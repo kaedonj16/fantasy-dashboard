@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 # process for a short window to keep modals snappy.
 #
 # The lock makes the query single-flight: without it, several modals opening on
-# a cold cache each run the full GROUP BY at once (a stampede) — that both
+# a cold cache each run the full GROUP BY at once (a stampede) -- that both
 # starves the DB pool (unrelated queries, e.g. the modal's own player-details
 # lookups, start failing) and makes the crawler calls themselves time out. With
 # it, one caller computes while the rest wait and then read the fresh cache.
@@ -50,7 +50,7 @@ def _atomic_json_write(path, data) -> None:
 #
 #   1. Disk snapshot (fast; written by a previous request, cron, or post-deploy)
 #   2. Shared ``adp_snapshots`` table (survives Render deploys; cron already
-#      mirrors here) — same idea as BR Fantasy reading ``draft_adp``
+#      mirrors here) -- same idea as BR Fantasy reading ``draft_adp``
 #   3. Live fetch + cache (same idea as ``fetch_sleeper_adp``)
 #
 # Cron / post-deploy still refresh in the background so the first page load
@@ -115,7 +115,7 @@ def snapshot_freshness(source: str, axis: str, season: int) -> Optional[float]:
 def global_adp_snapshot_signature() -> float:
     """Max mtime across all global ADP snapshot files, or 0.0.
 
-    A cheap cache-busting signal (stat only — no JSON parse, no season needed):
+    A cheap cache-busting signal (stat only -- no JSON parse, no season needed):
     when a refresh rewrites any Yahoo/ESPN/MFL snapshot this value changes, so a
     cache keyed partly on it rebuilds and picks up the new ADP instead of serving
     stale per-source columns until an unrelated cache (e.g. model values) turns
@@ -220,7 +220,7 @@ def _hydrate_snapshot_from_db(source: str, axis: str, season: int) -> bool:
     """Copy a non-empty ``adp_snapshots`` table slice onto disk. Returns True if
     the disk snapshot now has rows.
 
-    Render's web and cron disks are separate, but Postgres is shared — so after a
+    Render's web and cron disks are separate, but Postgres is shared -- so after a
     web deploy the table is the copy that still has Yahoo/ESPN/MFL from the last
     successful refresh. Best-effort: a missing table, no DSN, or a query error
     degrades to False and the caller tries a live fetch."""
@@ -350,7 +350,7 @@ def _persist_snapshot_db(record: dict) -> None:
     """Best-effort mirror of a snapshot into the adp_snapshots table.
 
     Disk is the source of truth for the resolver; the table exists for future
-    historical ADP-movement queries. Any DB problem is swallowed — a missing
+    historical ADP-movement queries. Any DB problem is swallowed -- a missing
     table, no DSN in a pure test env, or a transient error must never break the
     refresh or the request path."""
     meta = record.get("meta") or {}
@@ -646,16 +646,16 @@ _SLEEPER_ADP_FIELDS = {
 
 # Which market sources are valid per scoring axis, and which feed Consensus.
 # Only sources with verified capability on an axis appear:
-#   redraft — Sleeper, ESPN (global), Yahoo (global), MFL (global PPR), BR Fantasy.
-#   dynasty — Sleeper, BR Fantasy. ESPN/Yahoo/MFL global feeds are redraft-only
+#   redraft -- Sleeper, ESPN (global), Yahoo (global), MFL (global PPR), BR Fantasy.
+#   dynasty -- Sleeper, BR Fantasy. ESPN/Yahoo/MFL global feeds are redraft-only
 #             and are deliberately excluded from dynasty (never mix redraft ADP
 #             into a dynasty market). MFL exposes no verified dynasty ADP filter.
-#   rookie  — Sleeper, BR Fantasy. MFL has no verified rookie ADP filter.
+#   rookie  -- Sleeper, BR Fantasy. MFL has no verified rookie ADP filter.
 # The globals (espn/yahoo/mfl) are retrieved on the request path the same way
 # Sleeper is (cache, then fetch) and BR Fantasy is (shared DB), so they stay
 # visible after a web deploy whose local disk starts empty.
 #
-# ``brfantasy_live`` (past-7-days observed drafts) is selector-only — see
+# ``brfantasy_live`` (past-7-days observed drafts) is selector-only -- see
 # ADP_SELECTOR_EXTRA. Including it in Consensus would double-count recent
 # drafts already present in season-long BR Fantasy. Other platforms (Sleeper /
 # ESPN / Yahoo / MFL) publish season/global snapshots with no pick-level
@@ -709,7 +709,7 @@ def adp_source_options(scoring_type: str, season: Optional[int] = None):
     only, BR Fantasy on every axis, BR Fantasy Live on every axis).
 
     When ``season`` is given, a global snapshot-backed source (ESPN/Yahoo/MFL) is
-    hidden unless it actually has a non-empty snapshot for that season — so a
+    hidden unless it actually has a non-empty snapshot for that season -- so a
     selector never offers a source that would return nothing (Priority 4). Always-
     on sources (Sleeper, BR Fantasy, BR Fantasy Live) and Consensus are never
     gated. With ``season=None`` every configured source is listed (legacy
@@ -794,7 +794,7 @@ def fetch_crawler_adp(season: int, is_sf: bool, scoring_type: str,
 
     # Single-flight the compute. If another thread is already running it and it
     # takes a while, don't pile up (which would exhaust the worker's threads and
-    # make unrelated requests fail) — serve a stale entry if we have one, else
+    # make unrelated requests fail) -- serve a stale entry if we have one, else
     # empty so the caller falls back to Sleeper-only.
     if not _CRAWLER_ADP_LOCK.acquire(timeout=3.0):
         return _cached[1] if _cached is not None else {}
@@ -874,7 +874,7 @@ def fetch_crawler_adp_live(
     keeps a historical crawl backfill from flooding Live ADP.
 
     Unlike season-long ``fetch_crawler_adp``, this does **not** fall back to an
-    older season — an empty recent window means no live signal. Selector-only;
+    older season -- an empty recent window means no live signal. Selector-only;
     never blended into Consensus.
     """
     draft_type = _CRAWLER_DRAFT_TYPE.get(scoring_type)
@@ -972,7 +972,7 @@ def _yahoo_adp_source(season: int, is_sf: bool, scoring_type: str,
 
     With a league token, use Yahoo's league-format-aware draft_analysis (kept for
     connected Yahoo leagues). Without one, fall back to the public *global* Yahoo
-    ADP (no OAuth) so the "Yahoo" source works for everyone — retrieved like
+    ADP (no OAuth) so the "Yahoo" source works for everyone -- retrieved like
     Sleeper (cache, then fetch) rather than requiring a pre-warmed disk file."""
     if scoring_type != "redraft":
         return {}
@@ -1032,7 +1032,7 @@ def _is_pos_num(v) -> bool:
 
 # MFL ``averagePick`` is selected-only (mean among drafts that *took* the player).
 # A dart-throw listed only there (Sleeper 999 / ESPN+Yahoo omit) must not become
-# Consensus ADP — that is how Jam Miller showed 57.8 from 10% of MFL mocks.
+# Consensus ADP -- that is how Jam Miller showed 57.8 from 10% of MFL mocks.
 _SELECTED_ONLY_SOURCES = frozenset({"mfl"})
 
 
@@ -1162,7 +1162,7 @@ def resolve_market_adp(season: int, is_sf: bool, scoring_type: str = "redraft",
         return ordinal_rank_adp(m) if (as_rank and m) else m
 
     if source == "consensus":
-        # Consensus uses ADP_SOURCES only — never selector-extra (live) sources.
+        # Consensus uses ADP_SOURCES only -- never selector-extra (live) sources.
         names = list(valid)
         blended = consensus_adp([_src(n) for n in names], names)
         if blended:

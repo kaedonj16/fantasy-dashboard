@@ -1,4 +1,4 @@
-// BR Redzone live-scoreboard module — extracted from app.js so it only loads
+// BR Redzone live-scoreboard module -- extracted from app.js so it only loads
 // on the Redzone page (gated server-side via page_redzone). Runs deferred,
 // after app.js, so the shared helpers it relies on (openPlayerModal,
 // window._rzBuildLiveHtml, window._rzSyncTabLive) and window.__rz__ are ready.
@@ -24,10 +24,13 @@
   var _filterOpen  = false;
   var _myTeamOnly  = false;
   var _bigPlaysOnly = false; // TD or >=4 fantasy pts
+  var _feedSort    = 'foryou'; // 'foryou' or 'latest'
   var _heroMid    = null;
   var _heroTouched = false; // true once the viewer explicitly picks/clears the hero matchup
   var _seenPlayIds = new Set(); // Tank01 / demo play ids already in the feed
+  var _seenContributions = new Set(); // contribution keys (play + pid) for deduping
   var _pbpGames = {}; // game_id → true once we have real PBP for that game
+  var _pbpHistory = []; // full PBP contribution history (not capped)
   var _alertsArmed = false; // suppress TD beep/push until the first hydration seeds the feed
   var _slideDir   = 'none';
   var _feedPage   = 0;
@@ -75,6 +78,8 @@
       var bp = localStorage.getItem(_prefsKey('big-only'));
       if (bp === '1') _bigPlaysOnly = true;
       if (bp === '0') _bigPlaysOnly = false;
+      var fs = localStorage.getItem(_prefsKey('feed-sort'));
+      if (fs === 'latest' || fs === 'foryou') _feedSort = fs;
     } catch (_) {}
   }
   function _savePrefs() {
@@ -86,6 +91,7 @@
       }
       localStorage.setItem(_prefsKey('my-team'), _myTeamOnly ? '1' : '0');
       localStorage.setItem(_prefsKey('big-only'), _bigPlaysOnly ? '1' : '0');
+      localStorage.setItem(_prefsKey('feed-sort'), _feedSort);
     } catch (_) {}
   }
 
@@ -217,7 +223,7 @@
 
   // The window where Redzone presents its "live" look: a game actually in
   // progress, or the hour before the next kickoff. Used for the page-level
-  // status chip (per-game badges stay accurate — PRE until their own kickoff).
+  // status chip (per-game badges stay accurate -- PRE until their own kickoff).
   function _liveWindow() {
     if (_anyLive()) return { on: true, live: true };
     if (_isDemo) return { on: true, live: true };
@@ -245,6 +251,25 @@
   function _fmt(n) {
     if (n == null || n === '') return '0.0';
     return parseFloat(n).toFixed(1);
+  }
+  // Redzone-specific fantasy-point formatters that preserve precision
+  function _fmtFantasyDelta(n) {
+    if (n == null || n === '') return '0';
+    var val = parseFloat(n);
+    if (isNaN(val)) return '0';
+    // Preserve hundredths for small deltas like +0.04 passing yards
+    if (Math.abs(val) < 0.1) return val.toFixed(2).replace(/\.?0+$/, '');
+    // One decimal for normal values, strip trailing .0
+    var s = val.toFixed(1);
+    return s.replace(/\.0$/, '');
+  }
+  function _fmtFantasyTotal(n) {
+    if (n == null || n === '') return '0';
+    var val = parseFloat(n);
+    if (isNaN(val)) return '0';
+    // One decimal, strip trailing .0
+    var s = val.toFixed(1);
+    return s.replace(/\.0$/, '');
   }
   function _fmtTimer(n) {
     n = Math.max(0, Math.round(n));
@@ -419,8 +444,10 @@
     _scoreDelta = { me: 0, opp: 0 };
     _flashRids = new Set();
     _seenPlayIds = new Set();
+    _seenContributions = new Set();
     _pbpGames = {};
-    // A scope switch rehydrates from scratch — re-arm alerts only after it does.
+    _pbpHistory = [];
+    // A scope switch rehydrates from scratch -- re-arm alerts only after it does.
     _alertsArmed = false;
   }
 
@@ -512,7 +539,7 @@
     return ev.kind === 'td' || (ev.pts || 0) >= 4;
   }
   // Soft rank for display: mine → opp → rest, then TDs, then pts, then recency.
-  // Does not hide anyone — My Team / hero remain optional hard filters.
+  // Does not hide anyone -- My Team / hero remain optional hard filters.
   function _softRank(list) {
     return list.slice().sort(function(a, b) {
       var ar = a.mine ? 0 : (a.opp ? 1 : 2);
@@ -610,7 +637,7 @@
     var n = parseInt(m[2], 10);
     if (!(n >= 1 && n <= 20)) return false;
     var off = String(offenseTeam || '').toUpperCase();
-    if (!off) return false; // can't tell own 20 from opponent's — don't guess
+    if (!off) return false; // can't tell own 20 from opponent's -- don't guess
     return m[1].toUpperCase() !== off;
   }
   function _impactLine(ev) {
@@ -668,7 +695,7 @@
     var kind = tdc > 0 ? 'td' : (d.int > 0 ? 'neg'
              : ((d.rec >= 1 || d.carries >= 1 || d.pass_yds > 0) ? 'gain' : 'target'));
 
-    // Single-play TD shapes — read like a call from the booth.
+    // Single-play TD shapes -- read like a call from the booth.
     if (tdc === 1 && d.rec_td === 1 && d.rec === 1 && d.carries < 1) {
       return { desc: 'Hauls in a ' + ry + '-yard touchdown catch', kind: kind, stats: stats };
     }
@@ -699,7 +726,7 @@
       if (d.carries === 1) segs.push(uy >= 0 ? ('Runs for ' + _yds(uy)) : ('Is stuffed for a loss of ' + _yds(-uy)));
       else segs.push('Rushes ' + d.carries + ' times for ' + _yds(uy));
     }
-    if (!segs.length && d.targets > 0) segs.push('Targeted — pass incomplete');
+    if (!segs.length && d.targets > 0) segs.push('Targeted -- pass incomplete');
     if (d.int > 0) segs.push(d.int === 1 ? 'Throws an interception' : ('Throws ' + d.int + ' interceptions'));
     if (!segs.length) return null;
     return { desc: segs.join(' · '), kind: kind, stats: stats };
@@ -845,31 +872,119 @@
     return '';
   }
 
+  // NFL play identity: game_id + play_id (no pid)
+  function _nflPlayKey(play, gid) {
+    return String(play.play_id || (gid + ':' + (play.seq || 0)));
+  }
+  // Fantasy contribution identity: NFL play + pid
+  function _contributionKey(play, gid, pid) {
+    return _nflPlayKey(play, gid) + ':' + pid;
+  }
+
+  // Select primary actor for a grouped NFL play based on fantasy relevance hierarchy
+  function _selectPrimaryActor(contributions) {
+    if (!contributions || !contributions.length) return null;
+    if (contributions.length === 1) return contributions[0];
+    // Hierarchy: receiver > rusher > QB > kicker > DEF
+    var recTD = contributions.find(function(c) { return c.line.rec_td > 0; });
+    if (recTD) return recTD;
+    var rec = contributions.find(function(c) { return c.line.rec > 0; });
+    if (rec) return rec;
+    var target = contributions.find(function(c) { return c.line.targets > 0 && !c.line.rec; });
+    if (target) return target;
+    var rushTD = contributions.find(function(c) { return c.line.rush_td > 0; });
+    if (rushTD) return rushTD;
+    var rush = contributions.find(function(c) { return c.line.carries > 0; });
+    if (rush) return rush;
+    var passInt = contributions.find(function(c) { return c.line.int > 0; });
+    if (passInt) return passInt;
+    var passTD = contributions.find(function(c) { return c.line.pass_td > 0; });
+    if (passTD) return passTD;
+    var pass = contributions.find(function(c) { return c.line.pass_yds > 0; });
+    if (pass) return pass;
+    var defTD = contributions.find(function(c) { return c.line.def_td > 0; });
+    if (defTD) return defTD;
+    var defPlay = contributions.find(function(c) { return c.line.sacks || c.line.def_int || c.line.fum_rec; });
+    if (defPlay) return defPlay;
+    var kick = contributions.find(function(c) { return c.line.fgm || c.line.xpm; });
+    if (kick) return kick;
+    return contributions[0];
+  }
+
+  // Improve play description with fantasy-focused copy
+  function _improvePlayDesc(primary, contributions, rawText) {
+    var line = primary.line || {};
+    var pos = primary.pos;
+    var yds = Math.round(line.rec_yds || line.rush_yds || line.pass_yds || 0);
+    // Receiving TD
+    if (line.rec_td > 0 && line.rec > 0) {
+      var qb = contributions.find(function(c) { return c.line.pass_td > 0 && c.pid !== primary.pid; });
+      var qbName = qb ? qb.name.split(' ').pop() : '';
+      return yds > 0
+        ? yds + '-yard TD reception' + (qbName ? ' from ' + qbName : '')
+        : 'TD reception' + (qbName ? ' from ' + qbName : '');
+    }
+    // Completed pass (receiver primary)
+    if (line.rec > 0) {
+      var qb2 = contributions.find(function(c) { return (c.line.pass_yds > 0 || c.line.pass_td > 0) && c.pid !== primary.pid; });
+      var qbName2 = qb2 ? qb2.name.split(' ').pop() : '';
+      return yds > 0
+        ? yds + '-yard reception' + (qbName2 ? ' from ' + qbName2 : '')
+        : 'Reception' + (qbName2 ? ' from ' + qbName2 : '');
+    }
+    // Incomplete target
+    if (line.targets > 0 && !line.rec) {
+      var qb3 = contributions.find(function(c) { return c.pos === 'QB' && c.pid !== primary.pid; });
+      var qbName3 = qb3 ? qb3.name.split(' ').pop() : '';
+      return 'Target' + (qbName3 ? ' from ' + qbName3 : '') + ' · incomplete';
+    }
+    // Rushing TD
+    if (line.rush_td > 0 && line.carries > 0) {
+      return yds > 0 ? yds + '-yard rushing TD' : 'Rushing TD';
+    }
+    // Rush
+    if (line.carries > 0) {
+      if (pos === 'QB') return yds > 0 ? yds + '-yard scramble' : 'Scramble';
+      return yds > 0 ? yds + '-yard run' : 'Run';
+    }
+    // Interception
+    if (line.int > 0) return 'Pass intercepted';
+    // Passing TD (QB primary - rare, only when no receiver mapped)
+    if (line.pass_td > 0) return yds > 0 ? yds + '-yard TD pass' : 'TD pass';
+    // Kicker
+    if (line.fgm > 0) {
+      var dist = Math.round(line.fg_long || 0);
+      return dist > 0 ? dist + '-yard field goal' : 'Field goal';
+    }
+    if (line.xpm > 0) return 'Extra point';
+    // DEF
+    if (line.sacks > 0) return line.sacks === 1 ? 'Sack' : line.sacks + ' sacks';
+    if (line.def_int > 0) return 'Interception';
+    if (line.fum_rec > 0) return 'Fumble recovery';
+    if (line.def_td > 0) return 'Defensive TD';
+    // Fallback to raw or generic
+    if (rawText) return rawText;
+    var info = _describe(line, pos);
+    return info ? info.desc : 'Play';
+  }
+
   function _eventsFromPbp(newData, tags, scFor) {
     var byGame = newData.pbp_by_game || {};
-    var events = [];
+    var newContributions = [];
     Object.keys(byGame).forEach(function(gid) {
-      // Key presence = server attempted PBP for this game (may be an empty
-      // list). Quiet / empty payloads must still suppress bulk "Scored X pts".
       _pbpGames[gid] = true;
       (byGame[gid] || []).forEach(function(play) {
         var pid = _pidFromPlayName(play, newData);
         if (!pid || pid === '0') return;
-        var playKey = String(play.play_id || (gid + ':' + play.seq + ':' + pid));
-        if (_seenPlayIds.has(playKey)) return;
-        _seenPlayIds.add(playKey);
+        var contribKey = _contributionKey(play, gid, pid);
+        if (_seenContributions.has(contribKey)) return;
+        _seenContributions.add(contribKey);
         var rid = tags.pidToRoster[pid] || '';
-        if (!rid) return; // not on any roster in this payload
+        if (!rid) return;
         var line = play.stat_line || {};
         var scoring = scFor(pid);
         var pos = _pos(pid);
         var pts = parseFloat(_lineToPts(line, scoring, pos).toFixed(2));
-        var desc = play.play_text || '';
-        if (!desc) {
-          var info = _describe(line, pos);
-          if (!info) return;
-          desc = info.desc;
-        }
         var kind = play.is_td ? 'td' : (line.int > 0 ? 'neg'
                  : ((line.rec || line.carries || line.pass_yds || line.fgm || line.sacks || line.sack
                      || line.def_td || line.def_int || line.fum_rec) ? 'gain' : 'target'));
@@ -882,20 +997,73 @@
         if (line.targets && !line.rec) stats.push('target');
         if (line.fgm || line.xpm) stats.push('kick');
         if (line.sacks || line.sack) stats.push('sack');
-        events.push({
+        var contrib = {
           pid: pid, name: _name(pid), pos: pos, nflTeam: _team(pid),
           rosterId: rid, owner: _ownerName(rid), league: _leagueOfRid(rid),
           mine: tags.my.has(rid), opp: tags.opp.has(rid),
-          line: _gameLine(pid), ts: Date.now() + (play.seq || 0) * 0.001,
-          gameQuarter: play.quarter || ((_state.player_info || {})[pid] || {}).game_quarter || '',
-          gameClock: play.clock || ((_state.player_info || {})[pid] || {}).game_clock || '',
-          down: play.down || '', distance: play.distance || '', yardLine: play.yard_line || '',
-          desc: desc, kind: kind, stats: stats, pts: pts, statLine: line,
+          line: line, pts: pts, kind: kind, stats: stats,
+          playKey: _nflPlayKey(play, gid),
+          contribKey: contribKey,
+          rawPlayText: play.play_text || '',
+          quarter: play.quarter || '',
+          clock: play.clock || '',
+          down: play.down || '',
+          distance: play.distance || '',
+          yardLine: play.yard_line || '',
+          seq: play.seq || 0,
+          gameId: gid,
           cume: play.cume || null,
-          totalPts: parseFloat(_totalPtsForPid(pid, scoring, newData).toFixed(2)),
-          playId: playKey, fromPbp: true,
-          impact: ''
-        });
+          totalPts: parseFloat(_totalPtsForPid(pid, scoring, newData).toFixed(2))
+        };
+        newContributions.push(contrib);
+        _pbpHistory.push(contrib);
+      });
+    });
+    // Group contributions by NFL play
+    var playGroups = {};
+    newContributions.forEach(function(c) {
+      if (!playGroups[c.playKey]) playGroups[c.playKey] = [];
+      playGroups[c.playKey].push(c);
+    });
+    // Create one event per NFL play with primary actor
+    var events = [];
+    Object.keys(playGroups).forEach(function(playKey) {
+      var contribs = playGroups[playKey];
+      if (_seenPlayIds.has(playKey)) return;
+      _seenPlayIds.add(playKey);
+      var primary = _selectPrimaryActor(contribs);
+      if (!primary) return;
+      var desc = _improvePlayDesc(primary, contribs, primary.rawPlayText);
+      var allMine = contribs.some(function(c) { return c.mine; });
+      var allOpp = contribs.some(function(c) { return c.opp; });
+      events.push({
+        pid: primary.pid,
+        name: primary.name,
+        pos: primary.pos,
+        nflTeam: primary.nflTeam,
+        rosterId: primary.rosterId,
+        owner: primary.owner,
+        league: primary.league,
+        mine: allMine,
+        opp: allOpp,
+        line: _gameLine(primary.pid),
+        ts: Date.now() + primary.seq * 0.001,
+        gameQuarter: primary.quarter,
+        gameClock: primary.clock,
+        down: primary.down,
+        distance: primary.distance,
+        yardLine: primary.yardLine,
+        desc: desc,
+        kind: primary.kind,
+        stats: primary.stats,
+        pts: primary.pts,
+        statLine: primary.line,
+        cume: primary.cume,
+        totalPts: primary.totalPts,
+        playId: playKey,
+        fromPbp: true,
+        contributions: contribs,
+        impact: ''
       });
     });
     return events;
@@ -925,7 +1093,7 @@
     // Real play-by-play first (Tank01 / demo). Mark those games so we don't
     // also invent bulk-diff blurbs for the same snaps.
     var pbpEvents = _eventsFromPbp(newData, tags, _scFor);
-    // Cold boot can dump an entire game of PBP — keep the most recent slice.
+    // Cold boot can dump an entire game of PBP -- keep the most recent slice.
     if (!_feed.length && pbpEvents.length > 40) {
       pbpEvents = pbpEvents.slice(-40);
     }
@@ -940,7 +1108,7 @@
       if (handled[pid]) return;
       var code = String(pi.game_code || '');
       var gid = pi.game_id || '';
-      // Live/final: real Tank01 play-by-play lines only — never invent
+      // Live/final: real Tank01 play-by-play lines only -- never invent
       // boxscore-diff narratives or bulk "Scored X pts" cards.
       if (code === '1' || code === '2' || (gid && _pbpGames[gid])) {
         handled[pid] = true;
@@ -980,10 +1148,10 @@
     for (var i = allEvents.length - 1; i >= 0; i--) _feed.unshift(allEvents[i]);
     // Keep the feed chronological overall (newest first) for first-page paint.
     _feed = _chronoSort(_feed);
-    if (_feed.length > 200) _feed = _feed.slice(0, 200);
+    // No arbitrary cap - full history retained, rendering controlled by pagination
 
     // Push notification + audio chime for my TDs + log to history. Only for TDs
-    // found by a live poll — never the initial backfill of already-played snaps.
+    // found by a live poll -- never the initial backfill of already-played snaps.
     var myTDs = _alertsArmed
       ? allEvents.filter(function(ev) { return ev.kind === 'td' && ev.mine; })
       : [];
@@ -1332,7 +1500,7 @@
     if (_filters.nfl === 'all') return '';
     var g = _nflGameInfo(_filters.nfl);
     if (!g || (!g.away && !g.home)) return '';
-    var away = g.away || '—', home = g.home || '—';
+    var away = g.away || '--', home = g.home || '--';
     var aPts = (g.away_pts === '' || g.away_pts == null) ? '–' : g.away_pts;
     var hPts = (g.home_pts === '' || g.home_pts == null) ? '–' : g.home_pts;
     var poss = String(g.possession || '').toUpperCase();
@@ -1625,9 +1793,9 @@
     return '<div class="rz-mc-hero rz-mc-failed" title="Could not load this league">'
       + '<div class="rz-mch-league">' + (name || 'League') + '</div>'
       + '<div class="rz-mch-matchup">'
-      +   '<div class="rz-mch-side"><div class="rz-mch-owner">Unavailable</div><div class="rz-mch-score">—</div></div>'
+      +   '<div class="rz-mch-side"><div class="rz-mch-owner">Unavailable</div><div class="rz-mch-score">--</div></div>'
       +   '<div class="rz-mch-vs"><span class="rz-mch-pre">ERR</span></div>'
-      +   '<div class="rz-mch-side right"><div class="rz-mch-owner">—</div><div class="rz-mch-score">—</div></div>'
+      +   '<div class="rz-mch-side right"><div class="rz-mch-owner">--</div><div class="rz-mch-score">--</div></div>'
       + '</div>'
       + '</div>';
   }
@@ -1635,7 +1803,7 @@
   function _renderHeroCards() {
     // Score delta badge ("+N this update"): reflects the change from the most
     // recent poll. _detectChanges recomputes (and resets) _scoreDelta every
-    // poll, so the badge updates each cycle and clears when nothing changed —
+    // poll, so the badge updates each cycle and clears when nothing changed --
     // we only read it here (don't consume) so it survives per-second partial
     // re-renders between polls.
     var _dMe = _scoreDelta.me, _dOpp = _scoreDelta.opp;
@@ -1781,7 +1949,7 @@
 
   function _mtRowHtml(pid, matchup) {
     if (pid === '0') {
-      return '<div class="rz-mt-row is-empty"><span class="rz-pos-badge" style="opacity:.25">—</span>'
+      return '<div class="rz-mt-row is-empty"><span class="rz-pos-badge" style="opacity:.25">--</span>'
         + '<span class="rz-mt-name" style="color:var(--rz-muted)">Empty</span>'
         + '<span class="rz-mt-pts">0.0</span></div>';
     }
@@ -1919,7 +2087,7 @@
         if (!pidMap[pid] || pts > pidMap[pid].pts) pidMap[pid] = { pts: pts, roster_id: m.roster_id };
       });
     });
-    // Filtered map (respects active team/pos/owner filters) — used for both
+    // Filtered map (respects active team/pos/owner filters) -- used for both
     // the leaderboard list and the position leaders strip so they stay consistent.
     var filteredMap = {};
     Object.keys(pidMap).forEach(function(pid) {
@@ -1959,13 +2127,13 @@
                  : (_scope === 'user' && ev.league ? ev.league : '');
     var tagCls = ev.mine ? 'mine' : 'opp';
     var tag = tagLabel ? '<span class="rz-event-tag ' + tagCls + '">' + tagLabel + '</span>' : '';
-    var totalStr = (ev.totalPts != null && !isNaN(ev.totalPts)) ? _fmt(ev.totalPts) : '';
+    var totalStr = (ev.totalPts != null && !isNaN(ev.totalPts)) ? _fmtFantasyTotal(ev.totalPts) : '';
     // Headline the points THIS play earned (like Sleeper's game log), with the
     // player's running total underneath. A zero-value play (sack, incompletion,
-    // stat we don't model) shows a muted "0.0" — never a green "+0.0" that reads
+    // stat we don't model) shows a muted "0" -- never a green "+0" that reads
     // like a score, and never the running total masquerading as the play's pts.
     var d = _n(ev.pts);
-    var deltaPrimary = (d > 0.0001 ? '+' : '') + _fmt(d);
+    var deltaPrimary = (d > 0.0001 ? '+' : (d < -0.0001 ? '' : '')) + _fmtFantasyDelta(d);
     var deltaSecondary = totalStr;
     var deltaCls = d > 0.0001 ? 'pos' : (d < -0.0001 ? 'neg' : 'zero');
     var posKey = (ev.pos || 'x').toLowerCase().replace(/[^a-z]/g, '');
@@ -2126,7 +2294,7 @@
     // Focused matchup: keep only games that include one of its players.
     if (focusPids) gameIds = gameIds.filter(function(gid) { return gameMap[gid].hasFocus; });
     if (!gameIds.length) {
-      return '<div class="rz-pregame-empty-hint">Plays appear here as games unfold — targets, catches, carries and touchdowns with live fantasy points.'
+      return '<div class="rz-pregame-empty-hint">Plays appear here as games unfold -- targets, catches, carries and touchdowns with live fantasy points.'
       + (!_isDemo ? '<div class="rz-demo-cta"><a href="?demo=1" class="rz-demo-link">Try the Redzone demo</a></div>' : '')
       + '</div>';
     }
@@ -2180,7 +2348,7 @@
 
     var list = _chronoSort(_feed.filter(_eventMatches));
     // Hero focus alone should not force the "no matching" empty when the feed
-    // itself is empty — the pregame schedule already respects hero focus.
+    // itself is empty -- the pregame schedule already respects hero focus.
     var hardFilter = _filters.nfl !== 'all' || _filters.pos !== 'all' || _filters.stat !== 'all' || _myTeamOnly || _bigPlaysOnly
       || (_heroMid && _feed.length > 0);
     var totalPages = Math.max(1, Math.ceil(list.length / _PAGE_SIZE));
@@ -2199,7 +2367,7 @@
           container.innerHTML = '<div class="rz-feed-empty">No plays match these filters yet.</div>';
         }
       } else {
-        // Live/final with a PBP attempt but no lines yet — honest empty, not
+        // Live/final with a PBP attempt but no lines yet -- honest empty, not
         // boxscore / "Scored X pts" fiction.
         var pbpAttempted = Object.keys(_state.pbp_by_game || {}).length > 0
           || Object.keys(_pbpGames).length > 0;
@@ -2208,7 +2376,7 @@
           return c === '1' || c === '2';
         });
         if (pbpAttempted && liveOrFinal) {
-          container.innerHTML = '<div class="rz-feed-empty">Play-by-play lines aren’t available for these games yet. We only show real PBP — not box-score summaries.</div>';
+          container.innerHTML = '<div class="rz-feed-empty">Play-by-play lines aren’t available for these games yet. We only show real PBP -- not box-score summaries.</div>';
         } else {
           container.innerHTML = _pregameScheduleHtml();
         }
@@ -2811,7 +2979,7 @@
     _wireHeroScroll();
     root.querySelectorAll('[data-pid]').forEach(function(el) {
       if (el.classList.contains('rz-player-pts')) return;
-      // Feed events are wired by _syncFeed (el.onclick) — skip them here so a
+      // Feed events are wired by _syncFeed (el.onclick) -- skip them here so a
       // click doesn't fire openPlayerModal twice (two stacked modals).
       if (el.classList.contains('rz-event')) return;
       if (!el.dataset.pid || el.dataset.pid === '0') return;
@@ -2834,7 +3002,7 @@
       _loadingScope = false;
       _render();
     }
-    // else keep the skeleton — do not paint the other scope's state
+    // else keep the skeleton -- do not paint the other scope's state
   }
 
   async function _refresh() {
@@ -3044,7 +3212,7 @@
 
   function _isGameDay() {
     if (_isDemo) return true;
-    if (_anyLive()) return true; // already in progress — always poll regardless of day/time
+    if (_anyLive()) return true; // already in progress -- always poll regardless of day/time
     // Server checks the week's schedule file for a game dated today.
     if (_state.games_today) return true;
     // Fallback: any player has a kickoff later today
@@ -3081,7 +3249,7 @@
 
   function _tick() {
     if (_streaming) return; // hold the countdown/poll while a stream is loading cards
-    // Offseason / non-game day: stay idle — no countdown, no polling, no live
+    // Offseason / non-game day: stay idle -- no countdown, no polling, no live
     // look. Checked first so the timer never ticks down when nothing is on.
     if (!_isDemo && !_isGameDay()) {
       _countdown = 3600;

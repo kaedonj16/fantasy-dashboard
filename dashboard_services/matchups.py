@@ -1025,7 +1025,7 @@ def render_matchup_slide(
     # Projections for this week (dict {pid: proj_val})
     week_proj_map = _week_proj_map_from_bundles(projections, w)
     # Lazy raw-file fallback (same source Scout uses) when the bundle is empty
-    # or a starter pid is missing — common for Yahoo where scoreboard rows omit
+    # or a starter pid is missing -- common for Yahoo where scoreboard rows omit
     # lineups and the first paint races projection hydration.
     _raw_week_proj: Optional[Dict[str, Any]] = None
 
@@ -1127,7 +1127,7 @@ def render_matchup_slide(
         elif game_date == today_str and game_time:
             try:
                 # parse_game_datetime parses only the clock time, so its date
-                # defaults to 1900 — anchor it to today before comparing to now,
+                # defaults to 1900 -- anchor it to today before comparing to now,
                 # otherwise the kickoff is always "in the past" and a game later
                 # today is never corrected back to scheduled.
                 kickoff = parse_game_datetime(game_time).replace(
@@ -1435,7 +1435,7 @@ def render_matchup_slide(
         points = f"{left_points_html}{right_points_html}"
 
         # Box scores render under the name via .m-cell-stats inside left/right
-        # cells — no middle stat-stack columns (those pulled team abbrs away).
+        # cells -- no middle stat-stack columns (those pulled team abbrs away).
         rows_html.append(
             f"""<div class="m-row">
                   {left_cell}

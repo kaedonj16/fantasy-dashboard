@@ -609,7 +609,7 @@ def build_advanced_metrics_body(
         font-size:12px; font-weight:600; transition:all .15s; white-space:nowrap;
       }
       .am-pos.active { background:var(--text); color:var(--card); border-color:var(--text); }
-      /* Metric description tooltip — chrome matches .adv-def-tip (shared --tooltip-* tokens) */
+      /* Metric description tooltip -- chrome matches .adv-def-tip (shared --tooltip-* tokens) */
       .am-info { position:relative; display:inline-flex; margin-left:5px; color:var(--text-muted); cursor:help; vertical-align:middle; }
       .am-info i { font-size:11px; }
       /* My roster toggle */
@@ -813,7 +813,7 @@ def build_advanced_metrics_body(
       .am-trend-delta-down { color:var(--loss); }
       .am-trend-delta-flat { color:var(--text-muted); opacity:.6; }
       @media (max-width:600px) { .am-trendcell { min-width:80px; } .am-spark { display:none; } }
-      /* Pinned-player comparison modal — width grows with player count */
+      /* Pinned-player comparison modal -- width grows with player count */
       .am-cmp-card { max-width:min(95vw,1100px); }
       .am-legend-body { overflow-x:auto; }
       .am-cmp-table { min-width:520px; }
@@ -1051,7 +1051,7 @@ def build_advanced_metrics_body(
       html.og-render, html.og-render body { background:#eef2f7 !important; margin:0 !important; padding:0 !important; overflow:hidden !important; }
       html.og-render #appSplash { display:none !important; }
       /* Any transform on an ancestor would make position:fixed relative to it,
-         not the viewport — neutralize so the overlay truly fills the frame. */
+         not the viewport -- neutralize so the overlay truly fills the frame. */
       html.og-render #app-scale { transform:none !important; }
       html.og-render #amGraphModal {
         position:fixed !important; inset:0 !important; z-index:2147483600 !important; display:flex !important;
@@ -1259,7 +1259,7 @@ _AM_JS = r"""
     out.fpts_per_reception = rec > 0 ? (rec + recYds * 0.1 + (sel.reduce((s,w) => s + Number(w.rec_tds||0),0)) * 6) / rec : null;
     out.fpts_per_carry = car > 0 ? (rushYds * 0.1 + (sel.reduce((s,w) => s + Number(w.rush_tds||0),0)) * 6) / car : null;
 
-    // NGS/FTN/EPA metrics: totals summed, rates volume-weighted — parity with
+    // NGS/FTN/EPA metrics: totals summed, rates volume-weighted -- parity with
     // the server's get_adv_weekly_range_leaderboard so ranges match the board.
     const ADV_TOTALS = ['passing_epa', 'rushing_epa', 'receiving_epa',
       'yards_after_catch', 'explosive_runs_10_plus', 'ngs_rush_yards_over_expected'];
@@ -1406,7 +1406,7 @@ _AM_JS = r"""
     const addBtn  = document.getElementById('amAddStatBtn');
     const pinnedBtn = document.getElementById('amComparePinnedBtn');
     if (!chipsEl) return;
-    // Only show extra-metric chips (not the primary) — the primary is already
+    // Only show extra-metric chips (not the primary) -- the primary is already
     // visible in the dropdown, so showing it here when alone is redundant clutter.
     chipsEl.innerHTML = state.extraMetrics.map(function(key) {
       const lbl = (cfg.metrics[key] && cfg.metrics[key].label) || key;
@@ -1617,7 +1617,7 @@ _AM_JS = r"""
       });
       state.extraData[key] = { byId: Object.fromEntries(rows.map(r => [amRowKey(r), Number(r.value)])), maxAbs };
       render();
-      // Previous-season values (YoY trend arrows) are non-essential — fetch them
+      // Previous-season values (YoY trend arrows) are non-essential -- fetch them
       // off the critical path so the column shows immediately and the initial
       // request burst is halved.
       if (prevUrl) {
@@ -1741,8 +1741,8 @@ _AM_JS = r"""
   }
   // Positional rank + value bounds for a metric, computed from the loaded
   // leaderboard field (same data & filters the page is showing). Ranks are
-  // WITHIN each position — matching the player modal / a position-filtered
-  // leaderboard — so a multi-position efficiency metric like yards/touch doesn't
+  // WITHIN each position -- matching the player modal / a position-filtered
+  // leaderboard -- so a multi-position efficiency metric like yards/touch doesn't
   // bury RBs beneath WRs. bounds[pos] = [min, max] drive position-aware bars.
   function _amPosStats(key) {
     const lower = !!(cfg.metrics[key] && cfg.metrics[key].lowerBetter);
@@ -1771,7 +1771,7 @@ _AM_JS = r"""
     });
     return { ranks: ranks, bounds: bounds, counts: counts, avgs: avgs };
   }
-  // Bar fill (8–100%) by RANK within position — so a mid-ranked player in a
+  // Bar fill (8–100%) by RANK within position -- so a mid-ranked player in a
   // bunched-top metric (role score, snap share, yards/touch…) doesn't show a
   // near-full bar. #1 → 100, last → 8.
   function _amRankFill(rank, count) {
@@ -1779,7 +1779,7 @@ _AM_JS = r"""
     const t = (count - rank) / (count - 1);
     return 8 + Math.max(0, Math.min(1, t)) * 92;
   }
-  // Bar fill (8–100%) by where `val` sits in its position's [min,max] range —
+  // Bar fill (8–100%) by where `val` sits in its position's [min,max] range --
   // the same magnitude-preserving, position-aware scaling the player modal uses.
   function _amBoundsFill(key, val, bnds) {
     if (val == null || !bnds) return null;
@@ -1790,7 +1790,7 @@ _AM_JS = r"""
     t = Math.max(0, Math.min(1, t));
     return 8 + t * 92;  // 8% floor so the worst still shows a sliver
   }
-  // Unified bar fill (%) for the Compare modal — same four-shape model as the
+  // Unified bar fill (%) for the Compare modal -- same four-shape model as the
   // player modal:
   //  • SCORE  (grades, ratings, VORP/WAR) → value ÷ ceiling.
   //  • MINMAX (EPA totals) → position [min,max], so big leads & negatives show.
@@ -1895,7 +1895,7 @@ _AM_JS = r"""
 
     // Only the players whose split needs uncached data require a network call.
     // Page-season / full-season columns reuse already-loaded values, so adjusting
-    // one player's week range never re-fetches the others — it just re-aggregates
+    // one player's week range never re-fetches the others -- it just re-aggregates
     // that one player's (cached) weekly series locally.
     const needsFetch = players.some((p) => {
       const pid = String(p.player_id);
@@ -1905,7 +1905,7 @@ _AM_JS = r"""
       return !_amCmpSeason[pid + '_' + s];
     });
     // Show the spinner only when we actually have to wait on the network and the
-    // table isn't already on screen — so tweaking a cached range never flashes
+    // table isn't already on screen -- so tweaking a cached range never flashes
     // (or sticks on) "Loading…".
     if (needsFetch && body.dataset.cmpReady !== '1') {
       body.innerHTML = '<div style="padding:18px;color:var(--text-muted);font-size:13px;">Loading…</div>';
@@ -1947,7 +1947,7 @@ _AM_JS = r"""
       return { mode: 'fetch', metrics: metrics };
     }));
 
-    // A newer drag/season change started while we were awaiting — drop this
+    // A newer drag/season change started while we were awaiting -- drop this
     // stale render so the latest interaction wins (prevents flicker / clobber).
     if (token !== _amCmpToken) return;
 
@@ -1970,7 +1970,7 @@ _AM_JS = r"""
     const anyRange = players.some(p => rangeFor(p));
 
     // Always show exactly the metrics the user selected on the page (primary +
-    // any added compare metrics) — even when a week range is active. Week ranges
+    // any added compare metrics) -- even when a week range is active. Week ranges
     // simply re-aggregate those same metrics over the chosen weeks.
     metricsList = [state.metric, ...state.extraMetrics];
 
@@ -2181,7 +2181,7 @@ _AM_JS = r"""
     });
   }
   // Context volume columns: always-visible plain-number columns (like Games, no
-  // bar) keyed to the primary metric's category — receptions/targets for
+  // bar) keyed to the primary metric's category -- receptions/targets for
   // receiving, attempts/completions for passing, carries for rushing.
   function contextColsFor() {
     const cat = (cfg.metrics[state.metric] && cfg.metrics[state.metric].category) || '';
@@ -2193,7 +2193,7 @@ _AM_JS = r"""
     else if (cat === 'Rushing') cols = [{ key: 'car', label: 'Car', title: 'Carries' }];
     // Only show a context column when the loaded rows actually carry that value.
     // Auto-hides passing attempts/completions in week-range view and any metric
-    // whose source (e.g. NGS/EPA weekly store) lacks these volume totals — no
+    // whose source (e.g. NGS/EPA weekly store) lacks these volume totals -- no
     // columns of dashes.
     const rows = state.rows || [];
     return cols.filter(function(c) {
@@ -2922,7 +2922,7 @@ _AM_JS = r"""
   const _amHsPreload = {};
   // Client-side cache of per-metric leaderboard responses, keyed by request URL
   // (the params are deterministic for a given metric + filter set). Reopening a
-  // graph or toggling back to a prior axis is then instant — no refetch. Entries
+  // graph or toggling back to a prior axis is then instant -- no refetch. Entries
   // are invalidated whenever the underlying season/week filters change.
   const _amLbCache = new Map();
   let _amLbCacheSig = '';
@@ -3160,7 +3160,7 @@ _AM_JS = r"""
     const dx = niceDomain(Math.min.apply(null, xs), Math.max.apply(null, xs), L.ntX);
     const dy = niceDomain(Math.min.apply(null, ys), Math.max.apply(null, ys), L.ntY);
     // Zoom the view out a touch beyond the nice tick domain so the data cloud
-    // never hugs the frame — the crammed upper-right cluster (and its stacked
+    // never hugs the frame -- the crammed upper-right cluster (and its stacked
     // labels) was the readability problem. Pad the *positioning* domain by a
     // fraction of the data span; ticks stay on the same nice values, they just
     // sit inside a roomier frame. min()/max() guarantee we only ever zoom out
@@ -3262,11 +3262,11 @@ _AM_JS = r"""
         placed.push({ x1: cx2 - cw - 2, y1: cy2 - 12, x2: cx2 + 2, y2: cy2 + 6 });
       }
     }
-    // Emphasis: the top-ranked players carry the story — full-strength dots and
+    // Emphasis: the top-ranked players carry the story -- full-strength dots and
     // bold "Name 23.6" labels; the rest of the pool becomes a muted field with a
     // few quiet labels. pts is pre-sorted best-first, so index = rank.
     // Phones can't fit as many labels as the wide desktop chart, so cap them
-    // tighter there — a crammed stack of overlapping names reads as noise. Every
+    // tighter there -- a crammed stack of overlapping names reads as noise. Every
     // dot stays tappable for its full detail card, so fewer printed labels loses
     // no information, it just keeps the ones that print legible.
     const starCut = Math.min(isNarrow ? 6 : 8, Math.max(4, Math.round(pts.length * 0.3)));
@@ -3279,9 +3279,9 @@ _AM_JS = r"""
       const info = { nm: p.name, pos: p.position || '', hs: p.headshot || '', stats: stats };
       return { p: p, idx: idx, cx: cx, cy: cy, r: r, col: col, info: info, star: idx < starCut };
     });
-    // Pass 1 — field dots first (muted), then stars on top, largest-first within
+    // Pass 1 -- field dots first (muted), then stars on top, largest-first within
     // each group so small dots stay clickable. The field is kept quieter than the
-    // stars but visible enough to read the shape of the distribution — at the old
+    // stars but visible enough to read the shape of the distribution -- at the old
     // 0.24 the non-highlighted dots all but vanished on a bright phone screen.
     const fieldOp = TH.dark ? 0.42 : 0.36;
     ptData.filter(function(d) { return !d.star; }).sort(function(a, b) { return b.r - a.r; }).forEach(function(d) {
@@ -3294,11 +3294,11 @@ _AM_JS = r"""
         + '" fill="' + d.col + '" stroke="' + TH.bg + '" stroke-width="2"'
         + ' data-info="' + _amEsc(JSON.stringify(d.info)) + '"></circle>';
     });
-    // Pass 2 — labels with collision avoidance; higher-ranked names claim space
+    // Pass 2 -- labels with collision avoidance; higher-ranked names claim space
     // first. Star labels are bold ink with the ranked value in the accent; the
     // rest are quiet and dropped when they'd collide.
     const lblH = lblSize + 2;
-    // Intersection area of two boxes (0 when clear) — lets a crowded star pick
+    // Intersection area of two boxes (0 when clear) -- lets a crowded star pick
     // the least-bad anchor instead of stacking on a neighbour.
     const ovArea = function(a, b) {
       const ix = Math.min(a.x2, b.x2) - Math.max(a.x1, b.x1);
@@ -3352,7 +3352,7 @@ _AM_JS = r"""
       const lblFill = isStar ? TH.text : TH.muted;
       // Leader line: when a crowded cluster pushed this name to a stacked anchor
       // away from its dot, draw a thin connector so you can tell which label
-      // belongs to which point. Near labels (touching their dot) skip it — the
+      // belongs to which point. Near labels (touching their dot) skip it -- the
       // line would just be noise. Runs dot-edge → just short of the label, tinted
       // to the point colour for stars so the pairing reads at a glance.
       const _lx = chosen.x, _ly = chosen.y - fs * 0.32;
@@ -3551,7 +3551,7 @@ _AM_JS = r"""
     clone.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
     clone.setAttribute('width', W); clone.setAttribute('height', H);
     const xml = new XMLSerializer().serializeToString(clone);
-    // Encode as base64 data URI (not raw URI-encoded) — more robust across browsers
+    // Encode as base64 data URI (not raw URI-encoded) -- more robust across browsers
     // for loading an <svg> into an <img>, and avoids issues with special chars.
     let src;
     try {
@@ -3659,7 +3659,7 @@ _AM_JS = r"""
   };
 
   function fetchData() {
-    // paywall removed — advanced metrics is available to all users
+    // paywall removed -- advanced metrics is available to all users
     state.fetching = true;
     loading.style.display = ''; empty.style.display = 'none'; tbody.innerHTML = '';
     if (avgNote) avgNote.style.display = 'none';
@@ -4038,7 +4038,7 @@ _AM_JS = r"""
     window.addEventListener('load', function() { _amBuildWkBar(1, amMaxWk); });
   }
   // Quick range chips: Season / Last 2 / Last 4 (rolling windows ending at the
-  // current week) — the scouting workflow without dragging the bar each time.
+  // current week) -- the scouting workflow without dragging the bar each time.
   const quickWrap = document.getElementById('amQuickRanges');
   if (quickWrap) {
     quickWrap.addEventListener('click', function(e) {

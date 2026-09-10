@@ -9,7 +9,7 @@
 
 // ── Lazy feature-bundle loader ───────────────────────────────────────────────
 // Guests on the landing page get the slim public.js (fast paint). The feature
-// half (player modal, nav player-search, compare, adv metrics — everything below
+// half (player modal, nav player-search, compare, adv metrics -- everything below
 // the @public-js:core-end marker) lives in app-features.js and is loaded on
 // demand. window.__FEATURES_JS is the bundle URL (set by the page ONLY on lite
 // pages). Signed-in pages set window.__PLAYER_MODAL_JS instead, so the 170KB+
@@ -18,7 +18,7 @@
 // _deferInit runs an init fn at the right time whether the code loads normally
 // (register for DOMContentLoaded) or LATE via the lazy bundle after the DOM is
 // already parsed (defer to a macrotask so the whole feature script finishes
-// defining its globals first — mimics DOMContentLoaded's "after parse" timing
+// defining its globals first -- mimics DOMContentLoaded's "after parse" timing
 // without re-firing the core's already-run DOMContentLoaded listeners).
 function _deferInit(fn) {
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', fn);
@@ -27,7 +27,7 @@ function _deferInit(fn) {
 
 // ── Canonical HTML escaper ────────────────────────────────────────────────────
 // Single source of truth for escaping dynamic values interpolated into HTML
-// strings (innerHTML / template literals). Escapes the full set — & < > " ' —
+// strings (innerHTML / template literals). Escapes the full set -- & < > " ' --
 // so it is safe in both element-text and quoted-attribute contexts. User-set
 // fields (Sleeper/ESPN team & owner names) MUST pass through this; hoisted so it
 // is available to every call site regardless of source order. Prefer setting
@@ -197,7 +197,7 @@ if (typeof window.openPlayerModal === 'undefined') {
 // Prefetch the feature bundle (guests) or the player-modal script (signed-in)
 // once the page is idle so the first real interaction is instant.
 // Interactive SEO shells (compare / prospects / breakouts) need feature-half init
-// before first paint is useful — load eagerly instead of waiting for idle.
+// before first paint is useful -- load eagerly instead of waiting for idle.
 if (window.__FEATURES_JS || window.__PLAYER_MODAL_JS) {
   var _pf = function () { ensureFeatures(); };
   var _eagerLite = document.querySelector(
@@ -277,7 +277,7 @@ if (window.__FEATURES_JS || window.__PLAYER_MODAL_JS) {
 // If the server session expired but we still have saved_viewer in localStorage,
 // silently call /api/quick-set-viewer so the user stays logged in.
 // Does NOT fire after an explicit logout (user_id stripped, _explicitLogout set).
-// Does NOT fire in PWA standalone mode (added to home screen) — the "Continue as X"
+// Does NOT fire in PWA standalone mode (added to home screen) -- the "Continue as X"
 // banner on the home page handles re-auth with explicit user action there.
 (function () {
   if (window._isSignedIn) return;
@@ -285,7 +285,7 @@ if (window.__FEATURES_JS || window.__PLAYER_MODAL_JS) {
   if (sessionStorage.getItem('_explicitLogout')) return;
   var saved;
   try { saved = JSON.parse(localStorage.getItem('saved_viewer') || 'null'); } catch (_) {}
-  // Require user_id — logout strips it, which suppresses the re-auth offer.
+  // Require user_id -- logout strips it, which suppresses the re-auth offer.
   if (!saved || !saved.username || !saved.league_id || !saved.user_id) return;
   // Never silently re-authenticate (browser or PWA). Re-auth is always an
   // explicit user action: the home page already shows a "Continue as X" CTA, so
@@ -422,7 +422,7 @@ document.body.scrollTop = 0;
 // The original select stays in the DOM (CSS-hidden via .csd-wrap>select) so
 // existing JS can still read/write .value and fire change events normally.
 // Chrome-less pages (cheat-sheet embed iframe) load the same IIFE from
-// static/custom_selects.js instead of this bundle — keep the two in sync.
+// static/custom_selects.js instead of this bundle -- keep the two in sync.
 (function () {
   var _seq = 0;
   var _openWrap = null;
@@ -540,7 +540,7 @@ document.body.scrollTop = 0;
       // never wider than the viewport.
       list.style.minWidth = rect.width + 'px';
       list.style.maxWidth = (vw - 16) + 'px';
-      // Clamp horizontally so the list can't run off either edge — it's
+      // Clamp horizontally so the list can't run off either edge -- it's
       // position:fixed and lives inside the right-aligned settings menu on
       // mobile, which pushed the league switcher's list off-screen.
       var lw   = list.offsetWidth || rect.width;
@@ -939,12 +939,12 @@ window.brHaptic = function (pattern) {
     }
   }
   // Public close so Account overlays (Link a league, etc.) can dismiss the sheet
-  // before opening — open sheet z-index beats --z-modal and would cover them.
+  // before opening -- open sheet z-index beats --z-modal and would cover them.
   window.brCloseMoreSheet = function () { setOpen(false); };
   function openSearch() {
     var ss = document.getElementById('brSearchScreen'); if (!ss) return;
     // On lite pages the nav-search wiring (initNavSearch) lives in the lazy
-    // feature bundle — pull it in so typing actually returns results.
+    // feature bundle -- pull it in so typing actually returns results.
     if (typeof ensureFeatures === 'function') ensureFeatures();
     ss.classList.add('open'); ss.setAttribute('aria-hidden', 'false');
     setTimeout(function () { var i = document.getElementById('navPlayerSearch'); if (i) i.focus(); }, 260);
@@ -1182,7 +1182,7 @@ window.brHaptic = function (pattern) {
   function announce(title) {
     var el = announcer();
     // Strip a trailing " - Site" suffix so the announcement is just the page.
-    var name = (title || document.title || 'Page').split(/\s[|–—-]\s/)[0].trim();
+    var name = (title || document.title || 'Page').split(/\s[|–---]\s/)[0].trim();
     // Re-set to the same string won't re-announce; clear first so repeats speak.
     el.textContent = '';
     setTimeout(function () { el.textContent = name + ' loaded'; }, 50);
@@ -1209,7 +1209,7 @@ window.brHaptic = function (pattern) {
   var token = 0, navAbort = null;
   // Soft-nav prefetch: start the HTML fetch on pointerdown / hover so a click
   // often finds the response already in flight (or done). Keyed by absolute URL.
-  // Store a promise of HTML text (not the Response) — Response bodies are one-shot.
+  // Store a promise of HTML text (not the Response) -- Response bodies are one-shot.
   var softPrefetch = Object.create(null);
   var SOFT_PREFETCH_TTL_MS = 20000;
   function softAbsUrl(href) {
@@ -1430,13 +1430,13 @@ window.brHaptic = function (pattern) {
   };
 
   // Pages that can be swapped in place (script-free, or their page script is on
-  // the re-runnable allow-list). Everything else — Draft, Keeper, Redzone,
-  // Prospects, Trade, Compare, Metrics — loads its own scripts, so we let the
+  // the re-runnable allow-list). Everything else -- Draft, Keeper, Redzone,
+  // Prospects, Trade, Compare, Metrics -- loads its own scripts, so we let the
   // browser navigate to it natively (a single load) rather than fetch it here
   // only to bail to a full load anyway.
   // Pages whose inline scripts initialise on DOMContentLoaded (waivers,
   // graphs) or run a self-contained bootstrap (schedule) don't survive an
-  // in-place swap — DOMContentLoaded has already fired, so their data never
+  // in-place swap -- DOMContentLoaded has already fired, so their data never
   // loads and the page "struggles to load". Like Draft/Keeper/etc. they load
   // their own scripts, so let the browser navigate to them natively.
   var SOFT_NAV_PAGES = {
@@ -1515,7 +1515,7 @@ function fadeInCard(el) {
   el.classList.add('card-fade-in');
 }
 
-// Inline state icons — the shipped Font Awesome is subsetted (some fa-* glyphs
+// Inline state icons -- the shipped Font Awesome is subsetted (some fa-* glyphs
 // render blank), so the shared empty/error states use inline SVG to stay solid.
 var BR_STATE_ICONS = {
   empty:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5 5.2 4.6A2 2 0 0 1 7 3.6h10a2 2 0 0 1 1.8 1L21 8.5"/><path d="M3 8.5h5l1.2 2.2h5.6L16 8.5h5v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>',
@@ -1783,7 +1783,7 @@ window.emptyState = emptyState;
 
   // Flash the numeric values that changed across a re-render. Snapshots the text
   // of every `selector` under `container`, runs `mutate()` (which typically
-  // replaces innerHTML), then flashes any element whose number moved — green up,
+  // replaces innerHTML), then flashes any element whose number moved -- green up,
   // red down. Elements are matched by position, so `mutate` should keep their
   // order stable (true for live score refreshes of the same matchups/rows).
   window.brFlashUpdates = function (container, selector, mutate) {
@@ -1833,7 +1833,7 @@ window.emptyState = emptyState;
   //
   // Invert and Play must land in different frames (double rAF + a forced
   // reflow) or the browser batches them and the row keeps the invert
-  // translate — the "stuck" reorder on Player Rankings. A generation token
+  // translate -- the "stuck" reorder on Player Rankings. A generation token
   // cancels an in-flight pass when a newer one starts, and a timeout clears
   // the invert if transitionend never fires (conflicting `transition`
   // shorthand, display:none, tab hidden).
@@ -2007,7 +2007,7 @@ window.emptyState = emptyState;
   // Observe every [data-br-moment] under `root` (defaults to the document) and
   // play it the first time it scrolls into view. Exposed as window.brInitMoments
   // so AJAX-injected surfaces (e.g. the weekly highlights panel) can re-scan the
-  // freshly-swapped markup — the DOMContentLoaded pass can't see it.
+  // freshly-swapped markup -- the DOMContentLoaded pass can't see it.
   function initMoments(root) {
     var scope = root || document;
     var els = scope.querySelectorAll('[data-br-moment]');
@@ -2027,7 +2027,7 @@ window.emptyState = emptyState;
 
   // Rankings shakeup: swap `container`'s markup for `newHTML` and FLIP-animate
   // every [data-rk-key] element that exists in both from its old position to its
-  // new one — risers glow green and climb, fallers dim and slide down. Used by
+  // new one -- risers glow green and climb, fallers dim and slide down. Used by
   // the standings week-selector so scrubbing weeks visibly reshuffles the board.
   window.brSwapRanks = function (container, newHTML) {
     if (!container) return;
@@ -2096,8 +2096,8 @@ window.emptyState = emptyState;
   function initMotion() {
     if (!reduce) {
       // Stagger the main container's direct children (cards/sections) so they
-      // fade-and-rise in. Staggering children — rather than transforming the
-      // whole page — avoids creating a containing block for any fixed/sticky
+      // fade-and-rise in. Staggering children -- rather than transforming the
+      // whole page -- avoids creating a containing block for any fixed/sticky
       // descendants during the animation.
       var main = document.getElementById('page-root') ||
                  document.querySelector('main.page-main, main.os-main-col');
@@ -2106,7 +2106,7 @@ window.emptyState = emptyState;
       }
       // Nav pills: a gentle staggered entrance, but only once per browser
       // session. The nav is link-based (full page loads), so replaying it on
-      // every navigation would be noisy — this makes it a first-impression flourish.
+      // every navigation would be noisy -- this makes it a first-impression flourish.
       try {
         if (!sessionStorage.getItem('brNavEntered')) {
           document.querySelectorAll('.nav-pills-container').forEach(function (nav) {
@@ -2152,7 +2152,7 @@ window.emptyState = emptyState;
 window._brPromoEligible = function () {
   try {
     var t = parseInt(localStorage.getItem('br-first-seen') || '0', 10);
-    if (!t) return false;   // couldn't record (e.g. private mode) — don't nag
+    if (!t) return false;   // couldn't record (e.g. private mode) -- don't nag
     return (Date.now() - t) >= 24 * 60 * 60 * 1000;  // 1 day after first seen
   } catch (_) { return false; }
 };
@@ -2173,7 +2173,7 @@ window._brPromoEligible = function () {
     deferredPrompt = e;
     // Don't show if already dismissed or installed
     if (localStorage.getItem(DISMISS_KEY)) return;
-    // Not on a visitor's first session — only on a later visit (see above). The
+    // Not on a visitor's first session -- only on a later visit (see above). The
     // event re-fires on each load, so a skipped session just defers to the next.
     if (!window._brPromoEligible || !window._brPromoEligible()) return;
     // Delay slightly so it doesn't interrupt page load
@@ -2367,7 +2367,7 @@ window._brPromoEligible = function () {
       } catch (_) {}
     }
     if (!endpoint) {
-      // Not subscribed yet — show a subscribe prompt in a modal
+      // Not subscribed yet -- show a subscribe prompt in a modal
       var overlay = document.createElement('div');
       overlay.id = 'notifPrefsOverlay';
       overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:72px 16px 24px;';
@@ -2613,7 +2613,7 @@ window._brPromoEligible = function () {
   navigator.serviceWorker.ready.then(function (reg) {
     reg.pushManager.getSubscription().then(function (sub) {
       if (sub && Notification.permission === 'granted') {
-        // Already subscribed — sync localStorage and store endpoint
+        // Already subscribed -- sync localStorage and store endpoint
         localStorage.setItem(NOTIF_KEY, 'subscribed');
         window._pushEndpoint = sub.endpoint;
         // Backfill league rows for subs created before multi-league support (or
@@ -2623,11 +2623,11 @@ window._brPromoEligible = function () {
         return;
       }
       if (Notification.permission === 'granted' && !sub) {
-        // Permission granted but subscription was lost — re-subscribe silently
+        // Permission granted but subscription was lost -- re-subscribe silently
         subscribePush().catch(function () {});
         return;
       }
-      // Permission is 'default' and no active subscription — show banner once,
+      // Permission is 'default' and no active subscription -- show banner once,
       // and never on a visitor's first session (only a later visit; see
       // _brPromoEligible). Leaving `asked` untouched here means the prompt simply
       // waits for the next eligible visit rather than being consumed now.
@@ -2636,7 +2636,7 @@ window._brPromoEligible = function () {
       }
     });
   }).catch(function () {
-    // Service worker unavailable — fall back to simple check
+    // Service worker unavailable -- fall back to simple check
     if (!asked && Notification.permission === 'default' &&
         window._brPromoEligible && window._brPromoEligible()) {
       setTimeout(showNotifBanner, 45000);
@@ -2982,7 +2982,7 @@ window._brPromoEligible = function () {
           windowHeight: fd.documentElement.scrollHeight,
         });
         // Use the native share sheet when available (Save to Photos / Messages),
-        // falling back to a download — same flow as the graph modal.
+        // falling back to a download -- same flow as the graph modal.
         await _shareOrDownloadCanvas(canvas, 'br-fantasy-card.png', 'BR Fantasy');
       } catch (err) {
         console.warn('[scm] share/download failed, opening tab:', err);
@@ -3292,7 +3292,7 @@ function showLoginGate(target, opts) {
     wireSheetRefresh();
     updateLabels();
     initPills();
-    // A completed user refresh landed with a new cache timestamp — drop the
+    // A completed user refresh landed with a new cache timestamp -- drop the
     // flag so a later nav-fresh message doesn't bounce the page again.
     try {
       if (sessionStorage.getItem('brUserRefresh') === '1') {
@@ -3720,7 +3720,7 @@ function _renderPlayoffOdds(data) {
         }</td>`
       : '';
 
-    // #1 (top) seed odds — the team with the best regular-season finish.
+    // #1 (top) seed odds -- the team with the best regular-season finish.
     const topCell = `<td class="po-top">${
       is_complete
         ? (t.first_seed_pct === 100 ? '✓' : '')
@@ -3734,7 +3734,7 @@ function _renderPlayoffOdds(data) {
     const simAvgCell = '';
 
     // Movement: change in playoff probability (points) vs the last daily
-    // snapshot — so a trade that shifts the odds shows a ▲/▼. Hidden for a
+    // snapshot -- so a trade that shifts the odds shows a ▲/▼. Hidden for a
     // finished season (rows read Made/Missed) and for sub-0.1pt noise.
     const _mv = (!is_complete && t.roster_id != null) ? mv[String(t.roster_id)] : null;
     let mvHtml = '';
@@ -6010,8 +6010,8 @@ window.initTradePage = function initTradePage(root = document) {
       const sub = root.querySelector(".stl-sub");
       if (sub) {
         sub.textContent = scoringType === "redraft"
-          ? "Sleeper redraft comps — real trades where these players moved to opposite sides."
-          : "Sleeper dynasty comps — real trades where these players moved to opposite sides. A teaser of the full Trade Intel feed.";
+          ? "Sleeper redraft comps -- real trades where these players moved to opposite sides."
+          : "Sleeper dynasty comps -- real trades where these players moved to opposite sides. A teaser of the full Trade Intel feed.";
       }
 
       const res = await fetch("/api/trade-intel/similar-trades?" + params);
@@ -6506,7 +6506,7 @@ window.initTradePage = function initTradePage(root = document) {
       const mixed = Array.isArray(data.targets) ? data.targets : [];
       const isBalanced = !needPositions.length;
       const summary = data.summary || (isBalanced
-        ? "No glaring gaps — upgrades that fit your roster"
+        ? "No glaring gaps -- upgrades that fit your roster"
         : "");
 
       const posColor = POS_COLORS;
@@ -6800,7 +6800,7 @@ window.initTradePage = function initTradePage(root = document) {
     if (_btnSearchSend) _btnSearchSend.addEventListener("click", () => _setSearchMode("send"));
     _setSearchMode(_searchMode);  // apply persisted mode (sets active button + placeholder)
 
-    // Restore last searched player (PRO only — the search UI is hidden otherwise)
+    // Restore last searched player (PRO only -- the search UI is hidden otherwise)
     const _lastPlayer = (() => { try { return JSON.parse(localStorage.getItem('ti-last-player') || 'null'); } catch(_) { return null; } })();
     if (applySuggGating() && _lastPlayer && _lastPlayer.id) {
       playerInput.value = _lastPlayer.name || '';
@@ -7421,7 +7421,7 @@ window.initTradePage = function initTradePage(root = document) {
           // shapes rather than "no suggestions".
           const teamList = teamArchetypes.length ? teamArchetypes : _pkgArchetypes;
           const teamEmpty = getCurrentRosterId()
-            ? "No historical pattern matches this roster exactly — value-matched offers are listed below."
+            ? "No historical pattern matches this roster exactly -- value-matched offers are listed below."
             : "Select your team to see which of these patterns you can make.";
 
           function buildArchCells(list, emptyMsg) {
@@ -7749,7 +7749,7 @@ window.initTradePage = function initTradePage(root = document) {
         const mixed       = Array.isArray(data.targets) ? data.targets : [];
         const isBalanced  = !Object.keys(grouped).length;
         const summary     = data.summary || (isBalanced
-          ? "No glaring gaps — upgrades that fit your roster"
+          ? "No glaring gaps -- upgrades that fit your roster"
           : "");
         const posColor2   = POS_COLORS;
 
@@ -7976,7 +7976,7 @@ window.initTradePage = function initTradePage(root = document) {
         if (arch === "rebuilding") hint.textContent = "Production loss if you sell";
         else if (arch === "distribute") hint.textContent = "Win % cost of losing this stud";
         else hint.textContent = "Win % if acquired";
-        hint.title = "wk is typical remaining-week win chance. po is simulated playoff-make odds. They can move in opposite directions: playoffs depend on the rest of the season, schedule, and ceiling — not just average weekly scoring.";
+        hint.title = "wk is typical remaining-week win chance. po is simulated playoff-make odds. They can move in opposite directions: playoffs depend on the rest of the season, schedule, and ceiling -- not just average weekly scoring.";
       }
       const desc = root.querySelector("#otcStrategyDesc");
       if (desc) {
@@ -8144,7 +8144,7 @@ window.initTradePage = function initTradePage(root = document) {
         if (impactHint) {
           const isSell = archetype === "distribute" || archetype === "rebuilding";
           impactHint.textContent = isSell ? "Win % cost if traded away" : "Win % if acquired";
-          impactHint.title = "wk is typical remaining-week win chance. po is simulated playoff-make odds. They can move in opposite directions: playoffs depend on the rest of the season, schedule, and ceiling — not just average weekly scoring.";
+          impactHint.title = "wk is typical remaining-week win chance. po is simulated playoff-make odds. They can move in opposite directions: playoffs depend on the rest of the season, schedule, and ceiling -- not just average weekly scoring.";
         }
 
         if (!_strategyData.length) {
@@ -8204,7 +8204,7 @@ window.initTradePage = function initTradePage(root = document) {
         const wpdTitle = isSellArch
           ? "Change in typical remaining-week win chance if you trade this player away."
           : "Change in typical remaining-week win chance if you add this player (dropping your weakest at the position).";
-        const podTitle = "Change in simulated playoff-make odds. Playoffs can move differently from weekly win % because they depend on the rest of the season, schedule, and ceiling — not just average weekly scoring.";
+        const podTitle = "Change in simulated playoff-make odds. Playoffs can move differently from weekly win % because they depend on the rest of the season, schedule, and ceiling -- not just average weekly scoring.";
 
         const displayAsset = isSellArch && t.suggested_send && t.suggested_send[0]
           ? t.suggested_send[0] : t;
@@ -8557,7 +8557,7 @@ window.initTradePage = function initTradePage(root = document) {
           resultState.innerHTML = `
             <div class="otc-ai-empty">
               <div class="otc-ai-empty-title">Analysis unavailable</div>
-              <div class="otc-ai-empty-sub">The AI take failed this time. Re-run the eval in a moment — the value verdict above is still current.</div>
+              <div class="otc-ai-empty-sub">The AI take failed this time. Re-run the eval in a moment -- the value verdict above is still current.</div>
             </div>`;
         } else {
           resultState.innerHTML = `
@@ -8827,7 +8827,7 @@ window.initTradePage = function initTradePage(root = document) {
       if (rosterFilterActive()) {
         // Group each round's available variants: a real bucket asset (Early/Mid/
         // Late) is the ideal representative because it stays non-slotted and
-        // multi-selectable. Some rounds — notably the current draft year — carry
+        // multi-selectable. Some rounds -- notably the current draft year -- carry
         // only numeric slot assets in the value table, with no bucket to fall back
         // on. An unresolved pick there (e.g. an expansion team's pick that has no
         // prior-season standing to set its slot) must NOT grab the first slot and
@@ -9000,7 +9000,7 @@ window.initTradePage = function initTradePage(root = document) {
   }
 
   // League size doesn't affect redraft values, so grey it out in redraft mode.
-  // Keep the live trade-count label across redraft/dynasty tooltip rewrites —
+  // Keep the live trade-count label across redraft/dynasty tooltip rewrites --
   // innerHTML replacement used to drop #tradeCount and the "over N trades" copy.
   let cachedTradeCountLabel = (root.querySelector("#tradeCount")?.textContent || "").trim();
 
@@ -9081,7 +9081,7 @@ window.initTradePage = function initTradePage(root = document) {
     const panel = root.querySelector("#otcSettingsDropdown");
     if (!btn || !panel) return;
     // The panel is absolutely positioned (right:0) under the gear, which sits
-    // mid-row — so on a narrow screen a ~250px menu runs off the LEFT edge.
+    // mid-row -- so on a narrow screen a ~250px menu runs off the LEFT edge.
     // On phones, break it out to fixed positioning clamped to the viewport;
     // on wider screens leave the CSS default.
     function positionPanel() {
@@ -9557,8 +9557,8 @@ window.initTradePage = function initTradePage(root = document) {
 
   // Bind controls IMMEDIATELY (not gated behind the background data fetches
   // below). These only attach event listeners and need no fetched data, so the
-  // toolbar — Settings dropdown, Team 1/2 toggle, scoring controls, Analyze,
-  // etc. — works instantly. Previously they were inside the allSettled().then(),
+  // toolbar -- Settings dropdown, Team 1/2 toggle, scoring controls, Analyze,
+  // etc. -- works instantly. Previously they were inside the allSettled().then(),
   // so a single hung fetch left the whole toolbar dead.
   bindLeagueTypeControls();
   bindLeagueSizeControls();
@@ -9573,7 +9573,7 @@ window.initTradePage = function initTradePage(root = document) {
   bindClearTradeButton();
   bindShareButton();
   initMoversBreakoutsTabs();
-  // Search inputs bind immediately too — renderSide() lazily awaits
+  // Search inputs bind immediately too -- renderSide() lazily awaits
   // ensurePlayersLoaded() at query time, so they must not be gated behind the
   // background fetches (a hung fetch left the search bars dead).
   setupSearch("A");
@@ -10172,7 +10172,7 @@ document.addEventListener("DOMContentLoaded", () => {
       setTimeout(() => otpEmail?.focus(), 40);
     };
 
-    // Open the OTP modal for an arbitrary league — used by the "Link a league"
+    // Open the OTP modal for an arbitrary league -- used by the "Link a league"
     // modal, which has its own League ID + season + email fields. When an email
     // is supplied we kick off the code send so the member lands on the code step.
     // Returns false when the modal isn't present (feature flag off) so callers
@@ -10397,7 +10397,7 @@ document.addEventListener("DOMContentLoaded", () => {
           ". Paste the rest of the cookie string to get both.";
         espnCookieStatus.style.color = "var(--warning)";
       } else if (espnCookieBlob.value.trim()) {
-        espnCookieStatus.textContent = "Couldn't find SWID or espn_s2 in that text — copy the cookie rows and paste again.";
+        espnCookieStatus.textContent = "Couldn't find SWID or espn_s2 in that text -- copy the cookie rows and paste again.";
         espnCookieStatus.style.color = "var(--text-muted)";
       } else {
         espnCookieStatus.textContent = "";
@@ -10687,7 +10687,7 @@ if (!platformBtns.length) return;
       espnPrivateFields.style.display = isPrivate && !window._hasAccount ? "block" : "none";
     }
     if (espnDescription) espnDescription.textContent =
-      isEmail ? "Email: enter League ID + the email on your ESPN account. We'll send a 6-digit code — success lands you on your league dashboard."
+      isEmail ? "Email: enter League ID + the email on your ESPN account. We'll send a 6-digit code -- success lands you on your league dashboard."
       : isPrivate ? "Private: enter League ID plus SWID and espn_s2 (or paste the cookie string). Success = your private roster and standings load."
       : "Public leagues: enter the League ID from your ESPN URL. Success = your league dashboard loads with standings and rosters.";
     if (espnSwidInput) espnSwidInput.value = "";
@@ -10720,7 +10720,7 @@ if (!platformBtns.length) return;
 
   // No sign-in until a league is actually selected. Gate both continue buttons
   // ("Continue with Google" and "Continue without account") on the league <select>
-  // having a value — greyed + not-clickable until the user picks one.
+  // having a value -- greyed + not-clickable until the user picks one.
   const googleBtnEl = document.getElementById("googleContinueBtn");
   const guestSubmitEl = generateWrap ? generateWrap.querySelector('button[type="submit"]') : null;
   function syncHomeContinueState() {
@@ -11194,8 +11194,8 @@ if (!platformBtns.length) return;
         showEspnTeamPick(data.teams || [], null);
         syncEspnTeamSelection();
 
-        // Reveal the choice — Generate Dashboard (quick session) or Continue
-        // with Google (save to an account) — instead of jumping straight in, so
+        // Reveal the choice -- Generate Dashboard (quick session) or Continue
+        // with Google (save to an account) -- instead of jumping straight in, so
         // ESPN gets the same select-league-then-login option as Sleeper.
         if (leagueSelectWrap) leagueSelectWrap.style.display = "block";
         if (generateWrap) generateWrap.style.display = "block";
@@ -11236,7 +11236,7 @@ if (!platformBtns.length) return;
       const platform = (formPlatform && formPlatform.value) || "sleeper";
       const sel = document.getElementById("league");
       const leagueId = sel && sel.value;
-      // Require a selected league before signing in — no throwaway "sign in with
+      // Require a selected league before signing in -- no throwaway "sign in with
       // no league" path. The button is disabled until then; this guards clicks
       // that slip through (keyboard, etc.).
       if (!leagueId) { syncHomeContinueState(); if (window.brShake) window.brShake(sel); return; }
@@ -11297,7 +11297,7 @@ if (!platformBtns.length) return;
 
       // Unsigned Google path: stash the league, then sign in with Google.
       // Yahoo still has to authorize after that if this session has no Yahoo
-      // token — the Google callback sends them to /auth/yahoo. Do not bounce
+      // token -- the Google callback sends them to /auth/yahoo. Do not bounce
       // to Yahoo first; that would skip the Google account.
       if (!window._hasAccount && yahooRequestedAction === "google") {
         yahooConnectBtn.disabled = true;
@@ -11331,7 +11331,7 @@ if (!platformBtns.length) return;
         const data = await res.json();
 
         if (res.status === 401 && data.needs_oauth) {
-          // Start from the server's auth_url when it sends one — a 403 recovery
+          // Start from the server's auth_url when it sends one -- a 403 recovery
           // returns /auth/yahoo?reauth=1 so Yahoo shows its account chooser
           // instead of silently re-authorizing the same wrong account. Then
           // carry the league_id/team_name we already have on the form.
@@ -12107,7 +12107,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (isDropdownOpen) {
       isDropdownOpen = false;
       dropdown.style.display = "none";
-      // Restore gear badge from real unread state — never invent unread=true.
+      // Restore gear badge from real unread state -- never invent unread=true.
       setChangelogDot(hasNewNotifications, false);
     }
   }
@@ -12119,7 +12119,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   document.addEventListener("click", (e) => {
     // On mobile settings are relocated into #brSheetAccount (outside the gear
-    // wrapper) and forced visible — skip the outside-click close there.
+    // wrapper) and forced visible -- skip the outside-click close there.
     if (dropdown.closest("#brSheetAccount")) return;
     if (gearWrapper && !gearWrapper.contains(e.target)) {
       closeDropdown();
@@ -12234,7 +12234,7 @@ document.addEventListener('DOMContentLoaded', function() {
         // Handle success. Make sure the league you're viewing is always in the
         // list: if it isn't one of your account/linked leagues, inject it (marked
         // current) so the dropdown reflects where you actually are instead of
-        // showing some other league as selected — and so a single linked league
+        // showing some other league as selected -- and so a single linked league
         // still gives you something to switch between.
         const leagues = Array.isArray(data.leagues) ? data.leagues.slice() : [];
         const hasCurrent = leagues.some(l => String(l.league_id) === String(currentLeagueId));
@@ -12649,7 +12649,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // Generic nav dropdown toggle (works for Players, Stats, or any future dropdown)
 /**
- * Sliding active indicator for the desktop top-nav pills — the .nav-pill-ind
+ * Sliding active indicator for the desktop top-nav pills -- the .nav-pill-ind
  * pill glides to sit behind the active item, mirroring the mobile dock. The top
  * bar is identical on every page, so we remember where the indicator last sat
  * (sessionStorage) and glide it from there to the new active pill on load; on
@@ -12670,14 +12670,14 @@ document.addEventListener('DOMContentLoaded', function() {
   // Position + size relative to the container (getBoundingClientRect sidesteps
   // offsetParent nesting from the dropdown wrappers). `vy` is the active pill's
   // vertical-center offset from the container's center: it stays 0 for a normal
-  // single row (so the base top:50% centering — robust to the row settling after
-  // first paint — is used), and only becomes non-zero when the pills wrap, to
+  // single row (so the base top:50% centering -- robust to the row settling after
+  // first paint -- is used), and only becomes non-zero when the pills wrap, to
   // drop the indicator onto the active pill's row.
   function rectOf(el, container) {
     var er = el.getBoundingClientRect(), cr = container.getBoundingClientRect();
     // Only offset vertically when the pills actually wrapped (row is taller than
     // one pill). For a single row the pill is centered in the row, so CSS's
-    // top:50% centering is exact — and, unlike a measured offset, it can't be
+    // top:50% centering is exact -- and, unlike a measured offset, it can't be
     // thrown off by a transient reflow during a cold page load.
     var wrapped = cr.height > er.height * 1.6;
     return {
@@ -12689,7 +12689,7 @@ document.addEventListener('DOMContentLoaded', function() {
   }
   var glideUntil = 0;    // timestamp through which a glide is animating
   var revealed = false;  // opacity is only shown once we've settled on a real spot
-  // Position/size only — opacity is controlled separately by reveal(), so the
+  // Position/size only -- opacity is controlled separately by reveal(), so the
   // ResizeObserver can quietly re-snap the indicator while it's still hidden
   // during the cold-load settle without flashing it at a transient position.
   function place(ind, r, animate) {
@@ -12752,7 +12752,7 @@ document.addEventListener('DOMContentLoaded', function() {
     try { sessionStorage.setItem('br_nav_ind', JSON.stringify(to)); } catch (_) {}
   }
 
-  // Animate the indicator to the currently-active pill — used after a desktop
+  // Animate the indicator to the currently-active pill -- used after a desktop
   // soft-navigation swaps the active state in without a full page load.
   window.brNavGlide = function () {
     var e = els();
@@ -12763,7 +12763,7 @@ document.addEventListener('DOMContentLoaded', function() {
   };
 
   // Attach a ResizeObserver EARLY (before the cold-load reflow) so any later
-  // settle of the nav's side columns — which can transiently rewrap the pills —
+  // settle of the nav's side columns -- which can transiently rewrap the pills --
   // re-snaps the indicator. It fires on the row's own size changes, never on the
   // indicator's transform, so it doesn't interrupt a warm-load glide; its initial
   // synchronous callback is skipped so it doesn't stomp the first placement.
@@ -12914,7 +12914,7 @@ document.addEventListener('DOMContentLoaded', function() {
           platform: platform,
           viewer_roster_id: viewerRosterId,
           // Button click always means "give me a fresh report". The dashboard
-          // itself does not prefill cached copy — the result stays hidden
+          // itself does not prefill cached copy -- the result stays hidden
           // until this click.
           force: true
         })
@@ -13112,7 +13112,7 @@ document.addEventListener('DOMContentLoaded', function () {
     var params = new URLSearchParams(window.location.search);
     var pid = params.get('player');
     if (!pid || typeof openPlayerModal !== 'function') return;
-    // Don't open during a session-restore reload — the modal will open
+    // Don't open during a session-restore reload -- the modal will open
     // correctly on the next load once the session is set.
     if (sessionStorage.getItem('_sessionRestoreAttempted')) return;
     openPlayerModal(pid, params.get('player_name') || '', { force: true });
@@ -13193,7 +13193,7 @@ window.brDefImgOnError = function (img, hideFn) {
 
 // @public-js:core-end  (everything below is app/feature code; excluded from public.js)
 
-// R06.3 — one in-app toast near lineup lock when starters need attention.
+// R06.3 -- one in-app toast near lineup lock when starters need attention.
 // Safe no-op when league context or API data is missing.
 window.BRLineupLockToast = (function () {
   function _storageKey(season, week) {
@@ -13219,7 +13219,7 @@ window.BRLineupLockToast = (function () {
           var key = _storageKey(d.season, d.week);
           try { if (localStorage.getItem(key) === '1') return; } catch (e) {}
           if (typeof showToast !== 'function') return;
-          showToast(d.message || 'Lineup lock is coming — check your starters.', 'warning', 8000);
+          showToast(d.message || 'Lineup lock is coming -- check your starters.', 'warning', 8000);
           try { localStorage.setItem(key, '1'); } catch (e2) {}
         })
         .catch(function () {});
@@ -14064,7 +14064,7 @@ _deferInit(function () {
 // could otherwise stare at stale data with no signal. Show a small banner while
 // offline and clear it the moment connectivity returns.
 //
-// Important: do not leave a translated-off-screen node in the DOM while online —
+// Important: do not leave a translated-off-screen node in the DOM while online --
 // on phones that peek still showed a clipped "You are offline" strip at the
 // bottom edge. Create the bar only when offline; hide it completely when online.
 (function () {
@@ -14100,7 +14100,7 @@ _deferInit(function () {
   }
   window.addEventListener('online', _update);
   window.addEventListener('offline', _update);
-  // Only evaluate once the document is ready — avoids a flash if onLine is
+  // Only evaluate once the document is ready -- avoids a flash if onLine is
   // briefly false during early script evaluation on some mobile WebViews.
   if (document.readyState !== 'loading') {
     setTimeout(_update, 0);
@@ -15286,7 +15286,7 @@ function _buildCompareHeroHTML(p, other) {
   // ── ADP row (Dynasty + Redraft) ──────────────────────────────────────────
   // Same Sleeper feed as the player modal. The primary number is the viewer's
   // league type (SF in superflex, 1QB otherwise), with the other format in the
-  // sub-line — matching how pos rank already switches. Lower ADP = drafted
+  // sub-line -- matching how pos rank already switches. Lower ADP = drafted
   // earlier, so the winner highlight flips vs the value cards. Tier averages
   // have no ADP, so the whole row is dropped when neither value exists.
   const adp = p.stats?.adp || null;
@@ -15337,7 +15337,7 @@ function _buildCompareHeroHTML(p, other) {
 
 // Upgrade an ESPN headshot to a higher-resolution crop. ESPN stores each
 // headshot as one fixed-size PNG, but its image "combiner" re-renders that same
-// source at any requested width — so asking for ~2x the on-screen size yields a
+// source at any requested width -- so asking for ~2x the on-screen size yields a
 // crisp image on retina/hi-DPI screens instead of an upscaled, blurry one.
 // Non-ESPN URLs (rookie-pipeline headshots) and empty strings pass through
 // untouched, and an already-combined URL is left as-is.
@@ -15379,9 +15379,9 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2, counts1, c
   counts1 = counts1 || {}; counts2 = counts2 || {};
   bounds1 = bounds1 || {}; bounds2 = bounds2 || {};
   // Bar fill from a value relative to the position's min–max range (from the
-  // ranks API `bounds`). Preserves real magnitude — a big lead at the top of
+  // ranks API `bounds`). Preserves real magnitude -- a big lead at the top of
   // the position shows a long bar with a visible gap; bunched values show small
-  // gaps — while staying position-aware (Total TDs scaled within QBs vs. WRs).
+  // gaps -- while staying position-aware (Total TDs scaled within QBs vs. WRs).
   // Returns null when no usable bounds exist (→ value-scale fallback).
   const _boundsFillCmp = (key, val, b) => {
     if (val == null || !b || !b[key]) return null;
@@ -15398,7 +15398,7 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2, counts1, c
   const pos2 = (p2?.position || '').toUpperCase();
   const positions = [pos1, pos2].filter(Boolean);
 
-  // Build display key list from cfg when available — same metrics as leaderboard
+  // Build display key list from cfg when available -- same metrics as leaderboard
   let displayKeys = [];
   const cfgLabelMap = {};
 
@@ -15418,7 +15418,7 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2, counts1, c
       displayKeys = Array.from(allKeys);
     }
   } else {
-    // No cfg — use hardcoded position-aware lists
+    // No cfg -- use hardcoded position-aware lists
     const qbMetrics = [
       'completion_pct', 'yards_per_attempt', 'td_rate', 'int_rate', 'nfl_passer_rating',
       'epa_per_play', 'passing_epa', 'cpoe', 'success_rate', 'sack_rate', 'scramble_rate',
@@ -15579,7 +15579,7 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2, counts1, c
       'total_touches': 350, 'total_rush_tds': 18, 'total_rec_tds': 14,
       'total_pass_tds': 40, 'total_tds': 45,
 
-      // Opportunity / per-game rates — these previously fell through to the
+      // Opportunity / per-game rates -- these previously fell through to the
       // default range of 100, rendering near-empty bars. (Rank-percentile is
       // used when available; these are the career-view / unranked fallback.)
       'wopr': 0.65, 'air_yards_share': 38, 'air_yards_per_game': 110,
@@ -15745,7 +15745,7 @@ var _cmpSides = {
   2: { pid: null, position: '', season: null, range: 'full', wkStart: null, wkEnd: null, seasons: [] }
 };
 var _cmpWeeklyCache = {};  // `${pid}_${season}` -> weeks[]
-var _cmpTrendMode = 'weekly';  // 'weekly' | 'season' — usage-panel trend view
+var _cmpTrendMode = 'weekly';  // 'weekly' | 'season' -- usage-panel trend view
 var _cmpAdvCache = {};     // `${pid}_${seasonParam}` -> advanced-metrics payload
 var _cmpRanksCache = {};   // `${pid}|${season}|${ws}|${we}` -> {ranks,counts,bounds}
 var _cmpSideResultCache = {}; // side-signature -> full computed side result
@@ -15818,8 +15818,8 @@ function _cmpEsc(s) { return escapeHtml(s); }
 //     the leaderboard's avg_off_snap_pct.
 // Caveat: the weekly series (player_weekly_metrics, sourced from Sleeper) and the
 // season leaderboard (player_advanced_metrics, sourced from PFF/usage) come from
-// DIFFERENT pipelines, so a "Full" week-range will be close to — but not exactly
-// equal to — the leaderboard season value. That's why "Full" mode shows the
+// DIFFERENT pipelines, so a "Full" week-range will be close to -- but not exactly
+// equal to -- the leaderboard season value. That's why "Full" mode shows the
 // authoritative leaderboard numbers and only true sub-season splits use this.
 function _cmpAggregateWeeks(weeks, wkStart, wkEnd) {
   const sel = (weeks || []).filter(w => { const wk = Number(w.week); return wk >= wkStart && wk <= wkEnd; });
@@ -15842,7 +15842,7 @@ function _cmpAggregateWeeks(weeks, wkStart, wkEnd) {
     total_targets: tgt, total_receptions: rec, total_carries: car, total_touches: tch,
   };
 
-  // New NGS/FTN/EPA metrics: totals summed, rates volume-weighted — parity with
+  // New NGS/FTN/EPA metrics: totals summed, rates volume-weighted -- parity with
   // the server-side weekly aggregation in advanced_metrics.py so a week range
   // matches the leaderboard's range numbers.
   const ADV_TOTALS = ['passing_epa', 'rushing_epa', 'receiving_epa',
@@ -16082,8 +16082,8 @@ function cmpSetCustom(which, start, end) {
 function _cmpInitWkBars() {
   [1, 2].forEach(function(which) {
     const side = _cmpSides[which];
-    if (_cmpIsBaseline(side.pid)) return; // tier average — no week bar
-    if (side.season === null) return; // career — no bar rendered
+    if (_cmpIsBaseline(side.pid)) return; // tier average -- no week bar
+    if (side.season === null) return; // career -- no bar rendered
     const maxWk = (side.rangeMeta && side.rangeMeta.maxWk) ? side.rangeMeta.maxWk : 18;
     _wkBarInit('cmpWkBar' + which, function(ws, we) {
       if (ws <= 1 && we >= maxWk) {
@@ -16616,7 +16616,7 @@ function _compareWireView(p1, p2) {
   _cmpSides[2].position = (p2.position || '').toUpperCase();
 
   // The Stats (game logs) and Advanced Metrics tabs used to fetch for BOTH
-  // players the instant the compare view opened, even though they start hidden —
+  // players the instant the compare view opened, even though they start hidden --
   // 4+ blocking requests behind a spinner. Defer them until the user actually
   // opens each tab (loaded once), so Overview paints immediately. cmpSwitchTab
   // calls _cmpEnsureStats / _cmpEnsureMetrics on first visit.
@@ -16885,7 +16885,7 @@ function cmp3EnsureStats() {
   });
 }
 
-// Advanced Metrics tab: ONE unified table — a metric per row with three aligned,
+// Advanced Metrics tab: ONE unified table -- a metric per row with three aligned,
 // best-in-row-highlighted value columns (mirrors the Overview table and the
 // two-player compare) instead of three cramped single-player panels. Fetches all
 // three players up front and renders once, so no column can get stuck "Loading".
@@ -16967,7 +16967,7 @@ function _cmp3MetricTable(players, datas, cfg) {
     return Math.abs(v) >= 10 ? v.toFixed(1) : v.toFixed(2);
   };
 
-  // Category grouping — same order as the two-player compare / player modal.
+  // Category grouping -- same order as the two-player compare / player modal.
   const CAT_ORDER = ['Value', 'General', 'Passing', 'Rushing', 'Receiving', 'Volume'];
   const groups = {}; const order = [];
   for (const key of displayKeys) {
@@ -17835,7 +17835,7 @@ function _renderBkModalContent(data, playerId) {
 // ── Ages / demographics tab ─────────────────────────────────────────────────
 // Built entirely from the roster payload already loaded for the modal (each
 // player carries a real `age`, `position`, `is_starter` and `value`). No mock
-// data here — this is the actual age profile of the team's roster.
+// data here -- this is the actual age profile of the team's roster.
 function _tmBuildAgesHtml(data) {
   const POS_ORDER = ['QB', 'RB', 'WR', 'TE', 'K', 'DEF'];
   const roster = (data && Array.isArray(data.roster)) ? data.roster : [];
@@ -17856,7 +17856,7 @@ function _tmBuildAgesHtml(data) {
   }
 
   const mean = arr => arr.reduce((s, x) => s + x, 0) / arr.length;
-  const fmt1 = n => (n == null || isNaN(n)) ? '—' : n.toFixed(1);
+  const fmt1 = n => (n == null || isNaN(n)) ? '--' : n.toFixed(1);
 
   const allAges = withAge.map(p => p.age);
   const avgAge = mean(allAges);
@@ -17883,10 +17883,10 @@ function _tmBuildAgesHtml(data) {
   // ── Header stat tiles ──
   const tiles = [
     { v: fmt1(avgAge), l: 'Avg Age' },
-    { v: starterAvg != null ? fmt1(starterAvg) : '—', l: 'Starter Avg' },
-    { v: vwAge != null ? fmt1(vwAge) : '—', l: 'Value-Wtd Age' },
-    { v: youngest ? fmt1(youngest.age) : '—', l: 'Youngest' },
-    { v: oldest ? fmt1(oldest.age) : '—', l: 'Oldest' },
+    { v: starterAvg != null ? fmt1(starterAvg) : '--', l: 'Starter Avg' },
+    { v: vwAge != null ? fmt1(vwAge) : '--', l: 'Value-Wtd Age' },
+    { v: youngest ? fmt1(youngest.age) : '--', l: 'Youngest' },
+    { v: oldest ? fmt1(oldest.age) : '--', l: 'Oldest' },
   ];
   let html = '<div class="tm-ages-tiles">' + tiles.map(t =>
     `<div class="tm-stat-tile"><div class="tm-stat-tile-value">${t.v}</div><div class="tm-stat-tile-label">${t.l}</div></div>`
@@ -17956,7 +17956,7 @@ function _tmBuildAgesHtml(data) {
 // mid-season default. Record / PF / PA tiles prefer the league's real stats
 // so they match the modal header. Wire pairings to a matchups endpoint later.
 function _tmSeededRng(seed) {
-  // mulberry32 — small, stable, good enough for placeholder data.
+  // mulberry32 -- small, stable, good enough for placeholder data.
   let a = seed >>> 0;
   return function () {
     a |= 0; a = (a + 0x6D2B79F5) | 0;
@@ -18063,7 +18063,7 @@ function _tmGroupByPos(players, posKey) {
 function _tmLineupFromPool(byPos, slots) {
   const poolIdx = {};
   const nextFallback = (pos) => {
-    const pool = _TM_NAME_POOL[pos] || ['—'];
+    const pool = _TM_NAME_POOL[pos] || ['--'];
     poolIdx[pos] = (poolIdx[pos] || 0);
     return { name: pool[(poolIdx[pos]++) % pool.length], id: null };
   };
@@ -18074,7 +18074,7 @@ function _tmLineupFromPool(byPos, slots) {
   });
 }
 
-// This team's lineup from its real roster (best-by-value first — roster is
+// This team's lineup from its real roster (best-by-value first -- roster is
 // pre-sorted), carrying player_id so each starter opens the player modal.
 function _tmMyLineup(roster, slots) {
   return _tmLineupFromPool(_tmGroupByPos(roster, 'position'), slots);
@@ -18090,7 +18090,7 @@ function _tmOppLineupReal(oppTeam, slots) {
 function _tmOppLineup(slots, rng) {
   const used = {};
   const pick = (pos) => {
-    const pool = _TM_NAME_POOL[pos] || ['—'];
+    const pool = _TM_NAME_POOL[pos] || ['--'];
     let n, guard = 0;
     do { n = pool[Math.floor(rng() * pool.length)]; guard++; }
     while (used[n] && guard < 8);
@@ -18252,7 +18252,7 @@ function _tmBuildScheduleHtml(data) {
     }
 
     const resultCls = res === 'W' ? 'tm-sched-w' : res === 'L' ? 'tm-sched-l' : res === 'T' ? 'tm-sched-t' : 'tm-sched-upcoming';
-    const resultBadge = `<span class="tm-sched-result ${resultCls}">${played ? res : (wk.playoff ? 'PLYF' : '—')}</span>`;
+    const resultBadge = `<span class="tm-sched-result ${resultCls}">${played ? res : (wk.playoff ? 'PLYF' : '--')}</span>`;
     const scoreHtml = played
       ? `<span class="tm-sched-score">${myScore.toFixed(1)} <span class="tm-sched-dash">–</span> ${oppScore.toFixed(1)}</span>`
       : `<span class="tm-sched-score tm-sched-proj">Proj ${myScore.toFixed(1)} <span class="tm-sched-dash">–</span> ${oppScore.toFixed(1)}</span>`;
@@ -18315,7 +18315,7 @@ function _tmBuildScheduleHtml(data) {
   // modal header (0-0 / 0 PF before kickoff) instead of summing mock results.
   const recordStr = (data && data.record) ? String(data.record)
     : (ties ? `${wins}-${losses}-${ties}` : `${wins}-${losses}`);
-  const streakStr = streakLen ? `${streakType}${streakLen}` : '—';
+  const streakStr = streakLen ? `${streakType}${streakLen}` : '--';
 
   // Only show the Playoffs block if this team actually made the playoffs. Use
   // the real playoff-odds signal when available (>= 50% ≈ in), else a winning
@@ -18337,8 +18337,8 @@ function _tmBuildScheduleHtml(data) {
   const summaryTiles = [
     { v: recordStr, l: 'Record' },
     { v: streakStr, l: 'Streak' },
-    { v: _tmScheduleTileNumber(data && data.points_for, pf ? pf.toFixed(0) : '—'), l: 'Points For' },
-    { v: _tmScheduleTileNumber(data && data.points_against, pa ? pa.toFixed(0) : '—'), l: 'Points Against' },
+    { v: _tmScheduleTileNumber(data && data.points_for, pf ? pf.toFixed(0) : '--'), l: 'Points For' },
+    { v: _tmScheduleTileNumber(data && data.points_against, pa ? pa.toFixed(0) : '--'), l: 'Points Against' },
   ];
   const tilesHtml = '<div class="tm-ages-tiles">' + summaryTiles.map(t =>
     `<div class="tm-stat-tile"><div class="tm-stat-tile-value">${t.v}</div><div class="tm-stat-tile-label">${t.l}</div></div>`
@@ -18487,8 +18487,8 @@ function renderTeamDetails(data) {
         }
       }
 
-      const ageStr = player.age != null && !isNaN(parseFloat(player.age)) ? parseFloat(player.age).toFixed(1) : '—';
-      const valStr = player.value != null && !isNaN(parseFloat(player.value)) ? parseFloat(player.value).toFixed(1) : '—';
+      const ageStr = player.age != null && !isNaN(parseFloat(player.age)) ? parseFloat(player.age).toFixed(1) : '--';
+      const valStr = player.value != null && !isNaN(parseFloat(player.value)) ? parseFloat(player.value).toFixed(1) : '--';
       const rowAttrs = isUnknown
         ? ''
         : ` data-player-id="${player.player_id}" data-player-name="${player.name}" tabindex="0"`;
@@ -18503,7 +18503,7 @@ function renderTeamDetails(data) {
                 : `<span class="tm-roster-name player-clickable">${player.name}</span>`}
               ${badges ? `<span class="tm-roster-badges">${badges}</span>` : ''}
             </div>
-            <div class="tm-roster-meta">${player.team || '—'} · Age ${ageStr}</div>
+            <div class="tm-roster-meta">${player.team || '--'} · Age ${ageStr}</div>
           </div>
           <div class="tm-roster-side">
             <span class="pos-badge ${player.position}">${player.position}</span>
@@ -18548,7 +18548,7 @@ function renderTeamDetails(data) {
     picksHTML += '</div>';
   }
 
-  // Positional strength — the redraft stand-in for dynasty draft capital. Fills
+  // Positional strength -- the redraft stand-in for dynasty draft capital. Fills
   // the right column with how each position room ranks in the league, since
   // redraft teams have no future picks to show there.
   let strengthHTML = '';
@@ -18564,7 +18564,7 @@ function renderTeamDetails(data) {
     data.positional_strength.forEach(row => {
       const pct = Math.max(0, Math.min(100, Number(row.percentile) || 0));
       const rankTxt = row.of ? `${_ordinal(row.rank)} of ${row.of}` : _ordinal(row.rank);
-      const valTxt = row.value != null ? Number(row.value).toFixed(1) : '—';
+      const valTxt = row.value != null ? Number(row.value).toFixed(1) : '--';
       // Rank drives the bar color: top third strong, bottom third weak.
       let tier = 'mid';
       if (row.of) {
@@ -18588,7 +18588,7 @@ function renderTeamDetails(data) {
   // Build graphs section - each chart in its own section for side-by-side layout
   let graphsHTML = '';
 
-  // Trends block (seed movement, playoff odds, roster value, luck) — server
+  // Trends block (seed movement, playoff odds, roster value, luck) -- server
   // renders it as HTML+SVG so it drops straight in above the charts.
   if (data.trends_html) {
     graphsHTML += data.trends_html;
@@ -18889,7 +18889,7 @@ window.brUiPrefs = (function () {
   function clearTourDone(leagueId) {
     lsDel(TOUR_PREFIX + leagueId);
     lsDel(LATER_PREFIX + leagueId);
-    // Do not clear account-level flag on manual replay — only this league's local key.
+    // Do not clear account-level flag on manual replay -- only this league's local key.
   }
 
   function isSubWelcomeDone() {
@@ -18991,7 +18991,7 @@ window.showSubWelcome = function (opts) {
     personal: {
       eyebrow: 'PRO',
       title: 'Welcome to PRO',
-      lead: 'Start with Trade Suggestions — archetype packages with playoff-odds impact — or take a short PRO tour.',
+      lead: 'Start with Trade Suggestions -- archetype packages with playoff-odds impact -- or take a short PRO tour.',
       primaryLabel: 'Open Trade Suggestions →',
       primaryHref: base + '/trade?tab=suggestions',
       primaryCta: 'trade-suggestions',
@@ -19200,7 +19200,7 @@ window.showSubWelcome = function (opts) {
     {
       page: 'dashboard', selector: '#navSearchWrapper',
       title: 'Player Search',
-      body: 'Try it — click the search box or press Ctrl+K, then open any player profile from the results.',
+      body: 'Try it -- click the search box or press Ctrl+K, then open any player profile from the results.',
       interactive: true,
     },
     {
@@ -19283,7 +19283,7 @@ window.showSubWelcome = function (opts) {
     {
       page: 'breakouts', selector: '.card, .page-shell, .breakouts-root, main',
       title: 'Breakout Engine',
-      body: 'Opportunity projections and breakout candidates — ranked for your format.',
+      body: 'Opportunity projections and breakout candidates -- ranked for your format.',
       navigate: 'breakouts',
     },
     {
@@ -19398,7 +19398,7 @@ window.showSubWelcome = function (opts) {
       document.body.appendChild(el);
       overlays.push(el);
     });
-    // Soft shield over the hole when the step is not interactive — still dims
+    // Soft shield over the hole when the step is not interactive -- still dims
     // visually via overlays; this only blocks stray clicks when needed.
     holeShield = document.createElement('div');
     holeShield.className = 'tour-hole-shield';
@@ -19438,7 +19438,7 @@ window.showSubWelcome = function (opts) {
     renderTooltip(step, idx, target, steps.length);
     window.brTrack('site_tour_step', { step: idx, title: step.title || '', mobile: isMobile() });
 
-    // Optional demo open — only when a step explicitly opts in. Interactive
+    // Optional demo open -- only when a step explicitly opts in. Interactive
     // player-card steps leave opening to the user.
     if (step.action === 'openPlayerModal') {
       var playerEl = document.querySelector('[data-player-id]');
@@ -20197,7 +20197,7 @@ function setupFunAwardsGrid() {
 // the guest connect card into one-step-at-a-time: platform → credentials →
 // league + save. JS-only and additive: it toggles the same inline display
 // styles the existing flow already uses, so it adds no new layout risk. NOT
-// yet verified in a running app — enable the flag and click every platform
+// yet verified in a running app -- enable the flag and click every platform
 // (Sleeper / ESPN public+private / Yahoo / MFL / Fleaflicker) before relying
 // on it or flipping the default on.
 (function initSteppedOnboarding() {
@@ -20420,7 +20420,7 @@ window._rzBuildLiveHtml = function(pid, state, feed) {
       addRow('FGM', sl.fgm||0, 'fgm');
       addRow('XPM', sl.xpm||0, 'xpm');
     } else {
-      // RB / WR / TE — carries & targets shown as context (no points)
+      // RB / WR / TE -- carries & targets shown as context (no points)
       [['Carries', sl.carries||0, null], ['Rush Yds', sl.rush_yds||0, 'rush_yd'],
        ['Rush TDs', sl.rush_td||0, 'rush_td'], ['Targets', sl.targets||0, null],
        ['Rec', sl.rec||0, 'rec'], ['Rec Yds', sl.rec_yds||0, 'rec_yd'],

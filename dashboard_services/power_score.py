@@ -2,9 +2,9 @@
 
 Two scoring modes share the same z-score math:
 
-1. ``performance_power_scores`` — results-only (standings, historical week
+1. ``performance_power_scores`` -- results-only (standings, historical week
    views, career/tour graphs). Reconstructible from weekly scores alone.
-2. ``blended_team_scores`` — canonical live power rankings.
+2. ``blended_team_scores`` -- canonical live power rankings.
 
 In-season rank is all-play win % (the ``record`` term, which is all-play when
 weekly scores exist), with PPG as the tie-break. A walk-forward backtest of
@@ -20,7 +20,7 @@ from typing import Any, Iterable, Mapping, Optional, Sequence
 _CORE_POS = {"QB", "RB", "WR", "TE"}
 
 # Results-only blend (standings / historical / graphs). Weights sum to 1.0.
-# Past SoS is optional — when missing its weight redistributes.
+# Past SoS is optional -- when missing its weight redistributes.
 PERFORMANCE_WEIGHTS = {
     "win": 0.18,
     "avg": 0.26,
@@ -35,7 +35,7 @@ PERFORMANCE_WEIGHTS = {
 # (playoff / ros / momentum) redistribute onto the remaining terms.
 #
 # In-season (early/mid/late): all-play only. PPG is applied as a sort
-# tie-break in ``blended_team_scores``, not as a competing z-weight — a
+# tie-break in ``blended_team_scores``, not as a competing z-weight -- a
 # tiny pf weight would still reorder teams when all-play disagrees with PPG.
 # Zero-weight keys are still computed and returned on ``power_components``.
 _IN_SEASON_WEIGHTS = {
@@ -128,7 +128,7 @@ def starter_lineup_value(
     """Win-now starter strength: slot-legal lineup when positions are known.
 
     Falls back to the top-8 core (QB/RB/WR/TE) redraft sum when lineup slots
-    are missing or produce an empty fill — same safety net as the old formula.
+    are missing or produce an empty fill -- same safety net as the old formula.
     """
     pairs: list[tuple[str, str, float]] = []  # pid, pos, redraft
     for raw in player_ids or []:

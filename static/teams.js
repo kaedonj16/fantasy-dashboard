@@ -1,4 +1,4 @@
-// Teams-page analytics module — extracted from the inline <script> in
+// Teams-page analytics module -- extracted from the inline <script> in
 // build_teams_body (app.py) so it's cached and minified instead of re-sent
 // in the HTML on every teams navigation. Config arrives via window.__teamsCfg
 // (set inline just before this loads). Deferred, so app.js globals are ready.
@@ -87,7 +87,7 @@
             var avgDelta = data.league_avg_delta || 0;
             var avgSign = avgDelta >= 0 ? '+' : '';
             var avgFmt = avgSign + Math.round(avgDelta).toLocaleString();
-            // Largest deviation from the league average — scales the diverging bars.
+            // Largest deviation from the league average -- scales the diverging bars.
             var maxAbsVs = rows.reduce(function (m, r) {
                 return Math.max(m, Math.abs(r.vs_avg || 0));
             }, 0) || 1;
@@ -152,8 +152,8 @@
                     moversHtml += '</div>';
                 }
 
-                // Diverging bar: fills from the center (league avg) outward — right/green
-                // for above-average rosters, left/red for below — scaled to the widest gap.
+                // Diverging bar: fills from the center (league avg) outward -- right/green
+                // for above-average rosters, left/red for below -- scaled to the widest gap.
                 var barPct = Math.min(50, Math.round(Math.abs(r.vs_avg || 0) / maxAbsVs * 50));
                 var barStyle = (pos ? 'left:50%;' : 'right:50%;') + 'width:' + barPct + '%;';
 
@@ -270,11 +270,11 @@
             '</div>';
 
         if (usingProj) {
-            html += '<div class="sos-note" role="note">No games played yet — remaining opponents ranked by projected starter scoring.</div>';
+            html += '<div class="sos-note" role="note">No games played yet -- remaining opponents ranked by projected starter scoring.</div>';
         } else if (usingBlend) {
             html += '<div class="sos-note" role="note">Early results are mixed with preseason projections so one week doesn’t flip SOS.</div>';
         } else if (usingPR) {
-            html += '<div class="sos-note" role="note">No games played yet — SOS needs scoring and win rate, so remaining schedules look even.</div>';
+            html += '<div class="sos-note" role="note">No games played yet -- SOS needs scoring and win rate, so remaining schedules look even.</div>';
         }
 
         html += '<div class="sos-legend" aria-hidden="true">' +

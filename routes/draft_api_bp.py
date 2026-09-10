@@ -9,7 +9,7 @@ companion (observe picks only; never submit). Routes:
 
 Extracted from app.py to reduce monolith size. The two draft-type/order helpers
 live in app.py and are reached via the lazy shims below, so importing this
-blueprint at start-up stays free of a circular import — they're resolved only
+blueprint at start-up stays free of a circular import -- they're resolved only
 when a request is served. Everything else comes from dashboard_services.
 """
 from __future__ import annotations
@@ -225,7 +225,7 @@ def _relay_auth_ok(league_id: str, season: int) -> Tuple[bool, Optional[str]]:
     try:
         if session.get("account_id") or session.get("viewer_user_id") or session.get("viewer_roster_id"):
             return True, None
-        # Same-origin Draft Room (guest boards) — browser sends Sec-Fetch-Site.
+        # Same-origin Draft Room (guest boards) -- browser sends Sec-Fetch-Site.
         if (request.headers.get("Sec-Fetch-Site") or "").lower() == "same-origin":
             return True, None
     except RuntimeError:
@@ -691,7 +691,7 @@ def _map_playoff_odds_to_slots(
 
     Live recap keys chips by board slot (and slot 0 = "You"). Standings keys by
     ``roster_id``. Prefer the posted ``roster_id``, then slot==roster_id, then
-    team name. Slot 0 is a sentinel for the viewer's consolidated "You" row —
+    team name. Slot 0 is a sentinel for the viewer's consolidated "You" row --
     when its roster_id misses, mirror odds from ``viewer_slot`` or any sibling
     seat that shares the same roster_id.
     """
@@ -827,7 +827,7 @@ def _draft_scoring_settings(data: dict) -> dict:
 def _synthetic_draft_ctx(data: dict, teams_in: list) -> Optional[dict]:
     """Board-built preseason room: this draft's settings vs these drafted teams.
 
-    Slot 0 is the recap's "You" row, not an extra franchise — skip it here and
+    Slot 0 is the recap's "You" row, not an extra franchise -- skip it here and
     map it onto the viewer's seat after the sim.
     """
     roster = data.get("roster") or {}
@@ -958,7 +958,7 @@ def api_draft_playoff_odds():
     if not ctx:
         return jsonify({"error": "need_two_teams"}), 400
     # Live-only fallback: platform rosters not populated yet. Never overlay a
-    # mock — its scoring, lineup, and field are whatever the user set up.
+    # mock -- its scoring, lineup, and field are whatever the user set up.
     if use_league and league_ctx:
         _overlay_league_settings(ctx, league_ctx)
     settings = ctx.get("league_settings") or {}

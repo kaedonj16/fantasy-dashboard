@@ -1,9 +1,9 @@
-// Shared analytics terminology — keep in sync with utils/analytics_terminology.py
+// Shared analytics terminology -- keep in sync with utils/analytics_terminology.py
 (function () {
   var C = { VALUE: 'VALUE', MARKET: 'MARKET', PROJECTION: 'PROJECTION', HISTORY: 'HISTORY' };
   var LABELS = {
     br_value: { label: 'BR Value', category: C.VALUE, tooltip: 'Dynasty trade value from the BR model for this league format.' },
-    vor: { label: 'VOR', category: C.VALUE, tooltip: 'Value over replacement — points above a rosterable baseline at this position.' },
+    vor: { label: 'VOR', category: C.VALUE, tooltip: 'Value over replacement -- points above a rosterable baseline at this position.' },
     trade_value: { label: 'Trade value', category: C.VALUE, tooltip: 'Fair-trade value used in the calculator and trade database.' },
     roster_value: { label: 'Roster value', category: C.VALUE, tooltip: 'Combined player and pick value on a team\'s roster.' },
     adp: { label: 'ADP', category: C.MARKET, tooltip: 'Average draft position from the selected consensus source.' },

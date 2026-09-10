@@ -42,7 +42,7 @@ def _should_skip_mover(p: dict) -> bool:
     # Explicit skip positions
     if pos in ("PICK", "K", "DEF"):
         return True
-    # Fallback "Player {raw_id}" names — data never resolved a real name
+    # Fallback "Player {raw_id}" names -- data never resolved a real name
     if name.startswith("Player ") and "_" in name:
         return True
     # Raw pick IDs stored as names (e.g. "2027_5_early" or "2027 5th (Early)")
@@ -430,7 +430,7 @@ def build_risers_fallers_body(movers: dict, as_of_date: str | None = None,
 # ── Position analysis ─────────────────────────────────────────────────────────
 # Unique editorial copy per position so /rankings/dynasty-{qb,rb,wr,te} are not
 # near-duplicate templates (a thin-content signal). Rendered above the table.
-# Evergreen framing — no player names or numbers that would age out.
+# Evergreen framing -- no player names or numbers that would age out.
 
 _POSITION_ANALYSIS = {
     "QB": (

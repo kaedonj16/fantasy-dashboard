@@ -231,7 +231,7 @@ def build_cohort_index(rows: Sequence[Mapping[str, Any]]) -> dict:
     """Compact player-season index for request-time AND/OR cohort matching.
 
     Trajectory buckets use only consecutive seasons strictly before the
-    outcome year. This is not a parquet scan at request time — cron rebuilds
+    outcome year. This is not a parquet scan at request time -- cron rebuilds
     the index into the aggregates JSON.
     """
     from dashboard_services.historical.offense import (
@@ -391,7 +391,7 @@ def _market_adjusted(
     """Observed hit rate vs average ADP-bucket expected P. top_12 only.
 
     Existing ``adp`` leaves are P(top-12 | overall bucket). Other finish
-    lines would require a second market system — we omit them instead.
+    lines would require a second market system -- we omit them instead.
     """
     empty = {
         "observed_rate": _round_rate(observed_rate),

@@ -378,7 +378,7 @@ def match_comps(
 
     Excludes the query player. ``as_of_season`` (default: query season) drops
     later seasons so a historical query cannot use the future. Same-season
-    other players are allowed — their matching features are still pre-season.
+    other players are allowed -- their matching features are still pre-season.
 
     Relaxation fills the list when the exact cell is tiny; it does not invent
     players. This primitive is for tests and in-memory rebuilds. Request paths

@@ -19,7 +19,7 @@ get_model_value_table_cached, _displayed_value_map, get_player_slug_index,
 get_nfl_state, get_player_value_history, age_from_bday, page_breakouts,
 page_prospects) are resolved through the lazy shims below rather than a top-level
 ``from app import ...`` so importing this module during app start-up does not
-trigger a circular import — the real functions are only fetched when a request
+trigger a circular import -- the real functions are only fetched when a request
 is actually served.
 """
 from __future__ import annotations
@@ -91,7 +91,7 @@ def page_prospects(*args, **kwargs):
 
 @seo_pages_bp.route("/dynasty-trade-value-chart")
 def dynasty_trade_value_chart():
-    """Public dynasty trade value chart — same UI as player rankings, with SEO-optimised metadata."""
+    """Public dynasty trade value chart -- same UI as player rankings, with SEO-optimised metadata."""
     from datetime import datetime as _dt
     as_of = _dt.now().strftime("%B %Y")
     year  = _dt.now().year
@@ -111,7 +111,7 @@ def dynasty_trade_value_chart():
 
 @seo_pages_bp.route("/top-movers")
 def top_movers_page():
-    """Weekly dynasty risers and fallers — freshness content for SEO."""
+    """Weekly dynasty risers and fallers -- freshness content for SEO."""
     from dashboard_services.pages.dynasty_pages import build_risers_fallers_body
     from data_building.player_value_history import get_top_movers
     # Timeframe toggle: 7 / 30 / 90 days. Clamp to the supported set so a hand-
@@ -321,7 +321,7 @@ def page_compare(platform: str | None = None, season: int | None = None,
             title, league_id, "compare", body, platform, season,
             description=desc, lite_js=True,
         )
-    # Do not pass a remembered league_id into render_page — that would flip this
+    # Do not pass a remembered league_id into render_page -- that would flip this
     # public SEO page to noindex. Nav still inherits session last_* for signed-in
     # chrome via render_page's own session fallback.
     nav_platform = session.get("last_platform")

@@ -8,7 +8,7 @@ So "rosters as of time T" = today's rosters with every transaction after T undon
 Used to show honest day-over-day movement on value rankings without fabricating
 any past data.
 
-Pure logic — no DB, no network — so it's unit-testable and safe to import
+Pure logic -- no DB, no network -- so it's unit-testable and safe to import
 anywhere.
 """
 from typing import Dict, List, Set
@@ -16,7 +16,7 @@ from typing import Dict, List, Set
 
 def _tx_ts(t: dict) -> int:
     """Transaction timestamp in epoch milliseconds (Sleeper: status_updated, then
-    created). 0 when unknown — such a transaction is treated as ancient (never
+    created). 0 when unknown -- such a transaction is treated as ancient (never
     reversed), which is the safe default."""
     try:
         return int(t.get("status_updated") or t.get("created") or 0)
@@ -33,7 +33,7 @@ def reconstruct_rosters_as_of(
 
     Starts from ``current_rosters`` (each ``{"roster_id", "players": [...]}``) and
     reverses every transaction with a timestamp strictly after the cutoff, newest
-    first — so a player added-then-traded within the window resolves correctly.
+    first -- so a player added-then-traded within the window resolves correctly.
     Each ``transaction`` carries ``adds``/``drops`` as ``{player_id: roster_id}``
     (Sleeper's shape; a trade populates both). Reversing an add removes the player
     from the team that received it; reversing a drop restores the player to the

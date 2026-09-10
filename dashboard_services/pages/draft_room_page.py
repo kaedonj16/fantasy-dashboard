@@ -115,7 +115,7 @@ def build_draft_room_body(
     )
 
 
-# Plain (non-f) string — safe to contain { } freely.
+# Plain (non-f) string -- safe to contain { } freely.
 _DRAFT_ROOM_HTML = r"""
 <div class="dr-wrap">
   <div class="dr-hero" id="drHero">
@@ -610,7 +610,7 @@ _DRAFT_ROOM_HTML = r"""
     transform: translateY(-1px);
   }
   .dr-btn-ghost { background: transparent; font-weight: 600; }
-  /* Settings gear button — sits beside the side-panel tabs — + dropdown panel */
+  /* Settings gear button -- sits beside the side-panel tabs -- + dropdown panel */
   .dr-side-opts { position: relative; flex: 0 0 auto; display: flex; align-items: stretch; }
   .dr-opts-trigger { display: flex; align-items: center; justify-content: center; gap: 5px;
     background: transparent; border: none; cursor: pointer; color: var(--text-muted);
@@ -707,7 +707,7 @@ _DRAFT_ROOM_HTML = r"""
   .dr-pill-reconnect.is-busy { opacity: .65; cursor: wait; }
   .dr-espn-fallback { background: linear-gradient(90deg, color-mix(in srgb, var(--warning) 16%, transparent), color-mix(in srgb, var(--warning) 5%, transparent)); border-color: var(--warning); }
   .dr-espn-fallback .dr-banner-join { background: var(--warning); color: #111; cursor: pointer; border: 0; font: inherit; }
-  /* ESPN/Yahoo sync helpers — compact promo strip above the status bar */
+  /* ESPN/Yahoo sync helpers -- compact promo strip above the status bar */
   .dr-espn-tools {
     position: relative;
     display: flex;
@@ -912,7 +912,7 @@ _DRAFT_ROOM_HTML = r"""
     letter-spacing: .04em; color: var(--accent,#38bdf8); }
   .dr-cell-claimed .dr-cell-mineflag { color: var(--warning); }
   /* Keeper: same position tint as a live pick; the KEEP flag is the marker.
-     Do not wash the cell green — that hides WR/QB/TE color. */
+     Do not wash the cell green -- that hides WR/QB/TE color. */
   .dr-cell-keepflag { position: absolute; top: 2px; right: 5px; font-size: 8px; font-weight: 800;
     letter-spacing: .04em; color: var(--win,#15803d); }
   /* Traded pick: who the pick was dealt to (shown on another team's seat). */
@@ -1563,7 +1563,7 @@ _DRAFT_ROOM_HTML = r"""
   .dd-hist-pct.is-strong { color:#16a34a; }
   .dd-hist-vs.up { color:#16a34a; font-weight:700; }
   .dd-hist-vs.down { color:#dc2626; font-weight:700; }
-  /* Historical trends (Deep Dive) — scoped so early-ADP “high bar” never reads as a miss */
+  /* Historical trends (Deep Dive) -- scoped so early-ADP “high bar” never reads as a miss */
   .dd-hist { display:flex; flex-direction:column; gap:16px; }
   .dd-hist > .dd-sec { margin-bottom:0; }
   .dd-hist-stats {
@@ -1651,7 +1651,7 @@ _DRAFT_ROOM_HTML = r"""
   .dd-hist-callout-say {
     margin:10px 0 0; font-size:12.5px; line-height:1.45; color:var(--text-muted);
   }
-  /* overflow-x must stay auto — overflow:hidden here used to clip the
+  /* overflow-x must stay auto -- overflow:hidden here used to clip the
      dd-tablescroll horizontal swipe on narrow phones. */
   .dd-hist-tablewrap {
     margin-top:2px; border:1px solid var(--border); border-radius:12px;
@@ -1897,7 +1897,7 @@ _DRAFT_ROOM_HTML = r"""
   .dr-proj-bar-bg { height: 5px; border-radius: 3px; background: rgba(127,127,127,.15); overflow: hidden; }
   .dr-proj-bar-fill { height: 100%; border-radius: 3px; background: var(--accent,#38bdf8); }
   .dr-proj-bar-lbl { font-size: 9px; color: var(--text-muted); margin-top: 3px; }
-  /* Draft recap — biggest steals & reaches across the whole draft */
+  /* Draft recap -- biggest steals & reaches across the whole draft */
   .dr-league-body { padding: 8px 14px 14px; }
   .dr-recap { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 18px; margin-bottom: 16px; }
   @media (max-width: 460px) { .dr-recap { grid-template-columns: 1fr; gap: 14px; } }

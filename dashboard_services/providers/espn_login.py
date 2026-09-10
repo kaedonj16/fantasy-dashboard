@@ -1,7 +1,7 @@
 """ESPN email + one-time-code (OTP) login broker.
 
 Obtains ``espn_s2`` + ``SWID`` from an email one-time passcode and hands them to
-the normal ``connect_league`` pipeline — so a member can sign in with an email
+the normal ``connect_league`` pipeline -- so a member can sign in with an email
 and a code instead of copying cookies. Cookie-paste and the browser extension
 remain the fallback for every failure.
 
@@ -57,7 +57,7 @@ class EspnLoginRateLimited(EspnLoginError):
 def otp_login_enabled() -> bool:
     """Whether ESPN email/OTP sign-in is live.
 
-    ON when a usable broker is configured — i.e. the default OneID driver has its
+    ON when a usable broker is configured -- i.e. the default OneID driver has its
     ``ESPN_ONEID_API_KEY``, or a mock/dev broker is selected. So setting the API
     key is all it takes to turn the feature on. ``ESPN_OTP_LOGIN_ENABLED`` is an
     explicit override: ``0/false/off`` forces it off (kill-switch), ``1/true/on``
@@ -201,7 +201,7 @@ class PlaywrightEspnLoginBroker(EspnLoginBroker):
 
     NOT finalized: the OTP spike confirmed the flow is drivable and captcha-free,
     but the production driver (whether a live headless context per login or a
-    replay of the OTP API — decided from the spike's network capture) still needs
+    replay of the OTP API -- decided from the spike's network capture) still needs
     a networked validation run. Until then it refuses cleanly, so with the flag on
     users fall back to cookie paste instead of hitting a half-built browser.
     """
@@ -219,7 +219,7 @@ class PlaywrightEspnLoginBroker(EspnLoginBroker):
         raise EspnLoginUnavailable("ESPN email sign-in isn't available yet.")
 
 
-# ── real driver: the Disney OneID email-OTP API (Option B — no browser) ───────
+# ── real driver: the Disney OneID email-OTP API (Option B -- no browser) ───────
 # The spike captured this exact five-call flow, and no reCAPTCHA token rides on
 # any request. Shapes are validated; the flow still needs a networked run before
 # the flag is enabled. httpx is imported lazily so this module stays importable
@@ -337,7 +337,7 @@ _BROKER: Optional[EspnLoginBroker] = None
 def get_broker() -> EspnLoginBroker:
     """Singleton broker (holds the session store, so start/verify share state).
 
-    Defaults to the real OneID email-OTP driver — no env var needed; it reports
+    Defaults to the real OneID email-OTP driver -- no env var needed; it reports
     itself unavailable until ``ESPN_ONEID_API_KEY`` is set, so the feature simply
     turns on when the key is configured. ``ESPN_OTP_BROKER`` overrides the choice:
     ``mock`` (tests/dev) → deterministic; ``playwright`` → the headless stub.

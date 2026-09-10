@@ -57,13 +57,13 @@ def _available(row: dict) -> bool:
 
 
 # SportsGameOdds oddID is a fixed 5-part key: statID-statEntityID-periodID-
-# betTypeID-sideID (v2). periodID enumerates GAME segments only — game, reg,
-# halves (1h/2h), quarters (1q-4q), OT, innings, periods — so the weekly-vs-season
+# betTypeID-sideID (v2). periodID enumerates GAME segments only -- game, reg,
+# halves (1h/2h), quarters (1q-4q), OT, innings, periods -- so the weekly-vs-season
 # split is NOT encoded in the oddID. A recognized single-game period is therefore
 # always weekly; season-long futures are distinguished at the event level
 # (eventType) or by an explicit season market label. The positive season tokens
 # below still want confirming against a real futures event (the feed isn't
-# reachable from CI) — but the game-period guard makes false positives safe.
+# reachable from CI) -- but the game-period guard makes false positives safe.
 _GAME_PERIODS = {"game", "reg", "full", "fullgame", "1h", "2h", "1q", "2q", "3q",
                  "4q", "ot", "1p", "2p", "3p", "1i", "2i", "3i", "4i", "5i", "6i",
                  "7i", "8i", "9i"}

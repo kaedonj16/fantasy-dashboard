@@ -1009,9 +1009,9 @@
 </head>
 <body>
   <div class="page">
-    <p class="eyebrow">BR Fantasy · League Connector — concept</p>
+    <p class="eyebrow">BR Fantasy · League Connector -- concept</p>
     <h1>Draft Assistant, docked in the host room.</h1>
-    <p class="intro">A read-only overlay that watches Sleeper, Yahoo, or ESPN picks and mirrors BR Fantasy Draft Room tools — Best Available, roster construction, and live grades — without ever submitting a pick.</p>
+    <p class="intro">A read-only overlay that watches Sleeper, Yahoo, or ESPN picks and mirrors BR Fantasy Draft Room tools -- Best Available, roster construction, and live grades -- without ever submitting a pick.</p>
 
     <div class="toolbar">
       <div class="seg" role="radiogroup" aria-label="Theme">
@@ -1081,7 +1081,7 @@
           <div class="tab-bar" role="tablist">
             <button type="button" class="tab-btn active" data-tab="board" role="tab">Board</button>
             <button type="button" class="tab-btn" data-tab="roster" role="tab">Roster <span class="tab-chip" id="rosterChip">0</span></button>
-            <button type="button" class="tab-btn" data-tab="grades" role="tab">Grades <span class="tab-chip" id="gradesChip">—</span></button>
+            <button type="button" class="tab-btn" data-tab="grades" role="tab">Grades <span class="tab-chip" id="gradesChip">--</span></button>
           </div>
           <div class="ov-body" id="ovBody"></div>
           <div class="ov-foot">
@@ -1103,7 +1103,7 @@
       </div>
     </div>
 
-    <p class="footnote">Mockup of the League Connector overlay: illustrative data, not a live sync. Headshots are position-tinted silhouettes that fill with real photos when the assistant is wired to the app. The overlay reads host picks only — it never submits.</p>
+    <p class="footnote">Mockup of the League Connector overlay: illustrative data, not a live sync. Headshots are position-tinted silhouettes that fill with real photos when the assistant is wired to the app. The overlay reads host picks only -- it never submits.</p>
     <p class="footnote">Grade letters and playoff odds use a lightweight stand-in (value vs ADP, roster balance, and star power, curved against the field and damped early). Production Draft Room grades and odds come from the full Pick Score / team-grade / standings models.</p>
   </div>
 
@@ -1450,7 +1450,7 @@
     if (need > 0) out.push("Fills a starting " + p.pos + " need (" + need + " still open)");
     else if (p.pos !== "QB" && (counts.RB + counts.WR + counts.TE) < 5) out.push("FLEX-eligible depth for weekly lineup");
     if (diff >= 4) out.push("Value vs ADP: " + diff + " picks past market");
-    else if (diff <= -4) out.push("Slight reach vs ADP (" + Math.abs(diff) + " early) — still a positional fit");
+    else if (diff <= -4) out.push("Slight reach vs ADP (" + Math.abs(diff) + " early) -- still a positional fit");
     else out.push("In range of ADP " + p.adp.toFixed(1));
     if (isTierCliff(p)) out.push("Tier cliff: last " + p.pos + "s in T" + p.tier);
     else if (p.tier <= 2) out.push("Elite tier (T" + p.tier + ") talent still on the board");
@@ -1855,7 +1855,7 @@
     });
     const posCount = {};
     state.picks.forEach(function (x) { posCount[x.p.pos] = (posCount[x.p.pos] || 0) + 1; });
-    const topPos = Object.keys(posCount).sort(function (a, b) { return posCount[b] - posCount[a]; })[0] || "—";
+    const topPos = Object.keys(posCount).sort(function (a, b) { return posCount[b] - posCount[a]; })[0] || "--";
     return '<div class="recap"><div><p class="recap-h">' + IC.gem + "Biggest steals</p>" + steals.map(function (x) { return line(x, true); }).join("")
       + '</div><div><p class="recap-h">' + IC.down + "Biggest reaches</p>" + reaches.map(function (x) { return line(x, false); }).join("")
       + "</div></div>"
@@ -1928,7 +1928,7 @@
     const log = document.getElementById("pickLog");
     const recent = state.picks.slice().reverse().slice(0, 24);
     if (!recent.length) {
-      log.innerHTML = '<div class="empty-log">Waiting on pick 1.01. Simulate or hit Auto — the overlay never submits to the host.</div>';
+      log.innerHTML = '<div class="empty-log">Waiting on pick 1.01. Simulate or hit Auto -- the overlay never submits to the host.</div>';
     } else {
       log.innerHTML = recent.map(function (x) {
         const mine = x.slot === state.mySlot;
@@ -1950,7 +1950,7 @@
     document.getElementById("rosterChip").textContent = String(myPicks().length);
     const letter = gradeLetter(me.grade.score);
     const chip = document.getElementById("gradesChip");
-    chip.textContent = myPicks().length ? letter : "—";
+    chip.textContent = myPicks().length ? letter : "--";
     chip.style.color = myPicks().length ? gradeCol(me.grade.score) : "";
     document.querySelectorAll(".tab-btn").forEach(function (b) {
       b.classList.toggle("active", b.getAttribute("data-tab") === state.tab);
@@ -2028,7 +2028,7 @@
     const row = e.target.closest(".ba-row");
     if (draftBtn || row) {
       if (state.live) {
-        state.toast = "Draft in the host room — this overlay never submits a pick.";
+        state.toast = "Draft in the host room -- this overlay never submits a pick.";
         if (state.tab !== "roster") { /* stay on board */ }
         const recPn = nextMine(state.current);
         state.toast = "Take this player in the host draft (your next pick is " + (recPn ? pickLabel(recPn) : "done") + "). The overlay never submits.";
@@ -2050,7 +2050,7 @@
     if (link) {
       const kind = link.getAttribute("data-link");
       state.toast = kind === "room"
-        ? "Opens this live draft in BR Fantasy Draft Room — overlay stays synced, never submits."
+        ? "Opens this live draft in BR Fantasy Draft Room -- overlay stays synced, never submits."
         : "Opens your Draft Room cheat sheet for this league.";
       render();
       return;

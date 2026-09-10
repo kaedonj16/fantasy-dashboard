@@ -161,7 +161,7 @@ def portfolio_record_and_rank(lctx, rid, viewer_roster):
 
     Rank is the same seed the Standings page uses: ``build_standings_map``
     sorts every team by wins, then points for. Production stores
-    ``{roster_id: seed:int}``. Older fixtures pass dicts with wins/pf —
+    ``{roster_id: seed:int}``. Older fixtures pass dicts with wins/pf --
     accept both without 500'ing ``.get``. When the map has no entry, rank
     falls back to sorting ``rosters`` by the same wins-then-PF key.
     """
@@ -236,7 +236,7 @@ def ctx_scoring_type(ctx: dict) -> str:
     """``redraft`` for ESPN (always), Yahoo unless dynasty, and type 0/1.
 
     ESPN fantasy football is redraft-only, so platform alone is enough. Yahoo
-    has no dynasty product either — treat a missing/unknown type as redraft so
+    has no dynasty product either -- treat a missing/unknown type as redraft so
     trade suggestions use the same columns the calculator already does.
     Other platforms that publish type 0/1 (Fleaflicker adapters, Sleeper
     redraft/keeper) also classify as redraft. Mirrors app._league_is_redraft.
@@ -423,7 +423,7 @@ def detect_team_direction(
     is_redraft = str(scoring_type or "").strip().lower() == "redraft"
 
     if is_redraft:
-        # This-season lean only. Never rebuild/retool — those are dynasty words.
+        # This-season lean only. Never rebuild/retool -- those are dynasty words.
         if elite_assets >= 3 or (elite_assets >= 2 and strong_assets >= 5):
             return "contend"
         if elite_assets >= 1 and strong_assets >= 4:
@@ -530,7 +530,7 @@ def build_team_gm_context(ctx: dict, viewer_roster_id: str) -> Union[dict, None]
         roster_players, future_picks, scoring_type=scoring_type,
     )
 
-    # standings_map is {roster_id: seed:int} in production — resolve record/PF/PA
+    # standings_map is {roster_id: seed:int} in production -- resolve record/PF/PA
     # from team_stats / roster.settings (dict fixtures still work via helper).
     record, pf, pa = _record_pf_pa_for_roster(ctx, str(viewer_roster_id), roster)
     week = ctx.get("current_week")
@@ -610,7 +610,7 @@ def _playoff_status(pct, rank, playoff_teams: int) -> str:
 _REDRAFT_WINDOW_DISPLAY = {
     "contend": "Contend",
     "bubble": "Bubble",
-    # Display "Long Shot" (not "Out") — "Out" is reserved for mathematical
+    # Display "Long Shot" (not "Out") -- "Out" is reserved for mathematical
     # elimination on the playoff picture. This band is under 35% playoff odds.
     "out": "Long Shot",
 }
@@ -1343,7 +1343,7 @@ def build_trade_suggestions_context(
         w = _safe_float(s.get("wins") or s.get("W") or s.get("Wins") or 0)
         l = _safe_float(s.get("losses") or s.get("L") or s.get("Losses") or 0)
         if (w + l) <= 0:
-            # Production standings_map is seed ints — fall back to roster settings.
+            # Production standings_map is seed ints -- fall back to roster settings.
             rec, _, _ = _record_pf_pa_for_roster(ctx, str(rid))
             parts = str(rec or "").replace("–", "-").split("-")
             try:
@@ -1456,7 +1456,7 @@ def build_trade_suggestions_context(
         vals = [roster_totals_map[rid].get(pos, 0.0) for rid in roster_totals_map]
         league_avg[pos] = sum(vals) / len(vals) if vals else 0.0
 
-    # Viewer's competitive direction — used to bias which targets fit. Computed
+    # Viewer's competitive direction -- used to bias which targets fit. Computed
     # once up front (also reused for the return payload) so the partner loop can
     # reward direction-appropriate acquisitions.
     viewer_team_ctx = build_team_gm_context(ctx, viewer_roster_id) or {}
@@ -1802,13 +1802,13 @@ def build_power_rankings_context(ctx: dict) -> dict:
     _redraft_pct_fn = _make_pct_fn(_team_redraft_total)
 
     # ── All-play win % per roster (the in-season rank signal) ──────────────────
-    # Actual record is heavily schedule-luck-driven. All-play — how you'd fare
-    # against every other team each week — is the live ranking. Falls back to
+    # Actual record is heavily schedule-luck-driven. All-play -- how you'd fare
+    # against every other team each week -- is the live ranking. Falls back to
     # actual win% if weekly scores aren't available (offseason / preseason).
     # Form / schedule chips are derived from the same weekly scores for display:
-    #   momentum    — recent all-play (last ~3 wk) minus season all-play
-    #   consistency — negative coefficient of variation of weekly points
-    #   sos         — average season all-play of opponents actually faced
+    #   momentum    -- recent all-play (last ~3 wk) minus season all-play
+    #   consistency -- negative coefficient of variation of weekly points
+    #   sos         -- average season all-play of opponents actually faced
     _all_play_pct: dict[str, float] = {}
     _momentum: dict[str, float] = {}
     _consistency: dict[str, float] = {}

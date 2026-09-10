@@ -5,7 +5,7 @@ Flow (mirrors the Yahoo blueprint):
      → stores an opaque state in the session, redirects to Google's consent page
   2. Google redirects to /auth/google/callback?code=...&state=...
      → exchanges the code, reads the profile (sub + email), upserts the account,
-       sets session['account_id'], and — if a Sleeper session is already present —
+       sets session['account_id'], and -- if a Sleeper session is already present --
        bridges that identity onto the account and backfills its leagues.
 
 Configuration (env vars, all required to enable the flow):
@@ -258,7 +258,7 @@ def google_auth_callback():
                 account_id, "sleeper", str(viewer_user_id), session.get("viewer_username"),
             )
             if status == "conflict":
-                # Sleeper id already belongs to another Google account — do not
+                # Sleeper id already belongs to another Google account -- do not
                 # steal it. Clear the unverified viewer so this Google session
                 # doesn't keep browsing as that Sleeper identity.
                 logger.warning(
@@ -307,7 +307,7 @@ def google_auth_callback():
                         logger.warning("[google_auth] yahoo pending link attach failed", exc_info=True)
             # Sleeper: resolve the typed username to a team and set the viewer
             # identity, so the dashboard is personalized (and their other Sleeper
-            # leagues get bridged too) — the home flow never set a viewer session.
+            # leagues get bridged too) -- the home flow never set a viewer session.
             uname = pending.get("username")
             if pending["platform"] == "sleeper" and uname and not session.get("viewer_user_id"):
                 try:
@@ -340,7 +340,7 @@ def google_auth_callback():
                         pending["platform"], pending["league_id"], pending.get("season"),
                     )
                     # ESPN pickers pass roster/team id (not owner SWID) plus the
-                    # team name as username — both feed resolve_viewer so Scout
+                    # team name as username -- both feed resolve_viewer so Scout
                     # and other personalized tabs unlock after Google sign-in.
                     viewer = resolve_viewer_for_league(
                         lctx.get("users"), lctx.get("rosters"),

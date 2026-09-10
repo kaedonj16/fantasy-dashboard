@@ -130,7 +130,7 @@ def build_trade_calculator_body(
 
     is_guest_str = 'true' if is_guest else 'false'
     has_premium_str = 'true' if has_premium else 'false'
-    # Non-PRO users only see the Suggestions paywall CTA — hide Build Around / Strategy.
+    # Non-PRO users only see the Suggestions paywall CTA -- hide Build Around / Strategy.
     sugg_paywall_display = "display:none;" if has_premium else ""
     sugg_pro_display = "" if has_premium else "display:none;"
 
@@ -494,9 +494,9 @@ def build_trade_calculator_body(
             <div style="margin-bottom:14px;">
               <h3 class="stl-title">Recent Similar Trades</h3>
               <div class="stl-sub">{
-                  "Sleeper redraft comps — real trades where these players moved to opposite sides."
+                  "Sleeper redraft comps -- real trades where these players moved to opposite sides."
                   if scoring_type_val == "redraft"
-                  else "Sleeper dynasty comps — real trades where these players moved to opposite sides. A teaser of the full Trade Intel feed."
+                  else "Sleeper dynasty comps -- real trades where these players moved to opposite sides. A teaser of the full Trade Intel feed."
               }</div>
             </div>
             <div id="similarTradesList" class="stl-list"></div>
@@ -983,7 +983,7 @@ def build_trade_calculator_body(
                 Upgrade to PRO &rarr;
               </button>
             </div>
-            <!-- Build Around / Strategy tools — hidden when the user is not PRO -->
+            <!-- Build Around / Strategy tools -- hidden when the user is not PRO -->
             <div id="otcSuggProContent" style="{sugg_pro_display}">
             <!-- Sub-tab bar -->
             <div class="otc-sugg-subtab-bar">
@@ -1056,7 +1056,7 @@ def build_trade_calculator_body(
                 <span class="otc-sugg-section-title">Impact <span id="otcStrategySpinner" style="display:none;font-size:10px;font-weight:500;color:var(--text-muted);"><i class="fa-solid fa-circle-notch" style="animation:spin .9s linear infinite;margin-right:2px;"></i>Simulating…</span></span>
                 <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
                   <span id="otcCurrentPOBadge" style="display:none;font-size:10px;font-weight:700;padding:2px 7px;border-radius:6px;background:color-mix(in srgb, var(--accent) 13%, transparent);color:var(--accent);"></span>
-                  <span class="otc-strategy-section-hint" id="otcStrategyImpactHint" title="wk is typical remaining-week win chance. po is simulated playoff-make odds. They can move in opposite directions: playoffs depend on the rest of the season, schedule, and ceiling — not just average weekly scoring.">Win % if acquired</span>
+                  <span class="otc-strategy-section-hint" id="otcStrategyImpactHint" title="wk is typical remaining-week win chance. po is simulated playoff-make odds. They can move in opposite directions: playoffs depend on the rest of the season, schedule, and ceiling -- not just average weekly scoring.">Win % if acquired</span>
                 </div>
               </div>
               <div id="otcStrategyImpact">

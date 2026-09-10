@@ -2,7 +2,7 @@
 
 The Chrome/Edge extension observes the open Yahoo draft room and POSTs picks to
 ``/api/draft/yahoo-relay`` with the Draft Room session (same-origin). Observe-only
-— never talks to Yahoo and never submits picks.
+-- never talks to Yahoo and never submits picks.
 """
 from __future__ import annotations
 

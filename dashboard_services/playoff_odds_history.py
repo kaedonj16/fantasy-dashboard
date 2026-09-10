@@ -3,7 +3,7 @@ Weekly playoff-odds snapshots so the playoff-odds table can show movement arrows
 
 When the odds are (re)simulated we upsert the current week's rows, then load the
 most recent earlier week to compute per-team movement in the odds ranking
-(sorted by playoff probability, avg final wins as the tiebreaker — the same order
+(sorted by playoff probability, avg final wins as the tiebreaker -- the same order
 the table renders in). Failures are swallowed by the caller: arrows are
 decorative and must never break the endpoint.
 
@@ -58,7 +58,7 @@ _DAILY_TABLE_READY = False
 
 
 def _ensure_daily_table() -> None:
-    """Daily playoff-odds snapshots — the basis for the movement arrows. Keyed by
+    """Daily playoff-odds snapshots -- the basis for the movement arrows. Keyed by
     calendar date (not week) so movement works year-round: a trade in the
     offseason moves a team's odds and the next day's snapshot reflects it, exactly
     like a week-over-week shift does in-season."""

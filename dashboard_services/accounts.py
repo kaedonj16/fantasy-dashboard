@@ -2,8 +2,8 @@
 
 A single person is one row in ``accounts`` (identified by an OAuth provider
 subject + email). Their Sleeper / Yahoo / ESPN connections attach to that
-account via ``account_identities``, and every league they belong to — on any
-platform, whether or not they've subscribed to notifications for it — is one row
+account via ``account_identities``, and every league they belong to -- on any
+platform, whether or not they've subscribed to notifications for it -- is one row
 in ``user_leagues``. My Leagues, the league switcher, and push all read from
 ``user_leagues`` so the set of "my leagues" is platform-agnostic.
 
@@ -284,7 +284,7 @@ def stage_private_provider_connection(
     provider = str(provider or "").strip().lower()
     if not provider or not isinstance(credentials, dict) or not credentials:
         raise ValueError("Private provider connections require credentials.")
-    # Never persist passwords — callers must pass derived tokens/cookies/keys only.
+    # Never persist passwords -- callers must pass derived tokens/cookies/keys only.
     safe = {k: v for k, v in credentials.items()
             if k.lower() not in {"password", "passwd", "pass"} and v}
     if not safe:
@@ -610,10 +610,10 @@ def link_platform_identity(
     """Attach a platform identity (Sleeper user id / Yahoo guid) to an account.
 
     Returns:
-      ``linked``   — newly inserted
-      ``already``  — already owned by this account (handle refreshed)
-      ``conflict`` — identity belongs to a *different* account (not stolen)
-      ``noop``     — missing args
+      ``linked``   -- newly inserted
+      ``already``  -- already owned by this account (handle refreshed)
+      ``conflict`` -- identity belongs to a *different* account (not stolen)
+      ``noop``     -- missing args
 
     Never re-points an identity from another account: that would let a thief
     who typed someone else's Sleeper username + their own Google claim PRO.
@@ -895,7 +895,7 @@ def resolve_my_leagues(viewer_user_id, account_id, current_season):
     sleeper_ids = []
     if account_id:
         # Google account: only Sleeper identities actually linked to the
-        # account. Session viewer_user_id is league-scoped — opening ESPN /
+        # account. Session viewer_user_id is league-scoped -- opening ESPN /
         # Fleaflicker / Yahoo overwrites it with that platform's owner id,
         # which must not be sent to Sleeper as if it were a user.
         sleeper_ids.extend(list_account_platform_ids(account_id, "sleeper"))
@@ -1004,7 +1004,7 @@ def resolve_account_viewer_for_league(
         creds = get_espn_league_credentials(account_id, league_id, int(season)) or {}
         roster = match_viewer_roster(rosters, owner_ids=list(owner_id_variants(creds.get("swid"))))
     # Fleaflicker stores team ids on rosters, but private-login credentials carry the
-    # Fleaflicker owner id — match via metadata.flea_owner_id when team_id was never
+    # Fleaflicker owner id -- match via metadata.flea_owner_id when team_id was never
     # persisted (common on reconnect / saved-league open paths).
     if roster is None and platform == "fleaflicker":
         from dashboard_services.providers.fleaflicker_api import resolve_fleaflicker_team_id

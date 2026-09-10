@@ -40,7 +40,7 @@ YAHOO_AUTH_URL  = "https://api.login.yahoo.com/oauth2/request_auth"
 YAHOO_TOKEN_URL = "https://api.login.yahoo.com/oauth2/get_token"
 YAHOO_API_BASE  = "https://fantasysports.yahooapis.com/fantasy/v2"
 # Historical note: Yahoo Fantasy read used to be requested as the OAuth 1.0a
-# permission "fspt-r". Under OAuth 2.0 that is NOT a request scope — Fantasy
+# permission "fspt-r". Under OAuth 2.0 that is NOT a request scope -- Fantasy
 # access comes from the app's API Permissions (Fantasy Sports - Read). Sending
 # scope=fspt-r produced a token with no Fantasy permission (403 "not authorized"
 # on every call), so the authorize request now sends no scope at all. Kept only
@@ -133,7 +133,7 @@ def get_authorization_url(state: str, force_login: bool = False) -> str:
 
     force_login=True adds prompt=login so Yahoo shows its account chooser instead of
     silently re-authorizing whatever account is already signed into the browser. Use
-    it when recovering from a 403 (wrong account) — otherwise the user loops back to
+    it when recovering from a 403 (wrong account) -- otherwise the user loops back to
     the same wrong account. Leave it off for normal sign-in to keep that one-tap.
     """
     client_id    = _env_clean("YAHOO_CLIENT_ID")
@@ -227,7 +227,7 @@ def resolve_session_yahoo_token(session) -> tuple[str, str]:
     cookie is cleared and never trusted as a long-lived bearer.
     """
     guid = str(session.get("yahoo_guid") or "")
-    # Drop any stale cookie bearer — tokens belong in the DB after OAuth.
+    # Drop any stale cookie bearer -- tokens belong in the DB after OAuth.
     session.pop("yahoo_access_token", None)
     if not guid:
         return "", ""
@@ -258,9 +258,9 @@ def get_login_guid(access_token: str, league_id: str = "") -> str:
     not guaranteed with the ``fspt-r`` scope). Tries two sources and returns "" if
     both fail:
 
-      1. ``users;use_login=1`` — direct, but the fspt-r token is often forbidden
+      1. ``users;use_login=1`` -- direct, but the fspt-r token is often forbidden
          (403) from the user-identity resource.
-      2. the league's teams (when ``league_id`` is given) — Yahoo flags the
+      2. the league's teams (when ``league_id`` is given) -- Yahoo flags the
          authenticated user's own team manager with ``is_current_login=1``, which
          carries the real guid and only needs the league read fspt-r does allow.
     """
@@ -389,7 +389,7 @@ def get_valid_access_token(guid: str, *, force_refresh: bool = False) -> Optiona
 
     ``force_refresh=True`` always hits Yahoo's token endpoint (used after a
     ``token_expired`` API response when our stored ``expires_at`` was still in
-    the future — clock skew / Yahoo revoked early).
+    the future -- clock skew / Yahoo revoked early).
     """
     tokens = load_tokens(guid)
     if not tokens:
@@ -424,8 +424,8 @@ def get_valid_access_token(guid: str, *, force_refresh: bool = False) -> Optiona
 #
 # Yahoo OAuth tokens are account-level, so any league member who has authorized
 # can read the whole league. Recording which guid(s) authorized while viewing a
-# league lets a *different* viewer (a public share) or a background/cron job —
-# neither of which has the owner's session — fetch the league on their behalf.
+# league lets a *different* viewer (a public share) or a background/cron job --
+# neither of which has the owner's session -- fetch the league on their behalf.
 # ---------------------------------------------------------------------------
 
 def _init_league_owner_table() -> None:
@@ -466,7 +466,7 @@ def save_league_owner(league_id: str, season: int, guid: str) -> None:
 def get_league_token(league_id: str, season: int) -> Optional[str]:
     """Return a valid (auto-refreshed) access token from any authorized owner of
     this league, or None. Prefers an owner who authorized for the exact season,
-    then the most recently updated — since the token is account-level, any of
+    then the most recently updated -- since the token is account-level, any of
     them can read it. This is the path background jobs and non-owner viewers use.
     """
     if not league_id:
@@ -653,7 +653,7 @@ def _yahoo_get(
     if resp.status_code >= 400:
         # Yahoo puts the real reason in the body (e.g. "token_expired",
         # "insufficient scope", "not in this league"). raise_for_status() drops
-        # it, so surface it here — this is what tells a scope/permission problem
+        # it, so surface it here -- this is what tells a scope/permission problem
         # apart from a genuine league-membership 403.
         body = (resp.text or "")[:500].replace("\n", " ")
         logger.warning("[yahoo] %s %s -> %s body=%s", "GET", path, resp.status_code, body)
@@ -720,7 +720,7 @@ def _bare_yahoo_id(league_id: str) -> str:
 def _league_key_for_season(league_id: str, season: int, access_token: str = "") -> str:
     """Season-specific Yahoo league key (``<game_key>.l.<id>``).
 
-    ``_league_key`` caches one key — the current (or resolved) season. Historical
+    ``_league_key`` caches one key -- the current (or resolved) season. Historical
     fetches must use that year's NFL game key or they silently re-read this
     season. Falls back to ``_league_key`` when game keys aren't available.
     """
@@ -879,7 +879,7 @@ def resolve_league_key(access_token: str, league_id: str) -> Dict[str, Any]:
 
     Yahoo's "nfl" shortcut only ever points at the current season's game, so a
     league from a prior (or not-yet-current) season can't be reached as
-    "nfl.l.<id>" — the request 403s even for a member. This looks up the actual
+    "nfl.l.<id>" -- the request 403s even for a member. This looks up the actual
     NFL game keys for recent seasons and probes "<game_key>.l.<id>" newest-first
     until one resolves (a league the account can read), then caches that full key
     so every downstream call uses it.
@@ -894,7 +894,7 @@ def resolve_league_key(access_token: str, league_id: str) -> Dict[str, Any]:
     lid = str(league_id).strip()
     if not lid:
         return {"status": "absent"}
-    # A full key was pasted directly — accept and cache it.
+    # A full key was pasted directly -- accept and cache it.
     if ".l." in lid:
         bare = lid.split(".l.")[-1]
         with _league_key_lock:
@@ -912,7 +912,7 @@ def resolve_league_key(access_token: str, league_id: str) -> Dict[str, Any]:
             raw  = _yahoo_get(access_token, f"league/{full_key}")
             meta = _extract_league_meta(raw)
         except Exception:
-            # 403/404 for a season the account isn't in with this id — keep probing.
+            # 403/404 for a season the account isn't in with this id -- keep probing.
             continue
         if meta:
             with _league_key_lock:
@@ -1041,7 +1041,7 @@ def _yahoo_selected_position(slot_node: Any) -> Optional[str]:
 def _flatten_yahoo_player(rp: Any) -> tuple:
     """Normalize a Yahoo ``player`` entry to (meta_dict, selected_position).
 
-    Yahoo returns a player as ``[[{k:v}, {k:v}, ...], {selected_position}]`` —
+    Yahoo returns a player as ``[[{k:v}, {k:v}, ...], {selected_position}]`` --
     the metadata is a positional list of single-key dicts. Merge it into one
     flat dict (also tolerating an already-flat dict), so callers can read
     ``name``/``player_id``/``editorial_team_abbr`` uniformly."""
@@ -1126,7 +1126,7 @@ def _league_child_block(raw: Dict, child_key: str) -> Any:
     """Find a child collection (``teams``, ``settings``, ``scoreboard``, …).
 
     Yahoo usually nests these under ``league[1]``, but some sub-resource
-    responses attach them to ``league[0]`` instead — scanning avoids empty
+    responses attach them to ``league[0]`` instead -- scanning avoids empty
     extracts when the index shifts.
     """
     for item in _yahoo_league_nodes(raw):
@@ -1393,7 +1393,7 @@ def _fetch_team_roster_players(
     """Fetch one team's roster via the team resource (includes players).
 
     Yahoo's bulk ``teams;out=roster`` attaches roster metadata but omits the
-    players collection — this endpoint is the reliable source.
+    players collection -- this endpoint is the reliable source.
     """
     if not team_key:
         return []
@@ -1470,7 +1470,7 @@ def get_users(season: int, league_id: str, access_token: str) -> List[Dict[str, 
         team_id   = _team_attr(t, "team_id") or team_key.split(".")[-1]
         team_name = _team_attr(t, "name") or f"Team {team_id}"
         # Yahoo returns team_logos either as a list of {team_logo:{url}} or, for a
-        # single logo, as a bare {team_logo:{url}} dict. Handle both — parsing only
+        # single logo, as a bare {team_logo:{url}} dict. Handle both -- parsing only
         # the list shape (as this once did) dropped the logo for dict-shaped teams,
         # leaving user-level avatars empty.
         logo      = _team_attr(t, "team_logos", {})
@@ -1484,7 +1484,7 @@ def get_users(season: int, league_id: str, access_token: str) -> List[Dict[str, 
         mgr   = _yahoo_primary_manager(t)
         guid  = _yahoo_owner_id(t, team_id)
         # Yahoo privacy mode returns nickname "--hidden--". Never treat that as
-        # a display name — fall back to the public team name.
+        # a display name -- fall back to the public team name.
         nick  = public_owner_label(mgr.get("nickname"), team_name, fallback=team_name)
 
         out.append({
@@ -1537,7 +1537,7 @@ def _yahoo_player_canonical(rp: Any) -> tuple[Optional[str], Optional[str]]:
 def _split_yahoo_lineup(raw_players: List[Any]) -> tuple[List[str], List[str], List[str]]:
     """Map Yahoo roster rows to (players, starters, reserve/IR).
 
-    BN/NA are not starters and not IR — ``build_teams_overview`` puts those
+    BN/NA are not starters and not IR -- ``build_teams_overview`` puts those
     leftover ``players`` on the dashboard Bench list. Putting BN in
     ``reserve`` hid the rest of the roster because the teams-card does not
     render IR.
@@ -1611,7 +1611,7 @@ def get_rosters(season: int, league_id: str, access_token: str) -> List[Dict[str
         pts_for   = _safe_float(standings.get("points_for"))
         pts_ag    = _safe_float(standings.get("points_against"))
 
-        # Roster — prefer week-specific team resource (has lineup slots).
+        # Roster -- prefer week-specific team resource (has lineup slots).
         raw_players = roster_by_key.get(team_key) or _extract_roster_players(t)
         if _yahoo_players_need_hydration(raw_players) and team_key:
             raw_players = _fetch_team_roster_players(access_token, team_key, week)
@@ -1722,8 +1722,8 @@ def _yahoo_teams_block(node: Any, *, _depth: int = 0) -> Any:
 def _flatten_yahoo_matchup(entry: Any) -> Dict[str, Any]:
     """Normalize a scoreboard matchup row to a dict with ``teams``.
 
-    Yahoo commonly returns ``{"matchup": [{week/status…}, {teams: …}]}`` —
-    a list of single-key fragments — not a flat dict. Treating a list as
+    Yahoo commonly returns ``{"matchup": [{week/status…}, {teams: …}]}`` --
+    a list of single-key fragments -- not a flat dict. Treating a list as
     invalid dropped every pairing and painted "No matchups".
     """
     node = entry
@@ -1902,7 +1902,7 @@ def get_matchups(season: int, league_id: str, week: int, access_token: str) -> L
     Yahoo's JSON scoreboard nests matchups under ``scoreboard["0"]["matchups"]``.
     Reading only ``scoreboard["matchups"]`` yields an empty list, and the
     Season Hub then invents round-robin opponents that do not match Yahoo.
-    Scoreboard rows have no player keys — week rosters are pulled next so
+    Scoreboard rows have no player keys -- week rosters are pulled next so
     starter pids can join Sleeper weekly projections.
     """
     lk = _league_key_for_season(league_id, season, access_token)
@@ -1917,7 +1917,7 @@ def get_matchups(season: int, league_id: str, week: int, access_token: str) -> L
     out = _matchup_rows_from_scoreboard(raw, week)
     # Before kickoff Yahoo sometimes leaves ``;week=N`` empty while the
     # default scoreboard already has the current week's pairings. Do not
-    # retry that path after an HTTP/auth failure — it just doubles 403s.
+    # retry that path after an HTTP/auth failure -- it just doubles 403s.
     if not out:
         try:
             raw_default = _yahoo_get(access_token, f"league/{lk}/scoreboard")
@@ -2399,7 +2399,7 @@ def _yahoo_is_threshold_bonus(stat: dict) -> bool:
 
     Reception rows (stat_id 11) often carry a 9-catch extra under ``bonuses``.
     Treating that whole row as a bonus dropped PPR ``value=1`` and Start/Sit
-    scored the league as standard — the Yahoo analog of ESPN D/ST overrides.
+    scored the league as standard -- the Yahoo analog of ESPN D/ST overrides.
     """
     if not isinstance(stat, dict):
         return False

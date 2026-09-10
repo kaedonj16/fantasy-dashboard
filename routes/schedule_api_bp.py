@@ -1,4 +1,4 @@
-"""Extracted from app.py — schedule_api_bp (see route list below)."""
+"""Extracted from app.py -- schedule_api_bp (see route list below)."""
 from __future__ import annotations
 import logging
 import os
@@ -336,7 +336,7 @@ def api_schedule_rankings():
 
 
 def _projected_starter_avgs(rosters, ctx: dict, season: int, current_week: int) -> dict[str, float]:
-    """Projected weekly starter scoring per roster — same source as playoff odds."""
+    """Projected weekly starter scoring per roster -- same source as playoff odds."""
     roster_positions = ctx.get("roster_positions") or []
     if hasattr(roster_positions, "tolist"):
         roster_positions = roster_positions.tolist()

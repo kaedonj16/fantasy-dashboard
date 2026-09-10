@@ -2,8 +2,8 @@
 Weekly snapshots of each team's total roster value, so the team modal can show
 a value-over-time trend (who's building vs. aging out).
 
-There's no historical-roster record to reconstruct from — rosters change with
-trades and adds — so we snapshot the *current* roster's total value each week
+There's no historical-roster record to reconstruct from -- rosters change with
+trades and adds -- so we snapshot the *current* roster's total value each week
 going forward, keyed by (league, season, week, roster). The team modal both
 records the current week (throttled to one row via upsert) and reads the series.
 Best-effort: a failure returns an empty series and never breaks the modal.

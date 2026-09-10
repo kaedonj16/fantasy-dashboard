@@ -2,7 +2,7 @@
 
 The Chrome/Edge extension observes the open ESPN draft room and POSTs picks to
 ``/api/draft/espn-relay`` with the Draft Room session (same-origin). Observe-only
-— never talks to ESPN and never submits picks.
+-- never talks to ESPN and never submits picks.
 """
 from __future__ import annotations
 

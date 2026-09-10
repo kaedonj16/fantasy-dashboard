@@ -291,7 +291,7 @@ def api_player_advanced_metrics(player_id: str):
         # Blend usage-based role score with PFF quality grades for a single
         # evaluation signal used by the modal. Role score itself is an internal
         # signal (feeds the breakout engine) and is NOT surfaced on the front
-        # end — read it from the raw metrics, then strip it from the payload.
+        # end -- read it from the raw metrics, then strip it from the payload.
         role = metrics.get("role_score")
         off = metrics_payload.get("grades_offense")
         rush = metrics_payload.get("pff_rushing_grade")

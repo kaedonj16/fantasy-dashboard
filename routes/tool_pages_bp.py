@@ -12,7 +12,7 @@ and delegates its body to a dashboard_services.pages.* builder.
 App.py internals (render_page, get_league_ctx_from_cache, _nav_show_keeper) are
 reached through the lazy shims below rather than a top-level ``from app import``
 so importing this module during app start-up does not trigger a circular import
-— the real functions are only fetched when a request is actually served.
+-- the real functions are only fetched when a request is actually served.
 """
 from __future__ import annotations
 
@@ -269,7 +269,7 @@ def _cheat_sheet_kwargs(platform, season, league_id):
 @tool_pages_bp.route("/draft/cheat-sheet")
 @tool_pages_bp.route("/<platform>/<int:season>/<league_id>/draft/cheat-sheet")
 def page_cheat_sheet(platform: str = None, season: int = None, league_id: str = None):
-    """Printable Draft Cheat Sheet — the pre-draft view of the Draft Room board."""
+    """Printable Draft Cheat Sheet -- the pre-draft view of the Draft Room board."""
     from dashboard_services.pages.cheat_sheet_page import build_cheat_sheet_body
     league_id, season, kw = _cheat_sheet_kwargs(platform, season, league_id)
     body = build_cheat_sheet_body(league_id, season, platform, **kw)

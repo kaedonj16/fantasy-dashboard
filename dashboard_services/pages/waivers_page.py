@@ -39,14 +39,14 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 
 .wv-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
 /* Grid items default to min-width:auto, so a wide flex child (the horizontally
-   scrolling trending strip) would force its column — and the whole 2-column
-   layout — to expand past the viewport instead of scrolling. min-width:0 lets
+   scrolling trending strip) would force its column -- and the whole 2-column
+   layout -- to expand past the viewport instead of scrolling. min-width:0 lets
    the column stay at its 1fr track and the strip scroll inside it. */
 .wv-section { min-width: 0; }
 @media(min-width: 769px) { .wv-section { display: block !important; } }
 .wv-section-title { font-size: 14px; font-weight: 700; margin-bottom: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; }
 .wv-loading { display: flex; justify-content: center; padding: 40px; }
-/* Content-shaped loading placeholder — mirrors the real rows so the layout
+/* Content-shaped loading placeholder -- mirrors the real rows so the layout
    doesn't jump when data arrives (replaces a bare centered spinner). */
 .wv-skel { display: flex; flex-direction: column; gap: 8px; }
 .wv-skel-row {
@@ -161,7 +161,7 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-stream-imp-bad  { background: color-mix(in srgb, var(--loss) 14%, transparent); color: var(--loss); }
 .wv-stream-imp-mid  { background: rgba(148,163,184,.16); color: var(--text-muted); }
 
-/* Lineup advice banner — points left on the bench + suggested swaps */
+/* Lineup advice banner -- points left on the bench + suggested swaps */
 .wv-ss-advice { border-radius: 10px; padding: 12px 14px; margin-bottom: 16px; border: 1px solid var(--border); }
 .wv-ss-advice-ok { background: color-mix(in srgb, var(--win) 8%, transparent); border-color: color-mix(in srgb, var(--win) 30%, var(--border)); color: var(--text); font-size: 13px; font-weight: 600; }
 .wv-ss-advice-ok i { color: var(--win); margin-right: 6px; }
@@ -198,7 +198,7 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-ss-name-block { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; cursor: pointer; }
 .wv-ss-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 @media (max-width: 700px) {
-  /* Name/badge and the action buttons cannot share one narrow row — START/FLEX
+  /* Name/badge and the action buttons cannot share one narrow row -- START/FLEX
      pills overlapped "Open player" and long names wrapped into the buttons. */
   .wv-ss-top { flex-direction: column; align-items: stretch; gap: 8px; }
   .wv-ss-name-block { flex-wrap: wrap; row-gap: 4px; }
@@ -308,7 +308,7 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
   text-align: center; color: var(--text-subtle); font-size: 10.5px;
   text-transform: uppercase; letter-spacing: .04em; font-weight: 700;
 }
-/* Winner gets a soft green pill; the loser just stays neutral (no red — a
+/* Winner gets a soft green pill; the loser just stays neutral (no red -- a
    lower projection isn't a failure). The value is wrapped in .wv-cmp-v so the
    pill hugs the number instead of filling the whole column. */
 .wv-cmp-v { display: inline-block; }
@@ -914,7 +914,7 @@ function wvVerdictReasons(a, b, wi) {{
   return cand.slice(0, 2).map(c => c.txt);
 }}
 
-// The advisor's call: the single unified start_score decides it — the exact same
+// The advisor's call: the single unified start_score decides it -- the exact same
 // score behind the START badges and the optimal-lineup banner, so the three can
 // never contradict each other. Returns the winning side plus the one or two
 // signals that most decided it, or a toss-up when the scores are level.
@@ -965,7 +965,7 @@ function wvRenderCompare() {{
 
   const sub = (p) => [p.team, p.opponent || (p.on_bye ? 'BYE' : '')].filter(Boolean).join(' · ');
 
-  // Recommendation banner up top — the reason people opened the advisor.
+  // Recommendation banner up top -- the reason people opened the advisor.
   const v = wvVerdict(a, b);
   let verdictHtml = '';
   if (v && v.idx != null) {{

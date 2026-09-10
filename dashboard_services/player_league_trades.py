@@ -306,7 +306,7 @@ def get_player_league_trades(
         resolution_by_league[hist_lid] = build_draft_resolution_map(plat, hist_lid)
         slot_by_league[hist_lid] = _slot_map_for_league(plat, hist_lid)
 
-    # Also resolve against the current league id — dynasty drafts for future
+    # Also resolve against the current league id -- dynasty drafts for future
     # pick seasons often live on the newest league record.
     if lid not in resolution_by_league:
         resolution_by_league[lid] = build_draft_resolution_map(plat, lid)

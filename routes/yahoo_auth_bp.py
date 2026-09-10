@@ -34,7 +34,7 @@ def yahoo_auth_start():
     """Begin Yahoo OAuth flow.  Redirects to Yahoo consent page."""
     from dashboard_services.providers.yahoo_api import yahoo_enabled
     if not yahoo_enabled():
-        # Yahoo is turned off (Fantasy API access pending) — don't walk the user
+        # Yahoo is turned off (Fantasy API access pending) -- don't walk the user
         # into the "application not authorized" wall.
         return redirect("/?yahoo_error=unavailable")
     if not _yahoo_configured():
@@ -50,14 +50,14 @@ def yahoo_auth_start():
     # The site canonicalizes the other way (apex -> www at the edge), so redirecting
     # www -> apex just ping-pongs against that and yields ERR_TOO_MANY_REDIRECTS.
     # Yahoo returns to the apex callback, the edge bounces it to www (query intact),
-    # and the state cookie set here on www is present there — so the flow completes
+    # and the state cookie set here on www is present there -- so the flow completes
     # on one host without any redirect of our own.
 
     league_id = (request.args.get("league_id") or "").strip()
     from utils.safe_url import safe_local_url
     next_url  = safe_local_url(request.args.get("next"), "/")
     team_name = (request.args.get("team_name") or "").strip()
-    # reauth=1 means we're recovering from a 403 (wrong account) — force Yahoo's
+    # reauth=1 means we're recovering from a 403 (wrong account) -- force Yahoo's
     # account chooser so the user can pick a different account instead of being
     # silently re-authorized as the same one and hitting the same 403.
     force_login = (request.args.get("reauth") or "").strip() in ("1", "true", "yes")
@@ -142,7 +142,7 @@ def yahoo_auth_callback():
 
     save_tokens(guid, access_token, refresh_token, expires_in)
 
-    # Store Yahoo identity in session — guid only. Access tokens live in the DB
+    # Store Yahoo identity in session -- guid only. Access tokens live in the DB
     # after save_tokens; do not persist the bearer in the session cookie.
     session["yahoo_guid"]         = guid
     session.pop("yahoo_access_token", None)
@@ -163,7 +163,7 @@ def yahoo_auth_callback():
         # account actually belongs to. This both (a) confirms access before we
         # drop the user on the dashboard (a build against an inaccessible league
         # 500s on an uncaught 403) and (b) finds the correct season, since Yahoo's
-        # "nfl" game code only ever points at the current season's game — a league
+        # "nfl" game code only ever points at the current season's game -- a league
         # from any other season would otherwise fail even for a real member.
         resolved = resolve_league_key(access_token, league_id)
         status = resolved.get("status")
@@ -174,7 +174,7 @@ def yahoo_auth_callback():
             logger.warning("[yahoo_auth] league %s not in this account's leagues", league_id)
             return redirect("/?yahoo_error=league_access_denied")
         else:
-            # Couldn't list the account's leagues — fall back to a direct fetch so
+            # Couldn't list the account's leagues -- fall back to a direct fetch so
             # a current-season league (which resolves as nfl.l.<id>) still works.
             try:
                 get_league(season, league_id, access_token)
@@ -317,7 +317,7 @@ def api_yahoo_validate_league():
         logger.warning("[yahoo] validate league %s failed: %s", league_id, msg)
         from dashboard_services.providers.yahoo_api import yahoo_auth_error_kind, yahoo_oauth_start_url
         kind = yahoo_auth_error_kind(exc)
-        # 401 token_expired / 403 wrong account — drop stale session identity and
+        # 401 token_expired / 403 wrong account -- drop stale session identity and
         # send the user back through OAuth.
         if kind in ("expired", "forbidden"):
             session.pop("yahoo_access_token", None)
@@ -353,7 +353,7 @@ def api_yahoo_debug():
         return jsonify({"ok": False, "error": "Yahoo connections are unavailable."}), 503
 
     league_id = (request.args.get("league_id") or "").strip()
-    # /yahoo/<season>/<league_id>/... pages — infer from the Referer when omitted.
+    # /yahoo/<season>/<league_id>/... pages -- infer from the Referer when omitted.
     if not league_id:
         ref = request.referrer or ""
         for marker in ("/yahoo/", "/api/yahoo/"):

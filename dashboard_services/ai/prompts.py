@@ -21,7 +21,7 @@ POS_RANK_LABEL_NOTE = (
 )
 
 
-# Shared redraft honesty block — GM memo, front office, and power rankings.
+# Shared redraft honesty block -- GM memo, front office, and power rankings.
 REDRAFT_HONESTY_RULES = """
 REDRAFT HARD RULES:
 - Never use: retool, retooling, rebuild, rebuilding, window, dynasty, draft capital, future picks, multi-year.
@@ -38,7 +38,7 @@ REDRAFT HARD RULES:
 DONT_NARRATE_GAPS = (
     "Never narrate missing or empty fields. If a value is blank, omit it; "
     "do not write that context is missing or \"not provided\". "
-    "Never echo JSON field names (e.g. playoff_pct) in prose — write "
+    "Never echo JSON field names (e.g. playoff_pct) in prose -- write "
     "\"playoff odds\", \"playoff standing\", etc. Never start a sentence with "
     "the bare labels contend, bubble, or out."
 )
@@ -82,11 +82,11 @@ and playoff odds. Never recommend draft picks or multi-year rebuilds.
 {REDRAFT_HONESTY_RULES}
 
 Outlook must state contend / bubble / out in a full sentence (from
-playoff_status when present) — e.g. "This team is built to contend…" — never
+playoff_status when present) -- e.g. "This team is built to contend…" -- never
 start with the bare word. Cite playoff odds when playoff_pct exists (e.g.
 "78.5% playoff odds"); never write the key name "playoff_pct", and if odds are
 absent omit them entirely (never say they were not provided). In preseason, do
-not apologize for a missing record — say no games have been played.
+not apologize for a missing record -- say no games have been played.
 
 Return a JSON object with these fields - each must be a single sentence or short phrase, NOT a list:
 - team_identity: one-line team identity (this-season shape, not a dynasty window)

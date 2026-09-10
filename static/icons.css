@@ -85,7 +85,7 @@
    still ships these codepoints and the same-origin webfont, so restore the glyph
    for the unmapped icons. `.fa-solid.fa-x` (specificity 0,2,1) + !important beats
    the blanket `.fa-solid::before` reset (0,1,1). Glyphs honor `color:`, which the
-   colored severity chips (questionable=amber, out=red) depend on — a PNG mask
+   colored severity chips (questionable=amber, out=red) depend on -- a PNG mask
    would not. Codepoints verified against static/font-awesome.css. */
 .fa-solid.fa-arrow-down::before        { content: "\f063" !important; }
 .fa-solid.fa-arrow-down-short-wide::before { content: "\f884" !important; }

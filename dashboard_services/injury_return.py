@@ -64,7 +64,7 @@ def weeks_until_return(return_date, today: Optional[date] = None) -> Optional[fl
     now = today or date.today()
     delta = (day - now).days
     if delta <= 0:
-        return 0.4  # listed return is due — still a this-week absence
+        return 0.4  # listed return is due -- still a this-week absence
     return round(delta / 7.0, 2)
 
 

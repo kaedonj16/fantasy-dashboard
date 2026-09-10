@@ -71,7 +71,7 @@ def build_dashboard_body(ctx: dict) -> str:
     season_review_html = _render_season_review_card(ctx, viewer_roster_id, df_weekly, team_stats)
 
     # Tour / empty leagues can hand over a columnless or empty frame. Bind
-    # finalized_df on every path — awards still consume it below. Match
+    # finalized_df on every path -- awards still consume it below. Match
     # weekly_hub_page / app.py: missing `finalized` means "no completed weeks".
     if (
         df_weekly is not None
@@ -216,7 +216,7 @@ def build_dashboard_body(ctx: dict) -> str:
         </section>
         """
 
-    # ---- Hero stat cards — mirror the offseason hub's hero card ----
+    # ---- Hero stat cards -- mirror the offseason hub's hero card ----
     from utils.format import ordinal as _dash_ord
 
     _hero_cards: list = []
@@ -289,7 +289,7 @@ def build_dashboard_body(ctx: dict) -> str:
         for _lbl, _val, _sub in _hero_cards
     ]
 
-    # Playoff-odds tile — serve a warm cache on first paint; if the sim is
+    # Playoff-odds tile -- serve a warm cache on first paint; if the sim is
     # cold, kick it off in the background and let the client fill the tile.
     _po_val, _po_sub, _po_loaded = "-", "Simulating&hellip;", ""
     if viewer_roster_id:
@@ -349,7 +349,7 @@ def build_dashboard_body(ctx: dict) -> str:
                     "Best Ball mode: weekly Start/Sit and lineup locks are hidden. "
                     "Focus on waivers and the draft."
                 )
-            # R10.3 thin season outlook — playoff odds when available; honest v1 copy.
+            # R10.3 thin season outlook -- playoff odds when available; honest v1 copy.
             _outlook_odds = ""
             if viewer_roster_id:
                 if _po_val and _po_val != "-":
@@ -543,7 +543,7 @@ def build_dashboard_body(ctx: dict) -> str:
           var valEl = document.getElementById('dash-playoff-val');
           var subEl = document.getElementById('dash-playoff-sub');
           if (!row) {{
-            if (valEl) valEl.textContent = '—';
+            if (valEl) valEl.textContent = '--';
             if (subEl) subEl.textContent = 'Odds unavailable';
             el.classList.add('is-loaded');
             return;
@@ -568,7 +568,7 @@ def build_dashboard_body(ctx: dict) -> str:
         .catch(function() {{
           var valEl = document.getElementById('dash-playoff-val');
           var subEl = document.getElementById('dash-playoff-sub');
-          if (valEl) valEl.textContent = '—';
+          if (valEl) valEl.textContent = '--';
           if (subEl) subEl.textContent = 'Odds unavailable';
           el.classList.add('is-loaded');
         }});

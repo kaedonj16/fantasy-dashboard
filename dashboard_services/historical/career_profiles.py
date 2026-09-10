@@ -12,7 +12,7 @@ is that finish from outside last year's top-12 (prior None or > 12). Rank
 Draft-capital rates exclude missing capital; they are never labeled UDFA.
 Missing years_experience is not mapped to rookie.
 
-Descriptive only — these rates do not enter ranking or Pick Score unless
+Descriptive only -- these rates do not enter ranking or Pick Score unless
 the Phase 9 walk-forward gate sets ``pick_score.validated``.
 """
 from __future__ import annotations
@@ -625,7 +625,7 @@ def assemble_profile_aggregates(
     in native units (probability vs rank), never blended into a score. Phase 8
     stamps a compact board payload from this JSON; it does not enter ranking.
     Phase 9 adds a walk-forward verdict. Pick Score stays out of live ranking
-    unless that gate passes — and even then this assembler does not mutate
+    unless that gate passes -- and even then this assembler does not mutate
     ``pick_score.js``.
     """
     from dashboard_services.historical.walkforward import run_walk_forward
@@ -683,7 +683,7 @@ def assemble_profile_aggregates(
             "wilson_interval": (
                 "95% Wilson score interval on the binomial raw rate. Shown on "
                 "the selected multi-factor cohort, expanded Hist, and expanded "
-                "trend detail — not every table row."
+                "trend detail -- not every table row."
             ),
             "multi_factor_cohort": (
                 "POST /api/historical-cohort counts actual matching "
@@ -750,7 +750,7 @@ def assemble_profile_aggregates(
             "walk_forward": (
                 "Train seasons < S, test S. History P from comps rebuilt on "
                 "train; market P from ADP rates rebuilt on train. Warehouse "
-                "positional finishes are ground truth — not the breakout "
+                "positional finishes are ground truth -- not the breakout "
                 "engine usage-points proxy, and not a second BreakoutEngine. "
                 "Missing P is skipped, never 0. Pick Score stays untouched "
                 "unless pick_score.validated"

@@ -7,8 +7,8 @@ const CACHE_NAME = 'br-fantasy-v29';
 // How long to wait on the network for a page before painting a cached /
 // offline fallback. This is what kills the blank white screen on PWA launch:
 // instead of staring at the browser's blank page while a slow/cold server
-// trickles a response in (or never responds), we show the last-good page —
-// or the offline shell — and quietly update once the network finishes.
+// trickles a response in (or never responds), we show the last-good page --
+// or the offline shell -- and quietly update once the network finishes.
 const NAV_TIMEOUT_MS = 3500;
 // Explicit Refresh (bypass-cache / reload) skips the stale shell preference
 // but still must not hang forever on a stuck fetch.
@@ -16,13 +16,13 @@ const NAV_REFRESH_TIMEOUT_MS = 20000;
 // When there is nothing cached to paint after NAV_TIMEOUT_MS, keep waiting for
 // the in-flight fetch up to this ceiling before showing the offline shell.
 // Serving "You're offline" at 3.5s while the user is online (Render cold start,
-// slow mobile) is a false positive — only use the offline page after this
+// slow mobile) is a false positive -- only use the offline page after this
 // longer wait, or when the network has actually failed.
 const NAV_UNCACHED_GRACE_MS = 15000;
 
 // Precache the offline shell + brand assets only. Versioned minified JS/CSS
 // are served with ?v= hashes from HTML and cached via stale-while-revalidate
-// on /static/* — precaching unversioned app.js/dashboard.css fought those URLs.
+// on /static/* -- precaching unversioned app.js/dashboard.css fought those URLs.
 const PRECACHE_URLS = [
   '/static/BR_Logo.png?v=f4228e0e',
   '/static/BR_Logo_dark.png?v=f4228e0e',
@@ -65,14 +65,14 @@ self.addEventListener('fetch', event => {
   // Never touch non-http(s) schemes. In particular blob:/data: URLs: on iOS and
   // in standalone PWAs an <a download> for a blob is treated as a *navigation*,
   // which would otherwise land in handleNavigate(), fail to fetch the blob, and
-  // serve the cached home shell — leaving a loading screen that never resolves
+  // serve the cached home shell -- leaving a loading screen that never resolves
   // instead of downloading the file. Let the browser handle these natively.
   if (url.protocol !== 'http:' && url.protocol !== 'https:') return;
   if (request.method !== 'GET' || url.origin !== self.location.origin) return;
   if (url.pathname.startsWith('/api/')) return;
   // Auth-mutating navigation: must always hit the network so the server actually
   // clears the session (and its Set-Cookie applies) as part of THIS navigation.
-  // Serving /logout from cache — or racing it against the cached-page timeout —
+  // Serving /logout from cache -- or racing it against the cached-page timeout --
   // let the redirect to "/" fire before the session was cleared, so the user
   // landed back on their still-authenticated dashboard. Never cache/serve it.
   if (url.pathname === '/logout') return;
@@ -108,7 +108,7 @@ self.addEventListener('fetch', event => {
   }
 });
 
-// Explicit Refresh (and location.reload) must not prefer the 3.5s cached shell —
+// Explicit Refresh (and location.reload) must not prefer the 3.5s cached shell --
 // that shell still has the old data-cache-ts, so the mobile "Refresh data" time
 // looks unchanged even though the tap appeared to work. The page posts
 // bypass-cache immediately before reload; reload/no-cache navigations wait
@@ -154,7 +154,7 @@ function forceNetworkNav(request) {
 //
 // Also strip hop-by-hop / length / encoding headers: fetch() already decoded
 // the body, so keeping Content-Encoding: gzip (etc.) on the reconstructed
-// Response makes some browsers — especially iOS standalone PWAs — refuse the
+// Response makes some browsers -- especially iOS standalone PWAs -- refuse the
 // navigation or paint a blank white screen.
 async function unredirect(response) {
   if (!response || !response.redirected) return response;
@@ -198,13 +198,13 @@ async function handleNavigate(request) {
   const skipStaleShell = forceNetworkNav(request);
 
   // Kick off the network request. Normalize redirects and only treat OK
-  // responses as usable wins — a fast 502 must not beat a good cached shell.
+  // responses as usable wins -- a fast 502 must not beat a good cached shell.
   // Clone BEFORE returning so the body isn't already consumed when we stash
   // it in the cache.
   // Remember a non-OK HTTP response (404/500/…) separately from a dead
   // connection. A fast 502 still must not beat a good cached shell, but a
   // never-visited URL that the server answered with 404 should show that
-  // page — not the "You're offline" shell.
+  // page -- not the "You're offline" shell.
   let networkError = null;
   const networkFetch = fetch(request).then(async response => {
     const clean = await unredirect(response);
@@ -216,7 +216,7 @@ async function handleNavigate(request) {
     return null;
   }).catch(() => null);
 
-  // ALWAYS race the network against a timeout — even with an empty cache.
+  // ALWAYS race the network against a timeout -- even with an empty cache.
   // The previous "await network forever when uncached" path is what left PWA
   // cold launches stuck on a blank white screen when the origin was slow,
   // sleeping, or the fetch never settled (common on mobile / iOS standalone).
@@ -241,7 +241,7 @@ async function handleNavigate(request) {
   }
   if (networkError) return networkError;
 
-  // No cached paint available. Do NOT jump to offline.html yet — that is what
+  // No cached paint available. Do NOT jump to offline.html yet -- that is what
   // showed "You're offline" during slow-but-online loads. Wait for the network
   // (or a longer grace) first.
   const grace = new Promise(resolve => setTimeout(() => resolve(null), NAV_UNCACHED_GRACE_MS));
@@ -277,7 +277,7 @@ self.addEventListener('push', event => {
 self.addEventListener('notificationclick', event => {
   event.notification.close();
   const targetUrl = (event.notification.data && event.notification.data.url) || '/';
-  // Fires for both body taps and action button taps — same destination either way
+  // Fires for both body taps and action button taps -- same destination either way
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then(wcs => {
       for (var i = 0; i < wcs.length; i++) {

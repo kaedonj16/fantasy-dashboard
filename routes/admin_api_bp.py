@@ -1,4 +1,4 @@
-"""Extracted from app.py — admin_api_bp (see route list below)."""
+"""Extracted from app.py -- admin_api_bp (see route list below)."""
 from __future__ import annotations
 import hmac
 import logging
@@ -48,7 +48,7 @@ def api_prewarm_league():
 
     The league switcher calls this in the background for the viewer's other
     leagues after a page loads. It only builds the shared context that any page
-    render for that league would build anyway — no per-viewer data is returned
+    render for that league would build anyway -- no per-viewer data is returned
     (just ok/cached), so it's safe to call speculatively. Returns immediately
     when the context is already warm.
 
@@ -140,7 +140,7 @@ def api_refresh_league():
     except Exception:
         logger.debug("suppressed exception", exc_info=True)
     # ESPN: drop process-cached League / globals for THIS league only so
-    # post-draft rosters aren't stuck on empty pre-draft shells — without
+    # post-draft rosters aren't stuck on empty pre-draft shells -- without
     # wiping every other ESPN room on the worker (player modal / live page).
     if platform == "espn":
         try:
@@ -284,7 +284,7 @@ def api_debug_values():
     (calibration_backing = trade weight behind WLS; a weight near 0 means WLS is
     effectively off and the value is the vendor/engine blend).
 
-    ?player=<sleeper_id or name>: full provenance for one player — the
+    ?player=<sleeper_id or name>: full provenance for one player -- the
     player_values row (incl. calibration_backing), the FantasyCalc /
     DynastyProcess vendor values, and the last 14 daily history points.
     """

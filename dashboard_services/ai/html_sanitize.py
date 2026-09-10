@@ -1,6 +1,6 @@
 """Allowlist sanitizer for AI-rendered HTML before it hits innerHTML.
 
-Stdlib-only (html.parser) — strips script/iframe/object/embed, event-handler
+Stdlib-only (html.parser) -- strips script/iframe/object/embed, event-handler
 attributes, and javascript: URLs. Keeps the small tag set used by
 ``dashboard_services.ai.renderer``.
 """

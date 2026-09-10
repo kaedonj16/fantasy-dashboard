@@ -219,7 +219,7 @@
       var arr = benchByPos[pos] || [];
       var idx = arr.indexOf(p);
       // RB3/WR4 (first bench) are primary cover. A second RB/WR is still
-      // primary when a flex that can start them exists — injury/bye path.
+      // primary when a flex that can start them exists -- injury/bye path.
       if (pos === 'RB' || pos === 'WR') {
         if (idx === 0) return 'primary';
         if (idx === 1 && hasFlexFor(pos)) return 'primary';
@@ -259,7 +259,7 @@
         // Redraft playoff odds sum every starting slot (empty = 0). Scale the
         // filled-starter average by coverage so a finished stars-and-scrubs
         // roster with holes doesn't outrank a complete one on mean PPG alone.
-        // Only apply once the team has had enough picks to fill those slots —
+        // Only apply once the team has had enough picks to fill those slots --
         // mid-draft every roster has holes, and raw coverage (2/8 at the start
         // of round 3) zeros the 50-pt starter term and prints F for the whole
         // league.

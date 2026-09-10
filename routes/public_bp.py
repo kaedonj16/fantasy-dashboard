@@ -83,7 +83,7 @@ def email_unsubscribe():
         if ntype == "onboarding":
             detail = (
                 "You won't receive signup or PRO welcome emails. "
-                "Weekly digest emails are unchanged — use the link in a digest "
+                "Weekly digest emails are unchanged -- use the link in a digest "
                 "footer to opt out of those separately."
             )
         else:
@@ -155,7 +155,7 @@ def ads_txt():
 
     Served as a tiny in-memory Response (not send_file) with a long public
     Cache-Control so Cloudflare/CDN can keep serving it even when the origin
-    is slow — ads.txt timeouts are a common AdSense crawl failure.
+    is slow -- ads.txt timeouts are a common AdSense crawl failure.
     """
     ads_file = Path(__file__).resolve().parents[1] / "ads.txt"
     if ads_file.exists():
@@ -906,7 +906,7 @@ def oline_rankings_page(season: Optional[int] = None):
 
     def _cell(v, is_index=True, pct=False):
         if v is None:
-            return '<td style="padding:6px 10px;color:#9ca3af;">—</td>'
+            return '<td style="padding:6px 10px;color:#9ca3af;">--</td>'
         if is_index:
             return (f'<td style="padding:6px 10px;font-weight:600;'
                     f'color:{_oline_index_color(v)};">{v:.0f}</td>')
@@ -1337,7 +1337,7 @@ def glossary_page(platform: Optional[str] = None, season: Optional[int] = None,
             "</div>"
         )
 
-    # DefinedTermSet structured data — each entry is a DefinedTerm. Plain-text
+    # DefinedTermSet structured data -- each entry is a DefinedTerm. Plain-text
     # descriptions; escape '<' so a definition's link can't break the <script>.
     def _plain(s: str) -> str:
         import re

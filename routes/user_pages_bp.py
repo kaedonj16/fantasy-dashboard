@@ -10,7 +10,7 @@ that render via app.render_page.
 
 App.py internals used by the handlers are resolved through the lazy shims below
 rather than a top-level from app import ... so importing this module during
-app start-up does not trigger a circular import — the real functions are only
+app start-up does not trigger a circular import -- the real functions are only
 fetched when a request is actually served.
 """
 from __future__ import annotations
@@ -651,7 +651,7 @@ def api_portfolio_actions():
             pass
 
         # Waiver add only when the player clears the quality bar (startable
-        # rank / roster hole) — not merely the highest leftover FA value.
+        # rank / roster hole) -- not merely the highest leftover FA value.
         try:
             if model_value_table:
                 from app import (
@@ -720,7 +720,7 @@ def api_portfolio_actions():
 
         # Wasted roster capacity: IR-eligible players in active spots, recovered
         # players stuck on IR, open taxi slots (Sleeper IR/taxi; taxi is
-        # dynasty-only — leftover taxi_slots on keeper/redraft are ignored).
+        # dynasty-only -- leftover taxi_slots on keeper/redraft are ignored).
         try:
             settings = (
                 league_obj.get("settings")
@@ -789,8 +789,8 @@ def api_portfolio_actions():
 # The card's live-score slot fetches this per league, client-side and lazily, so
 # a slow provider on one league never blocks the page or the other cards. The
 # expensive part (a live matchup fetch + game statuses) is cached per
-# league/week for a short window so a card refresh — or several cards on the
-# same league — does not hammer the provider APIs.
+# league/week for a short window so a card refresh -- or several cards on the
+# same league -- does not hammer the provider APIs.
 _LIVE_MATCHUP_CACHE: dict = {}
 _LIVE_MATCHUP_TTL = 30.0  # seconds
 
@@ -838,7 +838,7 @@ def _week_scores_visible(games, now=None, lead_seconds=90 * 60) -> bool:
 def _build_live_matchups(platform, resolved_league_id, season, week, ctx):
     """(matchups, status_by_pid, proj_map) for one league/week, TTL-cached.
 
-    Only the live pieces are cached — the viewer's side is picked per request."""
+    Only the live pieces are cached -- the viewer's side is picked per request."""
     import time as _time
     key = (str(platform), str(resolved_league_id), int(season), int(week))
     hit = _LIVE_MATCHUP_CACHE.get(key)

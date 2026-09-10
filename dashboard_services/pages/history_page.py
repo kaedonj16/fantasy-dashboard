@@ -975,7 +975,7 @@ def _wrapped_player_leaders(history_ctx: dict) -> dict:
 
         # Sum the FULL season the league played, not just the fantasy regular
         # season. "Top producer of the year" should match the player card's
-        # season total, which includes the fantasy-playoff weeks — stopping at
+        # season total, which includes the fantasy-playoff weeks -- stopping at
         # playoff-start made a full-PPR total read like standard scoring (e.g. a
         # 24.5-PPG back showing ~344 over 14 weeks instead of ~416 over 17).
         # Bound by the last week the league actually has matchup data so we don't
@@ -1485,8 +1485,8 @@ _WRAPPED_BOOTSTRAP_JS = r"""
   }
   // Centered text drawn via manual measurement with left alignment. WebKit
   // (iOS Safari) misplaces canvas fillText when textAlign is 'center' and the
-  // string contains emoji — the text splits into runs and the alignment is
-  // applied wrong — so team names with emoji drifted off-center. Measuring and
+  // string contains emoji -- the text splits into runs and the alignment is
+  // applied wrong -- so team names with emoji drifted off-center. Measuring and
   // positioning ourselves sidesteps that entirely.
   function centerText(ctx, text, cx, y, maxW) {
     var t = maxW ? ellip(ctx, text, maxW) : String(text == null ? '' : text);

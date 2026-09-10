@@ -47,7 +47,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
     players_map = ctx["players_map"]
     # Read the live cached model table directly (the same source the player modal
     # uses) instead of ctx["model_value_table"], which gets pinned into the
-    # longer-lived league-context cache and goes stale — making the waiver list
+    # longer-lived league-context cache and goes stale -- making the waiver list
     # and roster values disagree with the modal after a value rebuild.
     model_value_table = list(get_model_value_table_cached() or []) or (ctx.get("model_value_table") or [])
 
@@ -67,7 +67,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
     draft_subtext = "Set once your league schedules the draft."
 
     # First NFL regular-season game kickoff (from the app's schedule), not the
-    # preseason — used for the no-draft-scheduled tile and the post-draft
+    # preseason -- used for the no-draft-scheduled tile and the post-draft
     # countdown alike. See _nfl_regular_season_kickoff_ms.
     _week1_delta = None
     _week1_date_txt = ""
@@ -109,14 +109,14 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
             )
 
             if not draft_done:
-                # Draft hasn't happened yet — count down to it.
+                # Draft hasn't happened yet -- count down to it.
                 countdown_label = "Draft countdown"
                 countdown_text = "Today!" if delta_days == 0 else f"{delta_days} days"
                 draft_text = draft_dt.strftime("%b %d, %Y at %I:%M %p %Z")
                 draft_subtext = "Countdown to your next league draft."
                 _target_ts_ms = draft_ts_ms
             else:
-                # Draft is finished — count down to NFL Week 1 kickoff, and show
+                # Draft is finished -- count down to NFL Week 1 kickoff, and show
                 # the Week 1 date (not the stale draft date) as the sub-line.
                 countdown_label = "Season kickoff"
                 _target_ts_ms = _week1_ts_ms or 0
@@ -291,7 +291,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
     # Hero stat tile #3. Dynasty leagues care about future draft capital; redraft
     # and keeper leagues carry no tradeable picks, so that number collapses to the
     # league's total value and reads as dead weight. Swap it for a League Parity
-    # read — how lopsided roster strength is (leader vs. cellar) — which tells a
+    # read -- how lopsided roster strength is (leader vs. cellar) -- which tells a
     # redraft manager how competitive the field is heading into the season.
     _breakdown_href = url_for("page_teams", platform=platform, season=season,
                               league_id=ctx.get("league_id", ""))
@@ -389,7 +389,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
         </section>
         """
 
-    # Projected playoff-odds tile — serve a warm cache on first paint; a cold
+    # Projected playoff-odds tile -- serve a warm cache on first paint; a cold
     # sim is kicked off in the background and the client fills or removes the tile.
     _os_playoff_tile_html = ""
     if viewer_roster_id:

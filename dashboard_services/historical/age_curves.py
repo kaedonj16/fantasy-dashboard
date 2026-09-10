@@ -2,9 +2,9 @@
 
 Two statistics that must never be collapsed:
 
-1. **Distribution** — among seasons that *did* hit (e.g. RB1), what share
+1. **Distribution** -- among seasons that *did* hit (e.g. RB1), what share
    fell in an age window. "X% of RB1 seasons came from ages 23–27."
-2. **Conditional hit rate** — among qualifying seasons *in* that window,
+2. **Conditional hit rate** -- among qualifying seasons *in* that window,
    what share hit. "X% of age-23–27 RB seasons finished RB1."
 
 Prime windows are derived from the data: Bayes-smoothed P(top-12 | integer

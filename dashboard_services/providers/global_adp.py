@@ -13,7 +13,7 @@ importable in the lightweight CI suite, and every fetcher returns a structured
 result and swallows failures into an empty payload so one provider's outage never
 propagates.
 
-None of these feeds is *required* on the request path — a central refresh
+None of these feeds is *required* on the request path -- a central refresh
 (``adp_service.refresh_global_adp_sources``) fetches them and persists snapshots
 so most page loads are a disk (or DB) read. The resolver also retrieves them on
 miss, the same way Sleeper ADP is cached-then-fetched, so a fresh web disk after
@@ -93,7 +93,7 @@ def espn_id_to_canonical() -> Dict[str, str]:
     """espn_id -> canonical id, merging Sleeper's feed with the players_index.
 
     Sleeper's ``espn_id`` is authoritative but *lags for recently-drafted players*
-    — the ESPN ids of the newest stars (e.g. Gibbs/Chase/Nacua) are simply absent
+    -- the ESPN ids of the newest stars (e.g. Gibbs/Chase/Nacua) are simply absent
     from the feed, so a Sleeper-only crosswalk drops exactly the top of the ADP
     board. The Tank01-derived players_index carries ``espnID`` for ~all players, so
     we merge it in to fill those gaps. Sleeper wins wherever both cover an id."""
@@ -125,8 +125,8 @@ def espn_id_to_canonical() -> Dict[str, str]:
 def _flip_comma_name(raw: str) -> str:
     """Reorder MFL's ``"Last, First"`` (optionally ``"Last, First Suffix"``) name
     to ``"First Last"`` so ``normalize_name`` lines it up with the ``"First Last"``
-    players_index. ``normalize_name`` itself only strips periods/suffixes — it does
-    NOT reorder the comma form — so without this every MFL name fails to match."""
+    players_index. ``normalize_name`` itself only strips periods/suffixes -- it does
+    NOT reorder the comma form -- so without this every MFL name fails to match."""
     if "," not in (raw or ""):
         return raw or ""
     last, _, first = raw.partition(",")
@@ -181,8 +181,8 @@ def _name_pos_to_canonical() -> tuple:
     feed that shares no id with our canonical space.
 
     Yahoo's public ADP carries a ``player_id`` that only maps through Sleeper's
-    ``yahoo_id`` — which *lags for recent players*, dropping the whole top of the
-    board — and the players_index has no yahoo id to merge in. Name/position is the
+    ``yahoo_id`` -- which *lags for recent players*, dropping the whole top of the
+    board -- and the players_index has no yahoo id to merge in. Name/position is the
     only remaining bridge, so build it once and cache it. ``by_name_pos`` is tried
     first (position disambiguates same-named players); ``by_name`` is the fallback."""
     if "idx" in _NAME_INDEX_CACHE:
@@ -386,7 +386,7 @@ def fetch_espn_global_adp(season: int, limit: int = 400) -> Dict[str, Any]:
     """Public ESPN global ADP + a *separate* PPR draft-room rank.
 
     ``averageDraftPosition`` is ESPN's global ADP (shared across scoring defaults,
-    so recorded as mixed/global — never labelled full-PPR). ``draftRanksByRankType
+    so recorded as mixed/global -- never labelled full-PPR). ``draftRanksByRankType
     .PPR.rank`` is ESPN's PPR platform rank; it is returned separately and must
     never be blended into ADP consensus. Empty payload on any failure.
     """
@@ -445,7 +445,7 @@ _MFL_URL = "https://api.myfantasyleague.com/{season}/export"
 
 # MFL's ``averagePick`` is the mean pick *among drafts that selected the player*,
 # not overall ADP. A 7th-round NFL rookie taken in 10% of mocks around pick 58
-# shows ADP 57.8 even though 90% of drafts never take him — then consensus (and
+# shows ADP 57.8 even though 90% of drafts never take him -- then consensus (and
 # the Draft Room "elite steal" recs) treat that as a real round-5 board. Sleeper
 # records those players as undrafted (999) and ESPN/Yahoo omit them from the
 # top-N board. Drop rows below this selection rate so they cannot leak in.
@@ -474,7 +474,7 @@ def filter_mfl_snapshot_adp(snap: Optional[dict]) -> Dict[str, float]:
     for the next MFL refresh.
 
     When the snapshot has ``draft_pct`` for *any* player, rows missing it are
-    dropped too — they are unverified selected-only leftovers, not legacy
+    dropped too -- they are unverified selected-only leftovers, not legacy
     payloads. A snapshot with no pcts at all (tests / pre-extra files) is left
     intact; consensus then omits MFL-only players instead."""
     adp = (snap or {}).get("adp") or {}

@@ -1,4 +1,4 @@
-// Draft Cheat Sheet — a printable, pre-draft view of the SAME board the Draft
+// Draft Cheat Sheet -- a printable, pre-draft view of the SAME board the Draft
 // Room ranks on. It ranks the shared /api/league-players pool by BRPickScore
 // (the identical, parity-tested engine the draft room's best-available list and
 // the server grade use), with inputs assembled through DraftBoardCore (the same
@@ -16,7 +16,7 @@
     var LIMIT = 300;
 
     // The backend only emits this redraft signal when independent, confidence-
-    // weighted market evidence clears its threshold; baseline-only rows stay "—".
+    // weighted market evidence clears its threshold; baseline-only rows stay "--".
     // Authoritative response metadata controls the entire column.  It is updated
     // on every load, so an unavailable signal cannot leave an invisible/stale
     // column (or CSV field) behind and automatically returns after a good refresh.
@@ -629,8 +629,8 @@
         return ['Fading', 'win-fade'];
     }
 
-    // ADP source the sheet is showing. "Auto" is Consensus — the same blended
-    // column Player Rankings defaults to — not the Sleeper overlay on avg_pick.
+    // ADP source the sheet is showing. "Auto" is Consensus -- the same blended
+    // column Player Rankings defaults to -- not the Sleeper overlay on avg_pick.
     function sheetAdpSource() {
         return (state.adpSource && state.adpSource !== 'auto') ? state.adpSource : 'consensus';
     }
@@ -1259,7 +1259,7 @@
     function histPctClass(h) {
         if (!h) return 'n';
         // Green only for a strong absolute cell or history beating the ADP
-        // bucket. Never paint market_higher red — early ADP is a high bar.
+        // bucket. Never paint market_higher red -- early ADP is a high bar.
         if (h.h_vs_m === 'history_higher') return 'g';
         var pct = h.p_hit_pct;
         if (pct != null && isFinite(Number(pct)) && Number(pct) >= HIST_STRONG_PCT) return 'g';
@@ -1316,7 +1316,7 @@
     }
 
     // Snake overall pick numbers for a 1-based seat. Odd rounds run 1→N, even
-    // rounds N→1 — the same convention the Draft Room board uses.
+    // rounds N→1 -- the same convention the Draft Room board uses.
     function snakePickNum(round, slot, nTeams) {
         var inRound = (round % 2 === 1) ? slot : (nTeams - slot + 1);
         return (round - 1) * nTeams + inRound;
@@ -1522,7 +1522,7 @@
         }
 
         // Drag + arrows reorder within the ranked list, so they're hidden on pinned/
-        // muted rows (terminal buckets) — those are managed by the pin/mute toggles
+        // muted rows (terminal buckets) -- those are managed by the pin/mute toggles
         // and revert. Keeps the arrows from looking clickable when they'd no-op.
         var canMove = x.ov !== 'pin' && x.ov !== 'mute';
         var move = canMove
@@ -1556,7 +1556,7 @@
             + sortTh('rk', 'Rk', 'cs-rk', 'VOR board rank. Click to restore the default order.')
             + sortTh('name', 'Player', 'l cs-player', 'Sort by player name')
             + sortTh('pos', 'Pos', '', 'Sort by position, then positional rank')
-            + sortTh('vor', 'VOR', 'cs-vor-col', 'VALUE: Value over replacement — the model ranking')
+            + sortTh('vor', 'VOR', 'cs-vor-col', 'VALUE: Value over replacement -- the model ranking')
             + sortTh('projectedPpg', 'Proj PPG', '', 'PROJECTION: Projected fantasy points per game')
             + sortTh(col5Key, col5, '', dyn ? 'Sort by age' : 'MARKET: Sort by ADP')
             + sortTh(col6Key, col6, 'cs-value-col', dyn ? 'Sort by career window (age)' : 'VALUE: Sort by value vs ADP')
@@ -1579,7 +1579,7 @@
             shown++;
             var cls = 'cs-p cs-c-' + x.pos + (state.done.has(x.id) ? ' done' : '') + (x.drafted ? ' drafted' : '') + (x.ov === 'mute' ? ' cs-muted' : '') + (x.ov ? ' cs-ov' : '') + (x.id === _flashId ? ' cs-flash' : '') + (pk ? ' cs-proj-row' : '');
             // Proj pick is marked by the divider line above + cs-proj-row highlight.
-            // Do not also inject an inline "Proj …" chip into the sticky name cell —
+            // Do not also inject an inline "Proj …" chip into the sticky name cell --
             // on mobile it crowds the name and paints over it when the board scrolls.
             var projTitle = pk ? ' title="Projected pick ' + pk.label + ' (overall #' + pk.pn + ')"' : '';
             var c5 = dyn ? '<td class="cs-num">' + (x.age != null ? x.age : '') + '</td>' : '<td class="cs-num">' + fmtAdp(x.adp) + '</td>';
@@ -1592,7 +1592,7 @@
                     var basisLabel = x.marketBasis === 'season_props' ? 'season-long player markets' : x.marketBasis === 'rolling_market' ? 'multiple recent weekly player markets' : x.marketBasis === 'team_environment' ? 'team betting environment' : 'a blend of available market signals';
                     var confLabel = x.marketConfidenceLabel || (x.marketConfidence >= .7 ? 'High' : (x.marketConfidence >= .5 ? 'Moderate' : 'Low'));
                     var direction = x.marketVsAdp > 0 ? 'earlier' : (x.marketVsAdp < 0 ? 'later' : 'near its current ADP');
-                    var mtip = 'Market context implies this player should be drafted ' + (x.marketVsAdp === 0 ? direction : 'about ' + Math.abs(Math.round(x.marketVsAdp)) + ' picks ' + direction) + '. Expected Pick ' + Math.round(x.marketExpectedAdp) + '; current ADP ' + (x.adp != null ? Number(x.adp).toFixed(1) : '—') + '. Confidence: ' + confLabel + ' (' + Math.round((x.marketConfidence || 0) * 100) + '%). Based primarily on ' + basisLabel + '.';
+                    var mtip = 'Market context implies this player should be drafted ' + (x.marketVsAdp === 0 ? direction : 'about ' + Math.abs(Math.round(x.marketVsAdp)) + ' picks ' + direction) + '. Expected Pick ' + Math.round(x.marketExpectedAdp) + '; current ADP ' + (x.adp != null ? Number(x.adp).toFixed(1) : '--') + '. Confidence: ' + confLabel + ' (' + Math.round((x.marketConfidence || 0) * 100) + '%). Based primarily on ' + basisLabel + '.';
                     market = '<td class="cs-market-col"><span class="cs-val ' + mcls + '" title="' + esc(mtip) + '">' + (x.marketVsAdp > 0 ? '+' : '') + Math.round(x.marketVsAdp) + '</span></td>';
                 }
             }
@@ -2057,7 +2057,7 @@
             if (nextSc.ppr !== curSc.ppr || nextSc.tep !== curSc.tep || nextSc.passTd !== curSc.passTd) {
                 state.scoring = nextSc;
                 syncScoringUi();
-                // Scoring changes the projection cache key — refetch the pool.
+                // Scoring changes the projection cache key -- refetch the pool.
                 loadPlayers();
                 return;
             }
@@ -2361,7 +2361,7 @@
     // Backend copy uses em/en dashes (e.g. age buckets "23–27"); the modal wants
     // plain hyphens. Applied to every backend-derived string the modal shows.
     function deDash(s) {
-        return String(s == null ? '' : s).replace(/—/g, '-').replace(/–/g, '-');
+        return String(s == null ? '' : s).replace(/--/g, '-').replace(/–/g, '-');
     }
 
     function histTrendRankKey(row) {
@@ -3221,7 +3221,7 @@
         var html = '<p class="cs-trends-lede">' + esc(data.note || data.headline || '') + '</p>';
         if (state.mode === 'dynasty') {
             html += '<p class="cs-trends-lede cs-trends-dynasty-note">'
-                + '1QB redraft history — research only, not dynasty ranking.</p>';
+                + '1QB redraft history -- research only, not dynasty ranking.</p>';
         }
         html += '<div class="cs-trends-pos" role="group" aria-label="Trends position">';
         positions.forEach(function (pos) {
@@ -3807,7 +3807,7 @@
             render();
         });
 
-        // CSV export is free — it dumps the currently visible board order.
+        // CSV export is free -- it dumps the currently visible board order.
         var csvBtn = $('csCsvBtn');
         if (csvBtn) csvBtn.addEventListener('click', function () {
             exportCsv();

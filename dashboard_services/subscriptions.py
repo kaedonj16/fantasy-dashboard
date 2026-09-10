@@ -55,7 +55,7 @@ def viewer_has_legacy_user_subscription(
 ) -> bool:
     """True when the Sleeper viewer identity has an active personal subscription.
 
-    Used for the "Link Google to secure PRO" prompt — independent of whether
+    Used for the "Link Google to secure PRO" prompt -- independent of whether
     soft dual-read still grants access.
     """
     platform = platform or "sleeper"
@@ -121,7 +121,7 @@ def has_user_league_subscription(
 ) -> bool:
     """True when this user (or linked account) bought single-league PRO for league_id.
 
-    Buyer-only — co-managers are not entitled via this table.
+    Buyer-only -- co-managers are not entitled via this table.
     """
     if not league_id:
         return False
@@ -283,7 +283,7 @@ def has_premium_access(
         # Fail closed: on any error, deny premium rather than grant it.
         return False
 
-    # Buyer-only single-league plan (own connection — avoid nesting get_conn).
+    # Buyer-only single-league plan (own connection -- avoid nesting get_conn).
     if league_id and has_user_league_subscription(
         user_id, league_id, platform, account_id=account_id,
     ):
@@ -372,7 +372,7 @@ def has_premium_for_viewer(
       2. Shared league plan for verified members
       3. Single-league personal plan for this league (buyer-only; account or
          soft dual-read identity)
-      4. Legacy Sleeper user-plan via viewer id/username — soft dual-read only
+      4. Legacy Sleeper user-plan via viewer id/username -- soft dual-read only
          (disabled when ``PRO_REQUIRE_GOOGLE=1``)
     """
     platform = platform or "sleeper"
@@ -402,7 +402,7 @@ def has_premium_for_viewer(
     if _acct and has_premium_access(None, None, platform, account_id=_acct):
         result = True
 
-    # League subscription only for actual members (shared plan — membership is
+    # League subscription only for actual members (shared plan -- membership is
     # the guard; Google is not required).
     if not result and league_id and has_premium_access(None, league_id, platform) \
             and viewer_is_league_member(viewer_user_id, league_id, platform, season):
@@ -427,7 +427,7 @@ def has_premium_for_viewer(
 
     # Legacy Sleeper username/id personal subscription.
     # Soft dual-read: still honor so buyers aren't locked out before linking.
-    # Hard cutover (PRO_REQUIRE_GOOGLE): skip — thieves can't unlock PRO by
+    # Hard cutover (PRO_REQUIRE_GOOGLE): skip -- thieves can't unlock PRO by
     # typing a username, and real buyers restore access by linking Google.
     if not result and not _require_google:
         if viewer_user_id and has_premium_access(viewer_user_id, None, platform):

@@ -1,6 +1,6 @@
 """
 Daily snapshots of any team ranking (value, power, ...) so ranked lists can show
-▲/▼ position-movement arrows year-round — the offseason included, where a trade
+▲/▼ position-movement arrows year-round -- the offseason included, where a trade
 reshuffles value and power rankings even though no games are played.
 
 Date-keyed (not week-keyed), mirroring playoff_odds_history's daily snapshot, so
@@ -21,7 +21,7 @@ def get_conn():
 
 _TABLE_READY = False
 _LAST_WRITE: Dict[tuple, float] = {}
-_WRITE_THROTTLE = 600  # seconds — one snapshot write per (league, season, kind) per 10 min
+_WRITE_THROTTLE = 600  # seconds -- one snapshot write per (league, season, kind) per 10 min
 
 
 def _ensure_table() -> None:
@@ -76,7 +76,7 @@ def record_ranks_for_date(
     Used by the daily seeder to lay down today's snapshot and to backfill a
     *reconstructed* earlier-day baseline. With ``overwrite`` False (the default)
     it writes only when no snapshot exists yet for that (league, season, kind,
-    date) — so a reconstructed baseline never clobbers a genuine one already
+    date) -- so a reconstructed baseline never clobbers a genuine one already
     recorded. Returns True if it wrote. Best-effort."""
     ordered = [str(r) for r in (ordered_roster_ids or []) if r is not None]
     if not ordered:

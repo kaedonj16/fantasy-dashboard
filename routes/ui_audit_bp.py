@@ -1,4 +1,4 @@
-"""Local UI/UX audit hub — only registered when ``UI_AUDIT=1``.
+"""Local UI/UX audit hub -- only registered when ``UI_AUDIT=1``.
 
 Visit ``/ui-audit`` for a link catalog of every public and league page backed
 by the deterministic ``ui-audit`` mock league (mid-season dynasty, no live HTTP).
@@ -56,7 +56,7 @@ def _hub_body() -> str:
         "</style>"
         '<div class="ui-audit-hero">'
         "<p>Deterministic mock league <strong>UI Audit Dynasty</strong> "
-        f"(<code>{UI_AUDIT_LEAGUE_ID}</code>) — week 11, 10 teams, in-season. "
+        f"(<code>{UI_AUDIT_LEAGUE_ID}</code>) -- week 11, 10 teams, in-season. "
         "No live Sleeper calls.</p>"
         '<div class="ui-audit-actions">'
         f'<a class="btn btn-primary" href="{url_for("ui_audit.bootstrap")}">'

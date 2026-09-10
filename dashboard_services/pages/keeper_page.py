@@ -371,7 +371,7 @@ def _auction_cost_map(
     """Best-effort auction $ paid map for a league.
 
     MFL embeds amounts on draft picks. Sleeper returns draft shells without
-    picks — hydrate via get_draft_picks when needed. ESPN/Yahoo rarely expose
+    picks -- hydrate via get_draft_picks when needed. ESPN/Yahoo rarely expose
     bid amounts on the normalized draft list; the UI stays editable.
     """
     plat = (platform or "").lower()
@@ -658,8 +658,8 @@ def compute_league_keepers(
             # resolves cost collisions) over these same objects in place. Re-running
             # analyze would recompute the raw cost and undo any collision bump.
             # "projected" means a rival team's estimated keepers. The viewer's
-            # own roster is always "yours" — whether those ids came from the
-            # optimizer or an explicit viewer_kept_ids override — so the draft
+            # own roster is always "yours" -- whether those ids came from the
+            # optimizer or an explicit viewer_kept_ids override -- so the draft
             # room banner can count ownership without a separate handoff.
             kept.append({
                 "id": pid, "name": c.name, "pos": c.position,

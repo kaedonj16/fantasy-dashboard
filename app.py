@@ -210,7 +210,7 @@ else:
     logger.info("[sentry] SENTRY_DSN not set - error tracking disabled")
 
 # Client-side (browser) error tracking. Loaded async, only when a browser DSN is
-# configured (SENTRY_JS_DSN — a separate public DSN from the server one). Empty
+# configured (SENTRY_JS_DSN -- a separate public DSN from the server one). Empty
 # string → injected nowhere, zero effect.
 _sentry_js_dsn = os.environ.get("SENTRY_JS_DSN", "")
 _SENTRY_JS_SNIPPET = ""
@@ -249,7 +249,7 @@ DASHBOARD_CACHE = {}
 # rendered page HTML, and on the public site any visitor can look up any league,
 # so without eviction this dict grows without limit (a slow OOM on a
 # long-running worker). Cap the entry count and evict the oldest ~10% when
-# exceeded — the same bounded pattern used by _GAME_LOGS_CACHE below.
+# exceeded -- the same bounded pattern used by _GAME_LOGS_CACHE below.
 DASHBOARD_CACHE_MAX = 400
 
 
@@ -283,7 +283,7 @@ def _prune_dashboard_cache(keep: Optional[str] = None) -> None:
 def _prune_ttl_cache(cache: dict, max_entries: int) -> None:
     """Evict the oldest ~10% of a per-league/per-roster TTL cache once it exceeds
     ``max_entries``. These caches key on ids from an effectively unbounded space
-    (any league/roster a visitor looks up), so a TTL alone doesn't cap memory —
+    (any league/roster a visitor looks up), so a TTL alone doesn't cap memory --
     stale entries linger until their exact key is requested again. Handles both
     entry shapes used here: ``{'ts': float, ...}`` dicts and ``(ts, payload)``
     tuples."""
@@ -356,8 +356,8 @@ def _playoff_sim_cached(ctx: dict, platform: str, block: bool = True) -> list:
 
     block=False serves only a warm cache: on a miss it kicks the sim off in a
     background thread and returns [] immediately. Synchronous render paths
-    (e.g. the dashboard's trade-window card) use that so a cold sim — several
-    projection fetches plus a Monte Carlo run — never blocks a page paint;
+    (e.g. the dashboard's trade-window card) use that so a cold sim -- several
+    projection fetches plus a Monte Carlo run -- never blocks a page paint;
     the surface simply appears on the next visit."""
     try:
         from data_building.simulate_playoff_odds import simulate_playoff_odds
@@ -372,7 +372,7 @@ def _playoff_sim_cached(ctx: dict, platform: str, block: bool = True) -> list:
         sig = _playoff_sim_sig(ctx, platform)
         hit = _PLAYOFF_SIM_CACHE.get(key)
         # Serve the cache only while it's fresh AND built on the current
-        # rosters / week / schedule — a trade or newly published slate
+        # rosters / week / schedule -- a trade or newly published slate
         # changes the signature and forces a re-sim right away.
         if hit and time.time() - hit["ts"] < _PLAYOFF_SIM_CACHE_TTL and hit.get("sig") == sig:
             return hit["data"] or []
@@ -526,7 +526,7 @@ def _ensure_minified_appjs() -> str:
         import rjsmin
         minified = rjsmin.jsmin(src.read_text(encoding="utf-8"))
         if not minified or len(minified) < len(src.read_text(encoding="utf-8")) * 0.4:
-            return "app.js"  # sanity check failed — serve original
+            return "app.js"  # sanity check failed -- serve original
         out.write_text(minified, encoding="utf-8")
         meta.write_text(src_hash, encoding="utf-8")
         return "app.min.js"
@@ -602,7 +602,7 @@ def _ensure_public_js() -> str:
 
 
 def _ensure_features_js() -> str:
-    """Build app-features.min.js — the below-the-marker feature half of app.js
+    """Build app-features.min.js -- the below-the-marker feature half of app.js
     (player modal, nav player-search, compare, advanced metrics, ...).
 
     This is the complement of public.js: public.js is everything ABOVE the
@@ -632,14 +632,14 @@ def _ensure_features_js() -> str:
     try:
         if out_min.exists() and meta.exists() and meta.read_text().strip() == src_hash:
             return "app-features.min.js"
-        # Everything after the marker LINE (not just the marker token — the token
+        # Everything after the marker LINE (not just the marker token -- the token
         # sits inside a `//` comment, so splitting on it alone would leave a bare
         # comment fragment starting the bundle). Drop through the line's newline.
         _mi = full.find(marker)
         _line_end = full.find("\n", _mi)
         feat_src = full[_line_end + 1:] if _line_end != -1 else full.split(marker, 1)[1]
         # openPlayerModal lives in player_modal.js so lite pages still get it
-        # when this bundle lazy-loads — do not attach player_modal.js on lite
+        # when this bundle lazy-loads -- do not attach player_modal.js on lite
         # pages or the public.js stub is overwritten too early.
         if modal:
             feat_src = feat_src.rstrip() + "\n" + modal + "\n"
@@ -692,7 +692,7 @@ _APP_JS_V = _static_hash(_APP_JS_FILE)
 _PUBLIC_JS_FILE = _ensure_public_js()
 _PUBLIC_JS_V = _static_hash(_PUBLIC_JS_FILE)
 # Lazy-loaded feature half of app.js (see _ensure_features_js). Empty string when
-# it couldn't be built — render_page then serves the full app.js instead of lite.
+# it couldn't be built -- render_page then serves the full app.js instead of lite.
 _FEATURES_JS_FILE = _ensure_features_js()
 _FEATURES_JS_V = _static_hash(_FEATURES_JS_FILE) if _FEATURES_JS_FILE else ""
 _CSS_FILE = _ensure_minified_css()
@@ -728,7 +728,7 @@ del _warm
 _FA_V = _static_hash("font-awesome.css")
 _ICONS_V = _static_hash("icons.css")
 
-# When this worker booted — a cheap "did the deploy actually restart me?" signal
+# When this worker booted -- a cheap "did the deploy actually restart me?" signal
 # alongside the bundle hashes in /healthz/version (served by routes.health_bp).
 _PROCESS_STARTED_AT = datetime.now(timezone.utc).isoformat()
 
@@ -821,7 +821,7 @@ _CSP_POLICY = "; ".join([
 
 # Set CSP_REPORT_ONLY=1 in the environment to emit the same policy as
 # Content-Security-Policy-Report-Only (observe violations in the console/Sentry
-# without blocking) — useful to validate the allowlist before enforcing.
+# without blocking) -- useful to validate the allowlist before enforcing.
 _CSP_HEADER_NAME = (
     "Content-Security-Policy-Report-Only"
     if os.environ.get("CSP_REPORT_ONLY", "").strip() in ("1", "true", "yes")
@@ -869,7 +869,7 @@ def _canonical_host_redirect():
         return
     if request.method not in ("GET", "HEAD"):
         return
-    # Never redirect the health-check endpoint — Render probes it on the
+    # Never redirect the health-check endpoint -- Render probes it on the
     # onrender.com host and treats a 301 as an unhealthy response.
     if request.path == "/health":
         return
@@ -918,7 +918,7 @@ app.config.update(
 
 # Share the session cookie across the apex and its subdomains (e.g. brfantasyfootball.com
 # AND www.brfantasyfootball.com). Without this the cookie is host-only, so a
-# session started on one host is invisible on the other — which silently breaks
+# session started on one host is invisible on the other -- which silently breaks
 # OAuth sign-in when the flow crosses www<->apex (the state set on /auth/google
 # is missing on /auth/google/callback, so login never sticks). Opt-in: set
 # COOKIE_DOMAIN explicitly, or it derives from PRIMARY_DOMAIN when that is set.
@@ -1925,11 +1925,11 @@ BASE_HTML = """
     <!-- Font Awesome is render-blocking on purpose: it's the ONLY source of the
          icon box sizing (.fa{{display:inline-block;width:1em;line-height:1}}). If it
          loads async, every <i class="fa-…"> renders 0x0 until it applies, then pops
-         to ~1em and reflows everything below it — that was the ~0.4 CLS. It's a tiny
+         to ~1em and reflows everything below it -- that was the ~0.4 CLS. It's a tiny
          (~8 KB) same-origin file, so the render-blocking cost is negligible. -->
     <link rel="stylesheet" href="/static/font-awesome.css?v={fa_v}">
-    <!-- Paywall CSS only styles the (hidden) upgrade modal — no above-the-fold
-         layout impact — so it stays async and doesn't block first paint. -->
+    <!-- Paywall CSS only styles the (hidden) upgrade modal -- no above-the-fold
+         layout impact -- so it stays async and doesn't block first paint. -->
     <link rel="stylesheet" href="/static/{paywall_css_file}?v={paywall_css_v}" media="print" onload="this.media='all'">
     <noscript><link rel="stylesheet" href="/static/{paywall_css_file}?v={paywall_css_v}"></noscript>
 
@@ -1989,7 +1989,7 @@ BASE_HTML = """
         window.__brWarmLaunch = _warm && !_userRefresh;
         if(!s) return;
         // Reveal the (already server-rendered) content as soon as the DOM is
-        // parsed — waiting for window 'load' gated LCP behind every image and
+        // parsed -- waiting for window 'load' gated LCP behind every image and
         // deferred script (measured LCP was ~14.6s on mobile).
         if(document.readyState!=='loading'){{ hide(); }} else {{ document.addEventListener('DOMContentLoaded',hide); }}
         setTimeout(hide,2500);  // safety: never let the splash get stuck
@@ -2429,7 +2429,7 @@ def get_players_index_global():
 
 # Per-position "elite starter" projection anchors, one set per (season, week,
 # scoring). The raw start/sit score is projected points scaled by capped
-# multipliers, so it is unbounded and position-relative — a QB 20 and a WR 20
+# multipliers, so it is unbounded and position-relative -- a QB 20 and a WR 20
 # mean different things. Dividing by the position's top weekly projection maps
 # the score onto a 0-100 confidence index that IS comparable across positions.
 _SS_POS_ANCHOR_CACHE: dict = {}
@@ -2641,7 +2641,7 @@ def _regular_season_week_with_games(season, hint_week=None, *, today=None) -> Op
 
     Sleeper often stays on season_type ``pre``/``off`` (and sometimes week=0)
     until Thursday kickoff. If this Tue–Mon window already has a regular-season
-    game — including one tomorrow — treat that week as the live slate.
+    game -- including one tomorrow -- treat that week as the live slate.
     """
     try:
         season_n = int(season or 0)
@@ -3459,9 +3459,9 @@ def _link_modal_html() -> str:
             <input id="linkMflSeason" class="link-inp link-full" inputmode="numeric" placeholder="current season" autocomplete="off">
             <div id="mflPrivateFields" style="display:none;">
               <label class="link-lb link-field" for="linkMflApikey">League APIKEY</label>
-              <input id="linkMflApikey" class="link-inp link-full" type="password" autocomplete="off" placeholder="Optional — from Help → Developer's API">
+              <input id="linkMflApikey" class="link-inp link-full" type="password" autocomplete="off" placeholder="Optional -- from Help → Developer's API">
               <label class="link-lb link-field" for="linkMflCookie">MFL_USER_ID cookie</label>
-              <input id="linkMflCookie" class="link-inp link-full" type="password" autocomplete="off" placeholder="Optional — cookie value">
+              <input id="linkMflCookie" class="link-inp link-full" type="password" autocomplete="off" placeholder="Optional -- cookie value">
               <details class="espn-credential-help"><summary>Or sign in once for the cookie</summary>
                 <label class="link-lb link-field" for="linkMflUser">MFL username</label>
                 <input id="linkMflUser" class="link-inp link-full" autocomplete="username">
@@ -3711,7 +3711,7 @@ def _link_modal_html() -> str:
         document.querySelectorAll('.espn-method').forEach(function(b){var on=b.dataset.method===espnMethod;b.classList.toggle('active',on);b.setAttribute('aria-pressed',on?'true':'false');});
         document.getElementById('espnPrivateFields').style.display=isPrivate?'block':'none';
         var emailFields=document.getElementById('espnEmailFields');if(emailFields)emailFields.style.display=isEmail?'block':'none';
-        document.getElementById('espnMethodHelp').textContent=isEmail?"Sign in with the email on your ESPN account and we'll email you a 6-digit code — no cookies needed.":isPrivate?'Connect a private ESPN league using its League ID and ESPN session credentials.':'Connect a publicly accessible ESPN league using its League ID.';
+        document.getElementById('espnMethodHelp').textContent=isEmail?"Sign in with the email on your ESPN account and we'll email you a 6-digit code -- no cookies needed.":isPrivate?'Connect a private ESPN league using its League ID and ESPN session credentials.':'Connect a publicly accessible ESPN league using its League ID.';
         document.getElementById('linkEspnSwid').value=''; document.getElementById('linkEspnS2').value=''; (function(){var b=document.getElementById('linkEspnBlob');if(b)b.value='';var s=document.getElementById('linkEspnBlobStatus');if(s)s.textContent='';})(); linkSetMsg('','');
         var connectBtn=document.getElementById('linkEspnConnect');
         if(isEmail){connectBtn.textContent='Email me a code';connectBtn.classList.remove('google-continue-btn');}
@@ -4321,13 +4321,13 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             ("Opponent Scout", "page_weekly", "scout", False, "?tab=scout"),
             ("Lineup Efficiency", "page_weekly", "optimal", False, "?tab=optimal"),
             # Roster/lineup tools live with the other weekly tools, not Players.
-            # Best Ball has no weekly Start/Sit — keep Waivers only.
+            # Best Ball has no weekly Start/Sit -- keep Waivers only.
             (_waiver_label, "league_pages.page_waivers", "waivers", False),
             ("Schedule Assistant", "page_schedule", "schedule", False),
         ]
         # Redzone lives inside the Weekly dropdown. The Weekly button glows and
         # the Redzone item pulses with a live dot only while games are live or
-        # about to kick off (the hour before) — not for the whole game day.
+        # about to kick off (the hour before) -- not for the whole game day.
         # Only available during the active season.
         _rz_pulse = ""
         if not offseason_mode:
@@ -4398,12 +4398,12 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         # Build the league switcher whenever there's a viewer OR a linked account.
         # It's populated from /api/my-leagues, which merges the account's leagues
         # across ALL platforms (Sleeper/ESPN/Yahoo), so it works on ESPN and Yahoo
-        # league pages too — earlier it was gated to non-ESPN and vanished on a
+        # league pages too -- earlier it was gated to non-ESPN and vanished on a
         # linked ESPN league, stranding the user with no way back. The switcher
         # hides itself client-side when there are 0-1 leagues to switch between.
         if viewer_username or account_id:
             # Current league's display name, read straight from the warm dashboard
-            # cache (the page already built it — no extra fetch). Lets the switcher
+            # cache (the page already built it -- no extra fetch). Lets the switcher
             # show the league you're on even when it isn't one of your linked/account
             # leagues, so the dropdown never mislabels a different league as current.
             _cur_name = (_chrome_meta.get("raw_name") or "")
@@ -4450,7 +4450,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         )
 
         # Rebuild settings gear with updated content. (The link-a-league modal is
-        # injected once per page in render_page, not here — this gear renders
+        # injected once per page in render_page, not here -- this gear renders
         # twice, desktop + mobile, and the modal needs unique DOM ids.)
         settings_gear = (
                 "<div class='settings-gear-wrapper'>"
@@ -4551,7 +4551,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
 
     # Per-platform copy for the "sign in to your team" username form. The form
     # resolves the entered name against THIS league's users/rosters (see
-    # /set-viewer), so the prompt must name the right platform — earlier it only
+    # /set-viewer), so the prompt must name the right platform -- earlier it only
     # split ESPN vs. "Sleeper username", mislabeling Yahoo and MFL leagues as
     # Sleeper and asking a non-Sleeper user for a Sleeper username.
     _signin_copy = {
@@ -4650,7 +4650,7 @@ _AD_TOP = """<aside class="ad-container ad-top-banner" aria-label="Advertisement
 _AD_BOTTOM = """<aside class="ad-container ad-bottom-content" aria-label="Advertisement"><span class="ad-disclosure">Advertisement</span><ins class="adsbygoogle" style="display:block;overflow:hidden;" data-ad-client="ca-pub-9164153092633845" data-ad-slot="5233061286" data-ad-format="horizontal" data-full-width-responsive="false"></ins></aside>"""
 # Legal / utility / checkout pages lack enough publisher content for AdSense
 # (Google's "no publisher content" / insufficient-content policies). Never place
-# ad units there — including when active is None (e.g. /pricing).
+# ad units there -- including when active is None (e.g. /pricing).
 _NO_ADS_PAGES = frozenset({
     "privacy", "terms", "about", "contact", "support", "faq", "pricing",
 })
@@ -4953,7 +4953,7 @@ def _google_link_pro_banner() -> str:
     """Prompt username-only PRO holders to link Google (soft dual-read / hard cutover).
 
     Soft mode: they still have PRO; banner is dismissible.
-    Hard mode (PRO_REQUIRE_GOOGLE): PRO is locked until they link — non-dismissible CTA.
+    Hard mode (PRO_REQUIRE_GOOGLE): PRO is locked until they link -- non-dismissible CTA.
     """
     from flask import session as _session
     if not needs_google_link_for_pro(
@@ -4971,7 +4971,7 @@ def _google_link_pro_banner() -> str:
     auth_href = f"/auth/google?intent=login&next={_urlquote(next_url, safe='')}"
     if hard:
         title = "Restore your PRO"
-        body = "Personal PRO now requires Google sign-in. Link your account to unlock it again — your Sleeper username alone is no longer enough."
+        body = "Personal PRO now requires Google sign-in. Link your account to unlock it again -- your Sleeper username alone is no longer enough."
         dismiss = ""
         display = "flex"
     else:
@@ -5273,7 +5273,7 @@ def render_page(
     # For public pages (no league context), inherit the session's last league so
     # SIGNED-IN visitors keep their league nav. A logged-out visitor gets the
     # guest nav even if the session still remembers a league from a public/shared
-    # view — otherwise a one-time league peek sticks them with league chrome.
+    # view -- otherwise a one-time league peek sticks them with league chrome.
     _nav_lid = league_id or session.get("last_league_id") or None
     _nav_platform = platform or session.get("last_platform") or None
     _nav_season_raw = session.get("last_season") if not season else None
@@ -5304,8 +5304,8 @@ def render_page(
 
     # Logged-out visitors on lite_js pages (landing + public SEO surfaces) get
     # the slim public.js for a fast first paint. public.js omits everything below
-    # the @public-js:core-end marker — the nav player-search and player modal
-    # included — so the feature half (app-features.js) is lazy-loaded on demand:
+    # the @public-js:core-end marker -- the nav player-search and player modal
+    # included -- so the feature half (app-features.js) is lazy-loaded on demand:
     # prefetched on idle (eagerly for compare/prospects/breakouts) and
     # force-loaded the moment a guest opens search or a player card (see the
     # ensureFeatures loader in app.js). Only go lite when that features bundle
@@ -5485,7 +5485,7 @@ def render_page(
         league_size_js=_json.dumps(_league_size),
         league_scoring_type_js=_json.dumps(_scoring_type),
     )
-    # Soft-nav documents are disposable swap payloads — still no-store for auth,
+    # Soft-nav documents are disposable swap payloads -- still no-store for auth,
     # but clients already hold a short in-memory prefetch map.
     if _soft_nav:
         # Strip splash + footer + body script tags the soft-nav client never runs
@@ -5716,7 +5716,7 @@ def build_league_context(platform: str, league_id: str, season: int) -> dict:
     # Offseason mode should only apply to the current upcoming season,
     # not to old historical seasons.
     # Preseason ("pre", ~August) has no regular-season games either, so treat it
-    # like the offseason — unless a regular-season game is scheduled this NFL
+    # like the offseason -- unless a regular-season game is scheduled this NFL
     # week. Sleeper often stays on "pre"/"off" until Thursday kickoff; once
     # there is a game this week (even tomorrow), show in-season standings,
     # weekly, and the dashboard.
@@ -7018,7 +7018,7 @@ def _rank_move_html(delta) -> str:
 
 
 def _ranking_movement(league_id, season, kind, ordered_roster_ids) -> dict:
-    """Thin wrapper around ranking_movement.record_daily_and_movement — returns
+    """Thin wrapper around ranking_movement.record_daily_and_movement -- returns
     {roster_id: rank_delta} for a ranked list, or {} on any failure."""
     try:
         from dashboard_services.ranking_movement import record_daily_and_movement
@@ -7597,7 +7597,7 @@ def _standings_movement(df_weekly) -> dict:
 
 def _render_usage_movers(ctx: dict, viewer_roster_id) -> str:
     """Compact strip of the viewer's rostered players whose recent usage is
-    rising fastest — last-3-week average vs season average of the position's
+    rising fastest -- last-3-week average vs season average of the position's
     key volume stat (QB snap %, RB touches, WR/TE targets). Returns '' when
     there's nothing meaningful to show."""
     if not viewer_roster_id:
@@ -7919,7 +7919,7 @@ def _trade_window_card_html(ctx: dict, viewer_roster_id) -> str:
                 if remaining < 0:
                     return ""
                 weeks_to = int(remaining // (7 * 86400))
-                # Display label only — approximate week from now + remaining.
+                # Display label only -- approximate week from now + remaining.
                 deadline = max(1, current_week + weeks_to)
 
         is_redraft = _league_is_redraft(ctx)
@@ -8274,7 +8274,7 @@ def render_power_and_playoffs(
 
     # ---- Movement arrows: day-over-day change in power-ranking position ----
     # Daily (date-keyed) so a trade that reshuffles the ranking shows a ▲/▼ the
-    # next day, in the offseason too — not just week-over-week during the season.
+    # next day, in the offseason too -- not just week-over-week during the season.
     _pr_order_rids = [_o2r.get(str(row.get("owner", "")))
                       for _, row in pr_sorted.iterrows()]
     movement: Dict[str, Optional[int]] = _ranking_movement(
@@ -8318,7 +8318,7 @@ def render_power_and_playoffs(
         except (TypeError, ValueError):
             return default
 
-    # Whether any team has actually played — offseason (synthetic team_stats) has
+    # Whether any team has actually played -- offseason (synthetic team_stats) has
     # G == 0, so the record and PF/PA net columns are meaningless there and hide.
     try:
         _has_games = int(pd.to_numeric(pr_sorted.get("G"), errors="coerce").fillna(0).sum()) > 0
@@ -8874,14 +8874,14 @@ def _build_offseason_standings_body(ctx: dict) -> str:
     _proj_available = sum(rid_to_proj.values()) > 0
     for r in team_rows:
         r["value_pct"] = r["total"] / league_value_total * 100
-        # Prefer "—" over painting every team 0.0% when lineup/projection
+        # Prefer "--" over painting every team 0.0% when lineup/projection
         # settings failed to load (the ESPN empty-slots failure mode).
         if _proj_available:
             r["prod_pct"] = rid_to_proj.get(r["rid"], 0.0) / proj_total * 100
             r["prod_pct_label"] = f"{r['prod_pct']:.1f}%"
         else:
             r["prod_pct"] = 0.0
-            r["prod_pct_label"] = "—"
+            r["prod_pct_label"] = "--"
 
     # ── normalize to a PPG-like scale (100–160) matching Teams page formula ──
     from dashboard_services.power_score import value_scale_score
@@ -9666,7 +9666,7 @@ def _build_waiver_targets_rows(ctx: dict, model_value_table: list, limit: int = 
     # Auto-apply the league's TE premium to waiver values, like elsewhere.
     _tep_dash = te_premium_from_settings(ctx.get("scoring_settings"))
     # Rank/display off the value column that matches this league's format
-    # (redraft vs dynasty, 1QB vs Superflex) — same selector as the API surface.
+    # (redraft vs dynasty, 1QB vs Superflex) -- same selector as the API surface.
     _vkey_dash, _vfb_dash = _waiver_value_keys(ctx)
     _rk_dash = _waiver_rank_label_key(ctx)
 
@@ -9798,7 +9798,7 @@ def _render_do_next_waiver_card(
     """Merged dashboard next-steps card: waiver preview, optional show-all, draft prep.
 
     Leagues that have not finished their startup/redraft draft skip waiver
-    suggestions entirely — pickups are meaningless before rosters exist.
+    suggestions entirely -- pickups are meaningless before rosters exist.
     """
     from utils.league_payload import startup_draft_pending
 
@@ -9885,14 +9885,14 @@ def _render_do_next_waiver_card(
 
 
 _WEEK1_KICKOFF_CACHE: dict = {}  # season -> (fetched_at, ts_ms | None)
-_WEEK1_KICKOFF_TTL = 6 * 3600  # 6h — the schedule is static once published
+_WEEK1_KICKOFF_TTL = 6 * 3600  # 6h -- the schedule is static once published
 
 
 def _nfl_regular_season_kickoff_ms(season: int):
     """Epoch-ms kickoff of the FIRST NFL *regular-season* game of `season`.
 
     Reads the app's schedule data (Tank01 Week 1, seasonType='reg') and takes the
-    earliest game start, so the countdown targets the real Week 1 opener — never a
+    earliest game start, so the countdown targets the real Week 1 opener -- never a
     preseason game. Falls back to the Thursday-after-Labor-Day opener (~8:20 PM
     ET) if the schedule isn't published yet. Cached (6h) and fail-soft.
     """
@@ -10236,7 +10236,7 @@ def build_projections_by_week(season: int, weeks: int, raw_scoring_settings: dic
 
     # Median of this player's other Sleeper weeks fills a hole if one week's
     # file omitted them. Never invent points from FantasyPros or last-season
-    # actuals — displayed projections are Sleeper-only.
+    # actuals -- displayed projections are Sleeper-only.
     all_vals: dict = {}
     for w in range(1, weeks + 1):
         for pid, val in raw[w].items():
@@ -10656,7 +10656,7 @@ def _maybe_check_roster_freshness(platform: str, league_id: str, season: int,
 
     On a cached-context read, kick a throttled background poll (≤ once / 90s per
     league) that does a cheap /rosters fetch and compares the roster signature to
-    the cached context. If it changed — a trade or waiver landed — expire the
+    the cached context. If it changed -- a trade or waiver landed -- expire the
     context so the next request rebuilds it from source (and the signature-keyed
     playoff-sim cache then re-runs on its own). Only the current season can
     change, so past-season views are skipped. Never blocks the caller."""
@@ -10680,7 +10680,7 @@ def _maybe_check_roster_freshness(platform: str, league_id: str, season: int,
             if not fresh:
                 return  # a failed/empty fetch must never expire a good context
             if _roster_sig({"rosters": fresh}) == cur_sig:
-                return  # unchanged — nothing to do
+                return  # unchanged -- nothing to do
             entry = DASHBOARD_CACHE.get(key)
             if entry:
                 entry["ts"] = 0  # expire context; next read rebuilds
@@ -10701,7 +10701,7 @@ def _maybe_check_roster_freshness(platform: str, league_id: str, season: int,
                 invalidate_league_caches(platform, league_id, season)
             except Exception:
                 pass
-            logger.info("[freshness] rosters changed for %s/%s/%s — context expired",
+            logger.info("[freshness] rosters changed for %s/%s/%s -- context expired",
                         platform, season, league_id)
         except Exception:
             logger.debug("[freshness] roster check failed", exc_info=True)
@@ -11427,7 +11427,7 @@ def api_start_sit_options():
         _wx_kind = (_wx_ss or {}).get("kind") if isinstance(_wx_ss, dict) else None
 
         # ── Start/sit score: one engine (utils.start_sit_score). Matchup is not
-        # re-multiplied — weekly proj already reflects the opponent. Weather and
+        # re-multiplied -- weekly proj already reflects the opponent. Weather and
         # Vegas are applied here because projection feeds usually omit them.
         from utils.start_sit_score import compute_start_score
         _ut_ss = _ss_usage_trends.get(pid) or {}
@@ -11557,8 +11557,8 @@ def api_start_sit_options():
     # ── Win-probability on the closest call at each position ─────────────────
     # The real start/sit tension is the marginal pair: the last player in a
     # starting slot vs the first one on the bench. Model each as Normal(proj, σ)
-    # — σ from the player's own boom/bust std when we have it, else a CV-based
-    # fallback — and report P(starter outscores the guy you'd bench). Surfaced
+    # -- σ from the player's own boom/bust std when we have it, else a CV-based
+    # fallback -- and report P(starter outscores the guy you'd bench). Surfaced
     # only when it's genuinely close, so a blowout call isn't dressed up as a
     # coin flip.
     import math as _math_ss
@@ -11592,11 +11592,11 @@ def api_start_sit_options():
             }
 
     # ── Optimal-lineup advice: compare the auto-optimal lineup to the
-    # viewer's actual current starters — the points left on the bench, plus the
+    # viewer's actual current starters -- the points left on the bench, plus the
     # specific swaps to fix it. Covers every position the league starts
     # (QB/RB/WR/TE plus K and D/ST when those slots exist). ────────────────────
     # The optimal lineup is chosen by the unified start_score, so its point
-    # totals and per-swap gains are measured on that SAME score — not raw
+    # totals and per-swap gains are measured on that SAME score -- not raw
     # projection. Swaps are paired same-position first (then FLEX/SUPER_FLEX)
     # so the banner never recommends a QB "over" an RB.
     from utils.lineup_issues import pair_start_sit_swaps as _pair_ss_swaps
@@ -12172,7 +12172,7 @@ def _redzone_collect(platform, league_id, season, week):
     # Every provider canonicalizes its player ids to Sleeper ids in rosters /
     # matchups (ESPN canon_pid, Yahoo name+pos crosswalk, MFL _canonical_map),
     # so the Sleeper player feed resolves names/positions/teams for ALL
-    # platforms — Redzone is no longer Sleeper-only.
+    # platforms -- Redzone is no longer Sleeper-only.
     nfl_players = get_nfl_players() or {}
     today_str = date.today().strftime("%Y%m%d")
     scores_body = get_nfl_scores_for_date(today_str) or {}
@@ -12195,14 +12195,14 @@ def _redzone_collect(platform, league_id, season, week):
 
     # Game discovery fallback: Tank01's getNFLScoresOnly is keyed to *today* and
     # goes dark when the provider is down / rate limited, leaving every player
-    # with no game_id/game_code — which strips PBP entirely and drops the client
+    # with no game_id/game_code -- which strips PBP entirely and drops the client
     # back to bulk "Scored X pts" cards. Fill any rostered team ESPN's free
     # scoreboard knows about but Tank01 didn't return, so the existing ESPN PBP
     # path (which needs a discovered live/final game) can actually run.
     #
     # ESPN also covers a second gap: Tank01 sometimes keeps a game at status
     # code "0" (pre) for minutes after kickoff. Tank01 *has* the team, so it is
-    # not "missing" — but the stale pre code keeps the game out of the PBP path,
+    # not "missing" -- but the stale pre code keeps the game out of the PBP path,
     # so the feed stays empty even though the game is live. Treat a rostered
     # team whose game shows pre/unknown after kickoff as a lag candidate and let
     # ESPN's real status upgrade it.
@@ -12278,7 +12278,7 @@ def _redzone_collect(platform, league_id, season, week):
     for gid, pids in games_to_pids.items():
         # Live AND final games get play-by-play. Skipping PBP on finals left the
         # client with only players_points deltas ("Scored 13.5 pts") after the
-        # whistle — the bulk cards users see when reopening Redzone post-game.
+        # whistle -- the bulk cards users see when reopening Redzone post-game.
         codes = {
             str((player_info.get(pid) or {}).get("game_code") or "")
             for pid in pids
@@ -12294,7 +12294,7 @@ def _redzone_collect(platform, league_id, season, week):
         )
         # Tank01's playByPlay response is experimental and sometimes returns PBP
         # without aggregate playerStats (or an empty body). Merge a plain
-        # boxscore for scoreboard totals only — Plays never invents boxscore /
+        # boxscore for scoreboard totals only -- Plays never invents boxscore /
         # "Scored X pts" fiction from that merge (client is PBP-lines-only for
         # live/final).
         if want_pbp and not (box.get("playerStats") or box.get("allPlayByPlay")
@@ -12365,7 +12365,7 @@ def _redzone_collect(platform, league_id, season, week):
                 ]
                 # Tank01 PBP is experimental and often empty for finals. Fall
                 # back to Sleeper (preferred) then ESPN CDN booth lines so
-                # Plays still shows real play-by-play — never boxscore fiction.
+                # Plays still shows real play-by-play -- never boxscore fiction.
                 if not plays:
                     try:
                         alt = _rz_fetch_alt_pbp_plays(
@@ -12391,7 +12391,7 @@ def _redzone_collect(platform, league_id, season, week):
                 logger.debug("[redzone] pbp parse failed game=%s", gid, exc_info=True)
                 pbp_by_game.setdefault(gid, [])
         elif want_pbp:
-            # No usable box at all — still try Sleeper/ESPN for booth lines.
+            # No usable box at all -- still try Sleeper/ESPN for booth lines.
             try:
                 rostered = set(pids)
                 alt = _rz_fetch_alt_pbp_plays(
@@ -12532,7 +12532,7 @@ def _redzone_user_portfolio(season):
 
     # Build the viewer's league portfolio as a deduped union of two sources so
     # "My Leagues" here matches (and can exceed) the league switcher:
-    #   1. The canonical account portfolio (resolve_my_leagues) — the same set
+    #   1. The canonical account portfolio (resolve_my_leagues) -- the same set
     #      the My Leagues page and /api/my-leagues switcher show.
     #   2. Live Sleeper memberships for every Sleeper identity linked to the
     #      account (or the session viewer for a Sleeper-only login).
@@ -12655,7 +12655,7 @@ def _redzone_user_league_slice(li, lg, season, week, account_id, viewer_uid,
                 lg_plat, lid, exc_info=True,
             )
         # ESPN private leagues often store SWID on the connection even when
-        # account_identities is empty — reuse that for roster matching.
+        # account_identities is empty -- reuse that for roster matching.
         if lg_plat == "espn" and not account_roster_id:
             try:
                 from dashboard_services.accounts import get_espn_league_credentials
@@ -13212,12 +13212,12 @@ _RANKINGS_FAQ = [
     ("How are dynasty trade values calculated?",
      "They blend consensus market data from real dynasty trades with recent on-field "
      "usage, the positional aging curve, and each player's situation. The result "
-     "estimates what your league would give up to acquire him — weighted for long-term "
+     "estimates what your league would give up to acquire him -- weighted for long-term "
      "outlook, not just this week's projection. Values refresh daily."),
     ("Why is a younger player valued above an older one who scores more?",
      "Dynasty rosters are held for years, so value prices in the runway a player has "
      "left. A 23-year-old ascending receiver can out-value a 30-year-old running back "
-     "who scores more today, because the market pays for future production — and "
+     "who scores more today, because the market pays for future production -- and "
      "running backs decline earlier than receivers."),
     ("Should I use 1QB or Superflex values?",
      "Match your league. In Superflex you can start two quarterbacks, so passers are "
@@ -13229,7 +13229,7 @@ _RANKINGS_FAQ = [
      "scoring toggle to switch between the two."),
     ("How often is the chart updated?",
      "Daily. Fresh market data and the latest usage roll in every day, and major news "
-     "— injuries, trades, depth-chart moves — is reflected within a day."),
+     "-- injuries, trades, depth-chart moves -- is reflected within a day."),
 ]
 
 
@@ -13258,20 +13258,20 @@ def _rankings_methodology_faq() -> str:
             '<div class="static-section-title">How these dynasty values are built</div>'
             '<p style="color:var(--text-muted);font-size:14px;line-height:1.75;">'
             "Every number here estimates one thing: <strong>what the rest of your league would "
-            "actually give up to acquire a player</strong> — not how many points he'll score this "
+            "actually give up to acquire a player</strong> -- not how many points he'll score this "
             "week. That's what separates a dynasty value from a redraft ranking, and it's why the "
             "two lists never match. Each value blends four inputs: <strong>consensus market data</strong> "
             "from thousands of real dynasty trades, <strong>recent usage and efficiency</strong>, the "
             "<strong>positional aging curve</strong> (running backs are discounted early; receivers and "
-            "quarterbacks hold value longer), and each player's <strong>situation</strong> — target share, "
+            "quarterbacks hold value longer), and each player's <strong>situation</strong> -- target share, "
             "depth-chart competition, and offensive context.</p>"
             '<div class="static-section-title">How to use the chart</div>'
             '<ul style="color:var(--text-muted);font-size:14px;line-height:1.8;margin-left:20px;">'
-            "<li><strong>Start from the number, then adjust</strong> for your roster's timeline and needs — "
+            "<li><strong>Start from the number, then adjust</strong> for your roster's timeline and needs -- "
             "a value is a market estimate, not a law.</li>"
             "<li><strong>Match the format toggle to your league.</strong> Superflex makes quarterbacks far "
             "more valuable; reading 1QB values in a Superflex league under-rates every QB.</li>"
-            "<li><strong>Compare across positions, not just within one</strong> — the single scale is what "
+            "<li><strong>Compare across positions, not just within one</strong> -- the single scale is what "
             'makes "two mid-WRs for one stud RB" a question you can actually answer.</li>'
             "</ul>"
             '<p style="color:var(--text-muted);font-size:14px;line-height:1.75;">New to dynasty values? Start '
@@ -13305,7 +13305,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         # Hide the skeleton and reveal the header/count for the pre-JS SSR view.
         # Must match the current #prLoading markup exactly: it's a .sk-list
         # skeleton (display:flex), so an inline display:none is required to beat
-        # the class — the old spinner-markup target silently no-op'd and left the
+        # the class -- the old spinner-markup target silently no-op'd and left the
         # skeleton stranded above the SSR table.
         body_html = body_html.replace(
             '<div id="prLoading" class="sk-list" role="status" aria-live="polite" aria-busy="true" style="margin-top:8px;">',
@@ -13414,7 +13414,7 @@ def page_prospects(platform: str, season: int, league_id: str):
 
 @app.route("/<platform>/<int:season>/<league_id>/metrics/og.png")
 def metrics_graph_og_image(platform: str, season: int, league_id: str):
-    """Social-share preview image for a shared advanced-metrics graph — a
+    """Social-share preview image for a shared advanced-metrics graph -- a
     headless screenshot of the graph rendered in og=1 mode. Falls back to the
     static logo if rendering is unavailable."""
     from dashboard_services.og_render import render_url_to_png
@@ -15416,7 +15416,7 @@ def page_schedule(platform: str, season: int, league_id: str):
 def _face_html(p: dict, tone: str) -> str:
     """Player headshot backed by a tone-tinted initial badge. The initial shows
     through when the headshot is missing/404s (onerror removes the img).
-    DEF/DST use the NFL team logo (local → ESPN) instead of a Sleeper headshot —
+    DEF/DST use the NFL team logo (local → ESPN) instead of a Sleeper headshot --
     defense ids are team abbreviations and have no player photo."""
     name = str(p.get("name") or "?").strip()
     initial = html.escape(name[0].upper() if name else "?")
@@ -15447,7 +15447,7 @@ def _face_html(p: dict, tone: str) -> str:
 
 def _player_row(p: dict, owner: str, team_label: str, ava_html: str,
                 tag: str, tone: str) -> str:
-    """tone: 'win' (sleeper) or 'loss' (bust) — drives the tokenized score color."""
+    """tone: 'win' (sleeper) or 'loss' (bust) -- drives the tokenized score color."""
     name = html.escape(str(p.get("name") or "Unknown"))
     pos = html.escape(str(p.get("pos") or "–"))
     nfl = html.escape(str(p.get("nfl") or ""))
@@ -15748,7 +15748,7 @@ def _build_next_week_ctx(
     except Exception:
         proj_by_pid = {}
 
-    # NFL teams playing next week — a starter whose team is absent is on bye.
+    # NFL teams playing next week -- a starter whose team is absent is on bye.
     try:
         from dashboard_services.matchups import build_team_schedule_lookup
         from utils.utils import load_week_schedule
@@ -16163,7 +16163,7 @@ def index():
     if not (next_url.startswith("/") and not next_url.startswith("//")):
         next_url = ""
 
-    # Signed-in users skip the guest landing page entirely — otherwise they'd see
+    # Signed-in users skip the guest landing page entirely -- otherwise they'd see
     # the logged-out "Get started" onboarding underneath their logged-in nav.
     # Send them to ?next= if provided, else their last league dashboard.
     # Google-only accounts have account_id without a Sleeper username.
@@ -16868,7 +16868,7 @@ def api_roster_grade():
     if not league_id or not viewer_roster_id:
         return jsonify({"error": "Missing required parameters"}), 400
 
-    # Same grades the Teams page already shows for free — keep one story.
+    # Same grades the Teams page already shows for free -- keep one story.
     try:
         ctx = get_league_ctx_from_cache(platform, league_id, season)
         grade_data = get_roster_grade(ctx, viewer_roster_id)
@@ -17708,7 +17708,7 @@ _LP_PAYLOAD_CACHE: dict = {}  # kdef(bool) -> {"ts": model_ts, "payload": dict}
 _LP_PAYLOAD_LOCK = threading.Lock()
 # Overlay = canonical projections + Market vs ADP + Hist, on a copy of the
 # memoized pool. Cached separately because that work used to run on every
-# /api/league-players hit even after the base pool was warm — the cheat sheet's
+# /api/league-players hit even after the base pool was warm -- the cheat sheet's
 # first paint paid it in full. Board JSON is the slim view=board body.
 _LP_OVERLAY_CACHE: dict = {}
 _LP_OVERLAY_LOCK = threading.Lock()
@@ -17747,7 +17747,7 @@ def _attach_adp_from_source(players, adp_season, source, league_id=None, token=N
     # BR Fantasy's raw avg_pick can't reach 1 (the No. 1 player still goes 5th in
     # some drafts, so the mean floats to ~3), so we show it as a clean 1..N draft
     # board. Rank it over the players WE actually list (this pool), not the whole
-    # crawl population — otherwise a crawl-only player nobody sees holds slot #1
+    # crawl population -- otherwise a crawl-only player nobody sees holds slot #1
     # and the top player we show reads as #2. Same treatment for Live (7d).
     _brf = (source in ("brfantasy", "brfantasy_live"))
     _pool_ids = {str(_p.get("id") or "") for _p in players}
@@ -18021,14 +18021,14 @@ def _build_league_players_payload(kdef: bool = False) -> dict:
     """Memoized wrapper around the (expensive) enriched player-pool build.
 
     The build re-reads model_values.json, injects pick values, derives redraft
-    values / rookies / birthdays / K-DEF / tier thresholds — non-trivial work
+    values / rookies / birthdays / K-DEF / tier thresholds -- non-trivial work
     that ran on EVERY /api/league-players hit (Draft Room load, Prospects, and
     the Teams-page draft-grades grader). The output is identical for all callers
     until the underlying values change, so memoize it.
 
     The cache is keyed on the model-value cache's timestamp, so it auto-
-    invalidates the moment values refresh — TTL expiry, the daily cron, or a
-    manual /api/flush-value-cache — with no coupling to those sites. Holding the
+    invalidates the moment values refresh -- TTL expiry, the daily cron, or a
+    manual /api/flush-value-cache -- with no coupling to those sites. Holding the
     lock across the build also collapses a thundering herd of concurrent first
     requests into a single rebuild.
     """
@@ -18041,7 +18041,7 @@ def _build_league_players_payload(kdef: bool = False) -> dict:
         # Also key on the global ADP snapshots' freshness: the per-source ADP
         # columns are baked into this payload and drop any source with no data at
         # build time, so a refresh that later populates ESPN/Yahoo/MFL must rebuild
-        # the payload — otherwise those columns stay missing until model values
+        # the payload -- otherwise those columns stay missing until model values
         # happen to change. Cheap (stat only). Best-effort: never block the build.
         try:
             from dashboard_services.adp_service import global_adp_snapshot_signature
@@ -18781,7 +18781,7 @@ def api_market_intel_health():
     and the projection-cache coverage the expected-ADP curve needs. It ends with
     a one-line ``diagnosis`` naming the first broken link, so an empty Market vs
     ADP column can be traced without opening the database. No secrets are
-    returned — only whether each is configured.
+    returned -- only whether each is configured.
 
     Requires ``X-Admin-Secret`` header matching ``ADMIN_SECRET``.
     """
@@ -18864,10 +18864,10 @@ def api_market_intel_health():
     _ppg_ok = int((out["projection_cache"] or {}).get("with_ppg") or 0) >= 2
 
     if not out["database_url_set"]:
-        out["diagnosis"] = "DATABASE_URL is not set — market intelligence is fully disabled."
+        out["diagnosis"] = "DATABASE_URL is not set -- market intelligence is fully disabled."
     elif _season_proj > 0 and not _ppg_ok:
         out["diagnosis"] = ("Season projections exist but Sleeper season PPG has no "
-                            "per-game values — expected_adp can't build its curve, so the column stays empty.")
+                            "per-game values -- expected_adp can't build its curve, so the column stays empty.")
     elif _season_proj > 0:
         out["diagnosis"] = ("Season fallback projections are present; Market vs ADP appears only for "
                             "players whose independent market confidence clears the display threshold.")
@@ -18875,16 +18875,16 @@ def api_market_intel_health():
         out["diagnosis"] = ("SportsGameOdds is not configured; baseline season projections remain safe, "
                             "but no independent weekly/team market context can be refreshed.")
     elif _season_snap == 0 and _weekly_any == 0:
-        out["diagnosis"] = ("No market data at all for this season — the refresh cron likely "
+        out["diagnosis"] = ("No market data at all for this season -- the refresh cron likely "
                             "hasn't run. Run scripts/refresh_market_intelligence.py.")
     elif _season_snap == 0 and _weekly_any > 0:
         out["diagnosis"] = ("Weekly market data exists; run the current refresh to materialize "
                             "team/rolling season fallback projections.")
     elif _season_proj == 0:
-        out["diagnosis"] = ("Season snapshots exist but no season projections were built — check "
+        out["diagnosis"] = ("Season snapshots exist but no season projections were built -- check "
                             "build_season_market_projection (needs a Sleeper season baseline).")
     else:
-        out["diagnosis"] = "Season market data and projections present — Market vs ADP should populate."
+        out["diagnosis"] = "Season market data and projections present -- Market vs ADP should populate."
 
     resp = jsonify(_sanitize_for_json(out))
     resp.headers["Cache-Control"] = "no-store"
@@ -19132,8 +19132,8 @@ def api_league_players():
 
     # Historical draft views pass ?season=<yr> so grades use the ADP OF THAT
     # SEASON (Sleeper's projections API is season-keyed; the crawl fallback too),
-    # not today's. We overlay onto a COPY so the shared memoized payload — which
-    # carries current-season ADP — is never mutated. Player value stays current
+    # not today's. We overlay onto a COPY so the shared memoized payload -- which
+    # carries current-season ADP -- is never mutated. Player value stays current
     # (no historical value snapshots exist), so only the ADP term is point-in-time.
     _cur_season = int((get_nfl_state() or {}).get("season") or datetime.now().year)
     _season_arg = request.args.get("season")
@@ -19218,8 +19218,8 @@ def api_league_players():
     # a CDN/browser retain a pre-contract or differently scored player payload.
     return _finish(payload)
     # SEASON (Sleeper's projections API is season-keyed; the crawl fallback too),
-    # not today's. We overlay onto a COPY so the shared memoized payload — which
-    # carries current-season ADP — is never mutated. Player value stays current
+    # not today's. We overlay onto a COPY so the shared memoized payload -- which
+    # carries current-season ADP -- is never mutated. Player value stays current
     # (no historical value snapshots exist), so only the ADP term is point-in-time.
     _cur_season = int((get_nfl_state() or {}).get("season") or datetime.now().year)
     _season_arg = request.args.get("season")
@@ -20125,7 +20125,7 @@ def api_player_details(player_id: str):
 
         # Sync league globals if league_id provided
         if league_id:
-            # sync_league_globals is a no-op for Sleeper — get_league() is what
+            # sync_league_globals is a no-op for Sleeper -- get_league() is what
             # populates the request-scoped scoring globals (incl. bonus_rec_te,
             # which TE-premium scaling reads). Without this the modal sees bare
             # defaults and never applies the TE premium.
@@ -20161,7 +20161,7 @@ def api_player_details(player_id: str):
         # in players_index. Synthesize a minimal meta so the modal can show the
         # team logo instead of 404ing.
         if not player_meta:
-            # Do not import canon_team here — a conditional import would make
+            # Do not import canon_team here -- a conditional import would make
             # it local for the whole handler and UnboundLocalError when this
             # DEF branch is skipped (found players).
             from utils.utils import def_team_logo_urls
@@ -20215,7 +20215,7 @@ def api_player_details(player_id: str):
                         _h["delta_from_prev"] = round(_h["delta_from_prev"] * _ratio_primary, 1)
 
         # Game logs are lazy-loaded by the Stats tab via /api/player-game-logs, so
-        # we deliberately DON'T build them here — doing so read ~100 MB of per-week
+        # we deliberately DON'T build them here -- doing so read ~100 MB of per-week
         # JSON on every modal open just to power a single "has any game logs"
         # boolean (rookie badge). Instead derive that boolean cheaply from the
         # per-season usage_rows files (one ~2 MB file per season, cached), which
@@ -20453,9 +20453,9 @@ def api_player_details(player_id: str):
 
         # TE-premium leagues make tight ends worth more. Scale a TE's value (and its
         # whole value history) so the modal shows the value as it counts in THIS
-        # league — consistent with the trade calculator / activity feed. No-op for
+        # league -- consistent with the trade calculator / activity feed. No-op for
         # non-TEs and non-TE-premium leagues. (player_value is the cached table row,
-        # so we never mutate it — the multiplier is applied as values are read out.)
+        # so we never mutate it -- the multiplier is applied as values are read out.)
         _modal_tep = te_premium_from_settings(scoring_settings)
         _modal_pos = str(player_meta.get("pos") or "").upper()
         _te_mult = (1.0 + _modal_tep * 0.20) if (_modal_tep and _modal_pos == "TE") else 1.0
@@ -20903,7 +20903,7 @@ def api_player_adp(player_id: str):
     """Market-source ADP (BR Fantasy, ESPN, Yahoo, MFL, Consensus) for one player.
 
     Split out of /api/player-details so the modal can open immediately on the
-    cheap Sleeper feed and pull these in afterward — BR Fantasy / Consensus need a
+    cheap Sleeper feed and pull these in afterward -- BR Fantasy / Consensus need a
     draft-crawler DB query and the global feeds are retrieved on miss (disk, then
     the shared DB, then a live fetch) the same way Sleeper is. ESPN/Yahoo/MFL
     are redraft-only global feeds and only contribute a Redraft value. Returns
@@ -20925,7 +20925,7 @@ def api_player_adp(player_id: str):
                     # averages those plotted values (rank + other source ADPs)
                     # for Cons, so (BR 2.0 + Sleeper 4.3) → Cons 3.2.
                     # fallback=False so an off-axis source shows nothing rather
-                    # than borrowing Sleeper's numbers — ESPN/Yahoo/MFL are
+                    # than borrowing Sleeper's numbers -- ESPN/Yahoo/MFL are
                     # redraft-only, so their dynasty cells must stay empty (not
                     # silently become Sleeper's ADP).
                     _mkt_cache[_key] = resolve_market_adp(
@@ -22023,7 +22023,7 @@ def _build_team_trends_html(league_id, season, week, roster_id, owner,
     nothing is available."""
     tiles = []
 
-    # #3 — seed movement this week (from the weekly results df; no snapshot).
+    # #3 -- seed movement this week (from the weekly results df; no snapshot).
     try:
         seed_mv = _standings_movement(df_weekly).get(str(owner))
         if seed_mv:
@@ -22038,7 +22038,7 @@ def _build_team_trends_html(league_id, season, week, roster_id, owner,
     except Exception:
         logger.debug("[team-trends] seed movement failed", exc_info=True)
 
-    # #1 — playoff-odds trend (read the weekly snapshots we now record).
+    # #1 -- playoff-odds trend (read the weekly snapshots we now record).
     try:
         from dashboard_services.playoff_odds_history import get_series as _po_series
         po = _po_series(league_id, season, roster_id)
@@ -22057,7 +22057,7 @@ def _build_team_trends_html(league_id, season, week, roster_id, owner,
     except Exception:
         logger.debug("[team-trends] playoff trend failed", exc_info=True)
 
-    # #4 — roster value over time (snapshot the current week, read the series).
+    # #4 -- roster value over time (snapshot the current week, read the series).
     try:
         from dashboard_services.team_value_history import record_and_series
         tv = record_and_series(league_id, season, week, roster_id,
@@ -22076,7 +22076,7 @@ def _build_team_trends_html(league_id, season, week, roster_id, owner,
     except Exception:
         logger.debug("[team-trends] value trend failed", exc_info=True)
 
-    # #5 — luck trend (cumulative actual-minus-expected wins, from the df).
+    # #5 -- luck trend (cumulative actual-minus-expected wins, from the df).
     try:
         luck_pts = _luck_series_for(df_weekly, owner)
         if len(luck_pts) >= 2:
@@ -22183,7 +22183,7 @@ def api_team_details(roster_id: str):
             1,
         )
 
-        # Playoff odds — warm-cache only so a cold Monte Carlo sim never blocks
+        # Playoff odds -- warm-cache only so a cold Monte Carlo sim never blocks
         # the modal paint. The tile stays hidden until the sim is warm, then
         # fills on the next open (mirrors how the hub playoff tile seeds).
         playoff_odds = None
@@ -22203,7 +22203,7 @@ def api_team_details(roster_id: str):
         values_by_id = {str(row["id"]): row for row in value_table if isinstance(row, dict) and row.get("id")}
 
         # Injury fields (status + body part) live only on the full Sleeper feed,
-        # not the compact index — pull it once so the modal can flag hurt players.
+        # not the compact index -- pull it once so the modal can flag hurt players.
         try:
             full_players = get_players_global() or {}
         except Exception:
@@ -22430,7 +22430,7 @@ def api_team_details(roster_id: str):
             except Exception:
                 logger.debug("suppressed exception", exc_info=True)
 
-        # Positional strength — redraft's answer to dynasty draft capital. Where
+        # Positional strength -- redraft's answer to dynasty draft capital. Where
         # a dynasty modal shows future picks, redraft has none, so surface how
         # this team's QB/RB/WR/TE rooms rank against the rest of the league using
         # the same calibrated composite that drives the Teams page grades.
@@ -22697,7 +22697,7 @@ def api_team_details(roster_id: str):
             # Continue without graph data
 
         # Team trends for the Graphs tab (seed movement, playoff odds, roster
-        # value, luck). Only in-season — when the graphs fell back to a prior
+        # value, luck). Only in-season -- when the graphs fell back to a prior
         # season, "this week" movement isn't meaningful. Best-effort throughout.
         trends_html = ""
         try:
@@ -22727,7 +22727,7 @@ def api_team_details(roster_id: str):
         # Real opponents for the schedule tab: every OTHER team in the league,
         # with its real roster_id, name, avatar, and player list (id/name/position).
         # The schedule pairings and scores are still mocked, but using real teams
-        # and players makes both clickable — a team opens its modal, a player
+        # and players makes both clickable -- a team opens its modal, a player
         # opens the player modal. Avatars replace the letter-circle placeholders.
         def _sched_player_list(r):
             out = []
@@ -22817,12 +22817,12 @@ def api_team_details(roster_id: str):
 @app.route("/api/player-league-trades/<player_id>")
 def api_player_league_trades(player_id: str):
     """
-    Trades involving this player inside the connected league — every season in
+    Trades involving this player inside the connected league -- every season in
     the league history chain. Includes counterparty team names and resolves
     drafted picks (e.g. 2026 1.04 → player) once that draft is complete.
 
     Query: platform, league_id, season, limit (default 50).
-    Free — same access model as the Trade Database.
+    Free -- same access model as the Trade Database.
     """
     try:
         from dashboard_services.player_league_trades import get_player_league_trades
@@ -23153,7 +23153,7 @@ def api_playoff_odds():
 
         # Movement arrows: each team's playoff-probability change (in points) vs
         # the most recent earlier daily snapshot. Date-based, so it works in the
-        # offseason too — a trade that shifts the odds shows a ▲/▼ the next day.
+        # offseason too -- a trade that shifts the odds shows a ▲/▼ the next day.
         # Snapshot only on a fresh sim (throttled by the 1h cache) so the table
         # isn't written on every view. Skipped for a finished season (rows read
         # Made/Missed, not a probability).
@@ -23165,7 +23165,7 @@ def api_playoff_odds():
                     league_id, season, odds, write=_fresh_sim)
             except Exception:
                 logger.debug("[playoff-odds] movement skipped", exc_info=True)
-        # Keep the weekly snapshot table populated in-season — it feeds the
+        # Keep the weekly snapshot table populated in-season -- it feeds the
         # team-modal playoff-odds sparkline (get_series), which is week-based.
         if not is_complete and current_week >= 1 and _fresh_sim:
             try:
@@ -23238,7 +23238,7 @@ def api_playoff_scenarios():
 
         state = build_sim_state(ctx, platform)
         if not state:
-            # Season complete or no schedule data — no live race to describe.
+            # Season complete or no schedule data -- no live race to describe.
             return jsonify({
                 "exact": False, "reason": "not_in_season",
                 "current_week": current_week, "teams": [],
@@ -24069,7 +24069,7 @@ def api_draft_grades():
                 })
             return rows
 
-        # This draft's actual lineups — Starters compares each team to these
+        # This draft's actual lineups -- Starters compares each team to these
         # peers, not a theoretical best-available field from the full pool.
         _league_teams = []
         if ps_ready and _dr_slots:
@@ -24139,7 +24139,7 @@ def api_draft_grades():
                 t["team_grade_letter"] = t["grade"]
 
         # Rank teams by the Draft-Room-aligned grade when available, then average
-        # pick score, then the letter grade — so ordering matches what the UI shows.
+        # pick score, then the letter grade -- so ordering matches what the UI shows.
         grade_order = {"A+": 5, "A": 4, "B": 3, "C": 2, "D": 1, "F": 0, "N/A": 2}
         results.sort(
             key=lambda x: (
@@ -24207,7 +24207,7 @@ def _deny_unless_trade_intel_premium():
     """403 the Trade Intel feed and history unless the viewer is PRO.
 
     Per-player market summaries (``/api/trade-intel/player``) and similar-trade
-    comps stay free — those back the labeled calculator. The trending feed and
+    comps stay free -- those back the labeled calculator. The trending feed and
     paginated trade history are the PRO product.
     """
     platform = request.args.get("platform") or session.get("last_platform") or "sleeper"
@@ -25185,7 +25185,7 @@ def _api_roster_intel_compute(ctx, league_type, viewer_rid_raw, fc_adp, season: 
     is_sf = (league_type or "").lower() == "sf"
 
     # Build value lookup keyed by player_id. Values AND position ranks must use
-    # the same format columns — otherwise a redraft league shows dynasty RB23.
+    # the same format columns -- otherwise a redraft league shows dynasty RB23.
     from utils.value_helpers import (
         format_rank_key as _fmt_rank_key,
         format_rank_label_key as _fmt_rank_lbl_key,
@@ -25284,7 +25284,7 @@ def _api_roster_intel_compute(ctx, league_type, viewer_rid_raw, fc_adp, season: 
         past_prime = (not redraft) and age > prime
         young = age > 0 and age <= 24
         # A dynasty "stash" is a young/rookie upside player you keep on the bench
-        # rather than cut — so below-replacement depth should never auto-cut them.
+        # rather than cut -- so below-replacement depth should never auto-cut them.
         rookie = int(years_exp_map.get(pid) or 99) <= 1
         stashable = (not redraft) and (young or rookie)
         prk = int(info.get("pos_rank") or 999)
@@ -25323,7 +25323,7 @@ def _api_roster_intel_compute(ctx, league_type, viewer_rid_raw, fc_adp, season: 
         if past_prime and prk > startable:
             return "Hold" if productive else "Cut"
 
-        # Elite, in-window starter — a keeper.
+        # Elite, in-window starter -- a keeper.
         if prk <= elite and not past_prime:
             return "Core"
 
@@ -25331,15 +25331,15 @@ def _api_roster_intel_compute(ctx, league_type, viewer_rid_raw, fc_adp, season: 
         if past_prime and prk <= startable:
             return "Sell High"  # aging starter still holding value
         if market_on and mkt_gap is not None and mkt_gap >= 5 and prk <= startable and not young:
-            return "Sell High"  # market over ours — sell the hype
+            return "Sell High"  # market over ours -- sell the hype
         if not past_prime and not young and prk <= elite and rank_chg >= 10:
-            return "Sell High"  # stud spiking — sell into momentum
+            return "Sell High"  # stud spiking -- sell into momentum
 
-        # Breakout — only if the player appears on the actual Breakout Engine page.
+        # Breakout -- only if the player appears on the actual Breakout Engine page.
         if not past_prime and pid in breakout_pids and prk <= depth:
             return "Breakout"
 
-        # Sleeper — our model well above the dynasty market; mid-tier only.
+        # Sleeper -- our model well above the dynasty market; mid-tier only.
         if market_on and mkt_gap is not None and mkt_gap <= -5 and elite < prk <= depth and not past_prime:
             return "Sleeper"
 
@@ -25523,7 +25523,7 @@ def api_trade_targets():
     Suggest trade acquisition targets for the viewer's team based on roster fit.
     Need detection uses starter-slot-weighted positional strength (same as Teams).
     Candidates are ranked by gap fill, what the viewer can pay, whether the
-    owner needs the viewer's surplus, and age window — not raw value — and
+    owner needs the viewer's surplus, and age window -- not raw value -- and
     returned as a mixed list so a TE-needy roster sees a reachable TE, not
     the same four elites every time.
     """
@@ -25585,7 +25585,7 @@ def api_trade_targets():
 
     # Per-roster positional value LISTS (not raw sums), so need detection ranks
     # teams with the same starter-slot-weighted strength the Teams page and share
-    # card use — a plain sum over-credits depth and misfires (a WR-deep team with
+    # card use -- a plain sum over-credits depth and misfires (a WR-deep team with
     # no elite WR looks "strong" and gets no WR targets).
     _rp_list = ctx.get("roster_positions") or []
     slot_counts = count_roster_positions(_rp_list)
@@ -26430,7 +26430,7 @@ def api_trade_intel_player_packages(player_id: str):
 
                 need_adj = max(-10, min(need_adj, 18))
 
-                # 4. Win/rebuild window — dynasty only. Redraft acceptance
+                # 4. Win/rebuild window -- dynasty only. Redraft acceptance
                 # is this-season need + value, not youth or future picks.
                 if not is_redraft:
                     grade_data = _roster_grade(owner_roster)
@@ -27849,7 +27849,7 @@ def build_portfolio_body(
         "white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}"
         ".pf-stat-label{font-size:11px;font-weight:600;color:var(--text-subtle);"
         "text-transform:uppercase;letter-spacing:.06em;margin-top:5px;}"
-        # color-win/loss were referenced but never defined — wire them to the theme.
+        # color-win/loss were referenced but never defined -- wire them to the theme.
         ".color-win{color:var(--win);}.color-loss{color:var(--loss);}"
         ".pf-arch{font-size:0.63em;font-weight:700;padding:2px 7px;border-radius:10px;"
         "color:#fff;white-space:nowrap;letter-spacing:.02em;}"
@@ -27899,7 +27899,7 @@ def build_portfolio_body(
         ".pf-league-type{text-align:right;padding-right:8px;white-space:nowrap;}"
         ".pf-streak{justify-content:center;}"
         # Mobile: the 5-column table is too cramped, so each league becomes a
-        # compact card — league name + type badge on one row, position-rank chips
+        # compact card -- league name + type badge on one row, position-rank chips
         # below. Record / Rank / Streak are dropped on mobile (they're 0-0 / ?
         # placeholders in the offseason and add clutter; the full table keeps them
         # on desktop). High-specificity selectors override the .standings-table
@@ -27911,7 +27911,7 @@ def build_portfolio_body(
         "column-gap:10px;border:1px solid var(--grid);border-radius:12px;background:var(--card);"
         "padding:12px 14px;margin-bottom:10px;}"
         ".pf-leagues-table tr.pf-league-row td{display:block;border:none;padding:0;}"
-        # Hide Record/Rank/Streak — selectors must out-specify the display:block above.
+        # Hide Record/Rank/Streak -- selectors must out-specify the display:block above.
         ".pf-leagues-table tr.pf-league-row td:nth-child(2),"
         ".pf-leagues-table tr.pf-league-row td:nth-child(3),"
         ".pf-leagues-table tr.pf-league-row td:nth-child(4){display:none;}"
@@ -27920,7 +27920,7 @@ def build_portfolio_body(
         ".pf-league-type{order:2;flex:0 0 auto;text-align:right;padding:0;}"
         ".pf-pos-chips{flex-basis:100%;gap:8px 14px;margin-top:9px;}"
         # Player Holdings: the 5-col table clips names on phones. Collapse each row
-        # into a card — badge + name/leagues + value — and drop the secondary Rank
+        # into a card -- badge + name/leagues + value -- and drop the secondary Rank
         # and Shares columns (the leagues list already conveys ownership breadth).
         "#pfTable thead{display:none;}"
         "#pfTable,#pfTable tbody{display:block;width:100%;}"
@@ -28008,7 +28008,7 @@ def build_portfolio_body(
         f"</div>"
     )
 
-    # Cross-league action digest (R04) — PRO-gated; filled async from /api/portfolio-actions.
+    # Cross-league action digest (R04) -- PRO-gated; filled async from /api/portfolio-actions.
     moves_card = (
         "<div class='card pf-moves-card' id='pfMovesCard' style='margin-bottom:14px;' hidden>"
         "<div class='card-header pf-moves-head'>"
@@ -28091,7 +28091,7 @@ def build_portfolio_body(
         )
 
     def _lg_tools(*extra):
-        # Favorite (+ optional unlink) only — archetype badge lives under the
+        # Favorite (+ optional unlink) only -- archetype badge lives under the
         # title so it can't collide with the star on narrow viewports.
         bits = "".join(x for x in extra if x)
         return (
@@ -28167,13 +28167,13 @@ def build_portfolio_body(
         name_link = f"<a href='{href}' class='pf-league-link pf-lg-name'>{name}</a>"
         name_muted = f"<span class='pf-lg-name' style='color:var(--text-muted);'>{name}</span>"
         # Presentational crest for the league card: initials + a stable hue from
-        # the name (no new data — derived from the league name we already show).
+        # the name (no new data -- derived from the league name we already show).
         _ini = html.escape("".join(w[0] for w in _raw_name.split()[:2]).upper() or "?")
         _crest_hue = f"hsl({sum(ord(c) for c in _raw_name) % 360} 52% 46%)"
 
         # Linked-but-not-drafted (or team-not-yet-linked) league: a normal pending
-        # state, so give it a proper row — name link, a soft status pill, a
-        # "practice in the Draft Room" nudge for pre-draft — instead of a bare
+        # state, so give it a proper row -- name link, a soft status pill, a
+        # "practice in the Draft Room" nudge for pre-draft -- instead of a bare
         # "unavailable" bar.
         if lg.get("pending"):
             reason = html.escape(lg.get("reason") or "Not drafted yet")
@@ -28218,7 +28218,7 @@ def build_portfolio_body(
                     )
             else:
                 countdown = ""
-                # "Team not linked yet" — open the link modal pointed at this
+                # "Team not linked yet" -- open the link modal pointed at this
                 # league's team picker so the user can set their team in one click
                 # (no re-typing the league id, and the right season is preserved).
                 _js_plat = html.escape(str(plat), quote=True)
@@ -28265,7 +28265,7 @@ def build_portfolio_body(
         rec_cls2 = "color-win" if wins > losses else ("color-loss" if losses > wins else "")
 
         # Standing as an ordinal place ("10th / 10") with a red flag for a
-        # bottom-third finish — a place reads more clearly than the old "10/10",
+        # bottom-third finish -- a place reads more clearly than the old "10/10",
         # which looked like a score.
         from utils.format import ord_suffix
         try:
@@ -28312,7 +28312,7 @@ def build_portfolio_body(
 
         # Position strength strip: the signature data of this app, promoted from
         # a grey footer line to four equal, quality-tinted chips. Rank quality
-        # carries in the tint alone — no "best" crown.
+        # carries in the tint alone -- no "best" crown.
         pos_ranks = lg.get("pos_user_rank") or {}
         strength_chips = ""
         for _pos in ["QB", "RB", "WR", "TE"]:
@@ -28492,7 +28492,7 @@ def build_portfolio_body(
         # projected final, and a win-probability bar (your share green, the
         # opponent's the remainder). Hydrated client-side (pfLiveScores); starts
         # as a skeleton, then swaps to scores or hides when not live. A neutral
-        # inset — not another bordered card — so it doesn't echo the
+        # inset -- not another bordered card -- so it doesn't echo the
         # Record/Standing/Streak row beneath it.
         ".pf-lg-live{border-radius:8px;padding:7px 9px 8px;"
         "background:color-mix(in srgb,var(--text-subtle) 9%,transparent);"
@@ -29255,7 +29255,7 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
         }
         _wc = _window_color_map.get(win_window, "#94a3b8")
 
-        # Canonical position palette — must match the JS POS_COLOR scheme used across
+        # Canonical position palette -- must match the JS POS_COLOR scheme used across
         # rankings, the draft room and the trade calculator (QB=blue, RB=green,
         # WR=amber, TE=purple). Kept in sync so a position reads as the same color
         # everywhere; the previous chart-only scheme colored WR blue (QB's color).
@@ -29453,7 +29453,7 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
 @app.route("/<platform>/<int:season>/<league_id>/share-card/og.png")
 @app.route("/<platform>/<int:season>/<league_id>/share-card/<roster_id>/og.png")
 def share_card_og_image(platform: str, season: int, league_id: str, roster_id: str = ""):
-    """Social-share preview image for a team report card — a screenshot of the
+    """Social-share preview image for a team report card -- a screenshot of the
     card's og=1 render mode, with a graceful fallback to the static logo."""
     from dashboard_services.og_render import render_url_to_png
     base = f"{request.host_url.rstrip('/')}/{platform}/{season}/{league_id}/share-card"
@@ -29697,7 +29697,7 @@ def page_trade_card(share_id: str):
             result.append({"name": _fmt_pick(pid), "val": round(val, 1)})
         return result
 
-    # Canonical position palette — must match the JS POS_COLOR scheme used across
+    # Canonical position palette -- must match the JS POS_COLOR scheme used across
     # rankings, the draft room and the trade calculator (QB=blue, RB=green,
     # WR=amber, TE=purple). Kept in sync so a position reads as the same color
     # everywhere; the previous chart-only scheme colored WR blue (QB's color).
@@ -29820,10 +29820,10 @@ def page_trade_card(share_id: str):
                 dlt = pi["delta"]
 
                 def _pi_sign(v):
-                    return (f'+{v:.1f}' if v > 0 else f'{v:.1f}') if v is not None else "—"
+                    return (f'+{v:.1f}' if v > 0 else f'{v:.1f}') if v is not None else "--"
 
                 def _pi_pct(v):
-                    return (f'+{v:.1f}%' if v > 0 else f'{v:.1f}%') if v is not None else "—"
+                    return (f'+{v:.1f}%' if v > 0 else f'{v:.1f}%') if v is not None else "--"
 
                 rows_pi = [
                     ("Playoff Odds", _pi_pct(dlt.get("playoff_pct"))),
@@ -29834,7 +29834,7 @@ def page_trade_card(share_id: str):
                     rows_pi.append(("Top-3 Pick", _pi_pct(dlt.get("top3_pick_pct"))))
                 cells = "".join(
                     f'<div class="pi-cell"><div class="pi-label">{lbl}</div>'
-                    f'<div class="pi-val {("pi-pos" if "+" in val else "pi-neg") if val != "—" else ""}">{val}</div></div>'
+                    f'<div class="pi-val {("pi-pos" if "+" in val else "pi-neg") if val != "--" else ""}">{val}</div></div>'
                     for lbl, val in rows_pi
                 )
                 pi_html = f"""
@@ -30075,7 +30075,7 @@ def page_trade_card(share_id: str):
 
 @app.route("/trade-card/<share_id>/og.png")
 def trade_card_og_image(share_id: str):
-    """Social-share preview image for a shared trade — a screenshot of the
+    """Social-share preview image for a shared trade -- a screenshot of the
     trade card's og=1 render mode. Falls back to the static logo if headless
     rendering is unavailable so share links never break."""
     from dashboard_services.og_render import render_url_to_png
@@ -30133,7 +30133,7 @@ def _notify_changelog_on_startup():
         link = latest.get("link", "/")
         # Title: prefer the entry's own headline (the short label before the first
         # colon, e.g. "Even It Out") over a generic tag word. iOS already shows
-        # "… from BR Fantasy" under the app name, so the title must NOT repeat it —
+        # "… from BR Fantasy" under the app name, so the title must NOT repeat it --
         # the old "BR Fantasy: New" rendered as "BR Fantasy: New from BR Fantasy".
         tag_labels = {"feature": "New feature", "new": "What's new", "fix": "Fix", "update": "Update"}
         title = tag_labels.get(tag, "Update")
@@ -30168,7 +30168,7 @@ def _notify_changelog_on_startup():
 
 
 # Run once at import time (gunicorn workers each run this, but the DB dedup prevents
-# duplicate sends — only the first worker to run wins the upsert race).
+# duplicate sends -- only the first worker to run wins the upsert race).
 _notify_changelog_on_startup()
 
 

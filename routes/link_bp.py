@@ -1,11 +1,11 @@
 """Link other platforms: attach ESPN / Yahoo leagues to the signed-in account.
 
 Flow the modal drives:
-  * ESPN  — GET /api/link/espn/preview?league_id=&season=  → {name, teams[]}
+  * ESPN  -- GET /api/link/espn/preview?league_id=&season=  → {name, teams[]}
             (no per-user discovery on ESPN, so the user picks their team)
-  * Yahoo — GET /api/link/yahoo/preview?league_id=&season= → {name, teams[], my_team_id}
+  * Yahoo -- GET /api/link/yahoo/preview?league_id=&season= → {name, teams[], my_team_id}
             (requires Yahoo OAuth; the user's team is auto-detected from the guid)
-  * both  — POST /api/link/add {platform, league_id, season, team_id, name}
+  * both  -- POST /api/link/add {platform, league_id, season, team_id, name}
             → writes a user_leagues row for the account
 
 Adding requires a signed-in account (session['account_id']); everything then
@@ -556,7 +556,7 @@ def link_yahoo_preview():
     except Exception as exc:
         logger.warning("[link/yahoo] preview failed: %s", exc)
         kind = yahoo_auth_error_kind(exc)
-        # Yahoo said token_expired even though our stored expires_at looked fine —
+        # Yahoo said token_expired even though our stored expires_at looked fine --
         # force a refresh once before bouncing the user through OAuth again.
         if kind == "expired" and guid:
             refreshed = get_valid_access_token(guid, force_refresh=True) or ""
@@ -586,7 +586,7 @@ def link_yahoo_preview():
 @link_bp.route("/api/link/pending", methods=["POST"])
 def link_pending():
     """Stash a league the user selected *before* signing in, then send them to
-    Google. The callback attaches it to the new account and drops them into it —
+    Google. The callback attaches it to the new account and drops them into it --
     the select-league-then-login onboarding order."""
     data = request.get_json(force=True) or {}
     platform = (data.get("platform") or "").strip().lower()

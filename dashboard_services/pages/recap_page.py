@@ -440,7 +440,7 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
               border:1px solid var(--accent);border-radius:8px;background:rgba(99,102,241,0.08);">
     <span style="font-size:18px;">👁️</span>
     <div style="font-size:13px;color:var(--text);">
-      <strong>Preview week</strong> — this is sample data, not your league’s results.
+      <strong>Preview week</strong> -- this is sample data, not your league’s results.
       Your real weekly recap will appear here after Week 1 completes.
     </div>
   </div>

@@ -192,7 +192,7 @@ def build_adjusted_season_projection(baseline_points: float, position: str,
         confidence = sum(i.confidence for i in usable_rolling) / len(usable_rolling)
         pct = max(-MAX_ROLLING_ADJUSTMENT, min(MAX_ROLLING_ADJUSTMENT, raw_pct))
         adjusted_rate = baseline_rate * (1.0 + pct * confidence)
-        # Only the remaining schedule is adjusted. This is role-rate evidence—not
+        # Only the remaining schedule is adjusted. This is role-rate evidence--not
         # a weekly line multiplied into a fabricated full-season sportsbook total.
         delta = (adjusted_rate - baseline_rate) * remaining_games * (1.0 - direct_coverage)
         adjustments["rolling_market_points"] = round(delta, 2)

@@ -127,7 +127,7 @@
             // never wider than the viewport.
             list.style.minWidth = rect.width + 'px';
             list.style.maxWidth = (vw - 16) + 'px';
-            // Clamp horizontally so the list can't run off either edge — it's
+            // Clamp horizontally so the list can't run off either edge -- it's
             // position:fixed and lives inside the right-aligned settings menu on
             // mobile, which pushed the league switcher's list off-screen.
             var lw = list.offsetWidth || rect.width;

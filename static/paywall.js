@@ -407,7 +407,7 @@ function _handleAlreadySubscribed(data, leagueId) {
   if (lid && typeof window.copyLeagueProInvite === 'function') {
     window.copyLeagueProInvite(platform, season, lid).then(function (ok) {
       if (ok && window.showToast) {
-        showToast('PRO is already on — invite link copied for your league mates.', 'success', 5000);
+        showToast('PRO is already on -- invite link copied for your league mates.', 'success', 5000);
       }
     });
   }

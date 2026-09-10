@@ -169,7 +169,7 @@ def canonicalize_usage_row(
 
     Returns None when the row cannot be identified as a skill-position
     player (no sleeper id, or position outside QB/RB/WR/TE after identity
-    join). Kickers/IDP are dropped — they are not part of this warehouse.
+    join). Kickers/IDP are dropped -- they are not part of this warehouse.
     """
     identity = identity or {}
     usage = raw.get("usage") if isinstance(raw.get("usage"), dict) else {}

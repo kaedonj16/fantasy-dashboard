@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 advanced_metrics_bp = Blueprint("advanced_metrics_bp", __name__)
 
-# Module-local caches (moved verbatim from app.py — used only by these handlers).
+# Module-local caches (moved verbatim from app.py -- used only by these handlers).
 _ADVANCED_METRICS_TTL = 600
 _ROLE_PLAYERS_CACHE: dict = {}
 _ROLE_PLAYERS_CACHE_TS: dict = {}
@@ -190,7 +190,7 @@ def api_advanced_metrics_leaderboard():
         "players": players,
     })
     # Leaderboard data is rebuilt at most daily, so let the browser reuse the
-    # response for a few minutes — makes graph reopens / metric toggles instant
+    # response for a few minutes -- makes graph reopens / metric toggles instant
     # even across page reloads within a session.
     resp.headers["Cache-Control"] = "private, max-age=300"
     return resp
@@ -225,7 +225,7 @@ def api_advanced_metrics_config():
     Cached with a long TTL since the config only changes with deploys.
     """
     from data_building.advanced_metrics import LEADERBOARD_METRICS, ADV_WEEKLY_METRIC_KEYS
-    from data_building.advanced_metrics import _WEEKLY_METRICS  # noqa: F401 — weekly_capable check
+    from data_building.advanced_metrics import _WEEKLY_METRICS  # noqa: F401 -- weekly_capable check
     weekly_keys = {*_WEEKLY_METRICS.keys(), *ADV_WEEKLY_METRIC_KEYS}
     out = {}
     for key, spec in LEADERBOARD_METRICS.items():

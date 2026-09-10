@@ -189,7 +189,7 @@ def _asset_values(row: Any, *, is_sf: bool, is_redraft: bool) -> Tuple[float, fl
     """Return ``(match_value, redraft_value)`` for suggestion math.
 
     Dynasty leagues match on long-term ``value`` / ``sf_value``. Redraft leagues
-    must match on ``redraft_value_*`` — otherwise a high-dynasty rookie (Makai
+    must match on ``redraft_value_*`` -- otherwise a high-dynasty rookie (Makai
     Lemon) looks like a fair 1-for-1 for a win-now veteran (Javonte Williams)
     even though the trade calculator, using redraft columns, shows a 400+ gap.
     """
@@ -551,7 +551,7 @@ def _suggestion_rank(r: Dict[str, Any]) -> float:
 # win% from another stud WR/RB who starts in FLEX. Scarcity used to bury QB/TE
 # even when replacing a 14-point QB room would move the needle; the opposite
 # overcorrection (reserved hole slots + a 0.80 strength penalty) buried those
-# high-rise adds. Need is now a small bottom-half boost only — never a penalty
+# high-rise adds. Need is now a small bottom-half boost only -- never a penalty
 # on a strength, never a reserved seat that jumps a low-rise TE over Chase Brown.
 
 _NEED_POS_ORDER = ("QB", "RB", "WR", "TE")
@@ -614,7 +614,7 @@ def _viewer_pos_league_ranks(
 def _need_multiplier(rank: Optional[int], n_field: int) -> float:
     """Mild hole boost from league rank (1 = best). Top half stays 1.0.
 
-    Last place gets ``_NEED_MULT_WORST``. A stacked room is never penalized —
+    Last place gets ``_NEED_MULT_WORST``. A stacked room is never penalized --
     Contending can still get its best rise from a position the team is heavy at.
     """
     if not rank or n_field <= 1:
@@ -654,7 +654,7 @@ def _select_varied_slate(
     """Pick a varied slate in score order.
 
     One player per (owner, position), at most ``max_per_pos`` per position.
-    No reserved seats — a low-rise hole does not jump a high-rise add at a
+    No reserved seats -- a low-rise hole does not jump a high-rise add at a
     strength. Falls back to filling remaining slots if the caps leave it thin.
     """
     scored = sorted(scored, key=lambda x: x[0], reverse=True)
@@ -2012,7 +2012,7 @@ def _get_archetype_suggestions_impl(
 
     # ── Build values_by_id ────────────────────────────────────────────────────
     # ``value`` is the column packages are matched on. In redraft it must be
-    # current-season production, not dynasty — otherwise a high-dynasty rookie
+    # current-season production, not dynasty -- otherwise a high-dynasty rookie
     # is offered as "fair" for a win-now veteran the calculator prices 5× higher.
     is_sf = league_type == "sf"
     score_ctx = ctx if ctx.get("platform") else {**ctx, "platform": platform}
@@ -2354,7 +2354,7 @@ def _get_archetype_suggestions_impl(
 
     # A "lone stud": the viewer's single best asset when it stands clearly clear
     # of the rest. Consolidation spends the depth AROUND it, never the stud
-    # itself — packaging your one irreplaceable player to move up a tier is a
+    # itself -- packaging your one irreplaceable player to move up a tier is a
     # lateral swap, not a consolidation. Affordability and the send pool below
     # therefore exclude it, which steers a one-stud team to targets it can reach
     # by bundling surplus (the young mid WRs) instead of shipping its cornerstone.
@@ -2417,7 +2417,7 @@ def _get_archetype_suggestions_impl(
             _viewer_best_rank[_pp] = _rr
             _viewer_best_val[_pp] = _f(_vv.get("value"))
 
-    # League rank of the viewer's positional rooms (1 = best) — same numbers
+    # League rank of the viewer's positional rooms (1 = best) -- same numbers
     # the Teams page shows. Used as a mild last-place tiebreaker only.
     _n_field = max(1, len(rosters))
     _viewer_league_ranks = _viewer_pos_league_ranks(

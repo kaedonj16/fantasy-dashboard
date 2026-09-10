@@ -243,7 +243,7 @@ def team_avatar(platform, roster: dict, users: list[dict]) -> Union[str, None]:
     if umeta.get("avatar"):
         return umeta["avatar"]
 
-    # A real profile picture beats the generated crest — a manager who set a
+    # A real profile picture beats the generated crest -- a manager who set a
     # profile pic but no custom team avatar should show their pic, not a monogram.
     profile_id = u.get("avatar") if u else None
     if profile_id:
@@ -334,7 +334,7 @@ def sleeper_league_exists(league_id: str) -> bool | None:
 
 
 def get_provider_scoring_settings() -> Dict[str, float]:
-    """Scoring keys the provider actually published — no ESPN PPR defaults.
+    """Scoring keys the provider actually published -- no ESPN PPR defaults.
 
     ``get_effective_scoring_settings`` overlays ``SCORING_DEFAULTS``
     (``pointsPerReception: 1``). That turns a Fleaflicker standard league
@@ -350,7 +350,7 @@ def get_normalized_scoring_settings(
 
     ESPN / Yahoo / Fleaflicker / MFL use the provider's published rules.
     Sleeper uses the league object. Never overlay ``SCORING_DEFAULTS``
-    (PPR, 1 pt/completion) — those are ESPN-shaped holes, not league settings.
+    (PPR, 1 pt/completion) -- those are ESPN-shaped holes, not league settings.
     """
     from utils.league_scoring import normalize_league_scoring
     plat = (platform or "").strip().lower() or "unknown"
@@ -676,7 +676,7 @@ def _previous_league_id(league: dict) -> str:
 
 
 def _probe_same_id_history(platform: str, league_id: str, season: int) -> dict[int, str]:
-    """Providers that reuse one league id across years — probe prior seasons.
+    """Providers that reuse one league id across years -- probe prior seasons.
 
     Stops after two consecutive misses so a first-year league doesn't hammer
     a decade of 404s. The requested season is always included.

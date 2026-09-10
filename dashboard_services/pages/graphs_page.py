@@ -810,7 +810,7 @@ COLOR_CYCLE = [
 # These build the full /graphs page body. They take every app-level input as a
 # parameter (the current league context, the completed-season list, a context
 # provider for other seasons, the live value table, and the prebuilt page URL)
-# so this module never imports app.py — the route wires the accessors in.
+# so this module never imports app.py -- the route wires the accessors in.
 
 def build_tour_mock_graphs_ctx(df_weekly) -> dict:
     """Graphs ctx for the tour/demo, from a pre-built mock weekly frame."""

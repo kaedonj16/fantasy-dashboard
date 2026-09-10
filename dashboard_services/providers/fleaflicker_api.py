@@ -4,7 +4,7 @@ Raw upstream names stay in this module. Public methods return the existing
 Sleeper-compatible dictionaries consumed by BR Fantasy.
 
 Public leagues need no auth. Private leagues use the undocumented ``/api/Login``
-token, passed in the ``Authorization`` header. Passwords are never stored —
+token, passed in the ``Authorization`` header. Passwords are never stored --
 only the returned token is retained (encrypted by the accounts layer).
 """
 from __future__ import annotations
@@ -55,7 +55,7 @@ _HEADERS = {
     "Referer": "https://www.fleaflicker.com/",
 }
 # Endpoints whose OpenAPI signatures do not take ``season``. Passing one
-# returns HTML 400, which we used to surface as a generic outage — and
+# returns HTML 400, which we used to surface as a generic outage -- and
 # ``get_transactions_by_week`` then printed that error 18 times.
 _NO_SEASON = frozenset({
     "FetchLeagueRules",
@@ -285,7 +285,7 @@ def _flea_dst_canonical(pro: dict) -> Optional[str]:
     """Sleeper-style DEF id (team code like ``SF``) for a Fleaflicker D/ST.
 
     App-wide the canonical id for a defense is its NFL team code (WAS, JAX,
-    LAR) — the same key ``teams_index`` and the team logos use. Fleaflicker
+    LAR) -- the same key ``teams_index`` and the team logos use. Fleaflicker
     joins by ``proPlayer.id`` / full name, which never matches a Sleeper
     defense entry, so plain name resolution dropped every D/ST from matchups
     and rosters. Map the team directly instead, the same way ESPN does.
@@ -440,7 +440,7 @@ def _pick_canonical(
 
     ``players_index`` has duplicate names (Lamar Jackson QB BAL vs CB ATL,
     DeVonta Smith WR PHI vs CB CAR, Josh Allen QB BUF vs DE JAX). Prefer
-    exact position + NFL team, then position, then the matching team —
+    exact position + NFL team, then position, then the matching team --
     never the IDP namesake that used to paint Lamar as IDP / FA.
     """
     if not name:
@@ -645,7 +645,7 @@ def login(email: str, password: str) -> str:
     failure = payload.get("failure")
     if failure:
         # LOGIN_CAPTCHA_REQUIRED / unknown ids still mean the user cannot proceed
-        # with password auth — surface as auth, not as a generic outage.
+        # with password auth -- surface as auth, not as a generic outage.
         raise ProviderAuthenticationError("Fleaflicker rejected that email or password.")
     user = payload.get("user") or {}
     token = normalize_auth_token(user.get("token") if isinstance(user, dict) else "")
@@ -703,7 +703,7 @@ def _fleaflicker_draft_status(league: Optional[dict]) -> str:
 
     The protobuf default is ``NOT_YET_DRAFTED`` and is omitted from JSON, so a
     league that has not drafted yet arrives with no field. Treat that as
-    pre-draft — never as an empty string that later looks like ``complete``.
+    pre-draft -- never as an empty string that later looks like ``complete``.
     """
     raw = _get(league or {}, "draft_status", "draftStatus")
     status = str(raw or "").strip().upper()
@@ -893,7 +893,7 @@ class FleaflickerProvider(ProviderAdapter):
         league = (standings or {}).get("league") or {}
         teams = self._teams_from_standings(standings or {})
         # Early / rolled season: season-specific standings can 404 or come back
-        # empty before Fleaflicker opens that year — retry without season.
+        # empty before Fleaflicker opens that year -- retry without season.
         if not league and not teams:
             standings = self._call(
                 "FetchLeagueStandings", league_id, season, ttl=1800, token=token,
@@ -1853,7 +1853,7 @@ class FleaflickerProvider(ProviderAdapter):
                     continue
                 positions = _flea_rule_positions(rule)
                 if positions and not (positions & _FLEA_SKILL_POS):
-                    # D/ST / K exceptions are not the league reception rate —
+                    # D/ST / K exceptions are not the league reception rate --
                     # same class of bug as ESPN pointsOverrides["16"].
                     continue
                 if key == "rec":

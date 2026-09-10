@@ -4,9 +4,9 @@ A shared helper so every record/achievement board renders the same podium marks
 as the All-Time Standings table: a gold "1", a muted "2", a bronze "3", and a
 plain bordered chip for the rest. The marks are styled by shared classes in
 dashboard.css (.rank / .rank-first / .rank-second / .rank-third / .rank-plain),
-so callers just drop the returned string into a cell — no inline SVG.
+so callers just drop the returned string into a cell -- no inline SVG.
 
-Deliberately NOT used on value boards — value fluctuates, so there's no
+Deliberately NOT used on value boards -- value fluctuates, so there's no
 meaningful "first place" to crown.
 """
 from __future__ import annotations
@@ -23,7 +23,7 @@ def rank_mark(rank, size: int = 36, wrap: bool = True, ring_others: bool = True)
     """Return an All-Time-Standings rank chip for a leaderboard row.
 
     Ranks 1/2/3 render as the gold/grey/bronze numerals and 4+ as a bordered
-    `.rank-plain` chip — the same flat marks the All-Time Standings table uses.
+    `.rank-plain` chip -- the same flat marks the All-Time Standings table uses.
     `rank` may be an int or anything int-coercible; a non-numeric rank falls back
     to the original text in a plain chip. `wrap` centers the chip in a fixed-width
     flex box so table columns line up; `size` sets that box's min width. `ring_others`

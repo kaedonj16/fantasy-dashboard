@@ -9,9 +9,9 @@
 // These mirror the corresponding helpers in static/draft_room.js exactly
 // (redraftVal / valOf / adpOf / computeReplacement / ppg scale / tierOf); keep
 // them in lockstep. Replacement and the PPG scale both anchor on the empirical
-// starter allocation (effectiveStarters / empiricalSlotAllocation) — the same
+// starter allocation (effectiveStarters / empiricalSlotAllocation) -- the same
 // best-available-fills-each-slot index the server grade uses
-// (utils.pick_score.empirical_slot_allocation) — which is what lets the two
+// (utils.pick_score.empirical_slot_allocation) -- which is what lets the two
 // surfaces agree. starterCounts remains the fallback when a pool isn't available.
 (function (root, factory) {
     var api = factory(root);
@@ -156,7 +156,7 @@
         return p._radp != null ? Number(p._radp) : null;   // value-derived redraft rank
     }
 
-    // One source's ADP on the current dynasty/redraft × 1QB/SF axis — the same
+    // One source's ADP on the current dynasty/redraft × 1QB/SF axis -- the same
     // fields the Player Rankings ADP columns read from p.adp_by_source.
     function sourceAdpOf(p, source, mode, sf) {
         var by = p && p.adp_by_source && p.adp_by_source[source];
@@ -934,7 +934,7 @@
         }
 
         // Keepers sit on the roster before the draft clock starts. Only the
-        // viewer's keepers count toward reconstruction — rivals are taken but
+        // viewer's keepers count toward reconstruction -- rivals are taken but
         // not on my roster. Skip when viewer roster is unknown.
         var myKeepers = [];
         if (typeof o.myKeepers === 'function') {
@@ -1300,7 +1300,7 @@
 
     // Deep Dive "reach" vs leftover ADP. Historical ADP is a mean across full
     // drafts, so after picks 1–8 the best remaining player often has ADP 11 at
-    // pick 9 — a cluster, not a reach. Remaining-board BPA (and a tight ADP
+    // pick 9 -- a cluster, not a reach. Remaining-board BPA (and a tight ADP
     // cluster with no clear favorite) plus players who would not last to the
     // next pick are on-market. Raw Steal/Value (fell past ADP) is unchanged.
     var ADP_REACH_CLUSTER = 1.0;   // within this many ADP of the remaining #1 = co-BPA
@@ -1408,7 +1408,7 @@
     }
 
     // Auction nomination $ guidance (R02.3): normalize BR value onto a share of
-    // remaining budget per remaining roster slot. Explicitly labeled guidance —
+    // remaining budget per remaining roster slot. Explicitly labeled guidance --
     // not a predicted clearing price.
     function suggestAuctionBid(opts) {
         opts = opts || {};

@@ -79,7 +79,7 @@ CHANGELOG = [
     {
         "date": "2026-09-04",
         "tag": "update",
-        "text": "Trade Targets: suggestions rank players by roster fit — how much they upgrade your gap, whether you can pay, owner surplus, and age window — instead of always listing the top few at a weak position.",
+        "text": "Trade Targets: suggestions rank players by roster fit -- how much they upgrade your gap, whether you can pay, owner surplus, and age window -- instead of always listing the top few at a weak position.",
         "link": "/trade"
     },
     {

@@ -2,7 +2,7 @@
 
 Every rate carries ``sample_size``, ``season_range``, ``raw_rate``,
 ``smoothed_rate`` (empirical Bayes toward a broader prior), and a
-confidence label. Empty cohorts keep ``raw_rate=None`` — never a fake 0%.
+confidence label. Empty cohorts keep ``raw_rate=None`` -- never a fake 0%.
 A real 0% (n>0, 0 successes) is allowed.
 
 This module must stay dependency-free (no pandas, Flask, or I/O).
@@ -132,7 +132,7 @@ def make_share(
 ) -> dict:
     """Composition share (e.g. % of RB1 seasons at an age). Not a hit rate.
 
-    No Bayes shrink — a share of a finite hit population is not a binomial
+    No Bayes shrink -- a share of a finite hit population is not a binomial
     rate toward a position baseline. ``raw_rate`` aliases ``share`` so the
     on-disk record still has the standard keys; ``smoothed_rate`` equals
     ``raw_rate``.

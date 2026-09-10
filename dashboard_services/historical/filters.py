@@ -507,7 +507,7 @@ def scout_matching_players(
 ) -> list[dict]:
     """Board players whose stamped trend feats match the selected profile.
 
-    Authoritative Scout path — same predicates as historical cohort matching.
+    Authoritative Scout path -- same predicates as historical cohort matching.
     ``board_features`` maps player id → feature dict. Display only.
     """
     if not isinstance(board_features, Mapping) or not filters:

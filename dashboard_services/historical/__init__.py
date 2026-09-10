@@ -1,4 +1,4 @@
-"""Historical analytics — pure-logic surface for slim CI.
+"""Historical analytics -- pure-logic surface for slim CI.
 
 I/O lives in ``data_building.historical`` and ``data_building.external_data.player_history``.
 Do not import pandas or Flask from this package.

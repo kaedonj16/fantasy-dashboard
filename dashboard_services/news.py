@@ -31,8 +31,8 @@ _TIMEOUT = 6
 # ── Reddit source ─────────────────────────────────────────────────────────────
 # r/nfl and r/fantasyfootball are the two most reliable NFL subs (r/nfl in
 # particular only allows reputable sources and flairs verified reporters). We
-# search both, then keep only community-vetted *link* posts — external articles
-# the community upvoted — and drop self/text posts (random opinions). This is the
+# search both, then keep only community-vetted *link* posts -- external articles
+# the community upvoted -- and drop self/text posts (random opinions). This is the
 # "verified, not just random people" filter.
 _REDDIT_TTL = 900               # 15 min per player+subs
 _REDDIT_SUBS = "fantasyfootball+nfl"
@@ -41,7 +41,7 @@ _REDDIT_EXCLUDE_DOMAINS = ("redd.it", "reddit.com", "imgur", "i.redd", "v.redd")
 
 # ── Google News source ────────────────────────────────────────────────────────
 # Google News RSS aggregates beat-writer / local coverage (Jaguars Wire, The
-# Athletic, PFF, …) — the same reporting behind insider tweets, as linkable
+# Athletic, PFF, …) -- the same reporting behind insider tweets, as linkable
 # articles. Free, no API key. Parsed from RSS (stdlib XML), blended like Reddit.
 _GNEWS_TTL = 900                # 15 min per player
 _GNEWS_BASE = "https://news.google.com/rss/search"
@@ -238,7 +238,7 @@ async def _async_fetch_reddit(client, player_name: str, limit: int = 8) -> list:
 
 async def _async_fetch_reddit_hot(client, limit: int = 12) -> list:
     """Top community-vetted Reddit link posts of the day across r/nfl +
-    r/fantasyfootball (no player filter) — for the general activity feed. Never
+    r/fantasyfootball (no player filter) -- for the general activity feed. Never
     raises."""
     now = time.time()
     key = f"reddit_hot_{_REDDIT_SUBS}"
@@ -304,7 +304,7 @@ def _parse_gnews_item(item_el) -> dict:
 def _parse_gnews_xml(xml_text: str, require_substr: Optional[str] = None) -> list:
     """Parse a Google News RSS body into news items (newest-first). When
     ``require_substr`` is given (a player's last name) the headline must contain
-    it — the same precision guard the Reddit source uses."""
+    it -- the same precision guard the Reddit source uses."""
     import xml.etree.ElementTree as ET
     try:
         root = ET.fromstring(xml_text)
@@ -349,7 +349,7 @@ async def _async_fetch_gnews(client, player_name: str, limit: int = 6) -> list:
 
 
 async def _async_fetch_gnews_general(limit: int = 12) -> list:
-    """Recent general NFL coverage via Google News RSS — for the activity feed.
+    """Recent general NFL coverage via Google News RSS -- for the activity feed.
     Never raises."""
     import httpx
     now = time.time()
@@ -388,22 +388,22 @@ def _norm_title(t: str) -> str:
 # ── Near-duplicate detection (wire-story syndication) ────────────────────────
 # The same event ("Player re-signs with X") is republished by dozens of outlets
 # with different URLs and slightly reworded headlines, so exact url/title dedup
-# can't catch it. We reduce each headline to a "story signature" — significant
-# tokens, minus attribution boilerplate, lightly stemmed — and treat two items as
+# can't catch it. We reduce each headline to a "story signature" -- significant
+# tokens, minus attribution boilerplate, lightly stemmed -- and treat two items as
 # the same story when their signatures overlap past a threshold.
 _NEWS_STOP = {
     "the", "a", "an", "to", "on", "in", "of", "for", "and", "or", "is", "are",
     "was", "were", "be", "been", "at", "by", "with", "as", "his", "her", "he",
     "she", "it", "its", "that", "this", "from", "up", "out", "off", "not", "no",
     "new", "now", "will", "has", "have", "back",
-    # attribution / wire boilerplate — not part of the story itself
+    # attribution / wire boilerplate -- not part of the story itself
     "say", "says", "said", "source", "sources", "report", "reports", "reported",
     "per", "via", "amid", "after", "before", "who", "what", "how", "why",
     "espn", "ap", "pff", "nfl", "update", "news", "sr", "jr",
 }
 
 # Foreign ESPN editions (and the like) that just re-run US NFL wire copy. Dropped
-# outright — they never add reporting the US feeds don't already carry.
+# outright -- they never add reporting the US feeds don't already carry.
 _LOW_SIGNAL_SRC = re.compile(
     r"espn\s+(deportes|philippines|africa|uk|australia|brasil|brazil|india|"
     r"mexico|argentina|colombia|chile|nederland)",
@@ -433,7 +433,7 @@ def _same_story(a: frozenset, b: frozenset) -> bool:
     over-merging: an item with too little signal (shared player name only) never
     trips the threshold."""
     if len(a) < 3 or len(b) < 3:
-        return False   # too little signal — leave it to exact dedup
+        return False   # too little signal -- leave it to exact dedup
     inter = len(a & b)
     if inter < 3:
         return False   # sharing only a name (2 tokens) is not "the same story"
@@ -615,10 +615,10 @@ def _run(coro):
 def get_player_news(player_name: str, espn_headshot: str = "", limit: int = 4) -> list:
     """
     Return up to `limit` recent news items for a player, blended from:
-      1. ESPN — the per-athlete feed (ID derived from the headshot URL), or a
+      1. ESPN -- the per-athlete feed (ID derived from the headshot URL), or a
          name-match against the general NFL feed when the athlete feed is empty.
-      2. Google News RSS — beat-writer / local coverage for the player.
-      3. Reddit — community-vetted link posts from r/fantasyfootball + r/nfl.
+      2. Google News RSS -- beat-writer / local coverage for the player.
+      3. Reddit -- community-vetted link posts from r/fantasyfootball + r/nfl.
 
     All three are merged, deduped (by destination URL and headline), and sorted
     by recency. ESPN wins dedupe ties, then Google News, then Reddit. Any source

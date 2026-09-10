@@ -494,7 +494,7 @@ def _pricing_body() -> str:
             except Exception:
                 logger.debug("suppressed exception", exc_info=True)
 
-        # Sanitize before embedding in HTML/JS — checkout already filters return_url,
+        # Sanitize before embedding in HTML/JS -- checkout already filters return_url,
         # but a crafted /pricing?success=1&return_to=https://evil link must not redirect.
         return_to = _safe_local_url(return_to, "/pricing")
         safe_return = html.escape(return_to) if return_to else ""
@@ -605,7 +605,7 @@ def _pricing_body() -> str:
         var btn = document.getElementById('sub-return');
         var showedInvite = showInvitePanel();
         if (btn) btn.style.display = 'inline-block';
-        // League buyers already got the invite moment here — tag the dashboard
+        // League buyers already got the invite moment here -- tag the dashboard
         // welcome as the feature CTA (no second invite), and suppress the
         // floating invite banner on arrival.
         if (leaguePlan) {{
@@ -674,7 +674,7 @@ def _pricing_body() -> str:
       </div>
       <div class="card-body" style="padding-top:28px;">
 
-        <!-- Feature list — must match static/paywall.js .paywall-features -->
+        <!-- Feature list -- must match static/paywall.js .paywall-features -->
         <div class="pricing-features-block">
           <div class="pricing-features-heading">What PRO includes</div>
           {_pricing_features_grid(_PRO_FEATURES)}
@@ -747,7 +747,7 @@ def _pricing_body() -> str:
         <!-- Free tier note -->
         <div style="text-align:center;font-size:13px;color:var(--text-muted);padding-top:12px;border-top:1px solid var(--border);">
           <i class="fa-solid fa-circle-info" style="margin-right:4px;"></i>
-          ADP rankings and basic player data are always free. One League unlocks PRO for you only — not your league mates.
+          ADP rankings and basic player data are always free. One League unlocks PRO for you only -- not your league mates.
         </div>
 
       </div>

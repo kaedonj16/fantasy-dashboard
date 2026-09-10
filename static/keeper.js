@@ -87,7 +87,7 @@
   }
   // Mirror of utils.keeper_value.resolve_cost_collisions: give every kept row a
   // unique cost round (one pick per round), bumping duplicates to the nearest
-  // open round — earlier (costlier) preferred — and re-pricing surplus/verdict.
+  // open round -- earlier (costlier) preferred -- and re-pricing surplus/verdict.
   // Records what moved (for the heads-up note). Mutates the kept rows in place.
   var lastBumps = [];
   function resolveCollisions(rows, r) {
@@ -116,7 +116,7 @@
   }
   function fmt(n) { return (n > 0 ? "+" : n < 0 ? "−" : "") + Math.abs(n) + " rd"; }
   function fmtAuction(n) {
-    if (n == null || n === "" || isNaN(Number(n))) return "—";
+    if (n == null || n === "" || isNaN(Number(n))) return "--";
     var v = Number(n);
     return "$" + (Math.round(v) === v ? String(Math.round(v)) : v.toFixed(2));
   }
@@ -311,7 +311,7 @@
       var pos = (row.p.pos || "").toUpperCase();
       var did = (row.p.draftedRound == null || row.p.draftedRound === "") ? "" : String(row.p.draftedRound);
       // Always an editable input (even for an auto-detected round) so a wrong
-      // value can always be corrected — it never locks into static text.
+      // value can always be corrected -- it never locks into static text.
       var draftedTxt = '<input class="kpr-drnd" type="number" min="1" data-id="' + esc(row.p.id) +
         '" placeholder="R?" value="' + esc(did) + '" aria-label="Drafted round">';
       draftedTxt += '<span class="kpr-dot">·</span>kept <input class="kpr-yrs" type="number" min="0" max="15" data-id="' +
@@ -344,7 +344,7 @@
 
   // Patch the derived columns of every row in place (matched by player id, so a
   // changed sort order doesn't matter) without touching the input cells. The
-  // table keeps its current row order while you edit — it re-sorts on the next
+  // table keeps its current row order while you edit -- it re-sorts on the next
   // full render (limit / rule change) so a row doesn't jump under your cursor.
   function patchTable(rows) {
     var mx = maxAbs(rows);
@@ -414,7 +414,7 @@
       var keptRows = compute().filter(function (r) { return r.keep; });
       var kept = keptRows.map(function (r) { return String(r.p.id); });
       // Carry each keeper's *resolved* cost round (after escalation + collision
-      // bumps) so the draft room spends the right pick — the server recomputes
+      // bumps) so the draft room spends the right pick -- the server recomputes
       // rival projections but can't know the per-player years-kept you entered.
       var keptDetail = keptRows.map(function (r) {
         var row = { id: String(r.p.id), costRound: r.cost, name: r.p.name, pos: r.p.pos };

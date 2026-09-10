@@ -5,7 +5,7 @@ Sleeper-compatible dictionaries consumed by BR Fantasy.
 
 Public leagues need no auth. Private leagues accept the official login cookie
 (``MFL_USER_ID``) and/or a league ``APIKEY``. Passwords used only to obtain a
-cookie are never stored — accounts persist the cookie and/or APIKEY encrypted.
+cookie are never stored -- accounts persist the cookie and/or APIKEY encrypted.
 """
 from __future__ import annotations
 
@@ -35,7 +35,7 @@ def _mfl_sleeper_league_type(raw_type: str) -> tuple[int, str]:
 
     MFL publishes values like ``Redraft``, ``Keeper``, ``Dynasty`` (casing
     varies). Without a numeric ``type``, ``_league_is_redraft`` used to treat
-    missing type as dynasty — so typical MFL redraft leagues got dynasty values.
+    missing type as dynasty -- so typical MFL redraft leagues got dynasty values.
     """
     t = str(raw_type or "redraft").strip().lower()
     if "dynasty" in t or t in ("d", "dyn"):
@@ -678,7 +678,7 @@ class MFLProvider(ProviderAdapter):
     def _positions(lg):
         """Parse MFL ``starters`` CSV into lineup slots.
 
-        Never fall back to ``rosterSize`` — that is often a bare number like
+        Never fall back to ``rosterSize`` -- that is often a bare number like
         ``"20"``, which becomes a fake slot and zeros out Proj% the same way
         empty ESPN ``roster_positions`` did.
         """

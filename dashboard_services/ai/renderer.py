@@ -67,7 +67,7 @@ def _gm_memo_fallback_html(team_ctx: dict) -> str:
     if pct is not None:
         bits.append(f"Playoff odds {html.escape(str(pct))}%.")
     if team_ctx.get("season_phase") == "preseason":
-        bits.append("Preseason — no games yet.")
+        bits.append("Preseason -- no games yet.")
     else:
         rec = str(team_ctx.get("record") or "").strip()
         if rec:

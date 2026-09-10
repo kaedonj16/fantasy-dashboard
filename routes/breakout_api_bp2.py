@@ -1,4 +1,4 @@
-"""Extracted from app.py — breakout_api_bp2 (see route list below)."""
+"""Extracted from app.py -- breakout_api_bp2 (see route list below)."""
 from __future__ import annotations
 import logging
 from flask import Blueprint, jsonify, request, session
@@ -54,7 +54,7 @@ def _map_in_season_breakouts(breakout_ids, players_index, values_by_id):
 def in_season_breakout_candidates(detect_fn, players_index, values_by_id):
     """In-season breakouts from the usage/engine detector only.
 
-    If detection fails, return [] — never substitute 7-day value risers.
+    If detection fails, return [] -- never substitute 7-day value risers.
     A price move is not a breakout.
     """
     try:
@@ -67,7 +67,7 @@ def in_season_breakout_candidates(detect_fn, players_index, values_by_id):
 
 @breakout_api_bp2.route("/api/breakout-candidates")
 def api_breakout_candidates():
-    """Alias of ``/api/breakout/candidates`` — same envelope, same 3-preview."""
+    """Alias of ``/api/breakout/candidates`` -- same envelope, same 3-preview."""
     from dashboard_services.breakout_api import candidates as canonical
     return canonical()
 
@@ -226,7 +226,7 @@ def api_calculate_breakout_scores():
         # Initialize engine. Pass the live Sleeper players feed so an injured
         # starter sitting ahead of a candidate on the depth chart boosts their
         # breakout (the same "starter in front got hurt" opening used for waiver
-        # targets). Best-effort — a missing feed just leaves the score as-is.
+        # targets). Best-effort -- a missing feed just leaves the score as-is.
         try:
             _full_players = get_players_global() or {}
         except Exception:

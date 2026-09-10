@@ -1,4 +1,4 @@
-// Player Rankings page module — extracted verbatim from the inline <script>
+// Player Rankings page module -- extracted verbatim from the inline <script>
 // in page_players (app.py) so the browser caches and minifies it instead of
 // re-downloading ~790 lines of inline JS on every rankings navigation.
 // Loaded deferred, after app.js and after the inline window.__leagueTePremium
@@ -64,7 +64,7 @@ var prAdpReloading = false;     // guards concurrent source re-fetches
 var prAdpColumns = [];          // [{value,label}] per-source ADP columns for the sort-by-ADP view
 var prAdpSortSource = '';       // which source column the ADP view is sorted by ('' = default)
 var PR_ADP_COL_W = 82;            // compact source columns; the table scrolls horizontally when every source is visible
-var PR_ADP_COL_W_MOBILE = 76;     // touch-friendly source cols — mobile scrolls instead of squeezing to fit
+var PR_ADP_COL_W_MOBILE = 76;     // touch-friendly source cols -- mobile scrolls instead of squeezing to fit
 var PR_ADP_RANK_W_MOBILE = 40;    // sticky # column width on mobile (must match CSS left offset)
 var PR_ADP_PLAYER_W_MOBILE = 132; // sticky Player column width on mobile
 
@@ -475,7 +475,7 @@ function prAdpSourceVal(p, src) {
 function prHasAdpColumns() { return Array.isArray(prAdpColumns) && prAdpColumns.length > 0; }
 // Per-source columns that actually carry a value on the CURRENT axis. ESPN/Yahoo/
 // MFL are redraft-only, so on the dynasty/rookie axes they hold no value and would
-// render as an all-dashes column — hide them instead of showing an empty column.
+// render as an all-dashes column -- hide them instead of showing an empty column.
 function prVisibleAdpColumns() {
   if (!prHasAdpColumns()) return [];
   const field = prAdpField();
@@ -486,7 +486,7 @@ function prVisibleAdpColumns() {
     }));
 }
 // The source the ADP view is currently sorted by (defaults to Consensus, else
-// first) — chosen among the columns visible on the current axis.
+// first) -- chosen among the columns visible on the current axis.
 function prActiveAdpSource() {
   const cols = prVisibleAdpColumns();
   if (!cols.length) return '';
@@ -633,7 +633,7 @@ function prFlipRender() {
   var sortBy = sortEl ? sortEl.value : '';
   // The ADP-source view rebuilds each row's grid (and often the overflow
   // scroller). FLIP-ing that layout change leaves rows translated inside the
-  // clip — the reorder that "gets stuck". Skip motion there; same-layout
+  // clip -- the reorder that "gets stuck". Skip motion there; same-layout
   // sorts (Value / Age / PPG / …) still glide.
   var adpLayout = sortBy === 'adp' || (list && list.querySelector('.pr-adp-mode'));
   if (!adpLayout && list && window.brFlipReorder) window.brFlipReorder(list, prRender);
@@ -710,7 +710,7 @@ function prRender() {
     });
   }
 
-  // In redraft mode exclude draft picks (not real players). Rookies stay —
+  // In redraft mode exclude draft picks (not real players). Rookies stay --
   // they play this season, so a rookie with a redraft value (e.g. a first-round
   // RB) belongs on the board. The value check below drops any rookie the model
   // has no redraft value for, so we only show ones that actually rank.
@@ -726,8 +726,8 @@ function prRender() {
   // Rank numbers ("#") are OVERALL ranks, computed from the full eligible pool
   // BEFORE the position filter (using the current sort). So filtering to a
   // position keeps each player on their overall rank (e.g. TE McBride shows his
-  // overall #, not #1) — which is what the overall movement arrow beside the #
-  // measures, so the two line up — and #s stay stable under search too.
+  // overall #, not #1) -- which is what the overall movement arrow beside the #
+  // measures, so the two line up -- and #s stay stable under search too.
   const _rankSort = (a, b) => {
     if (sortBy === 'age')       return (a.age != null ? a.age : 99) - (b.age != null ? b.age : 99);
     if (sortBy === 'adp')       { const aA = prGetAdpSortVal(a); const bA = prGetAdpSortVal(b); return (aA != null ? aA : 99999) - (bA != null ? bA : 99999); }
@@ -745,7 +745,7 @@ function prRender() {
       .forEach(p => { _rankMap.set(String(p.id), ++_rankIdx); });
   }
 
-  // Position filter (multi-select) — narrows which rows show, but each keeps the
+  // Position filter (multi-select) -- narrows which rows show, but each keeps the
   // overall rank number computed above.
   if (prPosFilters.has('ROOKIE')) {
     players = players.filter(p => p.is_rookie);
@@ -873,7 +873,7 @@ function prRender() {
 
     // Movement must match the ordering of the current view. We only track
     // dynasty value history, so:
-    //   • Redraft has no redraft-ordered movement — hide the arrow rather than
+    //   • Redraft has no redraft-ordered movement -- hide the arrow rather than
     //     show a mismatched dynasty delta on redraft-sorted rows.
     //   • Dynasty SF uses the SF-ordered delta (QBs move very differently in
     //     Superflex); Dynasty 1QB uses the 1QB delta.

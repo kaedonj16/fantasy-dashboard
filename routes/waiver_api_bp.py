@@ -137,7 +137,7 @@ def api_waiver_candidates():
 
     _rp_wv = ctx.get("roster_positions") or []
     # Pick the value column that matches this league's format (redraft vs
-    # dynasty, 1QB vs Superflex) — shared with the offseason/Season-Hub card so
+    # dynasty, 1QB vs Superflex) -- shared with the offseason/Season-Hub card so
     # both waiver surfaces rank and display off identical values.
     _vf_wv, _vfb_wv = _waiver_value_keys(ctx)
     _rk_wv = _waiver_rank_label_key(ctx)
@@ -246,7 +246,7 @@ def api_waiver_candidates():
     except Exception:
         logger.debug("suppressed exception", exc_info=True)
 
-    # Upcoming weekly projections — a player projected for ~0 points across the
+    # Upcoming weekly projections -- a player projected for ~0 points across the
     # next N weeks IS the projection provider's read on how long they're out, so
     # count the leading zero-run to get the injury timeline directly (#: weeks
     # out from projections rather than guessing from the injury label).
@@ -294,10 +294,10 @@ def api_waiver_candidates():
                 if _vid:
                     _injured_for_ppg.add(_vid)
 
-    # Season projected PPG — the *healthy* production of a role, used to value an
+    # Season projected PPG -- the *healthy* production of a role, used to value an
     # injury vacancy (the injured player projects ~0 while hurt, so their own
     # recent ppg understates the role). Only the injured players ahead of
-    # candidates need this — not the full players feed.
+    # candidates need this -- not the full players feed.
     _season_ppg_wv: dict = {}
     if _injured_for_ppg:
         try:
@@ -357,7 +357,7 @@ def api_waiver_candidates():
         return _weeks_out_from_projections(series)
 
     def _forward_ppg_wv(pid):
-        """Mean of a player's own upcoming (non-bye) weekly projections — a
+        """Mean of a player's own upcoming (non-bye) weekly projections -- a
         forward-looking production estimate (#1), better than backward ppg."""
         if not _future_week_projs_wv:
             return None
@@ -441,7 +441,7 @@ def api_waiver_candidates():
     # Attach every signal the shared scorer/labeler in utils.waiver_score reads,
     # so ranking + badge reflect: usage spikes, depth-chart injury vacancies
     # (proximity/volume/freshness weighted), the candidate's own health, roster
-    # need, and rest-of-season production — not just static dynasty value.
+    # need, and rest-of-season production -- not just static dynasty value.
     for c in candidates:
         # Safe defaults so a failed signal-join for one candidate can't 500 the
         # whole response (or the sort / result-building below that read these).
@@ -470,7 +470,7 @@ def api_waiver_candidates():
             c["healthy_ahead"] = _da.get("healthy_ahead") or 0
 
             # Handcuff upside (#8): the immediate backup to a healthy, high-usage
-            # starter is a valuable stash — if that starter goes down the role, and
+            # starter is a valuable stash -- if that starter goes down the role, and
             # the fantasy points, transfer wholesale. Only the direct #2 (exactly
             # one healthy body ahead) to an elite lead back earns it, scaled by that
             # starter's ROS production. RB-only: no other position concentrates a
@@ -512,7 +512,7 @@ def api_waiver_candidates():
             _self = _full_players_wv.get(c["player_id"]) or {}
             c["self_status"] = _self.get("injury_status") or _self.get("status") or ""
 
-            # Forward projected ppg for this candidate (#1) — used for production
+            # Forward projected ppg for this candidate (#1) -- used for production
             # and, via the transfer guard (#2), to fade injury upside taken.
             _fwd_ppg = _forward_ppg_wv(c["player_id"])
             c["own_proj_ppg"] = _fwd_ppg
@@ -566,7 +566,7 @@ def api_waiver_candidates():
     # money; a player who fills the viewer's own roster need is nudged up. A band
     # rather than a number because league budgets differ ($100 / $1000 / rolling);
     # the % reads the same regardless. Gated client-side on the league using FAAB.
-    # FAAB detection. Sleeper's waiver_type == 2 is NOT sufficient on its own —
+    # FAAB detection. Sleeper's waiver_type == 2 is NOT sufficient on its own --
     # rolling / waiver-priority leagues report the same code, so keying on it alone
     # showed a bid % to non-FAAB leagues. A genuine FAAB league always carries a
     # positive waiver_budget, so require both. ESPN uses an explicit acquisition
@@ -596,7 +596,7 @@ def api_waiver_candidates():
     # downgrade from the add, so the pairing is always a genuine upgrade. Needs
     # the viewer's roster, passed as ?rid= (the shared page cache means the client
     # supplies it, matching the window._viewerRid personalization pattern).
-    # Only surface drops when the active roster is full — otherwise they can add
+    # Only surface drops when the active roster is full -- otherwise they can add
     # without cutting anyone.
     _rid = (request.args.get("rid") or "").strip()
     _mvt_by_id = {str(r.get("id")): r for r in model_value_table
@@ -631,7 +631,7 @@ def api_waiver_candidates():
             pos = str(row.get("position") or meta.get("pos") or "").upper()
             name = row.get("name") or meta.get("name") or f"Player {pid}"
             _pos_counts[pos] = _pos_counts.get(pos, 0) + 1
-            # Never suggest cutting a current-class rookie — those are usually
+            # Never suggest cutting a current-class rookie -- those are usually
             # deliberate stashes (dynasty picks / upside bench holds), not spare
             # parts. Keep them in the position counts (they do take a roster spot)
             # but out of the droppable pool.
@@ -648,7 +648,7 @@ def api_waiver_candidates():
         add_pos = _c.get("position") or ""
         elig = [d for d in _drop_pool if d["value"] < add_val]
         if not elig:
-            return None  # everyone you'd cut is worth more than the add — hold
+            return None  # everyone you'd cut is worth more than the add -- hold
         same_pos = [d for d in elig
                     if d["position"] == add_pos and _pos_counts.get(add_pos, 0) > _KEEP.get(add_pos, 3)]
         deep = [d for d in elig if _pos_counts.get(d["position"], 0) > _KEEP.get(d["position"], 3)]
@@ -797,7 +797,7 @@ def api_trending_adds():
         val_row = _mvt.get(pid) or {}
         # Skip players we can't resolve in our index anywhere (neither the league
         # players index nor the value table). These render as a nameless
-        # "Player 12345" card, which is noise — drop them entirely.
+        # "Player 12345" card, which is noise -- drop them entirely.
         if not meta and not val_row:
             continue
         pos = str(val_row.get("position") or meta.get("pos") or "").upper()

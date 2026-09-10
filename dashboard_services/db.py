@@ -13,7 +13,7 @@ from typing import Iterator
 logger = logging.getLogger(__name__)
 
 # psycopg is required to actually talk to the DB, but importing this module must
-# not fail without it — many pure-logic modules (and the CI base test suite)
+# not fail without it -- many pure-logic modules (and the CI base test suite)
 # import things that transitively pull in db.py without ever opening a
 # connection, and a hard import here would abort pytest collection for the whole
 # suite. Degrade to None; any real query path raises clearly at call time.
@@ -128,7 +128,7 @@ def _get_pool():
         if _pool is not None and _pool_pid == pid:
             return _pool
         # New process: build a fresh pool bound to this pid. Abandon (do NOT
-        # close) any inherited pool — closing would disturb the parent's sockets.
+        # close) any inherited pool -- closing would disturb the parent's sockets.
         max_size = int(os.getenv("DB_POOL_MAX", str(int(os.getenv("WEB_THREADS", "2")) + 2)))
         _pool = ConnectionPool(
             get_database_url(),

@@ -1,6 +1,6 @@
 """Yahoo live-draft companion: fetch draftresults and normalize picks.
 
-Uses the league OAuth token via ``yahoo_api.get_league_token``. Observe-only —
+Uses the league OAuth token via ``yahoo_api.get_league_token``. Observe-only --
 never submits picks to Yahoo. Mid-draft, Yahoo's draftresults resource grows;
 the desktop extension relay covers gaps and faster updates.
 """

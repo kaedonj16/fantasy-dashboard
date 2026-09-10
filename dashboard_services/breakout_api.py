@@ -20,7 +20,7 @@ from data_building.breakout_engine.db_helpers import opportunity_data_ready
 logger = logging.getLogger(__name__)
 
 # Board ranking blend. The fitted model can't weight opportunity for WRs (too few
-# labeled breakouts in existence — the coef clamps to 0), so opportunity-rich WRs
+# labeled breakouts in existence -- the coef clamps to 0), so opportunity-rich WRs
 # rank low despite obvious situations (a vacated WR1 role). Rank instead by a blend
 # of the opportunity-weighted aggregate breakout_score and the model's hit
 # probability, so opportunity counts while the model's readiness signal still
@@ -813,9 +813,9 @@ def get_breakout_candidates_by_position(
 def _breakout_ranks(season: int) -> Dict[str, Dict]:
     """Rank the candidates the modal shows 'TE #2 · #14 overall' against.
 
-    Ranks off the EXACT set the board renders — get_breakout_candidates already
+    Ranks off the EXACT set the board renders -- get_breakout_candidates already
     pins a single as_of_date, applies the same exclusions, and sorts by
-    (hit_probability, breakout_opportunity_score) desc — so the modal rank and the
+    (hit_probability, breakout_opportunity_score) desc -- so the modal rank and the
     on-page order can never diverge. (The old version ranked each player's latest
     row independently, which could pick rows from different dates and reorder two
     players relative to the board.)"""

@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 # hot request paths (trade eval, trade suggestions, rookie rankings). Callers
 # mutate the rows they get back (e.g. FC-zeroing in get_model_value_table_cached
 # sets p["value"]=0), so every call is handed an isolated copy of flat scalar
-# dicts — never the cached originals — preserving the "fresh list per call"
+# dicts -- never the cached originals -- preserving the "fresh list per call"
 # semantics the direct DB build used to provide.
 _CURRENT_VALUES_CACHE: Optional[list] = None
 _CURRENT_VALUES_CACHE_TS: float = 0.0
@@ -199,7 +199,7 @@ def get_values_as_of(
         league_size: int = 10,
 ) -> dict:
     """{player_id: value} from the most recent daily snapshot on or before
-    ``as_of_date`` — i.e. what every player was worth as of that date. Used to
+    ``as_of_date`` -- i.e. what every player was worth as of that date. Used to
     value a reconstructed past roster with the values that actually applied then.
     Returns {} when no snapshot exists at/*before* the date."""
     try:

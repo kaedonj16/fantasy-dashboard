@@ -1,6 +1,6 @@
 """Auto-generated hex team crests.
 
-A fallback identity mark for teams with no profile picture — a hex shield in a
+A fallback identity mark for teams with no profile picture -- a hex shield in a
 color derived from the team name, with a two-letter monogram taken from the
 *team name* (not the username). Deliberately a fallback only: callers show the
 real avatar when one exists and fall back to this otherwise, so a crest never
@@ -87,7 +87,7 @@ def team_crest_data_uri(name: str) -> str:
 
     Drawn on a 48×48 square canvas with the hex centered and sized to fit inside
     the inscribed circle, so the app's `border-radius:50%` avatar frame clips only
-    the transparent corners — the shield stays whole. Colors are pre-computed to
+    the transparent corners -- the shield stays whole. Colors are pre-computed to
     plain hex (no color-mix/currentColor), since an SVG loaded as an image renders
     without the page's CSS context.
     """

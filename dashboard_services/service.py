@@ -322,7 +322,7 @@ def finalize_team_stats(
 
     Shared by the season builder (build_tables) and the standings week-selector,
     so a "through week N" view is produced by simply passing a week-capped
-    ``df_finalized`` and ``last_week=N`` here — both paths agree by construction.
+    ``df_finalized`` and ``last_week=N`` here -- both paths agree by construction.
     """
     if df_finalized is None or getattr(df_finalized, "empty", True):
         seeded = _seed_zero_standings(owner_avatar)
@@ -928,7 +928,7 @@ def compute_week_opponents(matchups_week: Iterable[Dict[str, Any]]) -> List[Tupl
                 continue
             L = m["left"] or {}
             R = m["right"] or {}
-            # Prefer owner display name — team_strength / standings are keyed by it.
+            # Prefer owner display name -- team_strength / standings are keyed by it.
             a = L.get("name") or L.get("username") or L.get("roster_id")
             b = R.get("name") or R.get("username") or R.get("roster_id")
             if a is not None and b is not None:
@@ -1014,7 +1014,7 @@ def _norm_series(series) -> pd.Series:
 def build_team_strength(team_stats: pd.DataFrame) -> dict[str, float]:
     """0–1 opponent weights for SOS.
 
-    Uses season scoring (AVG) blended with win rate — more stable than
+    Uses season scoring (AVG) blended with win rate -- more stable than
     PowerScore, which already mixes Last3 recency and would make schedule
     difficulty chase hot/cold streaks.
     """

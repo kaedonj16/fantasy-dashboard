@@ -1,13 +1,13 @@
-/* BR Fantasy — minimal CSS pack for logged-out SEO / lite_js pages (R14.3).
+/* BR Fantasy -- minimal CSS pack for logged-out SEO / lite_js pages (R14.3).
    Covers page shell, typography, cards, tables, nav, and footer so public
    surfaces render cleanly without the full dashboard bundle.
 
    The landing page (`active == "home"`) uses landing_lite.css (this file plus
-   a home/ticker/connect extract) — not this pack alone.
+   a home/ticker/connect extract) -- not this pack alone.
 
    Guest pages still render the full chrome (dropdown pills, utility bar,
    mobile dock, More sheet). Those nodes must be styled here or they spill
-   unstyled onto the page — that was the logged-out nav collapse. */
+   unstyled onto the page -- that was the logged-out nav collapse. */
 
 @font-face {
     font-family: "Archivo";

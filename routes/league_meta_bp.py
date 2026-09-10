@@ -1,4 +1,4 @@
-"""Extracted from app.py — league_meta_bp (see route list below)."""
+"""Extracted from app.py -- league_meta_bp (see route list below)."""
 from __future__ import annotations
 import logging
 from datetime import datetime
@@ -17,7 +17,7 @@ league_meta_bp = Blueprint("league_meta_bp", __name__)
 
 # ── Lazy shims to app.py internals (resolved at request time) ──
 def format_sleeper_league_option(*a, **k):
-    # Lives in utils.league_payload (a pure module), not app.py — import it
+    # Lives in utils.league_payload (a pure module), not app.py -- import it
     # directly so the Sleeper league-option formatting doesn't depend on app
     # re-exporting the name (which it no longer does).
     from utils.league_payload import format_sleeper_league_option as _fn
@@ -134,7 +134,7 @@ def api_my_leagues():
         logger.warning("[my-leagues] resolve failed: %s", exc)
 
     resp = jsonify({"ok": True, "leagues": out})
-    # Account-scoped list must never be cached — leagues added on another device
+    # Account-scoped list must never be cached -- leagues added on another device
     # need to appear on the next refresh/tab focus here.
     resp.headers["Cache-Control"] = "no-store"
     return resp
@@ -315,7 +315,7 @@ def api_espn_debug():
     """Read-only diagnostics for a 'my private ESPN league won't load' report.
 
     Reports whether the server can see ESPN_S2 / ESPN_SWID (presence + length
-    only — never the values) and, if a league_id is given, the exact result of
+    only -- never the values) and, if a league_id is given, the exact result of
     trying to load it. Hit /api/espn-debug?league_id=<id>[&season=<yr>].
     """
     from dashboard_services.providers.espn_api import espn_diagnostics

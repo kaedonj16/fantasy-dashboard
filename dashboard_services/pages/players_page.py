@@ -1,6 +1,6 @@
 """Player Rankings (/players) page shell.
 
-The static HTML/CSS/JS for the rankings page — filters, skeleton, table header,
+The static HTML/CSS/JS for the rankings page -- filters, skeleton, table header,
 and styles. Extracted verbatim from app.py's page_players to shrink the monolith;
 the route still assembles the dynamic parts (server-rendered rows, SEO intro,
 TE-premium + league-context scripts) around this shell.
@@ -670,7 +670,7 @@ def build_players_shell() -> str:
         .pr-adp-mode .pr-adp-cell { font-size: 12px; }
       }
 
-      /* Sticky column header — keep the # / Player / Value labels visible while
+      /* Sticky column header -- keep the # / Player / Value labels visible while
          scrolling a long list (mock #3, annotation "Sticky header"). .card.central
          sets overflow:hidden, which would trap position:sticky, so this page opts
          its own card back into overflow:visible (nothing here needs the clip).

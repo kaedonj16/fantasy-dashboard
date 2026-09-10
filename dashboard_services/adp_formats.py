@@ -6,7 +6,7 @@ here is unit-testable in isolation. ``adp_service`` (the I/O half) re-exports th
 public names, so callers may import either module.
 
 The model exists so every normalized ADP datapoint records *exactly* what it
-represents — including the dimensions a source leaves unspecified. A source that
+represents -- including the dimensions a source leaves unspecified. A source that
 publishes one global ADP with no scoring split is recorded as ``ppr="unknown"``
 rather than being mislabelled PPR; a superflex request served from a 2QB feed is
 recorded as a ``compatible`` proxy rather than an ``exact`` superflex match. We
@@ -62,7 +62,7 @@ TEP_NONE = "none"        # no TE premium
 TEP_MODERATE = "moderate"  # a half-point-ish premium
 TEP_STRONG = "strong"      # a full-point-ish premium
 
-# (inclusive_low, exclusive_high, bucket) — a premium of exactly the boundary
+# (inclusive_low, exclusive_high, bucket) -- a premium of exactly the boundary
 # falls in the higher bucket's low edge. 0.25 and 0.75 are the midpoints between
 # the canonical 0 / 0.5 / 1.0 premiums.
 TEP_BUCKET_BOUNDS: Tuple[Tuple[float, float, str], ...] = (
@@ -266,7 +266,7 @@ SOURCE_CAPABILITIES: Dict[str, SourceCapability] = {
               "native TE-premium source.",
     ),
     # Same observed-draft capability as BR Fantasy, but limited to drafts from
-    # the past N days (Live ADP). Selector-only — never blended into Consensus
+    # the past N days (Live ADP). Selector-only -- never blended into Consensus
     # (that would double-count recent drafts already in season-long BR Fantasy).
     "brfantasy_live": SourceCapability(
         key="brfantasy_live", display_name="BR Fantasy Live (7d)", scope="observed",
@@ -366,7 +366,7 @@ def _ppr_match(requested: Union[float, str], offered: Union[float, str]) -> str:
 def _tep_match(requested: float, offered: Union[float, str]) -> str:
     if offered in (UNKNOWN, MIXED):
         # A feed that doesn't resolve TEP serves a no-TEP request fine, but for a
-        # TEP request it is only a non-TEP fallback — never an exact TEP match.
+        # TEP request it is only a non-TEP fallback -- never an exact TEP match.
         # We never manufacture TEP by moving tight ends up a non-TEP board.
         return COMPATIBLE if requested > 0 else EXACT
     try:
@@ -416,7 +416,7 @@ def classify_match(requested: AdpFormat, source: str) -> str:
     """Best match quality a whole source can offer the request.
 
     Returns one of exact | compatible | generic | excluded. This is the single
-    gate the consensus resolver uses to decide whether — and how strongly — to
+    gate the consensus resolver uses to decide whether -- and how strongly -- to
     trust a source for a given request.
     """
     cap = source_capability(source)

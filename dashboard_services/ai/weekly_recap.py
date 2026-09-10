@@ -233,7 +233,7 @@ _OUT_STATUSES = {"OUT", "IR", "DOUBTFUL", "PUP", "NFI", "SUSP"}
 _MAYBE_STATUSES = {"QUESTIONABLE", "Q"}
 
 # How the six signals combine into the game-of-the-week score. Every signal is
-# normalized to 0-1 first (below), so these weights — not raw scales — decide
+# normalized to 0-1 first (below), so these weights -- not raw scales -- decide
 # what wins. Stakes and closeness lead: what's on the line and whether it'll be
 # close is the heart of a great game.
 _SIGNAL_WEIGHTS = {
@@ -279,7 +279,7 @@ def _prior_series(
 
 
 def _all_play_strength(df_weekly: pd.DataFrame, upto_week: int) -> dict:
-    """{rid: all-play win pct in [0,1]} through ``upto_week`` — a
+    """{rid: all-play win pct in [0,1]} through ``upto_week`` -- a
     schedule-independent strength rating, far steadier than a W-L seed early in
     the year. A team that would beat most of the league every week rates high
     even if its head-to-head luck has been bad."""
@@ -381,7 +381,7 @@ def _regular_stakes(
     value = urgency * (prox_a + prox_b) / 2.0
     label: str | None = None
 
-    # Both teams straddling the cutline — a direct bubble game (weight by urgency).
+    # Both teams straddling the cutline -- a direct bubble game (weight by urgency).
     if abs(rank_a - cut) <= 1 and abs(rank_b - cut) <= 1:
         value = max(value, urgency * (1.0 if weeks_left_after == 0 else 0.75))
         label = "Win-and-in" if weeks_left_after == 0 else "Playoff bubble decider"
@@ -441,9 +441,9 @@ def _build_next_week_preview(
         num_teams: int,
         nctx: dict,
 ) -> dict | None:
-    """Score each of next week's matchups on six normalized signals — playoff
+    """Score each of next week's matchups on six normalized signals -- playoff
     stakes, projected closeness, team strength (all-play), a rivalry angle,
-    star-availability drama, and momentum — combine them with intentional
+    star-availability drama, and momentum -- combine them with intentional
     weights, and pick the game of the week. Records which signal drove the pick
     so the card and the AI can say *why*. Deterministic and data-grounded; the AI
     only narrates the choice."""

@@ -253,7 +253,7 @@ def _streak_from_outcomes(outcomes: Any) -> str:
 # ============================================================
 
 # Public League objects previously lived in @lru_cache for the whole process.
-# That froze empty pre-/mid-draft rosters until redeploy — Teams stayed blank
+# That froze empty pre-/mid-draft rosters until redeploy -- Teams stayed blank
 # after ESPN finished the draft. Short TTL + explicit clear on refresh.
 _PUBLIC_LEAGUE_TTL = 120  # seconds
 _public_league_cache: Dict[Tuple[int, str], Tuple[float, Any]] = {}
@@ -265,9 +265,9 @@ _public_league_lock = threading.Lock()
 # player modal's sync_league_globals path). Authenticated League objects are
 # cached separately, keyed by a credential fingerprint so one account never
 # reuses another's cookies.
-_ANON_DENIED_TTL = 300  # seconds — privacy of a league rarely flips mid-session
+_ANON_DENIED_TTL = 300  # seconds -- privacy of a league rarely flips mid-session
 _anon_denied_until: Dict[Tuple[int, str], float] = {}
-_AUTH_LEAGUE_TTL = 120  # seconds — same freshness window as public leagues
+_AUTH_LEAGUE_TTL = 120  # seconds -- same freshness window as public leagues
 _auth_league_cache: Dict[Tuple[int, str, str], Tuple[float, Any]] = {}
 _auth_league_lock = threading.Lock()
 _league_load_locks: Dict[Tuple[int, str], threading.Lock] = {}
@@ -335,7 +335,7 @@ def _mark_anonymous_denied(key: Tuple[int, str], *, via_attr_error: bool) -> Non
             expired = [k for k, until in _anon_denied_until.items() if until <= now]
             for k in expired:
                 _anon_denied_until.pop(k, None)
-    # Log once per denial window — concurrent dashboard + modal traffic used to
+    # Log once per denial window -- concurrent dashboard + modal traffic used to
     # emit dozens of identical INFO lines per second for the same private league.
     if via_attr_error and not already:
         logger.info(
@@ -373,7 +373,7 @@ def _public_league_cached(season: int, league_id: str) -> League:
         # Parallel dashboard tasks (league/users/rosters/drafts) all call
         # _league() on a cold private room. Without this re-check, each waiter
         # that acquired the lock after a 401 still paid another anonymous ESPN
-        # round-trip — switching leagues felt like it hung for tens of seconds.
+        # round-trip -- switching leagues felt like it hung for tens of seconds.
         if _anonymous_denied(key):
             raise ESPNAccessDenied("ESPN denied anonymous access to this league.")
         try:
@@ -448,7 +448,7 @@ def _resolve_espn_request_creds(
             stored = get_espn_league_credentials(session["account_id"], league_id, season) or {}
             # Prefer credentials attached to this saved league. If this league was
             # linked without cookies (or season-bumped away from the row that has
-            # them), reuse any ESPN login on the same Google account — never env /
+            # them), reuse any ESPN login on the same Google account -- never env /
             # another account's cookies.
             espn_s2 = stored.get("espn_s2")
             swid = stored.get("swid")
@@ -582,7 +582,7 @@ def _league_cached(season: int, league_id: str) -> League:
     player modal's scoring sync) do not pay a failed ESPN round-trip each time.
 
     Linked private leagues (cookies stored on this league row, or staged during
-    connect) skip anonymous entirely — switching into those rooms used to wait
+    connect) skip anonymous entirely -- switching into those rooms used to wait
     on a 401 before the credentialed ``League()`` that actually succeeds.
     """
     key = _league_key(season, league_id)
@@ -614,7 +614,7 @@ def _league_cached(season: int, league_id: str) -> League:
     if not (espn_s2 and swid):
         # [espn-diag] No usable credentials reached the dashboard load. For a user
         # who just connected and picked a team, this means the cookies never made
-        # it from onboarding into storage (or were dropped when read back) — the
+        # it from onboarding into storage (or were dropped when read back) -- the
         # persistence branch. Contrast with the "authenticated League() load
         # failed" line above, which means cookies were present but rejected.
         logger.warning(
@@ -887,7 +887,7 @@ def _split_espn_roster_players(
         pid = getattr(p, "playerId", None)
         if pid is None:
             continue
-        # Same D/ST + skill-player path as matchups — negative ESPN defense
+        # Same D/ST + skill-player path as matchups -- negative ESPN defense
         # ids are never in the espnID crosswalk and must be team abbreviations.
         cp = resolve_espn_player_id(pid, espn_to_canon, player=p)
         if not cp:
@@ -1298,7 +1298,7 @@ def get_transactions(season: int, league_id: str, week: int) -> List[Dict[str, A
 
 _draft_meta_cache: Dict[Tuple[int, str], Tuple[float, Tuple[Optional[int], Optional[bool]]]] = {}
 _draft_meta_lock = threading.Lock()
-_DRAFT_META_TTL = 300  # 5 minutes — the scheduled draft date barely changes.
+_DRAFT_META_TTL = 300  # 5 minutes -- the scheduled draft date barely changes.
 
 
 def clear_espn_league_caches(league_id: Optional[str] = None, season: Optional[int] = None) -> None:
@@ -1308,7 +1308,7 @@ def clear_espn_league_caches(league_id: Optional[str] = None, season: Optional[i
     pick up ESPN roster assignments instead of empty pre-draft shells.
 
     When ``league_id`` (and optionally ``season``) is provided, only that
-    league's entries are evicted — switching leagues used to wipe every ESPN
+    league's entries are evicted -- switching leagues used to wipe every ESPN
     cache on the worker and force a cold rebuild of unrelated leagues.
     """
     with _public_league_lock:
@@ -1457,7 +1457,7 @@ def get_drafts(season: int, league_id: str) -> List[Dict[str, Any]]:
             "status": "complete" if drafted else "pre_draft",
             "type": dtype,
         }]
-    # Fallback: no date from ESPN — treat as a completed draft (Aug 1) so
+    # Fallback: no date from ESPN -- treat as a completed draft (Aug 1) so
     # has_draft_ended() and historical seasons behave as before.
     start_ts_ms = int(datetime(int(season), 8, 1).timestamp() * 1000)
     return [{
@@ -1531,7 +1531,7 @@ _ESPN_SCORING_STAT_KEYS: Dict[int, str] = {
 
 # pointsOverrides keys are ESPN position ids (0=QB, 2=RB, 4=WR, 6=TE, 16=D/ST).
 # They are exceptions for that position, not the league-wide rate. Key "16" is
-# D/ST — a PPR league commonly publishes points=1 with {"16": 0} because
+# D/ST -- a PPR league commonly publishes points=1 with {"16": 0} because
 # defenses don't catch passes. Treating that override as the league rec rate
 # made start/sit (and every other projection consumer) show standard scoring.
 _ESPN_SKILL_POS_OVERRIDE_IDS = ("0", "2", "4", "6")
@@ -1593,7 +1593,7 @@ def _espn_te_reception_premium(scoring_items: List[dict]) -> float:
 
 # Passing / rushing / receiving yards (and receptions) publish both a per-unit
 # rate and a 300-yard / 9-catch extra under the same statId. DST points-allowed
-# and FG distance buckets also use rangeStart/rangeEnd — those *are* the rates.
+# and FG distance buckets also use rangeStart/rangeEnd -- those *are* the rates.
 _ESPN_MILESTONE_RATE_STAT_IDS = frozenset({3, 24, 42, 53, 41})
 
 
@@ -1663,7 +1663,7 @@ _ESPN_LINEUP_SLOT_IDS: Dict[int, str] = {
 }
 
 # Names that are not a weekly starter. "FA" is espn-api's BoxPlayer default
-# when lineupSlotId is missing — treat as unassigned, not a starter.
+# when lineupSlotId is missing -- treat as unassigned, not a starter.
 _ESPN_RESERVE_SLOT_NAMES = {"IR", "RES", "RESERVE", "ER"}
 _ESPN_BENCH_SLOT_NAMES = {
     "BE", "BN", "BENCH", "INACTIVE", "NA", "FA", "NONE",

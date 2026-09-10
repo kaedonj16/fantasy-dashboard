@@ -10,7 +10,7 @@ Routes:
 
 Extracted from app.py to reduce monolith size. App.py internals are reached via
 the lazy shims below so importing the blueprint at start-up stays free of a
-circular import — the real functions are only fetched when a request is served.
+circular import -- the real functions are only fetched when a request is served.
 Page builders that have already been extracted into service modules are imported
 directly.
 """
@@ -91,7 +91,7 @@ def page_standings(platform: str, season: int, league_id: str):
 
     # Before any games are on this week's slate the in-season standings are all
     # 0-0, so show the populated value-based layout. It switches to in-season
-    # automatically once a regular-season game is scheduled this NFL week —
+    # automatically once a regular-season game is scheduled this NFL week --
     # not only after the first week finalizes.
     if _use_offseason_standings(ctx):
         body = _build_offseason_standings_body(ctx)
@@ -264,7 +264,7 @@ def page_graphs(platform: str, season: int, league_id: str):
         build_graphs_body, build_tour_mock_graphs_ctx, render_graphs_html)
 
     # Demo/mock preview only (?tour=1). Live site-tour resume uses ?tour_step=N
-    # and must hit the real league path below — do not conflate the two.
+    # and must hit the real league path below -- do not conflate the two.
     if request.args.get("tour") and not request.args.get("tour_step"):
         try:
             mock_ctx = build_tour_mock_graphs_ctx(_build_tour_mock_df_weekly())
@@ -325,7 +325,7 @@ def page_history(platform: str, season: int, league_id: str):
     from dashboard_services.api import resolve_league_id_for_season
     from utils.history_seasons import get_default_history_season
     # Demo/mock preview only (?tour=1). Live site-tour resume uses ?tour_step=N
-    # and must hit the real league path below — do not conflate the two.
+    # and must hit the real league path below -- do not conflate the two.
     if request.args.get("tour") and not request.args.get("tour_step"):
         try:
             mock_ctx = build_tour_mock_history_ctx(_build_tour_mock_df_weekly())

@@ -7,7 +7,7 @@ Runs once a day (from the notification cron) over every subscribed league and:
     playoff-odds rankings, so day-over-day movement accrues going forward;
   * on the first run for a league, reconstructs YESTERDAY's value rankings from
     the transaction log + the daily value history and backfills them as the
-    baseline — so ▲/▼ arrows appear immediately instead of a day later, using
+    baseline -- so ▲/▼ arrows appear immediately instead of a day later, using
     only real data (no fabrication).
 
 Power and playoff-odds rankings can't be truthfully reconstructed (they depend on
@@ -162,7 +162,7 @@ def _reconstruct_value_baseline(platform, league_id_str, season, rosters, pos_by
 
         yvals_raw = get_values_as_of(yday_s)
         if not yvals_raw:
-            return  # no value history for yesterday — can't reconstruct honestly
+            return  # no value history for yesterday -- can't reconstruct honestly
         yvals_te = {pid: apply_te_premium(v, pos_by_id.get(pid, ""), tep)
                     for pid, v in yvals_raw.items()}
 
@@ -187,7 +187,7 @@ def _reconstruct_value_baseline(platform, league_id_str, season, rosters, pos_by
 
 def snapshot_all_rankings() -> None:
     """Daily entry point: seed rankings for every subscribed league (current
-    season only — past seasons don't change)."""
+    season only -- past seasons don't change)."""
     try:
         from utils.push_notifications import _get_subscribed_leagues
         from dashboard_services.api import get_nfl_state

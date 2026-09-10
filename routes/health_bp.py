@@ -36,7 +36,7 @@ def _forbidden_unless_admin():
 def healthz_version():
     """Deploy smoke-check: content hashes of the bundles this process is
     actually serving, plus the git SHA when available. After a deploy, hit this
-    and confirm the hashes changed / match the built files — so "is it live yet?"
+    and confirm the hashes changed / match the built files -- so "is it live yet?"
     is a one-request answer instead of guessing at a stale cache. Cache-busting
     headers so an intermediary can never hand back a previous deploy's answer."""
     # Lazy import: app registers this blueprint at import time; version stamps

@@ -147,7 +147,7 @@ TEAM_ABBR_ALIASES: Mapping[str, str] = {
 }
 
 # Career stage from completed seasons before this year (0 = rookie year).
-# Missing years_experience is None — never mapped to rookie.
+# Missing years_experience is None -- never mapped to rookie.
 CAREER_STAGE_ROOKIE = "rookie"
 CAREER_STAGE_YEAR_2 = "year_2"
 CAREER_STAGE_YEAR_3 = "year_3"
@@ -164,7 +164,7 @@ CAREER_STAGE_ORDER: Tuple[str, ...] = (
 )
 
 # Last-season positional finish as a matching feature. Inclusive lo, exclusive
-# hi. ``none`` is *only* for rookies (exp 0) with no prior finish — veterans
+# hi. ``none`` is *only* for rookies (exp 0) with no prior finish -- veterans
 # with a missing prior are omitted from this dimension, not labeled ``none``.
 PRIOR_FINISH_NONE = "none"
 PRIOR_FINISH_BUCKETS: Tuple[Tuple[Optional[int], Optional[int], str], ...] = (
@@ -265,7 +265,7 @@ HIST_NESTED_KEEP_DIMS: Tuple[str, ...] = (
 NAMED_EXAMPLES_PER_CELL = 3
 
 # Phase 9 league-winner proxy. Reuses the existing top_5 cutoff; do not invent
-# a new rank line. Smash prior is "worse than top-12 or no prior" — rank 13
+# a new rank line. Smash prior is "worse than top-12 or no prior" -- rank 13
 # last year finishing top-5 is a smash. That is *not* the engine non-starter
 # cutoff (prior > 13).
 LEAGUE_WINNER_TIER = "top_5"
@@ -289,7 +289,7 @@ SLEEPER_UNDRAFTED_ADP = 999.0
 
 # Redraft PPR 1QB source order for a single historical ADP on a player-season.
 # Exact PPR (Sleeper) before MFL (compatible 1QB PPR) before generic mixed boards.
-# Superflex / TEP historical ADP is not in this list — it does not exist in
+# Superflex / TEP historical ADP is not in this list -- it does not exist in
 # free sources (Yahoo has no season axis; ESPN is mixed; Sleeper 2QB is a
 # compatible proxy stored separately, not blended into 1QB hit rates).
 ADP_SOURCE_PREFERENCE: Tuple[str, ...] = ("sleeper", "mfl", "espn", "yahoo")
@@ -498,7 +498,7 @@ def age_as_of_season_start(
 
     Truncation (not rounding) matches ``age_from_bday`` so a player three days
     short of a birthday does not jump a year. Returns None when the birth date
-    or season is missing/unparseable — never 0.0.
+    or season is missing/unparseable -- never 0.0.
     """
     dob = parse_birth_date(birth_date)
     try:
@@ -618,7 +618,7 @@ def value_bucket(value: Any, bounds: Any) -> Optional[str]:
     """Map a numeric value onto ``(lo, hi, label)`` bins.
 
     ``lo`` inclusive, ``hi`` exclusive, ``None`` open. Missing/unparseable
-    value returns None — never the first bucket.
+    value returns None -- never the first bucket.
     """
     v = _optional_float(value)
     if v is None:
@@ -641,7 +641,7 @@ def years_experience_before_season(
     """Completed NFL seasons *before* ``season``.
 
     Rookie year (``season == draft_year``) is 0. Missing both draft year and
-    first observed season returns None — never a invented 0 for a veteran.
+    first observed season returns None -- never a invented 0 for a veteran.
     """
     try:
         s = int(season)
@@ -673,7 +673,7 @@ def draft_capital_bucket(
     """``round_1`` / ``day_2`` / ``day_3`` / ``undrafted``.
 
     Unknown (missing round, not flagged undrafted) is None. Never infer
-    undrafted from a missing field — that would look like a real UDFA.
+    undrafted from a missing field -- that would look like a real UDFA.
     """
     if undrafted:
         return DRAFT_CAPITAL_UNDRAFTED
@@ -748,7 +748,7 @@ def tier_flags(positional_finish: Any) -> dict:
     """Boolean flags for each cutoff in ``TIER_CUTOFFS``.
 
     Unranked players get False for every flag (they did not finish top-N),
-    which is distinct from a missing finish used as a *feature* — callers
+    which is distinct from a missing finish used as a *feature* -- callers
     that need "unknown" should check the finish itself.
     """
     finish = _optional_int(positional_finish)
@@ -859,7 +859,7 @@ def is_adp_relative_bust(
 ) -> Optional[bool]:
     """True when drafted inside positional ADP top-N and finished outside.
 
-    None when ADP or finish is missing — not a fake bust. Players drafted
+    None when ADP or finish is missing -- not a fake bust. Players drafted
     outside the ADP cutoff are not in this cohort (also None).
     """
     adp_rank = _optional_int(adp_positional)
@@ -902,7 +902,7 @@ def source_map_is_usable(
 def is_absolute_bust(position: Any, positional_finish: Any) -> Optional[bool]:
     """True when the player finished outside the position's absolute-bust bar.
 
-    None when finish or position is missing — we do not call a missing
+    None when finish or position is missing -- we do not call a missing
     season a bust.
     """
     pos = str(position or "").upper()

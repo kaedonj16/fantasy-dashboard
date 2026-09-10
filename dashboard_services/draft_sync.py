@@ -236,7 +236,7 @@ def espn_status_from_flags(
     if drafted is False:
         return "pre_draft"
     if pick_count > 0:
-        # Flags missing, but picks exist — treat as in-progress rather than
+        # Flags missing, but picks exist -- treat as in-progress rather than
         # inventing a completed draft (mDraftDetail is often incomplete live).
         return "drafting"
     return "unknown"
@@ -639,7 +639,7 @@ def _player_display(canonical_id: Optional[str], lookup: Optional[PlayerLookup])
 
     Kickers in ``players_index`` are stored as ``pos="PK"`` (Tank01); normalize
     to ``K`` so Draft Room starter slots match. Team-abbr DEF ids (``BAL``,
-    ``SF``, …) are usually absent from the index — synthesize ``BAL D/ST`` like
+    ``SF``, …) are usually absent from the index -- synthesize ``BAL D/ST`` like
     ``from_players_map`` so ESPN D/ST picks never paint as ``Unknown``.
     """
     if not canonical_id:

@@ -134,7 +134,7 @@
     // depth target (needRaw == 0) is a bench body at a full spot while other
     // starting needs may remain. Penalize it, hardest at a true single-starter
     // slot (1-TE, or starterSlots <= 1) and in the early rounds. Need math is
-    // unchanged — only the single-vs-multi classification uses roster slots.
+    // unchanged -- only the single-vs-multi classification uses roster slots.
     if (needRaw <= 0 && (pos === 'RB' || pos === 'WR' || pos === 'TE')) {
       var teams2 = o.numTeams ? +o.numTeams : 12;
       var rd2 = pickNo ? Math.floor((pickNo - 1) / Math.max(teams2, 1)) + 1 : 1;

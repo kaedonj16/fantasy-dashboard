@@ -1,7 +1,7 @@
 """Walk-forward comparison of History P vs Market P vs position baseline.
 
 Reuses Phase 4 comps and Phase 5–6 ADP lookups. Train on seasons **< S**,
-test on season **S**. Ground truth is warehouse positional finishes — not
+test on season **S**. Ground truth is warehouse positional finishes -- not
 the breakout engine's usage-points proxy, and not a second BreakoutEngine.
 
 Live board comps stay pooled historical. This module is the honesty check
@@ -59,7 +59,7 @@ def roc_auc(
     """Mann–Whitney AUC. Ties count 0.5. Missing scores are skipped.
 
     Returns None when there are no positives or no negatives among scored
-    rows — never a fake 0.5.
+    rows -- never a fake 0.5.
     """
     pos: list[float] = []
     neg: list[float] = []

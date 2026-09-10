@@ -42,5 +42,5 @@ def clean_ai_text(text: str) -> str:
     # Replace em dashes, en dashes, and horizontal bars (a common AI tell) with a
     # comma so model output reads in a plain, human voice. Runs on the raw JSON
     # string, which only affects the string values (structure uses no dashes).
-    return re.sub(r'\s*[—–―]\s*', ', ', text)
+    return re.sub(r'\s*[--–―]\s*', ', ', text)
 

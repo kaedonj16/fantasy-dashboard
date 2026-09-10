@@ -2,7 +2,7 @@
 value trends / Beat the Market, and in-season schedule difficulty).
 
 Playoff odds / Power Rankings live on Standings; draft grades live in Draft
-Room / Draft History — not as Teams sidebar tabs.
+Room / Draft History -- not as Teams sidebar tabs.
 
 Moved verbatim from app.py to shrink the monolith. The heavy app.py internals it
 uses are lazy-imported from app inside the function (resolved at request time),
@@ -44,7 +44,7 @@ def roster_shape_label(pos_vals: Dict[str, List[float]], is_sf: bool) -> str:
     # Ordered specific -> generic; first match wins.
     if is_sf and qs >= 0.28:
         return "Konami Code"
-    # TE Premium: TE isn't merely present, it's a genuine strength — the TE room
+    # TE Premium: TE isn't merely present, it's a genuine strength -- the TE room
     # holds a high share of value AND at least matches the RB room. This stops an
     # RB-heavy team that happens to own one elite TE (e.g. Bowers) from reading as
     # "TE Premium" when it's really a Robust RB build.
@@ -983,11 +983,11 @@ def build_teams_body(ctx: dict) -> str:
     """
 
     # ---------- Page shell ----------
-    # Desktop: two columns — the team-grade cards (sort bar + legend + grid) fill
+    # Desktop: two columns -- the team-grade cards (sort bar + legend + grid) fill
     # the main column and stay visible, while League Analytics (Value / Roster
     # Intel / Schedule) sits in a right-hand sidebar with its own tab strip.
     # Mobile (<=1180px): the whole thing collapses into a single tabbed card
-    # (Teams / Value / Roster Intel / Schedule) — the "Teams" tab shows the grid,
+    # (Teams / Value / Roster Intel / Schedule) -- the "Teams" tab shows the grid,
     # the others show the analytics panels. See teams.js (default-tab wiring) and
     # dashboard.css (.teams-page responsive rules).
     return f"""

@@ -1,9 +1,9 @@
 // ============================================================
-// player_modal.js — player overlay (openPlayerModal + closePlayerModal)
+// player_modal.js -- player overlay (openPlayerModal + closePlayerModal)
 // Extracted from app.js. Watchlist / comparison stay in app.js.
 //
 // Full pages: load AFTER app.js.
-// Lite/public.js pages: do NOT attach this file as a blocking script — that
+// Lite/public.js pages: do NOT attach this file as a blocking script -- that
 // would overwrite the openPlayerModal stub and skip lazy-loading features.
 // _ensure_features_js concatenates this file into app-features.js instead.
 // ============================================================
@@ -595,7 +595,7 @@ function openPlayerModal(playerId, playerName, opts) {
       // 1QB and SF ranges sit side by side. Each source is a colored dot on a
       // shared draft-pick scale, with a spread band and a consensus marker, so
       // the market reads at a glance. A source with no value for the format is
-      // hidden entirely — no dot, no legend entry.
+      // hidden entirely -- no dot, no legend entry.
       const _adpColors = {
         'Sleeper': 'var(--adp-c-sleeper)', 'BR Fantasy': 'var(--adp-c-brf)',
         'BR Fantasy Live (7d)': 'var(--adp-c-brf-live)',
@@ -606,7 +606,7 @@ function openPlayerModal(playerId, playerName, opts) {
       const _adpNum = v => (Math.round(v * 10) / 10).toFixed(1);
       // One range track for a (format, axis): dots + spread band + consensus mark
       // on an auto-scaled pick axis. Cons is the mean of the plotted dots
-      // (BR Fantasy's 1..N rank included), so it sits among them — e.g.
+      // (BR Fantasy's 1..N rank included), so it sits among them -- e.g.
       // (2.0 + 4.3) / 2 → 3.2. A minimum span keeps a tight cluster looking
       // tight instead of stretching two near-equal picks across the whole track.
       const _adpRangeTrack = (pts, cons) => {
@@ -670,7 +670,7 @@ function openPlayerModal(playerId, playerName, opts) {
           </div>`;
       };
       // Inner grid for the ADP block. Backend Consensus is a raw-ADP mean and
-      // is dropped — Cons on the range is the mean of the remaining dots
+      // is dropped -- Cons on the range is the mean of the remaining dots
       // (BR Fantasy already ranked 1..N), so the marker sits among them.
       const _adpGridHTML = (sources) => {
         const srcs = sources.filter(s => s.label !== 'Consensus');
@@ -1249,7 +1249,7 @@ function openPlayerModal(playerId, playerName, opts) {
             const lineTraces = hasDualSeries ? [trace1qb, traceSF] : [
               { ...trace1qb, name: 'Value', text: dates.map((date, i) => `<b>${date}</b><br>Value: ${y1qb[i]?.toFixed(1) || ''}`) }
             ];
-            // A single marker at the latest point of each line — echoes the
+            // A single marker at the latest point of each line -- echoes the
             // ADP source dots (colored fill, surface-colored ring) so the two
             // blocks share a visual language.
             const endDot = (color, yArr) => ({
@@ -1257,7 +1257,7 @@ function openPlayerModal(playerId, playerName, opts) {
               type: 'scatter', mode: 'markers', showlegend: false, hoverinfo: 'skip',
               marker: { color, size: 8, line: { color: rowColor, width: 2 } },
             });
-            // Peak & floor markers on the primary (1QB) series — Direction 1
+            // Peak & floor markers on the primary (1QB) series -- Direction 1
             // "momentum": make the high-water mark and the trough self-evident.
             // Skipped when they land on the current point (the end dot already
             // marks it) or when the series is flat / too short.
@@ -1288,7 +1288,7 @@ function openPlayerModal(playerId, playerName, opts) {
 
             const layout = {
               // r needs to fit half of the last (right-most) date label, which is
-              // centered on the final data point at the plot's right edge — too
+              // centered on the final data point at the plot's right edge -- too
               // small and the last date clips off.
               margin: { l: 36, r: 34, t: 10, b: 26 },
               height: chartHeight,
@@ -1329,7 +1329,7 @@ function openPlayerModal(playerId, playerName, opts) {
             }).catch(function () {});
           }
 
-          // Time-range filter — only show ranges the data actually spans (e.g. a
+          // Time-range filter -- only show ranges the data actually spans (e.g. a
           // player with 2 weeks of history gets no "3 Mo"/"1 Yr" buttons).
           const RANGES = [{ label: '1 Mo', days: 30 }, { label: '3 Mo', days: 90 }, { label: '1 Yr', days: 365 }];
           const applicable = RANGES.filter(r => spanDays > r.days);
@@ -1851,7 +1851,7 @@ function _pmFetchTradesInto(panel, playerId, season, ctx) {
 // Prefetch the lazy tabs (Stats / Trades / Adv Metrics) once the modal's
 // Overview has loaded, so clicking a tab shows already-rendered content instead
 // of a spinner. We reuse pmSwitchTab's exact load path by briefly activating
-// each un-loaded tab and restoring the current one — all synchronously in one
+// each un-loaded tab and restoring the current one -- all synchronously in one
 // idle callback, so no intermediate tab state is ever painted.
 // ── Team tab (player modal) ───────────────────────────────────────────────────
 let _pmTeamAdvOpen = false;
@@ -1955,7 +1955,7 @@ function _pmBuildScheduleHTML(data) {
     const logo = g.opponent_logo
       ? `<img class="pm-schedule-logo" src="${_pmEsc(g.opponent_logo)}" alt="" loading="lazy" decoding="async" onerror="this.style.display='none'">`
       : '';
-    const oppName = g.opponent_name || g.opponent || '—';
+    const oppName = g.opponent_name || g.opponent || '--';
     const ha = g.ha === '@' ? '@' : 'vs';
     const dateBit = g.date_label ? `<span class="pm-schedule-date">${_pmEsc(g.date_label)}</span>` : '';
     return `<div class="pm-schedule-item${post}" data-idx="${idx}">
@@ -2007,13 +2007,13 @@ function _pmRenderBoxscoreHTML(payload, viewTeam) {
   const board = `<div class="pm-boxscore-board">
     <div class="pm-boxscore-side">
       ${away.logo ? `<img class="pm-boxscore-logo" src="${_pmEsc(away.logo)}" alt="" onerror="this.style.display='none'">` : ''}
-      <span class="pm-boxscore-team">${_pmEsc(away.name || away.team || '—')}</span>
+      <span class="pm-boxscore-team">${_pmEsc(away.name || away.team || '--')}</span>
       <span class="pm-boxscore-pts">${_pmDashNum(away.pts)}</span>
     </div>
     <div class="pm-boxscore-mid"><span class="pm-boxscore-status">${_pmEsc(statusLbl)}</span></div>
     <div class="pm-boxscore-side pm-boxscore-side-home">
       <span class="pm-boxscore-pts">${_pmDashNum(home.pts)}</span>
-      <span class="pm-boxscore-team">${_pmEsc(home.name || home.team || '—')}</span>
+      <span class="pm-boxscore-team">${_pmEsc(home.name || home.team || '--')}</span>
       ${home.logo ? `<img class="pm-boxscore-logo" src="${_pmEsc(home.logo)}" alt="" onerror="this.style.display='none'">` : ''}
     </div>
   </div>`;
@@ -2198,7 +2198,7 @@ function _pmTeamTierColor(rank, total) {
 }
 
 function _pmFmtTeamVal(key, val) {
-  if (val == null || val === '') return '—';
+  if (val == null || val === '') return '--';
   const n = Number(val);
   if (Number.isNaN(n)) return String(val);
   if (key === 'pass_rate') return (n * 100).toFixed(1) + '%';
@@ -2239,7 +2239,7 @@ function _pmTeamOrdSup(n) {
 }
 
 // Plain rank tiers for offense-profile dots: top third green (good), middle
-// yellow (mid), bottom red (bad). Same scale as Scoring/Pace hero ranks —
+// yellow (mid), bottom red (bad). Same scale as Scoring/Pace hero ranks --
 // not inverted by whether the tendency "helps" the player's position.
 function _pmTeamMetricColor(pos, key, rank, total) {
   return _pmTeamTierColor(rank, total);
@@ -2274,7 +2274,7 @@ function _pmTeamProfileRow(pos, label, key, entry) {
   </div>`;
 }
 
-// Target-share bar (WR/TE only — the endpoint carries target share, not carries).
+// Target-share bar (WR/TE only -- the endpoint carries target share, not carries).
 function _pmTeamShareBar(data) {
   const pos = String(data.position || '').toUpperCase();
   if (pos !== 'WR' && pos !== 'TE') return '';
@@ -2301,7 +2301,7 @@ function _pmTeamShareBar(data) {
   }).join('');
   const restBar = rest > 3 ? `<i style="width:${rest}%;background:var(--border)" title="Rest of offense: ${rest}%"></i>` : '';
   const last = String(data.player_name || '').split(' ').slice(-1)[0];
-  return `<div class="pm-tshare-cap"><span>Team target share</span><span><b>${me ? me.pct + '%' : '—'}</b>${me ? ' to ' + last : ''}</span></div>
+  return `<div class="pm-tshare-cap"><span>Team target share</span><span><b>${me ? me.pct + '%' : '--'}</b>${me ? ' to ' + last : ''}</span></div>
     <div class="pm-tshare-bar">${bars}${restBar}</div>`;
 }
 
@@ -2314,13 +2314,13 @@ function _pmTeamRoomRow(row, i) {
   const inj = _pmTeamInjBadge(row.injury);
   const snap = row.snap_pct != null
     ? `<span class="pm-troom-snap"><span class="pm-troom-bar"><span style="width:${Math.min(100, row.snap_pct)}%"></span></span><b>${row.snap_pct}%${row.snap_pct_source === 'derived' ? '<span class="pm-snap-est">est.</span>' : ''}</b></span>`
-    : '<span class="pm-troom-num mut">—</span>';
+    : '<span class="pm-troom-num mut">--</span>';
   return `<div class="${cls}"${attrs}>
     <span class="pm-troom-slot">${i + 1}</span>
-    <span class="pm-troom-name">${row.name || '—'}${inj}</span>
+    <span class="pm-troom-name">${row.name || '--'}${inj}</span>
     ${snap}
-    <span class="pm-troom-num${row.tgt_share == null ? ' mut' : ''}">${row.tgt_share != null ? row.tgt_share + '%' : '—'}</span>
-    <span class="pm-troom-num${row.ppg == null ? ' mut' : ''}">${row.ppg != null ? row.ppg : '—'}</span>
+    <span class="pm-troom-num${row.tgt_share == null ? ' mut' : ''}">${row.tgt_share != null ? row.tgt_share + '%' : '--'}</span>
+    <span class="pm-troom-num${row.ppg == null ? ' mut' : ''}">${row.ppg != null ? row.ppg : '--'}</span>
   </div>`;
 }
 
@@ -2331,7 +2331,7 @@ function _pmTeamMiniItem(row, i) {
     ? ` data-pid="${row.id}" data-pname="${String(row.name || '').replace(/"/g, '&quot;')}" role="button" tabindex="0"`
     : '';
   const inj = _pmTeamInjBadge(row.injury);
-  return `<div class="${cls}"${attrs}><span class="pm-mini-ord">${i + 1}</span><span class="pm-mini-name">${row.name || '—'}</span>${inj}</div>`;
+  return `<div class="${cls}"${attrs}><span class="pm-mini-ord">${i + 1}</span><span class="pm-mini-name">${row.name || '--'}</span>${inj}</div>`;
 }
 
 function _pmLoadTeamPanel(panel, playerId, viewSeason) {
@@ -2421,13 +2421,13 @@ function _pmBuildTeamHTML(data) {
     .map(function (m) { return _pmTeamProfileRow(pos, m[0], m[1], rm[m[1]]); }).join('');
 
   const room = (data.depth_chart && data.depth_chart[pos]) || [];
-  const roomRows = room.length ? room.map(_pmTeamRoomRow).join('') : '<div class="pm-team-depth-empty">—</div>';
+  const roomRows = room.length ? room.map(_pmTeamRoomRow).join('') : '<div class="pm-team-depth-empty">--</div>';
   const shareBar = _pmTeamShareBar(data);
 
   const otherPos = ['QB', 'RB', 'WR', 'TE'].filter(function (p) { return p !== pos; });
   const miniCols = otherPos.map(function (p) {
     const rows = (data.depth_chart && data.depth_chart[p]) || [];
-    const body = rows.length ? rows.slice(0, 5).map(_pmTeamMiniItem).join('') : '<div class="pm-team-depth-empty">—</div>';
+    const body = rows.length ? rows.slice(0, 5).map(_pmTeamMiniItem).join('') : '<div class="pm-team-depth-empty">--</div>';
     return `<div class="pm-mini-col"><h5>${p}</h5>${body}</div>`;
   }).join('');
 
@@ -2455,7 +2455,7 @@ function _pmBuildTeamHTML(data) {
   }
 
   // Offensive-line unit ratings (0-100, 100 = best) from public play-by-play.
-  // Kept as their own section — not mixed into Offense Profile — because they
+  // Kept as their own section -- not mixed into Offense Profile -- because they
   // are a different data source (not Sleeper volume/projections) and the
   // position-relevant metric should be easy to spot. Rank bars match the
   // Offense Profile visual language; "Grade" wording is avoided so these
@@ -2511,7 +2511,7 @@ function _pmBuildTeamHTML(data) {
       olineSec = `<div class="pm-team-sec pm-oline-sec">
       <div class="pm-section-header"><span class="pm-section-label">Offensive Line</span><span class="pm-team-secnote">${rankNote}</span></div>
       ${_pmTeamProfileAxis()}${olineRows}
-      <div class="pm-team-note">0&ndash;100 unit rating (100 = best), from public play-by-play — not a commercial blocker grade. Dot = league rank (right = 1st).${ctx ? ' ' + ctx + '.' : ''}${seasonBit} <a class="pm-oline-link" href="/oline-rankings${ol.season ? '/' + ol.season : ''}" target="_blank" rel="noopener">Full rankings</a></div>
+      <div class="pm-team-note">0&ndash;100 unit rating (100 = best), from public play-by-play -- not a commercial blocker grade. Dot = league rank (right = 1st).${ctx ? ' ' + ctx + '.' : ''}${seasonBit} <a class="pm-oline-link" href="/oline-rankings${ol.season ? '/' + ol.season : ''}" target="_blank" rel="noopener">Full rankings</a></div>
     </div>`;
     }
   }
@@ -2651,7 +2651,7 @@ function _pmWireTeamPanel(panel, playerId) {
     const t = pill.dataset.boxTeam || '';
     _pmRenderBoxInto(host, host._pmBoxPayload, t);
   });
-  // Box-score player rows are painted asynchronously — use delegation.
+  // Box-score player rows are painted asynchronously -- use delegation.
   panel.addEventListener('click', (e) => {
     const row = e.target.closest && e.target.closest('.pm-boxscore-player[data-pid]');
     if (!row || !panel.contains(row)) return;
@@ -2689,7 +2689,7 @@ function pmPrefetchTabs() {
         pmSwitchTab(t);
       }
     });
-    pmSwitchTab(activeTab); // restore — net-zero visual change
+    pmSwitchTab(activeTab); // restore -- net-zero visual change
   };
   if (window.requestIdleCallback) window.requestIdleCallback(run, { timeout: 1500 });
   else setTimeout(run, 400);
@@ -2808,7 +2808,7 @@ function _buildBkTabHTML(data, scoreColor) {
     html += `
       <div class="pm-hero-stat" style="background:${scoreColor}1a;border-color:${scoreColor}33;">
         <div class="pm-hero-label" style="color:${scoreColor};">Breakout Score</div>
-        <div class="pm-hero-val" style="color:${scoreColor};">${score != null ? score : '—'}</div>
+        <div class="pm-hero-val" style="color:${scoreColor};">${score != null ? score : '--'}</div>
       </div>`;
   }
 
@@ -2817,7 +2817,7 @@ function _buildBkTabHTML(data, scoreColor) {
   html += `<div style="display:flex;flex-direction:column;gap:8px;">
     <div class="pm-hero-stat">
       <div class="pm-hero-label">Breakout Score</div>
-      <div class="pm-hero-val" style="color:${scoreColor};">${score != null ? score : '—'}</div>
+      <div class="pm-hero-val" style="color:${scoreColor};">${score != null ? score : '--'}</div>
       ${score != null ? `<div style="font-size:11px;font-weight:700;color:${scoreColor};text-transform:uppercase;letter-spacing:0.03em;margin-top:1px;">${tier}${hitProb ? ` · ${hitProb} hit` : ''}</div>` : ''}
     </div>`;
   if (rank && rank.overall) {
@@ -2868,7 +2868,7 @@ function _buildBkTabHTML(data, scoreColor) {
   ];
   // Always show the raw component breakdown (consistent across every position).
   // The old "what's driving it" contribution view reflected the fitted model's
-  // coefficients — but the headline Breakout Score is now an opportunity-weighted
+  // coefficients -- but the headline Breakout Score is now an opportunity-weighted
   // blend, and the model's opportunity coefficient is 0, so the contribution view
   // contradicted the headline (and only existed for WR/RB, not curve QB/TE). The
   // raw 0-100 component scores are consistent with the blended score.
@@ -2879,7 +2879,7 @@ function _buildBkTabHTML(data, scoreColor) {
   // ── Component breakdown (left on desktop, below on mobile) ─────────────────
   html += `<div class='pm-left-column pm-bk-comp-col'>`;
   html += `<hr class="pm-section-divider">`;
-  // Plain, uniform bars — magnitude only, one accent color, no per-strength coloring.
+  // Plain, uniform bars -- magnitude only, one accent color, no per-strength coloring.
   html += `<div class="pm-section-header"><span class="pm-section-label">Component Breakdown</span></div>`;
   html += '<div class="pm-comp-list-bo">';
   components.forEach(c => {
@@ -3180,7 +3180,7 @@ let _advMetricsToken = 0; // incremented on each loadAdvancedMetrics call; guard
 
 // Fetch with a hard timeout so a hung request (slow cold server, dropped
 // connection that never errors) can't leave the Advanced Metrics tab spinning
-// forever — it aborts and rejects, which the caller turns into a Retry.
+// forever -- it aborts and rejects, which the caller turns into a Retry.
 // @public-js:include-start  (shared fetch helper used by core/public-page code)
 function _advFetch(url, ms, init) {
   const ctl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
@@ -3427,7 +3427,7 @@ function loadAdvancedMetrics(playerId, leagueId, season, weekStart, weekEnd) {
   (_cached ? Promise.resolve(_cached) : _advFetch(url, 12000)
     .then(res => {
       // 404 = no stored metrics for this player. Surface that as an empty
-      // payload instead of throwing — the old `!res.ok` throw made a missing
+      // payload instead of throwing -- the old `!res.ok` throw made a missing
       // row look like a network failure ("Retry").
       if (res.status === 404) {
         return res.json().catch(function() {
@@ -3528,7 +3528,7 @@ function loadAdvancedMetrics(playerId, leagueId, season, weekStart, weekEnd) {
         }
       }
 
-      // Populate bars — fetch metric config and ranks, then render once with both.
+      // Populate bars -- fetch metric config and ranks, then render once with both.
       // When season was known upfront (_earlyRanksPromise), the ranks fetch ran in
       // parallel with the metrics fetch so both are likely already resolved here.
       // For week-range views or auto-season, we fall back to a sequential fetch.
@@ -3582,7 +3582,7 @@ function loadAdvancedMetrics(playerId, leagueId, season, weekStart, weekEnd) {
 
         const s = (!isCareer && activeSeason) ? String(activeSeason) : '';
         if (wtWrap.dataset.season !== s) {
-          // Season changed — reset panel so it refetches.
+          // Season changed -- reset panel so it refetches.
           wtWrap.dataset.season = s;
           wtWrap.dataset.loaded = '';
           const wtBody = document.getElementById('pmWeeklyTrendsBody');
@@ -3590,7 +3590,7 @@ function loadAdvancedMetrics(playerId, leagueId, season, weekStart, weekEnd) {
           const wtBtn = document.getElementById('pmWeeklyTrendsBtn');
           if (wtBtn) wtBtn.innerHTML = 'Trends &#9662;';
         } else if (wtWrap.dataset.loaded) {
-          // Panel already loaded — re-render with updated week range filter.
+          // Panel already loaded -- re-render with updated week range filter.
           const wtBody = document.getElementById('pmWeeklyTrendsBody');
           if (wtBody && wtBody.style.display !== 'none') {
             pmWtRender(wtWrap, wtWrap.dataset.position || '');
@@ -3725,7 +3725,7 @@ function pmSeasonTrendFetch(playerId, metric) {
 }
 
 function pmStFmt(v, opt) {
-  if (v == null) return '—';
+  if (v == null) return '--';
   opt = opt || {};
   if (opt.pct) { var p = opt.pct_frac ? v * 100 : v; return (Math.round(p * 10) / 10) + '%'; }
   if (opt.integer) return Math.round(v).toLocaleString();
@@ -3784,7 +3784,7 @@ function pmSeasonTrendChartHTML(points, opt, position) {
     var x = xAt(i);
     var anchor = anchorAt(i);
     svg += '<text x="' + x.toFixed(1) + '" y="' + (H - 24) + '" text-anchor="' + anchor + '" class="pm-st-x">' + p.season + '</text>';
-    var rankTxt = (p.rank != null) ? (pos + p.rank + (p.count ? '/' + p.count : '')) : '—';
+    var rankTxt = (p.rank != null) ? (pos + p.rank + (p.count ? '/' + p.count : '')) : '--';
     svg += '<text x="' + x.toFixed(1) + '" y="' + (H - 10) + '" text-anchor="' + anchor + '" class="pm-st-rank">' + rankTxt + '</text>';
     if (p.value == null) return;
     var y = yAt(p.value);
@@ -3816,7 +3816,7 @@ function pmSeasonTrendChartHTML(points, opt, position) {
   } else {
     cap = '<div class="pm-st-caption">Only one season of data.</div>';
   }
-  if (opt.lower_better) cap += '<div class="pm-st-note">Lower is better — the line is green when it drops.</div>';
+  if (opt.lower_better) cap += '<div class="pm-st-note">Lower is better -- the line is green when it drops.</div>';
   return cap + svg;
 }
 
@@ -4041,7 +4041,7 @@ function advEnterMetricDef(e) {
   tip.textContent = def;
   tip.dataset.src = def;
   tip.style.display = 'block';
-  // Focus/keyboard events report clientX/Y as 0 — pin to the element instead.
+  // Focus/keyboard events report clientX/Y as 0 -- pin to the element instead.
   const fromPointer = e.type === 'mouseenter' || e.type === 'mousemove' || e.type === 'pointerover';
   _advPositionTip(tip, el, fromPointer ? e.clientX : null, fromPointer ? e.clientY : null);
 }
@@ -4194,7 +4194,7 @@ function pmToggleWeeklyTrends(playerId) {
 }
 
 const _ADV_METRIC_DESCS = {
-  // keyed by metric key — used by renderCompareMetricRows
+  // keyed by metric key -- used by renderCompareMetricRows
   vorp: "Value Over Replacement Points: season PPR points minus a replacement-level starter at the same position (league-size aware, FLEX included). This is a season total, so missed games (injury, bench) can make VORP negative even when per-game production was starter-level.",
   war: "Wins Above Replacement: season VORP divided by points-per-win (≈ the league's weekly scoring spread). Translates points above replacement into the wins they were worth; elite players are typically 4-6+.",
   role_score: "Overall opportunity score (0-100) blending snap share, touches, and red-zone usage relative to the player's position.",
@@ -4287,7 +4287,7 @@ const _ADV_METRIC_DESCS = {
   total_touches: "Total carries plus receptions in the season.",
   touches_per_game: "Carries plus receptions per game.",
   total_tds: "Total touchdowns (rush + receiving + passing) in the season.",
-  // keyed by display label — used by buildAdvancedMetricsHTML _cells()
+  // keyed by display label -- used by buildAdvancedMetricsHTML _cells()
   'Role Score': "Overall opportunity score (0-100) blending snap share, touches, and red-zone usage relative to the player's position.",
   'Snap Share': "Percent of the team's offensive snaps the player was on the field for.",
   'Route Partic': "Percent of the team's pass-play snaps on which the WR/TE ran a route. High route participation means a consistent full-time route runner.",
@@ -4391,8 +4391,8 @@ function buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive, counts, b
   }
   function _pg(total) { return (g > 0 && total != null) ? total / g : null; }
   // Bar fill from the metric's value relative to the position's min–max range
-  // (from the ranks API `bounds`). Preserves real magnitude — a big lead at the
-  // top shows a long bar with a visible gap; bunched values show small gaps —
+  // (from the ranks API `bounds`). Preserves real magnitude -- a big lead at the
+  // top shows a long bar with a visible gap; bunched values show small gaps --
   // while staying position-aware (bounds are built from that position's field).
   // Returns null when no usable bounds exist (→ caller uses a value-scale fallback).
   function _boundsFill(key, val) {
@@ -4446,7 +4446,7 @@ function buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive, counts, b
     pacr: 1.2, racr: 1.2,
   };
 
-  // Value: VORP / WAR — season-only, injected by the API for season views.
+  // Value: VORP / WAR -- season-only, injected by the API for season views.
   if (metrics.vorp != null) {
     const v = metrics.vorp;
     defs.push({ label: 'VORP', fill: Math.min(Math.max(v, 0) / 150 * 100, 100), display: (v >= 0 ? '+' : '') + v.toFixed(1), key: 'vorp', sub: _rankSub('vorp'), cat: 'Value' });
@@ -4457,7 +4457,7 @@ function buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive, counts, b
   }
 
   // Role Score is an internal signal (feeds breakout detection) and is not
-  // surfaced on the front end — the API no longer sends it.
+  // surfaced on the front end -- the API no longer sends it.
   // Snap Share (0–1 → %).  85 % = starter ceiling → full bar.
   if (metrics.snap_share != null && position !== "QB") {
     const pct = metrics.snap_share * 100;
@@ -4723,7 +4723,7 @@ function buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive, counts, b
     });
   }
 
-  // PPR fantasy points (all positions, when available — week range view)
+  // PPR fantasy points (all positions, when available -- week range view)
   if (metrics.ppr_pts != null) {
     const _ppMax = position === 'QB' ? 500 : position === 'RB' ? 350 : 300;
     defs.push({ label: 'PPR Points', fill: Math.min(metrics.ppr_pts / _ppMax * 100, 100), display: Math.round(metrics.ppr_pts).toString(), key: 'ppr_pts', sub: _rankSub('ppr_pts'), cat: 'General' });
@@ -4832,15 +4832,15 @@ function buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive, counts, b
     }
   }
 
-  // ── Bar fill model — four shapes, each matched to what the metric means ────
-  //  • SCORE  — designed 0→ceiling scale; value ÷ ceiling (grades, ratings,
+  // ── Bar fill model -- four shapes, each matched to what the metric means ────
+  //  • SCORE  -- designed 0→ceiling scale; value ÷ ceiling (grades, ratings,
   //             VORP/WAR). Magnitude shows; below-replacement floors near empty.
-  //  • MINMAX — wide-range value that can go negative (EPA totals); map the
+  //  • MINMAX -- wide-range value that can go negative (EPA totals); map the
   //             position's [min,max] onto the bar so a big lead AND negatives
   //             both render (lowest, often negative, sits at the floor).
-  //  • RANK   — compressed efficiency rates that bunch near the top; percentile
+  //  • RANK   -- compressed efficiency rates that bunch near the top; percentile
   //             within position so a mid-pack player reads mid-pack.
-  //  • LEADER — non-negative volume; value ÷ position leader (½ leader = ½ bar).
+  //  • LEADER -- non-negative volume; value ÷ position leader (½ leader = ½ bar).
   const _SCORE_CEIL = { role_score: 100, grades_offense: 100, pff_passing_grade: 100,
     pff_rushing_grade: 100, nfl_passer_rating: 158.3, vorp: 150, war: 6 };
   const _MINMAX_KEYS = new Set(['passing_epa', 'rushing_epa', 'receiving_epa']);
@@ -4885,7 +4885,7 @@ function buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive, counts, b
     const subLine = m.sub ? `<div class="pm-comp-sub${subCls}">${m.sub}</div>` : '';
     const _desc = m.desc || _ADV_METRIC_DESCS[m.label] || '';
     // Custom hover tooltip only (data-def + advEnterMetricDef). No native title=
-    // attribute — it would surface a second, plain browser tooltip on hover.
+    // attribute -- it would surface a second, plain browser tooltip on hover.
     const _defAttr = _desc ? ` data-def="${_desc.replace(/"/g, '&quot;')}" onclick="advShowMetricDef(event)" onmouseenter="advEnterMetricDef(event)" onmouseleave="advLeaveMetricDef(event)"` : '';
     return `<span class="pm-comp-label"${_defAttr}>${m.label}</span>` +
       `<div class="pm-comp-bar-wrap"><div class="pm-comp-bar" style="width:${fill.toFixed(1)}%;background:${color};"></div></div>` +
@@ -4924,7 +4924,7 @@ function buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive, counts, b
 
   let html = rankNote;
   if (cfg && Object.keys(cfg).length) {
-    // Group defs by category using cfg (best-effort — unlabeled defs go to 'Other')
+    // Group defs by category using cfg (best-effort -- unlabeled defs go to 'Other')
     const _CAT_ORDER = ['Value', 'General', 'Passing', 'Rushing', 'Receiving', 'Volume'];
     const _catGroups = {};
     const _uncategorized = [];

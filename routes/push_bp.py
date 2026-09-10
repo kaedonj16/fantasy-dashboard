@@ -64,7 +64,7 @@ def _init_push_table():
                     logger.debug("suppressed exception", exc_info=True)
             conn.commit()
             # Multi-league support: a device (endpoint) can subscribe to several
-            # leagues — one row per (endpoint, league_id). Replace the old
+            # leagues -- one row per (endpoint, league_id). Replace the old
             # endpoint-unique constraint with a composite unique index. All
             # league_ids are normalized to '' (never NULL) so the index is exact.
             try:
@@ -146,7 +146,7 @@ def api_push_subscribe():
     owner_id  = (str(session.get("account_id") or "").strip()
                  or (data.get("owner_id") or "").strip() or None)
     # Accept either a single league_id or a league_ids[] array (register the
-    # device for every league at once — the default-to-all subscribe path).
+    # device for every league at once -- the default-to-all subscribe path).
     raw_leagues = data.get("league_ids")
     if not isinstance(raw_leagues, list) or not raw_leagues:
         raw_leagues = [data.get("league_id")]
@@ -294,7 +294,7 @@ def api_push_broadcast():
     url   = data.get("url",   "/top-movers")
     tag   = data.get("tag",   "weekly-update")
     # Sending is a per-device network round-trip, so a real audience takes tens of
-    # seconds — longer than an HTTP client (or the gunicorn worker) will wait,
+    # seconds -- longer than an HTTP client (or the gunicorn worker) will wait,
     # which surfaces as a timeout and can kill the worker mid-blast. Fail fast on
     # a misconfigured server, then run the send loop on a background thread and
     # acknowledge immediately; the loop keeps going after the response returns.
@@ -345,10 +345,10 @@ def api_cron_notifications():
             run_all_daily()
         elif kind == "weekly":
             # Weekly email digest. Call once a week (e.g. Tuesday morning). Safe to
-            # call more often — it de-dupes per account per ISO week.
+            # call more often -- it de-dupes per account per ISO week.
             # Optional one-person test: JSON/query account_id or email, plus force=1
             # to bypass this week's dedupe. Do not omit those if you only want a
-            # self-send — a bare type=weekly still fans out to everyone.
+            # self-send -- a bare type=weekly still fans out to everyone.
             from utils.weekly_email import send_weekly_digests
             raw_aid = data.get("account_id") if data.get("account_id") not in (None, "") else request.args.get("account_id")
             account_id = None
@@ -386,7 +386,7 @@ def _push_broadcast(title: str, body: str, url: str = "/", tag: str = "update"):
         with get_conn() as _pconn:
             # One send per person, not per subscription row. A user accumulates
             # several endpoints on the same phone (Safari vs installed PWA,
-            # re-granting notifications, etc.) plus a row per league — all of
+            # re-granting notifications, etc.) plus a row per league -- all of
             # which would each receive a copy. Collapse by owner_id (the
             # signed-in user) so a global broadcast lands once; anonymous rows
             # with no owner still de-dupe per endpoint. Newest row (id DESC) wins,
@@ -456,7 +456,7 @@ def _push_broadcast(title: str, body: str, url: str = "/", tag: str = "update"):
             logger.debug("suppressed exception", exc_info=True)
 
     # Log the outcome so a background (fire-and-forget) broadcast still leaves a
-    # visible record in the app logs — the HTTP caller only gets a 202 and never
+    # visible record in the app logs -- the HTTP caller only gets a 202 and never
     # sees these totals.
     logger.info("[push] broadcast complete: sent=%d failed=%d pruned=%d", sent, failed, len(stale))
     return {"ok": True, "sent": sent, "failed": failed}, 200

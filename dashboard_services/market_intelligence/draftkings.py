@@ -1,6 +1,6 @@
 """DraftKings sportsbook season-long NFL player futures (free, unofficial).
 
-SportsGameOdds carries no season-long NFL player markets, but DraftKings does —
+SportsGameOdds carries no season-long NFL player markets, but DraftKings does --
 its NFL "Futures › Player Stats O/U" section posts season passing/rushing/
 receiving yard (and TD) over/unders for marquee players all offseason, i.e. right
 at draft time. This module reads them from DraftKings' internal ``sportscontent``

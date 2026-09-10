@@ -795,7 +795,7 @@ def build_activity_body(ctx: dict) -> str:
     if injury_df is not None and not injury_df.empty:
         injury_html = render_injury_watch(injury_df)
         # Float the signed-in viewer's own injured players to the top with a badge
-        # (client-side, cache-safe — see helper). Skipped silently on any issue.
+        # (client-side, cache-safe -- see helper). Skipped silently on any issue.
         try:
             _act_roster_pids = {
                 str(r.get("roster_id")): [str(p) for p in (r.get("players") or [])]
@@ -876,7 +876,7 @@ def build_activity_body(ctx: dict) -> str:
         .act-news-col .card-body {{ max-height: none; overflow: visible; }}
       }}
       @media (prefers-reduced-motion: reduce) {{ .act-mtab:active {{ transform: none; }} }}
-      /* Left news rail — sticky, own scroll, like the dashboard's snapshot rail. */
+      /* Left news rail -- sticky, own scroll, like the dashboard's snapshot rail. */
       @media (min-width: 1101px) {{
         .act-news-col {{ position: sticky; top: 90px; }}
       }}
@@ -1212,7 +1212,7 @@ def build_activity_body(ctx: dict) -> str:
       }}
 
       @media (max-width: 900px) {{
-        /* 2x2 instead of four tall stacked cards — far less vertical space. */
+        /* 2x2 instead of four tall stacked cards -- far less vertical space. */
         .bract-summary-grid {{
           grid-template-columns: 1fr 1fr;
           gap: 8px;

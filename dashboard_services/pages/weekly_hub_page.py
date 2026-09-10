@@ -507,7 +507,7 @@ function wkActivateTab(tab) {{
   if (panel) panel.classList.add('active');
 }})();
 
-// Desktop layout (>=1100px): restore the pre-tab-switcher arrangement — the
+// Desktop layout (>=1100px): restore the pre-tab-switcher arrangement -- the
 // Scorers/Scout/Lineup tabs in a left column, the matchup preview as the wide
 // right column, and Week Leaders in a right-hand "Weekly Tools" aside. Below
 // 1100px it stays the single 4-tab card (the mobile layout). Nodes are moved,

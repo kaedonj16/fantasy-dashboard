@@ -114,7 +114,7 @@ def _league_activity_targets(layer,
                              fallback_moves_pt=5.0, fallback_trades_pt=1.5,
                              floor_moves_pt=3.0, floor_trades_pt=0.5):
     """Full-season, per-team activity the health score treats as "healthy" for
-    THIS league — derived from what it typically does, not a league-agnostic
+    THIS league -- derived from what it typically does, not a league-agnostic
     constant. Takes the median of each prior season's moves-per-team and
     trades-per-team (per-team so league-size changes don't skew it), floored so
     a chronically dead league can't set an ultra-low bar for itself, and with no
@@ -523,17 +523,17 @@ def build_commissioner_body(ctx):
 
     # Score: an *engaged* league is a healthy league. Build up from a baseline
     # by rewarding activity relative to the league's own pace, then dock only for
-    # genuine health problems — dead teams and a high *rate* of lopsided trades.
+    # genuine health problems -- dead teams and a high *rate* of lopsided trades.
     # Raw trade/move volume is never punished, so a busy league scores high.
     activity_score = 40
     # Moves: full marks at (or above) the league's typical pace so far.
     activity_score += min(30, moves_ratio * 30)
     # Trades: full marks at (or above) the league's typical trade pace so far.
     activity_score += min(30, trades_ratio * 30)
-    # Inactive (dead) teams are a real health problem — dock per dead team.
+    # Inactive (dead) teams are a real health problem -- dock per dead team.
     activity_score -= inactive_count / n * 40
     # Lopsided trades: penalise the *share* of trades that are lopsided, not the
-    # count, so trading a lot doesn't cost points — only systematically unfair
+    # count, so trading a lot doesn't cost points -- only systematically unfair
     # trading does (max 15-point hit if every trade is lopsided).
     lopsided_ratio = (lopsided_count / total_trades) if total_trades else 0
     activity_score -= lopsided_ratio * 15
@@ -543,7 +543,7 @@ def build_commissioner_body(ctx):
 
     # Composite card: the health score as a hero with a 0-100 track, then the
     # four contributing factors as labelled horizontal bars beneath it. Each bar
-    # fill is meaningful and ties back to the score — inactive = share of teams
+    # fill is meaningful and ties back to the score -- inactive = share of teams
     # dead, lopsided = share of trades lopsided, trades/moves = pace vs the
     # league's own norm. Green fills read as the healthy direction, red/orange
     # as the unhealthy one.
@@ -572,7 +572,7 @@ def build_commissioner_body(ctx):
     ])
 
     # Ring geometry + a one-line verdict, both from values already computed above
-    # (this is presentation only — no new metric is calculated).
+    # (this is presentation only -- no new metric is calculated).
     import math as _math
     _ring_r = 54
     _ring_circ = 2 * _math.pi * _ring_r
@@ -656,7 +656,7 @@ def build_commissioner_body(ctx):
 </tr>"""
 
     # Parity strip: plot each team's existing value_pct along a thin↔stacked axis
-    # with the fair share marked. Pure visualization of the same numbers — no new
+    # with the fair share marked. Pure visualization of the same numbers -- no new
     # metric is computed.
     _shares = [r["value_pct"] for r in roster_infos] or [fair_share]
     _p_lo = min(min(_shares), fair_share)

@@ -1,4 +1,4 @@
-"""History vs Projection vs Market — three live signals, never blended (pure).
+"""History vs Projection vs Market -- three live signals, never blended (pure).
 
 History is comps ``P(top-12)`` from precomputed JSON leaves. Market is
 historical ``P(top-12 | current ADP overall bucket)``. Projection is the
@@ -7,9 +7,9 @@ caller's current Sleeper PPG plus an implied positional rank among the
 
 Native units stay distinct:
 
-* history vs market — probability
-* projection vs market — positional rank
-* projection vs history — qualitative only
+* history vs market -- probability
+* projection vs market -- positional rank
+* projection vs history -- qualitative only
 
 Missing any input stays ``unknown`` / ``None``, never a fake 0% or last
 place. This layer is descriptive and does not enter ranking or Pick Score.
@@ -49,7 +49,7 @@ from dashboard_services.historical.finishes import competition_ranks
 _ID_KEYS: tuple[str, ...] = ("sleeper_id", "player_id", "id")
 _PROJ_PPG_KEYS: tuple[str, ...] = ("projected_ppg", "proj_ppg")
 _ADP_KEYS: tuple[str, ...] = ("adp_overall", "adp", "overall_adp")
-# Actuals / wrong units — never treat these as a current projection.
+# Actuals / wrong units -- never treat these as a current projection.
 _NOT_PROJECTION_KEYS: tuple[str, ...] = (
     "ppg",
     "ppr_ppg",
@@ -343,7 +343,7 @@ def compare_projection_vs_history(
     skeptical_p: float = SIGNAL_HISTORY_SKEPTICAL_P,
     bullish_p: float = SIGNAL_HISTORY_BULLISH_P,
 ) -> dict:
-    """Qualitative only — does not invent P(top-12) from PPG."""
+    """Qualitative only -- does not invent P(top-12) from PPG."""
     if implies_top_12 is None or history_p is None:
         label = "unknown"
     elif implies_top_12 and history_p < skeptical_p:
