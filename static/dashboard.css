@@ -14037,37 +14037,36 @@ a.signed-home-league:hover {
     text-align: right;
 }
 
-/* Keep the team abbr immediately beside the name (do not flex-grow the
-   name into the full column — that shoved "NE"/"SEA" into a middle gutter).
-   Allow long names to wrap up to 2 lines instead of ellipsizing. */
+/* Name + team abbr as inline text so the abbr stays beside the name.
+   Avoid flex-grow / -webkit-box line-clamp — those stretched the name and
+   shoved "NE"/"SEA" into the far edge of the cell. */
 .p-name-line {
-    display: flex;
-    align-items: baseline;
-    gap: 4px;
+    display: block;
     min-width: 0;
     max-width: 100%;
+    line-height: 1.25;
 }
 
 .p-name-line--right {
-    justify-content: flex-end;
+    text-align: right;
 }
 
 .p-name-line .pname {
-    min-width: 0;
-    flex: 0 1 auto;
-    overflow: hidden;
+    display: inline;
     white-space: normal;
     overflow-wrap: anywhere;
     word-break: break-word;
-    line-height: 1.2;
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
 }
 
 .p-name-line .p-team {
-    flex: 0 0 auto;
+    display: inline;
     white-space: nowrap;
+    margin-left: 4px;
+}
+
+.p-name-line--right .p-team {
+    margin-left: 0;
+    margin-right: 4px;
 }
 
 .p-game-line {
