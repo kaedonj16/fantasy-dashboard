@@ -1058,14 +1058,116 @@
     return Object.keys(seen);
   }
   function _nflOptions() {
-    var seen = {};
+    // NFL filter lists matchups (game_id), not lone team abbrevs.
+    var byGid = {};
     (_state.matchups || []).forEach(function(m) {
       (m.players || []).forEach(function(pid) {
-        var t = _team(pid);
-        if (t) seen[t] = 1;
+        var info = (_state.player_info || {})[pid] || {};
+        var gid = info.game_id || '';
+        var away = info.away || '', home = info.home || '';
+        if (!gid && away && home) gid = away + '@' + home;
+        if (!gid || (!away && !home)) return;
+        if (!byGid[gid]) {
+          byGid[gid] = {
+            id: gid,
+            away: away,
+            home: home,
+            code: String(info.game_code || '0'),
+            label: (away && home) ? (away + ' @ ' + home) : gid
+          };
+        }
       });
     });
-    return Object.keys(seen).sort();
+    // Prefer live → upcoming → final so the chip bar stays useful on game day.
+    var rank = function(c) { return c === '1' ? 0 : c === '0' ? 1 : 2; };
+    return Object.keys(byGid).map(function(k) { return byGid[k]; }).sort(function(a, b) {
+      var rd = rank(a.code) - rank(b.code);
+      if (rd) return rd;
+      return a.label < b.label ? -1 : a.label > b.label ? 1 : 0;
+    });
+  }
+  function _nflGameInfo(gid) {
+    if (!gid || gid === 'all') return null;
+    var games = _state.games || {};
+    if (games[gid]) return games[gid];
+    // Fallback: rebuild a thin row from player_info + last PBP situation.
+    var info = _state.player_info || {};
+    var row = null;
+    Object.keys(info).some(function(pid) {
+      var p = info[pid];
+      if ((p.game_id || '') !== gid) return false;
+      row = {
+        game_id: gid,
+        away: p.away || '', home: p.home || '',
+        away_pts: p.away_pts || '', home_pts: p.home_pts || '',
+        game_status: p.game_status || '', game_code: String(p.game_code || ''),
+        game_clock: p.game_clock || '', game_quarter: p.game_quarter || '',
+        possession: '', down: '', distance: '', yard_line: ''
+      };
+      return true;
+    });
+    if (!row) {
+      // Legacy team-abbrev filter: resolve the game that team is in.
+      Object.keys(info).some(function(pid) {
+        var p = info[pid];
+        if ((p.team || '') !== gid) return false;
+        var resolved = p.game_id || ((p.away && p.home) ? (p.away + '@' + p.home) : '');
+        if (!resolved) return false;
+        row = _nflGameInfo(resolved);
+        return !!row;
+      });
+      return row;
+    }
+    var plays = (_state.pbp_by_game || {})[gid] || [];
+    var best = null;
+    for (var i = plays.length - 1; i >= 0; i--) {
+      var pl = plays[i] || {};
+      if (pl.team && (pl.down || pl.distance || pl.yard_line)) { best = pl; break; }
+    }
+    if (!best) {
+      for (var j = plays.length - 1; j >= 0; j--) {
+        if ((plays[j] || {}).team) { best = plays[j]; break; }
+      }
+    }
+    if (best) {
+      row.possession = best.team || '';
+      row.down = best.down || '';
+      row.distance = best.distance || '';
+      row.yard_line = best.yard_line || '';
+      if (!row.game_clock && best.clock) row.game_clock = best.clock;
+      if (!row.game_quarter && best.quarter) row.game_quarter = best.quarter;
+    }
+    return row;
+  }
+  function _nflFilterTeams() {
+    var f = _filters.nfl;
+    if (!f || f === 'all') return null;
+    var g = _nflGameInfo(f);
+    if (g && (g.away || g.home)) {
+      var set = {};
+      if (g.away) set[g.away] = 1;
+      if (g.home) set[g.home] = 1;
+      return set;
+    }
+    // Legacy single-team chip values still match that abbrev.
+    var legacy = {};
+    legacy[f] = 1;
+    return legacy;
+  }
+  function _nflFilterLabel() {
+    var f = _filters.nfl;
+    if (!f || f === 'all') return '';
+    var g = _nflGameInfo(f);
+    if (g && g.away && g.home) return g.away + ' @ ' + g.home;
+    var opt = _nflOptions().find(function(o) { return o.id === f; });
+    return (opt && opt.label) || f;
+  }
+  function _passesNflFilter(team, gameId) {
+    if (_filters.nfl === 'all') return true;
+    if (gameId && _filters.nfl === gameId) return true;
+    var teams = _nflFilterTeams();
+    if (!teams) return true;
+    return !!(team && teams[team]);
   }
   var _POS_LIST  = ['QB', 'RB', 'WR', 'TE', 'K', 'DEF'];
   var _STAT_LIST = [['td','TD'], ['reception','Reception'], ['carry','Carry'],
@@ -1079,7 +1181,7 @@
     if (_myTeamOnly && !ev.mine) return false;
     if (_bigPlaysOnly && !_isBigPlay(ev)) return false;
     if (!_passTeam(ev)) return false;
-    if (_filters.nfl !== 'all' && ev.nflTeam !== _filters.nfl) return false;
+    if (!_passesNflFilter(ev.nflTeam, (ev.gameId || ((_state.player_info || {})[ev.pid] || {}).game_id || ''))) return false;
     if (_filters.pos !== 'all' && ev.pos !== _filters.pos) return false;
     if (_filters.stat !== 'all' && (ev.stats || []).indexOf(_filters.stat) < 0) return false;
     if (_heroMid) { var hp = _heroMatchupPids(); if (hp && !hp.has(ev.pid)) return false; }
@@ -1090,7 +1192,8 @@
       var key = _scope === 'user' ? _leagueOfRid(rid) : _ownerName(rid);
       if (key !== _filters.team) return false;
     }
-    if (_filters.nfl !== 'all' && _team(pid) !== _filters.nfl) return false;
+    var info = (_state.player_info || {})[pid] || {};
+    if (!_passesNflFilter(_team(pid), info.game_id || '')) return false;
     if (_filters.pos !== 'all' && _pos(pid) !== _filters.pos) return false;
     if (_heroMid) { var hp2 = _heroMatchupPids(); if (hp2 && !hp2.has(pid)) return false; }
     return true;
@@ -1112,6 +1215,80 @@
     return (m && m.league_name) || 'Selected League';
   }
 
+  function _teamLogoSrc(abv) {
+    if (!abv) return '';
+    if (window.brTeamLogoLocal) return window.brTeamLogoLocal(abv);
+    var t = String(abv).toUpperCase();
+    if (t === 'WSH') t = 'WAS';
+    return '/static/images/team_logos/' + t + '.png';
+  }
+  function _nflBoardSitLine(g) {
+    if (!g) return '';
+    var dd = _downDist({ down: g.down, distance: g.distance });
+    var bits = [];
+    if (dd) bits.push(dd);
+    if (g.yard_line) bits.push(g.yard_line);
+    return bits.join(' · ');
+  }
+  function _nflBoardClockLine(g) {
+    if (!g) return '';
+    var code = String(g.game_code || '');
+    if (code === '2' || String(g.game_status || '').toLowerCase().indexOf('final') >= 0) return 'FINAL';
+    if (code === '0') {
+      var ep = parseFloat(g.game_time_epoch || 0);
+      if (ep) return _fmtKickoff(ep);
+      return g.game_status || 'Upcoming';
+    }
+    var q = g.game_quarter || '';
+    var clk = g.game_clock || '';
+    var mid = [q, clk].filter(Boolean).join(' ');
+    return mid || (g.game_status || 'LIVE');
+  }
+  function _renderNflBoard() {
+    if (_filters.nfl === 'all') return '';
+    var g = _nflGameInfo(_filters.nfl);
+    if (!g || (!g.away && !g.home)) return '';
+    var away = g.away || '—', home = g.home || '—';
+    var aPts = (g.away_pts === '' || g.away_pts == null) ? '–' : g.away_pts;
+    var hPts = (g.home_pts === '' || g.home_pts == null) ? '–' : g.home_pts;
+    var poss = String(g.possession || '').toUpperCase();
+    var awayPoss = poss && poss === String(away).toUpperCase();
+    var homePoss = poss && poss === String(home).toUpperCase();
+    var sit = _nflBoardSitLine(g);
+    var clock = _nflBoardClockLine(g);
+    var code = String(g.game_code || '');
+    var live = code === '1';
+    var logo = function(abv) {
+      var src = _teamLogoSrc(abv);
+      if (!src) return '<span class="rz-nfl-abv-only">' + abv + '</span>';
+      return '<img class="rz-nfl-logo" src="' + src + '" alt="" data-team="' + abv + '"'
+        + ' onerror="var t=this.getAttribute(\'data-team\');if(t&&!this._espnFallback){this._espnFallback=1;this.src=(window.brTeamLogoEspn?window.brTeamLogoEspn(t):\'\');}else{this.style.display=\'none\';}">';
+    };
+    var side = function(abv, pts, hasBall, align) {
+      var ball = hasBall
+        ? '<span class="rz-nfl-ball" title="Possession" aria-label="Has possession"></span>'
+        : '<span class="rz-nfl-ball-slot" aria-hidden="true"></span>';
+      return '<div class="rz-nfl-side rz-nfl-' + align + (hasBall ? ' has-ball' : '') + '">'
+        + (align === 'away' ? ball : '')
+        + logo(abv)
+        + '<div class="rz-nfl-side-meta">'
+        + '<span class="rz-nfl-abv">' + abv + '</span>'
+        + '<span class="rz-nfl-pts">' + pts + '</span>'
+        + '</div>'
+        + (align === 'home' ? ball : '')
+        + '</div>';
+    };
+    return '<div class="rz-nfl-board' + (live ? ' is-live' : '') + '" id="rz-nfl-board">'
+      + side(away, aPts, awayPoss, 'away')
+      + '<div class="rz-nfl-mid">'
+      + '<div class="rz-nfl-clock">' + clock + '</div>'
+      + (sit ? '<div class="rz-nfl-sit">' + sit + '</div>' : (live ? '<div class="rz-nfl-sit rz-nfl-sit-pending">Situation pending</div>' : ''))
+      + (live && !poss ? '<div class="rz-nfl-poss-pending">Possession pending</div>' : '')
+      + '</div>'
+      + side(home, hPts, homePoss, 'home')
+      + '</div>';
+  }
+
   function _renderFilterChips() {
     var activeCount = ['team','nfl','pos','stat'].filter(function(k) { return _filters[k] !== 'all'; }).length;
     var chips = '';
@@ -1119,7 +1296,7 @@
     if (_myTeamOnly) chips += '<span class="rz-active-chip" data-clear-myteam="1">My Team ×</span>';
     if (_bigPlaysOnly) chips += '<span class="rz-active-chip" data-clear-big="1">Big Plays ×</span>';
     if (_filters.team !== 'all') chips += '<span class="rz-active-chip" data-clear="team">' + _filters.team + ' ×</span>';
-    if (_filters.nfl  !== 'all') chips += '<span class="rz-active-chip" data-clear="nfl">'  + _filters.nfl  + ' ×</span>';
+    if (_filters.nfl  !== 'all') chips += '<span class="rz-active-chip" data-clear="nfl">'  + _nflFilterLabel()  + ' ×</span>';
     if (_filters.pos  !== 'all') chips += '<span class="rz-active-chip" data-clear="pos">'  + _filters.pos  + ' ×</span>';
     if (_filters.stat !== 'all') {
       var sl = _STAT_LIST.find(function(x) { return x[0] === _filters.stat; });
@@ -1135,7 +1312,7 @@
         return '<div class="rz-fp-row"><span class="rz-fp-label">' + label + '</span><div class="otc-day-filters rz-fp-opts">' + btns + '</div></div>';
       }
       var tOpts = [['all','All']].concat(_teamOptions().map(function(t) { return [t, t.length > 12 ? t.slice(0,11) + '…' : t]; }));
-      var nOpts = [['all','All']].concat(_nflOptions().map(function(t) { return [t, t]; }));
+      var nOpts = [['all','All']].concat(_nflOptions().map(function(o) { return [o.id, o.label]; }));
       var pOpts = [['all','All']].concat(_POS_LIST.map(function(p) { return [p, p]; }));
       var sOpts = [['all','All']].concat(_STAT_LIST);
       panel = '<div class="rz-filter-panel">'
@@ -2227,6 +2404,26 @@
       if (filterBtn) filterBtn.addEventListener('click', function() { _filterOpen = !_filterOpen; _render(); });
     }
 
+    // Refresh NFL matchup scoreboard (score / clock / d&d / possession)
+    var boardEl = root.querySelector('#rz-nfl-board');
+    var boardHtml = showFilters ? _renderNflBoard() : '';
+    if (boardHtml) {
+      var boardWrap = document.createElement('div');
+      boardWrap.innerHTML = boardHtml;
+      var newBoard = boardWrap.firstChild;
+      if (boardEl && newBoard) boardEl.parentNode.replaceChild(newBoard, boardEl);
+      else if (newBoard) {
+        var chipBar2 = root.querySelector('.rz-chip-bar');
+        var anchor = chipBar2 && (chipBar2.nextElementSibling && chipBar2.nextElementSibling.classList.contains('rz-filter-panel')
+          ? chipBar2.nextElementSibling : chipBar2);
+        var panelsHost = root.querySelector('.rz-main-card');
+        if (anchor && anchor.parentNode) anchor.parentNode.insertBefore(newBoard, anchor.nextSibling);
+        else if (panelsHost) panelsHost.insertBefore(newBoard, panelsHost.firstChild);
+      }
+    } else if (boardEl) {
+      boardEl.remove();
+    }
+
     // Sync feed (live-patches page 0)
     _syncFeed();
   }
@@ -2329,6 +2526,7 @@
       + '<div class="rz-main-card">'
       + tabBar
       + (showFilters ? _renderFilterChips() : '')
+      + (showFilters ? _renderNflBoard() : '')
       + panels
       + '</div>'
       + '</div>'

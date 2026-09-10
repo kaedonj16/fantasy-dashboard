@@ -195,6 +195,133 @@ def extract_pbp_plays(
     return out
 
 
+def game_situation_from_plays(plays: list[dict] | None) -> dict:
+    """Best-effort live board situation from the latest PBP rows.
+
+    Returns ``possession``, ``down``, ``distance``, ``yard_line``, plus optional
+    ``quarter`` / ``clock`` when the chosen play carries them. Empty strings
+    when unknown.
+
+    ``possession`` is the team abbreviation on the most recent play that has
+    field context (team + down/distance/yard line). That is the offense on that
+    snap — not a guaranteed current-drive marker after special teams / turnovers
+    when the provider omits the next snap. Callers must not invent values.
+    """
+    empty = {
+        "possession": "",
+        "down": "",
+        "distance": "",
+        "yard_line": "",
+        "quarter": "",
+        "clock": "",
+    }
+    if not plays:
+        return dict(empty)
+
+    # Prefer highest seq; fall back to original list order when seq is missing/tied.
+    indexed = [(i, p) for i, p in enumerate(plays) if isinstance(p, dict)]
+    ordered = [p for _, p in sorted(indexed, key=lambda ip: (int(ip[1].get("seq") or 0), ip[0]))]
+    chosen = None
+    for play in reversed(ordered):
+        team = _s(play.get("team"))
+        down = _s(play.get("down"))
+        distance = _s(play.get("distance"))
+        yard_line = _s(play.get("yard_line") or play.get("yardLine"))
+        if team and (down or distance or yard_line):
+            chosen = play
+            break
+    if chosen is None:
+        for play in reversed(ordered):
+            if _s(play.get("team")):
+                chosen = play
+                break
+    if chosen is None:
+        return dict(empty)
+
+    return {
+        "possession": _s(chosen.get("team")),
+        "down": _s(chosen.get("down")),
+        "distance": _s(chosen.get("distance")),
+        "yard_line": _s(chosen.get("yard_line") or chosen.get("yardLine")),
+        "quarter": _s(chosen.get("quarter")),
+        "clock": _s(chosen.get("clock")),
+    }
+
+
+def build_games_snapshot(
+    player_info: dict | None,
+    pbp_by_game: dict | None = None,
+) -> dict:
+    """Deduped per-game scoreboard rows for the Redzone NFL matchup strip.
+
+    Seeded from ``player_info`` (score / clock / quarter / status) and enriched
+    with PBP situation when available. Keys are ``game_id``.
+    """
+    games: dict = {}
+    for info in (player_info or {}).values():
+        if not isinstance(info, dict):
+            continue
+        gid = _s(info.get("game_id"))
+        if not gid or gid in games:
+            continue
+        away = _s(info.get("away"))
+        home = _s(info.get("home"))
+        if not away and not home:
+            continue
+        games[gid] = {
+            "game_id": gid,
+            "away": away,
+            "home": home,
+            "away_pts": _s(info.get("away_pts")),
+            "home_pts": _s(info.get("home_pts")),
+            "game_status": _s(info.get("game_status")),
+            "game_code": _s(info.get("game_code")),
+            "game_clock": _s(info.get("game_clock")),
+            "game_quarter": _s(info.get("game_quarter")),
+            "game_time_epoch": info.get("game_time_epoch") or 0,
+            "possession": "",
+            "down": "",
+            "distance": "",
+            "yard_line": "",
+        }
+
+    for gid, plays in (pbp_by_game or {}).items():
+        gid = _s(gid)
+        if not gid:
+            continue
+        sit = game_situation_from_plays(plays if isinstance(plays, list) else [])
+        row = games.setdefault(
+            gid,
+            {
+                "game_id": gid,
+                "away": "",
+                "home": "",
+                "away_pts": "",
+                "home_pts": "",
+                "game_status": "",
+                "game_code": "",
+                "game_clock": "",
+                "game_quarter": "",
+                "game_time_epoch": 0,
+                "possession": "",
+                "down": "",
+                "distance": "",
+                "yard_line": "",
+            },
+        )
+        for key in ("possession", "down", "distance", "yard_line"):
+            if sit.get(key):
+                row[key] = sit[key]
+        # Prefer live board clock/quarter from player_info; fill from PBP only
+        # when the scoreboard row is missing them.
+        if not row.get("game_clock") and sit.get("clock"):
+            row["game_clock"] = sit["clock"]
+        if not row.get("game_quarter") and sit.get("quarter"):
+            row["game_quarter"] = sit["quarter"]
+
+    return games
+
+
 def demo_play_text(kind: str, yds: int = 0, td: int = 0, dist: int = 0) -> str:
     """Booth-style one-liner for the deterministic demo script."""
     yds = int(yds or 0)
