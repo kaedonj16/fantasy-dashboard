@@ -720,6 +720,26 @@
   }
 
 
+  function _pidFromPlayName(play, newData) {
+    var pid = play.pid || '';
+    if (pid && pid !== '0') return pid;
+    var want = String(play.name || '').toLowerCase().trim();
+    if (!want) return '';
+    var info = (newData && newData.player_info) || _state.player_info || {};
+    var keys = Object.keys(info);
+    for (var i = 0; i < keys.length; i++) {
+      var row = info[keys[i]] || {};
+      var nm = String(row.name || '').toLowerCase().trim();
+      if (nm && nm === want) return keys[i];
+      // DEF rows sometimes arrive as "KC DEF"
+      if (row.pos === 'DEF' && row.team) {
+        var defLabel = String(row.team).toLowerCase() + ' def';
+        if (want === defLabel || want === String(row.team).toLowerCase()) return keys[i];
+      }
+    }
+    return '';
+  }
+
   function _eventsFromPbp(newData, tags, scFor) {
     var byGame = newData.pbp_by_game || {};
     var events = [];
@@ -728,7 +748,7 @@
       // list). Quiet / empty payloads must still suppress bulk "Scored X pts".
       _pbpGames[gid] = true;
       (byGame[gid] || []).forEach(function(play) {
-        var pid = play.pid || '';
+        var pid = _pidFromPlayName(play, newData);
         if (!pid || pid === '0') return;
         var playKey = String(play.play_id || (gid + ':' + play.seq + ':' + pid));
         if (_seenPlayIds.has(playKey)) return;
@@ -812,12 +832,11 @@
       var newL = pi.stat_line;
       if (!newL) return;
       if (handled[pid]) return;
-      // Skip box-score fiction only when this game has real PBP rows. An empty
-      // pbp_by_game[gid] (Tank01 miss) must still allow narrative diffs from
-      // playerStats so we don't fall through to bulk "Scored X pts".
+      var code = String(pi.game_code || '');
       var gid = pi.game_id || '';
-      var pbpRows = gid ? ((newData.pbp_by_game || {})[gid] || []) : [];
-      if (gid && pbpRows.length) {
+      // Live/final: real Tank01 play-by-play lines only — never invent
+      // boxscore-diff narratives or bulk "Scored X pts" cards.
+      if (code === '1' || code === '2' || (gid && _pbpGames[gid])) {
         handled[pid] = true;
         return;
       }
@@ -831,15 +850,9 @@
         if (handled[pid] || pid === '0') return;
         var info = newData.player_info[pid] || {};
         var gid = info.game_id || '';
-        var pbpRows = gid ? ((newData.pbp_by_game || {})[gid] || []) : [];
-        if (gid && (pbpRows.length || _pbpGames[gid])) {
-          handled[pid] = true;
-          return;
-        }
-        // Live/final NFL games: never invent post-game "Scored X pts" dump cards.
-        // Prefer PBP or boxscore narrative (_playsFromDiff) instead.
         var code = String(info.game_code || '');
-        if (code === '1' || code === '2') {
+        // Live/final or any game with a PBP attempt: no bulk point dumps.
+        if (code === '1' || code === '2' || (gid && _pbpGames[gid])) {
           handled[pid] = true;
           return;
         }
@@ -1918,7 +1931,19 @@
           container.innerHTML = '<div class="rz-feed-empty">No plays match these filters yet.</div>';
         }
       } else {
-        container.innerHTML = _pregameScheduleHtml();
+        // Live/final with a PBP attempt but no lines yet — honest empty, not
+        // boxscore / "Scored X pts" fiction.
+        var pbpAttempted = Object.keys(_state.pbp_by_game || {}).length > 0
+          || Object.keys(_pbpGames).length > 0;
+        var liveOrFinal = Object.keys(_state.player_info || {}).some(function(pid) {
+          var c = String(((_state.player_info || {})[pid] || {}).game_code || '');
+          return c === '1' || c === '2';
+        });
+        if (pbpAttempted && liveOrFinal) {
+          container.innerHTML = '<div class="rz-feed-empty">Play-by-play lines aren’t available for these games yet. We only show real PBP — not box-score summaries.</div>';
+        } else {
+          container.innerHTML = _pregameScheduleHtml();
+        }
       }
       _renderPagination(totalPages);
       return;

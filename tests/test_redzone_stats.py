@@ -68,6 +68,27 @@ def test_stat_line_none_input_does_not_raise():
     assert line["pass_yds"] == 0.0
 
 
+def test_stat_line_flat_fields():
+    """Per-play Tank01 deltas are often flat (no Passing/Rushing nests)."""
+    line = rz_stat_line_from_ps({
+        "longName": "Patrick Mahomes",
+        "passYds": "17",
+        "passTD": 1,
+        "int": 0,
+    })
+    assert line["pass_yds"] == 17.0
+    assert line["pass_td"] == 1.0
+    assert line["rec"] == 0.0
+
+
+def test_stat_line_nested_wins_over_flat():
+    line = rz_stat_line_from_ps({
+        "passYds": "99",
+        "Passing": {"passYds": "17"},
+    })
+    assert line["pass_yds"] == 17.0
+
+
 def test_stat_line_kicker_field_fallbacks():
     # fgm accepts either fgm or fgMade; fg_long accepts several spellings.
     a = rz_stat_line_from_ps({"Kicking": {"fgm": 4, "fgLng": 55, "xpm": 1}})
