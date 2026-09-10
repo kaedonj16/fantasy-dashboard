@@ -85,13 +85,17 @@ def test_week_scores_visible_gate():
 def test_portfolio_card_has_live_slot_and_hydration():
     source = (ROOT / "app.py").read_text()
     fn = source.split("def build_portfolio_body")[1].split("\ndef ")[0]
-    # A hidden, per-league slot on valid cards carrying the fetch keys.
+    # A per-league slot on valid cards carrying the fetch keys; starts as a
+    # content-shaped skeleton so scores don't pop in empty.
     assert "data-lg-live" in fn
     assert "data-platform=" in fn
     assert "data-league-id=" in fn
     assert "pf-lg-live" in fn
+    assert "aria-busy='true'" in fn
+    assert "pf-live-skel" in fn
+    assert "skeleton pf-live-skel-score" in fn
     # The slot sets display:flex, so it needs an explicit [hidden] rule to beat
-    # it — otherwise an un-hydrated slot paints an empty grey band on the card.
+    # it — hide after fetch when scores aren't live for the week.
     assert ".pf-lg-live[hidden]{display:none;}" in fn
     # Win-probability bar is rendered (hidden at final / bye inside wpBar).
     assert "pf-live-wp" in fn
@@ -100,6 +104,7 @@ def test_portfolio_card_has_live_slot_and_hydration():
     # Client hydration hits the endpoint, caps concurrency, refreshes live games.
     assert "/api/portfolio/matchup" in fn
     assert "document.hidden" in fn
+    assert "removeAttribute('aria-busy')" in fn
     # Offseason cards do not get a live slot (odds/scores are meaningless there).
     live_block = fn.split("_lg_season_live")[1].split("league_rows +=")[0]
     assert 'lg.get("offseason")' in live_block
@@ -111,5 +116,5 @@ def test_live_slot_not_on_pending_or_error_cards():
     # The slot markup is emitted once, right before the valid-card markup, so
     # pending and error branches (which `continue` earlier) never render it.
     # (The JS querySelectorAll also references the attribute, hence the exact
-    # "data-lg-live hidden" match here rather than a bare attribute count.)
-    assert fn.count("data-lg-live hidden") == 1
+    # "data-lg-live aria-busy" match here rather than a bare attribute count.)
+    assert fn.count("data-lg-live aria-busy='true'") == 1

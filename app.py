@@ -28003,15 +28003,35 @@ def build_portfolio_body(
         ) if strength_chips else ""
 
         # Live matchup slot: hydrated client-side (see pfLiveScores below) only
-        # in-season during game weeks; otherwise it stays hidden and the card
-        # falls back to the record/standing row. Kept out of the offseason cards.
+        # in-season during game weeks. Starts as a content-shaped skeleton so the
+        # band doesn't pop in empty; hides after fetch when scores aren't live.
+        # Kept out of the offseason cards.
         _lg_season_live = lg.get("season") or season
+        live_skel = (
+            "<div class='pf-live-skel' aria-hidden='true'>"
+            "<div class='skeleton pf-live-skel-status'></div>"
+            "<div class='pf-live-grid'>"
+            "<div class='pf-live-side'>"
+            "<div class='skeleton pf-live-skel-lbl'></div>"
+            "<div class='skeleton pf-live-skel-score'></div>"
+            "<div class='skeleton pf-live-skel-proj'></div>"
+            "</div>"
+            "<div class='pf-live-side opp'>"
+            "<div class='skeleton pf-live-skel-lbl'></div>"
+            "<div class='skeleton pf-live-skel-score'></div>"
+            "<div class='skeleton pf-live-skel-proj'></div>"
+            "</div>"
+            "</div>"
+            "<div class='skeleton pf-live-skel-wp'></div>"
+            "</div>"
+        )
         live_slot = (
             "" if lg.get("offseason") else
-            f"<div class='pf-lg-live' data-lg-live hidden "
+            f"<div class='pf-lg-live' data-lg-live aria-busy='true' "
             f"data-platform='{html.escape(str(plat), quote=True)}' "
             f"data-league-id='{html.escape(str(lid), quote=True)}' "
-            f"data-season='{html.escape(str(_lg_season_live), quote=True)}'></div>"
+            f"data-season='{html.escape(str(_lg_season_live), quote=True)}'>"
+            f"{live_skel}</div>"
         )
 
         league_rows += (
@@ -28135,15 +28155,25 @@ def build_portfolio_body(
         ".pf-lg-pager-lbl{font-size:12.5px;color:var(--text-muted);font-weight:600;min-width:96px;text-align:center;}"
         # Live matchup band: your total vs opponent as a head-to-head, each side's
         # projected final, and a win-probability bar (your share green, the
-        # opponent's the remainder). Hydrated client-side (pfLiveScores); hidden
-        # until it has data. A neutral inset — not another bordered card — so it
-        # doesn't echo the Record/Standing/Streak row beneath it.
+        # opponent's the remainder). Hydrated client-side (pfLiveScores); starts
+        # as a skeleton, then swaps to scores or hides when not live. A neutral
+        # inset — not another bordered card — so it doesn't echo the
+        # Record/Standing/Streak row beneath it.
         ".pf-lg-live{border-radius:8px;padding:7px 9px 8px;"
         "background:color-mix(in srgb,var(--text-subtle) 9%,transparent);"
         "display:flex;flex-direction:column;gap:6px;}"
         # The class sets display:flex, which would otherwise beat the UA
-        # [hidden]{display:none}; keep the empty slot truly hidden until hydrated.
+        # [hidden]{display:none}; hide after fetch when scores aren't live.
         ".pf-lg-live[hidden]{display:none;}"
+        # Content-shaped skeleton (status + two scores + WP track) using the
+        # shared .skeleton shimmer so the band reserves space while loading.
+        ".pf-live-skel{display:flex;flex-direction:column;gap:6px;}"
+        ".pf-live-skel-status{height:8px;width:72px;border-radius:4px;}"
+        ".pf-live-skel-lbl{height:8px;width:48px;border-radius:4px;}"
+        ".pf-live-side.opp .pf-live-skel-lbl{width:56px;}"
+        ".pf-live-skel-score{height:20px;width:52px;border-radius:4px;margin-top:2px;}"
+        ".pf-live-skel-proj{height:7px;width:40px;border-radius:4px;}"
+        ".pf-live-skel-wp{height:6px;width:100%;border-radius:999px;margin-top:2px;}"
         ".pf-live-status{font-size:9px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;"
         "color:var(--text-subtle);display:flex;align-items:center;gap:5px;}"
         ".pf-live-dot{width:6px;height:6px;border-radius:50%;background:var(--text-subtle);flex:0 0 auto;}"
@@ -28267,7 +28297,7 @@ def build_portfolio_body(
         "+'<div class=\"pf-live-wp-lbls\"><span class=\"pf-live-wp-you\">'+y+'% to win</span>'"
         "+'<span class=\"pf-live-wp-opp\">'+o+'%</span></div></div>';}"
         "function render(slot,d){"
-        "if(!d||!d.live||!d.you){slot.hidden=true;slot.innerHTML='';return;}"
+        "if(!d||!d.live||!d.you){slot.hidden=true;slot.innerHTML='';slot.removeAttribute('aria-busy');return;}"
         "var st=d.status||'pre';"
         "var txt=st==='in'?('Live \\u00b7 Wk '+d.week):(st==='final'?('Final \\u00b7 Wk '+d.week):('Wk '+d.week));"
         "var you=d.you,opp=d.opp;"
@@ -28277,6 +28307,7 @@ def build_portfolio_body(
         "+'<div class=\"pf-live-grid\">'+side(you,'You',false,yWin)"
         "+side(opp,opp?(opp.name||'Opp'):'Bye',true,oWin)+'</div>'"
         "+wpBar(d);"
+        "slot.removeAttribute('aria-busy');"
         "slot.hidden=false;}"
         "function load(slot){"
         "var p=slot.getAttribute('data-platform'),l=slot.getAttribute('data-league-id'),s=slot.getAttribute('data-season');"
