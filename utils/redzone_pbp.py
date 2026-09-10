@@ -420,7 +420,8 @@ def extract_pbp_plays(
         emitted = 0
         pstats = play.get("playerStats") or play.get("player_stats") or {}
         
-        # Track if we've successfully resolved a receiver contribution with valid pid
+        # Track if we have ANY receiver contribution (resolved or not)
+        has_any_receiver_contrib = False
         has_resolved_receiver_contrib = False
         offense_team = ""
         
@@ -462,9 +463,11 @@ def extract_pbp_plays(
                 or (" TD" in text)
             )
             
-            # Track receiver contributions - only count as resolved if we have a valid pid
-            if (line.get("rec") or line.get("rec_td")) and pid:
-                has_resolved_receiver_contrib = True
+            # Track receiver contributions
+            if line.get("rec") or line.get("rec_td"):
+                has_any_receiver_contrib = True
+                if pid:
+                    has_resolved_receiver_contrib = True
             
             out.append({
                 **base,
@@ -529,8 +532,8 @@ def extract_pbp_plays(
                 })
                 emitted += 1
 
-        # Fallback: Extract target from incomplete pass text
-        if not has_resolved_receiver_contrib and not is_no_play and "pass" in text.lower() and "incomplete" in text.lower():
+        # Fallback: Extract target from incomplete pass text (only if no receiver row exists)
+        if not has_any_receiver_contrib and not is_no_play and "pass" in text.lower() and "incomplete" in text.lower():
             target_name = _extract_target_from_text(text)
             if target_name:
                 # Try to resolve target
@@ -547,7 +550,7 @@ def extract_pbp_plays(
                     emitted += 1
                     has_resolved_receiver_contrib = True
         
-        # Fallback: Extract receiver from completed pass text
+        # Fallback: Extract receiver from completed pass text (runs when receiver exists but pid is empty)
         if not has_resolved_receiver_contrib and not is_no_play and "pass" in text.lower() and "incomplete" not in text.lower():
             # Look for patterns like "to <Name> for X yards"
             receiver_name = _extract_target_from_text(text)

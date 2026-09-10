@@ -108,7 +108,15 @@ window.showPaywall = function showPaywall(feature, opts) {
     ? `<p class="paywall-preview-line"><strong>${opts.count}</strong> ${opts.message || 'available with PRO'}</p>`
     : (opts.message ? `<p class="paywall-preview-line">${opts.message}</p>` : '');
 
-  document.querySelectorAll('.paywall-modal').forEach(function (el) { el.remove(); });
+  // CRITICAL: Properly close existing paywalls before removing them to restore inert state
+  var existingPaywalls = document.querySelectorAll('.paywall-modal');
+  if (existingPaywalls.length > 0) {
+    var inertRoot = document.getElementById('app-scale') || document.getElementById('page-root');
+    if (inertRoot && inertRoot.hasAttribute('inert')) {
+      inertRoot.removeAttribute('inert');
+    }
+    existingPaywalls.forEach(function (el) { el.remove(); });
+  }
 
   const modal = document.createElement('div');
   modal.className = 'paywall-modal';
@@ -1081,7 +1089,15 @@ function openHomeProModal() {
   const NEEDS_SEASON = { mfl: true, fleaflicker: true };
   const year = (window.__brctx && window.__brctx.season) || new Date().getFullYear();
 
-  document.querySelectorAll('.paywall-modal').forEach(function (el) { el.remove(); });
+  // CRITICAL: Properly close existing paywalls before removing them to restore inert state
+  const existingPaywalls = document.querySelectorAll('.paywall-modal');
+  if (existingPaywalls.length > 0) {
+    const inertRoot = document.getElementById('app-scale') || document.getElementById('page-root');
+    if (inertRoot && inertRoot.hasAttribute('inert')) {
+      inertRoot.removeAttribute('inert');
+    }
+    existingPaywalls.forEach(function (el) { el.remove(); });
+  }
 
   const modal = document.createElement('div');
   modal.className = 'paywall-modal';
@@ -1422,8 +1438,24 @@ function initHomeProSignup() {
   }
 }
 
+// Defensive cleanup: Remove stuck inert from app root on page load
+function cleanupStuckInert() {
+  var inertRoot = document.getElementById('app-scale') || document.getElementById('page-root');
+  if (inertRoot && inertRoot.hasAttribute('inert')) {
+    // Only remove if no active paywall modal exists
+    if (!document.querySelector('.paywall-modal')) {
+      inertRoot.removeAttribute('inert');
+      console.warn('[paywall] Removed stuck inert attribute from app root');
+    }
+  }
+}
+
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', initHomeProSignup);
+  document.addEventListener('DOMContentLoaded', function() {
+    cleanupStuckInert();
+    initHomeProSignup();
+  });
 } else {
+  cleanupStuckInert();
   initHomeProSignup();
 }

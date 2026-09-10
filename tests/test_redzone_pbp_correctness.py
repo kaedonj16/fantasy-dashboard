@@ -6,6 +6,7 @@ Tests cover the specific issues identified:
 3. Sacks showing QB instead of DST
 4. PBP chronology issues
 5. No Play stat contamination
+6. Text fallback when receiver row exists but pid is empty
 """
 from utils.redzone_pbp import (
     extract_pbp_plays,
@@ -812,3 +813,50 @@ def test_abbreviated_receiver_names_all_formats():
     te1 = next(p for p in play3_contribs if p["pid"] == "TE1")
     assert te1["stat_line"]["rec"] == 1
     assert te1["stat_line"]["rec_yds"] == 10
+
+
+def test_receiver_text_fallback_when_pid_empty():
+    """Test that text fallback runs when receiver row exists but pid is empty.
+    
+    This is the core bug: if playerStats has a receiver row but we can't resolve
+    the pid, we should still try text extraction to create a resolved contribution.
+    """
+    box = {
+        "allPlayByPlay": [
+            {
+                "playId": "1",
+                "play": "D.Maye pass short right to M.Hollins for 12 yards",
+                "playerStats": {
+                    "QB1": {"longName": "Drake Maye", "teamAbv": "NE", "Passing": {"passYds": 12}},
+                    # Receiver row exists but name doesn't resolve to pid
+                    "WR_UNKNOWN": {"longName": "M.Hollins", "teamAbv": "NE", "Receiving": {"receptions": 1, "recYds": 12}}
+                }
+            }
+        ]
+    }
+    
+    # Only QB is in name_to_pid, receiver is NOT
+    name_to_pid = {"drake maye": "QB1"}
+    
+    # But receiver IS in player_meta_by_pid for team resolution
+    player_meta_by_pid = {
+        "QB1": {"name": "Drake Maye", "team": "NE"},
+        "WR1": {"name": "Mack Hollins", "team": "NE"}
+    }
+    
+    plays = extract_pbp_plays(
+        box, "g1",
+        name_to_pid=name_to_pid,
+        player_meta_by_pid=player_meta_by_pid
+    )
+    
+    # Should have QB + receiver (from text fallback)
+    assert len(plays) == 2, f"Expected 2 contributions, got {len(plays)}"
+    
+    pids = {p["pid"] for p in plays}
+    assert "QB1" in pids
+    assert "WR1" in pids, "Text fallback should have resolved M.Hollins to WR1"
+    
+    wr = next(p for p in plays if p["pid"] == "WR1")
+    assert wr["stat_line"]["rec"] == 1
+    assert wr["stat_line"]["rec_yds"] == 12
