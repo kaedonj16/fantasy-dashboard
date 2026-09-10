@@ -1262,17 +1262,34 @@ def normalize_game_status_from_tank01(game: dict, now: datetime | None = None) -
 def game_has_started(game: Optional[dict], now: datetime | None = None) -> bool:
     """True when a Tank01/schedule game is live or final.
 
-    Explicit ``gameStatusCode`` 0 (scheduled) wins even if a stale
+    Explicit ``gameStatusCode`` 0 (scheduled) normally wins even if a stale
     ``gameTime_epoch`` would otherwise look like the game already ended —
     that is what painted last year's box scores on the Week 1 preview.
+
+    Exception: when ``gameDate`` is a calendar day before today, treat the
+    game as started/final even if Tank01 still reports code 0. Matchup rows
+    already date-correct the game line to "Final"; without this exception the
+    box-score line stays blank after Thursday night while the schedule lags.
     """
     if not game or not isinstance(game, dict):
         return False
+    if now is None:
+        now = datetime.now(timezone.utc)
     code = str(game.get("gameStatusCode") or "").strip()
-    if code == "0":
-        return False
     if code in ("1", "2"):
         return True
+    if code == "0":
+        game_date = str(game.get("gameDate") or "")[:8]
+        if len(game_date) == 8 and game_date.isdigit():
+            # Local calendar day — same basis as format_team_game_line's today_str.
+            today_str = (
+                now.astimezone().strftime("%Y%m%d")
+                if getattr(now, "tzinfo", None)
+                else now.strftime("%Y%m%d")
+            )
+            if game_date < today_str:
+                return True
+        return False
     return normalize_game_status_from_tank01(game, now=now) in ("in", "post")
 
 

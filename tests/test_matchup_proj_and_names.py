@@ -135,6 +135,10 @@ def test_render_matchup_keeps_team_abbr_outside_name_ellipsis():
     assert "IND" in html
     assert "Jonathan Taylor" in html
     assert "14.2" in html
+    # Full name is in the markup; CSS may wrap but must not rewrite/truncate HTML.
+    assert "Jonathan Ta..." not in html
+    assert 'data-player-name=\'Jonathan Taylor\'' in html
+    assert "class='pname player-clickable'" in html or 'class="pname' in html
 
 
 def test_team_live_totals_uses_yahoo_proj_total_when_starters_have_no_sleeper_proj():
