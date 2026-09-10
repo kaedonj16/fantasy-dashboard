@@ -297,14 +297,34 @@
 
   // ── Scoring math ───────────────────────────────────────────────────────────────
   function _n(x) { return parseFloat(x || 0) || 0; }
-  function _lineToPts(L, s) {
+  // Per-made-FG rate for a league. Leagues that score by distance define
+  // buckets (Sleeper fgm_0_19..fgm_50p; ESPN fgm_0_39/fgm_40_49/fgm_50p); pick
+  // the tightest bucket the league actually defines, else the flat fgm/fg rate.
+  function _fgRate(yds, s) {
+    yds = _n(yds);
+    var order;
+    if (yds >= 60) order = ['fgm_60p', 'fgm_50p', 'fgm_40_49', 'fgm_0_39', 'fgm', 'fg'];
+    else if (yds >= 50) order = ['fgm_50p', 'fgm_50_59', 'fgm_40_49', 'fgm_0_39', 'fgm', 'fg'];
+    else if (yds >= 40) order = ['fgm_40_49', 'fgm_0_39', 'fgm', 'fg'];
+    else if (yds >= 30) order = ['fgm_30_39', 'fgm_0_39', 'fgm', 'fg'];
+    else if (yds >= 20) order = ['fgm_20_29', 'fgm_0_39', 'fgm', 'fg'];
+    else if (yds > 0)   order = ['fgm_0_19', 'fgm_0_39', 'fgm', 'fg'];
+    else order = ['fgm', 'fg']; // unknown distance (e.g. cumulative box line)
+    for (var i = 0; i < order.length; i++) {
+      if (s[order[i]] != null) return _n(s[order[i]]);
+    }
+    return 0;
+  }
+  function _lineToPts(L, s, pos) {
     if (!L) return 0;
     s = s || _state.scoring || {};
     var pts = _n(L.pass_yds) * _n(s.pass_yd) + _n(L.pass_td) * _n(s.pass_td) + _n(L.int) * _n(s.pass_int)
       + _n(L.rush_yds) * _n(s.rush_yd) + _n(L.rush_td) * _n(s.rush_td)
       + _n(L.rec) * _n(s.rec) + _n(L.rec_yds) * _n(s.rec_yd) + _n(L.rec_td) * _n(s.rec_td);
-    // Kicker + defense (Sleeper-style keys with common aliases)
-    pts += _n(L.fgm) * _n(s.fgm || s.fg) + _n(L.xpm) * _n(s.xpm || s.xp);
+    // TE reception premium (bonus_rec_te) when the league runs one.
+    if (String(pos || '').toUpperCase() === 'TE') pts += _n(L.rec) * _n(s.bonus_rec_te);
+    // Kicker (distance-aware) + defense (Sleeper-style keys with common aliases)
+    pts += _n(L.fgm) * _fgRate(L.fg_yds, s) + _n(L.xpm) * _n(s.xpm || s.xp);
     var sacks = _n(L.sacks != null ? L.sacks : L.sack);
     pts += sacks * _n(s.sack) + _n(L.def_int) * _n(s.int || s.def_int)
       + _n(L.fum_rec) * _n(s.fum_rec) + _n(L.def_td) * _n(s.def_td || s.td);
@@ -797,8 +817,8 @@
         if (!rid) return; // not on any roster in this payload
         var line = play.stat_line || {};
         var scoring = scFor(pid);
-        var pts = parseFloat(_lineToPts(line, scoring).toFixed(2));
         var pos = _pos(pid);
+        var pts = parseFloat(_lineToPts(line, scoring, pos).toFixed(2));
         var desc = play.play_text || '';
         if (!desc) {
           var info = _describe(line, pos);

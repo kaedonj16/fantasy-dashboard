@@ -376,6 +376,16 @@ def test_quarter_label_is_prefixed():
     assert "[ev.gameQuarter, ev.gameClock]" not in src
 
 
+def test_scoring_honors_distance_fg_and_te_premium():
+    """Per-play points respect distance-based FG buckets and TE premium."""
+    src = _rz()
+    assert "function _fgRate(" in src
+    assert "fgm_50p" in src and "fgm_40_49" in src and "fgm_0_39" in src
+    # TE reception premium and per-play position both flow into the scorer.
+    assert "s.bonus_rec_te" in src
+    assert "_lineToPts(line, scoring, pos)" in src
+
+
 def test_app_wires_pbp_into_collect_and_demo():
     app = (_ROOT / "app.py").read_text(encoding="utf-8")
     assert "extract_pbp_plays as _rz_extract_pbp_plays" in app

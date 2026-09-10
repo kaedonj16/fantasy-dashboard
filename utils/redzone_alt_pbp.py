@@ -50,7 +50,7 @@ _RE_INT = re.compile(rf"({_NAME_TOK})\s+pass\b.*?INTERCEPTED")
 _RE_RUSH = re.compile(
     rf"^(?:\([^)]*\)\s*)?({_NAME_TOK})\b.*?for\s+(-?\d+|no gain)(?:\s*(?:yard|yd)s?)?"
 )
-_RE_FG = re.compile(rf"({_NAME_TOK})\s+\d+\s+yard field goal is GOOD")
+_RE_FG = re.compile(rf"({_NAME_TOK})\s+(\d+)\s+yard field goal is GOOD")
 _RE_XP = re.compile(rf"({_NAME_TOK})\s+extra point is GOOD")
 
 
@@ -110,7 +110,9 @@ def parse_pbp_play_stats(text: str) -> dict[str, dict]:
 
     mf = _RE_FG.search(text)
     if mf:
-        _accum(out, mf.group(1), fgm=1)
+        # Keep the distance so the client can score distance-based FG buckets
+        # (fgm_40_49, fgm_50p, …) rather than only a flat fgm.
+        _accum(out, mf.group(1), fgm=1, fg_yds=int(mf.group(2)))
     mx = _RE_XP.search(text)
     if mx:
         _accum(out, mx.group(1), xpm=1)

@@ -57,10 +57,14 @@ def test_parse_pbp_no_gain_reception_still_counts():
     assert sl["h.henry"] == {"rec": 1, "rec_yds": 0, "targets": 1}
 
 
-def test_parse_pbp_field_goal():
+def test_parse_pbp_field_goal_keeps_distance():
+    # Distance is retained so the client can score fgm_40_49 / fgm_50p buckets.
     assert parse_pbp_play_stats(
         "J.Myers 45 yard field goal is GOOD, Center-C.Stoll."
-    ) == {"j.myers": {"fgm": 1}}
+    ) == {"j.myers": {"fgm": 1, "fg_yds": 45}}
+    assert parse_pbp_play_stats(
+        "C.Santos 52 yard field goal is GOOD."
+    ) == {"c.santos": {"fgm": 1, "fg_yds": 52}}
 
 
 def test_espn_plays_attach_real_stat_lines():
