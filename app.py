@@ -21665,6 +21665,7 @@ def api_player_team(player_id: str):
     try:
         from utils.utils import load_relevant_index, load_teams_index, load_usage_table
         from utils.nfl_teams import get_team_full_name
+        from utils.player_team_schedule import build_team_schedule, resolve_team_for_season
 
         season = int(request.args.get("season", datetime.now().year))
         skill_positions = {"QB", "RB", "WR", "TE"}
@@ -21683,7 +21684,10 @@ def api_player_team(player_id: str):
 
         usage_index = load_relevant_index() or players_index
 
-        team = _canon_team_abbr(player_meta.get("team") or "")
+        current_team = _canon_team_abbr(player_meta.get("team") or "")
+        # Prefer the franchise the player actually played for in the viewed
+        # season (mid-season trades / historical context), not only the live roster.
+        team = resolve_team_for_season(str(player_id), season, current_team) or current_team
         position = str(player_meta.get("pos") or player_meta.get("position") or "").upper()
         player_name = player_meta.get("name") or ""
 
@@ -21741,6 +21745,21 @@ def api_player_team(player_id: str):
             teams_index, pfr_snaps,
         )
 
+        schedule = []
+        try:
+            schedule = build_team_schedule(
+                team,
+                int(stats_season if data_mode == "actual" else season),
+                bye_week=int(bye_week) if bye_week not in (None, "") else None,
+                teams_index=teams_index,
+                include_postseason=(data_mode == "actual"),
+                # Scoreboard enrichment is best-effort; empty without Tank01.
+                enrich_scores=True,
+            )
+        except Exception:
+            logger.debug("team schedule build failed for %s %s", team, season, exc_info=True)
+            schedule = []
+
         _payload = {
             "available": True,
             "team": team,
@@ -21758,11 +21777,54 @@ def api_player_team(player_id: str):
             "ranks_more": ranks_more,
             "depth_chart": depth_chart,
             "oline": _oline_for_player(int(stats_season), team, position),
+            "schedule": schedule,
         }
         _TEAM_PAYLOAD_CACHE[_payload_key] = (time.time(), _payload)
         return jsonify(_payload)
     except Exception as e:
         logger.exception("[api_player_team] error")
+        return _api_err("Request failed", e)
+
+
+@app.route("/api/player-team-boxscore")
+def api_player_team_boxscore():
+    """Lazy Tank01 box score for a Team-tab schedule accordion expansion."""
+    try:
+        from utils.utils import load_relevant_index, load_teams_index
+        from utils.player_team_schedule import get_shaped_boxscore
+
+        game_id = str(request.args.get("game_id") or "").strip()
+        view_team = _canon_team_abbr(request.args.get("team") or "")
+        focus_pid = str(request.args.get("focus_pid") or request.args.get("player_id") or "").strip()
+        season_type = str(request.args.get("season_type") or "reg").strip().lower()
+        if season_type not in ("reg", "post"):
+            season_type = "reg"
+        if not game_id:
+            return jsonify({"available": False, "error": "Missing game_id"}), 400
+
+        players_index = get_players_index_global() or load_relevant_index() or {}
+        teams_index = _canonical_teams_index(load_teams_index() or {})
+
+        # Reuse the short-lived redzone boxscore cache so live polls share work.
+        def _fetch(gid: str):
+            try:
+                return _redzone_boxscore(gid) or {}
+            except Exception:
+                from dashboard_services.api import fetch_tank_boxscore
+                return fetch_tank_boxscore(gid) or {}
+
+        payload = get_shaped_boxscore(
+            game_id,
+            view_team=view_team,
+            focus_pid=focus_pid,
+            players_index=players_index,
+            teams_index=teams_index,
+            season_type=season_type,
+            fetch_box=_fetch,
+        )
+        return jsonify(payload)
+    except Exception as e:
+        logger.exception("[api_player_team_boxscore] error")
         return _api_err("Request failed", e)
 
 
