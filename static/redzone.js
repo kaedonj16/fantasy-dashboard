@@ -403,14 +403,21 @@
   }
 
   function _describe(d, pos) {
+    // Prefer play-by-play wording over bulk box-score shorthand
+    // (e.g. "Throws a 66-yard touchdown pass" vs "66 yd TD pass").
+    function _yds(n) {
+      n = Math.round(n || 0);
+      return n === 1 ? '1 yard' : n + ' yards';
+    }
+
     // DEF: only sacks / INT / fumbles / defensive TDs
     if (pos === 'DEF') {
       var segs = [];
       var st = [];
-      if (d.sacks   > 0) { segs.push(d.sacks   === 1 ? '1 sack'   : d.sacks   + ' sacks');   st.push('sack'); }
-      if (d.def_int > 0) { segs.push(d.def_int  === 1 ? '1 INT'    : d.def_int  + ' INTs');   st.push('int'); }
-      if (d.fum_rec > 0) { segs.push(d.fum_rec  === 1 ? '1 fumble' : d.fum_rec  + ' fumbles'); st.push('fumble'); }
-      if (d.def_td  > 0) { segs.push(d.def_td   === 1 ? '1 DEF TD' : d.def_td   + ' DEF TDs'); st.push('td'); }
+      if (d.sacks   > 0) { segs.push(d.sacks   === 1 ? 'Records a sack' : 'Records ' + d.sacks + ' sacks'); st.push('sack'); }
+      if (d.def_int > 0) { segs.push(d.def_int  === 1 ? 'Picks off a pass' : 'Picks off ' + d.def_int + ' passes'); st.push('int'); }
+      if (d.fum_rec > 0) { segs.push(d.fum_rec  === 1 ? 'Recovers a fumble' : 'Recovers ' + d.fum_rec + ' fumbles'); st.push('fumble'); }
+      if (d.def_td  > 0) { segs.push(d.def_td   === 1 ? 'Scores a defensive touchdown' : 'Scores ' + d.def_td + ' defensive touchdowns'); st.push('td'); }
       if (!segs.length) return null;
       return { desc: segs.join(' · '), kind: d.def_td > 0 ? 'td' : 'gain', stats: st };
     }
@@ -419,9 +426,12 @@
     if (pos === 'K') {
       if (d.fgm > 0) {
         var dist = Math.round(d.fg_long || 0);
-        return { desc: (dist > 0 ? dist + ' yd FG' : 'FG'), kind: 'gain', stats: ['kick'] };
+        return {
+          desc: dist > 0 ? ('Drills a ' + dist + '-yard field goal') : 'Drills a field goal',
+          kind: 'gain', stats: ['kick']
+        };
       }
-      if (d.xpm > 0) return { desc: 'PAT', kind: 'gain', stats: ['kick'] };
+      if (d.xpm > 0) return { desc: 'Knocks through the extra point', kind: 'gain', stats: ['kick'] };
       return null;
     }
 
@@ -439,19 +449,41 @@
     var kind = tdc > 0 ? 'td' : (d.int > 0 ? 'neg'
              : ((d.rec >= 1 || d.carries >= 1 || d.pass_yds > 0) ? 'gain' : 'target'));
 
-    if (tdc === 1 && d.rec_td === 1 && d.rec === 1 && d.carries < 1) return { desc: ry + ' yd TD catch', kind: kind, stats: stats };
-    if (tdc === 1 && d.rush_td === 1 && d.carries === 1 && d.rec < 1) return { desc: uy + ' yd TD run', kind: kind, stats: stats };
-    if (tdc === 1 && d.pass_td === 1 && d.rec < 1 && d.carries < 1) return { desc: py + ' yd TD pass', kind: kind, stats: stats };
+    // Single-play TD shapes — read like a call from the booth.
+    if (tdc === 1 && d.rec_td === 1 && d.rec === 1 && d.carries < 1) {
+      return { desc: 'Hauls in a ' + ry + '-yard touchdown catch', kind: kind, stats: stats };
+    }
+    if (tdc === 1 && d.rush_td === 1 && d.carries === 1 && d.rec < 1) {
+      return { desc: uy > 0 ? ('Breaks a ' + uy + '-yard touchdown run') : 'Punches it in for a touchdown', kind: kind, stats: stats };
+    }
+    if (tdc === 1 && d.pass_td === 1 && d.rec < 1 && d.carries < 1) {
+      return { desc: 'Throws a ' + py + '-yard touchdown pass', kind: kind, stats: stats };
+    }
 
     var segs = [];
-    if (d.rec >= 1)     segs.push(d.rec === 1 ? ('1 catch ' + ry + ' yds') : (d.rec + ' catches ' + ry + ' yds'));
-    if (d.carries >= 1) segs.push(d.carries === 1 ? (uy + ' yd carry') : (d.carries + ' carries ' + uy + ' yds'));
-    if (d.pass_yds > 0) segs.push(py + ' pass yds');
-    if (!segs.length && d.targets > 0) segs.push('Targeted (incomplete)');
-    var tail = '';
-    if (tdc > 0) tail += ' · ' + tdc + ' TD' + (tdc > 1 ? 's' : '');
-    if (d.int > 0) tail += ' · INT';
-    return { desc: (segs.join(', ') || 'Active') + tail, kind: kind, stats: stats };
+    if (d.pass_td > 0) {
+      segs.push(d.pass_td === 1 ? 'Throws a touchdown pass' : ('Throws ' + d.pass_td + ' touchdown passes'));
+    } else if (d.pass_yds > 0) {
+      segs.push(d.pass_yds === py && py > 0 && !(d.rec >= 1 || d.carries >= 1)
+        ? ('Completes a pass for ' + _yds(py))
+        : ('Moves the chains for ' + _yds(py) + ' through the air'));
+    }
+    if (d.rec_td > 0) {
+      segs.push(d.rec_td === 1 ? 'Hauls in a touchdown catch' : ('Hauls in ' + d.rec_td + ' touchdown catches'));
+    } else if (d.rec >= 1) {
+      if (d.rec === 1) segs.push('Catches a pass for ' + _yds(ry));
+      else segs.push('Hauls in ' + d.rec + ' catches for ' + _yds(ry));
+    }
+    if (d.rush_td > 0) {
+      segs.push(d.rush_td === 1 ? 'Runs it in for a touchdown' : ('Runs in ' + d.rush_td + ' touchdowns'));
+    } else if (d.carries >= 1) {
+      if (d.carries === 1) segs.push(uy >= 0 ? ('Runs for ' + _yds(uy)) : ('Is stuffed for a loss of ' + _yds(-uy)));
+      else segs.push('Rushes ' + d.carries + ' times for ' + _yds(uy));
+    }
+    if (!segs.length && d.targets > 0) segs.push('Targeted — pass incomplete');
+    if (d.int > 0) segs.push(d.int === 1 ? 'Throws an interception' : ('Throws ' + d.int + ' interceptions'));
+    if (!segs.length) return null;
+    return { desc: segs.join(' · '), kind: kind, stats: stats };
   }
 
   // Big-play FX for a freshly-arrived feed event: touchdowns flash (with a
@@ -970,22 +1002,16 @@
     return (_state.matchups || []).find(function(m) { return String(m.matchup_id) === mid && !_isMyRid(m.roster_id); });
   }
 
-  // The viewer's own matchup, used as the default focused "game" in This League
-  // mode so a signed-in user lands on their own matchup rather than all of them.
-  // Returns null in My Leagues scope (where _heroMid is a roster id, not a
-  // matchup id) or when the viewer has no roster in this league.
+  // Previously auto-focused the viewer's own matchup in This League. That
+  // filtered Plays down to one game by default; we now land on the full feed
+  // and only filter when the viewer taps a hero card.
   function _defaultHeroMid() {
-    if (_scope !== 'league') return null;
-    var mine = _myMatchups();
-    return mine[0] ? String(mine[0].matchup_id) : null;
+    return null;
   }
 
-  // Apply the default hero once, unless the viewer has explicitly chosen or
-  // cleared one (_heroTouched). Idempotent: once _heroMid is set it won't move.
+  // No-op kept so call sites stay stable. Hero focus is opt-in via tap.
   function _applyDefaultHero() {
-    if (_heroTouched || _heroMid !== null) return;
-    var def = _defaultHeroMid();
-    if (def) _heroMid = def;
+    return;
   }
 
   function _playersLeft(matchup) {
@@ -1857,8 +1883,7 @@
     var headerRight = root.querySelector('.rz-header-right');
     if (headerRight) {
       var liveChipHtml = _statusChipHtml();
-      var demoLink = !_isDemo ? '<a href="?demo=1" class="rz-demo-btn">Demo</a>' : '';
-      headerRight.innerHTML = demoLink + liveChipHtml + '<button class="rz-refresh-timer" id="rz-timer">' + _fmtTimer(_countdown) + '</button>';
+      headerRight.innerHTML = liveChipHtml + '<button class="rz-refresh-timer" id="rz-timer">' + _fmtTimer(_countdown) + '</button>';
     }
 
     // Replace hero cards in-place and re-wire. Preserve the strip's horizontal
@@ -1988,7 +2013,6 @@
         '<div class="rz-panel' + (_activeTab === 'opp'    ? ' active' : '') + '" id="rz-panel-opp">'    + _rosterCard(oppMatchup) + '</div>')
       + '<div class="rz-panel' + (_activeTab === 'top'    ? ' active' : '') + '" id="rz-panel-top">'    + _renderTopPerformers()  + '</div>';
 
-    var demoLink = !_isDemo ? '<a href="?demo=1" class="rz-demo-btn">Demo</a>' : '';
     var exitBtn  = _isDemo ? '<button class="rz-demo-exit" id="rz-demo-exit">Exit Demo</button>' : '';
     var staleChip = _lastPollFailed ? '<span class="rz-stale-badge">⚠ Stale</span>' : '';
     var timerLabel = _lastPollFailed ? '?' : (idle ? '-' : _fmtTimer(_countdown));
@@ -1999,7 +2023,7 @@
       notifCta
       + '<div class="rz-header">'
       + '<div class="rz-brand"><div class="rz-brand-dot' + (live ? ' is-live' : '') + '"></div><span class="rz-brand-name">BR Redzone</span><span class="rz-brand-week">Wk ' + (_state.week || '') + '</span>' + demoPill + '</div>'
-      + '<div class="rz-header-right">' + demoLink + exitBtn + staleChip + liveChip + '<button class="rz-refresh-timer" id="rz-timer">' + timerLabel + '</button></div>'
+      + '<div class="rz-header-right">' + exitBtn + staleChip + liveChip + '<button class="rz-refresh-timer" id="rz-timer">' + timerLabel + '</button></div>'
       + '</div>'
       + '<div class="rz-content">'
       + _renderScopeToggle()
@@ -2206,7 +2230,7 @@
       _scopeCache[myScope] = newData;
       _detectChanges(newData);
       _seedPrevStats(newData);
-      _applyDefaultHero(); // focus the viewer's own matchup by default in This League
+      _applyDefaultHero(); // no-op: Plays start unfiltered; hero focus is opt-in
       _countdown = _pollInterval();
 
       var savedFeedHtml = null;
@@ -2451,7 +2475,7 @@
   _seedLeaders(_state);      // snapshot leading rosters so lead-change events don't fire on load
   _detectChanges(_state);    // populate initial feed from empty _prevStats
   _seedPrevStats(_state);    // snapshot stat lines for the next poll diff
-  _applyDefaultHero();       // focus the viewer's own matchup by default in This League
+  _applyDefaultHero();       // no-op: Plays start unfiltered; hero focus is opt-in
 
   _render();
   if (_isDemo) setTimeout(_refresh, 300);
