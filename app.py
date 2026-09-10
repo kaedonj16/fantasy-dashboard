@@ -12161,9 +12161,11 @@ def _redzone_collect(platform, league_id, season, week):
             play_by_play=want_pbp,
             ttl=(None if live else 300.0) if want_pbp else None,
         )
-        # Tank01's playByPlay response is experimental and sometimes returns an
-        # empty body for finals. Fall back to the plain boxscore so we still get
-        # playerStats (and thus narrative diffs) instead of bulk "Scored X pts".
+        # Tank01's playByPlay response is experimental and sometimes returns PBP
+        # without aggregate playerStats (or an empty body). Merge a plain
+        # boxscore for scoreboard totals only — Plays never invents boxscore /
+        # "Scored X pts" fiction from that merge (client is PBP-lines-only for
+        # live/final).
         if want_pbp and not (box.get("playerStats") or box.get("allPlayByPlay")
                              or box.get("allPlaybyPlay") or box.get("playByPlay")):
             plain = _redzone_boxscore(gid, play_by_play=False)

@@ -66,6 +66,68 @@ def test_extract_pbp_empty_box_is_safe():
     assert extract_pbp_plays(None, "g") == []  # type: ignore[arg-type]
 
 
+def test_extract_keeps_named_player_when_stats_zero():
+    """Tank01 often ships play text + empty deltas — keep the booth line."""
+    box = {
+        "allPlayByPlay": [
+            {
+                "playId": "7",
+                "play": "Patrick Mahomes pass incomplete intended for Travis Kelce",
+                "playerStats": {
+                    "a": {"longName": "Patrick Mahomes", "Passing": {}},
+                    "b": {"longName": "Travis Kelce", "Receiving": {"targets": "0"}},
+                },
+            }
+        ]
+    }
+    plays = extract_pbp_plays(
+        box, "g",
+        name_to_pid={"patrick mahomes": "4046", "travis kelce": "2133"},
+    )
+    assert len(plays) == 2
+    assert all(p["play_text"].startswith("Patrick Mahomes") for p in plays)
+    assert {p["pid"] for p in plays} == {"4046", "2133"}
+
+
+def test_extract_flat_player_stats_and_nested_body():
+    box = {
+        "body": {
+            "allPlayByPlay": [
+                {
+                    "playId": "1",
+                    "play": "Saquon Barkley rush for 12 yards",
+                    "playerStats": {
+                        "x": {
+                            "longName": "Saquon Barkley",
+                            "rushYds": "12",
+                            "carries": "1",
+                        }
+                    },
+                }
+            ]
+        }
+    }
+    plays = extract_pbp_plays(
+        box, "g", name_to_pid={"saquon barkley": "4866"}
+    )
+    assert len(plays) == 1
+    assert plays[0]["pid"] == "4866"
+    assert plays[0]["stat_line"]["rush_yds"] == 12.0
+    assert plays[0]["stat_line"]["carries"] == 1.0
+
+
+def test_extract_narrative_only_when_no_player_rows():
+    box = {
+        "allPlayByPlay": [
+            {"playId": "3", "play": "Timeout at the two-minute warning"}
+        ]
+    }
+    plays = extract_pbp_plays(box, "g")
+    assert len(plays) == 1
+    assert plays[0]["play_text"].startswith("Timeout")
+    assert plays[0]["pid"] == ""
+
+
 def test_demo_play_text_td_shapes():
     assert demo_play_text("pass", 66, 1) == "Throws a 66-yard touchdown pass"
     assert demo_play_text("rec", 26, 1) == "Hauls in a 26-yard touchdown catch"

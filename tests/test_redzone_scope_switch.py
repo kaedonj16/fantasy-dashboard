@@ -330,7 +330,12 @@ def test_app_wires_pbp_into_collect_and_demo():
     assert 'play_by_play=want_pbp' in app or "play_by_play=want_pbp" in app
     assert '"pbp_by_game": pbp_by_game' in app
     assert "Try Redzone Demo" in app
-    assert 'fetch_tank_boxscore' in (_ROOT / "dashboard_services" / "api.py").read_text(encoding="utf-8")
+    api = (_ROOT / "dashboard_services" / "api.py").read_text(encoding="utf-8")
+    assert 'fetch_tank_boxscore' in api
+    # Tank01 docs use both spellings; fantasyPoints helps per-play deltas.
+    assert 'params["playByPlay"] = "true"' in api
+    assert 'params["playByplay"] = "true"' in api
+    assert 'params["fantasyPoints"] = "true"' in api
     # Finals must still request PBP — otherwise Plays falls back to bulk
     # "Scored X pts" cards after the game ends.
     assert 'want_pbp = live or final' in app
@@ -339,24 +344,38 @@ def test_app_wires_pbp_into_collect_and_demo():
 
 
 def test_pbp_coverage_suppresses_bulk_points_without_new_events():
-    """Quiet / already-seen PBP polls must not invent 'Scored X pts' cards."""
+    """Live/final and PBP-covered games never invent Scored / boxscore fiction."""
     src = _fn("_detectChanges")
     assert "Scored ' + delta.toFixed(1) + ' pts'" in src
-    # Live/final games never take the bulk Scored fallback.
+    # Live/final games never take the bulk Scored fallback or _playsFromDiff.
     assert "code === '1' || code === '2'" in src
-    # Empty PBP still allows boxscore narrative diffs (pbpRows.length gate).
-    assert "pbpRows.length" in src
-    assert "_pbpGames[gid] && pbpEvents.length" not in src
+    assert "_pbpGames[gid]" in src
+    # Boxscore narrative is no longer a live/final substitute for real PBP.
+    assert "pbpRows.length" not in src
+    assert "_playsFromDiff" in src  # still used for pregame / non-PBP only
 
 
 def test_app_falls_back_to_plain_boxscore_when_pbp_empty():
     app = (_ROOT / "app.py").read_text(encoding="utf-8")
-    assert "Fall back to the plain boxscore" in app
-    assert 'play_by_play=False' in app
-    # Empty PBP attempts still register the game key for the client.
+    # Plain boxscore merge remains for scoreboard totals only.
+    assert "play_by_play=False" in app
     assert "pbp_by_game[gid] = plays" in app
     assert "if plays:" not in app[app.index("pbp_by_game[gid] = plays") - 80:
                                     app.index("pbp_by_game[gid] = plays") + 40]
+    # Client is responsible for PBP-lines-only; server must not claim narrative diffs.
+    assert "narrative diffs" not in app
+
+
+def test_events_from_pbp_resolves_name_when_pid_missing():
+    src = _fn("_eventsFromPbp")
+    assert "_pidFromPlayName" in (_ROOT / "static" / "redzone.js").read_text(encoding="utf-8")
+    assert "fromPbp: true" in src
+
+
+def test_live_final_empty_feed_is_honest_not_boxscore():
+    src = _fn("_syncFeed")
+    assert "Play-by-play lines" in src
+    assert "not box-score summaries" in src
 
 
 def test_filter_panel_is_matchups_not_fantasy_teams():
