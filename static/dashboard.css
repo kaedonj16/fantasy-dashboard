@@ -34751,7 +34751,7 @@ a.rz-demo-link:hover {
 .rz-nfl-ball-slot {
     visibility: hidden;
 }
-@media (max-width: 430px) {
+@media (max-width: 480px) {
     .rz-nfl-board {
         padding: 10px 10px;
         gap: 6px;
