@@ -15,8 +15,6 @@ import re
 import time
 from typing import Any
 
-import requests
-
 logger = logging.getLogger(__name__)
 
 _SLEEPER_SCORES = "https://api.sleeper.com/scores/nfl"
@@ -125,6 +123,7 @@ def fetch_sleeper_week_scores(
         return hit[1]
     url = f"{_SLEEPER_SCORES}/regular/{season}/{week}"
     try:
+        import requests
         resp = requests.get(
             url, headers={"User-Agent": _UA, "Accept": "application/json"}, timeout=8
         )
@@ -170,6 +169,7 @@ def fetch_sleeper_pbp(sleeper_game_id: str, *, ttl: float = 30.0) -> list:
         return hit[1]
     url = f"{_SLEEPER_SCORES}/pbp/{gid}"
     try:
+        import requests
         resp = requests.get(
             url, headers={"User-Agent": _UA, "Accept": "application/json"}, timeout=8
         )
@@ -313,6 +313,7 @@ def fetch_espn_event_id(
         if d:
             params["dates"] = d
         try:
+            import requests
             resp = requests.get(
                 _ESPN_SCOREBOARD,
                 params=params,
@@ -359,6 +360,7 @@ def fetch_espn_pbp(event_id: str, *, ttl: float = 30.0) -> dict:
     if hit and (now - hit[0]) < ttl:
         return hit[1]
     try:
+        import requests
         resp = requests.get(
             _ESPN_PBP,
             params={"xhr": "1", "gameId": eid},
