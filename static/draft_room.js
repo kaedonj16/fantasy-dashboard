@@ -13,25 +13,43 @@
   var posColor = function(p){ return POS_COLOR[(p||'').toUpperCase()] || '#94a3b8'; };
   var hsUrl = function(id){ return 'https://sleepercdn.com/content/nfl/players/' + id + '.jpg'; };
   // DEF players: prefer locally cached logo (after running download_team_logos.py),
-  // fall back to ESPN CDN which the browser fetches directly.
+  // fall back to ESPN CDN which the browser fetches directly. Prefer the shared
+  // helpers when app.js/public.js already loaded them.
   var playerImgUrl = function(p){
+    if (window.brPlayerImgUrl) return window.brPlayerImgUrl(p);
     var pos = String(p.position || '').toUpperCase();
-    if (pos === 'DEF' && p.team){
-      var t = p.team.toUpperCase();
-      // Check local first; if the file doesn't exist the browser's onerror swaps to ESPN CDN.
+    if ((pos === 'DEF' || pos === 'DST' || pos === 'D/ST') && (p.team || p.id)){
+      var t = String(p.team || p.id || '').toUpperCase();
+      if (t === 'WSH') t = 'WAS';
       return '/static/images/team_logos/' + t + '.png';
     }
     return hsUrl(p.id);
   };
   // Inline onerror for DEF logo <img> tags: try ESPN CDN, then hide.
   var _defImgErr = function(img){
+    if (window.brDefImgOnError) {
+      window.brDefImgOnError(img, function(el){ el.style.visibility = 'hidden'; });
+      return;
+    }
     var t = img.getAttribute('data-team');
     if (t && !img._espnFallback){
       img._espnFallback = true;
-      img.src = 'https://a.espncdn.com/i/teamlogos/nfl/500/' + t.toLowerCase() + '.png';
+      var slug = String(t).toUpperCase() === 'WAS' ? 'wsh' : String(t).toLowerCase();
+      img.src = 'https://a.espncdn.com/i/teamlogos/nfl/500/' + slug + '.png';
     } else {
       img.style.visibility = 'hidden';
     }
+  };
+  // Shared <img> attrs so every DEF crest gets the ESPN fallback, not just BA/roster.
+  var playerImgTag = function(p, cls){
+    var isDef = window.brIsDefPos
+      ? window.brIsDefPos(p && p.position)
+      : ['DEF','DST','D/ST'].indexOf(String((p && p.position) || '').toUpperCase()) >= 0;
+    var team = (p && (p.team || p.id)) || '';
+    if (isDef) {
+      return '<img class="'+cls+'" src="'+playerImgUrl(p)+'" alt="" data-team="'+esc(String(team))+'" onerror="_defImgErr(this)">';
+    }
+    return '<img class="'+cls+'" src="'+playerImgUrl(p)+'" alt="" onerror="this.style.visibility=\'hidden\'">';
   };
 
   var sessKey = 'dr_' + location.pathname;
@@ -3762,7 +3780,7 @@
       var sub = adp != null ? 'ADP ' + Number(adp).toFixed(1) : 'Val ' + Math.round(valOf(p));
       var lastName = p.name.split(' ').slice(1).join(' ') || p.name;
       bchipsInner += '<div class="dr-bchip" data-bchip="' + esc(String(p.id)) + '">'
-        + '<img class="dr-bchip-img" src="' + playerImgUrl(p) + '" alt="" onerror="this.style.visibility=\'hidden\'">'
+        + playerImgTag(p, 'dr-bchip-img')
         + '<div class="dr-bchip-body">'
         + '<div class="dr-bchip-name"><span class="dr-posbadge" style="background:' + posColor(pos) + ';font-size:8px;">' + pos + '</span> ' + esc(lastName) + '</div>'
         + '<div class="dr-bchip-adp">' + sub + '</div>'
@@ -3919,7 +3937,7 @@
       var sc = ps != null ? psColor(ps) : 'var(--text-muted)';
       var metaBits = [p.team || '', f.exp, (f.age ? 'Age ' + f.age.toFixed(0) : ''), (f.injury ? f.injury : '')].filter(Boolean);
       return '<div class="dr-cmp-player">'
-        + '<div class="dr-cmp-top"><img class="dr-cmp-hs" src="' + playerImgUrl(p) + '" alt="" onerror="this.style.visibility=\'hidden\'">'
+        + '<div class="dr-cmp-top">' + playerImgTag(p, 'dr-cmp-hs')
         + '<div><div class="dr-cmp-name"><span class="dr-posbadge" style="background:' + posColor(p.position) + '">' + esc(p.position) + '</span> ' + esc(p.name) + '</div>'
         + '<div class="dr-cmp-meta">' + esc(metaBits.join(' · ')) + '</div>'
         + '</div></div>'
@@ -4323,11 +4341,8 @@
     }
     // Compare button state
     var onCmp = compareIds.indexOf(String(p.id)) >= 0;
-    var _isDef = String(p.position || '').toUpperCase() === 'DEF';
     return '<div class="dr-ba-row' + availClass + '" data-id="' + esc(String(p.id)) + '">'
-      + '<img class="dr-ba-hs" src="' + playerImgUrl(p) + '" alt=""'
-      + (_isDef ? ' data-team="' + esc(p.team || '') + '" onerror="_defImgErr(this)"' : ' onerror="this.style.visibility=\'hidden\'"')
-      + '>'
+      + playerImgTag(p, 'dr-ba-hs')
       + '<div class="dr-ba-body"><div class="dr-ba-name">' + esc(p.name) + '</div>'
       + '<div class="dr-ba-meta"><span class="dr-posbadge" style="background:' + posColor(p.position) + '">' + esc(p.position) + '</span>' + esc(p.team || '') + tierBadge(p) + ppgPart + byeFlag + '</div>'
       + reasonLine + waitLine + availLine + '</div>'
@@ -4591,12 +4606,9 @@
       var _rsps = relPS(p);
       var psBadge = (_rsps != null) ? '<span class="dr-rslot-ps" style="color:' + psColor(_rsps) + '">' + _rsps + '</span>' : '';
       var pickLbl = pickNoStr(p);
-      var _isDefSlot = String(p.position || '').toUpperCase() === 'DEF';
       return '<div class="dr-rslot">'
         + '<span class="dr-rslot-pos" style="background:' + slotColor(slot) + '">' + slot + '</span>'
-        + '<img class="dr-rslot-hs" src="' + playerImgUrl(p) + '" alt=""'
-        + (_isDefSlot ? ' data-team="' + esc(p.team || '') + '" onerror="_defImgErr(this)"' : ' onerror="this.style.visibility=\'hidden\'"')
-        + '>'
+        + playerImgTag(p, 'dr-rslot-hs')
         + '<div class="dr-rslot-body"><div class="dr-rslot-name">' + esc(p.name) + '</div>'
         + '<div class="dr-rslot-meta">' + esc(p.position) + ' &middot; ' + esc(p.team || '') + (pickLbl ? ' &middot; <span style="color:var(--accent)">' + pickLbl + '</span>' : '') + '</div></div>'
         + psBadge
@@ -6970,7 +6982,7 @@
       } else {
         if (pl.val != null) h += '<span class="dr-cell-val">' + Math.round(pl.val) + '</span>';
       }
-      h += '<img class="dr-hs" src="' + playerImgUrl(pl) + '" alt="" onerror="this.style.visibility=\'hidden\'">';
+      h += playerImgTag(pl, 'dr-hs');
       h += '<div class="dr-cell-body"><div class="dr-cell-name">' + esc(pl.name) + '</div>'
         + '<div class="dr-cell-meta"><span class="dr-posbadge" style="background:' + posColor(pl.position) + '">' + esc(pl.position) + '</span> ' + esc(pl.team || '') + '</div></div>';
     }
@@ -7381,7 +7393,7 @@
       var psStr = (_rowps != null) ? '<span class="dr-sum-ps" style="color:' + psColor(_rowps) + '">' + _rowps + '</span>' : '';
       return '<div class="dr-sum-row">'
         + '<span class="dr-sum-slot-badge" style="background:' + slotColor(slot) + '">' + slot + '</span>'
-        + '<img class="dr-sum-hs" src="' + playerImgUrl(p) + '" alt="" onerror="this.style.visibility=\'hidden\'">'
+        + playerImgTag(p, 'dr-sum-hs')
         + '<div class="dr-sum-body"><div class="dr-sum-name">' + esc(p.name) + '</div>'
         + '<div class="dr-sum-meta">' + esc(p.position) + (p.team ? ' \xb7 ' + esc(p.team) : '') + (pickStr ? ' \xb7 ' + pickStr : '') + '</div>'
         + (p.reason ? '<div class="dr-sum-reason">' + esc(p.reason) + '</div>' : '')
@@ -8942,7 +8954,7 @@
     var h = '<button class="dr-prev-close" id="drPrevClose" aria-label="Close">&times;</button>'
       // Player identity row
       + '<div class="dr-prev-top">'
-      + '<img class="dr-prev-hs" src="' + playerImgUrl(p) + '" alt="" onerror="this.style.visibility=\'hidden\'">'
+      + playerImgTag(p, 'dr-prev-hs')
       + '<div class="dr-prev-id"><div class="dr-prev-name">' + esc(p.name) + (t ? (' <span class="dr-tier' + (isTierCliff(p) ? ' dr-tier-cliff' : '') + '">T' + t + '</span>') : '') + '</div>'
       + '<div class="dr-prev-meta"><span class="dr-posbadge" style="background:' + pc + '">' + esc(p.position) + '</span> ' + esc(metaBits.join(' · ')) + '</div>'
       + '</div></div>'

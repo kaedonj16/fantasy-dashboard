@@ -13,6 +13,9 @@ DEMO_SCORING = {
     "pass_yd": 0.04, "pass_td": 4.0, "pass_int": -2.0,
     "rush_yd": 0.1, "rush_td": 6.0,
     "rec": 0.5, "rec_yd": 0.1, "rec_td": 6.0,
+    # K + DEF so demo play cards don't show 0.0 on sacks / FG / DEF TDs
+    "fgm": 3.0, "xpm": 1.0,
+    "sack": 1.0, "int": 2.0, "fum_rec": 2.0, "def_td": 6.0,
 }
 
 

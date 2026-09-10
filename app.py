@@ -11816,7 +11816,8 @@ def _redzone_demo_data(t: float = _RZ_DEMO_START, scope: str = "league"):
         L = {"sacks": 0, "def_int": 0, "fum_rec": 0, "def_td": 0}
         for p in script:
             if p["t"] <= t_eff:
-                L[p["k"]] = L.get(p["k"], 0) + 1
+                key = "sacks" if p["k"] == "sack" else p["k"]
+                L[key] = L.get(key, 0) + 1
         return L
 
     def _demo_k_line(pid, t_eff):
@@ -11868,7 +11869,8 @@ def _redzone_demo_data(t: float = _RZ_DEMO_START, scope: str = "league"):
                 if p["t"] > t_eff:
                     break
                 line = {"sacks": 0, "def_int": 0, "fum_rec": 0, "def_td": 0}
-                line[p["k"]] = 1
+                key = "sacks" if p["k"] == "sack" else p["k"]
+                line[key] = 1
                 plays_out.append({
                     "play_id": f"{gid}:{pid}:{p['t']}",
                     "seq": len(plays_out),
@@ -15207,12 +15209,30 @@ def page_schedule(platform: str, season: int, league_id: str):
 
 def _face_html(p: dict, tone: str) -> str:
     """Player headshot backed by a tone-tinted initial badge. The initial shows
-    through when the headshot is missing/404s (onerror removes the img)."""
+    through when the headshot is missing/404s (onerror removes the img).
+    DEF/DST use the NFL team logo (local → ESPN) instead of a Sleeper headshot —
+    defense ids are team abbreviations and have no player photo."""
     name = str(p.get("name") or "?").strip()
     initial = html.escape(name[0].upper() if name else "?")
     pid = str(p.get("pid") or p.get("player_id") or "").strip()
+    pos = str(p.get("pos") or p.get("position") or "").upper()
+    if pos in ("DST", "D/ST"):
+        pos = "DEF"
     img = ""
-    if pid:
+    if pos == "DEF":
+        from utils.utils import canon_team, def_team_logo_urls
+        team = canon_team(p.get("nfl") or p.get("team") or pid) or ""
+        local, espn = def_team_logo_urls(team) if team else ("", "")
+        if local or espn:
+            src = html.escape(local or espn)
+            fb = html.escape(espn or "")
+            onerr = (
+                f"if(!this.dataset.fb&&'{fb}'){{this.dataset.fb=1;this.src='{fb}';}}"
+                f"else this.remove()"
+            )
+            img = (f'<img class="rc-face" src="{src}" alt="" loading="lazy" '
+                   f'decoding="async" onerror="{onerr}">')
+    elif pid:
         url = f"https://sleepercdn.com/content/nfl/players/thumb/{pid}.jpg"
         img = (f'<img class="rc-face" src="{url}" alt="" loading="lazy" '
                f'decoding="async" onerror="this.remove()">')
@@ -18456,14 +18476,28 @@ def _build_league_players_payload_uncached(kdef: bool = False) -> dict:
                     _kdef.append(_row)
             # Team defenses: not in players_index at all. Generate one entry per NFL
             # team. Sleeper identifies DST players by the team abbreviation as the ID.
+            # Attach the ESPN team logo so nav search / compare / modal can render a
+            # crest instead of a missing Sleeper headshot.
+            try:
+                from utils.utils import load_teams_index as _lti_def, def_team_logo_urls as _def_logos
+                _ti_def = _lti_def() or {}
+            except Exception:
+                _ti_def = {}
+                _def_logos = None
             for _team in _nfl_teams:
                 if _team not in _seen:
+                    _logo = ""
+                    if _def_logos:
+                        _logo = (_def_logos(_team)[1] or "")
+                    elif isinstance(_ti_def.get(_team), dict):
+                        _logo = str((_ti_def.get(_team) or {}).get("Logo") or "")
                     _kdef.append({
                         "id": _team,
                         "name": _team + " D/ST",
                         "position": "DEF",
                         "team": _team,
                         "value": 0, "sf_value": 0,
+                        "espnHeadshot": _logo,
                     })
             # Attach real Sleeper ADP so K/DEF sort by when managers actually draft
             # them (elite D/STs go rounds ~11-14) instead of alphabetically. Sleeper
@@ -19917,8 +19951,23 @@ def api_player_details(player_id: str):
             players_index_full = load_players_index() or {}
             player_meta = players_index_full.get(player_id, {})
 
+        # DEF/DST: Sleeper ids are team abbreviations (SF, WAS, …) and are not
+        # in players_index. Synthesize a minimal meta so the modal can show the
+        # team logo instead of 404ing.
         if not player_meta:
-            return jsonify({"error": "Player not found"}), 404
+            from utils.utils import canon_team, load_teams_index, def_team_logo_urls
+            _def_team = canon_team(player_id) or str(player_id or "").strip().upper()
+            _ti = load_teams_index() or {}
+            if _def_team and _def_team in _ti:
+                _local, _espn = def_team_logo_urls(_def_team)
+                player_meta = {
+                    "name": f"{_def_team} D/ST",
+                    "pos": "DEF",
+                    "team": _def_team,
+                    "espnHeadshot": _espn or _local,
+                }
+            else:
+                return jsonify({"error": "Player not found"}), 404
 
         player_team = canon_team(player_meta.get("team", "")) or player_meta.get("team", "")
 
@@ -28018,15 +28067,35 @@ def build_portfolio_body(
         ) if strength_chips else ""
 
         # Live matchup slot: hydrated client-side (see pfLiveScores below) only
-        # in-season during game weeks; otherwise it stays hidden and the card
-        # falls back to the record/standing row. Kept out of the offseason cards.
+        # in-season during game weeks. Starts as a content-shaped skeleton so the
+        # band doesn't pop in empty; hides after fetch when scores aren't live.
+        # Kept out of the offseason cards.
         _lg_season_live = lg.get("season") or season
+        live_skel = (
+            "<div class='pf-live-skel' aria-hidden='true'>"
+            "<div class='skeleton pf-live-skel-status'></div>"
+            "<div class='pf-live-grid'>"
+            "<div class='pf-live-side'>"
+            "<div class='skeleton pf-live-skel-lbl'></div>"
+            "<div class='skeleton pf-live-skel-score'></div>"
+            "<div class='skeleton pf-live-skel-proj'></div>"
+            "</div>"
+            "<div class='pf-live-side opp'>"
+            "<div class='skeleton pf-live-skel-lbl'></div>"
+            "<div class='skeleton pf-live-skel-score'></div>"
+            "<div class='skeleton pf-live-skel-proj'></div>"
+            "</div>"
+            "</div>"
+            "<div class='skeleton pf-live-skel-wp'></div>"
+            "</div>"
+        )
         live_slot = (
             "" if lg.get("offseason") else
-            f"<div class='pf-lg-live' data-lg-live hidden "
+            f"<div class='pf-lg-live' data-lg-live aria-busy='true' "
             f"data-platform='{html.escape(str(plat), quote=True)}' "
             f"data-league-id='{html.escape(str(lid), quote=True)}' "
-            f"data-season='{html.escape(str(_lg_season_live), quote=True)}'></div>"
+            f"data-season='{html.escape(str(_lg_season_live), quote=True)}'>"
+            f"{live_skel}</div>"
         )
 
         league_rows += (
@@ -28150,15 +28219,25 @@ def build_portfolio_body(
         ".pf-lg-pager-lbl{font-size:12.5px;color:var(--text-muted);font-weight:600;min-width:96px;text-align:center;}"
         # Live matchup band: your total vs opponent as a head-to-head, each side's
         # projected final, and a win-probability bar (your share green, the
-        # opponent's the remainder). Hydrated client-side (pfLiveScores); hidden
-        # until it has data. A neutral inset — not another bordered card — so it
-        # doesn't echo the Record/Standing/Streak row beneath it.
+        # opponent's the remainder). Hydrated client-side (pfLiveScores); starts
+        # as a skeleton, then swaps to scores or hides when not live. A neutral
+        # inset — not another bordered card — so it doesn't echo the
+        # Record/Standing/Streak row beneath it.
         ".pf-lg-live{border-radius:8px;padding:7px 9px 8px;"
         "background:color-mix(in srgb,var(--text-subtle) 9%,transparent);"
         "display:flex;flex-direction:column;gap:6px;}"
         # The class sets display:flex, which would otherwise beat the UA
-        # [hidden]{display:none}; keep the empty slot truly hidden until hydrated.
+        # [hidden]{display:none}; hide after fetch when scores aren't live.
         ".pf-lg-live[hidden]{display:none;}"
+        # Content-shaped skeleton (status + two scores + WP track) using the
+        # shared .skeleton shimmer so the band reserves space while loading.
+        ".pf-live-skel{display:flex;flex-direction:column;gap:6px;}"
+        ".pf-live-skel-status{height:8px;width:72px;border-radius:4px;}"
+        ".pf-live-skel-lbl{height:8px;width:48px;border-radius:4px;}"
+        ".pf-live-side.opp .pf-live-skel-lbl{width:56px;}"
+        ".pf-live-skel-score{height:20px;width:52px;border-radius:4px;margin-top:2px;}"
+        ".pf-live-skel-proj{height:7px;width:40px;border-radius:4px;}"
+        ".pf-live-skel-wp{height:6px;width:100%;border-radius:999px;margin-top:2px;}"
         ".pf-live-status{font-size:9px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;"
         "color:var(--text-subtle);display:flex;align-items:center;gap:5px;}"
         ".pf-live-dot{width:6px;height:6px;border-radius:50%;background:var(--text-subtle);flex:0 0 auto;}"
@@ -28282,7 +28361,7 @@ def build_portfolio_body(
         "+'<div class=\"pf-live-wp-lbls\"><span class=\"pf-live-wp-you\">'+y+'% to win</span>'"
         "+'<span class=\"pf-live-wp-opp\">'+o+'%</span></div></div>';}"
         "function render(slot,d){"
-        "if(!d||!d.live||!d.you){slot.hidden=true;slot.innerHTML='';return;}"
+        "if(!d||!d.live||!d.you){slot.hidden=true;slot.innerHTML='';slot.removeAttribute('aria-busy');return;}"
         "var st=d.status||'pre';"
         "var txt=st==='in'?('Live \\u00b7 Wk '+d.week):(st==='final'?('Final \\u00b7 Wk '+d.week):('Wk '+d.week));"
         "var you=d.you,opp=d.opp;"
@@ -28292,6 +28371,7 @@ def build_portfolio_body(
         "+'<div class=\"pf-live-grid\">'+side(you,'You',false,yWin)"
         "+side(opp,opp?(opp.name||'Opp'):'Bye',true,oWin)+'</div>'"
         "+wpBar(d);"
+        "slot.removeAttribute('aria-busy');"
         "slot.hidden=false;}"
         "function load(slot){"
         "var p=slot.getAttribute('data-platform'),l=slot.getAttribute('data-league-id'),s=slot.getAttribute('data-season');"

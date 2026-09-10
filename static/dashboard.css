@@ -32805,6 +32805,147 @@ button:disabled {
     color: var(--rz-red);
 }
 
+/* ── Compact My Teams list (My Leagues) ─ */
+.rz-mt-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 4px 0 12px;
+}
+.rz-mt-league {
+    background: var(--rz-card);
+    border: 1px solid var(--rz-border);
+    border-radius: var(--radius);
+    overflow: hidden;
+}
+.rz-mt-sum {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    cursor: pointer;
+    list-style: none;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--rz-text);
+    user-select: none;
+}
+.rz-mt-sum::-webkit-details-marker { display: none; }
+.rz-mt-sum::before {
+    content: '▸';
+    color: var(--rz-muted);
+    font-size: 10px;
+    transition: transform .15s;
+}
+.rz-mt-league[open] > .rz-mt-sum::before {
+    transform: rotate(90deg);
+}
+.rz-mt-lg {
+    flex: 1;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.rz-mt-score {
+    font-variant-numeric: tabular-nums;
+    color: var(--rz-muted);
+    font-weight: 800;
+}
+.rz-mt-sum-live {
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: .06em;
+    color: #fff;
+    background: var(--rz-red);
+    border-radius: 4px;
+    padding: 2px 5px;
+}
+.rz-mt-starters { border-top: 1px solid var(--rz-border); }
+.rz-mt-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--rz-border);
+    cursor: pointer;
+}
+.rz-mt-row:last-child { border-bottom: none; }
+.rz-mt-row:hover { background: var(--rz-hover); }
+.rz-mt-row.is-live { background: rgba(220, 38, 38, .04); }
+.rz-mt-name {
+    flex: 1;
+    min-width: 0;
+    font-size: 12px;
+    font-weight: 650;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.rz-mt-live {
+    font-size: 9px;
+    font-weight: 800;
+    color: var(--rz-red);
+    letter-spacing: .04em;
+}
+.rz-mt-final, .rz-mt-pre {
+    font-size: 9px;
+    font-weight: 700;
+    color: var(--rz-muted);
+    letter-spacing: .04em;
+    max-width: 56px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.rz-mt-pts {
+    min-width: 36px;
+    text-align: right;
+    font-size: 13px;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+}
+.rz-mt-pts.live-pts { color: var(--rz-red); }
+.rz-mt-bench {
+    border-top: 1px solid var(--rz-border);
+    background: rgba(0,0,0,.02);
+}
+.rz-mt-bench-sum {
+    padding: 6px 12px;
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--rz-muted);
+    cursor: pointer;
+    list-style: none;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+}
+.rz-mt-bench-sum::-webkit-details-marker { display: none; }
+
+/* Play card: delta + running total */
+.rz-event-delta {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 2px;
+}
+.rz-event-delta-pts {
+    font-size: 15px;
+    font-weight: 900;
+    line-height: 1;
+}
+.rz-event-total {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--rz-muted);
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+}
+.rz-event.td .rz-event-total {
+    color: #b45309;
+}
+
+
 @keyframes rz-score-flash {
     0% {
         color: var(--rz-green);
@@ -33235,6 +33376,14 @@ button:disabled {
     object-fit: cover;
     object-position: top center;
     display: block;
+}
+
+/* DEF/DST crests: contain the full logo instead of cropping like a headshot. */
+.rz-headshot.rz-team-logo {
+    object-fit: contain;
+    object-position: center;
+    padding: 2px;
+    background: #fff;
 }
 
 /* Initials fallback when headshot fails */
