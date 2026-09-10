@@ -1182,7 +1182,7 @@ window.brHaptic = function (pattern) {
   function announce(title) {
     var el = announcer();
     // Strip a trailing " - Site" suffix so the announcement is just the page.
-    var name = (title || document.title || 'Page').split(/\s[|–---]\s/)[0].trim();
+    var name = (title || document.title || 'Page').split(/\s(?:\||–|—|-)\s/)[0].trim();
     // Re-set to the same string won't re-announce; clear first so repeats speak.
     el.textContent = '';
     setTimeout(function () { el.textContent = name + ' loaded'; }, 50);
