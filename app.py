@@ -12314,6 +12314,17 @@ def _redzone_collect(platform, league_id, season, week):
         tstats = box.get("teamStats") or {}
         name_to_pid: dict = {}
         team_to_def_pid: dict = {}
+        player_meta_by_pid: dict = {}
+        
+        # Build player metadata for team-scoped resolution
+        for pid in pids:
+            pi = player_info[pid]
+            if pi.get("pos") != "DEF":
+                full_name = nfl_players.get(pid, {}).get("full_name") or ""
+                team = pi.get("team", "")
+                if full_name and team:
+                    player_meta_by_pid[pid] = {"name": full_name, "team": team}
+        
         if isinstance(pstats, dict) and pstats:
             name_map = {}
             for _, ps in pstats.items():
@@ -12336,14 +12347,24 @@ def _redzone_collect(platform, league_id, season, week):
                 else:
                     full = (nfl_players.get(pid, {}).get("full_name") or "").lower()
                     if full:
-                        # Store both full name and abbreviated form
                         from utils.redzone_pbp import _normalize_name, _extract_first_initial_last
                         normalized = _normalize_name(full)
                         name_to_pid[normalized] = pid
-                        # Also store first-initial + last-name variant
                         abbrev = _extract_first_initial_last(full)
                         if abbrev and abbrev != normalized:
                             name_to_pid[abbrev] = pid
+                        
+                        # Create explicit aliases for all abbreviation formats
+                        parts = full.split()
+                        if len(parts) >= 2:
+                            first_initial = parts[0][0]
+                            last_parts = " ".join(parts[1:])
+                            # M.Hollins format
+                            name_to_pid[_normalize_name(f"{first_initial}.{last_parts}")] = pid
+                            # M. Hollins format
+                            name_to_pid[_normalize_name(f"{first_initial}. {last_parts}")] = pid
+                            # M Hollins format
+                            name_to_pid[_normalize_name(f"{first_initial} {last_parts}")] = pid
                     ps = name_map.get(full)
                     if ps:
                         pi["stat_line"] = _rz_stat_line_from_ps(ps)
@@ -12355,14 +12376,24 @@ def _redzone_collect(platform, league_id, season, week):
                 else:
                     full = (nfl_players.get(pid, {}).get("full_name") or "").lower()
                     if full:
-                        # Store both full name and abbreviated form
                         from utils.redzone_pbp import _normalize_name, _extract_first_initial_last
                         normalized = _normalize_name(full)
                         name_to_pid[normalized] = pid
-                        # Also store first-initial + last-name variant
                         abbrev = _extract_first_initial_last(full)
                         if abbrev and abbrev != normalized:
                             name_to_pid[abbrev] = pid
+                        
+                        # Create explicit aliases for all abbreviation formats
+                        parts = full.split()
+                        if len(parts) >= 2:
+                            first_initial = parts[0][0]
+                            last_parts = " ".join(parts[1:])
+                            # M.Hollins format
+                            name_to_pid[_normalize_name(f"{first_initial}.{last_parts}")] = pid
+                            # M. Hollins format
+                            name_to_pid[_normalize_name(f"{first_initial}. {last_parts}")] = pid
+                            # M Hollins format
+                            name_to_pid[_normalize_name(f"{first_initial} {last_parts}")] = pid
 
         if want_pbp and box:
             try:
@@ -12380,6 +12411,7 @@ def _redzone_collect(platform, league_id, season, week):
                     name_to_pid=name_to_pid,
                     team_to_def_pid=team_to_def_pid,
                     game_context=game_context,
+                    player_meta_by_pid=player_meta_by_pid,
                 )
                 # Keep only plays that touch a rostered player (or carry text).
                 rostered = set(pids)

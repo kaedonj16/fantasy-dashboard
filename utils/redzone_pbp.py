@@ -38,10 +38,27 @@ def _s(v: Any) -> str:
 
 
 def _normalize_name(name: str) -> str:
-    """Normalize player name for matching: lowercase, strip periods/apostrophes."""
+    """Normalize player name for matching: lowercase, strip periods/apostrophes.
+    
+    Handles abbreviated formats like 'M.Hollins', 'H.Henry' by expanding them
+    to 'm hollins', 'h henry' before stripping punctuation.
+    """
     if not name:
         return ""
-    name = name.lower().strip()
+    name = name.strip()
+    
+    # Detect abbreviated format: single letter followed by period and surname
+    # Examples: M.Hollins, H.Henry, J.Smith-Njigba
+    # Must have a period or be exactly 1 char + space + surname to avoid matching full names
+    import re
+    abbrev_match = re.match(r'^([A-Za-z])\.(\s*)([A-Za-z][A-Za-z\-\']+(?:\s+[A-Za-z][A-Za-z\-\']+)*)$', name)
+    if abbrev_match:
+        # Convert to "first-initial surname" format
+        initial = abbrev_match.group(1).lower()
+        surname = abbrev_match.group(3)
+        name = f"{initial} {surname}"
+    
+    name = name.lower()
     # Remove periods and apostrophes
     name = name.replace(".", "").replace("'", "")
     # Normalize whitespace
@@ -55,7 +72,12 @@ def _extract_first_initial_last(name: str) -> str:
     Examples:
         'Mack Hollins' -> 'm hollins'
         'M.Hollins' -> 'm hollins'
+        'M. Hollins' -> 'm hollins'
+        'M Hollins' -> 'm hollins'
         'Jaxon Smith-Njigba' -> 'j smith-njigba'
+    
+    Note: _normalize_name already handles abbreviated formats, so this
+    function just extracts the first initial from the normalized result.
     """
     normalized = _normalize_name(name)
     if not normalized:
@@ -63,7 +85,10 @@ def _extract_first_initial_last(name: str) -> str:
     parts = normalized.split()
     if len(parts) < 2:
         return normalized
-    # First initial + rest
+    # If already in "initial surname" format (e.g., "m hollins"), return as-is
+    if len(parts[0]) == 1:
+        return normalized
+    # Otherwise extract first initial + rest
     return parts[0][0] + " " + " ".join(parts[1:])
 
 
@@ -110,8 +135,99 @@ def _resolve_player_name(
     return ""
 
 
+# Play state constants
+PLAY_STATE_VALID = "VALID"
+PLAY_STATE_NO_PLAY = "NO_PLAY"
+PLAY_STATE_NULLIFIED = "NULLIFIED"
+PLAY_STATE_OVERTURNED = "OVERTURNED"
+PLAY_STATE_CORRECTED = "CORRECTED"
+
+
+def _detect_play_state(play: dict, play_text: str) -> str:
+    """Detect play state from structured fields and text.
+    
+    Returns one of:
+    - VALID: Play counts for fantasy
+    - NO_PLAY: Pre-snap penalty, no action occurred
+    - NULLIFIED: Play occurred but was called back by penalty
+    - OVERTURNED: Play overturned by replay review
+    - CORRECTED: Provider stat correction
+    
+    Priority:
+    1. Structured provider fields (playStatus, playResult, etc.)
+    2. Play text detection
+    """
+    if not play_text:
+        return PLAY_STATE_VALID
+    
+    text_lower = play_text.lower()
+    
+    # Check structured fields first
+    play_status = str(play.get("playStatus") or play.get("play_status") or "").lower()
+    play_result = str(play.get("playResult") or play.get("play_result") or "").lower()
+    
+    if play_status in ("no_play", "no play", "nullified", "overturned"):
+        if "overturned" in play_status:
+            return PLAY_STATE_OVERTURNED
+        if "nullified" in play_status:
+            return PLAY_STATE_NULLIFIED
+        return PLAY_STATE_NO_PLAY
+    
+    if play_result in ("no_play", "no play", "nullified", "overturned"):
+        if "overturned" in play_result:
+            return PLAY_STATE_OVERTURNED
+        if "nullified" in play_result:
+            return PLAY_STATE_NULLIFIED
+        return PLAY_STATE_NO_PLAY
+    
+    # Text-based detection (fallback)
+    # Overturned by replay
+    if "overturned" in text_lower or "ruling overturned" in text_lower:
+        return PLAY_STATE_OVERTURNED
+    
+    # Nullified by penalty (play occurred but called back)
+    if "nullified" in text_lower:
+        return PLAY_STATE_NULLIFIED
+    
+    # No Play (pre-snap, false start, etc.)
+    if "no play" in text_lower:
+        # Check if it's a pre-snap penalty
+        pre_snap_penalties = [
+            "false start", "delay of game", "encroachment",
+            "neutral zone infraction", "offsides", "illegal formation"
+        ]
+        if any(penalty in text_lower for penalty in pre_snap_penalties):
+            return PLAY_STATE_NO_PLAY
+        # Generic "No Play" - could be called back
+        if "penalty" in text_lower:
+            return PLAY_STATE_NULLIFIED
+        return PLAY_STATE_NO_PLAY
+    
+    # Penalty where play still counts (declined, after the play, etc.)
+    if "penalty" in text_lower:
+        # Check for declined penalties
+        if "declined" in text_lower or "offsetting" in text_lower:
+            return PLAY_STATE_VALID
+        # Check for penalties that don't negate the play
+        after_play_penalties = [
+            "unnecessary roughness", "unsportsmanlike", "taunting",
+            "face mask", "horse collar", "late hit"
+        ]
+        if any(penalty in text_lower for penalty in after_play_penalties):
+            return PLAY_STATE_VALID
+        # If penalty is mentioned but no "No Play", assume play counts
+        # (defensive holding, pass interference where play stands, etc.)
+        return PLAY_STATE_VALID
+    
+    return PLAY_STATE_VALID
+
+
 def _is_no_play(play_text: str) -> bool:
-    """Detect if a play was nullified (penalty, etc.)."""
+    """Detect if a play was nullified (penalty, etc.).
+    
+    DEPRECATED: Use _detect_play_state() for more granular detection.
+    Kept for backward compatibility.
+    """
     if not play_text:
         return False
     text_lower = play_text.lower()
@@ -233,12 +349,14 @@ def extract_pbp_plays(
     name_to_pid: dict[str, str] | None = None,
     team_to_def_pid: dict[str, str] | None = None,
     game_context: dict | None = None,
+    player_meta_by_pid: dict[str, dict] | None = None,
 ) -> list[dict]:
     """Flatten ``allPlayByPlay`` (or aliases) into per-player Redzone plays.
 
     ``name_to_pid`` maps normalized name → Sleeper pid (supports full names and abbreviations).
     ``team_to_def_pid`` maps team abbreviation → Sleeper DEF pid for the league.
     ``game_context`` should contain 'home' and 'away' team abbreviations.
+    ``player_meta_by_pid`` maps pid → {"name": str, "team": str} for team-scoped resolution.
     """
     raw = _raw_pbp_list(box if isinstance(box, dict) else {})
     if not raw:
@@ -247,13 +365,26 @@ def extract_pbp_plays(
     name_to_pid = name_to_pid or {}
     team_to_def_pid = team_to_def_pid or {}
     game_context = game_context or {}
+    player_meta_by_pid = player_meta_by_pid or {}
+    
+    # Debug logging for NE/SEA games
+    import logging
+    logger = logging.getLogger(__name__)
+    is_ne_sea = (game_context.get("home") in ("NE", "SEA") or 
+                 game_context.get("away") in ("NE", "SEA"))
     
     # Build team -> players index for last-name resolution
     team_players: dict[str, list[tuple[str, str]]] = {}
-    for name, pid in name_to_pid.items():
-        # Extract team from name_to_pid if available (would need player_info)
-        # For now, skip this optimization - can be added later if needed
-        pass
+    if player_meta_by_pid:
+        for pid, meta in player_meta_by_pid.items():
+            if not isinstance(meta, dict):
+                continue
+            team = _s(meta.get("team", "")).upper()
+            name = _s(meta.get("name", ""))
+            if team and name:
+                if team not in team_players:
+                    team_players[team] = []
+                team_players[team].append((pid, name))
     
     out: list[dict] = []
 
@@ -268,8 +399,9 @@ def extract_pbp_plays(
         distance = _s(_first(play, "distance", "yardsToGo", "yards_to_go", "togo", "toGo"))
         yard_line = _s(_first(play, "yardline", "yardLine", "yard_line", "ballOn", "ballLocation"))
 
-        # Detect No Play
-        is_no_play = _is_no_play(text)
+        # Detect play state
+        play_state = _detect_play_state(play, text)
+        is_no_play = play_state != PLAY_STATE_VALID
         
         base = {
             "play_id": play_id,
@@ -282,13 +414,14 @@ def extract_pbp_plays(
             "yard_line": yard_line,
             "play_text": text,
             "is_no_play": is_no_play,
+            "play_state": play_state,
         }
 
         emitted = 0
         pstats = play.get("playerStats") or play.get("player_stats") or {}
         
-        # Track if we've seen a receiver contribution
-        has_receiver_contrib = False
+        # Track if we've successfully resolved a receiver contribution with valid pid
+        has_resolved_receiver_contrib = False
         offense_team = ""
         
         for ps in _iter_player_stats(pstats):
@@ -313,6 +446,14 @@ def extract_pbp_plays(
             # Resolve player name with fallback strategies
             pid = _resolve_player_name(long_name, team, name_to_pid, team_players) if long_name else ""
             
+            # Debug logging for NE/SEA pass plays
+            if is_ne_sea and "pass" in text.lower() and (line.get("rec") or line.get("pass_yds")):
+                logger.info(f"[NE/SEA PBP] PLAY: {play_id}")
+                logger.info(f"  TEXT: {text}")
+                logger.info(f"  RAW: {long_name} -> {line}")
+                logger.info(f"  RESOLVED: {long_name} -> pid={pid} team={team}")
+                logger.info(f"  NORMALIZED: {_normalize_name(long_name)}")
+            
             is_td = bool(
                 (line.get("pass_td") or 0)
                 or (line.get("rush_td") or 0)
@@ -321,9 +462,9 @@ def extract_pbp_plays(
                 or (" TD" in text)
             )
             
-            # Track receiver contributions
-            if line.get("rec") or line.get("rec_td"):
-                has_receiver_contrib = True
+            # Track receiver contributions - only count as resolved if we have a valid pid
+            if (line.get("rec") or line.get("rec_td")) and pid:
+                has_resolved_receiver_contrib = True
             
             out.append({
                 **base,
@@ -389,7 +530,7 @@ def extract_pbp_plays(
                 emitted += 1
 
         # Fallback: Extract target from incomplete pass text
-        if not has_receiver_contrib and not is_no_play and "pass" in text.lower() and "incomplete" in text.lower():
+        if not has_resolved_receiver_contrib and not is_no_play and "pass" in text.lower() and "incomplete" in text.lower():
             target_name = _extract_target_from_text(text)
             if target_name:
                 # Try to resolve target
@@ -404,9 +545,10 @@ def extract_pbp_plays(
                         "is_td": False,
                     })
                     emitted += 1
+                    has_resolved_receiver_contrib = True
         
         # Fallback: Extract receiver from completed pass text
-        if not has_receiver_contrib and not is_no_play and "pass" in text.lower() and "incomplete" not in text.lower():
+        if not has_resolved_receiver_contrib and not is_no_play and "pass" in text.lower() and "incomplete" not in text.lower():
             # Look for patterns like "to <Name> for X yards"
             receiver_name = _extract_target_from_text(text)
             if receiver_name:

@@ -31,7 +31,8 @@
   var _seenContributions = new Set(); // contribution keys (play + pid) for deduping
   var _pbpGames = {}; // game_id → true once we have real PBP for that game
   var _pbpHistory = []; // full PBP contribution history (not capped)
-  var _playGroupsByKey = {}; // canonical play groups: nflPlayKey → {contributions, primaryEvent}
+  var _playGroupsByKey = {}; // canonical play groups: nflPlayKey → {contributionsByKey, primaryEvent, playState}
+  var _contributionsByKey = {}; // global contribution storage: contribKey → contribution (for revisions)
   var _alertsArmed = false; // suppress TD beep/push until the first hydration seeds the feed
   var _slideDir   = 'none';
   var _feedPage   = 0;
@@ -97,6 +98,28 @@
   }
 
   document.addEventListener('click', function() { _hadInteraction = true; }, { once: true });
+
+  // Event delegation for player clicks - handles all [data-pid] clicks on root
+  root.addEventListener('click', function(e) {
+    var target = e.target;
+    // Walk up to find element with data-pid
+    while (target && target !== root) {
+      if (target.dataset && target.dataset.pid) {
+        // Skip if it's a player-pts element (just displays score)
+        if (target.classList.contains('rz-player-pts')) {
+          target = target.parentElement;
+          continue;
+        }
+        var pid = target.dataset.pid;
+        if (pid && pid !== '0' && window.openPlayerModal) {
+          window.openPlayerModal(pid, _name(pid), { tab: 'live' });
+          e.stopPropagation();
+          return;
+        }
+      }
+      target = target.parentElement;
+    }
+  });
 
   function _playTDBeep() {
     if (!_hadInteraction) return;
@@ -894,9 +917,68 @@
     var playId = play.play_id || ('seq:' + (play.seq || 0));
     return gid + ':' + playId;
   }
+  
   // Fantasy contribution identity: NFL play + pid
   function _contributionKey(play, gid, pid) {
     return _nflPlayKey(play, gid) + ':' + pid;
+  }
+  
+  // Check if contribution data changed (for detecting revisions)
+  function _contributionDataChanged(existingContrib, newPlay, isInvalid) {
+    if (!existingContrib) return true;
+    
+    // If validity changed, it's a revision
+    if (!!existingContrib.isInvalid !== !!isInvalid) return true;
+    
+    // Compare stat lines
+    var oldLine = existingContrib.line || {};
+    var newLine = newPlay.stat_line || {};
+    
+    // Key stats to compare
+    var keys = ['rec', 'rec_yds', 'rec_td', 'targets', 'carries', 'rush_yds', 'rush_td',
+                'pass_yds', 'pass_td', 'int', 'fgm', 'xpm', 'sacks', 'def_int', 'fum_rec', 'def_td'];
+    
+    for (var i = 0; i < keys.length; i++) {
+      var k = keys[i];
+      var oldVal = parseFloat(oldLine[k] || 0);
+      var newVal = parseFloat(newLine[k] || 0);
+      if (Math.abs(oldVal - newVal) > 0.001) return true;
+    }
+    
+    // Compare play text (for corrections)
+    var oldText = (existingContrib.rawPlayText || '').toLowerCase();
+    var newText = (newPlay.play_text || '').toLowerCase();
+    if (oldText !== newText) {
+      // Text changed - check if it's meaningful (not just formatting)
+      if (oldText.replace(/\s+/g, ' ') !== newText.replace(/\s+/g, ' ')) {
+        return true;
+      }
+    }
+    
+    return false;
+  }
+  
+  // Get description for nullified plays
+  function _getNullifiedDesc(playState, rawPlayText) {
+    if (playState === 'OVERTURNED') {
+      return 'Play overturned by replay review';
+    }
+    if (playState === 'NULLIFIED') {
+      return 'Play nullified by penalty';
+    }
+    if (playState === 'NO_PLAY') {
+      // Check for specific pre-snap penalties
+      var text = (rawPlayText || '').toLowerCase();
+      if (text.indexOf('false start') >= 0) return 'False start · No Play';
+      if (text.indexOf('delay of game') >= 0) return 'Delay of game · No Play';
+      if (text.indexOf('encroachment') >= 0) return 'Encroachment · No Play';
+      if (text.indexOf('offsides') >= 0) return 'Offsides · No Play';
+      return 'No Play';
+    }
+    if (playState === 'CORRECTED') {
+      return 'Stat correction';
+    }
+    return 'No Play';
   }
 
   // Select primary actor for a grouped NFL play based on fantasy relevance hierarchy
@@ -930,6 +1012,11 @@
   }
 
   // Improve play description with fantasy-focused copy
+  // Helper to check if play is nullified
+  function _isPlayNullified(event) {
+    return event && (event.isNullified || event.playState !== 'VALID');
+  }
+  
   function _improvePlayDesc(primary, contributions, rawText) {
     var line = primary.line || {};
     var pos = primary.pos;
@@ -998,33 +1085,112 @@
     var info = _describe(line, pos);
     return info ? info.desc : 'Play';
   }
+  
+  // Rebuild cumulative stats from valid PBP contributions
+  function _rebuildCumulativeStats(pid, upToSeq, gameId) {
+    if (!pid || !gameId) return null;
+    
+    var validContribs = _pbpHistory.filter(function(c) {
+      return c.pid === pid && 
+             c.gameId === gameId && 
+             !c.isInvalid && 
+             c.seq <= upToSeq;
+    });
+    
+    if (validContribs.length === 0) return null;
+    
+    // Sort by seq
+    validContribs.sort(function(a, b) { return a.seq - b.seq; });
+    
+    // Sum up stats
+    var cume = {
+      rec: 0, rec_yds: 0, rec_td: 0, targets: 0,
+      carries: 0, rush_yds: 0, rush_td: 0,
+      pass_yds: 0, pass_td: 0, pass_att: 0, pass_cmp: 0, int: 0,
+      fgm: 0, fga: 0, xpm: 0, xpa: 0,
+      sacks: 0, def_int: 0, fum_rec: 0, def_td: 0
+    };
+    
+    validContribs.forEach(function(c) {
+      var line = c.line || {};
+      Object.keys(cume).forEach(function(k) {
+        cume[k] += parseFloat(line[k] || 0);
+      });
+    });
+    
+    return cume;
+  }
 
   // Calculate post-play cumulative fantasy total from play.cume stats
   function _cumeToFantasyPts(cume, scoring, pos) {
     if (!cume || typeof cume !== 'object') return null;
     return parseFloat(_lineToPts(cume, scoring, pos).toFixed(2));
   }
+  
+  // Recalculate fantasy totals after play revision
+  function _recalculateTotals(pid, gameId, newData, scoring) {
+    if (!pid || !gameId) return null;
+    
+    // Find latest seq for this player in this game
+    var latestSeq = -1;
+    _pbpHistory.forEach(function(c) {
+      if (c.pid === pid && c.gameId === gameId && c.seq > latestSeq) {
+        latestSeq = c.seq;
+      }
+    });
+    
+    if (latestSeq < 0) return null;
+    
+    // Rebuild cumulative stats
+    var cume = _rebuildCumulativeStats(pid, latestSeq, gameId);
+    if (!cume) return null;
+    
+    var pos = _pos(pid);
+    return _cumeToFantasyPts(cume, scoring, pos);
+  }
 
   function _eventsFromPbp(newData, tags, scFor) {
     var byGame = newData.pbp_by_game || {};
     var newContributions = [];
+    var revisedPlayKeys = new Set(); // Track plays that need updates
+    
     // Process new contributions
     Object.keys(byGame).forEach(function(gid) {
       _pbpGames[gid] = true;
       (byGame[gid] || []).forEach(function(play) {
-        // Skip No Play contributions
-        if (play.is_no_play) return;
-        
         var pid = _pidFromPlayName(play, newData);
         if (!pid || pid === '0') return;
         
-        // Validate roster mapping BEFORE marking as seen
+        // Validate roster mapping BEFORE processing
         var rid = tags.pidToRoster[pid] || '';
         if (!rid) return;
         
-        // NOW mark as seen (after validation)
         var contribKey = _contributionKey(play, gid, pid);
-        if (_seenContributions.has(contribKey)) return;
+        var playKey = _nflPlayKey(play, gid);
+        var playState = play.play_state || 'VALID';
+        var isInvalid = playState !== 'VALID';
+        
+        // Check if this is a revision of an existing contribution
+        var existingContrib = _contributionsByKey[contribKey];
+        var isRevision = !!existingContrib;
+        
+        // For invalid plays (NO_PLAY, NULLIFIED, OVERTURNED), create zeroed contribution
+        if (isInvalid) {
+          // If we've seen this contribution before and it was valid, this is a revision
+          if (existingContrib && !existingContrib.isInvalid) {
+            isRevision = true;
+          }
+          // Skip creating new invalid contributions unless it's a revision
+          if (!isRevision) return;
+        }
+        
+        // Check if contribution data changed (for revisions)
+        if (isRevision) {
+          var dataChanged = _contributionDataChanged(existingContrib, play, isInvalid);
+          if (!dataChanged) return; // No change, skip
+        }
+        
+        // Mark as seen after validation
         _seenContributions.add(contribKey);
         var line = play.stat_line || {};
         var scoring = scFor(pid);
@@ -1050,7 +1216,7 @@
           rosterId: rid, owner: _ownerName(rid), league: _leagueOfRid(rid),
           mine: tags.my.has(rid), opp: tags.opp.has(rid),
           line: line, pts: pts, kind: kind, stats: stats,
-          playKey: _nflPlayKey(play, gid),
+          playKey: playKey,
           contribKey: contribKey,
           rawPlayText: play.play_text || '',
           quarter: play.quarter || '',
@@ -1063,14 +1229,27 @@
           cume: play.cume || null,
           cumeStatLine: play.cume || null,
           totalPts: totalPts,
-          scoring: scoring
+          scoring: scoring,
+          playState: playState,
+          isInvalid: isInvalid,
+          isRevision: isRevision
         };
+        
+        // Store in global contribution map
+        _contributionsByKey[contribKey] = contrib;
+        
         newContributions.push(contrib);
-        _pbpHistory.push(contrib);
+        
+        // Add to history only if not a revision
+        if (!isRevision) {
+          _pbpHistory.push(contrib);
+        }
+        
+        // Mark play for update
+        revisedPlayKeys.add(playKey);
       });
     });
     // Merge new contributions into canonical play groups
-    // Store contributions by key to allow updates
     newContributions.forEach(function(c) {
       var group = _playGroupsByKey[c.playKey];
       if (!group) {
@@ -1080,7 +1259,8 @@
           contributionsByKey: contribsByKey,
           needsUpdate: true,
           gameId: c.gameId,
-          seq: c.seq
+          seq: c.seq,
+          playState: c.playState
         };
       } else {
         // Update or add contribution
@@ -1093,10 +1273,17 @@
         }
         group.contributionsByKey[c.contribKey] = c;
         group.needsUpdate = true;
-        // Update gameId/seq from latest contribution
+        // Update gameId/seq/playState from latest contribution
         if (c.gameId) group.gameId = c.gameId;
         if (c.seq != null) group.seq = c.seq;
+        if (c.playState) group.playState = c.playState;
       }
+    });
+    
+    // Mark revised plays for update
+    revisedPlayKeys.forEach(function(playKey) {
+      var group = _playGroupsByKey[playKey];
+      if (group) group.needsUpdate = true;
     });
     // Generate/update events for plays that need it
     var events = [];
@@ -1104,17 +1291,85 @@
       var group = _playGroupsByKey[playKey];
       if (!group.needsUpdate) return;
       group.needsUpdate = false;
+      
       // Derive contributions array from contributionsByKey
       var contribs = group.contributionsByKey 
         ? Object.keys(group.contributionsByKey).map(function(k) { return group.contributionsByKey[k]; })
         : (group.contributions || []);
-      var primary = _selectPrimaryActor(contribs);
+      
+      // Filter out invalid contributions for primary selection
+      var validContribs = contribs.filter(function(c) { return !c.isInvalid; });
+      
+      // If all contributions are invalid, mark play as nullified
+      var playState = group.playState || 'VALID';
+      var isNullified = playState !== 'VALID' || validContribs.length === 0;
+      
+      if (isNullified) {
+        // Create nullified event
+        var firstContrib = contribs[0];
+        if (!firstContrib) return;
+        
+        var isNewPlay = !_seenPlayIds.has(playKey);
+        if (isNewPlay) _seenPlayIds.add(playKey);
+        
+        // Recalculate totals after nullification
+        var recalcTotal = _recalculateTotals(
+          firstContrib.pid, 
+          firstContrib.gameId, 
+          newData, 
+          firstContrib.scoring
+        );
+        
+        var nullifiedEvent = {
+          pid: firstContrib.pid,
+          name: firstContrib.name,
+          pos: firstContrib.pos,
+          nflTeam: firstContrib.nflTeam,
+          rosterId: firstContrib.rosterId,
+          owner: firstContrib.owner,
+          league: firstContrib.league,
+          mine: firstContrib.mine,
+          opp: firstContrib.opp,
+          line: {},
+          ts: Date.now() + firstContrib.seq * 0.001,
+          gameQuarter: firstContrib.quarter,
+          gameClock: firstContrib.clock,
+          down: firstContrib.down,
+          distance: firstContrib.distance,
+          yardLine: firstContrib.yardLine,
+          desc: _getNullifiedDesc(playState, firstContrib.rawPlayText),
+          kind: 'nullified',
+          stats: [],
+          pts: 0,
+          statLine: {},
+          cume: null,
+          cumeStatLine: null,
+          totalPts: recalcTotal !== null ? recalcTotal : 0,
+          playId: playKey,
+          fromPbp: true,
+          contributions: contribs,
+          isUpdate: !isNewPlay,
+          isNullified: true,
+          playState: playState,
+          impact: '',
+          gameId: group.gameId || firstContrib.gameId,
+          seq: group.seq != null ? group.seq : firstContrib.seq
+        };
+        group.primaryEvent = nullifiedEvent;
+        events.push(nullifiedEvent);
+        return;
+      }
+      
+      // Normal play processing with valid contributions
+      var primary = _selectPrimaryActor(validContribs);
       if (!primary) return;
-      var desc = _improvePlayDesc(primary, contribs, primary.rawPlayText);
-      var allMine = contribs.some(function(c) { return c.mine; });
-      var allOpp = contribs.some(function(c) { return c.opp; });
+      
+      var desc = _improvePlayDesc(primary, validContribs, primary.rawPlayText);
+      var allMine = validContribs.some(function(c) { return c.mine; });
+      var allOpp = validContribs.some(function(c) { return c.opp; });
       var isNewPlay = !_seenPlayIds.has(playKey);
       if (isNewPlay) _seenPlayIds.add(playKey);
+      
       var event = {
         pid: primary.pid,
         name: primary.name,
@@ -1142,10 +1397,11 @@
         totalPts: primary.totalPts,
         playId: playKey,
         fromPbp: true,
-        contributions: contribs,
+        contributions: validContribs,
         isUpdate: !isNewPlay,
+        isNullified: false,
+        playState: playState,
         impact: '',
-        // Add gameId and seq for chronology
         gameId: group.gameId || primary.gameId,
         seq: group.seq != null ? group.seq : primary.seq
       };
@@ -2523,10 +2779,7 @@
       container.innerHTML = '';
       container.appendChild(frag2);
       _renderPagination(totalPages);
-      container.querySelectorAll('[data-pid]').forEach(function(el) {
-        if (!el.dataset.pid || el.dataset.pid === '0') return;
-        el.onclick = function() { window.openPlayerModal(el.dataset.pid, _name(el.dataset.pid), { tab: 'live' }); };
-      });
+      // Click handlers now managed by root event delegation
       return;
     }
 
@@ -2573,10 +2826,7 @@
             setTimeout(function() {
               _bigPlayFx(n, e, container, true);
               container.insertBefore(n, container.firstChild);
-              n.querySelectorAll('[data-pid]').forEach(function(el) {
-                if (!el.dataset.pid || el.dataset.pid === '0') return;
-                el.onclick = function() { window.openPlayerModal(el.dataset.pid, _name(el.dataset.pid), { tab: 'live' }); };
-              });
+              // Click handlers now managed by root event delegation
             }, delay);
           })(node, ev, insertDelay);
           insertDelay += 420;
@@ -2656,11 +2906,7 @@
       });
     }
 
-    container.querySelectorAll('[data-pid]').forEach(function(el) {
-      if (el.classList.contains('rz-player-pts')) return;
-      if (!el.dataset.pid || el.dataset.pid === '0') return;
-      el.onclick = function() { window.openPlayerModal(el.dataset.pid, _name(el.dataset.pid), { tab: 'live' }); };
-    });
+    // Click handlers now managed by root event delegation
   }
 
   function _renderPagination(totalPages) {

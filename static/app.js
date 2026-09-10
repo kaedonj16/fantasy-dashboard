@@ -17235,6 +17235,9 @@ function initGlobalPlayerModals() {
   _globalPlayerModalsReady = true;
 
   document.addEventListener('click', function(e) {
+    // Skip if already handled or if it's a modified click
+    if (e.defaultPrevented) return;
+    
     const target = e.target.closest('[data-player-id]');
     if (target && target.dataset.playerId) {
       const playerId = target.dataset.playerId;
@@ -20053,7 +20056,9 @@ function setupFunAwardsGrid() {
     if (el.dataset.nsKind === 'cmd' || el.classList.contains('nav-search-cmd')) {
       window.location.href = el.getAttribute('href');
     } else {
-      openPlayerModal(el.dataset.nsPid, el.dataset.nsName);
+      if (typeof window.openPlayerModal === 'function') {
+        window.openPlayerModal(el.dataset.nsPid, el.dataset.nsName);
+      }
     }
     input.value = '';
     clearBtn.style.display = 'none';
@@ -20114,7 +20119,9 @@ function setupFunAwardsGrid() {
     const row = e.target.closest('.nav-search-result');
     if (!row) return;
     e.stopPropagation();
-    openPlayerModal(row.dataset.nsPid, row.dataset.nsName);
+    if (typeof window.openPlayerModal === 'function') {
+      window.openPlayerModal(row.dataset.nsPid, row.dataset.nsName);
+    }
     input.value = '';
     clearBtn.style.display = 'none';
     closeDropdown();
