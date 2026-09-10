@@ -329,3 +329,28 @@ def test_app_wires_pbp_into_collect_and_demo():
     assert '"pbp_by_game": pbp_by_game' in app
     assert "Try Redzone Demo" in app
     assert 'fetch_tank_boxscore' in (_ROOT / "dashboard_services" / "api.py").read_text(encoding="utf-8")
+
+
+def test_my_teams_is_compact_collapsible_list():
+    src = _rz()
+    assert "function _renderMyTeams(" in src
+    assert "rz-mt-list" in src
+    assert "rz-mt-league" in src
+    # Full roster cards should not be the My Teams layout anymore.
+    assert "_rosterCard(m)" not in _fn("_renderMyTeams")
+    assert "Bench (" in src  # collapsed bench summary
+
+
+def test_live_player_pts_prefer_boxscore_over_zero_platform():
+    src = _fn("_playerPts")
+    assert "Math.max(platformN, live)" in src
+    assert "_lineToPts(_statLine(pid)" in src
+
+
+def test_play_cards_show_delta_and_new_total():
+    src = _rz()
+    assert "totalPts" in _fn("_playsFromDiff")
+    assert "totalPts" in _fn("_eventsFromPbp")
+    html = _fn("_eventHtml")
+    assert "rz-event-delta-pts" in html
+    assert "rz-event-total" in html
