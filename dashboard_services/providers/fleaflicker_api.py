@@ -271,6 +271,43 @@ def _flea_pro_team(pro: dict) -> str:
     return ""
 
 
+_FLEA_DEF_POS = frozenset({"D/ST", "DST", "DEF", "D-ST", "DEFENSE"})
+
+
+def _flea_is_defense(pro: dict) -> bool:
+    """True when a Fleaflicker ``proPlayer`` is a team defense (D/ST)."""
+    if not isinstance(pro, dict):
+        return False
+    return str(_get(pro, "position") or "").upper().strip() in _FLEA_DEF_POS
+
+
+def _flea_dst_canonical(pro: dict) -> Optional[str]:
+    """Sleeper-style DEF id (team code like ``SF``) for a Fleaflicker D/ST.
+
+    App-wide the canonical id for a defense is its NFL team code (WAS, JAX,
+    LAR) — the same key ``teams_index`` and the team logos use. Fleaflicker
+    joins by ``proPlayer.id`` / full name, which never matches a Sleeper
+    defense entry, so plain name resolution dropped every D/ST from matchups
+    and rosters. Map the team directly instead, the same way ESPN does.
+    """
+    try:
+        from utils.utils import NFL_TEAMS, TEAM_ABBR_ALIASES, canon_team
+    except Exception:
+        # Slim CI has no ``requests``; fall back to name resolution.
+        return None
+    canon = canon_team(_flea_pro_team(pro)) or canon_team(
+        _get(pro, "nameFull", "name_full") or ""
+    )
+    if not canon:
+        return None
+    canon = canon.upper()
+    if canon in NFL_TEAMS:
+        return canon
+    # Feeds still sending JAC / WSH / LA: fold onto the site canonical code.
+    alt = TEAM_ABBR_ALIASES.get(canon)
+    return alt if alt in NFL_TEAMS else canon
+
+
 def _flea_group_family(group_label: str) -> str:
     """Normalize 'Receiving Stats' / 'Passing' onto the family used in the map."""
     group = str(group_label or "").strip().lower()
@@ -959,6 +996,12 @@ class FleaflickerProvider(ProviderAdapter):
 
     @staticmethod
     def _canonical_lookup(pro: dict, xwalk: dict, by_name: dict) -> Optional[str]:
+        # Team defenses never match a Sleeper player id or name, so resolve
+        # them to their NFL team code before the id/name paths drop them.
+        if _flea_is_defense(pro):
+            did = _flea_dst_canonical(pro)
+            if did:
+                return did
         pid = _get(pro, "id")
         if pid is not None:
             cached = xwalk.get(str(pid))
@@ -1030,10 +1073,17 @@ class FleaflickerProvider(ProviderAdapter):
             for roster in raw.get("rosters") or []:
                 for player in roster.get("players") or []:
                     pro = player.get("proPlayer") or player.get("pro_player") or {}
+                    pid = _get(pro, "id")
+                    if pid is None:
+                        continue
+                    if _flea_is_defense(pro):
+                        did = _flea_dst_canonical(pro)
+                        if did:
+                            out[str(pid)] = did
+                        continue
                     name = normalize_name(_get(pro, "nameFull", "name_full") or "")
                     pos = str(_get(pro, "position") or "").upper()
-                    pid = _get(pro, "id")
-                    if pid is None or not name:
+                    if not name:
                         continue
                     canonical = _pick_canonical(by_name, name, pos, _flea_pro_team(pro))
                     if canonical:
