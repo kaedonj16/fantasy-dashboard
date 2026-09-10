@@ -37503,6 +37503,45 @@ a, button, [role="button"], [role="tab"], summary, label,
         color: var(--accent);
     }
 
+    /* Redzone live: the mobile port of the desktop nav glow. The always-visible
+       More tab shows a pulsing red dot and the Redzone sheet row pulses red —
+       only while games are live or kicking off within the hour (server adds
+       .rz-mnav-live / .br-more-live). Reuses the desktop keyframes. */
+    .br-sheet-link.rz-mnav-live {
+        animation: rz-nav-live-pulse 1.6s ease-in-out infinite;
+    }
+
+    .br-sheet-link.rz-mnav-live .nav-svg-icon {
+        color: #dc2626;
+    }
+
+    .rz-mnav-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #dc2626;
+        box-shadow: 0 0 0 3px rgba(220, 38, 38, .18);
+        animation: rz-pulse 1.6s ease-in-out infinite;
+    }
+
+    .br-sheet-link .rz-mnav-dot {
+        margin-left: auto;
+        flex: 0 0 auto;
+    }
+
+    .br-more-tab.br-more-live {
+        color: #dc2626;
+    }
+
+    .br-more-tab .rz-mnav-dot {
+        position: absolute;
+        top: 6px;
+        left: 50%;
+        margin-left: 5px;
+        width: 7px;
+        height: 7px;
+    }
+
     /* The Discord PNG (matches the 20px nav-svg icons) and the freshness time on
      the Refresh row (right-aligned, quiet). Black glyph in light mode, white
      in dark mode — same invert the floating Discord pill uses. */

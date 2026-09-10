@@ -2565,6 +2565,43 @@ def _games_scheduled_today(season, week) -> bool:
         return False
 
 
+def _games_live_or_imminent(season, week, *, lead_minutes=60) -> bool:
+    """True if one of the week's games dated today is live or kicks off soon.
+
+    "Live" is the kickoff → +4h window; "imminent" is the hour before kickoff
+    (``lead_minutes``). Unlike :func:`_games_scheduled_today` (whole calendar
+    day, drives polling), this narrows to actual game action so the Redzone
+    nav glow only flashes when games are live or about to start. Missing/bad
+    kickoff epochs are skipped; any failure resolves to False.
+    """
+    try:
+        if not season or not week:
+            return False
+        today = datetime.now().strftime("%Y%m%d")
+        now = datetime.now().timestamp()
+        lead = lead_minutes * 60
+        live_tail = 4 * 60 * 60  # kickoff + 4h covers overtime/long games
+        sched = load_week_schedule(int(season), int(week)) or []
+        for g in sched:
+            if not isinstance(g, dict):
+                continue
+            if str(g.get("gameDate") or "") != today:
+                continue
+            raw = g.get("gameTime_epoch") or g.get("gameTimeEpoch")
+            if raw is None:
+                continue
+            try:
+                ep = float(raw)
+            except (ValueError, TypeError):
+                continue
+            if (ep - lead) <= now <= (ep + live_tail):
+                return True
+        return False
+    except Exception as _e:
+        logger.info(f"[games-live] check failed (s{season} w{week}): {_e}")
+        return False
+
+
 def _parse_schedule_game_date(value) -> Optional[date]:
     """Parse Tank01 ``gameDate`` (YYYYMMDD, int or str) to a date."""
     raw = str(value or "").strip()
@@ -2896,6 +2933,16 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
     offseason = _nfl_offseason_mode(nfl_state, season)
     draft_ended = has_draft_ended(league_id, platform, season)
 
+    # Mirror the desktop nav glow on mobile: the More tab and the Redzone sheet
+    # row pulse only while a game is live or kicks off within the hour.
+    rz_live = False
+    if not offseason:
+        try:
+            _rz_wk = nfl_state.get("week") or nfl_state.get("display_week")
+            rz_live = _games_live_or_imminent(nfl_state.get("season") or season, _rz_wk)
+        except Exception:
+            rz_live = False
+
     def _href(ep, suffix):
         return url_for(ep, platform=platform, season=season, league_id=league_id) + suffix
 
@@ -2936,10 +2983,12 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
             f"<a class='{cls}'{aria} href='{_href(ep, suffix)}'>"
             f"{_nav_icon(icon, size=22)}<span class='br-tabbar-lbl'>{label}</span></a>"
         )
+    _more_live_cls = " br-more-live" if rz_live else ""
+    _more_dot = "<span class='rz-mnav-dot' aria-hidden='true'></span>" if rz_live else ""
     items += (
-        "<button type='button' class='br-tabbar-item br-more-tab' id='brMoreTab' "
+        f"<button type='button' class='br-tabbar-item br-more-tab{_more_live_cls}' id='brMoreTab' "
         "aria-label='More' aria-haspopup='true' aria-expanded='false'>"
-        f"{_nav_icon('more', size=22)}<span class='br-tabbar-lbl'>More</span></button>"
+        f"{_nav_icon('more', size=22)}<span class='br-tabbar-lbl'>More</span>{_more_dot}</button>"
     )
     # Sliding active-pill indicator: --n tabs wide, sitting at slot --i. Rendered
     # at the active slot so it rests correctly with no flash; app.js animates a
@@ -2995,7 +3044,18 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
             _sl("schedule", "Schedule Assistant"),
         ]
         if not offseason:
-            rows.append(_sl("redzone", "Redzone"))
+            if rz_live:
+                _rz_icon, _rz_ep, _rz_suffix = _NAV_PAGE_META["redzone"]
+                _rz_on = " active" if active_norm == "redzone" else ""
+                _rz_aria = " aria-current='page'" if active_norm == "redzone" else ""
+                rows.append(
+                    f"<a class='br-sheet-link rz-mnav-live{_rz_on}'{_rz_aria} "
+                    f"href='{_href(_rz_ep, _rz_suffix)}'>"
+                    f"{_nav_icon(_rz_icon, size=20)}<span>Redzone</span>"
+                    "<span class='rz-mnav-dot' aria-hidden='true'></span></a>"
+                )
+            else:
+                rows.append(_sl("redzone", "Redzone"))
         weekly_html = _sec("Weekly", rows)
 
     league_html = _sec("League", [
@@ -4265,14 +4325,15 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             (_waiver_label, "league_pages.page_waivers", "waivers", False),
             ("Schedule Assistant", "page_schedule", "schedule", False),
         ]
-        # Redzone lives inside the Weekly dropdown. When a game is actually
-        # scheduled for today the Weekly button glows and the Redzone item
-        # pulses with a live dot. Only available during the active season.
+        # Redzone lives inside the Weekly dropdown. The Weekly button glows and
+        # the Redzone item pulses with a live dot only while games are live or
+        # about to kick off (the hour before) — not for the whole game day.
+        # Only available during the active season.
         _rz_pulse = ""
         if not offseason_mode:
-            # Live when the current NFL week's schedule has a game dated today.
+            # Pulse only when a game is in progress or kicks off within the hour.
             _rz_week = nfl_state.get("week") or nfl_state.get("display_week")
-            _rz_live = _games_scheduled_today(nfl_state.get("season") or season, _rz_week)
+            _rz_live = _games_live_or_imminent(nfl_state.get("season") or season, _rz_week)
             _rz_label = (
                 "<span class='rz-nav-live'><span class='rz-nav-dot'></span>Redzone</span>"
                 if _rz_live else "Redzone"
