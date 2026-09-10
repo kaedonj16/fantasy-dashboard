@@ -1,9 +1,9 @@
 """Normalize Tank01 play-by-play into Redzone feed events.
 
-Tank01's ``getNFLBoxScore?playByPlay=true`` returns an experimental
-``allPlayByPlay`` list. Each play may carry per-player fantasy deltas under
-``playerStats`` (and DST under ``teamStats``). Field names vary across seasons,
-so every lookup is defensive.
+Tank01's ``getNFLBoxScore?playByPlay=true`` (also documented as ``playByplay``)
+returns an experimental ``allPlayByPlay`` list. Each play may carry per-player
+fantasy deltas under ``playerStats`` (and DST under ``teamStats``). Field names
+vary across seasons, so every lookup is defensive.
 
 Output shape (one entry per fantasy-relevant player on the play)::
 
@@ -68,8 +68,42 @@ def _normalize_player_delta(ps: dict) -> dict:
     if not isinstance(ps, dict):
         return {}
     # Some payloads nest Passing/Rushing/Receiving; others already look like a
-    # boxscore playerStats row. rz_stat_line_from_ps handles both shapes.
+    # boxscore playerStats row (flat keys). rz_stat_line_from_ps handles both.
     return rz_stat_line_from_ps(ps)
+
+
+def _iter_player_stats(pstats: Any) -> Iterable[dict]:
+    """Yield player-stat dicts whether Tank01 sent a map or a list."""
+    if isinstance(pstats, dict):
+        for v in pstats.values():
+            if isinstance(v, dict):
+                yield v
+    elif isinstance(pstats, list):
+        for v in pstats:
+            if isinstance(v, dict):
+                yield v
+
+
+def _raw_pbp_list(box: dict) -> list:
+    """Locate ``allPlayByPlay`` (and aliases), including one nested ``body``."""
+    if not isinstance(box, dict):
+        return []
+    candidates = [box]
+    inner = box.get("body")
+    if isinstance(inner, dict):
+        candidates.append(inner)
+    for src in candidates:
+        raw = (
+            src.get("allPlayByPlay")
+            or src.get("allPlaybyPlay")
+            or src.get("playByPlay")
+            or src.get("plays")
+        )
+        if isinstance(raw, dict):
+            return list(raw.values())
+        if isinstance(raw, list):
+            return raw
+    return []
 
 
 def extract_pbp_plays(
@@ -84,19 +118,8 @@ def extract_pbp_plays(
     ``name_to_pid`` maps lowercased full name → Sleeper pid.
     ``team_to_def_pid`` maps team abbreviation → Sleeper DEF pid for the league.
     """
-    if not isinstance(box, dict):
-        return []
-    raw = (
-        box.get("allPlayByPlay")
-        or box.get("allPlaybyPlay")
-        or box.get("playByPlay")
-        or box.get("plays")
-        or []
-    )
-    if isinstance(raw, dict):
-        # Some payloads key plays by id.
-        raw = list(raw.values())
-    if not isinstance(raw, list):
+    raw = _raw_pbp_list(box if isinstance(box, dict) else {})
+    if not raw:
         return []
 
     name_to_pid = name_to_pid or {}
@@ -126,30 +149,35 @@ def extract_pbp_plays(
             "play_text": text,
         }
 
+        emitted = 0
         pstats = play.get("playerStats") or play.get("player_stats") or {}
-        if isinstance(pstats, dict):
-            for _, ps in pstats.items():
-                if not isinstance(ps, dict):
-                    continue
-                line = _normalize_player_delta(ps)
-                if not _stat_line_nonzero(line):
-                    continue
-                long_name = _s(_first(ps, "longName", "long_name", "playerName", "name"))
-                pid = name_to_pid.get(long_name.lower()) if long_name else ""
-                team = _s(_first(ps, "teamAbv", "team", "teamAbbreviation"))
-                is_td = bool(
-                    (line.get("pass_td") or 0)
-                    or (line.get("rush_td") or 0)
-                    or (line.get("rec_td") or 0)
-                )
-                out.append({
-                    **base,
-                    "pid": pid or "",
-                    "name": long_name,
-                    "team": team,
-                    "stat_line": line,
-                    "is_td": is_td,
-                })
+        for ps in _iter_player_stats(pstats):
+            line = _normalize_player_delta(ps)
+            long_name = _s(_first(ps, "longName", "long_name", "playerName", "name"))
+            # Keep named players (or nonzero deltas) even when Tank01 shipped
+            # empty/zero fantasy deltas — the booth line is still real PBP.
+            if not _stat_line_nonzero(line) and not long_name:
+                continue
+            if not _stat_line_nonzero(line) and not text:
+                continue
+            pid = name_to_pid.get(long_name.lower()) if long_name else ""
+            team = _s(_first(ps, "teamAbv", "team", "teamAbbreviation"))
+            is_td = bool(
+                (line.get("pass_td") or 0)
+                or (line.get("rush_td") or 0)
+                or (line.get("rec_td") or 0)
+                or ("touchdown" in text.lower())
+                or (" TD" in text)
+            )
+            out.append({
+                **base,
+                "pid": pid or "",
+                "name": long_name,
+                "team": team,
+                "stat_line": line,
+                "is_td": is_td,
+            })
+            emitted += 1
 
         # DST / team defense deltas on the play
         tstats = play.get("teamStats") or play.get("team_stats") or {}
@@ -179,10 +207,11 @@ def extract_pbp_plays(
                     "stat_line": line,
                     "is_td": is_td,
                 })
+                emitted += 1
 
-        # Narrative-only scoring play with no playerStats — still useful copy
-        # when we can later attach a pid client-side via name heuristics.
-        if text and not pstats and not tstats:
+        # Narrative-only scoring play with no usable player/team rows — still
+        # ship the booth line; the client may attach a pid via name heuristics.
+        if text and emitted == 0:
             out.append({
                 **base,
                 "pid": "",

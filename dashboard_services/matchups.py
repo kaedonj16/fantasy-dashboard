@@ -1299,7 +1299,16 @@ def render_matchup_slide(
         # keeps it until the new season plays), and WAS/WSH alias misses used to
         # mark Commanders as FINAL so the old "hide if not_started" gate never
         # fired. Keep the schedule game_line; drop the stat line until kickoff.
-        if is_not_started or is_bye or not game_has_started(game):
+        #
+        # Prefer the schedule row when we have one: a past gameDate with a stale
+        # Tank01 code 0 still counts as started (see game_has_started). Fall
+        # back to pid status only when schedule lookup missed.
+        if is_bye:
+            stats = None
+        elif game is not None:
+            if not game_has_started(game):
+                stats = None
+        elif is_not_started:
             stats = None
 
         meta_content = html.escape(str(nfl or "").strip())

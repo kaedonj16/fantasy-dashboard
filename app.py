@@ -11687,6 +11687,9 @@ from utils.redzone_pbp import (  # noqa: E402
     demo_play_text as _rz_demo_play_text,
     extract_pbp_plays as _rz_extract_pbp_plays,
 )
+from utils.redzone_alt_pbp import (  # noqa: E402
+    fetch_alt_pbp_plays as _rz_fetch_alt_pbp_plays,
+)
 
 # ── Demo mode ──────────────────────────────────────────────────────────────────
 # Time-parameterised sample data so the live play feed can be exercised any time
@@ -12183,6 +12186,24 @@ def _redzone_collect(platform, league_id, season, week):
             play_by_play=want_pbp,
             ttl=(None if live else 300.0) if want_pbp else None,
         )
+        # Tank01's playByPlay response is experimental and sometimes returns PBP
+        # without aggregate playerStats (or an empty body). Merge a plain
+        # boxscore for scoreboard totals only — Plays never invents boxscore /
+        # "Scored X pts" fiction from that merge (client is PBP-lines-only for
+        # live/final).
+        if want_pbp and not (box.get("playerStats") or box.get("allPlayByPlay")
+                             or box.get("allPlaybyPlay") or box.get("playByPlay")):
+            plain = _redzone_boxscore(gid, play_by_play=False)
+            if plain:
+                box = plain
+        elif want_pbp and box and not box.get("playerStats"):
+            plain = _redzone_boxscore(gid, play_by_play=False)
+            if plain.get("playerStats"):
+                merged = dict(plain)
+                for k in ("allPlayByPlay", "allPlaybyPlay", "playByPlay", "plays"):
+                    if box.get(k):
+                        merged[k] = box[k]
+                box = merged
         pstats = box.get("playerStats") or {}
         tstats = box.get("teamStats") or {}
         name_to_pid: dict = {}
@@ -12236,10 +12257,53 @@ def _redzone_collect(platform, league_id, season, week):
                     p for p in plays
                     if (p.get("pid") and p["pid"] in rostered) or p.get("play_text")
                 ]
-                if plays:
-                    pbp_by_game[gid] = plays
+                # Tank01 PBP is experimental and often empty for finals. Fall
+                # back to Sleeper (preferred) then ESPN CDN booth lines so
+                # Plays still shows real play-by-play — never boxscore fiction.
+                if not plays:
+                    try:
+                        alt = _rz_fetch_alt_pbp_plays(
+                            gid,
+                            season=season,
+                            week=week,
+                            name_to_pid=name_to_pid,
+                            team_to_def_pid=team_to_def_pid,
+                            live=live,
+                        )
+                        plays = [
+                            p for p in (alt or [])
+                            if (p.get("pid") and p["pid"] in rostered) or p.get("play_text")
+                        ]
+                    except Exception:
+                        logger.debug(
+                            "[redzone] alt pbp failed game=%s", gid, exc_info=True
+                        )
+                # Always record the game key when we attempted PBP so the client
+                # can suppress bulk point dumps even if Tank01 returned no rows.
+                pbp_by_game[gid] = plays
             except Exception:
                 logger.debug("[redzone] pbp parse failed game=%s", gid, exc_info=True)
+                pbp_by_game.setdefault(gid, [])
+        elif want_pbp:
+            # No usable box at all — still try Sleeper/ESPN for booth lines.
+            try:
+                rostered = set(pids)
+                alt = _rz_fetch_alt_pbp_plays(
+                    gid,
+                    season=season,
+                    week=week,
+                    name_to_pid=name_to_pid,
+                    team_to_def_pid=team_to_def_pid,
+                    live=live,
+                )
+                plays = [
+                    p for p in (alt or [])
+                    if (p.get("pid") and p["pid"] in rostered) or p.get("play_text")
+                ]
+                pbp_by_game[gid] = plays
+            except Exception:
+                logger.debug("[redzone] alt pbp failed game=%s", gid, exc_info=True)
+                pbp_by_game.setdefault(gid, [])
 
     # Projected points per matchup, scored with the league's settings so the
     # remaining projection matches the live point math it is added to.
@@ -19991,7 +20055,10 @@ def api_player_details(player_id: str):
         # in players_index. Synthesize a minimal meta so the modal can show the
         # team logo instead of 404ing.
         if not player_meta:
-            from utils.utils import canon_team, load_teams_index, def_team_logo_urls
+            # Do not import canon_team here — a conditional import would make
+            # it local for the whole handler and UnboundLocalError when this
+            # DEF branch is skipped (found players).
+            from utils.utils import def_team_logo_urls
             _def_team = canon_team(player_id) or str(player_id or "").strip().upper()
             _ti = load_teams_index() or {}
             if _def_team and _def_team in _ti:

@@ -14035,8 +14035,9 @@ a.signed-home-league:hover {
     text-align: right;
 }
 
-/* Ellipsis only the player name — keep the team abbr fully visible beside it.
-   Previously name+team shared one nowrap ellipsis line ("Jonathan Taylor I..."). */
+/* Keep the team abbr fully visible beside the name. Allow the name itself to
+   wrap (up to 2 lines) so long names like "Jaxon Smith-Njigba" stay readable
+   instead of clipping to "Jaxon Smith…" while the row center still looks empty. */
 .p-name-line {
     display: flex;
     align-items: baseline;
@@ -14051,9 +14052,15 @@ a.signed-home-league:hover {
 
 .p-name-line .pname {
     min-width: 0;
+    flex: 1 1 auto;
     overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    line-height: 1.2;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
 }
 
 .p-name-line .p-team {
@@ -15597,12 +15604,13 @@ img, svg, canvas {
 @media (max-width: 900px) {
     .m-cell-stats {
         display: block;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
+        white-space: normal;
+        overflow: visible;
+        text-overflow: unset;
         font-size: 10px;
         color: var(--text-muted);
         margin-top: 1px;
+        line-height: 1.25;
     }
 }
 
