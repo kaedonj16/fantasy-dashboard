@@ -19940,7 +19940,10 @@ def api_player_details(player_id: str):
         # in players_index. Synthesize a minimal meta so the modal can show the
         # team logo instead of 404ing.
         if not player_meta:
-            from utils.utils import canon_team, load_teams_index, def_team_logo_urls
+            # Do not import canon_team here — a conditional import would make
+            # it local for the whole handler and UnboundLocalError when this
+            # DEF branch is skipped (found players).
+            from utils.utils import def_team_logo_urls
             _def_team = canon_team(player_id) or str(player_id or "").strip().upper()
             _ti = load_teams_index() or {}
             if _def_team and _def_team in _ti:
