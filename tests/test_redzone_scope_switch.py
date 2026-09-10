@@ -416,6 +416,16 @@ def test_sleeper_style_situation_strip_and_yardage_chip():
     assert "statLine: line" in src
 
 
+def test_running_cumulative_stat_line_rendered():
+    """Sleeper-style running stat line ('QB · 2/3 CMP, 13 YD') at each play."""
+    src = _rz()
+    css = (_ROOT / "static" / "dashboard.css").read_text(encoding="utf-8")
+    assert "function _cumeLine(" in src
+    assert "cume: play.cume" in src
+    assert "rz-event-cume" in src and ".rz-event-cume" in css
+    assert "' CMP'" in src
+
+
 def test_scoring_honors_distance_fg_and_te_premium():
     """Per-play points respect distance-based FG buckets and TE premium."""
     src = _rz()

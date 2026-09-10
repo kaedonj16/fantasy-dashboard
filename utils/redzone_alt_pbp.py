@@ -47,6 +47,7 @@ _RE_PASS = re.compile(
     r"for\s+(-?\d+|no gain)(?:\s*(?:yard|yd)s?)?"
 )
 _RE_INT = re.compile(rf"({_NAME_TOK})\s+pass\b.*?INTERCEPTED")
+_RE_INCOMP = re.compile(rf"({_NAME_TOK})\s+pass\s+incomplete")
 # The ball carrier is the name immediately before a rush action, not whatever
 # name leads the sentence ("G.Van Roten reported in as eligible. D.Maye
 # scrambles …"). Anchor on the action so pre-snap clauses don't steal credit.
@@ -85,10 +86,12 @@ def parse_pbp_play_stats(text: str) -> dict[str, dict]:
     # A TD only counts for the offense when the ball wasn't turned over first.
     scored = "TOUCHDOWN" in text and "INTERCEPTED" not in text and "FUMBLE" not in text
 
+    # pass_att / pass_cmp are display-only (running CMP/ATT); _lineToPts ignores
+    # them. Every pass — complete, incomplete, or picked — is one attempt.
     m = _RE_PASS.search(text)
     if m:
         passer, receiver, yds = m.group(1), m.group(2), _yards(m.group(3))
-        _accum(out, passer, pass_yds=yds)
+        _accum(out, passer, pass_yds=yds, pass_cmp=1, pass_att=1)
         _accum(out, receiver, rec=1, rec_yds=yds, targets=1)
         if scored:
             _accum(out, passer, pass_td=1)
@@ -96,7 +99,11 @@ def parse_pbp_play_stats(text: str) -> dict[str, dict]:
 
     mi = _RE_INT.search(text)
     if mi:
-        _accum(out, mi.group(1), int=1)
+        _accum(out, mi.group(1), int=1, pass_att=1)
+
+    mc = _RE_INCOMP.search(text)
+    if mc:
+        _accum(out, mc.group(1), pass_att=1)
 
     # Rushes only — never a pass, sack, kick or punt (those carry "for N yards"
     # too but must not be scored as rushing).
@@ -142,6 +149,27 @@ def _stat_lines_by_pid(text: str, abbrev_index: dict[str, str]) -> dict[str, dic
         for k, v in sl.items():
             dest[k] = dest.get(k, 0) + v
     return by_pid
+
+
+def attach_cumulative(plays: list[dict]) -> list[dict]:
+    """Add a running per-player ``cume`` snapshot to each play, in order.
+
+    ``plays`` must be in chronological (ascending) order — both extractors emit
+    that way. Each play carries the player's totals *through that play*, so the
+    client can show Sleeper-style "23/33 CMP, 178 YD" context at that moment.
+    """
+    cume: dict[str, dict] = {}
+    for p in plays:
+        pid = p.get("pid")
+        if not pid:
+            p["cume"] = {}
+            continue
+        acc = cume.setdefault(pid, {})
+        for k, v in (p.get("stat_line") or {}).items():
+            if isinstance(v, (int, float)):
+                acc[k] = acc.get(k, 0) + v
+        p["cume"] = dict(acc)
+    return plays
 
 # ESPN uses a few abbreviations that differ from Sleeper/Tank01, which key the
 # rest of Redzone (player_info["team"], Tank01 game ids). Normalize ESPN → the
@@ -388,7 +416,7 @@ def extract_sleeper_pbp_plays(
                 })
         else:
             out.append({**base, "pid": "", "name": long_name, "team": _s(play.get("team"))})
-    return out
+    return attach_cumulative(out)
 
 
 # ── ESPN ─────────────────────────────────────────────────────────────────────
@@ -602,7 +630,7 @@ def extract_espn_pbp_plays(
                 # still resolve via heuristics; otherwise filtered server-side.
                 if is_td or play.get("scoringPlay"):
                     out.append({**base, "pid": "", "name": "", "team": ""})
-    return out
+    return attach_cumulative(out)
 
 
 # ── ESPN scoreboard (game discovery fallback) ─────────────────────────────────

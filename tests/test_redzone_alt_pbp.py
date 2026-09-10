@@ -1,5 +1,6 @@
 """Tests for Sleeper / ESPN alternate Redzone play-by-play helpers."""
 from utils.redzone_alt_pbp import (
+    attach_cumulative,
     build_name_indexes,
     extract_espn_pbp_plays,
     extract_espn_scoreboard_lookup,
@@ -10,12 +11,68 @@ from utils.redzone_alt_pbp import (
 )
 
 
+def test_attach_cumulative_builds_running_totals_in_order():
+    plays = [
+        {"pid": "qb", "stat_line": {"pass_yds": 12, "pass_cmp": 1, "pass_att": 1}},
+        {"pid": "qb", "stat_line": {"pass_att": 1}},  # incompletion
+        {"pid": "qb", "stat_line": {"pass_yds": 1, "pass_cmp": 1, "pass_att": 1}},
+        {"pid": "wr", "stat_line": {"rec": 1, "rec_yds": 12, "targets": 1}},
+    ]
+    out = attach_cumulative(plays)
+    assert out[0]["cume"] == {"pass_yds": 12, "pass_cmp": 1, "pass_att": 1}
+    # After the incompletion: 1/2 CMP, still 12 yards.
+    assert out[1]["cume"] == {"pass_yds": 12, "pass_cmp": 1, "pass_att": 2}
+    # After the third pass: 2/3 CMP, 13 yards.
+    assert out[2]["cume"] == {"pass_yds": 13, "pass_cmp": 2, "pass_att": 3}
+    assert out[3]["cume"] == {"rec": 1, "rec_yds": 12, "targets": 1}
+
+
+def test_espn_extract_attaches_cumulative_per_player():
+    payload = {
+        "gamepackageJSON": {
+            "drives": {
+                "previous": [
+                    {
+                        "plays": [
+                            {
+                                "id": "1",
+                                "text": "D.Maye pass short right to M.Hollins for 12 yards (E.Jones).",
+                                "clock": {"displayValue": "2:00"},
+                                "period": {"number": 4},
+                                "start": {"down": 4, "distance": 9},
+                                "type": {"text": "Pass"},
+                            },
+                            {
+                                "id": "2",
+                                "text": "D.Maye pass short left to M.Hollins to SEA 36 for 11 yards (E.Jones).",
+                                "clock": {"displayValue": "1:40"},
+                                "period": {"number": 4},
+                                "start": {"down": 1, "distance": 10},
+                                "type": {"text": "Pass"},
+                            },
+                        ]
+                    }
+                ]
+            }
+        }
+    }
+    plays = extract_espn_pbp_plays(
+        payload,
+        "20260909_NE@SEA",
+        name_to_pid={"drake maye": "11564", "malik hollins": "200"},
+    )
+    maye = [p for p in plays if p["pid"] == "11564"]
+    assert maye[-1]["cume"] == {"pass_yds": 23, "pass_cmp": 2, "pass_att": 2}
+    holl = [p for p in plays if p["pid"] == "200"]
+    assert holl[-1]["cume"] == {"rec": 2, "rec_yds": 23, "targets": 2}
+
+
 def test_parse_pbp_completed_pass_credits_passer_and_receiver():
     sl = parse_pbp_play_stats(
         "(Shotgun) D.Maye pass short right to M.Hollins pushed ob at SEA 16 "
         "for 12 yards (J.Jobe)."
     )
-    assert sl["d.maye"] == {"pass_yds": 12}
+    assert sl["d.maye"] == {"pass_yds": 12, "pass_cmp": 1, "pass_att": 1}
     assert sl["m.hollins"] == {"rec": 1, "rec_yds": 12, "targets": 1}
 
 
@@ -24,7 +81,7 @@ def test_parse_pbp_td_pass_and_extra_point():
         "D.Lock pass short left to J.Smith-Njigba for 45 yards, TOUCHDOWN. "
         "J.Myers extra point is GOOD, Center-C.Stoll, Holder-M.Dickson."
     )
-    assert sl["d.lock"] == {"pass_yds": 45, "pass_td": 1}
+    assert sl["d.lock"] == {"pass_yds": 45, "pass_cmp": 1, "pass_att": 1, "pass_td": 1}
     assert sl["j.smith-njigba"] == {"rec": 1, "rec_yds": 45, "targets": 1, "rec_td": 1}
     assert sl["j.myers"] == {"xpm": 1}
 
@@ -34,7 +91,7 @@ def test_parse_pbp_interception_only_credits_passer_pick():
         "(Shotgun) D.Maye pass deep right intended for M.Hollins INTERCEPTED "
         "by J.Jobe [D.Lawrence] at SEA -3. Touchback."
     )
-    assert sl == {"d.maye": {"int": 1}}
+    assert sl == {"d.maye": {"int": 1, "pass_att": 1}}
 
 
 def test_parse_pbp_sack_is_not_scored_as_a_rush():
@@ -109,7 +166,9 @@ def test_espn_plays_attach_real_stat_lines():
     assert by_pid["8155"]["stat_line"] == {
         "rec": 1, "rec_yds": 45, "targets": 1, "rec_td": 1,
     }
-    assert by_pid["99"]["stat_line"] == {"pass_yds": 45, "pass_td": 1}
+    assert by_pid["99"]["stat_line"] == {
+        "pass_yds": 45, "pass_cmp": 1, "pass_att": 1, "pass_td": 1,
+    }
 
 
 def test_parse_tank_game_id():

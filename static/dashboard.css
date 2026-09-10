@@ -33588,6 +33588,14 @@ button:disabled {
 .rz-event-yd.pos { color: var(--rz-green); }
 .rz-event-yd.neg { color: var(--rz-red); }
 .rz-event-yd.zero { color: var(--rz-muted); }
+/* Running per-player stat line through the play (e.g. "QB · 2/3 CMP, 13 YD"). */
+.rz-event-cume {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--rz-muted);
+    margin-top: 1px;
+    font-variant-numeric: tabular-nums;
+}
 
 /* ── Pagination ───────────────────────── */
 #rz-feed-pagination {

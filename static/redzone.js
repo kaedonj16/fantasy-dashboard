@@ -574,6 +574,34 @@
     if (ord) return ord + ' down';
     return dist ? ('& ' + dist) : '';
   }
+  // Sleeper-style running stat line for this player *through this play*
+  // (e.g. "2/3 CMP, 13 YD, 1 TD"). Built from the server's cumulative snapshot.
+  function _cumeLine(pos, c) {
+    if (!c) return '';
+    var p = [];
+    var yd = function(n) { return _n(n) + ' YD'; };
+    if (_n(c.pass_att)) {
+      p.push(_n(c.pass_cmp) + '/' + _n(c.pass_att) + ' CMP');
+      p.push(yd(c.pass_yds));
+      if (_n(c.pass_td)) p.push(_n(c.pass_td) + ' TD');
+      if (_n(c.int)) p.push(_n(c.int) + ' INT');
+      if (_n(c.carries)) p.push(_n(c.rush_yds) + ' RUSH');
+    } else if (_n(c.carries)) {
+      p.push(_n(c.carries) + ' CAR');
+      p.push(yd(c.rush_yds));
+      if (_n(c.rush_td)) p.push(_n(c.rush_td) + ' TD');
+      if (_n(c.rec)) { p.push(_n(c.rec) + ' REC'); p.push(yd(c.rec_yds)); }
+      if (_n(c.rec_td)) p.push(_n(c.rec_td) + ' REC TD');
+    } else if (_n(c.rec) || _n(c.targets)) {
+      p.push(_n(c.rec) + '/' + _n(c.targets) + ' REC');
+      p.push(yd(c.rec_yds));
+      if (_n(c.rec_td)) p.push(_n(c.rec_td) + ' TD');
+    } else if (_n(c.fgm) || _n(c.xpm)) {
+      if (_n(c.fgm)) p.push(_n(c.fgm) + ' FG');
+      if (_n(c.xpm)) p.push(_n(c.xpm) + ' XP');
+    }
+    return p.join(', ');
+  }
   // Red zone = the ball is inside the *opponent's* 20. yardLine reads like
   // "SEA 16"; it's the red zone only when that team is not the offense's own.
   function _isRedZone(yardLine, offenseTeam) {
@@ -863,6 +891,7 @@
           gameClock: play.clock || ((_state.player_info || {})[pid] || {}).game_clock || '',
           down: play.down || '', distance: play.distance || '', yardLine: play.yard_line || '',
           desc: desc, kind: kind, stats: stats, pts: pts, statLine: line,
+          cume: play.cume || null,
           totalPts: parseFloat(_totalPtsForPid(pid, scoring, newData).toFixed(2)),
           playId: playKey, fromPbp: true,
           impact: ''
@@ -1974,6 +2003,11 @@
       ? ' <span class="rz-event-yd ' + (ydVal > 0 ? 'pos' : (ydVal < 0 ? 'neg' : 'zero')) + '">'
         + (ydVal > 0 ? '+' : '') + ydVal + ' YD</span>'
       : '';
+    // Running per-player stat line through this play (Sleeper-style context).
+    var cumeStr = _cumeLine(ev.pos, ev.cume);
+    var cumeHtml = cumeStr
+      ? '<div class="rz-event-cume">' + ev.pos + ' · ' + cumeStr + '</div>'
+      : '';
     var impact = _impactLine(ev);
     var impactHtml = impact ? '<div class="rz-event-impact">' + impact + '</div>' : '';
     var isDef = String(ev.pos || '').toUpperCase() === 'DEF';
@@ -2002,6 +2036,7 @@
       + situationHtml
       + '<div class="rz-event-main"><span class="rz-event-name">' + ev.name + '</span>' + tag + '</div>'
       + '<div class="rz-event-desc">' + ev.desc + ydChip + '</div>'
+      + cumeHtml
       + impactHtml
       + '</div>'
       + '<div class="rz-event-delta ' + deltaCls + '">'
