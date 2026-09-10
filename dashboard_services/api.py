@@ -585,21 +585,32 @@ def get_nfl_scores_for_date(game_date: str) -> dict:
 
 
 @ttl_cache(ttl=300)
-def fetch_tank_boxscore(game_id: str, session: Optional[requests.Session] = None) -> dict:
+def fetch_tank_boxscore(
+    game_id: str,
+    session: Optional[requests.Session] = None,
+    *,
+    play_by_play: bool = False,
+) -> dict:
     """
     Fetch a single live boxscore from Tank01 for game_id like '20251207_PIT@BAL'.
     Returns the parsed JSON body.
+
+    When ``play_by_play`` is True, Tank01 also returns the experimental
+    ``allPlayByPlay`` list (per-play fantasy deltas + play text).
     """
     sess = session or requests.Session()
 
-    params = {"gameID": game_id}
+    params: dict = {"gameID": game_id}
+    if play_by_play:
+        params["playByPlay"] = "true"
 
     if _tank01_breaker.is_open():
         logger.warning("[Tank01] Circuit OPEN - skipping getNFLBoxScore %s", game_id)
         return {}
     try:
         url = f"{BASE}/getNFLBoxScore"
-        resp = sess.get(url, headers=TANK01_HEADERS, params=params, timeout=5)
+        # PBP payloads are larger; give them a little more time.
+        resp = sess.get(url, headers=TANK01_HEADERS, params=params, timeout=8 if play_by_play else 5)
         resp.raise_for_status()
         data = resp.json()
         _tank01_breaker.record_success()

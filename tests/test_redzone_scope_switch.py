@@ -307,3 +307,25 @@ def test_play_descriptions_are_play_by_play():
     assert "return { desc: ry + ' yd TD catch'" not in src
     assert "return { desc: py + ' yd TD pass'" not in src
     assert "return { desc: uy + ' yd TD run'" not in src
+
+
+def test_pbp_feed_path_and_soft_rank():
+    src = _rz()
+    assert "function _eventsFromPbp(" in src
+    assert "pbp_by_game" in src
+    assert "function _softRank(" in src
+    assert "function _isBigPlay(" in src
+    assert 'id="rz-bigplays-btn"' in src
+    assert "function _loadPrefs(" in src
+    assert "function _savePrefs(" in src
+    assert "rz-event-impact" in src
+    assert "Try the Redzone demo" in src
+
+
+def test_app_wires_pbp_into_collect_and_demo():
+    app = (_ROOT / "app.py").read_text(encoding="utf-8")
+    assert "extract_pbp_plays as _rz_extract_pbp_plays" in app
+    assert 'play_by_play=want_pbp' in app or "play_by_play=want_pbp" in app
+    assert '"pbp_by_game": pbp_by_game' in app
+    assert "Try Redzone Demo" in app
+    assert 'fetch_tank_boxscore' in (_ROOT / "dashboard_services" / "api.py").read_text(encoding="utf-8")

@@ -4280,6 +4280,8 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             # Player IDs are canonicalized onto the Tank01 boxscore feed, so
             # Redzone works on Sleeper, ESPN, Yahoo, and MFL.
             _weekly_items.append((_rz_label, "page_redzone", "redzone", False))
+            # Demo stays discoverable without a header Demo pill.
+            _weekly_items.append(("Try Redzone Demo", "page_redzone", "redzone", False, "?demo=1"))
             if _rz_live:
                 _rz_pulse = "nav-pill-redzone-live"
         nav_pills.append(nav_pill_dropdown(
@@ -11610,20 +11612,28 @@ _RZ_BOX_CACHE: dict = {}  # game_id -> (ts, boxscore)
 _RZ_BOX_TTL = 15.0
 
 
-def _redzone_boxscore(game_id: str) -> dict:
-    """Fetch a Tank01 boxscore with a short shared TTL cache (bounds API calls)."""
+def _redzone_boxscore(game_id: str, *, play_by_play: bool = False) -> dict:
+    """Fetch a Tank01 boxscore with a short shared TTL cache (bounds API calls).
+
+    ``play_by_play=True`` asks Tank01 for ``allPlayByPlay`` and is cached under a
+    separate key so plain boxscore consumers stay light.
+    """
     if not game_id:
         return {}
     now = time.time()
-    hit = _RZ_BOX_CACHE.get(game_id)
+    cache_key = f"{game_id}:pbp" if play_by_play else game_id
+    hit = _RZ_BOX_CACHE.get(cache_key)
     if hit and (now - hit[0]) < _RZ_BOX_TTL:
         return hit[1]
     try:
         from dashboard_services.api import fetch_tank_boxscore
-        box = fetch_tank_boxscore(game_id) or {}
+        box = fetch_tank_boxscore(game_id, play_by_play=play_by_play) or {}
     except Exception:
         box = {}
-    _RZ_BOX_CACHE[game_id] = (now, box)
+    _RZ_BOX_CACHE[cache_key] = (now, box)
+    # Plain boxscore callers can reuse a PBP response (it is a superset).
+    if play_by_play and box and game_id not in _RZ_BOX_CACHE:
+        _RZ_BOX_CACHE[game_id] = (now, box)
     return box
 
 
@@ -11667,6 +11677,10 @@ from utils.redzone_stats import (  # noqa: E402
     rz_def_stat_line as _rz_def_stat_line,
     rz_safe_epoch as _rz_safe_epoch,
     rz_stat_line_from_ps as _rz_stat_line_from_ps,
+)
+from utils.redzone_pbp import (  # noqa: E402
+    demo_play_text as _rz_demo_play_text,
+    extract_pbp_plays as _rz_extract_pbp_plays,
 )
 
 # ── Demo mode ──────────────────────────────────────────────────────────────────
@@ -11836,6 +11850,84 @@ def _redzone_demo_data(t: float = _RZ_DEMO_START, scope: str = "league"):
             info["stat_line"] = line
             pts[pid] = _rz_demo_pts(line)
 
+    # Synthetic play-by-play so the demo exercises the same client path as live Tank01 PBP.
+    pbp_by_game = {}
+    for pid, info in PLAYERS.items():
+        gid = info.get("game_id") or ""
+        if not gid or (info.get("game_code") or "0") == "0":
+            continue
+        pos = info.get("pos") or ""
+        t_eff = _RZ_DEMO_GAME if info.get("game_code") == "2" else t
+        plays_out = pbp_by_game.setdefault(gid, [])
+        if pos == "DEF":
+            for p in _DEMO_DEF_SCRIPT.get(pid, []):
+                if p["t"] > t_eff:
+                    break
+                line = {"sacks": 0, "def_int": 0, "fum_rec": 0, "def_td": 0}
+                line[p["k"]] = 1
+                plays_out.append({
+                    "play_id": f"{gid}:{pid}:{p['t']}",
+                    "seq": len(plays_out),
+                    "game_id": gid,
+                    "quarter": info.get("game_quarter") or "",
+                    "clock": info.get("game_clock") or "",
+                    "down": "", "distance": "", "yard_line": "",
+                    "play_text": _rz_demo_play_text(p["k"]),
+                    "pid": pid, "name": info.get("name") or "", "team": info.get("team") or "",
+                    "stat_line": line, "is_td": p["k"] == "def_td",
+                })
+        elif pos == "K":
+            for p in _DEMO_K_SCRIPT.get(pid, []):
+                if p["t"] > t_eff:
+                    break
+                line = {"fgm": 0, "fg_long": 0, "xpm": 0}
+                if p["k"] == "fgm":
+                    line["fgm"] = 1; line["fg_long"] = p.get("dist", 0)
+                else:
+                    line["xpm"] = 1
+                plays_out.append({
+                    "play_id": f"{gid}:{pid}:{p['t']}",
+                    "seq": len(plays_out),
+                    "game_id": gid,
+                    "quarter": info.get("game_quarter") or "",
+                    "clock": info.get("game_clock") or "",
+                    "down": "", "distance": "", "yard_line": "",
+                    "play_text": _rz_demo_play_text(p["k"], dist=p.get("dist", 0)),
+                    "pid": pid, "name": info.get("name") or "", "team": info.get("team") or "",
+                    "stat_line": line, "is_td": False,
+                })
+        else:
+            for p in _rz_demo_script(pid, pos):
+                if p["t"] > t_eff:
+                    break
+                kind = p["kind"]
+                line = {"pass_yds": 0, "pass_td": 0, "int": 0, "carries": 0,
+                        "rush_yds": 0, "rush_td": 0, "rec": 0, "rec_yds": 0,
+                        "rec_td": 0, "targets": 0}
+                if kind == "rush":
+                    line["carries"] = 1; line["rush_yds"] = p.get("yds", 0); line["rush_td"] = p.get("td", 0)
+                elif kind == "rec":
+                    line["rec"] = 1; line["targets"] = 1; line["rec_yds"] = p.get("yds", 0); line["rec_td"] = p.get("td", 0)
+                elif kind == "target":
+                    line["targets"] = 1
+                elif kind == "pass":
+                    line["pass_yds"] = p.get("yds", 0); line["pass_td"] = p.get("td", 0)
+                elif kind == "int":
+                    line["int"] = 1
+                plays_out.append({
+                    "play_id": f"{gid}:{pid}:{p['t']}",
+                    "seq": len(plays_out),
+                    "game_id": gid,
+                    "quarter": info.get("game_quarter") or "",
+                    "clock": info.get("game_clock") or "",
+                    "down": "1" if kind in ("pass", "rush", "rec", "target") else "",
+                    "distance": "10" if kind in ("pass", "rush", "rec", "target") else "",
+                    "yard_line": "",
+                    "play_text": _rz_demo_play_text(kind, p.get("yds", 0), p.get("td", 0)),
+                    "pid": pid, "name": info.get("name") or "", "team": info.get("team") or "",
+                    "stat_line": line, "is_td": bool(p.get("td")),
+                })
+
     def mk(rid, mid, starters, bench, league_name=None):
         players = starters + bench
         pp = {p: pts.get(p, 0.0) for p in players}
@@ -11851,6 +11943,7 @@ def _redzone_demo_data(t: float = _RZ_DEMO_START, scope: str = "league"):
         "week": 14, "season": 2024, "platform": "sleeper", "league_id": "demo",
         "player_info": PLAYERS,
         "scoring": dict(_RZ_DEMO_SCORING),
+        "pbp_by_game": pbp_by_game,
         "updated_at": time.time(),
         "is_demo": True,
         "demo_t": t,
@@ -11874,6 +11967,17 @@ def _redzone_demo_data(t: float = _RZ_DEMO_START, scope: str = "league"):
     def _apply_real_ids(d):
         M = _RZ_DEMO_PID
         d["player_info"] = {M.get(k, k): v for k, v in (d.get("player_info") or {}).items()}
+        # Remap synthetic PBP player ids onto real Sleeper ids too.
+        remapped_pbp = {}
+        for gid, plays in (d.get("pbp_by_game") or {}).items():
+            remapped = []
+            for play in plays or []:
+                p = dict(play)
+                if p.get("pid"):
+                    p["pid"] = M.get(p["pid"], p["pid"])
+                remapped.append(p)
+            remapped_pbp[gid] = remapped
+        d["pbp_by_game"] = remapped_pbp
         for m in d.get("matchups", []):
             m["starters"] = [M.get(p, p) for p in m.get("starters", [])]
             m["players"] = [M.get(p, p) for p in m.get("players", [])]
@@ -12024,16 +12128,26 @@ def _redzone_collect(platform, league_id, season, week):
     # Attach per-player stat lines from Tank01 boxscores. Tank01 is keyed by
     # player name, and player_info now resolves names on every platform, so the
     # live stat lines work league-wide regardless of provider.
+    # Also pull experimental play-by-play so the client can show real play text
+    # (down/distance/clock) instead of inventing copy from box-score deltas.
     games_to_pids: dict = {}
     for pid, info in player_info.items():
         gid = info.get("game_id")
         code = info.get("game_code")
         if gid and code in ("1", "2"):
             games_to_pids.setdefault(gid, []).append(pid)
+
+    pbp_by_game: dict = {}
     for gid, pids in games_to_pids.items():
-        box = _redzone_boxscore(gid)
+        # Live games: request PBP. Finals: plain boxscore is enough (and cheaper).
+        want_pbp = any(
+            (player_info.get(pid) or {}).get("game_code") == "1" for pid in pids
+        )
+        box = _redzone_boxscore(gid, play_by_play=want_pbp)
         pstats = box.get("playerStats") or {}
         tstats = box.get("teamStats") or {}
+        name_to_pid: dict = {}
+        team_to_def_pid: dict = {}
         if isinstance(pstats, dict) and pstats:
             name_map = {}
             for _, ps in pstats.items():
@@ -12051,11 +12165,42 @@ def _redzone_collect(platform, league_id, season, week):
                     side = "home" if team == home else ("away" if team == away else None)
                     if side and isinstance(tstats.get(side), dict):
                         pi["stat_line"] = _rz_def_stat_line(tstats[side])
+                    if team:
+                        team_to_def_pid[team] = pid
                 else:
                     full = (nfl_players.get(pid, {}).get("full_name") or "").lower()
+                    if full:
+                        name_to_pid[full] = pid
                     ps = name_map.get(full)
                     if ps:
                         pi["stat_line"] = _rz_stat_line_from_ps(ps)
+        else:
+            for pid in pids:
+                pi = player_info[pid]
+                if pi.get("pos") == "DEF" and pi.get("team"):
+                    team_to_def_pid[pi["team"]] = pid
+                else:
+                    full = (nfl_players.get(pid, {}).get("full_name") or "").lower()
+                    if full:
+                        name_to_pid[full] = pid
+
+        if want_pbp and box:
+            try:
+                plays = _rz_extract_pbp_plays(
+                    box, gid,
+                    name_to_pid=name_to_pid,
+                    team_to_def_pid=team_to_def_pid,
+                )
+                # Keep only plays that touch a rostered player (or carry text).
+                rostered = set(pids)
+                plays = [
+                    p for p in plays
+                    if (p.get("pid") and p["pid"] in rostered) or p.get("play_text")
+                ]
+                if plays:
+                    pbp_by_game[gid] = plays
+            except Exception:
+                logger.debug("[redzone] pbp parse failed game=%s", gid, exc_info=True)
 
     # Projected points per matchup, scored with the league's settings so the
     # remaining projection matches the live point math it is added to.
@@ -12090,6 +12235,7 @@ def _redzone_collect(platform, league_id, season, week):
         ],
         "player_info": player_info,
         "scoring": scoring,
+        "pbp_by_game": pbp_by_game,
     }
 
 
@@ -12361,6 +12507,7 @@ def _redzone_user_league_slice(li, lg, season, week, account_id, viewer_uid,
         "pid_league": slice_pid_league,
         "viewer_roster_id": ns + vrid,
         "leagues": [{"league_id": lid, "name": lname, "platform": lg_plat}],
+        "pbp_by_game": d.get("pbp_by_game") or {},
     }
 
 
@@ -12378,6 +12525,7 @@ def _redzone_fetch_user(platform, league_id, season, week):
     scoring: dict = {}
     scoring_by_league: dict = {}  # league_id -> that league's scoring settings
     pid_league: dict = {}  # pid -> league_id (so each player scores by its league)
+    pbp_by_game: dict = {}
     viewer_rids = []
     seen_users = set()
 
@@ -12396,6 +12544,8 @@ def _redzone_fetch_user(platform, league_id, season, week):
                 seen_users.add(uid)
                 users.append(u)
         player_info.update(s["player_info"])
+        for _gid, _plays in (s.get("pbp_by_game") or {}).items():
+            pbp_by_game.setdefault(_gid, []).extend(_plays or [])
         if not scoring:
             scoring = s["scoring"] or {}
         scoring_by_league.update(s["scoring_by_league"])
@@ -12415,6 +12565,7 @@ def _redzone_fetch_user(platform, league_id, season, week):
         "scoring": scoring,
         "scoring_by_league": scoring_by_league,
         "pid_league": pid_league,
+        "pbp_by_game": pbp_by_game,
         "viewer_roster_id": viewer_rids[0] if viewer_rids else "",
         "viewer_roster_ids": viewer_rids,
         "updated_at": time.time(),

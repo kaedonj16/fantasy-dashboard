@@ -33609,6 +33609,62 @@ button:disabled {
     color: var(--rz-text);
 }
 
+/* ── Big Plays quick toggle ─────────────── */
+.rz-bigplays-btn {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .04em;
+    padding: 5px 11px;
+    border-radius: 12px;
+    border: 1px solid var(--rz-border);
+    background: transparent;
+    color: var(--rz-muted);
+    cursor: pointer;
+    transition: all .15s;
+    white-space: nowrap;
+}
+.rz-bigplays-btn.active {
+    background: rgba(245, 158, 11, .14);
+    border-color: rgba(245, 158, 11, .5);
+    color: #d97706;
+}
+.rz-bigplays-btn:hover:not(.active) {
+    border-color: var(--rz-text);
+    color: var(--rz-text);
+}
+
+.rz-event-impact {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--rz-muted);
+    margin-top: 2px;
+}
+.rz-event.is-mine .rz-event-impact {
+    color: #16a34a;
+}
+.rz-event-down,
+.rz-event-yardline {
+    font-variant-numeric: tabular-nums;
+}
+.rz-event.is-big .rz-event-desc {
+    font-weight: 700;
+}
+.rz-demo-cta {
+    margin-top: 10px;
+}
+.rz-demo-cta .rz-demo-link,
+a.rz-demo-link {
+    color: var(--rz-red);
+    font-weight: 700;
+    font-size: 13px;
+    text-decoration: none;
+}
+.rz-demo-cta .rz-demo-link:hover,
+a.rz-demo-link:hover {
+    text-decoration: underline;
+}
+
+
 /* ── Pre-game schedule empty state ───── */
 .rz-pregame-wrap {
     padding: 8px 10px 12px;
