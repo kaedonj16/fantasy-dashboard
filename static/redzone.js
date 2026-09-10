@@ -305,7 +305,8 @@
       + _n(L.rec) * _n(s.rec) + _n(L.rec_yds) * _n(s.rec_yd) + _n(L.rec_td) * _n(s.rec_td);
     // Kicker + defense (Sleeper-style keys with common aliases)
     pts += _n(L.fgm) * _n(s.fgm || s.fg) + _n(L.xpm) * _n(s.xpm || s.xp);
-    pts += _n(L.sacks) * _n(s.sack) + _n(L.def_int) * _n(s.int || s.def_int)
+    var sacks = _n(L.sacks != null ? L.sacks : L.sack);
+    pts += sacks * _n(s.sack) + _n(L.def_int) * _n(s.int || s.def_int)
       + _n(L.fum_rec) * _n(s.fum_rec) + _n(L.def_td) * _n(s.def_td || s.td);
     return pts;
   }
@@ -743,7 +744,8 @@
           desc = info.desc;
         }
         var kind = play.is_td ? 'td' : (line.int > 0 ? 'neg'
-                 : ((line.rec || line.carries || line.pass_yds || line.fgm || line.sacks) ? 'gain' : 'target'));
+                 : ((line.rec || line.carries || line.pass_yds || line.fgm || line.sacks || line.sack
+                     || line.def_td || line.def_int || line.fum_rec) ? 'gain' : 'target'));
         var stats = [];
         if (line.rec) stats.push('reception');
         if (line.carries) stats.push('carry');
@@ -752,7 +754,7 @@
         if (line.int || line.def_int) stats.push('int');
         if (line.targets && !line.rec) stats.push('target');
         if (line.fgm || line.xpm) stats.push('kick');
-        if (line.sacks) stats.push('sack');
+        if (line.sacks || line.sack) stats.push('sack');
         events.push({
           pid: pid, name: _name(pid), pos: pos, nflTeam: _team(pid),
           rosterId: rid, owner: _ownerName(rid), league: _leagueOfRid(rid),
