@@ -9,12 +9,41 @@ from dashboard_services.providers.base import (
 )
 from dashboard_services.providers.fleaflicker_api import (
     FleaflickerProvider, _CACHE, _FAIL_CACHE, _OPTIONAL_FAIL, _TX_BY_WEEK,
-    _XWALK, _FAIL_TTL, _flea_pro_team,
+    _XWALK, _FAIL_TTL, _flea_pro_team, _flea_is_defense, _flea_dst_canonical,
     _fleaflicker_draft_status,
     _fleaflicker_sleeper_league_type, _fantasy_week_from_ms,
     _name_index_from_players,
     _normalize_fleaflicker_draft_status, _pick_canonical, login,
 )
+
+
+def _stub_utils(monkeypatch):
+    """utils.utils pulls the full web stack; stub only the DEF-path symbols."""
+    import sys
+    import types
+
+    mod = types.ModuleType("utils.utils")
+    mod.NFL_TEAMS = ["SF", "JAX", "WAS", "LAR", "KC", "NE", "BAL"]
+    mod.TEAM_ABBR_ALIASES = {
+        "WAS": "WSH", "WSH": "WAS", "JAC": "JAX", "JAX": "JAC",
+        "LA": "LAR", "LAR": "LA",
+    }
+    _aliases = {
+        "49ers": "SF", "san francisco 49ers": "SF", "49ers d/st": "SF",
+        "wsh": "WAS", "jac": "JAX", "la": "LAR",
+    }
+
+    def canon_team(t):
+        if not t:
+            return None
+        t0 = str(t).strip()
+        if "D/ST" in t0 or "DST" in t0:
+            t0 = t0.replace("D/ST", "").replace("DST", "").strip()
+        return _aliases.get(t0.lower(), t0.upper())
+
+    mod.canon_team = canon_team
+    monkeypatch.setitem(sys.modules, "utils.utils", mod)
+    return mod
 
 
 def response(payload, status=200):
@@ -664,6 +693,89 @@ def test_flea_pro_team_reads_abbrev_and_nested():
     assert _flea_pro_team({"proTeam": {"abbreviation": "PHI"}}) == "PHI"
     assert _flea_pro_team({"pro_team": {"abbreviation": "car"}}) == "CAR"
     assert _flea_pro_team({}) == ""
+
+
+def test_flea_is_defense_recognizes_dst_positions():
+    assert _flea_is_defense({"position": "D/ST"})
+    assert _flea_is_defense({"position": "DST"})
+    assert _flea_is_defense({"position": "DEF"})
+    assert _flea_is_defense({"position": "Defense"})
+    assert not _flea_is_defense({"position": "QB"})
+    assert not _flea_is_defense({"position": "CB"})  # IDP is not a team defense
+    assert not _flea_is_defense({})
+
+
+def test_flea_dst_canonical_maps_team_code(monkeypatch):
+    _stub_utils(monkeypatch)
+    # Team abbrev on the proPlayer.
+    assert _flea_dst_canonical({"position": "D/ST", "proTeamAbbreviation": "SF"}) == "SF"
+    # Nested proTeam object.
+    assert _flea_dst_canonical(
+        {"position": "D/ST", "proTeam": {"abbreviation": "WAS"}}
+    ) == "WAS"
+    # Legacy abbrev folds onto the site canonical code (WSH -> WAS, JAC -> JAX).
+    assert _flea_dst_canonical({"position": "D/ST", "proTeamAbbreviation": "WSH"}) == "WAS"
+    assert _flea_dst_canonical({"position": "D/ST", "proTeamAbbreviation": "JAC"}) == "JAX"
+    # No team code: fall back to the full name.
+    assert _flea_dst_canonical(
+        {"position": "D/ST", "nameFull": "San Francisco 49ers"}
+    ) == "SF"
+
+
+def test_canonical_lookup_resolves_defense_without_name_or_xwalk(monkeypatch):
+    _stub_utils(monkeypatch)
+    # Empty crosswalk and name index: the name/id paths would drop the D/ST,
+    # but the defense branch maps it to the team code.
+    pro = {"id": 8888, "nameFull": "San Francisco 49ers",
+           "position": "D/ST", "proTeamAbbreviation": "SF"}
+    assert FleaflickerProvider._canonical_lookup(pro, {}, {}) == "SF"
+
+
+def test_get_matchups_includes_defense_starter_and_points(monkeypatch):
+    _stub_utils(monkeypatch)
+    provider = FleaflickerProvider()
+    scoreboard = {"games": [{
+        "id": 58530021,
+        "home": {"id": 1}, "away": {"id": 2},
+        "homeScore": {"score": {"value": 120.0}},
+        "awayScore": {"score": {"value": 100.0}},
+    }]}
+    boxscore = {"lineups": [{
+        "group": "START",
+        "slots": [
+            {"position": {"label": "QB", "group": "START"},
+             "home": {"proPlayer": {"id": 9, "nameFull": "Star QB", "position": "QB"},
+                      "viewingActualPoints": {"value": 25.0}},
+             "away": {"proPlayer": {"id": 19, "nameFull": "Other QB", "position": "QB"},
+                      "viewingActualPoints": {"value": 20.0}}},
+            {"position": {"label": "D/ST", "group": "START"},
+             "home": {"proPlayer": {"id": 8888, "nameFull": "San Francisco 49ers",
+                                    "position": "D/ST", "proTeamAbbreviation": "SF"},
+                      "viewingActualPoints": {"value": 12.5}},
+             "away": {"proPlayer": {"id": 8889, "nameFull": "Washington Commanders",
+                                    "position": "D/ST", "proTeamAbbreviation": "WAS"},
+                      "viewingActualPoints": {"value": 7.0}}},
+        ],
+    }]}
+
+    def fake_call(method, *a, **k):
+        if method == "FetchLeagueScoreboard":
+            return scoreboard
+        if method == "FetchLeagueBoxscore":
+            return boxscore
+        raise AssertionError(f"unexpected method {method}")
+
+    monkeypatch.setattr(provider, "_call", fake_call)
+    monkeypatch.setattr(provider, "_canonical_map", lambda *a, **k: {})
+
+    rows = provider.get_matchups("14153", 2026, 17)
+    home = next(r for r in rows if r["roster_id"] == 1)
+    away = next(r for r in rows if r["roster_id"] == 2)
+    # The D/ST is a starter, resolved to its team code, with its own points.
+    assert "SF" in home["starters"]
+    assert home["players_points"]["SF"] == 12.5
+    assert "WAS" in away["starters"]
+    assert away["players_points"]["WAS"] == 7.0
 
 
 def test_fleaflicker_scoring_maps_group_abbreviations():
