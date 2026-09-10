@@ -126,6 +126,30 @@ def test_filter_polish_league_label_and_my_team_chip():
     assert "OPP · " in src
 
 
+def test_nfl_filter_is_matchups_with_scoreboard():
+    """RZ6.3 / RZ6.4 — NFL filter lists games; selected game shows board strip."""
+    src = _rz()
+    assert "function _nflMatchupOptions(" in src
+    assert "function _nflOptions(" not in src
+    assert "function _renderNflBoard(" in src
+    nfl = _fn("_nflMatchupOptions")
+    assert "game_id" in nfl
+    assert "away + ' @ ' + home" in nfl or 'away + " @ " + home' in nfl
+    # Must not list bare team abbrevs as the primary option value.
+    assert "seen[t] = 1" not in nfl
+    board = _fn("_renderNflBoard")
+    assert "rz-nfl-board" in board
+    assert "rz-nfl-ball" in board
+    assert "possession" in board
+    assert "_nflBoardSitLine" in board or "_downDist" in board
+    assert "function _nflBoardSitLine(" in src
+    assert "_downDist" in _fn("_nflBoardSitLine")
+    assert "_renderNflBoard()" in src
+    app = (_ROOT / "app.py").read_text(encoding="utf-8")
+    assert "build_games_snapshot as _rz_build_games_snapshot" in app
+    assert '"games": games' in app
+
+
 def test_scoring_prefers_roster_league_over_pid_map():
     src = _fn("_detectChanges")
     assert "mm.league_id" in src

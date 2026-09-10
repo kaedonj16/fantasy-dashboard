@@ -133,3 +133,63 @@ def test_demo_play_text_td_shapes():
     assert demo_play_text("rec", 26, 1) == "Hauls in a 26-yard touchdown catch"
     assert demo_play_text("target") == "Targeted — pass incomplete"
     assert "field goal" in demo_play_text("fgm", dist=51)
+
+
+def test_game_situation_from_latest_field_play():
+    from utils.redzone_pbp import game_situation_from_plays
+
+    plays = [
+        {"seq": 0, "team": "KC", "down": "1", "distance": "10", "yard_line": "KC 25"},
+        {"seq": 1, "team": "KC", "down": "2", "distance": "7", "yard_line": "KC 28"},
+        {"seq": 2, "team": "BAL", "down": "", "distance": "", "yard_line": ""},  # no field context
+    ]
+    sit = game_situation_from_plays(plays)
+    assert sit["possession"] == "KC"
+    assert sit["down"] == "2"
+    assert sit["distance"] == "7"
+    assert sit["yard_line"] == "KC 28"
+
+
+def test_game_situation_falls_back_to_team_only():
+    from utils.redzone_pbp import game_situation_from_plays
+
+    sit = game_situation_from_plays([
+        {"seq": 0, "team": "DET"},
+        {"seq": 1, "team": "CHI"},
+    ])
+    assert sit["possession"] == "CHI"
+    assert sit["down"] == ""
+
+
+def test_build_games_snapshot_merges_score_and_pbp():
+    from utils.redzone_pbp import build_games_snapshot
+
+    player_info = {
+        "1": {
+            "game_id": "g1", "away": "BAL", "home": "HOU",
+            "away_pts": "21", "home_pts": "14",
+            "game_code": "1", "game_clock": "4:32", "game_quarter": "Q3",
+            "game_status": "In Progress",
+        },
+        "2": {
+            "game_id": "g1", "away": "BAL", "home": "HOU",
+            "away_pts": "21", "home_pts": "14",
+            "game_code": "1", "game_clock": "4:32", "game_quarter": "Q3",
+        },
+    }
+    pbp = {
+        "g1": [
+            {"seq": 0, "team": "HOU", "down": "1", "distance": "10", "yard_line": "HOU 20"},
+            {"seq": 1, "team": "BAL", "down": "2", "distance": "7", "yard_line": "HOU 42"},
+        ]
+    }
+    games = build_games_snapshot(player_info, pbp)
+    assert "g1" in games
+    g = games["g1"]
+    assert g["away"] == "BAL" and g["home"] == "HOU"
+    assert g["away_pts"] == "21"
+    assert g["game_clock"] == "4:32"
+    assert g["possession"] == "BAL"
+    assert g["down"] == "2"
+    assert g["distance"] == "7"
+    assert g["yard_line"] == "HOU 42"

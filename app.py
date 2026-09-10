@@ -11683,6 +11683,7 @@ from utils.redzone_stats import (  # noqa: E402
     rz_stat_line_from_ps as _rz_stat_line_from_ps,
 )
 from utils.redzone_pbp import (  # noqa: E402
+    build_games_snapshot as _rz_build_games_snapshot,
     demo_play_text as _rz_demo_play_text,
     extract_pbp_plays as _rz_extract_pbp_plays,
 )
@@ -11937,6 +11938,26 @@ def _redzone_demo_data(t: float = _RZ_DEMO_START, scope: str = "league"):
                     "stat_line": line, "is_td": bool(p.get("td")),
                 })
 
+    games = _rz_build_games_snapshot(PLAYERS, pbp_by_game)
+    # Seed a few live-board situations so the NFL matchup strip is visible even
+    # before PBP rows accumulate enough field context.
+    _DEMO_BOARD = {
+        "demo_BAL_HOU": {"possession": "BAL", "down": "2", "distance": "7", "yard_line": "HOU 42"},
+        "demo_DET_CHI": {"possession": "DET", "down": "3", "distance": "4", "yard_line": "CHI 18"},
+        "demo_JAX_MIA": {"possession": "MIA", "down": "1", "distance": "10", "yard_line": "MIA 25"},
+        "demo_KC_LV": {"possession": "KC", "down": "2", "distance": "5", "yard_line": "LV 33"},
+        "demo_ATL_NO": {"possession": "ATL", "down": "1", "distance": "10", "yard_line": "ATL 40"},
+        "demo_LAR_SEA": {"possession": "SEA", "down": "4", "distance": "2", "yard_line": "LAR 48"},
+        "demo_PHI_WAS": {"possession": "PHI", "down": "2", "distance": "8", "yard_line": "WAS 29"},
+    }
+    for gid, sit in _DEMO_BOARD.items():
+        row = games.get(gid)
+        if not row or str(row.get("game_code") or "") != "1":
+            continue
+        for k, v in sit.items():
+            if not row.get(k):
+                row[k] = v
+
     def mk(rid, mid, starters, bench, league_name=None):
         players = starters + bench
         pp = {p: pts.get(p, 0.0) for p in players}
@@ -11953,6 +11974,7 @@ def _redzone_demo_data(t: float = _RZ_DEMO_START, scope: str = "league"):
         "player_info": PLAYERS,
         "scoring": dict(_RZ_DEMO_SCORING),
         "pbp_by_game": pbp_by_game,
+        "games": games,
         "updated_at": time.time(),
         "is_demo": True,
         "demo_t": t,
@@ -12302,6 +12324,8 @@ def _redzone_collect(platform, league_id, season, week):
                 proj_total += float(proj_pts.get(str(pid), 0))
         matchups_out.append({**m, "projected_pts": round(proj_total, 2)})
 
+    games = _rz_build_games_snapshot(player_info, pbp_by_game)
+
     return {
         "matchups": matchups_out,
         "rosters": [
@@ -12317,6 +12341,7 @@ def _redzone_collect(platform, league_id, season, week):
         "player_info": player_info,
         "scoring": scoring,
         "pbp_by_game": pbp_by_game,
+        "games": games,
     }
 
 
@@ -12589,6 +12614,9 @@ def _redzone_user_league_slice(li, lg, season, week, account_id, viewer_uid,
         "viewer_roster_id": ns + vrid,
         "leagues": [{"league_id": lid, "name": lname, "platform": lg_plat}],
         "pbp_by_game": d.get("pbp_by_game") or {},
+        "games": d.get("games") or _rz_build_games_snapshot(
+            d.get("player_info") or {}, d.get("pbp_by_game") or {},
+        ),
     }
 
 
@@ -12607,6 +12635,7 @@ def _redzone_fetch_user(platform, league_id, season, week):
     scoring_by_league: dict = {}  # league_id -> that league's scoring settings
     pid_league: dict = {}  # pid -> league_id (so each player scores by its league)
     pbp_by_game: dict = {}
+    games: dict = {}
     viewer_rids = []
     seen_users = set()
 
@@ -12627,6 +12656,9 @@ def _redzone_fetch_user(platform, league_id, season, week):
         player_info.update(s["player_info"])
         for _gid, _plays in (s.get("pbp_by_game") or {}).items():
             pbp_by_game.setdefault(_gid, []).extend(_plays or [])
+        for _gid, _g in (s.get("games") or {}).items():
+            if _gid and _gid not in games:
+                games[_gid] = _g
         if not scoring:
             scoring = s["scoring"] or {}
         scoring_by_league.update(s["scoring_by_league"])
@@ -12634,6 +12666,9 @@ def _redzone_fetch_user(platform, league_id, season, week):
         if s.get("viewer_roster_id"):
             viewer_rids.append(s["viewer_roster_id"])
         leagues.extend(s["leagues"])
+
+    if not games:
+        games = _rz_build_games_snapshot(player_info, pbp_by_game)
 
     return {
         "week": week, "season": season, "platform": platform, "league_id": league_id,
@@ -12647,6 +12682,7 @@ def _redzone_fetch_user(platform, league_id, season, week):
         "scoring_by_league": scoring_by_league,
         "pid_league": pid_league,
         "pbp_by_game": pbp_by_game,
+        "games": games,
         "viewer_roster_id": viewer_rids[0] if viewer_rids else "",
         "viewer_roster_ids": viewer_rids,
         "updated_at": time.time(),
