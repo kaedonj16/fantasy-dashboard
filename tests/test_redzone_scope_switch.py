@@ -367,6 +367,15 @@ def test_text_only_pbp_plays_headline_total_not_fake_delta():
     assert "var ptStr = ev.pts > 0" not in src
 
 
+def test_quarter_label_is_prefixed():
+    """Quarter shows as 'Q4', not a bare '4' next to the clock."""
+    src = _rz()
+    assert "function _fmtQuarter(" in src
+    assert "_fmtQuarter(ev.gameQuarter)" in src
+    # Old bare-number join must be gone from the event card.
+    assert "[ev.gameQuarter, ev.gameClock]" not in src
+
+
 def test_app_wires_pbp_into_collect_and_demo():
     app = (_ROOT / "app.py").read_text(encoding="utf-8")
     assert "extract_pbp_plays as _rz_extract_pbp_plays" in app

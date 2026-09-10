@@ -4,9 +4,100 @@ from utils.redzone_alt_pbp import (
     extract_espn_pbp_plays,
     extract_espn_scoreboard_lookup,
     extract_sleeper_pbp_plays,
+    parse_pbp_play_stats,
     parse_tank_game_id,
     pids_mentioned_in_text,
 )
+
+
+def test_parse_pbp_completed_pass_credits_passer_and_receiver():
+    sl = parse_pbp_play_stats(
+        "(Shotgun) D.Maye pass short right to M.Hollins pushed ob at SEA 16 "
+        "for 12 yards (J.Jobe)."
+    )
+    assert sl["d.maye"] == {"pass_yds": 12}
+    assert sl["m.hollins"] == {"rec": 1, "rec_yds": 12, "targets": 1}
+
+
+def test_parse_pbp_td_pass_and_extra_point():
+    sl = parse_pbp_play_stats(
+        "D.Lock pass short left to J.Smith-Njigba for 45 yards, TOUCHDOWN. "
+        "J.Myers extra point is GOOD, Center-C.Stoll, Holder-M.Dickson."
+    )
+    assert sl["d.lock"] == {"pass_yds": 45, "pass_td": 1}
+    assert sl["j.smith-njigba"] == {"rec": 1, "rec_yds": 45, "targets": 1, "rec_td": 1}
+    assert sl["j.myers"] == {"xpm": 1}
+
+
+def test_parse_pbp_interception_only_credits_passer_pick():
+    sl = parse_pbp_play_stats(
+        "(Shotgun) D.Maye pass deep right intended for M.Hollins INTERCEPTED "
+        "by J.Jobe [D.Lawrence] at SEA -3. Touchback."
+    )
+    assert sl == {"d.maye": {"int": 1}}
+
+
+def test_parse_pbp_sack_is_not_scored_as_a_rush():
+    assert parse_pbp_play_stats(
+        "(Shotgun) D.Maye sacked at SEA 28 for -7 yards (D.Hall)."
+    ) == {}
+
+
+def test_parse_pbp_rush_with_and_without_td():
+    assert parse_pbp_play_stats(
+        "R.Stevenson up the middle to NE 11 for 3 yards (D.Lawrence)."
+    ) == {"r.stevenson": {"rush_yds": 3, "carries": 1}}
+    assert parse_pbp_play_stats(
+        "R.Stevenson up the middle for 2 yards, TOUCHDOWN."
+    ) == {"r.stevenson": {"rush_yds": 2, "carries": 1, "rush_td": 1}}
+
+
+def test_parse_pbp_no_gain_reception_still_counts():
+    sl = parse_pbp_play_stats("D.Maye pass complete to H.Henry for no gain.")
+    assert sl["h.henry"] == {"rec": 1, "rec_yds": 0, "targets": 1}
+
+
+def test_parse_pbp_field_goal():
+    assert parse_pbp_play_stats(
+        "J.Myers 45 yard field goal is GOOD, Center-C.Stoll."
+    ) == {"j.myers": {"fgm": 1}}
+
+
+def test_espn_plays_attach_real_stat_lines():
+    payload = {
+        "gamepackageJSON": {
+            "drives": {
+                "previous": [
+                    {
+                        "plays": [
+                            {
+                                "id": "9",
+                                "text": (
+                                    "D.Lock pass short left to J.Smith-Njigba "
+                                    "for 45 yards, TOUCHDOWN."
+                                ),
+                                "clock": {"displayValue": "11:28"},
+                                "period": {"number": 4},
+                                "start": {"down": 4, "distance": 1},
+                                "type": {"text": "Passing Touchdown"},
+                                "scoringPlay": True,
+                            }
+                        ]
+                    }
+                ]
+            }
+        }
+    }
+    plays = extract_espn_pbp_plays(
+        payload,
+        "20260909_NE@SEA",
+        name_to_pid={"jaxon smith-njigba": "8155", "drew lock": "99"},
+    )
+    by_pid = {p["pid"]: p for p in plays}
+    assert by_pid["8155"]["stat_line"] == {
+        "rec": 1, "rec_yds": 45, "targets": 1, "rec_td": 1,
+    }
+    assert by_pid["99"]["stat_line"] == {"pass_yds": 45, "pass_td": 1}
 
 
 def test_parse_tank_game_id():

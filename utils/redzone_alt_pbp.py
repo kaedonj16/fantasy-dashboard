@@ -34,6 +34,106 @@ _ESPN_SB_CACHE: dict[str, tuple[float, dict]] = {}  # season:week -> team->game 
 
 _ABBREV_RE = re.compile(r"\b([A-Za-z])\.([A-Za-z][A-Za-z'\-]*)\b")
 
+# ── Booth-line stat parsing ───────────────────────────────────────────────────
+# ESPN / Sleeper play text is NFL gamebook style with abbreviated names
+# ("D.Maye", "J.Smith-Njigba"). We parse the common scoring actions into a
+# per-player stat line so Redzone can show real per-play fantasy points instead
+# of a flat 0.0. Uncommon / ambiguous actions (fumbles, laterals, 2-pt tries,
+# individual defensive credit) are intentionally left unscored — a wrong point
+# is worse than none.
+_NAME_TOK = r"[A-Z][A-Za-z'\-]*\.[A-Za-z][A-Za-z'\-]*"
+_RE_PASS = re.compile(
+    rf"({_NAME_TOK})\s+pass\s+.*?\bto\s+({_NAME_TOK}).*?"
+    r"for\s+(-?\d+|no gain)(?:\s*(?:yard|yd)s?)?"
+)
+_RE_INT = re.compile(rf"({_NAME_TOK})\s+pass\b.*?INTERCEPTED")
+_RE_RUSH = re.compile(
+    rf"^(?:\([^)]*\)\s*)?({_NAME_TOK})\b.*?for\s+(-?\d+|no gain)(?:\s*(?:yard|yd)s?)?"
+)
+_RE_FG = re.compile(rf"({_NAME_TOK})\s+\d+\s+yard field goal is GOOD")
+_RE_XP = re.compile(rf"({_NAME_TOK})\s+extra point is GOOD")
+
+
+def _yards(raw: str) -> int:
+    return 0 if _s(raw).lower() == "no gain" else int(raw)
+
+
+def _accum(dest: dict, name: str, **fields) -> None:
+    sl = dest.setdefault(name.lower(), {})
+    for k, v in fields.items():
+        sl[k] = sl.get(k, 0) + v
+
+
+def parse_pbp_play_stats(text: str) -> dict[str, dict]:
+    """Booth line → ``{abbrev_lower: stat_line}`` for the players it credits.
+
+    Keys match ``build_name_indexes``' abbrev index ("r.stevenson"), so callers
+    resolve them straight to pids. Stat keys match ``_lineToPts`` on the client
+    (pass_yds, pass_td, int, rush_yds, rush_td, rec, rec_yds, rec_td, fgm, xpm).
+    """
+    text = _s(text)
+    if not text:
+        return {}
+    out: dict[str, dict] = {}
+    # A TD only counts for the offense when the ball wasn't turned over first.
+    scored = "TOUCHDOWN" in text and "INTERCEPTED" not in text and "FUMBLE" not in text
+
+    m = _RE_PASS.search(text)
+    if m:
+        passer, receiver, yds = m.group(1), m.group(2), _yards(m.group(3))
+        _accum(out, passer, pass_yds=yds)
+        _accum(out, receiver, rec=1, rec_yds=yds, targets=1)
+        if scored:
+            _accum(out, passer, pass_td=1)
+            _accum(out, receiver, rec_td=1)
+
+    mi = _RE_INT.search(text)
+    if mi:
+        _accum(out, mi.group(1), int=1)
+
+    # Rushes only — never a pass, sack, kick or punt (those carry "for N yards"
+    # too but must not be scored as rushing).
+    if (
+        not re.search(r"\bpass\b", text)
+        and "sacked" not in text
+        and "field goal" not in text
+        and "extra point" not in text
+        and "kicks" not in text
+        and "punts" not in text
+    ):
+        mr = _RE_RUSH.search(text)
+        if mr:
+            rusher, yds = mr.group(1), _yards(mr.group(2))
+            _accum(out, rusher, rush_yds=yds, carries=1)
+            if scored:
+                _accum(out, rusher, rush_td=1)
+
+    mf = _RE_FG.search(text)
+    if mf:
+        _accum(out, mf.group(1), fgm=1)
+    mx = _RE_XP.search(text)
+    if mx:
+        _accum(out, mx.group(1), xpm=1)
+    return out
+
+
+def _stat_lines_by_pid(text: str, abbrev_index: dict[str, str]) -> dict[str, dict]:
+    """``parse_pbp_play_stats`` keyed by pid instead of abbreviation.
+
+    Ambiguous abbrevs are absent from ``abbrev_index`` (dropped by
+    ``build_name_indexes``), so unresolved credits are silently skipped rather
+    than attributed to the wrong player.
+    """
+    by_pid: dict[str, dict] = {}
+    for abbrev, sl in parse_pbp_play_stats(text).items():
+        pid = (abbrev_index or {}).get(abbrev)
+        if not pid or not sl:
+            continue
+        dest = by_pid.setdefault(pid, {})
+        for k, v in sl.items():
+            dest[k] = dest.get(k, 0) + v
+    return by_pid
+
 # ESPN uses a few abbreviations that differ from Sleeper/Tank01, which key the
 # rest of Redzone (player_info["team"], Tank01 game ids). Normalize ESPN → the
 # Sleeper convention so the merged scoreboard lines up with rostered players.
@@ -255,6 +355,7 @@ def extract_sleeper_pbp_plays(
             "is_td": "touchdown" in text.lower() or " TD" in text,
             "source": "sleeper",
         }
+        stat_by_pid = _stat_lines_by_pid(text, abbrev_idx)
         pids = pids_mentioned_in_text(text, full_index=full_idx, abbrev_index=abbrev_idx)
         # Explicit player fields if Sleeper starts shipping them.
         for key in ("player_id", "pid", "sleeper_id"):
@@ -266,9 +367,16 @@ def extract_sleeper_pbp_plays(
             mapped = name_to_pid.get(long_name.lower())
             if mapped and mapped not in pids:
                 pids.insert(0, mapped)
+        for pid in stat_by_pid:
+            if pid not in pids:
+                pids.append(pid)
         if pids:
             for pid in pids:
-                out.append({**base, "pid": pid, "name": long_name, "team": _s(play.get("team"))})
+                out.append({
+                    **base, "pid": pid, "name": long_name,
+                    "team": _s(play.get("team")),
+                    "stat_line": stat_by_pid.get(pid, {}),
+                })
         else:
             out.append({**base, "pid": "", "name": long_name, "team": _s(play.get("team"))})
     return out
@@ -466,12 +574,20 @@ def extract_espn_pbp_plays(
                 "source": "espn",
             }
             seq += 1
+            stat_by_pid = _stat_lines_by_pid(text, abbrev_idx)
             pids = pids_mentioned_in_text(
                 text, full_index=full_idx, abbrev_index=abbrev_idx
             )
+            # A parsed line may credit a player the mention pass missed.
+            for pid in stat_by_pid:
+                if pid not in pids:
+                    pids.append(pid)
             if pids:
                 for pid in pids:
-                    out.append({**base, "pid": pid, "name": "", "team": ""})
+                    out.append({
+                        **base, "pid": pid, "name": "", "team": "",
+                        "stat_line": stat_by_pid.get(pid, {}),
+                    })
             else:
                 # Keep scoring lines even without a name match — client may
                 # still resolve via heuristics; otherwise filtered server-side.

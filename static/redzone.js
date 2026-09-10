@@ -533,6 +533,13 @@
       return 0;
     });
   }
+  // "4" → "Q4", "5"+ → "OT"; pass through non-numeric labels ("OT", "Half").
+  function _fmtQuarter(q) {
+    var s = String(q == null ? '' : q).trim();
+    if (!s) return '';
+    if (/^\d+$/.test(s)) { var n = parseInt(s, 10); return n >= 5 ? 'OT' : ('Q' + n); }
+    return s;
+  }
   function _downDist(ev) {
     var d = ev.down, dist = ev.distance;
     if (!d && !dist) return '';
@@ -1247,7 +1254,7 @@
       if (ep) return _fmtKickoff(ep);
       return g.game_status || 'Upcoming';
     }
-    var q = g.game_quarter || '';
+    var q = _fmtQuarter(g.game_quarter || '');
     var clk = g.game_clock || '';
     var mid = [q, clk].filter(Boolean).join(' ');
     return mid || (g.game_status || 'LIVE');
@@ -1904,7 +1911,7 @@
       if (_tm) subInner = ev.line.replace(new RegExp('\\b' + _tm + '\\b'),
         '<strong class="rz-event-myteam">' + ev.nflTeam + '</strong>');
     }
-    var clockStr = [ev.gameQuarter, ev.gameClock].filter(Boolean).join(' ');
+    var clockStr = [_fmtQuarter(ev.gameQuarter), ev.gameClock].filter(Boolean).join(' ');
     var dd = _downDist(ev);
     var metaBits = [];
     if (dd) metaBits.push('<span class="rz-event-down">' + dd + '</span>');
