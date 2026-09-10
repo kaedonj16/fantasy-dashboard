@@ -265,6 +265,33 @@
       Object.keys(pp).forEach(function(pid) { _prevPts[pid] = pp[pid]; });
     });
   }
+
+  // Clear poll-diff snapshots so a scope switch can rehydrate Plays from the
+  // new payload instead of silently diffing against the other scope's lines.
+  function _resetFeedSnapshots() {
+    _prevStats = {};
+    _prevPts = {};
+    _milestonesSeen = {};
+    _blowoutSeen = {};
+    _prevInjury = {};
+    _prevLeader = {};
+    _prevMatchupPts = {};
+    _scoreDelta = { me: 0, opp: 0 };
+    _flashRids = new Set();
+  }
+
+  // Same cold-boot order as page load: suppress milestone/injury/lead noise,
+  // then turn current box scores into Plays against empty prevStats.
+  function _hydrateFeed(data) {
+    _seedMilestones(data);
+    _seedInjuries(data);
+    _seedLeaders(data);
+    (data.matchups || []).forEach(function(m) {
+      _prevMatchupPts[String(m.roster_id)] = parseFloat(m.points || 0);
+    });
+    _detectChanges(data);
+    _seedPrevStats(data);
+  }
   function _seedMilestones(data) {
     var _MS_THRS = [
       { key: 'rush_yds_100', field: 'rush_yds', thr: 100 },
@@ -322,9 +349,12 @@
     });
     var pidToRoster = {};
     (data.matchups || []).forEach(function(m) {
-      (m.players || []).forEach(function(pid) {
-        // prefer a roster the viewer can see; first wins
-        if (!(pid in pidToRoster)) pidToRoster[pid] = String(m.roster_id);
+      (m.players || m.starters || []).forEach(function(pid) {
+        // Prefer the viewer's roster when the same pid appears in multiple
+        // My Leagues slices; otherwise first wins.
+        var rid = String(m.roster_id);
+        if (!(pid in pidToRoster)) pidToRoster[pid] = rid;
+        else if (_isMyRid(rid) && !_isMyRid(pidToRoster[pid])) pidToRoster[pid] = rid;
       });
     });
     return { my: myRosters, opp: oppRosters, pidToRoster: pidToRoster };
@@ -1459,12 +1489,15 @@
     }
 
     var list = _feed.filter(_eventMatches);
-    var anyFilter = _filters.team !== 'all' || _filters.nfl !== 'all' || _filters.pos !== 'all' || _filters.stat !== 'all' || !!_heroMid;
+    // Hero focus alone should not force the "no matching" empty when the feed
+    // itself is empty — the pregame schedule already respects hero focus.
+    var hardFilter = _filters.team !== 'all' || _filters.nfl !== 'all' || _filters.pos !== 'all' || _filters.stat !== 'all' || _myTeamOnly
+      || (_heroMid && _feed.length > 0);
     var totalPages = Math.max(1, Math.ceil(list.length / _PAGE_SIZE));
     if (_feedPage >= totalPages) _feedPage = totalPages - 1;
 
     if (!list.length) {
-      if (anyFilter || _myTeamOnly) {
+      if (hardFilter) {
         if (window.brEmptyState) {
           window.brEmptyState(container, {
             icon: 'search',
@@ -1835,6 +1868,16 @@
 
     var mine = _myMatchups();
     var myMatchup = mine[0], oppMatchup = myMatchup ? _oppOf(myMatchup) : null;
+    // Follow the selected hero card so My Leagues Plays tracks the focused league.
+    if (_heroMid) {
+      var focused = null;
+      if (_scope === 'user') {
+        focused = mine.find(function(m) { return String(m.roster_id) === _heroMid; });
+      } else {
+        focused = mine.find(function(m) { return String(m.matchup_id) === _heroMid; });
+      }
+      if (focused) { myMatchup = focused; oppMatchup = _oppOf(focused); }
+    }
 
     var summary = _loadingScope ? _renderSkeletonHero() : _renderHeroCards();
 
@@ -1934,6 +1977,7 @@
         _filters = { team: 'all', nfl: 'all', pos: 'all', stat: 'all' };
         _feed = [];
         _shownFeedIds = new Set();
+        _resetFeedSnapshots(); // don't diff the new scope against the old one's lines
         _filterOpen = false;
         _myTeamOnly = false;
         _heroMid = null;
@@ -1947,6 +1991,9 @@
           _state = cached;
           _myRids = _myRidSet(cached);
           _loadingScope = false;
+          // Matchup cards restore immediately; Plays rehydrates when the
+          // refresh/stream finishes against empty snapshots.
+          _applyDefaultHero();
         } else {
           // Show skeleton cards until this scope's (often multi-league) data lands.
           _loadingScope = true;
@@ -2074,9 +2121,10 @@
       _lastPollFailed = false;
       _loadingScope = false;
       _myRids = _myRidSet(newData);
-      _detectChanges(newData);
+      // Apply state before detect so owner/league labels read the new payload.
       _state = newData;
       _scopeCache[myScope] = newData;
+      _detectChanges(newData);
       _seedPrevStats(newData);
       _applyDefaultHero(); // focus the viewer's own matchup by default in This League
       _countdown = _pollInterval();
@@ -2153,6 +2201,11 @@
   async function _refreshUserStream() {
     var myGen = ++_streamGen; // this stream owns the screen until the next scope switch
     _streaming = true;
+    // Fresh portfolio load — drop any prior Plays/snapshots so the end-of-stream
+    // hydrate can build the feed from current box scores.
+    _feed = [];
+    _shownFeedIds = new Set();
+    _resetFeedSnapshots();
     var parts = window.location.pathname.split('/');
     var apiBase = '/api/' + parts[1] + '/' + parts[2] + '/' + parts[3];
     var url = apiBase + '/redzone-data?_cb=' + Date.now() + '&scope=user&stream=1';
@@ -2192,8 +2245,9 @@
         _state = base;
         _scopeCache.user = base;
         _myRids = _myRidSet(base);
-        // Seed snapshots for the arriving league so it fires no retroactive events.
-        _seedPrevStats(base); _seedMilestones(base); _seedInjuries(base); _seedLeaders(base);
+        // Seed milestone/injury/lead snapshots so those don't fire retroactively,
+        // but leave prevStats empty until stream end so Plays can hydrate once.
+        _seedMilestones(base); _seedInjuries(base); _seedLeaders(base);
         (base.matchups || []).forEach(function(m) { _prevMatchupPts[String(m.roster_id)] = parseFloat(m.points || 0); });
         _render();
       }
@@ -2226,7 +2280,9 @@
     _state = base;
     _scopeCache.user = base;
     _myRids = _myRidSet(base);
-    _seedPrevStats(base);
+    // Hydrate Plays once the portfolio is complete (detect against empty
+    // prevStats, then seed for subsequent live polls).
+    _hydrateFeed(base);
     _loadingScope = false;
     _countdown = _pollInterval();
     _render();
