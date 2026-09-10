@@ -11689,6 +11689,7 @@ from utils.redzone_pbp import (  # noqa: E402
 )
 from utils.redzone_alt_pbp import (  # noqa: E402
     fetch_alt_pbp_plays as _rz_fetch_alt_pbp_plays,
+    build_espn_team_game_lookup as _rz_espn_team_game,
 )
 
 # ── Demo mode ──────────────────────────────────────────────────────────────────
@@ -12130,6 +12131,30 @@ def _redzone_collect(platform, league_id, season, week):
         all_pids.update(m.get("players") or [])
         all_pids.update(m.get("starters") or [])
     all_pids.discard("0")
+
+    # Game discovery fallback: Tank01's getNFLScoresOnly is keyed to *today* and
+    # goes dark when the provider is down / rate limited, leaving every player
+    # with no game_id/game_code — which strips PBP entirely and drops the client
+    # back to bulk "Scored X pts" cards. Fill any rostered team ESPN's free
+    # scoreboard knows about but Tank01 didn't return, so the existing ESPN PBP
+    # path (which needs a discovered live/final game) can actually run.
+    wanted_teams = {
+        (nfl_players.get(pid, {}) or {}).get("team")
+        for pid in all_pids
+    }
+    wanted_teams.discard("")
+    wanted_teams.discard(None)
+    missing_teams = {t for t in wanted_teams if t not in team_game}
+    if missing_teams:
+        try:
+            espn_lookup = _rz_espn_team_game(season, week) or {}
+        except Exception:
+            espn_lookup = {}
+            logger.debug("[redzone] espn scoreboard fallback failed", exc_info=True)
+        for team in missing_teams:
+            g = espn_lookup.get(team)
+            if g:
+                team_game[team] = g
 
     player_info = {}
     for pid in all_pids:

@@ -30,8 +30,14 @@ _SLEEPER_WEEK_CACHE: dict[str, tuple[float, list]] = {}
 _SLEEPER_PBP_CACHE: dict[str, tuple[float, list]] = {}
 _ESPN_EVENT_CACHE: dict[str, tuple[float, str]] = {}  # matchup key -> espn event id
 _ESPN_PBP_CACHE: dict[str, tuple[float, dict]] = {}
+_ESPN_SB_CACHE: dict[str, tuple[float, dict]] = {}  # season:week -> team->game lookup
 
 _ABBREV_RE = re.compile(r"\b([A-Za-z])\.([A-Za-z][A-Za-z'\-]*)\b")
+
+# ESPN uses a few abbreviations that differ from Sleeper/Tank01, which key the
+# rest of Redzone (player_info["team"], Tank01 game ids). Normalize ESPN → the
+# Sleeper convention so the merged scoreboard lines up with rostered players.
+_ESPN_TEAM_ALIAS = {"WSH": "WAS", "LA": "LAR"}
 
 
 def _s(v: Any) -> str:
@@ -472,6 +478,151 @@ def extract_espn_pbp_plays(
                 if is_td or play.get("scoringPlay"):
                     out.append({**base, "pid": "", "name": "", "team": ""})
     return out
+
+
+# ── ESPN scoreboard (game discovery fallback) ─────────────────────────────────
+
+
+def _espn_norm_team(abbr: str) -> str:
+    a = _s(abbr).upper()
+    return _ESPN_TEAM_ALIAS.get(a, a)
+
+
+def _espn_state_to_code(state: str, completed: bool) -> str:
+    """Map ESPN status.type → Tank01-style gameStatusCode ('1' live/'2' final)."""
+    st = _s(state).lower()
+    if completed or st == "post":
+        return "2"
+    if st == "in":
+        return "1"
+    return "0"
+
+
+def _iso_to_epoch(value: str) -> int:
+    s = _s(value)
+    if not s:
+        return 0
+    try:
+        from datetime import datetime, timezone
+
+        s = s.replace("Z", "+00:00")
+        dt = datetime.fromisoformat(s)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return int(dt.timestamp())
+    except Exception:
+        return 0
+
+
+def extract_espn_scoreboard_lookup(payload: dict) -> dict[str, dict]:
+    """Flatten an ESPN CDN scoreboard payload into ``{team_abv: game_dict}``.
+
+    The game dicts mirror the Tank01 ``getNFLScoresOnly`` shape that Redzone's
+    ``player_info`` builder consumes (``gameID`` in ``YYYYMMDD_AWAY@HOME`` form,
+    ``gameStatusCode`` '1'/'2', clock/period, scores). Pure transform — no I/O.
+    """
+    if not isinstance(payload, dict):
+        return {}
+    content = payload.get("content") or payload
+    sb = content.get("sbData") or content
+    events = sb.get("events") or []
+    lookup: dict[str, dict] = {}
+    for ev in events:
+        if not isinstance(ev, dict):
+            continue
+        comp = (ev.get("competitions") or [{}])[0]
+        if not isinstance(comp, dict):
+            continue
+        status = ev.get("status") or comp.get("status") or {}
+        stype = status.get("type") or {}
+        code = _espn_state_to_code(
+            stype.get("state"), bool(stype.get("completed"))
+        )
+        clock = _s(status.get("displayClock"))
+        period = _s(status.get("period"))
+        status_text = _s(stype.get("shortDetail") or stype.get("description"))
+        iso_date = _s(ev.get("date") or comp.get("date"))
+        yyyymmdd = ""
+        if len(iso_date) >= 10:
+            yyyymmdd = iso_date[:10].replace("-", "")
+        home = away = ""
+        home_pts = away_pts = ""
+        for t in comp.get("competitors") or []:
+            if not isinstance(t, dict):
+                continue
+            abv = _espn_norm_team((t.get("team") or {}).get("abbreviation"))
+            side = _s(t.get("homeAway")).lower()
+            if side == "home":
+                home, home_pts = abv, _s(t.get("score"))
+            elif side == "away":
+                away, away_pts = abv, _s(t.get("score"))
+        if not away or not home:
+            continue
+        game_id = f"{yyyymmdd}_{away}@{home}" if yyyymmdd else f"{away}@{home}"
+        game = {
+            "gameID": game_id,
+            "gameStatus": status_text,
+            "gameStatusCode": code,
+            "gameClock": clock,
+            "lineScore": {"period": period},
+            "home": home,
+            "away": away,
+            "homePts": home_pts,
+            "awayPts": away_pts,
+            "gameTime_epoch": _iso_to_epoch(iso_date),
+            "source": "espn",
+        }
+        lookup[home] = game
+        lookup[away] = game
+    return lookup
+
+
+def build_espn_team_game_lookup(
+    season: int | str,
+    week: int | str,
+    *,
+    seasontype: int | str = 2,
+    ttl: float = 60.0,
+) -> dict[str, dict]:
+    """ESPN CDN scoreboard for a whole week → ``{team_abv: game_dict}``.
+
+    Lets ESPN transparently fill games Tank01 does not return (provider down,
+    rate limited, or a game played on a day other than "today"). Returns ``{}``
+    on any failure.
+    """
+    key = f"{season}:{week}:{seasontype}"
+    now = time.time()
+    hit = _ESPN_SB_CACHE.get(key)
+    if hit and (now - hit[0]) < ttl:
+        return hit[1]
+    params = {
+        "xhr": "1",
+        "dates": str(season),
+        "seasontype": str(seasontype),
+        "week": str(week),
+    }
+    try:
+        import requests
+
+        resp = requests.get(
+            _ESPN_SCOREBOARD,
+            params=params,
+            headers={"User-Agent": _UA, "Accept": "application/json"},
+            timeout=10,
+        )
+        if resp.status_code != 200:
+            logger.debug("[espn-sb] scoreboard HTTP %s", resp.status_code)
+            return hit[1] if hit else {}
+        payload = resp.json()
+    except Exception:
+        logger.debug("[espn-sb] scoreboard fetch failed", exc_info=True)
+        return hit[1] if hit else {}
+
+    lookup = extract_espn_scoreboard_lookup(payload)
+    if lookup:
+        _ESPN_SB_CACHE[key] = (now, lookup)
+        return lookup
+    return hit[1] if hit else {}
 
 
 # ── Orchestration ────────────────────────────────────────────────────────────
