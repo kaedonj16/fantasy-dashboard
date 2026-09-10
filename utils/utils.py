@@ -1939,14 +1939,21 @@ def merge_live_stats_into_league_week_stats(
     Shape of both dicts:
 
       league_week_stats[team][pos][player_name] = {stat_dict}
+
+    Marks each merged player line with ``_src: "tank"`` so matchup rows can
+    tell Tank01 box scores apart from Footballguys prior-season leftovers.
     """
     for team, pos_map in live_stats.items():
         team_bucket = league_week_stats.setdefault(team, {})
         for pos, players in pos_map.items():
             pos_bucket = team_bucket.setdefault(pos, {})
             for name_key, stat_dict in players.items():
-                # Overwrite existing or add new
-                pos_bucket[name_key] = stat_dict
+                if isinstance(stat_dict, dict):
+                    merged = dict(stat_dict)
+                    merged["_src"] = "tank"
+                    pos_bucket[name_key] = merged
+                else:
+                    pos_bucket[name_key] = stat_dict
 
 
 def get_live_game_ids_for_today(
@@ -1992,6 +1999,85 @@ def get_live_game_ids_for_today(
                 live_ids.append(str(gid))
 
     return live_ids if live_ids else []
+
+
+def get_started_game_ids_for_week(
+        schedule: Iterable[Dict[str, Any]],
+        now: datetime | None = None,
+) -> List[str]:
+    """Tank01 gameIDs for games that have kicked off (live or final).
+
+    Includes calendar-past rows even when ``gameStatusCode`` is still ``0``,
+    so Thursday finals keep getting boxscore overlays after the live window.
+    """
+    ids: List[str] = []
+    seen: set[str] = set()
+    for game in schedule or []:
+        if not isinstance(game, dict):
+            continue
+        if not game_has_started(game, now=now):
+            continue
+        gid = game.get("gameID")
+        if not gid:
+            continue
+        key = str(gid)
+        if key in seen:
+            continue
+        seen.add(key)
+        ids.append(key)
+    return ids
+
+
+def tank01_status_confirms_started(game: Optional[dict]) -> bool:
+    """True when Tank01 itself reports live/final (not merely a past calendar day)."""
+    if not game or not isinstance(game, dict):
+        return False
+    return str(game.get("gameStatusCode") or "").strip() in ("1", "2")
+
+
+def player_week_stat_entry(
+        teams_stats: Optional[Dict[str, Any]],
+        team: str,
+        pos: str,
+        player: str,
+) -> Optional[Dict[str, Any]]:
+    """Raw week_stats dict for one player (includes optional ``_src``)."""
+    if not teams_stats or not team or not player:
+        return None
+    pos_norm = (pos or "").strip().upper()
+    if pos_norm == "PK":
+        lookup_pos = "K"
+    elif pos_norm in ("DEF", "DST", "D/ST"):
+        lookup_pos = "DEF"
+    else:
+        defensive_positions = {
+            "DL", "DE", "DT", "EDGE", "LB", "ILB", "OLB",
+            "DB", "CB", "S", "FS", "SS", "IDP",
+        }
+        lookup_pos = "IDP" if pos_norm in defensive_positions else pos_norm
+    team_data = lookup_team_map(teams_stats, team) or {}
+    if lookup_pos == "DEF":
+        return None
+    pos_data = team_data.get(lookup_pos) or {}
+    if not isinstance(pos_data, dict):
+        return None
+    entry = pos_data.get(normalize_name(player))
+    return entry if isinstance(entry, dict) else None
+
+
+def box_score_line_is_trusted(
+        game: Optional[dict],
+        player_stats: Optional[dict],
+) -> bool:
+    """Whether a week_stats line is safe to show on matchup rows.
+
+    Footballguys republishes last year's Wk N under the new season until their
+    logs flip. Calendar-past + Tank code ``0`` used to unlock those leftovers.
+    Trust Tank-overlaid lines (``_src=tank``) or an explicit Tank live/final code.
+    """
+    if player_stats and player_stats.get("_src") == "tank":
+        return True
+    return tank01_status_confirms_started(game)
 
 
 # expects these exist in your project (same pattern as IDP)
@@ -2208,10 +2294,25 @@ def build_and_save_week_stats_for_league(
     except Exception:
         schedule = []
 
-    week_started = any(
-        game_has_started(g) for g in schedule if isinstance(g, dict)
-    ) or bool(live_game_ids)
-    if not week_started:
+    # Calendar-past + Tank code 0 means the game is over but Footballguys may
+    # still be republishing last year. Only scrape FG once Tank itself reports
+    # live/final (or we already have explicit live IDs). Always Tank-overlay
+    # every started game so Thursday finals don't fall back to FG leftovers.
+    tank_confirmed = any(
+        tank01_status_confirms_started(g) for g in schedule if isinstance(g, dict)
+    )
+    started_ids = get_started_game_ids_for_week(schedule)
+    overlay_ids: List[str] = []
+    seen_ids: set[str] = set()
+    for gid in list(live_game_ids or []) + started_ids:
+        key = str(gid)
+        if not key or key in seen_ids:
+            continue
+        seen_ids.add(key)
+        overlay_ids.append(key)
+
+    allow_fg_scrape = tank_confirmed or bool(live_game_ids)
+    if not allow_fg_scrape and not overlay_ids:
         out_path = path_week_stats(season, week)
         if schedule:
             write_json(out_path, {})
@@ -2221,33 +2322,37 @@ def build_and_save_week_stats_for_league(
         return out_path
 
     print(f"[week_stats] building stats for the week (season={season}, week={week})")
-    for team_abv in teams_index.keys():
-        orig_team_abv = team_abv
-        if team_abv == "WSH":
-            team_abv = "WAS"
-        try:
-            html = fetch_team_game_logs_html(team_abv, season)
-            pos_player_stats = parse_team_week_pos_player_stats(html, week)
-            league_week_stats[team_abv] = pos_player_stats
-        except Exception as e:
-            print(f"[week_stats] Error for {orig_team_abv} week {week}: {e}")
-            league_week_stats[team_abv] = {}
+    if allow_fg_scrape:
+        for team_abv in teams_index.keys():
+            orig_team_abv = team_abv
+            if team_abv == "WSH":
+                team_abv = "WAS"
+            try:
+                html = fetch_team_game_logs_html(team_abv, season)
+                pos_player_stats = parse_team_week_pos_player_stats(html, week)
+                league_week_stats[team_abv] = pos_player_stats
+            except Exception as e:
+                print(f"[week_stats] Error for {orig_team_abv} week {week}: {e}")
+                league_week_stats[team_abv] = {}
+    else:
+        # Preserve any prior Tank-backed lines while we refresh overlays.
+        prior = load_week_stats(season, week)
+        if isinstance(prior, dict):
+            league_week_stats = prior
 
-    # ---------- Overlay live Tank01 stats (optional) ----------
-    if live_game_ids:
+    # ---------- Overlay Tank01 stats for started / live games ----------
+    if overlay_ids:
         # Load players_index once, reuse
         players_index = load_players_index()
 
-        # Normalize single string -> list
-        if isinstance(live_game_ids, str):
-            live_game_ids = [live_game_ids]
-
         session = requests.Session()
 
-        print(f"[week_stats] fetching live Tank01 stats")
-        for game_id in live_game_ids:
+        print(f"[week_stats] fetching Tank01 box scores for {len(overlay_ids)} game(s)")
+        for game_id in overlay_ids:
             try:
                 boxscore = fetch_tank_boxscore(game_id, session=session)
+                if not boxscore:
+                    continue
                 live_stats = build_live_stats_for_game_from_tank(boxscore, players_index)
                 merge_live_stats_into_league_week_stats(league_week_stats, live_stats)
             except Exception as e:
