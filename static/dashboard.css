@@ -38044,6 +38044,24 @@ a, button, [role="button"], [role="tab"], summary, label,
 .pm-team-adv-body { padding: 6px 0 0; }
 .pm-team-adv-body[hidden] { display: none; }
 
+/* Schedule section — closed dropdown by default (same chrome as More team ranks) */
+.pm-team-sched-toggle {
+    cursor: pointer;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+}
+.pm-team-schedule .pm-team-sched-toggle {
+    margin-bottom: 0;
+}
+.pm-team-sched-toggle:hover { background: transparent; }
+.pm-team-sched-toggle .pm-team-secnote { margin-left: auto; }
+.pm-team-sched-body { padding: 12px 0 0; }
+.pm-team-sched-body[hidden] { display: none; }
+
 /* Team tab — NFL schedule + expandable box score */
 .pm-team-schedule .pm-section-label {
     font-size: 11px;
