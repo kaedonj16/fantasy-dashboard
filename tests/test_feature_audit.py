@@ -111,6 +111,19 @@ def test_update_banner_clears_mobile_dock():
     assert ".toast-container .toast {" in DASH_CSS
 
 
+def test_redzone_td_alert_history_clears_mobile_dock():
+    """TD Alert History is a bottom sheet; it must stack above .br-tabbar."""
+    start = DASH_CSS.index(".rz-hist-overlay {")
+    end = DASH_CSS.index(".rz-hist-panel {", start)
+    overlay = DASH_CSS[start:end]
+    assert "z-index: var(--z-modal)" in overlay
+    assert "z-index: 1100" not in overlay
+    panel_start = DASH_CSS.index(".rz-hist-panel {")
+    panel_end = DASH_CSS.index(".rz-hist-hdr {", panel_start)
+    panel = DASH_CSS[panel_start:panel_end]
+    assert "padding-bottom: env(safe-area-inset-bottom)" in panel
+
+
 def test_recap_ready_banner_clears_mobile_dock_and_skips_offseason():
     recap = APP_PY[APP_PY.index("def _recap_ready_banner"): APP_PY.index("def _draft_imminent_banner")]
     assert "#recapReadyBanner" in recap
