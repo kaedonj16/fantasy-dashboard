@@ -70,6 +70,24 @@ def test_game_has_started_respects_scheduled_code_over_stale_epoch():
     assert game_has_started({"gameStatusCode": "2"}) is True
 
 
+def test_game_has_started_past_game_date_despite_scheduled_code():
+    """TNF finished yesterday but Tank01 still says Scheduled / code 0."""
+    now = datetime(2026, 9, 10, 16, 0, tzinfo=timezone.utc)
+    finished = {
+        "home": "SEA",
+        "away": "NE",
+        "gameDate": "20260909",
+        "gameTime": "8:20p",
+        "gameStatus": "Scheduled",
+        "gameStatusCode": "0",
+        "gameTime_epoch": "1788999600.0",
+    }
+    assert game_has_started(finished, now=now) is True
+    # Still scheduled later this week — code 0 must win over a stale epoch.
+    upcoming = _scheduled_wsh_game(gameTime_epoch="1726189200.0")
+    assert game_has_started(upcoming, now=now) is False
+
+
 def test_normalize_fallback_when_code_missing():
     now = datetime(2026, 9, 3, 12, 0, tzinfo=timezone.utc)
     future = {"gameTime_epoch": str(now.timestamp() + 7 * 86400)}
@@ -203,6 +221,40 @@ def test_matchup_shows_box_score_once_game_is_live(monkeypatch):
     assert "1 td" in html
     assert "11 car" in html
     assert "68 yds" in html
+    assert "m-cell-stats" in html
+
+
+def test_matchup_shows_box_score_when_final_but_tank01_code_still_zero(monkeypatch):
+    """Game line says Final (past gameDate) while schedule feed lags on code 0."""
+    mmod = _matchups()
+    finished = {
+        "home": "NYG",
+        "away": "WSH",
+        "gameDate": "20260909",
+        "gameTime": "8:20p",
+        "gameStatus": "Scheduled",
+        "gameStatusCode": "0",
+        "gameTime_epoch": "1788999600.0",
+    }
+    monkeypatch.setattr(mmod, "load_teams_index", lambda: {})
+    monkeypatch.setattr(mmod, "build_offense_rankings", lambda *_a, **_k: {})
+    monkeypatch.setattr(mmod, "load_week_stats", lambda *_a, **_k: DANIELS_STATS)
+    monkeypatch.setattr(mmod, "load_week_schedule", lambda *_a, **_k: [])
+    monkeypatch.setattr(mmod, "build_team_schedule_lookup", lambda *_a, **_k: {})
+    monkeypatch.setattr(mmod, "_allow_live_game_indicators", lambda *_a, **_k: True)
+    monkeypatch.setattr(mmod, "get_nfl_scores_for_date", lambda *_a, **_k: None)
+
+    html = mmod.render_matchup_slide(
+        "2026", _daniels_matchup(), w=1, proj_week=1,
+        status_by_pid={"11566": mmod.STATUS_FINAL},
+        projections={},
+        players={},
+        teams={},
+        team_game_lookup={"WSH": finished, "WAS": finished},
+    )
+    assert "Final" in html
+    assert "233 yds" in html
+    assert "1 td" in html
     assert "m-cell-stats" in html
 
 
