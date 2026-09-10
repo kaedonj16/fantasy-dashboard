@@ -110,6 +110,21 @@ def test_more_sheet_lists_core_pages(offline_client):
     assert "brSheetAcctDot" in js
 
 
+def test_mobile_redzone_glow_styles_present():
+    """The mobile port of the desktop Redzone nav glow must exist in the CSS.
+
+    The server only emits .rz-mnav-live / .br-more-live / .rz-mnav-dot while a
+    game is live or imminent (gated by app._games_live_or_imminent), so this
+    guards the styling contract those classes rely on from silent deletion.
+    """
+    css = (ROOT / "static" / "dashboard.css").read_text(encoding="utf-8")
+    assert ".br-sheet-link.rz-mnav-live" in css
+    assert ".br-more-tab.br-more-live" in css
+    assert ".rz-mnav-dot" in css
+    # Reuses the desktop live-pulse keyframes rather than inventing new ones.
+    assert "@keyframes rz-nav-live-pulse" in css
+
+
 def test_guest_more_sheet_puts_account_after_find():
     """Guest More sheet mirrors the league order: Find, then Account, then pages."""
     import app

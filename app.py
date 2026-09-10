@@ -2933,6 +2933,16 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
     offseason = _nfl_offseason_mode(nfl_state, season)
     draft_ended = has_draft_ended(league_id, platform, season)
 
+    # Mirror the desktop nav glow on mobile: the More tab and the Redzone sheet
+    # row pulse only while a game is live or kicks off within the hour.
+    rz_live = False
+    if not offseason:
+        try:
+            _rz_wk = nfl_state.get("week") or nfl_state.get("display_week")
+            rz_live = _games_live_or_imminent(nfl_state.get("season") or season, _rz_wk)
+        except Exception:
+            rz_live = False
+
     def _href(ep, suffix):
         return url_for(ep, platform=platform, season=season, league_id=league_id) + suffix
 
@@ -2973,10 +2983,12 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
             f"<a class='{cls}'{aria} href='{_href(ep, suffix)}'>"
             f"{_nav_icon(icon, size=22)}<span class='br-tabbar-lbl'>{label}</span></a>"
         )
+    _more_live_cls = " br-more-live" if rz_live else ""
+    _more_dot = "<span class='rz-mnav-dot' aria-hidden='true'></span>" if rz_live else ""
     items += (
-        "<button type='button' class='br-tabbar-item br-more-tab' id='brMoreTab' "
+        f"<button type='button' class='br-tabbar-item br-more-tab{_more_live_cls}' id='brMoreTab' "
         "aria-label='More' aria-haspopup='true' aria-expanded='false'>"
-        f"{_nav_icon('more', size=22)}<span class='br-tabbar-lbl'>More</span></button>"
+        f"{_nav_icon('more', size=22)}<span class='br-tabbar-lbl'>More</span>{_more_dot}</button>"
     )
     # Sliding active-pill indicator: --n tabs wide, sitting at slot --i. Rendered
     # at the active slot so it rests correctly with no flash; app.js animates a
@@ -3032,7 +3044,18 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
             _sl("schedule", "Schedule Assistant"),
         ]
         if not offseason:
-            rows.append(_sl("redzone", "Redzone"))
+            if rz_live:
+                _rz_icon, _rz_ep, _rz_suffix = _NAV_PAGE_META["redzone"]
+                _rz_on = " active" if active_norm == "redzone" else ""
+                _rz_aria = " aria-current='page'" if active_norm == "redzone" else ""
+                rows.append(
+                    f"<a class='br-sheet-link rz-mnav-live{_rz_on}'{_rz_aria} "
+                    f"href='{_href(_rz_ep, _rz_suffix)}'>"
+                    f"{_nav_icon(_rz_icon, size=20)}<span>Redzone</span>"
+                    "<span class='rz-mnav-dot' aria-hidden='true'></span></a>"
+                )
+            else:
+                rows.append(_sl("redzone", "Redzone"))
         weekly_html = _sec("Weekly", rows)
 
     league_html = _sec("League", [
