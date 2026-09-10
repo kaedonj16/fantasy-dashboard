@@ -11612,18 +11612,22 @@ _RZ_BOX_CACHE: dict = {}  # game_id -> (ts, boxscore)
 _RZ_BOX_TTL = 15.0
 
 
-def _redzone_boxscore(game_id: str, *, play_by_play: bool = False) -> dict:
+def _redzone_boxscore(
+    game_id: str, *, play_by_play: bool = False, ttl: float | None = None
+) -> dict:
     """Fetch a Tank01 boxscore with a short shared TTL cache (bounds API calls).
 
     ``play_by_play=True`` asks Tank01 for ``allPlayByPlay`` and is cached under a
-    separate key so plain boxscore consumers stay light.
+    separate key so plain boxscore consumers stay light. Pass ``ttl`` to reuse a
+    stable final-game PBP payload longer than the live poll interval.
     """
     if not game_id:
         return {}
     now = time.time()
     cache_key = f"{game_id}:pbp" if play_by_play else game_id
+    use_ttl = float(_RZ_BOX_TTL if ttl is None else ttl)
     hit = _RZ_BOX_CACHE.get(cache_key)
-    if hit and (now - hit[0]) < _RZ_BOX_TTL:
+    if hit and (now - hit[0]) < use_ttl:
         return hit[1]
     try:
         from dashboard_services.api import fetch_tank_boxscore
@@ -12141,11 +12145,22 @@ def _redzone_collect(platform, league_id, season, week):
 
     pbp_by_game: dict = {}
     for gid, pids in games_to_pids.items():
-        # Live games: request PBP. Finals: plain boxscore is enough (and cheaper).
-        want_pbp = any(
-            (player_info.get(pid) or {}).get("game_code") == "1" for pid in pids
+        # Live AND final games get play-by-play. Skipping PBP on finals left the
+        # client with only players_points deltas ("Scored 13.5 pts") after the
+        # whistle — the bulk cards users see when reopening Redzone post-game.
+        codes = {
+            str((player_info.get(pid) or {}).get("game_code") or "")
+            for pid in pids
+        }
+        live = "1" in codes
+        final = "2" in codes
+        want_pbp = live or final
+        # Final PBP is stable; cache longer to avoid re-hitting Tank01 every poll.
+        box = _redzone_boxscore(
+            gid,
+            play_by_play=want_pbp,
+            ttl=(None if live else 300.0) if want_pbp else None,
         )
-        box = _redzone_boxscore(gid, play_by_play=want_pbp)
         pstats = box.get("playerStats") or {}
         tstats = box.get("teamStats") or {}
         name_to_pid: dict = {}

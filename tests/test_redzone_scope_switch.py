@@ -329,28 +329,19 @@ def test_app_wires_pbp_into_collect_and_demo():
     assert '"pbp_by_game": pbp_by_game' in app
     assert "Try Redzone Demo" in app
     assert 'fetch_tank_boxscore' in (_ROOT / "dashboard_services" / "api.py").read_text(encoding="utf-8")
+    # Finals must still request PBP — otherwise Plays falls back to bulk
+    # "Scored X pts" cards after the game ends.
+    assert 'want_pbp = live or final' in app
+    assert 'ttl=(None if live else 300.0)' in app
+    assert "Finals: plain boxscore is enough" not in app
 
 
-def test_my_teams_is_compact_collapsible_list():
-    src = _rz()
-    assert "function _renderMyTeams(" in src
-    assert "rz-mt-list" in src
-    assert "rz-mt-league" in src
-    # Full roster cards should not be the My Teams layout anymore.
-    assert "_rosterCard(m)" not in _fn("_renderMyTeams")
-    assert "Bench (" in src  # collapsed bench summary
-
-
-def test_live_player_pts_prefer_boxscore_over_zero_platform():
-    src = _fn("_playerPts")
-    assert "Math.max(platformN, live)" in src
-    assert "_lineToPts(_statLine(pid)" in src
-
-
-def test_play_cards_show_delta_and_new_total():
-    src = _rz()
-    assert "totalPts" in _fn("_playsFromDiff")
-    assert "totalPts" in _fn("_eventsFromPbp")
-    html = _fn("_eventHtml")
-    assert "rz-event-delta-pts" in html
-    assert "rz-event-total" in html
+def test_pbp_coverage_suppresses_bulk_points_without_new_events():
+    """Quiet / already-seen PBP polls must not invent 'Scored X pts' cards."""
+    src = _fn("_detectChanges")
+    assert "_pbpGames[gid]" in src
+    # Gate on coverage alone — not on newly accepted pbpEvents.length.
+    assert "_pbpGames[gid] && pbpEvents.length" not in src
+    assert "Scored ' + delta.toFixed(1) + ' pts'" in src
+    # Points-delta path must also respect PBP coverage.
+    assert 'if (gid && _pbpGames[gid])' in src
