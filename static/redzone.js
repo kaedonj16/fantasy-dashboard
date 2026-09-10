@@ -638,8 +638,8 @@
       var info = _describe(d, pos);
       if (!info) return null;
       var earned = parseFloat((_lineToPts(newLine, scoring) - _lineToPts(oldLine, scoring)).toFixed(2));
-      // Cumulative total from the full post-play boxscore (not the sliced delta line).
-      var totalPts = parseFloat(_lineToPts(newL, scoring).toFixed(2));
+      // Cumulative total after this play (boxscore + platform, whichever is higher).
+      var totalPts = parseFloat(_totalPtsForPid(pid, scoring).toFixed(2));
       return Object.assign({}, base, {
         desc: info.desc, kind: info.kind, stats: info.stats, pts: earned,
         totalPts: totalPts, ts: Date.now() + Math.random()
@@ -762,7 +762,7 @@
           gameClock: play.clock || ((_state.player_info || {})[pid] || {}).game_clock || '',
           down: play.down || '', distance: play.distance || '', yardLine: play.yard_line || '',
           desc: desc, kind: kind, stats: stats, pts: pts,
-          totalPts: parseFloat(_totalPtsForPid(pid, scoring).toFixed(2)),
+          totalPts: parseFloat(_totalPtsForPid(pid, scoring, newData).toFixed(2)),
           playId: playKey, fromPbp: true,
           impact: ''
         });
@@ -830,7 +830,7 @@
           pid: pid, name: info.name || pid, pos: info.pos || '', nflTeam: info.team || '',
           rosterId: rid, owner: _ownerName(rid), league: _leagueOfRid(rid),
           desc: 'Scored ' + delta.toFixed(1) + ' pts', kind: 'gain', stats: ['pts'], pts: delta,
-          totalPts: parseFloat(pp[pid] || 0),
+          totalPts: parseFloat(_totalPtsForPid(pid, _scFor(pid), newData).toFixed(2)),
           mine: tags.my.has(rid), opp: tags.opp.has(rid), line: '', ts: Date.now()
         });
       });
