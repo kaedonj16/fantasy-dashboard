@@ -37,6 +37,126 @@ def _s(v: Any) -> str:
     return str(v).strip()
 
 
+def _normalize_name(name: str) -> str:
+    """Normalize player name for matching: lowercase, strip periods/apostrophes."""
+    if not name:
+        return ""
+    name = name.lower().strip()
+    # Remove periods and apostrophes
+    name = name.replace(".", "").replace("'", "")
+    # Normalize whitespace
+    name = " ".join(name.split())
+    return name
+
+
+def _extract_first_initial_last(name: str) -> str:
+    """Extract first-initial + last-name from a full name.
+    
+    Examples:
+        'Mack Hollins' -> 'm hollins'
+        'M.Hollins' -> 'm hollins'
+        'Jaxon Smith-Njigba' -> 'j smith-njigba'
+    """
+    normalized = _normalize_name(name)
+    if not normalized:
+        return ""
+    parts = normalized.split()
+    if len(parts) < 2:
+        return normalized
+    # First initial + rest
+    return parts[0][0] + " " + " ".join(parts[1:])
+
+
+def _resolve_player_name(
+    long_name: str,
+    team: str,
+    name_to_pid: dict[str, str],
+    team_players: dict[str, list[tuple[str, str]]],  # team -> [(pid, name), ...]
+) -> str:
+    """Resolve player name to pid with fallback strategies.
+    
+    Resolution order:
+    1. Exact normalized full name
+    2. First-initial + last-name match
+    3. Unique last-name match within team
+    
+    Returns empty string if no unique match found.
+    """
+    if not long_name:
+        return ""
+    
+    # Strategy 1: Exact full name
+    normalized_full = _normalize_name(long_name)
+    if normalized_full in name_to_pid:
+        return name_to_pid[normalized_full]
+    
+    # Strategy 2: First-initial + last-name
+    abbrev = _extract_first_initial_last(long_name)
+    if abbrev and abbrev in name_to_pid:
+        return name_to_pid[abbrev]
+    
+    # Strategy 3: Unique last-name within team
+    if team and team in team_players:
+        parts = normalized_full.split()
+        if len(parts) >= 2:
+            last_name = parts[-1]
+            matches = [
+                pid for pid, name in team_players[team]
+                if _normalize_name(name).split()[-1] == last_name
+            ]
+            if len(matches) == 1:
+                return matches[0]
+    
+    return ""
+
+
+def _is_no_play(play_text: str) -> bool:
+    """Detect if a play was nullified (penalty, etc.)."""
+    if not play_text:
+        return False
+    text_lower = play_text.lower()
+    return "no play" in text_lower or "nullified" in text_lower
+
+
+def _extract_target_from_text(play_text: str) -> str:
+    """Extract target player name from pass play text.
+    
+    Examples:
+        'pass short right to M.Hollins' -> 'M.Hollins'
+        'pass incomplete short left to J.Smith-Njigba' -> 'J.Smith-Njigba'
+    """
+    if not play_text:
+        return ""
+    # Pattern: "to <Name>" where Name can include hyphens, periods, apostrophes
+    import re
+    match = re.search(r'\bto\s+([A-Z][A-Za-z\-\.\'\']+(?:\s+[A-Z][A-Za-z\-\.\'\']+)*)', play_text)
+    if match:
+        return match.group(1).strip()
+    return ""
+
+
+def _opponent_team(game_context: dict, offense_team: str) -> str:
+    """Determine opposing team from game context.
+    
+    Args:
+        game_context: Dict with 'home' and 'away' team abbreviations
+        offense_team: The offensive team abbreviation
+    
+    Returns:
+        Opposing team abbreviation or empty string
+    """
+    if not offense_team or not game_context:
+        return ""
+    home = _s(game_context.get("home", "")).upper()
+    away = _s(game_context.get("away", "")).upper()
+    offense_upper = offense_team.upper()
+    if offense_upper == home:
+        return away
+    if offense_upper == away:
+        return home
+    return ""
+
+
 def _first(d: dict, *keys: str) -> Any:
     for k in keys:
         if k in d and d[k] not in (None, ""):
@@ -112,11 +232,13 @@ def extract_pbp_plays(
     *,
     name_to_pid: dict[str, str] | None = None,
     team_to_def_pid: dict[str, str] | None = None,
+    game_context: dict | None = None,
 ) -> list[dict]:
     """Flatten ``allPlayByPlay`` (or aliases) into per-player Redzone plays.
 
-    ``name_to_pid`` maps lowercased full name → Sleeper pid.
+    ``name_to_pid`` maps normalized name → Sleeper pid (supports full names and abbreviations).
     ``team_to_def_pid`` maps team abbreviation → Sleeper DEF pid for the league.
+    ``game_context`` should contain 'home' and 'away' team abbreviations.
     """
     raw = _raw_pbp_list(box if isinstance(box, dict) else {})
     if not raw:
@@ -124,6 +246,15 @@ def extract_pbp_plays(
 
     name_to_pid = name_to_pid or {}
     team_to_def_pid = team_to_def_pid or {}
+    game_context = game_context or {}
+    
+    # Build team -> players index for last-name resolution
+    team_players: dict[str, list[tuple[str, str]]] = {}
+    for name, pid in name_to_pid.items():
+        # Extract team from name_to_pid if available (would need player_info)
+        # For now, skip this optimization - can be added later if needed
+        pass
+    
     out: list[dict] = []
 
     for seq, play in enumerate(raw):
@@ -137,6 +268,9 @@ def extract_pbp_plays(
         distance = _s(_first(play, "distance", "yardsToGo", "yards_to_go", "togo", "toGo"))
         yard_line = _s(_first(play, "yardline", "yardLine", "yard_line", "ballOn", "ballLocation"))
 
+        # Detect No Play
+        is_no_play = _is_no_play(text)
+        
         base = {
             "play_id": play_id,
             "seq": seq,
@@ -147,12 +281,23 @@ def extract_pbp_plays(
             "distance": distance,
             "yard_line": yard_line,
             "play_text": text,
+            "is_no_play": is_no_play,
         }
 
         emitted = 0
         pstats = play.get("playerStats") or play.get("player_stats") or {}
+        
+        # Track if we've seen a receiver contribution
+        has_receiver_contrib = False
+        offense_team = ""
+        
         for ps in _iter_player_stats(pstats):
             line = _normalize_player_delta(ps)
+            
+            # No Play: ignore all fantasy stats
+            if is_no_play:
+                line = {}
+            
             long_name = _s(_first(ps, "longName", "long_name", "playerName", "name"))
             # Keep named players (or nonzero deltas) even when Tank01 shipped
             # empty/zero fantasy deltas — the booth line is still real PBP.
@@ -160,8 +305,14 @@ def extract_pbp_plays(
                 continue
             if not _stat_line_nonzero(line) and not text:
                 continue
-            pid = name_to_pid.get(long_name.lower()) if long_name else ""
+            
             team = _s(_first(ps, "teamAbv", "team", "teamAbbreviation"))
+            if team and not offense_team:
+                offense_team = team
+            
+            # Resolve player name with fallback strategies
+            pid = _resolve_player_name(long_name, team, name_to_pid, team_players) if long_name else ""
+            
             is_td = bool(
                 (line.get("pass_td") or 0)
                 or (line.get("rush_td") or 0)
@@ -169,6 +320,11 @@ def extract_pbp_plays(
                 or ("touchdown" in text.lower())
                 or (" TD" in text)
             )
+            
+            # Track receiver contributions
+            if line.get("rec") or line.get("rec_td"):
+                has_receiver_contrib = True
+            
             out.append({
                 **base,
                 "pid": pid or "",
@@ -181,6 +337,8 @@ def extract_pbp_plays(
 
         # DST / team defense deltas on the play
         tstats = play.get("teamStats") or play.get("team_stats") or {}
+        dst_emitted = False
+        
         if isinstance(tstats, dict):
             sides: Iterable = tstats.values() if not any(
                 k in tstats for k in ("home", "away", "Defense", "defense")
@@ -194,6 +352,11 @@ def extract_pbp_plays(
                 if not isinstance(side, dict):
                     continue
                 line = rz_def_stat_line(side)
+                
+                # No Play: ignore all fantasy stats
+                if is_no_play:
+                    line = {}
+                
                 if not _stat_line_nonzero(line):
                     continue
                 team = _s(_first(side, "teamAbv", "team", "teamAbbreviation"))
@@ -208,10 +371,65 @@ def extract_pbp_plays(
                     "is_td": is_td,
                 })
                 emitted += 1
+                dst_emitted = True
+        
+        # Fallback: Detect sacks from play text and create DST contribution
+        if not dst_emitted and not is_no_play and "sack" in text.lower() and offense_team:
+            defending_team = _opponent_team(game_context, offense_team)
+            if defending_team:
+                pid = team_to_def_pid.get(defending_team) if defending_team else ""
+                out.append({
+                    **base,
+                    "pid": pid or "",
+                    "name": (defending_team + " DEF") if defending_team else "Defense",
+                    "team": defending_team,
+                    "stat_line": {"sacks": 1},
+                    "is_td": False,
+                })
+                emitted += 1
 
+        # Fallback: Extract target from incomplete pass text
+        if not has_receiver_contrib and not is_no_play and "pass" in text.lower() and "incomplete" in text.lower():
+            target_name = _extract_target_from_text(text)
+            if target_name:
+                # Try to resolve target
+                target_pid = _resolve_player_name(target_name, offense_team, name_to_pid, team_players)
+                if target_pid:
+                    out.append({
+                        **base,
+                        "pid": target_pid,
+                        "name": target_name,
+                        "team": offense_team,
+                        "stat_line": {"targets": 1, "rec": 0},
+                        "is_td": False,
+                    })
+                    emitted += 1
+        
+        # Fallback: Extract receiver from completed pass text
+        if not has_receiver_contrib and not is_no_play and "pass" in text.lower() and "incomplete" not in text.lower():
+            # Look for patterns like "to <Name> for X yards"
+            receiver_name = _extract_target_from_text(text)
+            if receiver_name:
+                receiver_pid = _resolve_player_name(receiver_name, offense_team, name_to_pid, team_players)
+                if receiver_pid:
+                    # Try to extract yardage
+                    import re
+                    yds_match = re.search(r'for\s+(-?\d+)\s+yard', text)
+                    rec_yds = int(yds_match.group(1)) if yds_match else 0
+                    
+                    out.append({
+                        **base,
+                        "pid": receiver_pid,
+                        "name": receiver_name,
+                        "team": offense_team,
+                        "stat_line": {"rec": 1, "rec_yds": rec_yds, "targets": 1},
+                        "is_td": False,
+                    })
+                    emitted += 1
+        
         # Narrative-only scoring play with no usable player/team rows — still
         # ship the booth line; the client may attach a pid via name heuristics.
-        if text and emitted == 0:
+        if text and emitted == 0 and not is_no_play:
             out.append({
                 **base,
                 "pid": "",

@@ -12336,7 +12336,14 @@ def _redzone_collect(platform, league_id, season, week):
                 else:
                     full = (nfl_players.get(pid, {}).get("full_name") or "").lower()
                     if full:
-                        name_to_pid[full] = pid
+                        # Store both full name and abbreviated form
+                        from utils.redzone_pbp import _normalize_name, _extract_first_initial_last
+                        normalized = _normalize_name(full)
+                        name_to_pid[normalized] = pid
+                        # Also store first-initial + last-name variant
+                        abbrev = _extract_first_initial_last(full)
+                        if abbrev and abbrev != normalized:
+                            name_to_pid[abbrev] = pid
                     ps = name_map.get(full)
                     if ps:
                         pi["stat_line"] = _rz_stat_line_from_ps(ps)
@@ -12348,14 +12355,31 @@ def _redzone_collect(platform, league_id, season, week):
                 else:
                     full = (nfl_players.get(pid, {}).get("full_name") or "").lower()
                     if full:
-                        name_to_pid[full] = pid
+                        # Store both full name and abbreviated form
+                        from utils.redzone_pbp import _normalize_name, _extract_first_initial_last
+                        normalized = _normalize_name(full)
+                        name_to_pid[normalized] = pid
+                        # Also store first-initial + last-name variant
+                        abbrev = _extract_first_initial_last(full)
+                        if abbrev and abbrev != normalized:
+                            name_to_pid[abbrev] = pid
 
         if want_pbp and box:
             try:
+                # Build game_context for opponent team resolution
+                game_context = {}
+                if pids:
+                    sample_pi = player_info.get(pids[0], {})
+                    game_context = {
+                        "home": sample_pi.get("home", ""),
+                        "away": sample_pi.get("away", "")
+                    }
+                
                 plays = _rz_extract_pbp_plays(
                     box, gid,
                     name_to_pid=name_to_pid,
                     team_to_def_pid=team_to_def_pid,
+                    game_context=game_context,
                 )
                 # Keep only plays that touch a rostered player (or carry text).
                 rostered = set(pids)

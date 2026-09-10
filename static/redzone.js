@@ -567,13 +567,25 @@
   // chronological order (newest first): game kickoff epoch + elapsed game
   // seconds. Live-only events (milestones, bulk) fall back to detection time.
   function _chronoKey(ev) {
+    // For PBP events with gameId and seq, use provider sequence within game
+    if (ev.gameId && ev.seq != null) {
+      var g = (_state.games || {})[ev.gameId] || {};
+      var kickoff = parseFloat(g.game_time_epoch || 0) || 0;
+      if (kickoff) {
+        // Use kickoff + seq as a monotonic key (seq is already chronological)
+        // Scale seq to avoid collision with elapsed seconds
+        return kickoff + (ev.seq * 0.001);
+      }
+    }
+    // Fallback: reconstruct from quarter/clock
     var q = parseInt(ev.gameQuarter, 10);
     if (q > 0) {
       var per = 900; // 15:00 quarters (OT still monotonic under this model)
       var cs = _clockSecs(ev.gameClock);
       var inQ = (cs == null) ? 0 : Math.max(0, per - cs);
       var elapsed = (q - 1) * per + inQ;
-      var gid = ((_state.player_info || {})[ev.pid] || {}).game_id || '';
+      // Try to get gameId from event or player_info
+      var gid = ev.gameId || ((_state.player_info || {})[ev.pid] || {}).game_id || '';
       var g = (_state.games || {})[gid] || {};
       var kickoff = parseFloat(g.game_time_epoch || 0) || 0;
       if (kickoff) return kickoff + elapsed;
@@ -934,6 +946,10 @@
     if (line.rec > 0) {
       var qb2 = contributions.find(function(c) { return (c.line.pass_yds > 0 || c.line.pass_td > 0) && c.pid !== primary.pid; });
       var qbName2 = qb2 ? qb2.name : '';
+      // Handle negative yardage
+      if (yds < 0) {
+        return Math.abs(yds) + '-yard loss on reception' + (qbName2 ? ' from ' + qbName2 : '');
+      }
       return yds > 0
         ? yds + '-yard reception' + (qbName2 ? ' from ' + qbName2 : '')
         : 'Reception' + (qbName2 ? ' from ' + qbName2 : '');
@@ -963,8 +979,17 @@
       return dist > 0 ? dist + '-yard field goal' : 'Field goal';
     }
     if (line.xpm > 0) return 'Extra point';
-    // DEF
-    if (line.sacks > 0) return line.sacks === 1 ? 'Sack' : line.sacks + ' sacks';
+    // DEF - improved sack description
+    if (line.sacks > 0 || line.sack > 0) {
+      var sackCount = line.sacks || line.sack || 0;
+      // Try to find QB being sacked
+      var qb = contributions.find(function(c) { return c.pos === 'QB' && c.pid !== primary.pid; });
+      var qbName = qb ? qb.name : '';
+      if (sackCount === 1) {
+        return qbName ? 'Sack of ' + qbName : 'Sack';
+      }
+      return sackCount + ' sacks';
+    }
     if (line.def_int > 0) return 'Interception';
     if (line.fum_rec > 0) return 'Fumble recovery';
     if (line.def_td > 0) return 'Defensive TD';
@@ -987,13 +1012,20 @@
     Object.keys(byGame).forEach(function(gid) {
       _pbpGames[gid] = true;
       (byGame[gid] || []).forEach(function(play) {
+        // Skip No Play contributions
+        if (play.is_no_play) return;
+        
         var pid = _pidFromPlayName(play, newData);
         if (!pid || pid === '0') return;
+        
+        // Validate roster mapping BEFORE marking as seen
+        var rid = tags.pidToRoster[pid] || '';
+        if (!rid) return;
+        
+        // NOW mark as seen (after validation)
         var contribKey = _contributionKey(play, gid, pid);
         if (_seenContributions.has(contribKey)) return;
         _seenContributions.add(contribKey);
-        var rid = tags.pidToRoster[pid] || '';
-        if (!rid) return;
         var line = play.stat_line || {};
         var scoring = scFor(pid);
         var pos = _pos(pid);
@@ -1026,7 +1058,7 @@
           down: play.down || '',
           distance: play.distance || '',
           yardLine: play.yard_line || '',
-          seq: play.seq || 0,
+          seq: play.seq != null ? play.seq : 0,
           gameId: gid,
           cume: play.cume || null,
           cumeStatLine: play.cume || null,
@@ -1038,13 +1070,32 @@
       });
     });
     // Merge new contributions into canonical play groups
+    // Store contributions by key to allow updates
     newContributions.forEach(function(c) {
       var group = _playGroupsByKey[c.playKey];
       if (!group) {
-        _playGroupsByKey[c.playKey] = {contributions: [c], needsUpdate: true};
+        var contribsByKey = {};
+        contribsByKey[c.contribKey] = c;
+        _playGroupsByKey[c.playKey] = {
+          contributionsByKey: contribsByKey,
+          needsUpdate: true,
+          gameId: c.gameId,
+          seq: c.seq
+        };
       } else {
-        group.contributions.push(c);
+        // Update or add contribution
+        if (!group.contributionsByKey) {
+          // Migrate old structure
+          group.contributionsByKey = {};
+          (group.contributions || []).forEach(function(old) {
+            group.contributionsByKey[old.contribKey] = old;
+          });
+        }
+        group.contributionsByKey[c.contribKey] = c;
         group.needsUpdate = true;
+        // Update gameId/seq from latest contribution
+        if (c.gameId) group.gameId = c.gameId;
+        if (c.seq != null) group.seq = c.seq;
       }
     });
     // Generate/update events for plays that need it
@@ -1053,7 +1104,10 @@
       var group = _playGroupsByKey[playKey];
       if (!group.needsUpdate) return;
       group.needsUpdate = false;
-      var contribs = group.contributions;
+      // Derive contributions array from contributionsByKey
+      var contribs = group.contributionsByKey 
+        ? Object.keys(group.contributionsByKey).map(function(k) { return group.contributionsByKey[k]; })
+        : (group.contributions || []);
       var primary = _selectPrimaryActor(contribs);
       if (!primary) return;
       var desc = _improvePlayDesc(primary, contribs, primary.rawPlayText);
@@ -1090,7 +1144,10 @@
         fromPbp: true,
         contributions: contribs,
         isUpdate: !isNewPlay,
-        impact: ''
+        impact: '',
+        // Add gameId and seq for chronology
+        gameId: group.gameId || primary.gameId,
+        seq: group.seq != null ? group.seq : primary.seq
       };
       group.primaryEvent = event;
       events.push(event);
