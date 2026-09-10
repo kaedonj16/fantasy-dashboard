@@ -119,9 +119,35 @@ def test_focused_pair_drives_scorebar_and_live_chrome():
 
 def test_filter_polish_league_label_and_my_team_chip():
     src = _rz()
-    assert "? 'League' : 'Team'" in src
+    # Fantasy Team/League filter row is gone; NFL filter is matchups.
+    assert "fpRow('Matchup', 'nfl'" in src
+    assert "? 'League' : 'Team'" not in src
     assert 'data-clear-myteam="1"' in src
     assert "OPP · " in src
+
+
+def test_nfl_filter_is_matchups_with_scoreboard():
+    """RZ6.3 / RZ6.4 — NFL filter lists games; selected game shows board strip."""
+    src = _rz()
+    assert "function _nflMatchupOptions(" in src
+    assert "function _nflOptions(" not in src
+    assert "function _renderNflBoard(" in src
+    nfl = _fn("_nflMatchupOptions")
+    assert "game_id" in nfl
+    assert "away + ' @ ' + home" in nfl or 'away + " @ " + home' in nfl
+    # Must not list bare team abbrevs as the primary option value.
+    assert "seen[t] = 1" not in nfl
+    board = _fn("_renderNflBoard")
+    assert "rz-nfl-board" in board
+    assert "rz-nfl-ball" in board
+    assert "possession" in board
+    assert "_nflBoardSitLine" in board or "_downDist" in board
+    assert "function _nflBoardSitLine(" in src
+    assert "_downDist" in _fn("_nflBoardSitLine")
+    assert "_renderNflBoard()" in src
+    app = (_ROOT / "app.py").read_text(encoding="utf-8")
+    assert "build_games_snapshot as _rz_build_games_snapshot" in app
+    assert '"games": games' in app
 
 
 def test_scoring_prefers_roster_league_over_pid_map():
@@ -307,3 +333,82 @@ def test_play_descriptions_are_play_by_play():
     assert "return { desc: ry + ' yd TD catch'" not in src
     assert "return { desc: py + ' yd TD pass'" not in src
     assert "return { desc: uy + ' yd TD run'" not in src
+
+
+def test_pbp_feed_path_and_soft_rank():
+    src = _rz()
+    assert "function _eventsFromPbp(" in src
+    assert "pbp_by_game" in src
+    assert "function _softRank(" in src
+    assert "function _isBigPlay(" in src
+    assert 'id="rz-bigplays-btn"' in src
+    assert "function _loadPrefs(" in src
+    assert "function _savePrefs(" in src
+    assert "rz-event-impact" in src
+    assert "Try the Redzone demo" in src
+
+
+def test_app_wires_pbp_into_collect_and_demo():
+    app = (_ROOT / "app.py").read_text(encoding="utf-8")
+    assert "extract_pbp_plays as _rz_extract_pbp_plays" in app
+    assert 'play_by_play=want_pbp' in app or "play_by_play=want_pbp" in app
+    assert '"pbp_by_game": pbp_by_game' in app
+    assert "Try Redzone Demo" in app
+    api = (_ROOT / "dashboard_services" / "api.py").read_text(encoding="utf-8")
+    assert 'fetch_tank_boxscore' in api
+    # Tank01 docs use both spellings; fantasyPoints helps per-play deltas.
+    assert 'params["playByPlay"] = "true"' in api
+    assert 'params["playByplay"] = "true"' in api
+    assert 'params["fantasyPoints"] = "true"' in api
+    # Finals must still request PBP — otherwise Plays falls back to bulk
+    # "Scored X pts" cards after the game ends.
+    assert 'want_pbp = live or final' in app
+    assert 'ttl=(None if live else 300.0)' in app
+    assert "Finals: plain boxscore is enough" not in app
+
+
+def test_pbp_coverage_suppresses_bulk_points_without_new_events():
+    """Live/final and PBP-covered games never invent Scored / boxscore fiction."""
+    src = _fn("_detectChanges")
+    assert "Scored ' + delta.toFixed(1) + ' pts'" in src
+    # Live/final games never take the bulk Scored fallback or _playsFromDiff.
+    assert "code === '1' || code === '2'" in src
+    assert "_pbpGames[gid]" in src
+    # Boxscore narrative is no longer a live/final substitute for real PBP.
+    assert "pbpRows.length" not in src
+    assert "_playsFromDiff" in src  # still used for pregame / non-PBP only
+
+
+def test_app_falls_back_to_plain_boxscore_when_pbp_empty():
+    app = (_ROOT / "app.py").read_text(encoding="utf-8")
+    # Plain boxscore merge remains for scoreboard totals only.
+    assert "play_by_play=False" in app
+    assert "pbp_by_game[gid] = plays" in app
+    assert "if plays:" not in app[app.index("pbp_by_game[gid] = plays") - 80:
+                                    app.index("pbp_by_game[gid] = plays") + 40]
+    # Client is responsible for PBP-lines-only; server must not claim narrative diffs.
+    assert "narrative diffs" not in app
+    # Alternate sources (Sleeper → ESPN) when Tank01 PBP is empty.
+    assert "fetch_alt_pbp_plays as _rz_fetch_alt_pbp_plays" in app
+    assert "_rz_fetch_alt_pbp_plays" in app
+
+
+def test_events_from_pbp_resolves_name_when_pid_missing():
+    src = _fn("_eventsFromPbp")
+    assert "_pidFromPlayName" in (_ROOT / "static" / "redzone.js").read_text(encoding="utf-8")
+    assert "fromPbp: true" in src
+
+
+def test_live_final_empty_feed_is_honest_not_boxscore():
+    src = _fn("_syncFeed")
+    assert "Play-by-play lines" in src
+    assert "not box-score summaries" in src
+
+
+def test_filter_panel_is_matchups_not_fantasy_teams():
+    src = _rz()
+    assert "function _nflMatchupOptions(" in src
+    assert "fpRow('Matchup', 'nfl'" in src
+    assert "fpRow(_scope === 'user' ? 'League' : 'Team', 'team'" not in src
+    assert "function _teamOptions(" not in src
+    assert "function _nflOptions(" not in src

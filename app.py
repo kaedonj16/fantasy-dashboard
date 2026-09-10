@@ -4280,6 +4280,8 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             # Player IDs are canonicalized onto the Tank01 boxscore feed, so
             # Redzone works on Sleeper, ESPN, Yahoo, and MFL.
             _weekly_items.append((_rz_label, "page_redzone", "redzone", False))
+            # Demo stays discoverable without a header Demo pill.
+            _weekly_items.append(("Try Redzone Demo", "page_redzone", "redzone", False, "?demo=1"))
             if _rz_live:
                 _rz_pulse = "nav-pill-redzone-live"
         nav_pills.append(nav_pill_dropdown(
@@ -11610,20 +11612,32 @@ _RZ_BOX_CACHE: dict = {}  # game_id -> (ts, boxscore)
 _RZ_BOX_TTL = 15.0
 
 
-def _redzone_boxscore(game_id: str) -> dict:
-    """Fetch a Tank01 boxscore with a short shared TTL cache (bounds API calls)."""
+def _redzone_boxscore(
+    game_id: str, *, play_by_play: bool = False, ttl: float | None = None
+) -> dict:
+    """Fetch a Tank01 boxscore with a short shared TTL cache (bounds API calls).
+
+    ``play_by_play=True`` asks Tank01 for ``allPlayByPlay`` and is cached under a
+    separate key so plain boxscore consumers stay light. Pass ``ttl`` to reuse a
+    stable final-game PBP payload longer than the live poll interval.
+    """
     if not game_id:
         return {}
     now = time.time()
-    hit = _RZ_BOX_CACHE.get(game_id)
-    if hit and (now - hit[0]) < _RZ_BOX_TTL:
+    cache_key = f"{game_id}:pbp" if play_by_play else game_id
+    use_ttl = float(_RZ_BOX_TTL if ttl is None else ttl)
+    hit = _RZ_BOX_CACHE.get(cache_key)
+    if hit and (now - hit[0]) < use_ttl:
         return hit[1]
     try:
         from dashboard_services.api import fetch_tank_boxscore
-        box = fetch_tank_boxscore(game_id) or {}
+        box = fetch_tank_boxscore(game_id, play_by_play=play_by_play) or {}
     except Exception:
         box = {}
-    _RZ_BOX_CACHE[game_id] = (now, box)
+    _RZ_BOX_CACHE[cache_key] = (now, box)
+    # Plain boxscore callers can reuse a PBP response (it is a superset).
+    if play_by_play and box and game_id not in _RZ_BOX_CACHE:
+        _RZ_BOX_CACHE[game_id] = (now, box)
     return box
 
 
@@ -11667,6 +11681,14 @@ from utils.redzone_stats import (  # noqa: E402
     rz_def_stat_line as _rz_def_stat_line,
     rz_safe_epoch as _rz_safe_epoch,
     rz_stat_line_from_ps as _rz_stat_line_from_ps,
+)
+from utils.redzone_pbp import (  # noqa: E402
+    build_games_snapshot as _rz_build_games_snapshot,
+    demo_play_text as _rz_demo_play_text,
+    extract_pbp_plays as _rz_extract_pbp_plays,
+)
+from utils.redzone_alt_pbp import (  # noqa: E402
+    fetch_alt_pbp_plays as _rz_fetch_alt_pbp_plays,
 )
 
 # ── Demo mode ──────────────────────────────────────────────────────────────────
@@ -11798,7 +11820,8 @@ def _redzone_demo_data(t: float = _RZ_DEMO_START, scope: str = "league"):
         L = {"sacks": 0, "def_int": 0, "fum_rec": 0, "def_td": 0}
         for p in script:
             if p["t"] <= t_eff:
-                L[p["k"]] = L.get(p["k"], 0) + 1
+                key = "sacks" if p["k"] == "sack" else p["k"]
+                L[key] = L.get(key, 0) + 1
         return L
 
     def _demo_k_line(pid, t_eff):
@@ -11836,6 +11859,105 @@ def _redzone_demo_data(t: float = _RZ_DEMO_START, scope: str = "league"):
             info["stat_line"] = line
             pts[pid] = _rz_demo_pts(line)
 
+    # Synthetic play-by-play so the demo exercises the same client path as live Tank01 PBP.
+    pbp_by_game = {}
+    for pid, info in PLAYERS.items():
+        gid = info.get("game_id") or ""
+        if not gid or (info.get("game_code") or "0") == "0":
+            continue
+        pos = info.get("pos") or ""
+        t_eff = _RZ_DEMO_GAME if info.get("game_code") == "2" else t
+        plays_out = pbp_by_game.setdefault(gid, [])
+        if pos == "DEF":
+            for p in _DEMO_DEF_SCRIPT.get(pid, []):
+                if p["t"] > t_eff:
+                    break
+                line = {"sacks": 0, "def_int": 0, "fum_rec": 0, "def_td": 0}
+                key = "sacks" if p["k"] == "sack" else p["k"]
+                line[key] = 1
+                plays_out.append({
+                    "play_id": f"{gid}:{pid}:{p['t']}",
+                    "seq": len(plays_out),
+                    "game_id": gid,
+                    "quarter": info.get("game_quarter") or "",
+                    "clock": info.get("game_clock") or "",
+                    "down": "", "distance": "", "yard_line": "",
+                    "play_text": _rz_demo_play_text(p["k"]),
+                    "pid": pid, "name": info.get("name") or "", "team": info.get("team") or "",
+                    "stat_line": line, "is_td": p["k"] == "def_td",
+                })
+        elif pos == "K":
+            for p in _DEMO_K_SCRIPT.get(pid, []):
+                if p["t"] > t_eff:
+                    break
+                line = {"fgm": 0, "fg_long": 0, "xpm": 0}
+                if p["k"] == "fgm":
+                    line["fgm"] = 1; line["fg_long"] = p.get("dist", 0)
+                else:
+                    line["xpm"] = 1
+                plays_out.append({
+                    "play_id": f"{gid}:{pid}:{p['t']}",
+                    "seq": len(plays_out),
+                    "game_id": gid,
+                    "quarter": info.get("game_quarter") or "",
+                    "clock": info.get("game_clock") or "",
+                    "down": "", "distance": "", "yard_line": "",
+                    "play_text": _rz_demo_play_text(p["k"], dist=p.get("dist", 0)),
+                    "pid": pid, "name": info.get("name") or "", "team": info.get("team") or "",
+                    "stat_line": line, "is_td": False,
+                })
+        else:
+            for p in _rz_demo_script(pid, pos):
+                if p["t"] > t_eff:
+                    break
+                kind = p["kind"]
+                line = {"pass_yds": 0, "pass_td": 0, "int": 0, "carries": 0,
+                        "rush_yds": 0, "rush_td": 0, "rec": 0, "rec_yds": 0,
+                        "rec_td": 0, "targets": 0}
+                if kind == "rush":
+                    line["carries"] = 1; line["rush_yds"] = p.get("yds", 0); line["rush_td"] = p.get("td", 0)
+                elif kind == "rec":
+                    line["rec"] = 1; line["targets"] = 1; line["rec_yds"] = p.get("yds", 0); line["rec_td"] = p.get("td", 0)
+                elif kind == "target":
+                    line["targets"] = 1
+                elif kind == "pass":
+                    line["pass_yds"] = p.get("yds", 0); line["pass_td"] = p.get("td", 0)
+                elif kind == "int":
+                    line["int"] = 1
+                plays_out.append({
+                    "play_id": f"{gid}:{pid}:{p['t']}",
+                    "seq": len(plays_out),
+                    "game_id": gid,
+                    "quarter": info.get("game_quarter") or "",
+                    "clock": info.get("game_clock") or "",
+                    "down": "1" if kind in ("pass", "rush", "rec", "target") else "",
+                    "distance": "10" if kind in ("pass", "rush", "rec", "target") else "",
+                    "yard_line": "",
+                    "play_text": _rz_demo_play_text(kind, p.get("yds", 0), p.get("td", 0)),
+                    "pid": pid, "name": info.get("name") or "", "team": info.get("team") or "",
+                    "stat_line": line, "is_td": bool(p.get("td")),
+                })
+
+    games = _rz_build_games_snapshot(PLAYERS, pbp_by_game)
+    # Seed a few live-board situations so the NFL matchup strip is visible even
+    # before PBP rows accumulate enough field context.
+    _DEMO_BOARD = {
+        "demo_BAL_HOU": {"possession": "BAL", "down": "2", "distance": "7", "yard_line": "HOU 42"},
+        "demo_DET_CHI": {"possession": "DET", "down": "3", "distance": "4", "yard_line": "CHI 18"},
+        "demo_JAX_MIA": {"possession": "MIA", "down": "1", "distance": "10", "yard_line": "MIA 25"},
+        "demo_KC_LV": {"possession": "KC", "down": "2", "distance": "5", "yard_line": "LV 33"},
+        "demo_ATL_NO": {"possession": "ATL", "down": "1", "distance": "10", "yard_line": "ATL 40"},
+        "demo_LAR_SEA": {"possession": "SEA", "down": "4", "distance": "2", "yard_line": "LAR 48"},
+        "demo_PHI_WAS": {"possession": "PHI", "down": "2", "distance": "8", "yard_line": "WAS 29"},
+    }
+    for gid, sit in _DEMO_BOARD.items():
+        row = games.get(gid)
+        if not row or str(row.get("game_code") or "") != "1":
+            continue
+        for k, v in sit.items():
+            if not row.get(k):
+                row[k] = v
+
     def mk(rid, mid, starters, bench, league_name=None):
         players = starters + bench
         pp = {p: pts.get(p, 0.0) for p in players}
@@ -11851,6 +11973,8 @@ def _redzone_demo_data(t: float = _RZ_DEMO_START, scope: str = "league"):
         "week": 14, "season": 2024, "platform": "sleeper", "league_id": "demo",
         "player_info": PLAYERS,
         "scoring": dict(_RZ_DEMO_SCORING),
+        "pbp_by_game": pbp_by_game,
+        "games": games,
         "updated_at": time.time(),
         "is_demo": True,
         "demo_t": t,
@@ -11874,6 +11998,17 @@ def _redzone_demo_data(t: float = _RZ_DEMO_START, scope: str = "league"):
     def _apply_real_ids(d):
         M = _RZ_DEMO_PID
         d["player_info"] = {M.get(k, k): v for k, v in (d.get("player_info") or {}).items()}
+        # Remap synthetic PBP player ids onto real Sleeper ids too.
+        remapped_pbp = {}
+        for gid, plays in (d.get("pbp_by_game") or {}).items():
+            remapped = []
+            for play in plays or []:
+                p = dict(play)
+                if p.get("pid"):
+                    p["pid"] = M.get(p["pid"], p["pid"])
+                remapped.append(p)
+            remapped_pbp[gid] = remapped
+        d["pbp_by_game"] = remapped_pbp
         for m in d.get("matchups", []):
             m["starters"] = [M.get(p, p) for p in m.get("starters", [])]
             m["players"] = [M.get(p, p) for p in m.get("players", [])]
@@ -12024,16 +12159,55 @@ def _redzone_collect(platform, league_id, season, week):
     # Attach per-player stat lines from Tank01 boxscores. Tank01 is keyed by
     # player name, and player_info now resolves names on every platform, so the
     # live stat lines work league-wide regardless of provider.
+    # Also pull experimental play-by-play so the client can show real play text
+    # (down/distance/clock) instead of inventing copy from box-score deltas.
     games_to_pids: dict = {}
     for pid, info in player_info.items():
         gid = info.get("game_id")
         code = info.get("game_code")
         if gid and code in ("1", "2"):
             games_to_pids.setdefault(gid, []).append(pid)
+
+    pbp_by_game: dict = {}
     for gid, pids in games_to_pids.items():
-        box = _redzone_boxscore(gid)
+        # Live AND final games get play-by-play. Skipping PBP on finals left the
+        # client with only players_points deltas ("Scored 13.5 pts") after the
+        # whistle — the bulk cards users see when reopening Redzone post-game.
+        codes = {
+            str((player_info.get(pid) or {}).get("game_code") or "")
+            for pid in pids
+        }
+        live = "1" in codes
+        final = "2" in codes
+        want_pbp = live or final
+        # Final PBP is stable; cache longer to avoid re-hitting Tank01 every poll.
+        box = _redzone_boxscore(
+            gid,
+            play_by_play=want_pbp,
+            ttl=(None if live else 300.0) if want_pbp else None,
+        )
+        # Tank01's playByPlay response is experimental and sometimes returns PBP
+        # without aggregate playerStats (or an empty body). Merge a plain
+        # boxscore for scoreboard totals only — Plays never invents boxscore /
+        # "Scored X pts" fiction from that merge (client is PBP-lines-only for
+        # live/final).
+        if want_pbp and not (box.get("playerStats") or box.get("allPlayByPlay")
+                             or box.get("allPlaybyPlay") or box.get("playByPlay")):
+            plain = _redzone_boxscore(gid, play_by_play=False)
+            if plain:
+                box = plain
+        elif want_pbp and box and not box.get("playerStats"):
+            plain = _redzone_boxscore(gid, play_by_play=False)
+            if plain.get("playerStats"):
+                merged = dict(plain)
+                for k in ("allPlayByPlay", "allPlaybyPlay", "playByPlay", "plays"):
+                    if box.get(k):
+                        merged[k] = box[k]
+                box = merged
         pstats = box.get("playerStats") or {}
         tstats = box.get("teamStats") or {}
+        name_to_pid: dict = {}
+        team_to_def_pid: dict = {}
         if isinstance(pstats, dict) and pstats:
             name_map = {}
             for _, ps in pstats.items():
@@ -12051,11 +12225,85 @@ def _redzone_collect(platform, league_id, season, week):
                     side = "home" if team == home else ("away" if team == away else None)
                     if side and isinstance(tstats.get(side), dict):
                         pi["stat_line"] = _rz_def_stat_line(tstats[side])
+                    if team:
+                        team_to_def_pid[team] = pid
                 else:
                     full = (nfl_players.get(pid, {}).get("full_name") or "").lower()
+                    if full:
+                        name_to_pid[full] = pid
                     ps = name_map.get(full)
                     if ps:
                         pi["stat_line"] = _rz_stat_line_from_ps(ps)
+        else:
+            for pid in pids:
+                pi = player_info[pid]
+                if pi.get("pos") == "DEF" and pi.get("team"):
+                    team_to_def_pid[pi["team"]] = pid
+                else:
+                    full = (nfl_players.get(pid, {}).get("full_name") or "").lower()
+                    if full:
+                        name_to_pid[full] = pid
+
+        if want_pbp and box:
+            try:
+                plays = _rz_extract_pbp_plays(
+                    box, gid,
+                    name_to_pid=name_to_pid,
+                    team_to_def_pid=team_to_def_pid,
+                )
+                # Keep only plays that touch a rostered player (or carry text).
+                rostered = set(pids)
+                plays = [
+                    p for p in plays
+                    if (p.get("pid") and p["pid"] in rostered) or p.get("play_text")
+                ]
+                # Tank01 PBP is experimental and often empty for finals. Fall
+                # back to Sleeper (preferred) then ESPN CDN booth lines so
+                # Plays still shows real play-by-play — never boxscore fiction.
+                if not plays:
+                    try:
+                        alt = _rz_fetch_alt_pbp_plays(
+                            gid,
+                            season=season,
+                            week=week,
+                            name_to_pid=name_to_pid,
+                            team_to_def_pid=team_to_def_pid,
+                            live=live,
+                        )
+                        plays = [
+                            p for p in (alt or [])
+                            if (p.get("pid") and p["pid"] in rostered) or p.get("play_text")
+                        ]
+                    except Exception:
+                        logger.debug(
+                            "[redzone] alt pbp failed game=%s", gid, exc_info=True
+                        )
+                # Always record the game key when we attempted PBP so the client
+                # can suppress bulk point dumps even if Tank01 returned no rows.
+                pbp_by_game[gid] = plays
+            except Exception:
+                logger.debug("[redzone] pbp parse failed game=%s", gid, exc_info=True)
+                pbp_by_game.setdefault(gid, [])
+        elif want_pbp:
+            # No usable box at all — still try Sleeper/ESPN for booth lines.
+            try:
+                rostered = set(pids)
+                alt = _rz_fetch_alt_pbp_plays(
+                    gid,
+                    season=season,
+                    week=week,
+                    name_to_pid=name_to_pid,
+                    team_to_def_pid=team_to_def_pid,
+                    live=live,
+                )
+                plays = [
+                    p for p in (alt or [])
+                    if (p.get("pid") and p["pid"] in rostered) or p.get("play_text")
+                ]
+                pbp_by_game[gid] = plays
+            except Exception:
+                logger.debug("[redzone] alt pbp failed game=%s", gid, exc_info=True)
+                pbp_by_game.setdefault(gid, [])
 
     # Projected points per matchup, scored with the league's settings so the
     # remaining projection matches the live point math it is added to.
@@ -12076,6 +12324,8 @@ def _redzone_collect(platform, league_id, season, week):
                 proj_total += float(proj_pts.get(str(pid), 0))
         matchups_out.append({**m, "projected_pts": round(proj_total, 2)})
 
+    games = _rz_build_games_snapshot(player_info, pbp_by_game)
+
     return {
         "matchups": matchups_out,
         "rosters": [
@@ -12090,6 +12340,8 @@ def _redzone_collect(platform, league_id, season, week):
         ],
         "player_info": player_info,
         "scoring": scoring,
+        "pbp_by_game": pbp_by_game,
+        "games": games,
     }
 
 
@@ -12361,6 +12613,10 @@ def _redzone_user_league_slice(li, lg, season, week, account_id, viewer_uid,
         "pid_league": slice_pid_league,
         "viewer_roster_id": ns + vrid,
         "leagues": [{"league_id": lid, "name": lname, "platform": lg_plat}],
+        "pbp_by_game": d.get("pbp_by_game") or {},
+        "games": d.get("games") or _rz_build_games_snapshot(
+            d.get("player_info") or {}, d.get("pbp_by_game") or {},
+        ),
     }
 
 
@@ -12378,6 +12634,8 @@ def _redzone_fetch_user(platform, league_id, season, week):
     scoring: dict = {}
     scoring_by_league: dict = {}  # league_id -> that league's scoring settings
     pid_league: dict = {}  # pid -> league_id (so each player scores by its league)
+    pbp_by_game: dict = {}
+    games: dict = {}
     viewer_rids = []
     seen_users = set()
 
@@ -12396,6 +12654,11 @@ def _redzone_fetch_user(platform, league_id, season, week):
                 seen_users.add(uid)
                 users.append(u)
         player_info.update(s["player_info"])
+        for _gid, _plays in (s.get("pbp_by_game") or {}).items():
+            pbp_by_game.setdefault(_gid, []).extend(_plays or [])
+        for _gid, _g in (s.get("games") or {}).items():
+            if _gid and _gid not in games:
+                games[_gid] = _g
         if not scoring:
             scoring = s["scoring"] or {}
         scoring_by_league.update(s["scoring_by_league"])
@@ -12403,6 +12666,9 @@ def _redzone_fetch_user(platform, league_id, season, week):
         if s.get("viewer_roster_id"):
             viewer_rids.append(s["viewer_roster_id"])
         leagues.extend(s["leagues"])
+
+    if not games:
+        games = _rz_build_games_snapshot(player_info, pbp_by_game)
 
     return {
         "week": week, "season": season, "platform": platform, "league_id": league_id,
@@ -12415,6 +12681,8 @@ def _redzone_fetch_user(platform, league_id, season, week):
         "scoring": scoring,
         "scoring_by_league": scoring_by_league,
         "pid_league": pid_league,
+        "pbp_by_game": pbp_by_game,
+        "games": games,
         "viewer_roster_id": viewer_rids[0] if viewer_rids else "",
         "viewer_roster_ids": viewer_rids,
         "updated_at": time.time(),
@@ -15041,12 +15309,30 @@ def page_schedule(platform: str, season: int, league_id: str):
 
 def _face_html(p: dict, tone: str) -> str:
     """Player headshot backed by a tone-tinted initial badge. The initial shows
-    through when the headshot is missing/404s (onerror removes the img)."""
+    through when the headshot is missing/404s (onerror removes the img).
+    DEF/DST use the NFL team logo (local → ESPN) instead of a Sleeper headshot —
+    defense ids are team abbreviations and have no player photo."""
     name = str(p.get("name") or "?").strip()
     initial = html.escape(name[0].upper() if name else "?")
     pid = str(p.get("pid") or p.get("player_id") or "").strip()
+    pos = str(p.get("pos") or p.get("position") or "").upper()
+    if pos in ("DST", "D/ST"):
+        pos = "DEF"
     img = ""
-    if pid:
+    if pos == "DEF":
+        from utils.utils import canon_team, def_team_logo_urls
+        team = canon_team(p.get("nfl") or p.get("team") or pid) or ""
+        local, espn = def_team_logo_urls(team) if team else ("", "")
+        if local or espn:
+            src = html.escape(local or espn)
+            fb = html.escape(espn or "")
+            onerr = (
+                f"if(!this.dataset.fb&&'{fb}'){{this.dataset.fb=1;this.src='{fb}';}}"
+                f"else this.remove()"
+            )
+            img = (f'<img class="rc-face" src="{src}" alt="" loading="lazy" '
+                   f'decoding="async" onerror="{onerr}">')
+    elif pid:
         url = f"https://sleepercdn.com/content/nfl/players/thumb/{pid}.jpg"
         img = (f'<img class="rc-face" src="{url}" alt="" loading="lazy" '
                f'decoding="async" onerror="this.remove()">')
@@ -18290,14 +18576,28 @@ def _build_league_players_payload_uncached(kdef: bool = False) -> dict:
                     _kdef.append(_row)
             # Team defenses: not in players_index at all. Generate one entry per NFL
             # team. Sleeper identifies DST players by the team abbreviation as the ID.
+            # Attach the ESPN team logo so nav search / compare / modal can render a
+            # crest instead of a missing Sleeper headshot.
+            try:
+                from utils.utils import load_teams_index as _lti_def, def_team_logo_urls as _def_logos
+                _ti_def = _lti_def() or {}
+            except Exception:
+                _ti_def = {}
+                _def_logos = None
             for _team in _nfl_teams:
                 if _team not in _seen:
+                    _logo = ""
+                    if _def_logos:
+                        _logo = (_def_logos(_team)[1] or "")
+                    elif isinstance(_ti_def.get(_team), dict):
+                        _logo = str((_ti_def.get(_team) or {}).get("Logo") or "")
                     _kdef.append({
                         "id": _team,
                         "name": _team + " D/ST",
                         "position": "DEF",
                         "team": _team,
                         "value": 0, "sf_value": 0,
+                        "espnHeadshot": _logo,
                     })
             # Attach real Sleeper ADP so K/DEF sort by when managers actually draft
             # them (elite D/STs go rounds ~11-14) instead of alphabetically. Sleeper
@@ -19751,8 +20051,26 @@ def api_player_details(player_id: str):
             players_index_full = load_players_index() or {}
             player_meta = players_index_full.get(player_id, {})
 
+        # DEF/DST: Sleeper ids are team abbreviations (SF, WAS, …) and are not
+        # in players_index. Synthesize a minimal meta so the modal can show the
+        # team logo instead of 404ing.
         if not player_meta:
-            return jsonify({"error": "Player not found"}), 404
+            # Do not import canon_team here — a conditional import would make
+            # it local for the whole handler and UnboundLocalError when this
+            # DEF branch is skipped (found players).
+            from utils.utils import def_team_logo_urls
+            _def_team = canon_team(player_id) or str(player_id or "").strip().upper()
+            _ti = load_teams_index() or {}
+            if _def_team and _def_team in _ti:
+                _local, _espn = def_team_logo_urls(_def_team)
+                player_meta = {
+                    "name": f"{_def_team} D/ST",
+                    "pos": "DEF",
+                    "team": _def_team,
+                    "espnHeadshot": _espn or _local,
+                }
+            else:
+                return jsonify({"error": "Player not found"}), 404
 
         player_team = canon_team(player_meta.get("team", "")) or player_meta.get("team", "")
 
@@ -21347,6 +21665,7 @@ def api_player_team(player_id: str):
     try:
         from utils.utils import load_relevant_index, load_teams_index, load_usage_table
         from utils.nfl_teams import get_team_full_name
+        from utils.player_team_schedule import build_team_schedule, resolve_team_for_season
 
         season = int(request.args.get("season", datetime.now().year))
         skill_positions = {"QB", "RB", "WR", "TE"}
@@ -21365,7 +21684,10 @@ def api_player_team(player_id: str):
 
         usage_index = load_relevant_index() or players_index
 
-        team = _canon_team_abbr(player_meta.get("team") or "")
+        current_team = _canon_team_abbr(player_meta.get("team") or "")
+        # Prefer the franchise the player actually played for in the viewed
+        # season (mid-season trades / historical context), not only the live roster.
+        team = resolve_team_for_season(str(player_id), season, current_team) or current_team
         position = str(player_meta.get("pos") or player_meta.get("position") or "").upper()
         player_name = player_meta.get("name") or ""
 
@@ -21423,6 +21745,21 @@ def api_player_team(player_id: str):
             teams_index, pfr_snaps,
         )
 
+        schedule = []
+        try:
+            schedule = build_team_schedule(
+                team,
+                int(stats_season if data_mode == "actual" else season),
+                bye_week=int(bye_week) if bye_week not in (None, "") else None,
+                teams_index=teams_index,
+                include_postseason=(data_mode == "actual"),
+                # Scoreboard enrichment is best-effort; empty without Tank01.
+                enrich_scores=True,
+            )
+        except Exception:
+            logger.debug("team schedule build failed for %s %s", team, season, exc_info=True)
+            schedule = []
+
         _payload = {
             "available": True,
             "team": team,
@@ -21440,11 +21777,54 @@ def api_player_team(player_id: str):
             "ranks_more": ranks_more,
             "depth_chart": depth_chart,
             "oline": _oline_for_player(int(stats_season), team, position),
+            "schedule": schedule,
         }
         _TEAM_PAYLOAD_CACHE[_payload_key] = (time.time(), _payload)
         return jsonify(_payload)
     except Exception as e:
         logger.exception("[api_player_team] error")
+        return _api_err("Request failed", e)
+
+
+@app.route("/api/player-team-boxscore")
+def api_player_team_boxscore():
+    """Lazy Tank01 box score for a Team-tab schedule accordion expansion."""
+    try:
+        from utils.utils import load_relevant_index, load_teams_index
+        from utils.player_team_schedule import get_shaped_boxscore
+
+        game_id = str(request.args.get("game_id") or "").strip()
+        view_team = _canon_team_abbr(request.args.get("team") or "")
+        focus_pid = str(request.args.get("focus_pid") or request.args.get("player_id") or "").strip()
+        season_type = str(request.args.get("season_type") or "reg").strip().lower()
+        if season_type not in ("reg", "post"):
+            season_type = "reg"
+        if not game_id:
+            return jsonify({"available": False, "error": "Missing game_id"}), 400
+
+        players_index = get_players_index_global() or load_relevant_index() or {}
+        teams_index = _canonical_teams_index(load_teams_index() or {})
+
+        # Reuse the short-lived redzone boxscore cache so live polls share work.
+        def _fetch(gid: str):
+            try:
+                return _redzone_boxscore(gid) or {}
+            except Exception:
+                from dashboard_services.api import fetch_tank_boxscore
+                return fetch_tank_boxscore(gid) or {}
+
+        payload = get_shaped_boxscore(
+            game_id,
+            view_team=view_team,
+            focus_pid=focus_pid,
+            players_index=players_index,
+            teams_index=teams_index,
+            season_type=season_type,
+            fetch_box=_fetch,
+        )
+        return jsonify(payload)
+    except Exception as e:
+        logger.exception("[api_player_team_boxscore] error")
         return _api_err("Request failed", e)
 
 
@@ -27852,15 +28232,35 @@ def build_portfolio_body(
         ) if strength_chips else ""
 
         # Live matchup slot: hydrated client-side (see pfLiveScores below) only
-        # in-season during game weeks; otherwise it stays hidden and the card
-        # falls back to the record/standing row. Kept out of the offseason cards.
+        # in-season during game weeks. Starts as a content-shaped skeleton so the
+        # band doesn't pop in empty; hides after fetch when scores aren't live.
+        # Kept out of the offseason cards.
         _lg_season_live = lg.get("season") or season
+        live_skel = (
+            "<div class='pf-live-skel' aria-hidden='true'>"
+            "<div class='skeleton pf-live-skel-status'></div>"
+            "<div class='pf-live-grid'>"
+            "<div class='pf-live-side'>"
+            "<div class='skeleton pf-live-skel-lbl'></div>"
+            "<div class='skeleton pf-live-skel-score'></div>"
+            "<div class='skeleton pf-live-skel-proj'></div>"
+            "</div>"
+            "<div class='pf-live-side opp'>"
+            "<div class='skeleton pf-live-skel-lbl'></div>"
+            "<div class='skeleton pf-live-skel-score'></div>"
+            "<div class='skeleton pf-live-skel-proj'></div>"
+            "</div>"
+            "</div>"
+            "<div class='skeleton pf-live-skel-wp'></div>"
+            "</div>"
+        )
         live_slot = (
             "" if lg.get("offseason") else
-            f"<div class='pf-lg-live' data-lg-live hidden "
+            f"<div class='pf-lg-live' data-lg-live aria-busy='true' "
             f"data-platform='{html.escape(str(plat), quote=True)}' "
             f"data-league-id='{html.escape(str(lid), quote=True)}' "
-            f"data-season='{html.escape(str(_lg_season_live), quote=True)}'></div>"
+            f"data-season='{html.escape(str(_lg_season_live), quote=True)}'>"
+            f"{live_skel}</div>"
         )
 
         league_rows += (
@@ -27984,15 +28384,25 @@ def build_portfolio_body(
         ".pf-lg-pager-lbl{font-size:12.5px;color:var(--text-muted);font-weight:600;min-width:96px;text-align:center;}"
         # Live matchup band: your total vs opponent as a head-to-head, each side's
         # projected final, and a win-probability bar (your share green, the
-        # opponent's the remainder). Hydrated client-side (pfLiveScores); hidden
-        # until it has data. A neutral inset — not another bordered card — so it
-        # doesn't echo the Record/Standing/Streak row beneath it.
+        # opponent's the remainder). Hydrated client-side (pfLiveScores); starts
+        # as a skeleton, then swaps to scores or hides when not live. A neutral
+        # inset — not another bordered card — so it doesn't echo the
+        # Record/Standing/Streak row beneath it.
         ".pf-lg-live{border-radius:8px;padding:7px 9px 8px;"
         "background:color-mix(in srgb,var(--text-subtle) 9%,transparent);"
         "display:flex;flex-direction:column;gap:6px;}"
         # The class sets display:flex, which would otherwise beat the UA
-        # [hidden]{display:none}; keep the empty slot truly hidden until hydrated.
+        # [hidden]{display:none}; hide after fetch when scores aren't live.
         ".pf-lg-live[hidden]{display:none;}"
+        # Content-shaped skeleton (status + two scores + WP track) using the
+        # shared .skeleton shimmer so the band reserves space while loading.
+        ".pf-live-skel{display:flex;flex-direction:column;gap:6px;}"
+        ".pf-live-skel-status{height:8px;width:72px;border-radius:4px;}"
+        ".pf-live-skel-lbl{height:8px;width:48px;border-radius:4px;}"
+        ".pf-live-side.opp .pf-live-skel-lbl{width:56px;}"
+        ".pf-live-skel-score{height:20px;width:52px;border-radius:4px;margin-top:2px;}"
+        ".pf-live-skel-proj{height:7px;width:40px;border-radius:4px;}"
+        ".pf-live-skel-wp{height:6px;width:100%;border-radius:999px;margin-top:2px;}"
         ".pf-live-status{font-size:9px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;"
         "color:var(--text-subtle);display:flex;align-items:center;gap:5px;}"
         ".pf-live-dot{width:6px;height:6px;border-radius:50%;background:var(--text-subtle);flex:0 0 auto;}"
@@ -28116,7 +28526,7 @@ def build_portfolio_body(
         "+'<div class=\"pf-live-wp-lbls\"><span class=\"pf-live-wp-you\">'+y+'% to win</span>'"
         "+'<span class=\"pf-live-wp-opp\">'+o+'%</span></div></div>';}"
         "function render(slot,d){"
-        "if(!d||!d.live||!d.you){slot.hidden=true;slot.innerHTML='';return;}"
+        "if(!d||!d.live||!d.you){slot.hidden=true;slot.innerHTML='';slot.removeAttribute('aria-busy');return;}"
         "var st=d.status||'pre';"
         "var txt=st==='in'?('Live \\u00b7 Wk '+d.week):(st==='final'?('Final \\u00b7 Wk '+d.week):('Wk '+d.week));"
         "var you=d.you,opp=d.opp;"
@@ -28126,6 +28536,7 @@ def build_portfolio_body(
         "+'<div class=\"pf-live-grid\">'+side(you,'You',false,yWin)"
         "+side(opp,opp?(opp.name||'Opp'):'Bye',true,oWin)+'</div>'"
         "+wpBar(d);"
+        "slot.removeAttribute('aria-busy');"
         "slot.hidden=false;}"
         "function load(slot){"
         "var p=slot.getAttribute('data-platform'),l=slot.getAttribute('data-league-id'),s=slot.getAttribute('data-season');"

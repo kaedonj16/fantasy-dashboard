@@ -20,11 +20,14 @@
   var _isDemo   = !!_state.is_demo;
   var _demoT    = parseFloat(_state.demo_t || 150);
   var _scope    = _state.scope || 'league';
-  var _filters  = { team: 'all', nfl: 'all', pos: 'all', stat: 'all' };
+  var _filters  = { nfl: 'all', pos: 'all', stat: 'all' };
   var _filterOpen  = false;
   var _myTeamOnly  = false;
+  var _bigPlaysOnly = false; // TD or >=4 fantasy pts
   var _heroMid    = null;
   var _heroTouched = false; // true once the viewer explicitly picks/clears the hero matchup
+  var _seenPlayIds = new Set(); // Tank01 / demo play ids already in the feed
+  var _pbpGames = {}; // game_id → true once we have real PBP for that game
   var _slideDir   = 'none';
   var _feedPage   = 0;
   var _prevMatchupPts = {};
@@ -53,6 +56,36 @@
   var _scopeCache = { league: null, user: null };
   if (_state && Object.keys(_state).length) {
     _scopeCache[_state.scope || 'league'] = _state;
+  }
+
+  function _prefsKey(kind) {
+    var plat = _state.platform || 'x';
+    var lid = _state.league_id || 'x';
+    return 'rz-' + kind + ':' + plat + ':' + lid + ':' + _scope;
+  }
+  function _loadPrefs() {
+    if (_isDemo) return;
+    try {
+      var h = localStorage.getItem(_prefsKey('hero-mid'));
+      if (h !== null && h !== '') { _heroMid = h; _heroTouched = true; }
+      var mt = localStorage.getItem(_prefsKey('my-team'));
+      if (mt === '1') _myTeamOnly = true;
+      if (mt === '0') _myTeamOnly = false;
+      var bp = localStorage.getItem(_prefsKey('big-only'));
+      if (bp === '1') _bigPlaysOnly = true;
+      if (bp === '0') _bigPlaysOnly = false;
+    } catch (_) {}
+  }
+  function _savePrefs() {
+    if (_isDemo) return;
+    try {
+      if (_heroTouched) {
+        if (_heroMid) localStorage.setItem(_prefsKey('hero-mid'), String(_heroMid));
+        else localStorage.removeItem(_prefsKey('hero-mid'));
+      }
+      localStorage.setItem(_prefsKey('my-team'), _myTeamOnly ? '1' : '0');
+      localStorage.setItem(_prefsKey('big-only'), _bigPlaysOnly ? '1' : '0');
+    } catch (_) {}
   }
 
   document.addEventListener('click', function() { _hadInteraction = true; }, { once: true });
@@ -267,10 +300,54 @@
   function _lineToPts(L, s) {
     if (!L) return 0;
     s = s || _state.scoring || {};
-    return _n(L.pass_yds) * _n(s.pass_yd) + _n(L.pass_td) * _n(s.pass_td) + _n(L.int) * _n(s.pass_int)
+    var pts = _n(L.pass_yds) * _n(s.pass_yd) + _n(L.pass_td) * _n(s.pass_td) + _n(L.int) * _n(s.pass_int)
       + _n(L.rush_yds) * _n(s.rush_yd) + _n(L.rush_td) * _n(s.rush_td)
       + _n(L.rec) * _n(s.rec) + _n(L.rec_yds) * _n(s.rec_yd) + _n(L.rec_td) * _n(s.rec_td);
+    // Kicker + defense (Sleeper-style keys with common aliases)
+    pts += _n(L.fgm) * _n(s.fgm || s.fg) + _n(L.xpm) * _n(s.xpm || s.xp);
+    var sacks = _n(L.sacks != null ? L.sacks : L.sack);
+    pts += sacks * _n(s.sack) + _n(L.def_int) * _n(s.int || s.def_int)
+      + _n(L.fum_rec) * _n(s.fum_rec) + _n(L.def_td) * _n(s.def_td || s.td);
+    return pts;
   }
+
+  function _scoringForPid(pid, matchup) {
+    var sbl = _state.scoring_by_league || {};
+    var lid = (matchup && (matchup.league_id || matchup.leagueId)) || (_state.pid_league || {})[pid];
+    if (lid && sbl[lid]) return sbl[lid];
+    return _state.scoring || {};
+  }
+  // Platform players_points can lag behind Tank01 boxscores (Yahoo often sends
+  // {}). Prefer max(platform, boxscore) while the NFL game is live/final so
+  // My Teams doesn't show 0.0 for active players.
+  function _playerPts(pid, matchup) {
+    var pp = (matchup && matchup.players_points) || {};
+    var platformN = (pp[pid] != null && pp[pid] !== '') ? parseFloat(pp[pid]) : NaN;
+    var live = _lineToPts(_statLine(pid), _scoringForPid(pid, matchup));
+    var gs = _gameStatus(pid);
+    if (gs.type === 'live' || gs.type === 'final') {
+      if (isNaN(platformN)) return live;
+      return Math.max(platformN, live);
+    }
+    if (!isNaN(platformN)) return platformN;
+    return live || 0;
+  }
+  function _totalPtsForPid(pid, scoring, newData) {
+    var infoSrc = (newData && newData.player_info) || _state.player_info || {};
+    var fromLine = _lineToPts((infoSrc[pid] || {}).stat_line || null, scoring || _scoringForPid(pid));
+    var fromPlatform = NaN;
+    var matchups = (newData && newData.matchups) || _state.matchups || [];
+    for (var i = 0; i < matchups.length; i++) {
+      var pp = matchups[i].players_points || {};
+      if (pp[pid] != null && pp[pid] !== '') {
+        var n = parseFloat(pp[pid]);
+        if (!isNaN(n)) fromPlatform = isNaN(fromPlatform) ? n : Math.max(fromPlatform, n);
+      }
+    }
+    if (isNaN(fromPlatform)) return fromLine;
+    return Math.max(fromPlatform, fromLine);
+  }
+
   function _calcBreakdown(pos, bd, scoring) {
     var rows = [], total = 0;
     function row(label, val, key) {
@@ -320,6 +397,8 @@
     _prevMatchupPts = {};
     _scoreDelta = { me: 0, opp: 0 };
     _flashRids = new Set();
+    _seenPlayIds = new Set();
+    _pbpGames = {};
   }
 
   // Same cold-boot order as page load: suppress milestone/injury/lead noise,
@@ -402,6 +481,41 @@
     return { my: myRosters, opp: oppRosters, pidToRoster: pidToRoster };
   }
 
+
+  function _isBigPlay(ev) {
+    return ev.kind === 'td' || (ev.pts || 0) >= 4;
+  }
+  // Soft rank for display: mine → opp → rest, then TDs, then pts, then recency.
+  // Does not hide anyone — My Team / hero remain optional hard filters.
+  function _softRank(list) {
+    return list.slice().sort(function(a, b) {
+      var ar = a.mine ? 0 : (a.opp ? 1 : 2);
+      var br = b.mine ? 0 : (b.opp ? 1 : 2);
+      if (ar !== br) return ar - br;
+      var atd = a.kind === 'td' ? 0 : 1;
+      var btd = b.kind === 'td' ? 0 : 1;
+      if (atd !== btd) return atd - btd;
+      var ap = a.pts || 0, bp = b.pts || 0;
+      if (ap !== bp) return bp - ap;
+      return (b.ts || 0) - (a.ts || 0);
+    });
+  }
+  function _downDist(ev) {
+    var d = ev.down, dist = ev.distance;
+    if (!d && !dist) return '';
+    var ord = ({'1':'1st','2':'2nd','3':'3rd','4':'4th'})[String(d)] || (d ? (d + 'th') : '');
+    if (ord && dist) return ord + ' & ' + dist;
+    if (ord) return ord + ' down';
+    return dist ? ('& ' + dist) : '';
+  }
+  function _impactLine(ev) {
+    var bits = [];
+    if (ev.pts) bits.push((ev.pts > 0 ? '+' : '') + _fmt(ev.pts) + ' pts');
+    if (ev.mine && ev.kind === 'td') bits.push('your roster');
+    else if (ev.opp && ev.kind === 'td') bits.push('vs your matchup');
+    else if (ev.mine) bits.push('your starter');
+    return bits.join(' · ');
+  }
   function _describe(d, pos) {
     // Prefer play-by-play wording over bulk box-score shorthand
     // (e.g. "Throws a 66-yard touchdown pass" vs "66 yd TD pass").
@@ -525,7 +639,12 @@
       var info = _describe(d, pos);
       if (!info) return null;
       var earned = parseFloat((_lineToPts(newLine, scoring) - _lineToPts(oldLine, scoring)).toFixed(2));
-      return Object.assign({}, base, { desc: info.desc, kind: info.kind, stats: info.stats, pts: earned, ts: Date.now() + Math.random() });
+      // Cumulative total after this play (boxscore + platform, whichever is higher).
+      var totalPts = parseFloat(_totalPtsForPid(pid, scoring).toFixed(2));
+      return Object.assign({}, base, {
+        desc: info.desc, kind: info.kind, stats: info.stats, pts: earned,
+        totalPts: totalPts, ts: Date.now() + Math.random()
+      });
     }
 
     // DEF
@@ -600,6 +719,82 @@
     return results;
   }
 
+
+  function _pidFromPlayName(play, newData) {
+    var pid = play.pid || '';
+    if (pid && pid !== '0') return pid;
+    var want = String(play.name || '').toLowerCase().trim();
+    if (!want) return '';
+    var info = (newData && newData.player_info) || _state.player_info || {};
+    var keys = Object.keys(info);
+    for (var i = 0; i < keys.length; i++) {
+      var row = info[keys[i]] || {};
+      var nm = String(row.name || '').toLowerCase().trim();
+      if (nm && nm === want) return keys[i];
+      // DEF rows sometimes arrive as "KC DEF"
+      if (row.pos === 'DEF' && row.team) {
+        var defLabel = String(row.team).toLowerCase() + ' def';
+        if (want === defLabel || want === String(row.team).toLowerCase()) return keys[i];
+      }
+    }
+    return '';
+  }
+
+  function _eventsFromPbp(newData, tags, scFor) {
+    var byGame = newData.pbp_by_game || {};
+    var events = [];
+    Object.keys(byGame).forEach(function(gid) {
+      // Key presence = server attempted PBP for this game (may be an empty
+      // list). Quiet / empty payloads must still suppress bulk "Scored X pts".
+      _pbpGames[gid] = true;
+      (byGame[gid] || []).forEach(function(play) {
+        var pid = _pidFromPlayName(play, newData);
+        if (!pid || pid === '0') return;
+        var playKey = String(play.play_id || (gid + ':' + play.seq + ':' + pid));
+        if (_seenPlayIds.has(playKey)) return;
+        _seenPlayIds.add(playKey);
+        var rid = tags.pidToRoster[pid] || '';
+        if (!rid) return; // not on any roster in this payload
+        var line = play.stat_line || {};
+        var scoring = scFor(pid);
+        var pts = parseFloat(_lineToPts(line, scoring).toFixed(2));
+        var pos = _pos(pid);
+        var desc = play.play_text || '';
+        if (!desc) {
+          var info = _describe(line, pos);
+          if (!info) return;
+          desc = info.desc;
+        }
+        var kind = play.is_td ? 'td' : (line.int > 0 ? 'neg'
+                 : ((line.rec || line.carries || line.pass_yds || line.fgm || line.sacks || line.sack
+                     || line.def_td || line.def_int || line.fum_rec) ? 'gain' : 'target'));
+        var stats = [];
+        if (line.rec) stats.push('reception');
+        if (line.carries) stats.push('carry');
+        if (line.pass_yds || line.pass_td) stats.push('pass');
+        if (play.is_td || line.pass_td || line.rush_td || line.rec_td || line.def_td) stats.push('td');
+        if (line.int || line.def_int) stats.push('int');
+        if (line.targets && !line.rec) stats.push('target');
+        if (line.fgm || line.xpm) stats.push('kick');
+        if (line.sacks || line.sack) stats.push('sack');
+        events.push({
+          pid: pid, name: _name(pid), pos: pos, nflTeam: _team(pid),
+          rosterId: rid, owner: _ownerName(rid), league: _leagueOfRid(rid),
+          mine: tags.my.has(rid), opp: tags.opp.has(rid),
+          line: _gameLine(pid), ts: Date.now() + (play.seq || 0) * 0.001,
+          gameQuarter: play.quarter || ((_state.player_info || {})[pid] || {}).game_quarter || '',
+          gameClock: play.clock || ((_state.player_info || {})[pid] || {}).game_clock || '',
+          down: play.down || '', distance: play.distance || '', yardLine: play.yard_line || '',
+          desc: desc, kind: kind, stats: stats, pts: pts,
+          totalPts: parseFloat(_totalPtsForPid(pid, scoring, newData).toFixed(2)),
+          playId: playKey, fromPbp: true,
+          impact: ''
+        });
+      });
+    });
+    return events;
+  }
+
   function _detectChanges(newData) {
     var tags = _rosterTags(newData);
     // Resolve scoring per player by league (user scope spans multiple leagues);
@@ -621,9 +816,30 @@
       return newData.scoring || {};
     };
     var allEvents = [], handled = {};
+    // Real play-by-play first (Tank01 / demo). Mark those games so we don't
+    // also invent bulk-diff blurbs for the same snaps.
+    var pbpEvents = _eventsFromPbp(newData, tags, _scFor);
+    // Cold boot can dump an entire game of PBP — keep the most recent slice.
+    if (!_feed.length && pbpEvents.length > 40) {
+      pbpEvents = pbpEvents.slice(-40);
+    }
+    pbpEvents.forEach(function(ev) {
+      allEvents.push(ev);
+      handled[ev.pid] = true;
+    });
     Object.keys(newData.player_info || {}).forEach(function(pid) {
-      var newL = newData.player_info[pid].stat_line;
+      var pi = newData.player_info[pid] || {};
+      var newL = pi.stat_line;
       if (!newL) return;
+      if (handled[pid]) return;
+      var code = String(pi.game_code || '');
+      var gid = pi.game_id || '';
+      // Live/final: real Tank01 play-by-play lines only — never invent
+      // boxscore-diff narratives or bulk "Scored X pts" cards.
+      if (code === '1' || code === '2' || (gid && _pbpGames[gid])) {
+        handled[pid] = true;
+        return;
+      }
       handled[pid] = true;
       var evs = _playsFromDiff(pid, _prevStats[pid] || {}, newL, tags, _scFor(pid));
       evs.forEach(function(ev) { allEvents.push(ev); });
@@ -632,21 +848,32 @@
       var pp = m.players_points || {};
       Object.keys(pp).forEach(function(pid) {
         if (handled[pid] || pid === '0') return;
+        var info = newData.player_info[pid] || {};
+        var gid = info.game_id || '';
+        var code = String(info.game_code || '');
+        // Live/final or any game with a PBP attempt: no bulk point dumps.
+        if (code === '1' || code === '2' || (gid && _pbpGames[gid])) {
+          handled[pid] = true;
+          return;
+        }
         var delta = parseFloat((parseFloat(pp[pid] || 0) - parseFloat(_prevPts[pid] || 0)).toFixed(2));
         if (delta <= 0.05) return;
         var rid = tags.pidToRoster[pid] || String(m.roster_id);
-        var info = newData.player_info[pid] || {};
         allEvents.push({
           pid: pid, name: info.name || pid, pos: info.pos || '', nflTeam: info.team || '',
           rosterId: rid, owner: _ownerName(rid), league: _leagueOfRid(rid),
           desc: 'Scored ' + delta.toFixed(1) + ' pts', kind: 'gain', stats: ['pts'], pts: delta,
+          totalPts: parseFloat(_totalPtsForPid(pid, _scFor(pid), newData).toFixed(2)),
           mine: tags.my.has(rid), opp: tags.opp.has(rid), line: '', ts: Date.now()
         });
       });
     });
-    // TDs first, then chronological
-    allEvents.sort(function(a, b) { return (b.kind === 'td') - (a.kind === 'td'); });
-    allEvents.forEach(function(ev) { _feed.unshift(ev); });
+    // Soft rank within this batch (mine → opp → rest), then prepend.
+    allEvents = _softRank(allEvents);
+    // Prepend in reverse so the soft-ranked order survives unshift.
+    for (var i = allEvents.length - 1; i >= 0; i--) _feed.unshift(allEvents[i]);
+    // Keep feed soft-ranked overall for first-page painting.
+    _feed = _softRank(_feed);
     if (_feed.length > 200) _feed = _feed.slice(0, 200);
 
     // Push notification + audio chime for my TDs + log to history
@@ -842,50 +1069,96 @@
   }
 
   // ── Filters ────────────────────────────────────────────────────────────────────
-  function _teamOptions() {
-    if (_scope === 'user') {
-      return (_state.leagues || []).map(function(l) { return l.name; }).filter(Boolean);
-    }
-    var seen = {};
-    (_state.rosters || []).forEach(function(r) {
-      var nm = _ownerName(r.roster_id);
-      if (nm) seen[nm] = 1;
+  function _nflMatchupOptions() {
+    // Unique NFL games from player_info (away @ home), keyed by game_id.
+    var byId = {};
+    Object.keys(_state.player_info || {}).forEach(function(pid) {
+      var p = _state.player_info[pid] || {};
+      var gid = p.game_id || '';
+      var away = p.away || '', home = p.home || '';
+      if (!gid || !away || !home) return;
+      if (!byId[gid]) {
+        byId[gid] = {
+          id: gid,
+          label: away + ' @ ' + home,
+          away: away,
+          home: home,
+          code: String(p.game_code || '0')
+        };
+      }
     });
-    return Object.keys(seen);
+    // Prefer live → upcoming → final so the chip bar stays useful on game day.
+    var rank = function(c) { return c === '1' ? 0 : c === '0' ? 1 : 2; };
+    return Object.keys(byId).map(function(k) { return byId[k]; }).sort(function(a, b) {
+      var rd = rank(a.code) - rank(b.code);
+      if (rd) return rd;
+      return a.label.localeCompare(b.label);
+    });
   }
-  function _nflOptions() {
-    var seen = {};
-    (_state.matchups || []).forEach(function(m) {
-      (m.players || []).forEach(function(pid) {
-        var t = _team(pid);
-        if (t) seen[t] = 1;
-      });
+  function _nflGameInfo(gid) {
+    if (!gid || gid === 'all') return null;
+    var games = _state.games || {};
+    if (games[gid]) return games[gid];
+    // Fallback: rebuild a thin row from player_info + last PBP situation.
+    var info = _state.player_info || {};
+    var row = null;
+    Object.keys(info).some(function(pid) {
+      var p = info[pid];
+      if ((p.game_id || '') !== gid) return false;
+      row = {
+        game_id: gid,
+        away: p.away || '', home: p.home || '',
+        away_pts: p.away_pts || '', home_pts: p.home_pts || '',
+        game_status: p.game_status || '', game_code: String(p.game_code || ''),
+        game_clock: p.game_clock || '', game_quarter: p.game_quarter || '',
+        game_time_epoch: p.game_time_epoch || 0,
+        possession: '', down: '', distance: '', yard_line: ''
+      };
+      return true;
     });
-    return Object.keys(seen).sort();
+    if (!row) return null;
+    var plays = (_state.pbp_by_game || {})[gid] || [];
+    var best = null;
+    for (var i = plays.length - 1; i >= 0; i--) {
+      var pl = plays[i] || {};
+      if (pl.team && (pl.down || pl.distance || pl.yard_line)) { best = pl; break; }
+    }
+    if (!best) {
+      for (var j = plays.length - 1; j >= 0; j--) {
+        if ((plays[j] || {}).team) { best = plays[j]; break; }
+      }
+    }
+    if (best) {
+      row.possession = best.team || '';
+      row.down = best.down || '';
+      row.distance = best.distance || '';
+      row.yard_line = best.yard_line || '';
+      if (!row.game_clock && best.clock) row.game_clock = best.clock;
+      if (!row.game_quarter && best.quarter) row.game_quarter = best.quarter;
+    }
+    return row;
   }
   var _POS_LIST  = ['QB', 'RB', 'WR', 'TE', 'K', 'DEF'];
   var _STAT_LIST = [['td','TD'], ['reception','Reception'], ['carry','Carry'],
                     ['pass','Pass'], ['target','Target'], ['int','INT'], ['milestone','Milestone'], ['lead_change','Lead']];
 
-  function _passTeam(ev) {
-    if (_filters.team === 'all') return true;
-    return (_scope === 'user' ? ev.league : ev.owner) === _filters.team;
-  }
   function _eventMatches(ev) {
     if (_myTeamOnly && !ev.mine) return false;
-    if (!_passTeam(ev)) return false;
-    if (_filters.nfl !== 'all' && ev.nflTeam !== _filters.nfl) return false;
+    if (_bigPlaysOnly && !_isBigPlay(ev)) return false;
+    if (_filters.nfl !== 'all') {
+      var gid = ((_state.player_info || {})[ev.pid] || {}).game_id || '';
+      if (gid !== _filters.nfl) return false;
+    }
     if (_filters.pos !== 'all' && ev.pos !== _filters.pos) return false;
     if (_filters.stat !== 'all' && (ev.stats || []).indexOf(_filters.stat) < 0) return false;
     if (_heroMid) { var hp = _heroMatchupPids(); if (hp && !hp.has(ev.pid)) return false; }
     return true;
   }
   function _topMatches(pid, rid) {
-    if (_filters.team !== 'all') {
-      var key = _scope === 'user' ? _leagueOfRid(rid) : _ownerName(rid);
-      if (key !== _filters.team) return false;
+    if (_filters.nfl !== 'all') {
+      var gid = ((_state.player_info || {})[pid] || {}).game_id || '';
+      if (gid !== _filters.nfl) return false;
     }
-    if (_filters.nfl !== 'all' && _team(pid) !== _filters.nfl) return false;
     if (_filters.pos !== 'all' && _pos(pid) !== _filters.pos) return false;
     if (_heroMid) { var hp2 = _heroMatchupPids(); if (hp2 && !hp2.has(pid)) return false; }
     return true;
@@ -907,13 +1180,97 @@
     return (m && m.league_name) || 'Selected League';
   }
 
+  function _nflFilterLabel(gid) {
+    var opts = _nflMatchupOptions();
+    for (var i = 0; i < opts.length; i++) {
+      if (opts[i].id === gid) return opts[i].label;
+    }
+    var g = _nflGameInfo(gid);
+    if (g && g.away && g.home) return g.away + ' @ ' + g.home;
+    return gid;
+  }
+
+  function _teamLogoSrc(abv) {
+    if (!abv) return '';
+    if (window.brTeamLogoLocal) return window.brTeamLogoLocal(abv);
+    var t = String(abv).toUpperCase();
+    if (t === 'WSH') t = 'WAS';
+    return '/static/images/team_logos/' + t + '.png';
+  }
+  function _nflBoardSitLine(g) {
+    if (!g) return '';
+    var dd = _downDist({ down: g.down, distance: g.distance });
+    var bits = [];
+    if (dd) bits.push(dd);
+    if (g.yard_line) bits.push(g.yard_line);
+    return bits.join(' · ');
+  }
+  function _nflBoardClockLine(g) {
+    if (!g) return '';
+    var code = String(g.game_code || '');
+    if (code === '2' || String(g.game_status || '').toLowerCase().indexOf('final') >= 0) return 'FINAL';
+    if (code === '0') {
+      var ep = parseFloat(g.game_time_epoch || 0);
+      if (ep) return _fmtKickoff(ep);
+      return g.game_status || 'Upcoming';
+    }
+    var q = g.game_quarter || '';
+    var clk = g.game_clock || '';
+    var mid = [q, clk].filter(Boolean).join(' ');
+    return mid || (g.game_status || 'LIVE');
+  }
+  function _renderNflBoard() {
+    if (_filters.nfl === 'all') return '';
+    var g = _nflGameInfo(_filters.nfl);
+    if (!g || (!g.away && !g.home)) return '';
+    var away = g.away || '—', home = g.home || '—';
+    var aPts = (g.away_pts === '' || g.away_pts == null) ? '–' : g.away_pts;
+    var hPts = (g.home_pts === '' || g.home_pts == null) ? '–' : g.home_pts;
+    var poss = String(g.possession || '').toUpperCase();
+    var awayPoss = poss && poss === String(away).toUpperCase();
+    var homePoss = poss && poss === String(home).toUpperCase();
+    var sit = _nflBoardSitLine(g);
+    var clock = _nflBoardClockLine(g);
+    var code = String(g.game_code || '');
+    var live = code === '1';
+    var logo = function(abv) {
+      var src = _teamLogoSrc(abv);
+      if (!src) return '<span class="rz-nfl-abv-only">' + abv + '</span>';
+      return '<img class="rz-nfl-logo" src="' + src + '" alt="" data-team="' + abv + '"'
+        + ' onerror="var t=this.getAttribute(\'data-team\');if(t&&!this._espnFallback){this._espnFallback=1;this.src=(window.brTeamLogoEspn?window.brTeamLogoEspn(t):\'\');}else{this.style.display=\'none\';}">';
+    };
+    var side = function(abv, pts, hasBall, align) {
+      var ball = hasBall
+        ? '<span class="rz-nfl-ball" title="Possession" aria-label="Has possession"></span>'
+        : '<span class="rz-nfl-ball-slot" aria-hidden="true"></span>';
+      return '<div class="rz-nfl-side rz-nfl-' + align + (hasBall ? ' has-ball' : '') + '">'
+        + (align === 'away' ? ball : '')
+        + logo(abv)
+        + '<div class="rz-nfl-side-meta">'
+        + '<span class="rz-nfl-abv">' + abv + '</span>'
+        + '<span class="rz-nfl-pts">' + pts + '</span>'
+        + '</div>'
+        + (align === 'home' ? ball : '')
+        + '</div>';
+    };
+    return '<div class="rz-nfl-board' + (live ? ' is-live' : '') + '" id="rz-nfl-board">'
+      + side(away, aPts, awayPoss, 'away')
+      + '<div class="rz-nfl-mid">'
+      + '<div class="rz-nfl-clock">' + clock + '</div>'
+      + (sit ? '<div class="rz-nfl-sit">' + sit + '</div>' : (live ? '<div class="rz-nfl-sit rz-nfl-sit-pending">Situation pending</div>' : ''))
+      + (live && !poss ? '<div class="rz-nfl-poss-pending">Possession pending</div>' : '')
+      + '</div>'
+      + side(home, hPts, homePoss, 'home')
+      + '</div>';
+  }
+
   function _renderFilterChips() {
-    var activeCount = ['team','nfl','pos','stat'].filter(function(k) { return _filters[k] !== 'all'; }).length;
+    var activeCount = ['nfl','pos','stat'].filter(function(k) { return _filters[k] !== 'all'; }).length;
     var chips = '';
     if (_heroMid) chips += '<span class="rz-active-chip rz-hero-chip" data-clear-hero="1">&#9654; ' + _heroLabel() + ' ×</span>';
     if (_myTeamOnly) chips += '<span class="rz-active-chip" data-clear-myteam="1">My Team ×</span>';
-    if (_filters.team !== 'all') chips += '<span class="rz-active-chip" data-clear="team">' + _filters.team + ' ×</span>';
-    if (_filters.nfl  !== 'all') chips += '<span class="rz-active-chip" data-clear="nfl">'  + _filters.nfl  + ' ×</span>';
+    if (_bigPlaysOnly) chips += '<span class="rz-active-chip" data-clear-big="1">Big Plays ×</span>';
+    if (_filters.nfl  !== 'all') chips += '<span class="rz-active-chip" data-clear="nfl">'  + _nflFilterLabel(_filters.nfl)  + ' ×</span>';
     if (_filters.pos  !== 'all') chips += '<span class="rz-active-chip" data-clear="pos">'  + _filters.pos  + ' ×</span>';
     if (_filters.stat !== 'all') {
       var sl = _STAT_LIST.find(function(x) { return x[0] === _filters.stat; });
@@ -928,13 +1285,13 @@
         }).join('');
         return '<div class="rz-fp-row"><span class="rz-fp-label">' + label + '</span><div class="otc-day-filters rz-fp-opts">' + btns + '</div></div>';
       }
-      var tOpts = [['all','All']].concat(_teamOptions().map(function(t) { return [t, t.length > 12 ? t.slice(0,11) + '…' : t]; }));
-      var nOpts = [['all','All']].concat(_nflOptions().map(function(t) { return [t, t]; }));
+      var nOpts = [['all','All']].concat(_nflMatchupOptions().map(function(g) {
+        return [g.id, g.label];
+      }));
       var pOpts = [['all','All']].concat(_POS_LIST.map(function(p) { return [p, p]; }));
       var sOpts = [['all','All']].concat(_STAT_LIST);
       panel = '<div class="rz-filter-panel">'
-        + fpRow(_scope === 'user' ? 'League' : 'Team', 'team', tOpts)
-        + fpRow('NFL',  'nfl',  nOpts)
+        + fpRow('Matchup', 'nfl', nOpts)
         + fpRow('Pos',  'pos',  pOpts)
         + fpRow('Type', 'stat', sOpts)
         + '</div>';
@@ -942,12 +1299,14 @@
     var myTeamBtn = _myRids.size
       ? '<button class="rz-myteam-btn' + (_myTeamOnly ? ' active' : '') + '" id="rz-myteam-btn">My Team</button>'
       : '';
+    var bigBtn = '<button class="rz-bigplays-btn' + (_bigPlaysOnly ? ' active' : '') + '" id="rz-bigplays-btn">Big Plays</button>';
     var histCount = _notifHistory.length;
     var histBtn = histCount > 0
       ? '<button class="rz-hist-btn" id="rz-hist-btn">Alerts <span class="rz-hist-count">' + histCount + '</span></button>'
       : '';
     return '<div class="rz-chip-bar">'
       + myTeamBtn
+      + bigBtn
       + '<button class="rz-filter-toggle' + (_filterOpen ? ' open' : '') + '" id="rz-filter-btn">'
       + (activeCount ? '⊞ Filter (' + activeCount + ')' : '⊞ Filter') + '</button>'
       + histBtn
@@ -983,13 +1342,13 @@
   }
   function _rosterCard(matchup) {
     if (!matchup) return '<div class="rz-feed-empty">No lineup data.</div>';
-    var pp = matchup.players_points || {}, starters = matchup.starters || [];
+    var starters = matchup.starters || [];
     var bench = (matchup.players || []).filter(function(pid) { return pid !== '0' && !starters.includes(pid); });
     var rows = starters.map(function(pid) {
       if (pid === '0') return '<div class="rz-player-row"><span class="rz-pos-badge rz-pos-" style="opacity:.25"></span><div class="rz-player-info"><div class="rz-player-name" style="color:var(--rz-muted)">Empty slot</div></div><div class="rz-player-pts">0</div></div>';
-      return _playerRowHtml(pid, pp[pid], false);
+      return _playerRowHtml(pid, _playerPts(pid, matchup), false);
     }).join('');
-    var benchRows = bench.slice(0, 6).map(function(pid) { return _playerRowHtml(pid, pp[pid], true); }).join('');
+    var benchRows = bench.slice(0, 6).map(function(pid) { return _playerRowHtml(pid, _playerPts(pid, matchup), true); }).join('');
     return '<div class="rz-roster-card">' + rows
       + (bench.length ? '<div class="rz-section-label">Bench</div>' + benchRows : '') + '</div>';
   }
@@ -1311,12 +1670,63 @@
     );
   }
 
+  function _mtRowHtml(pid, matchup) {
+    if (pid === '0') {
+      return '<div class="rz-mt-row is-empty"><span class="rz-pos-badge" style="opacity:.25">—</span>'
+        + '<span class="rz-mt-name" style="color:var(--rz-muted)">Empty</span>'
+        + '<span class="rz-mt-pts">0.0</span></div>';
+    }
+    var gs = _gameStatus(pid);
+    var pts = _playerPts(pid, matchup);
+    var live = gs.type === 'live';
+    var status = live ? '<span class="rz-mt-live">LIVE</span>'
+               : gs.type === 'final' ? '<span class="rz-mt-final">FINAL</span>'
+               : '<span class="rz-mt-pre">' + (gs.label || '') + '</span>';
+    // Last name only keeps the compact list scannable across many leagues.
+    var full = _name(pid) || pid;
+    var short = full.indexOf(' ') >= 0 ? full.split(' ').slice(-1)[0] : full;
+    return (
+      '<div class="rz-mt-row' + (live ? ' is-live' : '') + '" data-pid="' + pid + '">'
+      + _posHtml(_pos(pid))
+      + '<span class="rz-mt-name" title="' + full + '">' + short + _injuryDot(pid) + '</span>'
+      + status
+      + '<span class="rz-mt-pts' + (live ? ' live-pts' : '') + '">' + _fmt(pts) + '</span>'
+      + '</div>'
+    );
+  }
+
   function _renderMyTeams() {
     var mine = _myMatchups();
     if (!mine.length) return '<div class="rz-feed-empty">No teams found.</div>';
-    return mine.map(function(m) {
-      return '<div class="rz-section-label" style="opacity:1;color:var(--rz-text);font-size:11px;">' + (m.league_name || 'League') + '</div>' + _rosterCard(m);
-    }).join('');
+    return '<div class="rz-mt-list">' + mine.map(function(m) {
+      var opp = _oppOf(m);
+      var myPts = parseFloat(m.points || 0);
+      var oppPts = opp ? parseFloat(opp.points || 0) : 0;
+      var starters = m.starters || [];
+      var anyLive = starters.some(function(pid) { return pid !== '0' && _gameStatus(pid).type === 'live'; });
+      var openAttr = anyLive ? ' open' : '';
+      var score = _fmt(myPts) + ' – ' + _fmt(oppPts);
+      var liveBadge = anyLive ? '<span class="rz-mt-sum-live">LIVE</span>' : '';
+      var rows = starters.map(function(pid) { return _mtRowHtml(pid, m); }).join('');
+      var bench = (m.players || []).filter(function(pid) { return pid !== '0' && starters.indexOf(pid) < 0; });
+      var benchHtml = '';
+      if (bench.length) {
+        benchHtml = '<details class="rz-mt-bench"><summary class="rz-mt-bench-sum">Bench (' + bench.length + ')</summary>'
+          + bench.slice(0, 8).map(function(pid) { return _mtRowHtml(pid, m); }).join('')
+          + '</details>';
+      }
+      return (
+        '<details class="rz-mt-league"' + openAttr + '>'
+        + '<summary class="rz-mt-sum">'
+        + '<span class="rz-mt-lg">' + (m.league_name || 'League') + '</span>'
+        + '<span class="rz-mt-score">' + score + '</span>'
+        + liveBadge
+        + '</summary>'
+        + '<div class="rz-mt-starters">' + rows + '</div>'
+        + benchHtml
+        + '</details>'
+      );
+    }).join('') + '</div>';
   }
 
   function _renderScoreboard() {
@@ -1391,10 +1801,12 @@
     _myMatchups().forEach(function(m) { (m.starters || []).forEach(function(p) { myStarters.add(p); }); });
     var pidMap = {};
     (_state.matchups || []).forEach(function(m) {
+      var seen = {};
       var pp = m.players_points || {};
-      Object.keys(pp).forEach(function(pid) {
-        if (pid === '0') return;
-        var pts = parseFloat(pp[pid] || 0);
+      Object.keys(pp).forEach(function(pid) { seen[pid] = true; });
+      (m.starters || []).forEach(function(pid) { if (pid && pid !== '0') seen[pid] = true; });
+      Object.keys(seen).forEach(function(pid) {
+        var pts = parseFloat(_playerPts(pid, m) || 0);
         if (!pidMap[pid] || pts > pidMap[pid].pts) pidMap[pid] = { pts: pts, roster_id: m.roster_id };
       });
     });
@@ -1430,7 +1842,7 @@
 
   var _FEED_ICON = { td: '🏈', gain: '🟢', neg: '⚠️', target: '🎯', milestone: '⭐' };
 
-  function _eid(ev) { return ev.pid + ':' + (ev.ts || ev.desc); }
+  function _eid(ev) { return ev.playId || (ev.pid + ':' + (ev.ts || ev.desc)); }
 
   function _eventHtml(ev, animate) {
     var tagLabel = ev.mine ? (_scope === 'user' && ev.league ? ev.league : 'MY TEAM')
@@ -1439,6 +1851,7 @@
     var tagCls = ev.mine ? 'mine' : 'opp';
     var tag = tagLabel ? '<span class="rz-event-tag ' + tagCls + '">' + tagLabel + '</span>' : '';
     var ptStr = ev.pts > 0 ? '+' + _fmt(ev.pts) : _fmt(ev.pts);
+    var totalStr = (ev.totalPts != null && !isNaN(ev.totalPts)) ? _fmt(ev.totalPts) : '';
     var posKey = (ev.pos || 'x').toLowerCase().replace(/[^a-z]/g, '');
     var initials = (ev.name || '?').trim().split(/\s+/).map(function(w) { return w[0] || ''; }).join('').slice(0, 2).toUpperCase();
     // Game score line (already includes both teams) — bold the player's own
@@ -1450,21 +1863,49 @@
         '<strong class="rz-event-myteam">' + ev.nflTeam + '</strong>');
     }
     var clockStr = [ev.gameQuarter, ev.gameClock].filter(Boolean).join(' ');
-    var clockHtml = clockStr ? '<span class="rz-event-clock">' + clockStr + '</span>' : '';
-    var subRow = (subInner || clockHtml)
-      ? '<div class="rz-event-sub">' + subInner + (subInner && clockHtml ? '  ·  ' : '') + clockHtml + '</div>'
+    var dd = _downDist(ev);
+    var metaBits = [];
+    if (dd) metaBits.push('<span class="rz-event-down">' + dd + '</span>');
+    if (clockStr) metaBits.push('<span class="rz-event-clock">' + clockStr + '</span>');
+    if (ev.yardLine) metaBits.push('<span class="rz-event-yardline">' + ev.yardLine + '</span>');
+    var metaHtml = metaBits.join(' · ');
+    var subRow = (subInner || metaHtml)
+      ? '<div class="rz-event-sub">' + subInner + (subInner && metaHtml ? '  ·  ' : '') + metaHtml + '</div>'
       : '';
+    var impact = _impactLine(ev);
+    var impactHtml = impact ? '<div class="rz-event-impact">' + impact + '</div>' : '';
+    var isDef = String(ev.pos || '').toUpperCase() === 'DEF';
+    var defTeam = ev.nflTeam || (isDef ? ev.pid : '') || '';
+    var avSrc, avOnErr;
+    if (isDef && defTeam && window.brTeamLogoLocal) {
+      avSrc = window.brTeamLogoLocal(defTeam);
+      avOnErr = 'brDefImgOnError(this)';
+    } else if (isDef && defTeam) {
+      var _dt = String(defTeam).toUpperCase();
+      if (_dt === 'WSH') _dt = 'WAS';
+      avSrc = '/static/images/team_logos/' + _dt + '.png';
+      avOnErr = "var t=this.getAttribute('data-team');if(t&&!this._espnFallback){this._espnFallback=1;this.src='https://a.espncdn.com/i/teamlogos/nfl/500/'+(String(t).toUpperCase()==='WAS'?'wsh':String(t).toLowerCase())+'.png';}else{this.parentNode.classList.add('img-err');}";
+    } else {
+      avSrc = 'https://sleepercdn.com/content/nfl/players/thumb/' + ev.pid + '.jpg';
+      avOnErr = "this.parentNode.classList.add('img-err')";
+    }
     return (
-      '<div class="rz-event ' + ev.kind + (ev.mine ? ' is-mine' : '') + (animate ? '' : ' rz-event-old') + '" data-pid="' + ev.pid + '">'
+      '<div class="rz-event ' + ev.kind + (ev.mine ? ' is-mine' : '') + (_isBigPlay(ev) ? ' is-big' : '') + (animate ? '' : ' rz-event-old') + '" data-pid="' + ev.pid + '">'
       + '<div class="rz-event-avatar rz-av-' + posKey + '" data-init="' + initials + '">'
-      + '<img class="rz-headshot" src="https://sleepercdn.com/content/nfl/players/thumb/' + ev.pid + '.jpg" alt="" onerror="this.parentNode.classList.add(\'img-err\')">'
+      + '<img class="rz-headshot' + (isDef ? ' rz-team-logo' : '') + '" src="' + avSrc + '" alt=""'
+      + (isDef && defTeam ? ' data-team="' + String(defTeam).replace(/"/g, '') + '"' : '')
+      + ' onerror="' + avOnErr + '">'
       + '</div>'
       + '<div class="rz-event-body">'
       + '<div class="rz-event-main"><span class="rz-event-name">' + ev.name + '</span>' + tag + '</div>'
       + '<div class="rz-event-desc">' + ev.desc + '</div>'
+      + impactHtml
       + subRow
       + '</div>'
-      + '<div class="rz-event-delta ' + (ev.pts >= 0 ? 'pos' : 'neg') + '">' + ptStr + '</div>'
+      + '<div class="rz-event-delta ' + (ev.pts >= 0 ? 'pos' : 'neg') + '">'
+      + '<div class="rz-event-delta-pts">' + ptStr + '</div>'
+      + (totalStr ? '<div class="rz-event-total">' + totalStr + '</div>' : '')
+      + '</div>'
       + '</div>'
     );
   }
@@ -1548,7 +1989,9 @@
     // Focused matchup: keep only games that include one of its players.
     if (focusPids) gameIds = gameIds.filter(function(gid) { return gameMap[gid].hasFocus; });
     if (!gameIds.length) {
-      return '<div class="rz-pregame-empty-hint">Plays appear here as games unfold, targets, catches, carries and touchdowns with live fantasy points.</div>';
+      return '<div class="rz-pregame-empty-hint">Plays appear here as games unfold — targets, catches, carries and touchdowns with live fantasy points.'
+      + (!_isDemo ? '<div class="rz-demo-cta"><a href="?demo=1" class="rz-demo-link">Try the Redzone demo</a></div>' : '')
+      + '</div>';
     }
 
     // Sort: games with spotlighted players first
@@ -1598,10 +2041,10 @@
       return;
     }
 
-    var list = _feed.filter(_eventMatches);
+    var list = _softRank(_feed.filter(_eventMatches));
     // Hero focus alone should not force the "no matching" empty when the feed
     // itself is empty — the pregame schedule already respects hero focus.
-    var hardFilter = _filters.team !== 'all' || _filters.nfl !== 'all' || _filters.pos !== 'all' || _filters.stat !== 'all' || _myTeamOnly
+    var hardFilter = _filters.nfl !== 'all' || _filters.pos !== 'all' || _filters.stat !== 'all' || _myTeamOnly || _bigPlaysOnly
       || (_heroMid && _feed.length > 0);
     var totalPages = Math.max(1, Math.ceil(list.length / _PAGE_SIZE));
     if (_feedPage >= totalPages) _feedPage = totalPages - 1;
@@ -1619,7 +2062,19 @@
           container.innerHTML = '<div class="rz-feed-empty">No plays match these filters yet.</div>';
         }
       } else {
-        container.innerHTML = _pregameScheduleHtml();
+        // Live/final with a PBP attempt but no lines yet — honest empty, not
+        // boxscore / "Scored X pts" fiction.
+        var pbpAttempted = Object.keys(_state.pbp_by_game || {}).length > 0
+          || Object.keys(_pbpGames).length > 0;
+        var liveOrFinal = Object.keys(_state.player_info || {}).some(function(pid) {
+          var c = String(((_state.player_info || {})[pid] || {}).game_code || '');
+          return c === '1' || c === '2';
+        });
+        if (pbpAttempted && liveOrFinal) {
+          container.innerHTML = '<div class="rz-feed-empty">Play-by-play lines aren’t available for these games yet. We only show real PBP — not box-score summaries.</div>';
+        } else {
+          container.innerHTML = _pregameScheduleHtml();
+        }
       }
       _renderPagination(totalPages);
       return;
@@ -1806,6 +2261,7 @@
         }
         _heroMid = prevMid === mid ? null : mid;
         _heroTouched = true;
+        _savePrefs();
         _feedPage = 0;
         _render();
       });
@@ -1915,19 +2371,43 @@
       // Re-wire chip clear handlers
       var myTeamToggle2 = root.querySelector('#rz-myteam-btn');
       if (myTeamToggle2) {
-        myTeamToggle2.addEventListener('click', function() { _myTeamOnly = !_myTeamOnly; _feedPage = 0; _render(); });
+        myTeamToggle2.addEventListener('click', function() { _myTeamOnly = !_myTeamOnly; _savePrefs(); _feedPage = 0; _render(); });
+      }
+      var bigToggle2 = root.querySelector('#rz-bigplays-btn');
+      if (bigToggle2) {
+        bigToggle2.addEventListener('click', function() { _bigPlaysOnly = !_bigPlaysOnly; _savePrefs(); _feedPage = 0; _render(); });
       }
       root.querySelectorAll('[data-clear]').forEach(function(btn) {
         btn.addEventListener('click', function() { _filters[btn.dataset.clear] = 'all'; _feedPage = 0; _render(); });
       });
       root.querySelectorAll('[data-clear-hero]').forEach(function(el) {
-        el.addEventListener('click', function() { _heroMid = null; _heroTouched = true; _feedPage = 0; _render(); });
+        el.addEventListener('click', function() { _heroMid = null; _heroTouched = true; _savePrefs(); _feedPage = 0; _render(); });
       });
       root.querySelectorAll('[data-fk]').forEach(function(btn) {
         btn.addEventListener('click', function() { _filters[btn.dataset.fk] = btn.dataset.fv; _filterOpen = false; _feedPage = 0; _render(); });
       });
       var filterBtn = root.querySelector('#rz-filter-btn');
       if (filterBtn) filterBtn.addEventListener('click', function() { _filterOpen = !_filterOpen; _render(); });
+    }
+
+    // Refresh NFL matchup scoreboard (score / clock / d&d / possession)
+    var boardEl = root.querySelector('#rz-nfl-board');
+    var boardHtml = showFilters ? _renderNflBoard() : '';
+    if (boardHtml) {
+      var boardWrap = document.createElement('div');
+      boardWrap.innerHTML = boardHtml;
+      var newBoard = boardWrap.firstChild;
+      if (boardEl && newBoard) boardEl.parentNode.replaceChild(newBoard, boardEl);
+      else if (newBoard) {
+        var chipBar2 = root.querySelector('.rz-chip-bar');
+        var anchor = chipBar2 && (chipBar2.nextElementSibling && chipBar2.nextElementSibling.classList.contains('rz-filter-panel')
+          ? chipBar2.nextElementSibling : chipBar2);
+        var panelsHost = root.querySelector('.rz-main-card');
+        if (anchor && anchor.parentNode) anchor.parentNode.insertBefore(newBoard, anchor.nextSibling);
+        else if (panelsHost) panelsHost.insertBefore(newBoard, panelsHost.firstChild);
+      }
+    } else if (boardEl) {
+      boardEl.remove();
     }
 
     // Sync feed (live-patches page 0)
@@ -2032,6 +2512,7 @@
       + '<div class="rz-main-card">'
       + tabBar
       + (showFilters ? _renderFilterChips() : '')
+      + (showFilters ? _renderNflBoard() : '')
       + panels
       + '</div>'
       + '</div>'
@@ -2062,6 +2543,16 @@
     if (myTeamToggle) {
       myTeamToggle.addEventListener('click', function() {
         _myTeamOnly = !_myTeamOnly;
+        _savePrefs();
+        _feedPage = 0;
+        _render();
+      });
+    }
+    var bigToggle = root.querySelector('#rz-bigplays-btn');
+    if (bigToggle) {
+      bigToggle.addEventListener('click', function() {
+        _bigPlaysOnly = !_bigPlaysOnly;
+        _savePrefs();
         _feedPage = 0;
         _render();
       });
@@ -2074,14 +2565,16 @@
         _streaming = false;
         _mlNames = []; _mlLoaded = null; _mlFailed = null;
         _scope = btn.dataset.scope;
-        _filters = { team: 'all', nfl: 'all', pos: 'all', stat: 'all' };
+        _filters = { nfl: 'all', pos: 'all', stat: 'all' };
         _feed = [];
         _shownFeedIds = new Set();
         _resetFeedSnapshots(); // don't diff the new scope against the old one's lines
         _filterOpen = false;
         _myTeamOnly = false;
+        _bigPlaysOnly = false;
         _heroMid = null;
-        _heroTouched = false; // let the new scope re-apply its default focus
+        _heroTouched = false; // restore prefs for the newly selected scope
+        _loadPrefs();
         _feedPage = 0;
         _countdown = 1;
         // Prefer the last-good payload for this scope so a late My Leagues
@@ -2133,10 +2626,13 @@
       });
     });
     root.querySelectorAll('[data-clear-hero]').forEach(function(el) {
-      el.addEventListener('click', function() { _heroMid = null; _heroTouched = true; _feedPage = 0; _render(); });
+      el.addEventListener('click', function() { _heroMid = null; _heroTouched = true; _savePrefs(); _feedPage = 0; _render(); });
     });
     root.querySelectorAll('[data-clear-myteam]').forEach(function(el) {
-      el.addEventListener('click', function() { _myTeamOnly = false; _feedPage = 0; _render(); });
+      el.addEventListener('click', function() { _myTeamOnly = false; _savePrefs(); _feedPage = 0; _render(); });
+    root.querySelectorAll('[data-clear-big]').forEach(function(el) {
+      el.addEventListener('click', function() { _bigPlaysOnly = false; _savePrefs(); _feedPage = 0; _render(); });
+    });
     });
     var exitDemo = root.querySelector('#rz-demo-exit');
     if (exitDemo) exitDemo.addEventListener('click', function() { window.location.href = window.location.pathname; });
@@ -2295,6 +2791,11 @@
     Object.assign(base.player_info, s.player_info || {});
     Object.assign(base.scoring_by_league, s.scoring_by_league || {});
     Object.assign(base.pid_league, s.pid_league || {});
+    if (!base.pbp_by_game) base.pbp_by_game = {};
+    Object.keys(s.pbp_by_game || {}).forEach(function(gid) {
+      var arr = base.pbp_by_game[gid] || (base.pbp_by_game[gid] = []);
+      (s.pbp_by_game[gid] || []).forEach(function(p) { arr.push(p); });
+    });
     if (!base.scoring || !Object.keys(base.scoring).length) base.scoring = s.scoring || base.scoring;
     if (s.viewer_roster_id) {
       base.viewer_roster_ids.push(s.viewer_roster_id);
@@ -2470,12 +2971,13 @@
     _prevMatchupPts[String(m.roster_id)] = parseFloat(m.points || 0);
   });
 
+  _loadPrefs();              // restore hero / My Team / Big Plays for this league+scope
   _seedMilestones(_state);   // pre-mark already-crossed milestones (no retroactive events)
   _seedInjuries(_state);     // snapshot injuries so only changes fire later
   _seedLeaders(_state);      // snapshot leading rosters so lead-change events don't fire on load
   _detectChanges(_state);    // populate initial feed from empty _prevStats
   _seedPrevStats(_state);    // snapshot stat lines for the next poll diff
-  _applyDefaultHero();       // no-op: Plays start unfiltered; hero focus is opt-in
+  _applyDefaultHero();       // no-op unless prefs restored a hero; focus stays opt-in by default
 
   _render();
   if (_isDemo) setTimeout(_refresh, 300);
