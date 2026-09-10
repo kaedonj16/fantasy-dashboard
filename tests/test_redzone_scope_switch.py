@@ -23,6 +23,16 @@ def _rz() -> str:
     return (_ROOT / "static" / "redzone.js").read_text(encoding="utf-8")
 
 
+def test_stale_tank01_pre_status_upgraded_by_espn():
+    """A rostered team stuck 'pre' after kickoff gets ESPN's real live/final
+    status, so Tank01 lag no longer leaves the Plays feed empty."""
+    app_src = (_ROOT / "app.py").read_text(encoding="utf-8")
+    assert "lag_teams" in app_src
+    assert "stale Tank01" in app_src
+    # Genuinely-upcoming games (kickoff in the future) must not trigger ESPN.
+    assert "now_ts >= ep" in app_src
+
+
 def _fn(name: str) -> str:
     src = _rz()
     needle = (
@@ -374,6 +384,17 @@ def test_quarter_label_is_prefixed():
     assert "_fmtQuarter(ev.gameQuarter)" in src
     # Old bare-number join must be gone from the event card.
     assert "[ev.gameQuarter, ev.gameClock]" not in src
+
+
+def test_td_alerts_only_after_initial_backfill():
+    """Cold boot ingests a whole game at once; no TD beep/push for old snaps."""
+    src = _rz()
+    assert "var _alertsArmed = false;" in src
+    # The alert set is gated on the arm flag, not raw allEvents.
+    assert "var myTDs = _alertsArmed" in src
+    # A scope switch re-hydrates silently, then re-arms.
+    assert "_alertsArmed = false;" in src
+    assert "_alertsArmed = true;" in src
 
 
 def test_scoring_honors_distance_fg_and_te_premium():
