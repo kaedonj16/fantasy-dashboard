@@ -28,6 +28,7 @@
   var _heroTouched = false; // true once the viewer explicitly picks/clears the hero matchup
   var _seenPlayIds = new Set(); // Tank01 / demo play ids already in the feed
   var _pbpGames = {}; // game_id → true once we have real PBP for that game
+  var _alertsArmed = false; // suppress TD beep/push until the first hydration seeds the feed
   var _slideDir   = 'none';
   var _feedPage   = 0;
   var _prevMatchupPts = {};
@@ -419,6 +420,8 @@
     _flashRids = new Set();
     _seenPlayIds = new Set();
     _pbpGames = {};
+    // A scope switch rehydrates from scratch — re-arm alerts only after it does.
+    _alertsArmed = false;
   }
 
   // Same cold-boot order as page load: suppress milestone/injury/lead noise,
@@ -432,6 +435,9 @@
     });
     _detectChanges(data);
     _seedPrevStats(data);
+    // The first pass ingests a whole game of history at once; only alert on
+    // TDs discovered by subsequent live polls, never on this initial backfill.
+    _alertsArmed = true;
   }
   function _seedMilestones(data) {
     var _MS_THRS = [
@@ -936,8 +942,11 @@
     _feed = _chronoSort(_feed);
     if (_feed.length > 200) _feed = _feed.slice(0, 200);
 
-    // Push notification + audio chime for my TDs + log to history
-    var myTDs = allEvents.filter(function(ev) { return ev.kind === 'td' && ev.mine; });
+    // Push notification + audio chime for my TDs + log to history. Only for TDs
+    // found by a live poll — never the initial backfill of already-played snaps.
+    var myTDs = _alertsArmed
+      ? allEvents.filter(function(ev) { return ev.kind === 'td' && ev.mine; })
+      : [];
     if (myTDs.length) {
       myTDs.forEach(function(ev) {
         _notifHistory.unshift({ ts: Date.now(), name: ev.name, desc: ev.desc, pts: ev.pts, kind: ev.kind });
@@ -2795,6 +2804,9 @@
       _scopeCache[myScope] = newData;
       _detectChanges(newData);
       _seedPrevStats(newData);
+      // After a scope switch the first fetch backfills history silently; arm
+      // alerts so only subsequent live polls beep/notify.
+      _alertsArmed = true;
       _applyDefaultHero(); // no-op: Plays start unfiltered; hero focus is opt-in
       _countdown = _pollInterval();
 
@@ -3046,6 +3058,7 @@
   _seedLeaders(_state);      // snapshot leading rosters so lead-change events don't fire on load
   _detectChanges(_state);    // populate initial feed from empty _prevStats
   _seedPrevStats(_state);    // snapshot stat lines for the next poll diff
+  _alertsArmed = true;       // initial feed is backfill; only live polls alert after this
   _applyDefaultHero();       // no-op unless prefs restored a hero; focus stays opt-in by default
 
   _render();

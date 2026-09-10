@@ -12199,6 +12199,13 @@ def _redzone_collect(platform, league_id, season, week):
     # back to bulk "Scored X pts" cards. Fill any rostered team ESPN's free
     # scoreboard knows about but Tank01 didn't return, so the existing ESPN PBP
     # path (which needs a discovered live/final game) can actually run.
+    #
+    # ESPN also covers a second gap: Tank01 sometimes keeps a game at status
+    # code "0" (pre) for minutes after kickoff. Tank01 *has* the team, so it is
+    # not "missing" — but the stale pre code keeps the game out of the PBP path,
+    # so the feed stays empty even though the game is live. Treat a rostered
+    # team whose game shows pre/unknown after kickoff as a lag candidate and let
+    # ESPN's real status upgrade it.
     wanted_teams = {
         (nfl_players.get(pid, {}) or {}).get("team")
         for pid in all_pids
@@ -12206,7 +12213,16 @@ def _redzone_collect(platform, league_id, season, week):
     wanted_teams.discard("")
     wanted_teams.discard(None)
     missing_teams = {t for t in wanted_teams if t not in team_game}
-    if missing_teams:
+    now_ts = time.time()
+    lag_teams = set()
+    for t in wanted_teams:
+        g = team_game.get(t)
+        if not g or str(g.get("gameStatusCode") or "") in ("1", "2"):
+            continue
+        ep = _rz_safe_epoch(g.get("gameTime_epoch") or g.get("gameTimeEpoch"))
+        if ep and now_ts >= ep:
+            lag_teams.add(t)
+    if missing_teams or lag_teams:
         try:
             espn_lookup = _rz_espn_team_game(season, week) or {}
         except Exception:
@@ -12216,6 +12232,10 @@ def _redzone_collect(platform, league_id, season, week):
             g = espn_lookup.get(team)
             if g:
                 team_game[team] = g
+        for team in lag_teams:
+            g = espn_lookup.get(team)
+            if g and str(g.get("gameStatusCode") or "") in ("1", "2"):
+                team_game[team] = g  # stale Tank01 "pre" → ESPN's live/final
 
     player_info = {}
     for pid in all_pids:
