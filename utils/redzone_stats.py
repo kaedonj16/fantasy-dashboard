@@ -24,38 +24,64 @@ def rz_safe_epoch(v) -> float:
         return 0.0
 
 
+def _pick(d: dict, *keys: str):
+    """First present non-empty value among keys on ``d``."""
+    for k in keys:
+        if k in d and d[k] not in (None, ""):
+            return d[k]
+    return None
+
+
 def rz_stat_line_from_ps(ps: dict) -> dict:
-    """Map a Tank01 playerStats entry to our canonical stat_line (QB/RB/WR/TE/K)."""
+    """Map a Tank01 playerStats entry to our canonical stat_line (QB/RB/WR/TE/K).
+
+    Accepts nested ``Passing`` / ``Rushing`` / ``Receiving`` / ``Kicking`` blocks
+    (boxscore shape) and flat per-play deltas Tank01 sometimes puts on the same
+    object (``passYds``, ``recYds``, …). Nested wins when both are present.
+    """
     ps = ps or {}
-    passing   = ps.get("Passing")   or {}
-    rushing   = ps.get("Rushing")   or {}
-    receiving = ps.get("Receiving") or {}
-    kicking   = ps.get("Kicking")   or {}
+    passing = ps.get("Passing") if isinstance(ps.get("Passing"), dict) else {}
+    rushing = ps.get("Rushing") if isinstance(ps.get("Rushing"), dict) else {}
+    receiving = ps.get("Receiving") if isinstance(ps.get("Receiving"), dict) else {}
+    kicking = ps.get("Kicking") if isinstance(ps.get("Kicking"), dict) else {}
+
+    def nest_or_flat(group: dict, *keys: str):
+        v = _pick(group, *keys) if group else None
+        if v is not None:
+            return rz_num(v)
+        return rz_num(_pick(ps, *keys))
+
     return {
-        "pass_yds": rz_num(passing.get("passYds")),
-        "pass_td":  rz_num(passing.get("passTD")),
-        "int":      rz_num(passing.get("int")),
-        "carries":  rz_num(rushing.get("carries")),
-        "rush_yds": rz_num(rushing.get("rushYds")),
-        "rush_td":  rz_num(rushing.get("rushTD")),
-        "rec":      rz_num(receiving.get("receptions")),
-        "rec_yds":  rz_num(receiving.get("recYds")),
-        "rec_td":   rz_num(receiving.get("recTD")),
-        "targets":  rz_num(receiving.get("targets")),
+        "pass_yds": nest_or_flat(passing, "passYds", "pass_yds", "passingYards"),
+        "pass_td":  nest_or_flat(passing, "passTD", "pass_td", "passingTD", "passTd"),
+        "int":      nest_or_flat(passing, "int", "interceptions", "passInterceptions", "ints"),
+        "carries":  nest_or_flat(rushing, "carries", "rushAttempts", "rushAtt"),
+        "rush_yds": nest_or_flat(rushing, "rushYds", "rush_yds", "rushingYards"),
+        "rush_td":  nest_or_flat(rushing, "rushTD", "rush_td", "rushingTD", "rushTd"),
+        "rec":      nest_or_flat(receiving, "receptions", "rec", "receivingReceptions"),
+        "rec_yds":  nest_or_flat(receiving, "recYds", "rec_yds", "receivingYards"),
+        "rec_td":   nest_or_flat(receiving, "recTD", "rec_td", "receivingTD", "recTd"),
+        "targets":  nest_or_flat(receiving, "targets", "receivingTargets"),
         # Kicker fields
-        "fgm":      rz_num(kicking.get("fgm") or kicking.get("fgMade")),
-        "fg_long":  rz_num(kicking.get("fgLng") or kicking.get("fg_long") or kicking.get("fgLong")),
-        "xpm":      rz_num(kicking.get("xpm") or kicking.get("xpMade")),
+        "fgm":      nest_or_flat(kicking, "fgm", "fgMade", "fieldGoalsMade"),
+        "fg_long":  nest_or_flat(kicking, "fgLng", "fg_long", "fgLong", "longestFieldGoal"),
+        "xpm":      nest_or_flat(kicking, "xpm", "xpMade", "extraPointsMade"),
     }
 
 
 def rz_def_stat_line(team_side: dict) -> dict:
-    """Build DEF stat_line from Tank01 teamStats[home/away] entry."""
+    """Build DEF stat_line from Tank01 teamStats[home/away] entry.
+
+    Also accepts a flat Defense-like dict (sacks/int at the top level) used on
+    some per-play teamStats rows.
+    """
     team_side = team_side or {}
-    defense = team_side.get("Defense") or team_side.get("defense") or {}
+    defense = team_side.get("Defense") or team_side.get("defense")
+    if not isinstance(defense, dict):
+        defense = team_side
     return {
-        "sacks":   rz_num(defense.get("sacks") or defense.get("totalSacks")),
-        "def_int": rz_num(defense.get("int") or defense.get("interceptions")),
-        "fum_rec": rz_num(defense.get("fumblesRecovered") or defense.get("fumRec")),
-        "def_td":  rz_num(defense.get("touchdowns") or defense.get("totalTD") or defense.get("defTD")),
+        "sacks":   rz_num(_pick(defense, "sacks", "totalSacks", "sack")),
+        "def_int": rz_num(_pick(defense, "int", "interceptions", "defInt")),
+        "fum_rec": rz_num(_pick(defense, "fumblesRecovered", "fumRec", "fumbleRecoveries")),
+        "def_td":  rz_num(_pick(defense, "touchdowns", "totalTD", "defTD", "defTd")),
     }
