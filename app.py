@@ -12161,6 +12161,22 @@ def _redzone_collect(platform, league_id, season, week):
             play_by_play=want_pbp,
             ttl=(None if live else 300.0) if want_pbp else None,
         )
+        # Tank01's playByPlay response is experimental and sometimes returns an
+        # empty body for finals. Fall back to the plain boxscore so we still get
+        # playerStats (and thus narrative diffs) instead of bulk "Scored X pts".
+        if want_pbp and not (box.get("playerStats") or box.get("allPlayByPlay")
+                             or box.get("allPlaybyPlay") or box.get("playByPlay")):
+            plain = _redzone_boxscore(gid, play_by_play=False)
+            if plain:
+                box = plain
+        elif want_pbp and box and not box.get("playerStats"):
+            plain = _redzone_boxscore(gid, play_by_play=False)
+            if plain.get("playerStats"):
+                merged = dict(plain)
+                for k in ("allPlayByPlay", "allPlaybyPlay", "playByPlay", "plays"):
+                    if box.get(k):
+                        merged[k] = box[k]
+                box = merged
         pstats = box.get("playerStats") or {}
         tstats = box.get("teamStats") or {}
         name_to_pid: dict = {}
@@ -12214,10 +12230,12 @@ def _redzone_collect(platform, league_id, season, week):
                     p for p in plays
                     if (p.get("pid") and p["pid"] in rostered) or p.get("play_text")
                 ]
-                if plays:
-                    pbp_by_game[gid] = plays
+                # Always record the game key when we attempted PBP so the client
+                # can suppress bulk point dumps even if Tank01 returned no rows.
+                pbp_by_game[gid] = plays
             except Exception:
                 logger.debug("[redzone] pbp parse failed game=%s", gid, exc_info=True)
+                pbp_by_game.setdefault(gid, [])
 
     # Projected points per matchup, scored with the league's settings so the
     # remaining projection matches the live point math it is added to.

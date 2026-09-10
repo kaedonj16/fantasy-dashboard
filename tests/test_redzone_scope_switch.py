@@ -119,7 +119,9 @@ def test_focused_pair_drives_scorebar_and_live_chrome():
 
 def test_filter_polish_league_label_and_my_team_chip():
     src = _rz()
-    assert "? 'League' : 'Team'" in src
+    # Fantasy Team/League filter row is gone; NFL filter is matchups.
+    assert "fpRow('Matchup', 'nfl'" in src
+    assert "? 'League' : 'Team'" not in src
     assert 'data-clear-myteam="1"' in src
     assert "OPP · " in src
 
@@ -339,9 +341,28 @@ def test_app_wires_pbp_into_collect_and_demo():
 def test_pbp_coverage_suppresses_bulk_points_without_new_events():
     """Quiet / already-seen PBP polls must not invent 'Scored X pts' cards."""
     src = _fn("_detectChanges")
-    assert "_pbpGames[gid]" in src
-    # Gate on coverage alone — not on newly accepted pbpEvents.length.
-    assert "_pbpGames[gid] && pbpEvents.length" not in src
     assert "Scored ' + delta.toFixed(1) + ' pts'" in src
-    # Points-delta path must also respect PBP coverage.
-    assert 'if (gid && _pbpGames[gid])' in src
+    # Live/final games never take the bulk Scored fallback.
+    assert "code === '1' || code === '2'" in src
+    # Empty PBP still allows boxscore narrative diffs (pbpRows.length gate).
+    assert "pbpRows.length" in src
+    assert "_pbpGames[gid] && pbpEvents.length" not in src
+
+
+def test_app_falls_back_to_plain_boxscore_when_pbp_empty():
+    app = (_ROOT / "app.py").read_text(encoding="utf-8")
+    assert "Fall back to the plain boxscore" in app
+    assert 'play_by_play=False' in app
+    # Empty PBP attempts still register the game key for the client.
+    assert "pbp_by_game[gid] = plays" in app
+    assert "if plays:" not in app[app.index("pbp_by_game[gid] = plays") - 80:
+                                    app.index("pbp_by_game[gid] = plays") + 40]
+
+
+def test_filter_panel_is_matchups_not_fantasy_teams():
+    src = _rz()
+    assert "function _nflMatchupOptions(" in src
+    assert "fpRow('Matchup', 'nfl'" in src
+    assert "fpRow(_scope === 'user' ? 'League' : 'Team', 'team'" not in src
+    assert "function _teamOptions(" not in src
+    assert "function _nflOptions(" not in src
