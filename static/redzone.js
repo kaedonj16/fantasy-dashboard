@@ -297,14 +297,34 @@
 
   // ── Scoring math ───────────────────────────────────────────────────────────────
   function _n(x) { return parseFloat(x || 0) || 0; }
-  function _lineToPts(L, s) {
+  // Per-made-FG rate for a league. Leagues that score by distance define
+  // buckets (Sleeper fgm_0_19..fgm_50p; ESPN fgm_0_39/fgm_40_49/fgm_50p); pick
+  // the tightest bucket the league actually defines, else the flat fgm/fg rate.
+  function _fgRate(yds, s) {
+    yds = _n(yds);
+    var order;
+    if (yds >= 60) order = ['fgm_60p', 'fgm_50p', 'fgm_40_49', 'fgm_0_39', 'fgm', 'fg'];
+    else if (yds >= 50) order = ['fgm_50p', 'fgm_50_59', 'fgm_40_49', 'fgm_0_39', 'fgm', 'fg'];
+    else if (yds >= 40) order = ['fgm_40_49', 'fgm_0_39', 'fgm', 'fg'];
+    else if (yds >= 30) order = ['fgm_30_39', 'fgm_0_39', 'fgm', 'fg'];
+    else if (yds >= 20) order = ['fgm_20_29', 'fgm_0_39', 'fgm', 'fg'];
+    else if (yds > 0)   order = ['fgm_0_19', 'fgm_0_39', 'fgm', 'fg'];
+    else order = ['fgm', 'fg']; // unknown distance (e.g. cumulative box line)
+    for (var i = 0; i < order.length; i++) {
+      if (s[order[i]] != null) return _n(s[order[i]]);
+    }
+    return 0;
+  }
+  function _lineToPts(L, s, pos) {
     if (!L) return 0;
     s = s || _state.scoring || {};
     var pts = _n(L.pass_yds) * _n(s.pass_yd) + _n(L.pass_td) * _n(s.pass_td) + _n(L.int) * _n(s.pass_int)
       + _n(L.rush_yds) * _n(s.rush_yd) + _n(L.rush_td) * _n(s.rush_td)
       + _n(L.rec) * _n(s.rec) + _n(L.rec_yds) * _n(s.rec_yd) + _n(L.rec_td) * _n(s.rec_td);
-    // Kicker + defense (Sleeper-style keys with common aliases)
-    pts += _n(L.fgm) * _n(s.fgm || s.fg) + _n(L.xpm) * _n(s.xpm || s.xp);
+    // TE reception premium (bonus_rec_te) when the league runs one.
+    if (String(pos || '').toUpperCase() === 'TE') pts += _n(L.rec) * _n(s.bonus_rec_te);
+    // Kicker (distance-aware) + defense (Sleeper-style keys with common aliases)
+    pts += _n(L.fgm) * _fgRate(L.fg_yds, s) + _n(L.xpm) * _n(s.xpm || s.xp);
     var sacks = _n(L.sacks != null ? L.sacks : L.sack);
     pts += sacks * _n(s.sack) + _n(L.def_int) * _n(s.int || s.def_int)
       + _n(L.fum_rec) * _n(s.fum_rec) + _n(L.def_td) * _n(s.def_td || s.td);
@@ -499,6 +519,46 @@
       if (ap !== bp) return bp - ap;
       return (b.ts || 0) - (a.ts || 0);
     });
+  }
+  // "MM:SS" game clock → seconds remaining in the quarter (null if unparsable).
+  function _clockSecs(clk) {
+    var m = String(clk == null ? '' : clk).match(/(\d+):(\d+)/);
+    if (!m) return null;
+    return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+  }
+  // Approximate wall-clock a play occurred at, so the feed reads in real
+  // chronological order (newest first): game kickoff epoch + elapsed game
+  // seconds. Live-only events (milestones, bulk) fall back to detection time.
+  function _chronoKey(ev) {
+    var q = parseInt(ev.gameQuarter, 10);
+    if (q > 0) {
+      var per = 900; // 15:00 quarters (OT still monotonic under this model)
+      var cs = _clockSecs(ev.gameClock);
+      var inQ = (cs == null) ? 0 : Math.max(0, per - cs);
+      var elapsed = (q - 1) * per + inQ;
+      var gid = ((_state.player_info || {})[ev.pid] || {}).game_id || '';
+      var g = (_state.games || {})[gid] || {};
+      var kickoff = parseFloat(g.game_time_epoch || 0) || 0;
+      if (kickoff) return kickoff + elapsed;
+    }
+    return (ev.ts || 0) / 1000;
+  }
+  // Newest first. Ties (same game-second) fall back to soft rank so a TD or a
+  // player of yours edges ahead of an ordinary simultaneous snap.
+  function _chronoSort(list) {
+    var ranked = _softRank(list); // stable base order for exact-tie fallback
+    return ranked.slice().sort(function(a, b) {
+      var ka = _chronoKey(a), kb = _chronoKey(b);
+      if (ka !== kb) return kb - ka;
+      return 0;
+    });
+  }
+  // "4" → "Q4", "5"+ → "OT"; pass through non-numeric labels ("OT", "Half").
+  function _fmtQuarter(q) {
+    var s = String(q == null ? '' : q).trim();
+    if (!s) return '';
+    if (/^\d+$/.test(s)) { var n = parseInt(s, 10); return n >= 5 ? 'OT' : ('Q' + n); }
+    return s;
   }
   function _downDist(ev) {
     var d = ev.down, dist = ev.distance;
@@ -757,8 +817,8 @@
         if (!rid) return; // not on any roster in this payload
         var line = play.stat_line || {};
         var scoring = scFor(pid);
-        var pts = parseFloat(_lineToPts(line, scoring).toFixed(2));
         var pos = _pos(pid);
+        var pts = parseFloat(_lineToPts(line, scoring, pos).toFixed(2));
         var desc = play.play_text || '';
         if (!desc) {
           var info = _describe(line, pos);
@@ -868,12 +928,12 @@
         });
       });
     });
-    // Soft rank within this batch (mine → opp → rest), then prepend.
-    allEvents = _softRank(allEvents);
-    // Prepend in reverse so the soft-ranked order survives unshift.
+    // Chronological within this batch (newest first), then prepend.
+    allEvents = _chronoSort(allEvents);
+    // Prepend in reverse so the sorted order survives unshift.
     for (var i = allEvents.length - 1; i >= 0; i--) _feed.unshift(allEvents[i]);
-    // Keep feed soft-ranked overall for first-page painting.
-    _feed = _softRank(_feed);
+    // Keep the feed chronological overall (newest first) for first-page paint.
+    _feed = _chronoSort(_feed);
     if (_feed.length > 200) _feed = _feed.slice(0, 200);
 
     // Push notification + audio chime for my TDs + log to history
@@ -1214,7 +1274,7 @@
       if (ep) return _fmtKickoff(ep);
       return g.game_status || 'Upcoming';
     }
-    var q = g.game_quarter || '';
+    var q = _fmtQuarter(g.game_quarter || '');
     var clk = g.game_clock || '';
     var mid = [q, clk].filter(Boolean).join(' ');
     return mid || (g.game_status || 'LIVE');
@@ -1850,8 +1910,17 @@
                  : (_scope === 'user' && ev.league ? ev.league : '');
     var tagCls = ev.mine ? 'mine' : 'opp';
     var tag = tagLabel ? '<span class="rz-event-tag ' + tagCls + '">' + tagLabel + '</span>' : '';
-    var ptStr = ev.pts > 0 ? '+' + _fmt(ev.pts) : _fmt(ev.pts);
     var totalStr = (ev.totalPts != null && !isNaN(ev.totalPts)) ? _fmt(ev.totalPts) : '';
+    // Per-play points only exist when the source gave us a stat line (Tank01 /
+    // demo). ESPN booth lines are text-only, so pts is 0 there — showing a
+    // green "+0.0" is misleading. In that case headline the player's running
+    // total instead and drop the fake delta.
+    var hasDelta = Math.abs(_n(ev.pts)) >= 0.05;
+    var deltaPrimary = hasDelta
+      ? (ev.pts > 0 ? '+' + _fmt(ev.pts) : _fmt(ev.pts))
+      : totalStr;
+    var deltaSecondary = hasDelta ? totalStr : '';
+    var deltaCls = (!hasDelta || ev.pts >= 0) ? 'pos' : 'neg';
     var posKey = (ev.pos || 'x').toLowerCase().replace(/[^a-z]/g, '');
     var initials = (ev.name || '?').trim().split(/\s+/).map(function(w) { return w[0] || ''; }).join('').slice(0, 2).toUpperCase();
     // Game score line (already includes both teams) — bold the player's own
@@ -1862,7 +1931,7 @@
       if (_tm) subInner = ev.line.replace(new RegExp('\\b' + _tm + '\\b'),
         '<strong class="rz-event-myteam">' + ev.nflTeam + '</strong>');
     }
-    var clockStr = [ev.gameQuarter, ev.gameClock].filter(Boolean).join(' ');
+    var clockStr = [_fmtQuarter(ev.gameQuarter), ev.gameClock].filter(Boolean).join(' ');
     var dd = _downDist(ev);
     var metaBits = [];
     if (dd) metaBits.push('<span class="rz-event-down">' + dd + '</span>');
@@ -1902,9 +1971,9 @@
       + impactHtml
       + subRow
       + '</div>'
-      + '<div class="rz-event-delta ' + (ev.pts >= 0 ? 'pos' : 'neg') + '">'
-      + '<div class="rz-event-delta-pts">' + ptStr + '</div>'
-      + (totalStr ? '<div class="rz-event-total">' + totalStr + '</div>' : '')
+      + '<div class="rz-event-delta ' + deltaCls + '">'
+      + '<div class="rz-event-delta-pts">' + (deltaPrimary || '') + '</div>'
+      + (deltaSecondary ? '<div class="rz-event-total">' + deltaSecondary + '</div>' : '')
       + '</div>'
       + '</div>'
     );
@@ -2041,7 +2110,7 @@
       return;
     }
 
-    var list = _softRank(_feed.filter(_eventMatches));
+    var list = _chronoSort(_feed.filter(_eventMatches));
     // Hero focus alone should not force the "no matching" empty when the feed
     // itself is empty — the pregame schedule already respects hero focus.
     var hardFilter = _filters.nfl !== 'all' || _filters.pos !== 'all' || _filters.stat !== 'all' || _myTeamOnly || _bigPlaysOnly

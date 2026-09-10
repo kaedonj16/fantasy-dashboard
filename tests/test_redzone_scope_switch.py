@@ -348,6 +348,44 @@ def test_pbp_feed_path_and_soft_rank():
     assert "Try the Redzone demo" in src
 
 
+def test_feed_is_chronological_newest_first():
+    """The Plays feed sorts by real game time (newest first), not soft rank."""
+    src = _rz()
+    assert "function _chronoSort(" in src
+    assert "function _chronoKey(" in src
+    # The rendered feed and its maintenance both use the chronological sort.
+    assert "_chronoSort(_feed.filter(_eventMatches))" in src
+    assert "_feed = _chronoSort(_feed)" in src
+
+
+def test_text_only_pbp_plays_headline_total_not_fake_delta():
+    """ESPN booth lines carry no stat line; never headline a green '+0.0'."""
+    src = _rz()
+    assert "var hasDelta = Math.abs(_n(ev.pts)) >= 0.05;" in src
+    assert "deltaPrimary" in src
+    # The old unconditional per-play string must be gone.
+    assert "var ptStr = ev.pts > 0" not in src
+
+
+def test_quarter_label_is_prefixed():
+    """Quarter shows as 'Q4', not a bare '4' next to the clock."""
+    src = _rz()
+    assert "function _fmtQuarter(" in src
+    assert "_fmtQuarter(ev.gameQuarter)" in src
+    # Old bare-number join must be gone from the event card.
+    assert "[ev.gameQuarter, ev.gameClock]" not in src
+
+
+def test_scoring_honors_distance_fg_and_te_premium():
+    """Per-play points respect distance-based FG buckets and TE premium."""
+    src = _rz()
+    assert "function _fgRate(" in src
+    assert "fgm_50p" in src and "fgm_40_49" in src and "fgm_0_39" in src
+    # TE reception premium and per-play position both flow into the scorer.
+    assert "s.bonus_rec_te" in src
+    assert "_lineToPts(line, scoring, pos)" in src
+
+
 def test_app_wires_pbp_into_collect_and_demo():
     app = (_ROOT / "app.py").read_text(encoding="utf-8")
     assert "extract_pbp_plays as _rz_extract_pbp_plays" in app
