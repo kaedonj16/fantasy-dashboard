@@ -46,7 +46,13 @@
   var _mlNames  = [];        // My Leagues: league display names by portfolio index
   var _mlLoaded = null;      // My Leagues: Set of portfolio indices whose card has arrived (null = not streaming)
   var _streaming = false;    // true while a progressive My Leagues stream is in flight
-  var _streamGen = 0;        // bumped on every scope switch so a stale stream can abort
+  var _streamGen = 0;        // bumped on every scope switch so a stale stream/poll can abort
+  // Last-good payload per scope so My Leagues → This League never paints
+  // portfolio (cross-league) data under the league-scoped chrome.
+  var _scopeCache = { league: null, user: null };
+  if (_state && Object.keys(_state).length) {
+    _scopeCache[_state.scope || 'league'] = _state;
+  }
 
   document.addEventListener('click', function() { _hadInteraction = true; }, { once: true });
 
@@ -1921,7 +1927,7 @@
     root.querySelectorAll('.rz-scope-btn').forEach(function(btn) {
       btn.addEventListener('click', function() {
         if (btn.dataset.scope === _scope) return;
-        _streamGen++; // abort any in-flight My Leagues stream from a prior switch
+        _streamGen++; // abort any in-flight My Leagues stream / poll from a prior switch
         _streaming = false;
         _mlNames = []; _mlLoaded = null;
         _scope = btn.dataset.scope;
@@ -1934,8 +1940,17 @@
         _heroTouched = false; // let the new scope re-apply its default focus
         _feedPage = 0;
         _countdown = 1;
-        // Show skeleton cards until this scope's (often multi-league) data lands.
-        _loadingScope = true;
+        // Prefer the last-good payload for this scope so a late My Leagues
+        // response cannot flash ESPN/portfolio names under This League.
+        var cached = _scopeCache[_scope];
+        if (cached) {
+          _state = cached;
+          _myRids = _myRidSet(cached);
+          _loadingScope = false;
+        } else {
+          // Show skeleton cards until this scope's (often multi-league) data lands.
+          _loadingScope = true;
+        }
         _render();
         // My Leagues streams a card at a time; This League is a single fetch.
         if (_scope === 'user') _refreshUserStream();
@@ -2021,21 +2036,47 @@
   }
 
   // ── Polling ───────────────────────────────────────────────────────────────────
+  // Restore last-good data for the active scope after a failed scope-switch
+  // fetch. Never clear the skeleton onto a foreign scope's payload (that is
+  // how My Leagues ESPN names used to appear under This League).
+  function _recoverScopeLoad(myGen, myScope) {
+    if (myGen !== _streamGen || myScope !== _scope) return;
+    _lastPollFailed = true;
+    if (!_loadingScope) return;
+    var cached = _scopeCache[myScope];
+    if (cached) {
+      _state = cached;
+      _myRids = _myRidSet(cached);
+      _loadingScope = false;
+      _render();
+    }
+    // else keep the skeleton — do not paint the other scope's state
+  }
+
   async function _refresh() {
     if (_streaming) return; // a progressive My Leagues stream owns the screen
+    // Capture at start so a late My Leagues poll cannot overwrite This League
+    // (or vice versa) after the user flips the scope tabs.
+    var myGen = _streamGen;
+    var myScope = _scope;
     try {
       var parts = window.location.pathname.split('/');
       var apiBase = '/api/' + parts[1] + '/' + parts[2] + '/' + parts[3];
-      var url = apiBase + '/redzone-data?_cb=' + Date.now() + '&scope=' + _scope;
+      var url = apiBase + '/redzone-data?_cb=' + Date.now() + '&scope=' + myScope;
       if (_isDemo) { _demoT += 15; url += '&demo=1&t=' + _demoT; }
       var resp = await fetch(url);
-      if (!resp.ok) { _lastPollFailed = true; if (_loadingScope) { _loadingScope = false; _render(); } return; }
+      if (myGen !== _streamGen || myScope !== _scope) return;
+      if (!resp.ok) { _recoverScopeLoad(myGen, myScope); return; }
       var newData = await resp.json();
+      if (myGen !== _streamGen || myScope !== _scope) return;
+      // Server stamps scope; reject a mismatched payload even if gen lined up.
+      if (newData && newData.scope && newData.scope !== myScope) return;
       _lastPollFailed = false;
       _loadingScope = false;
       _myRids = _myRidSet(newData);
       _detectChanges(newData);
       _state = newData;
+      _scopeCache[myScope] = newData;
       _seedPrevStats(newData);
       _applyDefaultHero(); // focus the viewer's own matchup by default in This League
       _countdown = _pollInterval();
@@ -2073,7 +2114,7 @@
         });
         _flashRids.clear();
       }
-    } catch (_) { _lastPollFailed = true; if (_loadingScope) { _loadingScope = false; _render(); } }
+    } catch (_) { _recoverScopeLoad(myGen, myScope); }
   }
 
   // ── Progressive My Leagues load ────────────────────────────────────────────
@@ -2116,12 +2157,18 @@
     var apiBase = '/api/' + parts[1] + '/' + parts[2] + '/' + parts[3];
     var url = apiBase + '/redzone-data?_cb=' + Date.now() + '&scope=user&stream=1';
     var resp;
-    try { resp = await fetch(url); } catch (_) { _streaming = false; return _refresh(); }
+    try { resp = await fetch(url); } catch (_) {
+      _streaming = false;
+      if (myGen !== _streamGen) return;
+      return _refresh();
+    }
     if (myGen !== _streamGen) { _streaming = false; return; } // superseded by a newer switch
     var ctype = (resp.headers.get('content-type') || '');
     // Server fell back to aggregate JSON (no portfolio / error) → use it directly.
     if (!resp.ok || !resp.body || ctype.indexOf('ndjson') < 0) {
-      _streaming = false; _loadingScope = false; return _refresh();
+      _streaming = false;
+      if (myGen !== _streamGen) return;
+      return _refresh();
     }
 
     var base = _emptyUserState();
@@ -2137,11 +2184,13 @@
         if (obj.games_today != null) base.games_today = obj.games_today;
         _mlNames = (obj.leagues || []).map(function(l) { return l.name || 'League'; });
         _state = base; _myRids = new Set(); _loadingScope = false;
+        _scopeCache.user = base;
         _render();
       } else if (obj.type === 'league') {
         if (!obj.empty) { _mergeLeagueSlice(base, obj); gotLeague = true; }
         if (obj.index != null) _mlLoaded.add(obj.index);
         _state = base;
+        _scopeCache.user = base;
         _myRids = _myRidSet(base);
         // Seed snapshots for the arriving league so it fires no retroactive events.
         _seedPrevStats(base); _seedMilestones(base); _seedInjuries(base); _seedLeaders(base);
@@ -2173,8 +2222,9 @@
 
     _mlNames = []; _mlLoaded = null; _streaming = false;
     if (myGen !== _streamGen) return;
-    if (!gotLeague) { _loadingScope = false; return _refresh(); }
+    if (!gotLeague) { return _refresh(); }
     _state = base;
+    _scopeCache.user = base;
     _myRids = _myRidSet(base);
     _seedPrevStats(base);
     _loadingScope = false;
