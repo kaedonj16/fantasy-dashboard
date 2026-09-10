@@ -24,7 +24,6 @@
   var _filterOpen  = false;
   var _myTeamOnly  = false;
   var _heroMid    = null;
-  var _heroTouched = false; // true once the viewer explicitly picks/clears the hero matchup
   var _slideDir   = 'none';
   var _feedPage   = 0;
   var _prevMatchupPts = {};
@@ -864,24 +863,6 @@
     return (_state.matchups || []).find(function(m) { return String(m.matchup_id) === mid && !_isMyRid(m.roster_id); });
   }
 
-  // The viewer's own matchup, used as the default focused "game" in This League
-  // mode so a signed-in user lands on their own matchup rather than all of them.
-  // Returns null in My Leagues scope (where _heroMid is a roster id, not a
-  // matchup id) or when the viewer has no roster in this league.
-  function _defaultHeroMid() {
-    if (_scope !== 'league') return null;
-    var mine = _myMatchups();
-    return mine[0] ? String(mine[0].matchup_id) : null;
-  }
-
-  // Apply the default hero once, unless the viewer has explicitly chosen or
-  // cleared one (_heroTouched). Idempotent: once _heroMid is set it won't move.
-  function _applyDefaultHero() {
-    if (_heroTouched || _heroMid !== null) return;
-    var def = _defaultHeroMid();
-    if (def) _heroMid = def;
-  }
-
   function _playersLeft(matchup) {
     if (!matchup) return 0;
     return (matchup.starters || []).filter(function(pid) {
@@ -1656,7 +1637,6 @@
           _slideDir = 'from-right';
         }
         _heroMid = prevMid === mid ? null : mid;
-        _heroTouched = true;
         _feedPage = 0;
         _render();
       });
@@ -1734,8 +1714,7 @@
     var headerRight = root.querySelector('.rz-header-right');
     if (headerRight) {
       var liveChipHtml = _statusChipHtml();
-      var demoLink = !_isDemo ? '<a href="?demo=1" class="rz-demo-btn">Demo</a>' : '';
-      headerRight.innerHTML = demoLink + liveChipHtml + '<button class="rz-refresh-timer" id="rz-timer">' + _fmtTimer(_countdown) + '</button>';
+      headerRight.innerHTML = liveChipHtml + '<button class="rz-refresh-timer" id="rz-timer">' + _fmtTimer(_countdown) + '</button>';
     }
 
     // Replace hero cards in-place and re-wire. Preserve the strip's horizontal
@@ -1773,7 +1752,7 @@
         btn.addEventListener('click', function() { _filters[btn.dataset.clear] = 'all'; _feedPage = 0; _render(); });
       });
       root.querySelectorAll('[data-clear-hero]').forEach(function(el) {
-        el.addEventListener('click', function() { _heroMid = null; _heroTouched = true; _feedPage = 0; _render(); });
+        el.addEventListener('click', function() { _heroMid = null; _feedPage = 0; _render(); });
       });
       root.querySelectorAll('[data-fk]').forEach(function(btn) {
         btn.addEventListener('click', function() { _filters[btn.dataset.fk] = btn.dataset.fv; _filterOpen = false; _feedPage = 0; _render(); });
@@ -1840,10 +1819,19 @@
 
     var minePanel = _scope === 'user' ? _renderMyTeams() : _rosterCard(myMatchup);
 
-    // Pinned score bar for the Plays tab
+    // Pinned score bar for the Plays tab. This League always has one "my"
+    // matchup to pin. My Leagues only pins when a league card is selected —
+    // otherwise the feed shows all plays across leagues and a single score
+    // would misrepresent the view.
     var playsScoreBar = '';
-    if (myMatchup && !_loadingScope) {
-      var _mm = myMatchup, _om = oppMatchup;
+    var scoreMatchup = null;
+    if (_scope === 'user' && _heroMid) {
+      scoreMatchup = (mine || []).find(function(m) { return String(m.roster_id) === _heroMid; }) || null;
+    } else if (_scope === 'league') {
+      scoreMatchup = myMatchup;
+    }
+    if (scoreMatchup && !_loadingScope) {
+      var _mm = scoreMatchup, _om = _oppOf(_mm);
       var _myP = parseFloat(_mm.points || 0), _opP = parseFloat(_om ? _om.points || 0 : 0);
       var _win = _myP >= _opP, _diff = Math.abs(_myP - _opP).toFixed(1);
       var _liveBar = _anyLive();
@@ -1863,7 +1851,6 @@
         '<div class="rz-panel' + (_activeTab === 'opp'    ? ' active' : '') + '" id="rz-panel-opp">'    + _rosterCard(oppMatchup) + '</div>')
       + '<div class="rz-panel' + (_activeTab === 'top'    ? ' active' : '') + '" id="rz-panel-top">'    + _renderTopPerformers()  + '</div>';
 
-    var demoLink = !_isDemo ? '<a href="?demo=1" class="rz-demo-btn">Demo</a>' : '';
     var exitBtn  = _isDemo ? '<button class="rz-demo-exit" id="rz-demo-exit">Exit Demo</button>' : '';
     var staleChip = _lastPollFailed ? '<span class="rz-stale-badge">⚠ Stale</span>' : '';
     var timerLabel = _lastPollFailed ? '?' : (idle ? '-' : _fmtTimer(_countdown));
@@ -1874,7 +1861,7 @@
       notifCta
       + '<div class="rz-header">'
       + '<div class="rz-brand"><div class="rz-brand-dot' + (live ? ' is-live' : '') + '"></div><span class="rz-brand-name">BR Redzone</span><span class="rz-brand-week">Wk ' + (_state.week || '') + '</span>' + demoPill + '</div>'
-      + '<div class="rz-header-right">' + demoLink + exitBtn + staleChip + liveChip + '<button class="rz-refresh-timer" id="rz-timer">' + timerLabel + '</button></div>'
+      + '<div class="rz-header-right">' + exitBtn + staleChip + liveChip + '<button class="rz-refresh-timer" id="rz-timer">' + timerLabel + '</button></div>'
       + '</div>'
       + '<div class="rz-content">'
       + _renderScopeToggle()
@@ -1929,9 +1916,8 @@
         _feed = [];
         _shownFeedIds = new Set();
         _filterOpen = false;
-        _myTeamOnly = false;
+        _myTeamOnly = false; // always land on all plays; never prefer My Team
         _heroMid = null;
-        _heroTouched = false; // let the new scope re-apply its default focus
         _feedPage = 0;
         _countdown = 1;
         // Show skeleton cards until this scope's (often multi-league) data lands.
@@ -1970,7 +1956,7 @@
       });
     });
     root.querySelectorAll('[data-clear-hero]').forEach(function(el) {
-      el.addEventListener('click', function() { _heroMid = null; _heroTouched = true; _feedPage = 0; _render(); });
+      el.addEventListener('click', function() { _heroMid = null; _feedPage = 0; _render(); });
     });
     var exitDemo = root.querySelector('#rz-demo-exit');
     if (exitDemo) exitDemo.addEventListener('click', function() { window.location.href = window.location.pathname; });
@@ -2037,7 +2023,6 @@
       _detectChanges(newData);
       _state = newData;
       _seedPrevStats(newData);
-      _applyDefaultHero(); // focus the viewer's own matchup by default in This League
       _countdown = _pollInterval();
 
       var savedFeedHtml = null;
@@ -2256,7 +2241,7 @@
   _seedLeaders(_state);      // snapshot leading rosters so lead-change events don't fire on load
   _detectChanges(_state);    // populate initial feed from empty _prevStats
   _seedPrevStats(_state);    // snapshot stat lines for the next poll diff
-  _applyDefaultHero();       // focus the viewer's own matchup by default in This League
+  // Start unfocused: show all plays. Matchup cards still filter when tapped.
 
   _render();
   if (_isDemo) setTimeout(_refresh, 300);
