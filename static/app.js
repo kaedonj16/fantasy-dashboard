@@ -13128,6 +13128,69 @@ function pmSlugify(name) {
     .replace(/^-+|-+$/g, "");
 }
 
+// ── DEF / player image helpers ───────────────────────────────────────────────
+// NFL defenses are keyed by team abbr (no Sleeper headshot). Prefer the locally
+// cached crest under /static/images/team_logos/, then ESPN CDN (WAS → wsh).
+// Shared by Redzone, Draft Room, and any page that paints player avatars.
+window.brCanonNflTeam = function (t) {
+  t = String(t || '').trim().toUpperCase();
+  if (t === 'WSH') return 'WAS';
+  if (t === 'JAC') return 'JAX';
+  if (t === 'LA') return 'LAR';
+  return t;
+};
+window.brIsDefPos = function (pos) {
+  pos = String(pos || '').toUpperCase();
+  return pos === 'DEF' || pos === 'DST' || pos === 'D/ST';
+};
+window.brTeamLogoLocal = function (team) {
+  var t = window.brCanonNflTeam(team);
+  return t ? ('/static/images/team_logos/' + t + '.png') : '';
+};
+window.brTeamLogoEspn = function (team) {
+  var t = window.brCanonNflTeam(team);
+  if (!t) return '';
+  var slug = (t === 'WAS') ? 'wsh' : t.toLowerCase();
+  return 'https://a.espncdn.com/i/teamlogos/nfl/500/' + slug + '.png';
+};
+window.brPlayerImgUrl = function (p) {
+  p = p || {};
+  var pos = p.position || p.pos || '';
+  if (window.brIsDefPos(pos)) {
+    var team = p.team || p.nflTeam || p.nfl || p.id || p.pid || '';
+    var local = window.brTeamLogoLocal(team);
+    if (local) return local;
+  }
+  var id = p.id != null ? p.id : p.pid;
+  if (id == null || id === '') return '';
+  return 'https://sleepercdn.com/content/nfl/players/' + id + '.jpg';
+};
+window.brPlayerThumbUrl = function (p) {
+  p = p || {};
+  var pos = p.position || p.pos || '';
+  if (window.brIsDefPos(pos)) {
+    var team = p.team || p.nflTeam || p.nfl || p.id || p.pid || '';
+    var local = window.brTeamLogoLocal(team);
+    if (local) return local;
+  }
+  var id = p.id != null ? p.id : p.pid;
+  if (id == null || id === '') return '';
+  return 'https://sleepercdn.com/content/nfl/players/thumb/' + id + '.jpg';
+};
+// Inline onerror for DEF crest <img>s: try ESPN CDN once, then hide / mark err.
+window.brDefImgOnError = function (img, hideFn) {
+  if (!img) return;
+  var t = img.getAttribute('data-team') || '';
+  if (t && !img._espnFallback) {
+    img._espnFallback = true;
+    img.src = window.brTeamLogoEspn(t);
+    return;
+  }
+  if (typeof hideFn === 'function') hideFn(img);
+  else if (img.parentNode) img.parentNode.classList.add('img-err');
+  else img.style.visibility = 'hidden';
+};
+
 // @public-js:core-end  (everything below is app/feature code; excluded from public.js)
 
 // R06.3 — one in-app toast near lineup lock when starters need attention.

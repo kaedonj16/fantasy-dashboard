@@ -890,6 +890,17 @@
   function hsUrl(p) {
     if (!p) return "";
     if (p.headshot) return String(p.headshot);
+    const pos = String((p.pos || p.position || "")).toUpperCase();
+    const isDef = pos === "DEF" || pos === "DST" || pos === "D/ST";
+    if (isDef) {
+      let t = String(p.team || p.id || "").toUpperCase();
+      if (t === "WSH") t = "WAS";
+      if (t) {
+        // Extension CSP allows a.espncdn.com; local site logos may be cross-origin.
+        const slug = t === "WAS" ? "wsh" : t.toLowerCase();
+        return "https://a.espncdn.com/i/teamlogos/nfl/500/" + slug + ".png";
+      }
+    }
     const id = String(p.id || "");
     if (/^\d+$/.test(id)) return "https://sleepercdn.com/content/nfl/players/" + id + ".jpg";
     return "";
