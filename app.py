@@ -11812,7 +11812,8 @@ def _redzone_demo_data(t: float = _RZ_DEMO_START, scope: str = "league"):
         L = {"sacks": 0, "def_int": 0, "fum_rec": 0, "def_td": 0}
         for p in script:
             if p["t"] <= t_eff:
-                L[p["k"]] = L.get(p["k"], 0) + 1
+                key = "sacks" if p["k"] == "sack" else p["k"]
+                L[key] = L.get(key, 0) + 1
         return L
 
     def _demo_k_line(pid, t_eff):
@@ -11864,7 +11865,8 @@ def _redzone_demo_data(t: float = _RZ_DEMO_START, scope: str = "league"):
                 if p["t"] > t_eff:
                     break
                 line = {"sacks": 0, "def_int": 0, "fum_rec": 0, "def_td": 0}
-                line[p["k"]] = 1
+                key = "sacks" if p["k"] == "sack" else p["k"]
+                line[key] = 1
                 plays_out.append({
                     "play_id": f"{gid}:{pid}:{p['t']}",
                     "seq": len(plays_out),

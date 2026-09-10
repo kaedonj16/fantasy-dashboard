@@ -300,10 +300,54 @@
   function _lineToPts(L, s) {
     if (!L) return 0;
     s = s || _state.scoring || {};
-    return _n(L.pass_yds) * _n(s.pass_yd) + _n(L.pass_td) * _n(s.pass_td) + _n(L.int) * _n(s.pass_int)
+    var pts = _n(L.pass_yds) * _n(s.pass_yd) + _n(L.pass_td) * _n(s.pass_td) + _n(L.int) * _n(s.pass_int)
       + _n(L.rush_yds) * _n(s.rush_yd) + _n(L.rush_td) * _n(s.rush_td)
       + _n(L.rec) * _n(s.rec) + _n(L.rec_yds) * _n(s.rec_yd) + _n(L.rec_td) * _n(s.rec_td);
+    // Kicker + defense (Sleeper-style keys with common aliases)
+    pts += _n(L.fgm) * _n(s.fgm || s.fg) + _n(L.xpm) * _n(s.xpm || s.xp);
+    var sacks = _n(L.sacks != null ? L.sacks : L.sack);
+    pts += sacks * _n(s.sack) + _n(L.def_int) * _n(s.int || s.def_int)
+      + _n(L.fum_rec) * _n(s.fum_rec) + _n(L.def_td) * _n(s.def_td || s.td);
+    return pts;
   }
+
+  function _scoringForPid(pid, matchup) {
+    var sbl = _state.scoring_by_league || {};
+    var lid = (matchup && (matchup.league_id || matchup.leagueId)) || (_state.pid_league || {})[pid];
+    if (lid && sbl[lid]) return sbl[lid];
+    return _state.scoring || {};
+  }
+  // Platform players_points can lag behind Tank01 boxscores (Yahoo often sends
+  // {}). Prefer max(platform, boxscore) while the NFL game is live/final so
+  // My Teams doesn't show 0.0 for active players.
+  function _playerPts(pid, matchup) {
+    var pp = (matchup && matchup.players_points) || {};
+    var platformN = (pp[pid] != null && pp[pid] !== '') ? parseFloat(pp[pid]) : NaN;
+    var live = _lineToPts(_statLine(pid), _scoringForPid(pid, matchup));
+    var gs = _gameStatus(pid);
+    if (gs.type === 'live' || gs.type === 'final') {
+      if (isNaN(platformN)) return live;
+      return Math.max(platformN, live);
+    }
+    if (!isNaN(platformN)) return platformN;
+    return live || 0;
+  }
+  function _totalPtsForPid(pid, scoring, newData) {
+    var infoSrc = (newData && newData.player_info) || _state.player_info || {};
+    var fromLine = _lineToPts((infoSrc[pid] || {}).stat_line || null, scoring || _scoringForPid(pid));
+    var fromPlatform = NaN;
+    var matchups = (newData && newData.matchups) || _state.matchups || [];
+    for (var i = 0; i < matchups.length; i++) {
+      var pp = matchups[i].players_points || {};
+      if (pp[pid] != null && pp[pid] !== '') {
+        var n = parseFloat(pp[pid]);
+        if (!isNaN(n)) fromPlatform = isNaN(fromPlatform) ? n : Math.max(fromPlatform, n);
+      }
+    }
+    if (isNaN(fromPlatform)) return fromLine;
+    return Math.max(fromPlatform, fromLine);
+  }
+
   function _calcBreakdown(pos, bd, scoring) {
     var rows = [], total = 0;
     function row(label, val, key) {
@@ -595,7 +639,12 @@
       var info = _describe(d, pos);
       if (!info) return null;
       var earned = parseFloat((_lineToPts(newLine, scoring) - _lineToPts(oldLine, scoring)).toFixed(2));
-      return Object.assign({}, base, { desc: info.desc, kind: info.kind, stats: info.stats, pts: earned, ts: Date.now() + Math.random() });
+      // Cumulative total after this play (boxscore + platform, whichever is higher).
+      var totalPts = parseFloat(_totalPtsForPid(pid, scoring).toFixed(2));
+      return Object.assign({}, base, {
+        desc: info.desc, kind: info.kind, stats: info.stats, pts: earned,
+        totalPts: totalPts, ts: Date.now() + Math.random()
+      });
     }
 
     // DEF
@@ -695,7 +744,8 @@
           desc = info.desc;
         }
         var kind = play.is_td ? 'td' : (line.int > 0 ? 'neg'
-                 : ((line.rec || line.carries || line.pass_yds || line.fgm || line.sacks) ? 'gain' : 'target'));
+                 : ((line.rec || line.carries || line.pass_yds || line.fgm || line.sacks || line.sack
+                     || line.def_td || line.def_int || line.fum_rec) ? 'gain' : 'target'));
         var stats = [];
         if (line.rec) stats.push('reception');
         if (line.carries) stats.push('carry');
@@ -704,7 +754,7 @@
         if (line.int || line.def_int) stats.push('int');
         if (line.targets && !line.rec) stats.push('target');
         if (line.fgm || line.xpm) stats.push('kick');
-        if (line.sacks) stats.push('sack');
+        if (line.sacks || line.sack) stats.push('sack');
         events.push({
           pid: pid, name: _name(pid), pos: pos, nflTeam: _team(pid),
           rosterId: rid, owner: _ownerName(rid), league: _leagueOfRid(rid),
@@ -714,6 +764,7 @@
           gameClock: play.clock || ((_state.player_info || {})[pid] || {}).game_clock || '',
           down: play.down || '', distance: play.distance || '', yardLine: play.yard_line || '',
           desc: desc, kind: kind, stats: stats, pts: pts,
+          totalPts: parseFloat(_totalPtsForPid(pid, scoring, newData).toFixed(2)),
           playId: playKey, fromPbp: true,
           impact: ''
         });
@@ -781,6 +832,7 @@
           pid: pid, name: info.name || pid, pos: info.pos || '', nflTeam: info.team || '',
           rosterId: rid, owner: _ownerName(rid), league: _leagueOfRid(rid),
           desc: 'Scored ' + delta.toFixed(1) + ' pts', kind: 'gain', stats: ['pts'], pts: delta,
+          totalPts: parseFloat(_totalPtsForPid(pid, _scFor(pid), newData).toFixed(2)),
           mine: tags.my.has(rid), opp: tags.opp.has(rid), line: '', ts: Date.now()
         });
       });
@@ -1131,13 +1183,13 @@
   }
   function _rosterCard(matchup) {
     if (!matchup) return '<div class="rz-feed-empty">No lineup data.</div>';
-    var pp = matchup.players_points || {}, starters = matchup.starters || [];
+    var starters = matchup.starters || [];
     var bench = (matchup.players || []).filter(function(pid) { return pid !== '0' && !starters.includes(pid); });
     var rows = starters.map(function(pid) {
       if (pid === '0') return '<div class="rz-player-row"><span class="rz-pos-badge rz-pos-" style="opacity:.25"></span><div class="rz-player-info"><div class="rz-player-name" style="color:var(--rz-muted)">Empty slot</div></div><div class="rz-player-pts">0</div></div>';
-      return _playerRowHtml(pid, pp[pid], false);
+      return _playerRowHtml(pid, _playerPts(pid, matchup), false);
     }).join('');
-    var benchRows = bench.slice(0, 6).map(function(pid) { return _playerRowHtml(pid, pp[pid], true); }).join('');
+    var benchRows = bench.slice(0, 6).map(function(pid) { return _playerRowHtml(pid, _playerPts(pid, matchup), true); }).join('');
     return '<div class="rz-roster-card">' + rows
       + (bench.length ? '<div class="rz-section-label">Bench</div>' + benchRows : '') + '</div>';
   }
@@ -1459,12 +1511,63 @@
     );
   }
 
+  function _mtRowHtml(pid, matchup) {
+    if (pid === '0') {
+      return '<div class="rz-mt-row is-empty"><span class="rz-pos-badge" style="opacity:.25">—</span>'
+        + '<span class="rz-mt-name" style="color:var(--rz-muted)">Empty</span>'
+        + '<span class="rz-mt-pts">0.0</span></div>';
+    }
+    var gs = _gameStatus(pid);
+    var pts = _playerPts(pid, matchup);
+    var live = gs.type === 'live';
+    var status = live ? '<span class="rz-mt-live">LIVE</span>'
+               : gs.type === 'final' ? '<span class="rz-mt-final">FINAL</span>'
+               : '<span class="rz-mt-pre">' + (gs.label || '') + '</span>';
+    // Last name only keeps the compact list scannable across many leagues.
+    var full = _name(pid) || pid;
+    var short = full.indexOf(' ') >= 0 ? full.split(' ').slice(-1)[0] : full;
+    return (
+      '<div class="rz-mt-row' + (live ? ' is-live' : '') + '" data-pid="' + pid + '">'
+      + _posHtml(_pos(pid))
+      + '<span class="rz-mt-name" title="' + full + '">' + short + _injuryDot(pid) + '</span>'
+      + status
+      + '<span class="rz-mt-pts' + (live ? ' live-pts' : '') + '">' + _fmt(pts) + '</span>'
+      + '</div>'
+    );
+  }
+
   function _renderMyTeams() {
     var mine = _myMatchups();
     if (!mine.length) return '<div class="rz-feed-empty">No teams found.</div>';
-    return mine.map(function(m) {
-      return '<div class="rz-section-label" style="opacity:1;color:var(--rz-text);font-size:11px;">' + (m.league_name || 'League') + '</div>' + _rosterCard(m);
-    }).join('');
+    return '<div class="rz-mt-list">' + mine.map(function(m) {
+      var opp = _oppOf(m);
+      var myPts = parseFloat(m.points || 0);
+      var oppPts = opp ? parseFloat(opp.points || 0) : 0;
+      var starters = m.starters || [];
+      var anyLive = starters.some(function(pid) { return pid !== '0' && _gameStatus(pid).type === 'live'; });
+      var openAttr = anyLive ? ' open' : '';
+      var score = _fmt(myPts) + ' – ' + _fmt(oppPts);
+      var liveBadge = anyLive ? '<span class="rz-mt-sum-live">LIVE</span>' : '';
+      var rows = starters.map(function(pid) { return _mtRowHtml(pid, m); }).join('');
+      var bench = (m.players || []).filter(function(pid) { return pid !== '0' && starters.indexOf(pid) < 0; });
+      var benchHtml = '';
+      if (bench.length) {
+        benchHtml = '<details class="rz-mt-bench"><summary class="rz-mt-bench-sum">Bench (' + bench.length + ')</summary>'
+          + bench.slice(0, 8).map(function(pid) { return _mtRowHtml(pid, m); }).join('')
+          + '</details>';
+      }
+      return (
+        '<details class="rz-mt-league"' + openAttr + '>'
+        + '<summary class="rz-mt-sum">'
+        + '<span class="rz-mt-lg">' + (m.league_name || 'League') + '</span>'
+        + '<span class="rz-mt-score">' + score + '</span>'
+        + liveBadge
+        + '</summary>'
+        + '<div class="rz-mt-starters">' + rows + '</div>'
+        + benchHtml
+        + '</details>'
+      );
+    }).join('') + '</div>';
   }
 
   function _renderScoreboard() {
@@ -1539,10 +1642,12 @@
     _myMatchups().forEach(function(m) { (m.starters || []).forEach(function(p) { myStarters.add(p); }); });
     var pidMap = {};
     (_state.matchups || []).forEach(function(m) {
+      var seen = {};
       var pp = m.players_points || {};
-      Object.keys(pp).forEach(function(pid) {
-        if (pid === '0') return;
-        var pts = parseFloat(pp[pid] || 0);
+      Object.keys(pp).forEach(function(pid) { seen[pid] = true; });
+      (m.starters || []).forEach(function(pid) { if (pid && pid !== '0') seen[pid] = true; });
+      Object.keys(seen).forEach(function(pid) {
+        var pts = parseFloat(_playerPts(pid, m) || 0);
         if (!pidMap[pid] || pts > pidMap[pid].pts) pidMap[pid] = { pts: pts, roster_id: m.roster_id };
       });
     });
@@ -1587,6 +1692,7 @@
     var tagCls = ev.mine ? 'mine' : 'opp';
     var tag = tagLabel ? '<span class="rz-event-tag ' + tagCls + '">' + tagLabel + '</span>' : '';
     var ptStr = ev.pts > 0 ? '+' + _fmt(ev.pts) : _fmt(ev.pts);
+    var totalStr = (ev.totalPts != null && !isNaN(ev.totalPts)) ? _fmt(ev.totalPts) : '';
     var posKey = (ev.pos || 'x').toLowerCase().replace(/[^a-z]/g, '');
     var initials = (ev.name || '?').trim().split(/\s+/).map(function(w) { return w[0] || ''; }).join('').slice(0, 2).toUpperCase();
     // Game score line (already includes both teams) — bold the player's own
@@ -1620,7 +1726,10 @@
       + impactHtml
       + subRow
       + '</div>'
-      + '<div class="rz-event-delta ' + (ev.pts >= 0 ? 'pos' : 'neg') + '">' + ptStr + '</div>'
+      + '<div class="rz-event-delta ' + (ev.pts >= 0 ? 'pos' : 'neg') + '">'
+      + '<div class="rz-event-delta-pts">' + ptStr + '</div>'
+      + (totalStr ? '<div class="rz-event-total">' + totalStr + '</div>' : '')
+      + '</div>'
       + '</div>'
     );
   }
