@@ -69,10 +69,13 @@ def test_player_modal_team_tab_ui_wiring():
     assert "${profile}${olineRows}" not in js
     assert "${profile}" in js
     assert "${olineSec}" in js
-    # Schedule accordion under the Team tab header.
+    # Schedule accordion above Rest of Depth Chart; section starts collapsed.
     assert "_pmBuildScheduleHTML" in js
     assert "Schedule" in js
     assert "pm-team-schedule" in js
+    assert "pm-team-sched-toggle" in js
+    assert "pm-team-sched-body" in js
+    assert "_pmTeamSchedOpen" in js
     assert "pm-schedule-toggle" in js
     assert "pm-boxscore" in js
     assert "/api/player-team-boxscore" in js
@@ -80,6 +83,11 @@ def test_player_modal_team_tab_ui_wiring():
     assert "_pmCollapseAllSchedule" in js
     assert "${scheduleSec}" in js
     assert "Box score available once the game begins" in js
+    # Placement: Role → Schedule → Rest of Depth Chart
+    role_i = js.find("${roleName}")
+    sched_i = js.find("${scheduleSec}")
+    depth_i = js.find("Rest of Depth Chart")
+    assert role_i > 0 and sched_i > role_i and depth_i > sched_i
 
 
 def test_player_modal_team_tab_css():
@@ -91,7 +99,7 @@ def test_player_modal_team_tab_css():
         ".pm-tp-primary", ".pm-tp-for", ".pm-oline-link",
         ".pm-team-schedule", ".pm-schedule-row", ".pm-schedule-toggle",
         ".pm-boxscore", ".pm-boxscore-table", ".pm-boxscore-focus",
-        ".pm-boxscore-team-pill",
+        ".pm-boxscore-team-pill", ".pm-team-sched-toggle", ".pm-team-sched-body",
     ):
         assert cls in css, cls
 

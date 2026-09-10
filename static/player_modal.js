@@ -1855,6 +1855,7 @@ function _pmFetchTradesInto(panel, playerId, season, ctx) {
 // idle callback, so no intermediate tab state is ever painted.
 // ── Team tab (player modal) ───────────────────────────────────────────────────
 let _pmTeamAdvOpen = false;
+let _pmTeamSchedOpen = false;
 // Lazy box-score cache + in-flight dedupe, keyed by season_type + game_id.
 const _pmBoxCache = Object.create(null); // key -> { ts, data }
 const _pmBoxInflight = Object.create(null); // key -> Promise
@@ -1922,10 +1923,21 @@ function _pmBuildScheduleHTML(data) {
   const team = data.team || '';
   const focusPid = String(data.player_id || '');
   const note = viewSeason ? `${viewSeason} · ${team || 'team'}` : (team || 'schedule');
+  const schedOpen = _pmTeamSchedOpen;
+  const schedChev = schedOpen ? '&#9662;' : '&#9656;';
+  const schedHint = schedOpen ? 'click to collapse' : 'click to expand';
+  const header = `<div class="pm-section-header pm-section-collapsible pm-team-sched-toggle" role="button" tabindex="0" aria-expanded="${schedOpen ? 'true' : 'false'}" aria-controls="pmTeamSchedBody">
+      <span class="pm-collapse-chevron" aria-hidden="true">${schedChev}</span>
+      <span class="pm-section-label">Schedule</span>
+      <span class="pm-team-secnote">${_pmEsc(note)}</span>
+      <span class="pm-collapse-hint">${schedHint}</span>
+    </div>`;
   if (!games.length) {
     return `<div class="pm-team-sec pm-team-schedule">
-      <div class="pm-section-header"><span class="pm-section-label">Schedule</span><span class="pm-team-secnote">${_pmEsc(note)}</span></div>
-      <div class="pm-schedule-empty">Schedule unavailable for this season.</div>
+      ${header}
+      <div class="pm-team-sched-body" id="pmTeamSchedBody"${schedOpen ? '' : ' hidden'}>
+        <div class="pm-schedule-empty">Schedule unavailable for this season.</div>
+      </div>
     </div>`;
   }
   const rows = games.map(function (g, idx) {
@@ -1967,8 +1979,10 @@ function _pmBuildScheduleHTML(data) {
     </div>`;
   }).join('');
   return `<div class="pm-team-sec pm-team-schedule">
-    <div class="pm-section-header"><span class="pm-section-label">Schedule</span><span class="pm-team-secnote">${_pmEsc(note)}</span></div>
-    <div class="pm-schedule-list">${rows}</div>
+    ${header}
+    <div class="pm-team-sched-body" id="pmTeamSchedBody"${schedOpen ? '' : ' hidden'}>
+      <div class="pm-schedule-list">${rows}</div>
+    </div>
   </div>`;
 }
 
@@ -2517,7 +2531,6 @@ function _pmBuildTeamHTML(data) {
       </div>
       ${heroStats ? '<div class="pm-team-herostats">' + heroStats + '</div>' : ''}
     </div>
-    ${scheduleSec}
     <div class="pm-team-sec">
       <div class="pm-section-header"><span class="pm-section-label">Offense Profile</span><span class="pm-team-secnote">${seasonNote} · rank of 32</span></div>
       ${_pmTeamProfileAxis()}${profile}
@@ -2541,6 +2554,7 @@ function _pmBuildTeamHTML(data) {
       </div>
       <div class="pm-team-note">Depth order + injuries from Sleeper. Tap any teammate to open their card.</div>
     </div>
+    ${scheduleSec}
     <div class="pm-team-sec">
       <div class="pm-section-header"><span class="pm-section-label">Rest of Depth Chart</span><span class="pm-team-secnote">Sleeper order</span></div>
       <div class="pm-team-depth"><div class="pm-mini-grid">${miniCols}</div></div>
@@ -2594,6 +2608,30 @@ function _pmWireTeamPanel(panel, playerId) {
       if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
         e.preventDefault();
         flipAdv();
+      }
+    });
+  }
+
+  // Schedule section dropdown (default closed), matching More team ranks.
+  const schedToggle = panel.querySelector('.pm-team-sched-toggle');
+  const schedBody = panel.querySelector('.pm-team-sched-body');
+  if (schedToggle && schedBody) {
+    const flipSched = () => {
+      _pmTeamSchedOpen = !_pmTeamSchedOpen;
+      schedToggle.setAttribute('aria-expanded', _pmTeamSchedOpen ? 'true' : 'false');
+      schedBody.hidden = !_pmTeamSchedOpen;
+      const chev = schedToggle.querySelector('.pm-collapse-chevron');
+      const hint = schedToggle.querySelector('.pm-collapse-hint');
+      if (chev) chev.innerHTML = _pmTeamSchedOpen ? '&#9662;' : '&#9656;';
+      if (hint) hint.textContent = _pmTeamSchedOpen ? 'click to collapse' : 'click to expand';
+      if (hint) hint.style.opacity = _pmTeamSchedOpen ? '0.8' : '';
+      if (!_pmTeamSchedOpen) _pmCollapseAllSchedule(panel);
+    };
+    schedToggle.addEventListener('click', flipSched);
+    schedToggle.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
+        e.preventDefault();
+        flipSched();
       }
     });
   }
