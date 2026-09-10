@@ -4,13 +4,17 @@ Reuses Tank01 schedule caches (``load_week_schedule``), scoreboard
 (``get_nfl_scores_for_date``), and box scores (``fetch_tank_boxscore`` /
 shared redzone cache). Pure-ish helpers live here so the Team-tab route and
 lazy box-score endpoint stay thin and unit-testable without Flask.
+
+Avoid importing ``utils.utils`` at module load or from lightweight helpers —
+it pulls ``requests``, which the slim "Python lint & syntax" CI job does not
+install. Heavy loaders are imported lazily (or injected) only when needed.
 """
 from __future__ import annotations
 
 import logging
 import time
 from datetime import date, datetime
-from typing import Any, Optional
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +32,17 @@ _POST_WEEK_LABELS = {
     2: "Divisional",
     3: "Conference",
     4: "Super Bowl",
+}
+
+# Site form is WAS / JAX / LAR; Tank01 and some schedules still send WSH / JAC / LA.
+_TEAM_CANON = {"WSH": "WAS", "JAC": "JAX", "LA": "LAR"}
+_TEAM_ABBR_ALIASES = {
+    "WAS": "WSH",
+    "WSH": "WAS",
+    "JAC": "JAX",
+    "JAX": "JAC",
+    "LA": "LAR",
+    "LAR": "LA",
 }
 
 
@@ -65,19 +80,37 @@ def _block_num(block: Optional[dict], *keys: str) -> Optional[float]:
 
 
 def _canon(team: str) -> str:
-    from utils.utils import canon_team
-    return str(canon_team(team) or team or "").upper()
+    """Normalize to the site team code (WAS/JAX/LAR) without importing utils.utils."""
+    t = str(team or "").strip().upper()
+    if not t:
+        return ""
+    return _TEAM_CANON.get(t, t)
 
 
 def _team_keys(team: str) -> set[str]:
-    from utils.utils import team_abbr_keys
-    return set(team_abbr_keys(team) or ()) | ({_canon(team)} if team else set())
+    t = str(team or "").strip().upper()
+    if not t:
+        return set()
+    keys = {t, _canon(t)}
+    alt = _TEAM_ABBR_ALIASES.get(t)
+    if alt:
+        keys.add(alt)
+    return keys
 
 
 def _teams_match(a: str, b: str) -> bool:
     if not a or not b:
         return False
     return bool(_team_keys(a) & _team_keys(b))
+
+
+def _lookup_team_map(mapping: Optional[dict], team: str):
+    if not mapping or not team:
+        return None
+    for key in _team_keys(team):
+        if key in mapping:
+            return mapping[key]
+    return None
 
 
 def tank_boxscore_game_id(game: dict) -> str:
@@ -134,9 +167,7 @@ def _fmt_date_label(game_date: str) -> str:
 
 
 def _status_from_game(game: dict, today: str) -> str:
-    """Return 'scheduled' | 'live' | 'final'."""
-    from utils.utils import game_has_started, normalize_game_status_from_tank01
-
+    """Return 'scheduled' | 'live' | 'final' without importing utils.utils."""
     code = str(game.get("gameStatusCode") or "").strip()
     if code == "2":
         return "final"
@@ -145,20 +176,14 @@ def _status_from_game(game: dict, today: str) -> str:
     if code == "0":
         return "scheduled"
     gdate = str(game.get("gameDate") or "")
-    if gdate and gdate < today and game_has_started(game):
-        return "final"
     if gdate and gdate < today:
-        # Past date with no live markers — treat as final for schedule chrome.
         return "final"
     if gdate and gdate > today:
         return "scheduled"
-    try:
-        norm = normalize_game_status_from_tank01(game)
-    except Exception:
-        norm = "pre"
-    if norm == "post":
+    status = (game.get("gameStatus") or "").lower().strip()
+    if "final" in status or "completed" in status:
         return "final"
-    if norm == "in":
+    if "in progress" in status or "live" in status:
         return "live"
     return "scheduled"
 
@@ -196,8 +221,11 @@ def _enrich_from_scores(game: dict, team: str, score_by_date: dict) -> dict:
             logger.debug("scores enrich failed for %s", gdate, exc_info=True)
             lookup = {}
         score_by_date[gdate] = lookup
-    from utils.utils import lookup_team_map
-    scored = lookup_team_map(lookup, team) or lookup_team_map(lookup, game.get("home")) or lookup_team_map(lookup, game.get("away"))
+    scored = (
+        _lookup_team_map(lookup, team)
+        or _lookup_team_map(lookup, game.get("home") or "")
+        or _lookup_team_map(lookup, game.get("away") or "")
+    )
     if not scored:
         return game
     merged = dict(game)
@@ -319,12 +347,16 @@ def build_team_schedule(
     teams_index: Optional[dict] = None,
     include_postseason: bool = True,
     enrich_scores: bool = True,
+    load_week_fn=None,
 ) -> list[dict]:
     """Chronological schedule rows for one NFL team in a season.
 
     Regular season weeks 1–18 come from on-disk ``load_week_schedule``. Missing
     weeks become bye rows (or the known ``bye_week``). Optional postseason weeks
     are fetched via Tank01 ``seasonType=post`` when available.
+
+    ``load_week_fn`` is injectable so unit tests never import ``utils.utils``
+    (which requires ``requests`` — absent from the slim lint CI job).
     """
     team = _canon(team)
     if not team:
@@ -335,8 +367,13 @@ def build_team_schedule(
     if hit and now - hit[0] < _TEAM_SCHEDULE_TTL:
         return hit[1]
 
-    from utils.utils import load_week_schedule
-    from utils.nfl_teams import get_team_full_name
+    if load_week_fn is None:
+        from utils.utils import load_week_schedule as load_week_fn  # noqa: PLC0415
+    try:
+        from utils.nfl_teams import get_team_full_name
+    except Exception:
+        def get_team_full_name(abbr):  # type: ignore
+            return abbr
 
     today = date.today().strftime("%Y%m%d")
     score_by_date: dict = {}
@@ -345,7 +382,7 @@ def build_team_schedule(
 
     for w in range(1, 19):
         try:
-            games = load_week_schedule(int(season), w) or []
+            games = load_week_fn(int(season), w) or []
         except Exception:
             games = []
         match = None
