@@ -33262,12 +33262,19 @@ button:disabled {
 .rz-feed-hdr {
     display: flex;
     align-items: center;
-    gap: 6px;
+    justify-content: space-between;
+    gap: 12px;
     padding: 8px 14px 6px;
     min-height: 0;
     font-size: 11px;
     font-weight: 700;
     color: var(--rz-muted);
+}
+
+.rz-feed-hdr-left {
+    display: flex;
+    align-items: center;
+    gap: 6px;
 }
 
 .rz-fh-dot {
@@ -33282,6 +33289,50 @@ button:disabled {
 
 .rz-fh-text b {
     color: var(--rz-text);
+}
+
+/* Feed sort toggle */
+.rz-feed-sort {
+    display: flex;
+    gap: 0;
+    background: var(--rz-bg);
+    border: 1px solid var(--rz-border);
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.rz-sort-btn {
+    padding: 4px 10px;
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--rz-muted);
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    transition: all .15s;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+.rz-sort-btn:hover {
+    background: var(--rz-hover);
+    color: var(--rz-text);
+}
+
+.rz-sort-btn.active {
+    background: var(--rz-primary);
+    color: white;
+}
+
+@media (max-width: 430px) {
+    .rz-feed-hdr {
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+    .rz-feed-sort {
+        flex: 1;
+        min-width: 140px;
+    }
 }
 
 /* ── Feed list ────────────────────────── */

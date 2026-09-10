@@ -1,6 +1,6 @@
 // BR Redzone live-scoreboard module -- extracted from app.js so it only loads
 // on the Redzone page (gated server-side via page_redzone). Runs deferred,
-// after app.js, so the shared helpers it relies on (openPlayerModal,
+// after app.js, so the shared helpers it relies on (window.openPlayerModal,
 // window._rzBuildLiveHtml, window._rzSyncTabLive) and window.__rz__ are ready.
 // The IIFE still self-guards on #rz-root, so including it elsewhere is a no-op.
 
@@ -31,6 +31,7 @@
   var _seenContributions = new Set(); // contribution keys (play + pid) for deduping
   var _pbpGames = {}; // game_id → true once we have real PBP for that game
   var _pbpHistory = []; // full PBP contribution history (not capped)
+  var _playGroupsByKey = {}; // canonical play groups: nflPlayKey → {contributions, primaryEvent}
   var _alertsArmed = false; // suppress TD beep/push until the first hydration seeds the feed
   var _slideDir   = 'none';
   var _feedPage   = 0;
@@ -253,23 +254,25 @@
     return parseFloat(n).toFixed(1);
   }
   // Redzone-specific fantasy-point formatters that preserve precision
-  function _fmtFantasyDelta(n) {
+  // Preserve meaningful hundredths, strip unnecessary trailing zeros
+  // Examples: 0.04→"0.04", 1.04→"1.04", 1.1→"1.1", 6→"6", 8.44→"8.44"
+  function _fmtFantasyPrecise(n) {
     if (n == null || n === '') return '0';
     var val = parseFloat(n);
     if (isNaN(val)) return '0';
-    // Preserve hundredths for small deltas like +0.04 passing yards
-    if (Math.abs(val) < 0.1) return val.toFixed(2).replace(/\.?0+$/, '');
-    // One decimal for normal values, strip trailing .0
-    var s = val.toFixed(1);
-    return s.replace(/\.0$/, '');
+    // Round to hundredths to avoid floating-point artifacts
+    var rounded = Math.round(val * 100) / 100;
+    // Format with 2 decimals, then strip unnecessary trailing zeros
+    var s = rounded.toFixed(2);
+    // Remove trailing zeros after decimal: "1.00"→"1", "1.10"→"1.1", "1.04"→"1.04"
+    s = s.replace(/\.?0+$/, '');
+    return s;
+  }
+  function _fmtFantasyDelta(n) {
+    return _fmtFantasyPrecise(n);
   }
   function _fmtFantasyTotal(n) {
-    if (n == null || n === '') return '0';
-    var val = parseFloat(n);
-    if (isNaN(val)) return '0';
-    // One decimal, strip trailing .0
-    var s = val.toFixed(1);
-    return s.replace(/\.0$/, '');
+    return _fmtFantasyPrecise(n);
   }
   function _fmtTimer(n) {
     n = Math.max(0, Math.round(n));
@@ -447,6 +450,7 @@
     _seenContributions = new Set();
     _pbpGames = {};
     _pbpHistory = [];
+    _playGroupsByKey = {};
     // A scope switch rehydrates from scratch -- re-arm alerts only after it does.
     _alertsArmed = false;
   }
@@ -873,8 +877,10 @@
   }
 
   // NFL play identity: game_id + play_id (no pid)
+  // MUST include gid even when play_id exists to prevent cross-game collisions
   function _nflPlayKey(play, gid) {
-    return String(play.play_id || (gid + ':' + (play.seq || 0)));
+    var playId = play.play_id || ('seq:' + (play.seq || 0));
+    return gid + ':' + playId;
   }
   // Fantasy contribution identity: NFL play + pid
   function _contributionKey(play, gid, pid) {
@@ -919,7 +925,7 @@
     // Receiving TD
     if (line.rec_td > 0 && line.rec > 0) {
       var qb = contributions.find(function(c) { return c.line.pass_td > 0 && c.pid !== primary.pid; });
-      var qbName = qb ? qb.name.split(' ').pop() : '';
+      var qbName = qb ? qb.name : '';
       return yds > 0
         ? yds + '-yard TD reception' + (qbName ? ' from ' + qbName : '')
         : 'TD reception' + (qbName ? ' from ' + qbName : '');
@@ -927,7 +933,7 @@
     // Completed pass (receiver primary)
     if (line.rec > 0) {
       var qb2 = contributions.find(function(c) { return (c.line.pass_yds > 0 || c.line.pass_td > 0) && c.pid !== primary.pid; });
-      var qbName2 = qb2 ? qb2.name.split(' ').pop() : '';
+      var qbName2 = qb2 ? qb2.name : '';
       return yds > 0
         ? yds + '-yard reception' + (qbName2 ? ' from ' + qbName2 : '')
         : 'Reception' + (qbName2 ? ' from ' + qbName2 : '');
@@ -935,7 +941,7 @@
     // Incomplete target
     if (line.targets > 0 && !line.rec) {
       var qb3 = contributions.find(function(c) { return c.pos === 'QB' && c.pid !== primary.pid; });
-      var qbName3 = qb3 ? qb3.name.split(' ').pop() : '';
+      var qbName3 = qb3 ? qb3.name : '';
       return 'Target' + (qbName3 ? ' from ' + qbName3 : '') + ' · incomplete';
     }
     // Rushing TD
@@ -953,7 +959,7 @@
     if (line.pass_td > 0) return yds > 0 ? yds + '-yard TD pass' : 'TD pass';
     // Kicker
     if (line.fgm > 0) {
-      var dist = Math.round(line.fg_long || 0);
+      var dist = Math.round(line.fg_long || line.fg_yds || 0);
       return dist > 0 ? dist + '-yard field goal' : 'Field goal';
     }
     if (line.xpm > 0) return 'Extra point';
@@ -968,9 +974,16 @@
     return info ? info.desc : 'Play';
   }
 
+  // Calculate post-play cumulative fantasy total from play.cume stats
+  function _cumeToFantasyPts(cume, scoring, pos) {
+    if (!cume || typeof cume !== 'object') return null;
+    return parseFloat(_lineToPts(cume, scoring, pos).toFixed(2));
+  }
+
   function _eventsFromPbp(newData, tags, scFor) {
     var byGame = newData.pbp_by_game || {};
     var newContributions = [];
+    // Process new contributions
     Object.keys(byGame).forEach(function(gid) {
       _pbpGames[gid] = true;
       (byGame[gid] || []).forEach(function(play) {
@@ -985,6 +998,9 @@
         var scoring = scFor(pid);
         var pos = _pos(pid);
         var pts = parseFloat(_lineToPts(line, scoring, pos).toFixed(2));
+        // Post-play total: use cume if available, else fall back to current total
+        var cumePts = _cumeToFantasyPts(play.cume, scoring, pos);
+        var totalPts = cumePts !== null ? cumePts : parseFloat(_totalPtsForPid(pid, scoring, newData).toFixed(2));
         var kind = play.is_td ? 'td' : (line.int > 0 ? 'neg'
                  : ((line.rec || line.carries || line.pass_yds || line.fgm || line.sacks || line.sack
                      || line.def_td || line.def_int || line.fum_rec) ? 'gain' : 'target'));
@@ -1013,30 +1029,39 @@
           seq: play.seq || 0,
           gameId: gid,
           cume: play.cume || null,
-          totalPts: parseFloat(_totalPtsForPid(pid, scoring, newData).toFixed(2))
+          cumeStatLine: play.cume || null,
+          totalPts: totalPts,
+          scoring: scoring
         };
         newContributions.push(contrib);
         _pbpHistory.push(contrib);
       });
     });
-    // Group contributions by NFL play
-    var playGroups = {};
+    // Merge new contributions into canonical play groups
     newContributions.forEach(function(c) {
-      if (!playGroups[c.playKey]) playGroups[c.playKey] = [];
-      playGroups[c.playKey].push(c);
+      var group = _playGroupsByKey[c.playKey];
+      if (!group) {
+        _playGroupsByKey[c.playKey] = {contributions: [c], needsUpdate: true};
+      } else {
+        group.contributions.push(c);
+        group.needsUpdate = true;
+      }
     });
-    // Create one event per NFL play with primary actor
+    // Generate/update events for plays that need it
     var events = [];
-    Object.keys(playGroups).forEach(function(playKey) {
-      var contribs = playGroups[playKey];
-      if (_seenPlayIds.has(playKey)) return;
-      _seenPlayIds.add(playKey);
+    Object.keys(_playGroupsByKey).forEach(function(playKey) {
+      var group = _playGroupsByKey[playKey];
+      if (!group.needsUpdate) return;
+      group.needsUpdate = false;
+      var contribs = group.contributions;
       var primary = _selectPrimaryActor(contribs);
       if (!primary) return;
       var desc = _improvePlayDesc(primary, contribs, primary.rawPlayText);
       var allMine = contribs.some(function(c) { return c.mine; });
       var allOpp = contribs.some(function(c) { return c.opp; });
-      events.push({
+      var isNewPlay = !_seenPlayIds.has(playKey);
+      if (isNewPlay) _seenPlayIds.add(playKey);
+      var event = {
         pid: primary.pid,
         name: primary.name,
         pos: primary.pos,
@@ -1059,12 +1084,16 @@
         pts: primary.pts,
         statLine: primary.line,
         cume: primary.cume,
+        cumeStatLine: primary.cumeStatLine,
         totalPts: primary.totalPts,
         playId: playKey,
         fromPbp: true,
         contributions: contribs,
+        isUpdate: !isNewPlay,
         impact: ''
-      });
+      };
+      group.primaryEvent = event;
+      events.push(event);
     });
     return events;
   }
@@ -1093,13 +1122,27 @@
     // Real play-by-play first (Tank01 / demo). Mark those games so we don't
     // also invent bulk-diff blurbs for the same snaps.
     var pbpEvents = _eventsFromPbp(newData, tags, _scFor);
-    // Cold boot can dump an entire game of PBP -- keep the most recent slice.
-    if (!_feed.length && pbpEvents.length > 40) {
-      pbpEvents = pbpEvents.slice(-40);
-    }
+    // No arbitrary limits - full PBP history retained
+    // Separate new plays from updates
+    var newPlays = [];
+    var updates = [];
     pbpEvents.forEach(function(ev) {
-      allEvents.push(ev);
+      if (ev.isUpdate) {
+        updates.push(ev);
+      } else {
+        newPlays.push(ev);
+        allEvents.push(ev);
+      }
       handled[ev.pid] = true;
+    });
+    // Update existing feed entries for plays that got new contributions
+    updates.forEach(function(upd) {
+      for (var i = 0; i < _feed.length; i++) {
+        if (_feed[i].playId === upd.playId) {
+          _feed[i] = upd;
+          break;
+        }
+      }
     });
     Object.keys(newData.player_info || {}).forEach(function(pid) {
       var pi = newData.player_info[pid] || {};
@@ -1152,9 +1195,18 @@
 
     // Push notification + audio chime for my TDs + log to history. Only for TDs
     // found by a live poll -- never the initial backfill of already-played snaps.
+    // Dedupe by playId so grouped plays (QB+receiver) only trigger ONE alert.
     var myTDs = _alertsArmed
-      ? allEvents.filter(function(ev) { return ev.kind === 'td' && ev.mine; })
+      ? allEvents.filter(function(ev) { return ev.kind === 'td' && ev.mine && !ev.isUpdate; })
       : [];
+    // Dedupe by playId - one alert per NFL play regardless of contributors
+    var seenTdPlays = new Set();
+    myTDs = myTDs.filter(function(ev) {
+      var key = ev.playId || (ev.pid + ':' + ev.ts);
+      if (seenTdPlays.has(key)) return false;
+      seenTdPlays.add(key);
+      return true;
+    });
     if (myTDs.length) {
       myTDs.forEach(function(ev) {
         _notifHistory.unshift({ ts: Date.now(), name: ev.name, desc: ev.desc, pts: ev.pts, kind: ev.kind });
@@ -1168,8 +1220,8 @@
           navigator.serviceWorker.ready.then(function(sw) {
             myTDs.forEach(function(ev) {
               var p = sw.showNotification('TD: ' + ev.name, {
-                body: ev.desc + (ev.pts > 0 ? '  +' + _fmt(ev.pts) + ' pts' : ''),
-                icon: '/static/BR_Mark.png?v=f4228e0e', tag: 'rz-td-' + ev.pid
+                body: ev.desc + (ev.pts > 0 ? '  +' + _fmtFantasyPrecise(ev.pts) + ' pts' : ''),
+                icon: '/static/BR_Mark.png?v=f4228e0e', tag: 'rz-td-' + (ev.playId || ev.pid)
               });
               if (p && p.catch) p.catch(function() {});
             });
@@ -1420,15 +1472,27 @@
                     ['pass','Pass'], ['target','Target'], ['int','INT'], ['milestone','Milestone'], ['lead_change','Lead']];
 
   function _eventMatches(ev) {
+    // Ownership filters inspect ALL contributions (QB + receiver both count)
     if (_myTeamOnly && !ev.mine) return false;
     if (_bigPlaysOnly && !_isBigPlay(ev)) return false;
     if (_filters.nfl !== 'all') {
       var gid = ((_state.player_info || {})[ev.pid] || {}).game_id || '';
       if (gid !== _filters.nfl) return false;
     }
+    // Position filter checks primary actor only
     if (_filters.pos !== 'all' && ev.pos !== _filters.pos) return false;
     if (_filters.stat !== 'all' && (ev.stats || []).indexOf(_filters.stat) < 0) return false;
-    if (_heroMid) { var hp = _heroMatchupPids(); if (hp && !hp.has(ev.pid)) return false; }
+    // Hero matchup: check if ANY contribution involves hero matchup players
+    if (_heroMid) {
+      var hp = _heroMatchupPids();
+      if (hp) {
+        var hasHero = hp.has(ev.pid);
+        if (!hasHero && ev.contributions) {
+          hasHero = ev.contributions.some(function(c) { return hp.has(c.pid); });
+        }
+        if (!hasHero) return false;
+      }
+    }
     return true;
   }
   function _topMatches(pid, rid) {
@@ -2176,8 +2240,6 @@
     var cumeHtml = cumeStr
       ? '<div class="rz-event-cume">' + ev.pos + ' · ' + cumeStr + '</div>'
       : '';
-    var impact = _impactLine(ev);
-    var impactHtml = impact ? '<div class="rz-event-impact">' + impact + '</div>' : '';
     var isDef = String(ev.pos || '').toUpperCase() === 'DEF';
     var defTeam = ev.nflTeam || (isDef ? ev.pid : '') || '';
     var avSrc, avOnErr;
@@ -2205,7 +2267,6 @@
       + '<div class="rz-event-main"><span class="rz-event-name">' + ev.name + '</span>' + tag + '</div>'
       + '<div class="rz-event-desc">' + ev.desc + ydChip + '</div>'
       + cumeHtml
-      + impactHtml
       + '</div>'
       + '<div class="rz-event-delta ' + deltaCls + '">'
       + '<div class="rz-event-delta-pts">' + (deltaPrimary || '') + '</div>'
@@ -2346,7 +2407,9 @@
       return;
     }
 
-    var list = _chronoSort(_feed.filter(_eventMatches));
+    // Apply feed ordering preference
+    var filtered = _feed.filter(_eventMatches);
+    var list = _feedSort === 'latest' ? _chronoSort(filtered) : _softRank(filtered);
     // Hero focus alone should not force the "no matching" empty when the feed
     // itself is empty -- the pregame schedule already respects hero focus.
     var hardFilter = _filters.nfl !== 'all' || _filters.pos !== 'all' || _filters.stat !== 'all' || _myTeamOnly || _bigPlaysOnly
@@ -2405,7 +2468,7 @@
       _renderPagination(totalPages);
       container.querySelectorAll('[data-pid]').forEach(function(el) {
         if (!el.dataset.pid || el.dataset.pid === '0') return;
-        el.onclick = function() { openPlayerModal(el.dataset.pid, _name(el.dataset.pid), { tab: 'live' }); };
+        el.onclick = function() { window.openPlayerModal(el.dataset.pid, _name(el.dataset.pid), { tab: 'live' }); };
       });
       return;
     }
@@ -2455,7 +2518,7 @@
               container.insertBefore(n, container.firstChild);
               n.querySelectorAll('[data-pid]').forEach(function(el) {
                 if (!el.dataset.pid || el.dataset.pid === '0') return;
-                el.onclick = function() { openPlayerModal(el.dataset.pid, _name(el.dataset.pid), { tab: 'live' }); };
+                el.onclick = function() { window.openPlayerModal(el.dataset.pid, _name(el.dataset.pid), { tab: 'live' }); };
               });
             }, delay);
           })(node, ev, insertDelay);
@@ -2511,22 +2574,35 @@
 
     _renderPagination(totalPages);
 
-    // Live feed header
+    // Live feed header with Latest/For You toggle
     var hdr = document.getElementById('rz-feed-hdr');
     if (hdr) {
       var totalEvts = list.length;
       var liveNow = _anyLive();
-      hdr.innerHTML = totalEvts
+      var statusText = totalEvts
         ? (liveNow
           ? '<span class="rz-fh-dot"></span><span class="rz-fh-text">Live · <b>' + totalEvts + '</b> ' + (totalEvts === 1 ? 'play' : 'plays') + '</span>'
           : '<span class="rz-fh-text"><b>' + totalEvts + '</b> ' + (totalEvts === 1 ? 'play' : 'plays') + ' · Final</span>')
         : '';
+      var sortToggle = '<div class="rz-feed-sort">'
+        + '<button class="rz-sort-btn' + (_feedSort === 'foryou' ? ' active' : '') + '" data-sort="foryou">For You</button>'
+        + '<button class="rz-sort-btn' + (_feedSort === 'latest' ? ' active' : '') + '" data-sort="latest">Latest</button>'
+        + '</div>';
+      hdr.innerHTML = '<div class="rz-feed-hdr-left">' + statusText + '</div>' + sortToggle;
+      // Wire sort toggle
+      hdr.querySelectorAll('.rz-sort-btn').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          _feedSort = btn.dataset.sort;
+          _savePrefs();
+          _render();
+        });
+      });
     }
 
     container.querySelectorAll('[data-pid]').forEach(function(el) {
       if (el.classList.contains('rz-player-pts')) return;
       if (!el.dataset.pid || el.dataset.pid === '0') return;
-      el.onclick = function() { openPlayerModal(el.dataset.pid, _name(el.dataset.pid), { tab: 'live' }); };
+      el.onclick = function() { window.openPlayerModal(el.dataset.pid, _name(el.dataset.pid), { tab: 'live' }); };
     });
   }
 
@@ -2980,10 +3056,10 @@
     root.querySelectorAll('[data-pid]').forEach(function(el) {
       if (el.classList.contains('rz-player-pts')) return;
       // Feed events are wired by _syncFeed (el.onclick) -- skip them here so a
-      // click doesn't fire openPlayerModal twice (two stacked modals).
+      // click doesn't fire window.openPlayerModal twice (two stacked modals).
       if (el.classList.contains('rz-event')) return;
       if (!el.dataset.pid || el.dataset.pid === '0') return;
-      el.addEventListener('click', function() { openPlayerModal(el.dataset.pid, _name(el.dataset.pid), { tab: 'live' }); });
+      el.addEventListener('click', function() { window.openPlayerModal(el.dataset.pid, _name(el.dataset.pid), { tab: 'live' }); });
     });
   }
 
