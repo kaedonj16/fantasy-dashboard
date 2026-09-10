@@ -1609,10 +1609,27 @@
       : '';
     var impact = _impactLine(ev);
     var impactHtml = impact ? '<div class="rz-event-impact">' + impact + '</div>' : '';
+    var isDef = String(ev.pos || '').toUpperCase() === 'DEF';
+    var defTeam = ev.nflTeam || (isDef ? ev.pid : '') || '';
+    var avSrc, avOnErr;
+    if (isDef && defTeam && window.brTeamLogoLocal) {
+      avSrc = window.brTeamLogoLocal(defTeam);
+      avOnErr = 'brDefImgOnError(this)';
+    } else if (isDef && defTeam) {
+      var _dt = String(defTeam).toUpperCase();
+      if (_dt === 'WSH') _dt = 'WAS';
+      avSrc = '/static/images/team_logos/' + _dt + '.png';
+      avOnErr = "var t=this.getAttribute('data-team');if(t&&!this._espnFallback){this._espnFallback=1;this.src='https://a.espncdn.com/i/teamlogos/nfl/500/'+(String(t).toUpperCase()==='WAS'?'wsh':String(t).toLowerCase())+'.png';}else{this.parentNode.classList.add('img-err');}";
+    } else {
+      avSrc = 'https://sleepercdn.com/content/nfl/players/thumb/' + ev.pid + '.jpg';
+      avOnErr = "this.parentNode.classList.add('img-err')";
+    }
     return (
       '<div class="rz-event ' + ev.kind + (ev.mine ? ' is-mine' : '') + (_isBigPlay(ev) ? ' is-big' : '') + (animate ? '' : ' rz-event-old') + '" data-pid="' + ev.pid + '">'
       + '<div class="rz-event-avatar rz-av-' + posKey + '" data-init="' + initials + '">'
-      + '<img class="rz-headshot" src="https://sleepercdn.com/content/nfl/players/thumb/' + ev.pid + '.jpg" alt="" onerror="this.parentNode.classList.add(\'img-err\')">'
+      + '<img class="rz-headshot' + (isDef ? ' rz-team-logo' : '') + '" src="' + avSrc + '" alt=""'
+      + (isDef && defTeam ? ' data-team="' + String(defTeam).replace(/"/g, '') + '"' : '')
+      + ' onerror="' + avOnErr + '">'
       + '</div>'
       + '<div class="rz-event-body">'
       + '<div class="rz-event-main"><span class="rz-event-name">' + ev.name + '</span>' + tag + '</div>'

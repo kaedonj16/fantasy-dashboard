@@ -15192,12 +15192,30 @@ def page_schedule(platform: str, season: int, league_id: str):
 
 def _face_html(p: dict, tone: str) -> str:
     """Player headshot backed by a tone-tinted initial badge. The initial shows
-    through when the headshot is missing/404s (onerror removes the img)."""
+    through when the headshot is missing/404s (onerror removes the img).
+    DEF/DST use the NFL team logo (local → ESPN) instead of a Sleeper headshot —
+    defense ids are team abbreviations and have no player photo."""
     name = str(p.get("name") or "?").strip()
     initial = html.escape(name[0].upper() if name else "?")
     pid = str(p.get("pid") or p.get("player_id") or "").strip()
+    pos = str(p.get("pos") or p.get("position") or "").upper()
+    if pos in ("DST", "D/ST"):
+        pos = "DEF"
     img = ""
-    if pid:
+    if pos == "DEF":
+        from utils.utils import canon_team, def_team_logo_urls
+        team = canon_team(p.get("nfl") or p.get("team") or pid) or ""
+        local, espn = def_team_logo_urls(team) if team else ("", "")
+        if local or espn:
+            src = html.escape(local or espn)
+            fb = html.escape(espn or "")
+            onerr = (
+                f"if(!this.dataset.fb&&'{fb}'){{this.dataset.fb=1;this.src='{fb}';}}"
+                f"else this.remove()"
+            )
+            img = (f'<img class="rc-face" src="{src}" alt="" loading="lazy" '
+                   f'decoding="async" onerror="{onerr}">')
+    elif pid:
         url = f"https://sleepercdn.com/content/nfl/players/thumb/{pid}.jpg"
         img = (f'<img class="rc-face" src="{url}" alt="" loading="lazy" '
                f'decoding="async" onerror="this.remove()">')
@@ -18441,14 +18459,28 @@ def _build_league_players_payload_uncached(kdef: bool = False) -> dict:
                     _kdef.append(_row)
             # Team defenses: not in players_index at all. Generate one entry per NFL
             # team. Sleeper identifies DST players by the team abbreviation as the ID.
+            # Attach the ESPN team logo so nav search / compare / modal can render a
+            # crest instead of a missing Sleeper headshot.
+            try:
+                from utils.utils import load_teams_index as _lti_def, def_team_logo_urls as _def_logos
+                _ti_def = _lti_def() or {}
+            except Exception:
+                _ti_def = {}
+                _def_logos = None
             for _team in _nfl_teams:
                 if _team not in _seen:
+                    _logo = ""
+                    if _def_logos:
+                        _logo = (_def_logos(_team)[1] or "")
+                    elif isinstance(_ti_def.get(_team), dict):
+                        _logo = str((_ti_def.get(_team) or {}).get("Logo") or "")
                     _kdef.append({
                         "id": _team,
                         "name": _team + " D/ST",
                         "position": "DEF",
                         "team": _team,
                         "value": 0, "sf_value": 0,
+                        "espnHeadshot": _logo,
                     })
             # Attach real Sleeper ADP so K/DEF sort by when managers actually draft
             # them (elite D/STs go rounds ~11-14) instead of alphabetically. Sleeper
@@ -19902,8 +19934,23 @@ def api_player_details(player_id: str):
             players_index_full = load_players_index() or {}
             player_meta = players_index_full.get(player_id, {})
 
+        # DEF/DST: Sleeper ids are team abbreviations (SF, WAS, …) and are not
+        # in players_index. Synthesize a minimal meta so the modal can show the
+        # team logo instead of 404ing.
         if not player_meta:
-            return jsonify({"error": "Player not found"}), 404
+            from utils.utils import canon_team, load_teams_index, def_team_logo_urls
+            _def_team = canon_team(player_id) or str(player_id or "").strip().upper()
+            _ti = load_teams_index() or {}
+            if _def_team and _def_team in _ti:
+                _local, _espn = def_team_logo_urls(_def_team)
+                player_meta = {
+                    "name": f"{_def_team} D/ST",
+                    "pos": "DEF",
+                    "team": _def_team,
+                    "espnHeadshot": _espn or _local,
+                }
+            else:
+                return jsonify({"error": "Player not found"}), 404
 
         player_team = canon_team(player_meta.get("team", "")) or player_meta.get("team", "")
 

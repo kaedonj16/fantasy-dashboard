@@ -1121,9 +1121,33 @@ from utils.proj_variant import pick_proj_variant
 # NFL team metadata / byes
 # ------------------------------------------------
 
+def _espn_logo_slug(team_abv: str) -> str:
+    """ESPN CDN team-logo slug (WAS → wsh; site-canonical otherwise)."""
+    t = (canon_team(team_abv) or str(team_abv or "")).strip().upper()
+    if t == "WAS":
+        return "wsh"
+    return t.lower()
+
+
 def _espn_logo_url(team_abv: str) -> str:
-    # ESPN logo fallback (500px)
-    return f"https://a.espncdn.com/i/teamlogos/nfl/500/{team_abv.lower()}.png"
+    # ESPN logo fallback (500px). Prefer teams_index.Logo when available.
+    return f"https://a.espncdn.com/i/teamlogos/nfl/500/{_espn_logo_slug(team_abv)}.png"
+
+
+def def_team_logo_urls(team_abv: str) -> tuple[str, str]:
+    """Local team-logo path + ESPN CDN URL for a DEF/DST (WAS-canonical).
+
+    Local files live at ``/static/images/team_logos/{ABBR}.png`` (WAS, not WSH).
+    ESPN uses ``wsh.png`` for Washington — prefer ``teams_index[team]["Logo"]``
+    when present so the CDN slug stays correct.
+    """
+    team = (canon_team(team_abv) or str(team_abv or "")).strip().upper()
+    if not team:
+        return ("", "")
+    local = f"/static/images/team_logos/{team}.png"
+    ti = (load_teams_index() or {}).get(team) or {}
+    espn = str(ti.get("Logo") or "").strip() or _espn_logo_url(team)
+    return (local, espn)
 
 
 def _safe_get(d: dict, *keys, default=None):
@@ -1450,12 +1474,24 @@ def pinfo_for_pid(
     elif pid in teams_index:
         pos = "DEF"
 
-    return {
+    out = {
         "pid": pid,
         "name": name,
         "pos": pos,
         "nfl": nfl,
     }
+    # DEF/DST: surface the NFL team logo so callers can render a crest instead
+    # of a missing Sleeper headshot (DEF ids are team abbreviations).
+    if str(pos or "").upper() in ("DEF", "DST", "D/ST") and nfl:
+        _local, _espn = def_team_logo_urls(nfl)
+        if _espn:
+            out["logo"] = _espn
+            out["logo_local"] = _local
+    elif team_info.get("Logo"):
+        # Team-abbr pid looked up purely from teams_index.
+        out["logo"] = team_info.get("Logo")
+        out["logo_local"] = f"/static/images/team_logos/{(nfl or pid)}.png"
+    return out
 
 
 

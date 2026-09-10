@@ -33237,6 +33237,14 @@ button:disabled {
     display: block;
 }
 
+/* DEF/DST crests: contain the full logo instead of cropping like a headshot. */
+.rz-headshot.rz-team-logo {
+    object-fit: contain;
+    object-position: center;
+    padding: 2px;
+    background: #fff;
+}
+
 /* Initials fallback when headshot fails */
 .rz-event-avatar.img-err .rz-headshot {
     opacity: 0;
