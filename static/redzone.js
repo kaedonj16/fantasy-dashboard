@@ -892,11 +892,23 @@
 
 
   function _pidFromPlayName(play, newData) {
+    // CRITICAL: Validate explicit play.pid against canonical player_info before trusting it.
+    // A backend/provider PID must exist in the canonical index to be used.
+    // This prevents wrong-namespace, stale, or malformed PIDs from being blindly accepted.
+    var info = (newData && newData.player_info) || _state.player_info || {};
     var pid = play.pid || '';
-    if (pid && pid !== '0') return pid;
+    if (pid && pid !== '0' && Object.prototype.hasOwnProperty.call(info, String(pid))) {
+      return String(pid);
+    }
+    
+    // Explicit PID was either missing or not in canonical index - resolve by name
     var want = String(play.name || '').toLowerCase().trim();
     if (!want) return '';
-    var info = (newData && newData.player_info) || _state.player_info || {};
+    
+    // Resolution order:
+    // 1. Exact normalized full-name match
+    // 2. Initial + surname match (already normalized by backend)
+    // 3. Team-scoped surname match (handled by backend)
     var keys = Object.keys(info);
     for (var i = 0; i < keys.length; i++) {
       var row = info[keys[i]] || {};
@@ -1161,9 +1173,8 @@
         var pid = _pidFromPlayName(play, newData);
         if (!pid || pid === '0') return;
         
-        // Validate roster mapping BEFORE processing
+        // Roster ownership is OPTIONAL metadata - do not gate on it
         var rid = tags.pidToRoster[pid] || '';
-        if (!rid) return;
         
         var contribKey = _contributionKey(play, gid, pid);
         var playKey = _nflPlayKey(play, gid);
@@ -1213,8 +1224,8 @@
         if (line.sacks || line.sack) stats.push('sack');
         var contrib = {
           pid: pid, name: _name(pid), pos: pos, nflTeam: _team(pid),
-          rosterId: rid, owner: _ownerName(rid), league: _leagueOfRid(rid),
-          mine: tags.my.has(rid), opp: tags.opp.has(rid),
+          rosterId: rid || '', owner: rid ? _ownerName(rid) : '', league: rid ? _leagueOfRid(rid) : '',
+          mine: rid ? tags.my.has(rid) : false, opp: rid ? tags.opp.has(rid) : false,
           line: line, pts: pts, kind: kind, stats: stats,
           playKey: playKey,
           contribKey: contribKey,

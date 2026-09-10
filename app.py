@@ -12317,14 +12317,49 @@ def _redzone_collect(platform, league_id, season, week):
         player_meta_by_pid: dict = {}
         
         # Build player metadata for team-scoped resolution
+        # CRITICAL: Use the FULL player index for the teams in this game, not just rostered players
+        # This allows PBP to resolve unrostered players like Mack Hollins, Demario Douglas, etc.
+        game_teams = set()
         for pid in pids:
-            pi = player_info[pid]
-            if pi.get("pos") != "DEF":
-                full_name = nfl_players.get(pid, {}).get("full_name") or ""
-                team = pi.get("team", "")
-                if full_name and team:
+            team = player_info[pid].get("team", "")
+            if team:
+                game_teams.add(team)
+        
+        # Iterate ALL players in the site index to find those on the game teams
+        for pid, p in nfl_players.items():
+            team = p.get("team", "")
+            pos = p.get("position", "")
+            full_name = p.get("full_name", "")
+            
+            # Include this player if they're on a team in this game
+            if team in game_teams and full_name:
+                if pos != "DEF":
                     player_meta_by_pid[pid] = {"name": full_name, "team": team}
         
+        # Build name_to_pid from the FULL player index (already in player_meta_by_pid)
+        from utils.redzone_pbp import _normalize_name, _extract_first_initial_last
+        for pid, meta in player_meta_by_pid.items():
+            full = meta.get("name", "").lower()
+            if full:
+                normalized = _normalize_name(full)
+                name_to_pid[normalized] = pid
+                abbrev = _extract_first_initial_last(full)
+                if abbrev and abbrev != normalized:
+                    name_to_pid[abbrev] = pid
+                
+                # Create explicit aliases for all abbreviation formats
+                parts = full.split()
+                if len(parts) >= 2:
+                    first_initial = parts[0][0]
+                    last_parts = " ".join(parts[1:])
+                    # M.Hollins format
+                    name_to_pid[_normalize_name(f"{first_initial}.{last_parts}")] = pid
+                    # M. Hollins format
+                    name_to_pid[_normalize_name(f"{first_initial}. {last_parts}")] = pid
+                    # M Hollins format
+                    name_to_pid[_normalize_name(f"{first_initial} {last_parts}")] = pid
+        
+        # Build team_to_def_pid and attach stat_line for rostered players
         if isinstance(pstats, dict) and pstats:
             name_map = {}
             for _, ps in pstats.items():
@@ -12346,25 +12381,6 @@ def _redzone_collect(platform, league_id, season, week):
                         team_to_def_pid[team] = pid
                 else:
                     full = (nfl_players.get(pid, {}).get("full_name") or "").lower()
-                    if full:
-                        from utils.redzone_pbp import _normalize_name, _extract_first_initial_last
-                        normalized = _normalize_name(full)
-                        name_to_pid[normalized] = pid
-                        abbrev = _extract_first_initial_last(full)
-                        if abbrev and abbrev != normalized:
-                            name_to_pid[abbrev] = pid
-                        
-                        # Create explicit aliases for all abbreviation formats
-                        parts = full.split()
-                        if len(parts) >= 2:
-                            first_initial = parts[0][0]
-                            last_parts = " ".join(parts[1:])
-                            # M.Hollins format
-                            name_to_pid[_normalize_name(f"{first_initial}.{last_parts}")] = pid
-                            # M. Hollins format
-                            name_to_pid[_normalize_name(f"{first_initial}. {last_parts}")] = pid
-                            # M Hollins format
-                            name_to_pid[_normalize_name(f"{first_initial} {last_parts}")] = pid
                     ps = name_map.get(full)
                     if ps:
                         pi["stat_line"] = _rz_stat_line_from_ps(ps)
@@ -12373,27 +12389,6 @@ def _redzone_collect(platform, league_id, season, week):
                 pi = player_info[pid]
                 if pi.get("pos") == "DEF" and pi.get("team"):
                     team_to_def_pid[pi["team"]] = pid
-                else:
-                    full = (nfl_players.get(pid, {}).get("full_name") or "").lower()
-                    if full:
-                        from utils.redzone_pbp import _normalize_name, _extract_first_initial_last
-                        normalized = _normalize_name(full)
-                        name_to_pid[normalized] = pid
-                        abbrev = _extract_first_initial_last(full)
-                        if abbrev and abbrev != normalized:
-                            name_to_pid[abbrev] = pid
-                        
-                        # Create explicit aliases for all abbreviation formats
-                        parts = full.split()
-                        if len(parts) >= 2:
-                            first_initial = parts[0][0]
-                            last_parts = " ".join(parts[1:])
-                            # M.Hollins format
-                            name_to_pid[_normalize_name(f"{first_initial}.{last_parts}")] = pid
-                            # M. Hollins format
-                            name_to_pid[_normalize_name(f"{first_initial}. {last_parts}")] = pid
-                            # M Hollins format
-                            name_to_pid[_normalize_name(f"{first_initial} {last_parts}")] = pid
 
         if want_pbp and box:
             try:
@@ -12413,12 +12408,8 @@ def _redzone_collect(platform, league_id, season, week):
                     game_context=game_context,
                     player_meta_by_pid=player_meta_by_pid,
                 )
-                # Keep only plays that touch a rostered player (or carry text).
-                rostered = set(pids)
-                plays = [
-                    p for p in plays
-                    if (p.get("pid") and p["pid"] in rostered) or p.get("play_text")
-                ]
+                # CRITICAL: Keep ALL resolved plays, including unrostered players
+                # Do NOT filter by roster ownership - that defeats the identity fix
                 # Tank01 PBP is experimental and often empty for finals. Fall
                 # back to Sleeper (preferred) then ESPN CDN booth lines so
                 # Plays still shows real play-by-play -- never boxscore fiction.
@@ -12432,10 +12423,7 @@ def _redzone_collect(platform, league_id, season, week):
                             team_to_def_pid=team_to_def_pid,
                             live=live,
                         )
-                        plays = [
-                            p for p in (alt or [])
-                            if (p.get("pid") and p["pid"] in rostered) or p.get("play_text")
-                        ]
+                        plays = alt or []
                     except Exception:
                         logger.debug(
                             "[redzone] alt pbp failed game=%s", gid, exc_info=True
@@ -12449,7 +12437,6 @@ def _redzone_collect(platform, league_id, season, week):
         elif want_pbp:
             # No usable box at all -- still try Sleeper/ESPN for booth lines.
             try:
-                rostered = set(pids)
                 alt = _rz_fetch_alt_pbp_plays(
                     gid,
                     season=season,
@@ -12458,14 +12445,40 @@ def _redzone_collect(platform, league_id, season, week):
                     team_to_def_pid=team_to_def_pid,
                     live=live,
                 )
-                plays = [
-                    p for p in (alt or [])
-                    if (p.get("pid") and p["pid"] in rostered) or p.get("play_text")
-                ]
-                pbp_by_game[gid] = plays
+                pbp_by_game[gid] = alt or []
             except Exception:
                 logger.debug("[redzone] alt pbp failed game=%s", gid, exc_info=True)
                 pbp_by_game.setdefault(gid, [])
+
+    # Add unrostered players that appeared in PBP to player_info so frontend can display them
+    for gid, plays in pbp_by_game.items():
+        for play in plays:
+            pid = play.get("pid")
+            if not pid or pid in player_info:
+                continue
+            # This player resolved in PBP but isn't rostered - add minimal player_info
+            p = nfl_players.get(pid, {})
+            tm = p.get("team") or ""
+            gd = team_game.get(tm, {}) if tm else {}
+            raw_inj = str(p.get("injury_status") or p.get("status") or "").strip()
+            inj = "" if raw_inj.lower() in ("", "active", "act") else raw_inj
+            ls = gd.get("lineScore") or {}
+            player_info[pid] = {
+                "name": p.get("full_name") or p.get("last_name") or pid,
+                "pos": p.get("position") or "?",
+                "team": tm,
+                "game_id": gd.get("gameID") or "",
+                "game_status": gd.get("gameStatus") or "",
+                "game_code": str(gd.get("gameStatusCode") or ""),
+                "game_clock": gd.get("gameClock") or "",
+                "game_quarter": ls.get("period") or "",
+                "home": gd.get("home") or "",
+                "away": gd.get("away") or "",
+                "home_pts": str(gd.get("homePts") or gd.get("homeScore") or ""),
+                "away_pts": str(gd.get("awayPts") or gd.get("awayScore") or ""),
+                "game_time_epoch": _rz_safe_epoch(gd.get("gameTime_epoch") or gd.get("gameTimeEpoch")),
+                "injury_status": inj,
+            }
 
     # Projected points per matchup, scored with the league's settings so the
     # remaining projection matches the live point math it is added to.
