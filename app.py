@@ -11683,8 +11683,12 @@ from utils.redzone_stats import (  # noqa: E402
     rz_stat_line_from_ps as _rz_stat_line_from_ps,
 )
 from utils.redzone_pbp import (  # noqa: E402
+    build_games_snapshot as _rz_build_games_snapshot,
     demo_play_text as _rz_demo_play_text,
     extract_pbp_plays as _rz_extract_pbp_plays,
+)
+from utils.redzone_alt_pbp import (  # noqa: E402
+    fetch_alt_pbp_plays as _rz_fetch_alt_pbp_plays,
 )
 
 # ── Demo mode ──────────────────────────────────────────────────────────────────
@@ -11934,6 +11938,26 @@ def _redzone_demo_data(t: float = _RZ_DEMO_START, scope: str = "league"):
                     "stat_line": line, "is_td": bool(p.get("td")),
                 })
 
+    games = _rz_build_games_snapshot(PLAYERS, pbp_by_game)
+    # Seed a few live-board situations so the NFL matchup strip is visible even
+    # before PBP rows accumulate enough field context.
+    _DEMO_BOARD = {
+        "demo_BAL_HOU": {"possession": "BAL", "down": "2", "distance": "7", "yard_line": "HOU 42"},
+        "demo_DET_CHI": {"possession": "DET", "down": "3", "distance": "4", "yard_line": "CHI 18"},
+        "demo_JAX_MIA": {"possession": "MIA", "down": "1", "distance": "10", "yard_line": "MIA 25"},
+        "demo_KC_LV": {"possession": "KC", "down": "2", "distance": "5", "yard_line": "LV 33"},
+        "demo_ATL_NO": {"possession": "ATL", "down": "1", "distance": "10", "yard_line": "ATL 40"},
+        "demo_LAR_SEA": {"possession": "SEA", "down": "4", "distance": "2", "yard_line": "LAR 48"},
+        "demo_PHI_WAS": {"possession": "PHI", "down": "2", "distance": "8", "yard_line": "WAS 29"},
+    }
+    for gid, sit in _DEMO_BOARD.items():
+        row = games.get(gid)
+        if not row or str(row.get("game_code") or "") != "1":
+            continue
+        for k, v in sit.items():
+            if not row.get(k):
+                row[k] = v
+
     def mk(rid, mid, starters, bench, league_name=None):
         players = starters + bench
         pp = {p: pts.get(p, 0.0) for p in players}
@@ -11950,6 +11974,7 @@ def _redzone_demo_data(t: float = _RZ_DEMO_START, scope: str = "league"):
         "player_info": PLAYERS,
         "scoring": dict(_RZ_DEMO_SCORING),
         "pbp_by_game": pbp_by_game,
+        "games": games,
         "updated_at": time.time(),
         "is_demo": True,
         "demo_t": t,
@@ -12161,6 +12186,24 @@ def _redzone_collect(platform, league_id, season, week):
             play_by_play=want_pbp,
             ttl=(None if live else 300.0) if want_pbp else None,
         )
+        # Tank01's playByPlay response is experimental and sometimes returns PBP
+        # without aggregate playerStats (or an empty body). Merge a plain
+        # boxscore for scoreboard totals only — Plays never invents boxscore /
+        # "Scored X pts" fiction from that merge (client is PBP-lines-only for
+        # live/final).
+        if want_pbp and not (box.get("playerStats") or box.get("allPlayByPlay")
+                             or box.get("allPlaybyPlay") or box.get("playByPlay")):
+            plain = _redzone_boxscore(gid, play_by_play=False)
+            if plain:
+                box = plain
+        elif want_pbp and box and not box.get("playerStats"):
+            plain = _redzone_boxscore(gid, play_by_play=False)
+            if plain.get("playerStats"):
+                merged = dict(plain)
+                for k in ("allPlayByPlay", "allPlaybyPlay", "playByPlay", "plays"):
+                    if box.get(k):
+                        merged[k] = box[k]
+                box = merged
         pstats = box.get("playerStats") or {}
         tstats = box.get("teamStats") or {}
         name_to_pid: dict = {}
@@ -12214,10 +12257,53 @@ def _redzone_collect(platform, league_id, season, week):
                     p for p in plays
                     if (p.get("pid") and p["pid"] in rostered) or p.get("play_text")
                 ]
-                if plays:
-                    pbp_by_game[gid] = plays
+                # Tank01 PBP is experimental and often empty for finals. Fall
+                # back to Sleeper (preferred) then ESPN CDN booth lines so
+                # Plays still shows real play-by-play — never boxscore fiction.
+                if not plays:
+                    try:
+                        alt = _rz_fetch_alt_pbp_plays(
+                            gid,
+                            season=season,
+                            week=week,
+                            name_to_pid=name_to_pid,
+                            team_to_def_pid=team_to_def_pid,
+                            live=live,
+                        )
+                        plays = [
+                            p for p in (alt or [])
+                            if (p.get("pid") and p["pid"] in rostered) or p.get("play_text")
+                        ]
+                    except Exception:
+                        logger.debug(
+                            "[redzone] alt pbp failed game=%s", gid, exc_info=True
+                        )
+                # Always record the game key when we attempted PBP so the client
+                # can suppress bulk point dumps even if Tank01 returned no rows.
+                pbp_by_game[gid] = plays
             except Exception:
                 logger.debug("[redzone] pbp parse failed game=%s", gid, exc_info=True)
+                pbp_by_game.setdefault(gid, [])
+        elif want_pbp:
+            # No usable box at all — still try Sleeper/ESPN for booth lines.
+            try:
+                rostered = set(pids)
+                alt = _rz_fetch_alt_pbp_plays(
+                    gid,
+                    season=season,
+                    week=week,
+                    name_to_pid=name_to_pid,
+                    team_to_def_pid=team_to_def_pid,
+                    live=live,
+                )
+                plays = [
+                    p for p in (alt or [])
+                    if (p.get("pid") and p["pid"] in rostered) or p.get("play_text")
+                ]
+                pbp_by_game[gid] = plays
+            except Exception:
+                logger.debug("[redzone] alt pbp failed game=%s", gid, exc_info=True)
+                pbp_by_game.setdefault(gid, [])
 
     # Projected points per matchup, scored with the league's settings so the
     # remaining projection matches the live point math it is added to.
@@ -12238,6 +12324,8 @@ def _redzone_collect(platform, league_id, season, week):
                 proj_total += float(proj_pts.get(str(pid), 0))
         matchups_out.append({**m, "projected_pts": round(proj_total, 2)})
 
+    games = _rz_build_games_snapshot(player_info, pbp_by_game)
+
     return {
         "matchups": matchups_out,
         "rosters": [
@@ -12253,6 +12341,7 @@ def _redzone_collect(platform, league_id, season, week):
         "player_info": player_info,
         "scoring": scoring,
         "pbp_by_game": pbp_by_game,
+        "games": games,
     }
 
 
@@ -12525,6 +12614,9 @@ def _redzone_user_league_slice(li, lg, season, week, account_id, viewer_uid,
         "viewer_roster_id": ns + vrid,
         "leagues": [{"league_id": lid, "name": lname, "platform": lg_plat}],
         "pbp_by_game": d.get("pbp_by_game") or {},
+        "games": d.get("games") or _rz_build_games_snapshot(
+            d.get("player_info") or {}, d.get("pbp_by_game") or {},
+        ),
     }
 
 
@@ -12543,6 +12635,7 @@ def _redzone_fetch_user(platform, league_id, season, week):
     scoring_by_league: dict = {}  # league_id -> that league's scoring settings
     pid_league: dict = {}  # pid -> league_id (so each player scores by its league)
     pbp_by_game: dict = {}
+    games: dict = {}
     viewer_rids = []
     seen_users = set()
 
@@ -12563,6 +12656,9 @@ def _redzone_fetch_user(platform, league_id, season, week):
         player_info.update(s["player_info"])
         for _gid, _plays in (s.get("pbp_by_game") or {}).items():
             pbp_by_game.setdefault(_gid, []).extend(_plays or [])
+        for _gid, _g in (s.get("games") or {}).items():
+            if _gid and _gid not in games:
+                games[_gid] = _g
         if not scoring:
             scoring = s["scoring"] or {}
         scoring_by_league.update(s["scoring_by_league"])
@@ -12570,6 +12666,9 @@ def _redzone_fetch_user(platform, league_id, season, week):
         if s.get("viewer_roster_id"):
             viewer_rids.append(s["viewer_roster_id"])
         leagues.extend(s["leagues"])
+
+    if not games:
+        games = _rz_build_games_snapshot(player_info, pbp_by_game)
 
     return {
         "week": week, "season": season, "platform": platform, "league_id": league_id,
@@ -12583,6 +12682,7 @@ def _redzone_fetch_user(platform, league_id, season, week):
         "scoring_by_league": scoring_by_league,
         "pid_league": pid_league,
         "pbp_by_game": pbp_by_game,
+        "games": games,
         "viewer_roster_id": viewer_rids[0] if viewer_rids else "",
         "viewer_roster_ids": viewer_rids,
         "updated_at": time.time(),
@@ -19955,7 +20055,10 @@ def api_player_details(player_id: str):
         # in players_index. Synthesize a minimal meta so the modal can show the
         # team logo instead of 404ing.
         if not player_meta:
-            from utils.utils import canon_team, load_teams_index, def_team_logo_urls
+            # Do not import canon_team here — a conditional import would make
+            # it local for the whole handler and UnboundLocalError when this
+            # DEF branch is skipped (found players).
+            from utils.utils import def_team_logo_urls
             _def_team = canon_team(player_id) or str(player_id or "").strip().upper()
             _ti = load_teams_index() or {}
             if _def_team and _def_team in _ti:
@@ -21562,6 +21665,7 @@ def api_player_team(player_id: str):
     try:
         from utils.utils import load_relevant_index, load_teams_index, load_usage_table
         from utils.nfl_teams import get_team_full_name
+        from utils.player_team_schedule import build_team_schedule, resolve_team_for_season
 
         season = int(request.args.get("season", datetime.now().year))
         skill_positions = {"QB", "RB", "WR", "TE"}
@@ -21580,7 +21684,10 @@ def api_player_team(player_id: str):
 
         usage_index = load_relevant_index() or players_index
 
-        team = _canon_team_abbr(player_meta.get("team") or "")
+        current_team = _canon_team_abbr(player_meta.get("team") or "")
+        # Prefer the franchise the player actually played for in the viewed
+        # season (mid-season trades / historical context), not only the live roster.
+        team = resolve_team_for_season(str(player_id), season, current_team) or current_team
         position = str(player_meta.get("pos") or player_meta.get("position") or "").upper()
         player_name = player_meta.get("name") or ""
 
@@ -21638,6 +21745,21 @@ def api_player_team(player_id: str):
             teams_index, pfr_snaps,
         )
 
+        schedule = []
+        try:
+            schedule = build_team_schedule(
+                team,
+                int(stats_season if data_mode == "actual" else season),
+                bye_week=int(bye_week) if bye_week not in (None, "") else None,
+                teams_index=teams_index,
+                include_postseason=(data_mode == "actual"),
+                # Scoreboard enrichment is best-effort; empty without Tank01.
+                enrich_scores=True,
+            )
+        except Exception:
+            logger.debug("team schedule build failed for %s %s", team, season, exc_info=True)
+            schedule = []
+
         _payload = {
             "available": True,
             "team": team,
@@ -21655,11 +21777,54 @@ def api_player_team(player_id: str):
             "ranks_more": ranks_more,
             "depth_chart": depth_chart,
             "oline": _oline_for_player(int(stats_season), team, position),
+            "schedule": schedule,
         }
         _TEAM_PAYLOAD_CACHE[_payload_key] = (time.time(), _payload)
         return jsonify(_payload)
     except Exception as e:
         logger.exception("[api_player_team] error")
+        return _api_err("Request failed", e)
+
+
+@app.route("/api/player-team-boxscore")
+def api_player_team_boxscore():
+    """Lazy Tank01 box score for a Team-tab schedule accordion expansion."""
+    try:
+        from utils.utils import load_relevant_index, load_teams_index
+        from utils.player_team_schedule import get_shaped_boxscore
+
+        game_id = str(request.args.get("game_id") or "").strip()
+        view_team = _canon_team_abbr(request.args.get("team") or "")
+        focus_pid = str(request.args.get("focus_pid") or request.args.get("player_id") or "").strip()
+        season_type = str(request.args.get("season_type") or "reg").strip().lower()
+        if season_type not in ("reg", "post"):
+            season_type = "reg"
+        if not game_id:
+            return jsonify({"available": False, "error": "Missing game_id"}), 400
+
+        players_index = get_players_index_global() or load_relevant_index() or {}
+        teams_index = _canonical_teams_index(load_teams_index() or {})
+
+        # Reuse the short-lived redzone boxscore cache so live polls share work.
+        def _fetch(gid: str):
+            try:
+                return _redzone_boxscore(gid) or {}
+            except Exception:
+                from dashboard_services.api import fetch_tank_boxscore
+                return fetch_tank_boxscore(gid) or {}
+
+        payload = get_shaped_boxscore(
+            game_id,
+            view_team=view_team,
+            focus_pid=focus_pid,
+            players_index=players_index,
+            teams_index=teams_index,
+            season_type=season_type,
+            fetch_box=_fetch,
+        )
+        return jsonify(payload)
+    except Exception as e:
+        logger.exception("[api_player_team_boxscore] error")
         return _api_err("Request failed", e)
 
 

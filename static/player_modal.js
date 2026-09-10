@@ -1855,6 +1855,323 @@ function _pmFetchTradesInto(panel, playerId, season, ctx) {
 // idle callback, so no intermediate tab state is ever painted.
 // ── Team tab (player modal) ───────────────────────────────────────────────────
 let _pmTeamAdvOpen = false;
+// Lazy box-score cache + in-flight dedupe, keyed by season_type + game_id.
+const _pmBoxCache = Object.create(null); // key -> { ts, data }
+const _pmBoxInflight = Object.create(null); // key -> Promise
+const _PM_BOX_TTL_LIVE = 15000;
+const _PM_BOX_TTL_FINAL = 10 * 60 * 1000;
+let _pmBoxLiveTimer = null;
+let _pmBoxLiveKey = '';
+let _pmBoxGen = 0; // bumped on season/player change to drop stale responses
+
+function _pmBoxCacheKey(seasonType, gameId) {
+  return String(seasonType || 'reg') + '|' + String(gameId || '');
+}
+
+function _pmStopBoxLiveRefresh() {
+  if (_pmBoxLiveTimer) {
+    clearInterval(_pmBoxLiveTimer);
+    _pmBoxLiveTimer = null;
+  }
+  _pmBoxLiveKey = '';
+}
+
+function _pmEsc(s) {
+  return typeof escapeHtml === 'function'
+    ? escapeHtml(String(s == null ? '' : s))
+    : String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function _pmDashNum(v) {
+  if (v == null || v === '') return '–';
+  return String(v);
+}
+
+function _pmScheduleResultHtml(g) {
+  if (!g || g.bye) return '<span class="pm-schedule-meta">Bye</span>';
+  if (g.status === 'live') {
+    const score = (g.team_pts != null && g.opp_pts != null)
+      ? `${g.team_pts}–${g.opp_pts}`
+      : '';
+    const clock = [g.quarter, g.clock].filter(Boolean).join(' ');
+    return `<span class="pm-schedule-live">LIVE</span>`
+      + (score ? `<span class="pm-schedule-score">${_pmEsc(score)}</span>` : '')
+      + (clock ? `<span class="pm-schedule-meta">${_pmEsc(clock)}</span>` : '');
+  }
+  if (g.status === 'final' || g.result) {
+    const res = g.result || 'F';
+    const cls = res === 'W' ? 'pm-schedule-w' : (res === 'L' ? 'pm-schedule-l' : 'pm-schedule-t');
+    const score = (g.team_pts != null && g.opp_pts != null)
+      ? `${g.team_pts}–${g.opp_pts}`
+      : '';
+    return `<span class="pm-schedule-result ${cls}">${_pmEsc(res)}</span>`
+      + (score ? `<span class="pm-schedule-score">${_pmEsc(score)}</span>` : '')
+      + (!score ? '<span class="pm-schedule-meta">Final</span>' : '');
+  }
+  const kick = g.kickoff || g.date_label || '';
+  return kick
+    ? `<span class="pm-schedule-meta">${_pmEsc(kick)}</span>`
+    : '<span class="pm-schedule-meta">Scheduled</span>';
+}
+
+function _pmBuildScheduleHTML(data) {
+  const games = Array.isArray(data.schedule) ? data.schedule : [];
+  const viewSeason = Number(data.stats_season || data.season) || '';
+  const team = data.team || '';
+  const focusPid = String(data.player_id || '');
+  const note = viewSeason ? `${viewSeason} · ${team || 'team'}` : (team || 'schedule');
+  if (!games.length) {
+    return `<div class="pm-team-sec pm-team-schedule">
+      <div class="pm-section-header"><span class="pm-section-label">Schedule</span><span class="pm-team-secnote">${_pmEsc(note)}</span></div>
+      <div class="pm-schedule-empty">Schedule unavailable for this season.</div>
+    </div>`;
+  }
+  const rows = games.map(function (g, idx) {
+    if (g.bye) {
+      return `<div class="pm-schedule-row pm-schedule-bye" data-bye="1">
+        <span class="pm-schedule-week">${_pmEsc(g.week_label || ('Week ' + g.week))}</span>
+        <span class="pm-schedule-opp"><span class="pm-schedule-opp-name">Bye week</span></span>
+        <span class="pm-schedule-status"><span class="pm-schedule-meta">Bye</span></span>
+        <span class="pm-schedule-chev" aria-hidden="true"></span>
+      </div>`;
+    }
+    const post = g.is_postseason ? ' pm-schedule-post' : '';
+    const gid = String(g.game_id || '');
+    const st = String(g.season_type || 'reg');
+    const logo = g.opponent_logo
+      ? `<img class="pm-schedule-logo" src="${_pmEsc(g.opponent_logo)}" alt="" loading="lazy" decoding="async" onerror="this.style.display='none'">`
+      : '';
+    const oppName = g.opponent_name || g.opponent || '—';
+    const ha = g.ha === '@' ? '@' : 'vs';
+    const dateBit = g.date_label ? `<span class="pm-schedule-date">${_pmEsc(g.date_label)}</span>` : '';
+    return `<div class="pm-schedule-item${post}" data-idx="${idx}">
+      <button type="button" class="pm-schedule-toggle pm-schedule-row" aria-expanded="false"
+        data-game-id="${_pmEsc(gid)}" data-season-type="${_pmEsc(st)}"
+        data-team="${_pmEsc(team)}" data-focus-pid="${_pmEsc(focusPid)}"
+        data-home-team="" data-away-team="" data-opp="${_pmEsc(g.opponent || '')}"
+        data-is-home="${g.is_home ? '1' : '0'}">
+        <span class="pm-schedule-week">${_pmEsc(g.week_label || ('Week ' + g.week))}${dateBit}</span>
+        <span class="pm-schedule-opp">
+          ${logo}
+          <span class="pm-schedule-opp-text">
+            <span class="pm-schedule-ha">${ha}</span>
+            <span class="pm-schedule-opp-name">${_pmEsc(oppName)}</span>
+          </span>
+        </span>
+        <span class="pm-schedule-status">${_pmScheduleResultHtml(g)}</span>
+        <span class="pm-schedule-chev" aria-hidden="true">&#9656;</span>
+      </button>
+      <div class="pm-boxscore" hidden></div>
+    </div>`;
+  }).join('');
+  return `<div class="pm-team-sec pm-team-schedule">
+    <div class="pm-section-header"><span class="pm-section-label">Schedule</span><span class="pm-team-secnote">${_pmEsc(note)}</span></div>
+    <div class="pm-schedule-list">${rows}</div>
+  </div>`;
+}
+
+function _pmBoxStatCell(v) {
+  return `<td class="pm-boxscore-num">${_pmDashNum(v)}</td>`;
+}
+
+function _pmRenderBoxscoreHTML(payload, viewTeam) {
+  if (!payload || payload.available === false) {
+    return `<div class="pm-boxscore-msg">Could not load box score.</div>`;
+  }
+  if (!payload.started) {
+    return `<div class="pm-boxscore-msg">${_pmEsc(payload.message || 'Box score available once the game begins.')}</div>`;
+  }
+  const home = payload.home || {};
+  const away = payload.away || {};
+  const vt = viewTeam || payload.view_team || home.team || away.team || '';
+  const statusLbl = payload.status === 'final' ? 'Final'
+    : (payload.status === 'live'
+      ? ['LIVE', payload.quarter, payload.clock].filter(Boolean).join(' · ')
+      : 'In progress');
+  const board = `<div class="pm-boxscore-board">
+    <div class="pm-boxscore-side">
+      ${away.logo ? `<img class="pm-boxscore-logo" src="${_pmEsc(away.logo)}" alt="" onerror="this.style.display='none'">` : ''}
+      <span class="pm-boxscore-team">${_pmEsc(away.name || away.team || '—')}</span>
+      <span class="pm-boxscore-pts">${_pmDashNum(away.pts)}</span>
+    </div>
+    <div class="pm-boxscore-mid"><span class="pm-boxscore-status">${_pmEsc(statusLbl)}</span></div>
+    <div class="pm-boxscore-side pm-boxscore-side-home">
+      <span class="pm-boxscore-pts">${_pmDashNum(home.pts)}</span>
+      <span class="pm-boxscore-team">${_pmEsc(home.name || home.team || '—')}</span>
+      ${home.logo ? `<img class="pm-boxscore-logo" src="${_pmEsc(home.logo)}" alt="" onerror="this.style.display='none'">` : ''}
+    </div>
+  </div>`;
+
+  const teams = payload.teams || {};
+  const pills = [away.team, home.team].filter(Boolean).map(function (t) {
+    const active = String(t) === String(vt) ? ' active' : '';
+    const label = (teams[t] && teams[t].name) || t;
+    return `<button type="button" class="pm-boxscore-team-pill${active}" data-box-team="${_pmEsc(t)}">${_pmEsc(label)}</button>`;
+  }).join('');
+
+  const group = teams[vt] || teams[Object.keys(teams)[0]] || { groups: [] };
+  let tables = '';
+  (group.groups || []).forEach(function (g) {
+    const cols = g.columns || [];
+    const head = `<tr><th class="pm-boxscore-name">Player</th>${cols.map(function (c) {
+      return `<th>${_pmEsc(c.label || c.key)}</th>`;
+    }).join('')}</tr>`;
+    const body = (g.players || []).map(function (p) {
+      const focus = p.is_focus ? ' pm-boxscore-focus' : '';
+      const click = p.id
+        ? ` data-pid="${_pmEsc(p.id)}" data-pname="${_pmEsc(p.name)}" role="button" tabindex="0"`
+        : '';
+      const cells = cols.map(function (c) {
+        return _pmBoxStatCell((p.cells || {})[c.key]);
+      }).join('');
+      return `<tr class="pm-boxscore-player${focus}"${click}><td class="pm-boxscore-name">${_pmEsc(p.name)}</td>${cells}</tr>`;
+    }).join('');
+    tables += `<div class="pm-boxscore-group">
+      <div class="pm-boxscore-pos">${_pmEsc(g.pos)}</div>
+      <div class="pm-boxscore-scroll"><table class="pm-boxscore-table"><thead>${head}</thead><tbody>${body}</tbody></table></div>
+    </div>`;
+  });
+  if (!tables) {
+    tables = `<div class="pm-boxscore-msg">No player lines for this team yet.</div>`;
+  }
+  return `${board}
+    <div class="pm-boxscore-pills" role="tablist" aria-label="Box score team">${pills}</div>
+    <div class="pm-boxscore-body" data-view-team="${_pmEsc(vt)}">${tables}</div>`;
+}
+
+function _pmFetchBoxscore(gameId, seasonType, team, focusPid, gen) {
+  const key = _pmBoxCacheKey(seasonType, gameId);
+  const now = Date.now();
+  const cached = _pmBoxCache[key];
+  if (cached) {
+    const ttl = (cached.data && cached.data.status === 'live') ? _PM_BOX_TTL_LIVE : _PM_BOX_TTL_FINAL;
+    if (now - cached.ts < ttl) {
+      return Promise.resolve(cached.data);
+    }
+  }
+  if (_pmBoxInflight[key]) return _pmBoxInflight[key];
+  const qs = new URLSearchParams({
+    game_id: gameId,
+    team: team || '',
+    focus_pid: focusPid || '',
+    season_type: seasonType || 'reg',
+  });
+  const p = fetch('/api/player-team-boxscore?' + qs.toString())
+    .then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    })
+    .then(function (data) {
+      delete _pmBoxInflight[key];
+      if (gen != null && gen !== _pmBoxGen) return data; // caller ignores stale
+      _pmBoxCache[key] = { ts: Date.now(), data: data };
+      return data;
+    })
+    .catch(function (err) {
+      delete _pmBoxInflight[key];
+      throw err;
+    });
+  _pmBoxInflight[key] = p;
+  return p;
+}
+
+function _pmRenderBoxInto(host, payload, viewTeam) {
+  if (!host) return;
+  host.innerHTML = _pmRenderBoxscoreHTML(payload, viewTeam);
+  host._pmBoxPayload = payload;
+  host._pmBoxTeam = viewTeam || payload.view_team || '';
+}
+
+function _pmCollapseAllSchedule(panel) {
+  if (!panel) return;
+  panel.querySelectorAll('.pm-schedule-item.is-open').forEach(function (item) {
+    item.classList.remove('is-open');
+    const btn = item.querySelector('.pm-schedule-toggle');
+    const box = item.querySelector('.pm-boxscore');
+    if (btn) {
+      btn.setAttribute('aria-expanded', 'false');
+      const chev = btn.querySelector('.pm-schedule-chev');
+      if (chev) chev.innerHTML = '&#9656;';
+    }
+    if (box) {
+      box.hidden = true;
+      box.innerHTML = '';
+      box._pmBoxPayload = null;
+    }
+  });
+  _pmStopBoxLiveRefresh();
+}
+
+function _pmStartBoxLiveRefresh(panel, item) {
+  _pmStopBoxLiveRefresh();
+  const btn = item && item.querySelector('.pm-schedule-toggle');
+  const box = item && item.querySelector('.pm-boxscore');
+  if (!btn || !box) return;
+  const gameId = btn.dataset.gameId;
+  const st = btn.dataset.seasonType || 'reg';
+  const key = _pmBoxCacheKey(st, gameId);
+  _pmBoxLiveKey = key;
+  _pmBoxLiveTimer = setInterval(function () {
+    if (!panel.isConnected || !item.isConnected || !item.classList.contains('is-open')) {
+      _pmStopBoxLiveRefresh();
+      return;
+    }
+    const gen = _pmBoxGen;
+    _pmFetchBoxscore(gameId, st, btn.dataset.team, btn.dataset.focusPid, gen).then(function (data) {
+      if (gen !== _pmBoxGen || !item.classList.contains('is-open')) return;
+      if (!data || data.status !== 'live') {
+        _pmRenderBoxInto(box, data, box._pmBoxTeam || btn.dataset.team);
+        _pmStopBoxLiveRefresh();
+        return;
+      }
+      _pmRenderBoxInto(box, data, box._pmBoxTeam || btn.dataset.team);
+    }).catch(function () { /* keep last good paint */ });
+  }, _PM_BOX_TTL_LIVE);
+}
+
+function _pmExpandScheduleGame(panel, item) {
+  if (!panel || !item) return;
+  const btn = item.querySelector('.pm-schedule-toggle');
+  const box = item.querySelector('.pm-boxscore');
+  if (!btn || !box) return;
+  const wasOpen = item.classList.contains('is-open');
+  _pmCollapseAllSchedule(panel);
+  if (wasOpen) return;
+
+  item.classList.add('is-open');
+  btn.setAttribute('aria-expanded', 'true');
+  const chev = btn.querySelector('.pm-schedule-chev');
+  if (chev) chev.innerHTML = '&#9662;';
+  box.hidden = false;
+  box.innerHTML = '<div class="pm-boxscore-loading"><div class="loading-spinner" style="width:14px;height:14px;margin:0 auto;"></div><div>Loading box score…</div></div>';
+
+  const gameId = btn.dataset.gameId;
+  const st = btn.dataset.seasonType || 'reg';
+  const team = btn.dataset.team || '';
+  const focusPid = btn.dataset.focusPid || '';
+  const gen = _pmBoxGen;
+  if (!gameId) {
+    box.innerHTML = '<div class="pm-boxscore-msg">Box score unavailable for this game.</div>';
+    return;
+  }
+  _pmFetchBoxscore(gameId, st, team, focusPid, gen).then(function (data) {
+    if (gen !== _pmBoxGen || !item.classList.contains('is-open')) return;
+    _pmRenderBoxInto(box, data, team);
+    if (data && data.status === 'live') _pmStartBoxLiveRefresh(panel, item);
+  }).catch(function () {
+    if (gen !== _pmBoxGen || !item.classList.contains('is-open')) return;
+    box.innerHTML = '';
+    if (window.brErrorState) {
+      window.brErrorState(box, 'Could not load box score.', function () {
+        _pmExpandScheduleGame(panel, item);
+      }, { compact: true });
+    } else {
+      box.innerHTML = '<div class="pm-boxscore-msg">Could not load box score.</div>';
+    }
+  });
+}
 
 // Tier color for a plain "higher rank = better" stat (Scoring, Pace), as a
 // theme token so hero rank labels track light/dark like the profile bars.
@@ -2007,8 +2324,10 @@ function _pmLoadTeamPanel(panel, playerId, viewSeason) {
   if (!panel || !playerId) return;
   const season = String(viewSeason || new Date().getFullYear());
   panel.dataset.pmTeamSeason = season;
+  _pmBoxGen += 1;
+  _pmStopBoxLiveRefresh();
   const _teamUrl = `/api/player-team/${encodeURIComponent(playerId)}?season=${encodeURIComponent(season)}`;
-  const _teamKey = 'pm_team_v2_' + _teamUrl;
+  const _teamKey = 'pm_team_v3_' + _teamUrl;
   const _teamTTL = 10 * 60 * 1000;
   const _renderTeam = (data) => {
     if (!panel.isConnected) return;
@@ -2052,6 +2371,9 @@ window.pmPickTeamSeason = function (playerId, yr) {
   if (String(panel.dataset.pmTeamSeason || '') === season && panel.querySelector('.pm-team-wrap')) {
     return;
   }
+  // Season change clears any expanded game and drops in-flight box scores.
+  _pmCollapseAllSchedule(panel);
+  _pmBoxGen += 1;
   panel.dataset.pmTeamSeason = season;
   panel.dataset.loaded = '1';
   _pmLoadTeamPanel(panel, playerId, season);
@@ -2180,6 +2502,8 @@ function _pmBuildTeamHTML(data) {
     }
   }
 
+  const scheduleSec = _pmBuildScheduleHTML(data);
+
   return `<div class="pm-team-wrap">
     <div class="pm-team-header">
       ${wm}
@@ -2193,6 +2517,7 @@ function _pmBuildTeamHTML(data) {
       </div>
       ${heroStats ? '<div class="pm-team-herostats">' + heroStats + '</div>' : ''}
     </div>
+    ${scheduleSec}
     <div class="pm-team-sec">
       <div class="pm-section-header"><span class="pm-section-label">Offense Profile</span><span class="pm-team-secnote">${seasonNote} · rank of 32</span></div>
       ${_pmTeamProfileAxis()}${profile}
@@ -2232,19 +2557,25 @@ function _pmWireTeamPanel(panel, playerId) {
     const pname = row.dataset.pname;
     if (!pid || typeof openPlayerModal !== 'function') return;
     // Replace the current modal rather than stacking a second overlay on top.
+    _pmStopBoxLiveRefresh();
     const ov = document.querySelector('.player-modal-overlay');
     if (ov) { document.body.style.overflow = ''; ov.remove(); }
     openPlayerModal(pid, pname, { force: true });
   };
-  panel.querySelectorAll('[data-pid]').forEach(row => {
-    row.addEventListener('click', () => _pmOpenTeammate(row));
-    row.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
-        e.preventDefault();
-        _pmOpenTeammate(row);
-      }
+  const _bindPlayerNav = (root) => {
+    (root || panel).querySelectorAll('[data-pid]').forEach(row => {
+      if (row.dataset.pmNavBound) return;
+      row.dataset.pmNavBound = '1';
+      row.addEventListener('click', () => _pmOpenTeammate(row));
+      row.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
+          e.preventDefault();
+          _pmOpenTeammate(row);
+        }
+      });
     });
-  });
+  };
+  _bindPlayerNav(panel);
   const toggle = panel.querySelector('.pm-team-adv-toggle');
   const body = panel.querySelector('.pm-team-adv-body');
   if (toggle && body) {
@@ -2266,6 +2597,37 @@ function _pmWireTeamPanel(panel, playerId) {
       }
     });
   }
+
+  // Schedule accordion: one open game at a time; box scores lazy-load on expand.
+  panel.querySelectorAll('.pm-schedule-toggle').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const item = btn.closest('.pm-schedule-item');
+      if (item) _pmExpandScheduleGame(panel, item);
+    });
+  });
+  panel.addEventListener('click', (e) => {
+    const pill = e.target.closest && e.target.closest('.pm-boxscore-team-pill');
+    if (!pill || !panel.contains(pill)) return;
+    const host = pill.closest('.pm-boxscore');
+    if (!host || !host._pmBoxPayload) return;
+    const t = pill.dataset.boxTeam || '';
+    _pmRenderBoxInto(host, host._pmBoxPayload, t);
+  });
+  // Box-score player rows are painted asynchronously — use delegation.
+  panel.addEventListener('click', (e) => {
+    const row = e.target.closest && e.target.closest('.pm-boxscore-player[data-pid]');
+    if (!row || !panel.contains(row)) return;
+    e.preventDefault();
+    _pmOpenTeammate(row);
+  });
+  panel.addEventListener('keydown', (e) => {
+    if (!(e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar')) return;
+    const row = e.target.closest && e.target.closest('.pm-boxscore-player[data-pid]');
+    if (!row || !panel.contains(row)) return;
+    e.preventDefault();
+    _pmOpenTeammate(row);
+  });
+
   // Season pills also use onclick; keep dataset in sync for re-entry.
   if (playerId) panel.dataset.pmPlayerId = String(playerId);
 }
@@ -4590,6 +4952,8 @@ function toggleGameLogYear(arg) {
 }
 
 function closePlayerModal() {
+  _pmStopBoxLiveRefresh();
+  _pmBoxGen += 1;
   const overlay = document.querySelector('.player-modal-overlay');
   if (overlay) {
     const _return = overlay._pmReturnFocus;

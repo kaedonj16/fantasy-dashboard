@@ -1,9 +1,9 @@
 """Normalize Tank01 play-by-play into Redzone feed events.
 
-Tank01's ``getNFLBoxScore?playByPlay=true`` returns an experimental
-``allPlayByPlay`` list. Each play may carry per-player fantasy deltas under
-``playerStats`` (and DST under ``teamStats``). Field names vary across seasons,
-so every lookup is defensive.
+Tank01's ``getNFLBoxScore?playByPlay=true`` (also documented as ``playByplay``)
+returns an experimental ``allPlayByPlay`` list. Each play may carry per-player
+fantasy deltas under ``playerStats`` (and DST under ``teamStats``). Field names
+vary across seasons, so every lookup is defensive.
 
 Output shape (one entry per fantasy-relevant player on the play)::
 
@@ -68,8 +68,42 @@ def _normalize_player_delta(ps: dict) -> dict:
     if not isinstance(ps, dict):
         return {}
     # Some payloads nest Passing/Rushing/Receiving; others already look like a
-    # boxscore playerStats row. rz_stat_line_from_ps handles both shapes.
+    # boxscore playerStats row (flat keys). rz_stat_line_from_ps handles both.
     return rz_stat_line_from_ps(ps)
+
+
+def _iter_player_stats(pstats: Any) -> Iterable[dict]:
+    """Yield player-stat dicts whether Tank01 sent a map or a list."""
+    if isinstance(pstats, dict):
+        for v in pstats.values():
+            if isinstance(v, dict):
+                yield v
+    elif isinstance(pstats, list):
+        for v in pstats:
+            if isinstance(v, dict):
+                yield v
+
+
+def _raw_pbp_list(box: dict) -> list:
+    """Locate ``allPlayByPlay`` (and aliases), including one nested ``body``."""
+    if not isinstance(box, dict):
+        return []
+    candidates = [box]
+    inner = box.get("body")
+    if isinstance(inner, dict):
+        candidates.append(inner)
+    for src in candidates:
+        raw = (
+            src.get("allPlayByPlay")
+            or src.get("allPlaybyPlay")
+            or src.get("playByPlay")
+            or src.get("plays")
+        )
+        if isinstance(raw, dict):
+            return list(raw.values())
+        if isinstance(raw, list):
+            return raw
+    return []
 
 
 def extract_pbp_plays(
@@ -84,19 +118,8 @@ def extract_pbp_plays(
     ``name_to_pid`` maps lowercased full name → Sleeper pid.
     ``team_to_def_pid`` maps team abbreviation → Sleeper DEF pid for the league.
     """
-    if not isinstance(box, dict):
-        return []
-    raw = (
-        box.get("allPlayByPlay")
-        or box.get("allPlaybyPlay")
-        or box.get("playByPlay")
-        or box.get("plays")
-        or []
-    )
-    if isinstance(raw, dict):
-        # Some payloads key plays by id.
-        raw = list(raw.values())
-    if not isinstance(raw, list):
+    raw = _raw_pbp_list(box if isinstance(box, dict) else {})
+    if not raw:
         return []
 
     name_to_pid = name_to_pid or {}
@@ -126,30 +149,35 @@ def extract_pbp_plays(
             "play_text": text,
         }
 
+        emitted = 0
         pstats = play.get("playerStats") or play.get("player_stats") or {}
-        if isinstance(pstats, dict):
-            for _, ps in pstats.items():
-                if not isinstance(ps, dict):
-                    continue
-                line = _normalize_player_delta(ps)
-                if not _stat_line_nonzero(line):
-                    continue
-                long_name = _s(_first(ps, "longName", "long_name", "playerName", "name"))
-                pid = name_to_pid.get(long_name.lower()) if long_name else ""
-                team = _s(_first(ps, "teamAbv", "team", "teamAbbreviation"))
-                is_td = bool(
-                    (line.get("pass_td") or 0)
-                    or (line.get("rush_td") or 0)
-                    or (line.get("rec_td") or 0)
-                )
-                out.append({
-                    **base,
-                    "pid": pid or "",
-                    "name": long_name,
-                    "team": team,
-                    "stat_line": line,
-                    "is_td": is_td,
-                })
+        for ps in _iter_player_stats(pstats):
+            line = _normalize_player_delta(ps)
+            long_name = _s(_first(ps, "longName", "long_name", "playerName", "name"))
+            # Keep named players (or nonzero deltas) even when Tank01 shipped
+            # empty/zero fantasy deltas — the booth line is still real PBP.
+            if not _stat_line_nonzero(line) and not long_name:
+                continue
+            if not _stat_line_nonzero(line) and not text:
+                continue
+            pid = name_to_pid.get(long_name.lower()) if long_name else ""
+            team = _s(_first(ps, "teamAbv", "team", "teamAbbreviation"))
+            is_td = bool(
+                (line.get("pass_td") or 0)
+                or (line.get("rush_td") or 0)
+                or (line.get("rec_td") or 0)
+                or ("touchdown" in text.lower())
+                or (" TD" in text)
+            )
+            out.append({
+                **base,
+                "pid": pid or "",
+                "name": long_name,
+                "team": team,
+                "stat_line": line,
+                "is_td": is_td,
+            })
+            emitted += 1
 
         # DST / team defense deltas on the play
         tstats = play.get("teamStats") or play.get("team_stats") or {}
@@ -179,10 +207,11 @@ def extract_pbp_plays(
                     "stat_line": line,
                     "is_td": is_td,
                 })
+                emitted += 1
 
-        # Narrative-only scoring play with no playerStats — still useful copy
-        # when we can later attach a pid client-side via name heuristics.
-        if text and not pstats and not tstats:
+        # Narrative-only scoring play with no usable player/team rows — still
+        # ship the booth line; the client may attach a pid via name heuristics.
+        if text and emitted == 0:
             out.append({
                 **base,
                 "pid": "",
@@ -193,6 +222,133 @@ def extract_pbp_plays(
             })
 
     return out
+
+
+def game_situation_from_plays(plays: list[dict] | None) -> dict:
+    """Best-effort live board situation from the latest PBP rows.
+
+    Returns ``possession``, ``down``, ``distance``, ``yard_line``, plus optional
+    ``quarter`` / ``clock`` when the chosen play carries them. Empty strings
+    when unknown.
+
+    ``possession`` is the team abbreviation on the most recent play that has
+    field context (team + down/distance/yard line). That is the offense on that
+    snap — not a guaranteed current-drive marker after special teams / turnovers
+    when the provider omits the next snap. Callers must not invent values.
+    """
+    empty = {
+        "possession": "",
+        "down": "",
+        "distance": "",
+        "yard_line": "",
+        "quarter": "",
+        "clock": "",
+    }
+    if not plays:
+        return dict(empty)
+
+    # Prefer highest seq; fall back to original list order when seq is missing/tied.
+    indexed = [(i, p) for i, p in enumerate(plays) if isinstance(p, dict)]
+    ordered = [p for _, p in sorted(indexed, key=lambda ip: (int(ip[1].get("seq") or 0), ip[0]))]
+    chosen = None
+    for play in reversed(ordered):
+        team = _s(play.get("team"))
+        down = _s(play.get("down"))
+        distance = _s(play.get("distance"))
+        yard_line = _s(play.get("yard_line") or play.get("yardLine"))
+        if team and (down or distance or yard_line):
+            chosen = play
+            break
+    if chosen is None:
+        for play in reversed(ordered):
+            if _s(play.get("team")):
+                chosen = play
+                break
+    if chosen is None:
+        return dict(empty)
+
+    return {
+        "possession": _s(chosen.get("team")),
+        "down": _s(chosen.get("down")),
+        "distance": _s(chosen.get("distance")),
+        "yard_line": _s(chosen.get("yard_line") or chosen.get("yardLine")),
+        "quarter": _s(chosen.get("quarter")),
+        "clock": _s(chosen.get("clock")),
+    }
+
+
+def build_games_snapshot(
+    player_info: dict | None,
+    pbp_by_game: dict | None = None,
+) -> dict:
+    """Deduped per-game scoreboard rows for the Redzone NFL matchup strip.
+
+    Seeded from ``player_info`` (score / clock / quarter / status) and enriched
+    with PBP situation when available. Keys are ``game_id``.
+    """
+    games: dict = {}
+    for info in (player_info or {}).values():
+        if not isinstance(info, dict):
+            continue
+        gid = _s(info.get("game_id"))
+        if not gid or gid in games:
+            continue
+        away = _s(info.get("away"))
+        home = _s(info.get("home"))
+        if not away and not home:
+            continue
+        games[gid] = {
+            "game_id": gid,
+            "away": away,
+            "home": home,
+            "away_pts": _s(info.get("away_pts")),
+            "home_pts": _s(info.get("home_pts")),
+            "game_status": _s(info.get("game_status")),
+            "game_code": _s(info.get("game_code")),
+            "game_clock": _s(info.get("game_clock")),
+            "game_quarter": _s(info.get("game_quarter")),
+            "game_time_epoch": info.get("game_time_epoch") or 0,
+            "possession": "",
+            "down": "",
+            "distance": "",
+            "yard_line": "",
+        }
+
+    for gid, plays in (pbp_by_game or {}).items():
+        gid = _s(gid)
+        if not gid:
+            continue
+        sit = game_situation_from_plays(plays if isinstance(plays, list) else [])
+        row = games.setdefault(
+            gid,
+            {
+                "game_id": gid,
+                "away": "",
+                "home": "",
+                "away_pts": "",
+                "home_pts": "",
+                "game_status": "",
+                "game_code": "",
+                "game_clock": "",
+                "game_quarter": "",
+                "game_time_epoch": 0,
+                "possession": "",
+                "down": "",
+                "distance": "",
+                "yard_line": "",
+            },
+        )
+        for key in ("possession", "down", "distance", "yard_line"):
+            if sit.get(key):
+                row[key] = sit[key]
+        # Prefer live board clock/quarter from player_info; fill from PBP only
+        # when the scoreboard row is missing them.
+        if not row.get("game_clock") and sit.get("clock"):
+            row["game_clock"] = sit["clock"]
+        if not row.get("game_quarter") and sit.get("quarter"):
+            row["game_quarter"] = sit["quarter"]
+
+    return games
 
 
 def demo_play_text(kind: str, yds: int = 0, td: int = 0, dist: int = 0) -> str:

@@ -597,12 +597,18 @@ def fetch_tank_boxscore(
 
     When ``play_by_play`` is True, Tank01 also returns the experimental
     ``allPlayByPlay`` list (per-play fantasy deltas + play text).
+
+    Tank01's RapidAPI discussion documents the flag as ``playByplay=true``
+    (lowercase ``p`` in ``play``); the playground uses ``playByPlay``. Send both
+    plus ``fantasyPoints=true`` so per-play deltas are more likely to populate.
     """
     sess = session or requests.Session()
 
     params: dict = {"gameID": game_id}
     if play_by_play:
         params["playByPlay"] = "true"
+        params["playByplay"] = "true"
+        params["fantasyPoints"] = "true"
 
     if _tank01_breaker.is_open():
         logger.warning("[Tank01] Circuit OPEN - skipping getNFLBoxScore %s", game_id)
