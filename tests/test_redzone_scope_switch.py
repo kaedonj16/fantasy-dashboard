@@ -69,6 +69,9 @@ def test_scope_switch_restores_cache_and_resets_feed_snapshots():
     assert "_state = cached" in block
     assert "_loadingScope = true" in block
     assert "_resetFeedSnapshots()" in block
+    # Cached switch must rehydrate Plays immediately and persist scope in the URL.
+    assert "_hydrateFeed(cached)" in block
+    assert "_syncScopeUrl()" in block
 
 
 def test_stream_fallbacks_check_generation():
@@ -79,12 +82,17 @@ def test_stream_fallbacks_check_generation():
 
 def test_my_leagues_stream_hydrates_plays_at_end():
     src = _fn("_refreshUserStream")
+    full = _rz()
     # Mid-stream must not seed prevStats (that suppressed all Plays).
     mid = src[src.index("obj.type === 'league'") : src.index("_hydrateFeed(base)")]
     assert "_seedPrevStats(base)" not in mid
-    assert "_seedMilestones(base)" in mid
     assert "_hydrateFeed(base)" in src
     assert "_resetFeedSnapshots()" in src
+    # Meta must not wipe a last-good portfolio into an empty cache shell.
+    assert "last-good portfolio" in src
+    # Empty slices surface a failed card, not a silent drop.
+    assert "_mlFailed" in src
+    assert "function _mlFailedCard(" in full
 
 
 def test_hydrate_feed_matches_cold_boot_order():
@@ -98,6 +106,37 @@ def test_empty_feed_with_hero_shows_schedule_not_no_matching():
     assert "hardFilter" in src
     assert "_heroMid && _feed.length > 0" in src
     assert "_pregameScheduleHtml()" in src
+
+
+def test_focused_pair_drives_scorebar_and_live_chrome():
+    src = _rz()
+    assert "function _focusedPair(" in src
+    assert "function _matchupIsLive(" in src
+    assert "_matchupIsLive([_mm, _om])" in src or "_matchupIsLive([myMatchup" in src
+    # Non-viewer heroes should not hard-code the "Me" label.
+    assert "(pair && pair.isMine) ? 'Me'" in src or "pair.isMine ? 'Me'" in src
+
+
+def test_filter_polish_league_label_and_my_team_chip():
+    src = _rz()
+    assert "? 'League' : 'Team'" in src
+    assert 'data-clear-myteam="1"' in src
+    assert "OPP · " in src
+
+
+def test_scoring_prefers_roster_league_over_pid_map():
+    src = _fn("_detectChanges")
+    assert "mm.league_id" in src
+    assert "tags.pidToRoster" in src
+
+
+def test_user_scope_fetch_fallback_keeps_user_scope():
+    app = (_ROOT / "app.py").read_text(encoding="utf-8")
+    block = app[app.index("def _redzone_fetch(") : app.index("def _redzone_user_portfolio")]
+    assert "portfolio_unavailable" in block
+    assert '"scope": "user"' in block
+    # Must not fall through to league collect after a user-scope failure.
+    assert block.index("portfolio_unavailable") < block.index("_redzone_collect(")
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="Node.js not available")

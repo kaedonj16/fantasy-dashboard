@@ -12110,7 +12110,29 @@ def _redzone_fetch(platform, league_id, season, week=None, scope="league"):
             return d
         except Exception as _e:
             logger.warning("[redzone] user-scope fetch failed: %s", _e)
-            # fall through to league scope
+            # Return an empty *user* payload (not league-scope). The client
+            # rejects scope mismatches after the stale-poll guard, so falling
+            # through to league collect left My Leagues hung on a skeleton.
+            return {
+                "week": week,
+                "season": season,
+                "platform": platform,
+                "league_id": league_id,
+                "scope": "user",
+                "matchups": [],
+                "rosters": [],
+                "users": [],
+                "leagues": [],
+                "player_info": {},
+                "scoring": {},
+                "scoring_by_league": {},
+                "pid_league": {},
+                "viewer_roster_id": "",
+                "viewer_roster_ids": [],
+                "games_today": gt,
+                "updated_at": time.time(),
+                "error": "portfolio_unavailable",
+            }
 
     d = _redzone_collect(platform, league_id, season, week)
     vrid = str(session.get("viewer_roster_id") or "")

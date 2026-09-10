@@ -45,6 +45,7 @@
   var _loadingScope = false; // true while awaiting the first fetch after a scope switch
   var _mlNames  = [];        // My Leagues: league display names by portfolio index
   var _mlLoaded = null;      // My Leagues: Set of portfolio indices whose card has arrived (null = not streaming)
+  var _mlFailed = null;      // My Leagues: Set of portfolio indices that failed to load
   var _streaming = false;    // true while a progressive My Leagues stream is in flight
   var _streamGen = 0;        // bumped on every scope switch so a stale stream/poll can abort
   // Last-good payload per scope so My Leagues → This League never paints
@@ -123,6 +124,47 @@
       (m.starters || []).forEach(function(pid) { if (_gameStatus(pid).type === 'live') live = true; });
     });
     return live;
+  }
+
+  function _matchupIsLive(matchups) {
+    var live = false;
+    (matchups || []).forEach(function(m) {
+      if (!m) return;
+      (m.starters || []).forEach(function(pid) { if (_gameStatus(pid).type === 'live') live = true; });
+    });
+    return live;
+  }
+
+  // Resolve the two sides of the focused hero card. This League heroes can be
+  // any matchup; My Leagues heroes are a viewer roster id.
+  function _focusedPair() {
+    var mine = _myMatchups();
+    if (!_heroMid) {
+      var m0 = mine[0];
+      return m0 ? { mine: m0, opp: _oppOf(m0), isMine: true } : null;
+    }
+    if (_scope === 'user') {
+      var focused = mine.find(function(m) { return String(m.roster_id) === _heroMid; });
+      if (!focused) return mine[0] ? { mine: mine[0], opp: _oppOf(mine[0]), isMine: true } : null;
+      return { mine: focused, opp: _oppOf(focused), isMine: true };
+    }
+    var pair = (_state.matchups || []).filter(function(m) { return String(m.matchup_id) === _heroMid; });
+    if (!pair.length) {
+      var m1 = mine[0];
+      return m1 ? { mine: m1, opp: _oppOf(m1), isMine: true } : null;
+    }
+    var mineSide = pair.find(function(m) { return _isMyRid(m.roster_id); }) || pair[0];
+    var oppSide = pair.find(function(m) { return String(m.roster_id) !== String(mineSide.roster_id); }) || null;
+    return { mine: mineSide, opp: oppSide, isMine: !!_isMyRid(mineSide.roster_id) };
+  }
+
+  function _syncScopeUrl() {
+    try {
+      var url = new URL(window.location.href);
+      if (_scope === 'user') url.searchParams.set('scope', 'user');
+      else url.searchParams.delete('scope');
+      window.history.replaceState({}, '', url.pathname + url.search + url.hash);
+    } catch (_) {}
   }
 
   // True when a not-yet-started game in this view kicks off within `mins`
@@ -532,7 +574,18 @@
     // fall back to the single top-level scoring.
     var _sbl = newData.scoring_by_league, _pidLg = newData.pid_league || {};
     var _scFor = function(pid) {
-      if (_sbl) { var lid = _pidLg[pid]; if (lid && _sbl[lid]) return _sbl[lid]; }
+      if (_sbl) {
+        // Prefer the league of the roster this pid is tagged to (viewer-first),
+        // so shared players don't inherit another league's last-write scoring.
+        var rid = tags.pidToRoster[pid];
+        var lid = null;
+        if (rid) {
+          var mm = (newData.matchups || []).find(function(x) { return String(x.roster_id) === String(rid); });
+          if (mm && mm.league_id) lid = mm.league_id;
+        }
+        if (!lid) lid = _pidLg[pid];
+        if (lid && _sbl[lid]) return _sbl[lid];
+      }
       return newData.scoring || {};
     };
     var allEvents = [], handled = {};
@@ -720,20 +773,36 @@
     // Increment unread count when user isn't on Plays tab
     if (_activeTab !== 'plays' && (allEvents.length + _specialCount)) _unreadCount += (allEvents.length + _specialCount);
 
-    // Track which rosters had point changes (for score flash) + capture score delta
+    // Track which rosters had point changes (for score flash) + capture score delta.
+    // When a hero card is focused, only accumulate deltas for that matchup so the
+    // "+N this update" strip doesn't mix other My Leagues games.
     _scoreDelta = { me: 0, opp: 0 };
-    var _myMidSet = new Set();
-    (newData.matchups || []).forEach(function(m) {
-      if (_isMyRid(m.roster_id)) _myMidSet.add(String(m.matchup_id));
-    });
+    var _focusMids = new Set();
+    var _focusMeRid = null;
+    if (_heroMid) {
+      if (_scope === 'user') {
+        var _fm = (newData.matchups || []).find(function(m) { return String(m.roster_id) === _heroMid; });
+        if (_fm) { _focusMids.add(String(_fm.matchup_id)); _focusMeRid = String(_fm.roster_id); }
+      } else {
+        _focusMids.add(String(_heroMid));
+        var _fpair = (newData.matchups || []).filter(function(m) { return String(m.matchup_id) === _heroMid; });
+        var _fmine = _fpair.find(function(m) { return _isMyRid(m.roster_id); }) || _fpair[0];
+        if (_fmine) _focusMeRid = String(_fmine.roster_id);
+      }
+    }
+    if (!_focusMids.size) {
+      (newData.matchups || []).forEach(function(m) {
+        if (_isMyRid(m.roster_id)) _focusMids.add(String(m.matchup_id));
+      });
+    }
     (newData.matchups || []).forEach(function(m) {
       var rid = String(m.roster_id);
       var newPts = parseFloat(m.points || 0);
       var oldPts = _prevMatchupPts[rid];
       if (oldPts !== undefined && Math.abs(newPts - oldPts) > 0.01) _flashRids.add(rid);
-      if (oldPts !== undefined && _myMidSet.has(String(m.matchup_id))) {
+      if (oldPts !== undefined && _focusMids.has(String(m.matchup_id))) {
         var delta = parseFloat((newPts - oldPts).toFixed(1));
-        if (_isMyRid(rid)) _scoreDelta.me += delta;
+        if (_focusMeRid ? rid === _focusMeRid : _isMyRid(rid)) _scoreDelta.me += delta;
         else _scoreDelta.opp += delta;
       }
       _prevMatchupPts[rid] = newPts;
@@ -810,6 +879,7 @@
     var activeCount = ['team','nfl','pos','stat'].filter(function(k) { return _filters[k] !== 'all'; }).length;
     var chips = '';
     if (_heroMid) chips += '<span class="rz-active-chip rz-hero-chip" data-clear-hero="1">&#9654; ' + _heroLabel() + ' ×</span>';
+    if (_myTeamOnly) chips += '<span class="rz-active-chip" data-clear-myteam="1">My Team ×</span>';
     if (_filters.team !== 'all') chips += '<span class="rz-active-chip" data-clear="team">' + _filters.team + ' ×</span>';
     if (_filters.nfl  !== 'all') chips += '<span class="rz-active-chip" data-clear="nfl">'  + _filters.nfl  + ' ×</span>';
     if (_filters.pos  !== 'all') chips += '<span class="rz-active-chip" data-clear="pos">'  + _filters.pos  + ' ×</span>';
@@ -831,7 +901,7 @@
       var pOpts = [['all','All']].concat(_POS_LIST.map(function(p) { return [p, p]; }));
       var sOpts = [['all','All']].concat(_STAT_LIST);
       panel = '<div class="rz-filter-panel">'
-        + fpRow('Team', 'team', tOpts)
+        + fpRow(_scope === 'user' ? 'League' : 'Team', 'team', tOpts)
         + fpRow('NFL',  'nfl',  nOpts)
         + fpRow('Pos',  'pos',  pOpts)
         + fpRow('Type', 'stat', sOpts)
@@ -1057,6 +1127,17 @@
       + '</div>';
   }
 
+  function _mlFailedCard(name) {
+    return '<div class="rz-mc-hero rz-mc-failed" title="Could not load this league">'
+      + '<div class="rz-mch-league">' + (name || 'League') + '</div>'
+      + '<div class="rz-mch-matchup">'
+      +   '<div class="rz-mch-side"><div class="rz-mch-owner">Unavailable</div><div class="rz-mch-score">—</div></div>'
+      +   '<div class="rz-mch-vs"><span class="rz-mch-pre">ERR</span></div>'
+      +   '<div class="rz-mch-side right"><div class="rz-mch-owner">—</div><div class="rz-mch-score">—</div></div>'
+      + '</div>'
+      + '</div>';
+  }
+
   function _renderHeroCards() {
     // Score delta badge ("+N this update"): reflects the change from the most
     // recent poll. _detectChanges recomputes (and resets) _scoreDelta every
@@ -1076,9 +1157,12 @@
       // hasn't arrived yet (loaded-but-teamless leagues are in _mlLoaded and get
       // no placeholder). Rendered after the real cards.
       var pending = '';
-      if (_mlLoaded) {
+      if (_mlLoaded || _mlFailed) {
+        var showingCache = _streaming && _scopeCache.user && (_scopeCache.user.matchups || []).length
+          && _state === _scopeCache.user;
         for (var _pi = 0; _pi < _mlNames.length; _pi++) {
-          if (!_mlLoaded.has(_pi)) pending += _mlPlaceholderCard(_mlNames[_pi]);
+          if (_mlFailed && _mlFailed.has(_pi)) pending += _mlFailedCard(_mlNames[_pi]);
+          else if (!showingCache && _mlLoaded && !_mlLoaded.has(_pi)) pending += _mlPlaceholderCard(_mlNames[_pi]);
         }
       }
       if (!mine.length && !pending) {
@@ -1324,7 +1408,7 @@
 
   function _eventHtml(ev, animate) {
     var tagLabel = ev.mine ? (_scope === 'user' && ev.league ? ev.league : 'MY TEAM')
-                 : ev.opp  ? 'OPP'
+                 : ev.opp  ? (_scope === 'user' && ev.league ? ('OPP · ' + ev.league) : 'OPP')
                  : (_scope === 'user' && ev.league ? ev.league : '');
     var tagCls = ev.mine ? 'mine' : 'opp';
     var tag = tagLabel ? '<span class="rz-event-tag ' + tagCls + '">' + tagLabel + '</span>' : '';
@@ -1866,18 +1950,9 @@
     var demoPill = _isDemo ? '<span class="rz-demo-pill">DEMO</span>' : '';
     var showFilters = (_activeTab === 'plays' || _activeTab === 'top');
 
-    var mine = _myMatchups();
-    var myMatchup = mine[0], oppMatchup = myMatchup ? _oppOf(myMatchup) : null;
-    // Follow the selected hero card so My Leagues Plays tracks the focused league.
-    if (_heroMid) {
-      var focused = null;
-      if (_scope === 'user') {
-        focused = mine.find(function(m) { return String(m.roster_id) === _heroMid; });
-      } else {
-        focused = mine.find(function(m) { return String(m.matchup_id) === _heroMid; });
-      }
-      if (focused) { myMatchup = focused; oppMatchup = _oppOf(focused); }
-    }
+    var pair = _focusedPair();
+    var myMatchup = pair ? pair.mine : null;
+    var oppMatchup = pair ? pair.opp : null;
 
     var summary = _loadingScope ? _renderSkeletonHero() : _renderHeroCards();
 
@@ -1895,10 +1970,11 @@
       var _mm = myMatchup, _om = oppMatchup;
       var _myP = parseFloat(_mm.points || 0), _opP = parseFloat(_om ? _om.points || 0 : 0);
       var _win = _myP >= _opP, _diff = Math.abs(_myP - _opP).toFixed(1);
-      var _liveBar = _anyLive();
+      var _liveBar = _matchupIsLive([_mm, _om]) || (!_heroMid && _anyLive());
+      var _meLabel = (pair && pair.isMine) ? 'Me' : (_ownerName(_mm.roster_id) || 'Team');
       var _oppName = _om ? (_ownerName(_om.roster_id) || 'Opp') : 'Opp';
       playsScoreBar = '<div class="rz-plays-scorebar">'
-        + '<span class="rz-psb-me' + (_win ? ' lead' : '') + '">Me  ' + _fmt(_myP) + '</span>'
+        + '<span class="rz-psb-me' + (_win ? ' lead' : '') + '">' + _meLabel + '  ' + _fmt(_myP) + '</span>'
         + '<span class="rz-psb-sep">' + (_liveBar ? '<span class="rz-psb-live-dot"></span>' : '') + 'vs</span>'
         + '<span class="rz-psb-opp' + (!_win ? ' lead' : '') + '">' + _oppName + '  ' + _fmt(_opP) + '</span>'
         + (_liveBar ? '<span class="rz-psb-spread">' + (_win ? '+' : '-') + _diff + '</span>' : '')
@@ -1972,7 +2048,7 @@
         if (btn.dataset.scope === _scope) return;
         _streamGen++; // abort any in-flight My Leagues stream / poll from a prior switch
         _streaming = false;
-        _mlNames = []; _mlLoaded = null;
+        _mlNames = []; _mlLoaded = null; _mlFailed = null;
         _scope = btn.dataset.scope;
         _filters = { team: 'all', nfl: 'all', pos: 'all', stat: 'all' };
         _feed = [];
@@ -1991,13 +2067,14 @@
           _state = cached;
           _myRids = _myRidSet(cached);
           _loadingScope = false;
-          // Matchup cards restore immediately; Plays rehydrates when the
-          // refresh/stream finishes against empty snapshots.
+          // Restore cards + Plays immediately from cache, then refresh in background.
+          _hydrateFeed(cached);
           _applyDefaultHero();
         } else {
           // Show skeleton cards until this scope's (often multi-league) data lands.
           _loadingScope = true;
         }
+        _syncScopeUrl();
         _render();
         // My Leagues streams a card at a time; This League is a single fetch.
         if (_scope === 'user') _refreshUserStream();
@@ -2033,6 +2110,9 @@
     });
     root.querySelectorAll('[data-clear-hero]').forEach(function(el) {
       el.addEventListener('click', function() { _heroMid = null; _heroTouched = true; _feedPage = 0; _render(); });
+    });
+    root.querySelectorAll('[data-clear-myteam]').forEach(function(el) {
+      el.addEventListener('click', function() { _myTeamOnly = false; _feedPage = 0; _render(); });
     });
     var exitDemo = root.querySelector('#rz-demo-exit');
     if (exitDemo) exitDemo.addEventListener('click', function() { window.location.href = window.location.pathname; });
@@ -2201,11 +2281,9 @@
   async function _refreshUserStream() {
     var myGen = ++_streamGen; // this stream owns the screen until the next scope switch
     _streaming = true;
-    // Fresh portfolio load — drop any prior Plays/snapshots so the end-of-stream
-    // hydrate can build the feed from current box scores.
-    _feed = [];
-    _shownFeedIds = new Set();
-    _resetFeedSnapshots();
+    _mlFailed = new Set();
+    // Keep cached Plays on screen while streaming; rebuild from the full
+    // portfolio once at stream end.
     var parts = window.location.pathname.split('/');
     var apiBase = '/api/' + parts[1] + '/' + parts[2] + '/' + parts[3];
     var url = apiBase + '/redzone-data?_cb=' + Date.now() + '&scope=user&stream=1';
@@ -2236,19 +2314,26 @@
         base.week = obj.week; base.season = obj.season;
         if (obj.games_today != null) base.games_today = obj.games_today;
         _mlNames = (obj.leagues || []).map(function(l) { return l.name || 'League'; });
-        _state = base; _myRids = new Set(); _loadingScope = false;
-        _scopeCache.user = base;
+        _loadingScope = false;
+        // Keep last-good portfolio cards on screen until the first slice lands.
+        // Never write an empty shell into _scopeCache.user (that poisoned switches).
+        if (!(_state.matchups && _state.matchups.length)) {
+          _state = base; _myRids = new Set();
+        }
         _render();
       } else if (obj.type === 'league') {
         if (!obj.empty) { _mergeLeagueSlice(base, obj); gotLeague = true; }
+        else if (obj.index != null) { (_mlFailed = _mlFailed || new Set()).add(obj.index); }
         if (obj.index != null) _mlLoaded.add(obj.index);
-        _state = base;
-        _scopeCache.user = base;
-        _myRids = _myRidSet(base);
-        // Seed milestone/injury/lead snapshots so those don't fire retroactively,
-        // but leave prevStats empty until stream end so Plays can hydrate once.
-        _seedMilestones(base); _seedInjuries(base); _seedLeaders(base);
-        (base.matchups || []).forEach(function(m) { _prevMatchupPts[String(m.roster_id)] = parseFloat(m.points || 0); });
+        // If a prior portfolio is already on screen, keep it until stream end so
+        // cards don't collapse to the first arriving league.
+        var keepCache = _scopeCache.user && (_scopeCache.user.matchups || []).length;
+        if (!keepCache) {
+          _state = base;
+          _myRids = _myRidSet(base);
+          _seedMilestones(base); _seedInjuries(base); _seedLeaders(base);
+          (base.matchups || []).forEach(function(m) { _prevMatchupPts[String(m.roster_id)] = parseFloat(m.points || 0); });
+        }
         _render();
       }
     }
@@ -2274,14 +2359,18 @@
       return;
     }
 
-    _mlNames = []; _mlLoaded = null; _streaming = false;
+    _mlLoaded = _mlLoaded; // keep for failed-card rendering until next switch
+    _streaming = false;
     if (myGen !== _streamGen) return;
     if (!gotLeague) { return _refresh(); }
     _state = base;
     _scopeCache.user = base;
     _myRids = _myRidSet(base);
-    // Hydrate Plays once the portfolio is complete (detect against empty
-    // prevStats, then seed for subsequent live polls).
+    // Rebuild Plays from the full portfolio (clear first to avoid duplicates
+    // from the cached hydrate shown during the stream).
+    _feed = [];
+    _shownFeedIds = new Set();
+    _resetFeedSnapshots();
     _hydrateFeed(base);
     _loadingScope = false;
     _countdown = _pollInterval();

@@ -32074,6 +32074,13 @@ button:disabled {
     border-color: var(--rz-border);
 }
 
+.rz-mc-hero.rz-mc-failed {
+    cursor: default;
+    opacity: 0.72;
+    border-style: dashed;
+    border-color: var(--rz-border);
+}
+
 .rz-skel-line,
 .rz-skel-num,
 .rz-skel-badge {
