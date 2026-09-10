@@ -11686,6 +11686,9 @@ from utils.redzone_pbp import (  # noqa: E402
     demo_play_text as _rz_demo_play_text,
     extract_pbp_plays as _rz_extract_pbp_plays,
 )
+from utils.redzone_alt_pbp import (  # noqa: E402
+    fetch_alt_pbp_plays as _rz_fetch_alt_pbp_plays,
+)
 
 # ── Demo mode ──────────────────────────────────────────────────────────────────
 # Time-parameterised sample data so the live play feed can be exercised any time
@@ -12232,11 +12235,52 @@ def _redzone_collect(platform, league_id, season, week):
                     p for p in plays
                     if (p.get("pid") and p["pid"] in rostered) or p.get("play_text")
                 ]
+                # Tank01 PBP is experimental and often empty for finals. Fall
+                # back to Sleeper (preferred) then ESPN CDN booth lines so
+                # Plays still shows real play-by-play — never boxscore fiction.
+                if not plays:
+                    try:
+                        alt = _rz_fetch_alt_pbp_plays(
+                            gid,
+                            season=season,
+                            week=week,
+                            name_to_pid=name_to_pid,
+                            team_to_def_pid=team_to_def_pid,
+                            live=live,
+                        )
+                        plays = [
+                            p for p in (alt or [])
+                            if (p.get("pid") and p["pid"] in rostered) or p.get("play_text")
+                        ]
+                    except Exception:
+                        logger.debug(
+                            "[redzone] alt pbp failed game=%s", gid, exc_info=True
+                        )
                 # Always record the game key when we attempted PBP so the client
                 # can suppress bulk point dumps even if Tank01 returned no rows.
                 pbp_by_game[gid] = plays
             except Exception:
                 logger.debug("[redzone] pbp parse failed game=%s", gid, exc_info=True)
+                pbp_by_game.setdefault(gid, [])
+        elif want_pbp:
+            # No usable box at all — still try Sleeper/ESPN for booth lines.
+            try:
+                rostered = set(pids)
+                alt = _rz_fetch_alt_pbp_plays(
+                    gid,
+                    season=season,
+                    week=week,
+                    name_to_pid=name_to_pid,
+                    team_to_def_pid=team_to_def_pid,
+                    live=live,
+                )
+                plays = [
+                    p for p in (alt or [])
+                    if (p.get("pid") and p["pid"] in rostered) or p.get("play_text")
+                ]
+                pbp_by_game[gid] = plays
+            except Exception:
+                logger.debug("[redzone] alt pbp failed game=%s", gid, exc_info=True)
                 pbp_by_game.setdefault(gid, [])
 
     # Projected points per matchup, scored with the league's settings so the
