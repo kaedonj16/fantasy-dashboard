@@ -282,3 +282,28 @@ process.stdout.write(JSON.stringify({
     assert out["hydratedFeed"] == 1
     assert out["desc"] == "55 rush yds"
     assert out["seededAfter"] is True
+
+
+def test_default_hero_filter_disabled():
+    src = _fn("_applyDefaultHero")
+    assert "return;" in src
+    assert "_heroMid = def" not in src
+    assert _fn("_defaultHeroMid").count("return null") >= 1
+
+
+def test_demo_header_button_removed():
+    src = _rz()
+    assert 'class="rz-demo-btn"' not in src
+    # Exit Demo stays available when already in demo mode.
+    assert "Exit Demo" in src or "rz-demo-exit" in src
+
+
+def test_play_descriptions_are_play_by_play():
+    src = _fn("_describe")
+    assert "Throws a " in src and "touchdown pass" in src
+    assert "Hauls in a " in src and "touchdown catch" in src
+    assert "Completes a pass for " in src
+    # Old bulk shorthand should not be returned as live copy (comment examples OK).
+    assert "return { desc: ry + ' yd TD catch'" not in src
+    assert "return { desc: py + ' yd TD pass'" not in src
+    assert "return { desc: uy + ' yd TD run'" not in src
