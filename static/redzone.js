@@ -675,7 +675,9 @@
     var byGame = newData.pbp_by_game || {};
     var events = [];
     Object.keys(byGame).forEach(function(gid) {
-      _pbpGames[gid] = true;
+      // Coverage is "this game has a PBP payload", not "we accepted new rows
+      // this poll" — quiet polls must still suppress box-score / points dumps.
+      if ((byGame[gid] || []).length) _pbpGames[gid] = true;
       (byGame[gid] || []).forEach(function(play) {
         var pid = play.pid || '';
         if (!pid || pid === '0') return;
@@ -758,10 +760,10 @@
       var pi = newData.player_info[pid] || {};
       var newL = pi.stat_line;
       if (!newL) return;
-      // If this player's game already has PBP, skip box-score fiction for them
-      // once we've seeded at least one PBP event (avoids double-counting).
+      // If this player's game already has a PBP payload, skip box-score fiction
+      // for them (avoids double-counting and post-game "Scored X pts" dumps).
       var gid = pi.game_id || '';
-      if (gid && _pbpGames[gid] && pbpEvents.length) {
+      if (gid && _pbpGames[gid]) {
         handled[pid] = true;
         return;
       }
@@ -773,6 +775,12 @@
       var pp = m.players_points || {};
       Object.keys(pp).forEach(function(pid) {
         if (handled[pid] || pid === '0') return;
+        // Same gate: don't invent bulk point cards when PBP covers the game.
+        var gid = ((newData.player_info || {})[pid] || {}).game_id || '';
+        if (gid && _pbpGames[gid]) {
+          handled[pid] = true;
+          return;
+        }
         var delta = parseFloat((parseFloat(pp[pid] || 0) - parseFloat(_prevPts[pid] || 0)).toFixed(2));
         if (delta <= 0.05) return;
         var rid = tags.pidToRoster[pid] || String(m.roster_id);

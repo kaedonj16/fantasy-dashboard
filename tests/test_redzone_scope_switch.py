@@ -329,3 +329,19 @@ def test_app_wires_pbp_into_collect_and_demo():
     assert '"pbp_by_game": pbp_by_game' in app
     assert "Try Redzone Demo" in app
     assert 'fetch_tank_boxscore' in (_ROOT / "dashboard_services" / "api.py").read_text(encoding="utf-8")
+    # Finals must still request PBP — otherwise Plays falls back to bulk
+    # "Scored X pts" cards after the game ends.
+    assert 'want_pbp = live or final' in app
+    assert 'ttl=(None if live else 300.0)' in app
+    assert "Finals: plain boxscore is enough" not in app
+
+
+def test_pbp_coverage_suppresses_bulk_points_without_new_events():
+    """Quiet / already-seen PBP polls must not invent 'Scored X pts' cards."""
+    src = _fn("_detectChanges")
+    assert "_pbpGames[gid]" in src
+    # Gate on coverage alone — not on newly accepted pbpEvents.length.
+    assert "_pbpGames[gid] && pbpEvents.length" not in src
+    assert "Scored ' + delta.toFixed(1) + ' pts'" in src
+    # Points-delta path must also respect PBP coverage.
+    assert 'if (gid && _pbpGames[gid])' in src
