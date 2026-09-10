@@ -368,13 +368,17 @@ def test_feed_is_chronological_newest_first():
     assert "_feed = _chronoSort(_feed)" in src
 
 
-def test_text_only_pbp_plays_headline_total_not_fake_delta():
-    """ESPN booth lines carry no stat line; never headline a green '+0.0'."""
+def test_play_headlines_per_play_delta_with_muted_zero():
+    """Each card headlines the points THIS play earned (Sleeper-style), with
+    a muted 0.0 for no-score plays — never a green '+0.0' or the running
+    total masquerading as the play's points."""
     src = _rz()
-    assert "var hasDelta = Math.abs(_n(ev.pts)) >= 0.05;" in src
-    assert "deltaPrimary" in src
+    assert "var deltaPrimary = (d > 0.0001 ? '+' : '') + _fmt(d);" in src
+    assert "d < -0.0001 ? 'neg' : 'zero'" in src
     # The old unconditional per-play string must be gone.
     assert "var ptStr = ev.pts > 0" not in src
+    css = (_ROOT / "static" / "dashboard.css").read_text(encoding="utf-8")
+    assert ".rz-event-delta.zero" in css
 
 
 def test_quarter_label_is_prefixed():
@@ -395,6 +399,31 @@ def test_td_alerts_only_after_initial_backfill():
     # A scope switch re-hydrates silently, then re-arms.
     assert "_alertsArmed = false;" in src
     assert "_alertsArmed = true;" in src
+
+
+def test_sleeper_style_situation_strip_and_yardage_chip():
+    """Borrowed Sleeper elements: situation strip (down/dist @ spot, RZ badge,
+    Q/clock + score) and a per-play yardage chip. No reactions or replies."""
+    src = _rz()
+    css = (_ROOT / "static" / "dashboard.css").read_text(encoding="utf-8")
+    assert "function _isRedZone(" in src
+    assert "rz-event-meta" in src and "rz-event-situation" in src
+    assert "rz-event-gamestate" in src
+    assert '<span class="rz-event-rz">RZ</span>' in src
+    assert "rz-event-yd" in src
+    assert ".rz-event-meta" in css and ".rz-event-rz" in css
+    # The play carries its stat line so the yardage chip can be derived.
+    assert "statLine: line" in src
+
+
+def test_running_cumulative_stat_line_rendered():
+    """Sleeper-style running stat line ('QB · 2/3 CMP, 13 YD') at each play."""
+    src = _rz()
+    css = (_ROOT / "static" / "dashboard.css").read_text(encoding="utf-8")
+    assert "function _cumeLine(" in src
+    assert "cume: play.cume" in src
+    assert "rz-event-cume" in src and ".rz-event-cume" in css
+    assert "' CMP'" in src
 
 
 def test_scoring_honors_distance_fg_and_te_premium():
