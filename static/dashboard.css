@@ -13487,8 +13487,10 @@ a.signed-home-league:hover {
 }
 
 .m-row {
+    /* Name | actual | proj | name — box scores sit under the name via
+       .m-cell-stats (not in middle columns that pulled team abbrs apart). */
     display: grid;
-    grid-template-columns: 1.1fr .5fr 60px 60px .5fr 1.1fr;
+    grid-template-columns: 1fr 60px 60px 1fr;
     align-items: center;
     column-gap: 10px;
     padding: 0 6px;
@@ -14035,9 +14037,9 @@ a.signed-home-league:hover {
     text-align: right;
 }
 
-/* Keep the team abbr fully visible beside the name. Allow the name itself to
-   wrap (up to 2 lines) so long names like "Jaxon Smith-Njigba" stay readable
-   instead of clipping to "Jaxon Smith…" while the row center still looks empty. */
+/* Keep the team abbr immediately beside the name (do not flex-grow the
+   name into the full column — that shoved "NE"/"SEA" into a middle gutter).
+   Allow long names to wrap up to 2 lines instead of ellipsizing. */
 .p-name-line {
     display: flex;
     align-items: baseline;
@@ -14052,7 +14054,7 @@ a.signed-home-league:hover {
 
 .p-name-line .pname {
     min-width: 0;
-    flex: 1 1 auto;
+    flex: 0 1 auto;
     overflow: hidden;
     white-space: normal;
     overflow-wrap: anywhere;
@@ -15586,31 +15588,23 @@ img, svg, canvas {
         grid-template-columns: 1fr 44px 44px 1fr;
         column-gap: 6px;
     }
-
-    /* collapse the stat-stack children so they don't wrap to a second row;
-     !important overrides any inline style="display:grid" on stat-stack divs */
-    .m-row > :nth-child(2),
-    .m-row > :nth-child(5) {
-        display: none !important;
-    }
 }
 
-/* Stats injected inline into player cells - only shown on mobile where
-   the stat-stack columns are hidden. */
+/* Box-score line under the player name (all viewports). */
 .m-cell-stats {
-    display: none;
+    display: block;
+    white-space: normal;
+    overflow: visible;
+    text-overflow: unset;
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 1px;
+    line-height: 1.25;
 }
 
 @media (max-width: 900px) {
     .m-cell-stats {
-        display: block;
-        white-space: normal;
-        overflow: visible;
-        text-overflow: unset;
         font-size: 10px;
-        color: var(--text-muted);
-        margin-top: 1px;
-        line-height: 1.25;
     }
 }
 

@@ -28,6 +28,8 @@ from utils.utils import (
     team_abbr_keys,
     canon_team,
     canonical_teams_index,
+    box_score_line_is_trusted,
+    player_week_stat_entry,
 )
 from utils.matchup_schedule import lineup_from_roster, _starters_look_like_full_roster
 from utils.week_proj import week_proj_map_from_bundles as _week_proj_map_from_bundles
@@ -1300,13 +1302,18 @@ def render_matchup_slide(
         # mark Commanders as FINAL so the old "hide if not_started" gate never
         # fired. Keep the schedule game_line; drop the stat line until kickoff.
         #
-        # Prefer the schedule row when we have one: a past gameDate with a stale
-        # Tank01 code 0 still counts as started (see game_has_started). Fall
-        # back to pid status only when schedule lookup missed.
+        # Prefer the schedule row when we have one. Fall back to pid status only
+        # when schedule lookup missed. Even after kickoff, hide Footballguys
+        # leftovers unless Tank01 confirms live/final or the line was Tank-overlaid.
+        raw_stat_entry = None
+        if stats and nfl:
+            raw_stat_entry = player_week_stat_entry(
+                week_stats, str(nfl).upper(), pos, lookup_name if nfl else name,
+            )
         if is_bye:
             stats = None
         elif game is not None:
-            if not game_has_started(game):
+            if not game_has_started(game) or not box_score_line_is_trusted(game, raw_stat_entry):
                 stats = None
         elif is_not_started:
             stats = None
@@ -1381,10 +1388,10 @@ def render_matchup_slide(
             fillvalue=None,
     )
     for L, R in _starter_pairs:
-        left_cell, left_actual, left_proj, left_is_bye, left_not_started, left_stats = player_bits(
+        left_cell, left_actual, left_proj, left_is_bye, left_not_started, _left_stats = player_bits(
             L, "left", True
         )
-        right_cell, right_actual, right_proj, right_is_bye, right_not_started, right_stats = player_bits(
+        right_cell, right_actual, right_proj, right_is_bye, right_not_started, _right_stats = player_bits(
             R, "right", False
         )
 
@@ -1423,29 +1430,16 @@ def render_matchup_slide(
                 "</div>"
             )
 
-        def stat_stack(stats, side: str) -> str:
-            if stats is None:
-                return "<div></div>"
-            if side == "left":
-                return (
-                    "<div class='p right' style='display: grid;'>"
-                    f"<span class='meta' style='display:flex;justify-content:flex-end'>{stats}</span></div>"
-                )
-            return (
-                "<div class='p left'>"
-                f"<span class='meta'>{stats}</span></div>"
-            )
-
         left_points_html = score_stack(left_actual, left_proj, "l", left_is_bye, left_more, left_not_started)
         right_points_html = score_stack(right_actual, right_proj, "r", right_is_bye, right_more, right_not_started)
         points = f"{left_points_html}{right_points_html}"
 
+        # Box scores render under the name via .m-cell-stats inside left/right
+        # cells — no middle stat-stack columns (those pulled team abbrs away).
         rows_html.append(
             f"""<div class="m-row">
                   {left_cell}
-                  {stat_stack(left_stats, "left")}
                   {points}
-                  {stat_stack(right_stats, "right")}
                   {right_cell}
                 </div>"""
         )

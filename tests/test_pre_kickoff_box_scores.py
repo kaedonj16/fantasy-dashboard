@@ -224,8 +224,8 @@ def test_matchup_shows_box_score_once_game_is_live(monkeypatch):
     assert "m-cell-stats" in html
 
 
-def test_matchup_shows_box_score_when_final_but_tank01_code_still_zero(monkeypatch):
-    """Game line says Final (past gameDate) while schedule feed lags on code 0."""
+def test_matchup_hides_footballguys_leftovers_when_tank_code_still_zero(monkeypatch):
+    """Past gameDate + Final game line must not paint last year's FG box score."""
     mmod = _matchups()
     finished = {
         "home": "NYG",
@@ -235,6 +235,7 @@ def test_matchup_shows_box_score_when_final_but_tank01_code_still_zero(monkeypat
         "gameStatus": "Scheduled",
         "gameStatusCode": "0",
         "gameTime_epoch": "1788999600.0",
+        "gameID": "20260909_WSH@NYG",
     }
     monkeypatch.setattr(mmod, "load_teams_index", lambda: {})
     monkeypatch.setattr(mmod, "build_offense_rankings", lambda *_a, **_k: {})
@@ -253,9 +254,58 @@ def test_matchup_shows_box_score_when_final_but_tank01_code_still_zero(monkeypat
         team_game_lookup={"WSH": finished, "WAS": finished},
     )
     assert "Final" in html
-    assert "233 yds" in html
-    assert "1 td" in html
+    assert "233 yds" not in html
+    assert "m-cell-stats" not in html
+
+
+def test_matchup_shows_tank_overlaid_box_score_when_code_still_zero(monkeypatch):
+    """Tank-backed lines (_src) are trusted even if schedule code lags at 0."""
+    mmod = _matchups()
+    finished = {
+        "home": "NYG",
+        "away": "WSH",
+        "gameDate": "20260909",
+        "gameTime": "8:20p",
+        "gameStatus": "Scheduled",
+        "gameStatusCode": "0",
+        "gameTime_epoch": "1788999600.0",
+        "gameID": "20260909_WSH@NYG",
+    }
+    tank_stats = {
+        "WAS": {
+            "QB": {
+                "jayden daniels": {
+                    "pass_yds": 188,
+                    "pass_td": 2,
+                    "int": 0,
+                    "rush_att": 6,
+                    "rush_yds": 22,
+                    "rush_td": 0,
+                    "_src": "tank",
+                }
+            }
+        }
+    }
+    monkeypatch.setattr(mmod, "load_teams_index", lambda: {})
+    monkeypatch.setattr(mmod, "build_offense_rankings", lambda *_a, **_k: {})
+    monkeypatch.setattr(mmod, "load_week_stats", lambda *_a, **_k: tank_stats)
+    monkeypatch.setattr(mmod, "load_week_schedule", lambda *_a, **_k: [])
+    monkeypatch.setattr(mmod, "build_team_schedule_lookup", lambda *_a, **_k: {})
+    monkeypatch.setattr(mmod, "_allow_live_game_indicators", lambda *_a, **_k: True)
+    monkeypatch.setattr(mmod, "get_nfl_scores_for_date", lambda *_a, **_k: None)
+
+    html = mmod.render_matchup_slide(
+        "2026", _daniels_matchup(), w=1, proj_week=1,
+        status_by_pid={"11566": mmod.STATUS_FINAL},
+        projections={},
+        players={},
+        teams={},
+        team_game_lookup={"WSH": finished, "WAS": finished},
+    )
+    assert "188 yds" in html
+    assert "2 tds" in html
     assert "m-cell-stats" in html
+    assert "233 yds" not in html
 
 
 def test_week_stats_builder_writes_empty_before_kickoff(monkeypatch, tmp_path):
@@ -273,6 +323,41 @@ def test_week_stats_builder_writes_empty_before_kickoff(monkeypatch, tmp_path):
     path = umod.build_and_save_week_stats_for_league({"WAS": {}}, 2026, 1, live_game_ids=None)
     assert str(path) == str(out)
     assert out.read_text(encoding="utf-8").strip() == "{}"
+
+
+def test_week_stats_builder_skips_fg_scrape_for_calendar_past_code_zero(monkeypatch, tmp_path):
+    """TNF finished yesterday with Tank still on code 0 must not scrape FG leftovers."""
+    import utils.utils as umod
+
+    out = tmp_path / "week_stats.json"
+    finished = {
+        "home": "SEA",
+        "away": "NE",
+        "gameDate": "20260909",
+        "gameTime": "8:20p",
+        "gameStatus": "Scheduled",
+        "gameStatusCode": "0",
+        "gameTime_epoch": "1788999600.0",
+        "gameID": "20260909_NE@SEA",
+    }
+    monkeypatch.setattr(umod, "path_week_stats", lambda *_a, **_k: str(out))
+    monkeypatch.setattr(umod, "load_week_schedule", lambda *_a, **_k: [finished])
+    monkeypatch.setattr(umod, "load_week_stats", lambda *_a, **_k: {})
+    monkeypatch.setattr(umod, "load_players_index", lambda: {})
+    monkeypatch.setattr(
+        umod, "overlay_idp_and_k_stats_from_sleeper", lambda **_k: None,
+    )
+
+    def _boom(*_a, **_k):
+        raise AssertionError("Footballguys scrape must not run on code-0 finals alone")
+
+    monkeypatch.setattr(umod, "fetch_team_game_logs_html", _boom)
+    monkeypatch.setattr(umod, "fetch_tank_boxscore", lambda *_a, **_k: {})
+
+    path = umod.build_and_save_week_stats_for_league({"NE": {}, "SEA": {}}, 2026, 1)
+    assert str(path) == str(out)
+    body = out.read_text(encoding="utf-8").strip()
+    assert body == "{}" or body == ""
 
 
 def test_week_stats_builder_skips_when_schedule_missing(monkeypatch, tmp_path):
