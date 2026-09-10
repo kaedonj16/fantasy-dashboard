@@ -47,8 +47,15 @@ _RE_PASS = re.compile(
     r"for\s+(-?\d+|no gain)(?:\s*(?:yard|yd)s?)?"
 )
 _RE_INT = re.compile(rf"({_NAME_TOK})\s+pass\b.*?INTERCEPTED")
+# The ball carrier is the name immediately before a rush action, not whatever
+# name leads the sentence ("G.Van Roten reported in as eligible. D.Maye
+# scrambles …"). Anchor on the action so pre-snap clauses don't steal credit.
+_RUSH_ACTION = (
+    r"(?:up the middle|(?:left|right|up)\s+(?:end|guard|tackle|middle)"
+    r"|scrambles?|rushe[sd]?|kneels?|sneaks?|rush(?:es|ed)?)"
+)
 _RE_RUSH = re.compile(
-    rf"^(?:\([^)]*\)\s*)?({_NAME_TOK})\b.*?for\s+(-?\d+|no gain)(?:\s*(?:yard|yd)s?)?"
+    rf"({_NAME_TOK})\s+{_RUSH_ACTION}\b.*?for\s+(-?\d+|no gain)(?:\s*(?:yard|yd)s?)?"
 )
 _RE_FG = re.compile(rf"({_NAME_TOK})\s+(\d+)\s+yard field goal is GOOD")
 _RE_XP = re.compile(rf"({_NAME_TOK})\s+extra point is GOOD")

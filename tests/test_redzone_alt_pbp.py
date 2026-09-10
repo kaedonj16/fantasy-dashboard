@@ -52,6 +52,14 @@ def test_parse_pbp_rush_with_and_without_td():
     ) == {"r.stevenson": {"rush_yds": 2, "carries": 1, "rush_td": 1}}
 
 
+def test_parse_pbp_rush_credit_survives_leading_clause():
+    # A pre-snap clause must not steal the carry from the actual ball carrier.
+    assert parse_pbp_play_stats(
+        "G.Van Roten reported in as eligible. D.Maye scrambles left end ran "
+        "ob at SEA 21 for 6 yards (J.Jobe)."
+    ) == {"d.maye": {"rush_yds": 6, "carries": 1}}
+
+
 def test_parse_pbp_no_gain_reception_still_counts():
     sl = parse_pbp_play_stats("D.Maye pass complete to H.Henry for no gain.")
     assert sl["h.henry"] == {"rec": 1, "rec_yds": 0, "targets": 1}

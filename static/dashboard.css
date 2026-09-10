@@ -33527,10 +33527,67 @@ button:disabled {
     color: var(--rz-red);
 }
 
+/* Zero-value play (sack, incompletion, unscored stat): muted, not green. */
+.rz-event-delta.zero .rz-event-delta-pts {
+    color: var(--rz-muted);
+}
+
 .rz-event.td .rz-event-delta {
     font-size: var(--text-md);
     color: #d97706;
 }
+
+/* ── Sleeper-style situation strip (down/dist @ spot · Q clock · score) ── */
+.rz-event-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    color: var(--rz-muted);
+    margin-bottom: 2px;
+}
+.rz-event-situation {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 700;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.rz-event-gamestate {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 1px;
+    flex-shrink: 0;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+.rz-event-gamestate .rz-event-score {
+    font-weight: 800;
+    color: var(--rz-fg, inherit);
+}
+.rz-event-rz {
+    background: var(--rz-red);
+    color: #fff;
+    font-weight: 800;
+    font-size: 9px;
+    line-height: 1;
+    padding: 2px 5px;
+    border-radius: 4px;
+    letter-spacing: 0.03em;
+}
+.rz-event-yd {
+    font-weight: 800;
+    font-size: 12px;
+    white-space: nowrap;
+}
+.rz-event-yd.pos { color: var(--rz-green); }
+.rz-event-yd.neg { color: var(--rz-red); }
+.rz-event-yd.zero { color: var(--rz-muted); }
 
 /* ── Pagination ───────────────────────── */
 #rz-feed-pagination {

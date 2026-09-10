@@ -574,6 +574,17 @@
     if (ord) return ord + ' down';
     return dist ? ('& ' + dist) : '';
   }
+  // Red zone = the ball is inside the *opponent's* 20. yardLine reads like
+  // "SEA 16"; it's the red zone only when that team is not the offense's own.
+  function _isRedZone(yardLine, offenseTeam) {
+    var m = String(yardLine || '').match(/([A-Za-z]{2,3})\s*(\d{1,2})\b/);
+    if (!m) return false;
+    var n = parseInt(m[2], 10);
+    if (!(n >= 1 && n <= 20)) return false;
+    var off = String(offenseTeam || '').toUpperCase();
+    if (!off) return false; // can't tell own 20 from opponent's — don't guess
+    return m[1].toUpperCase() !== off;
+  }
   function _impactLine(ev) {
     var bits = [];
     if (ev.pts) bits.push((ev.pts > 0 ? '+' : '') + _fmt(ev.pts) + ' pts');
@@ -851,7 +862,7 @@
           gameQuarter: play.quarter || ((_state.player_info || {})[pid] || {}).game_quarter || '',
           gameClock: play.clock || ((_state.player_info || {})[pid] || {}).game_clock || '',
           down: play.down || '', distance: play.distance || '', yardLine: play.yard_line || '',
-          desc: desc, kind: kind, stats: stats, pts: pts,
+          desc: desc, kind: kind, stats: stats, pts: pts, statLine: line,
           totalPts: parseFloat(_totalPtsForPid(pid, scoring, newData).toFixed(2)),
           playId: playKey, fromPbp: true,
           impact: ''
@@ -1920,35 +1931,48 @@
     var tagCls = ev.mine ? 'mine' : 'opp';
     var tag = tagLabel ? '<span class="rz-event-tag ' + tagCls + '">' + tagLabel + '</span>' : '';
     var totalStr = (ev.totalPts != null && !isNaN(ev.totalPts)) ? _fmt(ev.totalPts) : '';
-    // Per-play points only exist when the source gave us a stat line (Tank01 /
-    // demo). ESPN booth lines are text-only, so pts is 0 there — showing a
-    // green "+0.0" is misleading. In that case headline the player's running
-    // total instead and drop the fake delta.
-    var hasDelta = Math.abs(_n(ev.pts)) >= 0.05;
-    var deltaPrimary = hasDelta
-      ? (ev.pts > 0 ? '+' + _fmt(ev.pts) : _fmt(ev.pts))
-      : totalStr;
-    var deltaSecondary = hasDelta ? totalStr : '';
-    var deltaCls = (!hasDelta || ev.pts >= 0) ? 'pos' : 'neg';
+    // Headline the points THIS play earned (like Sleeper's game log), with the
+    // player's running total underneath. A zero-value play (sack, incompletion,
+    // stat we don't model) shows a muted "0.0" — never a green "+0.0" that reads
+    // like a score, and never the running total masquerading as the play's pts.
+    var d = _n(ev.pts);
+    var deltaPrimary = (d > 0.0001 ? '+' : '') + _fmt(d);
+    var deltaSecondary = totalStr;
+    var deltaCls = d > 0.0001 ? 'pos' : (d < -0.0001 ? 'neg' : 'zero');
     var posKey = (ev.pos || 'x').toLowerCase().replace(/[^a-z]/g, '');
     var initials = (ev.name || '?').trim().split(/\s+/).map(function(w) { return w[0] || ''; }).join('').slice(0, 2).toUpperCase();
-    // Game score line (already includes both teams) — bold the player's own
-    // team within it instead of a separate, duplicated team prefix.
-    var subInner = ev.line || ev.nflTeam || '';
-    if (ev.line && ev.nflTeam) {
-      var _tm = String(ev.nflTeam).replace(/[^A-Za-z0-9]/g, '');
-      if (_tm) subInner = ev.line.replace(new RegExp('\\b' + _tm + '\\b'),
-        '<strong class="rz-event-myteam">' + ev.nflTeam + '</strong>');
-    }
+    // ── Sleeper-style situation strip ──────────────────────────────────────
+    // Left: down & distance @ field spot, with a red-zone flag. Right: quarter
+    // + clock over a compact score. (No reactions / replies.)
     var clockStr = [_fmtQuarter(ev.gameQuarter), ev.gameClock].filter(Boolean).join(' ');
     var dd = _downDist(ev);
-    var metaBits = [];
-    if (dd) metaBits.push('<span class="rz-event-down">' + dd + '</span>');
-    if (clockStr) metaBits.push('<span class="rz-event-clock">' + clockStr + '</span>');
-    if (ev.yardLine) metaBits.push('<span class="rz-event-yardline">' + ev.yardLine + '</span>');
-    var metaHtml = metaBits.join(' · ');
-    var subRow = (subInner || metaHtml)
-      ? '<div class="rz-event-sub">' + subInner + (subInner && metaHtml ? '  ·  ' : '') + metaHtml + '</div>'
+    var situation = [dd, ev.yardLine].filter(Boolean).join(' @ ');
+    var rzBadge = _isRedZone(ev.yardLine, ev.nflTeam)
+      ? '<span class="rz-event-rz">RZ</span>' : '';
+    var pi = (_state.player_info || {})[ev.pid] || {};
+    var scoreStr = '';
+    if (pi.away && pi.home && !(pi.away_pts === '' && pi.home_pts === '')) {
+      scoreStr = pi.away + ' ' + (pi.away_pts || '0') + '–' + (pi.home_pts || '0') + ' ' + pi.home;
+    }
+    var gameState = [
+      clockStr ? '<span class="rz-event-clock">' + clockStr + '</span>' : '',
+      scoreStr ? '<span class="rz-event-score">' + scoreStr + '</span>' : ''
+    ].filter(Boolean).join('');
+    var situationHtml = (situation || rzBadge || gameState)
+      ? '<div class="rz-event-meta">'
+        + '<span class="rz-event-situation">' + situation + rzBadge + '</span>'
+        + '<span class="rz-event-gamestate">' + gameState + '</span>'
+        + '</div>'
+      : '';
+    // Yardage this player gained on the play (Sleeper's "+12 YD" chip).
+    var sl = ev.statLine || {};
+    var ydVal = null;
+    if (_n(sl.carries)) ydVal = _n(sl.rush_yds);
+    else if (_n(sl.rec)) ydVal = _n(sl.rec_yds);
+    else if ('pass_yds' in sl && !_n(sl.int)) ydVal = _n(sl.pass_yds);
+    var ydChip = (ydVal != null)
+      ? ' <span class="rz-event-yd ' + (ydVal > 0 ? 'pos' : (ydVal < 0 ? 'neg' : 'zero')) + '">'
+        + (ydVal > 0 ? '+' : '') + ydVal + ' YD</span>'
       : '';
     var impact = _impactLine(ev);
     var impactHtml = impact ? '<div class="rz-event-impact">' + impact + '</div>' : '';
@@ -1975,10 +1999,10 @@
       + ' onerror="' + avOnErr + '">'
       + '</div>'
       + '<div class="rz-event-body">'
+      + situationHtml
       + '<div class="rz-event-main"><span class="rz-event-name">' + ev.name + '</span>' + tag + '</div>'
-      + '<div class="rz-event-desc">' + ev.desc + '</div>'
+      + '<div class="rz-event-desc">' + ev.desc + ydChip + '</div>'
       + impactHtml
-      + subRow
       + '</div>'
       + '<div class="rz-event-delta ' + deltaCls + '">'
       + '<div class="rz-event-delta-pts">' + (deltaPrimary || '') + '</div>'
