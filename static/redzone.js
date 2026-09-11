@@ -1730,24 +1730,27 @@
   function _nflGameInfo(gid) {
     if (!gid || gid === 'all') return null;
     var games = _state.games || {};
-    if (games[gid]) return games[gid];
-    // Fallback: rebuild a thin row from player_info + last PBP situation.
+    // Start with the server scoreboard when available, then enrich missing
+    // situation fields from the PBP already loaded by the client. The server
+    // row can legitimately arrive before the first situation snapshot.
     var info = _state.player_info || {};
-    var row = null;
-    Object.keys(info).some(function(pid) {
-      var p = info[pid];
-      if ((p.game_id || '') !== gid) return false;
-      row = {
-        game_id: gid,
-        away: p.away || '', home: p.home || '',
-        away_pts: p.away_pts || '', home_pts: p.home_pts || '',
-        game_status: p.game_status || '', game_code: String(p.game_code || ''),
-        game_clock: p.game_clock || '', game_quarter: p.game_quarter || '',
-        game_time_epoch: p.game_time_epoch || 0,
-        possession: '', down: '', distance: '', yard_line: ''
-      };
-      return true;
-    });
+    var row = games[gid] ? Object.assign({}, games[gid]) : null;
+    if (!row) {
+      Object.keys(info).some(function(pid) {
+        var p = info[pid];
+        if ((p.game_id || '') !== gid) return false;
+        row = {
+          game_id: gid,
+          away: p.away || '', home: p.home || '',
+          away_pts: p.away_pts || '', home_pts: p.home_pts || '',
+          game_status: p.game_status || '', game_code: String(p.game_code || ''),
+          game_clock: p.game_clock || '', game_quarter: p.game_quarter || '',
+          game_time_epoch: p.game_time_epoch || 0,
+          possession: '', down: '', distance: '', yard_line: ''
+        };
+        return true;
+      });
+    }
     if (!row) return null;
     var plays = (_state.pbp_by_game || {})[gid] || [];
     var best = null;
@@ -1761,10 +1764,10 @@
       }
     }
     if (best) {
-      row.possession = best.team || '';
-      row.down = best.down || '';
-      row.distance = best.distance || '';
-      row.yard_line = best.yard_line || '';
+      if (!row.possession) row.possession = best.team || '';
+      if (!row.down) row.down = best.down || '';
+      if (!row.distance) row.distance = best.distance || '';
+      if (!row.yard_line) row.yard_line = best.yard_line || '';
       if (!row.game_clock && best.clock) row.game_clock = best.clock;
       if (!row.game_quarter && best.quarter) row.game_quarter = best.quarter;
     }
@@ -1887,22 +1890,22 @@
       var ball = hasBall
         ? '<span class="rz-nfl-ball" title="Possession" aria-label="Has possession"></span>'
         : '<span class="rz-nfl-ball-slot" aria-hidden="true"></span>';
-      return '<div class="rz-nfl-side rz-nfl-' + align + (hasBall ? ' has-ball' : '') + '">'
-        + (align === 'away' ? ball : '')
-        + logo(abv)
-        + '<div class="rz-nfl-side-meta">'
+      var meta = '<div class="rz-nfl-side-meta">'
         + '<span class="rz-nfl-abv">' + abv + '</span>'
         + '<span class="rz-nfl-pts">' + pts + '</span>'
-        + '</div>'
-        + (align === 'home' ? ball : '')
         + '</div>';
+      // Mirror the teams: the home logo is the outermost item on the right.
+      var contents = align === 'home'
+        ? ball + meta + logo(abv)
+        : ball + logo(abv) + meta;
+      return '<div class="rz-nfl-side rz-nfl-' + align + (hasBall ? ' has-ball' : '') + '">'
+        + contents + '</div>';
     };
     return '<div class="rz-nfl-board' + (live ? ' is-live' : '') + '" id="rz-nfl-board">'
       + side(away, aPts, awayPoss, 'away')
       + '<div class="rz-nfl-mid">'
       + '<div class="rz-nfl-clock">' + clock + '</div>'
-      + (sit ? '<div class="rz-nfl-sit">' + sit + '</div>' : (live ? '<div class="rz-nfl-sit rz-nfl-sit-pending">Situation pending</div>' : ''))
-      + (live && !poss ? '<div class="rz-nfl-poss-pending">Possession pending</div>' : '')
+      + (sit ? '<div class="rz-nfl-sit">' + sit + '</div>' : '')
       + '</div>'
       + side(home, hPts, homePoss, 'home')
       + '</div>';

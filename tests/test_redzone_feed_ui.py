@@ -39,3 +39,18 @@ def test_latest_order_is_comparable_across_simultaneous_games():
         "if (ev.gameId && ev.seq != null)"
     )
     assert "return list.slice().sort" in REDZONE_JS
+
+
+def test_selected_game_board_enriches_situation_and_mirrors_home_logo():
+    game_info = REDZONE_JS.split("function _nflGameInfo(gid) {", 1)[1].split(
+        "var _POS_LIST", 1
+    )[0]
+    board = REDZONE_JS.split("function _renderNflBoard() {", 1)[1].split(
+        "function _renderFilterChips()", 1
+    )[0]
+
+    assert "if (games[gid]) return games[gid]" not in game_info
+    assert "if (!row.possession) row.possession = best.team" in game_info
+    assert "? ball + meta + logo(abv)" in board
+    assert "Situation pending" not in REDZONE_JS
+    assert "Possession pending" not in REDZONE_JS

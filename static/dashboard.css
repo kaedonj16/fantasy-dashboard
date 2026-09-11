@@ -34797,14 +34797,6 @@ a.rz-demo-link:hover {
     font-weight: 600;
     color: var(--rz-muted);
 }
-.rz-nfl-sit-pending,
-.rz-nfl-poss-pending {
-    margin-top: 2px;
-    font-size: 10px;
-    font-weight: 600;
-    color: var(--rz-muted);
-    opacity: .75;
-}
 .rz-nfl-ball,
 .rz-nfl-ball-slot {
     width: 8px;
