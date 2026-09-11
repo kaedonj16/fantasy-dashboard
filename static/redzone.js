@@ -24,7 +24,6 @@
   var _filterOpen  = false;
   var _myTeamOnly  = false;
   var _bigPlaysOnly = false; // TD or >=4 fantasy pts
-  var _feedSort    = 'foryou'; // 'foryou' or 'latest'
   var _heroMid    = null;
   var _heroTouched = false; // true once the viewer explicitly picks/clears the hero matchup
   var _seenPlayIds = new Set(); // Tank01 / demo play ids already in the feed
@@ -80,8 +79,6 @@
       var bp = localStorage.getItem(_prefsKey('big-only'));
       if (bp === '1') _bigPlaysOnly = true;
       if (bp === '0') _bigPlaysOnly = false;
-      var fs = localStorage.getItem(_prefsKey('feed-sort'));
-      if (fs === 'latest' || fs === 'foryou') _feedSort = fs;
     } catch (_) {}
   }
   function _savePrefs() {
@@ -93,7 +90,6 @@
       }
       localStorage.setItem(_prefsKey('my-team'), _myTeamOnly ? '1' : '0');
       localStorage.setItem(_prefsKey('big-only'), _bigPlaysOnly ? '1' : '0');
-      localStorage.setItem(_prefsKey('feed-sort'), _feedSort);
     } catch (_) {}
   }
 
@@ -2539,10 +2535,7 @@
     if (pi.away && pi.home && !(pi.away_pts === '' && pi.home_pts === '')) {
       scoreStr = pi.away + ' ' + (pi.away_pts || '0') + '–' + (pi.home_pts || '0') + ' ' + pi.home;
     }
-    var gameState = [
-      clockStr ? '<span class="rz-event-clock">' + clockStr + '</span>' : '',
-      scoreStr ? '<span class="rz-event-score">' + scoreStr + '</span>' : ''
-    ].filter(Boolean).join('');
+    var gameState = scoreStr ? '<span class="rz-event-score">' + scoreStr + '</span>' : '';
     var situationHtml = (situation || rzBadge || gameState)
       ? '<div class="rz-event-meta">'
         + '<span class="rz-event-situation">' + situation + rzBadge + '</span>'
@@ -2593,8 +2586,9 @@
       + cumeHtml
       + '</div>'
       + '<div class="rz-event-delta ' + deltaCls + '">'
+      + (clockStr ? '<div class="rz-event-clock">' + clockStr + '</div>' : '')
       + '<div class="rz-event-delta-pts">' + (deltaPrimary || '') + '</div>'
-      + (deltaSecondary ? '<div class="rz-event-total">' + deltaSecondary + '</div>' : '')
+      + (deltaSecondary ? '<div class="rz-event-total"><span>' + deltaSecondary + '</span> total</div>' : '')
       + '</div>'
       + '</div>'
     );
@@ -2731,9 +2725,9 @@
       return;
     }
 
-    // Apply feed ordering preference
+    // The feed is always reverse chronological: newest plays belong first.
     var filtered = _feed.filter(_eventMatches);
-    var list = _feedSort === 'latest' ? _chronoSort(filtered) : _softRank(filtered);
+    var list = _chronoSort(filtered);
     // Hero focus alone should not force the "no matching" empty when the feed
     // itself is empty -- the pregame schedule already respects hero focus.
     var hardFilter = _filters.nfl !== 'all' || _filters.pos !== 'all' || _filters.stat !== 'all' || _myTeamOnly || _bigPlaysOnly
@@ -2892,7 +2886,7 @@
 
     _renderPagination(totalPages);
 
-    // Live feed header with Latest/For You toggle
+    // Live feed header
     var hdr = document.getElementById('rz-feed-hdr');
     if (hdr) {
       var totalEvts = list.length;
@@ -2902,19 +2896,7 @@
           ? '<span class="rz-fh-dot"></span><span class="rz-fh-text">Live · <b>' + totalEvts + '</b> ' + (totalEvts === 1 ? 'play' : 'plays') + '</span>'
           : '<span class="rz-fh-text"><b>' + totalEvts + '</b> ' + (totalEvts === 1 ? 'play' : 'plays') + ' · Final</span>')
         : '';
-      var sortToggle = '<div class="rz-feed-sort">'
-        + '<button class="rz-sort-btn' + (_feedSort === 'foryou' ? ' active' : '') + '" data-sort="foryou">For You</button>'
-        + '<button class="rz-sort-btn' + (_feedSort === 'latest' ? ' active' : '') + '" data-sort="latest">Latest</button>'
-        + '</div>';
-      hdr.innerHTML = '<div class="rz-feed-hdr-left">' + statusText + '</div>' + sortToggle;
-      // Wire sort toggle
-      hdr.querySelectorAll('.rz-sort-btn').forEach(function(btn) {
-        btn.addEventListener('click', function() {
-          _feedSort = btn.dataset.sort;
-          _savePrefs();
-          _render();
-        });
-      });
+      hdr.innerHTML = '<div class="rz-feed-hdr-left">' + statusText + '</div>';
     }
 
     // Click handlers now managed by root event delegation
