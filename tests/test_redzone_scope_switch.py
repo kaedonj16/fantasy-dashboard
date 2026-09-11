@@ -490,6 +490,16 @@ def test_events_from_pbp_resolves_name_when_pid_missing():
     assert "fromPbp: true" in src
 
 
+def test_player_modal_clicks_use_only_the_root_delegate():
+    """A scorer click must open one modal, not one per overlapping listener."""
+    src = _rz()
+    render = _fn("_render")
+
+    assert "root.addEventListener('click'" in src
+    assert "window.openPlayerModal(pid, _name(pid), { tab: 'live' });" in src
+    assert "querySelectorAll('[data-pid]')" not in render
+
+
 def test_live_final_empty_feed_is_honest_not_boxscore():
     src = _fn("_syncFeed")
     assert "Play-by-play lines" in src
