@@ -1753,23 +1753,30 @@
     }
     if (!row) return null;
     var plays = (_state.pbp_by_game || {})[gid] || [];
-    var best = null;
-    for (var i = plays.length - 1; i >= 0; i--) {
-      var pl = plays[i] || {};
-      if (pl.team && (pl.down || pl.distance || pl.yard_line)) { best = pl; break; }
-    }
-    if (!best) {
-      for (var j = plays.length - 1; j >= 0; j--) {
-        if ((plays[j] || {}).team) { best = plays[j]; break; }
-      }
-    }
+    var playTeam = function(play) {
+      if (play.team) return play.team;
+      var pid = String(play.pid || '');
+      return pid && info[pid] ? (info[pid].team || '') : '';
+    };
+    // Provider arrays are not guaranteed to be ordered. Pick the greatest
+    // sequence carrying usable field context rather than the last array row.
+    var ordered = plays.slice().sort(function(a, b) {
+      var as = parseFloat((a || {}).seq), bs = parseFloat((b || {}).seq);
+      if (!isFinite(as)) as = -1;
+      if (!isFinite(bs)) bs = -1;
+      return bs - as;
+    });
+    var best = ordered.find(function(pl) {
+      pl = pl || {};
+      return !!(playTeam(pl) || pl.down || pl.distance || pl.yard_line || pl.clock || pl.quarter);
+    }) || null;
     if (best) {
-      if (!row.possession) row.possession = best.team || '';
-      if (!row.down) row.down = best.down || '';
-      if (!row.distance) row.distance = best.distance || '';
-      if (!row.yard_line) row.yard_line = best.yard_line || '';
-      if (!row.game_clock && best.clock) row.game_clock = best.clock;
-      if (!row.game_quarter && best.quarter) row.game_quarter = best.quarter;
+      row.possession = playTeam(best) || row.possession || '';
+      row.down = best.down || row.down || '';
+      row.distance = best.distance || row.distance || '';
+      row.yard_line = best.yard_line || row.yard_line || '';
+      row.game_clock = best.clock || row.game_clock || '';
+      row.game_quarter = best.quarter || row.game_quarter || '';
     }
     return row;
   }
@@ -2779,6 +2786,15 @@
     var page0Items = list.slice(0, _PAGE_SIZE);
     var page0Eids = new Set(page0Items.map(function(ev) { return _eid(ev); }));
 
+    function _orderFeedDom(target, orderedItems) {
+      var byId = {};
+      target.querySelectorAll('[data-eid]').forEach(function(el) { byId[el.dataset.eid] = el; });
+      orderedItems.forEach(function(ev) {
+        var node = byId[_eid(ev)];
+        if (node) target.appendChild(node);
+      });
+    }
+
     // Remove events that have fallen off page 0
     container.querySelectorAll('[data-eid]').forEach(function(el) {
       if (!page0Eids.has(el.dataset.eid)) el.remove();
@@ -2818,6 +2834,7 @@
             setTimeout(function() {
               _bigPlayFx(n, e, container, true);
               container.insertBefore(n, container.firstChild);
+              _orderFeedDom(container, page0Items);
               // Click handlers now managed by root event delegation
             }, delay);
           })(node, ev, insertDelay);
@@ -2836,6 +2853,7 @@
         }
       });
       container.insertBefore(frag, container.firstChild);
+      _orderFeedDom(container, page0Items);
 
       // Auto-scroll to top if user was already near top (don't interrupt mid-scroll)
       if (!isInitialLoad && !liveStagger) {
@@ -2866,6 +2884,10 @@
         });
       }
     }
+
+    // Reconcile even when every ID already existed: filter changes and
+    // corrected provider ordering must still be reflected by the DOM.
+    _orderFeedDom(container, page0Items);
 
     // Prune to page size
     var items = container.querySelectorAll('[data-eid]');
@@ -3375,9 +3397,13 @@
       var apiBase = '/api/' + parts[1] + '/' + parts[2] + '/' + parts[3];
       var url = apiBase + '/redzone-data?_cb=' + Date.now() + '&scope=' + myScope;
       if (_isDemo) { _demoT += 15; url += '&demo=1&t=' + _demoT; }
-      var resp = await fetch(url);
+      var resp = await fetch(url, { cache: 'no-store' });
       if (myGen !== _streamGen || myScope !== _scope) return;
-      if (!resp.ok) { _recoverScopeLoad(myGen, myScope); return; }
+      if (!resp.ok) {
+        _recoverScopeLoad(myGen, myScope);
+        if (myGen === _streamGen && myScope === _scope) _render();
+        return;
+      }
       var newData = await resp.json();
       if (myGen !== _streamGen || myScope !== _scope) return;
       // Server stamps scope; reject a mismatched payload even if gen lined up.
@@ -3396,16 +3422,7 @@
       _applyDefaultHero(); // no-op: Plays start unfiltered; hero focus is opt-in
       _countdown = _pollInterval();
 
-      var savedFeedHtml = null;
-      var oldFeedEl = root.querySelector('#rz-feed-list');
-      if (oldFeedEl && oldFeedEl.children.length > 0) savedFeedHtml = oldFeedEl.innerHTML;
-
       _render();
-
-      if (savedFeedHtml !== null) {
-        var newFeedEl = root.querySelector('#rz-feed-list');
-        if (newFeedEl) { newFeedEl.innerHTML = savedFeedHtml; _syncFeed(); }
-      }
 
       // Auto-refresh Live tab in player modal if it's currently visible
       var livePanelEl = document.getElementById('pm-panel-live');
@@ -3429,7 +3446,10 @@
         });
         _flashRids.clear();
       }
-    } catch (_) { _recoverScopeLoad(myGen, myScope); }
+    } catch (_) {
+      _recoverScopeLoad(myGen, myScope);
+      if (myGen === _streamGen && myScope === _scope) _render();
+    }
   }
 
   // ── Progressive My Leagues load ────────────────────────────────────────────
@@ -3480,7 +3500,7 @@
     var apiBase = '/api/' + parts[1] + '/' + parts[2] + '/' + parts[3];
     var url = apiBase + '/redzone-data?_cb=' + Date.now() + '&scope=user&stream=1';
     var resp;
-    try { resp = await fetch(url); } catch (_) {
+    try { resp = await fetch(url, { cache: 'no-store' }); } catch (_) {
       _streaming = false;
       if (myGen !== _streamGen) return;
       return _refresh();

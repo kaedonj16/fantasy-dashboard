@@ -94,6 +94,25 @@ def test_espn_extract_attaches_cumulative_per_player():
     assert holl[-1]["cume"] == {"rec": 2, "rec_yds": 23, "targets": 2}
 
 
+def test_espn_extract_preserves_drive_offense_and_provider_sequence():
+    payload = {"gamepackageJSON": {"drives": {"current": {
+        "team": {"abbreviation": "WSH"},
+        "plays": [{
+            "id": "play-7", "sequenceNumber": "107",
+            "text": "J.Daniels pass complete to T.McLaurin for 8 yards.",
+            "period": {"number": 2}, "clock": {"displayValue": "4:20"},
+            "start": {"down": 2, "distance": 4},
+        }],
+    }}}}
+    plays = extract_espn_pbp_plays(
+        payload, "20260909_WSH@NYG",
+        name_to_pid={"jayden daniels": "1", "terry mclaurin": "2"},
+    )
+    assert plays
+    assert {play["team"] for play in plays} == {"WAS"}
+    assert {play["seq"] for play in plays} == {"107"}
+
+
 def test_parse_pbp_completed_pass_credits_passer_and_receiver():
     sl = parse_pbp_play_stats(
         "(Shotgun) D.Maye pass short right to M.Hollins pushed ob at SEA 16 "

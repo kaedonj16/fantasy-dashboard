@@ -16,6 +16,28 @@ def test_redzone_feed_is_always_latest_without_sort_switch():
     assert "For You</button>" not in REDZONE_JS
 
 
+def test_filters_are_applied_before_chronological_sort():
+    sync = REDZONE_JS.split("function _syncFeed() {", 1)[1].split(
+        "function _renderPagination", 1
+    )[0]
+    assert sync.index("_feed.filter(_eventMatches)") < sync.index(
+        "_chronoSort(filtered)"
+    )
+    assert "_myTeamOnly" in sync
+    assert "_bigPlaysOnly" in sync
+
+
+def test_page_zero_dom_is_reconciled_without_new_ids_and_after_stagger():
+    sync = REDZONE_JS.split("function _syncFeed() {", 1)[1].split(
+        "function _renderPagination", 1
+    )[0]
+    assert "function _orderFeedDom(target, orderedItems)" in sync
+    assert sync.count("_orderFeedDom(container, page0Items);") >= 3
+    assert sync.index("_orderFeedDom(container, page0Items);\n\n    // Prune") > sync.index(
+        "if (toAdd.length)"
+    )
+
+
 def test_play_summary_groups_clock_delta_and_labeled_total():
     delta_markup = REDZONE_JS.split(
         "'<div class=\"rz-event-delta ' + deltaCls + '\">'", 1
@@ -55,7 +77,30 @@ def test_selected_game_board_enriches_situation_and_mirrors_home_logo():
     )[0]
 
     assert "if (games[gid]) return games[gid]" not in game_info
-    assert "if (!row.possession) row.possession = best.team" in game_info
+    assert "plays.slice().sort" in game_info
+    assert "return bs - as" in game_info
+    assert "if (play.team) return play.team" in game_info
+    assert "info[pid] ? (info[pid].team || '')" in game_info
+    assert "row.possession = playTeam(best)" in game_info
     assert "? ball + meta + logo(abv)" in board
     assert "Situation pending" not in REDZONE_JS
     assert "Possession pending" not in REDZONE_JS
+
+
+def test_refresh_uses_fresh_canonical_render_and_no_browser_cache():
+    refresh = REDZONE_JS.split("async function _refresh() {", 1)[1].split(
+        "// ── Progressive My Leagues", 1
+    )[0]
+    assert "fetch(url, { cache: 'no-store' })" in refresh
+    detect_at = refresh.index("_detectChanges(newData);")
+    assert detect_at < refresh.index("_render();", detect_at)
+    assert "savedFeedHtml" not in refresh
+    assert "newFeedEl.innerHTML" not in refresh
+
+
+def test_failed_refresh_renders_to_clear_manual_spinner():
+    refresh = REDZONE_JS.split("async function _refresh() {", 1)[1].split(
+        "// ── Progressive My Leagues", 1
+    )[0]
+    assert refresh.count("_recoverScopeLoad(myGen, myScope);") == 2
+    assert refresh.count("if (myGen === _streamGen && myScope === _scope) _render();") == 2

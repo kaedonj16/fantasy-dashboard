@@ -574,6 +574,11 @@ def extract_espn_pbp_plays(
     for drive in drives:
         if not isinstance(drive, dict):
             continue
+        drive_team = _espn_norm_team(
+            _s((drive.get("team") or {}).get("abbreviation"))
+            if isinstance(drive.get("team"), dict)
+            else _s(drive.get("team"))
+        )
         for play in drive.get("plays") or []:
             if not isinstance(play, dict) or _espn_skip_play(play):
                 continue
@@ -590,7 +595,10 @@ def extract_espn_pbp_plays(
             down = _s(start.get("down") if isinstance(start, dict) else "")
             distance = _s(start.get("distance") if isinstance(start, dict) else "")
             yard_line = _s(start.get("possessionText") if isinstance(start, dict) else "")
-            play_id = _s(play.get("id") or play.get("sequenceNumber")) or f"{game_id}:espn:{seq}"
+            provider_seq = play.get("sequenceNumber")
+            if provider_seq is None:
+                provider_seq = play.get("id")
+            play_id = _s(play.get("id") or provider_seq) or f"{game_id}:espn:{seq}"
             is_td = bool(play.get("scoringPlay")) and (
                 "touchdown" in _s((play.get("type") or {}).get("text")).lower()
                 or "touchdown" in text.lower()
@@ -598,7 +606,7 @@ def extract_espn_pbp_plays(
             )
             base = {
                 "play_id": play_id,
-                "seq": seq,
+                "seq": provider_seq if provider_seq is not None else seq,
                 "game_id": game_id,
                 "quarter": quarter,
                 "clock": clock,
@@ -622,14 +630,14 @@ def extract_espn_pbp_plays(
             if pids:
                 for pid in pids:
                     out.append({
-                        **base, "pid": pid, "name": "", "team": "",
+                        **base, "pid": pid, "name": "", "team": drive_team,
                         "stat_line": stat_by_pid.get(pid, {}),
                     })
             else:
                 # Keep scoring lines even without a name match — client may
                 # still resolve via heuristics; otherwise filtered server-side.
                 if is_td or play.get("scoringPlay"):
-                    out.append({**base, "pid": "", "name": "", "team": ""})
+                    out.append({**base, "pid": "", "name": "", "team": drive_team})
     return attach_cumulative(out)
 
 
