@@ -95,7 +95,10 @@
 
   document.addEventListener('click', function() { _hadInteraction = true; }, { once: true });
 
-  // Event delegation for player clicks - handles all [data-pid] clicks on root
+  // Keep player-modal wiring in one delegated handler. Redzone replaces most of
+  // its DOM on every render; attaching another listener to each rendered row as
+  // well as this delegate opens two overlays from a single click (most visibly
+  // on the Top Scorers rows and position-leader tiles).
   root.addEventListener('click', function(e) {
     var target = e.target;
     // Walk up to find element with data-pid
@@ -3336,14 +3339,6 @@
 
     _wireHeroCards();
     _wireHeroScroll();
-    root.querySelectorAll('[data-pid]').forEach(function(el) {
-      if (el.classList.contains('rz-player-pts')) return;
-      // Feed events are wired by _syncFeed (el.onclick) -- skip them here so a
-      // click doesn't fire window.openPlayerModal twice (two stacked modals).
-      if (el.classList.contains('rz-event')) return;
-      if (!el.dataset.pid || el.dataset.pid === '0') return;
-      el.addEventListener('click', function() { window.openPlayerModal(el.dataset.pid, _name(el.dataset.pid), { tab: 'live' }); });
-    });
   }
 
   // ── Polling ───────────────────────────────────────────────────────────────────
