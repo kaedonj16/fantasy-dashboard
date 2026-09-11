@@ -1027,7 +1027,13 @@ def generate_team_ai_result(team_ctx: dict, mode: str = "gm_memo") -> dict:
         logger.error(f"[ai {mode}] Empty response from OpenAI API. Response object: {resp}")
         raise ValueError(f"OpenAI API returned empty response for {mode}")
     
-    data = json.loads(raw)
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"[ai {mode}] Failed to parse JSON response. Raw text: {raw[:200]}")
+        raise ValueError(f"OpenAI API returned invalid JSON for {mode}: {e}") from e
 
     if not isinstance(data, dict):
         raise ValueError(f"LLM {mode} did not return an object")
