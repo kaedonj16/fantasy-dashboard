@@ -77,11 +77,12 @@ def test_selected_game_board_enriches_situation_and_mirrors_home_logo():
     )[0]
 
     assert "if (games[gid]) return games[gid]" not in game_info
-    assert "plays.slice().sort" in game_info
-    assert "return bs - as" in game_info
-    assert "if (play.team) return play.team" in game_info
-    assert "info[pid] ? (info[pid].team || '')" in game_info
-    assert "row.possession = playTeam(best)" in game_info
+    assert "_gamesById[gid]" in game_info
+    normalize = REDZONE_JS.split("function _normalizeGames(data) {", 1)[1].split(
+        "function _gameStatus", 1
+    )[0]
+    assert "_resolveGameStatus(raw, true)" in normalize
+    assert "normalized[gid]" in normalize
     assert "? ball + meta + logo(abv)" in board
     assert "Situation pending" not in REDZONE_JS
     assert "Possession pending" not in REDZONE_JS

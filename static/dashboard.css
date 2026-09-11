@@ -31998,6 +31998,9 @@ button:disabled {
     scroll-behavior: smooth;
     scrollbar-width: none;
     -ms-overflow-style: none;
+    scroll-snap-type: x proximity;
+    overscroll-behavior-inline: contain;
+    -webkit-overflow-scrolling: touch;
 }
 
 .rz-hero-cards-row::-webkit-scrollbar {
@@ -32128,25 +32131,30 @@ button:disabled {
 
 .rz-mc-hero {
     flex: 0 0 auto;
-    min-width: 130px;
-    max-width: 200px;
-    width: 42vw;
+    min-width: 230px;
+    max-width: 280px;
+    width: 25vw;
     background: var(--rz-card);
-    border: 2px solid var(--rz-border);
+    border: 1px solid var(--rz-border);
     border-radius: var(--radius);
     padding: 10px 11px 12px;
     cursor: pointer;
     transition: border-color .15s, box-shadow .15s;
     user-select: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    scroll-snap-align: start;
 }
 
 .rz-mc-hero.viewer-matchup {
-    border-color: rgba(22, 163, 74, .35);
+    border-color: color-mix(in srgb, var(--rz-red) 22%, var(--rz-border));
 }
 
 .rz-mc-hero.selected {
-    border-color: var(--rz-red) !important;
-    box-shadow: 0 0 0 2px var(--rz-red-soft);
+    border-color: color-mix(in srgb, var(--rz-red) 58%, var(--rz-border)) !important;
+    background: color-mix(in srgb, var(--rz-red) 4%, var(--rz-card));
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--rz-red) 10%, transparent);
 }
 
 .rz-mc-hero:hover:not(.selected) {
@@ -32166,7 +32174,8 @@ button:disabled {
 }
 
 .rz-mch-matchup {
-    display: flex;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
     align-items: center;
     justify-content: space-between;
     gap: 4px;
@@ -32216,6 +32225,13 @@ button:disabled {
     flex-shrink: 0;
 }
 
+.rz-mc-center { min-width: 54px; gap: 2px; }
+.rz-mc-state { font-size: 7px; font-weight: 900; letter-spacing: .07em; color: var(--rz-muted); white-space: nowrap; }
+.rz-mc-state.live { color: var(--rz-red); }
+.rz-mc-to-play-counts { font-size: 12px; font-weight: 850; color: var(--rz-text); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rz-mc-to-play-counts i { padding: 0 4px; color: var(--rz-border); font-style: normal; }
+.rz-mc-center small { min-height: 8px; font-size: 6px; font-weight: 800; letter-spacing: .08em; color: var(--rz-muted); }
+
 .rz-mch-live {
     font-size: 7px;
     font-weight: 900;
@@ -32246,6 +32262,11 @@ button:disabled {
     text-transform: uppercase;
     color: var(--rz-muted);
     opacity: .5;
+}
+
+@media (max-width: 600px) {
+    .rz-mc-hero { min-width: 224px; width: 72vw; max-width: 260px; }
+    .rz-hero-cards-row { padding-inline: 10px; padding-right: 34px; }
 }
 
 /* Main content card (tabs + panels) */
@@ -33491,6 +33512,7 @@ button:disabled {
 
 /* ── Points ───────────────────────────── */
 .rz-event-delta {
+    position: relative;
     display: flex;
     flex-direction: column;
     align-items: flex-end;
@@ -33511,7 +33533,31 @@ button:disabled {
 .rz-event-delta-pts {
     font-size: 17px;
     letter-spacing: -.02em;
+    appearance: none;
+    border: 0;
+    padding: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
 }
+
+.rz-event-delta-pts:focus-visible,
+.rz-secondary-name:focus-visible { outline: 2px solid var(--rz-red); outline-offset: 2px; border-radius: 3px; }
+
+.rz-secondary { display: grid; grid-template-columns: minmax(0, auto) 1fr auto; align-items: center; gap: 6px; margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--rz-border); color: var(--rz-muted); font-size: 10px; min-width: 0; }
+.rz-secondary-name { appearance: none; border: 0; padding: 0; background: transparent; color: var(--rz-text); font: inherit; font-weight: 750; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rz-secondary b { color: var(--rz-muted); font-variant-numeric: tabular-nums; }
+.rz-correction { display: inline-flex; margin-left: 7px; padding: 1px 5px; border-radius: 4px; background: color-mix(in srgb, var(--rz-amber) 14%, transparent); color: #b45309; font-size: 8px; font-weight: 900; letter-spacing: .06em; vertical-align: middle; animation: rz-correction-in .35s ease-out; }
+@keyframes rz-correction-in { from { opacity: 0; } to { opacity: 1; } }
+
+.rz-scoring-popover { position: absolute; z-index: 20; top: calc(100% + 7px); right: 0; width: min(280px, calc(100vw - 36px)); padding: 12px; border: 1px solid var(--rz-border); border-radius: 10px; background: var(--rz-card); box-shadow: var(--shadow-lg); color: var(--rz-text); text-align: left; font-size: 11px; line-height: 1.35; white-space: normal; }
+.rz-scoring-popover > strong { display: block; margin-bottom: 7px; font-size: 12px; }
+.rz-scoring-row { display: flex; justify-content: space-between; gap: 18px; padding: 3px 0; font-weight: 500; }
+.rz-scoring-row b { flex-shrink: 0; font-variant-numeric: tabular-nums; }
+.rz-scoring-row.total { margin-top: 5px; padding-top: 7px; border-top: 1px solid var(--rz-border); font-weight: 800; }
+
+@media (prefers-reduced-motion: reduce) { .rz-correction { animation: none; } }
 
 .rz-event-delta-game {
     display: flex;
@@ -34729,15 +34775,17 @@ a.rz-demo-link:hover {
 
 /* ── NFL matchup scoreboard (when NFL filter is a game) ── */
 .rz-nfl-board {
-    display: flex;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(76px, auto) minmax(0, 1fr);
     align-items: center;
     justify-content: space-between;
     gap: 10px;
-    margin: 0 0 10px;
-    padding: 12px 14px;
-    background: var(--rz-card);
+    margin: 10px 14px;
+    padding: 11px 16px;
+    background: linear-gradient(145deg, var(--rz-card), var(--rz-surface));
     border: 1px solid var(--rz-border);
-    border-radius: 14px;
+    border-radius: 16px;
+    box-shadow: 0 4px 14px rgba(15, 23, 42, .06);
 }
 .rz-nfl-board.is-live {
     border-color: rgba(34, 197, 94, .35);
@@ -34747,7 +34795,7 @@ a.rz-demo-link:hover {
     align-items: center;
     gap: 8px;
     min-width: 0;
-    flex: 1;
+    width: 100%;
 }
 .rz-nfl-side.rz-nfl-home {
     justify-content: flex-end;
@@ -34781,8 +34829,8 @@ a.rz-demo-link:hover {
     color: var(--rz-muted);
 }
 .rz-nfl-pts {
-    font-size: 22px;
-    font-weight: 800;
+    font-size: 27px;
+    font-weight: 900;
     line-height: 1.05;
     color: var(--rz-text);
     font-variant-numeric: tabular-nums;
@@ -34790,8 +34838,8 @@ a.rz-demo-link:hover {
 .rz-nfl-mid {
     flex: 0 0 auto;
     text-align: center;
-    min-width: 88px;
-    max-width: 42%;
+    min-width: 76px;
+    max-width: 100%;
 }
 .rz-nfl-clock {
     font-size: 12px;
@@ -34802,6 +34850,8 @@ a.rz-demo-link:hover {
 .rz-nfl-board.is-live .rz-nfl-clock {
     color: #16a34a;
 }
+.rz-nfl-board.is-final { padding-block: 9px; }
+.rz-nfl-board.is-final .rz-nfl-clock { color: var(--rz-muted); letter-spacing: .08em; }
 .rz-nfl-sit {
     margin-top: 2px;
     font-size: 11px;
@@ -34826,7 +34876,8 @@ a.rz-demo-link:hover {
 }
 @media (max-width: 480px) {
     .rz-nfl-board {
-        padding: 10px 10px;
+        grid-template-columns: minmax(0, 1fr) minmax(68px, auto) minmax(0, 1fr);
+        padding: 9px 10px;
         gap: 6px;
     }
     .rz-nfl-pts {
@@ -34839,6 +34890,27 @@ a.rz-demo-link:hover {
     .rz-nfl-mid {
         min-width: 72px;
     }
+}
+
+/* Compact NFL game navigation: one canonical game filter, two synchronized UIs. */
+.rz-game-strip { border-bottom: 1px solid var(--rz-border); overflow: hidden; }
+.rz-game-strip-scroll { display: flex; flex-wrap: nowrap; gap: 8px; padding: 8px 14px; overflow-x: auto; overscroll-behavior-inline: contain; scroll-snap-type: x proximity; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+.rz-game-strip-scroll::-webkit-scrollbar { display: none; }
+.rz-game-pill { appearance: none; flex: 0 0 clamp(170px, 18vw, 220px); min-height: 58px; display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 7px; padding: 7px 9px; border: 1px solid var(--rz-border); border-radius: 15px; background: var(--rz-card); color: var(--rz-text); font: inherit; cursor: pointer; scroll-snap-align: start; transition: border-color .15s, background .15s, box-shadow .15s; }
+.rz-game-pill:hover { background: var(--rz-hover); }
+.rz-game-pill:focus-visible, .rz-mc-hero:focus-visible { outline: 2px solid var(--rz-red); outline-offset: 2px; }
+.rz-game-pill.is-selected { border-color: color-mix(in srgb, var(--rz-red) 55%, var(--rz-border)); background: color-mix(in srgb, var(--rz-red) 5%, var(--rz-card)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--rz-red) 12%, transparent); }
+.rz-game-pill.rz-game-all { flex-basis: 64px; min-width: 64px; font-size: 10px; font-weight: 900; letter-spacing: .08em; display: flex; justify-content: center; }
+.rz-gp-team { min-width: 0; display: grid; grid-template-columns: 22px minmax(0, auto) auto; align-items: center; gap: 4px; font-size: 10px; font-weight: 800; white-space: nowrap; }
+.rz-gp-team.home { grid-template-columns: minmax(0, auto) auto 22px; justify-content: end; text-align: right; }
+.rz-gp-team img { width: 22px; height: 22px; object-fit: contain; }
+.rz-gp-team b { font-size: 15px; font-variant-numeric: tabular-nums; }
+.rz-gp-status { max-width: 64px; overflow: hidden; text-overflow: ellipsis; font-size: 8px; font-weight: 850; letter-spacing: .04em; color: var(--rz-muted); text-align: center; white-space: nowrap; }
+.rz-game-pill.is-live .rz-gp-status { color: var(--rz-red); }
+
+@media (max-width: 600px) {
+    .rz-game-strip-scroll { padding-inline: 10px; }
+    .rz-game-pill { flex-basis: 174px; min-height: 54px; }
 }
 
 /* ── On-deck strip (games kicking off soon) ── */

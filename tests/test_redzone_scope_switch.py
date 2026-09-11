@@ -143,8 +143,8 @@ def test_nfl_filter_is_matchups_with_scoreboard():
     assert "function _nflOptions(" not in src
     assert "function _renderNflBoard(" in src
     nfl = _fn("_nflMatchupOptions")
-    assert "game_id" in nfl
-    assert "away + ' @ ' + home" in nfl or 'away + " @ " + home' in nfl
+    assert "_gamesById" in nfl and "id: k" in nfl
+    assert "g.away" in nfl and "g.home" in nfl
     # Must not list bare team abbrevs as the primary option value.
     assert "seen[t] = 1" not in nfl
     board = _fn("_renderNflBoard")
