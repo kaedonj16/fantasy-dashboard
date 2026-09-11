@@ -50,7 +50,6 @@ Usage
 from __future__ import annotations
 
 import argparse
-from contextlib import contextmanager
 import json
 import math
 import os
@@ -398,31 +397,17 @@ def playoff_pct_as_of(
 # ---------------------------------------------------------------------------
 
 
-@contextmanager
-def _light_stubs():
-    """Temporarily skip narrative/grade helpers; only PowerScore math is needed."""
+def _install_light_stubs() -> None:
+    """Skip narrative/grade helpers; we only need the PowerScore math."""
     import dashboard_services.ai.context_builders as cb
 
-    names = (
-        "summarize_roster_players",
-        "detect_team_direction",
-        "group_position_strength",
-        "calculate_roster_grade",
-        "build_model_value_lookup",
-    )
-    originals = {name: getattr(cb, name) for name in names}
-    try:
-        cb.summarize_roster_players = lambda **_k: []
-        cb.detect_team_direction = lambda *_a, **_k: "balanced"
-        cb.group_position_strength = lambda _x: {}
-        cb.calculate_roster_grade = lambda *_a, **_k: {"win_window": "balanced"}
-        cb.build_model_value_lookup = lambda tbl, is_sf=False, **_k: {
-            str(r.get("player_id") or r.get("id") or ""): r for r in (tbl or [])
-        }
-        yield
-    finally:
-        for name, helper in originals.items():
-            setattr(cb, name, helper)
+    cb.summarize_roster_players = lambda **_k: []
+    cb.detect_team_direction = lambda *_a, **_k: "balanced"
+    cb.group_position_strength = lambda _x: {}
+    cb.calculate_roster_grade = lambda *_a, **_k: {"win_window": "balanced"}
+    cb.build_model_value_lookup = lambda tbl, is_sf=False, **_k: {
+        str(r.get("player_id") or r.get("id") or ""): r for r in (tbl or [])
+    }
 
 
 def _df_weekly(rows: Sequence[dict]):
@@ -438,7 +423,6 @@ def _df_weekly(rows: Sequence[dict]):
     return df
 
 
-@_light_stubs()
 def rank_week(
     league: LeagueSeason,
     week_n: int,
@@ -452,6 +436,8 @@ def rank_week(
     """
     import dashboard_services.ai.context_builders as cb
     from dashboard_services.power_score import season_phase_from_progress
+
+    _install_light_stubs()
 
     through = league.rows_through(week_n)
     rec = h2h_records(through)

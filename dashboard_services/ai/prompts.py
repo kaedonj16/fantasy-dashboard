@@ -625,8 +625,6 @@ def generate_trade_ai_result(payload: dict) -> dict:
     )
 
     raw = clean_ai_text(resp.output_text.strip())
-    if not raw:
-        raise ValueError("OpenAI API returned empty response for trade_analysis")
     data = json.loads(raw)
 
     if not isinstance(data, dict):

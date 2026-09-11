@@ -1,10 +1,7 @@
 """Test that 404 errors for future weeks are handled gracefully without noisy logging."""
 import logging
 from unittest.mock import Mock, patch
-
-import pytest
-
-requests = pytest.importorskip("requests")
+import requests
 
 from dashboard_services.matchups import build_matchup_preview
 

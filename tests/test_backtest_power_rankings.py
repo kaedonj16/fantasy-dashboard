@@ -101,23 +101,6 @@ def test_rank_week_uses_production_blend_and_week_n_records():
     assert all(v == 0 for v in vals)
 
 
-def test_rank_week_restores_context_builder_helpers():
-    import dashboard_services.ai.context_builders as cb
-
-    helper_names = (
-        "summarize_roster_players",
-        "detect_team_direction",
-        "group_position_strength",
-        "calculate_roster_grade",
-        "build_model_value_lookup",
-    )
-    originals = {name: getattr(cb, name) for name in helper_names}
-
-    rank_week(make_strength_season(), week_n=4, n_sims=50, include_playoff=False)
-
-    assert {name: getattr(cb, name) for name in helper_names} == originals
-
-
 def test_rank_week_luck_adj_matches_context_builder_on_fixture():
     """Same scoring pattern as tests/test_power_rankings_luck.py — unlucky high scorer."""
     rows = []

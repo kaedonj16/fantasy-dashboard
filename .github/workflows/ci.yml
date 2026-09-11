@@ -9,9 +9,7 @@ jobs:
   python:
     name: Python lint & syntax
     runs-on: ubuntu-latest
-    # Dependency setup plus the full unit shard can exceed 15 minutes on a cold
-    # hosted runner; keep a real upper bound without terminating healthy runs.
-    timeout-minutes: 30
+    timeout-minutes: 10
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -65,8 +63,7 @@ jobs:
   integration:
     name: Integration tests (full stack)
     runs-on: ubuntu-latest
-    # The full-stack install and integration shard share this job-level budget.
-    timeout-minutes: 30
+    timeout-minutes: 15
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
