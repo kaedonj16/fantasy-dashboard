@@ -107,11 +107,21 @@ def build_matchup_preview(
 ) -> List[dict]:
     try:
         mlist = get_matchups(platform, league_id, week, season) or []
-    except Exception:
-        logging.getLogger(__name__).warning(
-            "get_matchups failed platform=%s league=%s week=%s; synthesizing",
-            platform, league_id, week, exc_info=True,
-        )
+    except Exception as e:
+        # 404s are expected for future weeks - log at debug level without traceback
+        # Other errors get full warning with traceback for investigation
+        is_404 = getattr(e, 'response', None) and getattr(e.response, 'status_code', None) == 404
+        logger = logging.getLogger(__name__)
+        if is_404:
+            logger.debug(
+                "get_matchups 404 (future week) platform=%s league=%s week=%s; synthesizing",
+                platform, league_id, week,
+            )
+        else:
+            logger.warning(
+                "get_matchups failed platform=%s league=%s week=%s; synthesizing",
+                platform, league_id, week, exc_info=True,
+            )
         mlist = []
 
     # Pre-fetch users/rosters once instead of per team
