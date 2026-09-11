@@ -7,10 +7,6 @@ from dashboard_services.ai.prompts import (
     generate_power_rankings_result,
     generate_trade_suggestions_result,
 )
-from dashboard_services.ai.history_recap import _generate_recap_ai_result
-from dashboard_services.ai.weekly_recap import _generate_ai_storyline
-
-
 @pytest.fixture
 def mock_empty_response():
     """Mock OpenAI response with empty output_text."""
@@ -70,8 +66,11 @@ class TestEmptyResponseHandling:
             with pytest.raises(ValueError, match="OpenAI API returned empty response for trade_suggestions"):
                 generate_trade_suggestions_result({})
 
+    @pytest.mark.integration
     def test_season_recap_empty_response(self, mock_empty_response):
         """Test generate_season_recap_result handles empty response."""
+        from dashboard_services.ai.history_recap import _generate_recap_ai_result
+
         with patch("dashboard_services.ai.history_recap.get_ai_client") as mock_client:
             mock_client.return_value.responses.create.return_value = mock_empty_response
             
@@ -82,8 +81,11 @@ class TestEmptyResponseHandling:
                     "season": "2026",
                 })
 
+    @pytest.mark.integration
     def test_weekly_recap_empty_response(self, mock_empty_response):
         """Test generate_weekly_recap_result handles empty response."""
+        from dashboard_services.ai.weekly_recap import _generate_ai_storyline
+
         with patch("dashboard_services.ai.weekly_recap.get_ai_client") as mock_client:
             mock_client.return_value.responses.create.return_value = mock_empty_response
             
