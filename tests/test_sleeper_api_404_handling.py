@@ -5,7 +5,10 @@ transactions, and brackets, rather than the service layer.
 """
 import pytest
 from unittest.mock import patch, Mock
-import requests
+
+# Heavy deps aren't installed in the lint job (ruff+pytest only); skip there so
+# collection doesn't hard-fail. Mirrors tests/test_matchup_404_handling.py.
+requests = pytest.importorskip("requests")
 
 from dashboard_services.api import get_matchups, get_transactions, get_bracket
 

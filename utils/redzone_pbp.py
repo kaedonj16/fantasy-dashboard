@@ -655,6 +655,44 @@ def game_situation_from_plays(plays: list[dict] | None) -> dict:
     }
 
 
+def normalize_nfl_game_status(game_code: Any, game_status: Any = "") -> str:
+    """Authoritative NFL game state from provider game-level metadata.
+
+    Returns one of ``pregame`` | ``live`` | ``halftime`` | ``final`` |
+    ``delayed`` | ``unknown``.
+
+    ``game_code`` is Tank01's ``gameStatusCode`` (ESPN is mapped onto the same
+    scale by ``_espn_state_to_code``): ``0`` scheduled, ``1`` in progress, ``2``
+    final. That numeric code is the game-level source of truth and always wins
+    over the free-text ``game_status`` label, which can lag or read stale.
+
+    Critically, a game is only ``final`` when the code says ``2`` (or, absent a
+    usable code, the text explicitly reads final). A missing/blank code is
+    ``unknown`` -- never ``final`` -- so a bye, a provider gap, or a stale
+    player record can never masquerade as a completed game.
+    """
+    code = _s(game_code)
+    text = _s(game_status).lower()
+    if code == "1":
+        return "halftime" if "half" in text else "live"
+    if code == "2":
+        return "final"
+    if code == "0":
+        return "pregame"
+    # No usable numeric code: fall back to the text label, conservatively.
+    if not text:
+        return "unknown"
+    if "final" in text:
+        return "final"
+    if "half" in text:
+        return "halftime"
+    if any(w in text for w in ("postpon", "delay", "suspend", "cancel")):
+        return "delayed"
+    if any(w in text for w in ("progress", "quarter", "qtr", "q1", "q2", "q3", "q4")):
+        return "live"
+    return "pregame"
+
+
 def build_games_snapshot(
     player_info: dict | None,
     pbp_by_game: dict | None = None,
@@ -683,6 +721,9 @@ def build_games_snapshot(
             "home_pts": _s(info.get("home_pts")),
             "game_status": _s(info.get("game_status")),
             "game_code": _s(info.get("game_code")),
+            "status": normalize_nfl_game_status(
+                info.get("game_code"), info.get("game_status")
+            ),
             "game_clock": _s(info.get("game_clock")),
             "game_quarter": _s(info.get("game_quarter")),
             "game_time_epoch": info.get("game_time_epoch") or 0,
@@ -707,6 +748,7 @@ def build_games_snapshot(
                 "home_pts": "",
                 "game_status": "",
                 "game_code": "",
+                "status": "unknown",
                 "game_clock": "",
                 "game_quarter": "",
                 "game_time_epoch": 0,

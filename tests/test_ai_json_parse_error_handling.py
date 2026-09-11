@@ -1,5 +1,10 @@
 """Test AI JSON parse error handling."""
 import pytest
+
+# The AI client imports `openai`, absent in the lint job (ruff+pytest only);
+# skip at collection there so pytest doesn't error importing this module.
+pytest.importorskip("openai")
+
 from dashboard_services.ai.client import clean_ai_text
 
 

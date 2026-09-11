@@ -31993,11 +31993,15 @@ button:disabled {
 .rz-hero-cards-row {
     display: flex;
     gap: 10px;
-    padding: 14px 14px 4px;
+    /* Extra right padding so the last card clears the overlaid next-arrow (§17). */
+    padding: 14px 40px 6px 14px;
     overflow-x: auto;
     scroll-behavior: smooth;
     scrollbar-width: none;
     -ms-overflow-style: none;
+    scroll-snap-type: x proximity;
+    overscroll-behavior-inline: contain;
+    -webkit-overflow-scrolling: touch;
 }
 
 .rz-hero-cards-row::-webkit-scrollbar {
@@ -32128,29 +32132,96 @@ button:disabled {
 
 .rz-mc-hero {
     flex: 0 0 auto;
-    min-width: 130px;
-    max-width: 200px;
-    width: 42vw;
+    min-width: 190px;
+    max-width: 240px;
+    width: 62vw;
     background: var(--rz-card);
-    border: 2px solid var(--rz-border);
+    border: 1px solid var(--rz-border);
     border-radius: var(--radius);
-    padding: 10px 11px 12px;
+    padding: 9px 12px 11px;
     cursor: pointer;
-    transition: border-color .15s, box-shadow .15s;
+    transition: border-color .15s, box-shadow .15s, background .15s;
     user-select: none;
+    scroll-snap-align: start;
+}
+.rz-mc-hero:focus-visible {
+    outline: 2px solid var(--rz-accent, #6366f1);
+    outline-offset: 2px;
 }
 
+/* Viewer's own matchup: a subtle neutral accent, deliberately NOT green --
+   selection and win/loss are kept conceptually separate (§16). */
 .rz-mc-hero.viewer-matchup {
-    border-color: rgba(22, 163, 74, .35);
+    border-color: var(--rz-border);
+    box-shadow: inset 3px 0 0 var(--rz-accent, #6366f1);
 }
 
+/* Selected matchup: a restrained accent, no neon/glow (§16). */
 .rz-mc-hero.selected {
-    border-color: var(--rz-red) !important;
-    box-shadow: 0 0 0 2px var(--rz-red-soft);
+    border-color: var(--rz-accent, #6366f1) !important;
+    background: color-mix(in srgb, var(--rz-accent, #6366f1) 6%, var(--rz-card));
 }
 
 .rz-mc-hero:hover:not(.selected) {
     border-color: var(--rz-muted);
+}
+
+/* 3-column matchup layout: left team | center status | right team (§12). The
+   center is auto-width so long usernames get the remaining space, and reserves
+   enough for "TO PLAY" so cards don't jump width as status changes. */
+.rz-mch-matchup {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    align-items: center;
+    gap: 6px;
+}
+.rz-mc-team-left { text-align: left; }
+.rz-mc-team-right { text-align: right; }
+.rz-mc-center {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1px;
+    min-width: 52px;
+    padding: 0 2px;
+}
+.rz-mc-state {
+    font-size: 8px;
+    font-weight: 900;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--rz-muted);
+    line-height: 1;
+}
+.rz-mc-state.live { color: var(--rz-red); }
+.rz-mc-state.toplay { color: var(--rz-muted); }
+.rz-mc-state.final { color: var(--rz-muted); }
+.rz-mc-state.neutral { color: var(--rz-muted); opacity: .6; }
+.rz-mc-to-play-counts,
+.rz-mc-playing-counts {
+    font-size: 13px;
+    font-weight: 800;
+    color: var(--rz-text);
+    font-variant-numeric: tabular-nums;
+    line-height: 1.1;
+    display: flex;
+    align-items: center;
+    gap: 3px;
+}
+.rz-mc-playing-counts { color: var(--rz-red); }
+.rz-mc-to-play-divider {
+    color: var(--rz-muted);
+    opacity: .55;
+    font-weight: 400;
+}
+.rz-mc-substate {
+    font-size: 7px;
+    font-weight: 800;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--rz-muted);
+    line-height: 1;
 }
 
 .rz-mch-league {
@@ -32165,15 +32236,7 @@ button:disabled {
     text-overflow: ellipsis;
 }
 
-.rz-mch-matchup {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 4px;
-}
-
 .rz-mch-side {
-    flex: 1;
     min-width: 0;
 }
 
@@ -32500,6 +32563,16 @@ button:disabled {
     background: var(--rz-surface);
     padding: 2px 6px;
     border-radius: 6px;
+}
+
+.rz-lb-toplay {
+    font-size: 11px;
+    font-weight: 800;
+    color: var(--rz-text);
+    font-variant-numeric: tabular-nums;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
 }
 
 /* Leagues summary (My Leagues scope) */
@@ -32997,6 +33070,13 @@ button:disabled {
     background: var(--rz-surface);
     color: var(--rz-muted);
     border: 1px solid var(--rz-border);
+}
+
+.rz-mc-status.toplay {
+    background: var(--rz-surface);
+    color: var(--rz-text);
+    border: 1px solid var(--rz-border);
+    font-variant-numeric: tabular-nums;
 }
 
 .rz-mc-status.pre {
@@ -34734,13 +34814,36 @@ a.rz-demo-link:hover {
     justify-content: space-between;
     gap: 10px;
     margin: 0 0 10px;
-    padding: 12px 14px;
+    /* Vertical padding drives card height; final games drop the D&D row and so
+       read shorter than live ones without any reserved blank space (§2, §3). */
+    padding: 14px 16px;
     background: var(--rz-card);
     border: 1px solid var(--rz-border);
     border-radius: 14px;
+    box-shadow: var(--shadow-sm);
+}
+.rz-nfl-board.is-final,
+.rz-nfl-board.is-pregame,
+.rz-nfl-board.is-unknown {
+    padding: 12px 16px;
 }
 .rz-nfl-board.is-live {
     border-color: rgba(34, 197, 94, .35);
+}
+/* Small live indicator, kept subtle -- green, not an overuse of red (§3). */
+.rz-nfl-live-dot {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #16a34a;
+    margin-right: 5px;
+    vertical-align: middle;
+    animation: rz-nfl-pulse 1.6s ease-in-out infinite;
+}
+@keyframes rz-nfl-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: .35; }
 }
 .rz-nfl-side {
     display: flex;
@@ -34839,6 +34942,120 @@ a.rz-demo-link:hover {
     .rz-nfl-mid {
         min-width: 72px;
     }
+}
+
+/* ── NFL game pill strip (ESPN-style fast game selector, §4/§6) ──────────────
+   A horizontal, single-row, snap-scrolling set of compact game pills that sits
+   directly below .rz-chip-bar and above the selected-game scoreboard. Bound to
+   the one canonical NFL filter -- it never introduces a second selection state. */
+.rz-game-strip {
+    margin: 0 0 10px;
+}
+.rz-game-strip-scroll {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding: 2px 2px 6px;
+    scroll-snap-type: x proximity;
+    overscroll-behavior-inline: contain;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+}
+.rz-game-strip-scroll::-webkit-scrollbar { display: none; }
+
+.rz-game-pill {
+    flex: 0 0 auto;
+    /* Compact -- much smaller than the detailed scoreboard (§4). Partial next
+       pill peeks in at mobile widths so the strip reads as scrollable. */
+    min-width: 108px;
+    max-width: 150px;
+    min-height: 46px;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: center;
+    gap: 2px;
+    padding: 7px 10px;
+    background: var(--rz-card);
+    border: 1px solid var(--rz-border);
+    border-radius: 14px;
+    cursor: pointer;
+    scroll-snap-align: start;
+    font: inherit;
+    color: var(--rz-text);
+    text-align: left;
+    transition: border-color .15s, background .15s, box-shadow .15s;
+}
+.rz-game-pill:hover { border-color: var(--rz-muted); }
+.rz-game-pill:focus-visible {
+    outline: 2px solid var(--rz-accent, #6366f1);
+    outline-offset: 2px;
+}
+.rz-game-pill.is-selected {
+    border-color: var(--rz-accent, #6366f1);
+    background: color-mix(in srgb, var(--rz-accent, #6366f1) 8%, var(--rz-card));
+    box-shadow: 0 0 0 1px var(--rz-accent, #6366f1);
+}
+.rz-game-pill-all {
+    min-width: 52px;
+    align-items: center;
+    justify-content: center;
+}
+.rz-gp-all {
+    font-size: 11px;
+    font-weight: 900;
+    letter-spacing: .08em;
+    color: var(--rz-muted);
+}
+.rz-game-pill-all.is-selected .rz-gp-all { color: var(--rz-accent, #6366f1); }
+.rz-gp-team {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
+}
+.rz-gp-logo {
+    width: 18px;
+    height: 18px;
+    object-fit: contain;
+    flex: 0 0 auto;
+}
+.rz-gp-logo-txt {
+    font-size: 9px;
+    font-weight: 800;
+    color: var(--rz-muted);
+    width: auto;
+    height: auto;
+}
+.rz-gp-abv {
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: .02em;
+    color: var(--rz-text);
+}
+.rz-gp-score {
+    margin-left: auto;
+    font-size: 13px;
+    font-weight: 900;
+    color: var(--rz-text);
+    font-variant-numeric: tabular-nums;
+}
+.rz-gp-status {
+    text-align: center;
+    font-size: 8px;
+    font-weight: 800;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+    color: var(--rz-muted);
+    line-height: 1;
+    padding: 1px 0;
+}
+.rz-game-pill.is-live .rz-gp-status { color: #16a34a; }
+.rz-game-pill.is-final .rz-gp-abv,
+.rz-game-pill.is-final .rz-gp-score { color: var(--rz-muted); }
+@media (max-width: 480px) {
+    .rz-game-pill { min-width: 100px; }
 }
 
 /* ── On-deck strip (games kicking off soon) ── */
