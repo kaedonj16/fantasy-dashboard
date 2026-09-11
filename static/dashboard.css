@@ -32923,30 +32923,6 @@ button:disabled {
 }
 .rz-mt-bench-sum::-webkit-details-marker { display: none; }
 
-/* Play card: delta + running total */
-.rz-event-delta {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 2px;
-}
-.rz-event-delta-pts {
-    font-size: 15px;
-    font-weight: 900;
-    line-height: 1;
-}
-.rz-event-total {
-    font-size: 11px;
-    font-weight: 700;
-    color: var(--rz-muted);
-    font-variant-numeric: tabular-nums;
-    line-height: 1;
-}
-.rz-event.td .rz-event-total {
-    color: #b45309;
-}
-
-
 @keyframes rz-score-flash {
     0% {
         color: var(--rz-green);

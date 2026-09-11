@@ -345,11 +345,11 @@ def test_play_descriptions_are_play_by_play():
     assert "return { desc: uy + ' yd TD run'" not in src
 
 
-def test_pbp_feed_path_and_soft_rank():
+def test_pbp_feed_path_and_filters():
     src = _rz()
     assert "function _eventsFromPbp(" in src
     assert "pbp_by_game" in src
-    assert "function _softRank(" in src
+    assert "function _softRank(" not in src
     assert "function _isBigPlay(" in src
     assert 'id="rz-bigplays-btn"' in src
     assert "function _loadPrefs(" in src

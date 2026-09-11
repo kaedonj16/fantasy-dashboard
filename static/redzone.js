@@ -561,21 +561,6 @@
   function _isBigPlay(ev) {
     return ev.kind === 'td' || (ev.pts || 0) >= 4;
   }
-  // Soft rank for display: mine → opp → rest, then TDs, then pts, then recency.
-  // Does not hide anyone -- My Team / hero remain optional hard filters.
-  function _softRank(list) {
-    return list.slice().sort(function(a, b) {
-      var ar = a.mine ? 0 : (a.opp ? 1 : 2);
-      var br = b.mine ? 0 : (b.opp ? 1 : 2);
-      if (ar !== br) return ar - br;
-      var atd = a.kind === 'td' ? 0 : 1;
-      var btd = b.kind === 'td' ? 0 : 1;
-      if (atd !== btd) return atd - btd;
-      var ap = a.pts || 0, bp = b.pts || 0;
-      if (ap !== bp) return bp - ap;
-      return (b.ts || 0) - (a.ts || 0);
-    });
-  }
   // "MM:SS" game clock → seconds remaining in the quarter (null if unparsable).
   function _clockSecs(clk) {
     var m = String(clk == null ? '' : clk).match(/(\d+):(\d+)/);
@@ -586,17 +571,8 @@
   // chronological order (newest first): game kickoff epoch + elapsed game
   // seconds. Live-only events (milestones, bulk) fall back to detection time.
   function _chronoKey(ev) {
-    // For PBP events with gameId and seq, use provider sequence within game
-    if (ev.gameId && ev.seq != null) {
-      var g = (_state.games || {})[ev.gameId] || {};
-      var kickoff = parseFloat(g.game_time_epoch || 0) || 0;
-      if (kickoff) {
-        // Use kickoff + seq as a monotonic key (seq is already chronological)
-        // Scale seq to avoid collision with elapsed seconds
-        return kickoff + (ev.seq * 0.001);
-      }
-    }
-    // Fallback: reconstruct from quarter/clock
+    // Reconstruct elapsed game time first. Unlike a provider sequence number,
+    // this remains comparable when plays from simultaneous games are merged.
     var q = parseInt(ev.gameQuarter, 10);
     if (q > 0) {
       var per = 900; // 15:00 quarters (OT still monotonic under this model)
@@ -609,13 +585,20 @@
       var kickoff = parseFloat(g.game_time_epoch || 0) || 0;
       if (kickoff) return kickoff + elapsed;
     }
+    // A provider sequence is still useful within one game when clock data is
+    // absent, but it must not override the cross-game wall-clock estimate.
+    if (ev.gameId && ev.seq != null) {
+      var seqGame = (_state.games || {})[ev.gameId] || {};
+      var seqKickoff = parseFloat(seqGame.game_time_epoch || 0) || 0;
+      if (seqKickoff) return seqKickoff + (ev.seq * 0.001);
+    }
     return (ev.ts || 0) / 1000;
   }
-  // Newest first. Ties (same game-second) fall back to soft rank so a TD or a
-  // player of yours edges ahead of an ordinary simultaneous snap.
+  // Newest first. Modern JavaScript's stable sort preserves ingestion order
+  // for exact ties instead of quietly reintroducing the removed "For You"
+  // ranking for simultaneous plays.
   function _chronoSort(list) {
-    var ranked = _softRank(list); // stable base order for exact-tie fallback
-    return ranked.slice().sort(function(a, b) {
+    return list.slice().sort(function(a, b) {
       var ka = _chronoKey(a), kb = _chronoKey(b);
       if (ka !== kb) return kb - ka;
       return 0;
