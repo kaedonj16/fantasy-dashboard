@@ -774,6 +774,13 @@ def generate_power_rankings_result(rankings_ctx: dict) -> dict:
     )
 
     raw = clean_ai_text(resp.output_text.strip())
+    
+    if not raw:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error("[ai power_rankings] Empty response from OpenAI API. Response object: %s", resp)
+        raise ValueError("OpenAI API returned empty response for power_rankings")
+    
     data = json.loads(raw)
 
     if not isinstance(data, dict):
@@ -929,6 +936,13 @@ Trade suggestions context:
     )
 
     raw = clean_ai_text(resp.output_text.strip())
+    
+    if not raw:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error("[ai trade_suggestions] Empty response from OpenAI API. Response object: %s", resp)
+        raise ValueError("OpenAI API returned empty response for trade_suggestions")
+    
     data = json.loads(raw)
 
     if not isinstance(data, dict):
@@ -1005,8 +1019,29 @@ def generate_team_ai_result(team_ctx: dict, mode: str = "gm_memo") -> dict:
         },
     )
 
-    raw = clean_ai_text(resp.output_text.strip())
-    data = json.loads(raw)
+    original = resp.output_text.strip()
+    
+    if not original:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"[ai {mode}] Empty response from OpenAI API. Response object: {resp}")
+        raise ValueError(f"OpenAI API returned empty response for {mode}")
+    
+    raw = clean_ai_text(original)
+    
+    if not raw:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"[ai {mode}] Response became empty after cleaning. Original: {original[:200]}")
+        raise ValueError(f"OpenAI API returned response that became empty after cleaning for {mode}")
+    
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"[ai {mode}] Failed to parse JSON response. Original: {original[:200]}, After cleaning: {raw[:200]}")
+        raise ValueError(f"OpenAI API returned invalid JSON for {mode}: {e}") from e
 
     if not isinstance(data, dict):
         raise ValueError(f"LLM {mode} did not return an object")

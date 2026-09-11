@@ -414,7 +414,12 @@ def get_rosters(league_id: str) -> List[dict]:
 
 @ttl_cache(ttl=300)
 def get_matchups(league_id: str, week: int) -> List[dict]:
-    return fetch_json(f"/league/{league_id}/matchups/{week}")
+    try:
+        return fetch_json(f"/league/{league_id}/matchups/{week}")
+    except requests.HTTPError as e:
+        if e.response.status_code == 404:
+            return []
+        raise
 
 
 _LAST_NFL_STATE: dict = {}
@@ -444,12 +449,22 @@ def get_nfl_players() -> dict:
 
 @ttl_cache(ttl=300)
 def get_transactions(league_id: str, week: int) -> List[dict]:
-    return fetch_json(f"/league/{league_id}/transactions/{week}")
+    try:
+        return fetch_json(f"/league/{league_id}/transactions/{week}")
+    except requests.HTTPError as e:
+        if e.response.status_code == 404:
+            return []
+        raise
 
 
 @ttl_cache(ttl=300)
 def get_bracket(league_id: str, bracket: str) -> List[dict]:
-    return fetch_json(f"/league/{league_id}/{bracket}_bracket")
+    try:
+        return fetch_json(f"/league/{league_id}/{bracket}_bracket")
+    except requests.HTTPError as e:
+        if e.response.status_code == 404:
+            return []
+        raise
 
 
 @ttl_cache(ttl=300)

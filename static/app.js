@@ -130,6 +130,20 @@ window.brFetchWithTimeout = function (url, opts, ms) {
   return fetch(url, merged).finally(function () { clearTimeout(timer); });
 };
 
+/**
+ * Lightweight fetch with a hard timeout for internal API calls (player deltas,
+ * indicators, advanced metrics). Aborts and rejects when the timer fires so hung
+ * requests don't leave spinners up forever. Used by trade calculator, compare,
+ * and player modal.
+ */
+function _advFetch(url, ms, init) {
+  const ctl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+  const t = ctl ? setTimeout(function() { ctl.abort(); }, ms || 12000) : null;
+  const opts = Object.assign({}, init || {}, ctl ? { signal: ctl.signal } : {});
+  return fetch(url, opts)
+    .finally(function() { if (t) clearTimeout(t); });
+}
+
 // ── Canonical position palette ────────────────────────────────────────────────
 // Single source of truth for position → color across the app (rankings, trade
 // calculator, playoff table, etc.). Previously this map was copy-pasted a dozen
