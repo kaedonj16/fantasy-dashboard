@@ -1,6 +1,12 @@
 """Test that AI functions handle empty responses gracefully."""
 import pytest
 from unittest.mock import Mock, patch
+
+# The AI client imports `openai`, which the lint job (ruff+pytest only) doesn't
+# install; skip at collection there so pytest doesn't error before it can
+# deselect these integration-marked tests.
+pytest.importorskip("openai")
+
 from dashboard_services.ai.prompts import (
     generate_team_ai_result,
     generate_trade_ai_result,
