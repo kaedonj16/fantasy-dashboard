@@ -305,13 +305,150 @@
   function _team(pid) { return ((_state.player_info || {})[pid] || {}).team || ''; }
   function _statLine(pid) { return ((_state.player_info || {})[pid] || {}).stat_line || null; }
 
-  function _gameStatus(pid) {
+  // Normalized NFL game status resolver. `g` is an _nflGameInfo() row keyed by
+  // game_id -- the authoritative game-level snapshot. The server pre-normalizes
+  // `g.status` (utils.redzone_pbp.normalize_nfl_game_status); we prefer it and
+  // only re-derive from the raw code/text when an older payload omits it.
+  //
+  // game_code is the game-level source of truth (Tank01 gameStatusCode, with
+  // ESPN mapped onto the same scale): 0 pregame, 1 live, 2 final. A game is
+  // FINAL only when that code says 2 (or, lacking a code, the text is
+  // explicitly final). A blank/unknown code is 'unknown' -- never final -- so a
+  // bye, a provider gap, or a stale player record can't fake a completed game.
+  // Returns 'pregame'|'live'|'halftime'|'final'|'delayed'|'unknown'.
+  function _normGameStatus(g) {
+    if (!g) return 'unknown';
+    if (g.status) return String(g.status);
+    var code = String(g.game_code || '');
+    var txt  = String(g.game_status || '').toLowerCase();
+    if (code === '1') return txt.indexOf('half') >= 0 ? 'halftime' : 'live';
+    if (code === '2') return 'final';
+    if (code === '0') return 'pregame';
+    if (txt.indexOf('final') >= 0) return 'final';
+    if (txt.indexOf('half') >= 0) return 'halftime';
+    if (/postpon|delay|suspend|cancel/.test(txt)) return 'delayed';
+    if (/progress|quarter|qtr|q[1-4]/.test(txt)) return 'live';
+    return txt ? 'pregame' : 'unknown';
+  }
+
+  // Coarse per-player state for matchup math, resolved from the player's NFL
+  // game (game-level authority), NOT the player's own possibly-stale record.
+  //   'final' | 'live' | 'upcoming' | 'bye' | 'unknown' | 'empty'
+  // 'live' folds in halftime; 'upcoming' folds in delayed (game not complete).
+  function _playerGameState(pid) {
+    if (pid === '0') return { type: 'empty', label: '', norm: 'empty' };
     var p = (_state.player_info || {})[pid] || {};
-    var code = String(p.game_code || '');
-    var st   = (p.game_status || '').toLowerCase();
-    if (code === '2' || st.includes('final')) return { label: 'FINAL', type: 'final' };
-    if (code === '1' || st.includes('progress') || st.includes('live')) return { label: 'LIVE', type: 'live' };
-    return { label: p.team ? (p.game_status || '') : '', type: 'pre' };
+    var gid = p.game_id || '';
+    var g = gid ? _nflGameInfo(gid) : null;
+    if (!g) {
+      // Rostered player whose team has no game this week = bye (not "to play").
+      // No team at all = unknown. Neither is ever final.
+      return p.team
+        ? { type: 'bye', label: 'BYE', norm: 'bye' }
+        : { type: 'unknown', label: '', norm: 'unknown' };
+    }
+    var norm = _normGameStatus(g);
+    var coarse = norm === 'final' ? 'final'
+               : (norm === 'live' || norm === 'halftime') ? 'live'
+               : (norm === 'pregame' || norm === 'delayed') ? 'upcoming'
+               : 'unknown';
+    var label = coarse === 'final' ? 'FINAL'
+              : coarse === 'live' ? (norm === 'halftime' ? 'HALF' : 'LIVE')
+              : coarse === 'upcoming' ? (g.game_status || 'Upcoming')
+              : '';
+    return { type: coarse, label: label, norm: norm, game: g };
+  }
+
+  // Backward-compatible player status used throughout the render helpers.
+  // type ∈ 'live' | 'final' | 'pre'. Derives from the game-level resolver so a
+  // stale player_info record can never win over the authoritative game object.
+  function _gameStatus(pid) {
+    var s = _playerGameState(pid);
+    if (s.type === 'final') return { label: 'FINAL', type: 'final' };
+    if (s.type === 'live')  return { label: s.label || 'LIVE', type: 'live' };
+    return { label: s.label || '', type: 'pre' };
+  }
+
+  // ── Fantasy matchup state ──────────────────────────────────────────────────
+  // Per-side player counts by NFL game state. Bye/empty players are excluded
+  // from `total` (they are not "relevant" to still-to-play), never counted as
+  // upcoming, and never stuck as such. Counts derive from the normalized game
+  // status only -- never from fantasy points, a 0.0 score, or a shown clock.
+  function _sideCounts(matchup) {
+    var c = { total: 0, final: 0, live: 0, upcoming: 0, unknown: 0, bye: 0 };
+    if (!matchup) return c;
+    (matchup.starters || []).forEach(function(pid) {
+      if (pid === '0') return;
+      var s = _playerGameState(pid).type;
+      if (s === 'empty') return;
+      if (s === 'bye') { c.bye++; return; }
+      c.total++;
+      if (s === 'final') c.final++;
+      else if (s === 'live') c.live++;
+      else if (s === 'upcoming') c.upcoming++;
+      else c.unknown++;
+    });
+    return c;
+  }
+
+  // Fantasy matchup state resolver (§15). A matchup is FINAL only when every
+  // relevant starter's NFL game is actually complete -- never because a single
+  // player's game ended, and never from the fantasy score. LIVE takes
+  // precedence over TO PLAY; unknown-only falls back to a neutral state.
+  function _matchupState(a, b) {
+    var ca = _sideCounts(a), cb = _sideCounts(b);
+    var live = ca.live + cb.live;
+    var upcoming = ca.upcoming + cb.upcoming;
+    var unknown = ca.unknown + cb.unknown;
+    var total = ca.total + cb.total;
+    var state;
+    if (live > 0) state = 'live';
+    else if (upcoming > 0) state = 'toplay';
+    else if (total > 0 && unknown === 0) state = 'final';
+    else state = 'unknown';
+    return {
+      state: state, a: ca, b: cb,
+      toPlayA: ca.upcoming, toPlayB: cb.upcoming,
+      liveA: ca.live, liveB: cb.live
+    };
+  }
+
+  // Center status column shared by every fantasy matchup card / row.
+  function _matchupCenterHtml(a, b) {
+    var ms = _matchupState(a, b);
+    if (ms.state === 'live') {
+      return '<div class="rz-mc-state live">LIVE</div>'
+        + '<div class="rz-mc-playing-counts">' + ms.liveA
+        + '<span class="rz-mc-to-play-divider">|</span>' + ms.liveB + '</div>'
+        + '<div class="rz-mc-substate">PLAYING</div>';
+    }
+    if (ms.state === 'toplay') {
+      return '<div class="rz-mc-state toplay">TO PLAY</div>'
+        + '<div class="rz-mc-to-play-counts">' + ms.toPlayA
+        + '<span class="rz-mc-to-play-divider">|</span>' + ms.toPlayB + '</div>';
+    }
+    if (ms.state === 'final') return '<div class="rz-mc-state final">FINAL</div>';
+    return '<div class="rz-mc-state neutral">–</div>';
+  }
+
+  // Minimal HTML-attribute escape for aria-label text.
+  function _esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  // Screen-reader summary for a fantasy matchup card (§21).
+  function _matchupAria(nameA, ptsA, nameB, ptsB, ms) {
+    var s = nameA + ' ' + _fmt(ptsA) + ', ' + nameB + ' ' + _fmt(ptsB);
+    if (ms.state === 'toplay') {
+      s += ', ' + ms.toPlayA + ' players to play versus ' + ms.toPlayB + ' players to play';
+    } else if (ms.state === 'live') {
+      s += ', live: ' + ms.liveA + ' versus ' + ms.liveB + ' players in play';
+    } else if (ms.state === 'final') {
+      s += ', final';
+    }
+    return s;
   }
   function _gameLine(pid) {
     var p = (_state.player_info || {})[pid] || {};
@@ -1718,32 +1855,53 @@
 
   // ── Filters ────────────────────────────────────────────────────────────────────
   function _nflMatchupOptions() {
-    // Unique NFL games from player_info (away @ home), keyed by game_id.
+    // Unique NFL games (away @ home) keyed by game_id. Prefer the authoritative
+    // `_state.games` collection; fall back to deriving from player_info so an
+    // older payload still yields a usable list.
     var byId = {};
+    var addRow = function(gid, away, home, code, epoch) {
+      if (!gid || !away || !home || byId[gid]) return;
+      byId[gid] = {
+        id: gid,
+        label: away + ' @ ' + home,
+        away: away,
+        home: home,
+        code: String(code || '0'),
+        epoch: parseFloat(epoch || 0) || 0
+      };
+    };
+    var games = _state.games || {};
+    Object.keys(games).forEach(function(gid) {
+      var g = games[gid] || {};
+      addRow(gid, g.away || '', g.home || '', g.game_code, g.game_time_epoch);
+    });
     Object.keys(_state.player_info || {}).forEach(function(pid) {
       var p = _state.player_info[pid] || {};
-      var gid = p.game_id || '';
-      var away = p.away || '', home = p.home || '';
-      if (!gid || !away || !home) return;
-      if (!byId[gid]) {
-        byId[gid] = {
-          id: gid,
-          label: away + ' @ ' + home,
-          away: away,
-          home: home,
-          code: String(p.game_code || '0')
-        };
-      }
+      addRow(p.game_id || '', p.away || '', p.home || '', p.game_code, p.game_time_epoch);
     });
-    // Prefer live → upcoming → final so the chip bar stays useful on game day.
+    // Deterministic, stable slate order (§7): live → upcoming → final, then by
+    // kickoff time, then label. Sorting by kickoff (not mutable score/clock)
+    // keeps the row from reshuffling on every poll.
     var rank = function(c) { return c === '1' ? 0 : c === '0' ? 1 : 2; };
     return Object.keys(byId).map(function(k) { return byId[k]; }).sort(function(a, b) {
       var rd = rank(a.code) - rank(b.code);
       if (rd) return rd;
+      if (a.epoch !== b.epoch) return a.epoch - b.epoch;
       return a.label.localeCompare(b.label);
     });
   }
+  // Cleared at the top of each render/refresh pass so repeated per-player
+  // lookups within one pass don't re-sort PBP for the same game.
+  var _giCache = {};
+  function _resetGameCache() { _giCache = {}; }
   function _nflGameInfo(gid) {
+    if (!gid || gid === 'all') return null;
+    if (Object.prototype.hasOwnProperty.call(_giCache, gid)) return _giCache[gid];
+    var _row = _nflGameInfoUncached(gid);
+    _giCache[gid] = _row;
+    return _row;
+  }
+  function _nflGameInfoUncached(gid) {
     if (!gid || gid === 'all') return null;
     var games = _state.games || {};
     // Start with the server scoreboard when available, then enrich missing
@@ -1867,42 +2025,53 @@
     if (t === 'WSH') t = 'WAS';
     return '/static/images/team_logos/' + t + '.png';
   }
-  function _nflBoardSitLine(g) {
-    if (!g) return '';
+  // Live down-and-distance line. Returns '' unless the game is actually live,
+  // so a final/pregame board never carries stale D&D (§2).
+  function _nflBoardSitLine(g, norm) {
+    if (!g || norm !== 'live') return '';
     var dd = _downDist({ down: g.down, distance: g.distance });
     var bits = [];
     if (dd) bits.push(dd);
     if (g.yard_line) bits.push(g.yard_line);
     return bits.join(' · ');
   }
-  function _nflBoardClockLine(g) {
+  // Centered status line. FINAL / HALFTIME / kickoff / "Q3 · 7:42" -- driven by
+  // the normalized game status, never a raw code guess.
+  function _nflBoardClockLine(g, norm) {
     if (!g) return '';
-    var code = String(g.game_code || '');
-    if (code === '2' || String(g.game_status || '').toLowerCase().indexOf('final') >= 0) return 'FINAL';
-    if (code === '0') {
+    if (norm === 'final') return 'FINAL';
+    if (norm === 'halftime') return 'HALFTIME';
+    if (norm === 'pregame' || norm === 'delayed') {
+      if (norm === 'delayed') return g.game_status || 'Delayed';
       var ep = parseFloat(g.game_time_epoch || 0);
       if (ep) return _fmtKickoff(ep);
       return g.game_status || 'Upcoming';
     }
-    var q = _fmtQuarter(g.game_quarter || '');
-    var clk = g.game_clock || '';
-    var mid = [q, clk].filter(Boolean).join(' ');
-    return mid || (g.game_status || 'LIVE');
+    if (norm === 'live') {
+      var q = _fmtQuarter(g.game_quarter || '');
+      var clk = g.game_clock || '';
+      var mid = [q, clk].filter(Boolean).join(' · ');
+      return mid || 'LIVE';
+    }
+    return g.game_status || '';
   }
   function _renderNflBoard() {
     if (_filters.nfl === 'all') return '';
     var g = _nflGameInfo(_filters.nfl);
     if (!g || (!g.away && !g.home)) return '';
+    var norm = _normGameStatus(g);
+    var live = norm === 'live' || norm === 'halftime';
+    var isFinal = norm === 'final';
     var away = g.away || '--', home = g.home || '--';
     var aPts = (g.away_pts === '' || g.away_pts == null) ? '–' : g.away_pts;
     var hPts = (g.home_pts === '' || g.home_pts == null) ? '–' : g.home_pts;
     var poss = String(g.possession || '').toUpperCase();
-    var awayPoss = poss && poss === String(away).toUpperCase();
-    var homePoss = poss && poss === String(home).toUpperCase();
-    var sit = _nflBoardSitLine(g);
-    var clock = _nflBoardClockLine(g);
-    var code = String(g.game_code || '');
-    var live = code === '1';
+    // Possession is a *current* marker -- only meaningful for a live game (§2).
+    var awayPoss = norm === 'live' && poss && poss === String(away).toUpperCase();
+    var homePoss = norm === 'live' && poss && poss === String(home).toUpperCase();
+    var sit = _nflBoardSitLine(g, norm);
+    var clock = _nflBoardClockLine(g, norm);
+    var stateCls = ' is-' + norm;
     var logo = function(abv) {
       var src = _teamLogoSrc(abv);
       if (!src) return '<span class="rz-nfl-abv-only">' + abv + '</span>';
@@ -1924,14 +2093,80 @@
       return '<div class="rz-nfl-side rz-nfl-' + align + (hasBall ? ' has-ball' : '') + '">'
         + contents + '</div>';
     };
-    return '<div class="rz-nfl-board' + (live ? ' is-live' : '') + '" id="rz-nfl-board">'
+    var liveDot = live && norm === 'live' ? '<span class="rz-nfl-live-dot" aria-hidden="true"></span>' : '';
+    return '<div class="rz-nfl-board' + stateCls + (live ? ' is-live' : '') + '" id="rz-nfl-board">'
       + side(away, aPts, awayPoss, 'away')
       + '<div class="rz-nfl-mid">'
-      + '<div class="rz-nfl-clock">' + clock + '</div>'
+      + '<div class="rz-nfl-clock">' + liveDot + clock + '</div>'
       + (sit ? '<div class="rz-nfl-sit">' + sit + '</div>' : '')
       + '</div>'
       + side(home, hPts, homePoss, 'home')
       + '</div>';
+  }
+
+  // Compact centered status for an NFL game pill.
+  function _gamePillStatus(g, norm) {
+    if (norm === 'final') return 'FINAL';
+    if (norm === 'halftime') return 'HALF';
+    if (norm === 'delayed') return 'DELAYED';
+    if (norm === 'live') {
+      var mid = [_fmtQuarter(g.game_quarter || ''), g.game_clock || ''].filter(Boolean).join(' ');
+      return mid || 'LIVE';
+    }
+    var ep = parseFloat((g && g.game_time_epoch) || 0);
+    if (ep) {
+      var d = new Date(ep * 1000);
+      if (!isNaN(d.getTime())) return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    }
+    return (g && g.game_status) || 'PRE';
+  }
+
+  // ESPN-style horizontal NFL game selector (§4). One pill per NFL game plus an
+  // "All" pill, all bound to the single canonical filter (`_filters.nfl`) so it
+  // stays in lock-step with the Filter panel's Matchup control -- no second
+  // game-selection state. Hidden entirely when there are no NFL games (§20).
+  function _renderGameStrip() {
+    var opts = _nflMatchupOptions();
+    if (!opts.length) return '';
+    var selectedAll = _filters.nfl === 'all';
+    var pills = '<button type="button" class="rz-game-pill rz-game-pill-all'
+      + (selectedAll ? ' is-selected' : '') + '" data-nfl-gid="all"'
+      + ' aria-pressed="' + (selectedAll ? 'true' : 'false') + '"'
+      + ' aria-label="Show all NFL games">'
+      + '<span class="rz-gp-all">ALL</span></button>';
+    var logo = function(abv) {
+      var src = _teamLogoSrc(abv);
+      if (!src) return '<span class="rz-gp-logo rz-gp-logo-txt">' + abv + '</span>';
+      return '<img class="rz-gp-logo" src="' + src + '" alt="" data-team="' + abv + '"'
+        + ' onerror="var t=this.getAttribute(\'data-team\');if(t&&!this._espnFallback){this._espnFallback=1;this.src=(window.brTeamLogoEspn?window.brTeamLogoEspn(t):\'\');}else{this.style.display=\'none\';}">';
+    };
+    pills += opts.map(function(o) {
+      var g = _nflGameInfo(o.id) || o;
+      var norm = _normGameStatus(g);
+      var selected = _filters.nfl === o.id;
+      var aPts = (g.away_pts === '' || g.away_pts == null) ? '' : g.away_pts;
+      var hPts = (g.home_pts === '' || g.home_pts == null) ? '' : g.home_pts;
+      var status = _gamePillStatus(g, norm);
+      var aria = o.away + ' ' + (aPts || '') + ' at ' + o.home + ' ' + (hPts || '') + ', ' + status;
+      var teamRow = function(abv, pts, side) {
+        return '<span class="rz-gp-team ' + side + '">'
+          + logo(abv)
+          + '<span class="rz-gp-abv">' + abv + '</span>'
+          + '<span class="rz-gp-score">' + (pts === '' ? '' : pts) + '</span>'
+          + '</span>';
+      };
+      return '<button type="button" class="rz-game-pill is-' + norm
+        + (selected ? ' is-selected' : '') + '" data-nfl-gid="' + o.id + '"'
+        + ' aria-pressed="' + (selected ? 'true' : 'false') + '"'
+        + ' aria-label="' + _esc(aria) + '">'
+        + teamRow(o.away, aPts, 'away')
+        + '<span class="rz-gp-status">' + status + '</span>'
+        + teamRow(o.home, hPts, 'home')
+        + '</button>';
+    }).join('');
+    return '<div class="rz-game-strip">'
+      + '<div class="rz-game-strip-scroll" role="group" aria-label="NFL games">'
+      + pills + '</div></div>';
   }
 
   function _renderFilterChips() {
@@ -2043,13 +2278,19 @@
     return;
   }
 
+  // Starters whose NFL game is not yet complete (live OR upcoming). Byes and
+  // empty slots don't count. Uses the authoritative game-level state, not the
+  // player's raw game_code, so a stale "final" record can't drop the count.
   function _playersLeft(matchup) {
     if (!matchup) return 0;
-    return (matchup.starters || []).filter(function(pid) {
-      if (pid === '0') return false;
-      var code = ((_state.player_info || {})[pid] || {}).game_code || '0';
-      return code !== '2'; // not final
-    }).length;
+    var c = _sideCounts(matchup);
+    return c.live + c.upcoming;
+  }
+  // Starters whose NFL game has not started yet ("to play"). Live players are
+  // deliberately excluded (§14). Byes/empty never count.
+  function _playersToPlay(matchup) {
+    if (!matchup) return 0;
+    return _sideCounts(matchup).upcoming;
   }
 
   function _renderHero() {
@@ -2117,16 +2358,23 @@
       var pair = groups[mid], a = pair[0], b = pair[1];
       if (!b) return;
       var ptsA = parseFloat(a.points || 0), ptsB = parseFloat(b.points || 0), aLead = ptsA >= ptsB;
-      var anyLive = false;
-      [a, b].forEach(function(m) { (m.starters || []).forEach(function(pid) { if (_gameStatus(pid).type === 'live') anyLive = true; }); });
+      var ms = _matchupState(a, b);
+      var anyLive = ms.state === 'live';
       var isClose = anyLive && Math.abs(ptsA - ptsB) < 5;
+      var lbMid = ms.state === 'live'
+        ? '<span class="rz-lb-live">LIVE</span>'
+        : ms.state === 'toplay'
+          ? '<span class="rz-lb-toplay">' + ms.toPlayA + '<span class="rz-mc-to-play-divider">|</span>' + ms.toPlayB + '</span>'
+          : ms.state === 'final'
+            ? '<span class="rz-lb-final">FINAL</span>'
+            : '<span class="rz-lb-final">–</span>';
       rows += (
         '<div class="rz-lb-row' + (isClose ? ' close' : '') + '">'
         + '<div class="rz-lb-team' + (aLead ? ' lead' : '') + '">'
         +   '<span class="rz-lb-name">' + (_ownerName(a.roster_id) || 'Team') + '</span>'
         +   '<span class="rz-lb-score">' + _fmt(ptsA) + '</span>'
         + '</div>'
-        + '<div class="rz-lb-mid">' + (anyLive ? '<span class="rz-lb-live">LIVE</span>' : '<span class="rz-lb-final">FINAL</span>') + '</div>'
+        + '<div class="rz-lb-mid">' + lbMid + '</div>'
         + '<div class="rz-lb-team right' + (!aLead ? ' lead' : '') + '">'
         +   '<span class="rz-lb-score">' + _fmt(ptsB) + '</span>'
         +   '<span class="rz-lb-name">' + (_ownerName(b.roster_id) || 'Team') + '</span>'
@@ -2227,28 +2475,21 @@
         var opp = _oppOf(m);
         var myPts = parseFloat(m.points || 0), oppPts = parseFloat(opp ? opp.points || 0 : 0);
         var win = myPts >= oppPts;
-        var anyLive = false, anyFinal = false;
-        [m, opp].forEach(function(r) {
-          if (!r) return;
-          (r.starters || []).forEach(function(pid) {
-            var gs = _gameStatus(pid);
-            if (gs.type === 'live') anyLive = true;
-            if (gs.type === 'final') anyFinal = true;
-          });
-        });
+        var ms = _matchupState(m, opp);
         var rid = String(m.roster_id);
         var selected = _heroMid === rid;
-        var badge = anyLive ? '<span class="rz-mch-live">LIVE</span>' : anyFinal ? '<span class="rz-mch-final">FINAL</span>' : '<span class="rz-mch-pre">PRE</span>';
         var oppName = opp ? (_ownerName(opp.roster_id) || 'Opp') : 'Opp';
-        return '<div class="rz-mc-hero' + (selected ? ' selected' : '') + (anyLive ? ' is-live' : '') + '" data-heromid="' + rid + '">'
+        return '<div class="rz-mc-hero' + (selected ? ' selected' : '') + (ms.state === 'live' ? ' is-live' : '') + '" data-heromid="' + rid + '"'
+          + ' role="button" tabindex="0" aria-pressed="' + (selected ? 'true' : 'false') + '"'
+          + ' aria-label="' + _esc(_matchupAria('You', myPts, oppName, oppPts, ms)) + '">'
           + '<div class="rz-mch-league">' + (m.league_name || 'League') + '</div>'
           + '<div class="rz-mch-matchup">'
-          +   '<div class="rz-mch-side">'
+          +   '<div class="rz-mch-side rz-mc-team-left">'
           +     '<div class="rz-mch-owner viewer">Me</div>'
           +     '<div class="rz-mch-score' + (win ? ' lead' : '') + '" data-score-rid="' + String(m.roster_id) + '">' + _fmt(myPts) + '</div>'
           +   '</div>'
-          +   '<div class="rz-mch-vs">' + badge + '</div>'
-          +   '<div class="rz-mch-side right">'
+          +   '<div class="rz-mch-vs rz-mc-center">' + _matchupCenterHtml(m, opp) + '</div>'
+          +   '<div class="rz-mch-side right rz-mc-team-right">'
           +     '<div class="rz-mch-owner">' + oppName + '</div>'
           +     '<div class="rz-mch-score' + (!win ? ' lead' : '') + '" data-score-rid="' + (opp ? String(opp.roster_id) : '') + '">' + _fmt(oppPts) + '</div>'
           +   '</div>'
@@ -2279,26 +2520,22 @@
       var pair = groups[mid], a = pair[0], b = pair[1];
       if (!b) return '';
       var ptsA = parseFloat(a.points || 0), ptsB = parseFloat(b.points || 0), aLead = ptsA >= ptsB;
-      var anyLive = false, anyFinal = false;
-      [a, b].forEach(function(m) { (m.starters || []).forEach(function(pid) {
-        var gs = _gameStatus(pid);
-        if (gs.type === 'live') anyLive = true;
-        if (gs.type === 'final') anyFinal = true;
-      }); });
+      var ms = _matchupState(a, b);
       var selected = _heroMid === mid;
       var isViewer = mid === myMid;
-      var badge = anyLive ? '<span class="rz-mch-live">LIVE</span>' : anyFinal ? '<span class="rz-mch-final">FINAL</span>' : '<span class="rz-mch-pre">PRE</span>';
       var nameA = _ownerName(a.roster_id) || 'Team';
       var nameB = _ownerName(b.roster_id) || 'Team';
       var vA = _isMyRid(a.roster_id), vB = _isMyRid(b.roster_id);
-      return '<div class="rz-mc-hero' + (selected ? ' selected' : '') + (anyLive ? ' is-live' : '') + (isViewer ? ' viewer-matchup' : '') + '" data-heromid="' + mid + '">'
+      return '<div class="rz-mc-hero' + (selected ? ' selected' : '') + (ms.state === 'live' ? ' is-live' : '') + (isViewer ? ' viewer-matchup' : '') + '" data-heromid="' + mid + '"'
+        + ' role="button" tabindex="0" aria-pressed="' + (selected ? 'true' : 'false') + '"'
+        + ' aria-label="' + _esc(_matchupAria(nameA, ptsA, nameB, ptsB, ms)) + '">'
         + '<div class="rz-mch-matchup">'
-        +   '<div class="rz-mch-side">'
+        +   '<div class="rz-mch-side rz-mc-team-left">'
         +     '<div class="rz-mch-owner' + (vA ? ' viewer' : '') + '">' + nameA + '</div>'
         +     '<div class="rz-mch-score' + (aLead ? ' lead' : '') + '" data-score-rid="' + String(a.roster_id) + '">' + _fmt(ptsA) + '</div>'
         +   '</div>'
-        +   '<div class="rz-mch-vs">' + badge + '</div>'
-        +   '<div class="rz-mch-side right">'
+        +   '<div class="rz-mch-vs rz-mc-center">' + _matchupCenterHtml(a, b) + '</div>'
+        +   '<div class="rz-mch-side right rz-mc-team-right">'
         +     '<div class="rz-mch-owner' + (vB ? ' viewer' : '') + '">' + nameB + '</div>'
         +     '<div class="rz-mch-score' + (!aLead ? ' lead' : '') + '" data-score-rid="' + String(b.roster_id) + '">' + _fmt(ptsB) + '</div>'
         +   '</div>'
@@ -2412,11 +2649,12 @@
       var ptsA = parseFloat(a.points || 0), ptsB = parseFloat(b.points || 0), aLead = ptsA >= ptsB;
       var projA = a.projected_pts != null ? parseFloat(a.projected_pts) : null;
       var projB = b.projected_pts != null ? parseFloat(b.projected_pts) : null;
-      var anyLive = false, anyFinal = false;
-      [a, b].forEach(function(m) { (m.starters || []).forEach(function(pid) { var gs = _gameStatus(pid); if (gs.type === 'live') anyLive = true; if (gs.type === 'final') anyFinal = true; }); });
-      var isClose = anyLive && Math.abs(ptsA - ptsB) < 5;
-      var cls = anyLive ? 'live' : anyFinal ? 'final' : 'pre';
-      var statusLabel = anyLive ? 'LIVE' : anyFinal ? 'FINAL' : '';
+      var ms = _matchupState(a, b);
+      var isClose = ms.state === 'live' && Math.abs(ptsA - ptsB) < 5;
+      var cls = ms.state === 'live' ? 'live' : ms.state === 'final' ? 'final' : ms.state === 'toplay' ? 'toplay' : 'pre';
+      var statusLabel = ms.state === 'live' ? 'LIVE'
+        : ms.state === 'toplay' ? 'TO PLAY ' + ms.toPlayA + ' | ' + ms.toPlayB
+        : ms.state === 'final' ? 'FINAL' : '';
       var vA = _isMyRid(a.roster_id), vB = _isMyRid(b.roster_id);
       var lgHdr = a.league_name ? '<span class="rz-mc-league">' + a.league_name + '</span>' : '';
       var leftA = _playersLeft(a), leftB = _playersLeft(b);
@@ -2725,6 +2963,7 @@
   }
 
   function _syncFeed() {
+    _resetGameCache();
     var container = document.getElementById('rz-feed-list');
     if (!container) return;
 
@@ -2943,8 +3182,38 @@
     if (nextBtn && !nextDis) nextBtn.addEventListener('click', function() { _feedPage++; _syncFeed(); });
   }
 
+  // Wire the NFL game pills to the single canonical filter (`_filters.nfl`).
+  // A full _render() repaints the Filter panel from the same state, so both
+  // controls stay synchronized with no second selection state (§5, §23).
+  function _wireGameStrip(scrollToSelected) {
+    root.querySelectorAll('[data-nfl-gid]').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var next = btn.dataset.nflGid || 'all';
+        if (_filters.nfl === next) return; // re-tapping the selection is a no-op
+        _filters.nfl = next;
+        _filterOpen = false;
+        _feedPage = 0;
+        _render();
+      });
+    });
+    if (scrollToSelected) {
+      var sel = root.querySelector('.rz-game-pill.is-selected:not(.rz-game-pill-all)');
+      if (sel && sel.scrollIntoView) {
+        try { sel.scrollIntoView({ inline: 'nearest', block: 'nearest' }); }
+        catch (_) { /* older browsers: leave scroll as-is */ }
+      }
+    }
+  }
+
   function _wireHeroCards() {
     root.querySelectorAll('[data-heromid]').forEach(function(el) {
+      // Keyboard activation for the (role=button) matchup cards.
+      el.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
+          e.preventDefault();
+          el.click();
+        }
+      });
       el.addEventListener('click', function() {
         var mid = el.dataset.heromid;
         var prevMid = _heroMid;
@@ -3032,6 +3301,7 @@
   var _activeTab = 'plays';
 
   function _partialUpdate() {
+    _resetGameCache();
     // Update timer text
     var timerEl = document.getElementById('rz-timer');
     if (timerEl) { timerEl.textContent = _fmtTimer(_countdown); timerEl.classList.remove('rz-timer-refreshing'); }
@@ -3092,6 +3362,26 @@
       if (filterBtn) filterBtn.addEventListener('click', function() { _filterOpen = !_filterOpen; _render(); });
     }
 
+    // Refresh the NFL game pill strip in place (scores/status update) without
+    // moving its horizontal scroll position or yanking the page.
+    var stripEl = root.querySelector('.rz-game-strip');
+    if (stripEl && showFilters) {
+      var prevScroll = 0;
+      var prevScrollEl = stripEl.querySelector('.rz-game-strip-scroll');
+      if (prevScrollEl) prevScroll = prevScrollEl.scrollLeft;
+      var stripWrap = document.createElement('div');
+      stripWrap.innerHTML = _renderGameStrip();
+      var newStrip = stripWrap.firstChild;
+      if (newStrip) {
+        stripEl.parentNode.replaceChild(newStrip, stripEl);
+        var newScrollEl = newStrip.querySelector && newStrip.querySelector('.rz-game-strip-scroll');
+        if (newScrollEl && prevScroll) newScrollEl.scrollLeft = prevScroll;
+        _wireGameStrip(false);
+      } else {
+        stripEl.remove();
+      }
+    }
+
     // Refresh NFL matchup scoreboard (score / clock / d&d / possession)
     var boardEl = root.querySelector('#rz-nfl-board');
     var boardHtml = showFilters ? _renderNflBoard() : '';
@@ -3148,6 +3438,7 @@
 
   // ── Full render ───────────────────────────────────────────────────────────────
   function _render() {
+    _resetGameCache();
     var TABS = _tabsFor();
     if (!TABS.some(function(t) { return t.key === _activeTab; })) _activeTab = 'plays';
 
@@ -3214,6 +3505,7 @@
       + '<div class="rz-main-card">'
       + tabBar
       + (showFilters ? _renderFilterChips() : '')
+      + (showFilters ? _renderGameStrip() : '')
       + (showFilters ? _renderNflBoard() : '')
       + panels
       + '</div>'
@@ -3374,6 +3666,7 @@
 
     _wireHeroCards();
     _wireHeroScroll();
+    _wireGameStrip(true);
   }
 
   // ── Polling ───────────────────────────────────────────────────────────────────
