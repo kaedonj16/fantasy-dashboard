@@ -354,7 +354,7 @@ def test_pbp_feed_path_and_soft_rank():
     assert 'id="rz-bigplays-btn"' in src
     assert "function _loadPrefs(" in src
     assert "function _savePrefs(" in src
-    assert "rz-event-impact" in src
+    assert "rz-event-delta" in src
     assert "Try the Redzone demo" in src
 
 
@@ -364,7 +364,8 @@ def test_feed_is_chronological_newest_first():
     assert "function _chronoSort(" in src
     assert "function _chronoKey(" in src
     # The rendered feed and its maintenance both use the chronological sort.
-    assert "_chronoSort(_feed.filter(_eventMatches))" in src
+    assert "var filtered = _feed.filter(_eventMatches);" in src
+    assert "var list = _chronoSort(filtered);" in src
     assert "_feed = _chronoSort(_feed)" in src
 
 
@@ -373,7 +374,7 @@ def test_play_headlines_per_play_delta_with_muted_zero():
     a muted 0.0 for no-score plays — never a green '+0.0' or the running
     total masquerading as the play's points."""
     src = _rz()
-    assert "var deltaPrimary = (d > 0.0001 ? '+' : '') + _fmt(d);" in src
+    assert "var deltaPrimary = (d > 0.0001 ? '+' : (d < -0.0001 ? '' : '')) + _fmtFantasyDelta(d);" in src
     assert "d < -0.0001 ? 'neg' : 'zero'" in src
     # The old unconditional per-play string must be gone.
     assert "var ptStr = ev.pts > 0" not in src
@@ -413,7 +414,7 @@ def test_sleeper_style_situation_strip_and_yardage_chip():
     assert "rz-event-yd" in src
     assert ".rz-event-meta" in css and ".rz-event-rz" in css
     # The play carries its stat line so the yardage chip can be derived.
-    assert "statLine: line" in src
+    assert "statLine: primary.line" in src
 
 
 def test_running_cumulative_stat_line_rendered():
