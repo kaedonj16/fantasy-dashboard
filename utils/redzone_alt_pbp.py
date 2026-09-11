@@ -1,10 +1,10 @@
 """Alternate play-by-play sources for Redzone (Sleeper + ESPN).
 
-Tank01's experimental ``allPlayByPlay`` is preferred when it returns rows.
-When it does not, we try:
+ESPN's structured feed is the primary live source. The configurable fallback
+helper can also query Sleeper when ESPN and Tank01 do not return usable rows:
 
-1. Sleeper ``GET /scores/nfl/pbp/{game_id}`` (undocumented; often empty today)
-2. ESPN CDN ``/core/nfl/playbyplay?xhr=1&gameId=…`` (real booth lines)
+1. ESPN CDN ``/core/nfl/playbyplay?xhr=1&gameId=…`` (real booth lines)
+2. Sleeper ``GET /scores/nfl/pbp/{game_id}`` (undocumented; often empty today)
 
 Both normalize into the same shape as ``utils.redzone_pbp.extract_pbp_plays``.
 """

@@ -477,7 +477,7 @@ def test_app_falls_back_to_plain_boxscore_when_pbp_empty():
                                     app.index("pbp_by_game[gid] = plays") + 40]
     # Client is responsible for PBP-lines-only; server must not claim narrative diffs.
     assert "narrative diffs" not in app
-    # Alternate sources (Sleeper → ESPN) when Tank01 PBP is empty.
+    # ESPN is primary; Tank01 and then Sleeper provide fallback coverage.
     assert "fetch_alt_pbp_plays as _rz_fetch_alt_pbp_plays" in app
     assert "_rz_fetch_alt_pbp_plays" in app
     assert 'providers=("espn",)' in app

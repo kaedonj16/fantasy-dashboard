@@ -12449,7 +12449,8 @@ def _redzone_collect(platform, league_id, season, week):
                 logger.debug("[redzone] pbp parse failed game=%s", gid, exc_info=True)
                 pbp_by_game.setdefault(gid, [])
         elif want_pbp:
-            # No usable box at all -- still try Sleeper/ESPN for booth lines.
+            # No usable Tank01 box at all -- ESPN remains primary, with
+            # Sleeper as the final fallback.
             try:
                 alt = _rz_fetch_alt_pbp_plays(
                     gid,
