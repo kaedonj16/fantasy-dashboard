@@ -1019,20 +1019,28 @@ def generate_team_ai_result(team_ctx: dict, mode: str = "gm_memo") -> dict:
         },
     )
 
-    raw = clean_ai_text(resp.output_text.strip())
+    original = resp.output_text.strip()
     
-    if not raw:
+    if not original:
         import logging
         logger = logging.getLogger(__name__)
         logger.error(f"[ai {mode}] Empty response from OpenAI API. Response object: {resp}")
         raise ValueError(f"OpenAI API returned empty response for {mode}")
+    
+    raw = clean_ai_text(original)
+    
+    if not raw:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"[ai {mode}] Response became empty after cleaning. Original: {original[:200]}")
+        raise ValueError(f"OpenAI API returned response that became empty after cleaning for {mode}")
     
     try:
         data = json.loads(raw)
     except json.JSONDecodeError as e:
         import logging
         logger = logging.getLogger(__name__)
-        logger.error(f"[ai {mode}] Failed to parse JSON response. Raw text: {raw[:200]}")
+        logger.error(f"[ai {mode}] Failed to parse JSON response. Original: {original[:200]}, After cleaning: {raw[:200]}")
         raise ValueError(f"OpenAI API returned invalid JSON for {mode}: {e}") from e
 
     if not isinstance(data, dict):
