@@ -33462,7 +33462,7 @@ button:disabled {
     color: var(--rz-text);
     background: var(--rz-border);
     padding: 3px 7px;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     font-size: 9px;
     line-height: 1;
     white-space: nowrap;
