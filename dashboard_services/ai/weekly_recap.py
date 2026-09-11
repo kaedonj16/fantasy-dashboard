@@ -789,7 +789,16 @@ For "looking_ahead": if next_week_preview is null, return an empty string. Other
             }
         },
     )
-    return json.loads(clean_ai_text(resp.output_text.strip()))
+    
+    raw = clean_ai_text(resp.output_text.strip())
+    
+    if not raw:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error("[ai weekly_recap] Empty response from OpenAI API. Response object: %s", resp)
+        raise ValueError("OpenAI API returned empty response for weekly_recap")
+    
+    return json.loads(raw)
 
 
 def _render_recap_html(result: dict) -> str:

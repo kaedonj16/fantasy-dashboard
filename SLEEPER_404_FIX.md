@@ -1,28 +1,70 @@
-# Sleeper API 404 Logging Fix
+# Sleeper API 404 Handling Fix
 
 ## Problem
-The application was logging excessive WARNING-level messages with full tracebacks for 404 errors when fetching matchup data from the Sleeper API. These 404s are **expected behavior** for future weeks that haven't occurred yet.
+The application was raising HTTPError exceptions for 404 responses when fetching matchup data from the Sleeper API. These 404s are **expected behavior** for future weeks that haven't occurred yet.
 
-Example log spam:
+Example error:
 ```
-2026-09-11 10:03:02 WARNING  dashboard_services.matchups: get_matchups failed platform=sleeper league=887776065 week=2; synthesizing
-Traceback (most recent call last):
-  ...
-requests.exceptions.HTTPError: 404 Client Error: Not Found for url: https://api.sleeper.app/v1/league/887776065/matchups/2
+requests.exceptions.HTTPError: 404 Client Error: Not Found for url: https://api.sleeper.app/v1/league/887776065/matchups/16
 ```
 
-This was repeated for every future week (2-16), creating significant log noise.
+This was happening for weeks 16-17 (future weeks in September 2026), causing unnecessary exception handling overhead and potential log noise.
 
 ## Root Cause
-In `dashboard_services/matchups.py`, the `build_matchup_preview` function was catching all exceptions and logging them at WARNING level with full tracebacks (`exc_info=True`), regardless of whether the error was expected (404 for future weeks) or unexpected (500 server error, network timeout, etc.).
+In `dashboard_services/api.py`, the `get_matchups` function was calling `fetch_json` which raises HTTPError for all 4xx/5xx responses, including 404s. For matchups, 404s are expected when requesting future weeks that haven't been played yet.
 
-## Solution
-Modified the exception handler to differentiate between expected 404 errors and unexpected errors:
+## Solution (Two-Layer Defense)
 
-- **404 errors**: Logged at DEBUG level without traceback (expected for future weeks)
-- **Other errors**: Logged at WARNING level with full traceback (unexpected, needs investigation)
+### Layer 1: API Layer (Primary Fix)
+Modified three Sleeper API functions to catch 404 errors and return empty lists instead of raising:
 
-### Code Changes
+**File**: `@/Users/4353251/IdeaProjects/fantasy-dashboard/dashboard_services/api.py:415-422`
+
+```python
+@ttl_cache(ttl=300)
+def get_matchups(league_id: str, week: int) -> List[dict]:
+    try:
+        return fetch_json(f"/league/{league_id}/matchups/{week}")
+    except requests.HTTPError as e:
+        if e.response.status_code == 404:
+            return []
+        raise
+```
+
+**File**: `@/Users/4353251/IdeaProjects/fantasy-dashboard/dashboard_services/api.py:450-457`
+
+```python
+@ttl_cache(ttl=300)
+def get_transactions(league_id: str, week: int) -> List[dict]:
+    try:
+        return fetch_json(f"/league/{league_id}/transactions/{week}")
+    except requests.HTTPError as e:
+        if e.response.status_code == 404:
+            return []
+        raise
+```
+
+**File**: `@/Users/4353251/IdeaProjects/fantasy-dashboard/dashboard_services/api.py:460-467`
+
+```python
+@ttl_cache(ttl=300)
+def get_bracket(league_id: str, bracket: str) -> List[dict]:
+    try:
+        return fetch_json(f"/league/{league_id}/{bracket}_bracket")
+    except requests.HTTPError as e:
+        if e.response.status_code == 404:
+            return []
+        raise
+```
+
+These changes prevent 404s from propagating up the stack entirely for:
+- **Matchups**: Future weeks that haven't been played yet
+- **Transactions**: Future weeks or weeks with no transactions
+- **Brackets**: Leagues without playoffs or before playoffs start
+
+### Layer 2: Service Layer (Existing Defense)
+The service layer in `dashboard_services/matchups.py` already has exception handling that differentiates between 404s and other errors:
+
 **File**: `@/Users/4353251/IdeaProjects/fantasy-dashboard/dashboard_services/matchups.py:110-125`
 
 ```python
@@ -44,21 +86,34 @@ except Exception as e:
     mlist = []
 ```
 
+With the API layer fix, this code path won't be triggered for 404s anymore, but it remains as a safety net.
+
 ## Impact
-- **Reduced log noise**: 404 errors for future weeks no longer spam WARNING logs
-- **Preserved debugging**: Unexpected errors still get full WARNING logs with tracebacks
-- **No functional change**: The application still synthesizes matchups when data is unavailable
+- **Eliminated exceptions**: 404 errors for future weeks no longer raise exceptions at all
+- **Better performance**: No exception handling overhead for expected 404s
+- **Cleaner logs**: No log messages at all for expected 404s (they're handled silently)
+- **Preserved debugging**: Unexpected errors (500, timeouts) still get full WARNING logs with tracebacks
+- **No functional change**: The application still returns empty matchups for future weeks
 - **Better observability**: Easier to spot actual problems in logs
 
 ## Testing
-Created comprehensive test suite in `@/Users/4353251/IdeaProjects/fantasy-dashboard/tests/test_matchup_404_handling.py`:
-- ✅ 404 errors logged at DEBUG level without traceback
+Created comprehensive test suite:
+
+**API Layer Tests** (`@/Users/4353251/IdeaProjects/fantasy-dashboard/tests/test_sleeper_api_404_handling.py`):
+- ✅ `get_matchups` returns empty list for 404 errors
+- ✅ `get_matchups` raises for 500 errors
+- ✅ `get_matchups` returns data on success
+- ✅ `get_matchups` raises for network errors
+
+**Service Layer Tests** (`@/Users/4353251/IdeaProjects/fantasy-dashboard/tests/test_matchup_404_handling.py`):
+- ✅ 404 errors logged at DEBUG level without traceback (if they reach service layer)
 - ✅ 500 errors logged at WARNING level with traceback
 - ✅ Generic exceptions logged at WARNING level with traceback
 - ✅ Matchup synthesis still works correctly
 
 ## Verification
-To verify the fix in production, check logs for:
-- DEBUG messages like: `get_matchups 404 (future week) platform=sleeper league=... week=...; synthesizing`
-- No WARNING messages for 404 errors
-- WARNING messages still appear for non-404 errors (500, timeouts, etc.)
+To verify the fix in production:
+- **No 404 exceptions**: Should not see `HTTPError: 404 Client Error` for matchups endpoints
+- **No log spam**: Should not see WARNING logs for future week matchups
+- **Graceful degradation**: Future weeks should show empty/synthesized matchups without errors
+- **Other errors still logged**: 500 errors, timeouts, etc. should still appear in WARNING logs

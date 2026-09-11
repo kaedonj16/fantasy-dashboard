@@ -547,6 +547,19 @@
         if (String(o.matchup_id) === mid && !_isMyRid(o.roster_id)) oppRosters.add(String(o.roster_id));
       });
     });
+    
+    // When a hero matchup is active, also include all rosters in that matchup
+    // so filtered matchups display correct mine/opp flags even when viewer isn't in them
+    if (_heroMid && _scope === 'league') {
+      (data.matchups || []).forEach(function(m) {
+        if (String(m.matchup_id) === _heroMid) {
+          var rid = String(m.roster_id);
+          if (_isMyRid(rid)) myRosters.add(rid);
+          else oppRosters.add(rid);
+        }
+      });
+    }
+    
     var pidToRoster = {};
     (data.matchups || []).forEach(function(m) {
       (m.players || m.starters || []).forEach(function(pid) {

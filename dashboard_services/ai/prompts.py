@@ -774,6 +774,13 @@ def generate_power_rankings_result(rankings_ctx: dict) -> dict:
     )
 
     raw = clean_ai_text(resp.output_text.strip())
+    
+    if not raw:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error("[ai power_rankings] Empty response from OpenAI API. Response object: %s", resp)
+        raise ValueError("OpenAI API returned empty response for power_rankings")
+    
     data = json.loads(raw)
 
     if not isinstance(data, dict):
@@ -929,6 +936,13 @@ Trade suggestions context:
     )
 
     raw = clean_ai_text(resp.output_text.strip())
+    
+    if not raw:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error("[ai trade_suggestions] Empty response from OpenAI API. Response object: %s", resp)
+        raise ValueError("OpenAI API returned empty response for trade_suggestions")
+    
     data = json.loads(raw)
 
     if not isinstance(data, dict):
@@ -1006,6 +1020,13 @@ def generate_team_ai_result(team_ctx: dict, mode: str = "gm_memo") -> dict:
     )
 
     raw = clean_ai_text(resp.output_text.strip())
+    
+    if not raw:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"[ai {mode}] Empty response from OpenAI API. Response object: {resp}")
+        raise ValueError(f"OpenAI API returned empty response for {mode}")
+    
     data = json.loads(raw)
 
     if not isinstance(data, dict):

@@ -3178,18 +3178,8 @@ const _advMetricsCache = new Map();
 const _advRanksCache = new Map(); // session cache for player-metric-ranks responses
 let _advMetricsToken = 0; // incremented on each loadAdvancedMetrics call; guards stale callbacks
 
-// Fetch with a hard timeout so a hung request (slow cold server, dropped
-// connection that never errors) can't leave the Advanced Metrics tab spinning
-// forever -- it aborts and rejects, which the caller turns into a Retry.
-// @public-js:include-start  (shared fetch helper used by core/public-page code)
-function _advFetch(url, ms, init) {
-  const ctl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
-  const t = ctl ? setTimeout(function() { ctl.abort(); }, ms || 12000) : null;
-  const opts = Object.assign({}, init || {}, ctl ? { signal: ctl.signal } : {});
-  return fetch(url, opts)
-    .finally(function() { if (t) clearTimeout(t); });
-}
-// @public-js:include-end
+// _advFetch is now defined in app.js (with @public-js:include markers) so it's
+// available in all bundles: app.min.js, public.js, and app-features.js.
 
 // ── Advanced-metrics config cache ────────────────────────────────────────────
 // Fetches LEADERBOARD_METRICS in frontend format once; cached for the session.

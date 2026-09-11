@@ -398,7 +398,15 @@ def _generate_recap_ai_result(payload: dict) -> dict:
         },
     )
 
-    data = json.loads(clean_ai_text(resp.output_text.strip()))
+    raw = clean_ai_text(resp.output_text.strip())
+    
+    if not raw:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error("[ai season_recap] Empty response from OpenAI API. Response object: %s", resp)
+        raise ValueError("OpenAI API returned empty response for season_recap")
+    
+    data = json.loads(raw)
     return data
 
 
