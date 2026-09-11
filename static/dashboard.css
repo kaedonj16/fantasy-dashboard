@@ -33291,13 +33291,6 @@ button:disabled {
     color: var(--rz-text);
 }
 
-@media (max-width: 430px) {
-    .rz-feed-hdr {
-        flex-wrap: wrap;
-        gap: 8px;
-    }
-}
-
 /* ── Feed list ────────────────────────── */
 #rz-feed-list {
     display: flex;

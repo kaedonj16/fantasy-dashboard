@@ -4307,8 +4307,8 @@
     // numeric 0-100 chip for Pick Score (pool-relative on live surfaces).
     var _isRec = opts.rank && p._ds != null;
     var psChip = _isRec
-      ? '<div class="dr-ba-pschip dr-ba-recchip" title="Recommendation Rank -- who to draft now (Decision Score order). Not Pick Score.">#' + opts.rank + '<small>REC</small></div>'
-      : (ps != null ? '<div class="dr-ba-pschip" style="color:' + psColor(ps) + ';background:' + psColor(ps) + '1a;" title="Pick Score vs best available -- player quality at this pick, not Recommendation Rank">'+ ps + '<small>PS</small></div>' : '');
+      ? '<div class="dr-ba-pschip dr-ba-recchip" title="Recommendation Rank — who to draft now (Decision Score order). Not Pick Score.">#' + opts.rank + '<small>REC</small></div>'
+      : (ps != null ? '<div class="dr-ba-pschip" style="color:' + psColor(ps) + ';background:' + psColor(ps) + '1a;" title="Pick Score vs best available — player quality at this pick, not Recommendation Rank">'+ ps + '<small>PS</small></div>' : '');
     var availClass = '';
     var availLine = '';
     if (opts.availAt){
@@ -7831,7 +7831,7 @@
       { v: fmtAdpDelta(netValue), l: 'Net ADP value (capped)', cls: netValue >= 0 ? 'good' : 'bad' },
       { v: nValues, l: 'Values (fell 3+ to you)', cls: 'good' },
       { v: nReaches, l: isRookieDraft() ? 'Reaches vs ADP' : 'Reaches (early 5+, could wait)', cls: nReaches ? 'bad' : '' },
-      { v: g.avgPs != null ? g.avgPs : '--', l: 'Avg Board PS' }
+      { v: g.avgPs != null ? g.avgPs : '—', l: 'Avg Board PS' }
     ];
     tileDefs.forEach(function(t){
       tiles += '<div class="dd-tile ' + (t.cls || '') + '"><div class="dd-tile-v">' + t.v + '</div><div class="dd-tile-l">' + t.l + '</div></div>';
