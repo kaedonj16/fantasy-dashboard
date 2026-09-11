@@ -1209,8 +1209,8 @@
           playKey: playKey,
           contribKey: contribKey,
           rawPlayText: play.play_text || '',
-          quarter: play.quarter || '',
-          clock: play.clock || '',
+          quarter: play.quarter || ((newData.player_info || {})[pid] || {}).game_quarter || '',
+          clock: play.clock || ((newData.player_info || {})[pid] || {}).game_clock || '',
           down: play.down || '',
           distance: play.distance || '',
           yardLine: play.yard_line || '',
@@ -2521,11 +2521,9 @@
     if (pi.away && pi.home && !(pi.away_pts === '' && pi.home_pts === '')) {
       scoreStr = pi.away + ' ' + (pi.away_pts || '0') + '–' + (pi.home_pts || '0') + ' ' + pi.home;
     }
-    var gameState = scoreStr ? '<span class="rz-event-score">' + scoreStr + '</span>' : '';
-    var situationHtml = (situation || rzBadge || gameState)
+    var situationHtml = (situation || rzBadge)
       ? '<div class="rz-event-meta">'
         + '<span class="rz-event-situation">' + situation + rzBadge + '</span>'
-        + '<span class="rz-event-gamestate">' + gameState + '</span>'
         + '</div>'
       : '';
     // Yardage this player gained on the play (Sleeper's "+12 YD" chip).
@@ -2572,7 +2570,10 @@
       + cumeHtml
       + '</div>'
       + '<div class="rz-event-delta ' + deltaCls + '">'
-      + (clockStr ? '<div class="rz-event-clock">' + clockStr + '</div>' : '')
+      + ((scoreStr || clockStr) ? '<div class="rz-event-delta-game">'
+        + (scoreStr ? '<div class="rz-event-score">' + scoreStr + '</div>' : '')
+        + (clockStr ? '<div class="rz-event-clock">' + clockStr + '</div>' : '')
+        + '</div>' : '')
       + '<div class="rz-event-delta-pts">' + (deltaPrimary || '') + '</div>'
       + (deltaSecondary ? '<div class="rz-event-total"><span>' + deltaSecondary + '</span> total</div>' : '')
       + '</div>'

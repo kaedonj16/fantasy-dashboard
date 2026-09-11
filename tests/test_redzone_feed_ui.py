@@ -22,11 +22,16 @@ def test_play_summary_groups_clock_delta_and_labeled_total():
     )[1][:500]
 
     assert "rz-event-clock" in delta_markup
+    assert "rz-event-score" in delta_markup
+    assert delta_markup.index("rz-event-score") < delta_markup.index(
+        "rz-event-delta-pts"
+    )
     assert "rz-event-delta-pts" in delta_markup
     assert "rz-event-total" in delta_markup
     assert "</span> total" in delta_markup
     assert ".rz-event-delta {" in DASHBOARD_CSS
     assert "border-radius: 10px;" in DASHBOARD_CSS
+    assert ".rz-event-delta-game {" in DASHBOARD_CSS
 
 
 def test_latest_order_is_comparable_across_simultaneous_games():

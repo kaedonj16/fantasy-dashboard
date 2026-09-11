@@ -409,7 +409,7 @@ def test_sleeper_style_situation_strip_and_yardage_chip():
     css = (_ROOT / "static" / "dashboard.css").read_text(encoding="utf-8")
     assert "function _isRedZone(" in src
     assert "rz-event-meta" in src and "rz-event-situation" in src
-    assert "rz-event-gamestate" in src
+    assert "rz-event-delta-game" in src
     assert '<span class="rz-event-rz">RZ</span>' in src
     assert "rz-event-yd" in src
     assert ".rz-event-meta" in css and ".rz-event-rz" in css
@@ -477,9 +477,11 @@ def test_app_falls_back_to_plain_boxscore_when_pbp_empty():
                                     app.index("pbp_by_game[gid] = plays") + 40]
     # Client is responsible for PBP-lines-only; server must not claim narrative diffs.
     assert "narrative diffs" not in app
-    # Alternate sources (Sleeper → ESPN) when Tank01 PBP is empty.
+    # ESPN is primary; Tank01 and then Sleeper provide fallback coverage.
     assert "fetch_alt_pbp_plays as _rz_fetch_alt_pbp_plays" in app
     assert "_rz_fetch_alt_pbp_plays" in app
+    assert 'providers=("espn",)' in app
+    assert app.index('providers=("espn",)') < app.index("_rz_extract_pbp_plays(", app.index('providers=("espn",)'))
 
 
 def test_events_from_pbp_resolves_name_when_pid_missing():

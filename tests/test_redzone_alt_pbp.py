@@ -5,10 +5,37 @@ from utils.redzone_alt_pbp import (
     extract_espn_pbp_plays,
     extract_espn_scoreboard_lookup,
     extract_sleeper_pbp_plays,
+    fetch_alt_pbp_plays,
     parse_pbp_play_stats,
     parse_tank_game_id,
     pids_mentioned_in_text,
 )
+
+
+def test_alternate_pbp_defaults_to_espn_first(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        "utils.redzone_alt_pbp.fetch_espn_event_id",
+        lambda **kwargs: calls.append("espn") or "event-1",
+    )
+    monkeypatch.setattr(
+        "utils.redzone_alt_pbp.fetch_espn_pbp", lambda *args, **kwargs: {"ok": 1}
+    )
+    monkeypatch.setattr(
+        "utils.redzone_alt_pbp.extract_espn_pbp_plays",
+        lambda *args, **kwargs: [{"play_id": "espn-1"}],
+    )
+    monkeypatch.setattr(
+        "utils.redzone_alt_pbp.sleeper_game_id_for_matchup",
+        lambda **kwargs: calls.append("sleeper") or "sleeper-1",
+    )
+
+    plays = fetch_alt_pbp_plays(
+        "20260909_NE@SEA", season=2026, week=1
+    )
+
+    assert plays == [{"play_id": "espn-1"}]
+    assert calls == ["espn"]
 
 
 def test_attach_cumulative_builds_running_totals_in_order():
