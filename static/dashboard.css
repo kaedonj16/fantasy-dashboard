@@ -32923,30 +32923,6 @@ button:disabled {
 }
 .rz-mt-bench-sum::-webkit-details-marker { display: none; }
 
-/* Play card: delta + running total */
-.rz-event-delta {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 2px;
-}
-.rz-event-delta-pts {
-    font-size: 15px;
-    font-weight: 900;
-    line-height: 1;
-}
-.rz-event-total {
-    font-size: 11px;
-    font-weight: 700;
-    color: var(--rz-muted);
-    font-variant-numeric: tabular-nums;
-    line-height: 1;
-}
-.rz-event.td .rz-event-total {
-    color: #b45309;
-}
-
-
 @keyframes rz-score-flash {
     0% {
         color: var(--rz-green);
@@ -33291,50 +33267,6 @@ button:disabled {
     color: var(--rz-text);
 }
 
-/* Feed sort toggle */
-.rz-feed-sort {
-    display: flex;
-    gap: 0;
-    background: var(--rz-bg);
-    border: 1px solid var(--rz-border);
-    border-radius: 6px;
-    overflow: hidden;
-}
-
-.rz-sort-btn {
-    padding: 4px 10px;
-    font-size: 10px;
-    font-weight: 600;
-    color: var(--rz-muted);
-    background: transparent;
-    border: none;
-    cursor: pointer;
-    transition: all .15s;
-    text-transform: uppercase;
-    letter-spacing: 0.3px;
-}
-
-.rz-sort-btn:hover {
-    background: var(--rz-hover);
-    color: var(--rz-text);
-}
-
-.rz-sort-btn.active {
-    background: var(--rz-primary);
-    color: white;
-}
-
-@media (max-width: 430px) {
-    .rz-feed-hdr {
-        flex-wrap: wrap;
-        gap: 8px;
-    }
-    .rz-feed-sort {
-        flex: 1;
-        min-width: 140px;
-    }
-}
-
 /* ── Feed list ────────────────────────── */
 #rz-feed-list {
     display: flex;
@@ -33524,14 +33456,12 @@ button:disabled {
 }
 
 .rz-event-clock {
-    display: inline-block;
     font-weight: 700;
     font-variant-numeric: tabular-nums;
-    color: var(--rz-text);
-    background: var(--rz-border);
-    padding: 0 5px;
-    border-radius: 6px;
-    font-size: 10px;
+    color: var(--rz-muted);
+    font-size: 9px;
+    line-height: 1;
+    white-space: nowrap;
 }
 
 .rz-event-myteam {
@@ -33561,13 +33491,55 @@ button:disabled {
 
 /* ── Points ───────────────────────────── */
 .rz-event-delta {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 3px;
+    min-width: 66px;
+    padding: 6px 8px;
+    border: 1px solid var(--rz-border);
+    border-radius: 10px;
+    background: var(--rz-surface);
     font-size: 15px;
     font-weight: 900;
     flex-shrink: 0;
-    min-width: 44px;
     text-align: right;
     font-variant-numeric: tabular-nums;
     line-height: 1;
+}
+
+.rz-event-delta-pts {
+    font-size: 17px;
+    letter-spacing: -.02em;
+}
+
+.rz-event-delta-game {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 3px;
+    color: var(--rz-muted);
+    font-size: 9px;
+    font-weight: 800;
+    white-space: nowrap;
+}
+
+.rz-event-delta-game .rz-event-score {
+    color: var(--rz-text);
+}
+
+.rz-event-total {
+    color: var(--rz-muted);
+    font-size: 8px;
+    font-weight: 700;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+}
+
+.rz-event-total span {
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0;
 }
 
 .rz-event-delta.pos {
@@ -34835,14 +34807,6 @@ a.rz-demo-link:hover {
     font-size: 11px;
     font-weight: 600;
     color: var(--rz-muted);
-}
-.rz-nfl-sit-pending,
-.rz-nfl-poss-pending {
-    margin-top: 2px;
-    font-size: 10px;
-    font-weight: 600;
-    color: var(--rz-muted);
-    opacity: .75;
 }
 .rz-nfl-ball,
 .rz-nfl-ball-slot {

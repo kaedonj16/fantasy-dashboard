@@ -789,10 +789,13 @@ def fetch_alt_pbp_plays(
     name_to_pid: dict[str, str] | None = None,
     team_to_def_pid: dict[str, str] | None = None,  # reserved
     live: bool = False,
+    providers: tuple[str, ...] = ("espn", "sleeper"),
 ) -> list[dict]:
     """Best-effort alternate PBP for a Tank01-keyed game.
 
-    Tries Sleeper first (user-requested), then ESPN CDN booth lines.
+    ESPN is the default primary because its structured plays consistently carry
+    period and clock fields. ``providers`` lets the caller place Tank01 between
+    ESPN and the undocumented Sleeper fallback without duplicating fetch logic.
     """
     del team_to_def_pid  # reserved for future DEF tagging
     date_part, away, home = parse_tank_game_id(tank_game_id)
@@ -800,34 +803,36 @@ def fetch_alt_pbp_plays(
         return []
     ttl = 15.0 if live else 300.0
 
-    # 1) Sleeper
-    sl_gid = sleeper_game_id_for_matchup(
-        season=season, week=week, away=away, home=home
-    )
-    if sl_gid:
-        raw = fetch_sleeper_pbp(sl_gid, ttl=ttl)
-        plays = extract_sleeper_pbp_plays(
-            raw, tank_game_id, name_to_pid=name_to_pid
-        )
-        if plays:
-            logger.info(
-                "[alt-pbp] sleeper hits game=%s sleeper_id=%s plays=%d",
-                tank_game_id, sl_gid, len(plays),
+    for provider in providers:
+        if provider == "espn":
+            eid = fetch_espn_event_id(
+                away=away, home=home, yyyymmdd=date_part, ttl=max(ttl, 300.0)
             )
-            return plays
-
-    # 2) ESPN
-    eid = fetch_espn_event_id(away=away, home=home, yyyymmdd=date_part, ttl=max(ttl, 300.0))
-    if eid:
-        payload = fetch_espn_pbp(eid, ttl=ttl)
-        plays = extract_espn_pbp_plays(
-            payload, tank_game_id, name_to_pid=name_to_pid
-        )
-        if plays:
-            logger.info(
-                "[alt-pbp] espn hits game=%s event=%s plays=%d",
-                tank_game_id, eid, len(plays),
+            if eid:
+                payload = fetch_espn_pbp(eid, ttl=ttl)
+                plays = extract_espn_pbp_plays(
+                    payload, tank_game_id, name_to_pid=name_to_pid
+                )
+                if plays:
+                    logger.info(
+                        "[alt-pbp] espn hits game=%s event=%s plays=%d",
+                        tank_game_id, eid, len(plays),
+                    )
+                    return plays
+        elif provider == "sleeper":
+            sl_gid = sleeper_game_id_for_matchup(
+                season=season, week=week, away=away, home=home
             )
-            return plays
+            if sl_gid:
+                raw = fetch_sleeper_pbp(sl_gid, ttl=ttl)
+                plays = extract_sleeper_pbp_plays(
+                    raw, tank_game_id, name_to_pid=name_to_pid
+                )
+                if plays:
+                    logger.info(
+                        "[alt-pbp] sleeper hits game=%s sleeper_id=%s plays=%d",
+                        tank_game_id, sl_gid, len(plays),
+                    )
+                    return plays
 
     return []
