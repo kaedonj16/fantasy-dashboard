@@ -24,7 +24,6 @@
   var _filterOpen  = false;
   var _myTeamOnly  = false;
   var _bigPlaysOnly = false; // TD or >=4 fantasy pts
-  var _feedSort    = 'foryou'; // 'foryou' or 'latest'
   var _heroMid    = null;
   var _heroTouched = false; // true once the viewer explicitly picks/clears the hero matchup
   var _seenPlayIds = new Set(); // Tank01 / demo play ids already in the feed
@@ -80,8 +79,6 @@
       var bp = localStorage.getItem(_prefsKey('big-only'));
       if (bp === '1') _bigPlaysOnly = true;
       if (bp === '0') _bigPlaysOnly = false;
-      var fs = localStorage.getItem(_prefsKey('feed-sort'));
-      if (fs === 'latest' || fs === 'foryou') _feedSort = fs;
     } catch (_) {}
   }
   function _savePrefs() {
@@ -93,7 +90,6 @@
       }
       localStorage.setItem(_prefsKey('my-team'), _myTeamOnly ? '1' : '0');
       localStorage.setItem(_prefsKey('big-only'), _bigPlaysOnly ? '1' : '0');
-      localStorage.setItem(_prefsKey('feed-sort'), _feedSort);
     } catch (_) {}
   }
 
@@ -565,21 +561,6 @@
   function _isBigPlay(ev) {
     return ev.kind === 'td' || (ev.pts || 0) >= 4;
   }
-  // Soft rank for display: mine → opp → rest, then TDs, then pts, then recency.
-  // Does not hide anyone -- My Team / hero remain optional hard filters.
-  function _softRank(list) {
-    return list.slice().sort(function(a, b) {
-      var ar = a.mine ? 0 : (a.opp ? 1 : 2);
-      var br = b.mine ? 0 : (b.opp ? 1 : 2);
-      if (ar !== br) return ar - br;
-      var atd = a.kind === 'td' ? 0 : 1;
-      var btd = b.kind === 'td' ? 0 : 1;
-      if (atd !== btd) return atd - btd;
-      var ap = a.pts || 0, bp = b.pts || 0;
-      if (ap !== bp) return bp - ap;
-      return (b.ts || 0) - (a.ts || 0);
-    });
-  }
   // "MM:SS" game clock → seconds remaining in the quarter (null if unparsable).
   function _clockSecs(clk) {
     var m = String(clk == null ? '' : clk).match(/(\d+):(\d+)/);
@@ -590,17 +571,8 @@
   // chronological order (newest first): game kickoff epoch + elapsed game
   // seconds. Live-only events (milestones, bulk) fall back to detection time.
   function _chronoKey(ev) {
-    // For PBP events with gameId and seq, use provider sequence within game
-    if (ev.gameId && ev.seq != null) {
-      var g = (_state.games || {})[ev.gameId] || {};
-      var kickoff = parseFloat(g.game_time_epoch || 0) || 0;
-      if (kickoff) {
-        // Use kickoff + seq as a monotonic key (seq is already chronological)
-        // Scale seq to avoid collision with elapsed seconds
-        return kickoff + (ev.seq * 0.001);
-      }
-    }
-    // Fallback: reconstruct from quarter/clock
+    // Reconstruct elapsed game time first. Unlike a provider sequence number,
+    // this remains comparable when plays from simultaneous games are merged.
     var q = parseInt(ev.gameQuarter, 10);
     if (q > 0) {
       var per = 900; // 15:00 quarters (OT still monotonic under this model)
@@ -613,13 +585,20 @@
       var kickoff = parseFloat(g.game_time_epoch || 0) || 0;
       if (kickoff) return kickoff + elapsed;
     }
+    // A provider sequence is still useful within one game when clock data is
+    // absent, but it must not override the cross-game wall-clock estimate.
+    if (ev.gameId && ev.seq != null) {
+      var seqGame = (_state.games || {})[ev.gameId] || {};
+      var seqKickoff = parseFloat(seqGame.game_time_epoch || 0) || 0;
+      if (seqKickoff) return seqKickoff + (ev.seq * 0.001);
+    }
     return (ev.ts || 0) / 1000;
   }
-  // Newest first. Ties (same game-second) fall back to soft rank so a TD or a
-  // player of yours edges ahead of an ordinary simultaneous snap.
+  // Newest first. Modern JavaScript's stable sort preserves ingestion order
+  // for exact ties instead of quietly reintroducing the removed "For You"
+  // ranking for simultaneous plays.
   function _chronoSort(list) {
-    var ranked = _softRank(list); // stable base order for exact-tie fallback
-    return ranked.slice().sort(function(a, b) {
+    return list.slice().sort(function(a, b) {
       var ka = _chronoKey(a), kb = _chronoKey(b);
       if (ka !== kb) return kb - ka;
       return 0;
@@ -1751,24 +1730,27 @@
   function _nflGameInfo(gid) {
     if (!gid || gid === 'all') return null;
     var games = _state.games || {};
-    if (games[gid]) return games[gid];
-    // Fallback: rebuild a thin row from player_info + last PBP situation.
+    // Start with the server scoreboard when available, then enrich missing
+    // situation fields from the PBP already loaded by the client. The server
+    // row can legitimately arrive before the first situation snapshot.
     var info = _state.player_info || {};
-    var row = null;
-    Object.keys(info).some(function(pid) {
-      var p = info[pid];
-      if ((p.game_id || '') !== gid) return false;
-      row = {
-        game_id: gid,
-        away: p.away || '', home: p.home || '',
-        away_pts: p.away_pts || '', home_pts: p.home_pts || '',
-        game_status: p.game_status || '', game_code: String(p.game_code || ''),
-        game_clock: p.game_clock || '', game_quarter: p.game_quarter || '',
-        game_time_epoch: p.game_time_epoch || 0,
-        possession: '', down: '', distance: '', yard_line: ''
-      };
-      return true;
-    });
+    var row = games[gid] ? Object.assign({}, games[gid]) : null;
+    if (!row) {
+      Object.keys(info).some(function(pid) {
+        var p = info[pid];
+        if ((p.game_id || '') !== gid) return false;
+        row = {
+          game_id: gid,
+          away: p.away || '', home: p.home || '',
+          away_pts: p.away_pts || '', home_pts: p.home_pts || '',
+          game_status: p.game_status || '', game_code: String(p.game_code || ''),
+          game_clock: p.game_clock || '', game_quarter: p.game_quarter || '',
+          game_time_epoch: p.game_time_epoch || 0,
+          possession: '', down: '', distance: '', yard_line: ''
+        };
+        return true;
+      });
+    }
     if (!row) return null;
     var plays = (_state.pbp_by_game || {})[gid] || [];
     var best = null;
@@ -1782,10 +1764,10 @@
       }
     }
     if (best) {
-      row.possession = best.team || '';
-      row.down = best.down || '';
-      row.distance = best.distance || '';
-      row.yard_line = best.yard_line || '';
+      if (!row.possession) row.possession = best.team || '';
+      if (!row.down) row.down = best.down || '';
+      if (!row.distance) row.distance = best.distance || '';
+      if (!row.yard_line) row.yard_line = best.yard_line || '';
       if (!row.game_clock && best.clock) row.game_clock = best.clock;
       if (!row.game_quarter && best.quarter) row.game_quarter = best.quarter;
     }
@@ -1908,22 +1890,22 @@
       var ball = hasBall
         ? '<span class="rz-nfl-ball" title="Possession" aria-label="Has possession"></span>'
         : '<span class="rz-nfl-ball-slot" aria-hidden="true"></span>';
-      return '<div class="rz-nfl-side rz-nfl-' + align + (hasBall ? ' has-ball' : '') + '">'
-        + (align === 'away' ? ball : '')
-        + logo(abv)
-        + '<div class="rz-nfl-side-meta">'
+      var meta = '<div class="rz-nfl-side-meta">'
         + '<span class="rz-nfl-abv">' + abv + '</span>'
         + '<span class="rz-nfl-pts">' + pts + '</span>'
-        + '</div>'
-        + (align === 'home' ? ball : '')
         + '</div>';
+      // Mirror the teams: the home logo is the outermost item on the right.
+      var contents = align === 'home'
+        ? ball + meta + logo(abv)
+        : ball + logo(abv) + meta;
+      return '<div class="rz-nfl-side rz-nfl-' + align + (hasBall ? ' has-ball' : '') + '">'
+        + contents + '</div>';
     };
     return '<div class="rz-nfl-board' + (live ? ' is-live' : '') + '" id="rz-nfl-board">'
       + side(away, aPts, awayPoss, 'away')
       + '<div class="rz-nfl-mid">'
       + '<div class="rz-nfl-clock">' + clock + '</div>'
-      + (sit ? '<div class="rz-nfl-sit">' + sit + '</div>' : (live ? '<div class="rz-nfl-sit rz-nfl-sit-pending">Situation pending</div>' : ''))
-      + (live && !poss ? '<div class="rz-nfl-poss-pending">Possession pending</div>' : '')
+      + (sit ? '<div class="rz-nfl-sit">' + sit + '</div>' : '')
       + '</div>'
       + side(home, hPts, homePoss, 'home')
       + '</div>';
@@ -2539,10 +2521,7 @@
     if (pi.away && pi.home && !(pi.away_pts === '' && pi.home_pts === '')) {
       scoreStr = pi.away + ' ' + (pi.away_pts || '0') + '–' + (pi.home_pts || '0') + ' ' + pi.home;
     }
-    var gameState = [
-      clockStr ? '<span class="rz-event-clock">' + clockStr + '</span>' : '',
-      scoreStr ? '<span class="rz-event-score">' + scoreStr + '</span>' : ''
-    ].filter(Boolean).join('');
+    var gameState = scoreStr ? '<span class="rz-event-score">' + scoreStr + '</span>' : '';
     var situationHtml = (situation || rzBadge || gameState)
       ? '<div class="rz-event-meta">'
         + '<span class="rz-event-situation">' + situation + rzBadge + '</span>'
@@ -2593,8 +2572,9 @@
       + cumeHtml
       + '</div>'
       + '<div class="rz-event-delta ' + deltaCls + '">'
+      + (clockStr ? '<div class="rz-event-clock">' + clockStr + '</div>' : '')
       + '<div class="rz-event-delta-pts">' + (deltaPrimary || '') + '</div>'
-      + (deltaSecondary ? '<div class="rz-event-total">' + deltaSecondary + '</div>' : '')
+      + (deltaSecondary ? '<div class="rz-event-total"><span>' + deltaSecondary + '</span> total</div>' : '')
       + '</div>'
       + '</div>'
     );
@@ -2731,9 +2711,9 @@
       return;
     }
 
-    // Apply feed ordering preference
+    // The feed is always reverse chronological: newest plays belong first.
     var filtered = _feed.filter(_eventMatches);
-    var list = _feedSort === 'latest' ? _chronoSort(filtered) : _softRank(filtered);
+    var list = _chronoSort(filtered);
     // Hero focus alone should not force the "no matching" empty when the feed
     // itself is empty -- the pregame schedule already respects hero focus.
     var hardFilter = _filters.nfl !== 'all' || _filters.pos !== 'all' || _filters.stat !== 'all' || _myTeamOnly || _bigPlaysOnly
@@ -2892,7 +2872,7 @@
 
     _renderPagination(totalPages);
 
-    // Live feed header with Latest/For You toggle
+    // Live feed header
     var hdr = document.getElementById('rz-feed-hdr');
     if (hdr) {
       var totalEvts = list.length;
@@ -2902,19 +2882,7 @@
           ? '<span class="rz-fh-dot"></span><span class="rz-fh-text">Live · <b>' + totalEvts + '</b> ' + (totalEvts === 1 ? 'play' : 'plays') + '</span>'
           : '<span class="rz-fh-text"><b>' + totalEvts + '</b> ' + (totalEvts === 1 ? 'play' : 'plays') + ' · Final</span>')
         : '';
-      var sortToggle = '<div class="rz-feed-sort">'
-        + '<button class="rz-sort-btn' + (_feedSort === 'foryou' ? ' active' : '') + '" data-sort="foryou">For You</button>'
-        + '<button class="rz-sort-btn' + (_feedSort === 'latest' ? ' active' : '') + '" data-sort="latest">Latest</button>'
-        + '</div>';
-      hdr.innerHTML = '<div class="rz-feed-hdr-left">' + statusText + '</div>' + sortToggle;
-      // Wire sort toggle
-      hdr.querySelectorAll('.rz-sort-btn').forEach(function(btn) {
-        btn.addEventListener('click', function() {
-          _feedSort = btn.dataset.sort;
-          _savePrefs();
-          _render();
-        });
-      });
+      hdr.innerHTML = '<div class="rz-feed-hdr-left">' + statusText + '</div>';
     }
 
     // Click handlers now managed by root event delegation
