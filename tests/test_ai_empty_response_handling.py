@@ -3,12 +3,12 @@ import pytest
 from unittest.mock import Mock, patch
 from dashboard_services.ai.prompts import (
     generate_team_ai_result,
-    generate_trade_analysis_result,
+    generate_trade_ai_result,
     generate_power_rankings_result,
     generate_trade_suggestions_result,
 )
-from dashboard_services.ai.history_recap import generate_season_recap_result
-from dashboard_services.ai.weekly_recap import generate_weekly_recap_result
+from dashboard_services.ai.history_recap import _generate_recap_ai_result
+from dashboard_services.ai.weekly_recap import _generate_ai_storyline
 
 
 @pytest.fixture
@@ -47,12 +47,12 @@ class TestEmptyResponseHandling:
                 generate_team_ai_result({"scoring_type": "dynasty"}, mode="front_office_briefing")
 
     def test_trade_analysis_empty_response(self, mock_empty_response):
-        """Test generate_trade_analysis_result handles empty response."""
+        """Test generate_trade_ai_result handles empty response."""
         with patch("dashboard_services.ai.prompts.get_ai_client") as mock_client:
             mock_client.return_value.responses.create.return_value = mock_empty_response
             
             with pytest.raises(ValueError, match="OpenAI API returned empty response for trade_analysis"):
-                generate_trade_analysis_result({})
+                generate_trade_ai_result({})
 
     def test_power_rankings_empty_response(self, mock_empty_response):
         """Test generate_power_rankings_result handles empty response."""
@@ -60,7 +60,7 @@ class TestEmptyResponseHandling:
             mock_client.return_value.responses.create.return_value = mock_empty_response
             
             with pytest.raises(ValueError, match="OpenAI API returned empty response for power_rankings"):
-                generate_power_rankings_result({"teams": []}, is_redraft=False)
+                generate_power_rankings_result({"teams": []})
 
     def test_trade_suggestions_empty_response(self, mock_empty_response):
         """Test generate_trade_suggestions_result handles empty response."""
@@ -76,7 +76,11 @@ class TestEmptyResponseHandling:
             mock_client.return_value.responses.create.return_value = mock_empty_response
             
             with pytest.raises(ValueError, match="OpenAI API returned empty response for season_recap"):
-                generate_season_recap_result({})
+                _generate_recap_ai_result({
+                    "team": {"name": "Test Team"},
+                    "league": {"total_teams": 0, "champion": "", "top_scorer": ""},
+                    "season": "2026",
+                })
 
     def test_weekly_recap_empty_response(self, mock_empty_response):
         """Test generate_weekly_recap_result handles empty response."""
@@ -84,7 +88,22 @@ class TestEmptyResponseHandling:
             mock_client.return_value.responses.create.return_value = mock_empty_response
             
             with pytest.raises(ValueError, match="OpenAI API returned empty response for weekly_recap"):
-                generate_weekly_recap_result({})
+                _generate_ai_storyline({
+                    "league_name": "Test",
+                    "week": 1,
+                    "weeks_until_playoffs": 0,
+                    "matchups": [],
+                    "teams": [],
+                    "high_scorer": None,
+                    "low_scorer": None,
+                    "biggest_blowout": None,
+                    "upsets": [],
+                    "hot_streaks": [],
+                    "cold_streaks": [],
+                    "big_movers": [],
+                    "playoff_race": [],
+                    "next_week_preview": None,
+                })
 
     def test_whitespace_only_response(self, mock_whitespace_response):
         """Test that whitespace-only responses are treated as empty."""
