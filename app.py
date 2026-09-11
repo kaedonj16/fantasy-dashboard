@@ -12401,17 +12401,30 @@ def _redzone_collect(platform, league_id, season, week):
                         "away": sample_pi.get("away", "")
                     }
                 
-                plays = _rz_extract_pbp_plays(
-                    box, gid,
+                # ESPN is the primary PBP source: its structured records include
+                # a period and display clock on each play. Tank01 remains the
+                # first fallback and continues to supply aggregate box scores.
+                plays = _rz_fetch_alt_pbp_plays(
+                    gid,
+                    season=season,
+                    week=week,
                     name_to_pid=name_to_pid,
                     team_to_def_pid=team_to_def_pid,
-                    game_context=game_context,
-                    player_meta_by_pid=player_meta_by_pid,
+                    live=live,
+                    providers=("espn",),
                 )
+                if not plays:
+                    plays = _rz_extract_pbp_plays(
+                        box, gid,
+                        name_to_pid=name_to_pid,
+                        team_to_def_pid=team_to_def_pid,
+                        game_context=game_context,
+                        player_meta_by_pid=player_meta_by_pid,
+                    )
                 # CRITICAL: Keep ALL resolved plays, including unrostered players
                 # Do NOT filter by roster ownership - that defeats the identity fix
                 # Tank01 PBP is experimental and often empty for finals. Fall
-                # back to Sleeper (preferred) then ESPN CDN booth lines so
+                # back to Sleeper's booth lines so
                 # Plays still shows real play-by-play -- never boxscore fiction.
                 if not plays:
                     try:
@@ -12422,6 +12435,7 @@ def _redzone_collect(platform, league_id, season, week):
                             name_to_pid=name_to_pid,
                             team_to_def_pid=team_to_def_pid,
                             live=live,
+                            providers=("sleeper",),
                         )
                         plays = alt or []
                     except Exception:
@@ -12435,7 +12449,8 @@ def _redzone_collect(platform, league_id, season, week):
                 logger.debug("[redzone] pbp parse failed game=%s", gid, exc_info=True)
                 pbp_by_game.setdefault(gid, [])
         elif want_pbp:
-            # No usable box at all -- still try Sleeper/ESPN for booth lines.
+            # No usable Tank01 box at all -- ESPN remains primary, with
+            # Sleeper as the final fallback.
             try:
                 alt = _rz_fetch_alt_pbp_plays(
                     gid,
@@ -12444,6 +12459,7 @@ def _redzone_collect(platform, league_id, season, week):
                     name_to_pid=name_to_pid,
                     team_to_def_pid=team_to_def_pid,
                     live=live,
+                    providers=("espn", "sleeper"),
                 )
                 pbp_by_game[gid] = alt or []
             except Exception:

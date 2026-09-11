@@ -52,14 +52,20 @@ def rz_stat_line_from_ps(ps: dict) -> dict:
         return rz_num(_pick(ps, *keys))
 
     return {
-        "pass_yds": nest_or_flat(passing, "passYds", "pass_yds", "passingYards"),
+        "pass_yds": nest_or_flat(
+            passing, "passYds", "passYards", "pass_yds", "passingYards"
+        ),
         "pass_td":  nest_or_flat(passing, "passTD", "pass_td", "passingTD", "passTd"),
         "int":      nest_or_flat(passing, "int", "interceptions", "passInterceptions", "ints"),
         "carries":  nest_or_flat(rushing, "carries", "rushAttempts", "rushAtt"),
-        "rush_yds": nest_or_flat(rushing, "rushYds", "rush_yds", "rushingYards"),
+        "rush_yds": nest_or_flat(
+            rushing, "rushYds", "rushYards", "rush_yds", "rushingYards"
+        ),
         "rush_td":  nest_or_flat(rushing, "rushTD", "rush_td", "rushingTD", "rushTd"),
         "rec":      nest_or_flat(receiving, "receptions", "rec", "receivingReceptions"),
-        "rec_yds":  nest_or_flat(receiving, "recYds", "rec_yds", "receivingYards"),
+        "rec_yds":  nest_or_flat(
+            receiving, "recYds", "recYards", "rec_yds", "receivingYards"
+        ),
         "rec_td":   nest_or_flat(receiving, "recTD", "rec_td", "receivingTD", "recTd"),
         "targets":  nest_or_flat(receiving, "targets", "receivingTargets"),
         # Kicker fields

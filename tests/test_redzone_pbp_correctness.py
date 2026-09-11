@@ -122,13 +122,38 @@ def test_receiver_contribution_with_abbreviated_name():
     pids = {p["pid"] for p in plays}
     assert "QB1" in pids
     assert "WR1" in pids
-    
     # Receiver should have reception
     wr_play = next(p for p in plays if p["pid"] == "WR1")
     assert wr_play["stat_line"]["rec"] == 1
     assert wr_play["stat_line"]["rec_yds"] == 19
 
 
+def test_touchdown_narrative_recovers_missing_receiver_scoring_fields():
+    """A provider TD without rec/TD flags must still score catch + yards + TD."""
+    box = {
+        "allPlayByPlay": [{
+            "playId": "td-1",
+            "quarter": "2",
+            "clock": "2:43",
+            "play": "D.Stafford pass to D.Robinson for 39 yards TOUCHDOWN",
+            "playerStats": {
+                "WR": {
+                    "longName": "Demarcus Robinson",
+                    "teamAbv": "LAR",
+                    "Receiving": {"recYards": 39},
+                }
+            },
+        }]
+    }
+
+    plays = extract_pbp_plays(
+        box, "g1", name_to_pid={"demarcus robinson": "WR1"}
+    )
+    line = plays[0]["stat_line"]
+    assert line["rec"] == 1
+    assert line["rec_yds"] == 39
+    assert line["rec_td"] == 1
+    assert plays[0]["quarter"] == "2" and plays[0]["clock"] == "2:43"
 def test_incomplete_target_fallback():
     """Test incomplete pass target extraction when playerStats missing."""
     box = {

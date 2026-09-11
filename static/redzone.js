@@ -24,7 +24,6 @@
   var _filterOpen  = false;
   var _myTeamOnly  = false;
   var _bigPlaysOnly = false; // TD or >=4 fantasy pts
-  var _feedSort    = 'foryou'; // 'foryou' or 'latest'
   var _heroMid    = null;
   var _heroTouched = false; // true once the viewer explicitly picks/clears the hero matchup
   var _seenPlayIds = new Set(); // Tank01 / demo play ids already in the feed
@@ -80,8 +79,6 @@
       var bp = localStorage.getItem(_prefsKey('big-only'));
       if (bp === '1') _bigPlaysOnly = true;
       if (bp === '0') _bigPlaysOnly = false;
-      var fs = localStorage.getItem(_prefsKey('feed-sort'));
-      if (fs === 'latest' || fs === 'foryou') _feedSort = fs;
     } catch (_) {}
   }
   function _savePrefs() {
@@ -93,13 +90,15 @@
       }
       localStorage.setItem(_prefsKey('my-team'), _myTeamOnly ? '1' : '0');
       localStorage.setItem(_prefsKey('big-only'), _bigPlaysOnly ? '1' : '0');
-      localStorage.setItem(_prefsKey('feed-sort'), _feedSort);
     } catch (_) {}
   }
 
   document.addEventListener('click', function() { _hadInteraction = true; }, { once: true });
 
-  // Event delegation for player clicks - handles all [data-pid] clicks on root
+  // Keep player-modal wiring in one delegated handler. Redzone replaces most of
+  // its DOM on every render; attaching another listener to each rendered row as
+  // well as this delegate opens two overlays from a single click (most visibly
+  // on the Top Scorers rows and position-leader tiles).
   root.addEventListener('click', function(e) {
     var target = e.target;
     // Walk up to find element with data-pid
@@ -565,21 +564,6 @@
   function _isBigPlay(ev) {
     return ev.kind === 'td' || (ev.pts || 0) >= 4;
   }
-  // Soft rank for display: mine → opp → rest, then TDs, then pts, then recency.
-  // Does not hide anyone -- My Team / hero remain optional hard filters.
-  function _softRank(list) {
-    return list.slice().sort(function(a, b) {
-      var ar = a.mine ? 0 : (a.opp ? 1 : 2);
-      var br = b.mine ? 0 : (b.opp ? 1 : 2);
-      if (ar !== br) return ar - br;
-      var atd = a.kind === 'td' ? 0 : 1;
-      var btd = b.kind === 'td' ? 0 : 1;
-      if (atd !== btd) return atd - btd;
-      var ap = a.pts || 0, bp = b.pts || 0;
-      if (ap !== bp) return bp - ap;
-      return (b.ts || 0) - (a.ts || 0);
-    });
-  }
   // "MM:SS" game clock → seconds remaining in the quarter (null if unparsable).
   function _clockSecs(clk) {
     var m = String(clk == null ? '' : clk).match(/(\d+):(\d+)/);
@@ -590,17 +574,8 @@
   // chronological order (newest first): game kickoff epoch + elapsed game
   // seconds. Live-only events (milestones, bulk) fall back to detection time.
   function _chronoKey(ev) {
-    // For PBP events with gameId and seq, use provider sequence within game
-    if (ev.gameId && ev.seq != null) {
-      var g = (_state.games || {})[ev.gameId] || {};
-      var kickoff = parseFloat(g.game_time_epoch || 0) || 0;
-      if (kickoff) {
-        // Use kickoff + seq as a monotonic key (seq is already chronological)
-        // Scale seq to avoid collision with elapsed seconds
-        return kickoff + (ev.seq * 0.001);
-      }
-    }
-    // Fallback: reconstruct from quarter/clock
+    // Reconstruct elapsed game time first. Unlike a provider sequence number,
+    // this remains comparable when plays from simultaneous games are merged.
     var q = parseInt(ev.gameQuarter, 10);
     if (q > 0) {
       var per = 900; // 15:00 quarters (OT still monotonic under this model)
@@ -613,13 +588,20 @@
       var kickoff = parseFloat(g.game_time_epoch || 0) || 0;
       if (kickoff) return kickoff + elapsed;
     }
+    // A provider sequence is still useful within one game when clock data is
+    // absent, but it must not override the cross-game wall-clock estimate.
+    if (ev.gameId && ev.seq != null) {
+      var seqGame = (_state.games || {})[ev.gameId] || {};
+      var seqKickoff = parseFloat(seqGame.game_time_epoch || 0) || 0;
+      if (seqKickoff) return seqKickoff + (ev.seq * 0.001);
+    }
     return (ev.ts || 0) / 1000;
   }
-  // Newest first. Ties (same game-second) fall back to soft rank so a TD or a
-  // player of yours edges ahead of an ordinary simultaneous snap.
+  // Newest first. Modern JavaScript's stable sort preserves ingestion order
+  // for exact ties instead of quietly reintroducing the removed "For You"
+  // ranking for simultaneous plays.
   function _chronoSort(list) {
-    var ranked = _softRank(list); // stable base order for exact-tie fallback
-    return ranked.slice().sort(function(a, b) {
+    return list.slice().sort(function(a, b) {
       var ka = _chronoKey(a), kb = _chronoKey(b);
       if (ka !== kb) return kb - ka;
       return 0;
@@ -1230,8 +1212,8 @@
           playKey: playKey,
           contribKey: contribKey,
           rawPlayText: play.play_text || '',
-          quarter: play.quarter || '',
-          clock: play.clock || '',
+          quarter: play.quarter || ((newData.player_info || {})[pid] || {}).game_quarter || '',
+          clock: play.clock || ((newData.player_info || {})[pid] || {}).game_clock || '',
           down: play.down || '',
           distance: play.distance || '',
           yardLine: play.yard_line || '',
@@ -1751,43 +1733,53 @@
   function _nflGameInfo(gid) {
     if (!gid || gid === 'all') return null;
     var games = _state.games || {};
-    if (games[gid]) return games[gid];
-    // Fallback: rebuild a thin row from player_info + last PBP situation.
+    // Start with the server scoreboard when available, then enrich missing
+    // situation fields from the PBP already loaded by the client. The server
+    // row can legitimately arrive before the first situation snapshot.
     var info = _state.player_info || {};
-    var row = null;
-    Object.keys(info).some(function(pid) {
-      var p = info[pid];
-      if ((p.game_id || '') !== gid) return false;
-      row = {
-        game_id: gid,
-        away: p.away || '', home: p.home || '',
-        away_pts: p.away_pts || '', home_pts: p.home_pts || '',
-        game_status: p.game_status || '', game_code: String(p.game_code || ''),
-        game_clock: p.game_clock || '', game_quarter: p.game_quarter || '',
-        game_time_epoch: p.game_time_epoch || 0,
-        possession: '', down: '', distance: '', yard_line: ''
-      };
-      return true;
-    });
+    var row = games[gid] ? Object.assign({}, games[gid]) : null;
+    if (!row) {
+      Object.keys(info).some(function(pid) {
+        var p = info[pid];
+        if ((p.game_id || '') !== gid) return false;
+        row = {
+          game_id: gid,
+          away: p.away || '', home: p.home || '',
+          away_pts: p.away_pts || '', home_pts: p.home_pts || '',
+          game_status: p.game_status || '', game_code: String(p.game_code || ''),
+          game_clock: p.game_clock || '', game_quarter: p.game_quarter || '',
+          game_time_epoch: p.game_time_epoch || 0,
+          possession: '', down: '', distance: '', yard_line: ''
+        };
+        return true;
+      });
+    }
     if (!row) return null;
     var plays = (_state.pbp_by_game || {})[gid] || [];
-    var best = null;
-    for (var i = plays.length - 1; i >= 0; i--) {
-      var pl = plays[i] || {};
-      if (pl.team && (pl.down || pl.distance || pl.yard_line)) { best = pl; break; }
-    }
-    if (!best) {
-      for (var j = plays.length - 1; j >= 0; j--) {
-        if ((plays[j] || {}).team) { best = plays[j]; break; }
-      }
-    }
+    var playTeam = function(play) {
+      if (play.team) return play.team;
+      var pid = String(play.pid || '');
+      return pid && info[pid] ? (info[pid].team || '') : '';
+    };
+    // Provider arrays are not guaranteed to be ordered. Pick the greatest
+    // sequence carrying usable field context rather than the last array row.
+    var ordered = plays.slice().sort(function(a, b) {
+      var as = parseFloat((a || {}).seq), bs = parseFloat((b || {}).seq);
+      if (!isFinite(as)) as = -1;
+      if (!isFinite(bs)) bs = -1;
+      return bs - as;
+    });
+    var best = ordered.find(function(pl) {
+      pl = pl || {};
+      return !!(playTeam(pl) || pl.down || pl.distance || pl.yard_line || pl.clock || pl.quarter);
+    }) || null;
     if (best) {
-      row.possession = best.team || '';
-      row.down = best.down || '';
-      row.distance = best.distance || '';
-      row.yard_line = best.yard_line || '';
-      if (!row.game_clock && best.clock) row.game_clock = best.clock;
-      if (!row.game_quarter && best.quarter) row.game_quarter = best.quarter;
+      row.possession = playTeam(best) || row.possession || '';
+      row.down = best.down || row.down || '';
+      row.distance = best.distance || row.distance || '';
+      row.yard_line = best.yard_line || row.yard_line || '';
+      row.game_clock = best.clock || row.game_clock || '';
+      row.game_quarter = best.quarter || row.game_quarter || '';
     }
     return row;
   }
@@ -1908,22 +1900,22 @@
       var ball = hasBall
         ? '<span class="rz-nfl-ball" title="Possession" aria-label="Has possession"></span>'
         : '<span class="rz-nfl-ball-slot" aria-hidden="true"></span>';
-      return '<div class="rz-nfl-side rz-nfl-' + align + (hasBall ? ' has-ball' : '') + '">'
-        + (align === 'away' ? ball : '')
-        + logo(abv)
-        + '<div class="rz-nfl-side-meta">'
+      var meta = '<div class="rz-nfl-side-meta">'
         + '<span class="rz-nfl-abv">' + abv + '</span>'
         + '<span class="rz-nfl-pts">' + pts + '</span>'
-        + '</div>'
-        + (align === 'home' ? ball : '')
         + '</div>';
+      // Mirror the teams: the home logo is the outermost item on the right.
+      var contents = align === 'home'
+        ? ball + meta + logo(abv)
+        : ball + logo(abv) + meta;
+      return '<div class="rz-nfl-side rz-nfl-' + align + (hasBall ? ' has-ball' : '') + '">'
+        + contents + '</div>';
     };
     return '<div class="rz-nfl-board' + (live ? ' is-live' : '') + '" id="rz-nfl-board">'
       + side(away, aPts, awayPoss, 'away')
       + '<div class="rz-nfl-mid">'
       + '<div class="rz-nfl-clock">' + clock + '</div>'
-      + (sit ? '<div class="rz-nfl-sit">' + sit + '</div>' : (live ? '<div class="rz-nfl-sit rz-nfl-sit-pending">Situation pending</div>' : ''))
-      + (live && !poss ? '<div class="rz-nfl-poss-pending">Possession pending</div>' : '')
+      + (sit ? '<div class="rz-nfl-sit">' + sit + '</div>' : '')
       + '</div>'
       + side(home, hPts, homePoss, 'home')
       + '</div>';
@@ -2539,14 +2531,9 @@
     if (pi.away && pi.home && !(pi.away_pts === '' && pi.home_pts === '')) {
       scoreStr = pi.away + ' ' + (pi.away_pts || '0') + '–' + (pi.home_pts || '0') + ' ' + pi.home;
     }
-    var gameState = [
-      clockStr ? '<span class="rz-event-clock">' + clockStr + '</span>' : '',
-      scoreStr ? '<span class="rz-event-score">' + scoreStr + '</span>' : ''
-    ].filter(Boolean).join('');
-    var situationHtml = (situation || rzBadge || gameState)
+    var situationHtml = (situation || rzBadge)
       ? '<div class="rz-event-meta">'
         + '<span class="rz-event-situation">' + situation + rzBadge + '</span>'
-        + '<span class="rz-event-gamestate">' + gameState + '</span>'
         + '</div>'
       : '';
     // Yardage this player gained on the play (Sleeper's "+12 YD" chip).
@@ -2593,8 +2580,12 @@
       + cumeHtml
       + '</div>'
       + '<div class="rz-event-delta ' + deltaCls + '">'
+      + ((scoreStr || clockStr) ? '<div class="rz-event-delta-game">'
+        + (scoreStr ? '<div class="rz-event-score">' + scoreStr + '</div>' : '')
+        + (clockStr ? '<div class="rz-event-clock">' + clockStr + '</div>' : '')
+        + '</div>' : '')
       + '<div class="rz-event-delta-pts">' + (deltaPrimary || '') + '</div>'
-      + (deltaSecondary ? '<div class="rz-event-total">' + deltaSecondary + '</div>' : '')
+      + (deltaSecondary ? '<div class="rz-event-total"><span>' + deltaSecondary + '</span> total</div>' : '')
       + '</div>'
       + '</div>'
     );
@@ -2731,9 +2722,9 @@
       return;
     }
 
-    // Apply feed ordering preference
+    // The feed is always reverse chronological: newest plays belong first.
     var filtered = _feed.filter(_eventMatches);
-    var list = _feedSort === 'latest' ? _chronoSort(filtered) : _softRank(filtered);
+    var list = _chronoSort(filtered);
     // Hero focus alone should not force the "no matching" empty when the feed
     // itself is empty -- the pregame schedule already respects hero focus.
     var hardFilter = _filters.nfl !== 'all' || _filters.pos !== 'all' || _filters.stat !== 'all' || _myTeamOnly || _bigPlaysOnly
@@ -2798,6 +2789,15 @@
     var page0Items = list.slice(0, _PAGE_SIZE);
     var page0Eids = new Set(page0Items.map(function(ev) { return _eid(ev); }));
 
+    function _orderFeedDom(target, orderedItems) {
+      var byId = {};
+      target.querySelectorAll('[data-eid]').forEach(function(el) { byId[el.dataset.eid] = el; });
+      orderedItems.forEach(function(ev) {
+        var node = byId[_eid(ev)];
+        if (node) target.appendChild(node);
+      });
+    }
+
     // Remove events that have fallen off page 0
     container.querySelectorAll('[data-eid]').forEach(function(el) {
       if (!page0Eids.has(el.dataset.eid)) el.remove();
@@ -2837,6 +2837,7 @@
             setTimeout(function() {
               _bigPlayFx(n, e, container, true);
               container.insertBefore(n, container.firstChild);
+              _orderFeedDom(container, page0Items);
               // Click handlers now managed by root event delegation
             }, delay);
           })(node, ev, insertDelay);
@@ -2855,6 +2856,7 @@
         }
       });
       container.insertBefore(frag, container.firstChild);
+      _orderFeedDom(container, page0Items);
 
       // Auto-scroll to top if user was already near top (don't interrupt mid-scroll)
       if (!isInitialLoad && !liveStagger) {
@@ -2886,13 +2888,17 @@
       }
     }
 
+    // Reconcile even when every ID already existed: filter changes and
+    // corrected provider ordering must still be reflected by the DOM.
+    _orderFeedDom(container, page0Items);
+
     // Prune to page size
     var items = container.querySelectorAll('[data-eid]');
     for (var i = _PAGE_SIZE; i < items.length; i++) items[i].remove();
 
     _renderPagination(totalPages);
 
-    // Live feed header with Latest/For You toggle
+    // Live feed header
     var hdr = document.getElementById('rz-feed-hdr');
     if (hdr) {
       var totalEvts = list.length;
@@ -2902,19 +2908,7 @@
           ? '<span class="rz-fh-dot"></span><span class="rz-fh-text">Live · <b>' + totalEvts + '</b> ' + (totalEvts === 1 ? 'play' : 'plays') + '</span>'
           : '<span class="rz-fh-text"><b>' + totalEvts + '</b> ' + (totalEvts === 1 ? 'play' : 'plays') + ' · Final</span>')
         : '';
-      var sortToggle = '<div class="rz-feed-sort">'
-        + '<button class="rz-sort-btn' + (_feedSort === 'foryou' ? ' active' : '') + '" data-sort="foryou">For You</button>'
-        + '<button class="rz-sort-btn' + (_feedSort === 'latest' ? ' active' : '') + '" data-sort="latest">Latest</button>'
-        + '</div>';
-      hdr.innerHTML = '<div class="rz-feed-hdr-left">' + statusText + '</div>' + sortToggle;
-      // Wire sort toggle
-      hdr.querySelectorAll('.rz-sort-btn').forEach(function(btn) {
-        btn.addEventListener('click', function() {
-          _feedSort = btn.dataset.sort;
-          _savePrefs();
-          _render();
-        });
-      });
+      hdr.innerHTML = '<div class="rz-feed-hdr-left">' + statusText + '</div>';
     }
 
     // Click handlers now managed by root event delegation
@@ -3367,14 +3361,6 @@
 
     _wireHeroCards();
     _wireHeroScroll();
-    root.querySelectorAll('[data-pid]').forEach(function(el) {
-      if (el.classList.contains('rz-player-pts')) return;
-      // Feed events are wired by _syncFeed (el.onclick) -- skip them here so a
-      // click doesn't fire window.openPlayerModal twice (two stacked modals).
-      if (el.classList.contains('rz-event')) return;
-      if (!el.dataset.pid || el.dataset.pid === '0') return;
-      el.addEventListener('click', function() { window.openPlayerModal(el.dataset.pid, _name(el.dataset.pid), { tab: 'live' }); });
-    });
   }
 
   // ── Polling ───────────────────────────────────────────────────────────────────
@@ -3406,9 +3392,13 @@
       var apiBase = '/api/' + parts[1] + '/' + parts[2] + '/' + parts[3];
       var url = apiBase + '/redzone-data?_cb=' + Date.now() + '&scope=' + myScope;
       if (_isDemo) { _demoT += 15; url += '&demo=1&t=' + _demoT; }
-      var resp = await fetch(url);
+      var resp = await fetch(url, { cache: 'no-store' });
       if (myGen !== _streamGen || myScope !== _scope) return;
-      if (!resp.ok) { _recoverScopeLoad(myGen, myScope); return; }
+      if (!resp.ok) {
+        _recoverScopeLoad(myGen, myScope);
+        if (myGen === _streamGen && myScope === _scope) _render();
+        return;
+      }
       var newData = await resp.json();
       if (myGen !== _streamGen || myScope !== _scope) return;
       // Server stamps scope; reject a mismatched payload even if gen lined up.
@@ -3427,16 +3417,7 @@
       _applyDefaultHero(); // no-op: Plays start unfiltered; hero focus is opt-in
       _countdown = _pollInterval();
 
-      var savedFeedHtml = null;
-      var oldFeedEl = root.querySelector('#rz-feed-list');
-      if (oldFeedEl && oldFeedEl.children.length > 0) savedFeedHtml = oldFeedEl.innerHTML;
-
       _render();
-
-      if (savedFeedHtml !== null) {
-        var newFeedEl = root.querySelector('#rz-feed-list');
-        if (newFeedEl) { newFeedEl.innerHTML = savedFeedHtml; _syncFeed(); }
-      }
 
       // Auto-refresh Live tab in player modal if it's currently visible
       var livePanelEl = document.getElementById('pm-panel-live');
@@ -3460,7 +3441,10 @@
         });
         _flashRids.clear();
       }
-    } catch (_) { _recoverScopeLoad(myGen, myScope); }
+    } catch (_) {
+      _recoverScopeLoad(myGen, myScope);
+      if (myGen === _streamGen && myScope === _scope) _render();
+    }
   }
 
   // ── Progressive My Leagues load ────────────────────────────────────────────
@@ -3511,7 +3495,7 @@
     var apiBase = '/api/' + parts[1] + '/' + parts[2] + '/' + parts[3];
     var url = apiBase + '/redzone-data?_cb=' + Date.now() + '&scope=user&stream=1';
     var resp;
-    try { resp = await fetch(url); } catch (_) {
+    try { resp = await fetch(url, { cache: 'no-store' }); } catch (_) {
       _streaming = false;
       if (myGen !== _streamGen) return;
       return _refresh();

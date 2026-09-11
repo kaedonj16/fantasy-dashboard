@@ -345,16 +345,16 @@ def test_play_descriptions_are_play_by_play():
     assert "return { desc: uy + ' yd TD run'" not in src
 
 
-def test_pbp_feed_path_and_soft_rank():
+def test_pbp_feed_path_and_filters():
     src = _rz()
     assert "function _eventsFromPbp(" in src
     assert "pbp_by_game" in src
-    assert "function _softRank(" in src
+    assert "function _softRank(" not in src
     assert "function _isBigPlay(" in src
     assert 'id="rz-bigplays-btn"' in src
     assert "function _loadPrefs(" in src
     assert "function _savePrefs(" in src
-    assert "rz-event-impact" in src
+    assert "rz-event-delta" in src
     assert "Try the Redzone demo" in src
 
 
@@ -364,7 +364,8 @@ def test_feed_is_chronological_newest_first():
     assert "function _chronoSort(" in src
     assert "function _chronoKey(" in src
     # The rendered feed and its maintenance both use the chronological sort.
-    assert "_chronoSort(_feed.filter(_eventMatches))" in src
+    assert "var filtered = _feed.filter(_eventMatches);" in src
+    assert "var list = _chronoSort(filtered);" in src
     assert "_feed = _chronoSort(_feed)" in src
 
 
@@ -373,7 +374,7 @@ def test_play_headlines_per_play_delta_with_muted_zero():
     a muted 0.0 for no-score plays — never a green '+0.0' or the running
     total masquerading as the play's points."""
     src = _rz()
-    assert "var deltaPrimary = (d > 0.0001 ? '+' : '') + _fmt(d);" in src
+    assert "var deltaPrimary = (d > 0.0001 ? '+' : (d < -0.0001 ? '' : '')) + _fmtFantasyDelta(d);" in src
     assert "d < -0.0001 ? 'neg' : 'zero'" in src
     # The old unconditional per-play string must be gone.
     assert "var ptStr = ev.pts > 0" not in src
@@ -408,12 +409,12 @@ def test_sleeper_style_situation_strip_and_yardage_chip():
     css = (_ROOT / "static" / "dashboard.css").read_text(encoding="utf-8")
     assert "function _isRedZone(" in src
     assert "rz-event-meta" in src and "rz-event-situation" in src
-    assert "rz-event-gamestate" in src
+    assert "rz-event-delta-game" in src
     assert '<span class="rz-event-rz">RZ</span>' in src
     assert "rz-event-yd" in src
     assert ".rz-event-meta" in css and ".rz-event-rz" in css
     # The play carries its stat line so the yardage chip can be derived.
-    assert "statLine: line" in src
+    assert "statLine: primary.line" in src
 
 
 def test_running_cumulative_stat_line_rendered():
@@ -476,15 +477,27 @@ def test_app_falls_back_to_plain_boxscore_when_pbp_empty():
                                     app.index("pbp_by_game[gid] = plays") + 40]
     # Client is responsible for PBP-lines-only; server must not claim narrative diffs.
     assert "narrative diffs" not in app
-    # Alternate sources (Sleeper → ESPN) when Tank01 PBP is empty.
+    # ESPN is primary; Tank01 and then Sleeper provide fallback coverage.
     assert "fetch_alt_pbp_plays as _rz_fetch_alt_pbp_plays" in app
     assert "_rz_fetch_alt_pbp_plays" in app
+    assert 'providers=("espn",)' in app
+    assert app.index('providers=("espn",)') < app.index("_rz_extract_pbp_plays(", app.index('providers=("espn",)'))
 
 
 def test_events_from_pbp_resolves_name_when_pid_missing():
     src = _fn("_eventsFromPbp")
     assert "_pidFromPlayName" in (_ROOT / "static" / "redzone.js").read_text(encoding="utf-8")
     assert "fromPbp: true" in src
+
+
+def test_player_modal_clicks_use_only_the_root_delegate():
+    """A scorer click must open one modal, not one per overlapping listener."""
+    src = _rz()
+    render = _fn("_render")
+
+    assert "root.addEventListener('click'" in src
+    assert "window.openPlayerModal(pid, _name(pid), { tab: 'live' });" in src
+    assert "querySelectorAll('[data-pid]')" not in render
 
 
 def test_live_final_empty_feed_is_honest_not_boxscore():

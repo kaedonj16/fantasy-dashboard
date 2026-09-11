@@ -417,6 +417,12 @@ def extract_pbp_plays(
             "play_state": play_state,
         }
 
+        # Called-back and overturned snaps do not belong in the fantasy play
+        # feed. Dropping them here also prevents named player rows with an
+        # intentionally emptied stat line from being emitted below.
+        if is_no_play:
+            continue
+
         emitted = 0
         pstats = play.get("playerStats") or play.get("player_stats") or {}
         
@@ -427,10 +433,24 @@ def extract_pbp_plays(
         
         for ps in _iter_player_stats(pstats):
             line = _normalize_player_delta(ps)
-            
-            # No Play: ignore all fantasy stats
-            if is_no_play:
-                line = {}
+
+            # Tank01 occasionally marks the play narrative as a touchdown but
+            # omits the per-player TD flag (and, less often, the reception).
+            # Recover only the unambiguous role represented by this stat row so
+            # a receiving score includes the catch, yards, and six-point TD.
+            text_is_td = "touchdown" in text.lower() or " td" in text.lower()
+            receiving = ps.get("Receiving") or ps.get("receiving")
+            passing = ps.get("Passing") or ps.get("passing")
+            rushing = ps.get("Rushing") or ps.get("rushing")
+            if text_is_td and isinstance(receiving, dict) and (
+                line.get("rec") or line.get("rec_yds")
+            ):
+                line["rec"] = line.get("rec") or 1.0
+                line["rec_td"] = line.get("rec_td") or 1.0
+            elif text_is_td and isinstance(rushing, dict) and line.get("carries"):
+                line["rush_td"] = line.get("rush_td") or 1.0
+            elif text_is_td and isinstance(passing, dict) and line.get("pass_yds"):
+                line["pass_td"] = line.get("pass_td") or 1.0
             
             long_name = _s(_first(ps, "longName", "long_name", "playerName", "name"))
             # Keep named players (or nonzero deltas) even when Tank01 shipped
@@ -459,8 +479,7 @@ def extract_pbp_plays(
                 (line.get("pass_td") or 0)
                 or (line.get("rush_td") or 0)
                 or (line.get("rec_td") or 0)
-                or ("touchdown" in text.lower())
-                or (" TD" in text)
+                or text_is_td
             )
             
             # Track receiver contributions
@@ -496,10 +515,6 @@ def extract_pbp_plays(
                 if not isinstance(side, dict):
                     continue
                 line = rz_def_stat_line(side)
-                
-                # No Play: ignore all fantasy stats
-                if is_no_play:
-                    line = {}
                 
                 if not _stat_line_nonzero(line):
                     continue
