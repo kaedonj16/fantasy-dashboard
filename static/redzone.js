@@ -3066,6 +3066,11 @@
       var isInitialLoad = _shownFeedIds.size === 0;
       var newCount = toAdd.filter(function(ev) { return !_shownFeedIds.has(_eid(ev)); }).length;
       var feedWasAboveViewport = container.getBoundingClientRect().top < -80;
+      // Pin the first visible existing entry, not merely the page scroll value:
+      // revised/new rows above it may have different heights.
+      var readingAnchor = !isInitialLoad && feedWasAboveViewport
+        ? Array.from(container.querySelectorAll('[data-eid]')).find(function(n) { return n.getBoundingClientRect().bottom > 0; }) : null;
+      var readingTop = readingAnchor ? readingAnchor.getBoundingClientRect().top : 0;
       if (!isInitialLoad && feedWasAboveViewport) _pendingNewPlays += newCount;
       // Sequential stagger: insert new plays one at a time during live polling
       var liveStagger = !isInitialLoad && newCount > 1;
@@ -3114,6 +3119,9 @@
       });
       container.insertBefore(frag, container.firstChild);
       _orderFeedDom(container, page0Items);
+      if (readingAnchor && readingAnchor.isConnected) {
+        window.scrollBy(0, readingAnchor.getBoundingClientRect().top - readingTop);
+      }
 
       // Auto-scroll to top if user was already near top (don't interrupt mid-scroll)
       if (!isInitialLoad && !liveStagger) {
@@ -3313,6 +3321,36 @@
 
   var _activeTab = 'plays';
 
+  function _playsScoreBarHtml() {
+    var pair = _focusedPair();
+    var myMatchup = pair ? pair.mine : null, opp = pair ? pair.opp : null;
+    var mine = myMatchup;
+    if (!mine || _loadingScope) return '';
+    var myPts = parseFloat(mine.points || 0), oppPts = parseFloat(opp ? opp.points || 0 : 0);
+    var winning = myPts >= oppPts, diff = Math.abs(myPts - oppPts).toFixed(1);
+    var live = _matchupIsLive([myMatchup, opp]) || (!_heroMid && _anyLive());
+    var meLabel = pair.isMine ? 'Me' : (_ownerName(mine.roster_id) || 'Team');
+    var oppLabel = opp ? (_ownerName(opp.roster_id) || 'Opp') : 'Opp';
+    return '<div class="rz-plays-scorebar">'
+      + '<span class="rz-psb-me' + (winning ? ' lead' : '') + '">' + meLabel + '  ' + _fmt(myPts) + '</span>'
+      + '<span class="rz-psb-sep">' + (live ? '<span class="rz-psb-live-dot"></span>' : '') + 'vs</span>'
+      + '<span class="rz-psb-opp' + (!winning ? ' lead' : '') + '">' + oppLabel + '  ' + _fmt(oppPts) + '</span>'
+      + (live ? '<span class="rz-psb-spread">' + (winning ? '+' : '-') + diff + '</span>' : '')
+      + '</div>';
+  }
+
+  // Patch a mounted panel without replacing the panel itself. Hidden panels are
+  // deliberately refreshed too, so opening a tab never reveals stale scores.
+  function _patchPanel(selector, html) {
+    var panel = root.querySelector(selector);
+    if (!panel || panel.innerHTML === html) return;
+    var active = document.activeElement, focusId = active && panel.contains(active) ? active.id : '';
+    var sx = panel.scrollLeft, sy = panel.scrollTop;
+    panel.innerHTML = html;
+    panel.scrollLeft = sx; panel.scrollTop = sy;
+    if (focusId) { var restored = panel.querySelector('#' + CSS.escape(focusId)); if (restored) restored.focus(); }
+  }
+
   function _partialUpdate() {
     _resetGameCache();
     // Update timer text
@@ -3342,6 +3380,7 @@
 
     // Replace hero cards in-place and re-wire. Preserve the strip's horizontal
     // scroll position so a live poll doesn't yank the user back to the start.
+    var heroChanged = false;
     var heroWrap = root.querySelector('.rz-hero-cards, .rz-no-matchup');
     if (heroWrap) {
       var prevRow = heroWrap.querySelector('.rz-hero-cards-row');
@@ -3349,23 +3388,25 @@
       var tempDiv = document.createElement('div');
       tempDiv.innerHTML = _renderHeroCards();
       var newHero = tempDiv.firstChild;
-      if (newHero) {
+      if (newHero && heroWrap.outerHTML !== newHero.outerHTML) {
         heroWrap.parentNode.replaceChild(newHero, heroWrap);
+        heroChanged = true;
         var newRow = newHero.querySelector && newHero.querySelector('.rz-hero-cards-row');
         if (newRow && prevScrollLeft) newRow.scrollLeft = prevScrollLeft;
       }
     }
-    _wireHeroCards();
-    _wireHeroScroll();
+    if (heroChanged) { _wireHeroCards(); _wireHeroScroll(); }
 
     // Update filter chips (hero chip may change)
     var showFilters = (_activeTab === 'plays' || _activeTab === 'top');
     var chipBar = root.querySelector('.rz-chip-bar');
     if (chipBar && showFilters) {
+      var chipsChanged = false;
       var tempDiv2 = document.createElement('div');
       tempDiv2.innerHTML = _renderFilterChips();
       var newChips = tempDiv2.firstChild;
-      if (newChips) chipBar.parentNode.replaceChild(newChips, chipBar);
+      if (newChips && chipBar.outerHTML !== newChips.outerHTML) { chipBar.parentNode.replaceChild(newChips, chipBar); chipsChanged = true; }
+      if (chipsChanged) {
       // Re-wire chip clear handlers
       var myTeamToggle2 = root.querySelector('#rz-myteam-btn');
       if (myTeamToggle2) {
@@ -3386,6 +3427,7 @@
       });
       var filterBtn = root.querySelector('#rz-filter-btn');
       if (filterBtn) filterBtn.addEventListener('click', function() { _filterOpen = !_filterOpen; _render(); });
+      }
     }
 
     // Refresh the NFL game pill strip in place (scores/status update) without
@@ -3398,12 +3440,12 @@
       var stripWrap = document.createElement('div');
       stripWrap.innerHTML = _renderGameStrip();
       var newStrip = stripWrap.firstChild;
-      if (newStrip) {
+      if (newStrip && stripEl.outerHTML !== newStrip.outerHTML) {
         stripEl.parentNode.replaceChild(newStrip, stripEl);
         var newScrollEl = newStrip.querySelector && newStrip.querySelector('.rz-game-strip-scroll');
         if (newScrollEl && prevScroll) newScrollEl.scrollLeft = prevScroll;
         _wireGameStrip(false);
-      } else {
+      } else if (!newStrip) {
         stripEl.remove();
       }
     }
@@ -3426,6 +3468,22 @@
       }
     } else if (boardEl) {
       boardEl.remove();
+    }
+
+    // Refresh every mounted fantasy view from the same accepted state. This
+    // includes inactive tabs; tab switching is therefore a pure visibility change.
+    var pairNow = _focusedPair();
+    _patchPanel('#rz-panel-mine', _scope === 'user' ? _renderMyTeams() : _rosterCard(pairNow ? pairNow.mine : null));
+    _patchPanel('#rz-panel-opp', _rosterCard(pairNow ? pairNow.opp : null));
+    _patchPanel('#rz-panel-top', _renderTopPerformers());
+    var playsPanel = root.querySelector('#rz-panel-plays');
+    if (playsPanel) {
+      var oldBar = playsPanel.querySelector('.rz-plays-scorebar');
+      var barHost = document.createElement('div'); barHost.innerHTML = _playsScoreBarHtml();
+      var nextBar = barHost.firstChild;
+      if (oldBar && nextBar && oldBar.outerHTML !== nextBar.outerHTML) oldBar.replaceWith(nextBar);
+      else if (!oldBar && nextBar) playsPanel.appendChild(nextBar);
+      else if (oldBar && !nextBar) oldBar.remove();
     }
 
     // Sync feed (live-patches page 0)
@@ -3494,21 +3552,7 @@
     var minePanel = _scope === 'user' ? _renderMyTeams() : _rosterCard(myMatchup);
 
     // Pinned score bar for the Plays tab
-    var playsScoreBar = '';
-    if (myMatchup && !_loadingScope) {
-      var _mm = myMatchup, _om = oppMatchup;
-      var _myP = parseFloat(_mm.points || 0), _opP = parseFloat(_om ? _om.points || 0 : 0);
-      var _win = _myP >= _opP, _diff = Math.abs(_myP - _opP).toFixed(1);
-      var _liveBar = _matchupIsLive([_mm, _om]) || (!_heroMid && _anyLive());
-      var _meLabel = (pair && pair.isMine) ? 'Me' : (_ownerName(_mm.roster_id) || 'Team');
-      var _oppName = _om ? (_ownerName(_om.roster_id) || 'Opp') : 'Opp';
-      playsScoreBar = '<div class="rz-plays-scorebar">'
-        + '<span class="rz-psb-me' + (_win ? ' lead' : '') + '">' + _meLabel + '  ' + _fmt(_myP) + '</span>'
-        + '<span class="rz-psb-sep">' + (_liveBar ? '<span class="rz-psb-live-dot"></span>' : '') + 'vs</span>'
-        + '<span class="rz-psb-opp' + (!_win ? ' lead' : '') + '">' + _oppName + '  ' + _fmt(_opP) + '</span>'
-        + (_liveBar ? '<span class="rz-psb-spread">' + (_win ? '+' : '-') + _diff + '</span>' : '')
-        + '</div>';
-    }
+    var playsScoreBar = _playsScoreBarHtml();
 
     var panels =
         '<div class="rz-panel' + (_activeTab === 'plays'  ? ' active' : '') + '" id="rz-panel-plays"><div class="rz-feed-hdr" id="rz-feed-hdr"></div><div id="rz-feed-list"></div><div id="rz-feed-pagination"></div>' + playsScoreBar + '</div>'

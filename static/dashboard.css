@@ -38340,7 +38340,7 @@ a, button, [role="button"], [role="tab"], summary, label,
 /* focus-position room table (container keeps the .pm-team-usage class) */
 .pm-team-usage { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 11px; overflow: hidden; }
 .pm-troom-row { display: grid; grid-template-columns: 20px 1fr 92px 46px 42px; align-items: center; gap: 9px; padding: 8px 11px; font-size: 12px; }
-.pm-room-rb .pm-troom-row { grid-template-columns: 20px minmax(120px,1fr) 70px 52px 78px 58px; }
+.pm-room-rb .pm-troom-row { grid-template-columns: 20px minmax(120px,1fr) repeat(5, minmax(58px, auto)); }
 .pm-room-qb .pm-troom-row,
 .pm-room-wr .pm-troom-row,
 .pm-room-te .pm-troom-row { grid-template-columns: 20px minmax(120px,1fr) 76px 52px 58px; }
@@ -38373,6 +38373,7 @@ a, button, [role="button"], [role="tab"], summary, label,
 .pm-troom-snap b { font-size: 10px; font-weight: 700; font-variant-numeric: tabular-nums; min-width: 26px; text-align: right; }
 .pm-troom-num { font-size: 11px; font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; color: var(--text); }
 .pm-troom-num.mut { color: var(--text-muted); font-weight: 600; }
+.pm-rb-mobile-details { display:none; }
 
 /* rest of depth chart -- .pm-team-depth wraps the mini grid */
 .pm-team-depth { margin-top: 2px; }
@@ -38800,8 +38801,11 @@ a, button, [role="button"], [role="tab"], summary, label,
     .pm-team-season-pills { max-width: 42%; gap: 3px; }
     .pm-team-season-pill { font-size: 9px; padding: 3px 7px; }
     /* room table: hide the snap bar and tighten columns/gaps for name room */
-    .pm-room-rb,.pm-team-usage { overflow-x:auto; }
-    .pm-room-rb .pm-troom-row { min-width:570px; }
+    .pm-team-usage { overflow:hidden; }
+    .pm-room-rb .pm-troom-row { grid-template-columns:18px minmax(0,1fr) 58px 60px; gap:6px; padding:8px 9px; }
+    .pm-room-rb .pm-col-tgt_share,.pm-room-rb .pm-col-carry_share,.pm-room-rb .pm-col-touch_share { display:none; }
+    .pm-room-rb .pm-rb-mobile-details { display:block; grid-column:2 / -1; color:var(--text-muted); font-size:10px; line-height:1.35; }
+    .pm-room-rb .pm-troom-head .pm-rb-mobile-details { display:none; }
     .pm-room-qb .pm-troom-row,.pm-room-wr .pm-troom-row,.pm-room-te .pm-troom-row { grid-template-columns:18px minmax(110px,1fr) 54px 44px 54px; gap:6px; padding:8px 9px; }
     .pm-troom-bar { display: none; }
     .pm-troom-snap { justify-content: flex-end; gap: 0; }
@@ -39507,3 +39511,8 @@ a, button, [role="button"], [role="tab"], summary, label,
   .top-nav.br-mnav .br-ctx-name { display:block; max-width:calc(100vw - 162px); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .rz-load-error { margin-inline:12px; }
 }
+
+/* Accessible validation for enhanced native selects. */
+.csd-wrap.is-invalid .csd-trigger { border-color: var(--loss); outline: 2px solid color-mix(in srgb, var(--loss) 28%, transparent); }
+.csd-error { color: var(--loss); font-size: 11px; line-height: 1.35; margin-top: 5px; }
+.csd-error[hidden] { display: none; }
