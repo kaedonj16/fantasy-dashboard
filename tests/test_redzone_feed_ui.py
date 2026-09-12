@@ -87,20 +87,21 @@ def test_selected_game_board_enriches_situation_and_mirrors_home_logo():
     assert "Possession pending" not in REDZONE_JS
 
 
-def test_refresh_uses_fresh_canonical_render_and_no_browser_cache():
+def test_refresh_uses_fresh_canonical_incremental_update_and_no_browser_cache():
     refresh = REDZONE_JS.split("async function _refresh() {", 1)[1].split(
         "// ── Progressive My Leagues", 1
     )[0]
-    assert "fetch(url, { cache: 'no-store' })" in refresh
+    assert "fetch(url, { cache: 'no-store', signal:" in refresh
+    assert "AbortController" in refresh
     detect_at = refresh.index("_detectChanges(newData);")
-    assert detect_at < refresh.index("_render();", detect_at)
+    assert detect_at < refresh.index("if (wasLoading) _render(); else _partialUpdate();", detect_at)
     assert "savedFeedHtml" not in refresh
     assert "newFeedEl.innerHTML" not in refresh
 
 
-def test_failed_refresh_renders_to_clear_manual_spinner():
+def test_failed_refresh_recovers_without_rebuilding_mounted_controls():
     refresh = REDZONE_JS.split("async function _refresh() {", 1)[1].split(
         "// ── Progressive My Leagues", 1
     )[0]
     assert refresh.count("_recoverScopeLoad(myGen, myScope);") == 2
-    assert refresh.count("if (myGen === _streamGen && myScope === _scope) _render();") == 2
+    assert refresh.count("if (myGen === _streamGen && myScope === _scope && !_loadingScope) _partialUpdate();") == 2
