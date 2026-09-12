@@ -10,6 +10,8 @@
 
 function openPlayerModal(playerId, playerName, opts) {
   opts = opts || {};
+  if (!opts.teamNavigation) _pmTeamNavHistory = [];
+  _pmTeamRestore = opts.restoreTeam || null;
 
   // Guests: a player-name click goes to the public player page (SEO landing),
   // not the in-app modal. Signed-in users keep the modal. opts.force bypasses
@@ -124,7 +126,8 @@ function openPlayerModal(playerId, playerName, opts) {
   // Remember what had focus so closePlayerModal can restore it, then move focus
   // into the dialog so keyboard and screen-reader users land inside it instead
   // of tabbing through the page behind the overlay.
-  overlay._pmReturnFocus = (document.activeElement instanceof HTMLElement) ? document.activeElement : null;
+  if (!opts.teamNavigation) _pmModalOriginalFocus = (document.activeElement instanceof HTMLElement) ? document.activeElement : null;
+  overlay._pmReturnFocus = _pmModalOriginalFocus;
   const _pmCloseBtn = modal.querySelector('.player-modal-close');
   if (_pmCloseBtn) { try { _pmCloseBtn.focus(); } catch (_) {} }
   // Keep Tab / Shift+Tab cycling within the dialog. Focusables are queried at
@@ -974,6 +977,8 @@ function openPlayerModal(playerId, playerName, opts) {
       pmTabBar.dataset.pmSeason = season;
       pmTabBar.dataset.pmPlayerName = data.name || playerName || '';
       pmTabBar.dataset.pmPosition = data.position || '';
+      const _teamPanel = document.getElementById('pm-panel-team');
+      if (_teamPanel && opts.teamSeason) _teamPanel.dataset.pmTeamSeason = String(opts.teamSeason);
 
       // Show/hide conditional tabs
       const tabMetrics = document.getElementById('pmTabMetrics');
@@ -1856,6 +1861,12 @@ function _pmFetchTradesInto(panel, playerId, season, ctx) {
 // ── Team tab (player modal) ───────────────────────────────────────────────────
 let _pmTeamAdvOpen = false;
 let _pmTeamSchedOpen = false;
+let _pmTeamOtherOpen = false;
+let _pmTeamOlineOpen = false;
+let _pmTeamRequestSeq = 0;
+let _pmTeamNavHistory = [];
+let _pmModalOriginalFocus = null;
+let _pmTeamRestore = null;
 // Lazy box-score cache + in-flight dedupe, keyed by season_type + game_id.
 const _pmBoxCache = Object.create(null); // key -> { ts, data }
 const _pmBoxInflight = Object.create(null); // key -> Promise
@@ -1926,12 +1937,16 @@ function _pmBuildScheduleHTML(data) {
   const schedOpen = _pmTeamSchedOpen;
   const schedChev = schedOpen ? '&#9662;' : '&#9656;';
   const schedHint = schedOpen ? 'click to collapse' : 'click to expand';
-  const header = `<div class="pm-section-header pm-section-collapsible pm-team-sched-toggle" role="button" tabindex="0" aria-expanded="${schedOpen ? 'true' : 'false'}" aria-controls="pmTeamSchedBody">
+  const previewGame = games.find(g => g.status === 'live') || games.find(g => !g.bye && g.status !== 'final') || games.filter(g => !g.bye).slice(-1)[0];
+  const preview = previewGame ? `<div class="pm-schedule-preview"><b>${_pmEsc(previewGame.week_label || ('Week ' + previewGame.week))}</b><span>${previewGame.ha === '@' ? '@ ' : 'vs '}${_pmEsc(previewGame.opponent_name || previewGame.opponent || '')}</span><span>${_pmScheduleResultHtml(previewGame)}</span></div>` : '';
+  const currentShortcut = Number(viewSeason) === new Date().getFullYear() && games.some(g => g.status === 'live' || (!g.bye && g.status !== 'final'))
+    ? '<button type="button" class="pm-current-week">Current week</button>' : '';
+  const header = `<button type="button" class="pm-section-header pm-section-collapsible pm-team-sched-toggle" aria-expanded="${schedOpen ? 'true' : 'false'}" aria-controls="pmTeamSchedBody">
       <span class="pm-collapse-chevron" aria-hidden="true">${schedChev}</span>
-      <span class="pm-section-label">Schedule</span>
+      <span class="pm-section-label">Schedule &amp; Results</span>
       <span class="pm-team-secnote">${_pmEsc(note)}</span>
       <span class="pm-collapse-hint">${schedHint}</span>
-    </div>`;
+    </button>${preview}${currentShortcut}`;
   if (!games.length) {
     return `<div class="pm-team-sec pm-team-schedule">
       ${header}
@@ -1958,8 +1973,9 @@ function _pmBuildScheduleHTML(data) {
     const oppName = g.opponent_name || g.opponent || '--';
     const ha = g.ha === '@' ? '@' : 'vs';
     const dateBit = g.date_label ? `<span class="pm-schedule-date">${_pmEsc(g.date_label)}</span>` : '';
-    return `<div class="pm-schedule-item${post}" data-idx="${idx}">
+    return `<div class="pm-schedule-item${post}" data-idx="${idx}" data-final="${g.status === 'final' ? '1' : '0'}">
       <button type="button" class="pm-schedule-toggle pm-schedule-row" aria-expanded="false"
+        data-status="${_pmEsc(g.status || 'scheduled')}"
         data-game-id="${_pmEsc(gid)}" data-season-type="${_pmEsc(st)}"
         data-team="${_pmEsc(team)}" data-focus-pid="${_pmEsc(focusPid)}"
         data-home-team="" data-away-team="" data-opp="${_pmEsc(g.opponent || '')}"
@@ -1990,7 +2006,7 @@ function _pmBoxStatCell(v) {
   return `<td class="pm-boxscore-num">${_pmDashNum(v)}</td>`;
 }
 
-function _pmRenderBoxscoreHTML(payload, viewTeam) {
+function _pmRenderBoxscoreHTML(payload, viewTeam, focusPid) {
   if (!payload || payload.available === false) {
     return `<div class="pm-boxscore-msg">Could not load box score.</div>`;
   }
@@ -2027,13 +2043,16 @@ function _pmRenderBoxscoreHTML(payload, viewTeam) {
 
   const group = teams[vt] || teams[Object.keys(teams)[0]] || { groups: [] };
   let tables = '';
-  (group.groups || []).forEach(function (g) {
+  const groups = (group.groups || []).slice();
+  const focusGroup = groups.findIndex(g => (g.players || []).some(p => String(p.id || '') === String(focusPid || '')));
+  if (focusGroup > 0) groups.unshift(groups.splice(focusGroup, 1)[0]);
+  groups.forEach(function (g) {
     const cols = g.columns || [];
     const head = `<tr><th class="pm-boxscore-name">Player</th>${cols.map(function (c) {
       return `<th>${_pmEsc(c.label || c.key)}</th>`;
     }).join('')}</tr>`;
     const body = (g.players || []).map(function (p) {
-      const focus = p.is_focus ? ' pm-boxscore-focus' : '';
+      const focus = String(p.id || '') === String(focusPid || '') ? ' pm-boxscore-focus' : '';
       const click = p.id
         ? ` data-pid="${_pmEsc(p.id)}" data-pname="${_pmEsc(p.name)}" role="button" tabindex="0"`
         : '';
@@ -2055,21 +2074,23 @@ function _pmRenderBoxscoreHTML(payload, viewTeam) {
     <div class="pm-boxscore-body" data-view-team="${_pmEsc(vt)}">${tables}</div>`;
 }
 
-function _pmFetchBoxscore(gameId, seasonType, team, focusPid, gen) {
+function _pmFetchBoxscore(gameId, seasonType, team, focusPid, gen, force) {
   const key = _pmBoxCacheKey(seasonType, gameId);
   const now = Date.now();
   const cached = _pmBoxCache[key];
-  if (cached) {
+  if (cached && !force) {
     const ttl = (cached.data && cached.data.status === 'live') ? _PM_BOX_TTL_LIVE : _PM_BOX_TTL_FINAL;
     if (now - cached.ts < ttl) {
       return Promise.resolve(cached.data);
     }
   }
-  if (_pmBoxInflight[key]) return _pmBoxInflight[key];
+  if (_pmBoxInflight[key] && !force) return _pmBoxInflight[key];
   const qs = new URLSearchParams({
     game_id: gameId,
     team: team || '',
-    focus_pid: focusPid || '',
+    // Cache neutral game data. Focus highlighting and group ordering are applied
+    // at render time, so opening the same game for another player cannot leak.
+    focus_pid: '',
     season_type: seasonType || 'reg',
   });
   const p = fetch('/api/player-team-boxscore?' + qs.toString())
@@ -2091,11 +2112,12 @@ function _pmFetchBoxscore(gameId, seasonType, team, focusPid, gen) {
   return p;
 }
 
-function _pmRenderBoxInto(host, payload, viewTeam) {
+function _pmRenderBoxInto(host, payload, viewTeam, focusPid) {
   if (!host) return;
-  host.innerHTML = _pmRenderBoxscoreHTML(payload, viewTeam);
+  host.innerHTML = _pmRenderBoxscoreHTML(payload, viewTeam, focusPid || host._pmFocusPid);
   host._pmBoxPayload = payload;
   host._pmBoxTeam = viewTeam || payload.view_team || '';
+  host._pmFocusPid = focusPid || host._pmFocusPid || '';
 }
 
 function _pmCollapseAllSchedule(panel) {
@@ -2136,29 +2158,24 @@ function _pmStartBoxLiveRefresh(panel, item) {
     _pmFetchBoxscore(gameId, st, btn.dataset.team, btn.dataset.focusPid, gen).then(function (data) {
       if (gen !== _pmBoxGen || !item.classList.contains('is-open')) return;
       if (!data || data.status !== 'live') {
-        _pmRenderBoxInto(box, data, box._pmBoxTeam || btn.dataset.team);
+        _pmRenderBoxInto(box, data, box._pmBoxTeam || btn.dataset.team, btn.dataset.focusPid);
         _pmStopBoxLiveRefresh();
         return;
       }
-      _pmRenderBoxInto(box, data, box._pmBoxTeam || btn.dataset.team);
+      const sx = box.scrollLeft, sy = box.scrollTop;
+      const active = document.activeElement && document.activeElement.dataset && document.activeElement.dataset.pid;
+      _pmRenderBoxInto(box, data, box._pmBoxTeam || btn.dataset.team, btn.dataset.focusPid);
+      box.scrollLeft = sx; box.scrollTop = sy;
+      if (active) { const restore = box.querySelector(`[data-pid="${CSS.escape(active)}"]`); if (restore) restore.focus(); }
     }).catch(function () { /* keep last good paint */ });
   }, _PM_BOX_TTL_LIVE);
 }
 
-function _pmExpandScheduleGame(panel, item) {
+function _pmLoadScheduleGame(panel, item, force) {
   if (!panel || !item) return;
   const btn = item.querySelector('.pm-schedule-toggle');
   const box = item.querySelector('.pm-boxscore');
   if (!btn || !box) return;
-  const wasOpen = item.classList.contains('is-open');
-  _pmCollapseAllSchedule(panel);
-  if (wasOpen) return;
-
-  item.classList.add('is-open');
-  btn.setAttribute('aria-expanded', 'true');
-  const chev = btn.querySelector('.pm-schedule-chev');
-  if (chev) chev.innerHTML = '&#9662;';
-  box.hidden = false;
   box.innerHTML = '<div class="pm-boxscore-loading"><div class="loading-spinner" style="width:14px;height:14px;margin:0 auto;"></div><div>Loading box score…</div></div>';
 
   const gameId = btn.dataset.gameId;
@@ -2170,21 +2187,37 @@ function _pmExpandScheduleGame(panel, item) {
     box.innerHTML = '<div class="pm-boxscore-msg">Box score unavailable for this game.</div>';
     return;
   }
-  _pmFetchBoxscore(gameId, st, team, focusPid, gen).then(function (data) {
+  _pmFetchBoxscore(gameId, st, team, focusPid, gen, force).then(function (data) {
     if (gen !== _pmBoxGen || !item.classList.contains('is-open')) return;
-    _pmRenderBoxInto(box, data, team);
+    _pmRenderBoxInto(box, data, team, focusPid);
     if (data && data.status === 'live') _pmStartBoxLiveRefresh(panel, item);
   }).catch(function () {
     if (gen !== _pmBoxGen || !item.classList.contains('is-open')) return;
     box.innerHTML = '';
     if (window.brErrorState) {
       window.brErrorState(box, 'Could not load box score.', function () {
-        _pmExpandScheduleGame(panel, item);
+        _pmLoadScheduleGame(panel, item, true);
       }, { compact: true });
     } else {
       box.innerHTML = '<div class="pm-boxscore-msg">Could not load box score.</div>';
     }
   });
+}
+
+function _pmExpandScheduleGame(panel, item) {
+  if (!panel || !item) return;
+  const wasOpen = item.classList.contains('is-open');
+  _pmCollapseAllSchedule(panel);
+  if (wasOpen) return;
+  const btn = item.querySelector('.pm-schedule-toggle');
+  const box = item.querySelector('.pm-boxscore');
+  if (!btn || !box) return;
+  item.classList.add('is-open');
+  btn.setAttribute('aria-expanded', 'true');
+  const chev = btn.querySelector('.pm-schedule-chev');
+  if (chev) chev.innerHTML = '&#9662;';
+  box.hidden = false;
+  _pmLoadScheduleGame(panel, item, false);
 }
 
 // Tier color for a plain "higher rank = better" stat (Scoring, Pace), as a
@@ -2242,7 +2275,8 @@ function _pmTeamOrdSup(n) {
 // yellow (mid), bottom red (bad). Same scale as Scoring/Pace hero ranks --
 // not inverted by whether the tendency "helps" the player's position.
 function _pmTeamMetricColor(pos, key, rank, total) {
-  return _pmTeamTierColor(rank, total);
+  if (String(key || '').startsWith('oline_')) return _pmTeamTierColor(rank, total);
+  return 'var(--accent)';
 }
 
 function _pmTeamProfileAxis() {
@@ -2305,7 +2339,13 @@ function _pmTeamShareBar(data) {
     <div class="pm-tshare-bar">${bars}${restBar}</div>`;
 }
 
-function _pmTeamRoomRow(row, i) {
+function _pmTeamRoomColumns(pos) {
+  if (pos === 'QB') return [{ key: 'snap_pct', label: 'Snap %' }, { key: 'games', label: 'Games' }, { key: 'ppg', label: 'PPR PPG' }];
+  if (pos === 'RB') return [{ key: 'snap_pct', label: 'Snap %' }, { key: 'tgt_share', label: 'Tgt %' }, { key: 'carry_share', fallback: 'touch_share', label: 'Carry/Touch %' }, { key: 'ppg', label: 'PPR PPG' }];
+  return [{ key: 'tgt_share', label: 'Tgt %' }, { key: 'snap_pct', label: 'Snap %' }, { key: 'ppg', label: 'PPR PPG' }];
+}
+
+function _pmTeamRoomRow(row, i, pos) {
   const clickable = !row.is_focus && !!row.id;
   const cls = 'pm-troom-row' + (row.is_focus ? ' pm-troom-focus' : (clickable ? ' pm-troom-click' : '')) + (row.order === 1 ? ' pm-troom-starter' : '');
   const attrs = clickable
@@ -2315,12 +2355,17 @@ function _pmTeamRoomRow(row, i) {
   const snap = row.snap_pct != null
     ? `<span class="pm-troom-snap"><span class="pm-troom-bar"><span style="width:${Math.min(100, row.snap_pct)}%"></span></span><b>${row.snap_pct}%${row.snap_pct_source === 'derived' ? '<span class="pm-snap-est">est.</span>' : ''}</b></span>`
     : '<span class="pm-troom-num mut">--</span>';
+  const metrics = _pmTeamRoomColumns(pos).map(function (col) {
+    if (col.key === 'snap_pct') return snap;
+    let value = row[col.key];
+    if (value == null && col.fallback) value = row[col.fallback];
+    const suffix = col.key.includes('share') && value != null ? '%' : '';
+    return `<span class="pm-troom-num${value == null ? ' mut' : ''}">${value == null ? '--' : value + suffix}</span>`;
+  }).join('');
   return `<div class="${cls}"${attrs}>
     <span class="pm-troom-slot">${i + 1}</span>
     <span class="pm-troom-name">${row.name || '--'}${inj}</span>
-    ${snap}
-    <span class="pm-troom-num${row.tgt_share == null ? ' mut' : ''}">${row.tgt_share != null ? row.tgt_share + '%' : '--'}</span>
-    <span class="pm-troom-num${row.ppg == null ? ' mut' : ''}">${row.ppg != null ? row.ppg : '--'}</span>
+    ${metrics}
   </div>`;
 }
 
@@ -2337,20 +2382,31 @@ function _pmTeamMiniItem(row, i) {
 function _pmLoadTeamPanel(panel, playerId, viewSeason) {
   if (!panel || !playerId) return;
   const season = String(viewSeason || new Date().getFullYear());
+  const requestId = String(++_pmTeamRequestSeq);
   panel.dataset.pmTeamSeason = season;
+  panel.dataset.pmTeamPlayer = String(playerId);
+  panel.dataset.pmTeamRequest = requestId;
   _pmBoxGen += 1;
   _pmStopBoxLiveRefresh();
   const _teamUrl = `/api/player-team/${encodeURIComponent(playerId)}?season=${encodeURIComponent(season)}`;
   const _teamKey = 'pm_team_v3_' + _teamUrl;
   const _teamTTL = 10 * 60 * 1000;
   const _renderTeam = (data) => {
-    if (!panel.isConnected) return;
+    if (!panel.isConnected || panel.dataset.pmTeamRequest !== requestId ||
+        panel.dataset.pmTeamSeason !== season || panel.dataset.pmTeamPlayer !== String(playerId)) return;
     if (!data || data.available === false) {
       window.brEmptyState(panel, { icon: 'search', title: 'No team data', message: 'Team context is not available for this player.', compact: true });
       return;
     }
     panel.innerHTML = _pmBuildTeamHTML(data);
     _pmWireTeamPanel(panel, playerId);
+    if (_pmTeamRestore && String(_pmTeamRestore.playerId) === String(playerId)) {
+      const restore = _pmTeamRestore; _pmTeamRestore = null;
+      requestAnimationFrame(function () {
+        const body = panel.closest('.player-modal-body'); if (body) body.scrollTop = restore.scrollTop || 0;
+        if (restore.gameId) { const btn = Array.from(panel.querySelectorAll('.pm-schedule-toggle')).find(b => b.dataset.gameId === restore.gameId); if (btn) btn.click(); }
+      });
+    }
   };
   let _teamCached = null;
   try {
@@ -2369,10 +2425,9 @@ function _pmLoadTeamPanel(panel, playerId, viewSeason) {
       _renderTeam(data);
     })
     .catch(() => {
-      if (panel.isConnected) {
+      if (panel.isConnected && panel.dataset.pmTeamRequest === requestId && panel.dataset.pmTeamSeason === season) {
         window.brErrorState(panel, 'Could not load team.', () => {
-          panel.dataset.loaded = '';
-          pmSwitchTab('team');
+          _pmLoadTeamPanel(panel, playerId, season);
         }, { compact: true });
       }
     });
@@ -2402,7 +2457,9 @@ function _pmBuildTeamHTML(data) {
     : `<div class="pm-crest" aria-hidden="true">${crestAbbr}</div>`;
   const wm = data.logo ? `<img class="pm-team-wm" src="${data.logo}" alt="" aria-hidden="true">` : '';
   const bye = data.bye_week != null ? `Bye ${data.bye_week}` : '';
-  const posLine = [data.position, team, bye].filter(Boolean).join(' · ');
+  const summarySeason = Number(data.stats_season || data.season) || '';
+  const summaryMode = data.data_mode === 'projection' ? 'Projected data' : 'Actual data';
+  const posLine = [data.position, team, summarySeason, summaryMode, bye].filter(Boolean).join(' · ');
 
   const ranks = data.ranks || {};
   const rm = data.ranks_more || {};
@@ -2415,13 +2472,27 @@ function _pmBuildTeamHTML(data) {
       <div class="pm-hero-splitlbl"><span>${pr}% Pass</span><span>${100 - pr}% Run</span></div></div>` : '',
   ].join('');
 
-  const profile = [['Pass Yards', 'pass_yds'], ['Pass Attempts', 'pass_att'], ['Rush Yards', 'rush_yds'], ['Rush Attempts', 'rush_att']]
+  const primaryProfile = pos === 'RB'
+    ? [['Rush Attempts', 'rush_att'], ['Rush Yards', 'rush_yds']]
+    : [['Pass Attempts', 'pass_att'], ['Pass Yards', 'pass_yds']];
+  const secondaryProfile = pos === 'RB'
+    ? [['Pass Attempts', 'pass_att'], ['Pass Yards', 'pass_yds']]
+    : [['Rush Attempts', 'rush_att'], ['Rush Yards', 'rush_yds']];
+  const profile = primaryProfile
     .map(function (m) { return _pmTeamProfileRow(pos, m[0], m[1], ranks[m[1]]); }).join('');
-  const moreProfile = [['Total Yards', 'total_yds'], ['Pass TDs', 'pass_tds'], ['Rush TDs', 'rush_tds'], ['Pass Rate', 'pass_rate'], ['Plays / Game', 'plays_pg']]
-    .map(function (m) { return _pmTeamProfileRow(pos, m[0], m[1], rm[m[1]]); }).join('');
+  const moreProfile = secondaryProfile.map(function (m) { return _pmTeamProfileRow(pos, m[0], m[1], ranks[m[1]]); }).join('')
+    + [['Total Yards', 'total_yds'], ['Pass TDs', 'pass_tds'], ['Rush TDs', 'rush_tds'], ['Pass Rate', 'pass_rate'], ['Plays / Game', 'plays_pg']]
+      .map(function (m) { return _pmTeamProfileRow(pos, m[0], m[1], rm[m[1]]); }).join('');
 
   const room = (data.depth_chart && data.depth_chart[pos]) || [];
-  const roomRows = room.length ? room.map(_pmTeamRoomRow).join('') : '<div class="pm-team-depth-empty">--</div>';
+  const roomRows = room.length ? room.map((r, i) => _pmTeamRoomRow(r, i, pos)).join('') : '<div class="pm-team-depth-empty">No role data available.</div>';
+  const roomCols = _pmTeamRoomColumns(pos);
+  const focusRole = room.find(r => r.is_focus);
+  const roleSummary = focusRole ? '<div class="pm-role-summary">' + roomCols.map(c => {
+    let v = focusRole[c.key]; if (v == null && c.fallback) v = focusRole[c.fallback];
+    const suffix = c.key.includes('share') && v != null ? '%' : '';
+    return `<span><small>${c.label}</small><b>${v == null ? '—' : v + suffix}${c.key === 'snap_pct' && focusRole.snap_pct_source === 'derived' ? ' <i>est.</i>' : ''}</b></span>`;
+  }).join('') + '</div>' : '';
   const shareBar = _pmTeamShareBar(data);
 
   const otherPos = ['QB', 'RB', 'WR', 'TE'].filter(function (p) { return p !== pos; });
@@ -2497,21 +2568,20 @@ function _pmBuildTeamHTML(data) {
     };
     // Primary metric first so the position-relevant signal is at the top,
     // then the other half and overall for context.
-    let olineRows = '';
+    let olineRows = '', olineMore = '';
     if (primaryKey === 'run_block') {
-      olineRows = mkOl('Run Block', 'run_block', ol.run_block, ol.run_block_rank)
-        + mkOl('Pass Block', 'pass_block', ol.pass_block, ol.pass_block_rank)
-        + mkOl('Overall', 'composite', ol.composite, ol.composite_rank);
+      olineRows = mkOl('Run Block', 'run_block', ol.run_block, ol.run_block_rank);
+      olineMore = mkOl('Pass Block', 'pass_block', ol.pass_block, ol.pass_block_rank) + mkOl('Overall', 'composite', ol.composite, ol.composite_rank);
     } else {
-      olineRows = mkOl('Pass Block', 'pass_block', ol.pass_block, ol.pass_block_rank)
-        + mkOl('Run Block', 'run_block', ol.run_block, ol.run_block_rank)
-        + mkOl('Overall', 'composite', ol.composite, ol.composite_rank);
+      olineRows = mkOl('Pass Block', 'pass_block', ol.pass_block, ol.pass_block_rank);
+      olineMore = mkOl('Run Block', 'run_block', ol.run_block, ol.run_block_rank) + mkOl('Overall', 'composite', ol.composite, ol.composite_rank);
     }
     if (olineRows) {
       olineSec = `<div class="pm-team-sec pm-oline-sec">
       <div class="pm-section-header"><span class="pm-section-label">Offensive Line</span><span class="pm-team-secnote">${rankNote}</span></div>
       ${_pmTeamProfileAxis()}${olineRows}
-      <div class="pm-team-note">0&ndash;100 unit rating (100 = best), from public play-by-play -- not a commercial blocker grade. Dot = league rank (right = 1st).${ctx ? ' ' + ctx + '.' : ''}${seasonBit} <a class="pm-oline-link" href="/oline-rankings${ol.season ? '/' + ol.season : ''}" target="_blank" rel="noopener">Full rankings</a></div>
+      <button type="button" class="pm-subdisclosure pm-oline-toggle" aria-expanded="false">More line metrics &amp; methodology <span aria-hidden="true">&#9656;</span></button>
+      <div class="pm-oline-more" hidden>${olineMore}<div class="pm-team-note">0&ndash;100 unit rating (100 = best), from public play-by-play -- not a commercial blocker grade. Dot = league rank (right = 1st).${ctx ? ' ' + ctx + '.' : ''}${seasonBit} <a class="pm-oline-link" href="/oline-rankings${ol.season ? '/' + ol.season : ''}" target="_blank" rel="noopener">Full rankings</a></div></div>
     </div>`;
     }
   }
@@ -2529,35 +2599,38 @@ function _pmBuildTeamHTML(data) {
         </div>
         ${seasonPills}
       </div>
+      ${data.team_timeframe && !data.team_timeframe.season_team_confirmed ? '<div class="pm-team-context-warning">No team record was found for this player in the selected season; current-team context is shown separately.</div>' : ''}
       ${heroStats ? '<div class="pm-team-herostats">' + heroStats + '</div>' : ''}
     </div>
+    <div class="pm-team-sec pm-role-sec">
+      <div class="pm-section-header"><span class="pm-section-label">Player's Role &amp; Competition</span><span class="pm-team-secnote">${pos} room</span></div>
+      ${roleSummary}${shareBar}
+      <div class="pm-team-usage pm-room-${pos.toLowerCase()}">
+        <div class="pm-troom-row pm-troom-head"><span></span><span>${pos} Room</span>${roomCols.map(c => `<span>${c.label}</span>`).join('')}</div>
+        ${roomRows}
+      </div>
+      <div class="pm-team-note">${data.roster_timeframe && data.roster_timeframe.historical_unavailable ? `Historical depth charts are unavailable. This is the current roster; injuries are current, while usage is from ${data.usage_timeframe ? data.usage_timeframe.season : 'the latest available season'}.` : `Current Sleeper depth order and injuries. Usage is from ${data.usage_timeframe ? data.usage_timeframe.season : seasonNote}.`} PPR PPG uses PPR scoring. Tap any teammate to open their card.</div>
+    </div>
+    ${scheduleSec}
     <div class="pm-team-sec">
-      <div class="pm-section-header"><span class="pm-section-label">Offense Profile</span><span class="pm-team-secnote">${seasonNote} · rank of 32</span></div>
+      <div class="pm-section-header"><span class="pm-section-label">Offensive Environment</span><span class="pm-team-secnote">${seasonNote} · rank of 32</span></div>
       ${_pmTeamProfileAxis()}${profile}
-      <div class="pm-team-note">Dot = team rank (right = 1st). Color = rank tier: <b style="color:var(--win)">green good</b>, <b style="color:var(--warning)">yellow mid</b>, <b style="color:var(--loss)">red bad</b>.${dataMode === 'projection' ? ' Values are Sleeper season projections aggregated by team.' : ''}</div>
-      <div class="pm-section-header pm-section-collapsible pm-team-adv-toggle" role="button" tabindex="0" aria-expanded="${advOpen ? 'true' : 'false'}" aria-controls="pmTeamAdvBody">
+      <div class="pm-team-note">Dot = team rank (right = 1st). Volume and tendency ranks are neutral context, not a player grade.${dataMode === 'projection' ? ' Values are Sleeper season projections aggregated by team.' : ''}</div>
+      <button type="button" class="pm-section-header pm-section-collapsible pm-team-adv-toggle" aria-expanded="${advOpen ? 'true' : 'false'}" aria-controls="pmTeamAdvBody">
         <span class="pm-collapse-chevron" aria-hidden="true">${advChev}</span>
         <span class="pm-section-label">More team ranks</span>
         <span class="pm-collapse-hint">${advHint}</span>
-      </div>
+      </button>
       <div class="pm-team-adv-body" id="pmTeamAdvBody"${advOpen ? '' : ' hidden'}>
         ${_pmTeamProfileAxis()}${moreProfile}
       </div>
     </div>
     ${olineSec}
-    <div class="pm-team-sec">
-      <div class="pm-section-header"><span class="pm-section-label">${roleName}&#39;s Role</span><span class="pm-team-secnote">${pos} room</span></div>
-      ${shareBar}
-      <div class="pm-team-usage">
-        <div class="pm-troom-row pm-troom-head"><span></span><span>${pos} Room</span><span>Snap %</span><span>Tgt %</span><span>PPG</span></div>
-        ${roomRows}
-      </div>
-      <div class="pm-team-note">Depth order + injuries from Sleeper. Tap any teammate to open their card.</div>
-    </div>
-    ${scheduleSec}
-    <div class="pm-team-sec">
-      <div class="pm-section-header"><span class="pm-section-label">Rest of Depth Chart</span><span class="pm-team-secnote">Sleeper order</span></div>
-      <div class="pm-team-depth"><div class="pm-mini-grid">${miniCols}</div></div>
+    <div class="pm-team-sec pm-other-sec">
+      <button type="button" class="pm-section-header pm-section-collapsible pm-other-toggle" aria-expanded="false">
+        <span class="pm-collapse-chevron" aria-hidden="true">&#9656;</span><span class="pm-section-label">Other Position Groups</span><span class="pm-team-secnote">${otherPos.map(p => ((data.depth_chart || {})[p] || [])[0]).filter(Boolean).map(r => r.name).slice(0, 2).join(' · ') || 'Current roster'}</span>
+      </button>
+      <div class="pm-team-depth pm-other-body" hidden><div class="pm-mini-grid">${miniCols}</div></div>
     </div>
   </div>`;
 }
@@ -2565,111 +2638,65 @@ function _pmBuildTeamHTML(data) {
 
 function _pmWireTeamPanel(panel, playerId) {
   if (!panel) return;
-  // Any clickable teammate (depth chart or usage table) carries data-pid.
-  const _pmOpenTeammate = (row) => {
-    const pid = row.dataset.pid;
-    const pname = row.dataset.pname;
+  panel.dataset.pmPlayerId = String(playerId || '');
+
+  const openTeammate = function (row) {
+    const pid = row && row.dataset.pid, pname = row && row.dataset.pname;
     if (!pid || typeof openPlayerModal !== 'function') return;
-    // Replace the current modal rather than stacking a second overlay on top.
+    const openItem = panel.querySelector('.pm-schedule-item.is-open');
+    _pmTeamNavHistory.push({
+      playerId: String(playerId),
+      playerName: (document.querySelector('.player-modal-name') || {}).textContent || '',
+      season: panel.dataset.pmTeamSeason,
+      scrollTop: panel.closest('.player-modal-body') ? panel.closest('.player-modal-body').scrollTop : 0,
+      advOpen: _pmTeamAdvOpen,
+      scheduleOpen: _pmTeamSchedOpen,
+      otherOpen: _pmTeamOtherOpen,
+      gameId: openItem ? (openItem.querySelector('.pm-schedule-toggle') || {}).dataset.gameId : ''
+    });
     _pmStopBoxLiveRefresh();
     const ov = document.querySelector('.player-modal-overlay');
-    if (ov) { document.body.style.overflow = ''; ov.remove(); }
-    openPlayerModal(pid, pname, { force: true });
+    if (ov) ov.remove();
+    openPlayerModal(pid, pname, { force: true, tab: 'team', teamSeason: panel.dataset.pmTeamSeason, teamNavigation: true });
   };
-  const _bindPlayerNav = (root) => {
-    (root || panel).querySelectorAll('[data-pid]').forEach(row => {
-      if (row.dataset.pmNavBound) return;
-      row.dataset.pmNavBound = '1';
-      row.addEventListener('click', () => _pmOpenTeammate(row));
-      row.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
-          e.preventDefault();
-          _pmOpenTeammate(row);
-        }
-      });
-    });
+
+  panel.onclick = function (e) {
+    const target = e.target;
+    const back = target.closest && target.closest('.pm-team-back');
+    if (back) {
+      const prev = _pmTeamNavHistory.pop();
+      if (!prev) return;
+      _pmTeamAdvOpen = prev.advOpen; _pmTeamSchedOpen = prev.scheduleOpen; _pmTeamOtherOpen = prev.otherOpen;
+      const ov = document.querySelector('.player-modal-overlay'); if (ov) ov.remove();
+      openPlayerModal(prev.playerId, prev.playerName, { force: true, tab: 'team', teamSeason: prev.season, teamNavigation: true,
+        restoreTeam: prev });
+      return;
+    }
+    const nav = target.closest && target.closest('[data-pid]');
+    if (nav && panel.contains(nav)) { e.preventDefault(); openTeammate(nav); return; }
+    const adv = target.closest && target.closest('.pm-team-adv-toggle');
+    if (adv) { _pmTeamAdvOpen = !_pmTeamAdvOpen; const body=panel.querySelector('.pm-team-adv-body'); adv.setAttribute('aria-expanded', String(_pmTeamAdvOpen)); if(body) body.hidden=!_pmTeamAdvOpen; return; }
+    const sched = target.closest && target.closest('.pm-team-sched-toggle');
+    if (sched) { _pmTeamSchedOpen=!_pmTeamSchedOpen; const body=panel.querySelector('.pm-team-sched-body'); sched.setAttribute('aria-expanded',String(_pmTeamSchedOpen)); if(body) body.hidden=!_pmTeamSchedOpen; if(!_pmTeamSchedOpen)_pmCollapseAllSchedule(panel); return; }
+    const current = target.closest && target.closest('.pm-current-week');
+    if (current) { if(!_pmTeamSchedOpen){ const t=panel.querySelector('.pm-team-sched-toggle'); if(t)t.click(); } const row=panel.querySelector('.pm-schedule-toggle[data-status="live"], .pm-schedule-item:not([data-final="1"]) .pm-schedule-toggle'); if(row)row.focus(); return; }
+    const other=target.closest && target.closest('.pm-other-toggle');
+    if(other){ _pmTeamOtherOpen=!_pmTeamOtherOpen; const body=panel.querySelector('.pm-other-body'); other.setAttribute('aria-expanded',String(_pmTeamOtherOpen)); if(body)body.hidden=!_pmTeamOtherOpen; return; }
+    const olt=target.closest && target.closest('.pm-oline-toggle');
+    if(olt){ _pmTeamOlineOpen=!_pmTeamOlineOpen; const body=panel.querySelector('.pm-oline-more'); olt.setAttribute('aria-expanded',String(_pmTeamOlineOpen)); if(body)body.hidden=!_pmTeamOlineOpen; return; }
+    const game=target.closest && target.closest('.pm-schedule-toggle');
+    if(game){ const item=game.closest('.pm-schedule-item'); if(item)_pmExpandScheduleGame(panel,item); return; }
+    const pill=target.closest && target.closest('.pm-boxscore-team-pill');
+    if(pill){ const host=pill.closest('.pm-boxscore'); if(host&&host._pmBoxPayload)_pmRenderBoxInto(host,host._pmBoxPayload,pill.dataset.boxTeam,host._pmFocusPid); }
   };
-  _bindPlayerNav(panel);
-  const toggle = panel.querySelector('.pm-team-adv-toggle');
-  const body = panel.querySelector('.pm-team-adv-body');
-  if (toggle && body) {
-    const flipAdv = () => {
-      _pmTeamAdvOpen = !_pmTeamAdvOpen;
-      toggle.setAttribute('aria-expanded', _pmTeamAdvOpen ? 'true' : 'false');
-      body.hidden = !_pmTeamAdvOpen;
-      const chev = toggle.querySelector('.pm-collapse-chevron');
-      const hint = toggle.querySelector('.pm-collapse-hint');
-      if (chev) chev.innerHTML = _pmTeamAdvOpen ? '&#9662;' : '&#9656;';
-      if (hint) hint.textContent = _pmTeamAdvOpen ? 'click to collapse' : 'click to expand';
-      if (hint) hint.style.opacity = _pmTeamAdvOpen ? '0.8' : '';
-    };
-    toggle.addEventListener('click', flipAdv);
-    toggle.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
-        e.preventDefault();
-        flipAdv();
-      }
-    });
-  }
-
-  // Schedule section dropdown (default closed), matching More team ranks.
-  const schedToggle = panel.querySelector('.pm-team-sched-toggle');
-  const schedBody = panel.querySelector('.pm-team-sched-body');
-  if (schedToggle && schedBody) {
-    const flipSched = () => {
-      _pmTeamSchedOpen = !_pmTeamSchedOpen;
-      schedToggle.setAttribute('aria-expanded', _pmTeamSchedOpen ? 'true' : 'false');
-      schedBody.hidden = !_pmTeamSchedOpen;
-      const chev = schedToggle.querySelector('.pm-collapse-chevron');
-      const hint = schedToggle.querySelector('.pm-collapse-hint');
-      if (chev) chev.innerHTML = _pmTeamSchedOpen ? '&#9662;' : '&#9656;';
-      if (hint) hint.textContent = _pmTeamSchedOpen ? 'click to collapse' : 'click to expand';
-      if (hint) hint.style.opacity = _pmTeamSchedOpen ? '0.8' : '';
-      if (!_pmTeamSchedOpen) _pmCollapseAllSchedule(panel);
-    };
-    schedToggle.addEventListener('click', flipSched);
-    schedToggle.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
-        e.preventDefault();
-        flipSched();
-      }
-    });
-  }
-
-  // Schedule accordion: one open game at a time; box scores lazy-load on expand.
-  panel.querySelectorAll('.pm-schedule-toggle').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const item = btn.closest('.pm-schedule-item');
-      if (item) _pmExpandScheduleGame(panel, item);
-    });
-  });
-  panel.addEventListener('click', (e) => {
-    const pill = e.target.closest && e.target.closest('.pm-boxscore-team-pill');
-    if (!pill || !panel.contains(pill)) return;
-    const host = pill.closest('.pm-boxscore');
-    if (!host || !host._pmBoxPayload) return;
-    const t = pill.dataset.boxTeam || '';
-    _pmRenderBoxInto(host, host._pmBoxPayload, t);
-  });
-  // Box-score player rows are painted asynchronously -- use delegation.
-  panel.addEventListener('click', (e) => {
-    const row = e.target.closest && e.target.closest('.pm-boxscore-player[data-pid]');
-    if (!row || !panel.contains(row)) return;
-    e.preventDefault();
-    _pmOpenTeammate(row);
-  });
-  panel.addEventListener('keydown', (e) => {
+  panel.onkeydown = function(e){
     if (!(e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar')) return;
-    const row = e.target.closest && e.target.closest('.pm-boxscore-player[data-pid]');
-    if (!row || !panel.contains(row)) return;
-    e.preventDefault();
-    _pmOpenTeammate(row);
-  });
-
-  // Season pills also use onclick; keep dataset in sync for re-entry.
-  if (playerId) panel.dataset.pmPlayerId = String(playerId);
+    const row=e.target.closest&&e.target.closest('[data-pid][role="button"]');
+    if(row){e.preventDefault();openTeammate(row);}
+  };
+  const wrap=panel.querySelector('.pm-team-wrap');
+  if(wrap && _pmTeamNavHistory.length){ const prev=_pmTeamNavHistory[_pmTeamNavHistory.length-1]; wrap.insertAdjacentHTML('afterbegin', `<button type="button" class="pm-team-back" aria-label="Back to ${_pmEsc(prev.playerName)}">&#8592; Back to ${_pmEsc(prev.playerName)}</button>`); }
 }
-
 function pmPrefetchTabs() {
   const bar = document.getElementById('pmTabBar');
   if (!bar || bar.dataset.pmPrefetched) return;
@@ -4982,6 +5009,8 @@ function toggleGameLogYear(arg) {
 function closePlayerModal() {
   _pmStopBoxLiveRefresh();
   _pmBoxGen += 1;
+  _pmTeamNavHistory = [];
+  _pmTeamRestore = null;
   const overlay = document.querySelector('.player-modal-overlay');
   if (overlay) {
     const _return = overlay._pmReturnFocus;
