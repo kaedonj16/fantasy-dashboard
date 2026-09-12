@@ -17110,6 +17110,16 @@ function addBreakoutBadgesToTeamsPage() {
 }
 
 let _globalPlayerModalsReady = false;
+
+// The open player-modal overlay carries data-player-id to identify the owner of
+// async responses. It is state metadata, not a page-level player trigger. Keep
+// that container out of the delegated trigger contract while still allowing a
+// real nested player link/row to win closest() first.
+function _globalPlayerModalTrigger(target) {
+  const trigger = target && target.closest && target.closest('[data-player-id]');
+  return trigger && !trigger.classList.contains('player-modal-overlay') ? trigger : null;
+}
+
 function initGlobalPlayerModals() {
   // Guard: only attach the delegated listener once
   if (_globalPlayerModalsReady) return;
@@ -17119,7 +17129,7 @@ function initGlobalPlayerModals() {
     // Skip if already handled or if it's a modified click
     if (e.defaultPrevented) return;
     
-    const target = e.target.closest('[data-player-id]');
+    const target = _globalPlayerModalTrigger(e.target);
     if (target && target.dataset.playerId) {
       const playerId = target.dataset.playerId;
       const playerName = target.dataset.playerName || target.textContent || 'Player';
@@ -17151,7 +17161,8 @@ function initGlobalPlayerModals() {
     if (e.key !== 'Enter' && e.key !== ' ' && e.key !== 'Spacebar') return;
     const el = e.target;
     if (!el || /^(A|BUTTON|INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return;
-    const trigger = el.closest('[data-player-id], .player-clickable, .team-clickable');
+    const trigger = _globalPlayerModalTrigger(el)
+      || el.closest('.player-clickable, .team-clickable');
     if (!trigger) return;
     e.preventDefault();
     trigger.click();

@@ -2726,6 +2726,14 @@ function _pmWireTeamPanel(panel, playerId) {
     openPlayerModal(pid, pname, { force: true, tab: 'team', teamSeason: panel.dataset.pmTeamSeason, teamNavigation: true });
   };
 
+  // data-pid is also metadata for charts/trends.  Only an explicitly
+  // interactive player row is a navigation target, for both pointer and
+  // keyboard activation.
+  const findPlayerNavTarget = function (target) {
+    const row = target && target.closest && target.closest('[data-pid][role="button"]');
+    return row && panel.contains(row) ? row : null;
+  };
+
   panel.onclick = function (e) {
     const target = e.target;
     const back = target.closest && target.closest('.pm-team-back');
@@ -2737,8 +2745,8 @@ function _pmWireTeamPanel(panel, playerId) {
         restoreTeam: prev });
       return;
     }
-    const nav = target.closest && target.closest('[data-pid]');
-    if (nav && panel.contains(nav)) { e.preventDefault(); openTeammate(nav); return; }
+    const nav = findPlayerNavTarget(target);
+    if (nav) { e.preventDefault(); openTeammate(nav); return; }
     const adv = target.closest && target.closest('.pm-team-adv-toggle');
     if (adv) { _pmTeamAdvOpen = !_pmTeamAdvOpen; _pmSyncDisclosure(adv, panel.querySelector('.pm-team-adv-body'), _pmTeamAdvOpen); return; }
     const sched = target.closest && target.closest('.pm-team-sched-toggle');
@@ -2756,7 +2764,7 @@ function _pmWireTeamPanel(panel, playerId) {
   };
   panel.onkeydown = function(e){
     if (!(e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar')) return;
-    const row=e.target.closest&&e.target.closest('[data-pid][role="button"]');
+    const row=findPlayerNavTarget(e.target);
     if(row){e.preventDefault();openTeammate(row);}
   };
   const wrap=panel.querySelector('.pm-team-wrap');

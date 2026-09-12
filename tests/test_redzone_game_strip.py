@@ -187,6 +187,46 @@ def test_strip_is_single_row_horizontal_scroll_on_mobile():
     assert "flex-wrap" not in block
 
 
+def test_strip_uses_shared_real_gutters_at_both_scroll_edges():
+    page = DASHBOARD_CSS.split(".rz-page {", 1)[1].split("}", 1)[0]
+    strip = DASHBOARD_CSS.split(".rz-game-strip-scroll {", 1)[1].split("}", 1)[0]
+    assert "--rz-content-gutter: 14px" in page
+    assert "padding: 3px var(--rz-content-gutter) 7px" in strip
+    assert "scroll-padding-inline: var(--rz-content-gutter)" in strip
+    assert "transform" not in strip and "margin-left" not in strip
+    for selector in (".rz-chip-bar {", ".rz-mt-list {", ".rz-feed-hdr {"):
+        block = DASHBOARD_CSS.rsplit(selector, 1)[1].split("}", 1)[0]
+        assert "var(--rz-content-gutter)" in block
+
+
+def test_pregame_hides_scores_by_status_but_live_zero_scores_remain():
+    strip = REDZONE_JS.split("function _renderGameStrip()", 1)[1].split(
+        "function _renderFilterChips", 1
+    )[0]
+    assert "showScore = norm !== 'pregame'" in strip
+    assert "showScore ?" in strip
+    assert "aPts === 0" not in strip and "hPts === 0" not in strip
+    assert "_gamePillTeamRow" in strip
+    schedule = REDZONE_JS.split("function _pregameScheduleHtml()", 1)[1].split(
+        "function _syncFeed", 1
+    )[0]
+    assert "rz-game-pill rz-pregame-pill" in schedule
+    assert "_gamePillTeamRow" in schedule
+
+
+def test_hero_arrows_use_scroll_tolerance_hidden_and_resize_recalculation():
+    arrows = REDZONE_JS.split("function _updateHeroArrows()", 1)[1].split(
+        "function _wireHeroScroll", 1
+    )[0]
+    assert "x <= 3" in arrows
+    assert "x >= maxScroll - 3" in arrows
+    assert "leftBtn.hidden = leftOff" in arrows
+    assert "rightBtn.hidden = rightOff" in arrows
+    assert "window.addEventListener('resize', _updateHeroArrows)" in REDZONE_JS
+    off = DASHBOARD_CSS.split(".rz-hero-arrow.rz-arrow-off {", 1)[1].split("}", 1)[0]
+    assert "display: none" in off
+
+
 def test_selected_matchup_style_is_not_loud_green(selector=".rz-mc-hero.selected"):
     block = DASHBOARD_CSS.split(selector + " {", 1)[1].split("}", 1)[0]
     # Selection uses the neutral accent, not a green (win-state) color.
