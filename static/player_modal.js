@@ -10,18 +10,12 @@
 
 function openPlayerModal(playerId, playerName, opts) {
   opts = opts || {};
+  if (!opts.teamNavigation) _pmTeamNavHistory = [];
+  _pmTeamRestore = opts.restoreTeam || null;
 
   // Keep one modal and one request owner. A history restore may arrive while a
   // soft-navigation callback is still settling.
-  if (document.getElementById('playerModal')) {
-    closePlayerModal({
-      history: false,
-      immediate: true,
-      preserveTeamContext: !!opts.teamNavigation,
-    });
-  }
-  if (!opts.teamNavigation) _pmTeamNavHistory = [];
-  _pmTeamRestore = opts.restoreTeam || null;
+  if (document.getElementById('playerModal')) closePlayerModal({ history: false, immediate: true });
 
   // Guests: a player-name click goes to the public player page (SEO landing),
   // not the in-app modal. Signed-in users keep the modal. opts.force bypasses
@@ -5048,10 +5042,8 @@ function closePlayerModal() {
   }
   _pmStopBoxLiveRefresh();
   _pmBoxGen += 1;
-  if (!options.preserveTeamContext) {
-    _pmTeamNavHistory = [];
-    _pmTeamRestore = null;
-  }
+  _pmTeamNavHistory = [];
+  _pmTeamRestore = null;
   const overlay = document.querySelector('.player-modal-overlay');
   if (overlay) {
     const _return = overlay._pmReturnFocus;
