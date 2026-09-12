@@ -84,13 +84,13 @@ function openPlayerModal(playerId, playerName, opts) {
       </div>
     </div>
     <div class="pm-tab-bar" id="pmTabBar" role="tablist" aria-label="Player details" style="display:none">
-      <button class="pm-tab active" role="tab" aria-selected="true" data-tab="overview" onclick="pmSwitchTab('overview')">Overview</button>
-      <button class="pm-tab" role="tab" aria-selected="false" data-tab="stats" onclick="pmSwitchTab('stats')">Stats</button>
-      <button class="pm-tab" role="tab" aria-selected="false" id="pmTabTeam" data-tab="team" onclick="pmSwitchTab('team')" style="display:none">Team</button>
-      <button class="pm-tab" role="tab" aria-selected="false" id="pmTabMetrics" data-tab="metrics" onclick="pmSwitchTab('metrics')" style="display:none">Adv Metrics</button>
-      <button class="pm-tab" role="tab" aria-selected="false" id="pmTabProspect" data-tab="prospect" onclick="pmSwitchTab('prospect')" style="display:none">Prospect</button>
-      <button class="pm-tab" role="tab" aria-selected="false" id="pmTabBreakout" data-tab="breakout" onclick="pmSwitchTab('breakout')" style="display:none">Breakout</button>
-      <button class="pm-tab" role="tab" aria-selected="false" data-tab="trades" onclick="pmSwitchTab('trades')">Trades</button>
+      <button type="button" class="pm-tab active" role="tab" aria-selected="true" data-tab="overview" onclick="pmSwitchTab('overview', event)">Overview</button>
+      <button type="button" class="pm-tab" role="tab" aria-selected="false" data-tab="stats" onclick="pmSwitchTab('stats', event)">Stats</button>
+      <button type="button" class="pm-tab" role="tab" aria-selected="false" id="pmTabTeam" data-tab="team" onclick="pmSwitchTab('team', event)" style="display:none">Team</button>
+      <button type="button" class="pm-tab" role="tab" aria-selected="false" id="pmTabMetrics" data-tab="metrics" onclick="pmSwitchTab('metrics', event)" style="display:none">Adv Metrics</button>
+      <button type="button" class="pm-tab" role="tab" aria-selected="false" id="pmTabProspect" data-tab="prospect" onclick="pmSwitchTab('prospect', event)" style="display:none">Prospect</button>
+      <button type="button" class="pm-tab" role="tab" aria-selected="false" id="pmTabBreakout" data-tab="breakout" onclick="pmSwitchTab('breakout', event)" style="display:none">Breakout</button>
+      <button type="button" class="pm-tab" role="tab" aria-selected="false" data-tab="trades" onclick="pmSwitchTab('trades', event)">Trades</button>
     </div>
     <div class="player-modal-body" id="playerModalBody">
       <div class="pm-skel" style="padding:16px 18px;">
@@ -121,6 +121,28 @@ function openPlayerModal(playerId, playerName, opts) {
   overlay.appendChild(modal);
   document.body.appendChild(overlay);
   document.body.style.overflow = 'hidden';
+  overlay.dataset.playerId = String(playerId);
+  overlay.dataset.playerName = playerName || '';
+  const underlyingUrl = new URL(window.location.href);
+  underlyingUrl.searchParams.delete('player'); underlyingUrl.searchParams.delete('player_name'); underlyingUrl.searchParams.delete('player_tab');
+  overlay.dataset.pageUrl = underlyingUrl.pathname + underlyingUrl.search + underlyingUrl.hash;
+  window.__brPlayerModal = { id: String(playerId), name: playerName || '', tab: opts.tab || 'overview' };
+  const modalUrl = new URL(window.location.href);
+  modalUrl.searchParams.set('player', playerId);
+  if (playerName) modalUrl.searchParams.set('player_name', playerName);
+  modalUrl.searchParams.set('player_tab', opts.tab || 'overview');
+  const modalState = Object.assign({}, history.state || {}, { brPlayerModal: true, brPlayerId: String(playerId) });
+  if (opts.teamNavigation) {
+    // Teammates are an in-dialog navigation stack, not browser entries.
+    history.replaceState(modalState, '', modalUrl);
+  } else if (!opts.fromHistory) {
+    history.pushState(modalState, '', modalUrl);
+  } else if (!(history.state && history.state.brPlayerModal)) {
+    // A shared/direct ?player URL needs a safe page entry beneath its modal.
+    const pageUrl = new URL(modalUrl); pageUrl.searchParams.delete('player'); pageUrl.searchParams.delete('player_name'); pageUrl.searchParams.delete('player_tab');
+    history.replaceState(Object.assign({}, history.state || {}, { brPlayerModal: false }), '', pageUrl);
+    history.pushState(modalState, '', modalUrl);
+  }
 
   // ── Accessibility: focus management + focus trap ──────────────────────────
   // Remember what had focus so closePlayerModal can restore it, then move focus
@@ -181,7 +203,7 @@ function openPlayerModal(playerId, playerName, opts) {
     .then(data => {
 
       const modalBody = document.getElementById('playerModalBody');
-      if (!modalBody) return; // modal was closed before fetch completed
+      if (!modalBody || !overlay.isConnected || overlay.dataset.playerId !== String(playerId)) return; // stale/closed request
 
       if (data.error) {
         if (window.brErrorState) {
@@ -968,7 +990,7 @@ function openPlayerModal(playerId, playerName, opts) {
         const _liveBtn = document.createElement('button');
         _liveBtn.className = 'pm-tab pm-tab-live';
         _liveBtn.dataset.tab = 'live';
-        _liveBtn.onclick = function() { pmSwitchTab('live'); };
+        _liveBtn.onclick = function(e) { pmSwitchTab('live', e); };
         _liveBtn.innerHTML = '<span class="pm-live-dot"></span>Redzone';
         if (pmTabBar) pmTabBar.appendChild(_liveBtn);
       }
@@ -1561,7 +1583,11 @@ function pmInjectContextActions(playerId, playerName, data, leagueId, platform, 
 }
 
 // ── Player Modal Tab Switching (global) ──────────────────────────────────────
-function pmSwitchTab(tab) {
+function pmSwitchTab(tab, clickEvent) {
+  // A few dashboard surfaces use delegated player-row click handlers. Keep a
+  // tab click inside the existing dialog so it cannot bubble into one of those
+  // handlers and invoke openPlayerModal a second time.
+  if (clickEvent && typeof clickEvent.stopPropagation === 'function') clickEvent.stopPropagation();
   document.querySelectorAll('.pm-panel').forEach(p => p.classList.remove('pm-panel-active'));
   document.querySelectorAll('.pm-tab').forEach(t => {
     t.classList.remove('active');
@@ -1578,7 +1604,22 @@ function pmSwitchTab(tab) {
   // modal body's inset while it's active.
   const _pmBodyEl = document.getElementById('playerModalBody');
   if (_pmBodyEl) _pmBodyEl.classList.toggle('pm-body-flush', tab === 'team');
+  // Live box-score polling only belongs to a visible Team tab/section.
+  if (tab !== 'team') _pmStopBoxLiveRefresh();
+  else if (panel) {
+    const liveItem = panel.querySelector('.pm-schedule-item.is-open .pm-schedule-toggle[data-status="live"]');
+    if (liveItem && !liveItem.closest('.pm-team-sched-body[hidden]')) _pmStartBoxLiveRefresh(panel, liveItem.closest('.pm-schedule-item'));
+  }
   if (window._pmSlideTabs) window._pmSlideTabs.sync(true);
+
+  // Tabs are shareable/restorable but replace the current modal entry so minor
+  // exploration does not turn Back into a tour through every tab.
+  if (window.__brPlayerModal) {
+    window.__brPlayerModal.tab = tab;
+    const u = new URL(window.location.href);
+    u.searchParams.set('player_tab', tab);
+    history.replaceState(Object.assign({}, history.state || {}, { brPlayerModal: true }), '', u);
+  }
 
   const pmTabBar = document.getElementById('pmTabBar');
   if (!pmTabBar) return;
@@ -1634,7 +1675,8 @@ function pmSwitchTab(tab) {
       })
       .catch(() => {
         if (panel.isConnected) {
-          panel.innerHTML = '<div class="player-modal-loading" style="padding:32px 0;"><div style="color:var(--text-muted);font-size:13px;">Breakout analysis not available.</div></div>';
+          panel.dataset.loaded = '';
+          window.brErrorState(panel, 'Could not load breakout analysis.', () => pmSwitchTab('breakout'), { compact: true });
         }
       });
   }
@@ -2505,7 +2547,7 @@ function _pmBuildTeamHTML(data) {
   const roleName = String(data.player_name || '').split(' ').slice(-1)[0] || pos;
   const advOpen = _pmTeamAdvOpen;
   const advChev = advOpen ? '&#9662;' : '&#9656;';
-  const advHint = advOpen ? 'click to collapse' : 'click to expand';
+  const advHint = advOpen ? 'Hide details' : 'Show details';
 
   const viewSeason = Number(data.stats_season || data.season) || '';
   const dataMode = data.data_mode === 'projection' ? 'projection' : 'actual';
@@ -2635,6 +2677,17 @@ function _pmBuildTeamHTML(data) {
   </div>`;
 }
 
+
+function _pmSyncDisclosure(button, body, open) {
+  if (!button) return;
+  button.setAttribute('aria-expanded', String(!!open));
+  if (body) body.hidden = !open;
+  const chev = button.querySelector('.pm-collapse-chevron, span[aria-hidden="true"]');
+  if (chev) chev.innerHTML = open ? '&#9662;' : '&#9656;';
+  const hint = button.querySelector('.pm-collapse-hint');
+  if (hint) hint.textContent = open ? 'Hide details' : 'Show details';
+  if (button.classList.contains('pm-oline-toggle')) button.firstChild.nodeValue = (open ? 'Hide' : 'Show') + ' line metrics & methodology ';
+}
 
 function _pmWireTeamPanel(panel, playerId) {
   if (!panel) return;
@@ -5007,6 +5060,11 @@ function toggleGameLogYear(arg) {
 }
 
 function closePlayerModal() {
+  const options = arguments[0] || {};
+  if (options.history !== false && history.state && history.state.brPlayerModal) {
+    history.back();
+    return;
+  }
   _pmStopBoxLiveRefresh();
   _pmBoxGen += 1;
   _pmTeamNavHistory = [];
@@ -5016,13 +5074,15 @@ function closePlayerModal() {
     const _return = overlay._pmReturnFocus;
     document.body.style.overflow = '';
     overlay.style.opacity = '0';
-    setTimeout(() => overlay.remove(), 200);
+    if (options.immediate) overlay.remove();
+    else setTimeout(() => overlay.remove(), 200);
     // Restore focus to whatever opened the modal (the clicked player row / chip),
     // so keyboard users are not dumped back at the top of the document.
-    if (_return && typeof _return.focus === 'function') {
+    if (options.restoreFocus !== false && _return && typeof _return.focus === 'function') {
       try { _return.focus(); } catch (_) {}
     }
   }
+  window.__brPlayerModal = null;
 }
 
 window.openPlayerModal = openPlayerModal;

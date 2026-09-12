@@ -55,7 +55,7 @@ A full breakdown of every feature on the site, organized by the main navigation.
   - **Scorers** — Highest scorers for the week.
   - **Scout** — Opponent breakdown for your current-week matchup (regular season, signed-in).
   - **Lineup** — Best possible lineup vs. what was started.
-- **Redzone (live)** — Live red-zone / scoring tracker with league-wide and your-team scopes. In the Weekly nav on every platform (Sleeper, ESPN, Yahoo, MFL, Fleaflicker) — providers canonicalize player ids to a common feed, and live stat lines come from Tank01 boxscores. Cross-league "My Leagues" uses the signed-in account portfolio on every platform (and still walks Sleeper leagues for a Sleeper-only session).
+- **Redzone (live)** — Live red-zone / scoring tracker whose incremental polling keeps hero cards, roster/opponent totals, individual scoring, Top Performers, and the pinned matchup bar synchronized without remounting the page; hidden tabs are refreshed before they open. League-wide and your-team scopes. In the Weekly nav on every platform (Sleeper, ESPN, Yahoo, MFL, Fleaflicker) — providers canonicalize player ids to a common feed, and live stat lines come from Tank01 boxscores. Cross-league "My Leagues" uses the signed-in account portfolio on every platform (and still walks Sleeper leagues for a Sleeper-only session).
 - **Weekly Recap** — AI-written recap of the week with a shareable OG share image. The AI storyline is PRO; free users see an upgrade teaser. Sample/preview weeks are labeled as sample data, not your league’s results.
 
 ---
@@ -121,3 +121,13 @@ A full breakdown of every feature on the site, organized by the main navigation.
 - **Browser extension**: Companion extension for ESPN/Yahoo live-draft relay, one-click ESPN private-league connect, and a read-only Draft Assistant overlay on **Sleeper, Yahoo, and ESPN** draft rooms. See `extension/README.md` for the parity checklist (phone drafts stay manual track; production zip via `pack_extension.py`).
 - **Trending surfaces** — Trending adds, risers/fallers, and value-movers boards driven by the live value engine.
 - **Static / informational pages** — About, Pricing, FAQ, Contact, Support, Privacy, Terms.
+
+### UX reliability and accessibility
+- **Stable mobile navigation** — League docks retain the same seasonal destinations on primary and secondary pages; secondary pages mark **More** active and remain identified in its sheet. The compact league header truncates long names without hiding context.
+- **Accessible selects** — Styled selects preserve native form values and change events while exposing labels, required/disabled state, selected/disabled options, full keyboard navigation, type-ahead, and viewport-aware positioning.
+- **Recoverable live views** — Redzone polling patches the mounted interface, preserves feed reading position, offers a single **New plays** action, and distinguishes initial connection errors from cached stale data with Retry. Partial My Leagues cards remain visible and identify league failures.
+- **Shareable player modals** — Player and selected tab are represented in the URL; Back closes the modal, Forward/direct URLs restore it, and transient Breakout failures offer Retry rather than being cached as loaded.
+- **Clear onboarding** — Provider setup uses the consistent Platform → Connect → Choose team progression. Private ESPN setup promotes the shipped desktop extension workflow and keeps manual credentials under Advanced setup with an explicit mobile handoff.
+
+- **Accessible form selects** — Enhanced selects retain native values and validation while presenting required/disabled state, visible inline errors, and focus on the usable combobox control.
+- **Mobile role comparison** — RB rooms prioritize player, snap share, and PPR PPG on narrow screens, with distinctly labeled target, carry, and touch shares in a compact detail line; desktop keeps the richer comparison table.

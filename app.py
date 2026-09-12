@@ -1302,12 +1302,12 @@ FORM_BODY = """
           <div class="home-step-connector"></div>
           <div class="home-step-item" id="hintStep2">
             <span class="home-step-num">2</span>
-            <span class="home-step-label">Username</span>
+            <span class="home-step-label">Connect</span>
           </div>
           <div class="home-step-connector"></div>
           <div class="home-step-item" id="hintStep3">
             <span class="home-step-num">3</span>
-            <span class="home-step-label">League</span>
+            <span class="home-step-label">Choose team</span>
           </div>
         </div>
 
@@ -1360,6 +1360,8 @@ FORM_BODY = """
           </div>
           {% endif %}
           <div id="espnHomePrivateFields" style="display:none;">
+            <p class="hint espn-extension-connect"><strong>Fastest on desktop:</strong> use the BR Fantasy browser extension to securely fill your ESPN connection. On mobile, continue this step on a supported desktop browser.</p>
+            <details class="espn-home-help"><summary>Advanced setup: enter ESPN cookies manually</summary>
             <div class="row">
               <label for="espnSwidInput">SWID</label>
               <input type="text" id="espnSwidInput" autocomplete="off" spellcheck="false" placeholder="{XXXXXXXX-XXXX-XXXX-...}">
@@ -1377,6 +1379,7 @@ FORM_BODY = """
                 <li>Select the <code>SWID</code> and <code>espn_s2</code> rows (or all of them), copy, and paste here, and we extract the two we need.</li>
               </ol>
               <strong>Treat these like a password.</strong> They're stored encrypted and only used to read your league.
+            </details>
             </details>
           </div>
           <div class="row" id="espnSubmitRow">
@@ -2903,17 +2906,16 @@ def _sheet_account_section(body: str) -> str:
 
 
 def _mobile_nav(active: str, league_id, platform, season) -> str:
-    """Mobile navigation: a dynamic bottom dock plus a full "More" sheet.
+    """Mobile navigation: a stable bottom dock plus a full "More" sheet.
 
     On phones this replaces the top nav entirely (CSS slims the top bar to the
     logo on the dashboard and hides it everywhere else). The dock keeps Home and
-    More fixed; the three middle slots change with the season and with the page
-    you are on:
+    More fixed; the three middle slots change only with the season/league state:
       - In season:       Matchups, Trades, Teams.
       - Offseason keeper: Draft, Trades, Keeper.
       - Offseason other:  Draft, Trades, Teams.
-    Whatever page you open takes the last middle slot if it is not already a tab,
-    so the active state is never lost. Everything else (every page, plus Search,
+    Secondary pages never displace those destinations: More becomes active and
+    the exact destination is marked in its sheet. Everything else (plus Search,
     Watchlist, the league switcher and Settings) lives in the More sheet. The
     interactive widgets are relocated into the sheet by app.js, so their existing
     handlers keep working; here we render their mount points."""
@@ -2946,7 +2948,7 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
     def _href(ep, suffix):
         return url_for(ep, platform=platform, season=season, league_id=league_id) + suffix
 
-    # ── Dynamic dock ──────────────────────────────────────────────────────────
+    # ── Stable contextual dock ──────────────────────────────────────────────────────────
     # The Keeper Assistant TOOL is offered whenever the league is keeper-capable
     # (matches the desktop nav + the gating test). The dock TAB is narrower:
     # redraft leagues (Sleeper type 0) keep the Teams slot even when Sleeper
@@ -2963,11 +2965,7 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
         middle = [first, "trade", "keeper" if show_keeper_tab else "teams"]
 
     dock_keys = ["dashboard"] + middle
-    # The page you're on always earns a tab: if it's a real page and not already
-    # in the dock, it takes over the last middle slot.
-    if active_norm in _NAV_PAGE_META and active_norm != "dashboard" and active_norm not in dock_keys:
-        middle = middle[:-1] + [active_norm]
-        dock_keys = ["dashboard"] + middle
+    secondary_active = active_norm in _NAV_PAGE_META and active_norm not in dock_keys
 
     items = ""
     active_index = -1
@@ -2985,9 +2983,13 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
         )
     _more_live_cls = " br-more-live" if rz_live else ""
     _more_dot = "<span class='rz-mnav-dot' aria-hidden='true'></span>" if rz_live else ""
+    if secondary_active:
+        active_index = len(dock_keys)
+    _more_active = " active" if secondary_active else ""
+    _more_current = " aria-current='page'" if secondary_active else ""
     items += (
-        f"<button type='button' class='br-tabbar-item br-more-tab{_more_live_cls}' id='brMoreTab' "
-        "aria-label='More' aria-haspopup='true' aria-expanded='false'>"
+        f"<button type='button' class='br-tabbar-item br-more-tab{_more_live_cls}{_more_active}' id='brMoreTab' "
+        f"aria-label='More navigation; current page: {_DOCK_LABELS.get(active_norm, active_norm.replace('-', ' ').title())}'{_more_current} aria-haspopup='true' aria-expanded='false'>"
         f"{_nav_icon('more', size=22)}<span class='br-tabbar-lbl'>More</span>{_more_dot}</button>"
     )
     # Sliding active-pill indicator: --n tabs wide, sitting at slot --i. Rendered

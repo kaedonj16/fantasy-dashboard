@@ -369,8 +369,8 @@ def build_dashboard_body(ctx: dict) -> str:
         <section class="os-card" id="dashBestBallOutlook">
           <div class="os-section-head">
             <div class="os-section-head-content">
-              <h2 class="os-section-title">Season outlook (thin)</h2>
-              <div class="os-section-subtitle">Best Ball: no weekly lineup. Finish framing only for v1.</div>
+              <h2 class="os-section-title">Season outlook</h2>
+              <div class="os-section-subtitle">Best Ball uses automatic optimal lineups each week.</div>
             </div>
           </div>
           <p style="margin:0;font-size:13px;line-height:1.45;color:var(--text-muted)">
