@@ -110,6 +110,36 @@ def test_my_leagues_stream_hydrates_plays_at_end():
     assert "function _mlFailedCard(" in full
 
 
+def test_my_leagues_plays_stay_loading_until_stream_hydrates():
+    src = _rz()
+    sync = _fn("_syncFeed")
+    stream = _fn("_refreshUserStream")
+    switch = src[src.index("root.querySelectorAll('.rz-scope-btn')") :]
+    switch = switch[: switch.index("root.querySelectorAll('.rz-tab-btn')")]
+
+    assert "_loadingPlays || (_loadingScope && !_feed.length)" in sync
+    assert "Loading plays…" in sync
+    assert "_loadingPlays = _scope === 'user' && !carryFeed" in switch
+    # Receiving stream metadata/cards must not expose an empty feed before the
+    # end-of-stream reconciliation has built the portfolio's canonical Plays.
+    mid_stream = stream[: stream.index("_saveScopeRuntime('user')")]
+    assert "_loadingPlays = false" not in mid_stream
+    assert stream.index("_saveScopeRuntime('user')") < stream.index("_loadingPlays = false")
+
+
+def test_league_plays_remain_visible_during_cold_portfolio_load():
+    src = _rz()
+    switch = src[src.index("root.querySelectorAll('.rz-scope-btn')") :]
+    switch = switch[: switch.index("root.querySelectorAll('.rz-tab-btn')")]
+
+    assert "var carryFeed = _scope === 'league'" in switch
+    assert "? _chronoSort(_feed)" in switch
+    assert "_feed = carryFeed || []" in switch
+    # Reset the destination scope's diff/PBP bookkeeping before exposing the
+    # provisional rows; the portfolio hydrate will still rebuild canonical data.
+    assert switch.index("_resetFeedSnapshots()") < switch.index("_feed = carryFeed || []")
+
+
 def test_runtime_cache_contains_all_canonical_pbp_structures():
     src = _rz()
     save = _fn("_saveScopeRuntime")

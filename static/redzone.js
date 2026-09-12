@@ -57,6 +57,10 @@
   var _prevLeader = {}; // matchup_id → leading roster_id (for lead-change events)
   var _scoreDelta = { me: 0, opp: 0 }; // pts gained since last poll (for hero card)
   var _loadingScope = false; // true while awaiting the first fetch after a scope switch
+  // My Leagues can render matchup cards progressively, but its Plays feed is
+  // only reconciled after every league slice arrives. Keep that feed in an
+  // explicit loading state instead of briefly presenting an empty-state message.
+  var _loadingPlays = false;
   var _mlNames  = [];        // My Leagues: league display names by portfolio index
   var _mlLoaded = null;      // My Leagues: Set of portfolio indices whose card has arrived (null = not streaming)
   var _mlFailed = null;      // My Leagues: Set of portfolio indices that failed to load
@@ -3093,9 +3097,12 @@
     var container = document.getElementById('rz-feed-list');
     if (!container) return;
 
-    if (_loadingScope) {
+    // A cold switch has nothing useful to show, so keep the loading treatment.
+    // When switching from This League with an existing feed, however, those
+    // NFL plays are still valid while My Leagues adds its extra roster context.
+    if (_loadingPlays || (_loadingScope && !_feed.length)) {
       container.innerHTML = '<div class="rz-feed-loading">'
-        + '<span class="rz-feed-spinner"></span>Loading your leagues…</div>';
+        + '<span class="rz-feed-spinner"></span>Loading plays…</div>';
       _renderPagination(1);
       return;
     }
@@ -3737,11 +3744,18 @@
     root.querySelectorAll('.rz-scope-btn').forEach(function(btn) {
       btn.addEventListener('click', function() {
         if (btn.dataset.scope === _scope) return;
+        // The underlying NFL PBP does not change between scopes. Preserve an
+        // already-loaded league feed as a provisional view while the portfolio
+        // stream discovers any additional players from the viewer's leagues.
+        var carryFeed = _scope === 'league' && btn.dataset.scope === 'user' && _feed.length
+          ? _chronoSort(_feed)
+          : null;
         _saveScopeRuntime(_scope); // freeze this scope's canonical PBP first
         _streamGen++; // abort any in-flight My Leagues stream / poll from a prior switch
         _streaming = false;
         _mlNames = []; _mlLoaded = null; _mlFailed = null;
         _scope = btn.dataset.scope;
+        _loadingPlays = _scope === 'user' && !carryFeed;
         _scopeJustSwitched = true;
         _animationMode = 'bulk';
         _animationNewIds = new Set();
@@ -3769,11 +3783,14 @@
             _hydrateFeed(cached);
             _shownFeedIds = new Set(_feed.map(_eid));
           }
+          _loadingPlays = false;
           _applyDefaultHero();
         } else {
           // Show skeleton cards until this scope's (often multi-league) data lands.
-          _feed = [];
           _resetFeedSnapshots();
+          // Keep shared NFL plays visible during a league → portfolio switch.
+          // End-of-stream hydration replaces this provisional feed atomically.
+          _feed = carryFeed || [];
           _loadingScope = true;
         }
         _syncScopeUrl();
@@ -3874,6 +3891,7 @@
   function _recoverScopeLoad(myGen, myScope) {
     if (myGen !== _streamGen || myScope !== _scope) return;
     _lastPollFailed = true;
+    _loadingPlays = false;
     if (!_loadingScope) return;
     var cached = _scopeCache[myScope];
     if (cached) {
@@ -3921,6 +3939,7 @@
       _scopeLoadError = null;
       _lastSuccessAt = Date.now();
       _loadingScope = false;
+      _loadingPlays = false;
       _myRids = _myRidSet(newData);
       // Apply state before detect so owner/league labels read the new payload.
       _state = newData;
@@ -4107,6 +4126,7 @@
     }
     _saveScopeRuntime('user');
     _loadingScope = false;
+    _loadingPlays = false;
     _scopeJustSwitched = false;
     _countdown = _pollInterval();
     _render();
