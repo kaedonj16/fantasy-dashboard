@@ -13,7 +13,7 @@ function openPlayerModal(playerId, playerName, opts) {
 
   // Keep one modal and one request owner. A history restore may arrive while a
   // soft-navigation callback is still settling.
-  if (document.getElementById('playerModal')) closePlayerModal({ history: false });
+  if (document.getElementById('playerModal')) closePlayerModal({ history: false, immediate: true });
 
   // Guests: a player-name click goes to the public player page (SEO landing),
   // not the in-app modal. Signed-in users keep the modal. opts.force bypasses
@@ -5016,7 +5016,8 @@ function closePlayerModal() {
     const _return = overlay._pmReturnFocus;
     document.body.style.overflow = '';
     overlay.style.opacity = '0';
-    setTimeout(() => overlay.remove(), 200);
+    if (options.immediate) overlay.remove();
+    else setTimeout(() => overlay.remove(), 200);
     // Restore focus to whatever opened the modal (the clicked player row / chip),
     // so keyboard users are not dumped back at the top of the document.
     if (_return && typeof _return.focus === 'function') {

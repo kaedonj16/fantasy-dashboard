@@ -33,6 +33,9 @@ def test_player_modal_history_and_breakout_retry_contract():
     assert "panel.dataset.loaded = '';" in modal
     assert "Could not load breakout analysis." in modal
     assert "brPlayerModal" in app and "fromHistory: true" in app
+    assert "pageUrl.searchParams.delete('player')" in app
+    assert "history.pushState(Object.assign({}, history.state || {}, { brPlayerModal: true })" in app
+    assert "immediate: true" in modal
 
 def test_onboarding_uses_provider_neutral_steps_and_private_espn_handoff():
     source = text("app.py")

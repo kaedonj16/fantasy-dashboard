@@ -1349,6 +1349,12 @@ window.brHaptic = function (pattern) {
     }
     if (modalPid) {
       if (modal) {
+        var openPid = modal.closest('.player-modal-overlay') && modal.closest('.player-modal-overlay').dataset.playerId;
+        if (String(openPid || '') !== String(modalPid)) {
+          if (typeof closePlayerModal === 'function') closePlayerModal({ history: false, immediate: true });
+          if (typeof openPlayerModal === 'function') openPlayerModal(modalPid, params.get('player_name') || '', { force: true, fromHistory: true, tab: params.get('player_tab') || 'overview' });
+          return;
+        }
         var wantedTab = params.get('player_tab') || 'overview';
         if (typeof pmSwitchTab === 'function') pmSwitchTab(wantedTab);
       } else if (typeof openPlayerModal === 'function') {
@@ -12971,7 +12977,16 @@ document.addEventListener('DOMContentLoaded', function () {
     // Don't open during a session-restore reload -- the modal will open
     // correctly on the next load once the session is set.
     if (sessionStorage.getItem('_sessionRestoreAttempted')) return;
-    history.replaceState(Object.assign({}, history.state || {}, { brPlayerModal: true }), '', window.location.href);
+    // A direct/share URL has no underlying history entry. Seed one with the
+    // same page context minus modal-only parameters so Close/Back always reveals
+    // the underlying page, and Forward can restore the exact player/tab URL.
+    var modalUrl = new URL(window.location.href);
+    var pageUrl = new URL(window.location.href);
+    pageUrl.searchParams.delete('player');
+    pageUrl.searchParams.delete('player_name');
+    pageUrl.searchParams.delete('player_tab');
+    history.replaceState(Object.assign({}, history.state || {}, { brPlayerModal: false }), '', pageUrl);
+    history.pushState(Object.assign({}, history.state || {}, { brPlayerModal: true }), '', modalUrl);
     openPlayerModal(pid, params.get('player_name') || '', { force: true, fromHistory: true, tab: params.get('player_tab') || 'overview' });
   } catch (e) {}
 });
