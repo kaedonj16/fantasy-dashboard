@@ -66,7 +66,10 @@ def test_refresh_guards_stale_generation_and_scope():
 def test_recover_scope_load_uses_cache_not_foreign_state():
     src = _fn("_recoverScopeLoad")
     assert "_scopeCache[myScope]" in src
-    assert "keep the skeleton" in src or "do not paint" in src.lower()
+    # First-load failure replaces the skeleton with an explicit retry state;
+    # only the active scope's cached payload may be restored.
+    assert "_scopeLoadError = true" in src
+    assert "_state = cached" in src
     assert "_loadingScope = false;\n      _render();" not in src or "_scopeCache" in src
 
 
