@@ -33366,7 +33366,7 @@ button:disabled {
     border-radius: 10px;
     cursor: pointer;
     transition: background .14s, transform .1s, box-shadow .14s;
-    animation: rz-event-in .36s var(--ease-spring) both;
+    animation: none;
     will-change: transform, opacity;
 }
 
@@ -33403,19 +33403,32 @@ button:disabled {
     background: linear-gradient(100deg, rgba(22, 163, 74, .06) 0%, transparent 55%);
 }
 
-@keyframes rz-event-in {
+@keyframes rz-live-enter {
     0% {
         opacity: 0;
-        transform: translateY(-18px) scale(.97);
-    }
-    60% {
-        opacity: 1;
-        transform: translateY(2px) scale(1.002);
+        transform: translateY(-32px) scale(.98);
     }
     100% {
         opacity: 1;
         transform: translateY(0) scale(1);
     }
+}
+
+@keyframes rz-bulk-enter {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.rz-event.is-live-enter {
+    animation: rz-live-enter 250ms cubic-bezier(.22, .68, 0, 1) both;
+}
+
+.rz-event.is-bulk-enter {
+    animation: rz-bulk-enter 220ms ease-out var(--rz-reveal-delay, 0ms) both;
+}
+
+.rz-event.is-layout-moving {
+    transition: transform 230ms cubic-bezier(.22, .68, 0, 1), background .14s, box-shadow .14s;
 }
 
 /* ── Avatar ──────────────────────────── */
@@ -33860,14 +33873,14 @@ button:disabled {
 }
 
 .rz-td-new {
-    animation: rz-event-in .36s var(--ease-spring) both,
+    animation: rz-live-enter 250ms cubic-bezier(.22, .68, 0, 1) both,
     rz-td-flash 1.6s .1s ease forwards;
 }
 
 /* The viewer's own touchdown gets a bigger green-and-gold burst (plus confetti
    fired from redzone.js). */
 .rz-td-new.rz-td-mine {
-    animation: rz-event-in .36s var(--ease-spring) both,
+    animation: rz-live-enter 250ms cubic-bezier(.22, .68, 0, 1) both,
     rz-td-mine-flash 1.9s .1s ease forwards;
 }
 
@@ -33885,8 +33898,21 @@ button:disabled {
 
 /* Explosive non-TD play (4+ fantasy points on one play): a quick blue pulse. */
 .rz-bigplay {
-    animation: rz-event-in .36s var(--ease-spring) both,
+    animation: rz-live-enter 250ms cubic-bezier(.22, .68, 0, 1) both,
     rz-bigplay-pulse 1.2s .05s ease forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .rz-event.is-live-enter,
+    .rz-event.is-bulk-enter,
+    .rz-event.is-layout-moving,
+    .rz-td-new,
+    .rz-td-new.rz-td-mine,
+    .rz-bigplay {
+        animation: none;
+        transition: none;
+        transform: none;
+    }
 }
 
 @keyframes rz-bigplay-pulse {

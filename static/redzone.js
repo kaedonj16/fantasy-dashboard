@@ -12,6 +12,12 @@
   var _state    = window.__rz__ || {};
   var _feed     = [];
   var _shownFeedIds = new Set();
+  var _shownFeedIdsByScope = { league: new Set(), user: new Set() };
+  // Rendering intent is explicit. Canonical feed order is computed before any
+  // of these presentation-only modes are applied.
+  var _animationMode = 'bulk'; // live | bulk | none
+  var _animationNewIds = new Set();
+  var _scopeJustSwitched = false;
   var _prevStats = {};
   var _prevPts   = {};
   var _countdown = 15;
@@ -628,10 +634,11 @@
 
   function _saveScopeRuntime(scope) {
     scope = scope || _scope;
+    _shownFeedIdsByScope[scope] = new Set(_shownFeedIds);
     _scopeRuntime[scope] = {
       identity: _runtimeIdentity(_state, scope),
-      feed: _feed.slice(),
-      pbpHistory: _pbpHistory.slice(),
+      feed: _chronoSort(_feed),
+      pbpHistory: _pbpHistory.slice().sort(_contributionCompare),
       pbpGames: Object.assign({}, _pbpGames),
       seenPlayIds: new Set(_seenPlayIds),
       seenContributions: new Set(_seenContributions),
@@ -646,8 +653,8 @@
   function _restoreScopeRuntime(scope, data) {
     var saved = _scopeRuntime[scope];
     if (!saved || saved.identity !== _runtimeIdentity(data, scope)) return false;
-    _feed = saved.feed.slice();
-    _pbpHistory = saved.pbpHistory.slice();
+    _feed = _chronoSort(saved.feed);
+    _pbpHistory = saved.pbpHistory.slice().sort(_contributionCompare);
     _pbpGames = Object.assign({}, saved.pbpGames);
     _seenPlayIds = new Set(saved.seenPlayIds);
     _seenContributions = new Set(saved.seenContributions);
@@ -656,6 +663,8 @@
     _prevStats = Object.assign({}, saved.prevStats);
     _prevPts = Object.assign({}, saved.prevPts);
     _prevMatchupPts = Object.assign({}, saved.prevMatchupPts);
+    _shownFeedIds = new Set(_feed.map(_eid));
+    _shownFeedIdsByScope[scope] = new Set(_shownFeedIds);
     return true;
   }
 
@@ -668,7 +677,7 @@
     (data.matchups || []).forEach(function(m) {
       _prevMatchupPts[String(m.roster_id)] = parseFloat(m.points || 0);
     });
-    _detectChanges(data);
+    _detectChanges(data, 'bulk');
     _seedPrevStats(data);
     // The first pass ingests a whole game of history at once; only alert on
     // TDs discovered by subsequent live polls, never on this initial backfill.
@@ -765,32 +774,63 @@
     if (!m) return null;
     return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
   }
+  function _quarterNumber(value) {
+    var s = String(value == null ? '' : value).trim().toUpperCase();
+    if (/^Q[1-4]$/.test(s)) return parseInt(s.slice(1), 10);
+    if (/^[1-4]$/.test(s)) return parseInt(s, 10);
+    if (s === 'OT') return 5;
+    var ot = s.match(/^(?:Q)?(\d+)OT$/);
+    if (ot) return 4 + parseInt(ot[1], 10);
+    var n = parseInt(s, 10);
+    return n > 0 ? n : null;
+  }
+  function _kickoffEpoch(gid, data, pid) {
+    data = data || _state || {};
+    var game = (data.games || {})[gid] || {};
+    var kickoff = parseFloat(game.game_time_epoch || game.kickoff_epoch || 0) || 0;
+    if (kickoff) return kickoff;
+    var pi = (data.player_info || {})[pid] || {};
+    return parseFloat(pi.game_time_epoch || 0) || 0;
+  }
+  function _playWallTime(kickoff, quarter, clock) {
+    var q = _quarterNumber(quarter);
+    if (!kickoff || !q) return null;
+    var period = q <= 4 ? 900 : 600;
+    var cs = _clockSecs(clock);
+    if (cs == null) return null;
+    var elapsed = q <= 4
+      ? (q - 1) * 900 + Math.max(0, 900 - cs)
+      : 4 * 900 + (q - 5) * 600 + Math.max(0, period - cs);
+    return kickoff + elapsed;
+  }
+  function _stableString(value) { return String(value == null ? '' : value); }
+  function _contributionCompare(a, b) {
+    var ga = _stableString(a.gameId), gb = _stableString(b.gameId);
+    if (ga !== gb) return ga < gb ? -1 : 1;
+    var sa = Number(a.seq || 0), sb = Number(b.seq || 0);
+    if (sa !== sb) return sa - sb;
+    var ka = _stableString(a.contribKey), kb = _stableString(b.contribKey);
+    return ka < kb ? -1 : (ka > kb ? 1 : 0);
+  }
   // Approximate wall-clock a play occurred at, so the feed reads in real
   // chronological order (newest first): game kickoff epoch + elapsed game
   // seconds. Live-only events (milestones, bulk) fall back to detection time.
   function _chronoKey(ev) {
     // Reconstruct elapsed game time first. Unlike a provider sequence number,
     // this remains comparable when plays from simultaneous games are merged.
-    var q = parseInt(ev.gameQuarter, 10);
-    if (q > 0) {
-      var per = 900; // 15:00 quarters (OT still monotonic under this model)
-      var cs = _clockSecs(ev.gameClock);
-      var inQ = (cs == null) ? 0 : Math.max(0, per - cs);
-      var elapsed = (q - 1) * per + inQ;
-      // Try to get gameId from event or player_info
-      var gid = ev.gameId || ((_state.player_info || {})[ev.pid] || {}).game_id || '';
-      var g = (_state.games || {})[gid] || {};
-      var kickoff = parseFloat(g.game_time_epoch || 0) || 0;
-      if (kickoff) return kickoff + elapsed;
-    }
+    if (ev.playSortTs != null) return Number(ev.playSortTs);
+    var gid = ev.gameId || ((_state.player_info || {})[ev.pid] || {}).game_id || '';
+    var kickoff = Number(ev.kickoffEpoch || _kickoffEpoch(gid, _state, ev.pid));
+    var wall = _playWallTime(kickoff, ev.gameQuarter, ev.gameClock);
+    if (wall != null) return wall;
     // A provider sequence is still useful within one game when clock data is
     // absent, but it must not override the cross-game wall-clock estimate.
     if (ev.gameId && ev.seq != null) {
-      var seqGame = (_state.games || {})[ev.gameId] || {};
-      var seqKickoff = parseFloat(seqGame.game_time_epoch || 0) || 0;
+      var seqKickoff = kickoff;
       if (seqKickoff) return seqKickoff + (ev.seq * 0.001);
     }
-    return (ev.ts || 0) / 1000;
+    // Browser time is chronology only for synthetic, non-PBP events.
+    return ev.fromPbp ? 0 : Number(ev.ts || ev.detectedAt || 0) / 1000;
   }
   // Newest first. Modern JavaScript's stable sort preserves ingestion order
   // for exact ties instead of quietly reintroducing the removed "For You"
@@ -799,7 +839,17 @@
     return list.slice().sort(function(a, b) {
       var ka = _chronoKey(a), kb = _chronoKey(b);
       if (ka !== kb) return kb - ka;
-      return 0;
+      var ga = _stableString(a.gameId), gb = _stableString(b.gameId);
+      if (ga !== gb) return ga < gb ? -1 : 1;
+      var sa = Number(a.seq || 0), sb = Number(b.seq || 0);
+      if (sa !== sb) return sb - sa;
+      var pa = _stableString(a.playId || a.nflPlayKey), pb = _stableString(b.playId || b.nflPlayKey);
+      if (pa !== pb) return pa < pb ? -1 : 1;
+      var ca = _stableString(a.contribKey || (a.contributions || []).map(function(c) { return c.contribKey; }).sort().join('|'));
+      var cb = _stableString(b.contribKey || (b.contributions || []).map(function(c) { return c.contribKey; }).sort().join('|'));
+      if (ca !== cb) return ca < cb ? -1 : 1;
+      var ea = _eid(a), eb = _eid(b);
+      return ea < eb ? -1 : (ea > eb ? 1 : 0);
     });
   }
   // "4" → "Q4", "5"+ → "OT"; pass through non-numeric labels ("OT", "Half").
@@ -1414,6 +1464,7 @@
           yardLine: play.yard_line || '',
           seq: play.seq != null ? play.seq : 0,
           gameId: gid,
+          kickoffEpoch: _kickoffEpoch(gid, newData, pid),
           cume: play.cume || null,
           cumeStatLine: play.cume || null,
           totalPts: totalPts,
@@ -1422,6 +1473,8 @@
           isInvalid: isInvalid,
           isRevision: isRevision
         };
+        contrib.playSortTs = _playWallTime(contrib.kickoffEpoch, contrib.quarter, contrib.clock);
+        contrib.detectedAt = existingContrib ? existingContrib.detectedAt : Date.now();
         
         // Store in global contribution map
         _contributionsByKey[contribKey] = contrib;
@@ -1448,6 +1501,8 @@
           needsUpdate: true,
           gameId: c.gameId,
           seq: c.seq,
+          playSortTs: c.playSortTs,
+          detectedAt: c.detectedAt,
           playState: c.playState
         };
       } else {
@@ -1465,6 +1520,10 @@
         if (c.gameId) group.gameId = c.gameId;
         if (c.seq != null) group.seq = c.seq;
         if (c.playState) group.playState = c.playState;
+        // A revision may correct metadata, but a parsing failure must never
+        // replace the first-known stable chronology with browser "now".
+        if (group.playSortTs == null && c.playSortTs != null) group.playSortTs = c.playSortTs;
+        if (group.detectedAt == null) group.detectedAt = c.detectedAt;
       }
     });
     
@@ -1484,6 +1543,7 @@
       var contribs = group.contributionsByKey 
         ? Object.keys(group.contributionsByKey).map(function(k) { return group.contributionsByKey[k]; })
         : (group.contributions || []);
+      contribs.sort(_contributionCompare);
       
       // Filter out invalid contributions for primary selection
       var validContribs = contribs.filter(function(c) { return !c.isInvalid; });
@@ -1519,7 +1579,8 @@
           mine: firstContrib.mine,
           opp: firstContrib.opp,
           line: {},
-          ts: Date.now() + firstContrib.seq * 0.001,
+          playSortTs: group.playSortTs != null ? group.playSortTs : firstContrib.playSortTs,
+          detectedAt: group.detectedAt || firstContrib.detectedAt,
           gameQuarter: firstContrib.quarter,
           gameClock: firstContrib.clock,
           down: firstContrib.down,
@@ -1569,7 +1630,8 @@
         mine: allMine,
         opp: allOpp,
         line: _gameLine(primary.pid),
-        ts: Date.now() + primary.seq * 0.001,
+        playSortTs: group.playSortTs != null ? group.playSortTs : primary.playSortTs,
+        detectedAt: group.detectedAt || primary.detectedAt,
         gameQuarter: primary.quarter,
         gameClock: primary.clock,
         down: primary.down,
@@ -1599,7 +1661,8 @@
     return events;
   }
 
-  function _detectChanges(newData) {
+  function _detectChanges(newData, animationIntent) {
+    var knownFeedIds = new Set(_feed.map(_eid));
     var tags = _rosterTags(newData);
     // Resolve scoring per player by league (user scope spans multiple leagues);
     // fall back to the single top-level scoring.
@@ -1697,7 +1760,7 @@
     // Push notification + audio chime for my TDs + log to history. Only for TDs
     // found by a live poll -- never the initial backfill of already-played snaps.
     // Dedupe by playId so grouped plays (QB+receiver) only trigger ONE alert.
-    var myTDs = _alertsArmed
+    var myTDs = _alertsArmed && animationIntent === 'live' && allEvents.length === 1
       ? allEvents.filter(function(ev) { return ev.kind === 'td' && ev.mine && !ev.isUpdate; })
       : [];
     // Dedupe by playId - one alert per NFL play regardless of contributors
@@ -1760,7 +1823,7 @@
           rosterId: rid, owner: _ownerName(rid), league: _leagueOfRid(rid),
           mine: tags.my.has(rid), opp: tags.opp.has(rid),
           desc: ms.desc + '!', kind: 'milestone', stats: ['milestone'],
-          pts: 0, ts: Date.now() + Math.random(),
+          pts: 0, ts: Date.now(),
           line: '', gameQuarter: (newData.player_info[pid] || {}).game_quarter || '',
           gameClock: (newData.player_info[pid] || {}).game_clock || ''
         });
@@ -1785,7 +1848,7 @@
         rosterId: rid, owner: _ownerName(rid), league: _leagueOfRid(rid),
         mine: tags.my.has(rid), opp: tags.opp.has(rid),
         desc: 'Injury: now ' + _injLabel(now), kind: 'neg', stats: ['injury'],
-        pts: 0, ts: Date.now() + Math.random(),
+        pts: 0, ts: Date.now(),
         line: '', gameQuarter: info.game_quarter || '', gameClock: info.game_clock || ''
       });
     });
@@ -1820,7 +1883,7 @@
         rosterId: '', owner: '', league: '',
         mine: false, opp: false,
         desc: leader + ' leading ' + trailer + ' by ' + spread + ', watch for reduced volume',
-        kind: 'neg', stats: ['blowout'], pts: 0, ts: Date.now() + Math.random(),
+        kind: 'neg', stats: ['blowout'], pts: 0, ts: Date.now(),
         line: g.away + ' ' + g.ap + ' @ ' + g.home + ' ' + g.hp,
         gameQuarter: g.qLabel, gameClock: g.clock
       });
@@ -1854,10 +1917,19 @@
         mine: isMyMid && _isMyRid(newLdr), opp: isMyMid && _isMyRid(trailRid),
         desc: (_ownerName(newLdr) || 'Team') + ' takes the lead (' + _fmt(leadPts) + ' – ' + _fmt(trailPts) + ')',
         kind: 'gain', stats: ['lead_change'],
-        pts: 0, ts: Date.now() + Math.random(),
+        pts: 0, ts: Date.now(),
         line: '', gameQuarter: '', gameClock: ''
       });
     });
+
+    // Determine presentation only after every canonical event for this update
+    // exists. Multiple simultaneous arrivals always get the calm bulk reveal.
+    _feed = _chronoSort(_feed);
+    var newlyDetected = _feed.filter(function(ev) { return !knownFeedIds.has(_eid(ev)); });
+    _animationNewIds = new Set(newlyDetected.map(_eid));
+    if (animationIntent === 'bulk' || newlyDetected.length > 1) _animationMode = 'bulk';
+    else if (animationIntent === 'live' && newlyDetected.length === 1) _animationMode = 'live';
+    else _animationMode = 'none';
 
     // Increment unread count when user isn't on Plays tab
     if (_activeTab !== 'plays' && (allEvents.length + _specialCount)) _unreadCount += (allEvents.length + _specialCount);
@@ -2798,7 +2870,9 @@
 
   var _FEED_ICON = { td: '🏈', gain: '🟢', neg: '⚠️', target: '🎯', milestone: '⭐' };
 
-  function _eid(ev) { return ev.playId || (ev.pid + ':' + (ev.ts || ev.desc)); }
+  function _eid(ev) {
+    return ev.playId || [ev.pid || '0', ev.kind || 'event', ev.desc || '', ev.playSortTs || ev.ts || 0].join(':');
+  }
 
   function _eventHtml(ev, animate) {
     var tagLabel = ev.mine ? (_scope === 'user' && ev.league ? ev.league : 'MY TEAM')
@@ -3094,9 +3168,11 @@
       return;
     }
 
-    // Page 0: live DOM-patching + FLIP
+    // Page 0: canonical DOM reconciliation first, presentation second.
     var page0Items = list.slice(0, _PAGE_SIZE);
     var page0Eids = new Set(page0Items.map(function(ev) { return _eid(ev); }));
+    var reducedMotion = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+    var mode = _animationMode;
 
     function _orderFeedDom(target, orderedItems) {
       var byId = {};
@@ -3106,110 +3182,84 @@
         if (node) target.appendChild(node);
       });
     }
+    function _updateEventNode(node, ev) {
+      var wrap = document.createElement('div');
+      wrap.innerHTML = _eventHtml(ev, false);
+      var fresh = wrap.firstChild;
+      // Preserve the card node (focus, listeners, and FLIP identity), while a
+      // provider revision updates its semantic content and ordinary classes.
+      node.className = fresh.className;
+      node.innerHTML = fresh.innerHTML;
+      node.dataset.pid = fresh.dataset.pid;
+    }
 
-    // Remove events that have fallen off page 0
+    var oldPositions = {};
+    if (mode === 'live' && !reducedMotion) {
+      container.querySelectorAll('[data-eid]').forEach(function(node) {
+        oldPositions[node.dataset.eid] = node.getBoundingClientRect().top;
+      });
+    }
+
+    // Remove off-page rows, update revisions in place, and create missing rows.
     container.querySelectorAll('[data-eid]').forEach(function(el) {
       if (!page0Eids.has(el.dataset.eid)) el.remove();
     });
-
-    var inDom = new Set();
-    container.querySelectorAll('[data-eid]').forEach(function(el) { inDom.add(el.dataset.eid); });
-    var toAdd = page0Items.filter(function(ev) { return !inDom.has(_eid(ev)); });
-
-    if (toAdd.length) {
-      var isInitialLoad = _shownFeedIds.size === 0;
-      var newCount = toAdd.filter(function(ev) { return !_shownFeedIds.has(_eid(ev)); }).length;
-      var feedWasAboveViewport = container.getBoundingClientRect().top < -80;
-      // Pin the first visible existing entry, not merely the page scroll value:
-      // revised/new rows above it may have different heights.
-      var readingAnchor = !isInitialLoad && feedWasAboveViewport
-        ? Array.from(container.querySelectorAll('[data-eid]')).find(function(n) { return n.getBoundingClientRect().bottom > 0; }) : null;
-      var readingTop = readingAnchor ? readingAnchor.getBoundingClientRect().top : 0;
-      if (!isInitialLoad && feedWasAboveViewport) _pendingNewPlays += newCount;
-      // Sequential stagger: insert new plays one at a time during live polling
-      var liveStagger = !isInitialLoad && newCount > 1;
-
-      var existingEls = [], existingTops = [];
-      if (!isInitialLoad && !liveStagger && toAdd.length <= 4) {
-        existingEls = Array.from(container.querySelectorAll('[data-eid]')).slice(0, 12);
-        existingTops = existingEls.map(function(n) { return n.getBoundingClientRect().top; });
+    var byId = {};
+    container.querySelectorAll('[data-eid]').forEach(function(el) { byId[el.dataset.eid] = el; });
+    var inserted = [];
+    page0Items.forEach(function(ev) {
+      var id = _eid(ev), node = byId[id];
+      if (node) {
+        _updateEventNode(node, ev);
+        return;
       }
+      var wrap = document.createElement('div');
+      wrap.innerHTML = _eventHtml(ev, false);
+      node = wrap.firstChild;
+      node.dataset.eid = id;
+      byId[id] = node;
+      inserted.push({ node: node, ev: ev, id: id });
+      container.appendChild(node);
+    });
 
-      var newIdx = 0;
-      var insertDelay = 0;
-      var frag = document.createDocumentFragment();
-      toAdd.forEach(function(ev) {
-        var id = _eid(ev);
-        var isNew = !_shownFeedIds.has(id);
-        var wrap = document.createElement('div');
-        wrap.innerHTML = _eventHtml(ev, isNew);
-        var node = wrap.firstChild;
-        node.dataset.eid = id;
-        _shownFeedIds.add(id);
+    // The accessible DOM order becomes canonical synchronously. No animation
+    // callback participates in identity, insertion, merging, or ordering.
+    _orderFeedDom(container, page0Items);
 
-        if (isNew && liveStagger) {
-          // Insert each new play into the DOM individually, one at a time
-          (function(n, e, delay) {
-            setTimeout(function() {
-              _bigPlayFx(n, e, container, true);
-              container.insertBefore(n, container.firstChild);
-              _orderFeedDom(container, page0Items);
-              // Click handlers now managed by root event delegation
-            }, delay);
-          })(node, ev, insertDelay);
-          insertDelay += 420;
-          newIdx++;
-        } else {
-          if (isNew && newCount > 1) {
-            // Initial load: quick cascade so the list doesn't appear all at once
-            node.style.animationDelay = (newIdx * 60) + 'ms';
-          }
-          if (isNew) {
-            newIdx++;
-            _bigPlayFx(node, ev, container, false);
-          }
-          frag.appendChild(node);
-        }
-      });
-      container.insertBefore(frag, container.firstChild);
-      _orderFeedDom(container, page0Items);
-      if (readingAnchor && readingAnchor.isConnected) {
-        window.scrollBy(0, readingAnchor.getBoundingClientRect().top - readingTop);
+    var liveInsert = mode === 'live' && inserted.length === 1
+      && _animationNewIds.has(inserted[0].id);
+    inserted.forEach(function(item, index) {
+      _shownFeedIds.add(item.id);
+      if (reducedMotion) return;
+      if (liveInsert) {
+        item.node.classList.add('is-live-enter');
+        _bigPlayFx(item.node, item.ev, container, true);
+      } else if (mode === 'bulk') {
+        item.node.classList.add('is-bulk-enter');
+        item.node.style.setProperty('--rz-reveal-delay', Math.min(index * 25, 200) + 'ms');
       }
+    });
 
-      // Auto-scroll to top if user was already near top (don't interrupt mid-scroll)
-      if (!isInitialLoad && !liveStagger) {
-        var feedTop = container.getBoundingClientRect().top;
-        if (feedTop > -80) {
-          var first = container.firstChild;
-          if (first && first.scrollIntoView) {
-            first.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-          }
-        }
-      }
-
-      if (existingEls.length) {
-        requestAnimationFrame(function() {
-          existingEls.forEach(function(n, i) {
-            if (!n.parentNode) return;
-            var dy = n.getBoundingClientRect().top - existingTops[i];
-            if (Math.abs(dy) > 0.5) {
-              n.style.transition = 'none';
-              n.style.transform = 'translateY(' + (-dy) + 'px)';
-              requestAnimationFrame(function() {
-                n.style.transition = 'transform .28s cubic-bezier(.22,.68,0,1.15)';
-                n.style.transform = '';
-                setTimeout(function() { if (n.style) n.style.transition = ''; }, 320);
-              });
-            }
+    if (liveInsert && !reducedMotion) {
+      requestAnimationFrame(function() {
+        container.querySelectorAll('[data-eid]').forEach(function(node) {
+          if (!(node.dataset.eid in oldPositions)) return;
+          var delta = oldPositions[node.dataset.eid] - node.getBoundingClientRect().top;
+          if (Math.abs(delta) <= 0.5) return;
+          node.style.transition = 'none';
+          node.style.transform = 'translateY(' + delta + 'px)';
+          node.classList.add('is-layout-moving');
+          requestAnimationFrame(function() {
+            node.style.transition = '';
+            node.style.transform = '';
           });
         });
-      }
+      });
     }
 
-    // Reconcile even when every ID already existed: filter changes and
-    // corrected provider ordering must still be reflected by the DOM.
-    _orderFeedDom(container, page0Items);
+    _shownFeedIdsByScope[_scope] = new Set(_shownFeedIds);
+    _animationMode = 'none';
+    _animationNewIds = new Set();
 
     // Prune to page size
     var items = container.querySelectorAll('[data-eid]');
@@ -3692,8 +3742,11 @@
         _streaming = false;
         _mlNames = []; _mlLoaded = null; _mlFailed = null;
         _scope = btn.dataset.scope;
+        _scopeJustSwitched = true;
+        _animationMode = 'bulk';
+        _animationNewIds = new Set();
         _filters = { nfl: 'all', pos: 'all', stat: 'all' };
-        _shownFeedIds = new Set();
+        _shownFeedIds = new Set(_shownFeedIdsByScope[_scope] || []);
         _filterOpen = false;
         _myTeamOnly = false;
         _bigPlaysOnly = false;
@@ -3714,6 +3767,7 @@
             _feed = [];
             _resetFeedSnapshots();
             _hydrateFeed(cached);
+            _shownFeedIds = new Set(_feed.map(_eid));
           }
           _applyDefaultHero();
         } else {
@@ -3732,17 +3786,20 @@
     root.querySelectorAll('.rz-tab-btn').forEach(function(btn) {
       btn.addEventListener('click', function() {
         _activeTab = btn.dataset.tab;
+        _animationMode = 'none';
         if (_activeTab === 'plays') _unreadCount = 0;
         _render();
       });
     });
     var filterBtn = root.querySelector('#rz-filter-btn');
     if (filterBtn) filterBtn.addEventListener('click', function() {
+      _animationMode = 'none';
       _filterOpen = !_filterOpen;
       _render();
     });
     root.querySelectorAll('[data-fk]').forEach(function(btn) {
       btn.addEventListener('click', function() {
+        _animationMode = 'bulk';
         _filters[btn.dataset.fk] = btn.dataset.fv;
         _filterOpen = false;
         _feedPage = 0;
@@ -3837,6 +3894,9 @@
     var myGen = _streamGen;
     var myScope = _scope;
     var wasLoading = _loadingScope;
+    var wasContinuouslyActive = !wasLoading && !_scopeJustSwitched
+      && !document.hidden
+      && (_lastSuccessAt == null || Date.now() - _lastSuccessAt < Math.max(60000, _pollInterval() * 2500));
     try {
       var parts = window.location.pathname.split('/');
       var apiBase = '/api/' + parts[1] + '/' + parts[2] + '/' + parts[3];
@@ -3865,7 +3925,7 @@
       // Apply state before detect so owner/league labels read the new payload.
       _state = newData;
       _scopeCache[myScope] = newData;
-      _detectChanges(newData);
+      _detectChanges(newData, wasContinuouslyActive ? 'live' : 'bulk');
       _seedPrevStats(newData);
       _saveScopeRuntime(myScope);
       // After a scope switch the first fetch backfills history silently; arm
@@ -3877,6 +3937,7 @@
       // Polling must not replace controls, focus, expanded panels, or scroll.
       // Full rendering is reserved for the initial/scope load.
       if (wasLoading) _render(); else _partialUpdate();
+      _scopeJustSwitched = false;
 
       // Auto-refresh Live tab in player modal if it's currently visible
       var livePanelEl = document.getElementById('pm-panel-live');
@@ -4035,16 +4096,18 @@
     // Reconcile into restored canonical state; empty or partial slices cannot
     // wipe last-good real PBP and the existing keys still govern revisions.
     if (_scopeRuntime.user && _scopeRuntime.user.identity === _runtimeIdentity(base, 'user')) {
-      _detectChanges(base);
+      _detectChanges(base, 'bulk');
       _seedPrevStats(base);
     } else {
       _feed = [];
       _shownFeedIds = new Set();
       _resetFeedSnapshots();
       _hydrateFeed(base);
+      _shownFeedIds = new Set(_feed.map(_eid));
     }
     _saveScopeRuntime('user');
     _loadingScope = false;
+    _scopeJustSwitched = false;
     _countdown = _pollInterval();
     _render();
   }
@@ -4122,7 +4185,7 @@
   _seedMilestones(_state);   // pre-mark already-crossed milestones (no retroactive events)
   _seedInjuries(_state);     // snapshot injuries so only changes fire later
   _seedLeaders(_state);      // snapshot leading rosters so lead-change events don't fire on load
-  _detectChanges(_state);    // populate initial feed from empty _prevStats
+  _detectChanges(_state, 'bulk'); // populate initial feed from empty _prevStats
   _seedPrevStats(_state);    // snapshot stat lines for the next poll diff
   _saveScopeRuntime(_scope); // initial real PBP is immediately restorable
   _alertsArmed = true;       // initial feed is backfill; only live polls alert after this
