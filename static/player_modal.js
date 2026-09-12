@@ -17,6 +17,10 @@ function openPlayerModal(playerId, playerName, opts) {
   // soft-navigation callback is still settling.
   if (document.getElementById('playerModal')) closePlayerModal({ history: false, immediate: true });
 
+  // Keep one modal and one request owner. A history restore may arrive while a
+  // soft-navigation callback is still settling.
+  if (document.getElementById('playerModal')) closePlayerModal({ history: false, immediate: true });
+
   // Guests: a player-name click goes to the public player page (SEO landing),
   // not the in-app modal. Signed-in users keep the modal. opts.force bypasses
   // this (used when auto-opening from ?player= after sign-in).
