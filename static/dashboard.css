@@ -38393,9 +38393,24 @@ a, button, [role="button"], [role="tab"], summary, label,
 .pm-snap-est { font-size: 8.5px; color: var(--text-muted); margin-left: 3px; font-weight: 600; }
 
 /* advanced collapse -- nested under the Offense Profile section */
-.pm-team-adv-toggle { cursor: pointer; }
+.pm-team-adv-toggle {
+    appearance: none;
+    width: 100%;
+    cursor: pointer;
+    background: transparent;
+    color: inherit;
+    border: 0;
+    font: inherit;
+    text-align: left;
+    box-shadow: none;
+}
 .pm-team-sec .pm-team-adv-toggle { margin: 12px 0 0; padding: 12px 0 4px; border-top: 1px solid var(--border); border-radius: 0; }
 .pm-team-sec .pm-team-adv-toggle:hover { background: transparent; }
+.pm-team-sec .pm-team-adv-toggle:focus-visible {
+    background: var(--row);
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
 .pm-team-adv-body { padding: 6px 0 0; }
 .pm-team-adv-body[hidden] { display: none; }
 
