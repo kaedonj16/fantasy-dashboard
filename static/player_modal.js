@@ -121,6 +121,16 @@ function openPlayerModal(playerId, playerName, opts) {
   overlay.appendChild(modal);
   document.body.appendChild(overlay);
   document.body.style.overflow = 'hidden';
+  overlay.dataset.playerId = String(playerId);
+  overlay.dataset.playerName = playerName || '';
+  window.__brPlayerModal = { id: String(playerId), name: playerName || '', tab: opts.tab || 'overview' };
+  if (!opts.fromHistory) {
+    const modalUrl = new URL(window.location.href);
+    modalUrl.searchParams.set('player', playerId);
+    if (playerName) modalUrl.searchParams.set('player_name', playerName);
+    modalUrl.searchParams.set('player_tab', opts.tab || 'overview');
+    history.pushState(Object.assign({}, history.state || {}, { brPlayerModal: true }), '', modalUrl);
+  }
 
   // ── Accessibility: focus management + focus trap ──────────────────────────
   // Remember what had focus so closePlayerModal can restore it, then move focus
@@ -1580,6 +1590,15 @@ function pmSwitchTab(tab) {
   if (_pmBodyEl) _pmBodyEl.classList.toggle('pm-body-flush', tab === 'team');
   if (window._pmSlideTabs) window._pmSlideTabs.sync(true);
 
+  // Tabs are shareable/restorable but replace the current modal entry so minor
+  // exploration does not turn Back into a tour through every tab.
+  if (window.__brPlayerModal) {
+    window.__brPlayerModal.tab = tab;
+    const u = new URL(window.location.href);
+    u.searchParams.set('player_tab', tab);
+    history.replaceState(Object.assign({}, history.state || {}, { brPlayerModal: true }), '', u);
+  }
+
   const pmTabBar = document.getElementById('pmTabBar');
   if (!pmTabBar) return;
   const playerId = pmTabBar.dataset.pmPlayerId;
@@ -1634,7 +1653,8 @@ function pmSwitchTab(tab) {
       })
       .catch(() => {
         if (panel.isConnected) {
-          panel.innerHTML = '<div class="player-modal-loading" style="padding:32px 0;"><div style="color:var(--text-muted);font-size:13px;">Breakout analysis not available.</div></div>';
+          panel.dataset.loaded = '';
+          window.brErrorState(panel, 'Could not load breakout analysis.', () => pmSwitchTab('breakout'), { compact: true });
         }
       });
   }
@@ -5007,6 +5027,11 @@ function toggleGameLogYear(arg) {
 }
 
 function closePlayerModal() {
+  const options = arguments[0] || {};
+  if (options.history !== false && history.state && history.state.brPlayerModal) {
+    history.back();
+    return;
+  }
   _pmStopBoxLiveRefresh();
   _pmBoxGen += 1;
   _pmTeamNavHistory = [];
@@ -5016,13 +5041,15 @@ function closePlayerModal() {
     const _return = overlay._pmReturnFocus;
     document.body.style.overflow = '';
     overlay.style.opacity = '0';
-    setTimeout(() => overlay.remove(), 200);
+    if (options.immediate) overlay.remove();
+    else setTimeout(() => overlay.remove(), 200);
     // Restore focus to whatever opened the modal (the clicked player row / chip),
     // so keyboard users are not dumped back at the top of the document.
     if (_return && typeof _return.focus === 'function') {
       try { _return.focus(); } catch (_) {}
     }
   }
+  window.__brPlayerModal = null;
 }
 
 window.openPlayerModal = openPlayerModal;

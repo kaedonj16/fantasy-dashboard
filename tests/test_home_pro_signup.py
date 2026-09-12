@@ -218,6 +218,11 @@ def test_google_callback_resumes_home_pro_checkout(monkeypatch):
     monkeypatch.setattr("dashboard_services.accounts.link_platform_identity", lambda *a, **k: "ok")
     monkeypatch.setattr("dashboard_services.accounts.add_user_league", lambda *a, **k: None)
     monkeypatch.setattr("dashboard_services.accounts.get_post_login_destination", lambda *a, **k: "/")
+    # The callback also attempts to personalize a staged Sleeper league. Keep
+    # this checkout-routing test hermetic: without these stubs it builds a live
+    # league context and waits on provider HTTP calls in CI.
+    monkeypatch.setattr("app.get_league_ctx_from_cache", lambda *a, **k: {"users": [], "rosters": []})
+    monkeypatch.setattr("app.resolve_viewer_for_league", lambda *a, **k: None)
 
     app = flask.Flask(__name__)
     app.secret_key = "test"
