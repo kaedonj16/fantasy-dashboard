@@ -62,6 +62,9 @@
   // Last-good payload per scope so My Leagues → This League never paints
   // portfolio (cross-league) data under the league-scoped chrome.
   var _scopeCache = { league: null, user: null };
+  // Canonical PBP is durable and scope-local. Payload caching alone is not
+  // enough: an empty/partial poll must not discard already reconciled plays.
+  var _scopeRuntime = { league: null, user: null };
   if (_state && Object.keys(_state).length) {
     _scopeCache[_state.scope || 'league'] = _state;
   }
@@ -613,8 +616,47 @@
     _pbpGames = {};
     _pbpHistory = [];
     _playGroupsByKey = {};
+    _contributionsByKey = {};
     // A scope switch rehydrates from scratch -- re-arm alerts only after it does.
     _alertsArmed = false;
+  }
+
+  function _runtimeIdentity(data, scope) {
+    data = data || {};
+    return [scope || _scope, data.platform || '', data.league_id || '', data.season || '', data.week || ''].join(':');
+  }
+
+  function _saveScopeRuntime(scope) {
+    scope = scope || _scope;
+    _scopeRuntime[scope] = {
+      identity: _runtimeIdentity(_state, scope),
+      feed: _feed.slice(),
+      pbpHistory: _pbpHistory.slice(),
+      pbpGames: Object.assign({}, _pbpGames),
+      seenPlayIds: new Set(_seenPlayIds),
+      seenContributions: new Set(_seenContributions),
+      playGroupsByKey: Object.assign({}, _playGroupsByKey),
+      contributionsByKey: Object.assign({}, _contributionsByKey),
+      prevStats: Object.assign({}, _prevStats),
+      prevPts: Object.assign({}, _prevPts),
+      prevMatchupPts: Object.assign({}, _prevMatchupPts)
+    };
+  }
+
+  function _restoreScopeRuntime(scope, data) {
+    var saved = _scopeRuntime[scope];
+    if (!saved || saved.identity !== _runtimeIdentity(data, scope)) return false;
+    _feed = saved.feed.slice();
+    _pbpHistory = saved.pbpHistory.slice();
+    _pbpGames = Object.assign({}, saved.pbpGames);
+    _seenPlayIds = new Set(saved.seenPlayIds);
+    _seenContributions = new Set(saved.seenContributions);
+    _playGroupsByKey = Object.assign({}, saved.playGroupsByKey);
+    _contributionsByKey = Object.assign({}, saved.contributionsByKey);
+    _prevStats = Object.assign({}, saved.prevStats);
+    _prevPts = Object.assign({}, saved.prevPts);
+    _prevMatchupPts = Object.assign({}, saved.prevMatchupPts);
+    return true;
   }
 
   // Same cold-boot order as page load: suppress milestone/injury/lead noise,
@@ -2124,6 +2166,21 @@
     return (g && g.game_status) || 'PRE';
   }
 
+  function _gamePillLogo(abv) {
+    var src = _teamLogoSrc(abv);
+    if (!src) return '<span class="rz-gp-logo rz-gp-logo-txt">' + abv + '</span>';
+    return '<img class="rz-gp-logo" src="' + src + '" alt="" data-team="' + abv + '"'
+      + ' onerror="var t=this.getAttribute(\'data-team\');if(t&&!this._espnFallback){this._espnFallback=1;this.src=(window.brTeamLogoEspn?window.brTeamLogoEspn(t):\'\');}else{this.style.display=\'none\';}">';
+  }
+
+  function _gamePillTeamRow(abv, pts, side, showScore) {
+    return '<span class="rz-gp-team ' + side + '">'
+      + _gamePillLogo(abv)
+      + '<span class="rz-gp-abv">' + abv + '</span>'
+      + (showScore ? '<span class="rz-gp-score">' + (pts === '' ? '' : pts) + '</span>' : '')
+      + '</span>';
+  }
+
   // ESPN-style horizontal NFL game selector (§4). One pill per NFL game plus an
   // "All" pill, all bound to the single canonical filter (`_filters.nfl`) so it
   // stays in lock-step with the Filter panel's Matchup control -- no second
@@ -2137,12 +2194,6 @@
       + ' aria-pressed="' + (selectedAll ? 'true' : 'false') + '"'
       + ' aria-label="Show all NFL games">'
       + '<span class="rz-gp-all">ALL</span></button>';
-    var logo = function(abv) {
-      var src = _teamLogoSrc(abv);
-      if (!src) return '<span class="rz-gp-logo rz-gp-logo-txt">' + abv + '</span>';
-      return '<img class="rz-gp-logo" src="' + src + '" alt="" data-team="' + abv + '"'
-        + ' onerror="var t=this.getAttribute(\'data-team\');if(t&&!this._espnFallback){this._espnFallback=1;this.src=(window.brTeamLogoEspn?window.brTeamLogoEspn(t):\'\');}else{this.style.display=\'none\';}">';
-    };
     pills += opts.map(function(o) {
       var g = _nflGameInfo(o.id) || o;
       var norm = _normGameStatus(g);
@@ -2150,21 +2201,15 @@
       var aPts = (g.away_pts === '' || g.away_pts == null) ? '' : g.away_pts;
       var hPts = (g.home_pts === '' || g.home_pts == null) ? '' : g.home_pts;
       var status = _gamePillStatus(g, norm);
-      var aria = o.away + ' ' + (aPts || '') + ' at ' + o.home + ' ' + (hPts || '') + ', ' + status;
-      var teamRow = function(abv, pts, side) {
-        return '<span class="rz-gp-team ' + side + '">'
-          + logo(abv)
-          + '<span class="rz-gp-abv">' + abv + '</span>'
-          + '<span class="rz-gp-score">' + (pts === '' ? '' : pts) + '</span>'
-          + '</span>';
-      };
+      var showScore = norm !== 'pregame' && norm !== 'unknown';
+      var aria = o.away + (showScore ? ' ' + aPts : '') + ' at ' + o.home + (showScore ? ' ' + hPts : '') + ', ' + status;
       return '<button type="button" class="rz-game-pill is-' + norm
         + (selected ? ' is-selected' : '') + '" data-nfl-gid="' + o.id + '"'
         + ' aria-pressed="' + (selected ? 'true' : 'false') + '"'
         + ' aria-label="' + _esc(aria) + '">'
-        + teamRow(o.away, aPts, 'away')
+        + _gamePillTeamRow(o.away, aPts, 'away', showScore)
         + '<span class="rz-gp-status">' + status + '</span>'
-        + teamRow(o.home, hPts, 'home')
+        + _gamePillTeamRow(o.home, hPts, 'home', showScore)
         + '</button>';
     }).join('');
     return '<div class="rz-game-strip">'
@@ -2395,9 +2440,9 @@
   function _heroCardsWrap(deltaHtml, cardsHtml) {
     return '<div class="rz-hero-cards">' + deltaHtml
       + '<div class="rz-hero-scroller">'
-      +   '<button type="button" class="rz-hero-arrow left rz-arrow-off" data-hero-arrow="-1" aria-label="Scroll to earlier matchups">&#8249;</button>'
+      +   '<button type="button" class="rz-hero-arrow left rz-arrow-off" data-hero-arrow="-1" aria-label="Scroll to earlier matchups" hidden>&#8249;</button>'
       +   '<div class="rz-hero-cards-row">' + cardsHtml + '</div>'
-      +   '<button type="button" class="rz-hero-arrow right rz-arrow-off" data-hero-arrow="1" aria-label="Scroll to more matchups">&#8250;</button>'
+      +   '<button type="button" class="rz-hero-arrow right rz-arrow-off" data-hero-arrow="1" aria-label="Scroll to more matchups" hidden>&#8250;</button>'
       + '</div>'
       + '</div>';
   }
@@ -2915,7 +2960,7 @@
       if (!gid || !p.home || !p.away) return;
       var code = String(p.game_code || '0');
       if (code === '2') return; // skip final games
-      if (!gameMap[gid]) gameMap[gid] = { home: p.home, away: p.away, status: p.game_status || '', code: code, kickoff: parseFloat(p.game_time_epoch || 0) || 0, spot: [], hasFocus: false };
+      if (!gameMap[gid]) gameMap[gid] = { id: gid, home: p.home, away: p.away, status: p.game_status || '', code: code, kickoff: parseFloat(p.game_time_epoch || 0) || 0, spot: [], hasFocus: false };
       if (focusPids && focusPids.has(pid)) gameMap[gid].hasFocus = true;
       if (spotPids.has(pid)) gameMap[gid].spot.push({ name: p.name || pid, pos: p.pos || '' });
     });
@@ -2939,9 +2984,12 @@
 
     gameIds.forEach(function(gid) {
       var g = gameMap[gid];
-      var statusText = g.code === '1'
-        ? 'LIVE · ' + (g.status || '')
-        : (g.kickoff ? _fmtKickoff(g.kickoff) : (g.status || 'Upcoming'));
+      var gameInfo = _nflGameInfo(gid) || g;
+      var norm = _normGameStatus(gameInfo);
+      var statusText = _gamePillStatus(gameInfo, norm);
+      var showScore = norm !== 'pregame' && norm !== 'unknown';
+      var awayPts = gameInfo.away_pts == null ? '' : gameInfo.away_pts;
+      var homePts = gameInfo.home_pts == null ? '' : gameInfo.home_pts;
       var playerChip = '';
       if (g.spot.length) {
         var rows = g.spot.slice(0, 3).map(function(pl) {
@@ -2953,9 +3001,10 @@
         playerChip = '<div class="rz-pregame-players"><strong>' + spotLabel + '</strong>' + rows + more + '</div>';
       }
       html += '<div class="rz-pregame-game">'
-        + '<div class="rz-pregame-teams">'
-        +   g.away + ' @ ' + g.home
-        +   '<div class="rz-pregame-time">' + statusText + '</div>'
+        + '<div class="rz-game-pill rz-pregame-pill is-' + norm + '">'
+        + _gamePillTeamRow(g.away, awayPts, 'away', showScore)
+        + '<span class="rz-gp-status">' + statusText + '</span>'
+        + _gamePillTeamRow(g.home, homePts, 'home', showScore)
         + '</div>'
         + playerChip
         + '</div>';
@@ -3002,13 +3051,18 @@
       } else {
         // Live/final with a PBP attempt but no lines yet -- honest empty, not
         // boxscore / "Scored X pts" fiction.
-        var pbpAttempted = Object.keys(_state.pbp_by_game || {}).length > 0
+        var hasCanonicalPbp = _pbpHistory.length > 0
+          || Object.keys(_playGroupsByKey).length > 0
+          || _feed.some(function(row) { return row && row.fromPbp; });
+        var pbpAttempted = Object.prototype.hasOwnProperty.call(_state, 'pbp_by_game')
           || Object.keys(_pbpGames).length > 0;
         var liveOrFinal = Object.keys(_state.player_info || {}).some(function(pid) {
           var c = String(((_state.player_info || {})[pid] || {}).game_code || '');
           return c === '1' || c === '2';
         });
-        if (pbpAttempted && liveOrFinal) {
+        if (hasCanonicalPbp) {
+          container.innerHTML = '<div class="rz-feed-empty">No plays match the current game or player selection.</div>';
+        } else if (pbpAttempted && liveOrFinal) {
           container.innerHTML = '<div class="rz-feed-empty">Play-by-play lines aren’t available for these games yet. We only show real PBP -- not box-score summaries.</div>';
         } else {
           container.innerHTML = _pregameScheduleHtml();
@@ -3273,8 +3327,10 @@
     var x = row.scrollLeft;
     var leftBtn = scroller.querySelector('[data-hero-arrow="-1"]');
     var rightBtn = scroller.querySelector('[data-hero-arrow="1"]');
-    if (leftBtn) leftBtn.classList.toggle('rz-arrow-off', !overflow || x <= 2);
-    if (rightBtn) rightBtn.classList.toggle('rz-arrow-off', !overflow || x >= maxScroll - 2);
+    var leftOff = !overflow || x <= 3;
+    var rightOff = !overflow || x >= maxScroll - 3;
+    if (leftBtn) { leftBtn.hidden = leftOff; leftBtn.classList.toggle('rz-arrow-off', leftOff); }
+    if (rightBtn) { rightBtn.hidden = rightOff; rightBtn.classList.toggle('rz-arrow-off', rightOff); }
     scroller.classList.toggle('rz-fade-left', overflow && x > 2);
     scroller.classList.toggle('rz-fade-right', overflow && x < maxScroll - 2);
   }
@@ -3396,6 +3452,7 @@
       }
     }
     if (heroChanged) { _wireHeroCards(); _wireHeroScroll(); }
+    else _updateHeroArrows(); // data/layout updates can change overflow without replacing markup
 
     // Update filter chips (hero chip may change)
     var showFilters = (_activeTab === 'plays' || _activeTab === 'top');
@@ -3630,14 +3687,13 @@
     root.querySelectorAll('.rz-scope-btn').forEach(function(btn) {
       btn.addEventListener('click', function() {
         if (btn.dataset.scope === _scope) return;
+        _saveScopeRuntime(_scope); // freeze this scope's canonical PBP first
         _streamGen++; // abort any in-flight My Leagues stream / poll from a prior switch
         _streaming = false;
         _mlNames = []; _mlLoaded = null; _mlFailed = null;
         _scope = btn.dataset.scope;
         _filters = { nfl: 'all', pos: 'all', stat: 'all' };
-        _feed = [];
         _shownFeedIds = new Set();
-        _resetFeedSnapshots(); // don't diff the new scope against the old one's lines
         _filterOpen = false;
         _myTeamOnly = false;
         _bigPlaysOnly = false;
@@ -3653,11 +3709,17 @@
           _state = cached;
           _myRids = _myRidSet(cached);
           _loadingScope = false;
-          // Restore cards + Plays immediately from cache, then refresh in background.
-          _hydrateFeed(cached);
+          // Restore cards + canonical Plays immediately, then refresh in the background.
+          if (!_restoreScopeRuntime(_scope, cached)) {
+            _feed = [];
+            _resetFeedSnapshots();
+            _hydrateFeed(cached);
+          }
           _applyDefaultHero();
         } else {
           // Show skeleton cards until this scope's (often multi-league) data lands.
+          _feed = [];
+          _resetFeedSnapshots();
           _loadingScope = true;
         }
         _syncScopeUrl();
@@ -3805,6 +3867,7 @@
       _scopeCache[myScope] = newData;
       _detectChanges(newData);
       _seedPrevStats(newData);
+      _saveScopeRuntime(myScope);
       // After a scope switch the first fetch backfills history silently; arm
       // alerts so only subsequent live polls beep/notify.
       _alertsArmed = true;
@@ -3969,12 +4032,18 @@
     _state = base;
     _scopeCache.user = base;
     _myRids = _myRidSet(base);
-    // Rebuild Plays from the full portfolio (clear first to avoid duplicates
-    // from the cached hydrate shown during the stream).
-    _feed = [];
-    _shownFeedIds = new Set();
-    _resetFeedSnapshots();
-    _hydrateFeed(base);
+    // Reconcile into restored canonical state; empty or partial slices cannot
+    // wipe last-good real PBP and the existing keys still govern revisions.
+    if (_scopeRuntime.user && _scopeRuntime.user.identity === _runtimeIdentity(base, 'user')) {
+      _detectChanges(base);
+      _seedPrevStats(base);
+    } else {
+      _feed = [];
+      _shownFeedIds = new Set();
+      _resetFeedSnapshots();
+      _hydrateFeed(base);
+    }
+    _saveScopeRuntime('user');
     _loadingScope = false;
     _countdown = _pollInterval();
     _render();
@@ -4055,6 +4124,7 @@
   _seedLeaders(_state);      // snapshot leading rosters so lead-change events don't fire on load
   _detectChanges(_state);    // populate initial feed from empty _prevStats
   _seedPrevStats(_state);    // snapshot stat lines for the next poll diff
+  _saveScopeRuntime(_scope); // initial real PBP is immediately restorable
   _alertsArmed = true;       // initial feed is backfill; only live polls alert after this
   _applyDefaultHero();       // no-op unless prefs restored a hero; focus stays opt-in by default
 

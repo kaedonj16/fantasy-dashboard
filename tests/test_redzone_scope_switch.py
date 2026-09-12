@@ -73,7 +73,7 @@ def test_recover_scope_load_uses_cache_not_foreign_state():
     assert "_loadingScope = false;\n      _render();" not in src or "_scopeCache" in src
 
 
-def test_scope_switch_restores_cache_and_resets_feed_snapshots():
+def test_scope_switch_restores_payload_and_isolated_runtime():
     src = _rz()
     block = src[src.index("root.querySelectorAll('.rz-scope-btn')") :]
     block = block[: block.index("root.querySelectorAll('.rz-tab-btn')")]
@@ -81,8 +81,10 @@ def test_scope_switch_restores_cache_and_resets_feed_snapshots():
     assert "var cached = _scopeCache[_scope]" in block
     assert "_state = cached" in block
     assert "_loadingScope = true" in block
-    assert "_resetFeedSnapshots()" in block
-    # Cached switch must rehydrate Plays immediately and persist scope in the URL.
+    assert "_saveScopeRuntime(_scope)" in block
+    assert "_restoreScopeRuntime(_scope, cached)" in block
+    # Only a cold scope rehydrates; a warm scope paints durable Plays immediately.
+    assert block.index("_restoreScopeRuntime") < block.index("_render();")
     assert "_hydrateFeed(cached)" in block
     assert "_syncScopeUrl()" in block
 
@@ -97,7 +99,7 @@ def test_my_leagues_stream_hydrates_plays_at_end():
     src = _fn("_refreshUserStream")
     full = _rz()
     # Mid-stream must not seed prevStats (that suppressed all Plays).
-    mid = src[src.index("obj.type === 'league'") : src.index("_hydrateFeed(base)")]
+    mid = src[src.index("obj.type === 'league'") : src.index("if (_scopeRuntime.user")]
     assert "_seedPrevStats(base)" not in mid
     assert "_hydrateFeed(base)" in src
     assert "_resetFeedSnapshots()" in src
@@ -106,6 +108,30 @@ def test_my_leagues_stream_hydrates_plays_at_end():
     # Empty slices surface a failed card, not a silent drop.
     assert "_mlFailed" in src
     assert "function _mlFailedCard(" in full
+
+
+def test_runtime_cache_contains_all_canonical_pbp_structures():
+    src = _rz()
+    save = _fn("_saveScopeRuntime")
+    restore = _fn("_restoreScopeRuntime")
+    for name in ("feed", "pbpHistory", "pbpGames", "seenPlayIds",
+                 "seenContributions", "playGroupsByKey", "contributionsByKey"):
+        assert name in save
+    for target in ("_feed", "_pbpHistory", "_pbpGames", "_seenPlayIds",
+                   "_seenContributions", "_playGroupsByKey", "_contributionsByKey"):
+        assert target in restore
+    assert "var _scopeRuntime = { league: null, user: null }" in src
+
+
+def test_empty_and_partial_polls_merge_without_clearing_canonical_pbp():
+    refresh = _fn("_refresh")
+    between_state_and_detect = refresh[refresh.index("_state = newData"):refresh.index("_detectChanges(newData)")]
+    assert "_feed = []" not in between_state_and_detect
+    assert "_resetFeedSnapshots" not in between_state_and_detect
+    assert "_saveScopeRuntime(myScope)" in refresh
+    sync = _fn("_syncFeed")
+    assert "hasCanonicalPbp" in sync
+    assert "No plays match the current game or player selection" in sync
 
 
 def test_hydrate_feed_matches_cold_boot_order():

@@ -31560,6 +31560,7 @@ button:disabled {
     --rz-text: var(--text);
     --rz-muted: var(--text-muted);
     --rz-hover: var(--accent-soft);
+    --rz-content-gutter: 14px;
     background: var(--rz-bg);
     min-height: calc(100vh - 56px);
     padding: 0 0 80px;
@@ -32042,8 +32043,7 @@ button:disabled {
 }
 
 .rz-hero-arrow.rz-arrow-off {
-    opacity: 0;
-    pointer-events: none;
+    display: none;
 }
 
 /* Edge fades hint that more matchups exist beyond the visible strip. */
@@ -32884,7 +32884,7 @@ button:disabled {
     display: flex;
     flex-direction: column;
     gap: 8px;
-    padding: 4px 0 12px;
+    padding: 6px var(--rz-content-gutter) 12px;
 }
 .rz-mt-league {
     background: var(--rz-card);
@@ -33320,7 +33320,7 @@ button:disabled {
     align-items: center;
     justify-content: space-between;
     gap: 12px;
-    padding: 8px 14px 6px;
+    padding: 8px var(--rz-content-gutter) 6px;
     min-height: 0;
     font-size: 11px;
     font-weight: 700;
@@ -33352,7 +33352,7 @@ button:disabled {
     display: flex;
     flex-direction: column;
     gap: 5px;
-    padding: 0 10px 8px;
+    padding: 0 var(--rz-content-gutter) 8px;
 }
 
 .rz-event {
@@ -33742,7 +33742,7 @@ button:disabled {
     display: flex;
     align-items: center;
     gap: 6px;
-    padding: 10px 14px 4px;
+    padding: 10px var(--rz-content-gutter) 4px;
     flex-wrap: wrap;
 }
 
@@ -33985,7 +33985,7 @@ a.rz-demo-link:hover {
 
 /* ── Pre-game schedule empty state ───── */
 .rz-pregame-wrap {
-    padding: 8px 10px 12px;
+    padding: 8px var(--rz-content-gutter) 12px;
     display: flex;
     flex-direction: column;
     gap: 6px;
@@ -34004,10 +34004,13 @@ a.rz-demo-link:hover {
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 10px 12px;
-    border-radius: 10px;
-    background: var(--rz-card);
-    border: 1px solid var(--rz-border);
+    padding: 0;
+}
+
+.rz-pregame-pill {
+    width: 120px;
+    max-width: 120px;
+    cursor: default;
 }
 
 .rz-pregame-teams {
@@ -34955,7 +34958,8 @@ a.rz-demo-link:hover {
     display: flex;
     gap: 8px;
     overflow-x: auto;
-    padding: 2px 2px 6px;
+    padding: 3px var(--rz-content-gutter) 7px;
+    scroll-padding-inline: var(--rz-content-gutter);
     scroll-snap-type: x proximity;
     overscroll-behavior-inline: contain;
     -webkit-overflow-scrolling: touch;
@@ -35055,6 +35059,7 @@ a.rz-demo-link:hover {
 .rz-game-pill.is-final .rz-gp-abv,
 .rz-game-pill.is-final .rz-gp-score { color: var(--rz-muted); }
 @media (max-width: 480px) {
+    .rz-page { --rz-content-gutter: 10px; }
     .rz-game-pill { min-width: 100px; }
 }
 
