@@ -37,6 +37,17 @@ def test_player_modal_history_and_breakout_retry_contract():
     assert "history.pushState(Object.assign({}, history.state || {}, { brPlayerModal: true })" in app
     assert "immediate: true" in modal
 
+
+def test_player_modal_tabs_do_not_retrigger_delegated_player_clicks():
+    modal = text("static/player_modal.js")
+    # Tab buttons are non-submitting controls and pass their click through to
+    # pmSwitchTab, which contains it inside the already-open player dialog.
+    assert '<button type="button" class="pm-tab active"' in modal
+    assert "onclick=\"pmSwitchTab('overview', event)\"" in modal
+    assert "function pmSwitchTab(tab, clickEvent)" in modal
+    assert "clickEvent.stopPropagation()" in modal
+    assert "_liveBtn.onclick = function(e) { pmSwitchTab('live', e); };" in modal
+
 def test_onboarding_uses_provider_neutral_steps_and_private_espn_handoff():
     source = text("app.py")
     assert '>Connect</span>' in source
