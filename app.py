@@ -10755,6 +10755,22 @@ def get_league_ctx_from_cache(platform: str, league_id: str, season: int) -> dic
                 ctx.get("users") or [], ctx.get("rosters") or [], platform, league_id, season
             )
             return ctx
+        # A context bust must also evict the provider-layer payloads used to
+        # rebuild it. Otherwise a new context timestamp could wrap old Sleeper
+        # rosters/matchups and falsely look fresh. This is league-scoped; Yahoo
+        # remains token-backed and ESPN owns its separately scoped cache below.
+        if platform == "sleeper":
+            try:
+                from utils.utils import clear_league_provider_cache_for_league
+                clear_league_provider_cache_for_league(league_id)
+            except Exception:
+                logger.debug("[refresh] Sleeper provider cache clear failed", exc_info=True)
+        elif platform == "espn":
+            try:
+                from dashboard_services.providers.espn_api import clear_espn_league_caches
+                clear_espn_league_caches(league_id, season)
+            except Exception:
+                logger.debug("[refresh] ESPN provider cache clear failed", exc_info=True)
         ctx = build_league_context(platform, league_id, season)
         _prune_dashboard_cache()
         DASHBOARD_CACHE[key] = {"ctx": ctx, "ts": time.time(), "page_html": {}}

@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     import pandas as pd
 
 from dashboard_services.api import (
+    _fetch_league,
     get_nfl_games_for_week_raw,
     get_transactions,
     get_rosters,
@@ -1753,6 +1754,19 @@ def clear_activity_cache_for_league(league_id: str) -> None:
     _clear_func_cache_for_league(get_users, "get_users", league_id)
 
     _clear_func_cache_for_league(get_rosters, "get_rosters", league_id)
+
+
+def clear_league_provider_cache_for_league(league_id: str) -> None:
+    """Evict only cached Sleeper payloads that feed a league-context rebuild."""
+    for func, name in (
+        (_fetch_league, "_fetch_league"),
+        (get_users, "get_users"),
+        (get_rosters, "get_rosters"),
+        (get_matchups, "get_matchups"),
+        (get_transactions, "get_transactions"),
+        (get_traded_picks, "get_traded_picks"),
+    ):
+        _clear_func_cache_for_league(func, name, league_id)
 
 
 def clear_teams_cache_for_league(league_id: str) -> None:
