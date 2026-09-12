@@ -59,7 +59,7 @@ def test_refresh_guards_stale_generation_and_scope():
     assert "newData.scope !== myScope" in src
     assert "_scopeCache[myScope] = newData" in src
     # State must be applied before detect so owner/league labels are correct.
-    assert src.index("_state = newData") < src.index("_detectChanges(newData)")
+    assert src.index("_state = newData") < src.index("_detectChanges(newData,")
     assert "_loadingScope = false; _render()" not in src.replace("_recoverScopeLoad", "")
 
 
@@ -125,7 +125,7 @@ def test_runtime_cache_contains_all_canonical_pbp_structures():
 
 def test_empty_and_partial_polls_merge_without_clearing_canonical_pbp():
     refresh = _fn("_refresh")
-    between_state_and_detect = refresh[refresh.index("_state = newData"):refresh.index("_detectChanges(newData)")]
+    between_state_and_detect = refresh[refresh.index("_state = newData"):refresh.index("_detectChanges(newData,")]
     assert "_feed = []" not in between_state_and_detect
     assert "_resetFeedSnapshots" not in between_state_and_detect
     assert "_saveScopeRuntime(myScope)" in refresh
