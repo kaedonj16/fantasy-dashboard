@@ -54,6 +54,9 @@
   var _mlNames  = [];        // My Leagues: league display names by portfolio index
   var _mlLoaded = null;      // My Leagues: Set of portfolio indices whose card has arrived (null = not streaming)
   var _mlFailed = null;      // My Leagues: Set of portfolio indices that failed to load
+  var _scopeLoadError = null; // explicit first-load failure; never leave skeletons forever
+  var _lastSuccessAt = null;
+  var _pendingNewPlays = 0;
   var _streaming = false;    // true while a progressive My Leagues stream is in flight
   var _streamGen = 0;        // bumped on every scope switch so a stale stream/poll can abort
   // Last-good payload per scope so My Leagues → This League never paints
@@ -3062,6 +3065,8 @@
     if (toAdd.length) {
       var isInitialLoad = _shownFeedIds.size === 0;
       var newCount = toAdd.filter(function(ev) { return !_shownFeedIds.has(_eid(ev)); }).length;
+      var feedWasAboveViewport = container.getBoundingClientRect().top < -80;
+      if (!isInitialLoad && feedWasAboveViewport) _pendingNewPlays += newCount;
       // Sequential stagger: insert new plays one at a time during live polling
       var liveStagger = !isInitialLoad && newCount > 1;
 
@@ -3160,7 +3165,15 @@
           ? '<span class="rz-fh-dot"></span><span class="rz-fh-text">Live · <b>' + totalEvts + '</b> ' + (totalEvts === 1 ? 'play' : 'plays') + '</span>'
           : '<span class="rz-fh-text"><b>' + totalEvts + '</b> ' + (totalEvts === 1 ? 'play' : 'plays') + ' · Final</span>')
         : '';
-      hdr.innerHTML = '<div class="rz-feed-hdr-left">' + statusText + '</div>';
+      hdr.innerHTML = '<div class="rz-feed-hdr-left">' + statusText + '</div>'
+        + (_pendingNewPlays ? '<button type="button" class="rz-new-plays" id="rz-new-plays">' + _pendingNewPlays + ' new play' + (_pendingNewPlays === 1 ? '' : 's') + '</button>' : '');
+      var newest = hdr.querySelector('#rz-new-plays');
+      if (newest) newest.addEventListener('click', function() {
+        _pendingNewPlays = 0;
+        var first = container.querySelector('[data-eid]');
+        if (first && first.scrollIntoView) first.scrollIntoView({behavior: 'smooth', block: 'start'});
+        _syncFeed();
+      });
     }
 
     // Click handlers now managed by root event delegation
@@ -3306,12 +3319,25 @@
     var timerEl = document.getElementById('rz-timer');
     if (timerEl) { timerEl.textContent = _fmtTimer(_countdown); timerEl.classList.remove('rz-timer-refreshing'); }
 
-    // Update live chip in header
-    var liveChipEl = root.querySelector('.rz-live-chip');
+    // Update status text without rebuilding header controls (the refresh button
+    // may currently own keyboard focus).
+    var liveChipEl = root.querySelector('.rz-live-chip, .rz-next-chip, .rz-final-chip');
     var headerRight = root.querySelector('.rz-header-right');
     if (headerRight) {
       var liveChipHtml = _statusChipHtml();
-      headerRight.innerHTML = liveChipHtml + '<button class="rz-refresh-timer" id="rz-timer">' + _fmtTimer(_countdown) + '</button>';
+      var chipHost = document.createElement('div'); chipHost.innerHTML = liveChipHtml;
+      var nextChip = chipHost.firstChild;
+      if (liveChipEl && nextChip && liveChipEl.outerHTML !== nextChip.outerHTML) liveChipEl.replaceWith(nextChip);
+      else if (!liveChipEl && nextChip) headerRight.insertBefore(nextChip, timerEl);
+      else if (liveChipEl && !nextChip) liveChipEl.remove();
+      var stale = headerRight.querySelector('.rz-stale-badge');
+      if (_lastPollFailed) {
+        var staleText = 'Stale' + (_lastSuccessAt ? ' · updated ' + new Date(_lastSuccessAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '');
+        if (!stale) { stale=document.createElement('span'); stale.className='rz-stale-badge'; headerRight.insertBefore(stale, timerEl); }
+        if (stale.textContent !== staleText) stale.textContent = staleText;
+      } else if (stale) stale.remove();
+      timerEl = document.getElementById('rz-timer');
+      if (timerEl) { timerEl.textContent = _lastPollFailed ? '↻' : _fmtTimer(_countdown); timerEl.setAttribute('aria-label', 'Refresh Redzone data'); }
     }
 
     // Replace hero cards in-place and re-wire. Preserve the strip's horizontal
@@ -3452,7 +3478,12 @@
     var myMatchup = pair ? pair.mine : null;
     var oppMatchup = pair ? pair.opp : null;
 
-    var summary = _loadingScope ? _renderSkeletonHero() : _renderHeroCards();
+    var summary = _loadingScope
+      ? (_scopeLoadError
+        ? '<div class="rz-load-error" role="alert"><strong>Could not load Redzone</strong><span>Check your connection and try again.</span><div><button type="button" class="rz-page-btn" id="rz-load-retry">Retry</button>'
+          + (_scope === 'user' ? '<button type="button" class="rz-page-btn" id="rz-load-league">This League</button>' : '') + '</div></div>'
+        : _renderSkeletonHero())
+      : _renderHeroCards();
 
     var tabBar = '<div class="rz-tab-bar">' + TABS.map(function(t) {
       var badge = (t.key === 'plays' && _unreadCount > 0 && _activeTab !== 'plays')
@@ -3487,8 +3518,8 @@
       + '<div class="rz-panel' + (_activeTab === 'top'    ? ' active' : '') + '" id="rz-panel-top">'    + _renderTopPerformers()  + '</div>';
 
     var exitBtn  = _isDemo ? '<button class="rz-demo-exit" id="rz-demo-exit">Exit Demo</button>' : '';
-    var staleChip = _lastPollFailed ? '<span class="rz-stale-badge">⚠ Stale</span>' : '';
-    var timerLabel = _lastPollFailed ? '?' : (idle ? '-' : _fmtTimer(_countdown));
+    var staleChip = _lastPollFailed ? '<span class="rz-stale-badge">Stale' + (_lastSuccessAt ? ' · updated ' + new Date(_lastSuccessAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '') + '</span>' : '';
+    var timerLabel = _lastPollFailed ? '↻' : (idle ? '↻' : _fmtTimer(_countdown));
     var notifCta = (!_notifDismissed && 'Notification' in window && Notification.permission === 'default')
       ? '<div class="rz-notif-cta" id="rz-notif-cta"><span>Enable TD alerts</span><button class="rz-notif-cta-btn" id="rz-notif-enable">Enable</button><button class="rz-notif-cta-x" id="rz-notif-dismiss">✕</button></div>'
       : '';
@@ -3496,7 +3527,7 @@
       notifCta
       + '<div class="rz-header">'
       + '<div class="rz-brand"><div class="rz-brand-dot' + (live ? ' is-live' : '') + '"></div><span class="rz-brand-name">BR Redzone</span><span class="rz-brand-week">Wk ' + (_state.week || '') + '</span>' + demoPill + '</div>'
-      + '<div class="rz-header-right">' + exitBtn + staleChip + liveChip + '<button class="rz-refresh-timer" id="rz-timer">' + timerLabel + '</button></div>'
+      + '<div class="rz-header-right">' + exitBtn + staleChip + liveChip + '<button class="rz-refresh-timer" id="rz-timer" aria-label="Refresh Redzone data">' + timerLabel + '</button></div>'
       + '</div>'
       + '<div class="rz-content">'
       + _renderScopeToggle()
@@ -3630,6 +3661,10 @@
     });
     var exitDemo = root.querySelector('#rz-demo-exit');
     if (exitDemo) exitDemo.addEventListener('click', function() { window.location.href = window.location.pathname; });
+    var loadRetry = root.querySelector('#rz-load-retry');
+    if (loadRetry) loadRetry.addEventListener('click', function() { _scopeLoadError = null; _render(); _scope === 'user' ? _refreshUserStream() : _refresh(); });
+    var loadLeague = root.querySelector('#rz-load-league');
+    if (loadLeague) loadLeague.addEventListener('click', function() { var b=root.querySelector('[data-scope="league"]'); if (b) b.click(); });
 
     var notifEnable = root.querySelector('#rz-notif-enable');
     if (notifEnable) notifEnable.addEventListener('click', function() {
@@ -3683,8 +3718,10 @@
       _myRids = _myRidSet(cached);
       _loadingScope = false;
       _render();
+    } else {
+      _scopeLoadError = true;
+      _render();
     }
-    // else keep the skeleton -- do not paint the other scope's state
   }
 
   async function _refresh() {
@@ -3693,16 +3730,21 @@
     // (or vice versa) after the user flips the scope tabs.
     var myGen = _streamGen;
     var myScope = _scope;
+    var wasLoading = _loadingScope;
     try {
       var parts = window.location.pathname.split('/');
       var apiBase = '/api/' + parts[1] + '/' + parts[2] + '/' + parts[3];
       var url = apiBase + '/redzone-data?_cb=' + Date.now() + '&scope=' + myScope;
       if (_isDemo) { _demoT += 15; url += '&demo=1&t=' + _demoT; }
-      var resp = await fetch(url, { cache: 'no-store' });
+      var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+      var timeout = setTimeout(function() { if (controller) controller.abort(); }, 12000);
+      var resp;
+      try { resp = await fetch(url, { cache: 'no-store', signal: controller ? controller.signal : undefined }); }
+      finally { clearTimeout(timeout); }
       if (myGen !== _streamGen || myScope !== _scope) return;
       if (!resp.ok) {
         _recoverScopeLoad(myGen, myScope);
-        if (myGen === _streamGen && myScope === _scope) _render();
+        if (myGen === _streamGen && myScope === _scope && !_loadingScope) _partialUpdate();
         return;
       }
       var newData = await resp.json();
@@ -3710,6 +3752,8 @@
       // Server stamps scope; reject a mismatched payload even if gen lined up.
       if (newData && newData.scope && newData.scope !== myScope) return;
       _lastPollFailed = false;
+      _scopeLoadError = null;
+      _lastSuccessAt = Date.now();
       _loadingScope = false;
       _myRids = _myRidSet(newData);
       // Apply state before detect so owner/league labels read the new payload.
@@ -3723,7 +3767,9 @@
       _applyDefaultHero(); // no-op: Plays start unfiltered; hero focus is opt-in
       _countdown = _pollInterval();
 
-      _render();
+      // Polling must not replace controls, focus, expanded panels, or scroll.
+      // Full rendering is reserved for the initial/scope load.
+      if (wasLoading) _render(); else _partialUpdate();
 
       // Auto-refresh Live tab in player modal if it's currently visible
       var livePanelEl = document.getElementById('pm-panel-live');
@@ -3749,7 +3795,7 @@
       }
     } catch (_) {
       _recoverScopeLoad(myGen, myScope);
-      if (myGen === _streamGen && myScope === _scope) _render();
+      if (myGen === _streamGen && myScope === _scope && !_loadingScope) _partialUpdate();
     }
   }
 

@@ -121,3 +121,10 @@ A full breakdown of every feature on the site, organized by the main navigation.
 - **Browser extension**: Companion extension for ESPN/Yahoo live-draft relay, one-click ESPN private-league connect, and a read-only Draft Assistant overlay on **Sleeper, Yahoo, and ESPN** draft rooms. See `extension/README.md` for the parity checklist (phone drafts stay manual track; production zip via `pack_extension.py`).
 - **Trending surfaces** — Trending adds, risers/fallers, and value-movers boards driven by the live value engine.
 - **Static / informational pages** — About, Pricing, FAQ, Contact, Support, Privacy, Terms.
+
+### UX reliability and accessibility
+- **Stable mobile navigation** — League docks retain the same seasonal destinations on primary and secondary pages; secondary pages mark **More** active and remain identified in its sheet. The compact league header truncates long names without hiding context.
+- **Accessible selects** — Styled selects preserve native form values and change events while exposing labels, required/disabled state, selected/disabled options, full keyboard navigation, type-ahead, and viewport-aware positioning.
+- **Recoverable live views** — Redzone polling patches the mounted interface, preserves feed reading position, offers a single **New plays** action, and distinguishes initial connection errors from cached stale data with Retry. Partial My Leagues cards remain visible and identify league failures.
+- **Shareable player modals** — Player and selected tab are represented in the URL; Back closes the modal, Forward/direct URLs restore it, and transient Breakout failures offer Retry rather than being cached as loaded.
+- **Clear onboarding** — Provider setup uses the consistent Platform → Connect → Choose team progression. Private ESPN setup promotes the shipped desktop extension workflow and keeps manual credentials under Advanced setup with an explicit mobile handoff.

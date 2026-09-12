@@ -39472,3 +39472,18 @@ a, button, [role="button"], [role="tab"], summary, label,
     max-width: none;
     min-width: 150px;
 }
+
+/* UX reliability: explicit Redzone recovery and a single unread-feed affordance. */
+.rz-load-error { margin:12px 16px; padding:18px; border:1px solid color-mix(in srgb,var(--loss) 38%,var(--border)); border-radius:var(--radius,12px); background:var(--card); display:flex; flex-direction:column; gap:8px; color:var(--text); }
+.rz-load-error > span { color:var(--text-muted); font-size:13px; }
+.rz-load-error > div { display:flex; flex-wrap:wrap; gap:8px; }
+.rz-new-plays { min-height:36px; padding:7px 12px; border:0; border-radius:999px; background:var(--accent); color:#fff; font:inherit; font-size:12px; font-weight:750; cursor:pointer; }
+.rz-new-plays:focus-visible, .rz-load-error button:focus-visible { outline:3px solid color-mix(in srgb,var(--accent) 45%,transparent); outline-offset:2px; }
+.csd-trigger:disabled { cursor:not-allowed; opacity:.55; }
+.csd-option[aria-disabled="true"] { cursor:not-allowed; opacity:.5; }
+
+@media (max-width:768px) {
+  .top-nav.br-mnav .br-ctx-league-wrap { min-width:0; max-width:calc(100vw - 112px); }
+  .top-nav.br-mnav .br-ctx-name { display:block; max-width:calc(100vw - 162px); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .rz-load-error { margin-inline:12px; }
+}
