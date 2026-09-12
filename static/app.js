@@ -268,12 +268,12 @@ if (window.__FEATURES_JS || window.__PLAYER_MODAL_JS) {
       if (d.type !== 'nav-fresh') return;
       if (d.url && d.url !== location.href) return;
       if (document.visibilityState !== 'visible') return;
-      if (Date.now() - loadedAt > 20000) return;
       // An explicit Refresh asked the SW to wait for the network; if it still
       // painted the cached shell (iOS often ignores location.reload's cache
       // mode), swap it for the fresh copy even on a warm in-app launch.
       var userRefresh = false;
       try { userRefresh = sessionStorage.getItem('brUserRefresh') === '1'; } catch (e) {}
+      if (!userRefresh && Date.now() - loadedAt > 20000) return;
       if (window.__brWarmLaunch && !userRefresh) return;
       if (userRefresh) {
         if (reloading) return;
@@ -2951,6 +2951,16 @@ function showLoginGate(target, opts) {
   }
   window.brUpdateFreshness = updateLabels;
 
+  function setRefreshFailure() {
+    updateLabels();
+    var t = document.getElementById('brSheetRefreshTime');
+    if (t) t.textContent = 'Failed · ' + (t.textContent || '—');
+    var chip = document.getElementById('cache-freshness');
+    var el = chip && chip.querySelector('.fp-pill-time');
+    if (el) el.textContent = 'Failed · ' + (el.textContent || '—');
+    if (chip) chip.style.opacity = '';
+  }
+
   function setRefreshingLabel() {
     var t = document.getElementById('brSheetRefreshTime');
     if (t) t.textContent = '…';
@@ -2989,6 +2999,7 @@ function showLoginGate(target, opts) {
         hardMessage: 'Refresh is taking longer than usual.',
         onCancel: function () {
           el.style.display = 'none';
+          doRefresh._run = (doRefresh._run || 0) + 1;
           doRefresh._busy = false;
           var btn = document.getElementById('brSheetRefresh');
           if (btn) { btn.disabled = false; btn.removeAttribute('aria-busy'); }
@@ -3055,51 +3066,103 @@ function showLoginGate(target, opts) {
 
   function hardReload() {
     try { sessionStorage.setItem('brUserRefresh', '1'); } catch (e) {}
-    ackBypassCache(location.href).then(function () { location.reload(); }, function () { location.reload(); });
+    try { sessionStorage.setItem('brRefreshExpectedTs', String(hardReload.expectedTs || 0)); } catch (e) {}
+    function reloadOrFail() {
+      try {
+        location.reload();
+      } catch (e) {
+        try {
+          sessionStorage.removeItem('brUserRefresh');
+          sessionStorage.removeItem('brRefreshExpectedTs');
+        } catch (_) {}
+        doRefresh._run = (doRefresh._run || 0) + 1;
+        doRefresh._busy = false;
+        var btn = document.getElementById('brSheetRefresh');
+        if (btn) { btn.disabled = false; btn.removeAttribute('aria-busy'); }
+        showRefreshOverlay(false);
+        setRefreshFailure();
+      }
+    }
+    ackBypassCache(location.href).then(reloadOrFail, reloadOrFail);
   }
 
-  function doRefresh() {
+  function extractFreshDocument(html, beforeTs) {
+    var doc = new DOMParser().parseFromString(html, 'text/html');
+    var root = doc.getElementById('page-root');
+    var nextTs = root ? parseInt(root.dataset.cacheTs || '0', 10) : 0;
+    if (!root || !nextTs) throw new Error('invalid refreshed document');
+    if (beforeTs && nextTs <= beforeTs) throw new Error('stale refreshed document');
+    return { html: html, cacheTs: nextTs };
+  }
+
+  function fetchFreshDocument(beforeTs) {
+    var attempts = 3;
+    function attempt(n) {
+      var opts = {
+        cache: 'reload',
+        credentials: 'same-origin',
+        headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache', 'X-BR-Refresh': '1' }
+      };
+      var request = typeof window.brFetchWithTimeout === 'function'
+        ? window.brFetchWithTimeout(location.href, opts, 30000)
+        : fetch(location.href, opts);
+      return request.then(function (res) {
+        if (!res.ok) throw new Error('page ' + res.status);
+        return res.text();
+      }).then(function (html) {
+        return extractFreshDocument(html, beforeTs);
+      }).catch(function (err) {
+        if (n + 1 >= attempts) throw err;
+        return new Promise(function (resolve) { setTimeout(resolve, 350 * (n + 1)); })
+          .then(function () { return attempt(n + 1); });
+      });
+    }
+    return attempt(0);
+  }
+
+  async function doRefresh() {
     if (doRefresh._busy) return;
     doRefresh._busy = true;
+    var runId = doRefresh._run = (doRefresh._run || 0) + 1;
+    var beforeTs = cacheTs();
+    var acceptedTs = 0;
+    var reloadStarted = false;
     setRefreshingLabel();
     var btn = document.getElementById('brSheetRefresh');
     if (btn) { btn.disabled = true; btn.setAttribute('aria-busy', 'true'); }
     showRefreshOverlay(true);
 
-    function finishOk() {
-      showRefreshOverlay(false);
-      if (btn) { btn.disabled = false; btn.removeAttribute('aria-busy'); }
-      doRefresh._busy = false;
-      updateLabels();
+    try {
+      await expireLeague();
+      if (runId !== doRefresh._run) throw new Error('refresh cancelled');
+      var fresh = await fetchFreshDocument(beforeTs);
+      if (runId !== doRefresh._run) throw new Error('refresh cancelled');
+      acceptedTs = fresh.cacheTs;
+      if (canSwapInPlace() && window.brSwapPageRoot(fresh.html)) {
+        // brSwapPageRoot copies the authoritative server build timestamp.
+        if (cacheTs() !== acceptedTs) throw new Error('freshness timestamp was not applied');
+        updateLabels();
+      } else {
+        // The document was proven fresh, but this page cannot safely re-run its
+        // scripts in place. Arm the SW and let a native navigation initialise it.
+        reloadStarted = true;
+        hardReload.expectedTs = acceptedTs;
+        hardReload();
+      }
+    } catch (err) {
+      if (runId === doRefresh._run) {
+        console.error('Refresh failed:', err);
+        setRefreshFailure();
+      }
+    } finally {
+      if (runId === doRefresh._run && !reloadStarted) {
+        doRefresh._busy = false;
+        if (btn) { btn.disabled = false; btn.removeAttribute('aria-busy'); }
+        showRefreshOverlay(false);
+      }
     }
-
-    expireLeague()
-      .then(function () {
-        if (!canSwapInPlace()) {
-          hardReload();
-          return;
-        }
-        return (typeof window.brFetchWithTimeout === 'function'
-          ? window.brFetchWithTimeout(location.href, {
-              cache: 'reload',
-              credentials: 'same-origin',
-              headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' }
-            }, 30000)
-          : fetch(location.href, {
-              cache: 'reload',
-              credentials: 'same-origin',
-              headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' }
-            })
-        ).then(function (res) {
-          if (!res.ok) throw new Error('page ' + res.status);
-          return res.text();
-        }).then(function (html) {
-          if (!window.brSwapPageRoot(html)) throw new Error('swap failed');
-          finishOk();
-        }).catch(function () { hardReload(); });
-      })
-      .catch(function () { finishOk(); });
   }
+  window.brRefreshLeague = doRefresh;
 
   // Mobile More-sheet Refresh row (persists across soft-navs, so wire once).
   function wireSheetRefresh() {
@@ -3168,7 +3231,11 @@ function showLoginGate(target, opts) {
     try {
       if (sessionStorage.getItem('brUserRefresh') === '1') {
         var ts = cacheTs();
-        if (ts && Date.now() - ts < 15000) sessionStorage.removeItem('brUserRefresh');
+        var expected = parseInt(sessionStorage.getItem('brRefreshExpectedTs') || '0', 10);
+        if (ts && (!expected || ts >= expected)) {
+          sessionStorage.removeItem('brUserRefresh');
+          sessionStorage.removeItem('brRefreshExpectedTs');
+        }
       }
     } catch (e) {}
   }
@@ -9899,49 +9966,13 @@ bindOnce(document, "domContentLoadedInit", "DOMContentLoaded", () => {
     return { league, page, platform, season };
   }
 
-  bindOnce(refreshBtn, "refreshBtnClick", "click", async () => {
-    const { league, page, platform, season } = readCtxFromRefreshBtn(refreshBtn);
-
-    if (!league || !page || !platform || !season) {
-      console.error("Missing league/page/platform/season for refresh.", { league, page, platform, season });
-      window.location.reload();
+  bindOnce(refreshBtn, "refreshBtnClick", "click", () => {
+    const ctx = readCtxFromRefreshBtn(refreshBtn);
+    if (!ctx.league || !ctx.page || !ctx.platform || !ctx.season) {
+      console.error("Missing league/page/platform/season for refresh.", ctx);
       return;
     }
-
-    refreshBtn.disabled = true;
-    refreshBtn.classList.add("refresh-spinner");
-
-    try {
-      const res = await fetch("/api/refresh-page", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ league_id: league, page, platform, season }),
-      });
-
-      const data = await res.json().catch(() => null);
-
-      if (!res.ok || !data || !data.ok) {
-        console.error("Refresh failed:", data?.error || res.statusText);
-        window.location.reload();
-        return;
-      }
-
-      const root = document.getElementById("page-root");
-
-      if (root && data.body_html) {
-        root.innerHTML = data.body_html;
-        root.dataset.cacheTs = String(Date.now());
-        requestAnimationFrame(() => window.initPageRoot?.(root));
-      } else {
-        window.location.reload();
-      }
-    } catch (err) {
-      console.error("Error during refresh:", err);
-      window.location.reload();
-    } finally {
-      refreshBtn.disabled = false;
-      refreshBtn.classList.remove("refresh-spinner");
-    }
+    if (typeof window.brRefreshLeague === 'function') window.brRefreshLeague();
   });
 })();
 

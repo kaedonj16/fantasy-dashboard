@@ -123,6 +123,14 @@ def api_refresh_league():
         _touch_league_bust(platform, season, league_id)
     except Exception:
         logger.debug("suppressed exception", exc_info=True)
+    # Clear this worker's provider payloads immediately. Sibling workers do the
+    # same just before rebuilding when they observe the shared bust marker.
+    if platform == "sleeper":
+        try:
+            from utils.utils import clear_league_provider_cache_for_league
+            clear_league_provider_cache_for_league(league_id)
+        except Exception:
+            logger.debug("suppressed exception", exc_info=True)
     # Also remove /tmp files so other gunicorn workers don't serve stale HTML
     for page in ("dashboard", "activity", "teams", "graphs", "standings", "weekly"):
         try:

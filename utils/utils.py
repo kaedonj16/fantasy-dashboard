@@ -1755,6 +1755,19 @@ def clear_activity_cache_for_league(league_id: str) -> None:
     _clear_func_cache_for_league(get_rosters, "get_rosters", league_id)
 
 
+def clear_league_provider_cache_for_league(league_id: str) -> None:
+    """Evict only cached Sleeper payloads that feed a league-context rebuild."""
+    for func, name in (
+        (get_league, "get_league"),
+        (get_users, "get_users"),
+        (get_rosters, "get_rosters"),
+        (get_matchups, "get_matchups"),
+        (get_transactions, "get_transactions"),
+        (get_traded_picks, "get_traded_picks"),
+    ):
+        _clear_func_cache_for_league(func, name, league_id)
+
+
 def clear_teams_cache_for_league(league_id: str) -> None:
     try:
         _clear_func_cache_for_league(get_users, "get_users", league_id)
