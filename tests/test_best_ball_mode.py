@@ -29,7 +29,9 @@ def test_dashboard_best_ball_badge():
 
 def test_dashboard_best_ball_thin_outlook():
     source = (ROOT / "dashboard_services" / "pages" / "dashboard_page.py").read_text(encoding="utf-8")
-    assert "Season outlook (thin)" in source
+    assert "Season outlook" in source
+    assert "Season outlook (thin)" not in source
+    assert "Finish framing only for v1" not in source
     assert "no weekly lineup" in source
     assert "_bb_outlook_html" in source
     assert "dashBestBallOutlook" in source

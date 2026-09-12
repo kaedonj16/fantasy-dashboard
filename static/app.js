@@ -447,7 +447,7 @@ document.body.scrollTop = 0;
   function initOne(sel) {
     if (sel._csdDone || sel.multiple || sel.hasAttribute('data-no-custom')) return;
     sel._csdDone = true;
-    var cs = getComputedStyle(sel), wrap=document.createElement('div'), trigger=document.createElement('button'), list=document.createElement('div');
+    var cs = getComputedStyle(sel), wrap=document.createElement('div'), trigger=document.createElement('button'), list=document.createElement('div'), error=document.createElement('div');
     wrap.className='csd-wrap'; if(sel.style.display==='none') wrap.style.display='none';
     var mw=parseFloat(cs.minWidth); if(mw>0) wrap.style.minWidth=mw+'px';
     var listId='csd-list-'+(++seq); trigger.type='button'; trigger.className='csd-trigger';
@@ -455,7 +455,8 @@ document.body.scrollTop = 0;
     trigger.style.fontWeight=cs.fontWeight; trigger.style.borderRadius=cs.borderRadius; trigger.style.paddingTop=cs.paddingTop; trigger.style.paddingBottom=cs.paddingBottom; trigger.style.paddingLeft=cs.paddingLeft;
     trigger.innerHTML='<span class="csd-value"></span><span class="csd-arrow">'+ARROW+'</span>';
     list.id=listId; list.className='csd-list'; list.setAttribute('role','listbox'); list.style.display='none';
-    sel.parentNode.insertBefore(wrap,sel); wrap.append(trigger,list,sel);
+    error.id=listId+'-error'; error.className='csd-error'; error.setAttribute('role','alert'); error.hidden=true;
+    sel.parentNode.insertBefore(wrap,sel); wrap.append(trigger,list,error,sel);
     var valueEl=trigger.querySelector('.csd-value'), isOpen=false, focusIndex=-1, typeBuffer='', typeTimer;
     function disabled(opt){ return opt.disabled || (opt.parentElement && opt.parentElement.tagName==='OPTGROUP' && opt.parentElement.disabled); }
     function rebuild(){
@@ -469,6 +470,8 @@ document.body.scrollTop = 0;
       var opt=sel.options[sel.selectedIndex]; valueEl.textContent=opt?opt.textContent.trim():'';
       trigger.disabled=!!sel.disabled; trigger.setAttribute('aria-disabled',sel.disabled?'true':'false');
       if(sel.required) trigger.setAttribute('aria-required','true'); else trigger.removeAttribute('aria-required');
+      var bad=!sel.disabled && !sel.checkValidity(); trigger.setAttribute('aria-invalid',bad?'true':'false'); wrap.classList.toggle('is-invalid',bad);
+      if(!bad){error.hidden=true;error.textContent='';trigger.removeAttribute('aria-describedby');}
       var label=labelText(sel); trigger.setAttribute('aria-label',label+(valueEl.textContent?': '+valueEl.textContent:''));
       Array.from(list.querySelectorAll('[role=option]')).forEach(function(el){ var on=el.dataset.value===sel.value; el.classList.toggle('is-selected',on); el.setAttribute('aria-selected',on?'true':'false'); });
       if(sel.disabled) close();
@@ -490,6 +493,9 @@ document.body.scrollTop = 0;
     });
     // Preserve native label activation after the select is visually replaced.
     var explicit=sel.id&&document.querySelector('label[for="'+CSS.escape(sel.id)+'"]'); if(explicit) explicit.addEventListener('click',function(e){if(e.target!==trigger){e.preventDefault();trigger.focus();}});
+    sel.addEventListener('invalid',function(e){
+      e.preventDefault(); sync(); error.textContent=sel.validationMessage||'Choose an option.'; error.hidden=false; trigger.setAttribute('aria-describedby',error.id); trigger.setAttribute('aria-invalid','true'); wrap.classList.add('is-invalid'); trigger.focus();
+    });
     sel.addEventListener('change',sync); new MutationObserver(rebuild).observe(sel,{childList:true,subtree:true,attributes:true,attributeFilter:['disabled','selected','label']}); new MutationObserver(function(){wrap.style.display=sel.style.display==='none'?'none':'';sync();}).observe(sel,{attributes:true,attributeFilter:['style','disabled','required','aria-label','aria-labelledby']});
     wrap._csdClose=close; wrap._csdReposition=function(){if(isOpen)position();}; rebuild();
   }
@@ -498,7 +504,6 @@ document.body.scrollTop = 0;
   window.initCustomSelects=function(root){(root||document).querySelectorAll('select:not([data-no-custom]):not([multiple])').forEach(initOne);};
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',function(){window.initCustomSelects();});else window.initCustomSelects();
 }());
-
 
 // ── Global utilities ──────────────────────────────────────────────────────────
 
@@ -1344,7 +1349,11 @@ window.brHaptic = function (pattern) {
     var modalPid = params.get('player');
     var modal = document.getElementById('playerModal');
     if (modal && !modalPid) {
+      var modalOverlay = modal.closest('.player-modal-overlay');
+      var renderedPageUrl = modalOverlay && modalOverlay.dataset.pageUrl;
       if (typeof closePlayerModal === 'function') closePlayerModal({ history: false });
+      var destination = location.pathname + location.search + location.hash;
+      if (renderedPageUrl && renderedPageUrl !== destination) softNav(location.href, true);
       return;
     }
     if (modalPid) {
