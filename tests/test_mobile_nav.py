@@ -10,7 +10,7 @@ contract the CSS/JS relies on:
   - a dynamic dock (`.br-tabbar`) with a More button and a More sheet,
   - mount points the client moves Search and the settings menu into,
   - top-nav marker classes so CSS keeps the logo + league chip on phones,
-  - the page you're on always earning a dock tab (here: Graphs).
+  - stable destinations with More active for a secondary page (here: Graphs).
 """
 import pytest
 from pathlib import Path
@@ -74,12 +74,15 @@ def test_league_chip_omits_week_and_season_state(offline_client):
     assert "br-ctx-week" not in html
 
 
-def test_current_page_earns_a_dock_tab(offline_client):
-    # Graphs isn't a default dock slot, so it takes over the last middle slot and
-    # shows as an active tab rather than leaving the bar with no active state.
+def test_secondary_page_keeps_dock_stable_and_activates_more(offline_client):
+    # Graphs is identified in the sheet while the season-specific dock remains
+    # stable, so repeated navigation never changes the user's destinations.
     html = _html(offline_client, GRAPHS)
-    assert "br-tabbar-lbl'>Graphs<" in html
-    assert "br-tabbar-item active" in html
+    assert "br-tabbar-lbl'>Graphs<" not in html
+    assert "br-more-tab active" in html
+    assert "current page: Graphs" in html
+    assert "br-sheet-link active" in html
+    assert "aria-current='page'" in html
 
 
 def test_more_sheet_lists_core_pages(offline_client):
