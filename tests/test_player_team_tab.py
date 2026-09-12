@@ -7,6 +7,12 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 
+# This module exercises the Flask application and its pandas-backed player/team
+# loaders.  Keep the entire regression module in CI's full-stack shard instead
+# of letting the slim Python job repeatedly attempt (and skip) an app import
+# without the production dependencies installed.
+pytestmark = pytest.mark.integration
+
 
 def _player_team_route_src() -> str:
     src = (ROOT / "app.py").read_text(encoding="utf-8")
@@ -49,7 +55,8 @@ def test_player_modal_team_tab_ui_wiring():
     assert "pmHasTeam" in js
     assert "'team'" in js
     assert "_pmTeamAdvOpen" in js
-    assert "openPlayerModal(pid,pname,{force:true})" in js.replace(" ", "")
+    assert "teamNavigation:true" in js.replace(" ", "")
+    assert "Back to ${_pmEsc(prev.playerName)}" in js
     assert "pmPickTeamSeason" in js
     assert "pm-team-season-pills" in js
     assert "available_seasons" in js
@@ -69,9 +76,11 @@ def test_player_modal_team_tab_ui_wiring():
     assert "${profile}${olineRows}" not in js
     assert "${profile}" in js
     assert "${olineSec}" in js
-    # Schedule accordion above Rest of Depth Chart; section starts collapsed.
+    # Schedule accordion has a compact preview and remains collapsed initially.
     assert "_pmBuildScheduleHTML" in js
-    assert "Schedule" in js
+    assert "Schedule &amp; Results" in js
+    assert "pm-schedule-preview" in js
+    assert "Current week" in js
     assert "pm-team-schedule" in js
     assert "pm-team-sched-toggle" in js
     assert "pm-team-sched-body" in js
@@ -83,11 +92,20 @@ def test_player_modal_team_tab_ui_wiring():
     assert "_pmCollapseAllSchedule" in js
     assert "${scheduleSec}" in js
     assert "Box score available once the game begins" in js
-    # Placement: Role → Schedule → Rest of Depth Chart
-    role_i = js.find("${roleName}")
+    # Placement: Role → Schedule → environment → line → other groups.
+    role_i = js.find("Player's Role &amp; Competition")
     sched_i = js.find("${scheduleSec}")
-    depth_i = js.find("Rest of Depth Chart")
-    assert role_i > 0 and sched_i > role_i and depth_i > sched_i
+    env_i = js.find("Offensive Environment")
+    line_i = js.find("${olineSec}", env_i)
+    depth_i = js.find("Other Position Groups")
+    assert role_i > 0 and sched_i > role_i and env_i > sched_i
+    assert line_i > env_i and depth_i > line_i
+    assert "PPR PPG" in js
+    assert "_pmTeamRequestSeq" in js
+    assert "panel.dataset.pmTeamRequest !== requestId" in js
+    assert "_pmLoadScheduleGame(panel, item, true)" in js
+    assert "panel.onclick = function" in js
+    assert "focus_pid: ''" in js
 
 
 def test_player_modal_team_tab_css():
@@ -107,6 +125,10 @@ def test_player_modal_team_tab_css():
     assert ".pm-team-sec { padding: 14px 18px; border-top: 1px solid var(--border); }" in css
     assert "font-variant-numeric: tabular-nums" in css
     assert "prefers-reduced-motion" in css
+    # Native disclosure buttons must override the global navy button fill.
+    adv_css = css[css.find(".pm-team-adv-toggle {"):css.find(".pm-team-adv-body", css.find(".pm-team-adv-toggle {"))]
+    assert "background: transparent" in adv_css
+    assert "color: inherit" in adv_css
 
 
 @pytest.fixture
@@ -188,6 +210,9 @@ def test_api_player_team_known_qb(flask_client, monkeypatch):
     assert data["position"] == "QB"
     assert data["player_id"] == "4046"
     assert data["data_mode"] == "actual"
+    assert data["scoring_label"] == "PPR PPG"
+    assert data["roster_timeframe"]["label"] == "Current roster"
+    assert data["usage_timeframe"]["mode"] == "actual"
     assert data["stats_season"] == 2025
     assert 2025 in data["available_seasons"]
     assert isinstance(data.get("schedule"), list)
@@ -265,6 +290,8 @@ def test_api_player_team_projection_season(flask_client, monkeypatch):
     data = resp.get_json()
     assert data["available"] is True
     assert data["data_mode"] == "projection"
+    assert data["offense_timeframe"]["mode"] == "projection"
+    assert data["usage_timeframe"]["is_prior_season"] is True
     assert data["stats_season"] == 2026
     assert data["season"] == 2026
     assert data["available_seasons"] == [2026, 2025]
