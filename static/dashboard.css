@@ -38277,6 +38277,7 @@ a, button, [role="button"], [role="tab"], summary, label,
 .pm-team-header-text { min-width: 0; }
 .pm-team-name { font-size: 20px; font-weight: 800; line-height: 1; color: var(--text); }
 .pm-team-meta { font-size: 11.5px; color: var(--text-muted); margin-top: 3px; font-weight: 600; }
+.pm-team-context-warning { margin-top:8px; color:var(--text-muted); font-size:10px; line-height:1.4; }
 .pm-team-herostats { display: flex; gap: 9px; margin-top: 14px; }
 .pm-team-herostats .pm-hero-stat {
     flex: 1;
@@ -38339,6 +38340,10 @@ a, button, [role="button"], [role="tab"], summary, label,
 /* focus-position room table (container keeps the .pm-team-usage class) */
 .pm-team-usage { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 11px; overflow: hidden; }
 .pm-troom-row { display: grid; grid-template-columns: 20px 1fr 92px 46px 42px; align-items: center; gap: 9px; padding: 8px 11px; font-size: 12px; }
+.pm-room-rb .pm-troom-row { grid-template-columns: 20px minmax(120px,1fr) 70px 52px 78px 58px; }
+.pm-room-qb .pm-troom-row,
+.pm-room-wr .pm-troom-row,
+.pm-room-te .pm-troom-row { grid-template-columns: 20px minmax(120px,1fr) 76px 52px 58px; }
 .pm-troom-row + .pm-troom-row { border-top: 1px solid var(--grid); }
 .pm-troom-head { background: var(--card-soft); font-size: 9px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-muted); }
 .pm-troom-head span:nth-child(n+3) { text-align: right; }
@@ -38348,7 +38353,20 @@ a, button, [role="button"], [role="tab"], summary, label,
 .pm-troom-focus .pm-troom-name { font-weight: 800; color: var(--accent); }
 .pm-troom-slot { width: 20px; height: 20px; border-radius: 6px; background: var(--row); color: var(--text-muted); font-size: 10px; font-weight: 800; display: grid; place-items: center; font-variant-numeric: tabular-nums; }
 .pm-troom-focus .pm-troom-slot, .pm-troom-starter .pm-troom-slot { background: var(--accent); color: #fff; }
-.pm-troom-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; color: var(--text); }
+.pm-troom-name { overflow-wrap: anywhere; min-width: 0; color: var(--text); }
+.pm-role-summary { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
+.pm-role-summary > span { min-width:72px; display:flex; flex-direction:column; gap:2px; }
+.pm-role-summary small { color:var(--text-muted); font-size:9px; font-weight:800; text-transform:uppercase; letter-spacing:.04em; }
+.pm-role-summary b { color:var(--text); font-size:15px; font-variant-numeric:tabular-nums; }
+.pm-role-summary i { color:var(--text-muted); font-size:9px; font-style:normal; }
+.pm-schedule-preview { display:flex; align-items:center; flex-wrap:wrap; gap:6px 10px; padding:8px 0 2px; font-size:11px; color:var(--text-muted); }
+.pm-schedule-preview b { color:var(--text); }
+.pm-current-week,.pm-team-back,.pm-subdisclosure { appearance:none; border:1px solid var(--border); background:var(--card); color:var(--accent); border-radius:8px; padding:6px 9px; font:inherit; font-size:11px; font-weight:700; cursor:pointer; }
+.pm-current-week { margin-top:7px; }
+.pm-team-back { margin:10px 18px 0; }
+.pm-subdisclosure { margin-top:8px; width:100%; text-align:left; }
+.pm-oline-more[hidden],.pm-other-body[hidden] { display:none; }
+.pm-other-toggle { width:100%; border:0; background:transparent; padding:0; text-align:left; color:inherit; }
 .pm-troom-snap { display: flex; align-items: center; gap: 6px; }
 .pm-troom-bar { flex: 1; height: 5px; border-radius: 3px; background: var(--grid); overflow: hidden; }
 .pm-troom-bar > span { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
@@ -38374,9 +38392,24 @@ a, button, [role="button"], [role="tab"], summary, label,
 .pm-snap-est { font-size: 8.5px; color: var(--text-muted); margin-left: 3px; font-weight: 600; }
 
 /* advanced collapse -- nested under the Offense Profile section */
-.pm-team-adv-toggle { cursor: pointer; }
+.pm-team-adv-toggle {
+    appearance: none;
+    width: 100%;
+    cursor: pointer;
+    background: transparent;
+    color: inherit;
+    border: 0;
+    font: inherit;
+    text-align: left;
+    box-shadow: none;
+}
 .pm-team-sec .pm-team-adv-toggle { margin: 12px 0 0; padding: 12px 0 4px; border-top: 1px solid var(--border); border-radius: 0; }
 .pm-team-sec .pm-team-adv-toggle:hover { background: transparent; }
+.pm-team-sec .pm-team-adv-toggle:focus-visible {
+    background: var(--row);
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
 .pm-team-adv-body { padding: 6px 0 0; }
 .pm-team-adv-body[hidden] { display: none; }
 
@@ -38782,7 +38815,9 @@ a, button, [role="button"], [role="tab"], summary, label,
     .pm-team-season-pills { max-width: 42%; gap: 3px; }
     .pm-team-season-pill { font-size: 9px; padding: 3px 7px; }
     /* room table: hide the snap bar and tighten columns/gaps for name room */
-    .pm-troom-row { grid-template-columns: 18px 1fr 44px 38px 34px; gap: 6px; padding: 8px 9px; }
+    .pm-room-rb,.pm-team-usage { overflow-x:auto; }
+    .pm-room-rb .pm-troom-row { min-width:570px; }
+    .pm-room-qb .pm-troom-row,.pm-room-wr .pm-troom-row,.pm-room-te .pm-troom-row { grid-template-columns:18px minmax(110px,1fr) 54px 44px 54px; gap:6px; padding:8px 9px; }
     .pm-troom-bar { display: none; }
     .pm-troom-snap { justify-content: flex-end; gap: 0; }
     .pm-troom-snap b { min-width: 0; }
