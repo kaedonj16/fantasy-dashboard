@@ -17,10 +17,6 @@ function openPlayerModal(playerId, playerName, opts) {
   // soft-navigation callback is still settling.
   if (document.getElementById('playerModal')) closePlayerModal({ history: false, immediate: true });
 
-  // Keep one modal and one request owner. A history restore may arrive while a
-  // soft-navigation callback is still settling.
-  if (document.getElementById('playerModal')) closePlayerModal({ history: false, immediate: true });
-
   // Guests: a player-name click goes to the public player page (SEO landing),
   // not the in-app modal. Signed-in users keep the modal. opts.force bypasses
   // this (used when auto-opening from ?player= after sign-in).
@@ -92,13 +88,13 @@ function openPlayerModal(playerId, playerName, opts) {
       </div>
     </div>
     <div class="pm-tab-bar" id="pmTabBar" role="tablist" aria-label="Player details" style="display:none">
-      <button class="pm-tab active" role="tab" aria-selected="true" data-tab="overview" onclick="pmSwitchTab('overview')">Overview</button>
-      <button class="pm-tab" role="tab" aria-selected="false" data-tab="stats" onclick="pmSwitchTab('stats')">Stats</button>
-      <button class="pm-tab" role="tab" aria-selected="false" id="pmTabTeam" data-tab="team" onclick="pmSwitchTab('team')" style="display:none">Team</button>
-      <button class="pm-tab" role="tab" aria-selected="false" id="pmTabMetrics" data-tab="metrics" onclick="pmSwitchTab('metrics')" style="display:none">Adv Metrics</button>
-      <button class="pm-tab" role="tab" aria-selected="false" id="pmTabProspect" data-tab="prospect" onclick="pmSwitchTab('prospect')" style="display:none">Prospect</button>
-      <button class="pm-tab" role="tab" aria-selected="false" id="pmTabBreakout" data-tab="breakout" onclick="pmSwitchTab('breakout')" style="display:none">Breakout</button>
-      <button class="pm-tab" role="tab" aria-selected="false" data-tab="trades" onclick="pmSwitchTab('trades')">Trades</button>
+      <button type="button" class="pm-tab active" role="tab" aria-selected="true" data-tab="overview" onclick="pmSwitchTab('overview', event)">Overview</button>
+      <button type="button" class="pm-tab" role="tab" aria-selected="false" data-tab="stats" onclick="pmSwitchTab('stats', event)">Stats</button>
+      <button type="button" class="pm-tab" role="tab" aria-selected="false" id="pmTabTeam" data-tab="team" onclick="pmSwitchTab('team', event)" style="display:none">Team</button>
+      <button type="button" class="pm-tab" role="tab" aria-selected="false" id="pmTabMetrics" data-tab="metrics" onclick="pmSwitchTab('metrics', event)" style="display:none">Adv Metrics</button>
+      <button type="button" class="pm-tab" role="tab" aria-selected="false" id="pmTabProspect" data-tab="prospect" onclick="pmSwitchTab('prospect', event)" style="display:none">Prospect</button>
+      <button type="button" class="pm-tab" role="tab" aria-selected="false" id="pmTabBreakout" data-tab="breakout" onclick="pmSwitchTab('breakout', event)" style="display:none">Breakout</button>
+      <button type="button" class="pm-tab" role="tab" aria-selected="false" data-tab="trades" onclick="pmSwitchTab('trades', event)">Trades</button>
     </div>
     <div class="player-modal-body" id="playerModalBody">
       <div class="pm-skel" style="padding:16px 18px;">
@@ -986,7 +982,7 @@ function openPlayerModal(playerId, playerName, opts) {
         const _liveBtn = document.createElement('button');
         _liveBtn.className = 'pm-tab pm-tab-live';
         _liveBtn.dataset.tab = 'live';
-        _liveBtn.onclick = function() { pmSwitchTab('live'); };
+        _liveBtn.onclick = function(e) { pmSwitchTab('live', e); };
         _liveBtn.innerHTML = '<span class="pm-live-dot"></span>Redzone';
         if (pmTabBar) pmTabBar.appendChild(_liveBtn);
       }
@@ -1579,7 +1575,11 @@ function pmInjectContextActions(playerId, playerName, data, leagueId, platform, 
 }
 
 // ── Player Modal Tab Switching (global) ──────────────────────────────────────
-function pmSwitchTab(tab) {
+function pmSwitchTab(tab, clickEvent) {
+  // A few dashboard surfaces use delegated player-row click handlers. Keep a
+  // tab click inside the existing dialog so it cannot bubble into one of those
+  // handlers and invoke openPlayerModal a second time.
+  if (clickEvent && typeof clickEvent.stopPropagation === 'function') clickEvent.stopPropagation();
   document.querySelectorAll('.pm-panel').forEach(p => p.classList.remove('pm-panel-active'));
   document.querySelectorAll('.pm-tab').forEach(t => {
     t.classList.remove('active');
