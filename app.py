@@ -21817,6 +21817,14 @@ def _build_player_team_depth_chart(
         )
         tgt_share = usage.get("target_share")
         tgt_pct = round(float(tgt_share) * 100) if tgt_share is not None else None
+        carry_share = usage.get("carry_share")
+        if carry_share is None:
+            carry_share = usage.get("rush_attempt_share")
+        carry_pct = round(float(carry_share) * 100) if carry_share is not None else None
+        touch_share = usage.get("touch_share")
+        touch_pct = round(float(touch_share) * 100) if touch_share is not None else None
+        games = usage.get("games")
+        avg_targets = usage.get("avg_targets")
         ppg = usage.get("ppr_ppg")
         ppg_val = round(float(ppg), 1) if ppg is not None else None
         inj = str(p.get("injury_status") or "").strip()
@@ -21832,13 +21840,22 @@ def _build_player_team_depth_chart(
             "snap_pct": snap_pct,
             "snap_pct_source": snap_src,
             "tgt_share": tgt_pct,
+            "carry_share": carry_pct,
+            "touch_share": touch_pct,
+            "games": int(games) if games is not None else None,
+            "avg_targets": round(float(avg_targets), 1) if avg_targets is not None else None,
             "ppg": ppg_val,
         })
 
     out: dict = {}
     for pos in positions:
         rows = sorted(by_pos[pos], key=lambda r: (r.get("order") or 99, r.get("name") or ""))
-        out[pos] = rows[:6]
+        limited = rows[:6]
+        # A long position room must never push the inspected player out of view.
+        focus = next((r for r in rows if r.get("is_focus")), None)
+        if focus and focus not in limited:
+            limited = limited[:5] + [focus]
+        out[pos] = limited
     return out
 
 
@@ -21879,6 +21896,13 @@ def api_player_team(player_id: str):
         # Prefer the franchise the player actually played for in the viewed
         # season (mid-season trades / historical context), not only the live roster.
         team = resolve_team_for_season(str(player_id), season, current_team) or current_team
+        team_history_found = int(season) == datetime.now().year
+        if not team_history_found:
+            try:
+                from data_building.external_data.player_team_history import teams_in_season
+                team_history_found = bool(teams_in_season(str(player_id), int(season)) or [])
+            except Exception:
+                team_history_found = False
         position = str(player_meta.get("pos") or player_meta.get("position") or "").upper()
         player_name = player_meta.get("name") or ""
 
@@ -21963,6 +21987,28 @@ def api_player_team(player_id: str):
             "season": season,
             "stats_season": stats_season,
             "data_mode": data_mode,
+            "offense_timeframe": {"season": int(stats_season), "mode": data_mode},
+            "schedule_timeframe": {"season": int(season), "team": team},
+            "team_timeframe": {
+                "season": int(season),
+                "source": "season history" if team_history_found else "current-team fallback",
+                "season_team_confirmed": bool(team_history_found),
+            },
+            # Sleeper exposes a live roster/depth chart, not historical snapshots.
+            # Keep it useful in old-season views, but label it honestly.
+            "roster_timeframe": {
+                "season": datetime.now().year,
+                "is_current": True,
+                "label": "Current roster",
+                "historical_unavailable": int(season) != datetime.now().year,
+            },
+            "injuries_timeframe": {"as_of": datetime.now().date().isoformat(), "is_current": True},
+            "usage_timeframe": {
+                "season": int(snap_season),
+                "mode": "actual",
+                "is_prior_season": data_mode == "projection" and int(snap_season) != int(season),
+            },
+            "scoring_label": "PPR PPG",
             "available_seasons": available_seasons,
             "ranks": ranks,
             "ranks_more": ranks_more,
