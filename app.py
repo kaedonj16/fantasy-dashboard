@@ -28340,14 +28340,14 @@ def build_portfolio_body(
             f"data-league='{_lid}' title='Unlink this league' aria-label='Unlink league'>&times;</button>"
         )
 
-    def _lg_tools(*extra):
+    def _lg_tools(is_favorite=False, *extra):
         # Favorite (+ optional unlink) only -- archetype badge lives under the
         # title so it can't collide with the star on narrow viewports.
         bits = "".join(x for x in extra if x)
         return (
             "<div class='pf-lg-tools'>"
-            "<button type='button' class='pf-lg-fav' aria-label='Favorite league' "
-            "aria-pressed='false' title='Favorite'>&#9733;</button>"
+            f"<button type='button' class='pf-lg-fav{' on' if is_favorite else ''}' aria-label='Favorite league' "
+            f"aria-pressed='{'true' if is_favorite else 'false'}' title='Favorite'>&#9733;</button>"
             f"{bits}</div>"
         )
 
@@ -28408,6 +28408,9 @@ def build_portfolio_body(
         lg for lg in all_leagues_data
         if lg.get("error") or lg.get("not_in_league") or lg.get("pending")
     ]
+    # Do this on the server as well as in the browser so favorites never flash
+    # on a later page, including favorite cards currently in an error state.
+    all_rows.sort(key=lambda lg: not bool(lg.get("is_favorite")))
     for lg in all_rows:
         lid = lg.get("league_id") or ""
         plat = lg.get("platform") or "sleeper"
@@ -28479,11 +28482,11 @@ def build_portfolio_body(
                     f"onclick=\"linkMyTeam('{_js_plat}','{_js_lid}','{_js_season}')\">Link my team →</button>"
                 )
             league_rows += (
-                f"<div class='{_card_pending_cls}' data-lg-key='{plat}:{lid}'>"
+                f"<div class='{_card_pending_cls}' data-lg-key='{plat}:{lid}' data-favorite='{'true' if lg.get('is_favorite') else 'false'}'>"
                 f"<div class='pf-lg-top'>"
                 f"<span class='pf-lg-crest' style='background:{_crest_hue};'>{_ini}</span>"
                 f"{_lg_id(name_link, plat)}"
-                f"{_lg_tools(_unlink_btn(plat, lid))}"
+                f"{_lg_tools(bool(lg.get('is_favorite')), _unlink_btn(plat, lid))}"
                 f"</div>"
                 f"{countdown}"
                 f"<div class='pf-lg-pending-row'>"
@@ -28496,11 +28499,11 @@ def build_portfolio_body(
 
         if lg.get("error") or lg.get("not_in_league"):
             league_rows += (
-                f"<div class='pf-lg-card' data-lg-key='{plat}:{lid}'>"
+                f"<div class='pf-lg-card' data-lg-key='{plat}:{lid}' data-favorite='{'true' if lg.get('is_favorite') else 'false'}'>"
                 f"<div class='pf-lg-top'>"
                 f"<span class='pf-lg-crest' style='background:var(--border);color:var(--text-muted);'>{_ini}</span>"
                 f"{_lg_id(name_muted, plat)}"
-                f"{_lg_tools(_unlink_btn(plat, lid))}"
+                f"{_lg_tools(bool(lg.get('is_favorite')), _unlink_btn(plat, lid))}"
                 f"</div>"
                 f"<div class='pf-lg-err'>couldn’t load</div>"
                 f"</div>"
@@ -28620,11 +28623,11 @@ def build_portfolio_body(
         )
 
         league_rows += (
-            f"<div class='pf-lg-card' data-lg-key='{plat}:{lid}'>"
+            f"<div class='pf-lg-card' data-lg-key='{plat}:{lid}' data-favorite='{'true' if lg.get('is_favorite') else 'false'}'>"
             f"<div class='pf-lg-top'>"
             f"<span class='pf-lg-crest' style='background:{_crest_hue};'>{_ini}</span>"
             f"{_lg_id(name_link, plat, off_note, '', lg.get('team_name') or '')}"
-            f"{_lg_tools(_unlink_btn(plat, lid))}"
+            f"{_lg_tools(bool(lg.get('is_favorite')), _unlink_btn(plat, lid))}"
             f"</div>"
             f"{live_slot}"
             f"<div class='pf-lg-stats'>"
@@ -28808,17 +28811,18 @@ def build_portfolio_body(
         "<button type='button' id='pfLgNext'>Next &rarr;</button>"
         "</div>"
         "</div>"
-        # Favorites (localStorage) sort to the front; the list paginates 4 at a
-        # time. Operates on the server-rendered cards, so it needs no new data.
+        # Account favorites are database-backed; provider-only sessions retain
+        # the existing local fallback. The list still paginates 4 at a time.
         "<script>(function(){"
         "var grid=document.querySelector('.pf-lg-grid');if(!grid)return;"
         "var pager=document.getElementById('pfLgPager'),prev=document.getElementById('pfLgPrev'),"
         "next=document.getElementById('pfLgNext'),lbl=document.getElementById('pfLgPageLbl');"
-        "var PAGE=4,KEY='pfFavLeagues';"
+        f"var PAGE=4,KEY='pfFavLeagues',ACCOUNT={'true' if _can_unlink else 'false'};"
         "var cards=[].slice.call(grid.querySelectorAll('.pf-lg-card'));"
         "cards.forEach(function(c,i){c._ord=i;});"
         "var page=0;"
-        "function favs(){try{return JSON.parse(localStorage.getItem(KEY))||[];}catch(e){return [];}}"
+        "function favs(){if(ACCOUNT)return cards.filter(function(c){return c.getAttribute('data-favorite')==='true';}).map(keyOf);"
+        "try{return JSON.parse(localStorage.getItem(KEY))||[];}catch(e){return [];}}"
         "function saveFavs(a){try{localStorage.setItem(KEY,JSON.stringify(a));}catch(e){}}"
         "function keyOf(c){return c.getAttribute('data-lg-key')||'';}"
         "function ordered(){var f=favs();return cards.slice().sort(function(a,b){"
@@ -28829,13 +28833,19 @@ def build_portfolio_body(
         "ord.forEach(function(c,i){grid.appendChild(c);"
         "c.style.display=(i>=page*PAGE&&i<(page+1)*PAGE)?'':'none';"
         "var s=c.querySelector('.pf-lg-fav');if(s){var on=f.indexOf(keyOf(c))>=0;"
-        "s.classList.toggle('on',on);s.setAttribute('aria-pressed',on?'true':'false');}});"
+        "s.classList.toggle('on',on);s.setAttribute('aria-pressed',on?'true':'false');"
+        "s.setAttribute('title',on?'Remove favorite':'Favorite');}});"
         "if(pager){pager.hidden=ord.length<=PAGE;if(lbl)lbl.textContent='Page '+(page+1)+' of '+pages;"
         "if(prev)prev.disabled=page<=0;if(next)next.disabled=page>=pages-1;}}"
         "grid.addEventListener('click',function(e){var s=e.target.closest('.pf-lg-fav');if(!s)return;"
         "e.preventDefault();e.stopPropagation();var c=s.closest('.pf-lg-card');if(!c)return;"
         "var k=keyOf(c);if(!k)return;var f=favs(),idx=f.indexOf(k);"
-        "if(idx>=0)f.splice(idx,1);else f.unshift(k);saveFavs(f);page=0;render();});"
+        "var on=idx<0;if(idx>=0)f.splice(idx,1);else f.unshift(k);"
+        "c.setAttribute('data-favorite',on?'true':'false');if(!ACCOUNT)saveFavs(f);page=0;render();"
+        "if(ACCOUNT){var parts=k.split(':');fetch('/api/my-leagues/favorite',{method:'POST',headers:{'Content-Type':'application/json'},"
+        "body:JSON.stringify({platform:parts.shift(),league_id:parts.join(':'),favorite:on})})"
+        ".then(function(r){if(!r.ok)throw new Error('favorite save failed');return r.json();})"
+        ".catch(function(){c.setAttribute('data-favorite',on?'false':'true');render();});}});"
         "if(prev)prev.addEventListener('click',function(){if(page>0){page--;render();}});"
         "if(next)next.addEventListener('click',function(){page++;render();});"
         "render();})();</script>"

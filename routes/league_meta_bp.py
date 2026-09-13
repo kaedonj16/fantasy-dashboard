@@ -123,6 +123,7 @@ def api_my_leagues():
                 "last_synced_at": m.get("last_synced_at"),
                 "last_successful_sync_at": m.get("last_successful_sync_at"),
                 "needs_reconnect": m.get("connection_status") == "reauth_required",
+                "is_favorite": bool(m.get("is_favorite")),
             }
             if live.get("has_format"):
                 row["sf"] = bool(live.get("is_sf"))
@@ -136,6 +137,26 @@ def api_my_leagues():
     resp = jsonify({"ok": True, "leagues": out})
     # Account-scoped list must never be cached -- leagues added on another device
     # need to appear on the next refresh/tab focus here.
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
+@league_meta_bp.route("/api/my-leagues/favorite", methods=["POST"])
+def api_favorite_my_league():
+    """Set an account-owned league's durable favorite state."""
+    account_id = session.get("account_id")
+    if not account_id:
+        return jsonify({"ok": False, "error": "Sign in to save favorites"}), 401
+    data = request.get_json(silent=True) or {}
+    platform = str(data.get("platform") or "").strip().lower()
+    league_id = str(data.get("league_id") or "").strip()
+    favorite = data.get("favorite")
+    if not platform or not league_id or not isinstance(favorite, bool):
+        return jsonify({"ok": False, "error": "Invalid favorite request"}), 400
+    from dashboard_services.accounts import set_user_league_favorite
+    if not set_user_league_favorite(account_id, platform, league_id, favorite):
+        return jsonify({"ok": False, "error": "League not found"}), 404
+    resp = jsonify({"ok": True, "is_favorite": favorite})
     resp.headers["Cache-Control"] = "no-store"
     return resp
 

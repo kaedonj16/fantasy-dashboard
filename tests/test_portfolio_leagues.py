@@ -108,6 +108,15 @@ def test_my_leagues_fav_and_arch_share_a_tools_group():
     assert "pf-lg-fav' aria-label='Favorite league'" not in fn.split("def _lg_tools")[0]
 
 
+def test_my_leagues_favorites_are_server_backed_and_sorted_before_pagination():
+    fn = _portfolio_fn()
+    assert "data-favorite=" in fn
+    assert "all_rows.sort(key=lambda lg: not bool(lg.get(\"is_favorite\")))" in fn
+    assert "/api/my-leagues/favorite" in fn
+    assert "var PAGE=4" in fn
+    assert "data-favorite',on?'true':'false'" in fn
+
+
 def test_my_leagues_cards_promote_position_strength_strip():
     """Positional rank is the signature data: a quality-tinted strength strip,
     not a grey footer line. Rank quality carries in the tint alone."""

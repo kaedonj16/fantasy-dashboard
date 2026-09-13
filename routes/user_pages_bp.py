@@ -135,7 +135,8 @@ def page_portfolio():
             lctx = get_league_ctx_from_cache(lg_platform, lid, lg_season)
         except Exception:
             return {"league_id": lid, "name": lg.get("name", "Unknown"),
-                    "platform": lg_platform, "error": True}
+                    "platform": lg_platform, "error": True,
+                    "is_favorite": bool(lg.get("is_favorite"))}
         rosters = lctx.get("rosters") or []
         players_index = lctx.get("players_index") or {}
         league_obj = lctx.get("league") or {}
@@ -156,6 +157,7 @@ def page_portfolio():
                 "draft_phase": draft_phase,
                 "draft_start_ms": draft_start_ms(league_obj, latest_draft),
                 "reason": "Drafting now" if draft_phase == "drafting" else "Draft not started",
+                "is_favorite": bool(lg.get("is_favorite")),
             }
         # Which roster is "yours": prefer the account's stored team (and ESPN SWID /
         # Sleeper identity), then the session viewer. A leftover ESPN owner id in
@@ -198,6 +200,7 @@ def page_portfolio():
                 "pending": True,
                 "predraft": False,
                 "reason": "Team not linked yet",
+                "is_favorite": bool(lg.get("is_favorite")),
             }
         rid = str(viewer_roster.get("roster_id"))
         from dashboard_services.ai.context_builders import (
@@ -314,6 +317,7 @@ def page_portfolio():
             "pos_user_rank": pos_user_rank,
             "offseason": lctx.get("offseason_mode", False),
             "team_name": team_name,
+            "is_favorite": bool(lg.get("is_favorite")),
         }
 
     # Each league summary is independent and dominated by get_league_ctx_from_cache,
@@ -333,7 +337,7 @@ def page_portfolio():
         else:
             with ThreadPoolExecutor(max_workers=max_workers) as pool:
                 leagues_data = [r for r in pool.map(_league_summary, league_inputs) if r]
-    leagues_data.sort(key=lambda x: x.get("name", ""))
+    leagues_data.sort(key=lambda x: (not x.get("is_favorite", False), x.get("name", "")))
 
     valid_leagues = [lg for lg in leagues_data
                      if not lg.get("error") and not lg.get("not_in_league") and not lg.get("pending")]
@@ -352,6 +356,7 @@ def page_portfolio():
 
     # Sort valid leagues by urgency: losing records and low standings first
     valid_leagues.sort(key=lambda lg: (
+        not lg.get("is_favorite", False),
         lg.get("wins", 0) - lg.get("losses", 0),
         -(lg.get("rank") if isinstance(lg.get("rank"), int) else 999),
     ))

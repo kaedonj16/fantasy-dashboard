@@ -158,6 +158,8 @@ def init_accounts_tables() -> None:
                 team_id    TEXT,
                 name       TEXT,
                 provider_connection_id INTEGER REFERENCES fantasy_provider_connections(id) ON DELETE SET NULL,
+                is_favorite BOOLEAN NOT NULL DEFAULT FALSE,
+                favorited_at TIMESTAMPTZ,
                 added_at   TIMESTAMPTZ DEFAULT now(),
                 UNIQUE (account_id, platform, league_id, season)
             )
@@ -167,6 +169,12 @@ def init_accounts_tables() -> None:
             """ALTER TABLE user_leagues ADD COLUMN IF NOT EXISTS
                provider_connection_id INTEGER REFERENCES fantasy_provider_connections(id)
                ON DELETE SET NULL"""
+        )
+        conn.execute(
+            "ALTER TABLE user_leagues ADD COLUMN IF NOT EXISTS is_favorite BOOLEAN NOT NULL DEFAULT FALSE"
+        )
+        conn.execute(
+            "ALTER TABLE user_leagues ADD COLUMN IF NOT EXISTS favorited_at TIMESTAMPTZ"
         )
         conn.execute(
             """
@@ -750,11 +758,13 @@ def list_user_leagues(account_id: int) -> list[dict]:
     with get_conn() as conn:
         rows = conn.execute(
             """SELECT l.platform,l.league_id,l.season,l.team_id,l.name,l.added_at,
+                      l.is_favorite,l.favorited_at,
                       c.status AS connection_status,c.last_synced_at,
                       c.last_successful_sync_at,c.last_error_code
                FROM user_leagues l LEFT JOIN fantasy_provider_connections c
                  ON c.id=l.provider_connection_id
-               WHERE l.account_id=%s ORDER BY l.added_at DESC""",
+               WHERE l.account_id=%s
+               ORDER BY l.is_favorite DESC, l.favorited_at DESC NULLS LAST, l.added_at DESC""",
             (account_id,),
         ).fetchall()
     return [
@@ -764,6 +774,8 @@ def list_user_leagues(account_id: int) -> list[dict]:
             "season": r["season"],
             "team_id": r["team_id"],
             "name": r["name"],
+            "is_favorite": bool(r.get("is_favorite")),
+            "favorited_at": r.get("favorited_at"),
             "connection_status": r.get("connection_status") or "connected",
             "last_synced_at": r.get("last_synced_at"),
             "last_successful_sync_at": r.get("last_successful_sync_at"),
@@ -771,6 +783,29 @@ def list_user_leagues(account_id: int) -> list[dict]:
         }
         for r in rows
     ]
+
+
+def set_user_league_favorite(account_id: int, platform: str, league_id: str, favorite: bool) -> bool:
+    """Persist a favorite against an account-owned league.
+
+    Favorites are league-scoped rather than season-scoped. Updating every saved
+    season keeps ESPN rollover rows and historical duplicate memberships in sync.
+    """
+    if not (account_id and platform and league_id):
+        return False
+    init_accounts_tables()
+    from dashboard_services.db import get_conn
+    with get_conn() as conn:
+        result = conn.execute(
+            """UPDATE user_leagues
+               SET is_favorite=%s,
+                   favorited_at=CASE WHEN %s THEN now() ELSE NULL END
+               WHERE account_id=%s AND platform=%s AND league_id=%s""",
+            (bool(favorite), bool(favorite), int(account_id),
+             str(platform).lower(), str(league_id)),
+        )
+        conn.commit()
+        return bool(getattr(result, "rowcount", 0))
 
 
 def resolve_account_leagues(account_id: int, enrichments=None, current_season=None) -> list[dict]:
@@ -802,9 +837,12 @@ def resolve_account_leagues(account_id: int, enrichments=None, current_season=No
         saved_season = saved.get("season") or season or None
         if platform == "espn" and season and saved_season and int(saved_season) < season:
             saved_season = season
-        leagues_by_key[(platform, league_id)] = dict(
+        # list_user_leagues is already ordered with favorites first and newest
+        # rows first. Keep that canonical row when historical seasons duplicate
+        # a league key instead of accidentally replacing it with an older row.
+        leagues_by_key.setdefault((platform, league_id), dict(
             saved, platform=platform, league_id=league_id, season=saved_season,
-        )
+        ))
 
     for live in enrichments or []:
         platform = str(live.get("platform") or "").lower()
@@ -822,7 +860,10 @@ def resolve_account_leagues(account_id: int, enrichments=None, current_season=No
         merged.update(platform=platform, league_id=league_id)
         leagues_by_key[key] = merged
 
-    return list(leagues_by_key.values())
+    return sorted(
+        leagues_by_key.values(),
+        key=lambda league: (not bool(league.get("is_favorite")),),
+    )
 
 
 def _hide_confirmed_deleted_sleeper_leagues(leagues: list[dict], live_leagues: list[dict]) -> list[dict]:

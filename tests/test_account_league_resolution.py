@@ -207,6 +207,22 @@ def test_sparse_enrichment_does_not_erase_saved_team_or_name(monkeypatch):
     }]
 
 
+def test_account_favorites_stay_at_the_front_after_live_enrichment(monkeypatch):
+    monkeypatch.setattr(accounts, "list_user_leagues", lambda account_id: [
+        {"platform": "sleeper", "league_id": "ordinary", "season": 2026,
+         "name": "A league", "is_favorite": False},
+        {"platform": "espn", "league_id": "favorite", "season": 2026,
+         "name": "Z league", "is_favorite": True},
+    ])
+
+    leagues = accounts.resolve_account_leagues(42, [{
+        "platform": "sleeper", "league_id": "ordinary", "name": "Updated A",
+    }], 2026)
+
+    assert [league["league_id"] for league in leagues] == ["favorite", "ordinary"]
+    assert leagues[0]["is_favorite"] is True
+
+
 def test_provider_only_resolution_never_loads_google_account_portfolio(monkeypatch):
     loaded_accounts = []
     monkeypatch.setattr(
