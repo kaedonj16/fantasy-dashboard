@@ -86,20 +86,26 @@ def test_player_modal_team_tab_ui_wiring():
     assert "_pmCollapseAllSchedule" in js
     assert "${scheduleSec}" in js
     assert "Box score available once the game begins" in js
-    # Placement: Role → Schedule → environment → line → other groups.
-    role_i = js.find("Player's Role &amp; Competition")
+    # Semantic hierarchy is identical at every width: situation before context,
+    # detail, and finally reference data.
+    context_i = js.find('pm-team-header')
+    role_i = js.find("Depth Chart / Competition")
     sched_i = js.find("${scheduleSec}")
     env_i = js.find("Offensive Environment")
     line_i = js.find("${olineSec}", env_i)
-    depth_i = js.find("Other Position Groups")
-    assert role_i > 0 and sched_i > role_i and env_i > sched_i
-    assert line_i > env_i and depth_i > line_i
+    depth_i = js.find("Full Roster / Reference")
+    assert 0 < context_i < role_i < env_i < line_i < sched_i < depth_i
+    assert 'aria-controls="pmTeamRosterBody"' in js
+    assert 'id="pmTeamRosterBody"' in js
+    assert 'Next:' in js
     assert "PPR PPG" in js
     assert "_pmTeamRequestSeq" in js
     assert "panel.dataset.pmTeamRequest !== requestId" in js
     assert "_pmLoadScheduleGame(panel, item, true)" in js
     assert "panel.onclick = function" in js
     assert "focus_pid: ''" in js
+    assert ".pm-player-link[data-pid][role=\"button\"]" in js
+    assert "target.closest('[data-pid][role=\"button\"]')" not in js
 
 
 def test_player_modal_team_tab_css():

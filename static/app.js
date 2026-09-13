@@ -729,6 +729,34 @@ window.brHaptic = function (pattern) {
   };
 
   function sheetOpen() { var s = document.getElementById('brMoreSheet'); return !!(s && s.classList.contains('open')); }
+  function showSheetPanel(name, backwards) {
+    var sheet = document.getElementById('brMoreSheet');
+    if (!sheet) return;
+    var current = sheet.querySelector('.br-sheet-panel:not([hidden])');
+    var next = sheet.querySelector('[data-br-sheet-panel="' + name + '"]');
+    if (!next || current === next) return;
+    var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    sheet.classList.toggle('br-sheet-going-back', !!backwards);
+    if (current) current.hidden = true;
+    next.hidden = false;
+    sheet.dataset.brSheetLevel = name;
+    sheet.scrollTop = 0;
+    if (!reduce) {
+      next.classList.remove('br-sheet-panel-enter');
+      void next.offsetWidth;
+      next.classList.add('br-sheet-panel-enter');
+      setTimeout(function () { next.classList.remove('br-sheet-panel-enter'); }, 220);
+    }
+    var focus = name === 'root' ? next.querySelector('.br-sheet-root-title') : next.querySelector('[data-br-sheet-back]');
+    if (focus) try { focus.focus(); } catch (_) {}
+  }
+  function resetSheetPanel() {
+    var sheet = document.getElementById('brMoreSheet');
+    if (!sheet) return;
+    sheet.querySelectorAll('.br-sheet-panel').forEach(function (p) { p.hidden = p.dataset.brSheetPanel !== 'root'; });
+    sheet.dataset.brSheetLevel = 'root';
+    sheet.classList.remove('br-sheet-going-back');
+  }
   // Restore Account expand/collapse (collapsed by default so Trades stays visible).
   function syncAcctSection() {
     var toggle = document.getElementById('brSheetAcctToggle');
@@ -774,6 +802,7 @@ window.brHaptic = function (pattern) {
     if (tab) { tab.setAttribute('aria-expanded', o ? 'true' : 'false'); tab.classList.toggle('active', o); }
     if (o && window.brHaptic) window.brHaptic(10);
     if (o) {
+      resetSheetPanel();
       dismissNotifToasts();
       sheet._brPrevFocus = document.activeElement;
       var first = sheet.querySelector('a, button, input, select, textarea, [tabindex]:not([tabindex="-1"])');
@@ -856,6 +885,9 @@ window.brHaptic = function (pattern) {
     });
 
     sheet.addEventListener('click', function (e) {
+      var category = e.target.closest('[data-br-sheet-target]');
+      if (category) { showSheetPanel(category.dataset.brSheetTarget, false); return; }
+      if (e.target.closest('[data-br-sheet-back]')) { showSheetPanel('root', true); return; }
       if (e.target.closest('#brSheetAcctToggle')) {
         var t = document.getElementById('brSheetAcctToggle');
         setAcctOpen(!(t && t.getAttribute('aria-expanded') === 'true'));
@@ -902,7 +934,11 @@ window.brHaptic = function (pattern) {
         var ss = document.getElementById('brSearchScreen');
         if (e.key === 'Escape') {
           if (ss && ss.classList.contains('open')) { closeSearch(); return; }
-          if (sheetOpen()) setOpen(false);
+          if (sheetOpen()) {
+            var openSheet = document.getElementById('brMoreSheet');
+            if (openSheet && openSheet.dataset.brSheetLevel && openSheet.dataset.brSheetLevel !== 'root') showSheetPanel('root', true);
+            else setOpen(false);
+          }
           return;
         }
         if (e.key !== 'Tab' || !sheetOpen()) return;
