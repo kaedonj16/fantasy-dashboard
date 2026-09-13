@@ -44,13 +44,27 @@ def test_game_strip_sits_below_chip_bar_and_above_feed_header():
     assert 'id="rz-feed-hdr"' in REDZONE_JS
 
 
-def test_filter_panel_still_contains_matchup_options():
-    # The Filter must keep the NFL matchup selector (§5, §23: do not remove it).
-    assert "_nflMatchupOptions()" in REDZONE_JS
+def test_filter_panel_uses_rostered_players_not_matchup_options():
+    # Game selection lives exclusively in the game strip; the Filter panel
+    # provides the rostered-player control instead.
     chips = REDZONE_JS.split("function _renderFilterChips()", 1)[1].split(
         "function _posHtml", 1
     )[0]
-    assert "fpRow('Matchup', 'nfl', nOpts)" in chips
+    assert "fpRow('Players', 'rostered', rOpts)" in chips
+    assert "['rostered', 'Rostered']" in chips
+    assert "fpRow('Matchup', 'nfl'" not in chips
+
+
+def test_rostered_player_filter_excludes_unrostered_primary_actors():
+    matches = REDZONE_JS.split("function _eventMatches(ev)", 1)[1].split(
+        "function _topMatches", 1
+    )[0]
+    assert "_filters.rostered === 'rostered' && !ev.rosterId" in matches
+
+    chips = REDZONE_JS.split("function _renderFilterChips()", 1)[1].split(
+        "function _posHtml", 1
+    )[0]
+    assert 'data-clear="rostered"' in chips
 
 
 def test_all_pill_present_and_selected_state_reflects_filter():

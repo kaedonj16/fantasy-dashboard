@@ -188,8 +188,10 @@ def test_focused_pair_drives_scorebar_and_live_chrome():
 
 def test_filter_polish_league_label_and_my_team_chip():
     src = _rz()
-    # Fantasy Team/League filter row is gone; NFL filter is matchups.
-    assert "fpRow('Matchup', 'nfl'" in src
+    # Fantasy Team/League and matchup filter rows are gone. NFL game selection
+    # belongs exclusively to the game strip; the panel offers rostered players.
+    assert "fpRow('Matchup', 'nfl'" not in src
+    assert "fpRow('Players', 'rostered', rOpts)" in src
     assert "? 'League' : 'Team'" not in src
     assert 'data-clear-myteam="1"' in src
     assert "OPP · " in src
@@ -565,10 +567,13 @@ def test_live_final_empty_feed_is_honest_not_boxscore():
     assert "not box-score summaries" in src
 
 
-def test_filter_panel_is_matchups_not_fantasy_teams():
+def test_filter_panel_has_rostered_players_not_matchups_or_fantasy_teams():
     src = _rz()
     assert "function _nflMatchupOptions(" in src
-    assert "fpRow('Matchup', 'nfl'" in src
+    panel = _fn("_renderFilterChips")
+    assert "fpRow('Players', 'rostered', rOpts)" in panel
+    assert "fpRow('Matchup', 'nfl'" not in panel
+    assert "_nflMatchupOptions()" not in panel
     assert "fpRow(_scope === 'user' ? 'League' : 'Team', 'team'" not in src
     assert "function _teamOptions(" not in src
     assert "function _nflOptions(" not in src
