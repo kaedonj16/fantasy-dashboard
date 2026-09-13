@@ -1,6 +1,11 @@
 """RedZone's 15-second browser poll must not sit behind minute-scale caches."""
 from pathlib import Path
 
+import pytest
+
+pytest.importorskip("flask")
+pytest.importorskip("requests")
+
 import dashboard_services.api as api
 
 
