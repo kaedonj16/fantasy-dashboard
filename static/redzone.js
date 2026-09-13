@@ -163,14 +163,50 @@
     } catch (_) {}
   }
 
-  function _myRidSet(data) {
-    var ids = (data.viewer_roster_ids && data.viewer_roster_ids.length)
-      ? data.viewer_roster_ids
-      : (data.viewer_roster_id ? [data.viewer_roster_id]
-         : (window._viewerRid ? [window._viewerRid] : []));
-    return new Set(ids.map(String));
+  // Viewer ownership is part of the Redzone payload, not page-global state.
+  // In particular, My Leagues roster ids are namespaced by portfolio index
+  // (for example, "0:1" and "1:1") and must never be reduced to their local
+  // roster id. Keep this contract scope-specific so a cache or stream from one
+  // scope cannot identify teams in the other scope.
+  function _myRidSet(data, scope) {
+    data = data || {};
+    scope = scope || data.scope || _scope;
+    var ids;
+    if (scope === 'user') {
+      // User scope deliberately does not fall back to viewer_roster_id: the
+      // complete list is the canonical identity for the portfolio.
+      ids = Array.isArray(data.viewer_roster_ids) ? data.viewer_roster_ids : [];
+    } else {
+      ids = Array.isArray(data.viewer_roster_ids) && data.viewer_roster_ids.length
+        ? data.viewer_roster_ids
+        : (data.viewer_roster_id ? [data.viewer_roster_id] : []);
+    }
+    return new Set(ids.filter(function(id) {
+      return id !== null && id !== undefined && id !== '';
+    }).map(String));
   }
   var _myRids = _myRidSet(_state);
+
+  // All canonical Redzone state replacement goes through this helper.  This
+  // makes _myRids an exact snapshot of the active payload, including cached
+  // scope restoration and progressive My Leagues slices.
+  function _setState(data) {
+    _state = data || {};
+    _myRids = _myRidSet(_state, _scope);
+  }
+
+  // A poll without the identity fields is incomplete, not evidence that the
+  // viewer owns an arbitrary team. Retain this scope's last-good payload in
+  // that case; an explicit empty value remains valid and renders as viewer
+  // unavailable.
+  function _hasViewerIdentityFields(data, scope) {
+    if (!data || typeof data !== 'object') return false;
+    if (scope === 'user') {
+      return Object.prototype.hasOwnProperty.call(data, 'viewer_roster_ids');
+    }
+    return Object.prototype.hasOwnProperty.call(data, 'viewer_roster_ids')
+      || Object.prototype.hasOwnProperty.call(data, 'viewer_roster_id');
+  }
 
   function _heroMatchupPids() {
     if (!_heroMid) return null;
@@ -3773,8 +3809,7 @@
         // response cannot flash ESPN/portfolio names under This League.
         var cached = _scopeCache[_scope];
         if (cached) {
-          _state = cached;
-          _myRids = _myRidSet(cached);
+          _setState(cached);
           _loadingScope = false;
           // Restore cards + canonical Plays immediately, then refresh in the background.
           if (!_restoreScopeRuntime(_scope, cached)) {
@@ -3895,8 +3930,7 @@
     if (!_loadingScope) return;
     var cached = _scopeCache[myScope];
     if (cached) {
-      _state = cached;
-      _myRids = _myRidSet(cached);
+      _setState(cached);
       _loadingScope = false;
       _render();
     } else {
@@ -3935,14 +3969,18 @@
       if (myGen !== _streamGen || myScope !== _scope) return;
       // Server stamps scope; reject a mismatched payload even if gen lined up.
       if (newData && newData.scope && newData.scope !== myScope) return;
+      if (!_hasViewerIdentityFields(newData, myScope)) {
+        _recoverScopeLoad(myGen, myScope);
+        if (myGen === _streamGen && myScope === _scope && !_loadingScope) _partialUpdate();
+        return;
+      }
       _lastPollFailed = false;
       _scopeLoadError = null;
       _lastSuccessAt = Date.now();
       _loadingScope = false;
       _loadingPlays = false;
-      _myRids = _myRidSet(newData);
       // Apply state before detect so owner/league labels read the new payload.
-      _state = newData;
+      _setState(newData);
       _scopeCache[myScope] = newData;
       _detectChanges(newData, wasContinuouslyActive ? 'live' : 'bulk');
       _seedPrevStats(newData);
@@ -4064,7 +4102,7 @@
         // Keep last-good portfolio cards on screen until the first slice lands.
         // Never write an empty shell into _scopeCache.user (that poisoned switches).
         if (!(_state.matchups && _state.matchups.length)) {
-          _state = base; _myRids = new Set();
+          _setState(base);
         }
         _render();
       } else if (obj.type === 'league') {
@@ -4075,8 +4113,7 @@
         // cards don't collapse to the first arriving league.
         var keepCache = _scopeCache.user && (_scopeCache.user.matchups || []).length;
         if (!keepCache) {
-          _state = base;
-          _myRids = _myRidSet(base);
+          _setState(base);
           _seedMilestones(base); _seedInjuries(base); _seedLeaders(base);
           (base.matchups || []).forEach(function(m) { _prevMatchupPts[String(m.roster_id)] = parseFloat(m.points || 0); });
         }
@@ -4109,9 +4146,8 @@
     _streaming = false;
     if (myGen !== _streamGen) return;
     if (!gotLeague) { return _refresh(); }
-    _state = base;
+    _setState(base);
     _scopeCache.user = base;
-    _myRids = _myRidSet(base);
     // Reconcile into restored canonical state; empty or partial slices cannot
     // wipe last-good real PBP and the existing keys still govern revisions.
     if (_scopeRuntime.user && _scopeRuntime.user.identity === _runtimeIdentity(base, 'user')) {
