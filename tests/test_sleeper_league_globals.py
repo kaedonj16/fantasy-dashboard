@@ -11,22 +11,18 @@ PPR receptions silently lost their point in the live feed.
 This test pins that the adapter now returns the real scoring settings so the
 generic sync path -- and therefore the normalized ``rec`` rate -- is correct.
 """
-import sys
-import types
-
 import pytest
+
+# dashboard_services.api pulls in the app stack (requests/flask); skip on the
+# slim lint shard that doesn't install them, like the other app-stack tests.
+pytest.importorskip("requests")
+pytest.importorskip("flask")
+
+from dashboard_services.providers.adapters import SleeperProvider
 
 
 @pytest.fixture
-def sleeper_provider(monkeypatch):
-    # The api module imports flask at module load; stub it so this pure-unit
-    # test runs on slim CI shards without the web stack.
-    if "flask" not in sys.modules:
-        stub = types.ModuleType("flask")
-        stub.g = types.SimpleNamespace()
-        stub.has_app_context = lambda: False
-        monkeypatch.setitem(sys.modules, "flask", stub)
-    from dashboard_services.providers.adapters import SleeperProvider
+def sleeper_provider():
     return SleeperProvider()
 
 
