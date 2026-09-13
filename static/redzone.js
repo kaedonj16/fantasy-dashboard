@@ -1865,41 +1865,6 @@
 
     var _specialCount = 0;
 
-    // Stat milestones: fire a feed event when a player crosses a threshold for first time
-    var _MS_DEFS = [
-      { key: 'rush_yds_100', field: 'rush_yds', thr: 100, desc: '100 rush yds' },
-      { key: 'rush_yds_150', field: 'rush_yds', thr: 150, desc: '150 rush yds' },
-      { key: 'pass_yds_300', field: 'pass_yds', thr: 300, desc: '300 pass yds' },
-      { key: 'pass_yds_400', field: 'pass_yds', thr: 400, desc: '400 pass yds' },
-      { key: 'rec_yds_100', field: 'rec_yds',  thr: 100, desc: '100 rec yds' },
-      { key: 'td_2',        field: '__tds',     thr: 2,   desc: '2 TDs' },
-      { key: 'td_3',        field: '__tds',     thr: 3,   desc: '3 TDs' },
-    ];
-    Object.keys(newData.player_info || {}).forEach(function(pid) {
-      var sl = (newData.player_info[pid] || {}).stat_line;
-      if (!sl) return;
-      var seen = _milestonesSeen[pid] || {};
-      var tds = (sl.rush_td||0) + (sl.rec_td||0) + (sl.pass_td||0);
-      var rid = tags.pidToRoster[pid] || '';
-      _MS_DEFS.forEach(function(ms) {
-        if (seen[ms.key]) return;
-        var val = ms.field === '__tds' ? tds : (sl[ms.field] || 0);
-        if (val < ms.thr) return;
-        seen[ms.key] = true;
-        _specialCount++;
-        _feed.unshift({
-          pid: pid, name: _name(pid), pos: _pos(pid), nflTeam: _team(pid),
-          rosterId: rid, owner: _ownerName(rid), league: _leagueOfRid(rid),
-          mine: tags.my.has(rid), opp: tags.opp.has(rid),
-          desc: ms.desc + '!', kind: 'milestone', stats: ['milestone'],
-          pts: 0, ts: Date.now(),
-          line: '', gameQuarter: (newData.player_info[pid] || {}).game_quarter || '',
-          gameClock: (newData.player_info[pid] || {}).game_clock || ''
-        });
-      });
-      _milestonesSeen[pid] = seen;
-    });
-
     // Injury-status changes: fire a feed event when a rostered player's status worsens mid-game
     Object.keys(newData.player_info || {}).forEach(function(pid) {
       var info = newData.player_info[pid] || {};
@@ -2130,7 +2095,7 @@
   }
   var _POS_LIST  = ['QB', 'RB', 'WR', 'TE', 'K', 'DEF'];
   var _STAT_LIST = [['td','TD'], ['reception','Reception'], ['carry','Carry'],
-                    ['pass','Pass'], ['target','Target'], ['int','INT'], ['milestone','Milestone'], ['lead_change','Lead']];
+                    ['pass','Pass'], ['target','Target'], ['int','INT'], ['lead_change','Lead']];
 
   function _eventMatches(ev) {
     // Ownership filters inspect ALL contributions (QB + receiver both count)
@@ -2940,7 +2905,7 @@
     }).join('');
   }
 
-  var _FEED_ICON = { td: '🏈', gain: '🟢', neg: '⚠️', target: '🎯', milestone: '⭐' };
+  var _FEED_ICON = { td: '🏈', gain: '🟢', neg: '⚠️', target: '🎯' };
 
   function _eid(ev) {
     return ev.playId || [ev.pid || '0', ev.kind || 'event', ev.desc || '', ev.playSortTs || ev.ts || 0].join(':');
