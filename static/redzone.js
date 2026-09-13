@@ -26,7 +26,7 @@
   var _isDemo   = !!_state.is_demo;
   var _demoT    = parseFloat(_state.demo_t || 150);
   var _scope    = _state.scope || 'league';
-  var _filters  = { nfl: 'all', pos: 'all', stat: 'all' };
+  var _filters  = { nfl: 'all', rostered: 'all', pos: 'all', stat: 'all' };
   var _filterOpen  = false;
   var _myTeamOnly  = false;
   var _bigPlaysOnly = false; // TD or >=4 fantasy pts
@@ -2087,6 +2087,10 @@
       var gid = ((_state.player_info || {})[ev.pid] || {}).game_id || '';
       if (gid !== _filters.nfl) return false;
     }
+    // Events are headed by their primary actor. This keeps the rostered-only
+    // view faithful to its label even when a grouped NFL play also contains
+    // an unrostered contributor (for example, a passer's contribution).
+    if (_filters.rostered === 'rostered' && !ev.rosterId) return false;
     // Position filter checks primary actor only
     if (_filters.pos !== 'all' && ev.pos !== _filters.pos) return false;
     if (_filters.stat !== 'all' && (ev.stats || []).indexOf(_filters.stat) < 0) return false;
@@ -2127,16 +2131,6 @@
     }
     var m = (_state.matchups || []).find(function(x) { return String(x.roster_id) === _heroMid; });
     return (m && m.league_name) || 'Selected League';
-  }
-
-  function _nflFilterLabel(gid) {
-    var opts = _nflMatchupOptions();
-    for (var i = 0; i < opts.length; i++) {
-      if (opts[i].id === gid) return opts[i].label;
-    }
-    var g = _nflGameInfo(gid);
-    if (g && g.away && g.home) return g.away + ' @ ' + g.home;
-    return gid;
   }
 
   function _teamLogoSrc(abv) {
@@ -2294,12 +2288,12 @@
   }
 
   function _renderFilterChips() {
-    var activeCount = ['nfl','pos','stat'].filter(function(k) { return _filters[k] !== 'all'; }).length;
+    var activeCount = ['rostered','pos','stat'].filter(function(k) { return _filters[k] !== 'all'; }).length;
     var chips = '';
     if (_heroMid) chips += '<span class="rz-active-chip rz-hero-chip" data-clear-hero="1">&#9654; ' + _heroLabel() + ' ×</span>';
     if (_myTeamOnly) chips += '<span class="rz-active-chip" data-clear-myteam="1">My Team ×</span>';
     if (_bigPlaysOnly) chips += '<span class="rz-active-chip" data-clear-big="1">Big Plays ×</span>';
-    if (_filters.nfl  !== 'all') chips += '<span class="rz-active-chip" data-clear="nfl">'  + _nflFilterLabel(_filters.nfl)  + ' ×</span>';
+    if (_filters.rostered === 'rostered') chips += '<span class="rz-active-chip" data-clear="rostered">Rostered ×</span>';
     if (_filters.pos  !== 'all') chips += '<span class="rz-active-chip" data-clear="pos">'  + _filters.pos  + ' ×</span>';
     if (_filters.stat !== 'all') {
       var sl = _STAT_LIST.find(function(x) { return x[0] === _filters.stat; });
@@ -2314,13 +2308,11 @@
         }).join('');
         return '<div class="rz-fp-row"><span class="rz-fp-label">' + label + '</span><div class="otc-day-filters rz-fp-opts">' + btns + '</div></div>';
       }
-      var nOpts = [['all','All']].concat(_nflMatchupOptions().map(function(g) {
-        return [g.id, g.label];
-      }));
+      var rOpts = [['all', 'All'], ['rostered', 'Rostered']];
       var pOpts = [['all','All']].concat(_POS_LIST.map(function(p) { return [p, p]; }));
       var sOpts = [['all','All']].concat(_STAT_LIST);
       panel = '<div class="rz-filter-panel">'
-        + fpRow('Matchup', 'nfl', nOpts)
+        + fpRow('Players', 'rostered', rOpts)
         + fpRow('Pos',  'pos',  pOpts)
         + fpRow('Type', 'stat', sOpts)
         + '</div>';
@@ -3112,7 +3104,7 @@
     var list = _chronoSort(filtered);
     // Hero focus alone should not force the "no matching" empty when the feed
     // itself is empty -- the pregame schedule already respects hero focus.
-    var hardFilter = _filters.nfl !== 'all' || _filters.pos !== 'all' || _filters.stat !== 'all' || _myTeamOnly || _bigPlaysOnly
+    var hardFilter = _filters.nfl !== 'all' || _filters.rostered !== 'all' || _filters.pos !== 'all' || _filters.stat !== 'all' || _myTeamOnly || _bigPlaysOnly
       || (_heroMid && _feed.length > 0);
     var totalPages = Math.max(1, Math.ceil(list.length / _PAGE_SIZE));
     if (_feedPage >= totalPages) _feedPage = totalPages - 1;
@@ -3759,7 +3751,7 @@
         _scopeJustSwitched = true;
         _animationMode = 'bulk';
         _animationNewIds = new Set();
-        _filters = { nfl: 'all', pos: 'all', stat: 'all' };
+        _filters = { nfl: 'all', rostered: 'all', pos: 'all', stat: 'all' };
         _shownFeedIds = new Set(_shownFeedIdsByScope[_scope] || []);
         _filterOpen = false;
         _myTeamOnly = false;
