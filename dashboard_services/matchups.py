@@ -749,7 +749,11 @@ def compute_win_prob(
     """
     Returns left team win probability (0.0–1.0) based on locked scores
     and projected remaining points modelled as normal distributions.
-    Variance per pending player: sigma = max(0.4 * projection, 4.0).
+    Variance per pending player: sigma = max(0.4 * projection, 4.0), and
+    each team's pending variance is floored at (TEAM_CV_FLOOR * remaining
+    projection)^2 so a full lineup's spread reflects real weekly team-score
+    dispersion (CV ~0.24) instead of the far tighter figure the independent
+    per-player sum produces.
 
     ``frac_lookup(starter) -> Optional[float]`` supplies the fraction of that
     player's game left to play. When given, an in-progress player banks the
@@ -759,6 +763,11 @@ def compute_win_prob(
     current points, the prior behaviour.
     """
     from math import erf
+
+    # Coefficient of variation a team's remaining points are assumed to carry.
+    # ~0.24 matches observed weekly team-score dispersion; see the pending
+    # variance floor in _stats.
+    TEAM_CV_FLOOR = 0.24
 
     def _stats(team: dict):
         locked = 0.0
@@ -799,6 +808,17 @@ def compute_win_prob(
                 pend_proj = fallback
                 sigma = max(0.4 * fallback, 4.0)
                 pend_var = sigma * sigma
+        # Team-level variance floor. Summing independent per-player variances
+        # dilutes a full lineup's spread by ~1/sqrt(n starters): nine starters
+        # projected to 130 came out at sigma ~17 (CV ~0.13), when real weekly
+        # team scores run CV ~0.20-0.25. That undershoot pushed the win bar to
+        # 1%/99%. Floor the pending variance at (TEAM_CV_FLOOR * remaining
+        # projection)^2 so the distribution matches observed dispersion. It
+        # scales with what is left to play, so it fades to zero as games finish
+        # and near-final blowouts still read decisively.
+        floor_var = (TEAM_CV_FLOOR * pend_proj) ** 2
+        if floor_var > pend_var:
+            pend_var = floor_var
         return locked, pend_proj, pend_var
 
     l_lock, l_pend, l_var = _stats(left)

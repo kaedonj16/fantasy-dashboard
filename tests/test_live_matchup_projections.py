@@ -143,6 +143,35 @@ def test_win_prob_uses_live_remaining_projection():
     assert live_p < frozen_p
 
 
+def test_win_prob_floors_team_variance_to_realistic_cv():
+    """A full pregame lineup's spread must reflect team-level dispersion
+    (CV ~0.24), not the tight independent per-player sum that ran the win bar
+    to 1%/99%. Summing nine independent starter variances dilutes the team
+    total by ~1/sqrt(9); the floor restores a realistic coefficient of
+    variation."""
+    from math import erf, sqrt
+
+    m = _matchups()
+    # Nine even starters per side; left projects 165, right 126 (a 39-pt margin).
+    left = {"starters": [{"pid": f"l{i}", "pts": 0.0, "pos": "WR"} for i in range(9)]}
+    right = {"starters": [{"pid": f"r{i}", "pts": 0.0, "pos": "WR"} for i in range(9)]}
+    proj = {f"l{i}": 165.0 / 9 for i in range(9)}
+    proj.update({f"r{i}": 126.0 / 9 for i in range(9)})
+    status = {pid: m.STATUS_NOT_STARTED for pid in proj}
+
+    p = m.compute_win_prob(left, right, status, proj)
+
+    # Analytic value with the CV floor active on both sides (it dominates the
+    # independent sum for a full lineup).
+    cv = 0.24
+    var = (cv * 165.0) ** 2 + (cv * 126.0) ** 2
+    z = (165.0 - 126.0) / (sqrt(var) * sqrt(2))
+    expected = 0.5 * (1 + erf(z))
+    assert p == pytest.approx(expected, abs=1e-6)
+    # Well short of the old near-certain read (~92% before the floor).
+    assert p < 0.85
+
+
 def _render_live_slide(monkeypatch, *, status, actual, proj, game):
     m = _matchups()
     monkeypatch.setattr("dashboard_services.api.get_nfl_state", lambda: {})
