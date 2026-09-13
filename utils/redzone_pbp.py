@@ -47,16 +47,23 @@ def _normalize_name(name: str) -> str:
         return ""
     name = name.strip()
     
-    # Detect abbreviated format: single letter followed by period and surname
-    # Examples: M.Hollins, H.Henry, J.Smith-Njigba
-    # Must have a period or be exactly 1 char + space + surname to avoid matching full names
+    # Detect abbreviated format: a leading initial, a period, then the rest of
+    # the name -- "M.Hollins", "J.Smith-Njigba", but also compound surnames
+    # ("A.St. Brown", "A.St.Brown") and names with middle initials
+    # ("D.J. Moore", "T.J. Hockenson"). Anchored to name characters so it never
+    # swallows a whole booth sentence.
     import re
-    abbrev_match = re.match(r'^([A-Za-z])\.(\s*)([A-Za-z][A-Za-z\-\']+(?:\s+[A-Za-z][A-Za-z\-\']+)*)$', name)
+    abbrev_match = re.match(r"^([A-Za-z])\.\s*([A-Za-z][A-Za-z.'\-\s]*[A-Za-z])$", name)
     if abbrev_match:
-        # Convert to "first-initial surname" format
         initial = abbrev_match.group(1).lower()
-        surname = abbrev_match.group(3)
-        name = f"{initial} {surname}"
+        # Split the remainder on periods/spaces and drop any leading single-letter
+        # middle initials, so "D.J. Moore" -> "d moore" (surname Moore) while
+        # "A.St. Brown" keeps the real compound surname -> "a st brown".
+        rest_tokens = [t for t in abbrev_match.group(2).replace(".", " ").split() if t]
+        while len(rest_tokens) > 1 and len(rest_tokens[0]) == 1:
+            rest_tokens.pop(0)
+        if rest_tokens:
+            name = initial + " " + " ".join(rest_tokens)
     
     name = name.lower()
     # Remove periods and apostrophes

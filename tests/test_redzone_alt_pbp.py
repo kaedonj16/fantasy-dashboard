@@ -199,6 +199,49 @@ def test_parse_pbp_lowercase_turnover_return_still_denies_offense_td():
     ) == {"c.williams": {"int": 1, "pass_att": 1}}
 
 
+def test_parse_pbp_captures_compound_surnames_in_booth_text():
+    # The name token must span multi-word surnames ("St. Brown", with or without
+    # the internal space) so these players aren't silently dropped from plays.
+    for text in (
+        "J.Goff pass short right to A.St. Brown for 12 yards, TOUCHDOWN.",
+        "J.Goff pass short right to A.St.Brown for 12 yards, TOUCHDOWN.",
+    ):
+        sl = parse_pbp_play_stats(text)
+        key = next(k for k in sl if k.startswith("a.st"))
+        assert sl[key] == {"rec": 1, "rec_yds": 12, "targets": 1, "rec_td": 1}
+        assert sl["j.goff"]["pass_td"] == 1
+
+
+def test_abbrev_index_resolves_suffixes_compounds_and_middle_initials():
+    from utils.redzone_alt_pbp import build_name_indexes, _stat_lines_by_pid
+
+    # Real full names (as the redzone endpoint feeds them, already lowercased).
+    names = {
+        "amon-ra st. brown": "stbrown",
+        "a.j. brown": "ajbrown",
+        "michael pittman jr.": "pittman",
+        "kenneth walker iii": "kwalker",
+        "marquez valdes-scantling": "mvs",
+        "d.j. moore": "djmoore",
+        "deebo samuel sr.": "deebo",
+        "jared goff": "goff",
+    }
+    _full, abbrev = build_name_indexes(names)
+
+    def who(text):
+        return sorted(k for k in _stat_lines_by_pid(text, abbrev) if k != "goff")
+
+    # Suffixes never become the surname; compound names resolve; and A.St. Brown
+    # no longer collides A.J. Brown onto a shared "abrown" key.
+    assert who("J.Goff pass to A.St. Brown for 5 yards.") == ["stbrown"]
+    assert who("J.Goff pass to A.Brown for 5 yards.") == ["ajbrown"]
+    assert who("J.Goff pass to M.Pittman for 5 yards.") == ["pittman"]
+    assert who("K.Walker up the middle for 5 yards.") == ["kwalker"]
+    assert who("J.Goff pass to M.Valdes-Scantling for 5 yards.") == ["mvs"]
+    assert who("J.Goff pass to D.Moore for 5 yards.") == ["djmoore"]
+    assert who("J.Goff pass to D.Samuel for 5 yards.") == ["deebo"]
+
+
 def test_parse_pbp_interception_only_credits_passer_pick():
     sl = parse_pbp_play_stats(
         "(Shotgun) D.Maye pass deep right intended for M.Hollins INTERCEPTED "
