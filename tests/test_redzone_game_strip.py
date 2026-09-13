@@ -115,8 +115,9 @@ def test_no_down_and_distance_when_final():
     render = REDZONE_JS.split("function _renderNflBoard()", 1)[1].split(
         "function _gamePillStatus", 1
     )[0]
-    # Possession is gated on a live game only.
-    assert "norm === 'live' && poss" in render
+    # Possession is gated on a live game only (live === norm === 'live').
+    assert "var live = norm === 'live'" in render
+    assert "live && poss" in render
 
 
 def test_scoreboard_uses_normalized_status_not_raw_final_text():

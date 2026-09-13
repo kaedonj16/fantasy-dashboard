@@ -2246,47 +2246,70 @@
     var g = _nflGameInfo(_filters.nfl);
     if (!g || (!g.away && !g.home)) return '';
     var norm = _normGameStatus(g);
-    var live = norm === 'live' || norm === 'halftime';
-    var isFinal = norm === 'final';
+    var live = norm === 'live';
+    // Pregame (and delayed / unknown) has no score yet -- show kickoff instead
+    // of "–" placeholders that read as broken before the game starts.
+    var isPre = norm === 'pregame' || norm === 'delayed' || norm === 'unknown';
+    var showScore = !isPre;
     var away = g.away || '--', home = g.home || '--';
-    var aPts = (g.away_pts === '' || g.away_pts == null) ? '–' : g.away_pts;
-    var hPts = (g.home_pts === '' || g.home_pts == null) ? '–' : g.home_pts;
+    var aPts = (g.away_pts === '' || g.away_pts == null) ? '0' : g.away_pts;
+    var hPts = (g.home_pts === '' || g.home_pts == null) ? '0' : g.home_pts;
     var poss = String(g.possession || '').toUpperCase();
     // Possession is a *current* marker -- only meaningful for a live game (§2).
-    var awayPoss = norm === 'live' && poss && poss === String(away).toUpperCase();
-    var homePoss = norm === 'live' && poss && poss === String(home).toUpperCase();
+    var awayPoss = live && poss && poss === String(away).toUpperCase();
+    var homePoss = live && poss && poss === String(home).toUpperCase();
     var sit = _nflBoardSitLine(g, norm);
-    var clock = _nflBoardClockLine(g, norm);
     var stateCls = ' is-' + norm;
     var logo = function(abv) {
       var src = _teamLogoSrc(abv);
-      if (!src) return '<span class="rz-nfl-abv-only">' + abv + '</span>';
-      return '<img class="rz-nfl-logo" src="' + src + '" alt="" data-team="' + abv + '"'
+      if (!src) return '<span class="rz-nfl-badge rz-nfl-badge-txt">' + abv + '</span>';
+      return '<img class="rz-nfl-badge" src="' + src + '" alt="" data-team="' + abv + '"'
         + ' onerror="var t=this.getAttribute(\'data-team\');if(t&&!this._espnFallback){this._espnFallback=1;this.src=(window.brTeamLogoEspn?window.brTeamLogoEspn(t):\'\');}else{this.style.display=\'none\';}">';
     };
-    var side = function(abv, pts, hasBall, align) {
-      var ball = hasBall
-        ? '<span class="rz-nfl-ball" title="Possession" aria-label="Has possession"></span>'
-        : '<span class="rz-nfl-ball-slot" aria-hidden="true"></span>';
-      var meta = '<div class="rz-nfl-side-meta">'
-        + '<span class="rz-nfl-abv">' + abv + '</span>'
-        + '<span class="rz-nfl-pts">' + pts + '</span>'
+    var team = function(abv, pts, hasBall, align) {
+      var ballHtml = hasBall
+        ? '<span class="rz-nfl-poss" title="Possession" aria-label="Has possession"></span>' : '';
+      var scoreHtml = showScore ? '<span class="rz-nfl-score">' + pts + '</span>' : '';
+      // Score sits toward the center; the home block reverses so its logo stays
+      // outermost (CSS row-reverse), keeping both scores flanking the middle.
+      return '<div class="rz-nfl-team rz-nfl-' + align + (hasBall ? ' has-ball' : '') + '">'
+        + logo(abv)
+        + '<span class="rz-nfl-abv">' + abv + ballHtml + '</span>'
+        + scoreHtml
         + '</div>';
-      // Mirror the teams: the home logo is the outermost item on the right.
-      var contents = align === 'home'
-        ? ball + meta + logo(abv)
-        : ball + logo(abv) + meta;
-      return '<div class="rz-nfl-side rz-nfl-' + align + (hasBall ? ' has-ball' : '') + '">'
-        + contents + '</div>';
     };
-    var liveDot = live && norm === 'live' ? '<span class="rz-nfl-live-dot" aria-hidden="true"></span>' : '';
+    var mid;
+    if (live) {
+      var clock = [_fmtQuarter(g.game_quarter || ''), g.game_clock || '']
+        .filter(Boolean).join(' · ') || 'LIVE';
+      mid = '<div class="rz-nfl-mid">'
+        + '<span class="rz-nfl-live-pill"><span class="rz-nfl-live-dot" aria-hidden="true"></span>' + clock + '</span>'
+        + (sit ? '<span class="rz-nfl-sit">' + sit + '</span>' : '')
+        + '</div>';
+    } else if (isPre) {
+      var day = '', tm = '';
+      var ep = parseFloat(g.game_time_epoch || 0);
+      if (norm === 'delayed') {
+        tm = g.game_status || 'Delayed';
+      } else if (ep) {
+        var d = new Date(ep * 1000);
+        if (!isNaN(d.getTime())) {
+          day = d.toLocaleDateString([], { weekday: 'short' });
+          tm = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+        }
+      }
+      if (!tm) tm = g.game_status || 'Upcoming';
+      mid = '<div class="rz-nfl-mid">'
+        + (day ? '<span class="rz-nfl-kick-day">' + day + '</span>' : '')
+        + '<span class="rz-nfl-kick-time">' + tm + '</span>'
+        + '</div>';
+    } else {  // final / halftime
+      mid = '<div class="rz-nfl-mid"><span class="rz-nfl-state">' + _nflBoardClockLine(g, norm) + '</span></div>';
+    }
     return '<div class="rz-nfl-board' + stateCls + (live ? ' is-live' : '') + '" id="rz-nfl-board">'
-      + side(away, aPts, awayPoss, 'away')
-      + '<div class="rz-nfl-mid">'
-      + '<div class="rz-nfl-clock">' + liveDot + clock + '</div>'
-      + (sit ? '<div class="rz-nfl-sit">' + sit + '</div>' : '')
-      + '</div>'
-      + side(home, hPts, homePoss, 'home')
+      + team(away, aPts, awayPoss, 'away')
+      + mid
+      + team(home, hPts, homePoss, 'home')
       + '</div>';
   }
 
@@ -3088,12 +3111,21 @@
       var mins = Math.max(1, Math.round((g.ep - now) / 60));
       var nameStr = g.names.slice(0, 3).join(', ') + (g.names.length > 3 ? ' +' + (g.names.length - 3) : '');
       return '<div class="rz-ondeck-item">'
-        + '<span class="rz-ondeck-clock">▶ ' + mins + 'm</span>'
-        + '<span class="rz-ondeck-game">' + g.away + ' @ ' + g.home + '</span>'
+        + '<div class="rz-ondeck-item-top">'
+        +   '<span class="rz-ondeck-game">' + g.away + ' @ ' + g.home + '</span>'
+        +   '<span class="rz-ondeck-clock">▶ ' + mins + 'm</span>'
+        + '</div>'
         + '<span class="rz-ondeck-players">' + nameStr + '</span>'
         + '</div>';
     }).join('');
-    return '<div class="rz-ondeck-bar"><span class="rz-ondeck-label">On deck</span>' + rows + '</div>';
+    var count = gids.length;
+    return '<div class="rz-ondeck-bar">'
+      + '<div class="rz-ondeck-head">'
+      +   '<span class="rz-ondeck-label">On deck</span>'
+      +   '<span class="rz-ondeck-count">' + count + (count === 1 ? ' game' : ' games') + '</span>'
+      + '</div>'
+      + '<div class="rz-ondeck-grid">' + rows + '</div>'
+      + '</div>';
   }
 
   function _pregameScheduleHtml() {
