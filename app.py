@@ -12686,7 +12686,18 @@ def _redzone_fetch(platform, league_id, season, week=None, scope="league"):
             }
 
     d = _redzone_collect(platform, league_id, season, week)
-    vrid = str(session.get("viewer_roster_id") or "")
+    # Resolve the viewer's roster for THIS league the same way the rest of the
+    # site does, instead of trusting the raw session viewer_roster_id. Roster
+    # ids are league-scoped integers, so a session id resolved for a different
+    # league silently binds the feed to whichever manager happens to hold that
+    # id here -- "my team" showing as another user. get_viewer_session_for_league
+    # re-resolves against this league's users/rosters (account team first, then
+    # unique username/user_id match) and is platform-agnostic.
+    league_viewer = get_viewer_session_for_league(
+        d.get("users") or [], d.get("rosters") or [],
+        platform=platform, league_id=league_id, season=season,
+    )
+    vrid = str((league_viewer or {}).get("viewer_roster_id") or "")
     d.update({
         "week": week, "season": season, "platform": platform, "league_id": league_id,
         "scope": "league",

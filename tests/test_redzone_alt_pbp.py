@@ -265,6 +265,38 @@ def test_parse_pbp_rush_with_and_without_td():
     ) == {"r.stevenson": {"rush_yds": 2, "carries": 1, "rush_td": 1}}
 
 
+def test_parse_pbp_rush_td_scores_regardless_of_touchdown_casing():
+    # The uppercase-only check badged these as scores but dropped the 6 points,
+    # so a two-rush-TD back showed his yards with none of the TD value.
+    for text in (
+        "D.Montgomery up the middle for 2 yards, Touchdown.",
+        "D.Montgomery up the middle for 2 yards, touchdown.",
+        "D.Montgomery right guard for 1 yard for a TD.",
+    ):
+        assert parse_pbp_play_stats(text) == {
+            "d.montgomery": {"rush_yds": 2 if "2 yards" in text else 1,
+                             "carries": 1, "rush_td": 1}
+        }, text
+
+
+def test_parse_pbp_pass_td_scores_regardless_of_touchdown_casing():
+    sl = parse_pbp_play_stats(
+        "C.Stroud pass short right to N.Collins for 12 yards, Touchdown."
+    )
+    assert sl["c.stroud"] == {"pass_yds": 12, "pass_cmp": 1, "pass_att": 1, "pass_td": 1}
+    assert sl["n.collins"] == {"rec": 1, "rec_yds": 12, "targets": 1, "rec_td": 1}
+
+
+def test_parse_pbp_td_credit_still_suppressed_on_turnover():
+    # A ball turned over first is never an offensive TD, whatever the casing.
+    assert "rush_td" not in parse_pbp_play_stats(
+        "D.Montgomery up the middle for 2 yards, fumble, TOUCHDOWN Seattle."
+    ).get("d.montgomery", {})
+    assert "pass_td" not in parse_pbp_play_stats(
+        "C.Stroud pass deep left INTERCEPTED by T.Bland, returned for a TD."
+    ).get("c.stroud", {})
+
+
 def test_parse_pbp_rush_credit_survives_leading_clause():
     # A pre-snap clause must not steal the carry from the actual ball carrier.
     assert parse_pbp_play_stats(
