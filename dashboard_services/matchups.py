@@ -38,6 +38,135 @@ STATUS_NOT_STARTED = "not_started"
 STATUS_IN_PROGRESS = "in_progress"
 STATUS_FINAL = "final"
 
+# NFL regulation clock: 4 quarters of 15 minutes.
+_QUARTERS = 4
+_QUARTER_MINUTES = 15.0
+_REGULATION_MINUTES = _QUARTERS * _QUARTER_MINUTES  # 60
+
+
+def _parse_quarter(period_raw: Any) -> Optional[int]:
+    """Parse a game's current quarter. Returns 1-4 for regulation, 5+ for OT,
+    or None when the period can't be read."""
+    s = str(period_raw or "").strip().upper()
+    if not s:
+        return None
+    if s.startswith("OT") or "OVERTIME" in s:
+        return _QUARTERS + 1
+    if "HALF" in s:  # "Halftime" / "Half" -> end of the 2nd quarter
+        return 2
+    digits = "".join(ch for ch in s if ch.isdigit())
+    if not digits:
+        return None
+    try:
+        return int(digits)
+    except ValueError:
+        return None
+
+
+def _parse_clock_minutes(clock_raw: Any) -> Optional[float]:
+    """Minutes (as a float) left on the game clock in the current quarter, from a
+    'MM:SS' string. Returns None when the clock can't be parsed."""
+    s = str(clock_raw or "").strip().upper()
+    if not s:
+        return None
+    if "HALF" in s or "END" in s:
+        # Between-period text ("Halftime", "End of 2nd"): no time on the clock.
+        return 0.0
+    if ":" not in s:
+        return None
+    mm, _, ss = s.partition(":")
+    try:
+        minutes = int(mm)
+        seconds = int("".join(ch for ch in ss if ch.isdigit()) or 0)
+    except ValueError:
+        return None
+    return minutes + seconds / 60.0
+
+
+def game_fraction_remaining(game: Optional[dict]) -> Optional[float]:
+    """Fraction of NFL regulation time left in a game, in [0.0, 1.0].
+
+    1.0 = not yet kicked off, 0.0 = final. Used to blend a player's live actual
+    points with their remaining pregame projection into a live projected final:
+    ``live_final = actual + pregame_proj * fraction_remaining``.
+
+    Returns None when the game is live but its clock/quarter can't be read, so
+    callers can fall back to prior behaviour instead of guessing.
+    """
+    if not isinstance(game, dict):
+        return None
+    code = str(game.get("gameStatusCode") or "").strip()
+    if code == "2":  # final
+        return 0.0
+    if code == "0":  # scheduled / not started
+        return 1.0
+
+    # Live (code "1"), or unknown code but possibly carrying clock data.
+    ls = game.get("lineScore") if isinstance(game.get("lineScore"), dict) else {}
+    period = _parse_quarter(ls.get("period") or ls.get("quarter"))
+    clock = _parse_clock_minutes(game.get("gameClock"))
+
+    if period is None:
+        # Live game with no usable quarter signal: don't guess.
+        return None
+    if period > _QUARTERS:
+        # Overtime: regulation is spent; treat as essentially over.
+        return 0.02
+
+    mins_left_in_quarter = clock if clock is not None else _QUARTER_MINUTES
+    mins_left_in_quarter = max(0.0, min(_QUARTER_MINUTES, mins_left_in_quarter))
+    remaining = mins_left_in_quarter + (_QUARTERS - period) * _QUARTER_MINUTES
+    return max(0.0, min(1.0, remaining / _REGULATION_MINUTES))
+
+
+def resolve_team_game(
+    nfl: Any,
+    team_game_lookup: Optional[dict],
+    team_schedule_lookup: Optional[dict] = None,
+) -> Optional[dict]:
+    """Find an NFL team's game dict, preferring the live scoreboard lookup and
+    falling back to the static week schedule."""
+    if not nfl:
+        return None
+    tc = str(nfl).upper()
+    game = None
+    if team_game_lookup:
+        game = lookup_team_map(team_game_lookup, tc)
+    if game is None and team_schedule_lookup:
+        game = lookup_team_map(team_schedule_lookup, tc)
+    return game
+
+
+def live_projected_final(
+    actual: float,
+    pregame_proj: float,
+    game: Optional[dict],
+) -> float:
+    """Blend an in-progress player's banked points with the portion of their
+    pregame projection still to come. Falls back to the pregame projection when
+    game progress is unknown, and to the actual once the game is final."""
+    frac = game_fraction_remaining(game)
+    if frac is None:
+        return pregame_proj
+    return actual + pregame_proj * frac
+
+
+def make_frac_lookup(
+    team_game_lookup: Optional[dict],
+    team_schedule_lookup: Optional[dict] = None,
+):
+    """Build a ``fn(starter_dict) -> Optional[float]`` that returns the fraction
+    of regulation left in that starter's NFL game (None when undeterminable).
+    Used to make live totals and win probability track games as they play."""
+
+    def _frac(p: Optional[dict]) -> Optional[float]:
+        game = resolve_team_game(
+            (p or {}).get("nfl"), team_game_lookup, team_schedule_lookup,
+        )
+        return game_fraction_remaining(game)
+
+    return _frac
+
 
 def _proj_value_for_pid(
     week_proj_map: Dict[str, Any],
@@ -484,13 +613,22 @@ def team_live_totals(
         projections: dict[str, float],
         *,
         proj_lookup=None,
+        frac_lookup=None,
 ) -> tuple[float, float]:
     """
     actual_total:
         sum of all actual points for starters (p['pts'])
     live_proj_total:
-        - players not started  -> use projection
-        - players started/finished -> use actual
+        - players not started      -> use pregame projection
+        - players in progress       -> live projected final
+                                       (banked points + remaining projection)
+        - players final             -> use actual
+
+    ``frac_lookup(starter) -> Optional[float]`` supplies the fraction of that
+    player's game still to play; when given, in-progress starters project their
+    finish instead of freezing at their current points, so the team total climbs
+    with the games. When it's absent (or can't read a game), in-progress
+    starters fall back to their locked actual, the prior behaviour.
 
     Compact dashboard slides never render starter rows, so this total is the
     only projected number the user sees. Yahoo scoreboard rows often have no
@@ -521,9 +659,16 @@ def team_live_totals(
             proj_val = _proj_value_for_pid(projections, pid)
 
         # Use == for strings, not `is`
-        if status in (STATUS_IN_PROGRESS, STATUS_FINAL):
+        if status == STATUS_FINAL:
             any_locked = True
             live_proj_total += actual
+        elif status == STATUS_IN_PROGRESS:
+            any_locked = True
+            frac = frac_lookup(p) if frac_lookup else None
+            if frac is None:
+                live_proj_total += actual
+            else:
+                live_proj_total += actual + proj_val * frac
         else:
             live_proj_total += proj_val
 
@@ -543,11 +688,20 @@ def compute_win_prob(
         right: dict,
         status_by_pid: dict[str, str],
         proj_map: dict[str, float],
+        *,
+        frac_lookup=None,
 ) -> float:
     """
     Returns left team win probability (0.0–1.0) based on locked scores
     and projected remaining points modelled as normal distributions.
     Variance per pending player: sigma = max(0.4 * projection, 4.0).
+
+    ``frac_lookup(starter) -> Optional[float]`` supplies the fraction of that
+    player's game left to play. When given, an in-progress player banks the
+    points already scored and carries only the remaining slice of their
+    projection as pending, with variance that shrinks toward zero as the game
+    ends. Without it, in-progress players are treated as fully locked at their
+    current points, the prior behaviour.
     """
     from math import erf
 
@@ -562,8 +716,18 @@ def compute_win_prob(
             if pid is not None and status == STATUS_NOT_STARTED:
                 status = status_by_pid.get(str(pid), status)
             proj = _proj_value_for_pid(proj_map, pid)
-            if status in (STATUS_IN_PROGRESS, STATUS_FINAL):
+            if status == STATUS_FINAL:
                 locked += actual
+            elif status == STATUS_IN_PROGRESS:
+                frac = frac_lookup(p) if frac_lookup else None
+                if frac is None:
+                    locked += actual
+                else:
+                    locked += actual
+                    remaining_proj = proj * frac
+                    pend_proj += remaining_proj
+                    sigma = max(0.4 * remaining_proj, 4.0 * frac)
+                    pend_var += sigma * sigma
             else:
                 pend_proj += proj
                 sigma = max(0.4 * proj, 4.0)
@@ -1021,6 +1185,11 @@ def render_matchup_slide(
         week_stats = load_week_stats(season, w)
         team_schedule_lookup = build_team_schedule_lookup(load_week_schedule(season, w))
 
+    # Live game progress: lets in-progress starters project their finish (banked
+    # points + remaining projection) instead of freezing at their current score,
+    # so team totals and the win bar track the games as they play.
+    _frac_lookup = make_frac_lookup(team_game_lookup, team_schedule_lookup)
+
     def _get_fpts_rank(team: str, pos: str):
         if not _fpts_data:
             return None, 0.0
@@ -1087,7 +1256,8 @@ def render_matchup_slide(
             points = f"{t['pts_total']:.2f}" if isinstance(t.get("pts_total"), (int, float)) else "-"
             return f"<span class='num'>{points}</span>", False
         actual_total, live_proj_total = team_live_totals(
-            t, status_by_pid, week_proj_map, proj_lookup=_pid_proj,
+            t, status_by_pid, week_proj_map,
+            proj_lookup=_pid_proj, frac_lookup=_frac_lookup,
         )
         any_started = any(
             status_by_pid.get(p.get("pid"), STATUS_NOT_STARTED) in (STATUS_IN_PROGRESS, STATUS_FINAL)
@@ -1264,6 +1434,10 @@ def render_matchup_slide(
         if status == "BYE":
             is_bye = True
 
+        # Resolve this player's NFL game once, up front, so the live-projection
+        # blend below and the game/stats lines further down share it.
+        game = resolve_team_game(nfl, team_game_lookup, team_schedule_lookup)
+
         # decide what to show
         is_not_started = False
         if is_bye:
@@ -1274,8 +1448,11 @@ def render_matchup_slide(
             display_actual = 0.0
             display_proj = proj_val
         elif status == STATUS_IN_PROGRESS:
+            # Live projected finish: banked points + the slice of the pregame
+            # projection still to come. Falls back to the pregame projection
+            # when the game clock can't be read.
             display_actual = actual
-            display_proj = proj_val
+            display_proj = live_projected_final(float(actual or 0.0), proj_val, game)
         elif status == STATUS_FINAL:
             display_actual = actual
             display_proj = None
@@ -1286,14 +1463,8 @@ def render_matchup_slide(
         # game / stats
         game_line = ""
         stats = None
-        game = None
         if nfl:
             team_code = str(nfl).upper()
-
-            if team_game_lookup:
-                game = lookup_team_map(team_game_lookup, team_code)
-            if game is None and team_schedule_lookup:
-                game = lookup_team_map(team_schedule_lookup, team_code)
             # normalized name (special-case Ken Walker)
             lookup_name = "ken walker" if name == "Kenneth Walker" else name
             if game:
@@ -1484,7 +1655,10 @@ def render_matchup_slide(
     # Win probability: only for live/projection weeks (skip completed weeks)
     win_bar_html = ""
     if proj:
-        l_prob = compute_win_prob(m["left"], m["right"], status_by_pid, week_proj_map)
+        l_prob = compute_win_prob(
+            m["left"], m["right"], status_by_pid, week_proj_map,
+            frac_lookup=_frac_lookup,
+        )
         lp = round(l_prob * 100)
         rp = 100 - lp
         l_leading = l_prob >= 0.5

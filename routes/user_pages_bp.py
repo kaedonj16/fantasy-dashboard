@@ -956,8 +956,22 @@ def api_portfolio_matchup():
         return jsonify({"live": False})
 
     from dashboard_services.matchups import (
-        _proj_value_for_pid, compute_win_prob, team_live_totals,
+        _proj_value_for_pid, compute_win_prob, team_live_totals, make_frac_lookup,
     )
+
+    # Live game progress so in-progress starters project their finish here too,
+    # matching the Matchups tab instead of freezing at their current points.
+    try:
+        from datetime import date as _date
+        from dashboard_services.api import (
+            get_nfl_scores_for_date, build_team_game_lookup,
+        )
+        _scores_body = get_nfl_scores_for_date(_date.today().strftime("%Y%m%d"))
+        _team_game_lookup = build_team_game_lookup(_scores_body) if _scores_body else {}
+    except Exception:
+        logger.debug("[portfolio-matchup] live scores load failed", exc_info=True)
+        _team_game_lookup = {}
+    _frac_lookup = make_frac_lookup(_team_game_lookup)
 
     # The precomputed bundle can miss starters (ESPN/Yahoo roster pids, or a
     # first paint racing projection hydration), and those players then project
@@ -986,7 +1000,9 @@ def api_portfolio_matchup():
                     proj_map[str(_pid)] = _val
 
     def _side(team):
-        actual, proj = team_live_totals(team, status_by_pid, proj_map)
+        actual, proj = team_live_totals(
+            team, status_by_pid, proj_map, frac_lookup=_frac_lookup,
+        )
         return {
             "name": team.get("name") or "",
             "score": round(float(actual or 0.0), 1),
@@ -1002,7 +1018,9 @@ def api_portfolio_matchup():
     win_prob = None
     if has_opp:
         try:
-            win_prob = round(compute_win_prob(you, opp, status_by_pid, proj_map) * 100.0, 1)
+            win_prob = round(compute_win_prob(
+                you, opp, status_by_pid, proj_map, frac_lookup=_frac_lookup,
+            ) * 100.0, 1)
         except Exception:
             logger.debug("[portfolio-matchup] win prob failed", exc_info=True)
 

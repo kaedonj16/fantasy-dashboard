@@ -248,7 +248,11 @@ def build_dashboard_body(ctx: dict) -> str:
                     if _dash_vid and _dash_vid in (str(_l0.get("roster_id", "")), str(_r0.get("roster_id", ""))):
                         _wp_proj = (proj_by_week.get(matchup_week) or {}).get("projections") or {}
                         _wp_status = (statuses.get(matchup_week) or {}).get("statuses", {})
-                        _wp = compute_win_prob(_l0, _r0, _wp_status, _wp_proj)
+                        from dashboard_services.matchups import make_frac_lookup
+                        _wp_frac = make_frac_lookup(team_game_lookup)
+                        _wp = compute_win_prob(
+                            _l0, _r0, _wp_status, _wp_proj, frac_lookup=_wp_frac,
+                        )
                         if str(_r0.get("roster_id", "")) == _dash_vid:
                             _wp = 1.0 - _wp
                         _win_sub = f"{round(_wp * 100)}% to win"
