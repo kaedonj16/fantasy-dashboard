@@ -35,12 +35,12 @@ jobs:
           enable-cache: true
           cache-dependency-glob: "requirements.txt"
 
-      - name: Install Ruff and pytest
-        # Keep this job slim on purpose: several unit modules gate themselves with
-        # ``pytest.importorskip("requests")`` (and similar) so they skip here and
-        # run in the full-stack job. Installing requests/flask/bs4 here would
-        # un-skip those modules and then fail on the next missing heavy dep.
-        run: uv pip install --system ruff pytest
+      - name: Install lint and unit-test dependencies
+        # utils.utils is exercised by the pure RedZone identity tests and imports
+        # requests and BeautifulSoup at module load. Keep Flask/pandas and the
+        # rest of the application stack in the integration job, but install these
+        # two lightweight direct dependencies so the unit shard can collect.
+        run: uv pip install --system ruff pytest requests beautifulsoup4
 
       - name: Lint for real bugs (syntax errors, undefined names)
         # Scoped to high-signal pyflakes/pycodestyle-error rules so CI flags
