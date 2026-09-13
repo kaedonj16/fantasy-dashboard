@@ -3128,9 +3128,13 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
             f"<span>{label}</span>{dot}"
             "<span class='br-sheet-chevron' aria-hidden='true'>&#8250;</span></button>"
         )
-    # Weekly and Trades are primary dock destinations. Their children remain in
-    # the mounted category panels, but do not make the root noisy.
-    root_labels = ["League", "Players", "Draft", "Stats"]
+    # Every product section is reachable from the More root, Weekly and Trades
+    # included. Both are dock destinations, but their extra tools live only in
+    # these panels (Weekly: Recap, Scout, Lineup Efficiency, Waivers, Schedule,
+    # Redzone; Trades: Suggestions, Database, Intel), so without a root row the
+    # user cannot reach them on mobile. Weekly only appears once its panel is
+    # built (in season or after the draft); trades_html is always present.
+    root_labels = (["Weekly"] if weekly_html else []) + ["Trades", "League", "Players", "Draft", "Stats"]
     root_categories = [_category_row(x) for x in root_labels]
     portfolio_root = portfolio_link
     portfolio_fallback = '<a class="br-sheet-link" href="/">Link a league</a>'

@@ -166,8 +166,13 @@ def test_more_information_architecture_and_shared_utilities(offline_client):
     assert "br-sheet-h'>Account<" in root
     for category in ("league", "players", "draft", "stats"):
         assert f"data-br-sheet-target='{category}'" in root
-    assert "data-br-sheet-target='weekly'" not in root
-    assert "data-br-sheet-target='trades'" not in root
+    # Weekly and Trades are dock destinations, but their extra tools (Recap,
+    # Scout, Lineup Efficiency, Schedule, Trade Database, Intel...) only live in
+    # the More panels, so the root must still offer a way in. Trades is always
+    # built; Weekly only once its panel exists (in season / after the draft).
+    assert "data-br-sheet-target='trades'" in root
+    if "data-br-sheet-panel='weekly'" in html:
+        assert "data-br-sheet-target='weekly'" in root
     assert "My Leagues" in root or "Link a league" in root
     assert "Refresh Data" in root and "What's New" in root and "Help &amp; Tours" in root
     account = html.split("data-br-sheet-panel='account'", 1)[1].split("</section>", 1)[0]
