@@ -52,7 +52,6 @@
   var _historyOpen = false;
   var _unreadCount = 0;
   var _milestonesSeen = {};
-  var _blowoutSeen = {};
   var _prevInjury = {};
   var _prevLeader = {}; // matchup_id → leading roster_id (for lead-change events)
   var _scoreDelta = { me: 0, opp: 0 }; // pts gained since last poll (for hero card)
@@ -233,12 +232,25 @@
     return pids.size ? pids : null;
   }
 
+  // The Redzone feed and game strip are NFL-wide: they surface plays from every
+  // tracked game, not just the games featuring the viewer's starters. So "live"
+  // must mean *any* tracked NFL game is in progress. Keying it to the viewer's
+  // own starters let the poll cadence fall back to the idle interval (up to 5
+  // min) the moment those players' games went final, freezing the feed while
+  // other games were still playing. Games/player_info are the authority here.
   function _anyLive() {
-    var live = false;
-    (_state.matchups || []).forEach(function(m) {
-      (m.starters || []).forEach(function(pid) { if (_gameStatus(pid).type === 'live') live = true; });
-    });
-    return live;
+    var games = _state.games || {};
+    var gids = Object.keys(games);
+    for (var i = 0; i < gids.length; i++) {
+      var norm = _normGameStatus(games[gids[i]]);
+      if (norm === 'live' || norm === 'halftime') return true;
+    }
+    var info = _state.player_info || {};
+    var pids = Object.keys(info);
+    for (var j = 0; j < pids.length; j++) {
+      if (String((info[pids[j]] || {}).game_code || '') === '1') return true;
+    }
+    return false;
   }
 
   function _matchupIsLive(matchups) {
@@ -513,10 +525,6 @@
     if (a === '' && h === '') return p.away + ' @ ' + p.home;
     return p.away + ' ' + (a || '0') + ' @ ' + p.home + ' ' + (h || '0');
   }
-  function _quarterNum(q) {
-    var m = String(q || '').match(/(\d)/);
-    return m ? parseInt(m[1], 10) : 0;
-  }
   var _INJ_RANK = { '': 0, 'Q': 1, 'D': 2, 'O': 3, 'IR': 3 };
   function _injLabel(code) {
     return code === 'O' ? 'Out' : code === 'IR' ? 'IR' : code === 'D' ? 'Doubtful'
@@ -684,7 +692,6 @@
     _prevStats = {};
     _prevPts = {};
     _milestonesSeen = {};
-    _blowoutSeen = {};
     _prevInjury = {};
     _prevLeader = {};
     _prevMatchupPts = {};
@@ -1878,41 +1885,6 @@
 
     var _specialCount = 0;
 
-    // Stat milestones: fire a feed event when a player crosses a threshold for first time
-    var _MS_DEFS = [
-      { key: 'rush_yds_100', field: 'rush_yds', thr: 100, desc: '100 rush yds' },
-      { key: 'rush_yds_150', field: 'rush_yds', thr: 150, desc: '150 rush yds' },
-      { key: 'pass_yds_300', field: 'pass_yds', thr: 300, desc: '300 pass yds' },
-      { key: 'pass_yds_400', field: 'pass_yds', thr: 400, desc: '400 pass yds' },
-      { key: 'rec_yds_100', field: 'rec_yds',  thr: 100, desc: '100 rec yds' },
-      { key: 'td_2',        field: '__tds',     thr: 2,   desc: '2 TDs' },
-      { key: 'td_3',        field: '__tds',     thr: 3,   desc: '3 TDs' },
-    ];
-    Object.keys(newData.player_info || {}).forEach(function(pid) {
-      var sl = (newData.player_info[pid] || {}).stat_line;
-      if (!sl) return;
-      var seen = _milestonesSeen[pid] || {};
-      var tds = (sl.rush_td||0) + (sl.rec_td||0) + (sl.pass_td||0);
-      var rid = tags.pidToRoster[pid] || '';
-      _MS_DEFS.forEach(function(ms) {
-        if (seen[ms.key]) return;
-        var val = ms.field === '__tds' ? tds : (sl[ms.field] || 0);
-        if (val < ms.thr) return;
-        seen[ms.key] = true;
-        _specialCount++;
-        _feed.unshift({
-          pid: pid, name: _name(pid), pos: _pos(pid), nflTeam: _team(pid),
-          rosterId: rid, owner: _ownerName(rid), league: _leagueOfRid(rid),
-          mine: tags.my.has(rid), opp: tags.opp.has(rid),
-          desc: ms.desc + '!', kind: 'milestone', stats: ['milestone'],
-          pts: 0, ts: Date.now(),
-          line: '', gameQuarter: (newData.player_info[pid] || {}).game_quarter || '',
-          gameClock: (newData.player_info[pid] || {}).game_clock || ''
-        });
-      });
-      _milestonesSeen[pid] = seen;
-    });
-
     // Injury-status changes: fire a feed event when a rostered player's status worsens mid-game
     Object.keys(newData.player_info || {}).forEach(function(pid) {
       var info = newData.player_info[pid] || {};
@@ -1932,42 +1904,6 @@
         desc: 'Injury: now ' + _injLabel(now), kind: 'neg', stats: ['injury'],
         pts: 0, ts: Date.now(),
         line: '', gameQuarter: info.game_quarter || '', gameClock: info.game_clock || ''
-      });
-    });
-
-    // Blowout warnings: one-time alert when an NFL game is 21+ apart in Q3/Q4
-    var _games = {};
-    Object.keys(newData.player_info || {}).forEach(function(pid) {
-      var info = newData.player_info[pid] || {};
-      var gid = info.game_id || '';
-      if (!gid || String(info.game_code || '') !== '1') return; // live games only
-      if (_games[gid]) {
-        if (_quarterNum(info.game_quarter) > _games[gid].qn) _games[gid].qn = _quarterNum(info.game_quarter);
-        return;
-      }
-      _games[gid] = {
-        home: info.home, away: info.away,
-        hp: parseFloat(info.home_pts || 0), ap: parseFloat(info.away_pts || 0),
-        qn: _quarterNum(info.game_quarter), qLabel: info.game_quarter || '', clock: info.game_clock || ''
-      };
-    });
-    Object.keys(_games).forEach(function(gid) {
-      if (_blowoutSeen[gid]) return;
-      var g = _games[gid];
-      var spread = Math.abs(g.hp - g.ap);
-      if (g.qn < 3 || spread < 21) return;
-      _blowoutSeen[gid] = true;
-      _specialCount++;
-      var leader = g.hp >= g.ap ? g.home : g.away;
-      var trailer = g.hp >= g.ap ? g.away : g.home;
-      _feed.unshift({
-        pid: '0', name: 'Blowout Alert', pos: '', nflTeam: leader,
-        rosterId: '', owner: '', league: '',
-        mine: false, opp: false,
-        desc: leader + ' leading ' + trailer + ' by ' + spread + ', watch for reduced volume',
-        kind: 'neg', stats: ['blowout'], pts: 0, ts: Date.now(),
-        line: g.away + ' ' + g.ap + ' @ ' + g.home + ' ' + g.hp,
-        gameQuarter: g.qLabel, gameClock: g.clock
       });
     });
 
@@ -2053,6 +1989,16 @@
   }
 
   // ── Filters ────────────────────────────────────────────────────────────────────
+  // Canonical NFL team abbreviation (WSH→WAS, JAC→JAX, LA→LAR, …) so the same
+  // team never reads as two different clubs. Uses the shared helper when present.
+  function _canonTeam(abv) {
+    if (window.brCanonNflTeam) return window.brCanonNflTeam(abv);
+    var t = String(abv || '').trim().toUpperCase();
+    if (t === 'WSH') return 'WAS';
+    if (t === 'JAC') return 'JAX';
+    if (t === 'LA') return 'LAR';
+    return t;
+  }
   function _nflMatchupOptions() {
     // Unique NFL games (away @ home) keyed by game_id. Prefer the authoritative
     // `_state.games` collection; fall back to deriving from player_info so an
@@ -2078,11 +2024,25 @@
       var p = _state.player_info[pid] || {};
       addRow(p.game_id || '', p.away || '', p.home || '', p.game_code, p.game_time_epoch);
     });
+    var rank = function(c) { return c === '1' ? 0 : c === '0' ? 1 : 2; };
+    // Collapse the same real-world matchup that arrives under two game_ids or two
+    // spellings of a team (e.g. a live "WSH @ PHI" and a pregame "WAS @ PHI").
+    // A given pair meets at most once on a weekly slate, so a canonical, order-
+    // independent team-pair key is a safe identity. Keep the more authoritative
+    // row: live over pregame/final (rank), then the one already underway (epoch).
+    var byMatchup = {};
+    Object.keys(byId).forEach(function(gid) {
+      var g = byId[gid];
+      var key = [_canonTeam(g.away), _canonTeam(g.home)].sort().join('@');
+      var cur = byMatchup[key];
+      if (!cur) { byMatchup[key] = g; return; }
+      var rd = rank(g.code) - rank(cur.code);
+      if (rd < 0 || (rd === 0 && g.epoch < cur.epoch)) byMatchup[key] = g;
+    });
     // Deterministic, stable slate order (§7): live → upcoming → final, then by
     // kickoff time, then label. Sorting by kickoff (not mutable score/clock)
     // keeps the row from reshuffling on every poll.
-    var rank = function(c) { return c === '1' ? 0 : c === '0' ? 1 : 2; };
-    return Object.keys(byId).map(function(k) { return byId[k]; }).sort(function(a, b) {
+    return Object.keys(byMatchup).map(function(k) { return byMatchup[k]; }).sort(function(a, b) {
       var rd = rank(a.code) - rank(b.code);
       if (rd) return rd;
       if (a.epoch !== b.epoch) return a.epoch - b.epoch;
@@ -2155,7 +2115,7 @@
   }
   var _POS_LIST  = ['QB', 'RB', 'WR', 'TE', 'K', 'DEF'];
   var _STAT_LIST = [['td','TD'], ['reception','Reception'], ['carry','Carry'],
-                    ['pass','Pass'], ['target','Target'], ['int','INT'], ['milestone','Milestone'], ['lead_change','Lead']];
+                    ['pass','Pass'], ['target','Target'], ['int','INT'], ['lead_change','Lead']];
 
   function _eventMatches(ev) {
     // Ownership filters inspect ALL contributions (QB + receiver both count)
@@ -2965,7 +2925,7 @@
     }).join('');
   }
 
-  var _FEED_ICON = { td: '🏈', gain: '🟢', neg: '⚠️', target: '🎯', milestone: '⭐' };
+  var _FEED_ICON = { td: '🏈', gain: '🟢', neg: '⚠️', target: '🎯' };
 
   function _eid(ev) {
     return ev.playId || [ev.pid || '0', ev.kind || 'event', ev.desc || '', ev.playSortTs || ev.ts || 0].join(':');
