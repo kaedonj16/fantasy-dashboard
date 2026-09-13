@@ -380,7 +380,6 @@ def pids_mentioned_in_text(
                 seen.add(pid)
                 found.append(pid)
     for m in _ABBREV_RE.finditer(text):
-        key = _canon_abbrev(f"{m.group(1)}.{m.group(2)}")
         pid, _candidate_count = _resolve_abbrev_pid(
             f"{m.group(1)}.{m.group(2)}", abbrev_index=abbrev_index,
             team=team, player_meta_by_pid=player_meta_by_pid,
