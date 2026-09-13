@@ -96,6 +96,7 @@ TEAM_ALIASES = {
     "nyj": "NYJ", "nyg": "NYG", "phi": "PHI", "dal": "DAL", "wasdc": "WAS",
     "min": "MIN", "chi": "CHI", "det": "DET", "atl": "ATL", "car": "CAR", "norleans": "NO",
     "sea": "SEA", "den": "DEN", "ari": "ARI", "hou": "HOU", "ten": "TEN", "ind": "IND",
+    "philadelphia": "PHI", "philadelphia eagles": "PHI", "eagles": "PHI",
 }
 
 # Bidirectional abbreviation pairs for lookups. The site canonical form is
@@ -188,6 +189,31 @@ DST_CANON = {
     "Saints": "NO",
     # ... extend as needed
 }
+
+# Provider payloads use city, full-franchise, and nickname strings in addition
+# to abbreviations.  Keep this shared rather than teaching individual features
+# (notably RedZone) one-off franchise exceptions.
+_NFL_FRANCHISES = {
+    "ARI": ("Arizona", "Arizona Cardinals", "Cardinals"), "ATL": ("Atlanta", "Atlanta Falcons", "Falcons"),
+    "BAL": ("Baltimore", "Baltimore Ravens", "Ravens"), "BUF": ("Buffalo", "Buffalo Bills", "Bills"),
+    "CAR": ("Carolina", "Carolina Panthers", "Panthers"), "CHI": ("Chicago", "Chicago Bears", "Bears"),
+    "CIN": ("Cincinnati", "Cincinnati Bengals", "Bengals"), "CLE": ("Cleveland", "Cleveland Browns", "Browns"),
+    "DAL": ("Dallas", "Dallas Cowboys", "Cowboys"), "DEN": ("Denver", "Denver Broncos", "Broncos"),
+    "DET": ("Detroit", "Detroit Lions", "Lions"), "GB": ("Green Bay", "Green Bay Packers", "Packers"),
+    "HOU": ("Houston", "Houston Texans", "Texans"), "IND": ("Indianapolis", "Indianapolis Colts", "Colts"),
+    "JAX": ("Jacksonville", "Jacksonville Jaguars", "Jaguars"), "KC": ("Kansas City", "Kansas City Chiefs", "Chiefs"),
+    "LV": ("Las Vegas", "Las Vegas Raiders", "Raiders"), "LAC": ("Los Angeles Chargers", "Chargers"),
+    "LAR": ("Los Angeles Rams", "Rams"), "MIA": ("Miami", "Miami Dolphins", "Dolphins"),
+    "MIN": ("Minnesota", "Minnesota Vikings", "Vikings"), "NE": ("New England", "New England Patriots", "Patriots"),
+    "NO": ("New Orleans", "New Orleans Saints", "Saints"), "NYG": ("New York Giants", "Giants"),
+    "NYJ": ("New York Jets", "Jets"), "PHI": ("Philadelphia", "Philadelphia Eagles", "Eagles"),
+    "PIT": ("Pittsburgh", "Pittsburgh Steelers", "Steelers"), "SEA": ("Seattle", "Seattle Seahawks", "Seahawks"),
+    "SF": ("San Francisco", "San Francisco 49ers", "49ers"), "TB": ("Tampa Bay", "Tampa Bay Buccaneers", "Buccaneers"),
+    "TEN": ("Tennessee", "Tennessee Titans", "Titans"), "WAS": ("Washington", "Washington Commanders", "Commanders"),
+}
+for _abbr, _names in _NFL_FRANCHISES.items():
+    for _name in _names:
+        TEAM_ALIASES.setdefault(_name.lower(), _abbr)
 
 TANK01_HOST = "tank01-nfl-live-in-game-real-time-statistics-nfl.p.rapidapi.com"
 BASE = f"https://{TANK01_HOST}"
@@ -771,7 +797,9 @@ def get_players_index_cached(rapidapi_key: str) -> Dict[str, Dict[str, Any]]:
 def canon_team(t: Optional[str]) -> Optional[str]:
     if not t:
         return None
-    t0 = t.strip()
+    t0 = str(t).strip().replace("_", " ")
+    t0 = re.sub(r"\s+NFL$", "", t0, flags=re.IGNORECASE).strip()
+    t0 = re.sub(r"\s+DEFENSE$", "", t0, flags=re.IGNORECASE).strip()
     # e.g., "49ers D/ST" => "49ers"
     if "D/ST" in t0 or "DST" in t0:
         t0 = t0.replace("D/ST", "").replace("DST", "").strip()

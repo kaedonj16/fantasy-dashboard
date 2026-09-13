@@ -384,11 +384,8 @@ def extract_pbp_plays(
     game_context = game_context or {}
     player_meta_by_pid = player_meta_by_pid or {}
     
-    # Debug logging for NE/SEA games
     import logging
     logger = logging.getLogger(__name__)
-    is_ne_sea = (game_context.get("home") in ("NE", "SEA") or 
-                 game_context.get("away") in ("NE", "SEA"))
     
     # Build team -> players index for last-name resolution
     team_players: dict[str, list[tuple[str, str]]] = {}
@@ -504,13 +501,14 @@ def extract_pbp_plays(
             # Resolve player name with fallback strategies
             pid = _resolve_player_name(long_name, team, name_to_pid, team_players) if long_name else ""
             
-            # Debug logging for NE/SEA pass plays
-            if is_ne_sea and "pass" in text.lower() and (line.get("rec") or line.get("pass_yds")):
-                logger.info(f"[NE/SEA PBP] PLAY: {play_id}")
-                logger.info(f"  TEXT: {text}")
-                logger.info(f"  RAW: {long_name} -> {line}")
-                logger.info(f"  RESOLVED: {long_name} -> pid={pid} team={team}")
-                logger.info(f"  NORMALIZED: {_normalize_name(long_name)}")
+            if logger.isEnabledFor(logging.DEBUG) and "pass" in text.lower() and (
+                line.get("rec") or line.get("pass_yds")
+            ):
+                role = "receiver" if line.get("rec") else "passer"
+                logger.debug(
+                    "[pbp-identity] play=%s offense=%s token=%s role=%s pid=%s",
+                    play_id, team, long_name, role, pid or "unresolved",
+                )
             
             is_td = bool(
                 (line.get("pass_td") or 0)

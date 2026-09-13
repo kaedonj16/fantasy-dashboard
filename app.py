@@ -151,6 +151,7 @@ from utils.utils import (
     canon_team,
     canonicalize_schedule,
     team_abbr_keys,
+    lookup_team_map,
 )
 from utils.lineup_slots import (
     count_lineup_slots as _count_lineup_slots,
@@ -11768,6 +11769,7 @@ def page_weekly(platform: str, season: int, league_id: str):
 
 _RZ_BOX_CACHE: dict = {}  # game_id -> (ts, boxscore)
 _RZ_BOX_TTL = 15.0
+_RZ_LIVE_CACHE_TTL = 12.0
 
 
 def _redzone_boxscore(
@@ -11789,7 +11791,9 @@ def _redzone_boxscore(
         return hit[1]
     try:
         from dashboard_services.api import fetch_tank_boxscore
-        box = fetch_tank_boxscore(game_id, play_by_play=play_by_play) or {}
+        box = fetch_tank_boxscore(
+            game_id, play_by_play=play_by_play, _cache_max_age=use_ttl,
+        ) or {}
     except Exception:
         box = {}
     _RZ_BOX_CACHE[cache_key] = (now, box)
@@ -12262,7 +12266,9 @@ def _redzone_collect(platform, league_id, season, week):
     from dashboard_services.platform_api import (
         get_matchups as _pm, get_rosters as _pr, get_users as _pu,
     )
-    matchups = _pm(platform, league_id, week, season) or []
+    matchups = _pm(
+        platform, league_id, week, season, cache_ttl=_RZ_LIVE_CACHE_TTL,
+    ) or []
     rosters = _pr(platform, league_id, season) or []
     users = _pu(platform, league_id, season) or []
 
@@ -12272,7 +12278,9 @@ def _redzone_collect(platform, league_id, season, week):
     # platforms -- Redzone is no longer Sleeper-only.
     nfl_players = get_nfl_players() or {}
     today_str = date.today().strftime("%Y%m%d")
-    scores_body = get_nfl_scores_for_date(today_str) or {}
+    scores_body = get_nfl_scores_for_date(
+        today_str, _cache_max_age=_RZ_LIVE_CACHE_TTL,
+    ) or {}
     team_game = build_team_game_lookup(scores_body)
     try:
         # Load this league's scoring into the request-scoped state so the live
@@ -12312,7 +12320,7 @@ def _redzone_collect(platform, league_id, season, week):
     # team whose game shows pre/unknown after kickoff as a lag candidate and let
     # ESPN's real status upgrade it.
     wanted_teams = {
-        (nfl_players.get(pid, {}) or {}).get("team")
+        canon_team((nfl_players.get(pid, {}) or {}).get("team"))
         for pid in all_pids
     }
     wanted_teams.discard("")
@@ -12334,19 +12342,19 @@ def _redzone_collect(platform, league_id, season, week):
             espn_lookup = {}
             logger.debug("[redzone] espn scoreboard fallback failed", exc_info=True)
         for team in missing_teams:
-            g = espn_lookup.get(team)
+            g = lookup_team_map(espn_lookup, team)
             if g:
                 team_game[team] = g
         for team in lag_teams:
-            g = espn_lookup.get(team)
+            g = lookup_team_map(espn_lookup, team)
             if g and str(g.get("gameStatusCode") or "") in ("1", "2"):
                 team_game[team] = g  # stale Tank01 "pre" → ESPN's live/final
 
     player_info = {}
     for pid in all_pids:
         p = nfl_players.get(pid, {})
-        tm = p.get("team") or ""
-        gd = team_game.get(tm, {}) if tm else {}
+        tm = canon_team(p.get("team")) or ""
+        gd = lookup_team_map(team_game, tm) or {}
         raw_inj = str(p.get("injury_status") or p.get("status") or "").strip()
         inj = "" if raw_inj.lower() in ("", "active", "act") else raw_inj
         ls = gd.get("lineScore") or {}
@@ -12432,14 +12440,16 @@ def _redzone_collect(platform, league_id, season, week):
         
         # Iterate ALL players in the site index to find those on the game teams
         for pid, p in nfl_players.items():
-            team = p.get("team", "")
+            team = canon_team(p.get("team")) or ""
             pos = p.get("position", "")
             full_name = p.get("full_name", "")
             
             # Include this player if they're on a team in this game
             if team in game_teams and full_name:
                 if pos != "DEF":
-                    player_meta_by_pid[pid] = {"name": full_name, "team": team}
+                    player_meta_by_pid[pid] = {
+                        "name": full_name, "team": team, "position": pos,
+                    }
         
         # Build name_to_pid from the FULL player index (already in player_meta_by_pid)
         from utils.redzone_pbp import _normalize_name, _extract_first_initial_last
@@ -12464,7 +12474,24 @@ def _redzone_collect(platform, league_id, season, week):
                     # M Hollins format
                     name_to_pid[_normalize_name(f"{first_initial} {last_parts}")] = pid
         
-        # Build team_to_def_pid and attach stat_line for rostered players
+        # Build team_to_def_pid independently of playerStats: defenses live in
+        # teamStats and may be the only rostered participant in this game.
+        for pid in pids:
+            pi = player_info[pid]
+            if pi.get("pos") != "DEF":
+                continue
+            team = canon_team(pi.get("team")) or ""
+            home = canon_team(pi.get("home")) or ""
+            away = canon_team(pi.get("away")) or ""
+            side = "home" if team == home else ("away" if team == away else None)
+            if side and isinstance(tstats.get(side), dict):
+                pi["stat_line"] = _rz_def_stat_line(tstats[side])
+            elif team:
+                logger.debug("[redzone] defense has no teamStats side team=%s game=%s", team, gid)
+            if team:
+                team_to_def_pid[team] = pid
+
+        # Attach skill-player stat lines when the provider supplied playerStats.
         if isinstance(pstats, dict) and pstats:
             name_map = {}
             for _, ps in pstats.items():
@@ -12474,26 +12501,11 @@ def _redzone_collect(platform, league_id, season, week):
             for pid in pids:
                 pi = player_info[pid]
                 pos = pi.get("pos", "")
-                if pos == "DEF":
-                    # Match team defense to boxscore teamStats
-                    team = pi.get("team", "")
-                    home = pi.get("home", "")
-                    away = pi.get("away", "")
-                    side = "home" if team == home else ("away" if team == away else None)
-                    if side and isinstance(tstats.get(side), dict):
-                        pi["stat_line"] = _rz_def_stat_line(tstats[side])
-                    if team:
-                        team_to_def_pid[team] = pid
-                else:
+                if pos != "DEF":
                     full = (nfl_players.get(pid, {}).get("full_name") or "").lower()
                     ps = name_map.get(full)
                     if ps:
                         pi["stat_line"] = _rz_stat_line_from_ps(ps)
-        else:
-            for pid in pids:
-                pi = player_info[pid]
-                if pi.get("pos") == "DEF" and pi.get("team"):
-                    team_to_def_pid[pi["team"]] = pid
 
         if want_pbp and box:
             try:
@@ -12515,6 +12527,7 @@ def _redzone_collect(platform, league_id, season, week):
                     week=week,
                     name_to_pid=name_to_pid,
                     team_to_def_pid=team_to_def_pid,
+                    player_meta_by_pid=player_meta_by_pid,
                     live=live,
                     final=final,
                     providers=("espn",),
@@ -12540,6 +12553,7 @@ def _redzone_collect(platform, league_id, season, week):
                             week=week,
                             name_to_pid=name_to_pid,
                             team_to_def_pid=team_to_def_pid,
+                            player_meta_by_pid=player_meta_by_pid,
                             live=live,
                             final=final,
                             providers=("sleeper",),
@@ -12565,6 +12579,7 @@ def _redzone_collect(platform, league_id, season, week):
                     week=week,
                     name_to_pid=name_to_pid,
                     team_to_def_pid=team_to_def_pid,
+                    player_meta_by_pid=player_meta_by_pid,
                     live=live,
                     final=final,
                     providers=("espn", "sleeper"),
@@ -12582,8 +12597,8 @@ def _redzone_collect(platform, league_id, season, week):
                 continue
             # This player resolved in PBP but isn't rostered - add minimal player_info
             p = nfl_players.get(pid, {})
-            tm = p.get("team") or ""
-            gd = team_game.get(tm, {}) if tm else {}
+            tm = canon_team(p.get("team")) or ""
+            gd = lookup_team_map(team_game, tm) or {}
             raw_inj = str(p.get("injury_status") or p.get("status") or "").strip()
             inj = "" if raw_inj.lower() in ("", "active", "act") else raw_inj
             ls = gd.get("lineScore") or {}
@@ -13075,7 +13090,10 @@ def _redzone_user_stream_response(platform, season, league_id, week):
             yield json.dumps(s) + "\n"
         yield json.dumps({"type": "done"}) + "\n"
 
-    return Response(stream_with_context(_gen()), mimetype="application/x-ndjson")
+    response = Response(stream_with_context(_gen()), mimetype="application/x-ndjson")
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    return response
 
 
 @app.route("/api/<platform>/<int:season>/<league_id>/redzone-data")
@@ -13086,7 +13104,9 @@ def api_redzone_data(platform: str, season: int, league_id: str):
             _t = float(request.args.get("t", _RZ_DEMO_START))
         except (TypeError, ValueError):
             _t = _RZ_DEMO_START
-        return jsonify(_redzone_demo_data(_t, scope=scope))
+        response = jsonify(_redzone_demo_data(_t, scope=scope))
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        return response
     week = request.args.get("week")
     # Progressive My Leagues: stream one card's data at a time (opt-in via
     # &stream=1). Any failure inside the stream setup falls back to aggregate.
@@ -13096,7 +13116,10 @@ def api_redzone_data(platform: str, season: int, league_id: str):
         except Exception as _e:
             logger.warning("[redzone] user-scope stream failed, using aggregate: %s", _e)
     try:
-        return jsonify(_redzone_fetch(platform, league_id, season, week=week, scope=scope))
+        response = jsonify(_redzone_fetch(platform, league_id, season, week=week, scope=scope))
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        return response
     except Exception as _e:
         logger.warning("[redzone] api fetch failed: %s", _e)
         return jsonify({"error": str(_e)}), 500

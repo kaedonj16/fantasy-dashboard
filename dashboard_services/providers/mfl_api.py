@@ -530,8 +530,9 @@ class MFLProvider(ProviderAdapter):
                 continue
         return {}
 
-    def get_matchups(self, league_id, season, week):
-        raw = self._export("weeklyResults", league_id, season, ttl=600, W=int(week))
+    def get_matchups(self, league_id, season, week, *, cache_ttl=None):
+        ttl = min(600, max(0, float(cache_ttl))) if cache_ttl is not None else 600
+        raw = self._export("weeklyResults", league_id, season, ttl=ttl, W=int(week))
         block = raw.get("weeklyResults") or {}
         matchups = _items(block.get("matchup", []), "matchup")
         # weeklyResults carries each franchise's per-player lines (id, score, and a

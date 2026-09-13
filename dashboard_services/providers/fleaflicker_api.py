@@ -1202,9 +1202,10 @@ class FleaflickerProvider(ProviderAdapter):
                 points[cid] = _num(raw_pts)
         return starters, points
 
-    def get_matchups(self, league_id, season, week, *, token: Optional[str] = None):
+    def get_matchups(self, league_id, season, week, *, token: Optional[str] = None, cache_ttl=None):
+        live_ttl = min(600, max(0, float(cache_ttl))) if cache_ttl is not None else 600
         raw = self._call(
-            "FetchLeagueScoreboard", league_id, season, ttl=600, token=token,
+            "FetchLeagueScoreboard", league_id, season, ttl=live_ttl, token=token,
             scoring_period=int(week),
         )
         by_name = self._build_name_index()
@@ -1221,7 +1222,7 @@ class FleaflickerProvider(ProviderAdapter):
             if game_id is not None and not boxscore_failed:
                 try:
                     box = self._call(
-                        "FetchLeagueBoxscore", league_id, season, ttl=300,
+                        "FetchLeagueBoxscore", league_id, season, ttl=min(300, live_ttl),
                         token=token,
                         scoring_period=int(week),
                         fantasy_game_id=int(game_id),
