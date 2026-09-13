@@ -1747,6 +1747,29 @@
       group.primaryEvent = event;
       events.push(event);
     });
+
+    // Reconcile each player's MOST RECENT running total to their authoritative
+    // fantasy points. The PBP "cume" is a running sum of only the booth lines
+    // our parser could score; a play whose text doesn't match a scoring pattern
+    // (unusual phrasing, laterals, 2-pt tries, or yardage on plays we don't
+    // model) is silently missed, so the cume drifts BELOW the player's real
+    // total -- the mismatch users notice on a live card. The platform /
+    // box-score total (_totalPtsForPid) is authoritative and current, so the
+    // latest card must never show a total beneath it. Older cards keep their
+    // through-that-play cume so the running-total progression stays intact.
+    var _latestByPid = {};
+    events.forEach(function(ev) {
+      if (!ev || ev.isNullified || !ev.pid) return;
+      var cur = _latestByPid[ev.pid];
+      if (!cur || (ev.seq || 0) >= (cur.seq || 0)) _latestByPid[ev.pid] = ev;
+    });
+    Object.keys(_latestByPid).forEach(function(pid) {
+      var ev = _latestByPid[pid];
+      var auth = _totalPtsForPid(pid, scFor(pid), newData);
+      if (!isNaN(auth) && auth > (_n(ev.totalPts) + 0.0001)) {
+        ev.totalPts = parseFloat(auth.toFixed(2));
+      }
+    });
     return events;
   }
 

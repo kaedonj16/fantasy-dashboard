@@ -327,6 +327,21 @@ def pids_mentioned_in_text(
     return found
 
 
+# Booth lines credit the tackler(s) -- and other non-actors like the sacker or
+# the player who broke up a pass -- in trailing parentheses: "(J.Rodriguez)",
+# "(M.Crosby; K.Smith)". Those names are never the player the play belongs to.
+# A rusher's tackler must not headline the ball carrier's run, so parenthetical
+# credits are stripped before resolving *mentioned* players. Players the stat
+# parser actually credits (rusher, passer, receiver, kicker) are added back by
+# the caller from ``_stat_lines_by_pid`` and are unaffected by this.
+_TACKLE_CREDIT_RE = re.compile(r"\([^)]*\)")
+
+
+def _text_without_credits(text: str) -> str:
+    """Drop parenthetical tackle / defender credits from a booth line."""
+    return _TACKLE_CREDIT_RE.sub(" ", _s(text))
+
+
 # ── Sleeper ──────────────────────────────────────────────────────────────────
 
 
@@ -468,7 +483,12 @@ def extract_sleeper_pbp_plays(
             "source": "sleeper",
         }
         stat_by_pid = _stat_lines_by_pid(text, abbrev_idx)
-        pids = pids_mentioned_in_text(text, full_index=full_idx, abbrev_index=abbrev_idx)
+        # Strip parenthetical tackle credits before resolving mentions so a
+        # defender who only made the stop never headlines the play (see
+        # _text_without_credits).
+        pids = pids_mentioned_in_text(
+            _text_without_credits(text), full_index=full_idx, abbrev_index=abbrev_idx
+        )
         # Explicit player fields if Sleeper starts shipping them.
         for key in ("player_id", "pid", "sleeper_id"):
             explicit = _s(play.get(key))
@@ -723,8 +743,14 @@ def extract_espn_pbp_plays(
             }
             seq += 1
             stat_by_pid = _stat_lines_by_pid(text, abbrev_idx)
+            # Resolve mentioned players from the action clause only -- never the
+            # parenthetical tackle credit -- so a defender who merely made the
+            # stop does not become a standalone card headlining the ball
+            # carrier's run.
             pids = pids_mentioned_in_text(
-                text, full_index=full_idx, abbrev_index=abbrev_idx
+                _text_without_credits(text),
+                full_index=full_idx,
+                abbrev_index=abbrev_idx,
             )
             # A parsed line may credit a player the mention pass missed.
             for pid in stat_by_pid:
