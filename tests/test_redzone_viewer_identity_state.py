@@ -77,6 +77,8 @@ ok(!_hasViewerIdentityFields({scope: 'league', matchups: []}, 'league'), 'partia
 ok(_state === valid && _isMyRid('7'), 'failed partial keeps last-good identity');
 _setState({scope: 'league', viewer_roster_id: '', viewer_roster_ids: [], matchups: []});
 ok(!_myRids.size && !_isMyRid('7'), 'explicit unavailable identity has no fallback');
+_heroMid = '10';
+ok(_focusedPair() === null, 'hero has no first-roster viewer fallback');
 
 // User scope accepts only its canonical plural field.
 _scope = 'user';
@@ -102,5 +104,7 @@ def test_all_runtime_state_replacements_use_the_identity_synchronizer():
         "_setState(newData);",
         "_setState(base);",
         "if (!_hasViewerIdentityFields(newData, myScope))",
+        "if (!_myRids.size) return null;",
     ):
         assert marker in source
+    assert "_fpair.find(function(m) { return _isMyRid(m.roster_id); }) || _fpair[0]" not in source

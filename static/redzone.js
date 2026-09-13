@@ -253,6 +253,10 @@
   // Resolve the two sides of the focused hero card. This League heroes can be
   // any matchup; My Leagues heroes are a viewer roster id.
   function _focusedPair() {
+    // Without a current-state viewer identity, no hero side may be labelled or
+    // scored as "Me". In particular, do not make the first roster in a pair a
+    // surrogate viewer merely because a partial response omitted identity.
+    if (!_myRids.size) return null;
     var mine = _myMatchups();
     if (!_heroMid) {
       var m0 = mine[0];
@@ -1987,7 +1991,7 @@
       } else {
         _focusMids.add(String(_heroMid));
         var _fpair = (newData.matchups || []).filter(function(m) { return String(m.matchup_id) === _heroMid; });
-        var _fmine = _fpair.find(function(m) { return _isMyRid(m.roster_id); }) || _fpair[0];
+        var _fmine = _fpair.find(function(m) { return _isMyRid(m.roster_id); });
         if (_fmine) _focusMeRid = String(_fmine.roster_id);
       }
     }
