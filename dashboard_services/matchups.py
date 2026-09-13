@@ -137,18 +137,71 @@ def resolve_team_game(
     return game
 
 
+# --- Live projected-finish model -------------------------------------------
+# A player's live projected final = points already banked + expected remaining.
+# The naive estimate for "remaining" is the pregame projection scaled by the
+# fraction of the game left (a pure clock model). That ignores how the player is
+# actually doing: a back getting no touches still projects his full pregame rate,
+# and a receiver on a tear projects as if he'd cooled off. We sharpen it by
+# blending that pregame-rate estimate with the player's *observed* in-game
+# scoring pace, trusting the observed pace more as more of the game is played
+# (more snaps seen -> more signal). Early on it stays pregame-dominated so one
+# fluke play doesn't send the number flying.
+_PACE_WEIGHT_EXP = 2.0     # >1 slows how fast observed pace overtakes pregame
+_PACE_MIN_ELAPSED = 0.05   # ignore pace until ~3 game-minutes have been played
+# Skill positions accumulate points continuously enough to extrapolate; kicker /
+# defense / IDP scoring is too lumpy (one FG, one pick-six) to read as a "pace".
+_PACE_POSITIONS = frozenset({"QB", "RB", "WR", "TE"})
+
+
+def live_final_from_frac(
+    actual: float,
+    pregame_proj: float,
+    frac: Any,
+    pos: str = "",
+) -> float:
+    """Live projected final points, given the fraction of regulation remaining.
+
+    Blends the pregame-rate estimate of remaining production with the player's
+    observed in-game fantasy pace, weighting pace more heavily the further the
+    game has progressed. Skill positions only; K/DEF/IDP fall back to the pure
+    pregame-rate (clock) estimate, and an unreadable fraction returns the
+    pregame projection unchanged.
+    """
+    try:
+        r = float(frac)
+    except (TypeError, ValueError):
+        return float(pregame_proj or 0.0)
+    r = max(0.0, min(1.0, r))
+    actual = float(actual or 0.0)
+    pregame_proj = float(pregame_proj or 0.0)
+
+    pregame_remaining = pregame_proj * r          # rest of game at pregame rate
+    elapsed = 1.0 - r
+    if pos.upper() not in _PACE_POSITIONS or elapsed <= _PACE_MIN_ELAPSED:
+        return actual + pregame_remaining
+
+    pace_remaining = actual * (r / elapsed)       # rest of game at observed rate
+    w = min(1.0, elapsed ** _PACE_WEIGHT_EXP)     # trust pace more as game plays
+    remaining = (1.0 - w) * pregame_remaining + w * pace_remaining
+    return actual + remaining
+
+
 def live_projected_final(
     actual: float,
     pregame_proj: float,
     game: Optional[dict],
+    *,
+    pos: str = "",
 ) -> float:
-    """Blend an in-progress player's banked points with the portion of their
-    pregame projection still to come. Falls back to the pregame projection when
-    game progress is unknown, and to the actual once the game is final."""
+    """Live projected final for a player, resolving game progress from ``game``.
+
+    Falls back to the pregame projection when progress is unknown, and to the
+    actual once the game is final (fraction 0)."""
     frac = game_fraction_remaining(game)
     if frac is None:
-        return pregame_proj
-    return actual + pregame_proj * frac
+        return float(pregame_proj or 0.0)
+    return live_final_from_frac(actual, pregame_proj, frac, pos)
 
 
 def make_frac_lookup(
@@ -668,7 +721,9 @@ def team_live_totals(
             if frac is None:
                 live_proj_total += actual
             else:
-                live_proj_total += actual + proj_val * frac
+                live_proj_total += live_final_from_frac(
+                    actual, proj_val, frac, p.get("pos") or "",
+                )
         else:
             live_proj_total += proj_val
 
@@ -723,8 +778,11 @@ def compute_win_prob(
                 if frac is None:
                     locked += actual
                 else:
+                    # Bank the points scored; carry the sharpened remaining
+                    # (pace-blended) projection as the pending, uncertain slice.
                     locked += actual
-                    remaining_proj = proj * frac
+                    final = live_final_from_frac(actual, proj, frac, p.get("pos") or "")
+                    remaining_proj = max(0.0, final - actual)
                     pend_proj += remaining_proj
                     sigma = max(0.4 * remaining_proj, 4.0 * frac)
                     pend_var += sigma * sigma
@@ -1452,7 +1510,9 @@ def render_matchup_slide(
             # projection still to come. Falls back to the pregame projection
             # when the game clock can't be read.
             display_actual = actual
-            display_proj = live_projected_final(float(actual or 0.0), proj_val, game)
+            display_proj = live_projected_final(
+                float(actual or 0.0), proj_val, game, pos=pos,
+            )
         elif status == STATUS_FINAL:
             display_actual = actual
             display_proj = None

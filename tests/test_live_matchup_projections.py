@@ -47,16 +47,48 @@ def test_game_fraction_remaining_unknown_returns_none():
     assert f({}) is None
 
 
-def test_live_projected_final_blends_actual_and_remaining_projection():
+def test_live_projected_final_clock_only_without_position():
     m = _matchups()
     half = {"gameStatusCode": "1", "lineScore": {"period": "2"}, "gameClock": "0:00"}
-    # 4 banked + 16 pregame * 0.5 remaining = 12.0 projected finish.
+    # With no position the pace blend is off, so it's the pure clock estimate:
+    # 4 banked + 16 pregame * 0.5 remaining = 12.0.
     assert m.live_projected_final(4.0, 16.0, half) == pytest.approx(12.0)
-    # A player already past their projection still climbs above it late.
     late = {"gameStatusCode": "1", "lineScore": {"period": "4"}, "gameClock": "7:30"}
     assert m.live_projected_final(18.0, 16.0, late) == pytest.approx(18.0 + 16.0 * 0.125)
     # Unknown progress falls back to the pregame projection (prior behaviour).
-    assert m.live_projected_final(4.0, 16.0, None) == pytest.approx(16.0)
+    assert m.live_projected_final(4.0, 16.0, None, pos="QB") == pytest.approx(16.0)
+
+
+def test_pace_blend_reacts_to_over_and_under_performance():
+    m = _matchups()
+    # At halftime a skill player's live finish blends pregame rate with the pace
+    # they've actually set. An on-pace player lands right on their projection...
+    assert m.live_final_from_frac(8.0, 16.0, 0.5, "QB") == pytest.approx(16.0)
+    # ...a cold start is marked down below the pregame number...
+    cold = m.live_final_from_frac(4.0, 16.0, 0.5, "QB")
+    assert 4.0 < cold < 16.0
+    # ...and a hot start is marked up above it.
+    hot = m.live_final_from_frac(12.0, 16.0, 0.5, "QB")
+    assert hot > 16.0
+    # The pure clock model (what a no-position / K/DEF call uses) would sit at a
+    # flat 12.0 for the cold case regardless of the slow start; the pace blend
+    # is strictly more pessimistic there.
+    assert cold < m.live_final_from_frac(4.0, 16.0, 0.5, "")
+
+
+def test_pace_blend_is_damped_early_and_position_aware():
+    m = _matchups()
+    # One early score barely moves the number: at ~5% elapsed the pace term is
+    # weighted near zero, so a hot Q1 stays close to the clock estimate.
+    early = m.live_final_from_frac(7.0, 12.0, 0.95, "WR")
+    clock_early = 7.0 + 12.0 * 0.95
+    assert early == pytest.approx(clock_early, abs=1.5)
+    # Kicker / defense scoring is too lumpy to extrapolate: an early made FG or a
+    # defensive TD uses the pure clock estimate, not pace.
+    assert m.live_final_from_frac(3.0, 8.0, 0.5, "K") == pytest.approx(3.0 + 8.0 * 0.5)
+    assert m.live_final_from_frac(6.0, 7.0, 0.5, "DEF") == pytest.approx(6.0 + 7.0 * 0.5)
+    # An unreadable fraction returns the pregame projection unchanged.
+    assert m.live_final_from_frac(4.0, 16.0, None, "QB") == pytest.approx(16.0)
 
 
 def test_team_live_totals_projects_in_progress_finish_with_frac_lookup():
@@ -68,8 +100,9 @@ def test_team_live_totals_projects_in_progress_finish_with_frac_lookup():
 
     actual, live = m.team_live_totals(team, {"a": m.STATUS_IN_PROGRESS}, proj, frac_lookup=frac)
     assert actual == pytest.approx(4.0)
-    # Live projected finish, not frozen at the 4.0 already scored.
-    assert live == pytest.approx(12.0)
+    # Live projected finish (pace-blended for a QB, cold start at halftime), not
+    # frozen at the 4.0 already scored and below the flat pregame 16.0.
+    assert live == pytest.approx(11.0)
 
     # Without the lookup, the old behaviour holds: in-progress freezes at actual.
     _, live_frozen = m.team_live_totals(team, {"a": m.STATUS_IN_PROGRESS}, proj)
@@ -144,13 +177,14 @@ def _render_live_slide(monkeypatch, *, status, actual, proj, game):
 def test_slide_shows_live_projected_finish_for_in_progress_player(monkeypatch):
     m = _matchups()
     half = {"gameStatusCode": "1", "lineScore": {"period": "2"}, "gameClock": "0:00"}
-    # actual 4.0, pregame proj 16.0, halftime -> live finish 12.0.
+    # QB, actual 4.0 at halftime on a 16.0 pregame -> pace-blended finish 11.0.
     html = _render_live_slide(
         monkeypatch, status=m.STATUS_IN_PROGRESS, actual=4.0, proj=16.0, game=half,
     )
     # The live projected finish is rendered; the frozen pregame 16.0 is not the
     # projection shown for the in-progress starter.
-    assert "12.0" in html
+    assert "11.0" in html
+    assert ">16.0<" not in html
 
 
 def test_slide_keeps_pregame_projection_before_kickoff(monkeypatch):
