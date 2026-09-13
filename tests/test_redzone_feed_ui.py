@@ -89,7 +89,11 @@ def test_selected_game_board_enriches_situation_and_mirrors_home_logo():
     assert "if (play.team) return play.team" in game_info
     assert "info[pid] ? (info[pid].team || '')" in game_info
     assert "row.possession = playTeam(best)" in game_info
-    assert "? ball + meta + logo(abv)" in board
+    # Both teams render as logo + abbr blocks; the home block is mirrored (logo
+    # outermost) via CSS row-reverse rather than a JS branch.
+    assert "team(away, aPts, awayPoss, 'away')" in board
+    assert "team(home, hPts, homePoss, 'home')" in board
+    assert "flex-direction: row-reverse" in DASHBOARD_CSS
     assert "Situation pending" not in REDZONE_JS
     assert "Possession pending" not in REDZONE_JS
 
@@ -194,6 +198,45 @@ console.log(JSON.stringify({{
 """
     out = json.loads(subprocess.check_output(["node", "-e", script], text=True))
     assert out == {"pid": "wr", "eventMine": False, "eventOpp": True}
+
+
+def test_on_deck_is_a_gridded_section_with_count_and_matches_gutter():
+    """On Deck is a header + responsive grid (tidy when many leagues connect),
+    aligned to the 14px content gutter like the cards below it."""
+    ondeck = REDZONE_JS.split("function _onDeckHtml() {", 1)[1].split(
+        "function _pregameScheduleHtml", 1
+    )[0]
+    assert "rz-ondeck-head" in ondeck
+    assert "rz-ondeck-count" in ondeck
+    assert "rz-ondeck-grid" in ondeck
+    assert "rz-ondeck-item-top" in ondeck
+    assert "' game' : ' games'" in ondeck
+    assert ".rz-ondeck-bar {\n    margin: 0 14px 10px;" in DASHBOARD_CSS
+    assert "grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));" in DASHBOARD_CSS
+
+
+def test_matchup_strip_and_board_share_the_content_gutter():
+    """The two sections that used to run wider than the rest now sit on the same
+    14px gutter as the scope toggle and main card."""
+    assert ".rz-hero-cards {\n    display: block;\n    /* Match the 14px" in DASHBOARD_CSS
+    assert "margin: 0 14px;" in DASHBOARD_CSS
+    assert ".rz-nfl-board {" in DASHBOARD_CSS
+    board_css = DASHBOARD_CSS.split(".rz-nfl-board {", 1)[1][:300]
+    assert "margin: 0 12px 10px;" in board_css
+
+
+def test_nfl_board_hides_score_until_kickoff():
+    """Pregame shows kickoff, not '–' score placeholders; scores render only once
+    the game is underway."""
+    board = REDZONE_JS.split("function _renderNflBoard()", 1)[1].split(
+        "function _gamePillStatus", 1
+    )[0]
+    assert "var showScore = !isPre;" in board
+    assert "showScore ? '<span class=\"rz-nfl-score\">'" in board
+    assert "rz-nfl-kick-time" in board
+    assert "rz-nfl-live-pill" in board
+    # No leftover em-dash score placeholder.
+    assert "'–'" not in board
 
 
 def test_scope_runtime_normalizes_feed_and_render_state_is_scope_local():

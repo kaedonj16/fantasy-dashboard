@@ -210,7 +210,7 @@ def test_nfl_filter_is_matchups_with_scoreboard():
     assert "seen[t] = 1" not in nfl
     board = _fn("_renderNflBoard")
     assert "rz-nfl-board" in board
-    assert "rz-nfl-ball" in board
+    assert "rz-nfl-poss" in board
     assert "possession" in board
     assert "_nflBoardSitLine" in board or "_downDist" in board
     assert "function _nflBoardSitLine(" in src
