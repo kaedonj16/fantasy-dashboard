@@ -51,6 +51,12 @@ def rz_stat_line_from_ps(ps: dict) -> dict:
             return rz_num(v)
         return rz_num(_pick(ps, *keys))
 
+    fg_yds = nest_or_flat(
+        kicking, "fgYds", "fgYards", "fg_yds", "fieldGoalYards", "fieldGoalDistance"
+    )
+    fg_long = nest_or_flat(kicking, "fgLng", "fg_long", "fgLong", "longestFieldGoal")
+    fgm = nest_or_flat(kicking, "fgm", "fgMade", "fieldGoalsMade")
+
     return {
         "pass_yds": nest_or_flat(
             passing, "passYds", "passYards", "pass_yds", "passingYards"
@@ -69,8 +75,9 @@ def rz_stat_line_from_ps(ps: dict) -> dict:
         "rec_td":   nest_or_flat(receiving, "recTD", "rec_td", "receivingTD", "recTd"),
         "targets":  nest_or_flat(receiving, "targets", "receivingTargets"),
         # Kicker fields
-        "fgm":      nest_or_flat(kicking, "fgm", "fgMade", "fieldGoalsMade"),
-        "fg_long":  nest_or_flat(kicking, "fgLng", "fg_long", "fgLong", "longestFieldGoal"),
+        "fgm":      fgm,
+        "fg_yds":   fg_yds,
+        "fg_long":  fg_long,
         "xpm":      nest_or_flat(kicking, "xpm", "xpMade", "extraPointsMade"),
     }
 

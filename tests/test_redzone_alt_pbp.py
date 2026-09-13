@@ -172,10 +172,10 @@ def test_parse_pbp_field_goal_keeps_distance():
     # Distance is retained so the client can score fgm_40_49 / fgm_50p buckets.
     assert parse_pbp_play_stats(
         "J.Myers 45 yard field goal is GOOD, Center-C.Stoll."
-    ) == {"j.myers": {"fgm": 1, "fg_yds": 45}}
+    ) == {"j.myers": {"fgm": 1, "fg_yds": 45, "fgm_40_49": 1}}
     assert parse_pbp_play_stats(
         "C.Santos 52 yard field goal is GOOD."
-    ) == {"c.santos": {"fgm": 1, "fg_yds": 52}}
+    ) == {"c.santos": {"fgm": 1, "fg_yds": 52, "fgm_50_59": 1}}
 
 
 def test_espn_plays_attach_real_stat_lines():
