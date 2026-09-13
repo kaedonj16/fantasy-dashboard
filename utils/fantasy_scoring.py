@@ -61,6 +61,40 @@ def score_stats(s: dict, ss: dict, pos: str = "") -> float:
     return p
 
 
+# week_stats box-score lines use plural yardage keys and ``int`` for
+# interceptions; score_stats speaks Sleeper's names. Remap before scoring so the
+# league's own rates, bonuses, and TE premium stay consistent.
+_WEEK_STATS_TO_SLEEPER = {
+    "pass_yds": "pass_yd",
+    "rush_yds": "rush_yd",
+    "rec_yds": "rec_yd",
+    "int": "pass_int",
+}
+
+
+def week_stats_line_points(entry: dict, ss: dict, pos: str = "") -> float | None:
+    """Fantasy points implied by a ``week_stats`` box-score line.
+
+    The matchup slide shows two numbers from two feeds: the authoritative live
+    points (Sleeper ``players_points``) and a human-readable box-score line
+    (Footballguys, Tank01-overlaid). When Footballguys is still republishing a
+    prior week/season, the box-score line can contradict the points. Scoring the
+    line lets callers detect that contradiction and hide the stale line.
+
+    Returns None when the entry has no numeric stats to score.
+    """
+    if not isinstance(entry, dict):
+        return None
+    remapped: dict = {}
+    for key, value in entry.items():
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            continue
+        remapped[_WEEK_STATS_TO_SLEEPER.get(key, key)] = value
+    if not remapped:
+        return None
+    return score_stats(remapped, ss or {}, pos)
+
+
 def _sleeper_standard_points(raw: dict, ss: dict):
     """Sleeper's own projected total for a *standard* PPR/half/std league.
 

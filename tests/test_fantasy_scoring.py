@@ -7,6 +7,7 @@ import pytest
 from utils.fantasy_scoring import (
     projection_points,
     score_stats,
+    week_stats_line_points,
     weekly_projection_points,
 )
 
@@ -185,3 +186,30 @@ def test_settings_wide_custom_rate_recomputes_for_skill_players():
     settings = {"rec": 1.0, "pass_int": -1.0, "rec_yd": 0.1}
     assert projection_points(entry, settings, "WR") == 18.0
 
+
+
+_PPR = {
+    "rec": 1.0, "pass_yd": 0.04, "pass_td": 4.0, "pass_int": -2.0,
+    "rush_yd": 0.1, "rush_td": 6.0, "rec_yd": 0.1, "rec_td": 6.0,
+    "fum_lost": -2.0,
+}
+
+
+def test_week_stats_line_points_remaps_plural_yard_keys():
+    # week_stats QB line: plural *_yds keys and `int` for interceptions.
+    line = {"pass_yds": 233, "pass_td": 1, "int": 0,
+            "rush_att": 11, "rush_yds": 68, "rush_td": 0}
+    # 233*0.04 + 1*4 + 68*0.1 = 20.12 (rush_att is unscored in PPR).
+    assert week_stats_line_points(line, _PPR, "QB") == pytest.approx(20.12)
+
+
+def test_week_stats_line_points_scores_receptions_for_skill_players():
+    line = {"rec": 8, "rec_yds": 55, "rush_att": 0, "rush_yds": 0}
+    # PPR: 8 receptions + 5.5 yards = 13.5.
+    assert week_stats_line_points(line, _PPR, "WR") == pytest.approx(13.5)
+
+
+def test_week_stats_line_points_none_when_no_numeric_stats():
+    assert week_stats_line_points({"_src": "tank"}, _PPR, "QB") is None
+    assert week_stats_line_points({}, _PPR, "WR") is None
+    assert week_stats_line_points(None, _PPR, "WR") is None

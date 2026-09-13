@@ -1328,6 +1328,33 @@ def render_matchup_slide(
         elif is_not_started:
             stats = None
 
+        # Stale box-score guard. The points (p['pts']) are Sleeper's authoritative
+        # live total; the box-score line is a separate Footballguys/Tank feed.
+        # Footballguys republishes a prior week/season until its logs flip, so an
+        # in-progress game can surface last week's full stat line beside this
+        # week's real, low points. Tank-overlaid lines (_src=tank) are built from
+        # the current game and trusted as-is; a non-Tank line whose implied score
+        # is far from the points shown is stale -- hide it so stats match scoring.
+        if (
+            stats
+            and pos in ("QB", "RB", "WR", "TE")
+            and isinstance(raw_stat_entry, dict)
+            and raw_stat_entry.get("_src") != "tank"
+            and status in (STATUS_IN_PROGRESS, STATUS_FINAL)
+            and scoring_settings and "rec" in scoring_settings
+        ):
+            live_pts = p.get("pts")
+            if isinstance(live_pts, (int, float)) and not isinstance(live_pts, bool):
+                try:
+                    from utils.fantasy_scoring import week_stats_line_points
+                    implied = week_stats_line_points(raw_stat_entry, scoring_settings, pos)
+                except Exception:
+                    implied = None
+                if implied is not None:
+                    tol = max(4.0, 0.4 * max(abs(implied), abs(float(live_pts))))
+                    if abs(implied - float(live_pts)) > tol:
+                        stats = None
+
         meta_content = html.escape(str(nfl or "").strip())
 
         # Add clickable attributes
