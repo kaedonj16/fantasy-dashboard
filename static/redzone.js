@@ -1684,11 +1684,16 @@
       if (!primary) return;
       
       var desc = _improvePlayDesc(primary, validContribs, primary.rawPlayText);
-      var allMine = validContribs.some(function(c) { return c.mine; });
-      var allOpp = validContribs.some(function(c) { return c.opp; });
+      // A grouped NFL play carries every fantasy contributor on the snap (e.g. a
+      // passer + receiver, or a DST + the sacked QB), but the card is headlined
+      // by the primary actor. Ownership must track that headline, not "any
+      // contributor" -- otherwise a play where only a background contributor is
+      // yours (your QB completing to an opponent's WR) headlines the opponent
+      // yet reads as MY TEAM and leaks into the My Team filter. Secondary
+      // contributors still surface via _secondaryContributors.
       var isNewPlay = !_seenPlayIds.has(playKey);
       if (isNewPlay) _seenPlayIds.add(playKey);
-      
+
       var event = {
         pid: primary.pid,
         name: primary.name,
@@ -1697,8 +1702,8 @@
         rosterId: primary.rosterId,
         owner: primary.owner,
         league: primary.league,
-        mine: allMine,
-        opp: allOpp,
+        mine: !!primary.mine,
+        opp: !!primary.opp,
         line: _gameLine(primary.pid),
         playSortTs: group.playSortTs != null ? group.playSortTs : primary.playSortTs,
         detectedAt: group.detectedAt || primary.detectedAt,
