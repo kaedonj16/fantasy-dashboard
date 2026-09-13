@@ -1987,7 +1987,7 @@ function _pmBuildScheduleHTML(data) {
   const schedChev = schedOpen ? '&#9662;' : '&#9656;';
   const schedHint = schedOpen ? 'Hide details' : 'Show details';
   const previewGame = games.find(g => g.status === 'live') || games.find(g => !g.bye && g.status !== 'final') || games.filter(g => !g.bye).slice(-1)[0];
-  const preview = previewGame ? `<div class="pm-schedule-preview"><b>${_pmEsc(previewGame.week_label || ('Week ' + previewGame.week))}</b><span>${previewGame.ha === '@' ? '@ ' : 'vs '}${_pmEsc(previewGame.opponent_name || previewGame.opponent || '')}</span><span>${_pmScheduleResultHtml(previewGame)}</span></div>` : '';
+  const preview = previewGame ? `<div class="pm-schedule-preview"><b>${previewGame.status === 'final' ? 'Latest:' : 'Next:'}</b><span>${previewGame.ha === '@' ? '@ ' : 'vs '}${_pmEsc(previewGame.opponent_name || previewGame.opponent || '')}</span><span>${_pmScheduleResultHtml(previewGame)}</span></div>` : '';
   const currentShortcut = Number(viewSeason) === new Date().getFullYear() && games.some(g => g.status === 'live' || (!g.bye && g.status !== 'final'))
     ? '<button type="button" class="pm-current-week">Current week</button>' : '';
   const header = `<button type="button" class="pm-section-header pm-section-collapsible pm-team-sched-toggle" aria-expanded="${schedOpen ? 'true' : 'false'}" aria-controls="pmTeamSchedBody">
@@ -2108,7 +2108,7 @@ function _pmRenderBoxscoreHTML(payload, viewTeam, focusPid) {
       const cells = cols.map(function (c) {
         return _pmBoxStatCell((p.cells || {})[c.key]);
       }).join('');
-      return `<tr class="pm-boxscore-player${focus}"${click}><td class="pm-boxscore-name">${_pmEsc(p.name)}</td>${cells}</tr>`;
+      return `<tr class="pm-boxscore-player${p.id ? ' pm-player-link' : ''}${focus}"${click}><td class="pm-boxscore-name">${_pmEsc(p.name)}</td>${cells}</tr>`;
     }).join('');
     tables += `<div class="pm-boxscore-group">
       <div class="pm-boxscore-pos">${_pmEsc(g.pos)}</div>
@@ -2398,7 +2398,7 @@ function _pmTeamRoomColumns(pos, room) {
 
 function _pmTeamRoomRow(row, i, pos, columns) {
   const clickable = !row.is_focus && !!row.id;
-  const cls = 'pm-troom-row' + (row.is_focus ? ' pm-troom-focus' : (clickable ? ' pm-troom-click' : '')) + (row.order === 1 ? ' pm-troom-starter' : '');
+  const cls = 'pm-troom-row' + (row.is_focus ? ' pm-troom-focus' : (clickable ? ' pm-troom-click pm-player-link' : '')) + (row.order === 1 ? ' pm-troom-starter' : '');
   const attrs = clickable
     ? ` data-pid="${row.id}" data-pname="${String(row.name || '').replace(/"/g, '&quot;')}" role="button" tabindex="0"`
     : '';
@@ -2427,7 +2427,7 @@ function _pmTeamRoomRow(row, i, pos, columns) {
 
 function _pmTeamMiniItem(row, i) {
   const clickable = !row.is_focus && !!row.id;
-  const cls = 'pm-team-depth-row pm-mini-item' + (row.is_focus ? ' pm-mini-focus' : (clickable ? ' pm-mini-click' : ''));
+  const cls = 'pm-team-depth-row pm-mini-item' + (row.is_focus ? ' pm-mini-focus' : (clickable ? ' pm-mini-click pm-player-link' : ''));
   const attrs = clickable
     ? ` data-pid="${row.id}" data-pname="${String(row.name || '').replace(/"/g, '&quot;')}" role="button" tabindex="0"`
     : '';
@@ -2515,7 +2515,7 @@ function _pmBuildTeamHTML(data) {
   const bye = data.bye_week != null ? `Bye ${data.bye_week}` : '';
   const summarySeason = Number(data.stats_season || data.season) || '';
   const summaryMode = data.data_mode === 'projection' ? 'Projected data' : 'Actual data';
-  const posLine = [data.position, team, summarySeason, summaryMode, bye].filter(Boolean).join(' · ');
+  const contextGame = (Array.isArray(data.schedule) ? data.schedule : []).find(g => !g.bye && (g.status === 'live' || g.status !== 'final'));
 
   const ranks = data.ranks || {};
   const rm = data.ranks_more || {};
@@ -2544,6 +2544,11 @@ function _pmBuildTeamHTML(data) {
   const roomCols = _pmTeamRoomColumns(pos, room);
   const roomRows = room.length ? room.map((r, i) => _pmTeamRoomRow(r, i, pos, roomCols)).join('') : '<div class="pm-team-depth-empty">No role data available.</div>';
   const focusRole = room.find(r => r.is_focus);
+  const roleLabel = focusRole && Number(focusRole.order) === 1 ? 'Starter' : (focusRole && focusRole.order ? `Depth ${focusRole.order}` : 'Team role');
+  const posLine = [pos, roleLabel].filter(Boolean).join(' · ');
+  const nextContext = contextGame
+    ? `Next: ${contextGame.ha === '@' ? '@ ' : 'vs '}${_pmEsc(contextGame.opponent_name || contextGame.opponent || '')}${contextGame.kickoff ? ' · ' + _pmEsc(contextGame.kickoff) : ''}`
+    : (bye || `${summarySeason} ${summaryMode}`);
   const roleSummary = focusRole ? '<div class="pm-role-summary">' + roomCols.map(c => {
     let v = focusRole[c.key]; if (v == null && c.fallback) v = focusRole[c.fallback];
     const suffix = c.key.includes('share') && v != null ? '%' : '';
@@ -2652,6 +2657,7 @@ function _pmBuildTeamHTML(data) {
         <div class="pm-team-header-text">
           <div class="pm-team-name">${data.team_name || team}</div>
           <div class="pm-team-meta">${posLine}</div>
+          <div class="pm-team-next">${nextContext}</div>
         </div>
         ${seasonPills}
       </div>
@@ -2659,7 +2665,7 @@ function _pmBuildTeamHTML(data) {
       ${heroStats ? '<div class="pm-team-herostats">' + heroStats + '</div>' : ''}
     </div>
     <div class="pm-team-sec pm-role-sec">
-      <div class="pm-section-header"><span class="pm-section-label">Player's Role &amp; Competition</span><span class="pm-team-secnote">${pos} room</span></div>
+      <div class="pm-section-header"><span class="pm-section-label">Depth Chart / Competition</span><span class="pm-team-secnote">${pos} room</span></div>
       ${roleSummary}${shareBar}
       <div class="pm-team-usage pm-room-${pos.toLowerCase()}">
         <div class="pm-troom-row pm-troom-head"><span></span><span>${pos} Room</span>${roomCols.map(c => `<span class="pm-col-${c.key}">${c.label}</span>`).join('')}</div>
@@ -2667,8 +2673,7 @@ function _pmBuildTeamHTML(data) {
       </div>
       <div class="pm-team-note">${data.roster_timeframe && data.roster_timeframe.historical_unavailable ? `Historical depth charts are unavailable. This is the current roster; injuries are current, while usage is from ${data.usage_timeframe ? data.usage_timeframe.season : 'the latest available season'}.` : `Current Sleeper depth order and injuries. Usage is from ${data.usage_timeframe ? data.usage_timeframe.season : seasonNote}.`} PPR PPG uses PPR scoring. Tap any teammate to open their card.</div>
     </div>
-    ${scheduleSec}
-    <div class="pm-team-sec">
+    <div class="pm-team-sec pm-environment-sec">
       <div class="pm-section-header"><span class="pm-section-label">Offensive Environment</span><span class="pm-team-secnote">${seasonNote} · rank of 32</span></div>
       ${_pmTeamProfileAxis()}${profile}
       <div class="pm-team-note">Dot = team rank (right = 1st). Volume and tendency ranks are neutral context, not a player grade.${dataMode === 'projection' ? ' Values are Sleeper season projections aggregated by team.' : ''}</div>
@@ -2682,11 +2687,12 @@ function _pmBuildTeamHTML(data) {
       </div>
     </div>
     ${olineSec}
+    ${scheduleSec}
     <div class="pm-team-sec pm-other-sec">
-      <button type="button" class="pm-section-header pm-section-collapsible pm-other-toggle" aria-expanded="${_pmTeamOtherOpen ? 'true' : 'false'}">
-        <span class="pm-collapse-chevron" aria-hidden="true">${_pmTeamOtherOpen ? '&#9662;' : '&#9656;'}</span><span class="pm-section-label">Other Position Groups</span><span class="pm-team-secnote">${otherPos.map(p => ((data.depth_chart || {})[p] || [])[0]).filter(Boolean).map(r => r.name).slice(0, 2).join(' · ') || 'Current roster'}</span>
+      <button type="button" class="pm-section-header pm-section-collapsible pm-other-toggle" aria-expanded="${_pmTeamOtherOpen ? 'true' : 'false'}" aria-controls="pmTeamRosterBody">
+        <span class="pm-collapse-chevron" aria-hidden="true">${_pmTeamOtherOpen ? '&#9662;' : '&#9656;'}</span><span class="pm-section-label">Full Roster / Reference</span><span class="pm-team-secnote">${otherPos.map(p => ((data.depth_chart || {})[p] || [])[0]).filter(Boolean).map(r => r.name).slice(0, 2).join(' · ') || 'Current roster'}</span>
       </button>
-      <div class="pm-team-depth pm-other-body"${_pmTeamOtherOpen ? '' : ' hidden'}><div class="pm-mini-grid">${miniCols}</div></div>
+      <div class="pm-team-depth pm-other-body" id="pmTeamRosterBody"${_pmTeamOtherOpen ? '' : ' hidden'}><div class="pm-mini-grid">${miniCols}</div></div>
     </div>
   </div>`;
 }
@@ -2730,7 +2736,7 @@ function _pmWireTeamPanel(panel, playerId) {
   // interactive player row is a navigation target, for both pointer and
   // keyboard activation.
   const findPlayerNavTarget = function (target) {
-    const row = target && target.closest && target.closest('[data-pid][role="button"]');
+    const row = target && target.closest && target.closest('.pm-player-link[data-pid][role="button"]');
     return row && panel.contains(row) ? row : null;
   };
 

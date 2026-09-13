@@ -3015,8 +3015,14 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
         )
 
     def _sec(title, rows):
-        return (f"<h3 class='br-sheet-h'>{title}</h3>"
-                f"<div class='br-sheet-group'>{''.join(rows)}</div>")
+        slug = title.lower().replace(" ", "-")
+        return (
+            f"<section class='br-sheet-panel br-sheet-detail' id='brMorePanel-{slug}' data-br-sheet-panel='{slug}' hidden>"
+            "<div class='br-sheet-panel-head'>"
+            "<button type='button' class='br-sheet-back' data-br-sheet-back aria-label='Back to More'>&#8249; More</button>"
+            f"<h3 class='br-sheet-title' tabindex='-1'>{title}</h3></div>"
+            f"<div class='br-sheet-group'>{''.join(rows)}</div></section>"
+        )
 
     # Search is a row like the others; tapping it opens the full-screen search
     # screen (app.js moves the real search widget into it). Watchlist is a plain
@@ -3109,20 +3115,51 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
         "<span>Join the Discord</span></a>"
     )
     account_html = _sheet_account_section(
-        f"{portfolio_link}{refresh_row}{discord_row}"
+        f"{refresh_row}{discord_row}"
         "<div class='br-sheet-mount' id='brSheetAccount'></div>"
     )
 
-    # Find + a collapsed Account header sit at the top so Search and settings stay
-    # thumb-reachable; Account starts collapsed so Trades / page sections aren't
-    # pushed off-screen. Page sections still mirror the desktop nav order
-    # (Trades → Weekly → League → Players → Draft → Stats) underneath.
+    category_keys = {
+        "Trades": {"trade", "trade-suggestions", "trade-database", "trade-intel"},
+        "Weekly": {"weekly", "recap", "scout", "optimal", "waivers", "schedule", "redzone"},
+        "League": {"standings", "teams", "activity", "league_health"},
+        "Players": {"players", "compare", "top-movers", "advanced-metrics", "breakouts", "prospects"},
+        "Draft": {"draft", "draft-cheat-sheet", "keeper", "draft-history"},
+        "Stats": {"awards", "graphs", "history"},
+    }
+    def _category_row(label):
+        slug = label.lower()
+        current = active_norm in category_keys[label]
+        dot = '<span class="br-sheet-active-dot" aria-label="Current section"></span>' if current else ""
+        return (
+            f"<button type='button' class='br-sheet-link br-sheet-category{' active' if current else ''}' "
+            f"data-br-sheet-target='{slug}' aria-controls='brMorePanel-{slug}'>"
+            f"<span>{label}</span>{dot}"
+            "<span class='br-sheet-chevron' aria-hidden='true'>&#8250;</span></button>"
+        )
+    root_labels = ["League", "Players", "Draft", "Stats"]
+    if weekly_html:
+        root_labels.append("Weekly")
+    root_labels.append("Trades")
+    root_categories = [_category_row(x) for x in root_labels]
+    portfolio_root = portfolio_link
+    portfolio_fallback = '<a class="br-sheet-link" href="/">Link a league</a>'
+    # The root is deliberately short: primary taxonomy first, core portfolio
+    # navigation next, and low-frequency account utilities last.
+    root_html = (
+        "<section class='br-sheet-panel br-sheet-root' id='brMorePanel-root' data-br-sheet-panel='root'>"
+        "<h2 class='br-sheet-root-title' tabindex='-1'>More</h2>"
+        f"{find_html}<h3 class='br-sheet-h'>Browse</h3><div class='br-sheet-group'>{''.join(root_categories)}</div>"
+        f"<h3 class='br-sheet-h'>My Leagues</h3><div class='br-sheet-group'>{portfolio_root or portfolio_fallback}</div>"
+        "<div class='br-sheet-utility-divider' aria-hidden='true'></div>"
+        f"{account_html}</section>"
+    )
     sheet = (
         "<div class='br-sheet-scrim' id='brSheetScrim'></div>"
         "<nav class='br-sheet' id='brMoreSheet' aria-label='More' aria-hidden='true'>"
         "  <div class='br-sheet-grip' aria-hidden='true'></div>"
-        f"  {find_html}{account_html}{trades_html}{weekly_html}{league_html}"
-        f"  {players_html}{draft_html}{stats_html}"
+        f"  <div class='br-sheet-panels'>{root_html}{trades_html}{weekly_html}{league_html}"
+        f"  {players_html}{draft_html}{stats_html}</div>"
         "</nav>"
     )
 
@@ -3208,8 +3245,14 @@ def _mobile_nav_guest(active: str) -> str:
         )
 
     def _sec(title, rows):
-        return (f"<h3 class='br-sheet-h'>{title}</h3>"
-                f"<div class='br-sheet-group'>{''.join(rows)}</div>")
+        slug = title.lower().replace(" ", "-")
+        return (
+            f"<section class='br-sheet-panel br-sheet-detail' id='brMorePanel-{slug}' data-br-sheet-panel='{slug}' hidden>"
+            "<div class='br-sheet-panel-head'>"
+            "<button type='button' class='br-sheet-back' data-br-sheet-back aria-label='Back to More'>&#8249; More</button>"
+            f"<h3 class='br-sheet-title' tabindex='-1'>{title}</h3></div>"
+            f"<div class='br-sheet-group'>{''.join(rows)}</div></section>"
+        )
 
     find_html = (
         "<h3 class='br-sheet-h'>Find</h3>"
@@ -3264,16 +3307,41 @@ def _mobile_nav_guest(active: str) -> str:
     # etc.) into on mobile, exactly as the league sheet does. Account starts
     # collapsed so Trades / page sections stay reachable without scrolling.
     account_html = _sheet_account_section(
-        f"{portfolio_link}{discord_row}"
+        f"{discord_row}"
         "<div class='br-sheet-mount' id='brSheetAccount'></div>"
     )
 
-    # Match the league sheet: collapsed Account header under Find, then pages.
+    guest_groups = {
+        "Trades": {"trade", "trade-suggestions", "trade-database", "trade-intel"},
+        "Players": {"players", "compare", "top-movers", "advanced-metrics", "breakouts", "prospects"},
+        "Draft": {"draft", "draft-cheat-sheet", "draft-history"},
+        "Learn": {"guides", "glossary", "faq", "about", "contact"},
+    }
+    def _guest_category(label):
+        slug = label.lower()
+        current = active in guest_groups[label]
+        dot = '<span class="br-sheet-active-dot" aria-label="Current section"></span>' if current else ""
+        return (
+            f"<button type='button' class='br-sheet-link br-sheet-category{' active' if current else ''}' "
+            f"data-br-sheet-target='{slug}' aria-controls='brMorePanel-{slug}'>"
+            f"<span>{label}</span>{dot}"
+            "<span class='br-sheet-chevron' aria-hidden='true'>&#8250;</span></button>"
+        )
+    categories = ''.join(_guest_category(x) for x in ("Trades", "Players", "Draft", "Learn"))
+    portfolio_fallback = '<a class="br-sheet-link" href="/auth/google?intent=login">Sign in to view leagues</a>'
+    root_html = (
+        "<section class='br-sheet-panel br-sheet-root' id='brMorePanel-root' data-br-sheet-panel='root'>"
+        "<h2 class='br-sheet-root-title' tabindex='-1'>More</h2>"
+        f"{find_html}<h3 class='br-sheet-h'>Browse</h3><div class='br-sheet-group'>{categories}</div>"
+        f"<h3 class='br-sheet-h'>My Leagues</h3><div class='br-sheet-group'>{portfolio_link or portfolio_fallback}</div>"
+        "<div class='br-sheet-utility-divider' aria-hidden='true'></div>"
+        f"{account_html}</section>"
+    )
     sheet = (
         "<div class='br-sheet-scrim' id='brSheetScrim'></div>"
         "<nav class='br-sheet' id='brMoreSheet' aria-label='More' aria-hidden='true'>"
         "  <div class='br-sheet-grip' aria-hidden='true'></div>"
-        f"  {find_html}{account_html}{trades_html}{players_html}{draft_html}{learn_html}"
+        f"  <div class='br-sheet-panels'>{root_html}{trades_html}{players_html}{draft_html}{learn_html}</div>"
         "</nav>"
     )
     search_screen = (

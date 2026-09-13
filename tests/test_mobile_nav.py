@@ -88,8 +88,10 @@ def test_secondary_page_keeps_dock_stable_and_activates_more(offline_client):
 def test_more_sheet_lists_core_pages(offline_client):
     html = _html(offline_client, GRAPHS)
     # A scannable, grouped list of everything else lives in the sheet.
-    for section in ("Find", "League", "Draft", "Players", "Stats"):
-        assert f"br-sheet-h'>{section}<" in html
+    assert "br-sheet-h'>Find<" in html
+    for section in ("League", "Draft", "Players", "Stats"):
+        assert f"data-br-sheet-panel='{section.lower()}'" in html
+        assert f"data-br-sheet-target='{section.lower()}'" in html
     # Account is a collapsible header (not a static .br-sheet-h) so it doesn't
     # crowd Trades / page sections off the first viewport.
     assert "id='brSheetAcctToggle'" in html
@@ -98,12 +100,12 @@ def test_more_sheet_lists_core_pages(offline_client):
     assert "aria-expanded='false'" in html
     # Watchlist is a plain link to the full page (no popover to reposition).
     assert "href='/watchlist'" in html
-    # Collapsed Account sits under Find — settings stay one tap away, Trades
-    # stays reachable without scrolling past ten Account rows.
+    # Categories and core league navigation outrank account utilities.
     find_at = html.index("br-sheet-h'>Find<")
     account_at = html.index("id='brSheetAcct'")
-    trades_at = html.index("br-sheet-h'>Trades<")
-    assert find_at < account_at < trades_at
+    browse_at = html.index("br-sheet-h'>Browse<")
+    leagues_at = html.index("br-sheet-h'>My Leagues<")
+    assert find_at < browse_at < leagues_at < account_at
     css = (ROOT / "static" / "dashboard.css").read_text(encoding="utf-8")
     assert ".br-sheet-acct-toggle" in css
     assert ".br-sheet-acct-body[hidden]" in css
@@ -128,19 +130,30 @@ def test_mobile_redzone_glow_styles_present():
     assert "@keyframes rz-nav-live-pulse" in css
 
 
-def test_guest_more_sheet_puts_account_after_find():
-    """Guest More sheet mirrors the league order: Find, then Account, then pages."""
+def test_guest_more_sheet_uses_category_drilldown_before_account():
+    """Guest More keeps search direct and puts taxonomy ahead of utilities."""
     import app
     with app.app.test_request_context("/players"):
         html = app._mobile_nav_guest("players")
     find_at = html.index("br-sheet-h'>Find<")
     account_at = html.index("id='brSheetAcct'")
-    trades_at = html.index("br-sheet-h'>Trades<")
-    assert find_at < account_at < trades_at
+    trades_at = html.index("data-br-sheet-target='trades'")
+    assert find_at < trades_at < account_at
     assert "id='brSheetAcctToggle'" in html
     assert "br-sheet-acct-label'>Account<" in html
     # Account body starts collapsed (hidden attribute on the group).
     assert "id='brSheetAcctBody' hidden>" in html
+
+
+def test_more_drilldown_controller_and_motion_contract():
+    js = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+    css = (ROOT / "static" / "dashboard.css").read_text(encoding="utf-8")
+    assert "showSheetPanel" in js
+    assert "data-br-sheet-target" in js
+    assert "data-br-sheet-back" in js
+    assert "prefers-reduced-motion: reduce" in js
+    assert "br-sheet-panel-in" in css
+    assert "@media (prefers-reduced-motion: reduce)" in css
 
 
 def test_mobile_notifications_click_outside_handles_relocated_dropdown():

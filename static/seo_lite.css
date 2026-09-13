@@ -1913,3 +1913,20 @@ input[type="search"] {
 
 .empty-state-title { font-weight: 700; color: var(--text); margin: 8px 0 4px; }
 
+
+/* Category drill-down inside the mobile More sheet. */
+@media (max-width: 700px) {
+  .br-sheet-panels{overflow:hidden;min-height:360px}.br-sheet-panel[hidden]{display:none!important}
+  .br-sheet-root-title{margin:14px 28px 4px;font-size:13px;line-height:28px;font-weight:850;letter-spacing:.1em;text-transform:uppercase}
+  .br-sheet-panel-head{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;min-height:48px;padding:4px 14px 0}
+  .br-sheet-back{justify-self:start;min-height:44px;padding:0 10px;border:0;background:none;color:var(--accent);font:inherit;font-weight:700;cursor:pointer}
+  .br-sheet-title{grid-column:2;margin:0;font-size:12px;letter-spacing:.1em;text-transform:uppercase}
+  .br-sheet-category{min-height:48px;width:100%}.br-sheet-category>span:first-child{flex:1;text-align:left}
+  .br-sheet-chevron{margin-left:auto;color:var(--text-muted);font-size:24px}.br-sheet-active-dot{width:6px;height:6px;border-radius:50%;background:var(--accent)}
+  .br-sheet-utility-divider{border-top:1px solid var(--border);margin:22px 14px 0}
+  .br-sheet-panel-enter{animation:br-sheet-panel-in .2s ease-out both}.br-sheet-going-back .br-sheet-panel-enter{animation-name:br-sheet-panel-back}
+  @keyframes br-sheet-panel-in{from{opacity:.35;transform:translateX(18px)}to{opacity:1;transform:none}}
+  @keyframes br-sheet-panel-back{from{opacity:.35;transform:translateX(-18px)}to{opacity:1;transform:none}}
+  .br-sheet-back:focus-visible,.br-sheet-category:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+}
+@media (prefers-reduced-motion:reduce){.br-sheet-panel-enter,.br-sheet-going-back .br-sheet-panel-enter{animation:none!important}}
