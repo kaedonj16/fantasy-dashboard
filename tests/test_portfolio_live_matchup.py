@@ -29,6 +29,21 @@ def test_live_matchup_endpoint_wired_and_gated():
     assert '"win_prob": win_prob' in endpoint
 
 
+def test_live_matchup_backfills_bundle_misses_from_raw_weekly_file():
+    """Starters missing from the precomputed bundle (ESPN/Yahoo roster pids, or a
+    first paint before hydration) must fall back to the raw weekly projection file
+    -- league-scored -- so the card's projection and win bar match the Matchups
+    tab instead of zeroing those players. Guards the fix from silent deletion."""
+    source = (ROOT / "routes" / "user_pages_bp.py").read_text()
+    endpoint = source.split("def api_portfolio_matchup")[1].split("\n@user_pages_bp.route")[0]
+    # Same raw-file fallback the full matchup slide uses.
+    assert "load_week_projection" in endpoint
+    assert "_proj_value_for_pid" in endpoint
+    assert "raw_week_map" in endpoint
+    # Enrich a copy, never the TTL-cached bundle shared across requests.
+    assert "dict(proj_map)" in endpoint
+
+
 def test_live_matchup_fetch_is_cached_and_current_week_only():
     source = (ROOT / "routes" / "user_pages_bp.py").read_text()
     assert "_LIVE_MATCHUP_CACHE" in source
