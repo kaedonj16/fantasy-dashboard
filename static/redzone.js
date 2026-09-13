@@ -232,12 +232,25 @@
     return pids.size ? pids : null;
   }
 
+  // The Redzone feed and game strip are NFL-wide: they surface plays from every
+  // tracked game, not just the games featuring the viewer's starters. So "live"
+  // must mean *any* tracked NFL game is in progress. Keying it to the viewer's
+  // own starters let the poll cadence fall back to the idle interval (up to 5
+  // min) the moment those players' games went final, freezing the feed while
+  // other games were still playing. Games/player_info are the authority here.
   function _anyLive() {
-    var live = false;
-    (_state.matchups || []).forEach(function(m) {
-      (m.starters || []).forEach(function(pid) { if (_gameStatus(pid).type === 'live') live = true; });
-    });
-    return live;
+    var games = _state.games || {};
+    var gids = Object.keys(games);
+    for (var i = 0; i < gids.length; i++) {
+      var norm = _normGameStatus(games[gids[i]]);
+      if (norm === 'live' || norm === 'halftime') return true;
+    }
+    var info = _state.player_info || {};
+    var pids = Object.keys(info);
+    for (var j = 0; j < pids.length; j++) {
+      if (String((info[pids[j]] || {}).game_code || '') === '1') return true;
+    }
+    return false;
   }
 
   function _matchupIsLive(matchups) {

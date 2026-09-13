@@ -850,7 +850,7 @@ def fetch_alt_pbp_plays(
                     payload, tank_game_id, name_to_pid=name_to_pid
                 )
                 if plays:
-                    logger.info(
+                    logger.debug(
                         "[alt-pbp] espn hits game=%s event=%s plays=%d",
                         tank_game_id, eid, len(plays),
                     )
@@ -865,7 +865,7 @@ def fetch_alt_pbp_plays(
                     raw, tank_game_id, name_to_pid=name_to_pid
                 )
                 if plays:
-                    logger.info(
+                    logger.debug(
                         "[alt-pbp] sleeper hits game=%s sleeper_id=%s plays=%d",
                         tank_game_id, sl_gid, len(plays),
                     )
