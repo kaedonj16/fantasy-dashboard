@@ -37457,7 +37457,7 @@ a, button, [role="button"], [role="tab"], summary, label,
 }
 
 /* Mobile More uses the desktop taxonomy as lightweight drill-down panels. */
-@media (max-width: 700px) {
+@media (max-width: 768px) {
     .br-sheet-panels { overflow: hidden; min-height: 360px; }
     .br-sheet-panel[hidden] { display: none !important; }
     .br-sheet-root-title {
