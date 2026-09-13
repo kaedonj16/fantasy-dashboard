@@ -79,3 +79,36 @@ def test_my_leagues_endpoint_sets_no_store_header_in_source():
     source = (ROOT / "routes" / "league_meta_bp.py").read_text()
     block = source[source.index('def api_my_leagues'):source.index("@league_meta_bp.route(\"/api/weekly-trends\")")]
     assert 'resp.headers["Cache-Control"] = "no-store"' in block
+
+
+def test_favorite_endpoint_persists_for_the_signed_in_account(offline_client, monkeypatch):
+    import dashboard_services.accounts as accounts
+
+    saved = []
+    monkeypatch.setattr(
+        accounts,
+        "set_user_league_favorite",
+        lambda account_id, platform, league_id, favorite: saved.append(
+            (account_id, platform, league_id, favorite)
+        ) or True,
+    )
+    with offline_client.session_transaction() as sess:
+        sess["account_id"] = 42
+
+    response = offline_client.post(
+        "/api/my-leagues/favorite",
+        json={"platform": "Sleeper", "league_id": "abc", "favorite": True},
+    )
+
+    assert response.status_code == 200
+    assert response.get_json() == {"ok": True, "is_favorite": True}
+    assert response.headers["Cache-Control"] == "no-store"
+    assert saved == [(42, "sleeper", "abc", True)]
+
+
+def test_favorite_endpoint_requires_an_account(offline_client):
+    response = offline_client.post(
+        "/api/my-leagues/favorite",
+        json={"platform": "sleeper", "league_id": "abc", "favorite": True},
+    )
+    assert response.status_code == 401
