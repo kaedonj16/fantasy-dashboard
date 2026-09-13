@@ -51,7 +51,7 @@ def test_dock_and_sheet_present(offline_client):
     css = (ROOT / "static" / "dashboard.css").read_text(encoding="utf-8")
     assert "button.br-sheet-link" in css
     assert "appearance: none" in css
-    assert "Refresh data" in html
+    assert "Refresh Data" in html
     # The widgets that get relocated must exist in the server HTML.
     assert "id='navSearchWrapper'" in html
     assert "id='settingsDropdown'" in html
@@ -92,26 +92,22 @@ def test_more_sheet_lists_core_pages(offline_client):
     for section in ("League", "Draft", "Players", "Stats"):
         assert f"data-br-sheet-panel='{section.lower()}'" in html
         assert f"data-br-sheet-target='{section.lower()}'" in html
-    # Account is a collapsible header (not a static .br-sheet-h) so it doesn't
-    # crowd Trades / page sections off the first viewport.
-    assert "id='brSheetAcctToggle'" in html
-    assert "br-sheet-acct-label'>Account<" in html
-    assert "id='brSheetAcctBody'" in html
-    assert "aria-expanded='false'" in html
+    # Account is a true drill-down, separate from product utilities.
+    assert "data-br-sheet-target='account'" in html
+    assert "data-br-sheet-panel='account'" in html
     # Watchlist is a plain link to the full page (no popover to reposition).
     assert "href='/watchlist'" in html
     # Categories and core league navigation outrank account utilities.
     find_at = html.index("br-sheet-h'>Find<")
-    account_at = html.index("id='brSheetAcct'")
-    browse_at = html.index("br-sheet-h'>Browse<")
-    leagues_at = html.index("br-sheet-h'>My Leagues<")
-    assert find_at < browse_at < leagues_at < account_at
+    account_at = html.index("data-br-sheet-target='account'")
+    navigate_at = html.index("br-sheet-h'>Navigate<")
+    tools_at = html.index("br-sheet-h'>Tools<")
+    assert find_at < navigate_at < tools_at < account_at
+    assert html.index("id='brSheetRefresh'") < account_at
+    assert html.index("What's New") < account_at
+    assert html.index("Help &amp; Tours") < account_at
     css = (ROOT / "static" / "dashboard.css").read_text(encoding="utf-8")
-    assert ".br-sheet-acct-toggle" in css
-    assert ".br-sheet-acct-body[hidden]" in css
     js = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
-    assert "brSheetAcctToggle" in js
-    assert "setAcctOpen" in js
     assert "brSheetAcctDot" in js
 
 
@@ -136,13 +132,11 @@ def test_guest_more_sheet_uses_category_drilldown_before_account():
     with app.app.test_request_context("/players"):
         html = app._mobile_nav_guest("players")
     find_at = html.index("br-sheet-h'>Find<")
-    account_at = html.index("id='brSheetAcct'")
+    account_at = html.index("data-br-sheet-target='account'")
     trades_at = html.index("data-br-sheet-target='trades'")
     assert find_at < trades_at < account_at
-    assert "id='brSheetAcctToggle'" in html
-    assert "br-sheet-acct-label'>Account<" in html
-    # Account body starts collapsed (hidden attribute on the group).
-    assert "id='brSheetAcctBody' hidden>" in html
+    assert "data-br-sheet-panel='account'" in html
+    assert "id='brSheetAccount'" in html
 
 
 def test_more_drilldown_controller_and_motion_contract():
@@ -153,7 +147,42 @@ def test_more_drilldown_controller_and_motion_contract():
     assert "data-br-sheet-back" in js
     assert "prefers-reduced-motion: reduce" in js
     assert "br-sheet-panel-in" in css
+    assert "br-sheet-panel-leave" in css
+    assert "br-sheet-panel-out" in css
     assert "@media (prefers-reduced-motion: reduce)" in css
+    assert "_brReturnFocus" in js
+    assert "e.stopPropagation()" in js
+
+
+def test_more_information_architecture_and_shared_utilities(offline_client):
+    html = _html(offline_client, GRAPHS)
+    root = html.split("data-br-sheet-panel='root'", 1)[1].split("</section>", 1)[0]
+    assert "br-sheet-h'>Navigate<" in root
+    assert "br-sheet-h'>Tools<" in root
+    assert "br-sheet-h'>Account<" in root
+    for category in ("league", "players", "draft", "stats"):
+        assert f"data-br-sheet-target='{category}'" in root
+    assert "data-br-sheet-target='weekly'" not in root
+    assert "data-br-sheet-target='trades'" not in root
+    assert "My Leagues" in root or "Link a league" in root
+    assert "Refresh Data" in root and "What's New" in root and "Help &amp; Tours" in root
+    account = html.split("data-br-sheet-panel='account'", 1)[1].split("</section>", 1)[0]
+    assert "My Leagues" not in account
+    assert "brSheetRefresh" not in account
+
+
+def test_desktop_profile_menu_exposes_shared_tools(monkeypatch):
+    import app
+    monkeypatch.setattr(app, "get_nfl_state", lambda: {"season": "2026", "season_type": "off"})
+    monkeypatch.setattr(app, "get_league_ctx_from_cache", lambda *a, **k: {})
+    monkeypatch.setattr(app, "has_draft_ended", lambda *a, **k: False)
+    with app.app.test_request_context("/sleeper/2026/L/dashboard"):
+        app.session["account_id"] = 42
+        html = app.build_nav("L", "dashboard", "sleeper", 2026)
+    assert "id='settingsRefreshBtn' data-br-action='refresh'" in html
+    assert "id='settingsChangelogBtn' data-br-action='whats-new'" in html
+    assert "id='settingsHelpToursBtn' data-br-action='help-tours'" in html
+    assert "href='/logout'" in html
 
 
 def test_mobile_notifications_click_outside_handles_relocated_dropdown():

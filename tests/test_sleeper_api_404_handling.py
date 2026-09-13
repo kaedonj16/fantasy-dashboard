@@ -13,6 +13,21 @@ requests = pytest.importorskip("requests")
 from dashboard_services.api import get_matchups, get_transactions, get_bracket
 
 
+@pytest.fixture(autouse=True)
+def clear_api_ttl_caches():
+    """Keep mocked API outcomes independent from earlier examples.
+
+    These helpers intentionally cache successful and 404 responses in
+    production.  Reusing the same league/week in this module otherwise means a
+    previous test can bypass the next test's mocked ``fetch_json`` entirely.
+    """
+    for helper in (get_matchups, get_transactions, get_bracket):
+        helper.clear_cache()
+    yield
+    for helper in (get_matchups, get_transactions, get_bracket):
+        helper.clear_cache()
+
+
 # ---- Matchups Tests ----
 
 def test_get_matchups_returns_empty_list_on_404():

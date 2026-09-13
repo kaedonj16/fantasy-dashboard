@@ -702,6 +702,7 @@ window.brHaptic = function (pattern) {
   function relocate() {
     var searchMount = document.getElementById('brSearchMount');
     var acctMount   = document.getElementById('brSheetAccount');
+    var newsMount   = document.getElementById('brSheetChangelog');
     var search      = document.getElementById('navSearchWrapper');
     var settings    = document.getElementById('settingsDropdown');
     var changelog   = document.getElementById('changelogDropdown');
@@ -709,7 +710,7 @@ window.brHaptic = function (pattern) {
     if (mq.matches) {
       if (search && searchMount && search.parentNode !== searchMount) searchMount.appendChild(search);
       if (settings && acctMount && settings.parentNode !== acctMount) acctMount.appendChild(settings);
-      if (changelog && acctMount && changelog.parentNode !== acctMount) acctMount.appendChild(changelog);
+      if (changelog && newsMount && changelog.parentNode !== newsMount) newsMount.appendChild(changelog);
     } else {
       [search, settings, changelog].forEach(function (n) {
         if (n && n._brHome && n.parentNode !== n._brHome.parent) n._brHome.parent.insertBefore(n, n._brHome.next);
@@ -729,31 +730,60 @@ window.brHaptic = function (pattern) {
   };
 
   function sheetOpen() { var s = document.getElementById('brMoreSheet'); return !!(s && s.classList.contains('open')); }
-  function showSheetPanel(name, backwards) {
+  function showSheetPanel(name, backwards, trigger) {
     var sheet = document.getElementById('brMoreSheet');
     if (!sheet) return;
-    var current = sheet.querySelector('.br-sheet-panel:not([hidden])');
+    if (sheet._brPanelTimer) {
+      clearTimeout(sheet._brPanelTimer);
+      sheet._brPanelTimer = null;
+      sheet.querySelectorAll('.br-sheet-panel-leave, .br-sheet-panel-leave-back').forEach(function (panel) {
+        panel.hidden = true;
+        panel.classList.remove('br-sheet-panel-leave', 'br-sheet-panel-leave-back');
+      });
+    }
+    var currentName = sheet.dataset.brSheetLevel || 'root';
+    var current = sheet.querySelector('[data-br-sheet-panel="' + currentName + '"]');
     var next = sheet.querySelector('[data-br-sheet-panel="' + name + '"]');
     if (!next || current === next) return;
     var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     sheet.classList.toggle('br-sheet-going-back', !!backwards);
-    if (current) current.hidden = true;
+    if (trigger) next._brReturnFocus = trigger;
     next.hidden = false;
     sheet.dataset.brSheetLevel = name;
     sheet.scrollTop = 0;
     if (!reduce) {
+      if (current) {
+        current.classList.remove('br-sheet-panel-leave', 'br-sheet-panel-leave-back');
+        current.classList.add(backwards ? 'br-sheet-panel-leave-back' : 'br-sheet-panel-leave');
+      }
       next.classList.remove('br-sheet-panel-enter');
       void next.offsetWidth;
       next.classList.add('br-sheet-panel-enter');
-      setTimeout(function () { next.classList.remove('br-sheet-panel-enter'); }, 220);
+      sheet._brPanelTimer = setTimeout(function () {
+        if (current) {
+          current.hidden = true;
+          current.classList.remove('br-sheet-panel-leave', 'br-sheet-panel-leave-back');
+        }
+        next.classList.remove('br-sheet-panel-enter');
+        sheet._brPanelTimer = null;
+      }, 210);
+    } else if (current) {
+      current.hidden = true;
     }
-    var focus = name === 'root' ? next.querySelector('.br-sheet-root-title') : next.querySelector('[data-br-sheet-back]');
+    var focus = name === 'root' && current && current._brReturnFocus
+      ? current._brReturnFocus
+      : (name === 'root' ? next.querySelector('.br-sheet-root-title') : next.querySelector('[data-br-sheet-back]'));
     if (focus) try { focus.focus(); } catch (_) {}
   }
   function resetSheetPanel() {
     var sheet = document.getElementById('brMoreSheet');
     if (!sheet) return;
+    if (sheet._brPanelTimer) clearTimeout(sheet._brPanelTimer);
+    sheet._brPanelTimer = null;
     sheet.querySelectorAll('.br-sheet-panel').forEach(function (p) { p.hidden = p.dataset.brSheetPanel !== 'root'; });
+    sheet.querySelectorAll('.br-sheet-panel').forEach(function (p) {
+      p.classList.remove('br-sheet-panel-enter', 'br-sheet-panel-leave', 'br-sheet-panel-leave-back');
+    });
     sheet.dataset.brSheetLevel = 'root';
     sheet.classList.remove('br-sheet-going-back');
   }
@@ -886,7 +916,7 @@ window.brHaptic = function (pattern) {
 
     sheet.addEventListener('click', function (e) {
       var category = e.target.closest('[data-br-sheet-target]');
-      if (category) { showSheetPanel(category.dataset.brSheetTarget, false); return; }
+      if (category) { showSheetPanel(category.dataset.brSheetTarget, false, category); return; }
       if (e.target.closest('[data-br-sheet-back]')) { showSheetPanel('root', true); return; }
       if (e.target.closest('#brSheetAcctToggle')) {
         var t = document.getElementById('brSheetAcctToggle');
@@ -894,6 +924,24 @@ window.brHaptic = function (pattern) {
         return;
       }
       if (e.target.closest('#brSheetSearchRow')) { setOpen(false); openSearch(); return; }
+      var action = e.target.closest('[data-br-action]');
+      if (action) {
+        // The changelog's document-level outside-click handler sees this same
+        // click after the synthetic bell click. Stop here so it cannot
+        // immediately close the panel we just opened.
+        e.stopPropagation();
+        var name = action.getAttribute('data-br-action');
+        if (name === 'refresh' && typeof window.brRefreshLeague === 'function') window.brRefreshLeague();
+        if (name === 'getting-started' && typeof window.startSiteTour === 'function') {
+          setOpen(false); window.startSiteTour();
+        }
+        if (name === 'whats-new') {
+          var bell = document.getElementById('changelogBell');
+          if (bell) bell.click();
+        }
+        if (name === 'help-tours') showSheetPanel('help-tours', false, action);
+        return;
+      }
       if (e.target.closest('.br-sheet-link, .nav-search-result')) setOpen(false);
     });
 
@@ -2969,7 +3017,7 @@ function showLoginGate(target, opts) {
     var t = document.getElementById('brSheetRefreshTime');
     if (!t) return;
     var ts = cacheTs();
-    t.textContent = ts ? fmtAge(ts) : '';
+    t.textContent = ts ? 'Updated ' + (fmtAge(ts) === 'now' ? 'just now' : fmtAge(ts) + ' ago') : '';
     t.classList.toggle('cf-stale', !!ts && (Date.now() - ts > STALE_MS));
   }
   function updateChip() {
@@ -2995,6 +3043,9 @@ function showLoginGate(target, opts) {
     var el = chip && chip.querySelector('.fp-pill-time');
     if (el) el.textContent = 'Failed · ' + (el.textContent || '—');
     if (chip) chip.style.opacity = '';
+    var btn = document.getElementById('brSheetRefresh');
+    var label = btn && btn.querySelector && btn.querySelector('span:not(.br-sheet-time)');
+    if (label) label.textContent = 'Refresh Data';
   }
 
   function setRefreshingLabel() {
@@ -3004,6 +3055,9 @@ function showLoginGate(target, opts) {
     var el = chip && chip.querySelector('.fp-pill-time');
     if (el) el.textContent = '…';
     if (chip) chip.style.opacity = '0.6';
+    var btn = document.getElementById('brSheetRefresh');
+    var label = btn && btn.querySelector && btn.querySelector('span:not(.br-sheet-time)');
+    if (label) label.textContent = 'Refreshing…';
   }
 
   function showRefreshOverlay(on) {
@@ -3178,6 +3232,8 @@ function showLoginGate(target, opts) {
         // brSwapPageRoot copies the authoritative server build timestamp.
         if (cacheTs() !== acceptedTs) throw new Error('freshness timestamp was not applied');
         updateLabels();
+        var refreshedLabel = btn && btn.querySelector && btn.querySelector('span:not(.br-sheet-time)');
+        if (refreshedLabel) refreshedLabel.textContent = 'Refresh Data';
       } else {
         // The document was proven fresh, but this page cannot safely re-run its
         // scripts in place. Arm the SW and let a native navigation initialise it.
@@ -19698,6 +19754,53 @@ window.showSubWelcome = function (opts) {
     initTour();
   });
 }());
+
+// Contextual guides are intentionally opt-in and registry-driven. No existing
+// contextual tours were found, so this starts empty rather than advertising
+// dead guides. Future guides must provide real steps and an available() gate.
+window.brFeatureGuides = window.brFeatureGuides || {};
+window.brAvailableFeatureGuides = function () {
+  return Object.keys(window.brFeatureGuides).map(function (key) {
+    return window.brFeatureGuides[key];
+  }).filter(function (guide) {
+    return guide && guide.id && guide.title && guide.description &&
+      Array.isArray(guide.steps) && guide.steps.length > 0 &&
+      (typeof guide.available !== 'function' || guide.available());
+  });
+};
+
+window.brOpenHelpTours = function () {
+  var old = document.getElementById('brHelpToursDialog');
+  if (old) old.remove();
+  var guides = window.brAvailableFeatureGuides();
+  var overlay = document.createElement('div');
+  overlay.id = 'brHelpToursDialog';
+  overlay.className = 'br-help-overlay';
+  overlay.innerHTML = '<div class="br-help-dialog" role="dialog" aria-modal="true" aria-labelledby="brHelpTitle">' +
+    '<button type="button" class="br-help-close" aria-label="Close Help and Tours">&times;</button>' +
+    '<h2 id="brHelpTitle">Help &amp; Tours</h2>' +
+    '<button type="button" class="br-help-start" data-help-start><strong>Getting Started</strong><small>Learn the BR Fantasy basics</small></button>' +
+    (guides.length ? '<h3>Feature Guides</h3>' + guides.map(function (g) {
+      return '<button type="button" class="br-help-start" data-guide="' + g.id + '"><strong>' + g.title + '</strong><small>' + g.description + '</small></button>';
+    }).join('') : '') +
+    '<div class="br-help-links"><a href="/faq">Help / FAQ</a><a href="/contact">Send Feedback</a></div></div>';
+  function close() { overlay.remove(); }
+  overlay.addEventListener('click', function (e) {
+    if (e.target === overlay || e.target.closest('.br-help-close')) close();
+    if (e.target.closest('[data-help-start]')) { close(); if (window.startSiteTour) window.startSiteTour(); }
+  });
+  document.body.appendChild(overlay);
+  overlay.querySelector('.br-help-close').focus();
+};
+
+document.addEventListener('click', function (e) {
+  var action = e.target.closest && e.target.closest('[data-br-action]');
+  if (!action || action.closest('#brMoreSheet')) return;
+  var name = action.getAttribute('data-br-action');
+  if (name === 'refresh' && window.brRefreshLeague) window.brRefreshLeague();
+  else if (name === 'help-tours') window.brOpenHelpTours();
+  // settingsChangelogBtn already delegates to the one changelog bell below.
+});
 
 // ── Pick value modal ──────────────────────────────────────────────────────────
 function showPickModal(el) {

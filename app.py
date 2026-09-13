@@ -2880,28 +2880,12 @@ def _nav_is_best_ball(platform, league_id, season) -> bool:
         return False
 
 
-def _sheet_account_section(body: str) -> str:
-    """Collapsible Account block for the mobile More sheet.
-
-    Starts collapsed so Trades / page sections stay in the first viewport; the
-    header stays under Find for one-tap access to settings. app.js toggles
-    ``aria-expanded`` / ``hidden`` on the controls below.
-    """
-    chev = (
-        "<svg class='br-sheet-acct-chev' width='16' height='16' viewBox='0 0 24 24' "
-        "fill='none' stroke='currentColor' stroke-width='2.25' stroke-linecap='round' "
-        "stroke-linejoin='round' aria-hidden='true'>"
-        "<polyline points='6 9 12 15 18 9'></polyline></svg>"
-    )
+def _sheet_action_row(label: str, action: str, icon: str, *, description: str = "") -> str:
+    """Render a More utility that delegates to the shared app.js action."""
+    detail = f"<small>{description}</small>" if description else ""
     return (
-        "<div class='br-sheet-acct' id='brSheetAcct'>"
-        "<button type='button' class='br-sheet-acct-toggle' id='brSheetAcctToggle' "
-        "aria-expanded='false' aria-controls='brSheetAcctBody'>"
-        "<span class='br-sheet-acct-label'>Account</span>"
-        "<span class='br-sheet-acct-dot' id='brSheetAcctDot' hidden aria-hidden='true'></span>"
-        f"{chev}</button>"
-        f"<div class='br-sheet-group br-sheet-acct-body' id='brSheetAcctBody' hidden>"
-        f"{body}</div></div>"
+        f"<button type='button' class='br-sheet-link' data-br-action='{action}'>"
+        f"{_nav_icon(icon, size=20)}<span>{label}{detail}</span></button>"
     )
 
 
@@ -3101,23 +3085,30 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
             f"href='/portfolio?from_league={league_id}&platform={platform}&season={season}'>"
             f"{_nav_icon('users', size=20)}<span>My Leagues</span></a>"
         )
-    # Refresh + Discord live in the sheet on mobile (they're floating pills only
-    # on desktop, where there's no bottom dock to crowd). The freshness time is
-    # filled in by app.js from the page's cache timestamp.
+    # The existing refresh control is presented in Tools. app.js continues to
+    # own the request and authoritative cache timestamp contract.
     refresh_row = (
         "<button type='button' class='br-sheet-link' id='brSheetRefresh'>"
-        f"{_nav_icon('refresh', size=20)}<span>Refresh data</span>"
+        f"{_nav_icon('refresh', size=20)}<span>Refresh Data</span>"
         "<span class='br-sheet-time' id='brSheetRefreshTime' aria-hidden='true'></span></button>"
     )
-    discord_row = (
-        "<a class='br-sheet-link' href='https://discord.gg/7aZrs7qfur' target='_blank' rel='noopener noreferrer'>"
-        "<img src='/static/images/discord-brands-solid.png' alt='' class='br-sheet-icon-img'>"
-        "<span>Join the Discord</span></a>"
+    tools_html = (
+        f"{refresh_row}"
+        + _sheet_action_row("What's New", "whats-new", "bell") +
+        "<button type='button' class='br-sheet-link br-sheet-category' data-br-action='help-tours' "
+        "aria-controls='brMorePanel-help-tours'><span>Help &amp; Tours</span>"
+        "<span class='br-sheet-chevron' aria-hidden='true'>&#8250;</span></button>"
     )
-    account_html = _sheet_account_section(
-        f"{refresh_row}{discord_row}"
-        "<div class='br-sheet-mount' id='brSheetAccount'></div>"
-    )
+    help_html = _sec("Help & Tours", [
+        _sheet_action_row("Getting Started", "getting-started", "sparkles",
+                          description="Learn the BR Fantasy basics"),
+        "<div class='br-feature-guides' data-br-feature-guides hidden></div>",
+        "<a class='br-sheet-link' href='/faq'><span>Help / FAQ</span></a>",
+        "<a class='br-sheet-link' href='/contact'><span>Send Feedback</span></a>",
+    ])
+    account_html = _sec("Account", [
+        "<div class='br-sheet-mount' id='brSheetAccount'></div>",
+    ])
 
     category_keys = {
         "Trades": {"trade", "trade-suggestions", "trade-database", "trade-intel"},
@@ -3137,10 +3128,9 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
             f"<span>{label}</span>{dot}"
             "<span class='br-sheet-chevron' aria-hidden='true'>&#8250;</span></button>"
         )
+    # Weekly and Trades are primary dock destinations. Their children remain in
+    # the mounted category panels, but do not make the root noisy.
     root_labels = ["League", "Players", "Draft", "Stats"]
-    if weekly_html:
-        root_labels.append("Weekly")
-    root_labels.append("Trades")
     root_categories = [_category_row(x) for x in root_labels]
     portfolio_root = portfolio_link
     portfolio_fallback = '<a class="br-sheet-link" href="/">Link a league</a>'
@@ -3149,17 +3139,23 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
     root_html = (
         "<section class='br-sheet-panel br-sheet-root' id='brMorePanel-root' data-br-sheet-panel='root'>"
         "<h2 class='br-sheet-root-title' tabindex='-1'>More</h2>"
-        f"{find_html}<h3 class='br-sheet-h'>Browse</h3><div class='br-sheet-group'>{''.join(root_categories)}</div>"
-        f"<h3 class='br-sheet-h'>My Leagues</h3><div class='br-sheet-group'>{portfolio_root or portfolio_fallback}</div>"
+        f"{find_html}<h3 class='br-sheet-h'>Navigate</h3><div class='br-sheet-group'>{''.join(root_categories)}{portfolio_root or portfolio_fallback}</div>"
         "<div class='br-sheet-utility-divider' aria-hidden='true'></div>"
-        f"{account_html}</section>"
+        f"<h3 class='br-sheet-h'>Tools</h3><div class='br-sheet-group'>{tools_html}</div>"
+        "<div class='br-sheet-changelog-mount' id='brSheetChangelog'></div>"
+        "<div class='br-sheet-utility-divider' aria-hidden='true'></div>"
+        "<h3 class='br-sheet-h'>Account</h3><div class='br-sheet-group'>"
+        "<button type='button' class='br-sheet-link br-sheet-category' data-br-sheet-target='account' "
+        "aria-controls='brMorePanel-account'><span>Account</span><span class='br-sheet-acct-dot' "
+        "id='brSheetAcctDot' hidden aria-hidden='true'></span><span class='br-sheet-chevron' aria-hidden='true'>&#8250;</span></button>"
+        "</div></section>"
     )
     sheet = (
         "<div class='br-sheet-scrim' id='brSheetScrim'></div>"
         "<nav class='br-sheet' id='brMoreSheet' aria-label='More' aria-hidden='true'>"
         "  <div class='br-sheet-grip' aria-hidden='true'></div>"
         f"  <div class='br-sheet-panels'>{root_html}{trades_html}{weekly_html}{league_html}"
-        f"  {players_html}{draft_html}{stats_html}</div>"
+        f"  {players_html}{draft_html}{stats_html}{help_html}{account_html}</div>"
         "</nav>"
     )
 
@@ -3298,18 +3294,9 @@ def _mobile_nav_guest(active: str) -> str:
             "<a class='br-sheet-link' href='/portfolio'>"
             f"{_nav_icon('users', size=20)}<span>My Leagues</span></a>"
         )
-    discord_row = (
-        "<a class='br-sheet-link' href='https://discord.gg/Ayy9SMmyC' target='_blank' rel='noopener noreferrer'>"
-        "<img src='/static/images/discord-brands-solid.png' alt='' class='br-sheet-icon-img'>"
-        "<span>Join the Discord</span></a>"
-    )
-    # brSheetAccount is the mount app.js relocates the settings menu (dark mode
-    # etc.) into on mobile, exactly as the league sheet does. Account starts
-    # collapsed so Trades / page sections stay reachable without scrolling.
-    account_html = _sheet_account_section(
-        f"{discord_row}"
-        "<div class='br-sheet-mount' id='brSheetAccount'></div>"
-    )
+    account_html = _sec("Account", [
+        "<div class='br-sheet-mount' id='brSheetAccount'></div>",
+    ])
 
     guest_groups = {
         "Trades": {"trade", "trade-suggestions", "trade-database", "trade-intel"},
@@ -3332,16 +3319,23 @@ def _mobile_nav_guest(active: str) -> str:
     root_html = (
         "<section class='br-sheet-panel br-sheet-root' id='brMorePanel-root' data-br-sheet-panel='root'>"
         "<h2 class='br-sheet-root-title' tabindex='-1'>More</h2>"
-        f"{find_html}<h3 class='br-sheet-h'>Browse</h3><div class='br-sheet-group'>{categories}</div>"
-        f"<h3 class='br-sheet-h'>My Leagues</h3><div class='br-sheet-group'>{portfolio_link or portfolio_fallback}</div>"
+        f"{find_html}<h3 class='br-sheet-h'>Navigate</h3><div class='br-sheet-group'>{categories}{portfolio_link or portfolio_fallback}</div>"
         "<div class='br-sheet-utility-divider' aria-hidden='true'></div>"
-        f"{account_html}</section>"
+        "<h3 class='br-sheet-h'>Tools</h3><div class='br-sheet-group'>"
+        + _sheet_action_row("What's New", "whats-new", "bell") +
+        "<button type='button' class='br-sheet-link br-sheet-category' data-br-sheet-target='learn' aria-controls='brMorePanel-learn'>"
+        "<span>Help</span><span class='br-sheet-chevron' aria-hidden='true'>&#8250;</span></button></div>"
+        "<div class='br-sheet-changelog-mount' id='brSheetChangelog'></div>"
+        "<div class='br-sheet-utility-divider' aria-hidden='true'></div>"
+        "<h3 class='br-sheet-h'>Account</h3><div class='br-sheet-group'>"
+        "<button type='button' class='br-sheet-link br-sheet-category' data-br-sheet-target='account' aria-controls='brMorePanel-account'>"
+        "<span>Account</span><span class='br-sheet-chevron' aria-hidden='true'>&#8250;</span></button></div></section>"
     )
     sheet = (
         "<div class='br-sheet-scrim' id='brSheetScrim'></div>"
         "<nav class='br-sheet' id='brMoreSheet' aria-label='More' aria-hidden='true'>"
         "  <div class='br-sheet-grip' aria-hidden='true'></div>"
-        f"  <div class='br-sheet-panels'>{root_html}{trades_html}{players_html}{draft_html}{learn_html}</div>"
+        f"  <div class='br-sheet-panels'>{root_html}{trades_html}{players_html}{draft_html}{learn_html}{account_html}</div>"
         "</nav>"
     )
     search_screen = (
@@ -4500,19 +4494,32 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
 
         # Update settings dropdown content for logged-in users with full menu
         settings_content = (
-                "<button type='button' class='settings-menu-item' id='settingsChangelogBtn'>"
-                "  " + _nav_icon("bell", cls="settings-menu-icon") +
-                "  <span class='settings-menu-label'>Notifications</span>"
-                "  <span id='settingsNotifDot' class='settings-notif-dot' style='display:none'></span>"
-                "</button>"
+                "<div class='settings-menu-heading'>Account</div>"
                 f"{dark_mode_toggle_html}"
-                f"{tour_menu_item}"
                 f"{league_switcher_html}"
                 "<button type='button' class='settings-menu-item' id='settingsLinkBtn' onclick='openLinkModal()'>"
                 "  <svg class='settings-menu-icon' viewBox='0 0 24 24' fill='none' stroke='currentColor' "
                 "       stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M12 5v14M5 12h14'/></svg>"
                 "  <span class='settings-menu-label'>Link a league</span>"
                 "</button>"
+                "<div class='settings-menu-heading settings-desktop-tools'>Tools</div>"
+                "<button type='button' class='settings-menu-item settings-desktop-tools' id='settingsRefreshBtn' data-br-action='refresh'>"
+                "  " + _nav_icon("refresh", cls="settings-menu-icon") +
+                "  <span class='settings-menu-label'>Refresh Data</span>"
+                "</button>"
+                "<button type='button' class='settings-menu-item settings-desktop-tools' id='settingsChangelogBtn' data-br-action='whats-new'>"
+                "  " + _nav_icon("bell", cls="settings-menu-icon") +
+                "  <span class='settings-menu-label'>What's New</span>"
+                "  <span id='settingsNotifDot' class='settings-notif-dot' style='display:none'></span>"
+                "</button>"
+                "<button type='button' class='settings-menu-item settings-desktop-tools' id='settingsHelpToursBtn' data-br-action='help-tours'>"
+                "  " + _nav_icon("sparkles", cls="settings-menu-icon") +
+                "  <span class='settings-menu-label'>Help &amp; Tours</span>"
+                "</button>"
+                # Preserve the existing replay controls as the implementation
+                # behind Help & Tours; mobile exposes them in that drill-down.
+                f"<div class='settings-tour-replays'>{tour_menu_item}</div>"
+                "<a href='/faq' class='settings-menu-item'><span class='settings-menu-label'>Help / Support</span></a>"
                 "<a href='/logout' class='settings-menu-item settings-menu-logout'>"
                 "  " + _nav_icon("logout", cls="settings-menu-icon") +
                 "  <span class='settings-menu-label'>Sign Out</span>"

@@ -75,6 +75,16 @@ def test_ui_prefs_and_events_endpoints_exist():
     assert "window.brUiPrefs" in APP_JS
 
 
+def test_help_tours_reuses_site_tour_and_filters_empty_guides():
+    assert "window.brOpenHelpTours" in APP_JS
+    assert "window.startSiteTour()" in APP_JS
+    assert "window.brFeatureGuides" in APP_JS
+    assert "guide.steps.length > 0" in APP_JS
+    assert "guide.available" in APP_JS
+    # The guide registry does not introduce another completion preference.
+    assert "feature_guide_done" not in APP_JS
+
+
 def test_home_onboarding_account_nudge_and_espn_guidance():
     # The bottom "Create Account" nudge was removed; saving now happens only at
     # step 3 via the inline #googleContinueBtn prompt. Keep the checks for the

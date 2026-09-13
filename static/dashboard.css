@@ -618,6 +618,46 @@ table, .standings-table, .mini-value, .mini-stat, .sr-stat-value,
     }
 }
 
+.settings-menu-heading {
+    padding: 10px 14px 5px;
+    color: var(--text-muted);
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+}
+
+.br-sheet-link small, .br-help-start small {
+    display: block;
+    margin-top: 3px;
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.br-help-overlay {
+    position: fixed; inset: 0; z-index: var(--z-modal);
+    display: grid; place-items: center; padding: 20px;
+    background: rgba(4, 8, 17, .62);
+}
+.br-help-dialog {
+    position: relative; width: min(440px, 100%); max-height: 85vh; overflow: auto;
+    padding: 24px; border: 1px solid var(--border); border-radius: 18px;
+    background: var(--card); box-shadow: 0 20px 60px rgba(0,0,0,.35);
+}
+.br-help-dialog h2 { margin: 0 36px 18px 0; }
+.br-help-dialog h3 { margin: 20px 0 8px; font-size: 12px; text-transform: uppercase; }
+.br-help-close { position: absolute; top: 12px; right: 12px; min-width: 44px; min-height: 44px; border: 0; background: none; color: var(--text); font-size: 24px; }
+.br-help-start { width: 100%; min-height: 56px; padding: 12px 14px; text-align: left; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-alt); color: var(--text); }
+.br-help-links { display: flex; gap: 18px; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border); }
+
+@media (max-width: 768px) {
+    #brSheetAccount .settings-desktop-tools,
+    #brSheetAccount .settings-tour-replays { display: none !important; }
+    #brSheetAccount .settings-menu-heading { display: block; }
+    .br-sheet-changelog-mount .changelog-dropdown { position: fixed; }
+}
+
 /* Honor reduced-motion preferences globally. */
 @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after {
@@ -37458,7 +37498,7 @@ a, button, [role="button"], [role="tab"], summary, label,
 
 /* Mobile More uses the desktop taxonomy as lightweight drill-down panels. */
 @media (max-width: 768px) {
-    .br-sheet-panels { overflow: hidden; min-height: 360px; }
+    .br-sheet-panels { position: relative; overflow: hidden; min-height: 360px; }
     .br-sheet-panel[hidden] { display: none !important; }
     .br-sheet-root-title {
         margin: 14px 28px 4px; font-size: 13px; line-height: 28px;
@@ -37481,14 +37521,22 @@ a, button, [role="button"], [role="tab"], summary, label,
     .br-sheet-utility-divider { border-top: 1px solid var(--border); margin: 22px 14px 0; }
     .br-sheet-panel-enter { animation: br-sheet-panel-in .2s ease-out both; }
     .br-sheet-going-back .br-sheet-panel-enter { animation-name: br-sheet-panel-back; }
+    .br-sheet-panel-leave, .br-sheet-panel-leave-back {
+        position: absolute; inset: 0; width: 100%; pointer-events: none;
+        animation: br-sheet-panel-out .2s ease-out both;
+    }
+    .br-sheet-panel-leave-back { animation-name: br-sheet-panel-out-back; }
     @keyframes br-sheet-panel-in { from { opacity: .35; transform: translateX(18px); } to { opacity: 1; transform: none; } }
     @keyframes br-sheet-panel-back { from { opacity: .35; transform: translateX(-18px); } to { opacity: 1; transform: none; } }
+    @keyframes br-sheet-panel-out { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateX(-18px); } }
+    @keyframes br-sheet-panel-out-back { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateX(18px); } }
     .br-sheet-back:focus-visible, .br-sheet-category:focus-visible, .br-sheet-root-title:focus-visible, .br-sheet-title:focus-visible {
         outline: 2px solid var(--accent); outline-offset: -2px;
     }
 }
 @media (prefers-reduced-motion: reduce) {
-    .br-sheet-panel-enter, .br-sheet-going-back .br-sheet-panel-enter { animation: none !important; }
+    .br-sheet-panel-enter, .br-sheet-going-back .br-sheet-panel-enter,
+    .br-sheet-panel-leave, .br-sheet-panel-leave-back { animation: none !important; }
 }
 
 @media (max-width: 768px) {
