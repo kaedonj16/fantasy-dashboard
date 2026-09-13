@@ -51,7 +51,7 @@ A full breakdown of every feature on the site, organized by the main navigation.
 ## Weekly
 
 - **Matchups / Weekly Hub** — Weekly matchup view with tabs:
-  - **Matchups** — Current-week matchup cards (default).
+  - **Matchups** — Current-week matchup cards (default). Player and team projections update live as games play — once a starter's game kicks off, the projection becomes a live projected finish: points already banked plus an expected remainder that blends the pregame rate with the player's own in-game scoring pace (weighted toward observed pace as the game goes), so a cold start is marked down and a hot one up instead of holding the frozen pregame number. Kicker/defense stay on the clock-only estimate (their scoring is too lumpy to read as a pace), and the win-probability bar tracks the same live totals.
   - **Scorers** — Highest scorers for the week.
   - **Scout** — Opponent breakdown for your current-week matchup (regular season, signed-in).
   - **Lineup** — Best possible lineup vs. what was started.
