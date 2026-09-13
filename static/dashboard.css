@@ -33752,6 +33752,24 @@ button:disabled {
     margin-top: 1px;
     font-variant-numeric: tabular-nums;
 }
+.rz-event-contributors {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px 10px;
+    margin-top: 3px;
+    color: var(--rz-muted);
+    font-size: 10px;
+    font-weight: 700;
+}
+.rz-event-contributor {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 4px;
+    white-space: nowrap;
+}
+.rz-event-contributor strong { font-variant-numeric: tabular-nums; }
+.rz-event-contributor strong.pos { color: var(--rz-green); }
+.rz-event-contributor strong.neg { color: var(--rz-red); }
 
 /* ── Pagination ───────────────────────── */
 #rz-feed-pagination {

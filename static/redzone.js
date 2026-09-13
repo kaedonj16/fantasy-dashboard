@@ -519,6 +519,28 @@
     }
     return 0;
   }
+  function _fgPts(L, s) {
+    // PBP normalizers retain distance buckets for each *made* kick.  Prefer
+    // them for cumulative lines so two made kicks at different distances do
+    // not get rescored at the latest kick's distance.  `fgm` is only the
+    // unbucketed remainder, which prevents generic + bucket double counting.
+    var bucketed = 0, pts = 0;
+    var bucketDistances = {
+      fgm_0_19: 10, fgm_20_29: 25, fgm_30_39: 35, fgm_0_39: 30,
+      fgm_40_49: 45, fgm_50_59: 55, fgm_50p: 55, fgm_60p: 60
+    };
+    Object.keys(bucketDistances).forEach(function(key) {
+      var count = _n(L[key]);
+      if (!count) return;
+      bucketed += count;
+      // Canonical PBP buckets describe the distance; _fgRate selects the
+      // league's actual configured bucket or its flat made-FG fallback.
+      pts += count * _fgRate(bucketDistances[key], s);
+    });
+    var unbucketed = Math.max(0, _n(L.fgm) - bucketed);
+    if (unbucketed) pts += unbucketed * _fgRate(_n(L.fg_yds) || _n(L.fg_long), s);
+    return pts;
+  }
   function _lineToPts(L, s, pos) {
     if (!L) return 0;
     s = s || _state.scoring || {};
@@ -528,7 +550,7 @@
     // TE reception premium (bonus_rec_te) when the league runs one.
     if (String(pos || '').toUpperCase() === 'TE') pts += _n(L.rec) * _n(s.bonus_rec_te);
     // Kicker (distance-aware) + defense (Sleeper-style keys with common aliases)
-    pts += _n(L.fgm) * _fgRate(L.fg_yds, s) + _n(L.xpm) * _n(s.xpm || s.xp);
+    pts += _fgPts(L, s) + _n(L.xpm) * _n(s.xpm || s.xp);
     var sacks = _n(L.sacks != null ? L.sacks : L.sack);
     pts += sacks * _n(s.sack) + _n(L.def_int) * _n(s.int || s.def_int)
       + _n(L.fum_rec) * _n(s.fum_rec) + _n(L.def_td) * _n(s.def_td || s.td);
@@ -1179,7 +1201,9 @@
     
     // Key stats to compare
     var keys = ['rec', 'rec_yds', 'rec_td', 'targets', 'carries', 'rush_yds', 'rush_td',
-                'pass_yds', 'pass_td', 'int', 'fgm', 'xpm', 'sacks', 'def_int', 'fum_rec', 'def_td'];
+                'pass_yds', 'pass_td', 'int', 'fgm', 'fg_yds', 'fg_long',
+                'fgm_0_19', 'fgm_20_29', 'fgm_30_39', 'fgm_0_39', 'fgm_40_49',
+                'fgm_50_59', 'fgm_50p', 'fgm_60p', 'xpm', 'sacks', 'def_int', 'fum_rec', 'def_td'];
     
     for (var i = 0; i < keys.length; i++) {
       var k = keys[i];
@@ -1351,6 +1375,8 @@
       carries: 0, rush_yds: 0, rush_td: 0,
       pass_yds: 0, pass_td: 0, pass_att: 0, pass_cmp: 0, int: 0,
       fgm: 0, fga: 0, xpm: 0, xpa: 0,
+      fgm_0_19: 0, fgm_20_29: 0, fgm_30_39: 0, fgm_0_39: 0,
+      fgm_40_49: 0, fgm_50_59: 0, fgm_50p: 0, fgm_60p: 0,
       sacks: 0, def_int: 0, fum_rec: 0, def_td: 0
     };
     
@@ -2870,6 +2896,17 @@
     return ev.playId || [ev.pid || '0', ev.kind || 'event', ev.desc || '', ev.playSortTs || ev.ts || 0].join(':');
   }
 
+  function _secondaryContributors(ev) {
+    var seen = new Set([String(ev.pid || '')]);
+    return (ev.contributions || []).filter(function(c) {
+      if (!c || c.isInvalid || !c.pid || seen.has(String(c.pid))) return false;
+      seen.add(String(c.pid));
+      // A secondary line earns its space only when the canonical contribution
+      // has fantasy impact.  This avoids making routine plays verbose.
+      return Math.abs(_n(c.pts)) > 0.0001;
+    });
+  }
+
   function _eventHtml(ev, animate) {
     var tagLabel = ev.mine ? (_scope === 'user' && ev.league ? ev.league : 'MY TEAM')
                  : ev.opp  ? (_scope === 'user' && ev.league ? ('OPP · ' + ev.league) : 'OPP')
@@ -2920,6 +2957,15 @@
     var cumeHtml = cumeStr
       ? '<div class="rz-event-cume">' + ev.pos + ' · ' + cumeStr + '</div>'
       : '';
+    var secondary = _secondaryContributors(ev);
+    var secondaryHtml = secondary.length
+      ? '<div class="rz-event-contributors">' + secondary.map(function(c) {
+          var pts = _n(c.pts);
+          return '<span class="rz-event-contributor"><span>' + c.name + '</span>'
+            + '<strong class="' + (pts > 0 ? 'pos' : (pts < 0 ? 'neg' : 'zero')) + '">'
+            + (pts > 0 ? '+' : '') + _fmtFantasyDelta(pts) + '</strong></span>';
+        }).join('') + '</div>'
+      : '';
     var isDef = String(ev.pos || '').toUpperCase() === 'DEF';
     var defTeam = ev.nflTeam || (isDef ? ev.pid : '') || '';
     var avSrc, avOnErr;
@@ -2947,6 +2993,7 @@
       + '<div class="rz-event-main"><span class="rz-event-name">' + ev.name + '</span>' + tag + '</div>'
       + '<div class="rz-event-desc">' + ev.desc + ydChip + '</div>'
       + cumeHtml
+      + secondaryHtml
       + '</div>'
       + '<div class="rz-event-delta ' + deltaCls + '">'
       + ((scoreStr || clockStr) ? '<div class="rz-event-delta-game">'

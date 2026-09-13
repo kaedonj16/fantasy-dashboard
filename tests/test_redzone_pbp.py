@@ -116,6 +116,19 @@ def test_extract_flat_player_stats_and_nested_body():
     assert plays[0]["stat_line"]["carries"] == 1.0
 
 
+def test_extract_kick_keeps_a_non_overlapping_distance_bucket():
+    """Tank01 made-FG rows must remain scoreable after cumulative rebuilds."""
+    box = {"allPlayByPlay": [{
+        "playId": "fg-1", "play": "Jake Kicker 56 yard field goal",
+        "playerStats": {"k": {
+            "longName": "Jake Kicker", "Kicking": {"fgMade": 1, "fgLng": 56},
+        }},
+    }]}
+    plays = extract_pbp_plays(box, "g", name_to_pid={"jake kicker": "k1"})
+    assert plays[0]["stat_line"]["fgm"] == 1.0
+    assert plays[0]["stat_line"]["fgm_50_59"] == 1.0
+
+
 def test_extract_narrative_only_when_no_player_rows():
     box = {
         "allPlayByPlay": [

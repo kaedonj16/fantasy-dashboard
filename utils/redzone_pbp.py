@@ -305,7 +305,17 @@ def _normalize_player_delta(ps: dict) -> dict:
         return {}
     # Some payloads nest Passing/Rushing/Receiving; others already look like a
     # boxscore playerStats row (flat keys). rz_stat_line_from_ps handles both.
-    return rz_stat_line_from_ps(ps)
+    line = rz_stat_line_from_ps(ps)
+    # Unlike a box score, this is one PBP contribution.  Preserve its made-FG
+    # distance as a non-overlapping canonical bucket so client cumulative
+    # scoring cannot apply every made kick at the latest kick's distance.
+    distance = line.get("fg_yds") or line.get("fg_long") or 0
+    if line.get("fgm") and distance:
+        key = ("fgm_60p" if distance >= 60 else "fgm_50_59" if distance >= 50
+               else "fgm_40_49" if distance >= 40 else "fgm_30_39" if distance >= 30
+               else "fgm_20_29" if distance >= 20 else "fgm_0_19")
+        line[key] = line["fgm"]
+    return line
 
 
 def _iter_player_stats(pstats: Any) -> Iterable[dict]:

@@ -12276,7 +12276,15 @@ def _redzone_collect(platform, league_id, season, week):
         # settings rather than generic defaults. sync_league_globals routes
         # through the right provider for every platform (Sleeper included).
         sync_league_globals(platform, league_id, season)
-        scoring = get_normalized_scoring_settings(platform) or {}
+        # Re-stamp the provider result at the Redzone boundary.  PBP point
+        # deltas are calculated client-side from this payload, so it must carry
+        # the same canonical `rec` (including explicit 0) contract as the rest
+        # of the app rather than falling back to an incomplete provider shape.
+        from utils.league_scoring import normalize_league_scoring
+        scoring = normalize_league_scoring(
+            platform, get_normalized_scoring_settings(platform) or {},
+            league_id=league_id, season=season,
+        )
     except Exception:
         scoring = {}
 

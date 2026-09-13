@@ -72,6 +72,12 @@ def _accum(dest: dict, name: str, **fields) -> None:
         sl[k] = sl.get(k, 0) + v
 
 
+def _fg_bucket(distance: int) -> str:
+    return ("fgm_60p" if distance >= 60 else "fgm_50_59" if distance >= 50 else
+            "fgm_40_49" if distance >= 40 else "fgm_30_39" if distance >= 30 else
+            "fgm_20_29" if distance >= 20 else "fgm_0_19")
+
+
 def parse_pbp_play_stats(text: str) -> dict[str, dict]:
     """Booth line → ``{abbrev_lower: stat_line}`` for the players it credits.
 
@@ -126,7 +132,8 @@ def parse_pbp_play_stats(text: str) -> dict[str, dict]:
     if mf:
         # Keep the distance so the client can score distance-based FG buckets
         # (fgm_40_49, fgm_50p, …) rather than only a flat fgm.
-        _accum(out, mf.group(1), fgm=1, fg_yds=int(mf.group(2)))
+        distance = int(mf.group(2))
+        _accum(out, mf.group(1), fgm=1, fg_yds=distance, **{_fg_bucket(distance): 1})
     mx = _RE_XP.search(text)
     if mx:
         _accum(out, mx.group(1), xpm=1)
