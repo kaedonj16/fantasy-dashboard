@@ -59,7 +59,7 @@ def test_refresh_guards_stale_generation_and_scope():
     assert "newData.scope !== myScope" in src
     assert "_scopeCache[myScope] = newData" in src
     # State must be applied before detect so owner/league labels are correct.
-    assert src.index("_state = newData") < src.index("_detectChanges(newData,")
+    assert src.index("_setState(newData)") < src.index("_detectChanges(newData,")
     assert "_loadingScope = false; _render()" not in src.replace("_recoverScopeLoad", "")
 
 
@@ -69,7 +69,7 @@ def test_recover_scope_load_uses_cache_not_foreign_state():
     # First-load failure replaces the skeleton with an explicit retry state;
     # only the active scope's cached payload may be restored.
     assert "_scopeLoadError = true" in src
-    assert "_state = cached" in src
+    assert "_setState(cached)" in src
     assert "_loadingScope = false;\n      _render();" not in src or "_scopeCache" in src
 
 
@@ -79,7 +79,7 @@ def test_scope_switch_restores_payload_and_isolated_runtime():
     block = block[: block.index("root.querySelectorAll('.rz-tab-btn')")]
     assert "_streamGen++" in block
     assert "var cached = _scopeCache[_scope]" in block
-    assert "_state = cached" in block
+    assert "_setState(cached)" in block
     assert "_loadingScope = true" in block
     assert "_saveScopeRuntime(_scope)" in block
     assert "_restoreScopeRuntime(_scope, cached)" in block
@@ -155,7 +155,7 @@ def test_runtime_cache_contains_all_canonical_pbp_structures():
 
 def test_empty_and_partial_polls_merge_without_clearing_canonical_pbp():
     refresh = _fn("_refresh")
-    between_state_and_detect = refresh[refresh.index("_state = newData"):refresh.index("_detectChanges(newData,")]
+    between_state_and_detect = refresh[refresh.index("_setState(newData)"):refresh.index("_detectChanges(newData,")]
     assert "_feed = []" not in between_state_and_detect
     assert "_resetFeedSnapshots" not in between_state_and_detect
     assert "_saveScopeRuntime(myScope)" in refresh
