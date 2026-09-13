@@ -1333,7 +1333,7 @@ def render_matchup_slide(
         if not proj_mode:
             points = f"{t['pts_total']:.2f}" if isinstance(t.get("pts_total"), (int, float)) else "-"
             return f"<span class='num'>{points}</span>", False
-        actual_total, live_proj_total = team_live_totals(
+        lineup_actual, live_proj_total = team_live_totals(
             t, status_by_pid, week_proj_map,
             proj_lookup=_pid_proj, frac_lookup=_frac_lookup,
         )
@@ -1343,6 +1343,15 @@ def render_matchup_slide(
         )
         if not any_started:
             return f"<span class='num m-proj-only'>{live_proj_total:.1f}</span>", False
+        # Provider scoreboard totals remain authoritative.  A partially mapped
+        # Yahoo lineup may enrich rows but must never zero the matchup header.
+        actual_total = t.get("pts_total")
+        if not isinstance(actual_total, (int, float)):
+            starters = t.get("starters") or []
+            lineup_complete = bool(starters) and all(
+                isinstance(p.get("pts"), (int, float)) for p in starters
+            )
+            actual_total = lineup_actual if lineup_complete else 0.0
         return f"<span class='num'>{actual_total:.1f}</span><span class='proj'>{live_proj_total:.1f}</span>", True
 
     def _team_col(t, side: str) -> str:

@@ -144,6 +144,14 @@ def ttl_cache(ttl: int = 300):
 
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
+            # Live surfaces may request a shorter freshness window without
+            # creating a second cache or changing the default used site-wide.
+            # This control kwarg is consumed by the decorator and is deliberately
+            # excluded from the key so live requests can refresh the normal entry.
+            requested_max_age = kwargs.pop("_cache_max_age", None)
+            effective_ttl = ttl
+            if requested_max_age is not None:
+                effective_ttl = max(0.0, min(float(ttl), float(requested_max_age)))
             frozen_args = _freeze(args)
             frozen_kwargs = _freeze(kwargs)
             key = (func.__name__, frozen_args, frozen_kwargs)
@@ -151,7 +159,7 @@ def ttl_cache(ttl: int = 300):
             entry = _cache.get(key)
             if entry is not None:
                 ts, cached_result = entry
-                if time.time() - ts < ttl:
+                if time.time() - ts < effective_ttl:
                     return cached_result
                 # Expired: try to refresh, but if the upstream call fails (e.g. a
                 # slow/down Sleeper API) serve the stale value instead of raising.
@@ -664,17 +672,22 @@ def build_team_game_lookup(scores_body: dict) -> dict[str, dict]:
       'DAL' -> { ... full game dict ... }
       'DET' -> { ... same game dict ... }
     """
+    from utils.utils import canon_team, team_abbr_keys, canonicalize_game_teams
     team_map: dict[str, dict] = {}
 
     for game in scores_body.values():
         if not isinstance(game, dict):
             continue
-        home = game.get("home")
-        away = game.get("away")
-        if home:
-            team_map[str(home)] = game
-        if away:
-            team_map[str(away)] = game
+        normalized = canonicalize_game_teams(game)
+        for raw in (game.get("home"), game.get("away")):
+            canonical = canon_team(raw)
+            if not canonical:
+                continue
+            # Both provider spelling and canonical/legacy abbreviations resolve
+            # to the same normalized game object.
+            team_map[str(raw)] = normalized
+            for key in team_abbr_keys(canonical):
+                team_map[key] = normalized
 
     return team_map
 

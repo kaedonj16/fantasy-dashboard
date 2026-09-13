@@ -44,7 +44,7 @@ _ESPN_SB_CACHE: dict[str, tuple[float, dict]] = {}  # season:week -> team->game 
 # swept into the name.
 _SURNAME_EXTRA = r"(?:[.\s]+[A-Z][a-z][A-Za-z'\-]*)*"
 _ABBREV_RE = re.compile(
-    r"\b([A-Za-z])\.\s?([A-Za-z][A-Za-z'\-]*" + _SURNAME_EXTRA + r")"
+    r"\b([A-Za-z]+)\.\s?([A-Za-z][A-Za-z'\-]*" + _SURNAME_EXTRA + r")"
 )
 
 # ── Booth-line stat parsing ───────────────────────────────────────────────────
@@ -182,7 +182,59 @@ def parse_pbp_play_stats(text: str) -> dict[str, dict]:
     return out
 
 
-def _stat_lines_by_pid(text: str, abbrev_index: dict[str, str]) -> dict[str, dict]:
+def _team_prefix_pid(
+    token: str,
+    team: str,
+    player_meta_by_pid: dict[str, dict] | None,
+) -> tuple[str, int]:
+    """Resolve ``Mi.Wilson`` from a unique full-name prefix on one NFL team."""
+    match = _ABBREV_RE.fullmatch(_s(token))
+    if not match or len(match.group(1)) < 2 or not team:
+        return "", 0
+    from utils.utils import canon_team
+
+    prefix = re.sub(r"[^a-z]", "", match.group(1).lower())
+    wanted_surname = _canon_abbrev("X." + match.group(2))[1:]
+    canonical_team = canon_team(team) or _s(team).upper()
+    hits: set[str] = set()
+    for pid, meta in (player_meta_by_pid or {}).items():
+        if not isinstance(meta, dict):
+            continue
+        candidate_team = canon_team(meta.get("team")) or _s(meta.get("team")).upper()
+        if candidate_team != canonical_team:
+            continue
+        tokens = _strip_suffix_tokens([p for p in _s(meta.get("name")).split() if p])
+        if len(tokens) < 2:
+            continue
+        first = re.sub(r"[^a-z]", "", tokens[0].lower())
+        surname = _canon_abbrev("X." + " ".join(tokens[1:]))[1:]
+        if first.startswith(prefix) and surname == wanted_surname:
+            hits.add(str(pid))
+    return (next(iter(hits)), 1) if len(hits) == 1 else ("", len(hits))
+
+
+def _resolve_abbrev_pid(
+    token: str,
+    *,
+    abbrev_index: dict[str, str],
+    team: str = "",
+    player_meta_by_pid: dict[str, dict] | None = None,
+) -> tuple[str, int]:
+    """Existing exact abbreviation first, then team-scoped prefix matching."""
+    pid = (abbrev_index or {}).get(_canon_abbrev(token))
+    if pid:
+        return pid, 1
+    return _team_prefix_pid(token, team, player_meta_by_pid)
+
+
+def _stat_lines_by_pid(
+    text: str,
+    abbrev_index: dict[str, str],
+    *,
+    team: str = "",
+    player_meta_by_pid: dict[str, dict] | None = None,
+    play_id: str = "",
+) -> dict[str, dict]:
     """``parse_pbp_play_stats`` keyed by pid instead of abbreviation.
 
     Ambiguous abbrevs are absent from ``abbrev_index`` (dropped by
@@ -191,7 +243,14 @@ def _stat_lines_by_pid(text: str, abbrev_index: dict[str, str]) -> dict[str, dic
     """
     by_pid: dict[str, dict] = {}
     for abbrev, sl in parse_pbp_play_stats(text).items():
-        pid = (abbrev_index or {}).get(_canon_abbrev(abbrev))
+        pid, candidate_count = _resolve_abbrev_pid(
+            abbrev, abbrev_index=abbrev_index, team=team,
+            player_meta_by_pid=player_meta_by_pid,
+        )
+        if logger.isEnabledFor(logging.DEBUG):
+            role = "receiver" if sl.get("rec") or sl.get("targets") else "passer" if sl.get("pass_att") else "participant"
+            logger.debug("[pbp-identity] play=%s offense=%s token=%s role=%s pid=%s candidates=%s",
+                         play_id, team, abbrev, role, pid or "unresolved", candidate_count)
         if not pid or not sl:
             continue
         dest = by_pid.setdefault(pid, {})
@@ -302,6 +361,8 @@ def pids_mentioned_in_text(
     *,
     full_index: dict[str, str],
     abbrev_index: dict[str, str],
+    team: str = "",
+    player_meta_by_pid: dict[str, dict] | None = None,
 ) -> list[str]:
     """Resolve rostered pids referenced in a booth line (full or F.Last)."""
     if not text:
@@ -319,8 +380,10 @@ def pids_mentioned_in_text(
                 seen.add(pid)
                 found.append(pid)
     for m in _ABBREV_RE.finditer(text):
-        key = _canon_abbrev(f"{m.group(1)}.{m.group(2)}")
-        pid = abbrev_index.get(key)
+        pid, _candidate_count = _resolve_abbrev_pid(
+            f"{m.group(1)}.{m.group(2)}", abbrev_index=abbrev_index,
+            team=team, player_meta_by_pid=player_meta_by_pid,
+        )
         if pid and pid not in seen:
             seen.add(pid)
             found.append(pid)
@@ -676,6 +739,7 @@ def extract_espn_pbp_plays(
     game_id: str,
     *,
     name_to_pid: dict[str, str] | None = None,
+    player_meta_by_pid: dict[str, dict] | None = None,
 ) -> list[dict]:
     """Flatten ESPN ``gamepackageJSON.drives`` into Redzone play rows."""
     if not isinstance(espn_payload, dict):
@@ -742,7 +806,15 @@ def extract_espn_pbp_plays(
                 "source": "espn",
             }
             seq += 1
-            stat_by_pid = _stat_lines_by_pid(text, abbrev_idx)
+            is_no_play = bool(re.search(r"\bno play\b", text, re.IGNORECASE))
+            if is_no_play:
+                out.append({**base, "pid": "", "name": "", "team": drive_team,
+                            "is_no_play": True, "play_state": "NO_PLAY"})
+                continue
+            stat_by_pid = _stat_lines_by_pid(
+                text, abbrev_idx, team=drive_team,
+                player_meta_by_pid=player_meta_by_pid, play_id=play_id,
+            )
             # Resolve mentioned players from the action clause only -- never the
             # parenthetical tackle credit -- so a defender who merely made the
             # stop does not become a standalone card headlining the ball
@@ -751,6 +823,8 @@ def extract_espn_pbp_plays(
                 _text_without_credits(text),
                 full_index=full_idx,
                 abbrev_index=abbrev_idx,
+                team=drive_team,
+                player_meta_by_pid=player_meta_by_pid,
             )
             # A parsed line may credit a player the mention pass missed.
             for pid in stat_by_pid:
@@ -925,6 +999,7 @@ def fetch_alt_pbp_plays(
     week: int | str,
     name_to_pid: dict[str, str] | None = None,
     team_to_def_pid: dict[str, str] | None = None,  # reserved
+    player_meta_by_pid: dict[str, dict] | None = None,
     live: bool = False,
     final: bool = False,
     providers: tuple[str, ...] = ("espn", "sleeper"),
@@ -960,7 +1035,8 @@ def fetch_alt_pbp_plays(
                 if force_fresh and espn_payload_completed(payload):
                     _ESPN_PBP_FINAL_DONE.add(eid)
                 plays = extract_espn_pbp_plays(
-                    payload, tank_game_id, name_to_pid=name_to_pid
+                    payload, tank_game_id, name_to_pid=name_to_pid,
+                    player_meta_by_pid=player_meta_by_pid,
                 )
                 if plays:
                     logger.debug(

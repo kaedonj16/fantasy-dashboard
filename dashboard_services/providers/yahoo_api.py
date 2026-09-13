@@ -609,6 +609,7 @@ def _yahoo_get(
     *,
     _retried: bool = False,
     _retried_key: bool = False,
+    cache_max_age: Optional[float] = None,
 ) -> Any:
     """Make a GET request to the Yahoo Fantasy API, returning parsed JSON."""
     league_key = _league_key_from_yahoo_path(path)
@@ -621,6 +622,7 @@ def _yahoo_get(
                         return _yahoo_get(
                             access_token, alt_path, params,
                             _retried=_retried, _retried_key=True,
+                            cache_max_age=cache_max_age,
                         )
                     except YahooLeagueAccessDenied:
                         continue
@@ -628,7 +630,8 @@ def _yahoo_get(
         if not _retried and not _retried_key:
             alt = _owner_token_for_league_path(path, access_token)
             if alt and not _yahoo_access_blocked(league_key, alt):
-                return _yahoo_get(alt, path, params, _retried=True)
+                return _yahoo_get(alt, path, params, _retried=True,
+                                  cache_max_age=cache_max_age)
         raise YahooLeagueAccessDenied(f"not a member of {league_key}")
 
     url = f"{YAHOO_API_BASE}/{path.lstrip('/')}"
@@ -641,7 +644,11 @@ def _yahoo_get(
 
     with _api_cache_lock:
         hit = _api_cache.get(cache_key)
-        if hit and (now - hit[0]) < _API_CACHE_TTL:
+        effective_ttl = (
+            _API_CACHE_TTL if cache_max_age is None
+            else min(_API_CACHE_TTL, max(0.0, float(cache_max_age)))
+        )
+        if hit and (now - hit[0]) < effective_ttl:
             return hit[1]
 
     resp = requests.get(
@@ -666,6 +673,7 @@ def _yahoo_get(
                         data = _yahoo_get(
                             access_token, alt_path, params,
                             _retried=_retried, _retried_key=True,
+                            cache_max_age=cache_max_age,
                         )
                         _remember_full_league_key(_league_key_from_yahoo_path(alt_path))
                         return data
@@ -677,7 +685,8 @@ def _yahoo_get(
                     logger.info(
                         "[yahoo] retrying %s with stored league-owner token", path,
                     )
-                    return _yahoo_get(alt, path, params, _retried=True)
+                    return _yahoo_get(alt, path, params, _retried=True,
+                                      cache_max_age=cache_max_age)
             raise YahooLeagueAccessDenied(
                 f"not a member of {league_key or path}"
             )
@@ -1072,6 +1081,15 @@ def _resolve_player(
 ) -> Optional[str]:
     """Map a Yahoo player to a canonical Sleeper id. Prefers the exact yahoo_id
     crosswalk; falls back to name/pos/team when the id is unknown."""
+    # Yahoo team defenses do not have a stable cross-provider player id.  They
+    # are represented by the Sleeper index's canonical team abbreviation.
+    pos = _yahoo_pos(yahoo_pos)
+    if pos == "DEF" or str(yahoo_pos or "").strip().upper() in {"D", "DST", "D/ST"}:
+        from utils.utils import canon_team, NFL_TEAMS
+        for candidate in (yahoo_team, yahoo_name):
+            team_id = canon_team(candidate)
+            if team_id in NFL_TEAMS:
+                return team_id
     if yahoo_id:
         hit = _yahoo_id_to_canonical().get(str(yahoo_id))
         if hit:
@@ -1172,6 +1190,7 @@ def _summarize_team_entry(team_data: List) -> Dict[str, Any]:
     raw_players = _extract_roster_players(team_data)
     resolved = 0
     unmapped_samples: List[str] = []
+    unmapped_defenses: List[str] = []
     for rp in raw_players:
         p_meta, _ = _flatten_yahoo_player(rp)
         yid = str(p_meta.get("player_id") or "")
@@ -1183,8 +1202,12 @@ def _summarize_team_entry(team_data: List) -> Dict[str, Any]:
         team = (p_meta.get("editorial_team_abbr") or "").upper()
         if _resolve_player(name or "", pos, team, yahoo_id=yid):
             resolved += 1
-        elif len(unmapped_samples) < 5:
-            unmapped_samples.append(f"yid={yid} name={name!r} pos={pos}")
+        else:
+            detail = f"yid={yid} name={name!r} pos={pos} team={team}"
+            if _yahoo_pos(pos) == "DEF":
+                unmapped_defenses.append(detail)
+            elif len(unmapped_samples) < 5:
+                unmapped_samples.append(detail)
     standings = _team_field_dict(team_data, "team_standings")
     outcome = _unwrap_yahoo_list_or_dict(standings.get("outcome_totals"))
     roster_block = _team_attr(team_data, "roster")
@@ -1197,6 +1220,7 @@ def _summarize_team_entry(team_data: List) -> Dict[str, Any]:
         "raw_players":    len(raw_players),
         "resolved_players": resolved,
         "unmapped_samples": unmapped_samples,
+        "unmapped_defenses": unmapped_defenses,
         "has_roster":     isinstance(roster_block, dict) and bool(roster_block),
         "roster_block_keys": roster_keys[:12],
         "players_block_keys": sorted(
@@ -1238,6 +1262,24 @@ def diagnose_league(season: int, league_id: str, access_token: str) -> Dict[str,
             "scoring_type": meta.get("scoring_type"),
             "current_week": meta.get("current_week"),
         }
+        week = _safe_int(meta.get("current_week")) or 1
+        scoreboard_path = f"league/{lk}/scoreboard;week={week}"
+        out["scoreboard_path"] = scoreboard_path
+        out["scoreboard_week"] = week
+        # Scoreboard diagnostics are additive.  A missing permission, an old
+        # fixture, or a transient endpoint failure must not turn an otherwise
+        # healthy league/roster diagnostic into a false failure.
+        try:
+            scoreboard_raw = _yahoo_get(access_token, scoreboard_path)
+            scoreboard_rows = _matchup_rows_from_scoreboard(scoreboard_raw, week)
+            out["scoreboard_response_shape"] = _summarize_fantasy_response(scoreboard_raw)
+            out["scoreboard_pairings"] = [
+                {"matchup_id": r.get("matchup_id"), "roster_id": r.get("roster_id"),
+                 "points": r.get("points"), "projected": r.get("projected_points")}
+                for r in scoreboard_rows
+            ]
+        except Exception as exc:
+            out["scoreboard_error"] = f"{type(exc).__name__}: {exc}"
     except Exception as exc:
         out["ok"] = False
         out["error"] = f"{type(exc).__name__}: {exc}"
@@ -1289,6 +1331,31 @@ def _team_attr(team_list: List, key: str, default=None):
 def _team_field_dict(team_list: List, key: str) -> Dict[str, Any]:
     """Read a team sub-resource and normalize Yahoo list wrappers to a dict."""
     return _unwrap_yahoo_list_or_dict(_team_attr(team_list, key))
+
+
+def _yahoo_nullable_total(value: Any) -> Optional[float]:
+    """Parse Yahoo totals without conflating an absent value with real 0.00."""
+    node = value
+    for _ in range(8):
+        if isinstance(node, list):
+            flat: Dict[str, Any] = {}
+            _merge_yahoo_dict_parts(node, flat)
+            node = flat.get("total") if "total" in flat else (node[0] if len(node) == 1 else None)
+            continue
+        if isinstance(node, dict):
+            if "total" in node:
+                node = node.get("total")
+                continue
+            numeric = [v for k, v in node.items() if str(k).isdigit()]
+            node = numeric[0] if len(numeric) == 1 else None
+            continue
+        break
+    if node is None or isinstance(node, bool) or str(node).strip() == "":
+        return None
+    try:
+        return float(node)
+    except (TypeError, ValueError):
+        return None
 
 
 def _yahoo_manager_entries(team_list: List) -> List[Dict[str, Any]]:
@@ -1545,6 +1612,7 @@ def _split_yahoo_lineup(raw_players: List[Any]) -> tuple[List[str], List[str], L
     players: List[str] = []
     starters: List[str] = []
     reserve: List[str] = []
+    fallback_starters: List[str] = []
     for rp in raw_players:
         canon, sel_pos = _yahoo_player_canonical(rp)
         if not canon:
@@ -1554,13 +1622,19 @@ def _split_yahoo_lineup(raw_players: List[Any]) -> tuple[List[str], List[str], L
         if slot in _YAHOO_IR_SLOTS:
             reserve.append(canon)
         elif slot in _YAHOO_BENCH_SLOTS:
+            # Some Yahoo preseason/offseason responses mark the entire roster
+            # BN.  Preserve the historical lineup fallback for ordinary
+            # players, but never promote a defense explicitly reported on the
+            # bench (Yahoo defense mapping is intentionally team based).
+            p_meta, _ = _flatten_yahoo_player(rp)
+            raw_pos = p_meta.get("display_position") or ""
+            if _yahoo_pos(str(raw_pos).split(",")[0]) != "DEF":
+                fallback_starters.append(canon)
             continue
         else:
             starters.append(canon)
-    if not starters and players:
-        # Yahoo tags every player BN before a lineup is submitted.
-        ir_set = set(reserve)
-        starters = [p for p in players if p not in ir_set][:9]
+    if not starters and fallback_starters:
+        starters = fallback_starters[:9]
     return players, starters, reserve
 
 
@@ -1815,12 +1889,12 @@ def _matchup_rows_from_scoreboard(raw: Any, week: int) -> List[Dict[str, Any]]:
             roster_id = _yahoo_roster_id_from_team(tm)
             if not roster_id:
                 continue
-            pts_block = _team_field_dict(tm, "team_points")
-            proj_block = _team_field_dict(tm, "team_projected_points")
+            raw_pts = _team_attr(tm, "team_points")
+            raw_proj = _team_attr(tm, "team_projected_points")
             team_key = str(_team_attr(tm, "team_key") or "")
             sides.append({
-                "points":            _safe_float(pts_block.get("total")),
-                "projected_points":  _safe_float(proj_block.get("total")),
+                "points":            _yahoo_nullable_total(raw_pts),
+                "projected_points":  _yahoo_nullable_total(raw_proj),
                 "players":           [],
                 "roster_id":         roster_id,
                 "team_key":          team_key,
@@ -1829,6 +1903,8 @@ def _matchup_rows_from_scoreboard(raw: Any, week: int) -> List[Dict[str, Any]]:
                 "starters_points":   [],
                 "players_points":    {},
             })
+            _yahoo_debug("scoreboard week=%s team_key=%s roster_id=%s raw_total=%r parsed_total=%r",
+                         week, team_key, roster_id, raw_pts, sides[-1]["points"])
         if len(sides) < 2:
             continue
         m_id += 1
@@ -1894,9 +1970,14 @@ def _hydrate_yahoo_matchup_lineups(
             row["players"] = players
         if starters:
             row["starters"] = starters
+        _yahoo_debug("roster week=%s team_key=%s roster_id=%s players=%s starters=%s",
+                     week_i, tk, row.get("roster_id"), len(players), len(starters))
 
 
-def get_matchups(season: int, league_id: str, week: int, access_token: str) -> List[Dict[str, Any]]:
+def get_matchups(
+    season: int, league_id: str, week: int, access_token: str, *,
+    cache_ttl: float | None = None,
+) -> List[Dict[str, Any]]:
     """Return Sleeper-shaped matchup rows for Yahoo's published week pairings.
 
     Yahoo's JSON scoreboard nests matchups under ``scoreboard["0"]["matchups"]``.
@@ -1906,8 +1987,9 @@ def get_matchups(season: int, league_id: str, week: int, access_token: str) -> L
     starter pids can join Sleeper weekly projections.
     """
     lk = _league_key_for_season(league_id, season, access_token)
+    cache_kwargs = {"cache_max_age": cache_ttl} if cache_ttl is not None else {}
     try:
-        raw = _yahoo_get(access_token, f"league/{lk}/scoreboard;week={week}")
+        raw = _yahoo_get(access_token, f"league/{lk}/scoreboard;week={week}", **cache_kwargs)
     except YahooLeagueAccessDenied:
         return []
     except Exception as exc:
@@ -1920,7 +2002,7 @@ def get_matchups(season: int, league_id: str, week: int, access_token: str) -> L
     # retry that path after an HTTP/auth failure -- it just doubles 403s.
     if not out:
         try:
-            raw_default = _yahoo_get(access_token, f"league/{lk}/scoreboard")
+            raw_default = _yahoo_get(access_token, f"league/{lk}/scoreboard", **cache_kwargs)
         except YahooLeagueAccessDenied:
             raw_default = None
         except Exception as exc:

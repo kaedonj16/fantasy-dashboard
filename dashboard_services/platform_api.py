@@ -46,8 +46,15 @@ def get_rosters(platform: str, league_id: str, season: int) -> List[Dict[str, An
     return get_provider(platform).get_rosters(league_id, season)
 
 
-def get_matchups(platform: str, league_id: str, week: int, season: int) -> List[Dict[str, Any]]:
-    return get_provider(platform).get_matchups(league_id, season, week)
+def get_matchups(
+    platform: str, league_id: str, week: int, season: int, *,
+    cache_ttl: float | None = None,
+) -> List[Dict[str, Any]]:
+    """Return matchups, optionally bounding provider cache age for live views."""
+    provider = get_provider(platform)
+    if cache_ttl is None:
+        return provider.get_matchups(league_id, season, week)
+    return provider.get_matchups(league_id, season, week, cache_ttl=cache_ttl)
 
 
 def get_traded_picks(platform: str, league_id: str, season: int) -> List[Dict[str, Any]]:

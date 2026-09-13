@@ -662,12 +662,18 @@ _box_score_cache: Dict[Tuple[int, str, int], Tuple[float, Any]] = {}
 _box_score_lock = threading.Lock()
 
 
-def _box_scores_cached(season: int, league_id: str, week: int):
+def _box_scores_cached(
+    season: int, league_id: str, week: int, *, max_age: float | None = None,
+):
     key = (int(season), str(league_id), int(week))
     now = time.time()
     with _box_score_lock:
         hit = _box_score_cache.get(key)
-        if hit and (now - hit[0]) < _BOX_SCORE_TTL:
+        effective_ttl = (
+            _BOX_SCORE_TTL if max_age is None
+            else min(_BOX_SCORE_TTL, max(0.0, float(max_age)))
+        )
+        if hit and (now - hit[0]) < effective_ttl:
             return hit[1]
     # Fetch outside the lock so a slow ESPN call doesn't block other keys.
     scores = _league(season, league_id).box_scores(week)
@@ -1094,9 +1100,18 @@ def resolve_espn_player_id(
     return canon_pid(str(espn_pid), espn_to_canon)
 
 
-def get_matchups(season: int, league_id: str, week: int) -> List[Dict[str, Any]]:
+def get_matchups(
+    season: int, league_id: str, week: int, *, cache_ttl: float | None = None,
+) -> List[Dict[str, Any]]:
     espn_to_canon = _espn_to_canon_cached()
-    box_scores = _box_scores_cached(season, league_id, week)
+    if cache_ttl is None:
+        # Keep the ordinary call signature compatible with tests and callers
+        # that replace the long-standing three-argument cache helper.
+        box_scores = _box_scores_cached(season, league_id, week)
+    else:
+        box_scores = _box_scores_cached(
+            season, league_id, week, max_age=cache_ttl,
+        )
 
     out: List[Dict[str, Any]] = []
     matchup_id = 0

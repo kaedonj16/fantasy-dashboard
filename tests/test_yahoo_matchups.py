@@ -181,6 +181,41 @@ def test_scoreboard_keeps_yahoo_team_projected_points(monkeypatch):
     assert by_rid[1]["points"] == 0.0
 
 
+@pytest.mark.parametrize("raw, expected", [
+    ({"total": "37.25"}, 37.25),
+    ([{"coverage_type": "week"}, {"total": "18.50"}], 18.5),
+    ({"0": {"total": "9.75"}}, 9.75),
+    ("6.25", 6.25),
+    ({"total": {"total": "3.5"}}, 3.5),
+    ({"total": "0.00"}, 0.0),
+    ({}, None),
+    ({"total": "not-a-score"}, None),
+])
+def test_yahoo_total_shapes_preserve_missing_and_real_zero(raw, expected):
+    assert yahoo_api._yahoo_nullable_total(raw) == expected
+
+
+@pytest.mark.parametrize("name, team", [
+    ("Philadelphia", ""),
+    ("Philadelphia Eagles", ""),
+    ("Eagles", ""),
+    ("Philadelphia Defense", ""),
+    ("", "Phi"),
+    ("", "PHILADELPHIA_EAGLES_NFL"),
+])
+def test_yahoo_philadelphia_defense_resolves_without_id_crosswalk(name, team):
+    assert yahoo_api._resolve_player(name, "D/ST", team, yahoo_id="999999") == "PHI"
+
+
+@pytest.mark.parametrize("slot, expected_starters", [("DEF", ["PHI"]), ("BN", [])])
+def test_yahoo_defense_remains_in_roster_and_obeys_selected_slot(slot, expected_starters):
+    payload = _team_roster_payload(1, "999999", "Philadelphia Eagles", pos="DEF", nfl="Phi", slot=slot)
+    raw = yahoo_api._extract_roster_players(payload["fantasy_content"]["team"])
+    players, starters, _reserve = yahoo_api._split_yahoo_lineup(raw)
+    assert players == ["PHI"]
+    assert starters == expected_starters
+
+
 def _team_roster_payload(team_id, yahoo_id, name, *, pos="QB", nfl="BUF", slot="QB"):
     player_entry = [[
         {"player_id": str(yahoo_id)},

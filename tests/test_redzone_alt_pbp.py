@@ -165,6 +165,94 @@ def test_parse_pbp_completed_pass_credits_passer_and_receiver():
     assert sl["m.hollins"] == {"rec": 1, "rec_yds": 12, "targets": 1}
 
 
+def test_espn_multi_letter_receiver_prefix_preserves_both_contributions():
+    payload = {"gamepackageJSON": {"drives": {"current": {
+        "team": {"abbreviation": "ARI"},
+        "plays": [{
+            "id": "401", "sequenceNumber": "9001",
+            "text": "(Shotgun) J.Brissett pass short right to Mi.Wilson to LAC 22 for 10 yards (D.Jackson).",
+            "type": {"text": "Pass"},
+        }],
+    }}}}
+    metadata = {
+        "qb": {"name": "Jacoby Brissett", "team": "ARI", "position": "QB"},
+        "wr": {"name": "Michael Wilson", "team": "ARI", "position": "WR"},
+        "tackler": {"name": "Derius Jackson", "team": "LAC", "position": "CB"},
+    }
+    rows = extract_espn_pbp_plays(
+        payload, "20260909_ARI@LAC",
+        name_to_pid={"jacoby brissett": "qb", "michael wilson": "wr"},
+        player_meta_by_pid=metadata,
+    )
+    assert {(r["pid"], r["game_id"], r["play_id"]) for r in rows} == {
+        ("qb", "20260909_ARI@LAC", "401"),
+        ("wr", "20260909_ARI@LAC", "401"),
+    }
+    by_pid = {r["pid"]: r for r in rows}
+    assert by_pid["wr"]["stat_line"] == {"rec": 1, "rec_yds": 10, "targets": 1}
+    assert by_pid["qb"]["stat_line"] == {"pass_yds": 10, "pass_cmp": 1, "pass_att": 1}
+    assert "tackler" not in by_pid
+
+
+def test_team_scoped_multi_letter_prefix_resolution_and_ambiguity():
+    from utils.redzone_alt_pbp import _resolve_abbrev_pid
+
+    _, abbrev = build_name_indexes({"michael wilson": "ari-michael"})
+    metadata = {
+        "ari-michael": {"name": "Michael Wilson", "team": "ARI"},
+        "nyj-mike": {"name": "Mike Wilson", "team": "NYJ"},
+    }
+    assert _resolve_abbrev_pid("M.Wilson", abbrev_index=abbrev,
+                               team="ARI", player_meta_by_pid=metadata) == ("ari-michael", 1)
+    assert _resolve_abbrev_pid("Mi.Wilson", abbrev_index=abbrev,
+                               team="ARI", player_meta_by_pid=metadata) == ("ari-michael", 1)
+    assert _resolve_abbrev_pid("Mic.Wilson", abbrev_index=abbrev,
+                               team="ARI", player_meta_by_pid=metadata) == ("ari-michael", 1)
+    assert _resolve_abbrev_pid("Mic.Wilson", abbrev_index=abbrev,
+                               team="NYJ", player_meta_by_pid=metadata) == ("", 0)
+
+    ambiguous = {**metadata, "ari-micah": {"name": "Micah Wilson", "team": "ARI"}}
+    assert _resolve_abbrev_pid("Mi.Wilson", abbrev_index={},
+                               team="ARI", player_meta_by_pid=ambiguous) == ("", 2)
+
+
+def test_prefix_resolution_handles_suffixes_and_compound_surnames():
+    from utils.redzone_alt_pbp import _resolve_abbrev_pid
+
+    metadata = {
+        "mhj": {"name": "Marvin Harrison Jr.", "team": "ARI"},
+        "olave": {"name": "Chris Olave", "team": "NO"},
+        "jsn": {"name": "Jaxon Smith-Njigba", "team": "SEA"},
+        "arsb": {"name": "Amon-Ra St. Brown", "team": "DET"},
+    }
+    assert _resolve_abbrev_pid("Mar.Harrison", abbrev_index={}, team="ARI", player_meta_by_pid=metadata)[0] == "mhj"
+    assert _resolve_abbrev_pid("Ch.Olave", abbrev_index={}, team="NO", player_meta_by_pid=metadata)[0] == "olave"
+    # Existing single-initial compound resolution remains exact.
+    _, abbrev = build_name_indexes({m["name"]: pid for pid, m in metadata.items()})
+    assert _resolve_abbrev_pid("J.Smith-Njigba", abbrev_index=abbrev)[0] == "jsn"
+    assert _resolve_abbrev_pid("A.St. Brown", abbrev_index=abbrev)[0] == "arsb"
+
+
+def test_espn_no_play_emits_no_player_contributions_or_cumulative_stats():
+    payload = {"gamepackageJSON": {"drives": {"current": {
+        "team": {"abbreviation": "ARI"}, "plays": [{
+            "id": "np1",
+            "text": "J.Brissett pass incomplete deep right to Mi.Wilson PENALTY on LAC-D.Jackson, Defensive Pass Interference, 23 yards, enforced at ARZ 45 - No Play.",
+        }],
+    }}}}
+    rows = extract_espn_pbp_plays(
+        payload, "20260909_ARI@LAC",
+        name_to_pid={"jacoby brissett": "qb", "michael wilson": "wr"},
+        player_meta_by_pid={"qb": {"name": "Jacoby Brissett", "team": "ARI"},
+                            "wr": {"name": "Michael Wilson", "team": "ARI"}},
+    )
+    assert len(rows) == 1
+    assert rows[0]["pid"] == ""
+    assert rows[0]["stat_line"] == {}
+    assert rows[0]["cume"] == {}
+    assert rows[0]["is_no_play"] is True
+
+
 def test_parse_pbp_td_pass_and_extra_point():
     sl = parse_pbp_play_stats(
         "D.Lock pass short left to J.Smith-Njigba for 45 yards, TOUCHDOWN. "

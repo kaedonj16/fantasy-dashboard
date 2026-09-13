@@ -21,6 +21,12 @@ def test_canon_team_maps_wsh_to_was():
     assert canon_team("WAS") == "WAS"
 
 
+def test_canon_team_maps_all_philadelphia_provider_forms():
+    for raw in ("PHI", "Phi", "Philadelphia", "Philadelphia Eagles",
+                "PHILADELPHIA_EAGLES_NFL", "Eagles"):
+        assert canon_team(raw) == "PHI"
+
+
 def test_canonical_teams_index_merges_wsh_into_was():
     merged = canonical_teams_index({
         "WAS": {"teamId": "32", "byeWeek": 12, "rush_yds_pg": None, "Logo": "was.png"},
