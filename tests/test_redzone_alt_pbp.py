@@ -38,6 +38,49 @@ def test_alternate_pbp_defaults_to_espn_first(monkeypatch):
     assert calls == ["espn"]
 
 
+def test_final_game_force_refreshes_espn_until_completed(monkeypatch):
+    """A game our status calls final must keep pulling fresh ESPN PBP (ttl=0)
+    until ESPN reports the game completed -- otherwise the last live snapshot,
+    a few plays short, freezes under the long final TTL."""
+    import utils.redzone_alt_pbp as alt
+    alt._ESPN_PBP_FINAL_DONE.discard("event-1")
+
+    ttls = []
+    # ESPN still shows the game in progress on the first look, completed on the next.
+    payloads = iter([
+        {"gamepackageJSON": {"header": {"competitions": [
+            {"status": {"type": {"completed": False}}}]}}},
+        {"gamepackageJSON": {"header": {"competitions": [
+            {"status": {"type": {"completed": True}}}]}}},
+    ])
+    monkeypatch.setattr(alt, "fetch_espn_event_id", lambda **kw: "event-1")
+    monkeypatch.setattr(alt, "extract_espn_pbp_plays",
+                        lambda *a, **k: [{"play_id": "p"}])
+
+    def fake_pbp(eid, *, ttl=30.0):
+        ttls.append(ttl)
+        return next(payloads)
+    monkeypatch.setattr(alt, "fetch_espn_pbp", fake_pbp)
+
+    # First final poll: ESPN not yet complete -> forced fresh (ttl 0), not marked done.
+    alt.fetch_alt_pbp_plays("20260909_NE@SEA", season=2026, week=1, final=True)
+    assert ttls[-1] == 0.0
+    assert "event-1" not in alt._ESPN_PBP_FINAL_DONE
+
+    # Second poll: ESPN now complete -> still forced fresh, and marked done.
+    alt.fetch_alt_pbp_plays("20260909_NE@SEA", season=2026, week=1, final=True)
+    assert ttls[-1] == 0.0
+    assert "event-1" in alt._ESPN_PBP_FINAL_DONE
+
+    # Once done, subsequent final polls serve the immutable long-TTL cache.
+    payloads = iter([{"gamepackageJSON": {"header": {"competitions": [
+        {"status": {"type": {"completed": True}}}]}}}])
+    monkeypatch.setattr(alt, "fetch_espn_pbp", fake_pbp)
+    alt.fetch_alt_pbp_plays("20260909_NE@SEA", season=2026, week=1, final=True)
+    assert ttls[-1] == 300.0
+    alt._ESPN_PBP_FINAL_DONE.discard("event-1")
+
+
 def test_attach_cumulative_builds_running_totals_in_order():
     plays = [
         {"pid": "qb", "stat_line": {"pass_yds": 12, "pass_cmp": 1, "pass_att": 1}},

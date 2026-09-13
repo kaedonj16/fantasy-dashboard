@@ -30,6 +30,10 @@ _SLEEPER_WEEK_CACHE: dict[str, tuple[float, list]] = {}
 _SLEEPER_PBP_CACHE: dict[str, tuple[float, list]] = {}
 _ESPN_EVENT_CACHE: dict[str, tuple[float, str]] = {}  # matchup key -> espn event id
 _ESPN_PBP_CACHE: dict[str, tuple[float, dict]] = {}
+# Event ids whose ESPN gamepackage has been fetched *after* the game reported
+# completed. Until an event is in here, a final game keeps force-refreshing its
+# PBP so the closing drives land, instead of freezing on the last live snapshot.
+_ESPN_PBP_FINAL_DONE: set[str] = set()
 _ESPN_SB_CACHE: dict[str, tuple[float, dict]] = {}  # season:week -> team->game lookup
 
 _ABBREV_RE = re.compile(r"\b([A-Za-z])\.([A-Za-z][A-Za-z'\-]*)\b")
@@ -547,6 +551,34 @@ def fetch_espn_pbp(event_id: str, *, ttl: float = 30.0) -> dict:
     return data
 
 
+def espn_payload_completed(payload: dict) -> bool:
+    """True when an ESPN gamepackage/summary payload reports the game finished.
+
+    A game can flip to final in Tank01 while ESPN's gamepackage is still mid-Q4,
+    so ``final`` from our status alone is not proof the closing drives are in the
+    payload yet. Read ESPN's own completion flag (``status.type.completed``),
+    checking the handful of shapes the summary endpoint uses.
+    """
+    if not isinstance(payload, dict):
+        return False
+    roots = [payload, payload.get("gamepackageJSON")]
+    for root in roots:
+        if not isinstance(root, dict):
+            continue
+        header = root.get("header")
+        comps = header.get("competitions") if isinstance(header, dict) else None
+        if isinstance(comps, list):
+            for comp in comps:
+                stype = ((comp or {}).get("status") or {}).get("type") or {}
+                if isinstance(stype, dict) and stype.get("completed"):
+                    return True
+        stat = root.get("status")
+        stype = (stat.get("type") or {}) if isinstance(stat, dict) else {}
+        if isinstance(stype, dict) and stype.get("completed"):
+            return True
+    return False
+
+
 def _espn_skip_play(play: dict) -> bool:
     """Drop non-action noise (kickoff, timeout, end quarter, etc.)."""
     typ = play.get("type") or {}
@@ -814,6 +846,7 @@ def fetch_alt_pbp_plays(
     name_to_pid: dict[str, str] | None = None,
     team_to_def_pid: dict[str, str] | None = None,  # reserved
     live: bool = False,
+    final: bool = False,
     providers: tuple[str, ...] = ("espn", "sleeper"),
 ) -> list[dict]:
     """Best-effort alternate PBP for a Tank01-keyed game.
@@ -821,6 +854,11 @@ def fetch_alt_pbp_plays(
     ESPN is the default primary because its structured plays consistently carry
     period and clock fields. ``providers`` lets the caller place Tank01 between
     ESPN and the undocumented Sleeper fallback without duplicating fetch logic.
+
+    ``final`` marks a game our status believes is over. A just-final game must
+    not serve the last *live* snapshot (which stops a few plays short) under the
+    long final TTL, so its ESPN PBP is force-refreshed until ESPN's own
+    gamepackage reports the game completed -- then it's immutable and cached.
     """
     del team_to_def_pid  # reserved for future DEF tagging
     date_part, away, home = parse_tank_game_id(tank_game_id)
@@ -834,7 +872,13 @@ def fetch_alt_pbp_plays(
                 away=away, home=home, yyyymmdd=date_part, ttl=max(ttl, 300.0)
             )
             if eid:
-                payload = fetch_espn_pbp(eid, ttl=ttl)
+                # Keep pulling fresh ESPN data for a final game until ESPN says
+                # the game is complete, so the closing drives are captured
+                # instead of frozen at the last live snapshot.
+                force_fresh = final and eid not in _ESPN_PBP_FINAL_DONE
+                payload = fetch_espn_pbp(eid, ttl=0.0 if force_fresh else ttl)
+                if force_fresh and espn_payload_completed(payload):
+                    _ESPN_PBP_FINAL_DONE.add(eid)
                 plays = extract_espn_pbp_plays(
                     payload, tank_game_id, name_to_pid=name_to_pid
                 )
