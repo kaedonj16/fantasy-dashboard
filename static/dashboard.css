@@ -618,6 +618,46 @@ table, .standings-table, .mini-value, .mini-stat, .sr-stat-value,
     }
 }
 
+.settings-menu-heading {
+    padding: 10px 14px 5px;
+    color: var(--text-muted);
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+}
+
+.br-sheet-link small, .br-help-start small {
+    display: block;
+    margin-top: 3px;
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.br-help-overlay {
+    position: fixed; inset: 0; z-index: var(--z-modal);
+    display: grid; place-items: center; padding: 20px;
+    background: rgba(4, 8, 17, .62);
+}
+.br-help-dialog {
+    position: relative; width: min(440px, 100%); max-height: 85vh; overflow: auto;
+    padding: 24px; border: 1px solid var(--border); border-radius: 18px;
+    background: var(--card); box-shadow: 0 20px 60px rgba(0,0,0,.35);
+}
+.br-help-dialog h2 { margin: 0 36px 18px 0; }
+.br-help-dialog h3 { margin: 20px 0 8px; font-size: 12px; text-transform: uppercase; }
+.br-help-close { position: absolute; top: 12px; right: 12px; min-width: 44px; min-height: 44px; border: 0; background: none; color: var(--text); font-size: 24px; }
+.br-help-start { width: 100%; min-height: 56px; padding: 12px 14px; text-align: left; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-alt); color: var(--text); }
+.br-help-links { display: flex; gap: 18px; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border); }
+
+@media (max-width: 768px) {
+    #brSheetAccount .settings-desktop-tools,
+    #brSheetAccount .settings-tour-replays { display: none !important; }
+    #brSheetAccount .settings-menu-heading { display: block; }
+    .br-sheet-changelog-mount .changelog-dropdown { position: fixed; }
+}
+
 /* Honor reduced-motion preferences globally. */
 @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after {

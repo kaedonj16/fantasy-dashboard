@@ -94,7 +94,7 @@ function openPlayerModal(playerId, playerName, opts) {
       <button type="button" class="pm-tab active" role="tab" aria-selected="true" data-tab="overview" onclick="pmSwitchTab('overview', event)">Overview</button>
       <button type="button" class="pm-tab" role="tab" aria-selected="false" data-tab="stats" onclick="pmSwitchTab('stats', event)">Stats</button>
       <button type="button" class="pm-tab" role="tab" aria-selected="false" id="pmTabTeam" data-tab="team" onclick="pmSwitchTab('team', event)" style="display:none">Team</button>
-      <button type="button" class="pm-tab" role="tab" aria-selected="false" id="pmTabMetrics" data-tab="metrics" onclick="pmSwitchTab('metrics', event)" style="display:none">Adv Metrics</button>
+      <button type="button" class="pm-tab" role="tab" aria-selected="false" id="pmTabMetrics" data-tab="metrics" onclick="pmSwitchTab('metrics', event)" style="display:none">Advanced</button>
       <button type="button" class="pm-tab" role="tab" aria-selected="false" id="pmTabProspect" data-tab="prospect" onclick="pmSwitchTab('prospect', event)" style="display:none">Prospect</button>
       <button type="button" class="pm-tab" role="tab" aria-selected="false" id="pmTabBreakout" data-tab="breakout" onclick="pmSwitchTab('breakout', event)" style="display:none">Breakout</button>
       <button type="button" class="pm-tab" role="tab" aria-selected="false" data-tab="trades" onclick="pmSwitchTab('trades', event)">Trades</button>
