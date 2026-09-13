@@ -17,10 +17,11 @@ def _wire():
 def test_click_and_keyboard_share_narrow_player_target_helper():
     wire = _wire()
     assert "function (target)" in wire
-    assert "closest('[data-pid][role=\"button\"]')" in wire
+    assert "closest('.pm-player-link[data-pid][role=\"button\"]')" in wire
     assert "const nav = findPlayerNavTarget(target)" in wire
     assert "const row=findPlayerNavTarget(e.target)" in wire
     assert "closest('[data-pid]')" not in wire
+    assert "closest('[data-pid][role=\"button\"]')" not in wire
 
 
 def test_metadata_pid_blocks_remain_non_navigation_metadata():
