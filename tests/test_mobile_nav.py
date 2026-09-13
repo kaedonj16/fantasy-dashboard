@@ -79,7 +79,11 @@ def test_secondary_page_keeps_dock_stable_and_activates_more(offline_client):
     # stable, so repeated navigation never changes the user's destinations.
     html = _html(offline_client, GRAPHS)
     assert "br-tabbar-lbl'>Graphs<" not in html
-    assert "br-more-tab active" in html
+    # More is active because Graphs lives in the sheet. Assert on the class tail
+    # rather than "br-more-tab active": when a game is live/imminent the dock
+    # inserts a `br-more-live` glow class between the two, so the adjacent-token
+    # form is wall-clock fragile.
+    assert "active' id='brMoreTab'" in html
     assert "current page: Graphs" in html
     assert "br-sheet-link active" in html
     assert "aria-current='page'" in html
