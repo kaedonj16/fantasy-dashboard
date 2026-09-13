@@ -154,6 +154,82 @@ def test_touchdown_narrative_recovers_missing_receiver_scoring_fields():
     assert line["rec_yds"] == 39
     assert line["rec_td"] == 1
     assert plays[0]["quarter"] == "2" and plays[0]["clock"] == "2:43"
+
+
+def test_non_td_catch_recovers_missing_reception_count_from_yards():
+    """A non-TD catch with receiving yards but no reception count must still
+    credit the reception, so PPR/half-PPR leagues score the +1 point."""
+    box = {
+        "allPlayByPlay": [{
+            "playId": "rec-1",
+            "quarter": "3",
+            "clock": "8:12",
+            "play": "D.Maye pass short right to M.Hollins for 19 yards",
+            "playerStats": {
+                "WR": {
+                    "longName": "Mack Hollins",
+                    "teamAbv": "NE",
+                    # Provider shipped yards but omitted the reception count.
+                    "Receiving": {"recYards": 19, "targets": 1},
+                }
+            },
+        }]
+    }
+    plays = extract_pbp_plays(box, "g1", name_to_pid={"mack hollins": "WR1"})
+    line = next(p for p in plays if p["pid"] == "WR1")["stat_line"]
+    assert line["rec"] == 1
+    assert line["rec_yds"] == 19
+    assert line["rec_td"] == 0
+
+
+def test_non_td_zero_yard_catch_recovers_reception_from_completion_text():
+    """A caught ball for no gain still counts as a reception when the booth
+    line is a completion and the receiving row only carries a target."""
+    box = {
+        "allPlayByPlay": [{
+            "playId": "rec-0yd",
+            "quarter": "1",
+            "clock": "11:03",
+            "play": "D.Maye pass short middle to H.Henry for no gain",
+            "playerStats": {
+                "TE": {
+                    "longName": "Hunter Henry",
+                    "teamAbv": "NE",
+                    "Receiving": {"recYards": 0, "targets": 1},
+                }
+            },
+        }]
+    }
+    plays = extract_pbp_plays(box, "g1", name_to_pid={"hunter henry": "TE1"})
+    line = next(p for p in plays if p["pid"] == "TE1")["stat_line"]
+    assert line["rec"] == 1
+    assert line["rec_yds"] == 0
+
+
+def test_incomplete_target_row_never_becomes_a_reception():
+    """An incomplete target that ships a receiving row must stay rec=0 so the
+    recovery never invents a catch on an incompletion."""
+    box = {
+        "allPlayByPlay": [{
+            "playId": "inc-1",
+            "quarter": "2",
+            "clock": "5:00",
+            "play": "D.Maye pass incomplete short left to R.Doubs",
+            "playerStats": {
+                "WR": {
+                    "longName": "Romeo Doubs",
+                    "teamAbv": "NE",
+                    "Receiving": {"recYards": 0, "targets": 1},
+                }
+            },
+        }]
+    }
+    plays = extract_pbp_plays(box, "g1", name_to_pid={"romeo doubs": "WR2"})
+    line = next(p for p in plays if p["pid"] == "WR2")["stat_line"]
+    assert line["rec"] == 0
+    assert line["targets"] == 1
+
+
 def test_incomplete_target_fallback():
     """Test incomplete pass target extraction when playerStats missing."""
     box = {

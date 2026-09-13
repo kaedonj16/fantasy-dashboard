@@ -461,7 +461,27 @@ def extract_pbp_plays(
                 line["rush_td"] = line.get("rush_td") or 1.0
             elif text_is_td and isinstance(passing, dict) and line.get("pass_yds"):
                 line["pass_td"] = line.get("pass_td") or 1.0
-            
+
+            # Non-TD completed catch: Tank01 sometimes ships receiving yardage
+            # (or a receiving block on a completion) without the per-play
+            # reception count. Left uncorrected, the client scores the yards
+            # but drops the +1 PPR reception point, so a catch reads as standard
+            # scoring in a PPR/half-PPR league. Recover the single reception the
+            # completion implies. Receiving yards only accrue on a caught ball,
+            # and an incomplete target ("incomplete" in the booth line) carries
+            # no yardage, so this never turns an incompletion into a catch.
+            text_is_completion = "pass" in text.lower() and "incomplete" not in text.lower()
+            if (
+                not line.get("rec")
+                and isinstance(receiving, dict)
+                and (
+                    line.get("rec_yds")
+                    or line.get("rec_td")
+                    or (text_is_completion and line.get("targets"))
+                )
+            ):
+                line["rec"] = 1.0
+
             long_name = _s(_first(ps, "longName", "long_name", "playerName", "name"))
             # Keep named players (or nonzero deltas) even when Tank01 shipped
             # empty/zero fantasy deltas — the booth line is still real PBP.
