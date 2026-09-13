@@ -1264,16 +1264,22 @@ def diagnose_league(season: int, league_id: str, access_token: str) -> Dict[str,
         }
         week = _safe_int(meta.get("current_week")) or 1
         scoreboard_path = f"league/{lk}/scoreboard;week={week}"
-        scoreboard_raw = _yahoo_get(access_token, scoreboard_path)
-        scoreboard_rows = _matchup_rows_from_scoreboard(scoreboard_raw, week)
         out["scoreboard_path"] = scoreboard_path
         out["scoreboard_week"] = week
-        out["scoreboard_response_shape"] = _summarize_fantasy_response(scoreboard_raw)
-        out["scoreboard_pairings"] = [
-            {"matchup_id": r.get("matchup_id"), "roster_id": r.get("roster_id"),
-             "points": r.get("points"), "projected": r.get("projected_points")}
-            for r in scoreboard_rows
-        ]
+        # Scoreboard diagnostics are additive.  A missing permission, an old
+        # fixture, or a transient endpoint failure must not turn an otherwise
+        # healthy league/roster diagnostic into a false failure.
+        try:
+            scoreboard_raw = _yahoo_get(access_token, scoreboard_path)
+            scoreboard_rows = _matchup_rows_from_scoreboard(scoreboard_raw, week)
+            out["scoreboard_response_shape"] = _summarize_fantasy_response(scoreboard_raw)
+            out["scoreboard_pairings"] = [
+                {"matchup_id": r.get("matchup_id"), "roster_id": r.get("roster_id"),
+                 "points": r.get("points"), "projected": r.get("projected_points")}
+                for r in scoreboard_rows
+            ]
+        except Exception as exc:
+            out["scoreboard_error"] = f"{type(exc).__name__}: {exc}"
     except Exception as exc:
         out["ok"] = False
         out["error"] = f"{type(exc).__name__}: {exc}"
@@ -1606,6 +1612,7 @@ def _split_yahoo_lineup(raw_players: List[Any]) -> tuple[List[str], List[str], L
     players: List[str] = []
     starters: List[str] = []
     reserve: List[str] = []
+    fallback_starters: List[str] = []
     for rp in raw_players:
         canon, sel_pos = _yahoo_player_canonical(rp)
         if not canon:
@@ -1615,9 +1622,19 @@ def _split_yahoo_lineup(raw_players: List[Any]) -> tuple[List[str], List[str], L
         if slot in _YAHOO_IR_SLOTS:
             reserve.append(canon)
         elif slot in _YAHOO_BENCH_SLOTS:
+            # Some Yahoo preseason/offseason responses mark the entire roster
+            # BN.  Preserve the historical lineup fallback for ordinary
+            # players, but never promote a defense explicitly reported on the
+            # bench (Yahoo defense mapping is intentionally team based).
+            p_meta, _ = _flatten_yahoo_player(rp)
+            raw_pos = p_meta.get("display_position") or ""
+            if _yahoo_pos(str(raw_pos).split(",")[0]) != "DEF":
+                fallback_starters.append(canon)
             continue
         else:
             starters.append(canon)
+    if not starters and fallback_starters:
+        starters = fallback_starters[:9]
     return players, starters, reserve
 
 

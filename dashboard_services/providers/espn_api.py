@@ -1104,7 +1104,14 @@ def get_matchups(
     season: int, league_id: str, week: int, *, cache_ttl: float | None = None,
 ) -> List[Dict[str, Any]]:
     espn_to_canon = _espn_to_canon_cached()
-    box_scores = _box_scores_cached(season, league_id, week, max_age=cache_ttl)
+    if cache_ttl is None:
+        # Keep the ordinary call signature compatible with tests and callers
+        # that replace the long-standing three-argument cache helper.
+        box_scores = _box_scores_cached(season, league_id, week)
+    else:
+        box_scores = _box_scores_cached(
+            season, league_id, week, max_age=cache_ttl,
+        )
 
     out: List[Dict[str, Any]] = []
     matchup_id = 0
