@@ -172,5 +172,5 @@ def test_failed_refresh_recovers_without_rebuilding_mounted_controls():
     refresh = REDZONE_JS.split("async function _refresh() {", 1)[1].split(
         "// ── Progressive My Leagues", 1
     )[0]
-    assert refresh.count("_recoverScopeLoad(myGen, myScope);") == 2
-    assert refresh.count("if (myGen === _streamGen && myScope === _scope && !_loadingScope) _partialUpdate();") == 2
+    assert refresh.count("_recoverScopeLoad(myGen, myScope);") == 3
+    assert refresh.count("if (myGen === _streamGen && myScope === _scope && !_loadingScope) _partialUpdate();") == 3
