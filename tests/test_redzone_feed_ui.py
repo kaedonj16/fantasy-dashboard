@@ -155,6 +155,47 @@ console.log(JSON.stringify({{forward:forward, reverse:reverse}}));
     assert result["reverse"] == result["forward"]
 
 
+def test_grouped_play_ownership_tracks_headline_actor_not_any_contributor():
+    """A grouped NFL play is 'mine' only when the headline (primary) actor is
+    mine -- not when any background contributor is. Otherwise your QB completing
+    to an opponent's WR headlines the opponent yet reads as MY TEAM and leaks
+    into the My Team filter."""
+    pbp = REDZONE_JS.split("function _eventsFromPbp(", 1)[1].split(
+        "function _detectChanges", 1
+    )[0]
+    events_block = pbp.split("var event = {", 1)[1][:400]
+    assert "mine: !!primary.mine" in events_block
+    assert "opp: !!primary.opp" in events_block
+    # The discarded "any contributor" ownership must not drive the event flags.
+    assert "mine: allMine" not in pbp
+    assert "opp: allOpp" not in pbp
+    # The My Team filter keys off that per-event flag.
+    assert "if (_myTeamOnly && !ev.mine) return false;" in REDZONE_JS
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node.js not available")
+def test_primary_actor_is_receiver_so_ownership_follows_the_catch():
+    """_selectPrimaryActor headlines the receiver over the passer, so a play
+    where only the passer is mine resolves to a not-mine event."""
+    helper = REDZONE_JS[
+        REDZONE_JS.index("function _selectPrimaryActor")
+        : REDZONE_JS.index("function _isPlayNullified")
+    ]
+    script = f"""
+{helper}
+var qbMine = {{pid:'qb', mine:true, opp:false, line:{{pass_yds:15}}}};
+var wrOpp  = {{pid:'wr', mine:false, opp:true, line:{{rec:1, rec_yds:15}}}};
+var primary = _selectPrimaryActor([qbMine, wrOpp]);
+console.log(JSON.stringify({{
+  pid: primary.pid,
+  eventMine: !!primary.mine,
+  eventOpp: !!primary.opp
+}}));
+"""
+    out = json.loads(subprocess.check_output(["node", "-e", script], text=True))
+    assert out == {"pid": "wr", "eventMine": False, "eventOpp": True}
+
+
 def test_scope_runtime_normalizes_feed_and_render_state_is_scope_local():
     save = REDZONE_JS.split("function _saveScopeRuntime", 1)[1].split(
         "function _restoreScopeRuntime", 1
