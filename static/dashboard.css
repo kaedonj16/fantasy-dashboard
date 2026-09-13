@@ -37498,7 +37498,7 @@ a, button, [role="button"], [role="tab"], summary, label,
 
 /* Mobile More uses the desktop taxonomy as lightweight drill-down panels. */
 @media (max-width: 768px) {
-    .br-sheet-panels { overflow: hidden; min-height: 360px; }
+    .br-sheet-panels { position: relative; overflow: hidden; min-height: 360px; }
     .br-sheet-panel[hidden] { display: none !important; }
     .br-sheet-root-title {
         margin: 14px 28px 4px; font-size: 13px; line-height: 28px;
@@ -37521,14 +37521,22 @@ a, button, [role="button"], [role="tab"], summary, label,
     .br-sheet-utility-divider { border-top: 1px solid var(--border); margin: 22px 14px 0; }
     .br-sheet-panel-enter { animation: br-sheet-panel-in .2s ease-out both; }
     .br-sheet-going-back .br-sheet-panel-enter { animation-name: br-sheet-panel-back; }
+    .br-sheet-panel-leave, .br-sheet-panel-leave-back {
+        position: absolute; inset: 0; width: 100%; pointer-events: none;
+        animation: br-sheet-panel-out .2s ease-out both;
+    }
+    .br-sheet-panel-leave-back { animation-name: br-sheet-panel-out-back; }
     @keyframes br-sheet-panel-in { from { opacity: .35; transform: translateX(18px); } to { opacity: 1; transform: none; } }
     @keyframes br-sheet-panel-back { from { opacity: .35; transform: translateX(-18px); } to { opacity: 1; transform: none; } }
+    @keyframes br-sheet-panel-out { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateX(-18px); } }
+    @keyframes br-sheet-panel-out-back { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateX(18px); } }
     .br-sheet-back:focus-visible, .br-sheet-category:focus-visible, .br-sheet-root-title:focus-visible, .br-sheet-title:focus-visible {
         outline: 2px solid var(--accent); outline-offset: -2px;
     }
 }
 @media (prefers-reduced-motion: reduce) {
-    .br-sheet-panel-enter, .br-sheet-going-back .br-sheet-panel-enter { animation: none !important; }
+    .br-sheet-panel-enter, .br-sheet-going-back .br-sheet-panel-enter,
+    .br-sheet-panel-leave, .br-sheet-panel-leave-back { animation: none !important; }
 }
 
 @media (max-width: 768px) {

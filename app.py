@@ -3095,7 +3095,7 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
     tools_html = (
         f"{refresh_row}"
         + _sheet_action_row("What's New", "whats-new", "bell") +
-        "<button type='button' class='br-sheet-link br-sheet-category' data-br-sheet-target='help-tours' "
+        "<button type='button' class='br-sheet-link br-sheet-category' data-br-action='help-tours' "
         "aria-controls='brMorePanel-help-tours'><span>Help &amp; Tours</span>"
         "<span class='br-sheet-chevron' aria-hidden='true'>&#8250;</span></button>"
     )

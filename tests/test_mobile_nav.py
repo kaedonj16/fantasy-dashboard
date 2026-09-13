@@ -147,8 +147,11 @@ def test_more_drilldown_controller_and_motion_contract():
     assert "data-br-sheet-back" in js
     assert "prefers-reduced-motion: reduce" in js
     assert "br-sheet-panel-in" in css
+    assert "br-sheet-panel-leave" in css
+    assert "br-sheet-panel-out" in css
     assert "@media (prefers-reduced-motion: reduce)" in css
     assert "_brReturnFocus" in js
+    assert "e.stopPropagation()" in js
 
 
 def test_more_information_architecture_and_shared_utilities(offline_client):

@@ -733,21 +733,42 @@ window.brHaptic = function (pattern) {
   function showSheetPanel(name, backwards, trigger) {
     var sheet = document.getElementById('brMoreSheet');
     if (!sheet) return;
-    var current = sheet.querySelector('.br-sheet-panel:not([hidden])');
+    if (sheet._brPanelTimer) {
+      clearTimeout(sheet._brPanelTimer);
+      sheet._brPanelTimer = null;
+      sheet.querySelectorAll('.br-sheet-panel-leave, .br-sheet-panel-leave-back').forEach(function (panel) {
+        panel.hidden = true;
+        panel.classList.remove('br-sheet-panel-leave', 'br-sheet-panel-leave-back');
+      });
+    }
+    var currentName = sheet.dataset.brSheetLevel || 'root';
+    var current = sheet.querySelector('[data-br-sheet-panel="' + currentName + '"]');
     var next = sheet.querySelector('[data-br-sheet-panel="' + name + '"]');
     if (!next || current === next) return;
     var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     sheet.classList.toggle('br-sheet-going-back', !!backwards);
     if (trigger) next._brReturnFocus = trigger;
-    if (current) current.hidden = true;
     next.hidden = false;
     sheet.dataset.brSheetLevel = name;
     sheet.scrollTop = 0;
     if (!reduce) {
+      if (current) {
+        current.classList.remove('br-sheet-panel-leave', 'br-sheet-panel-leave-back');
+        current.classList.add(backwards ? 'br-sheet-panel-leave-back' : 'br-sheet-panel-leave');
+      }
       next.classList.remove('br-sheet-panel-enter');
       void next.offsetWidth;
       next.classList.add('br-sheet-panel-enter');
-      setTimeout(function () { next.classList.remove('br-sheet-panel-enter'); }, 220);
+      sheet._brPanelTimer = setTimeout(function () {
+        if (current) {
+          current.hidden = true;
+          current.classList.remove('br-sheet-panel-leave', 'br-sheet-panel-leave-back');
+        }
+        next.classList.remove('br-sheet-panel-enter');
+        sheet._brPanelTimer = null;
+      }, 210);
+    } else if (current) {
+      current.hidden = true;
     }
     var focus = name === 'root' && current && current._brReturnFocus
       ? current._brReturnFocus
@@ -757,7 +778,12 @@ window.brHaptic = function (pattern) {
   function resetSheetPanel() {
     var sheet = document.getElementById('brMoreSheet');
     if (!sheet) return;
+    if (sheet._brPanelTimer) clearTimeout(sheet._brPanelTimer);
+    sheet._brPanelTimer = null;
     sheet.querySelectorAll('.br-sheet-panel').forEach(function (p) { p.hidden = p.dataset.brSheetPanel !== 'root'; });
+    sheet.querySelectorAll('.br-sheet-panel').forEach(function (p) {
+      p.classList.remove('br-sheet-panel-enter', 'br-sheet-panel-leave', 'br-sheet-panel-leave-back');
+    });
     sheet.dataset.brSheetLevel = 'root';
     sheet.classList.remove('br-sheet-going-back');
   }
@@ -900,6 +926,10 @@ window.brHaptic = function (pattern) {
       if (e.target.closest('#brSheetSearchRow')) { setOpen(false); openSearch(); return; }
       var action = e.target.closest('[data-br-action]');
       if (action) {
+        // The changelog's document-level outside-click handler sees this same
+        // click after the synthetic bell click. Stop here so it cannot
+        // immediately close the panel we just opened.
+        e.stopPropagation();
         var name = action.getAttribute('data-br-action');
         if (name === 'refresh' && typeof window.brRefreshLeague === 'function') window.brRefreshLeague();
         if (name === 'getting-started' && typeof window.startSiteTour === 'function') {
