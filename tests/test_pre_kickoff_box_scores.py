@@ -10,7 +10,7 @@ The 2026 draft-week hub showed Jayden Daniels as 233 yds / 1 td / 11 car /
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -31,14 +31,21 @@ from utils.utils import (
 
 
 def _scheduled_wsh_game(**extra):
+    # Default kickoff a week out from *now* so the game normalizes to "pre"
+    # regardless of the wall clock when the suite runs. A fixed past date (the
+    # old 2026-09-13 / epoch) flipped to "in" once real time crossed kickoff,
+    # because normalize_game_status_from_tank01 lets the epoch window win over
+    # the scheduled code. Tests that need a live/final game override
+    # gameStatusCode; date-logic tests override gameTime_epoch or pass `now`.
+    future = datetime.now(timezone.utc) + timedelta(days=7)
     game = {
         "home": "NYG",
         "away": "WSH",
-        "gameDate": "20260913",
+        "gameDate": future.strftime("%Y%m%d"),
         "gameTime": "1:00p",
         "gameStatus": "Scheduled",
         "gameStatusCode": "0",
-        "gameTime_epoch": "1789318800.0",
+        "gameTime_epoch": str(future.timestamp()),
     }
     game.update(extra)
     return game
