@@ -955,7 +955,35 @@ def api_portfolio_matchup():
     if not you:
         return jsonify({"live": False})
 
-    from dashboard_services.matchups import compute_win_prob, team_live_totals
+    from dashboard_services.matchups import (
+        _proj_value_for_pid, compute_win_prob, team_live_totals,
+    )
+
+    # The precomputed bundle can miss starters (ESPN/Yahoo roster pids, or a
+    # first paint racing projection hydration), and those players then project
+    # as 0.0 here -- understating a side's total and skewing the win bar, so the
+    # card disagreed with the Matchups tab. The full matchup slide backfills such
+    # misses from the raw weekly file (league-scored); do the same before scoring
+    # so both team_live_totals and compute_win_prob see complete projections.
+    scoring_settings = ctx.get("raw_scoring_settings") or {}
+    try:
+        from utils.utils import load_week_projection
+        raw_week_map = load_week_projection(int(season), int(week)) or {}
+    except Exception:
+        raw_week_map = {}
+    if raw_week_map:
+        proj_map = dict(proj_map)  # never mutate the TTL-cached bundle
+        for _team in (you, opp):
+            for _p in ((_team or {}).get("starters") or []):
+                _pid = _p.get("pid")
+                if _pid is None or str(_pid) in proj_map or _pid in proj_map:
+                    continue
+                _val = _proj_value_for_pid(
+                    proj_map, _pid, raw_week_map=raw_week_map,
+                    scoring_settings=scoring_settings, pos=_p.get("pos") or "",
+                )
+                if _val:
+                    proj_map[str(_pid)] = _val
 
     def _side(team):
         actual, proj = team_live_totals(team, status_by_pid, proj_map)

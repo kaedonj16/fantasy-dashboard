@@ -10,7 +10,7 @@ The 2026 draft-week hub showed Jayden Daniels as 233 yds / 1 td / 11 car /
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -31,14 +31,21 @@ from utils.utils import (
 
 
 def _scheduled_wsh_game(**extra):
+    # Default kickoff a week out from *now* so the game normalizes to "pre"
+    # regardless of the wall clock when the suite runs. A fixed past date (the
+    # old 2026-09-13 / epoch) flipped to "in" once real time crossed kickoff,
+    # because normalize_game_status_from_tank01 lets the epoch window win over
+    # the scheduled code. Tests that need a live/final game override
+    # gameStatusCode; date-logic tests override gameTime_epoch or pass `now`.
+    future = datetime.now(timezone.utc) + timedelta(days=7)
     game = {
         "home": "NYG",
         "away": "WSH",
-        "gameDate": "20260913",
+        "gameDate": future.strftime("%Y%m%d"),
         "gameTime": "1:00p",
         "gameStatus": "Scheduled",
         "gameStatusCode": "0",
-        "gameTime_epoch": "1789318800.0",
+        "gameTime_epoch": str(future.timestamp()),
     }
     game.update(extra)
     return game
@@ -306,6 +313,99 @@ def test_matchup_shows_tank_overlaid_box_score_when_code_still_zero(monkeypatch)
     assert "2 tds" in html
     assert "m-cell-stats" in html
     assert "233 yds" not in html
+
+
+_PPR_SCORING = {
+    "rec": 1.0, "pass_yd": 0.04, "pass_td": 4.0, "pass_int": -2.0,
+    "rush_yd": 0.1, "rush_td": 6.0, "rec_yd": 0.1, "rec_td": 6.0,
+    "fum_lost": -2.0,
+}
+
+
+def _daniels_matchup_pts(daniels_pts):
+    m = _daniels_matchup()
+    m["right"]["starters"][0]["pts"] = daniels_pts
+    return m
+
+
+def test_matchup_hides_stale_line_when_points_contradict_it(monkeypatch):
+    """Footballguys leftovers can survive into a live game with no _src=tank tag.
+    The 233/1/11/68 line scores ~20 PPR, so 0.0 live points means it is stale --
+    hide it instead of showing stats that don't match the (correct) points."""
+    mmod = _matchups()
+    live = _scheduled_wsh_game(gameStatusCode="1", gameStatus="In Progress")
+    monkeypatch.setattr(mmod, "load_teams_index", lambda: {})
+    monkeypatch.setattr(mmod, "build_offense_rankings", lambda *_a, **_k: {})
+    monkeypatch.setattr(mmod, "load_week_stats", lambda *_a, **_k: DANIELS_STATS)
+    monkeypatch.setattr(mmod, "load_week_schedule", lambda *_a, **_k: [])
+    monkeypatch.setattr(mmod, "build_team_schedule_lookup", lambda *_a, **_k: {})
+    monkeypatch.setattr(mmod, "_allow_live_game_indicators", lambda *_a, **_k: True)
+    monkeypatch.setattr(mmod, "get_nfl_scores_for_date", lambda *_a, **_k: None)
+
+    html = mmod.render_matchup_slide(
+        "2026", _daniels_matchup_pts(0.0), w=1, proj_week=1,
+        status_by_pid={"11566": mmod.STATUS_IN_PROGRESS},
+        projections={}, players={}, teams={},
+        team_game_lookup={"WSH": live},
+        scoring_settings=_PPR_SCORING,
+    )
+    assert "233" not in html
+    assert "m-cell-stats" not in html
+    assert "Jayden Daniels" in html
+
+
+def test_matchup_keeps_line_that_matches_points(monkeypatch):
+    """A live line consistent with the points shown stays visible."""
+    mmod = _matchups()
+    live = _scheduled_wsh_game(gameStatusCode="1", gameStatus="In Progress")
+    monkeypatch.setattr(mmod, "load_teams_index", lambda: {})
+    monkeypatch.setattr(mmod, "build_offense_rankings", lambda *_a, **_k: {})
+    monkeypatch.setattr(mmod, "load_week_stats", lambda *_a, **_k: DANIELS_STATS)
+    monkeypatch.setattr(mmod, "load_week_schedule", lambda *_a, **_k: [])
+    monkeypatch.setattr(mmod, "build_team_schedule_lookup", lambda *_a, **_k: {})
+    monkeypatch.setattr(mmod, "_allow_live_game_indicators", lambda *_a, **_k: True)
+    monkeypatch.setattr(mmod, "get_nfl_scores_for_date", lambda *_a, **_k: None)
+
+    # 233*0.04 + 1*4 + 68*0.1 = 20.12, so points that agree keep the line.
+    html = mmod.render_matchup_slide(
+        "2026", _daniels_matchup_pts(20.1), w=1, proj_week=1,
+        status_by_pid={"11566": mmod.STATUS_IN_PROGRESS},
+        projections={}, players={}, teams={},
+        team_game_lookup={"WSH": live},
+        scoring_settings=_PPR_SCORING,
+    )
+    assert "233 yds" in html
+    assert "m-cell-stats" in html
+
+
+def test_matchup_trusts_tank_line_even_when_points_lag(monkeypatch):
+    """Tank-overlaid lines are the current game by construction, so the stale
+    guard leaves them alone even if Sleeper points have not caught up yet."""
+    mmod = _matchups()
+    live = _scheduled_wsh_game(gameStatusCode="1", gameStatus="In Progress")
+    tank_stats = {
+        "WAS": {"QB": {"jayden daniels": {
+            "pass_yds": 233, "pass_td": 1, "int": 0,
+            "rush_att": 11, "rush_yds": 68, "rush_td": 0, "_src": "tank",
+        }}}
+    }
+    monkeypatch.setattr(mmod, "load_teams_index", lambda: {})
+    monkeypatch.setattr(mmod, "build_offense_rankings", lambda *_a, **_k: {})
+    monkeypatch.setattr(mmod, "load_week_stats", lambda *_a, **_k: tank_stats)
+    monkeypatch.setattr(mmod, "load_week_schedule", lambda *_a, **_k: [])
+    monkeypatch.setattr(mmod, "build_team_schedule_lookup", lambda *_a, **_k: {})
+    monkeypatch.setattr(mmod, "_allow_live_game_indicators", lambda *_a, **_k: True)
+    monkeypatch.setattr(mmod, "get_nfl_scores_for_date", lambda *_a, **_k: None)
+
+    html = mmod.render_matchup_slide(
+        "2026", _daniels_matchup_pts(0.0), w=1, proj_week=1,
+        status_by_pid={"11566": mmod.STATUS_IN_PROGRESS},
+        projections={}, players={}, teams={},
+        team_game_lookup={"WSH": live},
+        scoring_settings=_PPR_SCORING,
+    )
+    assert "233 yds" in html
+    assert "m-cell-stats" in html
 
 
 def test_week_stats_builder_writes_empty_before_kickoff(monkeypatch, tmp_path):
