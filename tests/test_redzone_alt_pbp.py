@@ -419,6 +419,82 @@ def test_extract_espn_pbp_maps_abbreviated_names():
     assert plays[0]["down"] == "1"
 
 
+def test_espn_rostered_tackler_does_not_create_a_card():
+    """A defender credited only in the parenthetical tackle group must not be
+    emitted as a play row, even when he is a rostered/tracked player. The play
+    belongs to the ball carrier -- here the rusher must be the only row."""
+    payload = {
+        "gamepackageJSON": {
+            "drives": {
+                "previous": [
+                    {
+                        "plays": [
+                            {
+                                "id": "1",
+                                "text": (
+                                    "M.Washington left tackle to MIA 34 "
+                                    "for 3 yards (J.Rodriguez)."
+                                ),
+                                "clock": {"displayValue": "11:23"},
+                                "period": {"number": 2},
+                                "start": {"down": 1, "distance": 10,
+                                          "possessionText": "MIA 37"},
+                                "type": {"text": "Rush"},
+                                "scoringPlay": False,
+                            }
+                        ]
+                    }
+                ]
+            }
+        }
+    }
+    plays = extract_espn_pbp_plays(
+        payload,
+        "20260913_LV@MIA",
+        # Both the rusher and the tackler are tracked players.
+        name_to_pid={"malik washington": "100", "jacob rodriguez": "200"},
+    )
+    assert [p["pid"] for p in plays] == ["100"]
+    assert plays[0]["stat_line"] == {"rush_yds": 3, "carries": 1}
+
+
+def test_espn_rostered_sacker_in_parens_does_not_create_a_card():
+    """The sacker (parenthetical credit) must not headline the sacked QB's play."""
+    payload = {
+        "gamepackageJSON": {
+            "drives": {
+                "previous": [
+                    {
+                        "plays": [
+                            {
+                                "id": "2",
+                                "text": (
+                                    "T.Tagovailoa sacked at MIA 20 for -7 yards "
+                                    "(M.Crosby)."
+                                ),
+                                "clock": {"displayValue": "9:00"},
+                                "period": {"number": 2},
+                                "start": {"down": 2, "distance": 10},
+                                "type": {"text": "Sack"},
+                                "scoringPlay": False,
+                            }
+                        ]
+                    }
+                ]
+            }
+        }
+    }
+    plays = extract_espn_pbp_plays(
+        payload,
+        "20260913_LV@MIA",
+        name_to_pid={"maxx crosby": "300", "tua tagovailoa": "400"},
+    )
+    # The sacked QB is the subject of the play (outside parens) and still gets a
+    # row. The sacker (Maxx Crosby) is a parenthetical credit and must not
+    # appear -- a defender never headlines an offensive snap.
+    assert [p["pid"] for p in plays] == ["400"]
+
+
 def test_extract_sleeper_pbp_when_rows_present():
     raw = [
         {
