@@ -60,6 +60,25 @@ _RE_RUSH = re.compile(
 )
 _RE_FG = re.compile(rf"({_NAME_TOK})\s+(\d+)\s+yard field goal is GOOD")
 _RE_XP = re.compile(rf"({_NAME_TOK})\s+extra point is GOOD")
+# "TD" is only ever the uppercase scoring abbreviation; anchor it so it can't
+# match inside another token. "touchdown" is matched case-insensitively below.
+_RE_TD_TOKEN = re.compile(r"\bTD\b")
+
+
+def _scored_offensive_td(text: str) -> bool:
+    """True when the play text describes a touchdown the offense keeps.
+
+    Mirrors the extractors' ``is_td`` flag (case-insensitive "touchdown" or a
+    "TD" token) so the fantasy stat credit and the on-play TD badge never
+    disagree. The uppercase-only check used to badge a play as a score while
+    silently dropping its rush_td / rec_td / pass_td points. A ball turned over
+    first (INTERCEPTED / FUMBLE) still yields no offensive TD, per this module's
+    "a wrong point is worse than none" contract.
+    """
+    lower = text.lower()
+    if "intercepted" in lower or "fumble" in lower:
+        return False
+    return "touchdown" in lower or bool(_RE_TD_TOKEN.search(text))
 
 
 def _yards(raw: str) -> int:
@@ -90,7 +109,9 @@ def parse_pbp_play_stats(text: str) -> dict[str, dict]:
         return {}
     out: dict[str, dict] = {}
     # A TD only counts for the offense when the ball wasn't turned over first.
-    scored = "TOUCHDOWN" in text and "INTERCEPTED" not in text and "FUMBLE" not in text
+    # Case-insensitive so a "Touchdown" / "for a TD" feed still scores the points
+    # it already badges (see _scored_offensive_td).
+    scored = _scored_offensive_td(text)
 
     # pass_att / pass_cmp are display-only (running CMP/ATT); _lineToPts ignores
     # them. Every pass — complete, incomplete, or picked — is one attempt.
