@@ -36,11 +36,11 @@ jobs:
           cache-dependency-glob: "requirements.txt"
 
       - name: Install lint and unit-test dependencies
-        # utils.utils is exercised by the pure RedZone identity tests and imports
-        # requests and BeautifulSoup at module load. Keep Flask/pandas and the
-        # rest of the application stack in the integration job, but install these
-        # two lightweight direct dependencies so the unit shard can collect.
-        run: uv pip install --system ruff pytest requests beautifulsoup4
+        # Pure tests import utils.utils (requests/BeautifulSoup) and
+        # dashboard_services.api (Flask) at module load. Keep pandas and the rest
+        # of the scientific stack in the integration job, but install these
+        # lightweight direct dependencies so the unit shard can collect.
+        run: uv pip install --system ruff pytest requests beautifulsoup4 flask
 
       - name: Lint for real bugs (syntax errors, undefined names)
         # Scoped to high-signal pyflakes/pycodestyle-error rules so CI flags
