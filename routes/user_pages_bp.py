@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import html
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
 from flask import Blueprint, redirect, request, session, url_for
@@ -117,8 +118,12 @@ def page_portfolio():
     # plus live Sleeper enrichment from linked identities. The shared builder also
     # backs /api/my-leagues so the portfolio and switcher never diverge.
     from dashboard_services.accounts import resolve_my_leagues
+    # Read the account id off the request thread once. The per-league summaries
+    # below run in a worker pool where Flask's request-local ``session`` is not
+    # bound, so every session value they need is captured here first.
+    account_id = session.get("account_id")
     league_inputs, season = resolve_my_leagues(
-        viewer_user_id, session.get("account_id"), season
+        viewer_user_id, account_id, season
     )
     def _league_summary(lg):
         lid = str(lg.get("league_id") or "")
@@ -156,7 +161,7 @@ def page_portfolio():
         # Sleeper identity), then the session viewer. A leftover ESPN owner id in
         # the session must not mark every Sleeper league as "Team not linked yet".
         viewer_roster = None
-        _account_id = session.get("account_id")
+        _account_id = account_id
         if _account_id:
             try:
                 from dashboard_services.accounts import resolve_account_viewer_for_league
@@ -311,11 +316,23 @@ def page_portfolio():
             "team_name": team_name,
         }
 
+    # Each league summary is independent and dominated by get_league_ctx_from_cache,
+    # which hits external providers whenever a league's context cache is cold. Built
+    # serially, a multi-league portfolio waited for the sum of every fetch; fanning
+    # out across a small thread pool makes the page wait for the slowest league
+    # instead. Per-league context builds already run safely in worker threads (the
+    # Teams-page warmup does the same, and get_league_ctx_from_cache locks per
+    # league), and nothing here touches request-local state -- account_id was
+    # captured above and get_viewer_session_for_league no-ops without a request
+    # context. Order does not matter: results are sorted by name just below.
     leagues_data = []
-    for _lg in league_inputs:
-        _result = _league_summary(_lg)
-        if _result:
-            leagues_data.append(_result)
+    if league_inputs:
+        max_workers = min(8, len(league_inputs))
+        if max_workers <= 1:
+            leagues_data = [r for r in map(_league_summary, league_inputs) if r]
+        else:
+            with ThreadPoolExecutor(max_workers=max_workers) as pool:
+                leagues_data = [r for r in pool.map(_league_summary, league_inputs) if r]
     leagues_data.sort(key=lambda x: x.get("name", ""))
 
     valid_leagues = [lg for lg in leagues_data
