@@ -37,7 +37,25 @@ class SleeperProvider(ProviderAdapter):
         from dashboard_services.api import get_transactions
         return get_transactions(league_id, week) or []
     def get_league_globals(self, league_id, season):
-        return None  # get_league retains Sleeper's historical global side effect.
+        # get_league both fetches the Sleeper league and populates the
+        # request-scoped scoring globals as a side effect. Returning the
+        # settings here lets the generic sync_league_globals path populate
+        # Sleeper scoring like every other provider, instead of silently
+        # relying on some *other* call having run get_league first this
+        # request. Redzone only calls sync_league_globals, so without this the
+        # feed scored Sleeper leagues with default settings -- every rate
+        # happens to match common scoring except rec, which defaults to 0,
+        # dropping the PPR reception point on every catch.
+        from dashboard_services.api import get_league
+        league = get_league(league_id)
+        if not isinstance(league, dict) or not league:
+            return None
+        return {
+            "scoring_settings": league.get("scoring_settings") or {},
+            "roster_positions": league.get("roster_positions") or [],
+            "league_settings": league.get("settings") or {},
+            "total_rosters": int(league.get("total_rosters") or 0),
+        }
 
 
 class ESPNProvider(ProviderAdapter):
