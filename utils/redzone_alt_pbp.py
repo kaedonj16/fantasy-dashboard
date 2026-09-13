@@ -90,7 +90,17 @@ def parse_pbp_play_stats(text: str) -> dict[str, dict]:
         return {}
     out: dict[str, dict] = {}
     # A TD only counts for the offense when the ball wasn't turned over first.
-    scored = "TOUCHDOWN" in text and "INTERCEPTED" not in text and "FUMBLE" not in text
+    # Match the touchdown token case-insensitively (and accept "TD"): ESPN --
+    # the primary live source -- writes "Touchdown"/"td", not only Tank01's
+    # uppercase "TOUCHDOWN". A case-sensitive check credited the yards on a
+    # scoring play but silently dropped the 4/6 TD points, so a QB's live total
+    # ran ~20 points light versus the box score.
+    low = text.lower()
+    scored = (
+        ("touchdown" in low or " td" in low)
+        and "intercepted" not in low
+        and "fumble" not in low
+    )
 
     # pass_att / pass_cmp are display-only (running CMP/ATT); _lineToPts ignores
     # them. Every pass — complete, incomplete, or picked — is one attempt.

@@ -132,6 +132,30 @@ def test_parse_pbp_td_pass_and_extra_point():
     assert sl["j.myers"] == {"xpm": 1}
 
 
+def test_parse_pbp_td_credit_is_case_insensitive_and_accepts_td_token():
+    # ESPN (the primary live source) writes "Touchdown"/"td", not only Tank01's
+    # uppercase "TOUCHDOWN". The TD points must still be credited, else a live
+    # total runs light versus the box score (a QB read ~20 pts low).
+    pass_td = parse_pbp_play_stats(
+        "(Shotgun) C.Williams pass short right to D.Moore for 15 yards, Touchdown."
+    )
+    assert pass_td["c.williams"] == {
+        "pass_yds": 15, "pass_cmp": 1, "pass_att": 1, "pass_td": 1,
+    }
+    assert pass_td["d.moore"] == {"rec": 1, "rec_yds": 15, "targets": 1, "rec_td": 1}
+
+    rush_td = parse_pbp_play_stats("C.Williams up the middle for 3 yards, TD.")
+    assert rush_td["c.williams"] == {"rush_yds": 3, "carries": 1, "rush_td": 1}
+
+
+def test_parse_pbp_lowercase_turnover_return_still_denies_offense_td():
+    # A pick-six / fumble-return score names a touchdown but the offense is not
+    # credited -- the exclusion must hold regardless of casing.
+    assert parse_pbp_play_stats(
+        "C.Williams pass INTERCEPTED at CAR 20, returned by J.Jobe for a touchdown."
+    ) == {"c.williams": {"int": 1, "pass_att": 1}}
+
+
 def test_parse_pbp_interception_only_credits_passer_pick():
     sl = parse_pbp_play_stats(
         "(Shotgun) D.Maye pass deep right intended for M.Hollins INTERCEPTED "
