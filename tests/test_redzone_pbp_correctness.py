@@ -31,6 +31,12 @@ def test_normalize_name_strips_periods_and_apostrophes():
     assert _normalize_name("Mack Hollins") == "mack hollins"
     assert _normalize_name("J.Smith-Njigba") == "j smith-njigba"
     assert _normalize_name("D'Andre Swift") == "dandre swift"
+    # Compound surnames expand instead of gluing ("a.st." -> "ast"); middle
+    # initials are dropped so the true surname wins.
+    assert _normalize_name("A.St. Brown") == "a st brown"
+    assert _normalize_name("A.St.Brown") == "a st brown"
+    assert _normalize_name("D.J. Moore") == "d moore"
+    assert _normalize_name("T.J. Hockenson") == "t hockenson"
 
 
 def test_extract_first_initial_last():

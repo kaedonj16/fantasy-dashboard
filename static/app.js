@@ -20421,6 +20421,41 @@ function setupFunAwardsGrid() {
 })();
 
 
+// Kicker FG scoring, distance- and per-yard-aware (mirrors redzone.js _fgPts).
+// A flat `fgm` rate is only one of several Sleeper FG schemes: leagues also
+// score by distance bucket (fgm_0_19..fgm_50p) or per yard (fgm_yds). Scoring
+// FGs at a flat `fgm` rate alone drops every point in those leagues.
+function _rzFgRate(yds, s) {
+  yds = parseFloat(yds || 0) || 0;
+  var order;
+  if (yds >= 60) order = ['fgm_60p', 'fgm_50p', 'fgm_40_49', 'fgm_0_39', 'fgm', 'fg'];
+  else if (yds >= 50) order = ['fgm_50p', 'fgm_50_59', 'fgm_40_49', 'fgm_0_39', 'fgm', 'fg'];
+  else if (yds >= 40) order = ['fgm_40_49', 'fgm_0_39', 'fgm', 'fg'];
+  else if (yds >= 30) order = ['fgm_30_39', 'fgm_0_39', 'fgm', 'fg'];
+  else if (yds >= 20) order = ['fgm_20_29', 'fgm_0_39', 'fgm', 'fg'];
+  else if (yds > 0)   order = ['fgm_0_19', 'fgm_0_39', 'fgm', 'fg'];
+  else order = ['fgm', 'fg'];
+  for (var i = 0; i < order.length; i++) {
+    if (s[order[i]] != null) return parseFloat(s[order[i]] || 0) || 0;
+  }
+  return 0;
+}
+function _rzFgPts(sl, s) {
+  var n = function(x) { return parseFloat(x || 0) || 0; };
+  var bucketed = 0, pts = 0;
+  var bd = { fgm_0_19: 10, fgm_20_29: 25, fgm_30_39: 35, fgm_0_39: 30,
+             fgm_40_49: 45, fgm_50_59: 55, fgm_50p: 55, fgm_60p: 60 };
+  Object.keys(bd).forEach(function(k) {
+    var c = n(sl[k]); if (!c) return;
+    bucketed += c; pts += c * _rzFgRate(bd[k], s);
+  });
+  var unbucketed = Math.max(0, n(sl.fgm) - bucketed);
+  if (unbucketed) pts += unbucketed * _rzFgRate(n(sl.fg_yds) || n(sl.fg_long), s);
+  var perYd = n(s.fgm_yds);
+  if (perYd) pts += (n(sl.fg_yds) || n(sl.fg_long)) * perYd;
+  return pts;
+}
+
 // ── Redzone live player HTML (shared between Redzone page and player modal) ───
 window._rzBuildLiveHtml = function(pid, state, feed) {
   if (!pid || pid === '0') return '<div style="padding:20px;text-align:center;color:var(--text-muted);">No data.</div>';
@@ -20486,7 +20521,13 @@ window._rzBuildLiveHtml = function(pid, state, feed) {
                       ['Fum Rec', sl.fum_rec||0], ['DEF TDs', sl.def_td||0]];
       defStats.forEach(function(r) { if (r[1] > 0) rows.push({ label: r[0], val: r[1], pts: null }); });
     } else if (pos === 'K') {
-      addRow('FGM', sl.fgm||0, 'fgm');
+      // FGs are distance-/per-yard-scored in most Sleeper leagues, so score the
+      // whole made-FG line rather than a flat per-make rate (which is 0 there).
+      var fgPts = parseFloat(_rzFgPts(sl, sc).toFixed(2));
+      if ((sl.fgm || 0) && fgPts) {
+        total += fgPts;
+        rows.push({ label: 'FGM', val: sl.fgm || 0, pts: fgPts });
+      }
       addRow('XPM', sl.xpm||0, 'xpm');
     } else {
       // RB / WR / TE -- carries & targets shown as context (no points)

@@ -12516,6 +12516,7 @@ def _redzone_collect(platform, league_id, season, week):
                     name_to_pid=name_to_pid,
                     team_to_def_pid=team_to_def_pid,
                     live=live,
+                    final=final,
                     providers=("espn",),
                 )
                 if not plays:
@@ -12540,6 +12541,7 @@ def _redzone_collect(platform, league_id, season, week):
                             name_to_pid=name_to_pid,
                             team_to_def_pid=team_to_def_pid,
                             live=live,
+                            final=final,
                             providers=("sleeper",),
                         )
                         plays = alt or []
@@ -12564,6 +12566,7 @@ def _redzone_collect(platform, league_id, season, week):
                     name_to_pid=name_to_pid,
                     team_to_def_pid=team_to_def_pid,
                     live=live,
+                    final=final,
                     providers=("espn", "sleeper"),
                 )
                 pbp_by_game[gid] = alt or []

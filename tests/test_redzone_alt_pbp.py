@@ -38,6 +38,49 @@ def test_alternate_pbp_defaults_to_espn_first(monkeypatch):
     assert calls == ["espn"]
 
 
+def test_final_game_force_refreshes_espn_until_completed(monkeypatch):
+    """A game our status calls final must keep pulling fresh ESPN PBP (ttl=0)
+    until ESPN reports the game completed -- otherwise the last live snapshot,
+    a few plays short, freezes under the long final TTL."""
+    import utils.redzone_alt_pbp as alt
+    alt._ESPN_PBP_FINAL_DONE.discard("event-1")
+
+    ttls = []
+    # ESPN still shows the game in progress on the first look, completed on the next.
+    payloads = iter([
+        {"gamepackageJSON": {"header": {"competitions": [
+            {"status": {"type": {"completed": False}}}]}}},
+        {"gamepackageJSON": {"header": {"competitions": [
+            {"status": {"type": {"completed": True}}}]}}},
+    ])
+    monkeypatch.setattr(alt, "fetch_espn_event_id", lambda **kw: "event-1")
+    monkeypatch.setattr(alt, "extract_espn_pbp_plays",
+                        lambda *a, **k: [{"play_id": "p"}])
+
+    def fake_pbp(eid, *, ttl=30.0):
+        ttls.append(ttl)
+        return next(payloads)
+    monkeypatch.setattr(alt, "fetch_espn_pbp", fake_pbp)
+
+    # First final poll: ESPN not yet complete -> forced fresh (ttl 0), not marked done.
+    alt.fetch_alt_pbp_plays("20260909_NE@SEA", season=2026, week=1, final=True)
+    assert ttls[-1] == 0.0
+    assert "event-1" not in alt._ESPN_PBP_FINAL_DONE
+
+    # Second poll: ESPN now complete -> still forced fresh, and marked done.
+    alt.fetch_alt_pbp_plays("20260909_NE@SEA", season=2026, week=1, final=True)
+    assert ttls[-1] == 0.0
+    assert "event-1" in alt._ESPN_PBP_FINAL_DONE
+
+    # Once done, subsequent final polls serve the immutable long-TTL cache.
+    payloads = iter([{"gamepackageJSON": {"header": {"competitions": [
+        {"status": {"type": {"completed": True}}}]}}}])
+    monkeypatch.setattr(alt, "fetch_espn_pbp", fake_pbp)
+    alt.fetch_alt_pbp_plays("20260909_NE@SEA", season=2026, week=1, final=True)
+    assert ttls[-1] == 300.0
+    alt._ESPN_PBP_FINAL_DONE.discard("event-1")
+
+
 def test_attach_cumulative_builds_running_totals_in_order():
     plays = [
         {"pid": "qb", "stat_line": {"pass_yds": 12, "pass_cmp": 1, "pass_att": 1}},
@@ -130,6 +173,73 @@ def test_parse_pbp_td_pass_and_extra_point():
     assert sl["d.lock"] == {"pass_yds": 45, "pass_cmp": 1, "pass_att": 1, "pass_td": 1}
     assert sl["j.smith-njigba"] == {"rec": 1, "rec_yds": 45, "targets": 1, "rec_td": 1}
     assert sl["j.myers"] == {"xpm": 1}
+
+
+def test_parse_pbp_td_credit_is_case_insensitive_and_accepts_td_token():
+    # ESPN (the primary live source) writes "Touchdown"/"td", not only Tank01's
+    # uppercase "TOUCHDOWN". The TD points must still be credited, else a live
+    # total runs light versus the box score (a QB read ~20 pts low).
+    pass_td = parse_pbp_play_stats(
+        "(Shotgun) C.Williams pass short right to D.Moore for 15 yards, Touchdown."
+    )
+    assert pass_td["c.williams"] == {
+        "pass_yds": 15, "pass_cmp": 1, "pass_att": 1, "pass_td": 1,
+    }
+    assert pass_td["d.moore"] == {"rec": 1, "rec_yds": 15, "targets": 1, "rec_td": 1}
+
+    rush_td = parse_pbp_play_stats("C.Williams up the middle for 3 yards, TD.")
+    assert rush_td["c.williams"] == {"rush_yds": 3, "carries": 1, "rush_td": 1}
+
+
+def test_parse_pbp_lowercase_turnover_return_still_denies_offense_td():
+    # A pick-six / fumble-return score names a touchdown but the offense is not
+    # credited -- the exclusion must hold regardless of casing.
+    assert parse_pbp_play_stats(
+        "C.Williams pass INTERCEPTED at CAR 20, returned by J.Jobe for a touchdown."
+    ) == {"c.williams": {"int": 1, "pass_att": 1}}
+
+
+def test_parse_pbp_captures_compound_surnames_in_booth_text():
+    # The name token must span multi-word surnames ("St. Brown", with or without
+    # the internal space) so these players aren't silently dropped from plays.
+    for text in (
+        "J.Goff pass short right to A.St. Brown for 12 yards, TOUCHDOWN.",
+        "J.Goff pass short right to A.St.Brown for 12 yards, TOUCHDOWN.",
+    ):
+        sl = parse_pbp_play_stats(text)
+        key = next(k for k in sl if k.startswith("a.st"))
+        assert sl[key] == {"rec": 1, "rec_yds": 12, "targets": 1, "rec_td": 1}
+        assert sl["j.goff"]["pass_td"] == 1
+
+
+def test_abbrev_index_resolves_suffixes_compounds_and_middle_initials():
+    from utils.redzone_alt_pbp import build_name_indexes, _stat_lines_by_pid
+
+    # Real full names (as the redzone endpoint feeds them, already lowercased).
+    names = {
+        "amon-ra st. brown": "stbrown",
+        "a.j. brown": "ajbrown",
+        "michael pittman jr.": "pittman",
+        "kenneth walker iii": "kwalker",
+        "marquez valdes-scantling": "mvs",
+        "d.j. moore": "djmoore",
+        "deebo samuel sr.": "deebo",
+        "jared goff": "goff",
+    }
+    _full, abbrev = build_name_indexes(names)
+
+    def who(text):
+        return sorted(k for k in _stat_lines_by_pid(text, abbrev) if k != "goff")
+
+    # Suffixes never become the surname; compound names resolve; and A.St. Brown
+    # no longer collides A.J. Brown onto a shared "abrown" key.
+    assert who("J.Goff pass to A.St. Brown for 5 yards.") == ["stbrown"]
+    assert who("J.Goff pass to A.Brown for 5 yards.") == ["ajbrown"]
+    assert who("J.Goff pass to M.Pittman for 5 yards.") == ["pittman"]
+    assert who("K.Walker up the middle for 5 yards.") == ["kwalker"]
+    assert who("J.Goff pass to M.Valdes-Scantling for 5 yards.") == ["mvs"]
+    assert who("J.Goff pass to D.Moore for 5 yards.") == ["djmoore"]
+    assert who("J.Goff pass to D.Samuel for 5 yards.") == ["deebo"]
 
 
 def test_parse_pbp_interception_only_credits_passer_pick():

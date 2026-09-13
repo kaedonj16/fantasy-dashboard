@@ -30,9 +30,22 @@ _SLEEPER_WEEK_CACHE: dict[str, tuple[float, list]] = {}
 _SLEEPER_PBP_CACHE: dict[str, tuple[float, list]] = {}
 _ESPN_EVENT_CACHE: dict[str, tuple[float, str]] = {}  # matchup key -> espn event id
 _ESPN_PBP_CACHE: dict[str, tuple[float, dict]] = {}
+# Event ids whose ESPN gamepackage has been fetched *after* the game reported
+# completed. Until an event is in here, a final game keeps force-refreshing its
+# PBP so the closing drives land, instead of freezing on the last live snapshot.
+_ESPN_PBP_FINAL_DONE: set[str] = set()
 _ESPN_SB_CACHE: dict[str, tuple[float, dict]] = {}  # season:week -> team->game lookup
 
-_ABBREV_RE = re.compile(r"\b([A-Za-z])\.([A-Za-z][A-Za-z'\-]*)\b")
+# Booth abbreviation: an initial, a period, then a surname that may span several
+# Title-case words joined by spaces and/or periods -- "A.St. Brown",
+# "A.St.Brown", "C.Van Jefferson" -- not only single-token "D.Moore". Extra
+# surname words must be Title-case (upper+lower) so all-caps booth keywords
+# (TOUCHDOWN, INTERCEPTED, PENALTY) and lowercase verbs ("for", "up") are never
+# swept into the name.
+_SURNAME_EXTRA = r"(?:[.\s]+[A-Z][a-z][A-Za-z'\-]*)*"
+_ABBREV_RE = re.compile(
+    r"\b([A-Za-z])\.\s?([A-Za-z][A-Za-z'\-]*" + _SURNAME_EXTRA + r")"
+)
 
 # ── Booth-line stat parsing ───────────────────────────────────────────────────
 # ESPN / Sleeper play text is NFL gamebook style with abbreviated names
@@ -41,7 +54,7 @@ _ABBREV_RE = re.compile(r"\b([A-Za-z])\.([A-Za-z][A-Za-z'\-]*)\b")
 # of a flat 0.0. Uncommon / ambiguous actions (fumbles, laterals, 2-pt tries,
 # individual defensive credit) are intentionally left unscored — a wrong point
 # is worse than none.
-_NAME_TOK = r"[A-Z][A-Za-z'\-]*\.[A-Za-z][A-Za-z'\-]*"
+_NAME_TOK = r"[A-Z][A-Za-z'\-]*\.[A-Za-z][A-Za-z'\-]*" + _SURNAME_EXTRA
 _RE_PASS = re.compile(
     rf"({_NAME_TOK})\s+pass\s+.*?\bto\s+({_NAME_TOK}).*?"
     r"for\s+(-?\d+|no gain)(?:\s*(?:yard|yd)s?)?"
@@ -109,9 +122,17 @@ def parse_pbp_play_stats(text: str) -> dict[str, dict]:
         return {}
     out: dict[str, dict] = {}
     # A TD only counts for the offense when the ball wasn't turned over first.
-    # Case-insensitive so a "Touchdown" / "for a TD" feed still scores the points
-    # it already badges (see _scored_offensive_td).
-    scored = _scored_offensive_td(text)
+    # Match the touchdown token case-insensitively (and accept "TD"): ESPN --
+    # the primary live source -- writes "Touchdown"/"td", not only Tank01's
+    # uppercase "TOUCHDOWN". A case-sensitive check credited the yards on a
+    # scoring play but silently dropped the 4/6 TD points, so a QB's live total
+    # ran ~20 points light versus the box score.
+    low = text.lower()
+    scored = (
+        ("touchdown" in low or " td" in low)
+        and "intercepted" not in low
+        and "fumble" not in low
+    )
 
     # pass_att / pass_cmp are display-only (running CMP/ATT); _lineToPts ignores
     # them. Every pass — complete, incomplete, or picked — is one attempt.
@@ -170,7 +191,7 @@ def _stat_lines_by_pid(text: str, abbrev_index: dict[str, str]) -> dict[str, dic
     """
     by_pid: dict[str, dict] = {}
     for abbrev, sl in parse_pbp_play_stats(text).items():
-        pid = (abbrev_index or {}).get(abbrev)
+        pid = (abbrev_index or {}).get(_canon_abbrev(abbrev))
         if not pid or not sl:
             continue
         dest = by_pid.setdefault(pid, {})
@@ -223,17 +244,43 @@ def parse_tank_game_id(game_id: str) -> tuple[str, str, str]:
     return date_part, away.upper(), home.upper()
 
 
+_NAME_SUFFIXES = {"jr", "sr", "ii", "iii", "iv", "v"}
+
+
+def _strip_suffix_tokens(tokens: list[str]) -> list[str]:
+    """Drop trailing generational suffixes (Jr., Sr., III, ...) so they are never
+    mistaken for a surname. Keep at least the first two tokens."""
+    out = list(tokens)
+    while len(out) > 1 and out[-1].strip(".").lower() in _NAME_SUFFIXES:
+        out.pop()
+    return out
+
+
+def _canon_abbrev(raw: str) -> str:
+    """Collapse a booth abbreviation ("A.St. Brown") or a built "<initial>.<surname>"
+    to one comparable key ("astbrown"): drop trailing suffixes, lowercase, and
+    strip periods, spaces and apostrophes. Hyphens are kept (Valdes-Scantling)."""
+    toks = _strip_suffix_tokens(_s(raw).split())
+    return re.sub(r"[.\s']", "", " ".join(toks).lower())
+
+
 def _abbrev_forms(full_name: str) -> set[str]:
-    parts = [p for p in _s(full_name).replace(".", " ").split() if p]
-    if len(parts) < 2:
+    """Canonical booth-abbreviation key(s) for a full name.
+
+    The surname is every token after the first, minus a generational suffix, so
+    compound names resolve from how the booth actually abbreviates them
+    ("Amon-Ra St. Brown" -> "A.St. Brown" -> "astbrown"; "Michael Pittman Jr."
+    -> "M.Pittman" -> "mpittman"). The first initial is the first letter of the
+    first token, so "D.J. Moore" -> "D.Moore" -> "dmoore".
+    """
+    toks = _strip_suffix_tokens([p for p in _s(full_name).split() if p])
+    if len(toks) < 2:
         return set()
-    first, last = parts[0], parts[-1]
-    if not first or not last:
+    initial = next((c for c in toks[0] if c.isalpha()), "")
+    surname = " ".join(toks[1:])
+    if not initial or not surname:
         return set()
-    return {
-        f"{first[0].lower()}.{last.lower()}",
-        f"{first[0].lower()}{last.lower()}",
-    }
+    return {_canon_abbrev(f"{initial}.{surname}")}
 
 
 def build_name_indexes(
@@ -272,7 +319,7 @@ def pids_mentioned_in_text(
                 seen.add(pid)
                 found.append(pid)
     for m in _ABBREV_RE.finditer(text):
-        key = f"{m.group(1).lower()}.{m.group(2).lower()}"
+        key = _canon_abbrev(f"{m.group(1)}.{m.group(2)}")
         pid = abbrev_index.get(key)
         if pid and pid not in seen:
             seen.add(pid)
@@ -558,6 +605,34 @@ def fetch_espn_pbp(event_id: str, *, ttl: float = 30.0) -> dict:
     return data
 
 
+def espn_payload_completed(payload: dict) -> bool:
+    """True when an ESPN gamepackage/summary payload reports the game finished.
+
+    A game can flip to final in Tank01 while ESPN's gamepackage is still mid-Q4,
+    so ``final`` from our status alone is not proof the closing drives are in the
+    payload yet. Read ESPN's own completion flag (``status.type.completed``),
+    checking the handful of shapes the summary endpoint uses.
+    """
+    if not isinstance(payload, dict):
+        return False
+    roots = [payload, payload.get("gamepackageJSON")]
+    for root in roots:
+        if not isinstance(root, dict):
+            continue
+        header = root.get("header")
+        comps = header.get("competitions") if isinstance(header, dict) else None
+        if isinstance(comps, list):
+            for comp in comps:
+                stype = ((comp or {}).get("status") or {}).get("type") or {}
+                if isinstance(stype, dict) and stype.get("completed"):
+                    return True
+        stat = root.get("status")
+        stype = (stat.get("type") or {}) if isinstance(stat, dict) else {}
+        if isinstance(stype, dict) and stype.get("completed"):
+            return True
+    return False
+
+
 def _espn_skip_play(play: dict) -> bool:
     """Drop non-action noise (kickoff, timeout, end quarter, etc.)."""
     typ = play.get("type") or {}
@@ -825,6 +900,7 @@ def fetch_alt_pbp_plays(
     name_to_pid: dict[str, str] | None = None,
     team_to_def_pid: dict[str, str] | None = None,  # reserved
     live: bool = False,
+    final: bool = False,
     providers: tuple[str, ...] = ("espn", "sleeper"),
 ) -> list[dict]:
     """Best-effort alternate PBP for a Tank01-keyed game.
@@ -832,6 +908,11 @@ def fetch_alt_pbp_plays(
     ESPN is the default primary because its structured plays consistently carry
     period and clock fields. ``providers`` lets the caller place Tank01 between
     ESPN and the undocumented Sleeper fallback without duplicating fetch logic.
+
+    ``final`` marks a game our status believes is over. A just-final game must
+    not serve the last *live* snapshot (which stops a few plays short) under the
+    long final TTL, so its ESPN PBP is force-refreshed until ESPN's own
+    gamepackage reports the game completed -- then it's immutable and cached.
     """
     del team_to_def_pid  # reserved for future DEF tagging
     date_part, away, home = parse_tank_game_id(tank_game_id)
@@ -845,7 +926,13 @@ def fetch_alt_pbp_plays(
                 away=away, home=home, yyyymmdd=date_part, ttl=max(ttl, 300.0)
             )
             if eid:
-                payload = fetch_espn_pbp(eid, ttl=ttl)
+                # Keep pulling fresh ESPN data for a final game until ESPN says
+                # the game is complete, so the closing drives are captured
+                # instead of frozen at the last live snapshot.
+                force_fresh = final and eid not in _ESPN_PBP_FINAL_DONE
+                payload = fetch_espn_pbp(eid, ttl=0.0 if force_fresh else ttl)
+                if force_fresh and espn_payload_completed(payload):
+                    _ESPN_PBP_FINAL_DONE.add(eid)
                 plays = extract_espn_pbp_plays(
                     payload, tank_game_id, name_to_pid=name_to_pid
                 )

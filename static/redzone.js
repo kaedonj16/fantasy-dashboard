@@ -579,6 +579,13 @@
     });
     var unbucketed = Math.max(0, _n(L.fgm) - bucketed);
     if (unbucketed) pts += unbucketed * _fgRate(_n(L.fg_yds) || _n(L.fg_long), s);
+    // Per-yard FG scoring (Sleeper "fgm_yds"): points for every yard of made
+    // FGs, on top of / instead of per-make or bucket points. Leagues that use
+    // it define no flat fgm or distance bucket, so without this a made FG scored
+    // zero. fg_yds is the cumulative made-FG yardage; fg_long is the single-kick
+    // fallback when a feed omits the total.
+    var perYd = _n(s.fgm_yds);
+    if (perYd) pts += (_n(L.fg_yds) || _n(L.fg_long)) * perYd;
     return pts;
   }
   function _lineToPts(L, s, pos) {
