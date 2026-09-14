@@ -267,26 +267,42 @@ def test_field_position_handles_sides_aliases_boundaries_and_hidden_states():
 var window={{}};
 {helpers}
 function fp(x){{ return window._rzFieldPosition(Object.assign({{status:'live',field_position_reliable:true,away:'MIA',home:'OAK'}},x)); }}
-console.log(JSON.stringify([
- fp({{possession:'MIA',yard_line:'MIA 31'}}),
- fp({{possession:'LV',yard_line:'LV 31'}}),
- fp({{possession:'MIA',yard_line:'LV 31'}}),
- fp({{possession:'LV',yard_line:'MIA 31'}}),
- fp({{possession:'MIA',yard_line:'50'}}),
- fp({{possession:'MIA',yard_line:'LV 1'}}),
- fp({{possession:'MIA',yard_line:'MIA 1'}}),
- fp({{status:'halftime',possession:'MIA',yard_line:'MIA 20'}}),
- fp({{field_position_reliable:false,possession:'MIA',yard_line:'MIA 20'}}),
- fp({{possession:'XXX',yard_line:'MIA 20'}})
-]));
+console.log(JSON.stringify({{
+ awayOwn: fp({{possession:'MIA',yard_line:'MIA 31'}}),
+ homeOwn: fp({{possession:'LV',yard_line:'LV 31'}}),
+ awayOpp: fp({{possession:'MIA',yard_line:'LV 31'}}),
+ homeOpp: fp({{possession:'LV',yard_line:'MIA 31'}}),
+ mid: fp({{possession:'MIA',yard_line:'50'}}),
+ goalNear: fp({{possession:'MIA',yard_line:'LV 1'}}),
+ ownGoal: fp({{possession:'MIA',yard_line:'MIA 1'}}),
+ firstDownAway: fp({{possession:'MIA',yard_line:'MIA 31',down:2,distance:6}}),
+ firstDownHome: fp({{possession:'LV',yard_line:'MIA 12',down:1,distance:10}}),
+ goalToGoNum: fp({{possession:'MIA',yard_line:'LV 3',down:1,distance:3}}),
+ goalToGoStr: fp({{possession:'MIA',yard_line:'LV 5',distance:'Goal'}}),
+ ltgInside: fp({{possession:'MIA',yard_line:'MIA 48',down:1,distance:10}}),
+ halftime: fp({{status:'halftime',possession:'MIA',yard_line:'MIA 20'}}),
+ unreliable: fp({{field_position_reliable:false,possession:'MIA',yard_line:'MIA 20'}}),
+ badTeam: fp({{possession:'XXX',yard_line:'MIA 20'}})
+}}));
 """
     out = json.loads(subprocess.check_output(["node", "-e", script], text=True))
-    assert out == [
-        {"spot": 31, "side": "away"}, {"spot": 69, "side": "home"},
-        {"spot": 69, "side": "away"}, {"spot": 31, "side": "home"},
-        {"spot": 50, "side": "away"}, {"spot": 99, "side": "away"},
-        {"spot": 1, "side": "away"}, None, None, None,
-    ]
+    # Away goal on the left (spot 0), home goal on the right (spot 100); OAK aliases to LV.
+    assert out["awayOwn"] == {"spot": 31, "side": "away", "ltg": None,
+                              "label": "MIA 31", "toGoal": 69, "goalToGo": False}
+    assert out["homeOwn"]["spot"] == 69 and out["homeOwn"]["side"] == "home" and out["homeOwn"]["label"] == "LV 31"
+    assert out["awayOpp"]["spot"] == 69 and out["awayOpp"]["side"] == "away" and out["awayOpp"]["toGoal"] == 31
+    assert out["homeOpp"]["spot"] == 31 and out["homeOpp"]["side"] == "home"
+    assert out["mid"]["spot"] == 50 and out["mid"]["label"] == "50"
+    assert out["goalNear"]["spot"] == 99 and out["ownGoal"]["spot"] == 1
+    # First-down line-to-gain: away drives toward 100 (31+6=37), home toward 0 (12-10=2).
+    assert out["firstDownAway"]["ltg"] == 37 and out["firstDownAway"]["goalToGo"] is False
+    assert out["firstDownHome"]["ltg"] == 2 and out["firstDownHome"]["side"] == "home"
+    assert out["ltgInside"]["ltg"] == 58 and out["ltgInside"]["goalToGo"] is False
+    # Goal-to-go (numeric distance reaching the goal, or the literal "Goal") shows no line.
+    assert out["goalToGoNum"]["goalToGo"] is True and out["goalToGoNum"]["ltg"] is None
+    assert out["goalToGoStr"]["goalToGo"] is True and out["goalToGoStr"]["ltg"] is None
+    # Hidden states never invent a value.
+    assert out["halftime"] is None and out["unreliable"] is None and out["badTeam"] is None
 
 
 def test_shared_board_and_modal_refresh_contract():
@@ -297,8 +313,19 @@ def test_shared_board_and_modal_refresh_contract():
     assert "setTimeout(function tick()" in app_js
     assert "Live box-score stats are temporarily unavailable." in app_js
     assert "Stat breakdown appears once the game is underway." not in app_js
+    # Possession dot rendered by the shared renderer (main only set an unstyled .has-ball).
+    assert "rz-nfl-poss" in app_js
+    # Goal-to-go relabels the situation line ("1st & 3" from the 3 -> "1st & Goal").
+    assert "goalToGo" in app_js
+    # Field-position row presentation.
     assert ".rz-field-fill.is-away" in DASHBOARD_CSS
     assert ".rz-field-fill.is-home" in DASHBOARD_CSS
+    assert ".rz-field-flag" in DASHBOARD_CSS
+    assert ".rz-field-fd" in DASHBOARD_CSS
+    assert ".rz-field-tick" in DASHBOARD_CSS
+    assert ".rz-field-clip" in DASHBOARD_CSS
+    assert ".rz-field-fill.is-dim" in DASHBOARD_CSS
+    assert ".rz-nfl-poss" in DASHBOARD_CSS
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="Node.js not available")
 def test_player_modal_log_uses_each_players_latest_canonical_contribution():
