@@ -68,6 +68,29 @@
   var _pendingNewPlays = 0;
   var _streaming = false;    // true while a progressive My Leagues stream is in flight
   var _streamGen = 0;        // bumped on every scope switch so a stale stream/poll can abort
+  // ── Request lifecycle ──────────────────────────────────────────────────────
+  // Scope-generation checks alone cannot order two requests within the SAME
+  // scope. Every _refresh()/_refreshUserStream() call claims a monotonically
+  // increasing sequence id; only the current owner (matching seq AND gen AND
+  // scope) may apply a response, reset controls, or clear the streaming/loading
+  // flags. The in-flight request exposes its AbortController so a scope switch
+  // or a manual refresh can cancel a stalled/active request and start clean.
+  var _reqSeq   = 0;         // last-claimed request id; the highest is the owner
+  var _inflight = null;      // { seq, gen, scope, controller } owning the network, or null
+  var _lastDataAt = null;    // wall-clock of the last APPLIED upstream snapshot (true data
+                             // freshness) -- distinct from _lastSuccessAt (a poll that merely
+                             // completed, which may carry an error payload or restore last-good).
+  var _visListenersWired = false; // guard so resume-on-visible listeners are wired only once
+  // Every network request is bounded. The server's live budget is roughly a
+  // ~12s scoreboard fetch plus a couple of short box-score calls, so the client
+  // deadline sits just above that and stays armed through response-body reads
+  // and JSON parsing (a slow body used to hang forever because the old timeout
+  // was cleared the moment fetch() returned headers). A stream additionally has
+  // an inactivity timeout so a feed that stalls between chunks cannot pin
+  // _streaming true and disable refresh/polling indefinitely.
+  var _RZ_FETCH_DEADLINE_MS  = 25000; // single league / aggregate user fetch
+  var _RZ_STREAM_DEADLINE_MS = 90000; // whole My Leagues portfolio stream (up to 12 leagues)
+  var _RZ_STREAM_IDLE_MS     = 20000; // no stream chunk for this long -> treat as stalled
   // Last-good payload per scope so My Leagues → This League never paints
   // portfolio (cross-league) data under the league-scoped chrome.
   var _scopeCache = { league: null, user: null };
@@ -938,6 +961,20 @@
     if (!s) return '';
     if (/^\d+$/.test(s)) { var n = parseInt(s, 10); return n >= 5 ? 'OT' : ('Q' + n); }
     return s;
+  }
+  // Numeric ordering of a game quarter so two sources can be compared for
+  // freshness by *period* (not by clock). Q1-Q4 → 1-4, halftime sits between
+  // Q2 and Q3, OT/2OT/OT2 → 5,6,… Unknown/pregame text → -1 (not comparable).
+  function _quarterRank(q) {
+    var s = String(q == null ? '' : q).trim().toUpperCase();
+    if (!s) return -1;
+    if (/^Q?\d+$/.test(s)) return parseInt(s.replace('Q', ''), 10);
+    if (s.indexOf('HALF') >= 0) return 2.5;
+    if (s.indexOf('OT') >= 0 || s.indexOf('OVERTIME') >= 0) {
+      var m = s.match(/(\d+)/);
+      return 4 + (m ? parseInt(m[1], 10) : 1); // OT → 5, 2OT / OT2 → 6, …
+    }
+    return -1;
   }
   function _downDist(ev) {
     var d = ev.down, dist = ev.distance;
@@ -2127,12 +2164,25 @@
       return !!(playTeam(pl) || pl.down || pl.distance || pl.yard_line || pl.clock || pl.quarter);
     }) || null;
     if (best) {
+      // Situation fields the scoreboard never carries: always take from PBP.
       row.possession = playTeam(best) || row.possession || '';
       row.down = best.down || row.down || '';
       row.distance = best.distance || row.distance || '';
       row.yard_line = best.yard_line || row.yard_line || '';
-      row.game_clock = best.clock || row.game_clock || '';
-      row.game_quarter = best.quarter || row.game_quarter || '';
+      // Clock/quarter: the server scoreboard is the authoritative *current*
+      // clock. PBP carries the clock of the last parsed play, which routinely
+      // lags the board (a fresh 8:00 board was rendered as 9:10 because the
+      // newest play ran at 9:10 remaining). Fill from PBP only when the board
+      // lacks a value, or when PBP has advanced to a LATER period (quarter
+      // change / OT). Never let a PBP clock replace a present board clock within
+      // the same period -- a decreasing clock is not proof of freshness.
+      var sbQ = row.game_quarter || '';
+      var sbClk = row.game_clock || '';
+      var pbpQ = best.quarter || '';
+      var pbpClk = best.clock || '';
+      var pbpLaterPeriod = _quarterRank(pbpQ) > _quarterRank(sbQ);
+      if (!sbQ || pbpLaterPeriod) row.game_quarter = pbpQ || sbQ;
+      if (!sbClk || pbpLaterPeriod) row.game_clock = pbpClk || sbClk;
     }
     return row;
   }
@@ -3598,7 +3648,7 @@
       else if (liveChipEl && !nextChip) liveChipEl.remove();
       var stale = headerRight.querySelector('.rz-stale-badge');
       if (_lastPollFailed) {
-        var staleText = 'Stale' + (_lastSuccessAt ? ' · updated ' + new Date(_lastSuccessAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '');
+        var staleText = 'Stale' + (_lastDataAt ? ' · updated ' + new Date(_lastDataAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '');
         if (!stale) { stale=document.createElement('span'); stale.className='rz-stale-badge'; headerRight.insertBefore(stale, timerEl); }
         if (stale.textContent !== staleText) stale.textContent = staleText;
       } else if (stale) stale.remove();
@@ -3791,7 +3841,7 @@
       + '<div class="rz-panel' + (_activeTab === 'top'    ? ' active' : '') + '" id="rz-panel-top">'    + _renderTopPerformers()  + '</div>';
 
     var exitBtn  = _isDemo ? '<button class="rz-demo-exit" id="rz-demo-exit">Exit Demo</button>' : '';
-    var staleChip = _lastPollFailed ? '<span class="rz-stale-badge">Stale' + (_lastSuccessAt ? ' · updated ' + new Date(_lastSuccessAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '') + '</span>' : '';
+    var staleChip = _lastPollFailed ? '<span class="rz-stale-badge">Stale' + (_lastDataAt ? ' · updated ' + new Date(_lastDataAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '') + '</span>' : '';
     var timerLabel = _lastPollFailed ? '↻' : (idle ? '↻' : _fmtTimer(_countdown));
     var notifCta = (!_notifDismissed && 'Notification' in window && Notification.permission === 'default')
       ? '<div class="rz-notif-cta" id="rz-notif-cta"><span>Enable TD alerts</span><button class="rz-notif-cta-btn" id="rz-notif-enable">Enable</button><button class="rz-notif-cta-x" id="rz-notif-dismiss">✕</button></div>'
@@ -3867,6 +3917,7 @@
           : null;
         _saveScopeRuntime(_scope); // freeze this scope's canonical PBP first
         _streamGen++; // abort any in-flight My Leagues stream / poll from a prior switch
+        _cancelInflight('scope-switch'); // and actually abort the in-flight request/reader
         _streaming = false;
         _mlNames = []; _mlLoaded = null; _mlFailed = null;
         _scope = btn.dataset.scope;
@@ -3999,15 +4050,40 @@
   }
 
   // ── Polling ───────────────────────────────────────────────────────────────────
-  // Restore last-good data for the active scope after a failed scope-switch
-  // fetch. Never clear the skeleton onto a foreign scope's payload (that is
-  // how My Leagues ESPN names used to appear under This League).
-  function _recoverScopeLoad(myGen, myScope) {
-    if (myGen !== _streamGen || myScope !== _scope) return;
+  // Concise diagnostics: request duration, timeout/error reason, scope, and any
+  // discarded obsolete response. Never logs credentials or personal data.
+  function _rzLog(event, detail) {
+    try {
+      if (window.console && console.debug) console.debug('[redzone] ' + event, detail || {});
+    } catch (_) {}
+  }
+
+  // A request owns the screen only while it is the newest one in the current
+  // scope generation and scope. Older/obsolete requests silently discard their
+  // responses instead of clobbering fresher state.
+  function _ownsScreen(seq, gen, scope) {
+    return seq === _reqSeq && gen === _streamGen && scope === _scope;
+  }
+  // Cancel whatever request currently owns the network (stalled or active) so a
+  // manual refresh or scope switch can start clean. Ownership-aware: it only
+  // drops the shared _inflight handle -- it never clears another request's
+  // streaming/loading flags.
+  function _cancelInflight(reason) {
+    var f = _inflight;
+    _inflight = null;
+    if (f && f.controller) { try { f.controller.abort(); } catch (_) {} }
+    if (f) _rzLog('cancel', { seq: f.seq, scope: f.scope, reason: reason });
+  }
+
+  // Restore last-good data for the active scope after a failed / obsolete fetch.
+  // Never clear the skeleton onto a foreign scope's payload (that is how My
+  // Leagues ESPN names used to appear under This League). Ownership-aware.
+  function _recoverScopeLoad(seq, gen, scope) {
+    if (!_ownsScreen(seq, gen, scope)) return;
     _lastPollFailed = true;
     _loadingPlays = false;
     if (!_loadingScope) return;
-    var cached = _scopeCache[myScope];
+    var cached = _scopeCache[scope];
     if (cached) {
       _setState(cached);
       _loadingScope = false;
@@ -4018,44 +4094,111 @@
     }
   }
 
-  async function _refresh() {
-    if (_streaming) return; // a progressive My Leagues stream owns the screen
-    // Capture at start so a late My Leagues poll cannot overwrite This League
-    // (or vice versa) after the user flips the scope tabs.
+  // Manual refresh (timer tap / resume): guaranteed to run. Cancels a stalled or
+  // active poll/stream and starts a fresh request with immediate loading
+  // feedback so a hung stream can never leave the button inert.
+  function _manualRefresh() {
+    if (_scope === 'user') _refreshUserStream({ manual: true });
+    else _refresh({ manual: true });
+  }
+
+  async function _refresh(opts) {
+    opts = opts || {};
+    // Automatic polls defer to whatever request already owns the network so they
+    // never pile up. A manual refresh preempts: it cancels the in-flight request
+    // (and a possibly-stalled My Leagues stream) and starts clean.
+    if (_streaming) {
+      if (!opts.manual) return; // a stream owns the screen
+      if (_scope === 'user') return _refreshUserStream({ manual: true });
+      _cancelInflight('manual-preempt-stream');
+      _streaming = false;
+    }
+    if (_inflight) {
+      if (!opts.manual) return; // a request is already in flight
+      _cancelInflight('manual-preempt');
+    }
+
+    // Capture ownership at start so a late poll cannot overwrite a newer request
+    // (or the other scope) after the user flips scope tabs or taps refresh.
+    var mySeq = ++_reqSeq;
     var myGen = _streamGen;
     var myScope = _scope;
+    var startedAt = Date.now();
     var wasLoading = _loadingScope;
+    // Live vs bulk animation keys off actual data freshness, not merely "a poll
+    // ran": a run that only restored last-good must not fake live continuity.
     var wasContinuouslyActive = !wasLoading && !_scopeJustSwitched
       && !document.hidden
-      && (_lastSuccessAt == null || Date.now() - _lastSuccessAt < Math.max(60000, _pollInterval() * 2500));
+      && (_lastDataAt == null || Date.now() - _lastDataAt < Math.max(60000, _pollInterval() * 2500));
+
+    var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    _inflight = { seq: mySeq, gen: myGen, scope: myScope, controller: controller };
+    if (opts.manual) _lastPollFailed = false; // optimistic; a failure re-sets it
+
+    // The deadline stays armed through header receipt, body consumption AND JSON
+    // parsing. Clearing it after fetch() returned headers (the old behavior) let
+    // a slow/stalled body hang the request forever.
+    var timedOut = false;
+    var deadline = setTimeout(function() {
+      timedOut = true;
+      if (controller) { try { controller.abort(); } catch (_) {} }
+    }, _RZ_FETCH_DEADLINE_MS);
+    function _release() {
+      clearTimeout(deadline);
+      if (_inflight && _inflight.seq === mySeq) _inflight = null;
+    }
+
     try {
       var parts = window.location.pathname.split('/');
       var apiBase = '/api/' + parts[1] + '/' + parts[2] + '/' + parts[3];
       var url = apiBase + '/redzone-data?_cb=' + Date.now() + '&scope=' + myScope;
       if (_isDemo) { _demoT += 15; url += '&demo=1&t=' + _demoT; }
-      var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
-      var timeout = setTimeout(function() { if (controller) controller.abort(); }, 12000);
-      var resp;
-      try { resp = await fetch(url, { cache: 'no-store', signal: controller ? controller.signal : undefined }); }
-      finally { clearTimeout(timeout); }
-      if (myGen !== _streamGen || myScope !== _scope) return;
-      if (!resp.ok) {
-        _recoverScopeLoad(myGen, myScope);
-        if (myGen === _streamGen && myScope === _scope && !_loadingScope) _partialUpdate();
+
+      var resp = await fetch(url, { cache: 'no-store', signal: controller ? controller.signal : undefined });
+      // Consume + parse the body under the SAME deadline before releasing it.
+      var newData = null, parseErr = null;
+      if (resp.ok) { try { newData = await resp.json(); } catch (e) { parseErr = e; } }
+      _release();
+
+      // Only the current owner may touch state / controls. A superseded request
+      // (newer poll, scope switch, or manual preempt) discards silently.
+      if (!_ownsScreen(mySeq, myGen, myScope)) {
+        _rzLog('discard-obsolete', { scope: myScope, seq: mySeq, ms: Date.now() - startedAt });
         return;
       }
-      var newData = await resp.json();
-      if (myGen !== _streamGen || myScope !== _scope) return;
-      // Server stamps scope; reject a mismatched payload even if gen lined up.
-      if (newData && newData.scope && newData.scope !== myScope) return;
+      if (!resp.ok || parseErr) {
+        _rzLog('refresh-fail', { scope: myScope, ms: Date.now() - startedAt,
+          reason: parseErr ? 'parse' : ('http-' + resp.status) });
+        _lastSuccessAt = resp.ok ? Date.now() : _lastSuccessAt; // transport succeeded even if body was bad
+        _recoverScopeLoad(mySeq, myGen, myScope);
+        if (_ownsScreen(mySeq, myGen, myScope) && !_loadingScope) _partialUpdate();
+        return;
+      }
+      // Server stamps scope; reject a mismatched payload even if ownership lined up.
+      if (newData && newData.scope && newData.scope !== myScope) {
+        _rzLog('discard-scope', { scope: myScope, got: newData.scope });
+        return;
+      }
+      // A 200 that carries an error (e.g. portfolio_unavailable) is NOT a fresh
+      // snapshot. Treat it like a failure: keep last-good data, flag stale.
+      if (newData && newData.error) {
+        _rzLog('refresh-error-payload', { scope: myScope, error: String(newData.error) });
+        _lastSuccessAt = Date.now(); // the request itself completed
+        _recoverScopeLoad(mySeq, myGen, myScope);
+        if (_ownsScreen(mySeq, myGen, myScope) && !_loadingScope) _partialUpdate();
+        return;
+      }
       if (!_hasViewerIdentityFields(newData, myScope)) {
-        _recoverScopeLoad(myGen, myScope);
-        if (myGen === _streamGen && myScope === _scope && !_loadingScope) _partialUpdate();
+        _rzLog('refresh-no-identity', { scope: myScope });
+        _lastSuccessAt = Date.now();
+        _recoverScopeLoad(mySeq, myGen, myScope);
+        if (_ownsScreen(mySeq, myGen, myScope) && !_loadingScope) _partialUpdate();
         return;
       }
       _lastPollFailed = false;
       _scopeLoadError = null;
       _lastSuccessAt = Date.now();
+      _lastDataAt = Date.now(); // real upstream data applied
       _loadingScope = false;
       _loadingPlays = false;
       // Apply state before detect so owner/league labels read the new payload.
@@ -4074,6 +4217,7 @@
       // Full rendering is reserved for the initial/scope load.
       if (wasLoading) _render(); else _partialUpdate();
       _scopeJustSwitched = false;
+      _rzLog('refresh-ok', { scope: myScope, ms: Date.now() - startedAt, live: _anyLive() });
 
       // Auto-refresh Live tab in player modal if it's currently visible
       var livePanelEl = document.getElementById('pm-panel-live');
@@ -4097,9 +4241,13 @@
         });
         _flashRids.clear();
       }
-    } catch (_) {
-      _recoverScopeLoad(myGen, myScope);
-      if (myGen === _streamGen && myScope === _scope && !_loadingScope) _partialUpdate();
+    } catch (e) {
+      _release();
+      if (!_ownsScreen(mySeq, myGen, myScope)) return; // aborted by a newer request; not our problem
+      _rzLog('refresh-catch', { scope: myScope, ms: Date.now() - startedAt,
+        reason: timedOut ? 'deadline' : (e && e.name === 'AbortError' ? 'abort' : 'network') });
+      _recoverScopeLoad(mySeq, myGen, myScope);
+      if (_ownsScreen(mySeq, myGen, myScope) && !_loadingScope) _partialUpdate();
     }
   }
 
@@ -4141,33 +4289,72 @@
     }
   }
 
-  async function _refreshUserStream() {
-    var myGen = ++_streamGen; // this stream owns the screen until the next scope switch
+  async function _refreshUserStream(opts) {
+    opts = opts || {};
+    // This stream owns the screen until the next scope switch. Bumping the gen
+    // supersedes any prior stream (its read loop sees the mismatch and cancels);
+    // claiming a fresh request seq lets ownership checks order it against polls.
+    var myGen = ++_streamGen;
+    var mySeq = ++_reqSeq;
+    _cancelInflight('stream-start'); // abort any active poll / stalled prior stream
     _streaming = true;
     _mlFailed = new Set();
-    // Keep cached Plays on screen while streaming; rebuild from the full
-    // portfolio once at stream end.
+    var startedAt = Date.now();
+
     var parts = window.location.pathname.split('/');
     var apiBase = '/api/' + parts[1] + '/' + parts[2] + '/' + parts[3];
     var url = apiBase + '/redzone-data?_cb=' + Date.now() + '&scope=user&stream=1';
-    var resp;
-    try { resp = await fetch(url, { cache: 'no-store' }); } catch (_) {
-      _streaming = false;
-      if (myGen !== _streamGen) return;
-      return _refresh();
+
+    var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    _inflight = { seq: mySeq, gen: myGen, scope: 'user', controller: controller };
+
+    var reader = null;
+    var stallReason = null;
+    // Overall deadline AND inactivity timeout. Either aborts the fetch/reader so
+    // a stream that never returns headers, or stalls between chunks, can never
+    // pin _streaming true and freeze manual refresh + automatic polling.
+    var overall = setTimeout(function() { _abortStream('deadline'); }, _RZ_STREAM_DEADLINE_MS);
+    var idle = null;
+    function _bumpIdle() {
+      if (idle) clearTimeout(idle);
+      idle = setTimeout(function() { _abortStream('inactivity'); }, _RZ_STREAM_IDLE_MS);
     }
-    if (myGen !== _streamGen) { _streaming = false; return; } // superseded by a newer switch
+    function _abortStream(reason) {
+      stallReason = reason;
+      if (controller) { try { controller.abort(); } catch (_) {} }
+      if (reader) { try { reader.cancel(); } catch (_) {} }
+    }
+    // Ownership-aware teardown: only clear the shared streaming/inflight flags if
+    // THIS stream still owns them. A superseding stream/switch must be left alone.
+    function _finish() {
+      clearTimeout(overall);
+      if (idle) clearTimeout(idle);
+      if (_streamGen === myGen && _scope === 'user') _streaming = false;
+      if (_inflight && _inflight.seq === mySeq) _inflight = null;
+    }
+
+    _bumpIdle();
+    var resp;
+    try { resp = await fetch(url, { cache: 'no-store', signal: controller ? controller.signal : undefined }); }
+    catch (e) {
+      _finish();
+      _rzLog('stream-fetch-fail', { ms: Date.now() - startedAt,
+        reason: stallReason || (e && e.name === 'AbortError' ? 'abort' : 'network') });
+      if (myGen !== _streamGen || _scope !== 'user') return; // superseded
+      return _refresh({ manual: opts.manual }); // recover via the aggregate fetch
+    }
+    if (myGen !== _streamGen) { _finish(); return; } // superseded by a newer switch
     var ctype = (resp.headers.get('content-type') || '');
     // Server fell back to aggregate JSON (no portfolio / error) → use it directly.
     if (!resp.ok || !resp.body || ctype.indexOf('ndjson') < 0) {
-      _streaming = false;
+      _finish();
       if (myGen !== _streamGen) return;
-      return _refresh();
+      return _refresh({ manual: opts.manual });
     }
 
     var base = _emptyUserState();
     _mlNames = []; _mlLoaded = new Set();
-    var reader = resp.body.getReader();
+    reader = resp.body.getReader();
     var decoder = new TextDecoder();
     var buf = '', gotLeague = false;
 
@@ -4203,8 +4390,9 @@
     try {
       while (true) {
         var chunk = await reader.read();
-        if (myGen !== _streamGen) { try { reader.cancel(); } catch (_) {} _streaming = false; return; }
+        if (myGen !== _streamGen) { try { reader.cancel(); } catch (_) {} _finish(); return; }
         if (chunk.done) break;
+        _bumpIdle(); // progress → reset the inactivity timer
         buf += decoder.decode(chunk.value, { stream: true });
         var lines = buf.split('\n');
         buf = lines.pop();
@@ -4215,16 +4403,20 @@
           _handle(obj);
         }
       }
-    } catch (_) {
-      _mlNames = []; _mlLoaded = null; _streaming = false;
-      if (myGen === _streamGen) return _refresh();
+    } catch (e) {
+      _mlNames = []; _mlLoaded = null;
+      _finish();
+      _rzLog('stream-read-fail', { ms: Date.now() - startedAt,
+        reason: stallReason || (e && e.name === 'AbortError' ? 'abort' : 'network') });
+      if (myGen === _streamGen && _scope === 'user') return _refresh({ manual: opts.manual });
       return;
     }
 
-    _mlLoaded = _mlLoaded; // keep for failed-card rendering until next switch
-    _streaming = false;
-    if (myGen !== _streamGen) return;
-    if (!gotLeague) { return _refresh(); }
+    // Stream completed normally.
+    clearTimeout(overall);
+    if (idle) clearTimeout(idle);
+    if (myGen !== _streamGen) { _finish(); return; }
+    if (!gotLeague) { _finish(); return _refresh({ manual: opts.manual }); }
     _setState(base);
     _scopeCache.user = base;
     // Reconcile into restored canonical state; empty or partial slices cannot
@@ -4240,11 +4432,17 @@
       _shownFeedIds = new Set(_feed.map(_eid));
     }
     _saveScopeRuntime('user');
+    _lastPollFailed = false;
+    _scopeLoadError = null;
+    _lastSuccessAt = Date.now();
+    _lastDataAt = Date.now();
     _loadingScope = false;
     _loadingPlays = false;
     _scopeJustSwitched = false;
     _countdown = _pollInterval();
+    _finish(); // clear streaming/inflight before the final render reflects it
     _render();
+    _rzLog('stream-ok', { leagues: _mlLoaded ? _mlLoaded.size : 0, ms: Date.now() - startedAt });
   }
 
   function _isGameDay() {
@@ -4298,8 +4496,9 @@
     var el = document.getElementById('rz-timer');
     if (el) el.textContent = _fmtTimer(_countdown);
     if (_countdown <= 0) {
-      _countdown = _pollInterval();
-      _refresh();
+      // Never let an automatic poll pile onto an in-flight request; retry shortly.
+      if (_inflight) { _countdown = 1; }
+      else { _countdown = _pollInterval(); _refresh(); }
     }
   }
 
@@ -4307,9 +4506,27 @@
     if (e.target && e.target.id === 'rz-timer') {
       var el = document.getElementById('rz-timer');
       if (el) { el.textContent = '↻'; el.classList.add('rz-timer-refreshing'); }
-      _refresh();
+      _manualRefresh();
     }
   });
+
+  // Resume promptly when the tab becomes visible again or the network returns,
+  // without stacking duplicate timers/listeners. A single refresh (the stream
+  // for My Leagues) re-syncs; the existing 1s _tick keeps the countdown honest.
+  if (!_visListenersWired) {
+    _visListenersWired = true;
+    var _resumeIfStale = function() {
+      if (document.hidden) return;
+      if (!_isDemo && !_isGameDay()) return;
+      // Skip a redundant refresh when data is already fresh and nothing failed.
+      if (!_lastPollFailed && _lastDataAt != null
+          && (Date.now() - _lastDataAt) < _pollInterval() * 1000) return;
+      _rzLog('resume', { hidden: document.hidden });
+      _manualRefresh();
+    };
+    document.addEventListener('visibilitychange', _resumeIfStale);
+    window.addEventListener('online', _resumeIfStale);
+  }
 
   // Seed initial matchup points so first refresh doesn't trigger flash
   (_state.matchups || []).forEach(function(m) {
@@ -4325,6 +4542,10 @@
   _saveScopeRuntime(_scope); // initial real PBP is immediately restorable
   _alertsArmed = true;       // initial feed is backfill; only live polls alert after this
   _applyDefaultHero();       // no-op unless prefs restored a hero; focus stays opt-in by default
+  // The page loaded with a fresh server snapshot: treat it as our baseline data
+  // freshness so the resume-on-visible guard and the live/bulk heuristic start
+  // from "just updated" rather than "never".
+  if (_state && Object.keys(_state).length) { _lastDataAt = Date.now(); _lastSuccessAt = Date.now(); }
 
   _render();
   if (_isDemo) setTimeout(_refresh, 300);

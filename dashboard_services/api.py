@@ -567,11 +567,15 @@ class Tank01Error(Exception):
 
 
 @ttl_cache(ttl=300)
-def get_nfl_scores_for_date(game_date: str) -> dict:
+def get_nfl_scores_for_date(game_date: str, timeout: int = 20) -> dict:
     """
     Wraps Tank01 getNFLScoresOnly.
 
     game_date: 'YYYYMMDD' string, e.g. '20251204'
+    timeout: upstream request budget in seconds. Ordinary pages keep the
+        generous 20s default; live surfaces (Redzone) pass a shorter value so
+        the whole server response stays inside the client's abort deadline
+        rather than the client giving up on a request the server would answer.
     Returns: body dict from Tank01 (gameID -> gameDict)
     """
     url = f"{BASE}/getNFLScoresOnly"
@@ -581,7 +585,7 @@ def get_nfl_scores_for_date(game_date: str) -> dict:
         logger.warning("[Tank01] Circuit OPEN - skipping getNFLScoresOnly %s", game_date)
         return {}
     try:
-        resp = SESSION.get(url, headers=TANK01_HEADERS, params=params, timeout=20)
+        resp = SESSION.get(url, headers=TANK01_HEADERS, params=params, timeout=timeout)
         resp.raise_for_status()
         data = resp.json() or {}
         _tank01_breaker.record_success()

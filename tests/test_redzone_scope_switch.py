@@ -35,8 +35,10 @@ def test_stale_tank01_pre_status_upgraded_by_espn():
 
 def _fn(name: str) -> str:
     src = _rz()
+    # _refresh / _refreshUserStream take an opts arg now; match the open paren
+    # without assuming a specific parameter list.
     needle = (
-        "async function %s()" % name
+        "async function %s(" % name
         if name.startswith("_refresh")
         else "function %s(" % name
     )
@@ -54,8 +56,11 @@ def test_refresh_guards_stale_generation_and_scope():
     src = _fn("_refresh")
     assert "var myGen = _streamGen" in src
     assert "var myScope = _scope" in src
+    assert "var mySeq = ++_reqSeq" in src  # explicit request-sequence ownership
     assert "'&scope=' + myScope" in src or '"&scope=" + myScope' in src
-    assert "myGen !== _streamGen || myScope !== _scope" in src
+    # Ownership (seq AND gen AND scope) gates every state mutation now; a
+    # scope-generation check alone could not order two same-scope requests.
+    assert "_ownsScreen(mySeq, myGen, myScope)" in src
     assert "newData.scope !== myScope" in src
     assert "_scopeCache[myScope] = newData" in src
     # State must be applied before detect so owner/league labels are correct.
@@ -65,7 +70,9 @@ def test_refresh_guards_stale_generation_and_scope():
 
 def test_recover_scope_load_uses_cache_not_foreign_state():
     src = _fn("_recoverScopeLoad")
-    assert "_scopeCache[myScope]" in src
+    # Ownership-aware and scoped to the active scope's own cache.
+    assert "_ownsScreen(seq, gen, scope)" in src
+    assert "_scopeCache[scope]" in src
     # First-load failure replaces the skeleton with an explicit retry state;
     # only the active scope's cached payload may be restored.
     assert "_scopeLoadError = true" in src
@@ -91,8 +98,16 @@ def test_scope_switch_restores_payload_and_isolated_runtime():
 
 def test_stream_fallbacks_check_generation():
     src = _fn("_refreshUserStream")
-    assert src.count("if (myGen !== _streamGen) return") >= 2
+    # A superseding scope switch / newer stream (higher generation) must be
+    # detected at every await boundary so a stale stream can neither paint nor
+    # clear another request's flags.
+    assert src.count("myGen !== _streamGen") >= 3
     assert "_scopeCache.user = base" in src
+    # Streaming unavailable / mid-stream error degrades to the aggregate fetch.
+    assert "_refresh({ manual: opts.manual })" in src
+    # A stalled stream cannot pin _streaming: it has both an overall deadline and
+    # an inactivity timeout, and ownership-aware teardown clears the flags.
+    assert "_RZ_STREAM_DEADLINE_MS" in src and "_RZ_STREAM_IDLE_MS" in src
 
 
 def test_my_leagues_stream_hydrates_plays_at_end():
