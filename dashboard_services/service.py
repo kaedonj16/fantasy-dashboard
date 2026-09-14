@@ -132,8 +132,12 @@ def matchup_cards_last_week(
                 pid_s = str(pid)
                 if i < len(spts) and spts[i] is not None:
                     pts = float(spts[i])
+                elif pid_s in players_points and players_points[pid_s] is not None:
+                    pts = float(players_points[pid_s])
                 else:
-                    pts = float(players_points.get(pid_s, 0.0))
+                    # Missing Yahoo player scoring is unknown, not a zero-score
+                    # performance, and must not enter positional rankings.
+                    continue
                 name, nfl, pos = pmeta(pid_s)
                 if pos:
                     buckets[pos].append(
