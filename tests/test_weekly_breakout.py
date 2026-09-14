@@ -391,3 +391,22 @@ def test_backtest_flat_player_is_not_a_true_riser():
 def test_backtest_none_when_no_lookahead():
     riser = [_bwk(w, 20 + 8 * w, 5 + 2 * w, w) for w in range(1, 6)]
     assert bt._did_sustain(riser, "WR", 5, 3) is None  # nothing after week 5
+
+
+def test_backtest_usefulness_metric_tracks_ppg():
+    # Startable PPR over the lookahead counts as useful; below-threshold does not.
+    useful = [_bwk(w, 60, 20, 6, ppr=14) for w in range(1, 9)]
+    thin = [_bwk(w, 60, 20, 6, ppr=4) for w in range(1, 9)]
+    assert bt._became_useful(useful, "WR", 5, 3) is True
+    assert bt._became_useful(thin, "WR", 5, 3) is False
+    assert bt._became_useful(useful, "WR", 8, 3) is None  # no lookahead
+
+
+def test_backtest_reports_both_precisions():
+    riser = [_bwk(1, 25, 8, 2, 3), _bwk(2, 28, 9, 3, 4), _bwk(3, 55, 18, 6, 6),
+             _bwk(4, 64, 22, 8, 8), _bwk(5, 68, 24, 8, 12), _bwk(6, 70, 25, 9, 14),
+             _bwk(7, 69, 24, 8, 13), _bwk(8, 71, 26, 9, 15)]
+    rep = bt.run_backtest({"r": riser}, {"r": {"position": "WR"}},
+                          eval_weeks=[5], top_n=1, horizon=3)
+    assert "precision" in rep["methods"]["model"]
+    assert "precision_useful" in rep["methods"]["model"]

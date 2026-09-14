@@ -16,9 +16,15 @@ simple baselines, so we can see whether the engine adds anything over them:
     - usage-growth-only: rank by raw recent-vs-baseline usage delta, ignoring the
       resulting level, classification, confidence, and the fantasy-spike guard
 
-Reported per method: precision among the top-N, coverage of the week's true
-sustained risers, false-positive rate, and average lead time (games between the
-flag and the player's first elevated-production game).
+Reported per method: two precisions among the top-N - precision(usage) for
+sustaining the usage rise, and precision(useful) for the flagged player actually
+reaching a startable PPR PPG over the lookahead - plus coverage of the week's
+true sustained risers, false-positive rate, and average lead time (games between
+the flag and the player's first elevated-production game). The two precisions
+matter because a raw usage-delta ranker optimizes precision(usage) almost by
+construction (the ground truth IS a usage rise); precision(useful) is the read
+that tracks product value, and is where workload-awareness and the spike guard
+earn their place.
 
 The evaluation core (``run_backtest``) is pure - it takes an in-memory
 {player_id: [weekly rows]} map - so it is unit tested without a database. The DB
@@ -79,6 +85,25 @@ _INCREASE_RATIO = 1.25      # recent usage must be >=25% above baseline to count
 _SUSTAIN_FRACTION = 0.5     # keep >=half the rise over the lookahead
 _USEFULNESS_RATIO = 1.15    # lookahead PPG >=15% above the pre-flag baseline PPG
 _ABS_USAGE_FLOOR = 8.0      # min key-stat level when baseline is ~0 (rookie/debut)
+
+# Absolute fantasy-relevance (roughly startable-flex PPR PPG) per position. Used
+# for the SECONDARY outcome metric: did a flagged player actually become
+# fantasy-useful over the lookahead, regardless of usage mechanics? This matches
+# product value more directly than the usage-sustain metric, which a raw
+# usage-delta ranker optimizes by construction.
+_USEFUL_PPG = {"QB": 16.0, "RB": 12.0, "WR": 11.0, "TE": 9.0}
+
+
+def _became_useful(rows: List[Dict], position: str, cutoff_week: int, horizon: int) -> Optional[bool]:
+    """Did the player average a fantasy-relevant PPR PPG over the lookahead?
+    None when there is no lookahead data."""
+    fut = _future_active(rows, cutoff_week, horizon)
+    if not fut:
+        return None
+    fut_ppg, _ = _mean_present(fut, "ppr_pts")
+    if fut_ppg is None:
+        return False
+    return fut_ppg >= _USEFUL_PPG.get((position or "").upper(), 11.0)
 
 
 def _did_sustain(rows: List[Dict], position: str, cutoff_week: int, horizon: int) -> Optional[bool]:
@@ -178,7 +203,8 @@ def run_backtest(
 ) -> Dict[str, Any]:
     """Evaluate model vs baselines across ``eval_weeks``. Pure. See module doc."""
     methods = ("model", "recent_points", "usage_growth")
-    agg = {m: {"picks": 0, "hits": 0, "lead_times": []} for m in methods}
+    agg = {m: {"picks": 0, "hits": 0, "useful_picks": 0, "useful_hits": 0,
+               "lead_times": []} for m in methods}
     coverage_num = {m: 0 for m in methods}
     coverage_den = 0
 
@@ -189,6 +215,7 @@ def run_backtest(
         recent_scored: List[Tuple[str, float]] = []
         usage_scored: List[Tuple[str, float]] = []
         sustain_by_pid: Dict[str, Optional[bool]] = {}
+        useful_by_pid: Dict[str, Optional[bool]] = {}
 
         for pid, rows in series_by_player.items():
             meta = meta_by_player.get(pid, {})
@@ -198,6 +225,7 @@ def run_backtest(
                 continue
             universe.append(pid)
             sustain_by_pid[pid] = _did_sustain(rows, pos, W, horizon)
+            useful_by_pid[pid] = _became_useful(rows, pos, W, horizon)
 
             res = score_player(
                 {"player_id": pid, "position": pos, "team": meta.get("team")},
@@ -221,14 +249,18 @@ def run_backtest(
         for m, plist in picks.items():
             for pid in plist:
                 s = sustain_by_pid.get(pid)
-                if s is None:
-                    continue  # no lookahead data -> not scorable, exclude from precision
-                agg[m]["picks"] += 1
-                if s:
-                    agg[m]["hits"] += 1
-                    lt = _lead_time(series_by_player[pid], W, horizon)
-                    if lt is not None:
-                        agg[m]["lead_times"].append(lt)
+                if s is not None:  # scorable on the usage-sustain metric
+                    agg[m]["picks"] += 1
+                    if s:
+                        agg[m]["hits"] += 1
+                        lt = _lead_time(series_by_player[pid], W, horizon)
+                        if lt is not None:
+                            agg[m]["lead_times"].append(lt)
+                u = useful_by_pid.get(pid)
+                if u is not None:  # scorable on the fantasy-usefulness metric
+                    agg[m]["useful_picks"] += 1
+                    if u:
+                        agg[m]["useful_hits"] += 1
             coverage_num[m] += len(set(plist) & true_risers)
 
     report = {"eval_weeks": eval_weeks, "top_n": top_n, "horizon": horizon, "methods": {}}
@@ -236,10 +268,13 @@ def run_backtest(
         picks = agg[m]["picks"]
         hits = agg[m]["hits"]
         lts = agg[m]["lead_times"]
+        u_picks = agg[m]["useful_picks"]
+        u_hits = agg[m]["useful_hits"]
         report["methods"][m] = {
             "picks_evaluated": picks,
             "hits": hits,
             "precision": round(hits / picks, 3) if picks else None,
+            "precision_useful": round(u_hits / u_picks, 3) if u_picks else None,
             "false_positive_rate": round((picks - hits) / picks, 3) if picks else None,
             "coverage": round(coverage_num[m] / coverage_den, 3) if coverage_den else None,
             "avg_lead_time_games": round(sum(lts) / len(lts), 2) if lts else None,
@@ -298,9 +333,12 @@ def main() -> Dict[str, Any]:
     print(f"=== Weekly breakout backtest: season {args.season} ===")
     print(f"eval weeks {eval_weeks} | top_n={args.top_n} | horizon={args.horizon}")
     for m, mr in report["methods"].items():
-        print(f"  {m:16s} precision={mr['precision']} coverage={mr['coverage']} "
-              f"fp_rate={mr['false_positive_rate']} lead={mr['avg_lead_time_games']} "
-              f"(n={mr['picks_evaluated']})")
+        print(f"  {m:16s} precision(usage)={mr['precision']} "
+              f"precision(useful)={mr['precision_useful']} "
+              f"coverage={mr['coverage']} fp_rate={mr['false_positive_rate']} "
+              f"lead={mr['avg_lead_time_games']} (n={mr['picks_evaluated']})")
+    print("  precision(usage): flagged player sustained the usage rise; "
+          "precision(useful): flagged player reached startable PPR PPG over the lookahead.")
     return report
 
 
