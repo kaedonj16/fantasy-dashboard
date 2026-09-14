@@ -222,3 +222,22 @@ def test_merge_no_duplicate_first_seen():
     a = assess_big_game(GameContext(player_id="p", position="WR", season=2025,
                                     week=6, actual_points=22.0))
     assert merge_assessment(None, a) is a
+
+
+def test_enrichment_is_order_independent():
+    # Consistent signal coverage regardless of processing order (#5/#11): each
+    # player's assessment depends only on that player, so shuffling the batch
+    # never changes any result.
+    batch = [
+        GameContext(player_id="a", position="WR", season=2025, week=7, actual_points=24.0,
+                    pregame_projection=8.0, projection_saved_at="t",
+                    snap_share=0.8, snap_share_prev=0.4, targets=10, targets_prev=4),
+        GameContext(player_id="b", position="RB", season=2025, week=7, actual_points=22.0,
+                    pregame_projection=5.0, projection_saved_at="t",
+                    touchdowns=2, touches=4, touches_prev=3, total_yards=95, longest_play_yards=70),
+        GameContext(player_id="c", position="TE", season=2025, week=7, actual_points=6.0,
+                    pregame_projection=6.0, projection_saved_at="t"),
+    ]
+    forward = {g.player_id: assess_big_game(g).to_dict() for g in batch}
+    reverse = {g.player_id: assess_big_game(g).to_dict() for g in reversed(batch)}
+    assert forward == reverse
