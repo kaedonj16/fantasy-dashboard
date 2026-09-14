@@ -682,7 +682,8 @@ print(f"[cron] O-line ratings: {{len(res.get('ratings', {{}}))}} teams -> {{out_
     # 'Opp plays faced' pace/possession context for the Start/Sit advisor #
     # -- offensive plays each defense faces per game. Same in-season /    #
     # Wednesday cadence as the O-line + matchup ratings above (fresh      #
-    # weekly game data). Display-only: never enters the start/sit score.  #
+    # weekly game data). Raw values display separately; the bounded pace #
+    # multiplier enters shared scoring exactly once.                       #
     # ------------------------------------------------------------------ #
     if not in_season:
         print("[cron] Team play volume skipped - offseason")
@@ -693,9 +694,17 @@ print(f"[cron] O-line ratings: {{len(res.get('ratings', {{}}))}} teams -> {{out_
     else:
         _run_step(f"""
 from dotenv import load_dotenv; load_dotenv()
-from data_building.team_play_volume import build_team_play_volume, out_path
-res = build_team_play_volume({season!r})
-print(f"[cron] Team play volume: {{len(res.get('teams', {{}}))}} teams -> {{out_path({season!r})}}")
+from data_building.team_play_volume import build_team_play_volume
+res = build_team_play_volume({season!r}, persist=True)
+teams = len(res.get('teams', {{}}))
+if not teams:
+    raise RuntimeError("team play volume source returned no teams during regular season")
+if not res.get("persisted"):
+    raise RuntimeError("team play volume was not persisted")
+print(f"[cron] Team play volume: {{teams}} teams persisted for {{res['season']}}; "
+      f"generated_at={{res['generated_at']}} league_avg={{res.get('nfl_avg_plays_faced_pg')}}")
+print(f"team_play_volume season={{res['season']}} teams={{teams}} "
+      f"avg={{res.get('nfl_avg_plays_faced_pg')}} persisted=true")
 """, "build_team_play_volume", timeout=900)
 
     # ------------------------------------------------------------------ #

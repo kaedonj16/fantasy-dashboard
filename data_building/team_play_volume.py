@@ -4,19 +4,17 @@
 each NFL defense faces per game, so a fantasy player's weekly opponent carries a
 pace/possession signal (a slow, ball-control opponent leaves fewer snaps to
 accrue points against; a fast, pass-happy one leaves more). Public-safe (open
-pbp only), computed once per season and cached to
-``cache/team_play_volume_s{season}.json`` for the request path to read (see
-``app._load_team_play_volume``).
+pbp only), computed by cron and persisted to Postgres. The JSON output is a
+local-development/debugging convenience, never the production source of truth.
 
 The heavy aggregation lives in
 ``data_building.external_data.nflverse_metrics.build_team_play_volume_for_season``;
 this module is the thin cron/cache wrapper (it computes the league average once
 and writes the file), mirroring ``data_building/oline_ratings.py``.
 
-This is DISPLAY-ONLY context. It is never fed into the start/sit score, the
-START/SIT badges, the optimal lineup, or the Compare verdict -- matchup/volume
-is intentionally kept out of the score (utils/start_sit_score.py) because weekly
-projections already reflect the opponent.
+The raw opponent values are display context. A separate, conservative and
+bounded expected-play multiplier is applied exactly once by the shared scorer;
+missing data remains neutral.
 
 Output ``cache/team_play_volume_s{season}.json``::
 
@@ -46,7 +44,7 @@ def out_path(season: int) -> str:
     return os.path.join(str(CACHE_DIR), f"team_play_volume_s{season}.json")
 
 
-def build_team_play_volume(season: int, save: bool = True) -> dict:
+def build_team_play_volume(season: int, save: bool = True, persist: bool | None = None) -> dict:
     """Compute and (optionally) cache the team play-volume table for ``season``.
 
     Returns the full blob (metadata + league average + per-team rows). When
@@ -78,6 +76,17 @@ def build_team_play_volume(season: int, save: bool = True) -> dict:
         with open(tmp, "w") as f:
             json.dump(blob, f)
         os.replace(tmp, out_path(season))
+    blob["persisted"] = False
+    blob["persisted_teams"] = 0
+    if persist is None:
+        persist = bool(os.getenv("DATABASE_URL"))
+    if teams and persist:
+        from dashboard_services.team_play_volume import persist_team_play_volume
+        count = persist_team_play_volume(blob)
+        blob["persisted"] = count == len(teams)
+        blob["persisted_teams"] = count
+    elif not teams:
+        print(f"[team_play_volume] season={season} empty source; retaining persisted snapshot")
     return blob
 
 

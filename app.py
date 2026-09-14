@@ -11383,10 +11383,9 @@ def api_start_sit_options():
 
     # ── Opponent play volume ("opp plays faced"): pace / possession context ──
     # Offensive plays each NFL defense faces per game, from open play-by-play.
-    # Attached per player for their weekly opponent as DISPLAY-ONLY context --
-    # deliberately NOT part of the start/sit score, START/SIT badges, optimal
-    # lineup, or Compare verdict (weekly projections already reflect the
-    # opponent; see utils/start_sit_score.py).
+    # Attached per player as DISPLAY CONTEXT. These raw values are not scored;
+    # expected_plays_context separately blends offense/opponent pace and the
+    # shared scorer applies that derived signal once, conservatively and bounded.
     team_play_volume: dict = {}
     _tpv_nfl_avg = None
     try:
@@ -11561,8 +11560,7 @@ def api_start_sit_options():
         _wx_ss = (game_conditions.get(team) or {}).get("weather") if not on_bye else None
         _wx_kind = (_wx_ss or {}).get("kind") if isinstance(_wx_ss, dict) else None
 
-        # Opponent play volume ("opp plays faced"): display-only pace context,
-        # never fed into the start/sit score below.
+        # Raw opponent play volume is display context, not itself a score input.
         _pv_ss = (_play_volume_context(team_play_volume, opponent, _tpv_nfl_avg)
                   if (opponent and not on_bye) else None)
 
@@ -11652,10 +11650,13 @@ def api_start_sit_options():
             "weather": _wx_ss,
             "consistency": _cons,
             "oline": _ol_ss,
-            # Display-only pace context (opp plays faced); not a scoring input.
+            # Raw display context; scoring receives only _pace_ss below.
             "play_volume": _pv_ss,
             "environment_debug": {
+                "play_volume_source": (_tpv_blob or {}).get("play_volume_source"),
+                "play_volume_generated_at": (_tpv_blob or {}).get("generated_at"),
                 "expected_team_plays": _pace_ss.get("expected_team_plays"),
+                "opponent_plays_faced_pg": (_pv_ss or {}).get("plays_faced_pg"),
                 "league_avg_plays": _pace_ss.get("league_average_plays"),
                 "pace_source": _pace_ss.get("source"),
                 "role_confidence": _role_conf_ss,
@@ -15531,51 +15532,23 @@ def _load_team_play_volume(season: int) -> dict:
     Shape: ``{"nfl_avg_plays_faced_pg": float, "teams": {team: {plays_faced_pg,
     plays_faced_l4_pg, off_plays_pg, games}}}``. Produced by
     data_building/team_play_volume.py via the daily cron. Returns {} when no
-    cache exists so callers degrade gracefully (the stat is simply omitted).
+    persisted or development-fallback data exists, so the stat is omitted.
 
-    Pace carries across seasons, so before the in-season build (offseason / very
-    early weeks) the newest available season's cache is used instead of showing
-    nothing -- the same cross-season fallback ``_oline_for_player`` uses. Cached
-    in-process with the matchup-ratings TTL."""
-    key = str(season)
-    now = time.time()
-    if (_TEAM_PLAY_VOLUME_CACHE.get(key) is not None
-            and now - _TEAM_PLAY_VOLUME_TS.get(key, 0) < _MATCHUP_RATINGS_TTL):
-        return _TEAM_PLAY_VOLUME_CACHE[key]
-    blob: dict = {}
-    try:
-        path = os.path.join("cache", f"team_play_volume_s{season}.json")
-        if not os.path.exists(path):
-            newest = None
-            try:
-                for fn in os.listdir("cache"):
-                    if fn.startswith("team_play_volume_s") and fn.endswith(".json"):
-                        try:
-                            yr = int(fn[len("team_play_volume_s"):-len(".json")])
-                        except ValueError:
-                            continue
-                        newest = yr if newest is None else max(newest, yr)
-            except Exception:
-                newest = None
-            if newest is not None:
-                path = os.path.join("cache", f"team_play_volume_s{newest}.json")
-        if os.path.exists(path):
-            blob = json.load(open(path)) or {}
-    except Exception:
-        blob = {}
-    _TEAM_PLAY_VOLUME_CACHE[key] = blob
-    _TEAM_PLAY_VOLUME_TS[key] = now
-    return blob
+    Production reads the shared Postgres snapshot; the service owns a
+    season-keyed 30-minute cache and permits JSON fallback only outside Render.
+    Stale valid DB rows remain usable and missing rows return an empty object."""
+    from dashboard_services.team_play_volume import load_team_play_volume
+    return load_team_play_volume(season)
 
 
 def _play_volume_context(teams_tbl: dict, opponent: str, nfl_avg):
-    """Display-only play-volume object for a player's weekly opponent.
+    """Display play-volume object for a player's weekly opponent.
 
     ``teams_tbl`` is the {team: row} map from ``_load_team_play_volume``;
     ``opponent`` the player's NFL opponent code; ``nfl_avg`` the league average
     plays faced. Returns None when the opponent has no row, so a card without
-    data simply omits the stat. This value is NEVER fed into the start/sit score
-    -- pace is context, not part of the ranking.
+    data simply omits the stat. This object is not fed into scoring; the distinct
+    bounded expected-play context is calculated by ``expected_plays_context``.
 
     A per-position (pass/rush) headline was tried and dropped: a no-leakage
     backtest found opponent plays-faced barely predicts next-week points and the
