@@ -163,6 +163,37 @@ def test_game_situation_from_latest_field_play():
     assert sit["yard_line"] == "KC 28"
 
 
+def test_field_position_reliable_accepts_snap_yard_line_and_guards_turnovers():
+    from utils.redzone_pbp import game_situation_from_plays
+
+    # Snap yard_line only (no end_yard_line) is still a usable current spot --
+    # this is what most live feeds send, so the indicator must not be suppressed.
+    snap_only = game_situation_from_plays([
+        {"seq": 0, "team": "NYG", "down": "2", "distance": "11", "yard_line": "DAL 29"},
+    ])
+    assert snap_only["yard_line"] == "DAL 29"
+    assert snap_only["field_position_reliable"] is True
+
+    # end_yard_line is preferred when present.
+    with_end = game_situation_from_plays([
+        {"seq": 0, "team": "KC", "down": "1", "distance": "10",
+         "yard_line": "KC 25", "end_yard_line": "KC 31"},
+    ])
+    assert with_end["yard_line"] == "KC 31"
+    assert with_end["field_position_reliable"] is True
+
+    # In-progress turnovers stay unreliable -- possession/spot can momentarily lie.
+    turnover = game_situation_from_plays([
+        {"seq": 0, "team": "DAL", "down": "1", "distance": "10", "yard_line": "DAL 28",
+         "play_text": "J.Dart sacked, FUMBLES, recovered by NYG at DAL 34"},
+    ])
+    assert turnover["field_position_reliable"] is False
+
+    # No usable yard line at all -> not reliable.
+    team_only = game_situation_from_plays([{"seq": 0, "team": "CHI"}])
+    assert team_only["field_position_reliable"] is False
+
+
 def test_game_situation_falls_back_to_team_only():
     from utils.redzone_pbp import game_situation_from_plays
 

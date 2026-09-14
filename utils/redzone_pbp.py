@@ -686,13 +686,23 @@ def game_situation_from_plays(plays: list[dict] | None) -> dict:
     if chosen is None:
         return dict(empty)
 
+    yard_line = _s(chosen.get("end_yard_line") or chosen.get("yard_line") or chosen.get("yardLine"))
+    is_turnover = any(
+        word in _s(chosen.get("play_text")).lower()
+        for word in ("intercept", "fumble", "turnover")
+    )
     return {
         "possession": _s(chosen.get("team")),
         "down": _s(chosen.get("down")),
         "distance": _s(chosen.get("distance")),
-        "yard_line": _s(chosen.get("end_yard_line") or chosen.get("yard_line") or chosen.get("yardLine")),
-        "field_position_reliable": bool(_s(chosen.get("end_yard_line")))
-        and not any(word in _s(chosen.get("play_text")).lower() for word in ("intercept", "fumble", "turnover")),
+        "yard_line": yard_line,
+        # Reliable when we have a current ball spot -- the end-of-play location if
+        # the provider sends it, otherwise the snap yard line the situation line
+        # already displays -- and the latest play is not an in-progress turnover,
+        # where possession and spot can momentarily disagree. Many feeds only send
+        # a current yard_line (no end_yard_line), so gating strictly on the latter
+        # hid the indicator for otherwise-good live data.
+        "field_position_reliable": bool(yard_line) and not is_turnover,
         "quarter": _s(chosen.get("quarter")),
         "clock": _s(chosen.get("clock")),
     }
