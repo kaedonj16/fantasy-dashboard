@@ -11,6 +11,7 @@ Both normalize into the same shape as ``utils.redzone_pbp.extract_pbp_plays``.
 from __future__ import annotations
 
 import logging
+import os
 import re
 import time
 from typing import Any
@@ -20,6 +21,13 @@ logger = logging.getLogger(__name__)
 _SLEEPER_SCORES = "https://api.sleeper.com/scores/nfl"
 _ESPN_SCOREBOARD = "https://cdn.espn.com/core/nfl/scoreboard"
 _ESPN_PBP = "https://cdn.espn.com/core/nfl/playbyplay"
+# ESPN's own site/app read the web API summary endpoint, which stays within
+# seconds of live play. The CDN gamepackage above (``_ESPN_PBP``) is an
+# edge-cached bundle that can trail live play by minutes, so summary is the
+# primary source and the CDN is the fallback (see ``fetch_espn_pbp``). Note the
+# ``.web`` host: the bare ``site.api.espn.com`` began returning permission
+# errors in 2026.
+_ESPN_SUMMARY = "https://site.web.api.espn.com/apis/site/v2/sports/football/nfl/summary"
 
 _UA = (
     "Mozilla/5.0 (compatible; BRFantasyRedzone/1.0; +https://brfantasy.com)"
@@ -29,7 +37,8 @@ _UA = (
 _SLEEPER_WEEK_CACHE: dict[str, tuple[float, list]] = {}
 _SLEEPER_PBP_CACHE: dict[str, tuple[float, list]] = {}
 _ESPN_EVENT_CACHE: dict[str, tuple[float, str]] = {}  # matchup key -> espn event id
-_ESPN_PBP_CACHE: dict[str, tuple[float, dict]] = {}
+_ESPN_PBP_CACHE: dict[str, tuple[float, dict]] = {}  # event id -> CDN gamepackage payload
+_ESPN_SUMMARY_CACHE: dict[str, tuple[float, dict]] = {}  # event id -> web API summary payload
 # Event ids whose ESPN gamepackage has been fetched *after* the game reported
 # completed. Until an event is in here, a final game keeps force-refreshing its
 # PBP so the closing drives land, instead of freezing on the last live snapshot.
@@ -662,7 +671,100 @@ def fetch_espn_event_id(
     return hit[1] if hit else ""
 
 
-def fetch_espn_pbp(event_id: str, *, ttl: float = 30.0) -> dict:
+def _espn_drives(payload: dict) -> list:
+    """The chronological drive list from a CDN gamepackage or web API summary.
+
+    Both shapes carry ``drives`` (as ``{previous:[...], current:{...}}`` or a
+    plain list); the CDN wraps the game under ``gamepackageJSON`` while the
+    summary puts it at the root, so unwrap defensively.
+    """
+    if not isinstance(payload, dict):
+        return []
+    gp = payload.get("gamepackageJSON") or payload
+    block = gp.get("drives") if isinstance(gp, dict) else None
+    if isinstance(block, dict):
+        drives = list(block.get("previous") or [])
+        cur = block.get("current")
+        if isinstance(cur, dict):
+            drives.append(cur)
+        return drives
+    if isinstance(block, list):
+        return block
+    return []
+
+
+def _espn_payload_has_plays(payload: dict) -> bool:
+    """True when a payload carries at least one drive with plays.
+
+    Gates the summary-vs-CDN choice: the extractor reads plays out of
+    ``drives``, so a summary response with no drives (pre-snap, a provider gap)
+    is treated as a miss and the CDN fallback runs instead.
+    """
+    for drive in _espn_drives(payload):
+        if isinstance(drive, dict) and (drive.get("plays") or []):
+            return True
+    return False
+
+
+def _espn_latest_play_marker(payload: dict) -> str:
+    """``"Q4 0:47"`` for the newest play in a payload — a cheap freshness probe.
+
+    Drives and the plays inside them are chronological, so the last play of the
+    last drive is the most recent. Used only for freshness logging.
+    """
+    for drive in reversed(_espn_drives(payload)):
+        plays = drive.get("plays") if isinstance(drive, dict) else None
+        if plays:
+            last = plays[-1] if isinstance(plays[-1], dict) else {}
+            clock = _s((last.get("clock") or {}).get("displayValue"))
+            period = _s((last.get("period") or {}).get("number"))
+            return f"Q{period} {clock}".strip()
+    return ""
+
+
+def fetch_espn_pbp_summary(event_id: str, *, ttl: float = 15.0) -> dict:
+    """ESPN web API game summary (drives + plays) — the freshest live PBP source.
+
+    Reads ``site.web.api.espn.com`` (the ``.web`` host; the bare
+    ``site.api.espn.com`` began 403ing in 2026), the same feed espn.com and the
+    app consume, which stays within seconds of live. Returns the parsed payload
+    (``drives`` at the root, the shape ``extract_espn_pbp_plays`` handles) or
+    ``{}`` on failure, serving the last good value while an entry is only stale.
+    """
+    eid = _s(event_id)
+    if not eid:
+        return {}
+    now = time.time()
+    hit = _ESPN_SUMMARY_CACHE.get(eid)
+    if hit and (now - hit[0]) < ttl:
+        return hit[1]
+    try:
+        import requests
+        resp = requests.get(
+            _ESPN_SUMMARY,
+            params={"event": eid},
+            headers={"User-Agent": _UA, "Accept": "application/json"},
+            timeout=12,
+        )
+        if resp.status_code != 200:
+            logger.debug("[espn-pbp] summary HTTP %s event=%s", resp.status_code, eid)
+            return hit[1] if hit else {}
+        data = resp.json()
+    except Exception:
+        logger.debug("[espn-pbp] summary fetch failed event=%s", eid, exc_info=True)
+        return hit[1] if hit else {}
+    if not isinstance(data, dict):
+        return hit[1] if hit else {}
+    _ESPN_SUMMARY_CACHE[eid] = (now, data)
+    return data
+
+
+def _fetch_espn_pbp_cdn(event_id: str, *, ttl: float = 30.0) -> dict:
+    """CDN gamepackage play-by-play (``cdn.espn.com/core``).
+
+    An edge-cached bundle that can trail live play by minutes — kept as the
+    fallback behind the web API summary (see ``fetch_espn_pbp``).
+    """
     eid = _s(event_id)
     if not eid:
         return {}
@@ -688,6 +790,52 @@ def fetch_espn_pbp(event_id: str, *, ttl: float = 30.0) -> dict:
         return hit[1] if hit else {}
     _ESPN_PBP_CACHE[eid] = (now, data)
     return data
+
+
+def fetch_espn_pbp(event_id: str, *, ttl: float = 30.0) -> dict:
+    """ESPN play-by-play payload, freshest source first.
+
+    Primary: the web API summary endpoint (``fetch_espn_pbp_summary``), which
+    ESPN's own site/app read and which stays close to live. Fallback: the
+    edge-cached CDN gamepackage (``_fetch_espn_pbp_cdn``), which can trail live
+    play by minutes. Both carry the ``drives``/``plays`` shape
+    ``extract_espn_pbp_plays`` and ``espn_payload_completed`` consume, so
+    callers (and the ``final``/force-refresh logic) are unchanged.
+
+    Set ``RZ_ESPN_PBP_COMPARE`` truthy to also pull the CDN payload every call
+    and log how far its newest play trails the summary's — turning the
+    directional "the CDN lags" claim into a number you can watch during a live
+    game before trusting the switch. Off by default so a normal poll makes one
+    request, not two.
+    """
+    eid = _s(event_id)
+    if not eid:
+        return {}
+    summary = fetch_espn_pbp_summary(eid, ttl=ttl)
+    summary_ok = _espn_payload_has_plays(summary)
+
+    if os.environ.get("RZ_ESPN_PBP_COMPARE", "").strip().lower() in ("1", "true", "yes", "on"):
+        cdn = _fetch_espn_pbp_cdn(eid, ttl=ttl)
+        logger.info(
+            "[espn-pbp-compare] event=%s summary_latest=%r cdn_latest=%r summary_ok=%s",
+            eid, _espn_latest_play_marker(summary), _espn_latest_play_marker(cdn), summary_ok,
+        )
+        return summary if summary_ok else cdn
+
+    if summary_ok:
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(
+                "[espn-pbp] source=summary event=%s latest=%r",
+                eid, _espn_latest_play_marker(summary),
+            )
+        return summary
+    cdn = _fetch_espn_pbp_cdn(eid, ttl=ttl)
+    if logger.isEnabledFor(logging.DEBUG):
+        logger.debug(
+            "[espn-pbp] source=cdn event=%s latest=%r (summary had no plays)",
+            eid, _espn_latest_play_marker(cdn),
+        )
+    return cdn
 
 
 def espn_payload_completed(payload: dict) -> bool:

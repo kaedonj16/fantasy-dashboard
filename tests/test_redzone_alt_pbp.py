@@ -38,6 +38,62 @@ def test_alternate_pbp_defaults_to_espn_first(monkeypatch):
     assert calls == ["espn"]
 
 
+def test_fetch_espn_pbp_prefers_summary_over_cdn(monkeypatch):
+    """The web API summary is the freshest source; the CDN gamepackage (which
+    can trail live play by minutes) is only touched when summary yields no
+    plays."""
+    import utils.redzone_alt_pbp as alt
+
+    summary = {"drives": {"current": {"plays": [{"id": "s1", "text": "x"}]}}}
+    calls = []
+    monkeypatch.setattr(alt, "fetch_espn_pbp_summary",
+                        lambda eid, **kw: calls.append("summary") or summary)
+    monkeypatch.setattr(alt, "_fetch_espn_pbp_cdn",
+                        lambda eid, **kw: calls.append("cdn") or {"cdn": 1})
+
+    assert alt.fetch_espn_pbp("event-1") is summary
+    assert calls == ["summary"]  # CDN never fetched when summary has plays
+
+
+def test_fetch_espn_pbp_falls_back_to_cdn_when_summary_empty(monkeypatch):
+    import utils.redzone_alt_pbp as alt
+
+    cdn = {"gamepackageJSON": {"drives": {"current": {"plays": [{"id": "c1"}]}}}}
+    calls = []
+    # Summary returns no usable drives -> treated as a miss.
+    monkeypatch.setattr(alt, "fetch_espn_pbp_summary",
+                        lambda eid, **kw: calls.append("summary") or {})
+    monkeypatch.setattr(alt, "_fetch_espn_pbp_cdn",
+                        lambda eid, **kw: calls.append("cdn") or cdn)
+
+    assert alt.fetch_espn_pbp("event-1") is cdn
+    assert calls == ["summary", "cdn"]
+
+
+def test_espn_payload_has_plays_and_latest_marker_read_both_shapes():
+    from utils.redzone_alt_pbp import _espn_payload_has_plays, _espn_latest_play_marker
+
+    # Summary shape: drives at the root.
+    summary = {"drives": {
+        "previous": [{"plays": [{"clock": {"displayValue": "9:00"},
+                                 "period": {"number": 3}}]}],
+        "current": {"plays": [{"clock": {"displayValue": "0:47"},
+                               "period": {"number": 4}}]},
+    }}
+    assert _espn_payload_has_plays(summary) is True
+    assert _espn_latest_play_marker(summary) == "Q4 0:47"
+
+    # CDN shape: drives under gamepackageJSON.
+    cdn = {"gamepackageJSON": {"drives": {"current": {
+        "plays": [{"clock": {"displayValue": "2:00"}, "period": {"number": 2}}]}}}}
+    assert _espn_payload_has_plays(cdn) is True
+    assert _espn_latest_play_marker(cdn) == "Q2 2:00"
+
+    assert _espn_payload_has_plays({}) is False
+    assert _espn_payload_has_plays({"drives": {"current": {"plays": []}}}) is False
+    assert _espn_latest_play_marker({}) == ""
+
+
 def test_final_game_force_refreshes_espn_until_completed(monkeypatch):
     """A game our status calls final must keep pulling fresh ESPN PBP (ttl=0)
     until ESPN reports the game completed -- otherwise the last live snapshot,
