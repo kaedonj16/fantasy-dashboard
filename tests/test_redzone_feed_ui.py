@@ -99,7 +99,7 @@ def test_selected_game_board_enriches_situation_and_mirrors_home_logo():
 
 
 def test_refresh_uses_fresh_canonical_incremental_update_and_no_browser_cache():
-    refresh = REDZONE_JS.split("async function _refresh() {", 1)[1].split(
+    refresh = REDZONE_JS.split("async function _refresh(opts) {", 1)[1].split(
         "// ── Progressive My Leagues", 1
     )[0]
     assert "fetch(url, { cache: 'no-store', signal:" in refresh
@@ -253,11 +253,14 @@ def test_scope_runtime_normalizes_feed_and_render_state_is_scope_local():
 
 
 def test_failed_refresh_recovers_without_rebuilding_mounted_controls():
-    refresh = REDZONE_JS.split("async function _refresh() {", 1)[1].split(
+    refresh = REDZONE_JS.split("async function _refresh(opts) {", 1)[1].split(
         "// ── Progressive My Leagues", 1
     )[0]
-    assert refresh.count("_recoverScopeLoad(myGen, myScope);") == 3
-    assert refresh.count("if (myGen === _streamGen && myScope === _scope && !_loadingScope) _partialUpdate();") == 3
+    # Every non-applying exit (bad HTTP/parse, 200 error payload, missing
+    # identity, network/deadline catch) recovers last-good and repaints controls
+    # in place -- and only the current request owner may do so.
+    assert refresh.count("_recoverScopeLoad(mySeq, myGen, myScope);") == 4
+    assert refresh.count("if (_ownsScreen(mySeq, myGen, myScope) && !_loadingScope) _partialUpdate();") == 4
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="Node.js not available")
 def test_field_position_handles_sides_aliases_boundaries_and_hidden_states():

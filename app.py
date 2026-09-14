@@ -11770,6 +11770,13 @@ def page_weekly(platform: str, season: int, league_id: str):
 _RZ_BOX_CACHE: dict = {}  # game_id -> (ts, boxscore)
 _RZ_BOX_TTL = 15.0
 _RZ_LIVE_CACHE_TTL = 12.0
+# Bound the scoreboard upstream wait on the live path. The client aborts a
+# Redzone poll after _RZ_FETCH_DEADLINE_MS (25s in static/redzone.js); the
+# scoreboard fetch plus a couple of short box-score calls must fit inside that,
+# so the live path caps the scoreboard at 12s instead of the 20s default other
+# pages use. Aligning the two ends the old mismatch where the client gave up at
+# 12s on a request the 20s server was still willing to answer.
+_RZ_SCOREBOARD_TIMEOUT = 12
 
 
 def _redzone_boxscore(
@@ -12280,8 +12287,11 @@ def _redzone_collect(platform, league_id, season, week):
     # platforms -- Redzone is no longer Sleeper-only.
     nfl_players = get_nfl_players() or {}
     today_str = date.today().strftime("%Y%m%d")
+    # Bounded upstream wait so the whole server response fits inside the client's
+    # abort deadline. Shared across every league collected in one My Leagues
+    # request via the short-age cache below, so the scoreboard is fetched once.
     scores_body = get_nfl_scores_for_date(
-        today_str, _cache_max_age=_RZ_LIVE_CACHE_TTL,
+        today_str, timeout=_RZ_SCOREBOARD_TIMEOUT, _cache_max_age=_RZ_LIVE_CACHE_TTL,
     ) or {}
     team_game = build_team_game_lookup(scores_body)
     try:
