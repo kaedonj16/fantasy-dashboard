@@ -20505,8 +20505,68 @@ window._rzRenderGameBoard = function(game, options) {
   return '<div class="rz-nfl-board is-'+esc(status)+(live?' is-live':'')+(options.modal?' rz-nfl-board--modal':'')+'"'+(options.id?' id="'+esc(options.id)+'"':'')+'><div class="rz-nfl-score-row">'+team(away,game.away_pts,'away')+center+team(home,game.home_pts,'home')+'</div>'+field+'</div>';
 };
 
+// Build a player's modal log from canonical grouped plays. A feed card has one
+// headline actor, but every participant keeps an independently scored
+// contribution. This is intentionally exported so redzone.js can pass its
+// uncapped, latest-revision play-group history rather than its display feed.
+window._rzPlayerLogEvents = function(pid, events) {
+  var wanted = String(pid == null ? '' : pid), latest = {};
+  (events || []).forEach(function(ev, index) {
+    if (!ev) return;
+    var playKey = String(ev.playId || ev.nflPlayKey || ('legacy:' + index));
+    var contributions = Array.isArray(ev.contributions) ? ev.contributions : [];
+    var contribution = contributions.find(function(c) { return c && String(c.pid) === wanted; });
+    // Demo and old synthetic events have no grouped contributions.
+    if (!contribution && !contributions.length && String(ev.pid) === wanted) contribution = ev;
+    if (!contribution) return;
+    var invalid = !!ev.isNullified || (ev.playState && ev.playState !== 'VALID') || !!contribution.isInvalid;
+    var line = contribution.line || contribution.statLine || {};
+    var desc = ev.desc || 'Play';
+    if (!invalid && String(contribution.pos || '').toUpperCase() === 'QB') {
+      var receiver = contributions.find(function(c) {
+        var l = (c && (c.line || c.statLine)) || {};
+        return c && String(c.pid) !== wanted && Number(l.rec || 0) > 0;
+      });
+      var yards = Number(line.pass_yds || 0);
+      if (Number(line.pass_td || 0) > 0) {
+        desc = yards + '-yard TD pass';
+      } else if (receiver) {
+        desc = yards + '-yard completion to ' + (receiver.name || 'receiver');
+      }
+    }
+    var row = {
+      pid: wanted,
+      playId: playKey,
+      gameId: ev.gameId || contribution.gameId || '',
+      seq: ev.seq != null ? ev.seq : contribution.seq,
+      playSortTs: ev.playSortTs != null ? ev.playSortTs : contribution.playSortTs,
+      gameQuarter: ev.gameQuarter || contribution.quarter || '',
+      gameClock: ev.gameClock || contribution.clock || '',
+      kind: invalid ? 'nullified' : (contribution.kind || ev.kind || 'gain'),
+      desc: invalid ? (ev.desc || 'Play nullified') : desc,
+      statLine: invalid ? {} : line,
+      pts: invalid ? 0 : Number(contribution.pts || 0),
+      isNullified: invalid
+    };
+    var previous = latest[playKey];
+    var rowOrder = Number(row.playSortTs || 0), previousOrder = Number(previous && previous.playSortTs || 0);
+    if (!previous || rowOrder > previousOrder
+        || (rowOrder === previousOrder && Number(row.seq || 0) >= Number(previous.seq || 0))) {
+      latest[playKey] = row;
+    }
+  });
+  return Object.keys(latest).map(function(k) { return latest[k]; }).sort(function(a, b) {
+    var at=Number(a.playSortTs || 0), bt=Number(b.playSortTs || 0);
+    if (at !== bt) return bt - at;
+    var as=Number(a.seq || 0), bs=Number(b.seq || 0);
+    if (as !== bs) return bs - as;
+    return a.playId < b.playId ? -1 : (a.playId > b.playId ? 1 : 0);
+  });
+};
+
 // Player summary renderer.
 window._rzBuildLiveHtml = function(pid, state, feed) {
+  pid = String(pid == null ? '' : pid);
   if (!pid || pid === '0') return '<div style="padding:20px;text-align:center;color:var(--text-muted);">No data.</div>';
   var info = (state.player_info || {})[pid] || {};
   // Use this player's league scoring (user scope may span leagues with
@@ -20611,7 +20671,7 @@ window._rzBuildLiveHtml = function(pid, state, feed) {
       + '</div>';
   }
 
-  var playerEvs = (feed || []).filter(function(ev) { return ev.pid === pid; });
+  var playerEvs = window._rzPlayerLogEvents(pid, feed);
   var logHtml = '<div class="rz-pm-log-title">Game Log'
     + (playerEvs.length ? ' <span style="font-size:10px;font-weight:600;opacity:.55;">(' + playerEvs.length + ')</span>' : '')
     + '</div>';
