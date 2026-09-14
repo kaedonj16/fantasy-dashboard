@@ -612,9 +612,15 @@ def test_signal_value_play():
     assert waiver_signal(_cand(position="RB", age=22, value=400), {})[1] == "Value Play"
 
 
-def test_signal_sell_window():
-    # RB prime 26, age 29 (> prime+2).
-    assert waiver_signal(_cand(position="RB", age=29, value=400), {})[1] == "Sell Window"
+def test_aging_waiver_add_is_available_not_sell_window():
+    # You can't "sell" a free agent, so the waiver labeler must not tag an aging
+    # add as "Sell Window" — an aging veteran on the wire is just Available.
+    cls, label = waiver_signal(_cand(position="RB", age=29, value=400), {})
+    assert label == "Available"
+    assert label != "Sell Window"
+    # A 0-value, past-prime veteran (the Waller/Hollins case) is Available too,
+    # never a dynasty-sell tag.
+    assert waiver_signal(_cand(position="TE", age=34, value=0), {})[1] == "Available"
 
 
 def test_signal_default_available():

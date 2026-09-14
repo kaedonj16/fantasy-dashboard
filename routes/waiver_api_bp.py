@@ -177,20 +177,17 @@ def api_waiver_candidates():
         usage_trends = {}
 
     # Deterministic discovery signals that may bypass the value floor (#5): a
-    # confirmed usage spike, or a league-wide trending-add. Age / raw rank
-    # movement are deliberately NOT here — they are the noise the floor blocks.
+    # *confirmed usage spike* only. Age, raw rank movement, and league-wide
+    # trending-adds are deliberately NOT here — those are popularity/noise, and
+    # admitting a 0-value, past-prime veteran into "best moves" just because he's
+    # being added elsewhere (a signing/return rumor) is exactly what the floor is
+    # meant to block. Trending players still show in the "Trending across leagues"
+    # strip; they earn a spot in the ranked list once real usage shows up.
     _signal_ids: set[str] = set()
     try:
         for _pid_u, _ut in (usage_trends or {}).items():
             if isinstance(_ut, dict) and _usage_ratio(_ut.get("stat"), _ut.get("delta")) >= 1.0:
                 _signal_ids.add(str(_pid_u))
-    except Exception:
-        logger.debug("suppressed exception", exc_info=True)
-    try:
-        for _row_t in _sleeper_trending_adds(limit=50) or []:
-            _tp = str(_row_t.get("player_id") or "")
-            if _tp:
-                _signal_ids.add(_tp)
     except Exception:
         logger.debug("suppressed exception", exc_info=True)
 
@@ -811,9 +808,19 @@ def api_waiver_candidates():
         pm[cid] = max(0.0, float(cand_pts))
         pos = dict(_roster_pos)
         pos[cid] = _c.get("position")
-        # Speculative upside keeps a promising player surfacing as a stash without
-        # claiming a lineup gain it doesn't produce (#1).
-        _spec = 0.8 if _c.get("discovery") else min(1.0, float(_bscore or 0.0) / 80.0)
+        # Speculative upside lets a *promising* player surface as a stash without
+        # claiming a lineup gain it doesn't produce (#1). A stash implies youth or
+        # a real breakout — an aging veteran is never a "stash", so gate it on
+        # being under the position's prime age (or carrying a genuine breakout).
+        try:
+            _age = float(_c.get("age") or 0)
+        except (TypeError, ValueError):
+            _age = 0.0
+        _prime = _WAIVER_PRIME_MAX.get(str(_c.get("position") or "").upper(), 28)
+        _young = 0 < _age < _prime
+        _spec = min(1.0, float(_bscore or 0.0) / 80.0)
+        if _c.get("discovery") and _young:
+            _spec = max(_spec, 0.8)
         try:
             from utils.waiver_lineup import evaluate_pickup as _eval_pickup
             return _eval_pickup(

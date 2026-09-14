@@ -947,7 +947,7 @@ function wvRenderWaivers() {{
         ${{outcomeChip}}
         ${{marketChip}}
         ${{faabChip}}
-        <span class="wv-advice-metric"><span class="wv-advice-label">Value</span><span class="wv-value">${{Math.round(p.value)}}</span></span>
+        ${{p.value > 0 ? `<span class="wv-advice-metric"><span class="wv-advice-label">Value</span><span class="wv-value">${{Math.round(p.value)}}</span></span>` : ''}}
       </div>
     </div>
   `;

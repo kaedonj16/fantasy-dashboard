@@ -1125,8 +1125,9 @@ def waiver_signal(c: dict, waiver_breakout: dict,
         return ("signal-injury-soft", "Bumped Up")
     if age and age < prime - 2 and val >= 300:
         return ("signal-value", "Value Play")
-    if age and age > prime + 2:
-        return ("signal-aging", "Sell Window")
+    # NB: no "Sell Window" here. This labels *waiver adds*, and you can't sell a
+    # free agent — an aging veteran on the wire is just "Available" (a streamer),
+    # not a dynasty sell candidate.
     return ("signal-hold", "Available")
 
 
