@@ -589,21 +589,27 @@ function wvPlaysRow(lbl, val) {{
          '<span class="wv-ss-plays-detail-val">' + val + '</span></div>';
 }}
 function wvPlaysFacedChip(pv) {{
-  if (!pv || pv.plays_faced_pg == null) return '';
-  const faced = pv.plays_faced_pg;
+  if (!pv || pv.faced_pg == null) return '';
+  const faced = pv.faced_pg;
+  const label = pv.label || 'Opp plays faced';
   let sub = '';
   if (pv.vs_avg != null) {{
     const a = Math.abs(pv.vs_avg).toFixed(1);
     sub = pv.vs_avg > 0 ? (a + ' above NFL average')
         : (pv.vs_avg < 0 ? (a + ' below NFL average') : 'at NFL average');
   }}
-  const rows = [wvPlaysRow('Season average', faced + '/gm')];
-  if (pv.plays_faced_l4_pg != null) rows.push(wvPlaysRow('Last 4 games', pv.plays_faced_l4_pg + '/gm'));
+  // Reveal: the pass/rush split (headline basis marked), the total, this
+  // opponent's own offensive possession, plus the recent window and sample.
+  const rows = [];
+  if (pv.pass_faced_pg != null) rows.push(wvPlaysRow('Pass plays faced' + (pv.basis === 'pass' ? ' •' : ''), pv.pass_faced_pg + '/gm'));
+  if (pv.rush_faced_pg != null) rows.push(wvPlaysRow('Rush plays faced' + (pv.basis === 'rush' ? ' •' : ''), pv.rush_faced_pg + '/gm'));
+  if (pv.plays_faced_pg != null) rows.push(wvPlaysRow('Total plays faced', pv.plays_faced_pg + '/gm'));
+  if (pv.faced_l4_pg != null) rows.push(wvPlaysRow('Last 4 games' + (pv.basis && pv.basis !== 'total' ? ' (' + pv.basis + ')' : ''), pv.faced_l4_pg + '/gm'));
   if (pv.games != null) rows.push(wvPlaysRow('Sample', pv.games + (pv.games === 1 ? ' game' : ' games')));
   if (pv.off_plays_pg != null) rows.push(wvPlaysRow('Opp off. possession', pv.off_plays_pg + ' plays/gm'));
   const detail = '<div class="wv-ss-plays-detail">' + rows.join('') + '</div>';
   const tip = 'Offensive plays this opponent&#39;s defense faces per game (pace/possession). Context only, not part of the start/sit score.';
-  return '<div class="wv-ss-stat"><span class="wv-ss-stat-lbl">Opp plays faced</span>' +
+  return '<div class="wv-ss-stat"><span class="wv-ss-stat-lbl">' + label + '</span>' +
          '<span class="wv-ss-stat-val wv-ss-plays-btn" role="button" tabindex="0" ' +
          'aria-expanded="false" title="' + tip + '" ' +
          'onclick="wvTogglePlays(this)" onkeydown="wvPlaysKey(event,this)">' +
@@ -928,8 +934,10 @@ function wvCmpDerive(p) {{
     def:      p.fpts_against > 0 ? `${{p.fpts_against}} pts` : (p.on_bye ? 'BYE' : '–'),
     defCls:   wvMuClass(p.def_rank, p.def_total),
     mu:       (!p.on_bye ? wvMuChip(p.def_rank, p.def_total) : '') || (p.on_bye ? '–' : 'No data'),
+    // Compare uses TOTAL plays faced on both sides so a RB vs WR row stays
+    // apples-to-apples (the card headline is position-relevant; this isn't).
     playsFaced: (p.play_volume && p.play_volume.plays_faced_pg != null) ? p.play_volume.plays_faced_pg : null,
-    playsVsAvg: (p.play_volume && p.play_volume.vs_avg != null) ? p.play_volume.vs_avg : null,
+    playsVsAvg: (p.play_volume && p.play_volume.total_vs_avg != null) ? p.play_volume.total_vs_avg : null,
     playsL4:    (p.play_volume && p.play_volume.plays_faced_l4_pg != null) ? p.play_volume.plays_faced_l4_pg : null,
     vegasNum: p.implied_total != null ? p.implied_total : null,
     vegas:    p.implied_total != null ? (p.implied_total + ' implied') : '–',

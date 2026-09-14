@@ -25,6 +25,20 @@ def test_plays_faced_and_off_plays_per_game():
     assert out["BAL"]["games"] == 2
 
 
+def test_pass_rush_split():
+    # g1: BAL faces 4 pass + 2 rush; g2: BAL faces 6 pass + 4 rush.
+    rows = []
+    rows += [_row("g1", "BAL", "CIN", 1, "pass")] * 4
+    rows += [_row("g1", "BAL", "CIN", 1, "run")] * 2
+    rows += [_row("g2", "BAL", "PIT", 2, "pass")] * 6
+    rows += [_row("g2", "BAL", "PIT", 2, "run")] * 4
+    out = aggregate_team_play_volume(rows)["BAL"]
+    assert out["pass_faced_pg"] == 5.0   # (4+6)/2
+    assert out["rush_faced_pg"] == 3.0   # (2+4)/2
+    assert out["plays_faced_pg"] == 8.0  # total
+    assert out["games"] == 2
+
+
 def test_non_scrimmage_plays_excluded():
     # Punts / kickoffs / kneels / spikes / no_play don't count as volume.
     rows = [_row("g1", "BAL", "CIN", 1, "pass"),
@@ -74,22 +88,49 @@ def test_empty_rows():
     assert aggregate_team_play_volume([]) == {}
 
 
-def test_play_volume_context_builds_delta():
+def test_play_volume_context_position_aware():
     import pytest
-    flask = pytest.importorskip("flask")  # noqa: F841
+    pytest.importorskip("flask")
     from app import _play_volume_context
 
     teams = {"BAL": {"plays_faced_pg": 58.4, "plays_faced_l4_pg": 56.8,
+                     "pass_faced_pg": 33.1, "rush_faced_pg": 25.3,
+                     "pass_faced_l4_pg": 32.0, "rush_faced_l4_pg": 24.8,
                      "off_plays_pg": 61.2, "games": 5}}
-    pv = _play_volume_context(teams, "BAL", 64.5)
-    assert pv["plays_faced_pg"] == 58.4
-    assert pv["vs_avg"] == -6.1
-    assert pv["games"] == 5
-    assert pv["off_plays_pg"] == 61.2
+    avgs = {"total": 64.5, "pass": 37.6, "rush": 26.9}
 
-    # Alias opponent code resolves to the canonical row.
-    assert _play_volume_context(teams, "BLT", 64.5)["plays_faced_pg"] == 58.4
-    # Unknown opponent -> None (stat omitted).
-    assert _play_volume_context(teams, "XYZ", 64.5) is None
-    # No table -> None.
-    assert _play_volume_context({}, "BAL", 64.5) is None
+    # RB -> rush basis headline.
+    rb = _play_volume_context(teams, "BAL", "RB", avgs)
+    assert rb["basis"] == "rush"
+    assert rb["faced_pg"] == 25.3
+    assert rb["vs_avg"] == round(25.3 - 26.9, 1)      # -1.6
+    assert rb["total_vs_avg"] == round(58.4 - 64.5, 1)  # -6.1 (for Compare)
+
+    # WR -> pass basis headline.
+    wr = _play_volume_context(teams, "BAL", "WR", avgs)
+    assert wr["basis"] == "pass"
+    assert wr["faced_pg"] == 33.1
+    assert wr["vs_avg"] == round(33.1 - 37.6, 1)      # -4.5
+
+    # Splits + total present regardless of basis (for the card detail/Compare).
+    assert wr["pass_faced_pg"] == 33.1 and wr["rush_faced_pg"] == 25.3
+    assert wr["plays_faced_pg"] == 58.4 and wr["games"] == 5
+
+    # Alias opponent code resolves; unknown / empty table -> None.
+    assert _play_volume_context(teams, "BLT", "WR", avgs)["faced_pg"] == 33.1
+    assert _play_volume_context(teams, "XYZ", "WR", avgs) is None
+    assert _play_volume_context({}, "BAL", "WR", avgs) is None
+
+
+def test_play_volume_context_falls_back_to_total_when_split_missing():
+    import pytest
+    pytest.importorskip("flask")
+    from app import _play_volume_context
+
+    # A row with only the total (e.g. an older cache) still yields a headline.
+    teams = {"BAL": {"plays_faced_pg": 58.4, "plays_faced_l4_pg": 56.8, "games": 5}}
+    avgs = {"total": 64.5, "pass": 37.6, "rush": 26.9}
+    pv = _play_volume_context(teams, "BAL", "RB", avgs)
+    assert pv["basis"] == "total"
+    assert pv["faced_pg"] == 58.4
+    assert pv["vs_avg"] == round(58.4 - 64.5, 1)

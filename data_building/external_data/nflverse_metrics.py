@@ -629,14 +629,20 @@ def aggregate_team_play_volume(rows) -> Dict[str, Dict[str, float]]:
     Pure (no pandas / nfl_data_py) so the math is unit-tested directly. ``rows``
     is any iterable of ``(game_id, defteam, posteam, week, play_type)`` tuples;
     only scrimmage plays (``play_type in {'pass','run'}``) are counted, and team
-    codes are normalised to canonical abbreviations (WAS/JAX/LAR/...). Per team:
+    codes are normalised to canonical abbreviations (WAS/JAX/LAR/...).
 
-      - ``plays_faced_pg``   : scrimmage plays the DEFENSE faces per game.
-      - ``plays_faced_l4_pg``: the same over the team's last four games (by week).
+    Plays faced are split by type so callers can show the position-relevant one:
+    a defense that faces lots of *pass* plays feeds QB/WR/TE volume; lots of
+    *rush* plays feeds RB volume. Per team, per game:
+
+      - ``plays_faced_pg`` / ``pass_faced_pg`` / ``rush_faced_pg``: scrimmage
+        plays the DEFENSE faces per game (total, pass-only, rush-only).
+      - ``plays_faced_l4_pg`` / ``pass_faced_l4_pg`` / ``rush_faced_l4_pg``: the
+        same over the team's last four games (by week).
       - ``off_plays_pg``     : scrimmage plays the team's own OFFENSE runs/game.
       - ``games``            : games in the defensive sample (sample size).
 
-    A team is only emitted once it has the headline defensive number.
+    A team is only emitted once it has the headline (total) defensive number.
     """
     try:
         from utils.schedule_ease import norm_sched_team as _norm
@@ -646,43 +652,53 @@ def aggregate_team_play_volume(rows) -> Dict[str, Dict[str, float]]:
 
     from collections import defaultdict
 
-    # Per (team, game): plays faced on defense, plays run on offense, + the week
-    # of each defensive game so the "last four" window can be picked by recency.
-    def_by_game: Dict[str, Dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    # Per (team, game): pass/rush plays faced on defense, plays run on offense,
+    # + the week of each defensive game so "last four" is picked by recency.
+    def_pass: Dict[str, Dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    def_rush: Dict[str, Dict[str, int]] = defaultdict(lambda: defaultdict(int))
     off_by_game: Dict[str, Dict[str, int]] = defaultdict(lambda: defaultdict(int))
     def_game_week: Dict[str, Dict[str, int]] = defaultdict(dict)
 
     for gid, dt, ot, wk, ptype in rows:
-        if str(ptype or "").strip().lower() not in _SCRIMMAGE_PLAY_TYPES:
+        pt = str(ptype or "").strip().lower()
+        if pt not in _SCRIMMAGE_PLAY_TYPES:
             continue
         g = str(gid)
         d = _norm(dt)
         o = _norm(ot)
         if d and d.lower() != "nan":
-            def_by_game[d][g] += 1
+            (def_pass if pt == "pass" else def_rush)[d][g] += 1
             w = _f(wk)
             if w is not None:
                 def_game_week[d][g] = int(w)
         if o and o.lower() != "nan":
             off_by_game[o][g] += 1
 
+    def _pg(by_game, games):
+        return round(sum(by_game.get(g, 0) for g in games) / len(games), 1) if games else None
+
     out: Dict[str, Dict[str, float]] = {}
-    for t in set(def_by_game) | set(off_by_game):
-        dg = def_by_game.get(t, {})
+    for t in set(def_pass) | set(def_rush) | set(off_by_game):
+        pg_map = def_pass.get(t, {})
+        rg_map = def_rush.get(t, {})
         og = off_by_game.get(t, {})
+        games = set(pg_map) | set(rg_map)
         row: Dict[str, float] = {}
-        if dg:
-            n_def = len(dg)
-            row["plays_faced_pg"] = round(sum(dg.values()) / n_def, 1)
-            row["games"] = n_def
+        if games:
+            row["games"] = len(games)
+            total_by_game = {g: pg_map.get(g, 0) + rg_map.get(g, 0) for g in games}
+            row["plays_faced_pg"] = _pg(total_by_game, games)
+            row["pass_faced_pg"] = _pg(pg_map, games)
+            row["rush_faced_pg"] = _pg(rg_map, games)
             wk_map = def_game_week.get(t, {})
-            last4 = sorted(dg.keys(), key=lambda g: wk_map.get(g, 0))[-4:]
+            last4 = sorted(games, key=lambda g: wk_map.get(g, 0))[-4:]
             if last4:
-                row["plays_faced_l4_pg"] = round(
-                    sum(dg[g] for g in last4) / len(last4), 1)
+                row["plays_faced_l4_pg"] = _pg(total_by_game, last4)
+                row["pass_faced_l4_pg"] = _pg(pg_map, last4)
+                row["rush_faced_l4_pg"] = _pg(rg_map, last4)
         if og:
             row["off_plays_pg"] = round(sum(og.values()) / len(og), 1)
-        # Only surface a team once it has the headline defensive number.
+        # Only surface a team once it has the headline (total) defensive number.
         if row.get("plays_faced_pg") is not None:
             out[t] = row
     return out
