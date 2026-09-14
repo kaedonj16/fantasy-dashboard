@@ -372,6 +372,21 @@ for w in {_proj_weeks!r}:
 """, "fetch_weekly_projections")
 
     # ------------------------------------------------------------------ #
+    # Step 2b: Pregame projection snapshot (waiver big-game detector).     #
+    # Save the current week's projections as the pregame baseline so an     #
+    # unexpected big game can be graded against what was expected going in, #
+    # never a number revised after kickoff. Idempotent: never overwrites an #
+    # existing snapshot for the week, so early-week runs win.               #
+    # ------------------------------------------------------------------ #
+    if in_season:
+        _run_step(f"""
+from dotenv import load_dotenv; load_dotenv()
+from dashboard_services.waiver_discoveries import save_pregame_snapshot
+n = save_pregame_snapshot({season!r}, {week!r})
+print(f"[cron] Pregame projection snapshot week {week}: {{n}} rows")
+""", "save_pregame_snapshot")
+
+    # ------------------------------------------------------------------ #
     # Step 4: Advanced metrics                                            #
     # ------------------------------------------------------------------ #
     _run_step(f"""
@@ -515,6 +530,26 @@ else:
     n = build_weekly_metrics(current_season)
 print(f"[cron] Weekly metrics: {{n}} rows upserted")
 """, "build_weekly_metrics")
+
+    # ------------------------------------------------------------------ #
+    # Step 4a1b: Detect unexpected big games for the completed week.       #
+    # Reuses the weekly metrics just built + the pregame snapshot and       #
+    # upserts discoveries idempotently, so the waiver surfaces read them    #
+    # cheaply instead of detecting on the request path.                     #
+    # ------------------------------------------------------------------ #
+    if season_type in ("reg", "post"):
+        _run_step(f"""
+from dotenv import load_dotenv; load_dotenv()
+from datetime import datetime
+from dashboard_services.api import get_nfl_state
+from dashboard_services.waiver_discoveries import detect_week
+_st = get_nfl_state() or {{}}
+_season = int(_st.get("season") or datetime.now().year)
+_wk = int(_st.get("week") or _st.get("display_week") or 1)
+_target = max(1, _wk - 1)  # grade the most recently completed week
+_found = detect_week(_season, _target, status="final")
+print(f"[cron] Big-game discoveries s{{_season}}w{{_target}}: {{len(_found)}} surfaced")
+""", "detect_big_game_discoveries")
 
     # ------------------------------------------------------------------ #
     # Step 4a2: Per-week NFL team map (recent_team per player-week).       #

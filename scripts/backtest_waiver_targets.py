@@ -89,10 +89,20 @@ def precision_at_k(scores: List[float], actuals: List[float], k: int) -> float:
 
 @dataclasses.dataclass
 class WeekSnapshot:
-    """The inputs needed to score + grade one week's waiver pool."""
+    """The inputs needed to score + grade one week's waiver pool.
+
+    Everything here must be knowable *as of week W* (no lookahead) except
+    ``realized_points``, which is the future outcome we grade against. Baseline
+    inputs (last-week points, pregame projection) are decision-time facts, not
+    revised-after-the-fact numbers, so the lift comparison stays leakage-free.
+    """
     candidates: List[dict]                 # scorer-ready candidate dicts at week W
     breakout: Dict[str, float]             # player_id -> breakout score at week W
     realized_points: Dict[str, float]      # player_id -> total points over W+1..W+horizon
+    # Optional baselines (as of week W). Missing -> that baseline is skipped and
+    # reported as uncovered rather than silently scored zero.
+    last_week_points: Dict[str, float] = dataclasses.field(default_factory=dict)
+    projection: Dict[str, float] = dataclasses.field(default_factory=dict)
 
 
 _CORE_POS = ("QB", "RB", "WR", "TE")
@@ -240,6 +250,22 @@ def _default_snapshot_loader(season: int, week: int, horizon: int) -> Optional[W
                 except Exception:
                     breakout = {}   # table may not exist / no history
 
+                # Last-week points baseline: week-W realized points, a decision-
+                # time fact (no lookahead into the W+1..W+H grading window).
+                last_week_points: Dict[str, float] = {}
+                try:
+                    lw_rows = _fetch(
+                        cur,
+                        "SELECT player_id, ppr_pts FROM player_weekly_metrics "
+                        "WHERE season = %s AND week = %s",
+                        (int(season), int(week)),
+                    )
+                    for r in lw_rows:
+                        if r.get("ppr_pts") is not None:
+                            last_week_points[str(r["player_id"])] = float(r["ppr_pts"])
+                except Exception:
+                    last_week_points = {}
+
         if not cur_vals or not realized:
             print(f"[backtest] wk{week}: values={len(cur_vals)} realized={len(realized)} — skipping")
             return None
@@ -256,7 +282,22 @@ def _default_snapshot_loader(season: int, week: int, horizon: int) -> Optional[W
                 "pos_rank_label": v.get("pos_rank_label"),
                 "rank_change_7d": rc,
             })
-        return WeekSnapshot(candidates=candidates, breakout=breakout, realized_points=realized)
+        # Projection-only baseline: the saved pregame snapshot for the first
+        # graded week (W+1), when it exists. Historical snapshots may be absent,
+        # in which case this baseline is simply uncovered (never faked).
+        projection: Dict[str, float] = {}
+        try:
+            from dashboard_services.waiver_discoveries import load_pregame_snapshot
+            snap_map = load_pregame_snapshot(int(season), int(week) + 1)
+            for pid, rec in (snap_map or {}).items():
+                if rec.get("pts") is not None:
+                    projection[str(pid)] = float(rec["pts"])
+        except Exception:
+            projection = {}
+
+        return WeekSnapshot(candidates=candidates, breakout=breakout,
+                            realized_points=realized,
+                            last_week_points=last_week_points, projection=projection)
     except Exception as exc:  # pragma: no cover - env dependent
         print(f"[backtest] wk{week} load failed: {exc}")
         return None
@@ -267,11 +308,19 @@ def _default_snapshot_loader(season: int, week: int, horizon: int) -> Optional[W
 # ---------------------------------------------------------------------------
 
 def evaluate(snapshots: List[WeekSnapshot], weights: WaiverWeights, k: int = 15) -> dict:
-    """Aggregate Spearman / precision@k / value-only lift across week snapshots."""
-    sp_model: List[float] = []
-    sp_value: List[float] = []
-    p_model: List[float] = []
-    p_value: List[float] = []
+    """Aggregate Spearman / precision@k across week snapshots, with lift over
+    three simple baselines (value-only, projection-only, last-week points).
+
+    A useful waiver model must beat not just static value but also the naive
+    "start whoever scored last week" and "trust the weekly projection" rules; a
+    baseline with no data in a week is skipped for that week and its coverage
+    reported, never scored as zero.
+    """
+    def _acc():
+        return {"model": [], "value": [], "proj": [], "last": []}
+    sp = _acc()
+    pk = _acc()
+    cover = {"proj": 0, "last": 0}
 
     for snap in snapshots:
         cands = [c for c in snap.candidates if c.get("player_id") in snap.realized_points]
@@ -281,22 +330,80 @@ def evaluate(snapshots: List[WeekSnapshot], weights: WaiverWeights, k: int = 15)
         model = [waiver_pickup_score(c, snap.breakout, w=weights) for c in cands]
         valonly = [value_component(c.get("value"), weights) for c in cands]
 
-        sp_model.append(spearman(model, actual))
-        sp_value.append(spearman(valonly, actual))
-        p_model.append(precision_at_k(model, actual, k))
-        p_value.append(precision_at_k(valonly, actual, k))
+        sp["model"].append(spearman(model, actual))
+        sp["value"].append(spearman(valonly, actual))
+        pk["model"].append(precision_at_k(model, actual, k))
+        pk["value"].append(precision_at_k(valonly, actual, k))
+
+        # Projection-only baseline (as-of-W pregame projection).
+        if snap.projection and any(c["player_id"] in snap.projection for c in cands):
+            proj = [snap.projection.get(c["player_id"], 0.0) for c in cands]
+            sp["proj"].append(spearman(proj, actual))
+            pk["proj"].append(precision_at_k(proj, actual, k))
+            cover["proj"] += 1
+        # Last-week fantasy points baseline (week-W realized, known at decision).
+        if snap.last_week_points and any(c["player_id"] in snap.last_week_points for c in cands):
+            last = [snap.last_week_points.get(c["player_id"], 0.0) for c in cands]
+            sp["last"].append(spearman(last, actual))
+            pk["last"].append(precision_at_k(last, actual, k))
+            cover["last"] += 1
 
     def _avg(xs):
         return sum(xs) / len(xs) if xs else 0.0
 
     return {
-        "weeks": len(sp_model),
-        "spearman_model": _avg(sp_model),
-        "spearman_value_only": _avg(sp_value),
-        "precision_at_k_model": _avg(p_model),
-        "precision_at_k_value_only": _avg(p_value),
+        "weeks": len(sp["model"]),
+        "spearman_model": _avg(sp["model"]),
+        "spearman_value_only": _avg(sp["value"]),
+        "spearman_projection_only": _avg(sp["proj"]),
+        "spearman_last_week": _avg(sp["last"]),
+        "precision_at_k_model": _avg(pk["model"]),
+        "precision_at_k_value_only": _avg(pk["value"]),
+        "precision_at_k_projection_only": _avg(pk["proj"]),
+        "precision_at_k_last_week": _avg(pk["last"]),
+        "coverage_projection_weeks": cover["proj"],
+        "coverage_last_week_weeks": cover["last"],
         "k": k,
     }
+
+
+def persist_recommendation_snapshot(season: int, week: int, snap: WeekSnapshot,
+                                    weights: WaiverWeights, out_dir: str,
+                                    k: int = 25) -> str:
+    """Write the model's week-W top-k with the features used and the realized
+    outcome, so recommendation quality can be audited over time (item 11).
+
+    Stores only as-of-W features (value, breakout, rank change, projection,
+    last-week points) plus the graded ``realized_points`` — never current
+    ownership, current injuries, or revised projections — to keep the record
+    free of future-data leakage. Returns the path written."""
+    import json
+    import os
+    ranked = sorted(
+        snap.candidates,
+        key=lambda c: waiver_pickup_score(c, snap.breakout, w=weights),
+        reverse=True,
+    )[:k]
+    rows = []
+    for c in ranked:
+        pid = c.get("player_id")
+        rows.append({
+            "player_id": pid,
+            "position": c.get("position"),
+            "score": round(waiver_pickup_score(c, snap.breakout, w=weights), 3),
+            "value": c.get("value"),
+            "rank_change_7d": c.get("rank_change_7d"),
+            "breakout": snap.breakout.get(pid),
+            "projection": snap.projection.get(pid) if snap.projection else None,
+            "last_week_points": snap.last_week_points.get(pid) if snap.last_week_points else None,
+            "realized_points": snap.realized_points.get(pid),
+        })
+    os.makedirs(out_dir, exist_ok=True)
+    path = os.path.join(out_dir, f"waiver_reco_s{season}_w{week}.json")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump({"season": season, "week": week, "k": k,
+                   "leakage_safe": True, "recommendations": rows}, f, indent=2)
+    return path
 
 
 def _parse_weeks(spec: str) -> List[int]:
@@ -314,6 +421,19 @@ def _print_report(label: str, m: dict) -> None:
     print(f"  Precision  model={m['precision_at_k_model']:.3f}   "
           f"value-only={m['precision_at_k_value_only']:.3f}   "
           f"lift={m['precision_at_k_model'] - m['precision_at_k_value_only']:+.3f}")
+    # Extra baselines, with coverage so an uncovered baseline reads honestly.
+    if m.get("coverage_projection_weeks"):
+        print(f"  vs projection-only  spearman={m['spearman_projection_only']:+.3f}   "
+              f"precision={m['precision_at_k_projection_only']:.3f}   "
+              f"(covered {m['coverage_projection_weeks']}/{m['weeks']} wks)")
+    else:
+        print("  vs projection-only  (no pregame snapshots in range — uncovered)")
+    if m.get("coverage_last_week_weeks"):
+        print(f"  vs last-week points spearman={m['spearman_last_week']:+.3f}   "
+              f"precision={m['precision_at_k_last_week']:.3f}   "
+              f"(covered {m['coverage_last_week_weeks']}/{m['weeks']} wks)")
+    else:
+        print("  vs last-week points (no weekly metrics in range — uncovered)")
 
 
 def main() -> int:
@@ -327,6 +447,9 @@ def main() -> int:
                     help="a WaiverWeights field to scale by 0.5x/1x/1.5x and compare")
     ap.add_argument("--loader", default=None,
                     help="dotted path to a custom snapshot loader(season, week, horizon)")
+    ap.add_argument("--snapshot-dir", default=None,
+                    help="if set, persist the model's leakage-safe top-k recommendations "
+                         "per week to this directory for later quality audits")
     args = ap.parse_args()
 
     loader: Callable = _default_snapshot_loader
@@ -335,15 +458,23 @@ def main() -> int:
         loader = getattr(__import__(mod, fromlist=[fn]), fn)
 
     snaps: List[WeekSnapshot] = []
+    weeks_loaded: List[int] = []
     for wk in _parse_weeks(args.weeks):
         snap = loader(args.season, wk, args.horizon)
         if snap:
             snaps.append(snap)
+            weeks_loaded.append(wk)
 
     if not snaps:
         print("\nNo week snapshots loaded — wire _default_snapshot_loader() (or pass "
               "--loader) to your historical value + weekly-stats stores, then re-run.")
         return 1
+
+    if args.snapshot_dir:
+        for wk, snap in zip(weeks_loaded, snaps):
+            path = persist_recommendation_snapshot(args.season, wk, snap, WEIGHTS,
+                                                    args.snapshot_dir, k=max(args.k, 25))
+            print(f"[backtest] wrote recommendation snapshot -> {path}")
 
     if not args.sweep:
         _print_report("waiver-target model", evaluate(snaps, WEIGHTS, args.k))
