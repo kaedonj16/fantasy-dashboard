@@ -11371,15 +11371,11 @@ def api_start_sit_options():
     # lineup, or Compare verdict (weekly projections already reflect the
     # opponent; see utils/start_sit_score.py).
     team_play_volume: dict = {}
-    _tpv_avgs: dict = {}
+    _tpv_nfl_avg = None
     try:
         _tpv_blob = _load_team_play_volume(season)
         team_play_volume = (_tpv_blob or {}).get("teams") or {}
-        _tpv_avgs = {
-            "total": (_tpv_blob or {}).get("nfl_avg_plays_faced_pg"),
-            "pass": (_tpv_blob or {}).get("nfl_avg_pass_faced_pg"),
-            "rush": (_tpv_blob or {}).get("nfl_avg_rush_faced_pg"),
-        }
+        _tpv_nfl_avg = (_tpv_blob or {}).get("nfl_avg_plays_faced_pg")
     except Exception:
         logger.debug("suppressed exception", exc_info=True)
 
@@ -11549,9 +11545,8 @@ def api_start_sit_options():
         _wx_kind = (_wx_ss or {}).get("kind") if isinstance(_wx_ss, dict) else None
 
         # Opponent play volume ("opp plays faced"): display-only pace context,
-        # never fed into the start/sit score below. Headline is the
-        # position-relevant split (rush faced for RB, pass faced for QB/WR/TE).
-        _pv_ss = (_play_volume_context(team_play_volume, opponent, pos, _tpv_avgs)
+        # never fed into the start/sit score below.
+        _pv_ss = (_play_volume_context(team_play_volume, opponent, _tpv_nfl_avg)
                   if (opponent and not on_bye) else None)
 
         # ── Start/sit score: one engine (utils.start_sit_score). Matchup is not
@@ -15529,73 +15524,38 @@ def _load_team_play_volume(season: int) -> dict:
     return blob
 
 
-def _play_volume_context(teams_tbl: dict, opponent: str, position, avgs: dict):
+def _play_volume_context(teams_tbl: dict, opponent: str, nfl_avg):
     """Display-only play-volume object for a player's weekly opponent.
 
     ``teams_tbl`` is the {team: row} map from ``_load_team_play_volume``;
-    ``opponent`` the player's NFL opponent code; ``position`` selects the
-    position-relevant headline (RB -> rush plays faced; QB/WR/TE -> pass plays
-    faced; else total); ``avgs`` is {"total","pass","rush"} league averages.
-    Returns None when the opponent has no row, so a card without data simply
-    omits the stat. This value is NEVER fed into the start/sit score -- pace is
-    context, not part of the ranking.
+    ``opponent`` the player's NFL opponent code; ``nfl_avg`` the league average
+    plays faced. Returns None when the opponent has no row, so a card without
+    data simply omits the stat. This value is NEVER fed into the start/sit score
+    -- pace is context, not part of the ranking.
 
-    The ``faced_*`` fields are the position-relevant headline used on the card;
-    the ``*_faced_pg`` splits and the total feed the card's collapsed detail and
-    the (apples-to-apples, always-total) Compare row."""
+    A per-position (pass/rush) headline was tried and dropped: a no-leakage
+    backtest found opponent plays-faced barely predicts next-week points and the
+    split gave no consistent edge over the total, so this stays a single total
+    (see scripts/backtest_opp_plays_faced.py)."""
     if not teams_tbl or not opponent:
         return None
     row = (teams_tbl.get(_norm_sched_team(opponent))
            or teams_tbl.get(str(opponent).upper()))
     if not row or row.get("plays_faced_pg") is None:
         return None
-
-    avgs = avgs or {}
-    pos = (position or "").upper().strip()
-    if pos == "RB":
-        basis, label = "rush", "Opp rush plays faced"
-        faced, l4, avg = (row.get("rush_faced_pg"), row.get("rush_faced_l4_pg"),
-                          avgs.get("rush"))
-    elif pos in ("QB", "WR", "TE"):
-        basis, label = "pass", "Opp pass plays faced"
-        faced, l4, avg = (row.get("pass_faced_pg"), row.get("pass_faced_l4_pg"),
-                          avgs.get("pass"))
-    else:
-        basis, label, faced, l4, avg = ("total", "Opp plays faced", None, None, None)
-    # Fall back to the total when the position-relevant split is missing.
-    if faced is None:
-        basis, label = "total", "Opp plays faced"
-        faced, l4, avg = (row.get("plays_faced_pg"), row.get("plays_faced_l4_pg"),
-                          avgs.get("total"))
-
-    def _delta(v, a):
-        if v is None or a is None:
-            return None
-        try:
-            return round(float(v) - float(a), 1)
-        except (TypeError, ValueError):
-            return None
-
-    total = row.get("plays_faced_pg")
+    faced = row.get("plays_faced_pg")
     out = {
-        # Position-relevant headline for the card.
-        "basis": basis,
-        "label": label,
-        "faced_pg": faced,
-        "faced_l4_pg": l4,
-        "nfl_avg": avg,
-        "vs_avg": _delta(faced, avg),
-        # Splits for the collapsed card detail.
-        "pass_faced_pg": row.get("pass_faced_pg"),
-        "rush_faced_pg": row.get("rush_faced_pg"),
-        # Total for the neutral Compare row (apples-to-apples across positions).
-        "plays_faced_pg": total,
+        "plays_faced_pg": faced,
         "plays_faced_l4_pg": row.get("plays_faced_l4_pg"),
-        "total_vs_avg": _delta(total, avgs.get("total")),
-        # Shared context.
-        "games": row.get("games"),
         "off_plays_pg": row.get("off_plays_pg"),
+        "games": row.get("games"),
+        "nfl_avg": nfl_avg,
     }
+    if nfl_avg is not None and faced is not None:
+        try:
+            out["vs_avg"] = round(float(faced) - float(nfl_avg), 1)
+        except (TypeError, ValueError):
+            pass
     return out
 
 
