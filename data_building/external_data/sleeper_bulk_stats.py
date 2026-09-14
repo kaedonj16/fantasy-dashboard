@@ -36,17 +36,31 @@ def fetch_week_stats(season: int, week: int) -> Dict[str, Any]:
     """
     Load stats for a single NFL week from the existing cache file.
     If the file does not exist (or is unreadable / wrong shape), fetch from Sleeper and write it.
+
+    A *populated* cache file is authoritative and returned as-is. An **empty**
+    cache (``{}``) is treated as a miss once it is older than ``WEEK_CACHE_TTL``:
+    an empty file is only ever a pre-kickoff placeholder (including the empty
+    files that ship in the repo), so a week that already has games would
+    otherwise stay permanently blank — the game log and everything downstream
+    would keep showing projections for games that were actually played. Refetch
+    is gated by the TTL so genuinely future / bye weeks (which Sleeper keeps
+    returning ``{}`` for) are not re-hit on every call.
     """
     cache_path = Path(_week_cache_path(season, week))
     cache_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # 1) Load only (no cache selection logic)
+    # 1) Load: a non-empty cache wins; an empty-but-fresh cache is kept to avoid
+    #    hammering Sleeper for weeks with no games yet. Empty + stale falls
+    #    through to a refetch so real stats land once the games are played.
     if cache_path.exists():
         try:
             data = read_json(str(cache_path))
             if isinstance(data, dict):
-                return data
-            print(f"[sleeper_bulk_stats] Existing file is not a dict ({type(data)}): {cache_path.name}. Refetching...")
+                if data or _is_cache_fresh(str(cache_path)):
+                    return data
+                print(f"[sleeper_bulk_stats] Empty stale cache {cache_path.name}; refetching...")
+            else:
+                print(f"[sleeper_bulk_stats] Existing file is not a dict ({type(data)}): {cache_path.name}. Refetching...")
         except json.JSONDecodeError as e:
             print(f"[sleeper_bulk_stats] Corrupt JSON at {cache_path.name}: {e}. Refetching...")
         except Exception as e:
