@@ -20471,14 +20471,27 @@ window._rzFieldPosition = function(game) {
   var raw = String(game.yard_line || '').trim().toUpperCase().replace(/\s+/g, ' ');
   var midfield = /^(50|MIDFIELD)$/.test(raw);
   var match = raw.match(/^([A-Z]{2,3})\s+(\d{1,2})$/);
-  var spot;
-  if (midfield) spot = 50;
+  var spot, label;
+  if (midfield) { spot = 50; label = '50'; }
   else if (match) {
     var territory = window._rzNormalizeTeam(match[1]), yard = Number(match[2]);
     if (yard < 0 || yard > 50 || (territory !== away && territory !== home)) return null;
     spot = territory === away ? yard : 100 - yard;
+    label = territory + ' ' + yard;
   } else return null;
-  return { spot: spot, side: poss === away ? 'away' : 'home' };
+  var side = poss === away ? 'away' : 'home';
+  // Yards to the opponent's goal line, from this offense's perspective.
+  var toGoal = side === 'away' ? 100 - spot : spot;
+  // Line-to-gain (first-down marker). Away drives toward 100, home toward 0.
+  // Only when distance is a clean number that stays short of the goal -- goal-to-go
+  // and unparseable distances ("Goal") intentionally yield no separate line.
+  var ltg = null, distN = parseInt(String(game.distance), 10);
+  var goalToGo = /goal/i.test(String(game.distance)) || (!isNaN(distN) && distN >= toGoal);
+  if (!isNaN(distN) && distN >= 1 && !goalToGo) {
+    var gain = side === 'away' ? spot + distN : spot - distN;
+    if (gain > 0 && gain < 100) ltg = gain;
+  }
+  return { spot: spot, side: side, ltg: ltg, label: label, toGoal: toGoal, goalToGo: goalToGo };
 };
 
 window._rzRenderGameBoard = function(game, options) {
@@ -20495,13 +20508,38 @@ window._rzRenderGameBoard = function(game, options) {
   var poss=window._rzNormalizeTeam(game.possession), showScore=!pre;
   var colors={ARI:'#97233F',ATL:'#A71930',BAL:'#241773',BUF:'#00338D',CAR:'#0085CA',CHI:'#0B162A',CIN:'#FB4F14',CLE:'#311D00',DAL:'#003594',DEN:'#FB4F14',DET:'#0076B6',GB:'#203731',HOU:'#03202F',IND:'#002C5F',JAX:'#006778',KC:'#E31837',LV:'#000000',LAC:'#0080C6',LAR:'#003594',MIA:'#008E97',MIN:'#4F2683',NE:'#002244',NO:'#D3BC8D',NYG:'#0B2265',NYJ:'#125740',PHI:'#004C54',PIT:'#FFB612',SF:'#AA0000',SEA:'#002244',TB:'#D50A0A',TEN:'#0C2340',WAS:'#5A1414'};
   var logo=function(t){var src=window.brTeamLogoLocal?window.brTeamLogoLocal(t):'/static/images/team_logos/'+t+'.png';return '<img class="rz-nfl-badge" src="'+esc(src)+'" alt="" onerror="this.style.visibility=\'hidden\'">';};
-  var team=function(t,pts,side){return '<div class="rz-nfl-team rz-nfl-'+side+(live&&poss===t?' has-ball':'')+'">'+logo(t)+'<span class="rz-nfl-abv">'+esc(t)+'</span>'+(showScore?'<span class="rz-nfl-score">'+esc(pts==null||pts===''?0:pts)+'</span>':'')+'</div>';};
-  var sit=''; if(live){var down=String(game.down||''), dist=String(game.distance||''); if(down) sit=({1:'1st',2:'2nd',3:'3rd',4:'4th'}[down]||down)+' & '+(dist||'?'); if(game.yard_line) sit+=(sit?' · ':'')+esc(game.yard_line);}
+  var team=function(t,pts,side){var ball=live&&poss===t;return '<div class="rz-nfl-team rz-nfl-'+side+(ball?' has-ball':'')+'">'+logo(t)+'<span class="rz-nfl-abv">'+esc(t)+'</span>'+(showScore?'<span class="rz-nfl-score">'+esc(pts==null||pts===''?0:pts)+'</span>':'')+(ball?'<span class="rz-nfl-poss" title="Has possession" aria-label="Has possession"></span>':'')+'</div>';};
+  var fp=window._rzFieldPosition(Object.assign({},game,{status:status}));
+  var sit='';
+  if(live){
+    var down=String(game.down||''), dist=String(game.distance||'');
+    if(down){
+      // Goal-to-go: the line to gain reaches the goal line, so the distance reads
+      // "Goal" rather than a raw number (e.g. 1st & 3 from the 3 is 1st & Goal).
+      var dLabel=(fp&&fp.goalToGo)||/goal/i.test(dist)?'Goal':(dist||'?');
+      sit=({1:'1st',2:'2nd',3:'3rd',4:'4th'}[down]||down)+' & '+dLabel;
+    }
+    if(game.yard_line) sit+=(sit?' · ':'')+esc(game.yard_line);
+  }
   var center;
   if(live){var clock=[game.game_quarter?(/^Q/i.test(String(game.game_quarter))?game.game_quarter:'Q'+game.game_quarter):'',game.game_clock].filter(Boolean).join(' · ');center='<div class="rz-nfl-mid"><span class="rz-nfl-live-pill"><span class="rz-nfl-live-dot"></span>'+esc(clock||'LIVE')+'</span>'+(sit?'<span class="rz-nfl-sit">'+sit+'</span>':'')+'</div>';}
   else center='<div class="rz-nfl-mid"><span class="rz-nfl-state">'+esc(status==='final'?'FINAL':status==='halftime'?'HALFTIME':game.game_status||'Upcoming')+'</span></div>';
-  var fp=window._rzFieldPosition(Object.assign({},game,{status:status})), field='';
-  if(fp){var style='--rz-ball:'+fp.spot+'%;--rz-team-color:'+(colors[poss]||'#334155')+';';field='<div class="rz-field-track" style="'+style+'" role="img" aria-label="Ball at '+esc(game.yard_line)+'"><span class="rz-field-fill is-'+fp.side+'"></span></div>';}
+  var field='';
+  if(fp){
+    var tc=colors[poss]||'#334155', atkR=fp.side==='away';
+    var dim=(function(h){h=String(h).replace('#','');if(h.length!==6)return false;var r=parseInt(h.slice(0,2),16),gc=parseInt(h.slice(2,4),16),b=parseInt(h.slice(4,6),16);return (0.299*r+0.587*gc+0.114*b)<66;})(tc);
+    var ticks=''; for(var _y=10;_y<=90;_y+=10){ticks+='<span class="rz-field-tick'+(_y===50?' is-mid':'')+'" style="left:'+_y+'%"></span>';}
+    var labels=[[20,'20'],[40,'40'],[50,'50'],[60,'40'],[80,'20']].map(function(p){return '<span style="left:'+p[0]+'%">'+p[1]+'</span>';}).join('');
+    var rzTint='<span class="rz-field-rz" style="'+(atkR?'right':'left')+':0"></span>';
+    var fillW=atkR?('calc('+fp.spot+'% + 9px)'):('calc('+(100-fp.spot)+'% + 9px)');
+    var fill='<span class="rz-field-fill is-'+fp.side+(dim?' is-dim':'')+'" style="width:'+fillW+'"></span>';
+    var fd=(fp.ltg!=null)?'<span class="rz-field-fd" style="left:'+Math.min(Math.max(fp.ltg,1),99)+'%"></span>':'';
+    var flagPos=Math.min(Math.max(fp.spot,9),91);
+    var flag='<span class="rz-field-flag" style="left:'+flagPos+'%">'+esc(fp.label)+'</span>';
+    field='<div class="rz-field" style="--rz-team-color:'+tc+';" role="img" aria-label="Ball at '+esc(fp.label)+', '+esc(poss)+' ball">'
+      +'<div class="rz-field-track"><div class="rz-field-clip">'+rzTint+ticks+fill+fd+'</div>'+flag+'</div>'
+      +'<div class="rz-field-scale">'+labels+'</div></div>';
+  }
   return '<div class="rz-nfl-board is-'+esc(status)+(live?' is-live':'')+(options.modal?' rz-nfl-board--modal':'')+'"'+(options.id?' id="'+esc(options.id)+'"':'')+'><div class="rz-nfl-score-row">'+team(away,game.away_pts,'away')+center+team(home,game.home_pts,'home')+'</div>'+field+'</div>';
 };
 

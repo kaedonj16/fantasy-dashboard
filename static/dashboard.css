@@ -34926,30 +34926,42 @@ a.rz-demo-link:hover {
     align-items: center;
     gap: 10px;
 }
+/* Field-position row: a yard field with a seamless single-color bar that ends in
+   an arrow point overhanging the ball, plus a yard-line flag, red-zone tint,
+   yard ticks/labels, and a first-down line. Shared by the RedZone board and the
+   player modal via _rzRenderGameBoard, so tokens carry site-wide fallbacks. */
+.rz-field { margin-top: 10px; }
 .rz-field-track {
     position: relative;
-    height: 16px;
-    margin-top: 11px;
-    overflow: hidden;
-    border-radius: 2px;
-    background: color-mix(in srgb, var(--rz-muted, var(--text-muted)) 18%, transparent);
+    height: 18px;
+    margin-top: 19px; /* headroom for the yard-line flag above the track */
+    border-radius: 9px;
+    border: 1px solid var(--rz-border, var(--border));
+    background: color-mix(in srgb, var(--rz-muted, var(--text-muted)) 16%, transparent);
 }
-.rz-field-fill {
-    position: absolute;
-    inset-block: 0;
-    background: var(--rz-team-color);
-    transition: width .35s ease, left .35s ease, right .35s ease;
-}
-.rz-field-fill.is-away {
-    left: 0;
-    width: var(--rz-ball);
-    clip-path: polygon(0 0, calc(100% - 9px) 0, 100% 50%, calc(100% - 9px) 100%, 0 100%);
-}
-.rz-field-fill.is-home {
-    right: 0;
-    width: calc(100% - var(--rz-ball));
-    clip-path: polygon(9px 0, 100% 0, 100% 100%, 9px 100%, 0 50%);
-}
+.rz-field-clip { position: absolute; inset: 0; border-radius: inherit; overflow: hidden; }
+/* opponent red zone -- the attacked final 20 */
+.rz-field-rz { position: absolute; top: 0; bottom: 0; width: 20%; background: var(--rz-red-soft, rgba(220, 38, 38, .10)); }
+/* yard ticks every 10, emphasised at midfield */
+.rz-field-tick { position: absolute; top: 0; bottom: 0; width: 1px; background: color-mix(in srgb, var(--rz-border, var(--border)) 70%, transparent); }
+.rz-field-tick.is-mid { background: color-mix(in srgb, var(--rz-muted, var(--text-muted)) 45%, transparent); }
+/* seamless bar + arrowhead: one element, one colour, no outline. Width overshoots
+   the spot by the 9px point depth so the body ends on the mark and the tip overhangs. */
+.rz-field-fill { position: absolute; top: 0; bottom: 0; background: var(--rz-team-color); transition: width .4s ease; }
+.rz-field-fill.is-away { left: 0; clip-path: polygon(0 0, calc(100% - 9px) 0, 100% 50%, calc(100% - 9px) 100%, 0 100%); }
+.rz-field-fill.is-home { right: 0; clip-path: polygon(9px 0, 100% 0, 100% 100%, 9px 100%, 0 50%); }
+/* near-black team colours (LV, CHI, ...) vanish on the dark card -- a top sheen
+   restores contrast without an outline. Dark theme only; light already contrasts. */
+:root[data-theme="dark"] .rz-field-fill.is-dim { box-shadow: inset 0 3px 3px -1px rgba(255, 255, 255, .4); }
+/* first-down line-to-gain marker */
+.rz-field-fd { position: absolute; top: -2px; bottom: -2px; width: 2px; transform: translateX(-50%); background: #eab308; border-radius: 2px; z-index: 3; box-shadow: 0 0 0 1px rgba(15, 23, 42, .15); }
+/* yard-line flag above the ball */
+.rz-field-flag { position: absolute; top: -18px; transform: translateX(-50%); background: var(--rz-text, var(--text)); color: var(--rz-card, var(--card)); font-size: 9.5px; font-weight: 800; letter-spacing: .02em; padding: 2px 6px; border-radius: 5px; white-space: nowrap; transition: left .4s ease; }
+.rz-field-flag::after { content: ""; position: absolute; left: 50%; bottom: -3px; transform: translateX(-50%); border-left: 3px solid transparent; border-right: 3px solid transparent; border-top: 3px solid var(--rz-text, var(--text)); }
+/* yard labels 20/40/50/40/20 below the track */
+.rz-field-scale { position: relative; height: 12px; margin-top: 3px; }
+.rz-field-scale span { position: absolute; transform: translateX(-50%); font-size: 9px; font-weight: 700; color: var(--rz-muted, var(--text-muted)); font-variant-numeric: tabular-nums; }
+@media (prefers-reduced-motion: reduce) { .rz-field-fill, .rz-field-flag { transition: none; } }
 .rz-nfl-board--modal { margin: 10px 12px 8px; }
 .rz-pm-injury-row { padding: 0 16px 4px; }
 .rz-nfl-board.is-live {
@@ -35008,16 +35020,16 @@ a.rz-demo-link:hover {
     white-space: nowrap;
     min-width: 0;
 }
+/* Possession indicator: a small amber dot sitting just past the score on the
+   centre-facing side (toward the clock). It is the last flex child of the team
+   block, so row-reverse on the home side keeps it toward the middle. */
 .rz-nfl-poss {
-    display: inline-block;
-    width: 8px;
-    height: 8px;
-    margin-left: 5px;
-    border-radius: 50% 40% 50% 40%;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
     background: #f59e0b;
-    box-shadow: 0 0 0 2px rgba(245, 158, 11, .22);
-    transform: rotate(-20deg);
-    vertical-align: middle;
+    box-shadow: 0 0 0 3px rgba(245, 158, 11, .18);
+    flex: 0 0 auto;
 }
 .rz-nfl-score {
     font-size: 24px;
@@ -35081,7 +35093,9 @@ a.rz-demo-link:hover {
         gap: 6px;
     }
     .rz-nfl-score-row { gap: 6px; }
-    .rz-field-track { height: 14px; margin-top: 9px; }
+    .rz-field { margin-top: 8px; }
+    .rz-field-track { height: 16px; margin-top: 17px; } /* keep flag headroom */
+    .rz-field-flag { font-size: 9px; padding: 1.5px 5px; }
     .rz-nfl-badge { width: 28px; height: 28px; }
     .rz-nfl-abv { font-size: 13px; }
     .rz-nfl-score { font-size: 20px; }
