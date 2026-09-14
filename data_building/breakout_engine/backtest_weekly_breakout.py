@@ -39,6 +39,9 @@ not actually produced on real data.
 from __future__ import annotations
 
 import argparse
+import glob
+import json
+import os
 from typing import Any, Dict, List, Optional, Tuple
 
 from data_building.breakout_engine.weekly_breakout import (
@@ -282,6 +285,71 @@ def run_backtest(
     return report
 
 
+_BUCKETS = ((0, 49), (50, 59), (60, 69), (70, 79), (80, 89), (90, 100))
+
+
+def build_evaluation_records(series_by_player, meta_by_player, *, season,
+                             eval_weeks, horizons=(1, 3, 6)) -> List[Dict[str, Any]]:
+    """Leakage-safe weekly-v2 rows suitable for calibration and later replay."""
+    records = []
+    for week in eval_weeks:
+        for pid, rows in series_by_player.items():
+            meta = meta_by_player.get(pid, {})
+            pos = str(meta.get("position") or "").upper()
+            through = [r for r in rows if int(r["week"]) <= week and _positive_usage(r)]
+            if len(through) < 2:
+                continue
+            scored = score_player({"player_id": pid, "position": pos,
+                                   "team": meta.get("team")}, rows, cutoff_week=week)
+            current = through[-1]
+            row = {
+                "season": int(season), "week": int(week), "player_id": pid,
+                "position": pos, "team": meta.get("team"),
+                "score": scored["breakout_score"], "components": scored.get("components") or {},
+                "signals": scored.get("signals") or {},
+                "inputs": {k: current.get(k) for k in (
+                    "snap_pct", "routes", "targets", "carries", "red_zone_opportunities", "ppr_pts")},
+                "baselines": {"recent_points": _recent_ppg(rows, week),
+                              "usage_growth": _usage_delta(rows, pos, week)},
+                "outcomes": {},
+            }
+            for horizon in horizons:
+                future = _future_active(rows, week, horizon)
+                future_ppg, _ = _mean_present(future, "ppr_pts")
+                row["outcomes"][str(horizon)] = {
+                    "role_persisted": _did_sustain(rows, pos, week, horizon),
+                    "fantasy_hit": _became_useful(rows, pos, week, horizon),
+                    "fantasy_ppg": round(future_ppg, 2) if future_ppg is not None else None,
+                }
+            records.append(row)
+    return records
+
+
+def calibration_report(records: List[Dict[str, Any]], horizon: int = 3) -> dict:
+    """Score-bucket and position results; rates stay None for empty buckets."""
+    def summarize(rows):
+        outcomes = [r["outcomes"].get(str(horizon), {}) for r in rows]
+        scorable_role = [o["role_persisted"] for o in outcomes if o.get("role_persisted") is not None]
+        scorable_hit = [o["fantasy_hit"] for o in outcomes if o.get("fantasy_hit") is not None]
+        ppg = [o["fantasy_ppg"] for o in outcomes if o.get("fantasy_ppg") is not None]
+        return {"sample_size": len(rows),
+                "role_persistence_rate": round(sum(scorable_role) / len(scorable_role), 3) if scorable_role else None,
+                "fantasy_hit_rate": round(sum(scorable_hit) / len(scorable_hit), 3) if scorable_hit else None,
+                "average_future_ppg": round(sum(ppg) / len(ppg), 2) if ppg else None}
+    buckets = {}
+    for lo, hi in _BUCKETS:
+        buckets[f"{lo}-{hi}" if hi < 100 else "90+"] = summarize(
+            [r for r in records if lo <= float(r.get("score") or 0) <= hi])
+    positions = {p: summarize([r for r in records if r.get("position") == p])
+                 for p in ("QB", "RB", "WR", "TE")}
+    coverage = {}
+    for signal in ("routes_pg", "high_value_opportunities_pg"):
+        coverage[signal] = round(sum(bool((r.get("signals") or {}).get(signal, {}).get("available"))
+                                     for r in records) / len(records), 3) if records else None
+    return {"horizon": horizon, "sample_size": len(records), "buckets": buckets,
+            "positions": positions, "optional_signal_coverage": coverage}
+
+
 # =============================================================================
 # DB loader + CLI
 # =============================================================================
@@ -311,9 +379,59 @@ def load_season_series(season: int) -> Tuple[Dict[str, List[Dict]], Dict[str, Di
     return series, meta
 
 
+def load_cached_season_series(season: int) -> Tuple[Dict[str, List[Dict]], Dict[str, Dict]]:
+    """Reproduce the supported weekly subset from committed Sleeper caches.
+
+    This makes measurement runnable in CI/development without production DB
+    credentials. It intentionally reports routes/red-zone usage as unavailable.
+    """
+    from utils.utils import load_players_index
+    players = load_players_index() or {}
+    series, meta = {}, {}
+    pattern = os.path.join("cache", "sleeper_stats", f"sleeper_stats_s{int(season)}_w*.json")
+    for path in sorted(glob.glob(pattern), key=lambda p: int(p.rsplit("_w", 1)[1].split(".")[0])):
+        week = int(path.rsplit("_w", 1)[1].split(".")[0])
+        with open(path, encoding="utf-8") as fh:
+            stats = json.load(fh) or {}
+        team_targets = {}
+        for pid, st in stats.items():
+            pm = players.get(str(pid)) or {}
+            team = pm.get("team")
+            if team:
+                team_targets[team] = team_targets.get(team, 0.0) + float(st.get("rec_tgt") or 0)
+        for pid, st in stats.items():
+            pm = players.get(str(pid)) or {}
+            pos = str(pm.get("pos") or "").upper()
+            if pos not in _USEFUL_PPG:
+                continue
+            snaps, team_snaps = float(st.get("off_snp") or 0), float(st.get("tm_off_snp") or 0)
+            targets, carries, pass_att = (float(st.get("rec_tgt") or 0),
+                                           float(st.get("rush_att") or 0),
+                                           float(st.get("pass_att") or 0))
+            if not any((snaps, targets, carries, pass_att)):
+                continue
+            team = pm.get("team")
+            row = {"season": int(season), "week": week, "position": pos,
+                   "snaps": snaps, "team_snaps": team_snaps,
+                   "snap_pct": round(100 * snaps / team_snaps, 1) if team_snaps else None,
+                   "targets": targets, "carries": carries, "pass_att": pass_att,
+                   "touches": carries + float(st.get("rec") or 0),
+                   "target_share": round(100 * targets / team_targets[team], 1)
+                   if team and team_targets.get(team) else None,
+                   "ppr_pts": float(st.get("pts_ppr") or 0)}
+            series.setdefault(str(pid), []).append(row)
+            meta.setdefault(str(pid), {"position": pos, "team": team,
+                                        "name": pm.get("name")})
+    return series, meta
+
+
 def main() -> Dict[str, Any]:
     ap = argparse.ArgumentParser(description="Weekly breakout chronological backtest")
-    ap.add_argument("--season", type=int, required=True)
+    ap.add_argument("--season", type=int)
+    ap.add_argument("--start-season", type=int)
+    ap.add_argument("--end-season", type=int)
+    ap.add_argument("--output", help="optional structured JSON report path")
+    ap.add_argument("--source", choices=("auto", "db", "cache"), default="auto")
     ap.add_argument("--top-n", type=int, default=15)
     ap.add_argument("--horizon", type=int, default=3, help="lookahead games (2-4)")
     ap.add_argument("--eval-from", type=int, default=4, help="first cutoff week to evaluate")
@@ -322,23 +440,47 @@ def main() -> Dict[str, Any]:
                     help="if set, weeks <= this are reserved for tuning and NOT evaluated")
     args = ap.parse_args()
 
-    series, meta = load_season_series(args.season)
+    if args.season:
+        seasons = [args.season]
+    elif args.start_season and args.end_season:
+        seasons = list(range(args.start_season, args.end_season + 1))
+    else:
+        ap.error("provide --season or --start-season and --end-season")
     start = args.eval_from
     if args.tune_through:
         start = max(start, args.tune_through + 1)
     eval_weeks = list(range(start, args.eval_to + 1))
 
-    report = run_backtest(series, meta, eval_weeks=eval_weeks,
-                          top_n=args.top_n, horizon=args.horizon)
-    print(f"=== Weekly breakout backtest: season {args.season} ===")
+    records, season_reports = [], {}
+    for season in seasons:
+        if args.source == "cache":
+            series, meta = load_cached_season_series(season)
+        else:
+            try:
+                series, meta = load_season_series(season)
+            except Exception:
+                if args.source == "db":
+                    raise
+                series, meta = load_cached_season_series(season)
+        season_reports[str(season)] = run_backtest(series, meta, eval_weeks=eval_weeks,
+                                                   top_n=args.top_n, horizon=args.horizon)
+        records.extend(build_evaluation_records(series, meta, season=season, eval_weeks=eval_weeks))
+    report = {"seasons": season_reports, "calibration": calibration_report(records, args.horizon),
+              "records": records}
+    print(f"=== Weekly breakout backtest: seasons {seasons[0]}-{seasons[-1]} ===")
     print(f"eval weeks {eval_weeks} | top_n={args.top_n} | horizon={args.horizon}")
-    for m, mr in report["methods"].items():
+    combined = season_reports[str(seasons[-1])]
+    for m, mr in combined["methods"].items():
         print(f"  {m:16s} precision(usage)={mr['precision']} "
               f"precision(useful)={mr['precision_useful']} "
               f"coverage={mr['coverage']} fp_rate={mr['false_positive_rate']} "
               f"lead={mr['avg_lead_time_games']} (n={mr['picks_evaluated']})")
     print("  precision(usage): flagged player sustained the usage rise; "
           "precision(useful): flagged player reached startable PPR PPG over the lookahead.")
+    print(json.dumps(report["calibration"], indent=2, sort_keys=True))
+    if args.output:
+        with open(args.output, "w", encoding="utf-8") as fh:
+            json.dump(report, fh, indent=2, sort_keys=True)
     return report
 
 

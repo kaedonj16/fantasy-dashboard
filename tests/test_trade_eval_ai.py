@@ -55,13 +55,26 @@ def test_wrapper_forwards_opponent_roster_id(offline_client, monkeypatch):
     assert captured["scoring_type"] == "redraft"
 
 
-def test_trade_eval_endpoint_forwards_scoring_type_to_analyst(offline_client):
+def test_trade_eval_endpoint_forwards_scoring_type_to_analyst(offline_client, monkeypatch):
     import app
+    captured = {}
+    monkeypatch.setattr(app, "has_premium_for_viewer", lambda *a, **k: True)
+    monkeypatch.setattr(app, "get_league_ctx_from_cache", lambda **k: {"rosters": []})
+    monkeypatch.setattr(app, "get_model_value_table_cached", lambda: [])
+    monkeypatch.setattr(app, "load_pick_value_table", lambda **k: {})
+    monkeypatch.setattr(app, "_tier_thresholds_cached", lambda *a, **k: [])
 
-    src = inspect.getsource(app.api_trade_eval)
-    start = src.index("get_trade_ai_analysis(")
-    chunk = src[start:start + 800]
-    assert "scoring_type=scoring_type" in chunk
+    def fake_analysis(**kwargs):
+        captured.update(kwargs)
+        return "<ai>"
+    monkeypatch.setattr(app, "get_trade_ai_analysis", fake_analysis)
+
+    response = offline_client.post("/api/trade-eval", json={
+        "league_id": "league-1", "viewer_roster_id": "7",
+        "scoring_type": "redraft", "side_a_players": [], "side_b_players": [],
+    })
+    assert response.status_code == 200
+    assert captured["scoring_type"] == "redraft"
 
 
 @pytest.mark.parametrize(

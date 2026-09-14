@@ -39,6 +39,9 @@ def _neutral_factors(proj: float) -> dict:
         "floor": 1.0,
         "weather": 1.0,
         "oline": 1.0,
+        "expected_plays": 1.0,
+        "role": 1.0,
+        "def_injuries": 1.0,
     }
 
 
@@ -94,6 +97,10 @@ def compute_start_score(
     position: Optional[str] = None,
     oline_index: Optional[float] = None,
     apply_matchup: bool = False,
+    expected_team_plays: Optional[float] = None,
+    league_average_plays: Optional[float] = None,
+    role_confidence: Optional[float] = None,
+    defensive_injury_impact: Optional[float] = None,
 ) -> tuple[float, dict, Optional[str]]:
     """Return ``(score, score_factors, demotion)``.
 
@@ -110,7 +117,7 @@ def compute_start_score(
     ``def_rank`` / ``def_total`` are still accepted so callers can pass them
     without branching; they only affect the score when ``apply_matchup`` is True.
     """
-    form = mu = usage = avail = vegas = floor = weather = oline = 1.0
+    form = mu = usage = avail = vegas = floor = weather = oline = plays = role = def_inj = 1.0
     demotion = None
     try:
         proj = float(proj_pts or 0)
@@ -181,7 +188,33 @@ def compute_start_score(
         except (TypeError, ValueError):
             oline = 1.0
 
-    score = proj * form * mu * usage * avail * vegas * floor * weather * oline
+    if expected_team_plays is not None and league_average_plays:
+        try:
+            # Pace affects opportunity, but feeds and projections are correlated;
+            # apply only half the relative delta and cap the residual at ±5%.
+            relative = float(expected_team_plays) / float(league_average_plays) - 1.0
+            plays = min(1.05, max(0.95, 1.0 + relative * 0.5))
+            if plays < 1.0:
+                demotion = demotion or "low_play_volume"
+        except (TypeError, ValueError, ZeroDivisionError):
+            plays = 1.0
+    if role_confidence is not None:
+        try:
+            confidence = min(1.0, max(0.0, float(role_confidence)))
+            # Confidence widens/narrows the range more than it moves the mean.
+            role = 0.97 + 0.03 * confidence
+            if confidence < 0.45:
+                demotion = demotion or "volatile_role"
+        except (TypeError, ValueError):
+            role = 1.0
+    if defensive_injury_impact is not None:
+        try:
+            # Caller supplies a quality-weighted 0..1 impact; absence is neutral.
+            def_inj = 1.0 + 0.03 * min(1.0, max(0.0, float(defensive_injury_impact)))
+        except (TypeError, ValueError):
+            def_inj = 1.0
+
+    score = proj * form * mu * usage * avail * vegas * floor * weather * oline * plays * role * def_inj
     return score, {
         "proj": proj,
         "form": round(form, 3),
@@ -192,4 +225,18 @@ def compute_start_score(
         "floor": round(floor, 3),
         "weather": round(weather, 3),
         "oline": round(oline, 3),
+        "expected_plays": round(plays, 3),
+        "role": round(role, 3),
+        "def_injuries": round(def_inj, 3),
     }, demotion
+
+
+def likely_range(expected: float, role_confidence: Optional[float] = None) -> tuple[float, float]:
+    """Conservative display range; confidence changes width, never fake mean precision."""
+    try:
+        mean = max(0.0, float(expected))
+        confidence = 0.5 if role_confidence is None else min(1.0, max(0.0, float(role_confidence)))
+    except (TypeError, ValueError):
+        return (0.0, 0.0)
+    width = mean * (0.22 + (1.0 - confidence) * 0.18)
+    return round(max(0.0, mean - width), 1), round(mean + width, 1)

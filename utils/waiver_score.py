@@ -992,6 +992,11 @@ def waiver_pickup_score(c: dict, waiver_breakout: dict,
     injury_freshness, need_mult, scarcity_mult, self_status,
     schedule_ease_rank, schedule_total.
     """
+    # League roster membership is authoritative.  Callers may omit this key for
+    # legacy/offseason pools, but an explicitly unavailable player can never be
+    # promoted by model signals.
+    if c.get("available") is False or c.get("is_available") is False:
+        return 0.0
     try:
         val = float(c.get("value") or 0)
     except (TypeError, ValueError):
@@ -1068,6 +1073,19 @@ def waiver_pickup_score(c: dict, waiver_breakout: dict,
             age_pts = max(w.age_base + gap * w.age_decay_per, w.age_floor)
 
     raw = value_pts + proj_pts + opportunity_pts + trend_pts + sched_pts + age_pts
+
+    # Distinct opportunity-surprise overlay. It deliberately rewards earned
+    # volume and sustainability, not touchdowns; correlated breakout/usage
+    # signals remain in the diminishing-returns bucket above.
+    surprise = c.get("waiver_surprise") or {}
+    if isinstance(surprise, dict):
+        usage_surprise = _clamp01(float(surprise.get("unexpected_usage") or 0))
+        sustainable = _clamp01(float(surprise.get("sustainability") or 0))
+        role_change = _clamp01(float(surprise.get("role_change") or 0))
+        surprise_bonus = 18.0 * (0.55 * usage_surprise + 0.45 * role_change) * sustainable
+        low_volume_tds = max(0.0, float(surprise.get("unsustainable_production") or 0))
+        temporary = max(0.0, float(surprise.get("temporary_role") or 0))
+        raw += surprise_bonus - min(15.0, 10.0 * low_volume_tds + 8.0 * temporary)
 
     # Roster-aware (#4a): a position of real need to the viewer is worth more.
     raw *= float(c.get("need_mult") or 1.0)
