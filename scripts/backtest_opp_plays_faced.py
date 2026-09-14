@@ -125,9 +125,13 @@ def _load(seasons, wp_lo, wp_hi):
         weekly_rows.append((int(sn), int(w), pos, opp, pts))
 
     # ---- Per (season, team, week) defensive plays faced ----
+    # game_id must be in the column list: nfl_data_py references it internally,
+    # and omitting it makes import_pbp_data raise KeyError('game_id') -> the
+    # whole season is silently dropped as "Data not available".
     pbp = nfl.import_pbp_data(
         list(seasons),
-        columns=["season", "week", "season_type", "defteam", "play_type", "wp"],
+        columns=["game_id", "season", "week", "season_type",
+                 "defteam", "play_type", "wp"],
         downcast=True,
     )
     if "season_type" in pbp:
@@ -157,6 +161,14 @@ def _load(seasons, wp_lo, wp_hi):
 
 def run(seasons, wp_lo, wp_hi, min_prior_games):
     weekly_rows, faced = _load(seasons, wp_lo, wp_hi)
+    # Sanity line so an empty pull is obvious rather than silently reading as
+    # "no correlation". Both should be in the thousands for a few seasons.
+    print(f"[loaded] player-weeks={len(weekly_rows)}  "
+          f"(season,team,week) defensive rows={len(faced)}")
+    if not weekly_rows or not faced:
+        print("[abort] one of the nflverse pulls came back empty; check the "
+              "messages above (network / column / season availability).")
+        return
 
     # Pre-index defensive weeks per (season, team) for fast prior-week sums.
     weeks_by_team = defaultdict(list)  # (season, team) -> [week, ...]
