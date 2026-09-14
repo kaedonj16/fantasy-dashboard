@@ -24,12 +24,8 @@ Output ``cache/team_play_volume_s{season}.json``::
       "season": 2025,
       "generated_at": "...",
       "nfl_avg_plays_faced_pg": 64.5,
-      "nfl_avg_pass_faced_pg": 37.6,
-      "nfl_avg_rush_faced_pg": 26.9,
       "teams": {
         "BAL": {"plays_faced_pg": 58.4, "plays_faced_l4_pg": 56.8,
-                 "pass_faced_pg": 33.1, "rush_faced_pg": 25.3,
-                 "pass_faced_l4_pg": 32.0, "rush_faced_l4_pg": 24.8,
                  "off_plays_pg": 61.2, "games": 5},
         ...
       }
@@ -63,18 +59,16 @@ def build_team_play_volume(season: int, save: bool = True) -> dict:
 
     teams = build_team_play_volume_for_season(season) or {}
 
-    def _league_avg(field):
-        vals = [r[field] for r in teams.values() if r.get(field) is not None]
-        return round(sum(vals) / len(vals), 1) if vals else None
+    faced = [r["plays_faced_pg"] for r in teams.values()
+             if r.get("plays_faced_pg") is not None]
+    # League average precomputed once here and shared across every player and
+    # platform at read time.
+    nfl_avg = round(sum(faced) / len(faced), 1) if faced else None
 
     blob = {
         "season": season,
         "generated_at": datetime.now(timezone.utc).isoformat(),
-        # League averages precomputed once here and shared across every player
-        # and platform at read time (per position basis: total / pass / rush).
-        "nfl_avg_plays_faced_pg": _league_avg("plays_faced_pg"),
-        "nfl_avg_pass_faced_pg": _league_avg("pass_faced_pg"),
-        "nfl_avg_rush_faced_pg": _league_avg("rush_faced_pg"),
+        "nfl_avg_plays_faced_pg": nfl_avg,
         "teams": teams,
     }
 
@@ -94,13 +88,10 @@ if __name__ == "__main__":
     res = build_team_play_volume(yr)
     tms = res.get("teams", {})
     print(f"[team_play_volume] season={yr} teams={len(tms)} "
-          f"nfl_avg={res.get('nfl_avg_plays_faced_pg')} "
-          f"(pass={res.get('nfl_avg_pass_faced_pg')} "
-          f"rush={res.get('nfl_avg_rush_faced_pg')}) -> {out_path(yr)}")
+          f"nfl_avg={res.get('nfl_avg_plays_faced_pg')} -> {out_path(yr)}")
     for t, row in sorted(tms.items(),
                          key=lambda kv: kv[1].get("plays_faced_pg", 0),
                          reverse=True):
         print(f"  {t:>3} faced={row.get('plays_faced_pg')} "
-              f"pass={row.get('pass_faced_pg')} rush={row.get('rush_faced_pg')} "
               f"l4={row.get('plays_faced_l4_pg')} off={row.get('off_plays_pg')} "
               f"g={row.get('games')}")
