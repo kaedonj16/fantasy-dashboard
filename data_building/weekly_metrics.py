@@ -80,9 +80,16 @@ def init_weekly_metrics_db() -> None:
                 touches      INTEGER,
                 target_share NUMERIC,
                 ppr_pts      NUMERIC,
+                pass_att     INTEGER,
                 PRIMARY KEY (player_id, season, week)
             )
             """
+        )
+        # Migration for databases created before pass_att existed (needed by the
+        # weekly breakout engine's QB passing-opportunity signal). Safe no-op when
+        # the column is already present.
+        conn.execute(
+            "ALTER TABLE player_weekly_metrics ADD COLUMN IF NOT EXISTS pass_att INTEGER"
         )
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_pwm_season_week "
@@ -173,8 +180,8 @@ def build_weekly_metrics(season: int, weeks: Optional[List[int]] = None) -> int:
                     INSERT INTO player_weekly_metrics
                         (player_id, season, week, position, snap_pct, snaps, team_snaps,
                          targets, receptions, rec_yards, carries, rush_yards, touches,
-                         target_share, ppr_pts)
-                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                         target_share, ppr_pts, pass_att)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                     ON CONFLICT (player_id, season, week) DO UPDATE SET
                         position = EXCLUDED.position,
                         snap_pct = EXCLUDED.snap_pct,
@@ -187,13 +194,14 @@ def build_weekly_metrics(season: int, weeks: Optional[List[int]] = None) -> int:
                         rush_yards = EXCLUDED.rush_yards,
                         touches = EXCLUDED.touches,
                         target_share = EXCLUDED.target_share,
-                        ppr_pts = EXCLUDED.ppr_pts
+                        ppr_pts = EXCLUDED.ppr_pts,
+                        pass_att = EXCLUDED.pass_att
                     """,
                     (
                         pid, int(season), int(week), pos, snap_pct, int(snaps),
                         int(team_snaps), int(targets), int(receptions),
                         _f(st.get("rec_yd")), int(carries), _f(st.get("rush_yd")),
-                        int(touches), tgt_share, _f(st.get("pts_ppr")),
+                        int(touches), tgt_share, _f(st.get("pts_ppr")), int(pass_att),
                     ),
                 )
                 count += 1
@@ -209,8 +217,8 @@ def get_player_weekly_series(player_id: str, season: int) -> List[Dict[str, Any]
     with get_conn() as conn:
         rows = conn.execute(
             """
-            SELECT week, snap_pct, targets, receptions, carries, touches,
-                   target_share, ppr_pts, rec_yards, rush_yards
+            SELECT week, snap_pct, snaps, team_snaps, targets, receptions, carries,
+                   touches, target_share, ppr_pts, rec_yards, rush_yards, pass_att
             FROM player_weekly_metrics
             WHERE player_id = %s AND season = %s
             ORDER BY week

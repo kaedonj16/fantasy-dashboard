@@ -1678,7 +1678,11 @@ function pmSwitchTab(tab, clickEvent) {
         if (score < 50) scoreColor = '#3b82f6';
         if (score < 40) scoreColor = '#f59e0b';
         if (score < 30) scoreColor = '#6b7280';
-        panel.innerHTML = _buildBkTabHTML(data, scoreColor);
+        // In-season (weekly usage engine) results render a dedicated view:
+        // classification + score + confidence, concise reasons, main risk, a
+        // compact usage comparison, and data freshness. Offseason results keep
+        // the opportunity/projection view.
+        panel.innerHTML = data.weekly ? _buildWeeklyBkTabHTML(data) : _buildBkTabHTML(data, scoreColor);
       })
       .catch(() => {
         if (panel.isConnected) {
@@ -2799,6 +2803,128 @@ function pmPrefetchTabs() {
   };
   if (window.requestIdleCallback) window.requestIdleCallback(run, { timeout: 1500 });
   else setTimeout(run, 400);
+}
+
+// ── Weekly (in-season) breakout tab builder ──────────────────────────────────
+// Renders the current-season usage-based read: classification + score +
+// confidence (kept visually separate), 2-3 concise reasons, the main risk, a
+// compact baseline->recent usage comparison, and data freshness. Provisional
+// signals and unavailable data are clearly marked. No DOM side effects.
+function _buildWeeklyBkTabHTML(data) {
+  const score = Math.round(parseFloat(data.breakout_score != null ? data.breakout_score : (data.breakout_opportunity_score || 0)));
+  const conf  = Math.round(parseFloat(data.confidence != null ? data.confidence : (data.confidence_score || 0)));
+  const cls   = data.classification || 'watchlist';
+  const clsLabel = data.classification_label ||
+    ({emerging_breakout:'Emerging Breakout', temporary_opportunity:'Temporary Opportunity', watchlist:'Watchlist'}[cls] || cls);
+
+  // Classification drives the accent; score drives the tier word.
+  const clsColor = cls === 'emerging_breakout' ? '#10b981'
+                 : cls === 'temporary_opportunity' ? '#f59e0b'
+                 : '#6b7280';
+  let tier = 'Low', scoreColor = '#6b7280';
+  if (score >= 60)      { tier = 'Strong';   scoreColor = '#10b981'; }
+  else if (score >= 42) { tier = 'Notable';  scoreColor = '#3b82f6'; }
+  else if (score >= 18) { tier = 'Modest';   scoreColor = '#f59e0b'; }
+
+  const provisional = data.provisional === true;
+  const weeksStale  = parseInt(data.weeks_stale || 0, 10) || 0;
+  const asOfWeek    = data.as_of_week;
+
+  // ── Hero: Classification | Score | Confidence (three separate reads) ───────
+  let html = '';
+  html += `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;align-items:center;">`;
+  html += `<span style="display:inline-flex;align-items:center;gap:6px;padding:4px 11px;border-radius:999px;
+             background:${clsColor}1a;color:${clsColor};border:1px solid ${clsColor}44;font-size:12px;font-weight:800;
+             text-transform:uppercase;letter-spacing:0.03em;">${_pmEsc(clsLabel)}</span>`;
+  if (provisional) {
+    html += `<span title="Limited current-season sample; read as an early signal."
+               style="padding:3px 9px;border-radius:999px;background:var(--surface-2,rgba(255,255,255,0.06));
+               color:var(--text-muted);font-size:11px;font-weight:700;">Provisional</span>`;
+  }
+  html += `</div>`;
+
+  html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:6px;">`;
+  html += `
+    <div class="pm-hero-stat" style="background:${scoreColor}1a;border-color:${scoreColor}33;">
+      <div class="pm-hero-label" style="color:${scoreColor};">Breakout Score</div>
+      <div class="pm-hero-val" style="color:${scoreColor};">${score}</div>
+      <div style="font-size:11px;font-weight:700;color:${scoreColor};text-transform:uppercase;letter-spacing:0.03em;margin-top:1px;">${tier} role change</div>
+    </div>`;
+  html += `
+    <div class="pm-hero-stat">
+      <div class="pm-hero-label">Confidence</div>
+      <div class="pm-hero-val" style="color:var(--text);">${conf}</div>
+      <div style="font-size:11px;color:var(--text-muted);margin-top:1px;">evidence strength</div>
+    </div>`;
+  html += `</div>`;
+
+  // ── Why (concise reasons) ──────────────────────────────────────────────────
+  const reasons = Array.isArray(data.reasons) ? data.reasons.filter(Boolean).slice(0, 3)
+                : String(data.key_reasons || '').split('\n').map(r => r.trim()).filter(Boolean).slice(0, 3);
+  if (reasons.length) {
+    html += `<hr class="pm-section-divider">`;
+    html += `<div class="pm-section-header"><span class="pm-section-label">Why</span></div>`;
+    html += `<div style="display:flex;flex-direction:column;gap:6px;">`;
+    reasons.forEach(r => {
+      html += `<div style="display:flex;gap:9px;align-items:flex-start;font-size:13px;color:var(--text);line-height:1.45;">
+                 <span style="color:${clsColor};margin-top:1px;flex-shrink:0;">&#8226;</span>
+                 <span>${_pmEsc(r)}</span>
+               </div>`;
+    });
+    html += `</div>`;
+  }
+
+  // ── Usage comparison (baseline -> recent) ──────────────────────────────────
+  const usage = Array.isArray(data.usage_comparison) ? data.usage_comparison : [];
+  if (usage.length) {
+    html += `<hr class="pm-section-divider">`;
+    html += `<div class="pm-section-header"><span class="pm-section-label">Usage: baseline → recent</span></div>`;
+    html += `<div style="display:flex;flex-direction:column;gap:5px;">`;
+    usage.slice(0, 5).forEach(u => {
+      const unit = u.unit || '';
+      const fmt  = (v) => (v == null ? 'n/a' : (unit === '%' ? Math.round(v) + '%' : (Math.round(v * 10) / 10)));
+      const d    = u.delta;
+      const dColor = d == null ? 'var(--text-muted)' : (d >= 0 ? '#10b981' : '#f59e0b');
+      const dStr = d == null ? '' : (d >= 0 ? '↑ +' : '↓ ') + fmt(Math.abs(d)).toString().replace('%','') + (unit === '%' ? 'pp' : '');
+      html += `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:12.5px;">
+                 <span style="color:var(--text-muted);">${_pmEsc(u.label || u.key)}</span>
+                 <span style="display:flex;align-items:center;gap:8px;">
+                   <span style="color:var(--text);font-variant-numeric:tabular-nums;">${fmt(u.baseline)} → <strong>${fmt(u.recent)}</strong></span>
+                   <span style="color:${dColor};font-weight:700;min-width:52px;text-align:right;font-variant-numeric:tabular-nums;">${dStr}</span>
+                 </span>
+               </div>`;
+    });
+    html += `</div>`;
+  }
+
+  // ── Main risk ───────────────────────────────────────────────────────────────
+  const risks = Array.isArray(data.risks) ? data.risks.filter(Boolean) : [];
+  if (risks.length) {
+    html += `<hr class="pm-section-divider">`;
+    html += `<div style="display:flex;gap:9px;align-items:flex-start;background:rgba(245,158,11,0.08);
+               border:1px solid rgba(245,158,11,0.22);border-radius:9px;padding:9px 11px;">
+               <span style="color:#f59e0b;margin-top:1px;flex-shrink:0;"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i></span>
+               <div style="font-size:12.5px;color:var(--text-muted);line-height:1.45;">
+                 <span style="font-weight:700;color:var(--text);">Main risk:</span> ${_pmEsc(risks[0])}
+                 ${risks.length > 1 ? `<span style="display:block;margin-top:3px;opacity:0.8;">${_pmEsc(risks[1])}</span>` : ''}
+               </div>
+             </div>`;
+  }
+
+  // ── Freshness footer ─────────────────────────────────────────────────────────
+  const evalWeeks = Array.isArray(data.evaluated_weeks) ? data.evaluated_weeks : [];
+  const recentWeeks = Array.isArray(data.recent_weeks) ? data.recent_weeks : [];
+  const baseWeeks = Array.isArray(data.baseline_weeks) ? data.baseline_weeks : [];
+  let freshBits = [];
+  if (asOfWeek != null) freshBits.push(`Through week ${_pmEsc(asOfWeek)}`);
+  if (recentWeeks.length) freshBits.push(`recent: wk ${recentWeeks.join(', ')}`);
+  if (baseWeeks.length)   freshBits.push(`baseline: wk ${baseWeeks.join(', ')}`);
+  if (weeksStale >= 1)    freshBits.push(`${weeksStale} wk stale`);
+  if (freshBits.length) {
+    html += `<div style="font-size:11px;color:var(--text-muted);margin-top:10px;text-align:right;">${_pmEsc(freshBits.join(' · '))}</div>`;
+  }
+
+  return html;
 }
 
 // ── Breakout tab HTML builder (returns HTML string, no DOM side effects) ─────

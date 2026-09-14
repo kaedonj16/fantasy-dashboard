@@ -623,23 +623,49 @@ def apply_candidate_filter(candidates: List[Any], usage_by_id: Dict[str, Dict]) 
 
 
 def main() -> Dict[str, Any]:
+    """Production breakout refresh entry point (called by cron_daily.py and the
+    scheduler).
+
+    Routes by NFL schedule/state, NOT the calendar month:
+
+    - In-season (there is at least one completed regular-season week, including a
+      January week 18) -> the dedicated weekly path, which scores current-season
+      per-game usage growth. This is the fix for the old behavior, where even in
+      October this ran the offseason historical scorer on last season's stats.
+    - Offseason / preseason (no completed regular-season games yet) -> the
+      historical/offseason scorer, unchanged.
+    """
     from dashboard_services.api import get_nfl_state
-    from data_building.breakout_engine.build_historical_scores import run
+    from data_building.breakout_engine.weekly_runner import (
+        resolve_scoring_context, run_weekly_breakout, MODE_WEEKLY,
+    )
 
     nfl_state = get_nfl_state() or {}
-    season = int(nfl_state.get("season", 2026))
-    stats_season = season - 1
+    as_of = date.today()
+    context = resolve_scoring_context(nfl_state, as_of_date=as_of)
+    print(f"[calculate_breakouts] {context.to_log()}")
 
-    print(f"[calculate_breakouts] Season: {season}, scoring from {stats_season} stats with as_of_date={date.today()}")
+    if context.mode == MODE_WEEKLY:
+        summary = run_weekly_breakout(context, refresh=True, min_score=0.0)
+        return {"mode": "weekly", **summary}
+
+    # ── offseason / preseason: unchanged historical scorer ───────────────────
+    from data_building.breakout_engine.build_historical_scores import run
+
+    season = context.season
+    stats_season = season - 1
+    print(f"[calculate_breakouts] offseason path - season {season}, scoring from "
+          f"{stats_season} stats with as_of_date={as_of}")
 
     # Storage floor is the effective candidate cutoff everywhere (all page
     # requests use <= this), so it controls how many breakouts surface. With
     # contested-share opportunity dilution making scores meaningful, ~60 yields
     # the genuine candidates (roughly 20). Raise toward 70 for a tighter
     # high-conviction list (~14), or lower it to widen the net.
-    run(seasons=[stats_season], min_score=60.0, as_of_date_override=date.today())
+    run(seasons=[stats_season], min_score=60.0, as_of_date_override=as_of)
 
-    return {"season": season, "stats_season": stats_season, "as_of_date": date.today().isoformat()}
+    return {"mode": "offseason", "season": season, "stats_season": stats_season,
+            "as_of_date": as_of.isoformat()}
 
 
 if __name__ == "__main__":

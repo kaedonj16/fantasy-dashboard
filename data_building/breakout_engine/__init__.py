@@ -23,7 +23,20 @@ Usage:
         print(f"  Reasons: {candidate.key_reasons}")
 """
 
-from .core import BreakoutEngine, BreakoutCandidate
+# Lazily expose BreakoutEngine/BreakoutCandidate so that importing a lightweight
+# submodule (e.g. weekly_breakout, a pure DB-free scorer) does not drag in
+# core.py's heavy transitive deps (projections -> openai). Consumers that do
+# ``from data_building.breakout_engine import BreakoutEngine`` still work; the
+# import of core is deferred to first attribute access (PEP 562).
 
 __all__ = ['BreakoutEngine', 'BreakoutCandidate']
 __version__ = '1.0.0'
+
+
+def __getattr__(name):
+    if name in ('BreakoutEngine', 'BreakoutCandidate'):
+        from .core import BreakoutEngine, BreakoutCandidate
+        globals()['BreakoutEngine'] = BreakoutEngine
+        globals()['BreakoutCandidate'] = BreakoutCandidate
+        return globals()[name]
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

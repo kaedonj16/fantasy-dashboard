@@ -17829,8 +17829,10 @@ function _renderBkModalContent(data, playerId) {
   if (score < 40) scoreColor = '#f59e0b';
   if (score < 30) scoreColor = '#6b7280';
 
-  // ── Body: delegate to shared builder ──────────────────────────────────────
-  let html = _buildBkTabHTML(data, scoreColor);
+  // ── Body: delegate to shared builder (weekly view in-season) ──────────────
+  let html = (data.weekly && typeof _buildWeeklyBkTabHTML === 'function')
+    ? _buildWeeklyBkTabHTML(data)
+    : _buildBkTabHTML(data, scoreColor);
 
   // ── Footer CTA ────────────────────────────────────────────────────────────
   html += `

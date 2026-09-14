@@ -1,0 +1,698 @@
+"""
+Weekly (in-season) breakout detection.
+
+The offseason engine (build_historical_scores + core/components) scores role
+*opportunity* from roster churn and prior-season production. That path is wrong
+during the season: it reads last season's stats and labels everything
+``phase="offseason"`` even in October, so a rookie who just took over a backfield
+never surfaces until the following spring.
+
+This module is the dedicated in-season path. Its primary evidence is *current
+season weekly usage* - the per-game snap share, target share, targets, carries
+and passing volume already persisted in ``player_weekly_metrics`` by
+``data_building.weekly_metrics``. It compares a player's latest 1-2 completed
+games against the immediately preceding 3-4 (non-overlapping windows, so momentum
+is real and not diluted by including the same games on both sides), rewards
+usage growth *before* it turns into fantasy points, and separates three things
+the old board conflated:
+
+    classification  - what kind of situation this is (emerging / temporary / watchlist)
+    breakout_score  - how large the role change is (0-100, sample-independent)
+    confidence      - how much to trust it (0-100, from sample size, coverage,
+                      freshness, persistence, and signal agreement)
+
+Everything in this module is pure and DB-free: ``score_player`` takes plain lists
+of weekly-row dicts so it can be unit-tested without Postgres. The thin DB layer
+(loading rows, refreshing data, persisting results) lives in
+``weekly_store`` and ``weekly_runner``.
+
+Share units: ``snap_pct`` and ``target_share`` are stored as percentages on a
+0-100 scale (see weekly_metrics.build_weekly_metrics). A missing share is
+``None`` and MUST stay ``None`` (unknown) - never coerced to 0, which would read
+as "played but had no role".
+"""
+from __future__ import annotations
+
+from typing import Any, Dict, List, Optional, Sequence, Tuple
+
+# Bump when the scoring math changes so persisted rows are self-identifying and a
+# stale row can be told apart from a current-version one.
+SCORING_VERSION = "weekly-v1"
+
+_POSITIONS = ("QB", "RB", "WR", "TE")
+
+# Trend window shape. "recent" is the latest 1-2 completed games; "baseline" the
+# 3-4 immediately before it. The two never overlap.
+RECENT_MAX = 2
+BASELINE_MAX = 4
+
+# Per-position "full workload" anchors used to turn raw per-game counts into a
+# 0-100 growth signal. These are typical every-down-starter per-game volumes, not
+# ceilings - they only set the scale on which a delta is judged "large".
+_FULL_TARGETS_PG = {"WR": 8.5, "TE": 6.5}
+_FULL_OPPORTUNITY_PG = {"RB": 18.0}   # carries + targets
+_FULL_PASS_ATT_PG = {"QB": 33.0}
+_FULL_RUSH_PG = {"QB": 6.0, "RB": 15.0}
+
+# Classification / candidacy thresholds. Kept here (not inline) so tuning is
+# auditable and tests can import the exact cutoffs.
+WATCHLIST_MIN_SCORE = 18.0     # below this a player is not a breakout candidate
+EMERGING_MIN_SCORE = 42.0      # sustained role change large enough to headline
+EMERGING_MIN_BASELINE_GAMES = 2
+
+# A single game's fantasy output this many times the baseline, with no matching
+# usage growth, is flagged as efficiency/TD-driven rather than a role change.
+FANTASY_SPIKE_RATIO = 1.8
+
+
+# =============================================================================
+# small numeric helpers - all preserve "unknown" (None) rather than inventing 0
+# =============================================================================
+
+def _num(v: Any) -> Optional[float]:
+    """Coerce to float, but keep None/'' as None (unknown). Never turns a missing
+    value into 0.0."""
+    if v is None or v == "":
+        return None
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    return f
+
+
+def _mean_present(rows: Sequence[Dict], key: str) -> Tuple[Optional[float], int]:
+    """Mean of the present (non-None) values of ``key`` across rows.
+
+    Returns (mean_or_None, count_present). Missing values are excluded from both
+    the sum and the divisor, so a share that is unknown in some weeks does not
+    drag the average toward zero.
+    """
+    vals = [_num(r.get(key)) for r in rows]
+    present = [v for v in vals if v is not None]
+    if not present:
+        return None, 0
+    return sum(present) / len(present), len(present)
+
+
+def _clamp(v: float, lo: float, hi: float) -> float:
+    return max(lo, min(hi, v))
+
+
+def _round(v: Optional[float], n: int = 1) -> Optional[float]:
+    return None if v is None else round(v, n)
+
+
+# =============================================================================
+# game-status classification
+# =============================================================================
+# player_weekly_metrics only stores weeks a player was active with usage, so an
+# absent week is either a bye, an inactive game, or missing data. We disambiguate
+# with the team's played-week set when it is available.
+
+STATUS_ACTIVE = "active"
+STATUS_ACTIVE_NO_USAGE = "active_no_usage"
+STATUS_BYE = "bye"
+STATUS_INACTIVE = "inactive"
+STATUS_MISSING = "missing"
+
+
+def classify_week_status(
+    row: Optional[Dict],
+    week: int,
+    team_weeks_played: Optional[set] = None,
+) -> str:
+    """Label one week for one player.
+
+    ``row`` is the player's ``player_weekly_metrics`` row for that week, or None.
+    ``team_weeks_played`` is the set of weeks the player's team actually played
+    (from the schedule); when provided it separates byes from inactives.
+    """
+    if row is not None:
+        snaps = _num(row.get("snaps")) or 0.0
+        targets = _num(row.get("targets")) or 0.0
+        carries = _num(row.get("carries")) or 0.0
+        pass_att = _num(row.get("pass_att")) or 0.0
+        if snaps <= 0 and targets <= 0 and carries <= 0 and pass_att <= 0:
+            return STATUS_ACTIVE_NO_USAGE
+        return STATUS_ACTIVE
+    if team_weeks_played is not None:
+        if week not in team_weeks_played:
+            return STATUS_BYE
+        return STATUS_INACTIVE
+    return STATUS_MISSING
+
+
+# =============================================================================
+# trend windows
+# =============================================================================
+
+def split_windows(
+    active_rows: Sequence[Dict],
+    recent_max: int = RECENT_MAX,
+    baseline_max: int = BASELINE_MAX,
+) -> Tuple[List[Dict], List[Dict]]:
+    """Split a player's active weekly rows (oldest first) into non-overlapping
+    recent and baseline windows.
+
+    Sizing keeps momentum meaningful with small samples - the old
+    recent-3-vs-season-average comparison put the same games on both sides and
+    reported zero momentum through three games:
+
+        1 game  -> recent=1, baseline=0   (provisional; caller supplies a prior baseline)
+        2-3     -> recent=1, baseline=rest (1 vs 1, 1 vs 2)
+        4+      -> recent=2, baseline=up to 4 preceding
+    """
+    rows = list(active_rows)
+    n = len(rows)
+    if n == 0:
+        return [], []
+    if n == 1:
+        return rows[-1:], []
+    if n <= 3:
+        return rows[-1:], rows[:-1][-baseline_max:]
+    r = min(recent_max, 2)
+    recent = rows[n - r:]
+    baseline = rows[max(0, n - r - baseline_max): n - r]
+    return recent, baseline
+
+
+# =============================================================================
+# per-signal growth scoring
+# =============================================================================
+
+def _share_growth(baseline: Optional[float], recent: Optional[float]) -> Dict[str, Any]:
+    """Score growth in a 0-100 team-share metric (snap share, target share).
+
+    Rewards BOTH the change and the resulting workload level, so a 45%->65% move
+    (bigger role, bigger jump) outranks 5%->15%. The resulting-level term only
+    applies when there was actual growth, so an already-established starter who
+    holds steady scores 0 - this board is about role *change*, not role size.
+    """
+    out = {
+        "baseline": _round(baseline), "recent": _round(recent),
+        "delta": None, "points": 0.0, "available": recent is not None,
+    }
+    if recent is None:
+        return out
+    base = baseline if baseline is not None else 0.0
+    delta = recent - base
+    out["delta"] = _round(delta)
+    if delta <= 0:
+        return out
+    delta_pts = _clamp(delta / 25.0 * 60.0, 0.0, 60.0)     # +25pp -> 60
+    # The resulting-level bonus scales with how *meaningful* the growth is, so a
+    # trivial +1pp wiggle on an established 55%-snap starter does not unlock the
+    # full "grew into a big role" credit. Full level bonus needs ~15pp of growth.
+    level_frac = _clamp(delta / 15.0, 0.0, 1.0)
+    level_pts = _clamp(recent / 100.0 * 40.0, 0.0, 40.0) * level_frac
+    out["points"] = round(delta_pts + level_pts, 1)
+    return out
+
+
+def _count_growth(baseline: Optional[float], recent: Optional[float], full: float) -> Dict[str, Any]:
+    """Score growth in a per-game *count* metric (targets, carry+target
+    opportunity, pass attempts) against a position "full workload" anchor.
+
+    Counts are secondary to shares because a team that simply runs more plays
+    inflates everyone's counts; the share signals carry the team-normalized role
+    read, and this adds workload magnitude on top.
+    """
+    out = {
+        "baseline": _round(baseline), "recent": _round(recent),
+        "delta": None, "points": 0.0, "available": recent is not None,
+    }
+    if recent is None:
+        return out
+    base = baseline if baseline is not None else 0.0
+    delta = recent - base
+    out["delta"] = _round(delta)
+    if delta <= 0:
+        return out
+    delta_pts = _clamp(delta / (full * 0.5) * 60.0, 0.0, 60.0)   # +half a full load -> 60
+    # Level bonus scaled by growth significance (full at ~35% of a full workload
+    # gained), so a negligible count bump on an already-busy player scores small.
+    level_frac = _clamp(delta / (full * 0.35), 0.0, 1.0)
+    level_pts = _clamp(recent / full * 40.0, 0.0, 40.0) * level_frac
+    out["points"] = round(delta_pts + level_pts, 1)
+    return out
+
+
+def _combine_correlated(a: float, b: float) -> float:
+    """Combine two correlated signals (e.g. snaps and targets both rose for the
+    same reason) without double-counting: full credit for the stronger, a third
+    of the weaker. Prevents four aligned signals from each awarding full points
+    for one underlying change."""
+    hi, lo = (a, b) if a >= b else (b, a)
+    return hi + 0.35 * lo
+
+
+# =============================================================================
+# per-position role signal assembly
+# =============================================================================
+
+def _pg(total: Optional[float], games: int) -> Optional[float]:
+    if total is None or games <= 0:
+        return None
+    return total / games
+
+
+def _position_signals(
+    position: str,
+    recent: List[Dict],
+    baseline: List[Dict],
+) -> Tuple[Dict[str, Dict[str, Any]], float]:
+    """Compute per-signal growth detail and the combined role-change score for a
+    position. Returns (signals, role_score) where role_score is 0-100.
+    """
+    rn = max(1, len(recent))
+    bn = max(1, len(baseline))
+
+    # Shares are already per-game (each row is one game); average the present ones.
+    snap_r, _ = _mean_present(recent, "snap_pct")
+    snap_b, _ = _mean_present(baseline, "snap_pct")
+    tgtshare_r, _ = _mean_present(recent, "target_share")
+    tgtshare_b, _ = _mean_present(baseline, "target_share")
+
+    # Per-game counts: sum present values then divide by games in the window.
+    def _count_pg(rows: List[Dict], key: str) -> Optional[float]:
+        total, present = _mean_present(rows, key)
+        return total  # _mean_present already returns per-present-row mean == per-game
+
+    tgt_r = _count_pg(recent, "targets")
+    tgt_b = _count_pg(baseline, "targets")
+    car_r = _count_pg(recent, "carries")
+    car_b = _count_pg(baseline, "carries")
+    pass_r = _count_pg(recent, "pass_att")
+    pass_b = _count_pg(baseline, "pass_att")
+
+    signals: Dict[str, Dict[str, Any]] = {}
+    snap = _share_growth(snap_b, snap_r)
+    signals["snap_share"] = snap
+
+    if position in ("WR", "TE"):
+        tshare = _share_growth(tgtshare_b, tgtshare_r)
+        tcount = _count_growth(tgt_b, tgt_r, _FULL_TARGETS_PG.get(position, 8.0))
+        signals["target_share"] = tshare
+        signals["targets_pg"] = tcount
+        # target_share is the team-normalized role read; snaps and raw targets are
+        # correlated support. Route through the receiving role, add snaps as the
+        # correlated partner, and let raw target volume top it up modestly.
+        role = _combine_correlated(tshare["points"], snap["points"])
+        role += 0.25 * tcount["points"]
+        role_score = _clamp(role, 0.0, 100.0)
+
+    elif position == "RB":
+        # Opportunity = carries + targets per game (NOT touches: receptions depend
+        # on completion outcomes, so touches understates a back's earned work).
+        opp_r = None if (car_r is None and tgt_r is None) else (car_r or 0.0) + (tgt_r or 0.0)
+        opp_b = None if (car_b is None and tgt_b is None) else (car_b or 0.0) + (tgt_b or 0.0)
+        opp = _count_growth(opp_b, opp_r, _FULL_OPPORTUNITY_PG["RB"])
+        tcount = _count_growth(tgt_b, tgt_r, 4.0)
+        signals["carry_opportunity_pg"] = opp
+        signals["targets_pg"] = tcount
+        # Snap share and opportunity move together for a back taking over a
+        # backfield; combine without double counting, then add receiving as a
+        # separate skill dimension (a pass-catching role is extra, real value).
+        role = _combine_correlated(snap["points"], opp["points"])
+        role += 0.20 * tcount["points"]
+        role_score = _clamp(role, 0.0, 100.0)
+
+    elif position == "QB":
+        pass_g = _count_growth(pass_b, pass_r, _FULL_PASS_ATT_PG["QB"])
+        rush_g = _count_growth(car_b, car_r, _FULL_RUSH_PG["QB"])
+        signals["pass_att_pg"] = pass_g
+        signals["rush_pg"] = rush_g
+        # Starting role is the snap-share step; passing volume is the primary
+        # opportunity; rushing is a bonus dimension.
+        role = _combine_correlated(snap["points"], pass_g["points"])
+        role += 0.20 * rush_g["points"]
+        role_score = _clamp(role, 0.0, 100.0)
+
+    else:
+        role_score = _clamp(snap["points"], 0.0, 100.0)
+
+    return signals, round(role_score, 1)
+
+
+# =============================================================================
+# confidence
+# =============================================================================
+
+def _sample_factor(recent_games: int, baseline_games: int) -> float:
+    """0-1 from total games observed. Provisional 1-game samples land low."""
+    total = recent_games + baseline_games
+    table = {0: 0.0, 1: 0.30, 2: 0.45, 3: 0.60, 4: 0.72, 5: 0.82}
+    return table.get(total, 0.90)
+
+
+def _persistence_factor(recent: List[Dict], baseline: List[Dict], key: str) -> Optional[float]:
+    """0-1: did the recent window hold up rather than being one spike? Every
+    recent game at or above the baseline mean scores high; a lone spike scores
+    low. None when the signal is unavailable."""
+    b_mean, _ = _mean_present(baseline, key)
+    r_vals = [v for v in (_num(r.get(key)) for r in recent) if v is not None]
+    if not r_vals:
+        return None
+    if b_mean is None:
+        return 0.5  # provisional: no baseline to persist against
+    above = sum(1 for v in r_vals if v >= b_mean - 1e-9)
+    return above / len(r_vals)
+
+
+def _compute_confidence(
+    signals: Dict[str, Dict[str, Any]],
+    recent: List[Dict],
+    baseline: List[Dict],
+    position: str,
+    weeks_stale: int,
+    provisional: bool,
+) -> Tuple[float, Dict[str, Any]]:
+    """Blend sample size, source coverage, freshness, persistence and signal
+    agreement into a 0-100 confidence. This is deliberately NOT the breakout
+    score and NOT presented as a calibrated probability - it is how much to trust
+    the score given the evidence behind it."""
+    recent_games = len(recent)
+    baseline_games = len(baseline)
+
+    sample = _sample_factor(recent_games, baseline_games)
+
+    expected = [k for k in signals]
+    available = [k for k, v in signals.items() if v.get("available")]
+    coverage = (len(available) / len(expected)) if expected else 0.0
+
+    freshness = _clamp(1.0 - 0.25 * max(0, weeks_stale), 0.0, 1.0)
+
+    key = "snap_pct" if position == "QB" else (
+        "target_share" if position in ("WR", "TE") else "snap_pct")
+    persistence = _persistence_factor(recent, baseline, key)
+    if persistence is None:
+        persistence = 0.5
+
+    # Agreement: how many scored signals point the same (positive) way.
+    pos_signals = [v for v in signals.values() if v.get("available") and (v.get("points") or 0) > 0]
+    scored = [v for v in signals.values() if v.get("available")]
+    agreement = (len(pos_signals) / len(scored)) if scored else 0.0
+
+    conf = 100.0 * (
+        0.34 * sample +
+        0.16 * coverage +
+        0.16 * freshness +
+        0.20 * persistence +
+        0.14 * agreement
+    )
+    if provisional:
+        conf = min(conf, 35.0)
+    conf = round(_clamp(conf, 0.0, 100.0), 1)
+    detail = {
+        "sample": round(sample, 3),
+        "coverage": round(coverage, 3),
+        "freshness": round(freshness, 3),
+        "persistence": round(persistence, 3),
+        "agreement": round(agreement, 3),
+        "recent_games": recent_games,
+        "baseline_games": baseline_games,
+        "weeks_stale": weeks_stale,
+    }
+    return conf, detail
+
+
+# =============================================================================
+# deterministic explanations
+# =============================================================================
+
+_SIGNAL_LABELS = {
+    "snap_share": ("Snap share", "%"),
+    "target_share": ("Target share", "%"),
+    "targets_pg": ("Targets/game", ""),
+    "carry_opportunity_pg": ("Carries+targets/game", ""),
+    "pass_att_pg": ("Pass attempts/game", ""),
+    "rush_pg": ("Rush attempts/game", ""),
+}
+
+
+def _fmt(v: Optional[float], unit: str) -> str:
+    if v is None:
+        return "n/a"
+    if unit == "%":
+        return f"{v:.0f}%"
+    return f"{v:.1f}"
+
+
+def _build_reasons(
+    signals: Dict[str, Dict[str, Any]],
+    recent_games: int,
+    baseline_games: int,
+) -> List[str]:
+    """Deterministic, input-grounded reason strings. No adjectives that aren't
+    derived from the numbers - e.g.
+    'Snap share increased from 42% to 68% over the last 2 games.'"""
+    window_phrase = (
+        f"over the last {recent_games} game{'s' if recent_games != 1 else ''}"
+    )
+    # Rank scored signals by contribution.
+    ranked = sorted(
+        ((k, v) for k, v in signals.items() if v.get("available") and (v.get("points") or 0) > 0),
+        key=lambda kv: kv[1].get("points") or 0,
+        reverse=True,
+    )
+    reasons: List[str] = []
+    for key, sig in ranked[:3]:
+        label, unit = _SIGNAL_LABELS.get(key, (key, ""))
+        base = sig.get("baseline")
+        rec = sig.get("recent")
+        if base is None:
+            reasons.append(
+                f"{label} at {_fmt(rec, unit)} {window_phrase} "
+                f"(no prior-window baseline yet)."
+            )
+        else:
+            verb = "increased" if (rec or 0) >= (base or 0) else "changed"
+            reasons.append(
+                f"{label} {verb} from {_fmt(base, unit)} to {_fmt(rec, unit)} "
+                f"{window_phrase}."
+            )
+    if not reasons:
+        reasons.append("No meaningful usage growth versus the prior window.")
+    return reasons
+
+
+# =============================================================================
+# top-level pure scorer
+# =============================================================================
+
+def score_player(
+    player: Dict[str, Any],
+    weekly_rows: Sequence[Dict[str, Any]],
+    *,
+    prior_baseline: Optional[Dict[str, Any]] = None,
+    injury_context: Optional[Dict[str, Any]] = None,
+    team_weeks_played: Optional[set] = None,
+    cutoff_week: Optional[int] = None,
+) -> Dict[str, Any]:
+    """Score one player from current-season weekly usage. Pure and DB-free.
+
+    Args:
+        player: {player_id, player_name, team, position, ...}
+        weekly_rows: that player's player_weekly_metrics rows for the season,
+            any order; each is a dict with week/snap_pct/snaps/targets/carries/
+            pass_att/target_share/ppr_pts. Only active weeks appear (the builder
+            drops inactive ones), which is why absent weeks are classified via
+            team_weeks_played.
+        prior_baseline: optional prior-season per-game usage
+            {snap_pct, target_share, targets_pg, carries_pg, pass_att_pg} used as
+            the baseline window ONLY when the player has too few current-season
+            games. Rookies pass None and are handled provisionally.
+        injury_context: optional {vacated: bool, source: str} indicating a
+            teammate ahead is out - drives the "temporary opportunity" class.
+        team_weeks_played: weeks the team played (for bye vs inactive labeling).
+        cutoff_week: as-of week; rows after it are ignored (strict cutoff so
+            historical scoring can never read future weeks).
+
+    Returns a structured result dict (see module docstring).
+    """
+    position = (player.get("position") or "").upper()
+
+    # Strict as-of cutoff: never read a week beyond the cutoff.
+    rows = [dict(r) for r in weekly_rows if _num(r.get("week")) is not None]
+    if cutoff_week is not None:
+        rows = [r for r in rows if int(r["week"]) <= int(cutoff_week)]
+    rows.sort(key=lambda r: int(r["week"]))
+
+    # Active weeks only carry usage; that is what the windows compare.
+    active = [r for r in rows if classify_week_status(r, int(r["week"]), team_weeks_played) in
+              (STATUS_ACTIVE, STATUS_ACTIVE_NO_USAGE)]
+
+    evaluated_weeks = [int(r["week"]) for r in active]
+    recent, baseline = split_windows(active)
+
+    baseline_source = "current_season"
+    provisional = False
+
+    # Too little current-season baseline: fall back to a prior-season baseline row
+    # if one was supplied. Rookies (no prior) run provisionally on current data.
+    if len(baseline) == 0:
+        provisional = True
+        if prior_baseline:
+            baseline_source = "prior_season"
+        else:
+            baseline_source = "none"
+
+    # Build the baseline window. When falling back to prior season, synthesize a
+    # single pseudo-game row from the per-game prior values so the same signal
+    # math applies.
+    baseline_rows = list(baseline)
+    if baseline_source == "prior_season" and prior_baseline:
+        baseline_rows = [{
+            "week": 0,
+            "snap_pct": prior_baseline.get("snap_pct"),
+            "target_share": prior_baseline.get("target_share"),
+            "targets": prior_baseline.get("targets_pg"),
+            "carries": prior_baseline.get("carries_pg"),
+            "pass_att": prior_baseline.get("pass_att_pg"),
+        }]
+
+    signals, role_score = _position_signals(position, recent, baseline_rows)
+
+    # ── fantasy context: opportunity BEFORE production ────────────────────────
+    # ppr is never part of the score. We only use it to (a) report and (b) flag a
+    # points spike unmatched by role growth as a risk, so a TD/long-play game
+    # doesn't masquerade as a breakout.
+    recent_ppg, _ = _mean_present(recent, "ppr_pts")
+    baseline_ppg, _ = _mean_present(baseline_rows, "ppr_pts")
+    spike_without_role = False
+    if (recent_ppg is not None and baseline_ppg not in (None, 0)
+            and recent_ppg >= baseline_ppg * FANTASY_SPIKE_RATIO
+            and role_score < WATCHLIST_MIN_SCORE):
+        spike_without_role = True
+
+    weeks_stale = 0
+    if cutoff_week is not None and evaluated_weeks:
+        weeks_stale = max(0, int(cutoff_week) - evaluated_weeks[-1])
+
+    confidence, conf_detail = _compute_confidence(
+        signals, recent, baseline_rows, position, weeks_stale, provisional
+    )
+
+    breakout_score = role_score
+
+    # ── classification: separate from score & confidence ─────────────────────
+    injury_vacated = bool(injury_context and injury_context.get("vacated"))
+    classification = _classify(
+        breakout_score=breakout_score,
+        baseline_games=len(baseline),
+        persistence=conf_detail["persistence"],
+        provisional=provisional,
+        injury_vacated=injury_vacated,
+    )
+
+    reasons = _build_reasons(signals, len(recent), len(baseline_rows))
+    risks = _build_risks(
+        provisional=provisional,
+        baseline_source=baseline_source,
+        spike_without_role=spike_without_role,
+        injury_vacated=injury_vacated,
+        weeks_stale=weeks_stale,
+        confidence=confidence,
+        recent_games=len(recent),
+    )
+    if injury_vacated and classification == "temporary_opportunity":
+        src = (injury_context or {}).get("source") or "a teammate's absence"
+        reasons.insert(0, f"Opening created by {src}.")
+
+    return {
+        "player_id": str(player.get("player_id") or ""),
+        "player_name": player.get("player_name") or player.get("name"),
+        "team": player.get("team"),
+        "position": position,
+        "scoring_version": SCORING_VERSION,
+        "classification": classification,
+        "breakout_score": round(breakout_score, 1),
+        "confidence": confidence,
+        "provisional": provisional,
+        "baseline_source": baseline_source,
+        "evaluated_weeks": evaluated_weeks,
+        "recent_weeks": [int(r["week"]) for r in recent],
+        "baseline_weeks": [int(r["week"]) for r in baseline],
+        "signals": signals,
+        "sample": {
+            "recent_games": len(recent),
+            "baseline_games": len(baseline),
+            "total_games": len(active),
+        },
+        "coverage": {
+            "available": [k for k, v in signals.items() if v.get("available")],
+            "expected": list(signals.keys()),
+            "fraction": conf_detail["coverage"],
+        },
+        "confidence_detail": conf_detail,
+        "fantasy": {
+            "recent_ppg": _round(recent_ppg),
+            "baseline_ppg": _round(baseline_ppg),
+            "spike_without_role": spike_without_role,
+        },
+        "reasons": reasons,
+        "risks": risks,
+    }
+
+
+def _classify(
+    *,
+    breakout_score: float,
+    baseline_games: int,
+    persistence: float,
+    provisional: bool,
+    injury_vacated: bool,
+) -> str:
+    """Emerging vs temporary vs watchlist. Score gates candidacy; the *kind* of
+    situation is decided by persistence, sample, and whether a short-term absence
+    is the identifiable cause."""
+    if breakout_score < WATCHLIST_MIN_SCORE:
+        return "watchlist"
+    # A verified teammate absence driving the work is a temporary opportunity even
+    # when the number is large - it may not persist once the starter returns.
+    if injury_vacated and (provisional or baseline_games < EMERGING_MIN_BASELINE_GAMES):
+        return "temporary_opportunity"
+    if (not provisional
+            and breakout_score >= EMERGING_MIN_SCORE
+            and baseline_games >= EMERGING_MIN_BASELINE_GAMES
+            and persistence >= 0.6):
+        return "emerging_breakout"
+    return "watchlist"
+
+
+def _build_risks(
+    *,
+    provisional: bool,
+    baseline_source: str,
+    spike_without_role: bool,
+    injury_vacated: bool,
+    weeks_stale: int,
+    confidence: float,
+    recent_games: int,
+) -> List[str]:
+    risks: List[str] = []
+    if provisional:
+        risks.append(
+            f"Provisional: only {recent_games} qualifying game"
+            f"{'s' if recent_games != 1 else ''} of current-season evidence."
+        )
+    if baseline_source == "prior_season":
+        risks.append("Baseline is last season's per-game usage, not this season's.")
+    if baseline_source == "none":
+        risks.append("No baseline available; change is measured against zero.")
+    if injury_vacated:
+        risks.append("Role may contract when the injured player ahead returns.")
+    if spike_without_role:
+        risks.append(
+            "Recent fantasy points spiked without matching usage growth "
+            "(efficiency/TD-driven, not a role change)."
+        )
+    if weeks_stale >= 1:
+        risks.append(
+            f"Latest usable game is {weeks_stale} week"
+            f"{'s' if weeks_stale != 1 else ''} behind the cutoff."
+        )
+    if confidence < 40 and not provisional:
+        risks.append("Low confidence: limited sample, coverage, or agreement among signals.")
+    return risks
