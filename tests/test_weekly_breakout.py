@@ -102,6 +102,43 @@ def test_td_spike_without_role_growth_is_not_a_breakout():
     assert res["classification"] == "watchlist"
 
 
+def test_routes_and_high_value_usage_are_explainable_when_available():
+    rows = [wk(1, 25, 8, 2), wk(2, 28, 9, 2), wk(3, 70, 24, 8)]
+    rows[0].update(routes=10, red_zone_opportunities=0)
+    rows[1].update(routes=11, red_zone_opportunities=0)
+    rows[2].update(routes=31, red_zone_opportunities=3)
+    res = wb.score_player(WR, rows, cutoff_week=3)
+    assert res["signals"]["routes_pg"]["delta"] > 15
+    assert res["components"]["high_value_touches"] > 0
+    assert res["components"]["unexpected_usage"] > 0
+
+
+def test_garbage_time_and_returning_starter_lower_sustainability():
+    rows = [wk(1, 20, tgt=2), wk(2, 22, tgt=2), wk(3, 68, tgt=8)]
+    normal = wb.score_player(WR, rows, cutoff_week=3,
+                             injury_context={"vacated": True, "multi_week": True})
+    rows[-1]["garbage_time"] = True
+    risky = wb.score_player(WR, rows, cutoff_week=3,
+                            injury_context={"vacated": True, "starter_returning": True})
+    assert risky["components"]["sustainability"] < normal["components"]["sustainability"]
+
+
+def test_v2_backtest_emits_calibration_records_without_future_leakage():
+    from data_building.breakout_engine.backtest_weekly_breakout import (
+        build_evaluation_records, calibration_report,
+    )
+    rows = [wk(1, 25, 8, 2, ppr=3), wk(2, 30, 9, 3, ppr=4),
+            wk(3, 65, 22, 8, ppr=7), wk(4, 68, 24, 9, ppr=12)]
+    records = build_evaluation_records({"1": rows}, {"1": WR}, season=2025,
+                                       eval_weeks=[2], horizons=(1, 3))
+    assert len(records) == 1
+    assert records[0]["week"] == 2
+    assert records[0]["inputs"]["targets"] == 3
+    report = calibration_report(records, horizon=1)
+    assert report["sample_size"] == 1
+    assert sum(v["sample_size"] for v in report["buckets"].values()) == 1
+
+
 def test_role_growth_and_workload_both_count():
     # A 45%->65% snap move (bigger role, bigger jump) must outrank 5%->15%.
     small = wb._share_growth(5.0, 15.0)["points"]

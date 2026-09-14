@@ -236,6 +236,26 @@ def test_incomplete_target_row_never_becomes_a_reception():
     assert line["targets"] == 1
 
 
+def test_called_back_revision_emits_identity_preserving_tombstone():
+    box = {"allPlayByPlay": [{
+        "playId": "td-7", "playStatus": "overturned",
+        "play": "Touchdown overturned after review",
+        "playerStats": {"WR": {"longName": "Stefon Diggs", "teamAbv": "NE"}},
+        "revisionId": "2",
+    }]}
+    plays = extract_pbp_plays(
+        box, "g1", name_to_pid={"stefon diggs": "WR1"},
+        player_meta_by_pid={"WR1": {"name": "Stefon Diggs", "team": "NE"}},
+        emit_revisions=True,
+    )
+    assert len(plays) == 1
+    assert plays[0]["play_id"] == "td-7"
+    assert plays[0]["pid"] == "WR1"
+    assert plays[0]["play_state"] == "OVERTURNED"
+    assert plays[0]["stat_line"] == {}
+    assert plays[0]["revision_id"] == "2"
+
+
 def test_incomplete_target_fallback():
     """Test incomplete pass target extraction when playerStats missing."""
     box = {

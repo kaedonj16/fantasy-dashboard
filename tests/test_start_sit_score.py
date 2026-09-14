@@ -1,5 +1,5 @@
 """Unit tests for the unified start/sit formula (no Flask)."""
-from utils.start_sit_score import compute_start_score
+from utils.start_sit_score import compute_start_score, likely_range
 
 
 def test_bye_zeros_score():
@@ -134,3 +134,31 @@ def test_weather_and_vegas_stack():
     assert factors["weather"] == 0.95
     assert abs(score - 10.0 * 0.92 * 0.95) < 1e-9
     assert demotion == "low_total"  # injury-style demotions keep priority
+
+
+def test_expected_plays_is_bounded_and_directional():
+    slow, sf, dem = compute_start_score(10, expected_team_plays=56, league_average_plays=64)
+    fast, ff, _ = compute_start_score(10, expected_team_plays=72, league_average_plays=64)
+    assert sf["expected_plays"] == 0.95
+    assert ff["expected_plays"] == 1.05
+    assert slow < fast
+    assert dem == "low_play_volume"
+
+
+def test_role_confidence_changes_mean_conservatively_and_range_materially():
+    stable, stable_f, _ = compute_start_score(10, role_confidence=1.0)
+    volatile, volatile_f, dem = compute_start_score(10, role_confidence=0.0)
+    assert stable_f["role"] == 1.0
+    assert volatile_f["role"] == 0.97
+    assert stable > volatile
+    assert dem == "volatile_role"
+    stable_range = likely_range(stable, 1.0)
+    volatile_range = likely_range(volatile, 0.0)
+    assert stable_range[1] - stable_range[0] < volatile_range[1] - volatile_range[0]
+
+
+def test_defensive_injury_is_small_quality_weighted_residual():
+    base, _, _ = compute_start_score(10)
+    impacted, factors, _ = compute_start_score(10, defensive_injury_impact=1.0)
+    assert factors["def_injuries"] == 1.03
+    assert impacted == base * 1.03

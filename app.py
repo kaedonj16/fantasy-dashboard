@@ -11231,6 +11231,23 @@ def _startsit_compare_extras(pid, pos, team, season, week, scoring_settings, *,
     except Exception:
         logger.debug("[startsit extras] oline failed", exc_info=True)
 
+    # Existing cron-built team play volume and weekly usage are the only pace /
+    # role inputs currently trustworthy enough to affect the shared scorer.
+    try:
+        from utils.start_sit_context import expected_plays_context, role_confidence_from_trend
+        _pv_blob = _load_team_play_volume(int(season)) or {}
+        out["pace"] = expected_plays_context(
+            _pv_blob.get("teams") or {}, team, opponent,
+            _pv_blob.get("nfl_avg_plays_faced_pg"),
+        )
+        from data_building.weekly_metrics import get_usage_trends
+        out["role_confidence"] = role_confidence_from_trend(
+            (get_usage_trends(int(season)) or {}).get(str(pid)) or {}
+        )
+    except Exception:
+        out["pace"] = {}
+        out["role_confidence"] = None
+
     return out
 
 
@@ -11549,11 +11566,15 @@ def api_start_sit_options():
         _pv_ss = (_play_volume_context(team_play_volume, opponent, _tpv_nfl_avg)
                   if (opponent and not on_bye) else None)
 
+        from utils.start_sit_context import expected_plays_context, role_confidence_from_trend
+        _pace_ss = expected_plays_context(team_play_volume, team, opponent, _tpv_nfl_avg)
+
         # ── Start/sit score: one engine (utils.start_sit_score). Matchup is not
         # re-multiplied -- weekly proj already reflects the opponent. Weather and
         # Vegas are applied here because projection feeds usually omit them.
-        from utils.start_sit_score import compute_start_score
+        from utils.start_sit_score import compute_start_score, likely_range
         _ut_ss = _ss_usage_trends.get(pid) or {}
+        _role_conf_ss = role_confidence_from_trend(_ut_ss)
         usage_delta = _ut_ss.get("delta")
         _cons = _resolve_consistency(pid, pos)
         _bust = None
@@ -11575,6 +11596,9 @@ def api_start_sit_options():
             weather_kind=_wx_kind,
             position=pos,
             oline_index=(_ol_ss or {}).get("primary_value"),
+            expected_team_plays=_pace_ss.get("expected_team_plays"),
+            league_average_plays=_pace_ss.get("league_average_plays"),
+            role_confidence=_role_conf_ss,
         )
         _form = _factors["form"]
         _mu = _factors["matchup"]
@@ -11630,6 +11654,14 @@ def api_start_sit_options():
             "oline": _ol_ss,
             # Display-only pace context (opp plays faced); not a scoring input.
             "play_volume": _pv_ss,
+            "environment_debug": {
+                "expected_team_plays": _pace_ss.get("expected_team_plays"),
+                "league_avg_plays": _pace_ss.get("league_average_plays"),
+                "pace_source": _pace_ss.get("source"),
+                "role_confidence": _role_conf_ss,
+                "vegas_available": _imp_ss is not None,
+                "weather_available": _wx_kind is not None,
+            },
             "demotion": demotion,
             # Unified start/sit score (the single ranking used everywhere) plus the
             # per-factor multipliers behind it, so the Compare card can name which
@@ -11644,7 +11676,11 @@ def api_start_sit_options():
                 "usage": round(_ug, 3), "avail": round(_avail, 3),
                 "vegas": round(_vg, 3), "floor": round(_fl, 3),
                 "weather": round(_wx, 3), "oline": round(_ol, 3),
+                "expected_plays": _factors["expected_plays"],
+                "role": _factors["role"],
+                "def_injuries": _factors["def_injuries"],
             },
+            "likely_range": likely_range(score, _role_conf_ss),
             "_score": score,
         })
 
@@ -12488,6 +12524,13 @@ def _redzone_collect(platform, league_id, season, week):
                 if pos != "DEF":
                     player_meta_by_pid[pid] = {
                         "name": full_name, "team": team, "position": pos,
+                        # Preserve cross-provider IDs for the authoritative PBP
+                        # resolver; absent fields remain absent, never guessed.
+                        **{k: p.get(k) for k in (
+                            "player_id", "sleeper_id", "tank01_id", "espn_id",
+                            "yahoo_id", "mfl_id", "fleaflicker_id", "gsis_id",
+                            "sportradar_id",
+                        ) if p.get(k) not in (None, "")},
                     }
         
         # Build name_to_pid from the FULL player index (already in player_meta_by_pid)
@@ -12575,6 +12618,7 @@ def _redzone_collect(platform, league_id, season, week):
                         team_to_def_pid=team_to_def_pid,
                         game_context=game_context,
                         player_meta_by_pid=player_meta_by_pid,
+                        emit_revisions=True,
                     )
                 # CRITICAL: Keep ALL resolved plays, including unrostered players
                 # Do NOT filter by roster ownership - that defeats the identity fix
@@ -21008,6 +21052,9 @@ def api_player_details(player_id: str):
                     weather_kind=_ss_wx_kind,
                     position=_ss_pos,
                     oline_index=(_ss_ol or {}).get("primary_value"),
+                    expected_team_plays=(_ssp.get("pace") or {}).get("expected_team_plays"),
+                    league_average_plays=(_ssp.get("pace") or {}).get("league_average_plays"),
+                    role_confidence=_ssp.get("role_confidence"),
                 )
                 _start_score = round(float(_ss_val), 2)
                 _start_factors = _ss_fac

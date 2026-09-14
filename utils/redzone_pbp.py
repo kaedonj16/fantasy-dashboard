@@ -29,6 +29,7 @@ from __future__ import annotations
 from typing import Any, Iterable
 
 from utils.redzone_stats import rz_def_stat_line, rz_stat_line_from_ps
+from utils.player_identity import PlayerIdentityResolver
 
 
 def _s(v: Any) -> str:
@@ -367,6 +368,7 @@ def extract_pbp_plays(
     team_to_def_pid: dict[str, str] | None = None,
     game_context: dict | None = None,
     player_meta_by_pid: dict[str, dict] | None = None,
+    emit_revisions: bool = False,
 ) -> list[dict]:
     """Flatten ``allPlayByPlay`` (or aliases) into per-player Redzone plays.
 
@@ -383,6 +385,7 @@ def extract_pbp_plays(
     team_to_def_pid = team_to_def_pid or {}
     game_context = game_context or {}
     player_meta_by_pid = player_meta_by_pid or {}
+    identity_resolver = PlayerIdentityResolver(player_meta_by_pid)
     
     import logging
     logger = logging.getLogger(__name__)
@@ -401,6 +404,7 @@ def extract_pbp_plays(
                 team_players[team].append((pid, name))
     
     out: list[dict] = []
+    identity_counts: dict[str, int] = {}
 
     for seq, play in enumerate(raw):
         if not isinstance(play, dict):
@@ -436,14 +440,43 @@ def extract_pbp_plays(
             "play_state": play_state,
         }
 
-        # Called-back and overturned snaps do not belong in the fantasy play
-        # feed. Dropping them here also prevents named player rows with an
-        # intentionally emptied stat line from being emitted below.
-        if is_no_play:
-            continue
-
         emitted = 0
         pstats = play.get("playerStats") or play.get("player_stats") or {}
+
+        # A provider commonly republishes the same play id after review.  Do not
+        # drop that revision: clients need an identity-preserving zero/tombstone
+        # to reverse the contribution they previously applied.  Retain every
+        # structured actor when present; the conservative narrative-only marker
+        # below is still useful for group-level diagnostics when actors vanished
+        # from the corrected payload.
+        if is_no_play and emit_revisions:
+            for ps in _iter_player_stats(pstats):
+                long_name = _s(_first(ps, "longName", "long_name", "playerName", "name"))
+                team = _s(_first(ps, "teamAbv", "team", "teamAbbreviation"))
+                raw_id = _first(ps, "playerID", "playerId", "player_id")
+                identity = identity_resolver.resolve(
+                    provider="tank01", tank01_id=raw_id, name=long_name, team=team,
+                )
+                pid = identity["canonical_player_id"] or (
+                    _resolve_player_name(long_name, team, name_to_pid, team_players) if long_name else ""
+                )
+                if pid and not identity["canonical_player_id"]:
+                    identity = {**identity, "canonical_player_id": pid,
+                                "confidence": "strong", "resolution_method": "caller_crosswalk"}
+                out.append({
+                    **base, "pid": pid, "name": long_name, "team": team,
+                    "stat_line": {}, "is_td": False, "identity": identity, "revision_id": _s(
+                        _first(play, "revisionId", "revision_id", "version", "lastModified")
+                    ),
+                })
+                emitted += 1
+            if emitted == 0:
+                out.append({**base, "pid": "", "name": "", "team": "",
+                            "stat_line": {}, "is_td": False})
+            logger.debug("[pbp-revision] play=%s state=%s actors=%d", play_id, play_state, emitted)
+            continue
+        if is_no_play:
+            continue
         
         # Track if we have ANY receiver contribution (resolved or not)
         has_any_receiver_contrib = False
@@ -503,8 +536,26 @@ def extract_pbp_plays(
             if team and not offense_team:
                 offense_team = team
             
-            # Resolve player name with fallback strategies
-            pid = _resolve_player_name(long_name, team, name_to_pid, team_players) if long_name else ""
+            role = ("passer" if line.get("pass_yds") or line.get("pass_td") or line.get("int")
+                    else "receiver" if line.get("rec") or line.get("rec_yds")
+                    else "target" if line.get("targets")
+                    else "rusher" if line.get("carries") or line.get("rush_yds")
+                    else "kicker" if line.get("fgm") or line.get("xpm") else "")
+            raw_id = _first(ps, "playerID", "playerId", "player_id")
+            identity = identity_resolver.resolve(
+                provider="tank01", tank01_id=raw_id, name=long_name, team=team,
+                role=role,
+            )
+            pid = identity["canonical_player_id"]
+            # Backward-compatible name map is an exact crosswalk supplied by the
+            # caller; never use its ambiguous surname entries.
+            if not pid and identity["confidence"] == "unresolved" and long_name:
+                pid = _resolve_player_name(long_name, team, name_to_pid, team_players)
+                if pid:
+                    identity = {**identity, "canonical_player_id": pid,
+                                "confidence": "strong", "resolution_method": "caller_crosswalk"}
+            method = identity.get("resolution_method") or "unresolved"
+            identity_counts[method] = identity_counts.get(method, 0) + 1
             
             if logger.isEnabledFor(logging.DEBUG) and "pass" in text.lower() and (
                 line.get("rec") or line.get("pass_yds")
@@ -535,6 +586,8 @@ def extract_pbp_plays(
                 "team": team,
                 "stat_line": line,
                 "is_td": is_td,
+                "actor_role": role,
+                "identity": identity,
             })
             emitted += 1
 
@@ -591,8 +644,11 @@ def extract_pbp_plays(
         if not has_any_receiver_contrib and not is_no_play and "pass" in text.lower() and "incomplete" in text.lower():
             target_name = _extract_target_from_text(text)
             if target_name:
-                # Try to resolve target
-                target_pid = _resolve_player_name(target_name, offense_team, name_to_pid, team_players)
+                target_identity = identity_resolver.resolve(
+                    provider="tank01", name=target_name, team=offense_team, role="target")
+                target_pid = target_identity["canonical_player_id"]
+                if not target_pid and target_identity["confidence"] == "unresolved":
+                    target_pid = _resolve_player_name(target_name, offense_team, name_to_pid, team_players)
                 if target_pid:
                     out.append({
                         **base,
@@ -601,6 +657,8 @@ def extract_pbp_plays(
                         "team": offense_team,
                         "stat_line": {"targets": 1, "rec": 0},
                         "is_td": False,
+                        "actor_role": "target",
+                        "identity": {**target_identity, "canonical_player_id": target_pid},
                     })
                     emitted += 1
                     has_resolved_receiver_contrib = True
@@ -610,7 +668,11 @@ def extract_pbp_plays(
             # Look for patterns like "to <Name> for X yards"
             receiver_name = _extract_target_from_text(text)
             if receiver_name:
-                receiver_pid = _resolve_player_name(receiver_name, offense_team, name_to_pid, team_players)
+                receiver_identity = identity_resolver.resolve(
+                    provider="tank01", name=receiver_name, team=offense_team, role="receiver")
+                receiver_pid = receiver_identity["canonical_player_id"]
+                if not receiver_pid and receiver_identity["confidence"] == "unresolved":
+                    receiver_pid = _resolve_player_name(receiver_name, offense_team, name_to_pid, team_players)
                 if receiver_pid:
                     # Try to extract yardage
                     import re
@@ -624,6 +686,8 @@ def extract_pbp_plays(
                         "team": offense_team,
                         "stat_line": {"rec": 1, "rec_yds": rec_yds, "targets": 1},
                         "is_td": False,
+                        "actor_role": "receiver",
+                        "identity": {**receiver_identity, "canonical_player_id": receiver_pid},
                     })
                     emitted += 1
         
@@ -639,6 +703,11 @@ def extract_pbp_plays(
                 "is_td": "touchdown" in text.lower() or " TD" in text,
             })
 
+    if logger.isEnabledFor(logging.DEBUG) and identity_counts:
+        unresolved = sum(1 for p in out if (p.get("identity") or {}).get("confidence") == "unresolved")
+        ambiguous = sum(1 for p in out if (p.get("identity") or {}).get("confidence") == "ambiguous")
+        logger.debug("[pbp-identity-summary] game=%s actors=%d unresolved=%d ambiguous=%d methods=%s",
+                     game_id, len(out), unresolved, ambiguous, identity_counts)
     return out
 
 
@@ -706,6 +775,41 @@ def game_situation_from_plays(plays: list[dict] | None) -> dict:
         "quarter": _s(chosen.get("quarter")),
         "clock": _s(chosen.get("clock")),
     }
+
+
+def pbp_boxscore_mismatches(plays: list[dict], boxscore_by_pid: dict,
+                            *, tolerance: float = 0.01) -> list[dict]:
+    """Return material PBP/boxscore discrepancies without mutating either source.
+
+    The boxscore is a secondary correctness check, never an overwrite.  Only
+    confidently resolved play rows participate; unresolved actors remain visible
+    in PBP but cannot create misleading player totals.
+    """
+    totals: dict[str, dict[str, float]] = {}
+    for play in plays or []:
+        pid = str(play.get("pid") or "")
+        identity = play.get("identity") or {}
+        if not pid or identity.get("confidence") in {"ambiguous", "unresolved"}:
+            continue
+        if play.get("play_state", PLAY_STATE_VALID) != PLAY_STATE_VALID:
+            continue
+        dest = totals.setdefault(pid, {})
+        for key, value in (play.get("stat_line") or {}).items():
+            try:
+                dest[key] = dest.get(key, 0.0) + float(value or 0)
+            except (TypeError, ValueError):
+                continue
+    mismatches = []
+    for pid, pbp in totals.items():
+        raw_box = boxscore_by_pid.get(pid)
+        if not isinstance(raw_box, dict):
+            continue
+        box = rz_stat_line_from_ps(raw_box)
+        for stat in set(pbp) & set(box):
+            if abs(pbp[stat] - float(box[stat] or 0)) > tolerance:
+                mismatches.append({"player_id": pid, "stat": stat,
+                                   "pbp": pbp[stat], "boxscore": float(box[stat] or 0)})
+    return mismatches
 
 
 def normalize_nfl_game_status(game_code: Any, game_status: Any = "") -> str:

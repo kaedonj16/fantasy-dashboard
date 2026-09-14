@@ -787,3 +787,33 @@ def test_faab_bid_bands_bad_input_baseline():
     assert out["faab_target"] == 1
     assert out["faab_high"] == 2
     assert "Baseline" in out["faab_rationale"]
+
+
+def test_explicitly_unavailable_candidate_never_scores():
+    candidate = _cand(value=1000)
+    candidate["available"] = False
+    assert waiver_pickup_score(candidate, {}) == 0.0
+
+
+def test_waiver_surprise_rewards_usage_not_td_luck():
+    base = _cand(value=100, position="RB", age=24)
+    usage = dict(base, waiver_surprise={
+        "unexpected_usage": 1.0, "role_change": 1.0, "sustainability": 0.9,
+    })
+    td_only = dict(base, waiver_surprise={
+        "unexpected_usage": 0.1, "role_change": 0.0, "sustainability": 0.2,
+        "unsustainable_production": 1.0,
+    })
+    assert waiver_pickup_score(usage, {}) > waiver_pickup_score(td_only, {})
+
+
+def test_returning_starter_temporary_penalty_lowers_surprise_score():
+    base = _cand(value=100, position="RB", age=24)
+    durable = dict(base, waiver_surprise={
+        "unexpected_usage": 0.8, "role_change": 0.8, "sustainability": 0.8,
+    })
+    temporary = dict(base, waiver_surprise={
+        "unexpected_usage": 0.8, "role_change": 0.8, "sustainability": 0.8,
+        "temporary_role": 1.0,
+    })
+    assert waiver_pickup_score(durable, {}) > waiver_pickup_score(temporary, {})

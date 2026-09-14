@@ -37,7 +37,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 # Bump when the scoring math changes so persisted rows are self-identifying and a
 # stale row can be told apart from a current-version one.
-SCORING_VERSION = "weekly-v1"
+SCORING_VERSION = "weekly-v2"
 
 _POSITIONS = ("QB", "RB", "WR", "TE")
 
@@ -285,6 +285,10 @@ def _position_signals(
     car_b = _count_pg(baseline, "carries")
     pass_r = _count_pg(recent, "pass_att")
     pass_b = _count_pg(baseline, "pass_att")
+    route_r = _count_pg(recent, "routes")
+    route_b = _count_pg(baseline, "routes")
+    rz_r = _count_pg(recent, "red_zone_opportunities")
+    rz_b = _count_pg(baseline, "red_zone_opportunities")
 
     signals: Dict[str, Dict[str, Any]] = {}
     snap = _share_growth(snap_b, snap_r)
@@ -295,11 +299,15 @@ def _position_signals(
         tcount = _count_growth(tgt_b, tgt_r, _FULL_TARGETS_PG.get(position, 8.0))
         signals["target_share"] = tshare
         signals["targets_pg"] = tcount
+        routes = _count_growth(route_b, route_r, 30.0)
+        signals["routes_pg"] = routes
+        high_value = _count_growth(rz_b, rz_r, 3.0)
+        signals["high_value_opportunities_pg"] = high_value
         # target_share is the team-normalized role read; snaps and raw targets are
         # correlated support. Route through the receiving role, add snaps as the
         # correlated partner, and let raw target volume top it up modestly.
         role = _combine_correlated(tshare["points"], snap["points"])
-        role += 0.25 * tcount["points"]
+        role += 0.20 * tcount["points"] + 0.20 * routes["points"]
         role_score = _clamp(role, 0.0, 100.0)
 
     elif position == "RB":
@@ -311,11 +319,13 @@ def _position_signals(
         tcount = _count_growth(tgt_b, tgt_r, 4.0)
         signals["carry_opportunity_pg"] = opp
         signals["targets_pg"] = tcount
+        high_value = _count_growth(rz_b, rz_r, 3.0)
+        signals["high_value_opportunities_pg"] = high_value
         # Snap share and opportunity move together for a back taking over a
         # backfield; combine without double counting, then add receiving as a
         # separate skill dimension (a pass-catching role is extra, real value).
         role = _combine_correlated(snap["points"], opp["points"])
-        role += 0.20 * tcount["points"]
+        role += 0.15 * tcount["points"] + 0.15 * high_value["points"]
         role_score = _clamp(role, 0.0, 100.0)
 
     elif position == "QB":
@@ -428,6 +438,8 @@ _SIGNAL_LABELS = {
     "carry_opportunity_pg": ("Carries+targets/game", ""),
     "pass_att_pg": ("Pass attempts/game", ""),
     "rush_pg": ("Rush attempts/game", ""),
+    "routes_pg": ("Routes/game", ""),
+    "high_value_opportunities_pg": ("Red-zone opportunities/game", ""),
 }
 
 
@@ -576,8 +588,31 @@ def score_player(
 
     breakout_score = role_score
 
+    # Explainable component view. These are evidence summaries, not calibrated
+    # probabilities. Missing optional route/RZ data remains unavailable rather
+    # than being represented as a zero observation.
+    available_points = [float(v.get("points") or 0) for v in signals.values() if v.get("available")]
+    opportunity_jump = max(available_points, default=0.0)
+    expected_recent = []
+    for sig in signals.values():
+        if sig.get("available") and sig.get("recent") is not None and sig.get("baseline") is not None:
+            expected_recent.append(max(0.0, float(sig["recent"]) - float(sig["baseline"])))
+    unexpected_usage = _clamp((sum(expected_recent) / max(1, len(expected_recent))) * 8.0, 0.0, 100.0)
+    hv = signals.get("high_value_opportunities_pg", {})
+    high_value_score = float(hv.get("points") or 0.0) if hv.get("available") else None
+
     # ── classification: separate from score & confidence ─────────────────────
     injury_vacated = bool(injury_context and injury_context.get("vacated"))
+    starter_returning = bool(injury_context and injury_context.get("starter_returning"))
+    garbage_time = bool(recent and all(bool(r.get("garbage_time")) for r in recent))
+    sustainability = 100.0 * conf_detail["persistence"]
+    if injury_vacated:
+        sustainability += 15.0 if (injury_context or {}).get("multi_week") else -10.0
+    if starter_returning:
+        sustainability -= 30.0
+    if garbage_time:
+        sustainability -= 35.0
+    sustainability = round(_clamp(sustainability, 0.0, 100.0), 1)
     classification = _classify(
         breakout_score=breakout_score,
         baseline_games=len(baseline),
@@ -615,6 +650,14 @@ def score_player(
         "recent_weeks": [int(r["week"]) for r in recent],
         "baseline_weeks": [int(r["week"]) for r in baseline],
         "signals": signals,
+        "components": {
+            "role_change": round(role_score, 1),
+            "opportunity_jump": round(opportunity_jump, 1),
+            "unexpected_usage": round(unexpected_usage, 1),
+            "high_value_touches": _round(high_value_score),
+            "sustainability": sustainability,
+            "production_confirmation": None if recent_ppg is None else round(_clamp(recent_ppg * 4, 0, 100), 1),
+        },
         "sample": {
             "recent_games": len(recent),
             "baseline_games": len(baseline),
