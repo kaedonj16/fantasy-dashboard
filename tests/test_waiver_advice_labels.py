@@ -33,7 +33,11 @@ def test_faab_checkbox_controls_bid_visibility():
     body = build_waivers_body("sleeper", 2026, "league", {})
     assert 'id="wvShowFaab"' in body
     assert 'onchange="wvToggleFaab(this.checked)"' in body
-    assert "window.wvFaabEnabled && wvShowFaab && (p.faab_high || p.faab_target)" in body
+    # FAAB bid chip is still gated on the FAAB-enabled league + the toggle; the
+    # rework also handles dollars and the waiver-priority mode.
+    assert "window.wvFaabEnabled && wvShowFaab" in body
+    assert "faab_dollars_target" in body
+    assert "p.faab_mode === 'waiver_priority'" in body
 
 
 def test_advice_pills_use_canonical_chip_styles():

@@ -112,6 +112,25 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 }
 .wv-drop-pos { font-weight: 700; color: var(--text); }
 
+/* Recommendation-horizon segmented control (#2): this week / next 4 wks / stash. */
+.wv-horizon { display: inline-flex; flex-wrap: wrap; gap: 4px; margin: 0 0 12px; }
+.wv-horizon-btn {
+  font-size: 11px; font-weight: 600; padding: 5px 10px; border-radius: 999px;
+  border: 1px solid var(--border); background: transparent; color: var(--text-muted);
+  cursor: pointer; white-space: nowrap;
+}
+.wv-horizon-btn.active {
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  border-color: var(--accent); color: var(--text);
+}
+/* Unexpected-performances list shares the waiver-row look. */
+.wv-biggames { margin-bottom: 8px; }
+/* Muted chip fallback for watchlist / provisional tags. */
+.chip--muted {
+  background: color-mix(in srgb, var(--text-muted) 14%, transparent);
+  color: var(--text-muted);
+}
+
 /* Trending-across-leagues strip: a horizontal, scrollable row of the most-added
    players Sleeper-wide that this league can still claim. */
 .wv-trending-title { display: flex; align-items: center; gap: 6px; }
@@ -414,12 +433,22 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
         </div>
         <div id="wvTrendingStrip" class="wv-trending-strip"></div>
       </div>
+      <!-- Unexpected performances available in your league (big-game detector) -->
+      <div id="wvBigGamesWrap" hidden>
+        <div class="wv-section-title">Unexpected performances available in your league</div>
+        <div id="wvBigGamesList" class="wv-biggames"></div>
+      </div>
       <div class="wv-section-heading">
-        <div class="wv-section-title">Waiver Wire</div>
+        <div class="wv-section-title" id="wvBestMovesTitle">Best moves for your team</div>
         <label class="wv-faab-toggle" id="wvFaabToggle" hidden>
           <input type="checkbox" id="wvShowFaab" onchange="wvToggleFaab(this.checked)">
           <span>FAAB</span>
         </label>
+      </div>
+      <div class="wv-horizon" id="wvHorizonCtl" role="tablist" aria-label="Recommendation horizon">
+        <button type="button" class="wv-horizon-btn active" data-h="this_week" onclick="wvSetHorizon('this_week')">This week</button>
+        <button type="button" class="wv-horizon-btn" data-h="four_week" onclick="wvSetHorizon('four_week')">Next 4 weeks</button>
+        <button type="button" class="wv-horizon-btn" data-h="stash" onclick="wvSetHorizon('stash')">Long-term stash</button>
       </div>
       <div id="wvWaiverList">
         {wv_skel}
@@ -451,8 +480,10 @@ const WV_SEASON = {season};
 const WV_LEAGUE_ID = '{league_id}';
 let wvCurrentPos = 'ALL';
 let wvWaiverData = [];
+let wvHorizon = 'this_week';  // #2: default in-season to personalized immediate help
 let wvShowFaab = false;  // FAAB hidden by default; the toggle opts it in
 let wvTrendingData = [];
+let wvBigGamesData = [];
 let wvStartSitData = {{}};
 let wvCompare = [null, null]; // [playerA, playerB]
 
@@ -482,11 +513,23 @@ function wvSetPos(pos) {{
   wvRenderWaivers();
   wvRenderStartSit();
   wvRenderTrending(wvTrendingData);
+  wvRenderBigGames(wvBigGamesData);
 }}
 
 function wvToggleFaab(show) {{
   wvShowFaab = !!show;
   wvRenderWaivers();
+}}
+
+// #2: switch recommendation horizon and re-fetch (the server re-weights the
+// ranking so the list meaningfully reflects the choice).
+function wvSetHorizon(h) {{
+  if (h === wvHorizon) return;
+  wvHorizon = h;
+  document.querySelectorAll('.wv-horizon-btn').forEach(b => {{
+    b.classList.toggle('active', b.getAttribute('data-h') === h);
+  }});
+  wvLoadCandidates();
 }}
 
 // ── Matchup chip helper ───────────────────────────────────────────────────────
@@ -609,13 +652,17 @@ function wvStatsRow(p) {{
 }}
 
 // ── Load ──────────────────────────────────────────────────────────────────────
-function wvLoad() {{
+function wvLoadCandidates() {{
   const _wvRid = window._viewerRid ? ('&rid=' + encodeURIComponent(window._viewerRid)) : '';
-  fetch(`/api/waiver-candidates?platform=${{WV_PLATFORM}}&league_id=${{WV_LEAGUE_ID}}&season=${{WV_SEASON}}${{_wvRid}}`)
+  const _h = '&horizon=' + encodeURIComponent(wvHorizon);
+  // Without an identified roster we can't claim personalized improvement (#1).
+  const bm = document.getElementById('wvBestMovesTitle');
+  if (bm) bm.textContent = window._viewerRid ? 'Best moves for your team' : 'Top available players';
+  fetch(`/api/waiver-candidates?platform=${{WV_PLATFORM}}&league_id=${{WV_LEAGUE_ID}}&season=${{WV_SEASON}}${{_wvRid}}${{_h}}`)
     .then(r => r.json().then(d => ({{ ok: r.ok, d }})))
     .then(({{ ok, d }}) => {{
       if (!ok || d.error) {{
-        window.brErrorState('wvWaiverList', (d && d.error) || 'Unable to load waiver data.', wvLoad);
+        window.brErrorState('wvWaiverList', (d && d.error) || 'Unable to load waiver data.', wvLoadCandidates);
         return;
       }}
       wvWaiverData = d.candidates || [];
@@ -631,7 +678,18 @@ function wvLoad() {{
       }}
       wvRenderWaivers();
     }})
-    .catch(() => {{ window.brErrorState('wvWaiverList', 'Unable to load waiver data.', wvLoad); }});
+    .catch(() => {{ window.brErrorState('wvWaiverList', 'Unable to load waiver data.', wvLoadCandidates); }});
+}}
+
+function wvLoad() {{
+  wvLoadCandidates();
+
+  // Unexpected performances available in your league (#6/#7). Best-effort strip;
+  // stays hidden when nothing has been ingested for the completed week.
+  fetch(`/api/waiver-big-games?platform=${{WV_PLATFORM}}&league_id=${{WV_LEAGUE_ID}}&season=${{WV_SEASON}}`)
+    .then(r => r.json())
+    .then(d => {{ wvBigGamesData = (d && d.discoveries) || []; wvRenderBigGames(wvBigGamesData); }})
+    .catch(() => {{}});
 
   fetch(`/api/trending-adds?platform=${{WV_PLATFORM}}&league_id=${{WV_LEAGUE_ID}}&season=${{WV_SEASON}}`)
     .then(r => r.json())
@@ -663,6 +721,54 @@ function wvLoad() {{
     }});
 }}
 
+// ── Unexpected performances available (big-game detector) ──────────────────────
+const WV_BG_CATEGORY = {{
+  priority: {{ label: 'Priority pickup', cls: 'chip--accent' }},
+  speculative: {{ label: 'Speculative add', cls: 'chip--neutral' }},
+  watchlist: {{ label: 'Watchlist', cls: 'chip--muted' }},
+}};
+const WV_BG_CAUTION = {{
+  td_dependent: 'leaned on TDs',
+  one_big_play: 'one long play',
+  hot_efficiency: 'unsustainable efficiency',
+  role_unconfirmed: 'usage not confirmed',
+  uncertain_baseline: 'thin history',
+}};
+
+function wvRenderBigGames(items) {{
+  const wrap = document.getElementById('wvBigGamesWrap');
+  const list = document.getElementById('wvBigGamesList');
+  if (!wrap || !list) return;
+  let rows = items || [];
+  if (wvCurrentPos !== 'ALL') rows = rows.filter(d => d.position === wvCurrentPos);
+  if (!rows.length) {{ wrap.hidden = true; list.innerHTML = ''; return; }}
+  wrap.hidden = false;
+  list.innerHTML = rows.slice(0, 8).map(d => {{
+    const cat = WV_BG_CATEGORY[d.category] || {{ label: d.category, cls: 'chip--muted' }};
+    const live = d.status === 'in_progress'
+      ? '<span class="chip chip--sm chip--muted" title="Provisional — scored live during the game">Game in progress</span>' : '';
+    // Evidence-based copy generated from the actual factors (no generic filler).
+    const facts = (d.factors || []).slice(0, 2).join(' · ');
+    const cautions = (d.cautions || []).map(c => WV_BG_CAUTION[c]).filter(Boolean);
+    const cautionLine = cautions.length
+      ? `<div class="wv-drop-hint" title="Why the box score may not stick"><span class="wv-drop-lbl">Caution</span> ${{cautions.join(' · ')}}</div>` : '';
+    const sub = [d.position, d.team].filter(Boolean).join(' · ');
+    return `
+    <div class="wv-player-row" onclick="openPlayerModal('${{d.player_id}}', '${{(d.name||'').replace(/'/g,"\\'")}}')">
+      <div>
+        <div class="wv-player-name">${{d.name || ('Player ' + d.player_id)}}</div>
+        <div class="wv-player-sub">${{sub}}</div>
+        ${{facts ? `<div class="wv-drop-hint"><span class="wv-drop-lbl">What changed</span> ${{facts}}</div>` : ''}}
+        ${{cautionLine}}
+      </div>
+      <div class="wv-right">
+        <span class="wv-advice-metric"><span class="wv-advice-label">Category</span><span class="chip chip--sm ${{cat.cls}}">${{cat.label}}</span></span>
+        ${{live}}
+      </div>
+    </div>`;
+  }}).join('');
+}}
+
 // ── Waiver list ───────────────────────────────────────────────────────────────
 function wvRenderWaivers() {{
   const list = document.getElementById('wvWaiverList');
@@ -676,17 +782,50 @@ function wvRenderWaivers() {{
       usageChip = `<span class="wv-usage-chip" title="Last-3-week avg vs season avg">&#9650; +${{p.usage_delta}} ${{statLbl}}</span>`;
     }}
     let faabChip = '';
-    if (window.wvFaabEnabled && wvShowFaab && (p.faab_high || p.faab_target)) {{
-      const low = p.faab_low != null ? p.faab_low : '';
-      const mid = p.faab_target != null ? p.faab_target : '';
-      const hi = p.faab_high != null ? p.faab_high : '';
-      const bid = (low !== '' && mid !== '' && hi !== '')
-        ? (low + ' · ' + mid + ' · ' + hi)
-        : (low !== '' && hi !== '' ? (low + '&ndash;' + hi) : ('&le;' + hi));
-      const tip = (p.faab_rationale
-        ? ('Suggested FAAB % of budget: low · target · stretch. ' + p.faab_rationale)
-        : 'Suggested FAAB % of budget: low · target · stretch');
-      faabChip = `<span class="wv-advice-metric"><span class="wv-advice-label">FAAB bid</span><span class="chip chip--sm chip--accent" title="${{tip}}">${{bid}}%</span></span>`;
+    if (p.faab_mode === 'waiver_priority' && p.faab_claim_guidance) {{
+      // Non-FAAB (waiver-priority) leagues get qualitative claim guidance (#4).
+      faabChip = `<span class="wv-advice-metric"><span class="wv-advice-label">Waiver claim</span><span class="chip chip--sm chip--neutral" title="${{p.faab_rationale || ''}}">${{p.faab_claim_guidance}}</span></span>`;
+    }} else if (window.wvFaabEnabled && wvShowFaab && (p.faab_high != null || p.faab_target != null || p.faab_dollars_target != null)) {{
+      // Prefer dollars when a real budget is known; otherwise clearly-labeled %.
+      const hasDollars = p.faab_dollars_target != null;
+      let bid, unit, denomTip;
+      if (hasDollars) {{
+        const dl = p.faab_dollars_low, dm = p.faab_dollars_target, dh = p.faab_dollars_high;
+        bid = '$' + dl + ' · $' + dm + ' · $' + dh;
+        unit = '';
+        denomTip = 'Suggested FAAB bid (low · target · stretch), capped at your remaining budget. ';
+      }} else {{
+        const low = p.faab_low != null ? p.faab_low : '';
+        const mid = p.faab_target != null ? p.faab_target : '';
+        const hi = p.faab_high != null ? p.faab_high : '';
+        bid = [low, mid, hi].filter(v => v !== '').join(' · ');
+        unit = '%';
+        const denom = p.faab_pct_denominator === 'remaining_budget' ? 'remaining budget' : 'season budget';
+        denomTip = 'Suggested FAAB as % of your ' + denom + ' (low · target · stretch). ';
+      }}
+      const tip = denomTip + (p.faab_rationale || '') + (p.faab_heuristic ? ' (heuristic estimate)' : '');
+      faabChip = `<span class="wv-advice-metric"><span class="wv-advice-label">FAAB bid</span><span class="chip chip--sm chip--accent" title="${{tip}}">${{bid}}${{unit}}</span></span>`;
+    }}
+    // Roster-aware outcome + lineup gain (#1/#3).
+    let outcomeChip = '';
+    const OUTCOME_LBL = {{add: 'Add', add_drop: 'Add & drop', stash: 'Stash', hold: 'Hold', cannot_evaluate: ''}};
+    if (p.outcome && OUTCOME_LBL[p.outcome]) {{
+      const cls = (p.outcome === 'add' || p.outcome === 'add_drop') ? 'chip--accent'
+                : (p.outcome === 'stash' ? 'chip--neutral' : 'chip--muted');
+      outcomeChip = `<span class="wv-advice-metric"><span class="wv-advice-label">Move</span><span class="chip chip--sm ${{cls}}">${{OUTCOME_LBL[p.outcome]}}</span></span>`;
+    }}
+    let gainHint = '';
+    if (p.lineup_gain != null && p.lineup_gain > 0) {{
+      const wk4 = (p.lineup_gain_4wk != null && p.lineup_gain_4wk > 0)
+        ? (', +' + p.lineup_gain_4wk + ' over 4 wks') : '';
+      gainHint = `<div class="wv-drop-hint" title="Projected fantasy-point gain to your best starting lineup">`
+        + `<span class="wv-drop-lbl">Lineup</span> +${{p.lineup_gain}} pts this week${{wk4}}</div>`;
+    }}
+    let replacesHint = '';
+    if (p.replaces && p.replaces.name) {{
+      replacesHint = `<div class="wv-drop-hint" title="Who this pickup would bump from your starting lineup">`
+        + `<span class="wv-drop-lbl">Starts over</span> `
+        + `<span class="wv-drop-pos">${{p.replaces.position}}</span> ${{p.replaces.name}}</div>`;
     }}
     const marketChip = p.market_opportunity
       ? `<span class="wv-advice-metric"><span class="wv-advice-label">Market Opportunity</span><span class="chip chip--sm chip--neutral" title="Market Projection ${{p.market_projection}}, difference ${{p.market_opportunity.delta > 0 ? '+' : ''}}${{p.market_opportunity.delta}}">${{p.market_opportunity.label}}</span></span>`
@@ -720,6 +859,8 @@ function wvRenderWaivers() {{
       <div>
         <div class="wv-player-name">${{p.name}}</div>
         <div class="wv-player-sub">${{[p.position, p.team, p.pos_rank_label, p.age ? 'Age ' + parseFloat(p.age).toFixed(1) : '', p.rostered_pct != null ? Math.round(p.rostered_pct) + '% rostered' : '', p.adds_48h ? ('+' + p.adds_48h + ' adds') : ''].filter(Boolean).join(' · ')}}${{usageChip}}</div>
+        ${{gainHint}}
+        ${{replacesHint}}
         ${{dropHint}}
         ${{urgencyHint}}
         ${{returnHint}}
@@ -730,6 +871,7 @@ function wvRenderWaivers() {{
       </div>
       <div class="wv-right">
         <span class="wv-advice-metric"><span class="wv-advice-label">Why add</span><span class="chip chip--sm ${{p.signal_class}}">${{p.signal}}</span></span>
+        ${{outcomeChip}}
         ${{marketChip}}
         ${{faabChip}}
         <span class="wv-advice-metric"><span class="wv-advice-label">Value</span><span class="wv-value">${{Math.round(p.value)}}</span></span>

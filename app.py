@@ -1079,6 +1079,11 @@ try:
     app.register_blueprint(waiver_api_bp)
     logger.info("[waiver-api-bp] registered")
 
+    from routes.waiver_prefs_bp import waiver_prefs_bp
+
+    app.register_blueprint(waiver_prefs_bp)
+    logger.info("[waiver-prefs-bp] registered")
+
     from routes.advanced_metrics_bp import advanced_metrics_bp
 
     app.register_blueprint(advanced_metrics_bp)

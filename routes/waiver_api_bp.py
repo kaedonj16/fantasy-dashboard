@@ -19,12 +19,14 @@ from utils.lineup_slots import starter_need_counts as _starter_need_counts
 from utils.validation import safe_int as _safe_int
 from utils.value_helpers import apply_te_premium, te_premium_from_settings
 from utils.waiver_score import (
+    HORIZONS as _HORIZONS,
     WAIVER_PRIME_MAX as _WAIVER_PRIME_MAX,
     WEIGHTS,
     adaptive_trend_thresholds as _adaptive_trend_thresholds,
     build_depth_index as _build_depth_index,
     depth_analysis_for_player as _depth_analysis_for_player,
-    faab_bid_bands as _faab_bid_bands,
+    faab_recommendation as _faab_recommendation,
+    horizon_weights as _horizon_weights,
     need_multiplier as _need_multiplier,
     positional_need_scores as _positional_need_scores,
     replacement_levels as _replacement_levels,
@@ -32,6 +34,7 @@ from utils.waiver_score import (
     scarcity_multiplier as _scarcity_multiplier,
     schedule_urgency as _schedule_urgency,
     strip_bye_weeks as _strip_bye_weeks,
+    usage_ratio as _usage_ratio,
     waiver_pickup_score as _waiver_pickup_score,
     waiver_signal as _waiver_signal,
     weeks_out_from_projections as _weeks_out_from_projections,
@@ -89,6 +92,11 @@ def _matchup_rank_table(*args, **kwargs):
     return _fn(*args, **kwargs)
 
 
+def _load_do_not_drop(*args, **kwargs):
+    from routes.waiver_prefs_bp import load_do_not_drop as _fn
+    return _fn(*args, **kwargs)
+
+
 @waiver_api_bp.route("/api/waiver-candidates")
 def api_waiver_candidates():
     """
@@ -99,6 +107,12 @@ def api_waiver_candidates():
     league_id = (request.args.get("league_id") or "").strip()
     season = int(request.args.get("season") or datetime.now().year)
     position_filter = (request.args.get("position") or "").strip().upper()
+    # Recommendation horizon (#2): this_week (personalized immediate help, the
+    # in-season default), four_week, or long-term stash. The ranking weights are
+    # swapped per horizon so the list meaningfully reflects the choice.
+    horizon = (request.args.get("horizon") or "").strip().lower()
+    if horizon not in _HORIZONS:
+        horizon = "four_week"
 
     if not league_id:
         return jsonify({"error": "league_id required"}), 400
@@ -145,6 +159,41 @@ def api_waiver_candidates():
     # for non-TE-premium leagues / non-TEs.
     _tep_wv = te_premium_from_settings(ctx.get("scoring_settings"))
 
+    # Weekly usage trends: recent role growth is the strongest waiver signal.
+    # Usage trends are a live in-season signal: last-3-week average vs season
+    # average. In the offseason the only data is last season's final weeks, which
+    # reads as if it were current activity ("Usage Spike / +6 touches" in July),
+    # so we hide usage entirely until real games return. Value/breakout signals
+    # ("Breakout", "Trending Up" from value-rank movement) still show.
+    # Computed up-front so a credible usage spike can admit a low-value player
+    # past the static value floor (#5).
+    usage_trends: dict = {}
+    try:
+        from data_building.weekly_metrics import get_usage_trends
+        _nfl_wv = get_nfl_state() or {}
+        if str(_nfl_wv.get("season_type") or "").lower() != "off":
+            usage_trends = get_usage_trends(int(_nfl_wv.get("season") or season))
+    except Exception:
+        usage_trends = {}
+
+    # Deterministic discovery signals that may bypass the value floor (#5): a
+    # confirmed usage spike, or a league-wide trending-add. Age / raw rank
+    # movement are deliberately NOT here — they are the noise the floor blocks.
+    _signal_ids: set[str] = set()
+    try:
+        for _pid_u, _ut in (usage_trends or {}).items():
+            if isinstance(_ut, dict) and _usage_ratio(_ut.get("stat"), _ut.get("delta")) >= 1.0:
+                _signal_ids.add(str(_pid_u))
+    except Exception:
+        logger.debug("suppressed exception", exc_info=True)
+    try:
+        for _row_t in _sleeper_trending_adds(limit=50) or []:
+            _tp = str(_row_t.get("player_id") or "")
+            if _tp:
+                _signal_ids.add(_tp)
+    except Exception:
+        logger.debug("suppressed exception", exc_info=True)
+
     candidates = []
     for row in model_value_table:
         if not isinstance(row, dict):
@@ -165,9 +214,11 @@ def api_waiver_candidates():
         except Exception:
             val = 0.0
         val = apply_te_premium(val, pos, _tep_wv)
-        # Floor out near-zero-value noise (see _build_waiver_targets_rows): a
-        # negligible-value free agent only surfaces on a trend/age bonus.
-        if val < WEIGHTS.min_value:
+        # Floor out near-zero-value noise, UNLESS a credible opportunity signal
+        # (a real usage spike or a league-wide trending-add) justifies the look
+        # (#5). Age / rank-noise-only players stay filtered.
+        _below_floor = val < WEIGHTS.min_value
+        if _below_floor and pid not in _signal_ids:
             continue
         pmeta_wv = players_index.get(pid, {})
         precise_age_wv = age_from_bday(pmeta_wv.get("bDay"))
@@ -189,37 +240,34 @@ def api_waiver_candidates():
             "age": age,
             "pos_rank_label": row.get(_rk_wv) or row.get("pos_rank_label") or "",
             "rank_change_7d": row.get("rank_change_7d"),
+            "discovery": _below_floor,   # admitted on a credible signal, not value
         })
 
     # Breakout scores that align with the Breakout Engine page (same season
     # resolution + eligibility gate), so the "Breakout" waiver signal never tags
     # a player the engine wouldn't call a breakout.
+    #
+    # Enrich a DETERMINISTIC union of discovery sources rather than the arbitrary
+    # first-100-by-value slice the old code used (#5): the top candidates by value
+    # PLUS every signal/discovery candidate (usage spikes, trending adds, low-value
+    # surprises), so an emerging player is never denied a breakout tag just because
+    # a hundred higher-value names sorted ahead of him.
     waiver_breakout: dict = {}
     try:
         _db_url = os.getenv("DATABASE_URL", "").strip()
         if _db_url and not any(t in _db_url for t in ("USER", "PASSWORD", "HOST")):
             from dashboard_services.breakout_api import aligned_breakout_scores as _abs
+            _by_value = sorted(
+                candidates, key=lambda c: c.get("value") or 0.0, reverse=True)
+            _breakout_ids = {c["player_id"] for c in _by_value[:150]}
+            _breakout_ids |= {c["player_id"] for c in candidates
+                              if c.get("discovery") or str(c["player_id"]) in _signal_ids}
             waiver_breakout = _abs(
-                [c["player_id"] for c in candidates[:100]],
+                sorted(_breakout_ids),   # deterministic, order-independent
                 int(season) if season else None,
             )
     except Exception:
         logger.debug("suppressed exception", exc_info=True)
-
-    # Weekly usage trends: recent role growth is the strongest waiver signal.
-    # Usage trends are a live in-season signal: last-3-week average vs season
-    # average. In the offseason the only data is last season's final weeks, which
-    # reads as if it were current activity ("Usage Spike / +6 touches" in July),
-    # so we hide usage entirely until real games return. Value/breakout signals
-    # ("Breakout", "Trending Up" from value-rank movement) still show.
-    usage_trends: dict = {}
-    try:
-        from data_building.weekly_metrics import get_usage_trends
-        _nfl_wv = get_nfl_state() or {}
-        if str(_nfl_wv.get("season_type") or "").lower() != "off":
-            usage_trends = get_usage_trends(int(_nfl_wv.get("season") or season))
-    except Exception:
-        usage_trends = {}
 
     # Depth-chart injury vacancies: an injured player ahead of a candidate on
     # the same team+position frees up the role directly. The reduced players_index
@@ -533,9 +581,16 @@ def api_waiver_candidates():
             logger.exception("[waiver-candidates] signal join failed for %s", c.get("player_id"))
             continue
 
+    # Horizon-aware weights (#2): this_week mutes age/long-term value and leans on
+    # forward production; stash leans on value/youth and de-emphasizes this-week
+    # injury opportunity. Dynasty stashes weight age/value more, using the same
+    # value column the league already resolved (redraft vs dynasty).
+    _is_dynasty = bool(_vf_wv and "dynasty" in str(_vf_wv).lower())
+    _horizon_w = _horizon_weights(horizon, dynasty=_is_dynasty)
+
     def _safe_pickup_score(c):
         try:
-            return _waiver_pickup_score(c, waiver_breakout, _WAIVER_PRIME_MAX)
+            return _waiver_pickup_score(c, waiver_breakout, _WAIVER_PRIME_MAX, w=_horizon_w)
         except Exception:
             logger.exception("[waiver-candidates] pickup score failed for %s", c.get("player_id"))
             return 0.0
@@ -579,15 +634,45 @@ def api_waiver_candidates():
              and _safe_int(_wv_settings.get("waiver_budget"), 0) > 0)
             or _safe_int(_wv_settings.get("acquisition_budget"), 0) > 0  # ESPN FAAB
     )
-    _wv_scores = [_safe_pickup_score(c) for c in _shown]
-    _wv_smin = min(_wv_scores) if _wv_scores else 0.0
-    _wv_srng = ((max(_wv_scores) - _wv_smin) if _wv_scores else 1.0) or 1.0
+    # Season phase (#4): early adds have a whole season to pay off (bid up a
+    # touch); late-season fliers rarely do (bid down).
+    try:
+        _phase_state = get_nfl_state() or {}
+        _wk_now = int(_phase_state.get("week") or _phase_state.get("display_week") or 1)
+    except Exception:
+        _wk_now = 1
+    if _wk_now >= 17:
+        _season_phase = "playoffs"
+    elif _wk_now >= 14:
+        _season_phase = "late"
+    elif _wk_now <= 4:
+        _season_phase = "early"
+    else:
+        _season_phase = "mid"
+    # Season budget total (Sleeper waiver_budget / ESPN acquisition_budget). None
+    # when the league doesn't publish one -> guidance stays percentage-only.
+    _faab_total = None
+    if _safe_int(_wv_settings.get("waiver_budget"), 0) > 0:
+        _faab_total = _safe_int(_wv_settings.get("waiver_budget"), 0)
+    elif _safe_int(_wv_settings.get("acquisition_budget"), 0) > 0:
+        _faab_total = _safe_int(_wv_settings.get("acquisition_budget"), 0)
+    _faab_waiver_type = "faab" if _faab_enabled else "priority"
+    # Remaining budget is filled from the viewer's roster below (if identifiable);
+    # referenced at call time so the closure picks up the assigned value.
+    _faab_remaining = None
 
     def _faab_for(_c):
-        return _faab_bid_bands(
-            _safe_pickup_score(_c), _wv_smin, _wv_srng,
+        # List-independent (#4): the bid comes from this player's own absolute
+        # composite score and context, never the displayed list's min/max, so
+        # filtering or paging never changes a player's suggested bid.
+        return _faab_recommendation(
+            _safe_pickup_score(_c),
+            budget_total=_faab_total, budget_remaining=_faab_remaining,
+            waiver_type=_faab_waiver_type, season_phase=_season_phase,
             need_mult=_c.get("need_mult") or 1.0,
             handcuff_upside=_c.get("handcuff_upside") or 0.0,
+            role_duration=(_c.get("role_duration")
+                           if _c.get("role_duration") is not None else 1.0),
         )
 
     # ── Add/drop pairing: for each target, the best player on the viewer's own
@@ -601,7 +686,25 @@ def api_waiver_candidates():
     _rid = (request.args.get("rid") or "").strip()
     _mvt_by_id = {str(r.get("id")): r for r in model_value_table
                   if isinstance(r, dict) and r.get("id")}
-    _KEEP = {"QB": 2, "RB": 5, "WR": 6, "TE": 2}  # keep-depth before a spot is "spare"
+    # Keep-depth from THIS league's actual starting requirements (#3), not a fixed
+    # 2QB/5RB/6WR/2TE heuristic: a position is "spare" only past its starters +
+    # one bench of insurance. Superflex/FLEX/TE-premium already flow through
+    # starter_need_counts, so a Superflex league wants a 2nd QB and a TE-premium
+    # league values TE depth automatically.
+    try:
+        _keep_depth = _starter_need_counts(_rp_wv, extra_depth=1)
+    except Exception:
+        _keep_depth = {"QB": 2, "RB": 5, "WR": 6, "TE": 2}
+
+    # Protected players never suggested as a cut (#3): current-class rookies (in
+    # redraft only if the caller keeps them; here we protect the drafted class),
+    # dynasty taxi/reserve, and the viewer's explicit "Do not drop" list.
+    _protected: set[str] = set()
+    try:
+        from flask import session as _sess_wv
+        _protected |= _load_do_not_drop(_sess_wv.get("account_id"), platform, league_id)
+    except Exception:
+        logger.debug("suppressed exception", exc_info=True)
 
     def _roster_val(pid: str) -> float:
         row = _mvt_by_id.get(pid) or {}
@@ -615,15 +718,25 @@ def api_waiver_candidates():
     _drop_pool: list = []
     _pos_counts: dict = {}
     _roster_full = False
+    _viewer_active: list = []
     _viewer_roster = next((r for r in rosters if str(r.get("roster_id")) == _rid), None) if _rid else None
     if _viewer_roster:
         _res = {str(p) for p in (_viewer_roster.get("reserve") or [])}
         _tax = {str(p) for p in (_viewer_roster.get("taxi") or [])}
         _active = [str(p) for p in (_viewer_roster.get("players") or [])
                    if str(p) not in _res and str(p) not in _tax]
+        _viewer_active = list(_active)
         _slot_n = len([s for s in (_rp_wv or [])
                        if str(s).upper() not in ("IR", "TAXI", "RESERVE", "IR+")])
         _roster_full = _roster_needs_drop(len(_active), _slot_n)
+        # Remaining FAAB budget for this viewer (#4): season total minus spent, so
+        # dollar guidance never exceeds what they can actually bid. Sleeper reports
+        # waiver_budget_used on the roster; ESPN acquisitionBudgetSpent.
+        if _faab_total is not None:
+            _rs = _viewer_roster.get("settings") or {}
+            _used = _safe_int(_rs.get("waiver_budget_used"),
+                              _safe_int(_rs.get("acquisitionBudgetSpent"), 0))
+            _faab_remaining = max(0, int(_faab_total) - int(_used or 0))
         for pid in _active:
             pid = str(pid)
             row = _mvt_by_id.get(pid) or {}
@@ -631,11 +744,11 @@ def api_waiver_candidates():
             pos = str(row.get("position") or meta.get("pos") or "").upper()
             name = row.get("name") or meta.get("name") or f"Player {pid}"
             _pos_counts[pos] = _pos_counts.get(pos, 0) + 1
-            # Never suggest cutting a current-class rookie -- those are usually
-            # deliberate stashes (dynasty picks / upside bench holds), not spare
-            # parts. Keep them in the position counts (they do take a roster spot)
-            # but out of the droppable pool.
-            if pid in _rookie_sids_wv:
+            # Protect dynasty rookies / taxi stashes and the viewer's explicit
+            # "Do not drop" list, but do NOT auto-protect rookies in redraft (#3):
+            # in a redraft league a benched rookie is a fair cut. Protected players
+            # still count toward position depth (they occupy a roster spot).
+            if pid in _protected or (pid in _rookie_sids_wv and _is_dynasty):
                 continue
             _drop_pool.append({"player_id": pid, "name": name, "position": pos,
                                "value": _roster_val(pid)})
@@ -650,10 +763,68 @@ def api_waiver_candidates():
         if not elig:
             return None  # everyone you'd cut is worth more than the add -- hold
         same_pos = [d for d in elig
-                    if d["position"] == add_pos and _pos_counts.get(add_pos, 0) > _KEEP.get(add_pos, 3)]
-        deep = [d for d in elig if _pos_counts.get(d["position"], 0) > _KEEP.get(d["position"], 3)]
+                    if d["position"] == add_pos and _pos_counts.get(add_pos, 0) > _keep_depth.get(add_pos, 3)]
+        deep = [d for d in elig if _pos_counts.get(d["position"], 0) > _keep_depth.get(d["position"], 3)]
         pick = (same_pos or deep or elig)[0]
-        return {"name": pick["name"], "position": pick["position"], "value": round(pick["value"])}
+        return {"player_id": pick["player_id"], "name": pick["name"],
+                "position": pick["position"], "value": round(pick["value"])}
+
+    # ── Lineup-based team-improvement (#1): does adding the player actually raise
+    # the viewer's best legal lineup, and if so who does he replace / who is cut?
+    # Reuses the shared optimal-lineup solver via utils.waiver_lineup. Points come
+    # from each player's own forward projection (a consistent, league-scored read),
+    # so a bench add contributes no starting gain and byes/injuries drop to ~0 on
+    # their own. Only runs when the viewer's roster is identified.
+    def _brief(pid):
+        pid = str(pid)
+        meta = players_index.get(pid, {}) or _full_players_wv.get(pid, {})
+        row = _mvt_by_id.get(pid) or {}
+        return {"player_id": pid,
+                "name": row.get("name") or meta.get("name") or f"Player {pid}",
+                "position": str(row.get("position") or meta.get("pos")
+                                or meta.get("position") or "").upper()}
+
+    _roster_pts: dict = {}
+    _roster_pos: dict = {}
+    if _viewer_active:
+        for _rpid in _viewer_active:
+            _rpid = str(_rpid)
+            try:
+                _pp = _forward_ppg_wv(_rpid)
+            except Exception:
+                _pp = None
+            if _pp is None:
+                _pp = _ppg_by_pid_wv.get(_rpid)
+            _roster_pts[_rpid] = max(0.0, float(_pp)) if _pp is not None else 0.0
+            _roster_pos[_rpid] = _brief(_rpid)["position"]
+    _drop_by_id = {d["player_id"]: d for d in _drop_pool}
+
+    def _lineup_eval_for(_c, _bscore=0.0):
+        """PickupEvaluation for the viewer's roster, or None if not evaluable."""
+        if not _viewer_active or not _roster_pts:
+            return None
+        cid = str(_c["player_id"])
+        cand_pts = _c.get("ros_ppg")
+        if cand_pts is None:
+            return None
+        pm = dict(_roster_pts)
+        pm[cid] = max(0.0, float(cand_pts))
+        pos = dict(_roster_pos)
+        pos[cid] = _c.get("position")
+        # Speculative upside keeps a promising player surfacing as a stash without
+        # claiming a lineup gain it doesn't produce (#1).
+        _spec = 0.8 if _c.get("discovery") else min(1.0, float(_bscore or 0.0) / 80.0)
+        try:
+            from utils.waiver_lineup import evaluate_pickup as _eval_pickup
+            return _eval_pickup(
+                cid, _c.get("position"), _viewer_active,
+                [{"pts_map": pm, "covered": True}], pos, _rp_wv,
+                droppable_pids=[d["player_id"] for d in _drop_pool],
+                speculative_upside=_spec,
+            )
+        except Exception:
+            logger.debug("lineup eval failed for %s", cid, exc_info=True)
+            return None
 
     _adds_by_id = {}
     try:
@@ -674,6 +845,28 @@ def api_waiver_candidates():
             ut = usage_trends.get(c["player_id"]) or {}
             _faab = _faab_for(c)
             _urgency = _schedule_urgency(c.get("schedule_ease_rank"), 32)
+
+            # Lineup-based team improvement (#1) + explicit outcome (#3).
+            _le = _lineup_eval_for(c, bscore)
+            if _le is not None:
+                _outcome = _le.outcome
+                _lineup_gain = (round(_le.week_gain, 1)
+                                if _le.outcome in ("add", "add_drop") else None)
+                _lineup_gain_4wk = (round(_le.horizon_gain, 1)
+                                    if _le.outcome in ("add", "add_drop") else None)
+                _drop = (_drop_by_id.get(_le.drop_pid) if _le.drop_pid else None)
+                if _drop is not None:
+                    _drop = {"player_id": _drop["player_id"], "name": _drop["name"],
+                             "position": _drop["position"], "value": round(_drop["value"])}
+                _replaces = _brief(_le.replaces_pid) if _le.replaces_pid else None
+            else:
+                # No identifiable viewer roster -> league-wide guidance, no claim of
+                # personalized lineup improvement.
+                _outcome = None
+                _lineup_gain = None
+                _lineup_gain_4wk = None
+                _drop = _drop_for(c)
+                _replaces = None
             _confidence_inputs = sum([
                 c.get("ros_ppg") is not None,
                 c.get("usage_delta") is not None,
@@ -710,11 +903,26 @@ def api_waiver_candidates():
                 "scarcity": round((c.get("scarcity_mult") or 1.0) - 1.0, 3),
                 "schedule_ease_rank": c.get("schedule_ease_rank"),
                 "schedule_urgency": _urgency,
-                "faab_low": _faab["faab_low"],
-                "faab_target": _faab["faab_target"],
-                "faab_high": _faab["faab_high"],
-                "faab_rationale": _faab["faab_rationale"],
-                "drop": _drop_for(c),
+                # FAAB (#4): percentages (back-compat keys) plus an explicit
+                # denominator, dollar amounts when a budget is known, and the mode
+                # so the UI can show waiver-priority guidance instead of a bid.
+                "faab_low": _faab.get("pct_low"),
+                "faab_target": _faab.get("pct_target"),
+                "faab_high": _faab.get("pct_high"),
+                "faab_rationale": _faab.get("rationale"),
+                "faab_mode": _faab.get("mode"),
+                "faab_pct_denominator": _faab.get("pct_denominator"),
+                "faab_dollars_low": _faab.get("low"),
+                "faab_dollars_target": _faab.get("target"),
+                "faab_dollars_high": _faab.get("high"),
+                "faab_claim_guidance": _faab.get("claim_guidance"),
+                "faab_heuristic": _faab.get("heuristic"),
+                # Roster-aware outcome (#1/#3).
+                "outcome": _outcome,
+                "lineup_gain": _lineup_gain,
+                "lineup_gain_4wk": _lineup_gain_4wk,
+                "replaces": _replaces,
+                "drop": _drop,
                 "confidence": _confidence,
                 "market_projection": c.get("market_projection"),
                 "market_opportunity": _market_opp,
@@ -726,6 +934,80 @@ def api_waiver_candidates():
             continue
 
     return jsonify({"candidates": result, "total": len(result), "faab_enabled": _faab_enabled})
+
+
+@waiver_api_bp.route("/api/waiver-big-games")
+def api_waiver_big_games():
+    """"Unexpected performances available in your league" (#6/#7).
+
+    Reads the shared, pre-computed big-game discoveries (populated by scheduled
+    ingestion — never detected on the request path) and filters them to players
+    the viewer's league can still add. Keeps the shared performance/role fields
+    from the detector and layers only availability on top. Best-effort: returns
+    an empty list rather than erroring when discoveries haven't been ingested.
+    """
+    platform = (request.args.get("platform") or "sleeper").strip().lower()
+    league_id = (request.args.get("league_id") or "").strip()
+    season = int(request.args.get("season") or datetime.now().year)
+    if not league_id:
+        return jsonify({"discoveries": [], "week": None})
+
+    try:
+        _nfl = get_nfl_state() or {}
+        _dseason = int(_nfl.get("season") or season)
+        # The most recently completed week (last week's games) is what "available
+        # this week" is about; fall back to the display week.
+        _week = _safe_int(request.args.get("week"),
+                          _safe_int(_nfl.get("week"), _safe_int(_nfl.get("display_week"), 1)))
+        _week = max(1, int(_week) - 1) if not request.args.get("week") else int(_week)
+    except Exception:
+        _dseason, _week = season, 1
+
+    try:
+        from dashboard_services.waiver_discoveries import get_week_discoveries
+        discoveries = get_week_discoveries(_dseason, _week)
+    except Exception:
+        logger.debug("suppressed exception", exc_info=True)
+        discoveries = []
+
+    try:
+        ctx = get_league_ctx_from_cache(platform, league_id, season)
+    except Exception:
+        ctx = {}
+    # Owned = active + reserve + taxi, so a stashed player never shows as
+    # "available" (provider identity: ids are the league's own player ids).
+    rostered_ids = set()
+    for r in (ctx.get("rosters") or []):
+        for key in ("players", "reserve", "taxi"):
+            for pid in (r.get(key) or []):
+                if pid is not None:
+                    rostered_ids.add(str(pid))
+
+    players_index = ctx.get("players_index") or get_players_index_global() or {}
+    _mvt = {str(r.get("id")): r for r in (get_model_value_table_cached() or [])
+            if isinstance(r, dict) and r.get("id")}
+
+    out = []
+    for d in discoveries:
+        pid = str(d.get("player_id") or "")
+        if not pid or pid in rostered_ids:
+            continue  # already owned in this league
+        meta = players_index.get(pid) or {}
+        row = _mvt.get(pid) or {}
+        if not meta and not row:
+            continue  # can't resolve identity -> skip rather than show "Player 123"
+        d = dict(d)
+        d["name"] = row.get("name") or meta.get("name") or f"Player {pid}"
+        d["position"] = str(row.get("position") or meta.get("pos") or "").upper()
+        d["team"] = (row.get("team") or meta.get("team") or "").upper()
+        # We know it's unrostered in this league; true "claimable now" (waiver vs
+        # FA) needs provider transaction data we don't confirm here.
+        d["availability"] = "unrostered"
+        out.append(d)
+        if len(out) >= 15:
+            break
+
+    return jsonify({"discoveries": out, "week": _week, "season": _dseason})
 
 
 _TRENDING_ADDS_CACHE: dict = {}
