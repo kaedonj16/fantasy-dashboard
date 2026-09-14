@@ -246,6 +246,26 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-mu-hard { background: color-mix(in srgb, var(--loss) 15%, transparent); color: var(--loss); }
 [data-theme="dark"] .wv-mu-ok { color: #a3e635; }
 
+/* Opp plays faced: a tappable pace/possession stat. The value toggles a
+   full-width detail panel (season / last-4 splits, sample, opp possession)
+   kept collapsed so the card stays lean. Neutral colour throughout -- more
+   plays is context, not a verdict. */
+.wv-ss-plays-btn { cursor: pointer; border-bottom: 1px dashed var(--border); }
+.wv-ss-plays-btn:hover { border-bottom-color: var(--accent); }
+.wv-ss-plays-caret { font-size: .7em; margin-left: 3px; color: var(--text-muted); }
+.wv-ss-plays-sub { font-size: 10px; color: var(--text-muted); margin-top: 1px; }
+.wv-ss-plays-detail {
+  flex-basis: 100%; display: none; margin-top: 6px; padding: 8px 10px;
+  border-radius: 6px; background: var(--surface); border: 1px solid var(--border);
+}
+.wv-ss-plays-detail.open { display: block; }
+.wv-ss-plays-detail-row {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 12px; font-size: 11px; padding: 2px 0;
+}
+.wv-ss-plays-detail-lbl { color: var(--text-muted); }
+.wv-ss-plays-detail-val { font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+
 /* Badges */
 .wv-ss-start-badge      { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: color-mix(in srgb, var(--win) 15%, transparent); color: var(--win); flex-shrink: 0; }
 .wv-ss-flex-start-badge { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: color-mix(in srgb, var(--win) 15%, transparent); color: var(--win); border: 1px solid color-mix(in srgb, var(--win) 30%, transparent); flex-shrink: 0; }
@@ -557,6 +577,52 @@ function wvConsistencyChips(p) {{
          '<span class="wv-ss-cons wv-ss-cons-' + k + '" title="' + tip + '">' + c.label + '</span></div>';
 }}
 
+// ── Opp plays faced (pace / possession context) ──────────────────────────────
+// One tappable stat: the offensive plays this player's OPPONENT defense faces
+// per game. The headline is the season average with a "x above/below NFL
+// average" sub; tapping reveals the season/last-4 splits, sample size, and the
+// opponent's own offensive possession, kept collapsed so the card stays lean.
+// Deliberately neutral (no start/sit implication) -- pace is context only.
+function wvPlaysRow(lbl, val) {{
+  return '<div class="wv-ss-plays-detail-row">' +
+         '<span class="wv-ss-plays-detail-lbl">' + lbl + '</span>' +
+         '<span class="wv-ss-plays-detail-val">' + val + '</span></div>';
+}}
+function wvPlaysFacedChip(pv) {{
+  if (!pv || pv.plays_faced_pg == null) return '';
+  const faced = pv.plays_faced_pg;
+  let sub = '';
+  if (pv.vs_avg != null) {{
+    const a = Math.abs(pv.vs_avg).toFixed(1);
+    sub = pv.vs_avg > 0 ? (a + ' above NFL average')
+        : (pv.vs_avg < 0 ? (a + ' below NFL average') : 'at NFL average');
+  }}
+  const rows = [wvPlaysRow('Season average', faced + '/gm')];
+  if (pv.plays_faced_l4_pg != null) rows.push(wvPlaysRow('Last 4 games', pv.plays_faced_l4_pg + '/gm'));
+  if (pv.games != null) rows.push(wvPlaysRow('Sample', pv.games + (pv.games === 1 ? ' game' : ' games')));
+  if (pv.off_plays_pg != null) rows.push(wvPlaysRow('Opp off. possession', pv.off_plays_pg + ' plays/gm'));
+  const detail = '<div class="wv-ss-plays-detail">' + rows.join('') + '</div>';
+  const tip = 'Offensive plays this opponent&#39;s defense faces per game (pace/possession). Context only, not part of the start/sit score.';
+  return '<div class="wv-ss-stat"><span class="wv-ss-stat-lbl">Opp plays faced</span>' +
+         '<span class="wv-ss-stat-val wv-ss-plays-btn" role="button" tabindex="0" ' +
+         'aria-expanded="false" title="' + tip + '" ' +
+         'onclick="wvTogglePlays(this)" onkeydown="wvPlaysKey(event,this)">' +
+         faced + '/gm<span class="wv-ss-plays-caret" aria-hidden="true">&#9662;</span></span>' +
+         (sub ? '<span class="wv-ss-plays-sub">' + sub + '</span>' : '') +
+         '</div>' + detail;
+}}
+function wvTogglePlays(el) {{
+  const wrap = el.closest('.wv-ss-stats');
+  if (!wrap) return;
+  const d = wrap.querySelector('.wv-ss-plays-detail');
+  if (!d) return;
+  const open = d.classList.toggle('open');
+  el.setAttribute('aria-expanded', open ? 'true' : 'false');
+}}
+function wvPlaysKey(e, el) {{
+  if (e.key === 'Enter' || e.key === ' ') {{ e.preventDefault(); wvTogglePlays(el); }}
+}}
+
 // Compose the start/sit stats row in three groups, most-decisive first, with a
 // thin divider between groups:
 //   1. Output      - what to expect  (Proj PPG, L4 PPG)
@@ -599,6 +665,7 @@ function wvStatsRow(p) {{
     g3.push('<div class="wv-ss-stat"><span class="wv-ss-stat-lbl">Matchup</span>' +
             '<span class="wv-ss-stat-val" title="Matchup rank (1 = easiest)' + dtip + '">' + mu + '</span></div>');
   }}
+  if (!p.on_bye) g3.push(wvPlaysFacedChip(p.play_volume));
   g3.push(wvVegasChip(p));
   g3.push(wvVenueChip(p));
 
@@ -861,12 +928,22 @@ function wvCmpDerive(p) {{
     def:      p.fpts_against > 0 ? `${{p.fpts_against}} pts` : (p.on_bye ? 'BYE' : '–'),
     defCls:   wvMuClass(p.def_rank, p.def_total),
     mu:       (!p.on_bye ? wvMuChip(p.def_rank, p.def_total) : '') || (p.on_bye ? '–' : 'No data'),
+    playsFaced: (p.play_volume && p.play_volume.plays_faced_pg != null) ? p.play_volume.plays_faced_pg : null,
+    playsVsAvg: (p.play_volume && p.play_volume.vs_avg != null) ? p.play_volume.vs_avg : null,
+    playsL4:    (p.play_volume && p.play_volume.plays_faced_l4_pg != null) ? p.play_volume.plays_faced_l4_pg : null,
     vegasNum: p.implied_total != null ? p.implied_total : null,
     vegas:    p.implied_total != null ? (p.implied_total + ' implied') : '–',
     venue:    env ? `<span class="wv-ss-env wv-ss-env-${{env.kind}}">${{env.label}}</span>` : (p.on_bye ? 'BYE' : '–'),
     value:    p.value > 0 ? Math.round(p.value) : null,
     rank:     p.pos_rank_label || '–',
   }};
+}}
+
+// Signed "vs NFL average" for the neutral play-volume compare row (e.g. -6.1 /
+// +1.7). Null renders as a dash so the row drops when neither side has data.
+function wvFmtVsAvg(v) {{
+  if (v == null) return '–';
+  return (v > 0 ? '+' : '') + v.toFixed(1);
 }}
 
 // Winner classes for a pair of numeric values (higher is better by default).
@@ -1009,6 +1086,9 @@ function wvRenderCompare() {{
         ${{row('Opponent', da.opp, db.opp)}}
         ${{row('Def vs pos', da.def, db.def, da.defCls, db.defCls)}}
         ${{row('Matchup', da.mu, db.mu)}}
+        ${{row('Opp plays faced/game', dash(da.playsFaced), dash(db.playsFaced))}}
+        ${{row('vs. NFL average', wvFmtVsAvg(da.playsVsAvg), wvFmtVsAvg(db.playsVsAvg))}}
+        ${{row('Last 4 games', dash(da.playsL4), dash(db.playsL4))}}
         ${{row('Vegas total', da.vegas, db.vegas, wVeg[0], wVeg[1])}}
         ${{row('Venue', da.venue, db.venue)}}
       </div>

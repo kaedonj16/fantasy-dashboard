@@ -617,6 +617,124 @@ def build_pbp_metrics_for_season(season: int) -> Dict[str, Dict[str, float]]:
     return out
 
 
+# A "scrimmage play" for pace/volume: pass or run. Special teams, kneels,
+# spikes, and penalty no-plays are excluded so the count reflects real
+# offensive volume rather than clock/administrative snaps.
+_SCRIMMAGE_PLAY_TYPES = frozenset({"pass", "run"})
+
+
+def aggregate_team_play_volume(rows) -> Dict[str, Dict[str, float]]:
+    """Aggregate {team: {play-volume aggregates}} from raw play rows.
+
+    Pure (no pandas / nfl_data_py) so the math is unit-tested directly. ``rows``
+    is any iterable of ``(game_id, defteam, posteam, week, play_type)`` tuples;
+    only scrimmage plays (``play_type in {'pass','run'}``) are counted, and team
+    codes are normalised to canonical abbreviations (WAS/JAX/LAR/...). Per team:
+
+      - ``plays_faced_pg``   : scrimmage plays the DEFENSE faces per game.
+      - ``plays_faced_l4_pg``: the same over the team's last four games (by week).
+      - ``off_plays_pg``     : scrimmage plays the team's own OFFENSE runs/game.
+      - ``games``            : games in the defensive sample (sample size).
+
+    A team is only emitted once it has the headline defensive number.
+    """
+    try:
+        from utils.schedule_ease import norm_sched_team as _norm
+    except Exception:
+        def _norm(t):
+            return (str(t) or "").upper().strip()
+
+    from collections import defaultdict
+
+    # Per (team, game): plays faced on defense, plays run on offense, + the week
+    # of each defensive game so the "last four" window can be picked by recency.
+    def_by_game: Dict[str, Dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    off_by_game: Dict[str, Dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    def_game_week: Dict[str, Dict[str, int]] = defaultdict(dict)
+
+    for gid, dt, ot, wk, ptype in rows:
+        if str(ptype or "").strip().lower() not in _SCRIMMAGE_PLAY_TYPES:
+            continue
+        g = str(gid)
+        d = _norm(dt)
+        o = _norm(ot)
+        if d and d.lower() != "nan":
+            def_by_game[d][g] += 1
+            w = _f(wk)
+            if w is not None:
+                def_game_week[d][g] = int(w)
+        if o and o.lower() != "nan":
+            off_by_game[o][g] += 1
+
+    out: Dict[str, Dict[str, float]] = {}
+    for t in set(def_by_game) | set(off_by_game):
+        dg = def_by_game.get(t, {})
+        og = off_by_game.get(t, {})
+        row: Dict[str, float] = {}
+        if dg:
+            n_def = len(dg)
+            row["plays_faced_pg"] = round(sum(dg.values()) / n_def, 1)
+            row["games"] = n_def
+            wk_map = def_game_week.get(t, {})
+            last4 = sorted(dg.keys(), key=lambda g: wk_map.get(g, 0))[-4:]
+            if last4:
+                row["plays_faced_l4_pg"] = round(
+                    sum(dg[g] for g in last4) / len(last4), 1)
+        if og:
+            row["off_plays_pg"] = round(sum(og.values()) / len(og), 1)
+        # Only surface a team once it has the headline defensive number.
+        if row.get("plays_faced_pg") is not None:
+            out[t] = row
+    return out
+
+
+def build_team_play_volume_for_season(season: int) -> Dict[str, Dict[str, float]]:
+    """Return {team: {play-volume aggregates}} for a season from open pbp.
+
+    A team-level pace / possession table (no player ids, so public-safe like the
+    other builders here). See ``aggregate_team_play_volume`` for the per-team
+    fields; the headline is ``plays_faced_pg`` -- the "opp plays faced" volume a
+    fantasy player inherits from their weekly opponent (a high number means a
+    fast, pass-happy schedule of opponents with more snaps to accrue points
+    against; low the reverse). Regular season only. Returns {} when nfl_data_py
+    or the data is unavailable, mirroring the other builders.
+
+    This is DISPLAY-ONLY matchup context. It is deliberately never fed into the
+    start/sit score (utils/start_sit_score.py leaves matchup/volume out on
+    purpose to avoid double-counting the opponent, which weekly projections
+    already reflect).
+    """
+    try:
+        import nfl_data_py as nfl  # optional dependency
+        pbp = nfl.import_pbp_data(
+            [season],
+            columns=[
+                "game_id", "week", "season_type",
+                "posteam", "defteam", "play_type",
+            ],
+            downcast=True,
+        )
+    except Exception as e:
+        print(f"[nflverse_metrics] team play volume unavailable for {season} ({e})")
+        return {}
+
+    if pbp is None or pbp.empty:
+        return {}
+
+    pbp = pbp[pbp["season_type"] == "REG"]
+    if pbp.empty:
+        return {}
+
+    rows = zip(
+        pbp["game_id"].tolist(),
+        pbp["defteam"].tolist(),
+        pbp["posteam"].tolist(),
+        pbp["week"].tolist(),
+        pbp["play_type"].tolist(),
+    )
+    return aggregate_team_play_volume(rows)
+
+
 def build_nflverse_metrics_for_season(season: int) -> Dict[str, Dict[str, float]]:
     """Merge NGS + FTN + pbp-derived metrics into one {sleeper_id: {columns}} map."""
     combined: Dict[str, Dict[str, float]] = {}
