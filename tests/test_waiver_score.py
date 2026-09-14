@@ -627,6 +627,65 @@ def test_signal_default_available():
     assert waiver_signal(_cand(position="RB", age=26, value=100), {})[1] == "Available"
 
 
+# ---- Streamer label (favorable matchup + startable projection) -------------
+
+def test_streamer_label_on_favorable_matchup_and_startable_proj():
+    c = _cand(position="QB", age=30, value=100)
+    c["ros_ppg"] = 18.0
+    c["schedule_ease_rank"], c["schedule_total"] = 3, 32   # top ~6% easiest
+    assert waiver_signal(c, {})[1] == "Streamer"
+
+
+def test_no_streamer_without_favorable_matchup():
+    c = _cand(position="QB", age=30, value=100)
+    c["ros_ppg"] = 18.0
+    c["schedule_ease_rank"], c["schedule_total"] = 28, 32   # tough slate
+    assert waiver_signal(c, {})[1] == "Available"
+
+
+def test_no_streamer_without_startable_projection():
+    c = _cand(position="QB", age=30, value=100)
+    c["ros_ppg"] = 4.0                                       # not startable
+    c["schedule_ease_rank"], c["schedule_total"] = 2, 32
+    assert waiver_signal(c, {})[1] == "Available"
+
+
+# ---- Unexpected big game folded into the ranked score ----------------------
+
+def test_big_game_boosts_score_bounded_and_no_double_count():
+    base = _cand(value=300, position="WR")
+    boosted = _cand(value=300, position="WR")
+    boosted["big_game_pts"] = 40.0
+    assert waiver_pickup_score(boosted, {}) > waiver_pickup_score(base, {})
+
+    # Folded into the opportunity combine with diminishing returns, not summed on
+    # top: a player who ALSO has a usage spike doesn't get both at full weight.
+    from utils.waiver_score import WEIGHTS
+    both = _cand(value=300, position="WR", usage_stat="snap_pct", usage_delta=16)  # usage capped 50
+    both["big_game_pts"] = 40.0
+    # opportunity = max + 0.5*second (+lower terms); usage(50) is the max, big(40) second.
+    delta = waiver_pickup_score(both, {}) - waiver_pickup_score(_cand(value=300, position="WR"), {})
+    # Must be well under naive 50+40 = 90.
+    assert delta < 50 + 40
+
+
+def test_big_game_zero_is_inert():
+    plain = _cand(value=400, position="RB")
+    withzero = _cand(value=400, position="RB")
+    withzero["big_game_pts"] = 0
+    assert waiver_pickup_score(withzero, {}) == pytest.approx(waiver_pickup_score(plain, {}))
+
+
+def test_fluky_big_game_boosts_less_than_sustainable_one():
+    # The route scores big_game_pts as surprise*sustainability*scale, so a fluky
+    # (low-sustain) game contributes far less than a sustainable one.
+    fluky = _cand(value=200, position="RB", player_id="f")
+    fluky["big_game_pts"] = 0.8 * 0.1 * 95.0     # high surprise, low sustainability
+    sustained = _cand(value=200, position="RB", player_id="s")
+    sustained["big_game_pts"] = 0.6 * 0.7 * 95.0  # sustainable role
+    assert waiver_pickup_score(sustained, {}) > waiver_pickup_score(fluky, {})
+
+
 def test_tables_have_expected_positions():
     assert set(WAIVER_PRIME_MAX) == {"QB", "RB", "WR", "TE"}
     assert set(USAGE_SPIKE_MIN) == {"snap_pct", "touches", "targets"}

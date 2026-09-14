@@ -903,6 +903,20 @@ function wvRenderWaivers() {{
     const marketChip = p.market_opportunity
       ? `<span class="wv-advice-metric"><span class="wv-advice-label">Market Opportunity</span><span class="chip chip--sm chip--neutral" title="Market Projection ${{p.market_projection}}, difference ${{p.market_opportunity.delta > 0 ? '+' : ''}}${{p.market_opportunity.delta}}">${{p.market_opportunity.label}}</span></span>`
       : '';
+    // Projected points/gm — the useful number for a streamer whose dynasty value
+    // is ~0 (#1). Shown whenever a projection exists, next to (or instead of) Value.
+    const projChip = (p.ros_ppg != null)
+      ? `<span class="wv-advice-metric"><span class="wv-advice-label">Proj</span><span class="wv-value" title="Projected fantasy points per game (rest of season)">${{p.ros_ppg}}</span></span>`
+      : '';
+    // Unexpected big game last week (#3), folded into the ranking as a bounded
+    // boost. Chip makes the boost transparent; tooltip carries the evidence.
+    let bigGameChip = '';
+    if (p.big_game && p.big_game.category) {{
+      const BG = {{ priority: ['Priority', 'chip--accent'], speculative: ['Speculative', 'chip--neutral'], watchlist: ['Watchlist', 'chip--muted'] }};
+      const meta = BG[p.big_game.category] || [p.big_game.category, 'chip--muted'];
+      const facts = (p.big_game.factors || []).join(' · ');
+      bigGameChip = `<span class="wv-advice-metric"><span class="wv-advice-label">Big game</span><span class="chip chip--sm ${{meta[1]}}" title="Unexpected performance last week${{facts ? ': ' + facts : ''}}">${{meta[0]}}</span></span>`;
+    }}
     let dropHint = '';
     if (p.drop && p.drop.name) {{
       dropHint = `<div class="wv-drop-hint" title="Suggested drop to make room. Your roster is full; weakest spare below this target's value">`
@@ -944,9 +958,11 @@ function wvRenderWaivers() {{
       </div>
       <div class="wv-right">
         <span class="wv-advice-metric"><span class="wv-advice-label">Why add</span><span class="chip chip--sm ${{p.signal_class}}">${{p.signal}}</span></span>
+        ${{bigGameChip}}
         ${{outcomeChip}}
         ${{marketChip}}
         ${{faabChip}}
+        ${{projChip}}
         ${{p.value > 0 ? `<span class="wv-advice-metric"><span class="wv-advice-label">Value</span><span class="wv-value">${{Math.round(p.value)}}</span></span>` : ''}}
       </div>
     </div>

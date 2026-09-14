@@ -191,6 +191,27 @@ def api_waiver_candidates():
     except Exception:
         logger.debug("suppressed exception", exc_info=True)
 
+    # Unexpected big games from the shared detector for the most recently
+    # completed week, pre-computed by scheduled ingestion (never detected on the
+    # request path). Unlike a raw trending-add, a priority/speculative discovery
+    # is a real performance signal, so it may bypass the value floor and it boosts
+    # the ranked score below (folded into the opportunity combine, not summed).
+    _big_games: dict = {}
+    try:
+        from dashboard_services.waiver_discoveries import get_week_discoveries
+        _nfl_bg = get_nfl_state() or {}
+        _bg_season = int(_nfl_bg.get("season") or season)
+        _bg_week = max(1, int(_nfl_bg.get("week") or _nfl_bg.get("display_week") or 1) - 1)
+        for _d in get_week_discoveries(_bg_season, _bg_week):
+            _dp = str(_d.get("player_id") or "")
+            if not _dp:
+                continue
+            _big_games[_dp] = _d
+            if _d.get("category") in ("priority", "speculative"):
+                _signal_ids.add(_dp)
+    except Exception:
+        logger.debug("suppressed exception", exc_info=True)
+
     candidates = []
     for row in model_value_table:
         if not isinstance(row, dict):
@@ -574,6 +595,20 @@ def api_waiver_candidates():
 
             # Positional scarcity (#4).
             c["scarcity_mult"] = _scarcity_multiplier(c["position"], c["value"], _repl_by_pos_wv)
+
+            # Unexpected big game -> a bounded opportunity boost (#6/#7), scored
+            # from surprise * sustainability so a fluky watchlist game barely
+            # registers while a sustainable priority discovery is a real bump.
+            _disc = _big_games.get(c["player_id"])
+            if _disc:
+                try:
+                    _sp = float(_disc.get("performance_surprise") or 0.0)
+                    _su = float(_disc.get("role_sustainability") or 0.0)
+                except (TypeError, ValueError):
+                    _sp = _su = 0.0
+                c["big_game_pts"] = min(_sp * _su * WEIGHTS.big_game_scale, WEIGHTS.big_game_max)
+                c["big_game_category"] = _disc.get("category")
+                c["big_game_priority"] = _disc.get("category") == "priority"
         except Exception:
             logger.exception("[waiver-candidates] signal join failed for %s", c.get("player_id"))
             continue
@@ -935,6 +970,13 @@ def api_waiver_candidates():
                 "market_opportunity": _market_opp,
                 "rostered_pct": c.get("rostered_pct"),
                 "adds_48h": _adds_by_id.get(str(c["player_id"])),
+                # Unexpected big game (completed week), when this player had one.
+                "big_game": (lambda d: {
+                    "category": d.get("category"),
+                    "surprise": d.get("performance_surprise"),
+                    "sustainability": d.get("role_sustainability"),
+                    "factors": (d.get("factors") or [])[:2],
+                } if d else None)(_big_games.get(c["player_id"])),
             })
         except Exception:
             logger.exception("[waiver-candidates] result row failed for %s", c.get("player_id"))
@@ -1090,6 +1132,12 @@ def api_trending_adds():
         if not meta and not val_row:
             continue
         pos = str(val_row.get("position") or meta.get("pos") or "").upper()
+        # Drop retired / no-NFL-team players (#4): a return/signing rumor spikes
+        # add counts for players with no team, and they aren't actually claimable
+        # skill contributors. D/ST is team-based, so it's exempt from this check.
+        _tm = str(val_row.get("team") or meta.get("team") or "").strip().upper()
+        if pos != "DEF" and _tm in ("", "FA", "FREE AGENT", "NONE", "RET"):
+            continue
         if pos == "DEF":
             name = f"{(meta.get('team') or pid)} D/ST"
         else:
