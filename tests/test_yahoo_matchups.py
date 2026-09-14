@@ -233,6 +233,20 @@ def _team_roster_payload(team_id, yahoo_id, name, *, pos="QB", nfl="BUF", slot="
     }
 
 
+def _player_points_payload(entries, *, dict_wrapper=False):
+    players = {"count": len(entries)}
+    for i, (yahoo_id, points) in enumerate(entries):
+        player = [
+            [{"player_key": f"461.p.{yahoo_id}"}, {"player_id": str(yahoo_id)}],
+            {"player_points": {"coverage_type": "week", "week": "1", "total": points}},
+        ]
+        players[str(i)] = {"player": player}
+    league = {"0": {"league_key": "461.l.99"}, "1": {"players": players}, "count": 2} if dict_wrapper else [
+        {"league_key": "461.l.99"}, {"players": players},
+    ]
+    return {"fantasy_content": {"league": league}}
+
+
 def test_get_matchups_hydrates_starters_from_week_roster(monkeypatch):
     """Scoreboard has no player keys; week roster + yahoo_id → Sleeper pids."""
     import dashboard_services.api as api
@@ -263,6 +277,64 @@ def test_get_matchups_hydrates_starters_from_week_roster(monkeypatch):
     assert by_rid[2]["starters"] == ["11564"]
     assert by_rid[1]["players"] == ["4984"]
     assert any("roster;week=1" in p for p in roster_paths)
+
+
+def test_get_matchups_hydrates_weekly_points_and_preserves_missing(monkeypatch):
+    """Yahoo totals stay official while starter/bench zero and negative scores hydrate."""
+    import dashboard_services.api as api
+
+    monkeypatch.setattr(api, "get_nfl_players", lambda: {
+        "qb": {"yahoo_id": "1001"}, "k": {"yahoo_id": "1002"},
+        "bench": {"yahoo_id": "1003"}, "missing": {"yahoo_id": "1004"},
+    })
+    yahoo_api._yahoo_id_to_canonical.cache_clear()
+    scoreboard = _scoreboard_payload([(1, 2)], nested=True)
+    scoreboard["fantasy_content"]["league"][1]["scoreboard"]["0"]["matchups"]["0"]["matchup"]["teams"]["0"] = _team_entry(1, "77.25")
+
+    def roster(team_id):
+        specs = (
+            [("1001", "Quarterback", "QB", "BUF", "QB"),
+             ("1002", "Kicker", "K", "BUF", "K"),
+             ("9999", "Philadelphia Eagles", "DEF", "Phi", "DEF"),
+             ("1003", "Bench", "RB", "BUF", "BN"),
+             ("1004", "Missing", "WR", "BUF", "WR")]
+            if team_id == "1" else [("2001", "Other", "QB", "NE", "QB")]
+        )
+        payload = _team_roster_payload(team_id, *specs[0][:2], pos=specs[0][2], nfl=specs[0][3], slot=specs[0][4])
+        block = payload["fantasy_content"]["team"][1]["roster"]["players"]
+        for i, (yid, name, pos, nfl, slot) in enumerate(specs):
+            one = _team_roster_payload(team_id, yid, name, pos=pos, nfl=nfl, slot=slot)
+            block[str(i)] = one["fantasy_content"]["team"][1]["roster"]["players"]["0"]
+        block["count"] = len(specs)
+        return payload
+
+    paths = []
+    def fake_get(token, path, params=None, **kwargs):
+        paths.append(path)
+        if path.startswith("team/"):
+            return roster(path.split(".t.")[-1].split("/")[0])
+        if "/players;player_keys=" in path:
+            return _player_points_payload([
+                ("1001", "14.5"), ("1002", "0.00"), ("9999", "-2.0"),
+                ("1003", "6.25"), ("2001", "9.0"),
+            ], dict_wrapper=True)
+        return scoreboard
+
+    monkeypatch.setattr(yahoo_api, "_yahoo_get", fake_get)
+    monkeypatch.setattr(yahoo_api, "_league_key_for_season", lambda *a, **k: "461.l.99")
+    rows = yahoo_api.get_matchups(2026, "99", 1, "tok")
+    yahoo_api._yahoo_id_to_canonical.cache_clear()
+    home = next(r for r in rows if r["roster_id"] == 1)
+    assert home["points"] == 77.25  # never replace Yahoo's official team total
+    assert home["players_points"] == {"qb": 14.5, "k": 0.0, "PHI": -2.0, "bench": 6.25}
+    assert home["starters"] == ["qb", "k", "PHI", "missing"]
+    assert home["starters_points"] == [14.5, 0.0, -2.0, None]
+    assert any("/stats;type=week;week=1" in path for path in paths)
+
+
+def test_player_points_parser_handles_wrappers_and_real_zero():
+    raw = _player_points_payload([("1", "3.5"), ("2", "0"), ("3", "-1.25"), ("4", "bad")])
+    assert yahoo_api._extract_yahoo_player_points(raw) == {"1": 3.5, "2": 0.0, "3": -1.25}
 
 
 def test_yahoo_roster_starters_join_sleeper_week_projections():

@@ -690,6 +690,7 @@ def team_live_totals(
     actual_total = 0.0
     live_proj_total = 0.0
     any_locked = False
+    missing_locked = False
 
     starters = team.get("starters") or []
     projections = projections or {}
@@ -697,12 +698,16 @@ def team_live_totals(
     for p in starters:
         pid = p.get("pid")
 
-        actual = float(p.get("pts") or 0.0)
-        actual_total += actual
-
         status = status_by_pid.get(pid, STATUS_NOT_STARTED)
         if pid is not None and status == STATUS_NOT_STARTED:
             status = status_by_pid.get(str(pid), status)
+        raw_actual = p.get("pts")
+        actual_available = isinstance(raw_actual, (int, float)) and not isinstance(raw_actual, bool)
+        actual = float(raw_actual) if actual_available else 0.0
+        if actual_available:
+            actual_total += actual
+        elif status in (STATUS_FINAL, STATUS_IN_PROGRESS):
+            missing_locked = True
         if proj_lookup:
             try:
                 proj_val = float(proj_lookup(pid, p.get("pos") or "") or 0.0)
@@ -727,7 +732,21 @@ def team_live_totals(
         else:
             live_proj_total += proj_val
 
-    if live_proj_total == 0.0 and not any_locked:
+    if missing_locked:
+        # Yahoo's scoreboard totals/projections are authoritative and remain
+        # useful when one player-stat batch is partial. Never manufacture the
+        # missing player's contribution as zero.
+        try:
+            if team.get("pts_total") is not None:
+                actual_total = float(team["pts_total"])
+        except (TypeError, ValueError):
+            pass
+        try:
+            if team.get("proj_total") is not None:
+                live_proj_total = float(team["proj_total"])
+        except (TypeError, ValueError):
+            pass
+    elif live_proj_total == 0.0 and not any_locked:
         fallback = team.get("proj_total")
         try:
             if fallback is not None and float(fallback) > 0:
@@ -775,7 +794,14 @@ def compute_win_prob(
         pend_var = 0.0
         for p in (team.get("starters") or []):
             pid = p.get("pid")
-            actual = float(p.get("pts") or 0.0)
+            raw_actual = p.get("pts")
+            if (
+                status_by_pid.get(pid, status_by_pid.get(str(pid), STATUS_NOT_STARTED))
+                in (STATUS_FINAL, STATUS_IN_PROGRESS)
+                and not isinstance(raw_actual, (int, float))
+            ):
+                return None
+            actual = float(raw_actual) if isinstance(raw_actual, (int, float)) else 0.0
             status = status_by_pid.get(pid, STATUS_NOT_STARTED)
             if pid is not None and status == STATUS_NOT_STARTED:
                 status = status_by_pid.get(str(pid), status)
@@ -821,8 +847,12 @@ def compute_win_prob(
             pend_var = floor_var
         return locked, pend_proj, pend_var
 
-    l_lock, l_pend, l_var = _stats(left)
-    r_lock, r_pend, r_var = _stats(right)
+    left_stats = _stats(left)
+    right_stats = _stats(right)
+    if left_stats is None or right_stats is None:
+        return None
+    l_lock, l_pend, l_var = left_stats
+    r_lock, r_pend, r_var = right_stats
     l_total = l_lock + l_pend
     r_total = r_lock + r_pend
     combined_var = l_var + r_var
@@ -1499,7 +1529,7 @@ def render_matchup_slide(
             player_stats = pos_data.get(normalize_name(name), {})
             actual = player_stats.get('pts_idp', 0.0)
         else:
-            actual = p.get("pts") or 0.0
+            actual = p.get("pts")
 
         proj_val = _pid_proj(pid, pos)
         is_bye = False
@@ -1539,8 +1569,9 @@ def render_matchup_slide(
             # projection still to come. Falls back to the pregame projection
             # when the game clock can't be read.
             display_actual = actual
-            display_proj = live_projected_final(
-                float(actual or 0.0), proj_val, game, pos=pos,
+            display_proj = (
+                live_projected_final(float(actual), proj_val, game, pos=pos)
+                if actual is not None else None
             )
         elif status == STATUS_FINAL:
             display_actual = actual
@@ -1675,7 +1706,7 @@ def render_matchup_slide(
                     f"</div>"
                 )
 
-        return cell, float(display_actual), display_proj, is_bye, is_not_started, (stats if stats else None)
+        return cell, (float(display_actual) if display_actual is not None else None), display_proj, is_bye, is_not_started, (stats if stats else None)
 
     rows_html: List[str] = []
 
@@ -1695,8 +1726,8 @@ def render_matchup_slide(
         la = 0.0 if left_is_bye else left_actual
         ra = 0.0 if right_is_bye else right_actual
 
-        left_more = la > ra
-        right_more = ra > la
+        left_more = la is not None and ra is not None and la > ra
+        right_more = la is not None and ra is not None and ra > la
 
         def score_stack(actual_val, proj_val, side: str, is_bye: bool, more: bool, not_started: bool = False) -> str:
             if is_bye:
@@ -1705,18 +1736,24 @@ def render_matchup_slide(
                     f"<span class='num mid {side}' style='opacity:0.4;'>BYE</span>"
                     "</div>"
                 )
-            if proj_val is None:
-                cls = f"num mid {side}" + (" more" if more else "")
-                return (
-                    "<div class='num-stack' style='display:grid'>"
-                    f"<span class='{cls}'>{actual_val:.1f}</span>"
-                    "</div>"
-                )
             if not_started:
                 # hasn't played yet - projection only, no zero actual
                 return (
                     "<div class='num-stack' style='display:grid'>"
                     f"<span class='num mid {side} proj' style='opacity:0.55;'>{proj_val:.1f}</span>"
+                    "</div>"
+                )
+            if actual_val is None:
+                return (
+                    "<div class='num-stack' style='display:grid'>"
+                    f"<span class='num mid {side}' title='Weekly fantasy points unavailable'>—</span>"
+                    "</div>"
+                )
+            if proj_val is None:
+                cls = f"num mid {side}" + (" more" if more else "")
+                return (
+                    "<div class='num-stack' style='display:grid'>"
+                    f"<span class='{cls}'>{actual_val:.1f}</span>"
                     "</div>"
                 )
             cls_actual = f"num mid {side}" + (" more" if more else "")
@@ -1748,19 +1785,20 @@ def render_matchup_slide(
             m["left"], m["right"], status_by_pid, week_proj_map,
             frac_lookup=_frac_lookup,
         )
-        lp = round(l_prob * 100)
-        rp = 100 - lp
-        l_leading = l_prob >= 0.5
-        win_green = "#22c55e"
-        lose_fade = "rgba(148,163,184,0.35)"
-        l_col = win_green if l_leading else "var(--text-muted)"
-        r_col = win_green if not l_leading else "var(--text-muted)"
-        l_bar = win_green if l_leading else lose_fade
-        r_bar = win_green if not l_leading else lose_fade
-        track_bg = f"linear-gradient(to right,{l_bar} {lp}%,{r_bar} {lp}%)"
-        _wp_lname = str(m['left'].get('name') or 'left team').replace('"', '')
-        _wp_rname = str(m['right'].get('name') or 'right team').replace('"', '')
-        win_bar_html = f"""<div class="m-win-bar" role="img" aria-label="Win probability: {_wp_lname} {lp} percent, {_wp_rname} {rp} percent">
+        if l_prob is not None:
+            lp = round(l_prob * 100)
+            rp = 100 - lp
+            l_leading = l_prob >= 0.5
+            win_green = "#22c55e"
+            lose_fade = "rgba(148,163,184,0.35)"
+            l_col = win_green if l_leading else "var(--text-muted)"
+            r_col = win_green if not l_leading else "var(--text-muted)"
+            l_bar = win_green if l_leading else lose_fade
+            r_bar = win_green if not l_leading else lose_fade
+            track_bg = f"linear-gradient(to right,{l_bar} {lp}%,{r_bar} {lp}%)"
+            _wp_lname = str(m['left'].get('name') or 'left team').replace('"', '')
+            _wp_rname = str(m['right'].get('name') or 'right team').replace('"', '')
+            win_bar_html = f"""<div class="m-win-bar" role="img" aria-label="Win probability: {_wp_lname} {lp} percent, {_wp_rname} {rp} percent">
   <span class="m-wp-pct" style="color:{l_col};">{lp}%</span>
   <div class="m-wp-track" style="background:{track_bg};"></div>
   <span class="m-wp-pct" style="color:{r_col};text-align:right;">{rp}%</span>

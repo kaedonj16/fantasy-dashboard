@@ -1514,6 +1514,81 @@ def _prefetch_team_rosters(
     return out
 
 
+def _yahoo_player_key(rp: Any) -> str:
+    """Return Yahoo's full player key from a roster player fragment."""
+    meta, _slot = _flatten_yahoo_player(rp)
+    key = meta.get("player_key") or ""
+    if key:
+        return str(key)
+    player_id = meta.get("player_id")
+    return f"nfl.p.{player_id}" if player_id else ""
+
+
+def _extract_yahoo_player_points(raw: Any) -> Dict[str, float]:
+    """Parse ``player_points.total`` from Yahoo player-resource wrappers.
+
+    Keys are Yahoo player ids (the final component of ``player_key``). Missing
+    or malformed totals are deliberately omitted; zero and negative totals are
+    retained.
+    """
+    found: Dict[str, float] = {}
+
+    def walk(node: Any) -> None:
+        if isinstance(node, list):
+            flat: Dict[str, Any] = {}
+            _merge_yahoo_dict_parts(node, flat)
+            if "player_id" in flat or "player_key" in flat:
+                add(flat)
+            for value in node:
+                walk(value)
+        elif isinstance(node, dict):
+            if "player_id" in node or "player_key" in node:
+                add(node)
+            for value in node.values():
+                walk(value)
+
+    def add(node: Dict[str, Any]) -> None:
+        key = str(node.get("player_id") or node.get("player_key") or "").split(".")[-1]
+        points = _yahoo_nullable_total(node.get("player_points"))
+        if key and points is not None:
+            found[key] = points
+
+    walk(raw)
+    return found
+
+
+def _fetch_league_player_points(
+    access_token: str, league_key: str, week: int, raw_players: List[Any],
+) -> Dict[str, float]:
+    """Fetch league-scored weekly totals in bounded player-key batches.
+
+    Yahoo documents weekly scoring as the player ``stats`` subresource. The
+    league players collection is important here: its ``player_points`` values
+    use this league's scoring settings. Roster-only responses are used solely
+    for lineup slots and identity.
+    """
+    keys = list(dict.fromkeys(k for k in map(_yahoo_player_key, raw_players) if k))
+    out: Dict[str, float] = {}
+    for start in range(0, len(keys), 25):
+        batch = keys[start:start + 25]
+        path = (
+            f"league/{league_key}/players;player_keys={','.join(batch)}"
+            f"/stats;type=week;week={int(week)}"
+        )
+        try:
+            raw = _yahoo_get(access_token, path)
+            parsed = _extract_yahoo_player_points(raw)
+            # A cached empty response from the former score-less implementation
+            # must heal immediately rather than waiting for process restart/TTL.
+            if not parsed and raw_players:
+                raw = _yahoo_get(access_token, path, cache_max_age=0)
+                parsed = _extract_yahoo_player_points(raw)
+            out.update(parsed)
+        except Exception as exc:
+            logger.warning("[yahoo] weekly player points batch failed: %s", exc)
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Public API – normalized to match Sleeper/ESPN shapes
 # ---------------------------------------------------------------------------
@@ -1958,6 +2033,11 @@ def _hydrate_yahoo_matchup_lineups(
     by_key = _prefetch_team_rosters(
         access_token, [], week=week_i if week_i > 0 else None, team_keys=keys,
     )
+    all_raw_players = [p for tk in keys for p in (by_key.get(tk) or [])]
+    points_by_yahoo_id = (
+        _fetch_league_player_points(access_token, league_key, week_i, all_raw_players)
+        if week_i > 0 and all_raw_players else {}
+    )
     for row in rows:
         tk = str(row.get("team_key") or "")
         raw_players = by_key.get(tk) or []
@@ -1970,6 +2050,17 @@ def _hydrate_yahoo_matchup_lineups(
             row["players"] = players
         if starters:
             row["starters"] = starters
+        players_points: Dict[str, float] = {}
+        for rp in raw_players:
+            canonical, _slot = _yahoo_player_canonical(rp)
+            meta, _ = _flatten_yahoo_player(rp)
+            yahoo_id = str(meta.get("player_id") or meta.get("player_key") or "").split(".")[-1]
+            if canonical and yahoo_id in points_by_yahoo_id:
+                players_points[canonical] = points_by_yahoo_id[yahoo_id]
+        row["players_points"] = players_points
+        # Positional alignment is part of the normalized provider contract.
+        # None means Yahoo did not provide a score; it is not a fabricated zero.
+        row["starters_points"] = [players_points.get(pid) for pid in starters]
         _yahoo_debug("roster week=%s team_key=%s roster_id=%s players=%s starters=%s",
                      week_i, tk, row.get("roster_id"), len(players), len(starters))
 
