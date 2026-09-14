@@ -641,21 +641,79 @@ def test_faab_bid_bands_shape_and_ordering():
 
 
 def test_faab_bid_bands_scales_with_score():
-    low = faab_bid_bands(10.0, 0.0, 100.0)
-    high = faab_bid_bands(95.0, 0.0, 100.0)
+    # Bids come from the player's ABSOLUTE composite score, so a floor-level
+    # score is a flier and a strong every-week score is a top target.
+    low = faab_bid_bands(50.0)
+    high = faab_bid_bands(210.0)
     assert high["faab_target"] > low["faab_target"]
     assert "top target" in high["faab_rationale"]
     assert "speculative" in low["faab_rationale"] or "flier" in low["faab_rationale"]
 
 
 def test_faab_bid_bands_need_and_handcuff_nudge_center():
-    base = faab_bid_bands(60.0, 0.0, 100.0)
-    needy = faab_bid_bands(60.0, 0.0, 100.0, need_mult=1.2)
-    cuff = faab_bid_bands(60.0, 0.0, 100.0, handcuff_upside=0.4)
+    base = faab_bid_bands(120.0)
+    needy = faab_bid_bands(120.0, need_mult=1.2)
+    cuff = faab_bid_bands(120.0, handcuff_upside=0.4)
     assert needy["faab_target"] >= base["faab_target"]
     assert cuff["faab_target"] > base["faab_target"]
     assert "fills a roster need" in needy["faab_rationale"]
     assert "handcuff upside" in cuff["faab_rationale"]
+
+
+# ---- #4 FAAB is independent of the displayed list --------------------------
+
+def test_faab_bid_independent_of_list_min_max():
+    # The same player+context must get the same bid regardless of what else is on
+    # the displayed board (filtering by position or paging changes score_min/range
+    # but must NOT change this player's suggested bid).
+    a = faab_bid_bands(120.0, score_min=0.0, score_range=200.0)
+    b = faab_bid_bands(120.0, score_min=90.0, score_range=40.0)
+    c = faab_bid_bands(120.0, score_min=-500.0, score_range=9999.0)
+    assert a == b == c
+
+
+def test_faab_recommendation_dollars_and_denominator():
+    from utils.waiver_score import faab_recommendation
+    rec = faab_recommendation(190.0, budget_total=100, budget_remaining=60,
+                              waiver_type="faab", season_phase="mid")
+    assert rec["mode"] == "faab"
+    assert rec["pct_denominator"] == "remaining_budget"
+    # Dollars are a % of the *remaining* budget and never exceed it.
+    assert rec["high"] <= 60
+    assert rec["low"] <= rec["target"] <= rec["high"]
+    assert rec["heuristic"] is True
+
+
+def test_faab_recommendation_no_budget_hides_dollars():
+    from utils.waiver_score import faab_recommendation
+    rec = faab_recommendation(150.0, budget_total=None, budget_remaining=None)
+    assert rec["low"] is None and rec["target"] is None and rec["high"] is None
+    # Percentages are still shown, with the denominator clearly named.
+    assert rec["pct_target"] is not None
+    assert rec["pct_denominator"] == "season_budget"
+
+
+def test_faab_recommendation_waiver_priority_mode():
+    from utils.waiver_score import faab_recommendation
+    rec = faab_recommendation(200.0, waiver_type="priority")
+    assert rec["mode"] == "waiver_priority"
+    assert rec["target"] is None and rec["pct_target"] is None
+    assert rec["claim_guidance"]
+
+
+def test_faab_weak_wire_does_not_auto_expensive():
+    from utils.waiver_score import faab_recommendation
+    # A low absolute score stays a cheap flier even with no better alternatives.
+    rec = faab_recommendation(50.0, budget_total=100, budget_remaining=100)
+    assert rec["target"] <= 5
+    assert "flier" in rec["rationale"]
+
+
+def test_faab_short_role_keeps_bid_modest():
+    lasting = faab_bid_bands(150.0, role_duration=1.0)
+    one_week = faab_bid_bands(150.0, role_duration=0.2)
+    assert one_week["faab_target"] < lasting["faab_target"]
+    assert "short-term role" in one_week["faab_rationale"]
 
 
 def test_faab_bid_bands_bad_input_baseline():

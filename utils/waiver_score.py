@@ -32,7 +32,7 @@ production rather than leaving them hand-picked.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace as _dc_replace
 
 from utils.draft_grade import clamp01 as _clamp01
 
@@ -358,7 +358,8 @@ def strip_bye_weeks(weekly_projs, plays_this_week) -> list:
     return out
 
 
-def weeks_out_from_projections(weekly_projs, zero_threshold: float = 1.0) -> int:
+def weeks_out_from_projections(weekly_projs, zero_threshold: float = 1.0,
+                               treat_missing_as_out: bool = True) -> int:
     """Derive weeks-out from the leading run of ~zero weekly projections.
 
     Projection providers zero out a player's weekly points for every week they're
@@ -366,18 +367,106 @@ def weeks_out_from_projections(weekly_projs, zero_threshold: float = 1.0) -> int
     starting now is a direct read on the injury timeline — far better than
     guessing from the injury label. ``weekly_projs`` is this player's projected
     points for the upcoming weeks, in order (week now, +1, +2, ...).
+
+    ``treat_missing_as_out`` controls what a ``None`` (missing) entry means. When
+    True (default, back-compat) a missing week counts as out — the historical
+    behavior for providers that omit an inactive player. When False (item 9) a
+    missing projection is *unknown*: the run STOPS there rather than being treated
+    as a confirmed zero-point week, so a player who simply hasn't been loaded into
+    the feed can't fabricate or extend an inferred absence. An *explicit* zero
+    (present but ~0) always counts either way.
     """
     n = 0
     for p in (weekly_projs or []):
+        if p is None:
+            if treat_missing_as_out:
+                n += 1
+                continue
+            break  # missing => unknown; do not extend an inferred absence
         try:
-            v = float(p) if p is not None else 0.0
+            v = float(p)
         except (TypeError, ValueError):
-            v = 0.0
+            # Unparseable => unknown, same treatment as missing.
+            if treat_missing_as_out:
+                n += 1
+                continue
+            break
         if v <= zero_threshold:
             n += 1
         else:
             break
     return n
+
+
+# Week-status vocabulary the UI/scoring must keep distinct (item 9): a missing
+# projection is NOT an explicit zero, a bye is NOT an absence, and an explicit
+# zero alone is NOT proof of injury.
+WEEK_MISSING = "missing"        # no projection loaded — unknown
+WEEK_ZERO = "zero"              # explicitly projected ~0 (inactive / not in plans)
+WEEK_BYE = "bye"                # team not scheduled
+WEEK_OUT = "out"               # confirmed absence (injury/return info)
+WEEK_PLAYING = "playing"        # projected to play
+
+
+def classify_projection_week(proj, *, present: bool = True, bye: bool = False,
+                             confirmed_out: bool = False,
+                             zero_threshold: float = 1.0) -> str:
+    """Label one upcoming week with provenance, keeping the five states distinct.
+
+    ``confirmed_out`` comes from reliable injury/return information (not inferred
+    from a zero projection). ``present`` is False when the player is absent from
+    the projection feed for that week (missing, not zero)."""
+    if bye:
+        return WEEK_BYE
+    if confirmed_out:
+        return WEEK_OUT
+    if not present or proj is None:
+        return WEEK_MISSING
+    try:
+        v = float(proj)
+    except (TypeError, ValueError):
+        return WEEK_MISSING
+    return WEEK_ZERO if v <= zero_threshold else WEEK_PLAYING
+
+
+def return_timeline(week_labels, *, return_week_override=None) -> dict:
+    """Summarize an upcoming-week label series into a structured, honest timeline.
+
+    ``week_labels`` is the output of :func:`classify_projection_week` per week,
+    week now first. Returns weeks_out (confirmed absence run, stopping at the
+    first unknown/playing week), the basis, and coverage so the caller can show
+    uncertainty rather than a false-precise return date. A leading run of BYE
+    weeks is skipped (a bye isn't a missed game); the run ends at the first
+    MISSING (unknown) or PLAYING week.
+    """
+    labels = list(week_labels or [])
+    weeks_out = 0
+    unknown_from = None
+    basis = "none"
+    for i, lab in enumerate(labels):
+        if lab == WEEK_BYE:
+            continue
+        if lab in (WEEK_OUT, WEEK_ZERO):
+            weeks_out += 1
+            basis = "confirmed" if lab == WEEK_OUT else "projection_zero"
+        elif lab == WEEK_MISSING:
+            unknown_from = i
+            break
+        else:  # WEEK_PLAYING
+            break
+    covered = sum(1 for lab in labels if lab != WEEK_MISSING)
+    missing = sum(1 for lab in labels if lab == WEEK_MISSING)
+    if return_week_override is not None:
+        weeks_out = int(return_week_override)
+        basis = "return_date"
+    return {
+        "weeks_out": weeks_out,
+        "basis": basis,
+        "weeks_covered": covered,
+        "weeks_missing": missing,
+        "unknown_from": unknown_from,
+        "estimated": basis in ("projection_zero",),  # projection-derived => estimate, not certain
+    }
 
 
 def expected_vacated_points(vacated, horizon_weeks: float = None,
@@ -632,52 +721,214 @@ def waiver_push_copy(candidate: dict) -> tuple[str, str]:
     return title, body
 
 
-def faab_bid_bands(pickup_score: float, score_min: float, score_range: float,
-                   need_mult: float = 1.0, handcuff_upside: float = 0.0) -> dict:
-    """Low / target / stretch FAAB % of budget for a waiver target.
+# Absolute reference band mapping a composite pickup score onto bid intensity,
+# independent of the displayed waiver list (#4). Calibrated to
+# waiver_pickup_score: players near the min_value floor sit around FAAB_SCORE_LOW
+# while strong every-week adds land near FAAB_SCORE_HIGH. Because these are fixed,
+# changing a position filter or paging the list can't move the same player's bid.
+FAAB_SCORE_LOW = 45.0
+FAAB_SCORE_HIGH = 190.0
 
-    Modest by design (waiver fliers, not trade pieces). ``need_mult`` and
-    ``handcuff_upside`` nudge the center when the add fills a hole or is an
-    elite handcuff. Always returns ints suitable for UI chips.
+# Season-phase intensity multipliers: early-season adds have a whole season to
+# pay off (bid up a touch); late-season fliers rarely do (bid down) unless they
+# are immediate help, which the score already reflects.
+_FAAB_PHASE_MULT = {"early": 1.1, "mid": 1.0, "late": 0.85, "playoffs": 0.8}
+
+
+def faab_intensity(pickup_score, *, need_mult: float = 1.0,
+                   handcuff_upside: float = 0.0, role_duration: float = 1.0,
+                   season_phase: str = "mid") -> float:
+    """0..1 bid intensity from an ABSOLUTE score reference (never the displayed
+    list, #4), nudged by roster need, handcuff upside, expected role duration,
+    and season timing.
+
+    ``role_duration`` is a 0..1 estimate of how long the add stays useful (a
+    one-week injury fill is low; a player earning a lasting role is high) so a
+    short-term plug doesn't command a season-long price.
     """
     try:
-        smin = float(score_min)
-        srng = float(score_range) or 1.0
         score = float(pickup_score)
     except (TypeError, ValueError):
-        return {"faab_low": 0, "faab_target": 1, "faab_high": 2,
-                "faab_rationale": "Baseline flier bid"}
-    t = max(0.0, min(1.0, (score - smin) / srng))
-    center = 1.0 + (t ** 1.7) * 16.0
+        return 0.0
+    t = _clamp01((score - FAAB_SCORE_LOW) / (FAAB_SCORE_HIGH - FAAB_SCORE_LOW))
     try:
         need = float(need_mult or 1.0)
     except (TypeError, ValueError):
         need = 1.0
-    center *= 1.0 + min(max(need - 1.0, 0.0), 0.25)
+    t *= 1.0 + min(max(need - 1.0, 0.0), 0.25)
     try:
-        cuff = float(handcuff_upside or 0.0)
+        cuff = max(0.0, float(handcuff_upside or 0.0))
     except (TypeError, ValueError):
         cuff = 0.0
-    center += max(0.0, cuff) * 13.0
-    low = max(0, int(round(center * 0.72)))
+    t += cuff * 0.15
+    try:
+        dur = _clamp01(float(role_duration))
+    except (TypeError, ValueError):
+        dur = 1.0
+    # A short role caps how aggressive the bid gets (0.6..1.0 of intensity).
+    t *= 0.6 + 0.4 * dur
+    t *= _FAAB_PHASE_MULT.get(str(season_phase or "mid").lower(), 1.0)
+    return _clamp01(t)
+
+
+def _faab_pct_bands(intensity: float) -> "tuple[int, int, int]":
+    """Low / target / stretch as % of the budget denominator, from 0..1 intensity.
+    Modest by design (waiver fliers, not auction pieces): target tops out ~26%."""
+    center = 1.0 + (intensity ** 1.6) * 25.0
+    low = max(0, int(round(center * 0.7)))
     target = max(low, int(round(center)))
-    high = max(target + 1, min(50, int(round(center * 1.12)) + 1))
+    high = max(target + 1, min(50, int(round(center * 1.15)) + 1))
+    return low, target, high
+
+
+def _faab_rationale(intensity: float, need: float, cuff: float,
+                    role_duration: float) -> str:
     bits = []
-    if t >= 0.85:
+    if intensity >= 0.7:
         bits.append("top target on your wire")
-    elif t >= 0.55:
-        bits.append("solid add vs this week's board")
+    elif intensity >= 0.4:
+        bits.append("solid add vs the market")
     else:
         bits.append("speculative flier")
     if need > 1.05:
         bits.append("fills a roster need")
     if cuff >= 0.35:
         bits.append("handcuff upside")
+    if role_duration <= 0.4:
+        bits.append("short-term role — keep the bid modest")
+    return "; ".join(bits)
+
+
+def faab_bid_bands(pickup_score: float, score_min: float = 0.0,
+                   score_range: float = 1.0, need_mult: float = 1.0,
+                   handcuff_upside: float = 0.0, role_duration: float = 1.0,
+                   season_phase: str = "mid") -> dict:
+    """Low / target / stretch FAAB **% of budget** for a waiver target.
+
+    List-independent (#4): the bid comes from the player's own absolute score and
+    context, so ``score_min`` / ``score_range`` are accepted only for backward
+    compatibility and are ignored — filtering or paging the list never changes a
+    player's suggested bid. Always returns ints suitable for UI chips.
+    """
+    try:
+        score = float(pickup_score)
+    except (TypeError, ValueError):
+        return {"faab_low": 0, "faab_target": 1, "faab_high": 2,
+                "faab_rationale": "Baseline flier bid"}
+    try:
+        need = float(need_mult or 1.0)
+    except (TypeError, ValueError):
+        need = 1.0
+    try:
+        cuff = max(0.0, float(handcuff_upside or 0.0))
+    except (TypeError, ValueError):
+        cuff = 0.0
+    try:
+        dur = _clamp01(float(role_duration))
+    except (TypeError, ValueError):
+        dur = 1.0
+    intensity = faab_intensity(score, need_mult=need, handcuff_upside=cuff,
+                               role_duration=dur, season_phase=season_phase)
+    low, target, high = _faab_pct_bands(intensity)
     return {
         "faab_low": low,
         "faab_target": target,
         "faab_high": high,
-        "faab_rationale": "; ".join(bits),
+        "faab_rationale": _faab_rationale(intensity, need, cuff, dur),
+    }
+
+
+def faab_recommendation(pickup_score, *, budget_total=None, budget_remaining=None,
+                        waiver_type: str = "faab", season_phase: str = "mid",
+                        need_mult: float = 1.0, handcuff_upside: float = 0.0,
+                        role_duration: float = 1.0) -> dict:
+    """List-independent FAAB / waiver-priority claim guidance (#4).
+
+    Returns a dict describing how hard to bid, with the percentage denominator
+    made explicit and dollar amounts only when a real budget is known:
+
+      * ``mode``            — "faab" or "waiver_priority".
+      * ``pct_low/target/high`` and ``pct_denominator`` — % of *remaining* budget
+        when a remaining figure is supplied, otherwise % of the *season* budget.
+        The denominator is named so the UI never shows an ambiguous "%".
+      * ``low/target/high`` and ``budget_basis`` — dollar amounts, capped at the
+        remaining budget, only when a total budget is available. When it isn't,
+        these are ``None`` and only clearly-labeled percentages are shown (no
+        fabricated dollars).
+      * ``claim_guidance`` — qualitative advice for waiver-priority leagues that
+        don't use FAAB at all.
+      * ``rationale`` and ``heuristic: True`` — these are heuristic estimates, not
+        validated market prices; a weak wire never auto-creates an expensive bid.
+    """
+    intensity = faab_intensity(pickup_score, need_mult=need_mult,
+                               handcuff_upside=handcuff_upside,
+                               role_duration=role_duration, season_phase=season_phase)
+    pct_low, pct_target, pct_high = _faab_pct_bands(intensity)
+    try:
+        need = float(need_mult or 1.0)
+    except (TypeError, ValueError):
+        need = 1.0
+    try:
+        cuff = max(0.0, float(handcuff_upside or 0.0))
+    except (TypeError, ValueError):
+        cuff = 0.0
+    rationale = _faab_rationale(intensity, need, cuff, _clamp01(float(role_duration)))
+
+    if str(waiver_type or "").lower() in ("priority", "waiver_priority", "rolling_priority"):
+        if intensity >= 0.7:
+            claim = "Use your top waiver claim"
+        elif intensity >= 0.4:
+            claim = "Worth a mid-priority claim"
+        else:
+            claim = "Only if it costs a low claim"
+        return {
+            "mode": "waiver_priority",
+            "pct_low": None, "pct_target": None, "pct_high": None,
+            "pct_denominator": None,
+            "low": None, "target": None, "high": None, "budget_basis": None,
+            "claim_guidance": claim,
+            "rationale": rationale,
+            "heuristic": True,
+        }
+
+    # Dollar denominator: prefer remaining budget (what you can actually spend),
+    # else the season budget. Name whichever we used.
+    denom = None
+    denom_label = None
+    if budget_remaining is not None:
+        try:
+            denom = max(0.0, float(budget_remaining))
+            denom_label = "remaining_budget"
+        except (TypeError, ValueError):
+            denom = None
+    if denom is None and budget_total is not None:
+        try:
+            denom = max(0.0, float(budget_total))
+            denom_label = "season_budget"
+        except (TypeError, ValueError):
+            denom = None
+
+    dollars = {"low": None, "target": None, "high": None}
+    if denom is not None:
+        cap = denom
+        dollars = {
+            "low": min(int(round(pct_low / 100.0 * denom)), int(cap)),
+            "target": min(int(round(pct_target / 100.0 * denom)), int(cap)),
+            "high": min(int(round(pct_high / 100.0 * denom)), int(cap)),
+        }
+        # Preserve ordering after the remaining-budget cap.
+        dollars["target"] = max(dollars["low"], dollars["target"])
+        dollars["high"] = max(dollars["target"], dollars["high"])
+
+    return {
+        "mode": "faab",
+        "pct_low": pct_low, "pct_target": pct_target, "pct_high": pct_high,
+        "pct_denominator": denom_label or "season_budget",
+        "low": dollars["low"], "target": dollars["target"], "high": dollars["high"],
+        "budget_basis": denom_label,
+        "claim_guidance": None,
+        "rationale": rationale,
+        "heuristic": True,
     }
 
 
@@ -906,3 +1157,105 @@ def need_multiplier(position, need_scores: dict, w: WaiverWeights = WEIGHTS) -> 
     if n is None:
         return 1.0
     return 1.0 + w.need_max_bonus * _clamp01(n)
+
+
+# ---------------------------------------------------------------------------
+# Recommendation horizons (#2)
+# ---------------------------------------------------------------------------
+
+# The three horizons the surfaces offer. Each meaningfully reweights the model:
+# immediate help leans on forward production and mutes age / long-term value;
+# a stash leans on value/age/upside and mutes this-week injury opportunity.
+HORIZONS = ("this_week", "four_week", "stash")
+
+
+def horizon_weights(horizon, base: WaiverWeights = WEIGHTS, *,
+                    dynasty: bool = False) -> WaiverWeights:
+    """Return a WaiverWeights tuned for the selected horizon (#2).
+
+    * ``this_week``  — redraft immediate help: forward projection dominates, and
+      direct age / long-term value bonuses are minimized.
+    * ``four_week``  — the balanced default.
+    * ``stash``      — value, youth, and role upside matter; this-week injury
+      opportunity is de-emphasized (a short-term vacancy doesn't make a stash),
+      and in dynasty leagues age / value are weighted even more.
+    """
+    h = str(horizon or "four_week").lower()
+    if h == "this_week":
+        return _dc_replace(
+            base,
+            value_max=base.value_max * 0.45,
+            proj_per_ppg=base.proj_per_ppg * 1.4,
+            proj_max=base.proj_max * 1.4,
+            age_youth_max=6.0, age_youth_per=0.5,
+            age_decay_per=1.5, age_floor=-4.0,
+        )
+    if h == "stash":
+        return _dc_replace(
+            base,
+            value_max=base.value_max * (1.6 if dynasty else 1.2),
+            proj_per_ppg=base.proj_per_ppg * 0.5,
+            proj_max=base.proj_max * 0.5,
+            age_youth_max=base.age_youth_max * (1.5 if dynasty else 1.1),
+            age_youth_per=base.age_youth_per * (1.4 if dynasty else 1.0),
+            injury_max=base.injury_max * 0.5,   # short-term vacancy ≠ a stash reason
+        )
+    return base
+
+
+# ---------------------------------------------------------------------------
+# Candidate discovery floor (#5)
+# ---------------------------------------------------------------------------
+
+# Engine breakout score at/above which a low-value player has a *credible*
+# opportunity signal worth admitting to the pool (matches the "Breakout" badge).
+BREAKOUT_FLOOR = 55.0
+
+
+def credible_opportunity(c: dict, waiver_breakout: dict = None,
+                         w: WaiverWeights = WEIGHTS) -> bool:
+    """Does the candidate have a *real* opportunity signal (not just age or noisy
+    rank movement)? Used to let promising low-value players bypass the static
+    value floor (#5) without admitting every deep player on noise.
+
+    Credible signals: a confirmed usage spike, a confirmed injury vacancy with
+    the candidate genuinely next in line, an engine breakout at/above the floor,
+    or an explicit verified role-change flag. Age and raw rank_change_7d are
+    deliberately excluded — they are the noisy signals the floor exists to block.
+    """
+    waiver_breakout = waiver_breakout or {}
+    # Real usage spike (last-3 vs season at/above the stat threshold).
+    if usage_ratio(c.get("usage_stat"), c.get("usage_delta")) >= 1.0:
+        return True
+    # Confirmed / likely absence ahead, candidate next in line.
+    inj_sev = max((VACANCY_SEVERITY.get(str(s).upper(), 0.0)
+                   for s in (c.get("injured_ahead") or [])), default=0.0)
+    if inj_sev >= VACANCY_STRONG and int(c.get("healthy_ahead") or 0) == 0:
+        return True
+    # Engine breakout.
+    try:
+        if float(waiver_breakout.get(c.get("player_id"), 0) or 0) >= BREAKOUT_FLOOR:
+            return True
+    except (TypeError, ValueError):
+        pass
+    # Explicit verified role change / big-game discovery flag set by the caller.
+    if c.get("verified_role_change") or c.get("big_game_priority"):
+        return True
+    return False
+
+
+def passes_candidate_floor(c: dict, waiver_breakout: dict = None,
+                           min_value: float = None,
+                           w: WaiverWeights = WEIGHTS) -> bool:
+    """True when a candidate clears the value floor OR carries a credible
+    opportunity signal (#5). This is the single admission gate the discovery
+    layer should apply, so a real breakout/vacancy/usage story surfaces even at
+    low static value, while age/rank-noise-only players stay filtered out."""
+    floor = w.min_value if min_value is None else float(min_value)
+    try:
+        val = float(c.get("value") or 0)
+    except (TypeError, ValueError):
+        val = 0.0
+    if val >= floor:
+        return True
+    return credible_opportunity(c, waiver_breakout, w)
