@@ -622,6 +622,192 @@ def _unavailable_breakout_payload(season: Optional[int]) -> Dict:
     }
 
 
+# =============================================================================
+# WEEKLY (IN-SEASON) BREAKOUT SERVING
+# =============================================================================
+# During the season the board is served from the weekly usage engine
+# (weekly_breakout / weekly_store), not the offseason opportunity table. The
+# payloads keep the legacy field names the UI already reads
+# (breakout_opportunity_score, confidence_score, key_reasons, breakout_blend) and
+# add weekly-specific fields (classification, usage_comparison, freshness,
+# provisional, risks) under a ``weekly`` flag so the modal can branch.
+
+_WEEKLY_SIGNAL_UNITS = {
+    "snap_share": "%", "target_share": "%",
+    "targets_pg": "", "carry_opportunity_pg": "", "pass_att_pg": "", "rush_pg": "",
+}
+_WEEKLY_SIGNAL_LABELS = {
+    "snap_share": "Snap share", "target_share": "Target share",
+    "targets_pg": "Targets/game", "carry_opportunity_pg": "Carries+targets/game",
+    "pass_att_pg": "Pass att/game", "rush_pg": "Rush att/game",
+}
+_WEEKLY_CLASS_LABELS = {
+    "emerging_breakout": "Emerging Breakout",
+    "temporary_opportunity": "Temporary Opportunity",
+    "watchlist": "Watchlist",
+}
+
+
+def _weekly_breakout_available(season: int) -> bool:
+    """True when a weekly snapshot exists for the season (in-season serving)."""
+    try:
+        from data_building.breakout_engine.weekly_store import latest_scored_week
+        return latest_scored_week(season) is not None
+    except Exception:
+        logger.debug("weekly breakout availability check failed", exc_info=True)
+        return False
+
+
+def _weekly_usage_comparison(evidence: Dict) -> List[Dict]:
+    """Compact baseline->recent usage rows for the UI, only for signals that had
+    data. Preserves None (unknown) rather than showing a fake 0."""
+    signals = (evidence or {}).get("signals") or {}
+    out = []
+    for key, sig in signals.items():
+        if not sig or not sig.get("available"):
+            continue
+        out.append({
+            "key": key,
+            "label": _WEEKLY_SIGNAL_LABELS.get(key, key),
+            "unit": _WEEKLY_SIGNAL_UNITS.get(key, ""),
+            "baseline": sig.get("baseline"),
+            "recent": sig.get("recent"),
+            "delta": sig.get("delta"),
+            "points": sig.get("points"),
+        })
+    out.sort(key=lambda s: (s.get("points") or 0), reverse=True)
+    return out
+
+
+def _weekly_row_to_candidate(row: Dict) -> Dict:
+    """Transform a weekly_breakout_scores row into a UI candidate dict."""
+    evidence = row.get("evidence") or {}
+    if isinstance(evidence, str):
+        try:
+            import json as _json
+            evidence = _json.loads(evidence)
+        except Exception:
+            evidence = {}
+    score = float(row.get("breakout_score") or 0)
+    conf = float(row.get("confidence") or 0)
+    classification = row.get("classification") or "watchlist"
+    reasons_text = row.get("reasons") or "\n".join(evidence.get("reasons") or [])
+    risks_list = (row.get("risks") or "").split("\n") if row.get("risks") else (evidence.get("risks") or [])
+    risks_list = [r for r in risks_list if r]
+    return {
+        "player_id": str(row.get("player_id") or ""),
+        "player_name": row.get("player_name"),
+        "team": row.get("team"),
+        "position": row.get("position"),
+        # legacy field names the existing UI/consumers read
+        "breakout_opportunity_score": round(score, 1),
+        "confidence_score": round(conf, 1),
+        "key_reasons": reasons_text,
+        "breakout_blend": round(score / 100.0, 4),
+        "hit_probability": None,
+        "breakout_type": {
+            "type": classification,
+            "label": _WEEKLY_CLASS_LABELS.get(classification, classification.title()),
+        },
+        # weekly-specific
+        "weekly": True,
+        "mode": "weekly",
+        "classification": classification,
+        "classification_label": _WEEKLY_CLASS_LABELS.get(classification, classification.title()),
+        "breakout_score": round(score, 1),
+        "confidence": round(conf, 1),
+        "provisional": bool(row.get("provisional")),
+        "baseline_source": row.get("baseline_source"),
+        "as_of_week": row.get("as_of_week"),
+        "evaluated_weeks": list(row.get("evaluated_weeks") or []),
+        "recent_weeks": list(row.get("recent_weeks") or []),
+        "baseline_weeks": list(row.get("baseline_weeks") or []),
+        "reasons": [r for r in (evidence.get("reasons") or reasons_text.split("\n")) if r],
+        "risks": risks_list,
+        "usage_comparison": _weekly_usage_comparison(evidence),
+        "sample": evidence.get("sample"),
+        "fantasy": evidence.get("fantasy"),
+        "coverage_fraction": (float(row["coverage_fraction"])
+                              if row.get("coverage_fraction") is not None else None),
+    }
+
+
+def get_weekly_breakout_candidates(season: int, min_score: float = 0.0,
+                                   limit: Optional[int] = None) -> Dict:
+    """In-season board served from the weekly engine."""
+    from data_building.breakout_engine.weekly_store import load_weekly_candidates
+    from data_building.breakout_engine.weekly_breakout import WATCHLIST_MIN_SCORE
+
+    payload = load_weekly_candidates(
+        season, min_score=max(min_score, WATCHLIST_MIN_SCORE), limit=None
+    )
+    rows = payload.get("candidates", [])
+    candidates = [_weekly_row_to_candidate(r) for r in rows]
+    candidates.sort(key=lambda c: (c.get("breakout_score") or 0, c.get("confidence") or 0),
+                    reverse=True)
+    if limit and limit > 0:
+        candidates = candidates[:limit]
+
+    # Enrich name / headshot / precise age from players_index (same as offseason).
+    try:
+        from utils.utils import load_players_index
+        from dashboard_services.service import age_from_bday
+        players_index = load_players_index() or {}
+        for c in candidates:
+            pmeta = players_index.get(str(c.get('player_id') or ''), {})
+            if not c.get('player_name'):
+                c['player_name'] = pmeta.get('full_name') or pmeta.get('name')
+            c['espnHeadshot'] = pmeta.get('espnHeadshot')
+            precise = age_from_bday(pmeta.get('bDay'))
+            if precise is not None:
+                c['age'] = precise
+    except Exception:
+        logger.warning("weekly breakout: player index enrich failed", exc_info=True)
+
+    return {
+        "season": season,
+        "candidates": candidates,
+        "count": len(candidates),
+        "as_of_date": payload.get("as_of_date"),
+        "as_of_week": payload.get("as_of_week"),
+        "weeks_stale": payload.get("weeks_stale", 0),
+        "scoring_version": payload.get("scoring_version"),
+        "mode": "weekly",
+        "data_available": True,
+        "data_status": payload.get("data_status", "ok"),
+    }
+
+
+def get_weekly_breakout_detail(player_id: str, season: int) -> Dict:
+    """In-season player detail served from the weekly engine."""
+    from data_building.breakout_engine.weekly_store import get_weekly_candidate
+    row = get_weekly_candidate(str(player_id), season)
+    if not row:
+        return {"player_id": player_id, "season": season, "available": False,
+                "mode": "weekly", "data_available": False}
+    cand = _weekly_row_to_candidate(row)
+    cand["season"] = season
+    cand["available"] = True
+    cand["as_of_date"] = (row.get("as_of_date").isoformat()
+                          if hasattr(row.get("as_of_date"), "isoformat") else row.get("as_of_date"))
+    try:
+        from utils.utils import load_players_index
+        from dashboard_services.service import age_from_bday
+        pmeta = (load_players_index() or {}).get(str(player_id), {})
+        if not cand.get('player_name'):
+            cand['player_name'] = pmeta.get('full_name') or pmeta.get('name')
+        cand['espnHeadshot'] = pmeta.get('espnHeadshot')
+        precise = age_from_bday(pmeta.get('bDay'))
+        if precise is not None:
+            cand['age'] = precise
+    except Exception:
+        logger.debug("weekly detail enrich failed", exc_info=True)
+    rank = _breakout_ranks(season).get(str(player_id))
+    if rank:
+        cand['breakout_rank'] = rank
+    return cand
+
+
 def get_breakout_candidates(season: Optional[int] = None, min_score: float = 0.0,
                             limit: Optional[int] = None) -> Dict:
     """
@@ -648,6 +834,10 @@ def get_breakout_candidates(season: Optional[int] = None, min_score: float = 0.0
         from dashboard_services.api import get_nfl_state
         nfl_state = get_nfl_state() or {}
         season = int(nfl_state.get('season', 2026))
+
+    # In-season: serve the weekly usage engine's board when it has a snapshot.
+    if _weekly_breakout_available(season):
+        return get_weekly_breakout_candidates(season, min_score=min_score, limit=limit)
 
     if not opportunity_data_ready(season):
         return _unavailable_breakout_payload(season)
@@ -855,6 +1045,10 @@ def get_breakout_candidate_detail(player_id: str, season: Optional[int] = None) 
         from dashboard_services.api import get_nfl_state
         nfl_state = get_nfl_state() or {}
         season = int(nfl_state.get('season', 2026))
+
+    # In-season: serve weekly detail when a snapshot exists.
+    if _weekly_breakout_available(season):
+        return get_weekly_breakout_detail(player_id, season)
 
     if not opportunity_data_ready(season):
         return {
@@ -1279,6 +1473,18 @@ def aligned_breakout_scores(player_ids, requested_season: Optional[int] = None) 
     try:
         season = _resolve_bo_season(requested_season)
         if not season:
+            return out
+        # In-season: reproduce the weekly board's displayed set (top-N by score)
+        # so the waiver 'Breakout' tag matches the Breakout page. Breakout
+        # detection stays independent of league availability - this only maps
+        # scores for whichever players the caller asked about.
+        if _weekly_breakout_available(season):
+            board = get_weekly_breakout_candidates(season, min_score=0.0,
+                                                   limit=_BO_PAGE_LIMIT)
+            for c in board.get("candidates", []):
+                pid = str(c.get("player_id"))
+                if pid in pids:
+                    out[pid] = float(c.get("breakout_score") or 0)
             return out
         if not opportunity_data_ready(season):
             return out

@@ -777,7 +777,15 @@ print(f"[cron] Archetype cache: {{n}} WR/TE profiles -> cache/archetype_{_archet
 from dotenv import load_dotenv; load_dotenv()
 from datetime import date
 today = date.today()
-if today.month in (1, 2) or (today.month == 3 and today.day < 15):
+# Decide from the NFL schedule, not the calendar month: a completed
+# regular-season week (including a Week 18 that falls in January) is an
+# in-season run and must not be skipped as "playoffs". Only the true dead
+# period (offseason context during Jan/Feb/early March) is skipped.
+from dashboard_services.api import get_nfl_state
+from data_building.breakout_engine.weekly_runner import resolve_scoring_context, MODE_WEEKLY
+_ctx = resolve_scoring_context(get_nfl_state() or {{}}, as_of_date=today)
+_dead_period = (today.month in (1, 2) or (today.month == 3 and today.day < 15))
+if _ctx.mode != MODE_WEEKLY and _dead_period:
     print("[cron] Breakout skipped - playoff/early offseason period")
 else:
     from data_building.breakout_engine.calculate_breakouts_with_real_data import main as run_breakouts
