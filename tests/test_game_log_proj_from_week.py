@@ -7,6 +7,11 @@ it are still to come and get projected.
 """
 import pytest
 
+# app.py imports pandas (and flask) at module load. The fast "lint" CI shard has
+# flask but not pandas, so guard on pandas first — otherwise importing app here
+# raises at COLLECTION and aborts the whole run. The helper itself is pure; this
+# test runs in the full-dependency shard.
+pytest.importorskip("pandas")
 pytest.importorskip("flask")
 
 from app import _game_log_proj_from_week  # noqa: E402
