@@ -159,9 +159,22 @@ def run_breakout_scoring(dry_run: bool = False) -> dict:
         # Run the scoring
         result = calculate_breakouts()
 
-        print(f"\n✓ Breakout scoring completed successfully")
-        print(f"  - Candidates analyzed: {result.get('raw_candidates', 0)}")
-        print(f"  - Scores saved: {result.get('saved_count', 0)}")
+        # calculate_breakouts() now returns either a weekly summary
+        # ({mode, candidates_scanned, records_saved, ...}) or an offseason marker
+        # ({mode: 'offseason', ...}). Report from whichever keys are present so
+        # the log reflects what actually ran (the old raw_candidates/saved_count
+        # keys no longer exist and always printed 0).
+        mode = result.get('mode', 'unknown')
+        analyzed = result.get('candidates_scanned', result.get('raw_candidates', 0))
+        saved = result.get('records_saved', result.get('saved_count', 0))
+        print(f"\n✓ Breakout scoring completed successfully (mode={mode})")
+        if mode == 'offseason':
+            print(f"  - Offseason historical scorer ran for season "
+                  f"{result.get('season')} (stats {result.get('stats_season')})")
+        else:
+            print(f"  - Cutoff week: {result.get('cutoff_week')}")
+            print(f"  - Candidates analyzed: {analyzed}")
+            print(f"  - Scores saved: {saved}")
 
         return {
             'status': 'success',
