@@ -11359,6 +11359,25 @@ def api_start_sit_options():
     except Exception:
         logger.debug("suppressed exception", exc_info=True)
 
+    # ── Opponent play volume ("opp plays faced"): pace / possession context ──
+    # Offensive plays each NFL defense faces per game, from open play-by-play.
+    # Attached per player for their weekly opponent as DISPLAY-ONLY context --
+    # deliberately NOT part of the start/sit score, START/SIT badges, optimal
+    # lineup, or Compare verdict (weekly projections already reflect the
+    # opponent; see utils/start_sit_score.py).
+    team_play_volume: dict = {}
+    _tpv_avgs: dict = {}
+    try:
+        _tpv_blob = _load_team_play_volume(season)
+        team_play_volume = (_tpv_blob or {}).get("teams") or {}
+        _tpv_avgs = {
+            "total": (_tpv_blob or {}).get("nfl_avg_plays_faced_pg"),
+            "pass": (_tpv_blob or {}).get("nfl_avg_pass_faced_pg"),
+            "rush": (_tpv_blob or {}).get("nfl_avg_rush_faced_pg"),
+        }
+    except Exception:
+        logger.debug("suppressed exception", exc_info=True)
+
     # ── Weekly consistency / boom-bust profiles (from actual weekly scores) ──
     # Start from last completed season and mold toward the current one as games
     # come in (see blended_consistency_profile). Last season is loaded per-player:
@@ -11524,6 +11543,12 @@ def api_start_sit_options():
         _wx_ss = (game_conditions.get(team) or {}).get("weather") if not on_bye else None
         _wx_kind = (_wx_ss or {}).get("kind") if isinstance(_wx_ss, dict) else None
 
+        # Opponent play volume ("opp plays faced"): display-only pace context,
+        # never fed into the start/sit score below. Headline is the
+        # position-relevant split (rush faced for RB, pass faced for QB/WR/TE).
+        _pv_ss = (_play_volume_context(team_play_volume, opponent, pos, _tpv_avgs)
+                  if (opponent and not on_bye) else None)
+
         # ── Start/sit score: one engine (utils.start_sit_score). Matchup is not
         # re-multiplied -- weekly proj already reflects the opponent. Weather and
         # Vegas are applied here because projection feeds usually omit them.
@@ -11603,6 +11628,8 @@ def api_start_sit_options():
             "weather": _wx_ss,
             "consistency": _cons,
             "oline": _ol_ss,
+            # Display-only pace context (opp plays faced); not a scoring input.
+            "play_volume": _pv_ss,
             "demotion": demotion,
             # Unified start/sit score (the single ranking used everywhere) plus the
             # per-factor multipliers behind it, so the Compare card can name which
@@ -15448,6 +15475,123 @@ def _oline_for_player(season: int, team: str, position: str):
         "sack_rate": row.get("sack_rate"),
         "line_yards": row.get("line_yards"),
     }
+
+
+_TEAM_PLAY_VOLUME_CACHE: dict = {}
+_TEAM_PLAY_VOLUME_TS: dict = {}
+
+
+def _load_team_play_volume(season: int) -> dict:
+    """Load the cron-precomputed team play-volume table ("opp plays faced").
+
+    Shape: ``{"nfl_avg_plays_faced_pg": float, "teams": {team: {plays_faced_pg,
+    plays_faced_l4_pg, off_plays_pg, games}}}``. Produced by
+    data_building/team_play_volume.py via the daily cron. Returns {} when no
+    cache exists so callers degrade gracefully (the stat is simply omitted).
+
+    Pace carries across seasons, so before the in-season build (offseason / very
+    early weeks) the newest available season's cache is used instead of showing
+    nothing -- the same cross-season fallback ``_oline_for_player`` uses. Cached
+    in-process with the matchup-ratings TTL."""
+    key = str(season)
+    now = time.time()
+    if (_TEAM_PLAY_VOLUME_CACHE.get(key) is not None
+            and now - _TEAM_PLAY_VOLUME_TS.get(key, 0) < _MATCHUP_RATINGS_TTL):
+        return _TEAM_PLAY_VOLUME_CACHE[key]
+    blob: dict = {}
+    try:
+        path = os.path.join("cache", f"team_play_volume_s{season}.json")
+        if not os.path.exists(path):
+            newest = None
+            try:
+                for fn in os.listdir("cache"):
+                    if fn.startswith("team_play_volume_s") and fn.endswith(".json"):
+                        try:
+                            yr = int(fn[len("team_play_volume_s"):-len(".json")])
+                        except ValueError:
+                            continue
+                        newest = yr if newest is None else max(newest, yr)
+            except Exception:
+                newest = None
+            if newest is not None:
+                path = os.path.join("cache", f"team_play_volume_s{newest}.json")
+        if os.path.exists(path):
+            blob = json.load(open(path)) or {}
+    except Exception:
+        blob = {}
+    _TEAM_PLAY_VOLUME_CACHE[key] = blob
+    _TEAM_PLAY_VOLUME_TS[key] = now
+    return blob
+
+
+def _play_volume_context(teams_tbl: dict, opponent: str, position, avgs: dict):
+    """Display-only play-volume object for a player's weekly opponent.
+
+    ``teams_tbl`` is the {team: row} map from ``_load_team_play_volume``;
+    ``opponent`` the player's NFL opponent code; ``position`` selects the
+    position-relevant headline (RB -> rush plays faced; QB/WR/TE -> pass plays
+    faced; else total); ``avgs`` is {"total","pass","rush"} league averages.
+    Returns None when the opponent has no row, so a card without data simply
+    omits the stat. This value is NEVER fed into the start/sit score -- pace is
+    context, not part of the ranking.
+
+    The ``faced_*`` fields are the position-relevant headline used on the card;
+    the ``*_faced_pg`` splits and the total feed the card's collapsed detail and
+    the (apples-to-apples, always-total) Compare row."""
+    if not teams_tbl or not opponent:
+        return None
+    row = (teams_tbl.get(_norm_sched_team(opponent))
+           or teams_tbl.get(str(opponent).upper()))
+    if not row or row.get("plays_faced_pg") is None:
+        return None
+
+    avgs = avgs or {}
+    pos = (position or "").upper().strip()
+    if pos == "RB":
+        basis, label = "rush", "Opp rush plays faced"
+        faced, l4, avg = (row.get("rush_faced_pg"), row.get("rush_faced_l4_pg"),
+                          avgs.get("rush"))
+    elif pos in ("QB", "WR", "TE"):
+        basis, label = "pass", "Opp pass plays faced"
+        faced, l4, avg = (row.get("pass_faced_pg"), row.get("pass_faced_l4_pg"),
+                          avgs.get("pass"))
+    else:
+        basis, label, faced, l4, avg = ("total", "Opp plays faced", None, None, None)
+    # Fall back to the total when the position-relevant split is missing.
+    if faced is None:
+        basis, label = "total", "Opp plays faced"
+        faced, l4, avg = (row.get("plays_faced_pg"), row.get("plays_faced_l4_pg"),
+                          avgs.get("total"))
+
+    def _delta(v, a):
+        if v is None or a is None:
+            return None
+        try:
+            return round(float(v) - float(a), 1)
+        except (TypeError, ValueError):
+            return None
+
+    total = row.get("plays_faced_pg")
+    out = {
+        # Position-relevant headline for the card.
+        "basis": basis,
+        "label": label,
+        "faced_pg": faced,
+        "faced_l4_pg": l4,
+        "nfl_avg": avg,
+        "vs_avg": _delta(faced, avg),
+        # Splits for the collapsed card detail.
+        "pass_faced_pg": row.get("pass_faced_pg"),
+        "rush_faced_pg": row.get("rush_faced_pg"),
+        # Total for the neutral Compare row (apples-to-apples across positions).
+        "plays_faced_pg": total,
+        "plays_faced_l4_pg": row.get("plays_faced_l4_pg"),
+        "total_vs_avg": _delta(total, avgs.get("total")),
+        # Shared context.
+        "games": row.get("games"),
+        "off_plays_pg": row.get("off_plays_pg"),
+    }
+    return out
 
 
 def _matchup_rank_table(season: int, position: str):

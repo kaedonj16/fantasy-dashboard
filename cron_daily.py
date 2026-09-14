@@ -643,6 +643,27 @@ print(f"[cron] O-line ratings: {{len(res.get('ratings', {{}}))}} teams -> {{out_
 """, "build_oline_ratings", timeout=900)
 
     # ------------------------------------------------------------------ #
+    # Step 4d: Team play-volume table (opp plays faced; nflverse pbp)     #
+    # 'Opp plays faced' pace/possession context for the Start/Sit advisor #
+    # -- offensive plays each defense faces per game. Same in-season /    #
+    # Wednesday cadence as the O-line + matchup ratings above (fresh      #
+    # weekly game data). Display-only: never enters the start/sit score.  #
+    # ------------------------------------------------------------------ #
+    if not in_season:
+        print("[cron] Team play volume skipped - offseason")
+        record_pipeline_health("build_team_play_volume", "skipped")
+    elif today_weekday != 2:  # 0=Mon … 2=Wed … 6=Sun
+        print(f"[cron] Team play volume skipped - not Wednesday (weekday={today_weekday})")
+        record_pipeline_health("build_team_play_volume", "skipped")
+    else:
+        _run_step(f"""
+from dotenv import load_dotenv; load_dotenv()
+from data_building.team_play_volume import build_team_play_volume, out_path
+res = build_team_play_volume({season!r})
+print(f"[cron] Team play volume: {{len(res.get('teams', {{}}))}} teams -> {{out_path({season!r})}}")
+""", "build_team_play_volume", timeout=900)
+
+    # ------------------------------------------------------------------ #
     # Step 5: Model values                                                #
     # ------------------------------------------------------------------ #
     if not force_rebuild and _model_values_fresh():

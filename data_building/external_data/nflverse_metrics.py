@@ -617,6 +617,140 @@ def build_pbp_metrics_for_season(season: int) -> Dict[str, Dict[str, float]]:
     return out
 
 
+# A "scrimmage play" for pace/volume: pass or run. Special teams, kneels,
+# spikes, and penalty no-plays are excluded so the count reflects real
+# offensive volume rather than clock/administrative snaps.
+_SCRIMMAGE_PLAY_TYPES = frozenset({"pass", "run"})
+
+
+def aggregate_team_play_volume(rows) -> Dict[str, Dict[str, float]]:
+    """Aggregate {team: {play-volume aggregates}} from raw play rows.
+
+    Pure (no pandas / nfl_data_py) so the math is unit-tested directly. ``rows``
+    is any iterable of ``(game_id, defteam, posteam, week, play_type)`` tuples;
+    only scrimmage plays (``play_type in {'pass','run'}``) are counted, and team
+    codes are normalised to canonical abbreviations (WAS/JAX/LAR/...).
+
+    Plays faced are split by type so callers can show the position-relevant one:
+    a defense that faces lots of *pass* plays feeds QB/WR/TE volume; lots of
+    *rush* plays feeds RB volume. Per team, per game:
+
+      - ``plays_faced_pg`` / ``pass_faced_pg`` / ``rush_faced_pg``: scrimmage
+        plays the DEFENSE faces per game (total, pass-only, rush-only).
+      - ``plays_faced_l4_pg`` / ``pass_faced_l4_pg`` / ``rush_faced_l4_pg``: the
+        same over the team's last four games (by week).
+      - ``off_plays_pg``     : scrimmage plays the team's own OFFENSE runs/game.
+      - ``games``            : games in the defensive sample (sample size).
+
+    A team is only emitted once it has the headline (total) defensive number.
+    """
+    try:
+        from utils.schedule_ease import norm_sched_team as _norm
+    except Exception:
+        def _norm(t):
+            return (str(t) or "").upper().strip()
+
+    from collections import defaultdict
+
+    # Per (team, game): pass/rush plays faced on defense, plays run on offense,
+    # + the week of each defensive game so "last four" is picked by recency.
+    def_pass: Dict[str, Dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    def_rush: Dict[str, Dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    off_by_game: Dict[str, Dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    def_game_week: Dict[str, Dict[str, int]] = defaultdict(dict)
+
+    for gid, dt, ot, wk, ptype in rows:
+        pt = str(ptype or "").strip().lower()
+        if pt not in _SCRIMMAGE_PLAY_TYPES:
+            continue
+        g = str(gid)
+        d = _norm(dt)
+        o = _norm(ot)
+        if d and d.lower() != "nan":
+            (def_pass if pt == "pass" else def_rush)[d][g] += 1
+            w = _f(wk)
+            if w is not None:
+                def_game_week[d][g] = int(w)
+        if o and o.lower() != "nan":
+            off_by_game[o][g] += 1
+
+    def _pg(by_game, games):
+        return round(sum(by_game.get(g, 0) for g in games) / len(games), 1) if games else None
+
+    out: Dict[str, Dict[str, float]] = {}
+    for t in set(def_pass) | set(def_rush) | set(off_by_game):
+        pg_map = def_pass.get(t, {})
+        rg_map = def_rush.get(t, {})
+        og = off_by_game.get(t, {})
+        games = set(pg_map) | set(rg_map)
+        row: Dict[str, float] = {}
+        if games:
+            row["games"] = len(games)
+            total_by_game = {g: pg_map.get(g, 0) + rg_map.get(g, 0) for g in games}
+            row["plays_faced_pg"] = _pg(total_by_game, games)
+            row["pass_faced_pg"] = _pg(pg_map, games)
+            row["rush_faced_pg"] = _pg(rg_map, games)
+            wk_map = def_game_week.get(t, {})
+            last4 = sorted(games, key=lambda g: wk_map.get(g, 0))[-4:]
+            if last4:
+                row["plays_faced_l4_pg"] = _pg(total_by_game, last4)
+                row["pass_faced_l4_pg"] = _pg(pg_map, last4)
+                row["rush_faced_l4_pg"] = _pg(rg_map, last4)
+        if og:
+            row["off_plays_pg"] = round(sum(og.values()) / len(og), 1)
+        # Only surface a team once it has the headline (total) defensive number.
+        if row.get("plays_faced_pg") is not None:
+            out[t] = row
+    return out
+
+
+def build_team_play_volume_for_season(season: int) -> Dict[str, Dict[str, float]]:
+    """Return {team: {play-volume aggregates}} for a season from open pbp.
+
+    A team-level pace / possession table (no player ids, so public-safe like the
+    other builders here). See ``aggregate_team_play_volume`` for the per-team
+    fields; the headline is ``plays_faced_pg`` -- the "opp plays faced" volume a
+    fantasy player inherits from their weekly opponent (a high number means a
+    fast, pass-happy schedule of opponents with more snaps to accrue points
+    against; low the reverse). Regular season only. Returns {} when nfl_data_py
+    or the data is unavailable, mirroring the other builders.
+
+    This is DISPLAY-ONLY matchup context. It is deliberately never fed into the
+    start/sit score (utils/start_sit_score.py leaves matchup/volume out on
+    purpose to avoid double-counting the opponent, which weekly projections
+    already reflect).
+    """
+    try:
+        import nfl_data_py as nfl  # optional dependency
+        pbp = nfl.import_pbp_data(
+            [season],
+            columns=[
+                "game_id", "week", "season_type",
+                "posteam", "defteam", "play_type",
+            ],
+            downcast=True,
+        )
+    except Exception as e:
+        print(f"[nflverse_metrics] team play volume unavailable for {season} ({e})")
+        return {}
+
+    if pbp is None or pbp.empty:
+        return {}
+
+    pbp = pbp[pbp["season_type"] == "REG"]
+    if pbp.empty:
+        return {}
+
+    rows = zip(
+        pbp["game_id"].tolist(),
+        pbp["defteam"].tolist(),
+        pbp["posteam"].tolist(),
+        pbp["week"].tolist(),
+        pbp["play_type"].tolist(),
+    )
+    return aggregate_team_play_volume(rows)
+
+
 def build_nflverse_metrics_for_season(season: int) -> Dict[str, Dict[str, float]]:
     """Merge NGS + FTN + pbp-derived metrics into one {sleeper_id: {columns}} map."""
     combined: Dict[str, Dict[str, float]] = {}
