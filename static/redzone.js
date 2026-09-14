@@ -2235,6 +2235,7 @@
     if (_filters.nfl === 'all') return '';
     var g = _nflGameInfo(_filters.nfl);
     if (!g || (!g.away && !g.home)) return '';
+    if (window._rzRenderGameBoard) return window._rzRenderGameBoard(g, { id: 'rz-nfl-board' });
     var norm = _normGameStatus(g);
     var live = norm === 'live';
     // Pregame (and delayed / unknown) has no score yet -- show kickoff instead

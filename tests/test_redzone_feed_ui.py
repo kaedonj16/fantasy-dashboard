@@ -258,3 +258,44 @@ def test_failed_refresh_recovers_without_rebuilding_mounted_controls():
     )[0]
     assert refresh.count("_recoverScopeLoad(myGen, myScope);") == 3
     assert refresh.count("if (myGen === _streamGen && myScope === _scope && !_loadingScope) _partialUpdate();") == 3
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node.js not available")
+def test_field_position_handles_sides_aliases_boundaries_and_hidden_states():
+    app_js = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+    helpers = app_js[app_js.index("window._rzNormalizeTeam") : app_js.index("window._rzRenderGameBoard")]
+    script = f"""
+var window={{}};
+{helpers}
+function fp(x){{ return window._rzFieldPosition(Object.assign({{status:'live',field_position_reliable:true,away:'MIA',home:'OAK'}},x)); }}
+console.log(JSON.stringify([
+ fp({{possession:'MIA',yard_line:'MIA 31'}}),
+ fp({{possession:'LV',yard_line:'LV 31'}}),
+ fp({{possession:'MIA',yard_line:'LV 31'}}),
+ fp({{possession:'LV',yard_line:'MIA 31'}}),
+ fp({{possession:'MIA',yard_line:'50'}}),
+ fp({{possession:'MIA',yard_line:'LV 1'}}),
+ fp({{possession:'MIA',yard_line:'MIA 1'}}),
+ fp({{status:'halftime',possession:'MIA',yard_line:'MIA 20'}}),
+ fp({{field_position_reliable:false,possession:'MIA',yard_line:'MIA 20'}}),
+ fp({{possession:'XXX',yard_line:'MIA 20'}})
+]));
+"""
+    out = json.loads(subprocess.check_output(["node", "-e", script], text=True))
+    assert out == [
+        {"spot": 31, "side": "away"}, {"spot": 69, "side": "home"},
+        {"spot": 69, "side": "away"}, {"spot": 31, "side": "home"},
+        {"spot": 50, "side": "away"}, {"spot": 99, "side": "away"},
+        {"spot": 1, "side": "away"}, None, None, None,
+    ]
+
+
+def test_shared_board_and_modal_refresh_contract():
+    app_js = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+    assert "window._rzRenderGameBoard(game, { modal:true })" in app_js
+    assert "field_position_reliable" in app_js
+    assert "requestGeneration === _generation" in app_js
+    assert "setTimeout(function tick()" in app_js
+    assert "Live box-score stats are temporarily unavailable." in app_js
+    assert "Stat breakdown appears once the game is underway." not in app_js
+    assert ".rz-field-fill.is-away" in DASHBOARD_CSS
+    assert ".rz-field-fill.is-home" in DASHBOARD_CSS

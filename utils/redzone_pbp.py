@@ -412,6 +412,10 @@ def extract_pbp_plays(
         down = _s(_first(play, "down", "Down"))
         distance = _s(_first(play, "distance", "yardsToGo", "yards_to_go", "togo", "toGo"))
         yard_line = _s(_first(play, "yardline", "yardLine", "yard_line", "ballOn", "ballLocation"))
+        # A play's ordinary yardLine is its *starting* spot.  Keep an explicitly
+        # supplied ending spot separate so scoreboards never label pre-snap
+        # position as the current ball position.
+        end_yard_line = _s(_first(play, "endYardLine", "end_yard_line", "endYardline", "endBallLocation"))
 
         # Detect play state
         play_state = _detect_play_state(play, text)
@@ -426,6 +430,7 @@ def extract_pbp_plays(
             "down": down,
             "distance": distance,
             "yard_line": yard_line,
+            "end_yard_line": end_yard_line,
             "play_text": text,
             "is_no_play": is_no_play,
             "play_state": play_state,
@@ -656,6 +661,7 @@ def game_situation_from_plays(plays: list[dict] | None) -> dict:
         "yard_line": "",
         "quarter": "",
         "clock": "",
+        "field_position_reliable": False,
     }
     if not plays:
         return dict(empty)
@@ -668,7 +674,7 @@ def game_situation_from_plays(plays: list[dict] | None) -> dict:
         team = _s(play.get("team"))
         down = _s(play.get("down"))
         distance = _s(play.get("distance"))
-        yard_line = _s(play.get("yard_line") or play.get("yardLine"))
+        yard_line = _s(play.get("end_yard_line") or play.get("yard_line") or play.get("yardLine"))
         if team and (down or distance or yard_line):
             chosen = play
             break
@@ -684,7 +690,9 @@ def game_situation_from_plays(plays: list[dict] | None) -> dict:
         "possession": _s(chosen.get("team")),
         "down": _s(chosen.get("down")),
         "distance": _s(chosen.get("distance")),
-        "yard_line": _s(chosen.get("yard_line") or chosen.get("yardLine")),
+        "yard_line": _s(chosen.get("end_yard_line") or chosen.get("yard_line") or chosen.get("yardLine")),
+        "field_position_reliable": bool(_s(chosen.get("end_yard_line")))
+        and not any(word in _s(chosen.get("play_text")).lower() for word in ("intercept", "fumble", "turnover")),
         "quarter": _s(chosen.get("quarter")),
         "clock": _s(chosen.get("clock")),
     }
@@ -766,6 +774,7 @@ def build_games_snapshot(
             "down": "",
             "distance": "",
             "yard_line": "",
+            "field_position_reliable": False,
         }
 
     for gid, plays in (pbp_by_game or {}).items():
@@ -791,9 +800,10 @@ def build_games_snapshot(
                 "down": "",
                 "distance": "",
                 "yard_line": "",
+                "field_position_reliable": False,
             },
         )
-        for key in ("possession", "down", "distance", "yard_line"):
+        for key in ("possession", "down", "distance", "yard_line", "field_position_reliable"):
             if sit.get(key):
                 row[key] = sit[key]
         # Prefer live board clock/quarter from player_info; fill from PBP only

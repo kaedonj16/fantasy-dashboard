@@ -531,6 +531,7 @@ def extract_sleeper_pbp_plays(
         down = _s(play.get("down"))
         distance = _s(play.get("distance") or play.get("yards_to_go"))
         yard_line = _s(play.get("yard_line") or play.get("yardline") or play.get("ball_on"))
+        end_yard_line = _s(play.get("end_yard_line") or play.get("end_yardline") or play.get("end_ball_on"))
         base = {
             "play_id": play_id,
             "seq": seq,
@@ -540,6 +541,7 @@ def extract_sleeper_pbp_plays(
             "down": down,
             "distance": distance,
             "yard_line": yard_line,
+            "end_yard_line": end_yard_line,
             "play_text": text,
             "stat_line": {},
             "is_td": "touchdown" in text.lower() or " TD" in text,
@@ -773,6 +775,7 @@ def extract_espn_pbp_plays(
             if not text:
                 continue
             start = play.get("start") or {}
+            end = play.get("end") or {}
             clock = ""
             clk = play.get("clock") or {}
             if isinstance(clk, dict):
@@ -782,6 +785,7 @@ def extract_espn_pbp_plays(
             down = _s(start.get("down") if isinstance(start, dict) else "")
             distance = _s(start.get("distance") if isinstance(start, dict) else "")
             yard_line = _s(start.get("possessionText") if isinstance(start, dict) else "")
+            end_yard_line = _s(end.get("possessionText") if isinstance(end, dict) else "")
             provider_seq = play.get("sequenceNumber")
             if provider_seq is None:
                 provider_seq = play.get("id")
@@ -800,6 +804,7 @@ def extract_espn_pbp_plays(
                 "down": down,
                 "distance": distance,
                 "yard_line": yard_line,
+                "end_yard_line": end_yard_line,
                 "play_text": text,
                 "stat_line": {},
                 "is_td": is_td,

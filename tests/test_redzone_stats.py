@@ -114,3 +114,12 @@ def test_def_stat_line_lowercase_key_and_missing():
 
 def test_def_stat_line_none_input():
     assert rz_def_stat_line(None)["sacks"] == 0.0
+
+
+def test_boxscore_identity_resolves_provider_id_and_normalized_name():
+    from utils.redzone_stats import resolve_boxscore_player_stats
+    by_id = {"4881": {"longName": "Kirk Cousins", "Passing": {"passYds": 120}}}
+    assert resolve_boxscore_player_stats(by_id, "4881", {"full_name": "Kirk Cousins", "team": "ATL"}) is by_id["4881"]
+    by_name = {"row": {"longName": "Kirk Cousins Jr.", "teamAbv": "ATL", "Passing": {"passYds": 120}}}
+    assert resolve_boxscore_player_stats(by_name, "4881", {"full_name": "Kirk Cousins", "team": "ATL"}) is by_name["row"]
+    assert resolve_boxscore_player_stats(by_name, "4881", {"full_name": "Kirk Cousins", "team": "MIN"}) is None

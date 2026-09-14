@@ -20457,6 +20457,55 @@ function _rzFgPts(sl, s) {
 }
 
 // ── Redzone live player HTML (shared between Redzone page and player modal) ───
+// Shared NFL game board (Redzone page + site-wide player modal).
+window._rzNormalizeTeam = function(team) {
+  var t = String(team || '').trim().toUpperCase();
+  return ({ JAC:'JAX', WSH:'WAS', OAK:'LV', SD:'LAC', STL:'LAR' })[t] || t;
+};
+
+window._rzFieldPosition = function(game) {
+  if (!game || String(game.status || '').toLowerCase() !== 'live' || !game.field_position_reliable) return null;
+  var away = window._rzNormalizeTeam(game.away), home = window._rzNormalizeTeam(game.home);
+  var poss = window._rzNormalizeTeam(game.possession);
+  if (!poss || (poss !== away && poss !== home)) return null;
+  var raw = String(game.yard_line || '').trim().toUpperCase().replace(/\s+/g, ' ');
+  var midfield = /^(50|MIDFIELD)$/.test(raw);
+  var match = raw.match(/^([A-Z]{2,3})\s+(\d{1,2})$/);
+  var spot;
+  if (midfield) spot = 50;
+  else if (match) {
+    var territory = window._rzNormalizeTeam(match[1]), yard = Number(match[2]);
+    if (yard < 0 || yard > 50 || (territory !== away && territory !== home)) return null;
+    spot = territory === away ? yard : 100 - yard;
+  } else return null;
+  return { spot: spot, side: poss === away ? 'away' : 'home' };
+};
+
+window._rzRenderGameBoard = function(game, options) {
+  options = options || {};
+  if (!game || (!game.away && !game.home)) return '';
+  var esc = function(v) { var d=document.createElement('div'); d.textContent=String(v == null ? '' : v); return d.innerHTML; };
+  var status = String(game.status || '').toLowerCase();
+  if (!status) {
+    var code=String(game.game_code || ''), txt=String(game.game_status || '').toLowerCase();
+    status=code==='2'?'final':code==='1'?(txt.indexOf('half')>=0?'halftime':'live'):code==='0'?'pregame':'unknown';
+  }
+  var away=window._rzNormalizeTeam(game.away)||'--', home=window._rzNormalizeTeam(game.home)||'--';
+  var live=status==='live', pre=status==='pregame'||status==='delayed'||status==='unknown';
+  var poss=window._rzNormalizeTeam(game.possession), showScore=!pre;
+  var colors={ARI:'#97233F',ATL:'#A71930',BAL:'#241773',BUF:'#00338D',CAR:'#0085CA',CHI:'#0B162A',CIN:'#FB4F14',CLE:'#311D00',DAL:'#003594',DEN:'#FB4F14',DET:'#0076B6',GB:'#203731',HOU:'#03202F',IND:'#002C5F',JAX:'#006778',KC:'#E31837',LV:'#000000',LAC:'#0080C6',LAR:'#003594',MIA:'#008E97',MIN:'#4F2683',NE:'#002244',NO:'#D3BC8D',NYG:'#0B2265',NYJ:'#125740',PHI:'#004C54',PIT:'#FFB612',SF:'#AA0000',SEA:'#002244',TB:'#D50A0A',TEN:'#0C2340',WAS:'#5A1414'};
+  var logo=function(t){var src=window.brTeamLogoLocal?window.brTeamLogoLocal(t):'/static/images/team_logos/'+t+'.png';return '<img class="rz-nfl-badge" src="'+esc(src)+'" alt="" onerror="this.style.visibility=\'hidden\'">';};
+  var team=function(t,pts,side){return '<div class="rz-nfl-team rz-nfl-'+side+(live&&poss===t?' has-ball':'')+'">'+logo(t)+'<span class="rz-nfl-abv">'+esc(t)+'</span>'+(showScore?'<span class="rz-nfl-score">'+esc(pts==null||pts===''?0:pts)+'</span>':'')+'</div>';};
+  var sit=''; if(live){var down=String(game.down||''), dist=String(game.distance||''); if(down) sit=({1:'1st',2:'2nd',3:'3rd',4:'4th'}[down]||down)+' & '+(dist||'?'); if(game.yard_line) sit+=(sit?' · ':'')+esc(game.yard_line);}
+  var center;
+  if(live){var clock=[game.game_quarter?(/^Q/i.test(String(game.game_quarter))?game.game_quarter:'Q'+game.game_quarter):'',game.game_clock].filter(Boolean).join(' · ');center='<div class="rz-nfl-mid"><span class="rz-nfl-live-pill"><span class="rz-nfl-live-dot"></span>'+esc(clock||'LIVE')+'</span>'+(sit?'<span class="rz-nfl-sit">'+sit+'</span>':'')+'</div>';}
+  else center='<div class="rz-nfl-mid"><span class="rz-nfl-state">'+esc(status==='final'?'FINAL':status==='halftime'?'HALFTIME':game.game_status||'Upcoming')+'</span></div>';
+  var fp=window._rzFieldPosition(Object.assign({},game,{status:status})), field='';
+  if(fp){var style='--rz-ball:'+fp.spot+'%;--rz-team-color:'+(colors[poss]||'#334155')+';';field='<div class="rz-field-track" style="'+style+'" role="img" aria-label="Ball at '+esc(game.yard_line)+'"><span class="rz-field-fill is-'+fp.side+'"></span></div>';}
+  return '<div class="rz-nfl-board is-'+esc(status)+(live?' is-live':'')+(options.modal?' rz-nfl-board--modal':'')+'"'+(options.id?' id="'+esc(options.id)+'"':'')+'><div class="rz-nfl-score-row">'+team(away,game.away_pts,'away')+center+team(home,game.home_pts,'home')+'</div>'+field+'</div>';
+};
+
+// Player summary renderer.
 window._rzBuildLiveHtml = function(pid, state, feed) {
   if (!pid || pid === '0') return '<div style="padding:20px;text-align:center;color:var(--text-muted);">No data.</div>';
   var info = (state.player_info || {})[pid] || {};
@@ -20492,29 +20541,25 @@ window._rzBuildLiveHtml = function(pid, state, feed) {
   var clockStr = [info.game_quarter, info.game_clock].filter(Boolean).join(' · ');
   var inj = info.injury_status || '';
   var injBadge = inj ? '<span class="rz-pm-inj">' + inj + '</span>' : '';
-  var gameHdr = (gsLabel || gameLine)
-    ? '<div class="rz-pm-game-hdr">'
-      + (gsLabel ? '<span class="rz-pm-status ' + gsType + '">' + gsLabel + (clockStr ? ' · ' + clockStr : '') + '</span>' : '')
-      + (gameLine ? '<span class="rz-pm-game-line">' + gameLine + '</span>' : '')
-      + injBadge + '</div>'
-    : '';
+  var game = (state.games || {})[info.game_id] || Object.assign({}, info, { status: gsType === 'pre' ? 'pregame' : gsType });
+  var gameHdr = (gsLabel || gameLine) ? window._rzRenderGameBoard(game, { modal:true }) + (injBadge ? '<div class="rz-pm-injury-row">'+injBadge+'</div>' : '') : '';
 
   var sl = info.stat_line, statBlock = '';
   if (sl) {
     var pos = info.pos || '', rows = [], total = 0;
-    var addRow = function(label, val, key) {
+    var addRow = function(label, val, key, showZero) {
       var rate = parseFloat(sc[key] || 0);
-      if (!val || !rate) return;
+      if ((val == null || (!showZero && Number(val) === 0)) || !rate) return;
       var pts = parseFloat((val * rate).toFixed(2));
       total += pts;
       rows.push({ label: label, val: val, pts: pts });
     };
     if (pos === 'QB') {
-      addRow('Pass Yds', sl.pass_yds||0, 'pass_yd');
-      addRow('Pass TDs', sl.pass_td ||0, 'pass_td');
-      addRow('INTs',     sl.int     ||0, 'pass_int');
-      addRow('Rush Yds', sl.rush_yds||0, 'rush_yd');
-      addRow('Rush TDs', sl.rush_td ||0, 'rush_td');
+      addRow('Pass Yds', sl.pass_yds, 'pass_yd', true);
+      addRow('Pass TDs', sl.pass_td, 'pass_td', true);
+      addRow('INTs', sl.int, 'pass_int', true);
+      addRow('Rush Yds', sl.rush_yds, 'rush_yd', true);
+      addRow('Rush TDs', sl.rush_td, 'rush_td', true);
     } else if (pos === 'DEF') {
       // DEF scoring varies per league; show raw stats, use players_points for total
       var defStats = [['Sacks', sl.sacks||0], ['INTs', sl.def_int||0],
@@ -20562,7 +20607,7 @@ window._rzBuildLiveHtml = function(pid, state, feed) {
   if (!statBlock) {
     statBlock = '<div class="rz-pm-stats rz-pm-no-stats">'
       + (fantasyPts !== null ? '<div class="rz-pm-pts-big">' + fantasyPts + ' pts</div>' : '')
-      + '<div style="color:var(--text-muted);font-size:12px;">Stat breakdown appears once the game is underway.</div>'
+      + '<div style="color:var(--text-muted);font-size:12px;">' + (gsType === 'pre' ? 'Stats will appear after kickoff.' : gsType === 'live' ? 'Live box-score stats are temporarily unavailable.' : 'Box-score stats are unavailable for this game.') + '</div>'
       + '</div>';
   }
 
@@ -20603,7 +20648,7 @@ window._rzSyncTabLive = function(panel) {
 // Default stub for non-Redzone pages: one-shot fetch, 30 s cache.
 // Overridden by the Redzone IIFE when #rz-root is present.
 (function() {
-  var _cache = null, _cacheTs = 0, _fetching = false, _pending = [];
+  var _cache = null, _cacheTs = 0, _fetching = false, _pending = [], _timer = null, _generation = 0;
   window.__rzGetPlayerLive = function(pid) {
     var STALE = 30000;
     var refresh = function() {
@@ -20613,20 +20658,29 @@ window._rzSyncTabLive = function(panel) {
       if (panel && panel.classList.contains('pm-panel-active') && pmBar && pmBar.dataset.pmPlayerId === pid) {
         panel.innerHTML = window._rzBuildLiveHtml(pid, _cache, []);
         window._rzSyncTabLive(panel);
+        if (!_timer) _timer = setTimeout(function tick() {
+          _timer = null;
+          var bar=document.getElementById('pmTabBar'), p=document.getElementById('pm-panel-live');
+          if (!bar || !p || !p.classList.contains('pm-panel-active') || bar.dataset.pmPlayerId !== pid) return;
+          _cacheTs = 0;
+          window.__rzGetPlayerLive(pid);
+        }, 15000);
       }
     };
     if (_cache && Date.now() - _cacheTs < STALE) {
+      refresh();
       return window._rzBuildLiveHtml(pid, _cache, []);
     }
     if (!_fetching) {
       _fetching = true;
+      var requestGeneration = ++_generation;
       var parts = window.location.pathname.split('/');
       var url = '/api/' + parts[1] + '/' + parts[2] + '/' + parts[3] + '/redzone-data?scope=league&_cb=' + Date.now();
       fetch(url)
         .then(function(r) { return r.ok ? r.json() : null; })
         .then(function(data) {
           _fetching = false;
-          if (data) { _cache = data; _cacheTs = Date.now(); }
+          if (data && requestGeneration === _generation) { _cache = data; _cacheTs = Date.now(); }
           _pending.forEach(function(fn) { fn(); });
           _pending = [];
         })
