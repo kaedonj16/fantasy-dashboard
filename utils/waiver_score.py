@@ -104,9 +104,18 @@ class WaiverWeights:
     usage_max: float = 50.0
     breakout_per: float = 0.5
     breakout_max: float = 45.0
+    # Unexpected big game (from the shared detector) as an opportunity signal.
+    # Scored from surprise * sustainability so a fluky watchlist game barely
+    # moves the needle while a sustainable priority discovery is a real bump.
+    big_game_scale: float = 95.0
+    big_game_max: float = 40.0
     # Diminishing-returns weights when combining correlated opportunity signals.
+    # Big game, usage, breakout and injury all proxy "the role is opening up", so
+    # they are combined with decay (not summed) — a player who shows up on several
+    # is not quadruple-counted (#6).
     opp_second: float = 0.5
     opp_third: float = 0.25
+    opp_fourth: float = 0.125
     # Weekly rank trend. A waiver target should be justified by real value +
     # opportunity, not by a single noisy 7-day rank swing, so the raw-trend term
     # is capped well below the value / opportunity terms (a big riser still gets
@@ -1023,8 +1032,14 @@ def waiver_pickup_score(c: dict, waiver_breakout: dict,
     usage_pts = min(usage_ratio(c.get("usage_stat"), c.get("usage_delta")) * w.usage_per_ratio,
                     w.usage_max)
     breakout_pts = min(bscore * w.breakout_per, w.breakout_max)
-    opp = sorted([injury_pts, usage_pts, breakout_pts], reverse=True)
-    opportunity_pts = opp[0] + w.opp_second * opp[1] + w.opp_third * opp[2]  # (#6)
+    # Unexpected big game folded in as a fourth (correlated) opportunity signal.
+    try:
+        big_game_pts = min(max(0.0, float(c.get("big_game_pts") or 0)), w.big_game_max)
+    except (TypeError, ValueError):
+        big_game_pts = 0.0
+    opp = sorted([injury_pts, usage_pts, breakout_pts, big_game_pts], reverse=True)
+    opportunity_pts = (opp[0] + w.opp_second * opp[1]
+                       + w.opp_third * opp[2] + w.opp_fourth * opp[3])  # (#6)
 
     # Weekly rank trend, blended across available windows and noise-shrunk (#7),
     # then discounted by positional depth so a deep player's dense (noisy) overall
@@ -1125,8 +1140,24 @@ def waiver_signal(c: dict, waiver_breakout: dict,
         return ("signal-injury-soft", "Bumped Up")
     if age and age < prime - 2 and val >= 300:
         return ("signal-value", "Value Play")
-    if age and age > prime + 2:
-        return ("signal-aging", "Sell Window")
+    # Streamer: a startable weekly projection into a favorable upcoming matchup.
+    # This is the useful label for the productive-but-unexciting wire add (esp. an
+    # aging vet or a bye/injury fill-in) — actionable *this week*, not a dynasty
+    # sell. "Sell Window" is intentionally gone: you can't sell a free agent.
+    try:
+        _ros = float(c.get("ros_ppg")) if c.get("ros_ppg") is not None else None
+    except (TypeError, ValueError):
+        _ros = None
+    _ease = c.get("schedule_ease_rank")
+    _tot = c.get("schedule_total")
+    _favorable = False
+    try:
+        if _ease and _tot and float(_tot) > 1:
+            _favorable = (float(_ease) - 1.0) / (float(_tot) - 1.0) <= 0.4
+    except (TypeError, ValueError):
+        _favorable = False
+    if _ros is not None and _ros >= 9.0 and _favorable:
+        return ("signal-usage", "Streamer")
     return ("signal-hold", "Available")
 
 
