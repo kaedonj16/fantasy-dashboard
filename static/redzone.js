@@ -2235,6 +2235,7 @@
     if (_filters.nfl === 'all') return '';
     var g = _nflGameInfo(_filters.nfl);
     if (!g || (!g.away && !g.home)) return '';
+    if (window._rzRenderGameBoard) return window._rzRenderGameBoard(g, { id: 'rz-nfl-board' });
     var norm = _normGameStatus(g);
     var live = norm === 'live';
     // Pregame (and delayed / unknown) has no score yet -- show kickoff instead
@@ -3069,8 +3070,16 @@
 
   // Expose live data to the global player modal (injected as "Live" tab)
   // Override the global stub with the live Redzone state + event feed
+  function _modalPlayHistory() {
+    // primaryEvent is regenerated in place whenever a provider revises or
+    // nullifies a play, so this is both complete and latest-only. Do not use
+    // the paginated/capped presentation feed as modal history.
+    return _chronoSort(Object.keys(_playGroupsByKey).map(function(key) {
+      return (_playGroupsByKey[key] || {}).primaryEvent;
+    }).filter(Boolean).concat(_feed.filter(function(ev) { return !ev.fromPbp; })));
+  }
   window.__rzGetPlayerLive = function(pid) {
-    return window._rzBuildLiveHtml(pid, _state, _feed);
+    return window._rzBuildLiveHtml(pid, _state, _modalPlayHistory());
   };
 
   // "On deck": games kicking off within the next 90 min that include my players.

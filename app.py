@@ -11843,6 +11843,7 @@ from utils.redzone_stats import (  # noqa: E402
     rz_def_stat_line as _rz_def_stat_line,
     rz_safe_epoch as _rz_safe_epoch,
     rz_stat_line_from_ps as _rz_stat_line_from_ps,
+    resolve_boxscore_player_stats as _rz_resolve_boxscore_player_stats,
 )
 from utils.redzone_pbp import (  # noqa: E402
     build_games_snapshot as _rz_build_games_snapshot,
@@ -12120,6 +12121,7 @@ def _redzone_demo_data(t: float = _RZ_DEMO_START, scope: str = "league"):
         for k, v in sit.items():
             if not row.get(k):
                 row[k] = v
+        row["field_position_reliable"] = True  # demo rows are current situation snapshots
 
     def mk(rid, mid, starters, bench, league_name=None):
         players = starters + bench
@@ -12493,17 +12495,14 @@ def _redzone_collect(platform, league_id, season, week):
 
         # Attach skill-player stat lines when the provider supplied playerStats.
         if isinstance(pstats, dict) and pstats:
-            name_map = {}
-            for _, ps in pstats.items():
-                ln = (ps.get("longName") or "").lower()
-                if ln:
-                    name_map[ln] = ps
             for pid in pids:
                 pi = player_info[pid]
                 pos = pi.get("pos", "")
                 if pos != "DEF":
-                    full = (nfl_players.get(pid, {}).get("full_name") or "").lower()
-                    ps = name_map.get(full)
+                    identity = dict(nfl_players.get(pid, {}) or {})
+                    identity.setdefault("name", pi.get("name"))
+                    identity.setdefault("team", pi.get("team"))
+                    ps = _rz_resolve_boxscore_player_stats(pstats, pid, identity)
                     if ps:
                         pi["stat_line"] = _rz_stat_line_from_ps(ps)
 

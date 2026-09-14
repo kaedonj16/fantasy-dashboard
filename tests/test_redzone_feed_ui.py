@@ -258,3 +258,100 @@ def test_failed_refresh_recovers_without_rebuilding_mounted_controls():
     )[0]
     assert refresh.count("_recoverScopeLoad(myGen, myScope);") == 3
     assert refresh.count("if (myGen === _streamGen && myScope === _scope && !_loadingScope) _partialUpdate();") == 3
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node.js not available")
+def test_field_position_handles_sides_aliases_boundaries_and_hidden_states():
+    app_js = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+    helpers = app_js[app_js.index("window._rzNormalizeTeam") : app_js.index("window._rzRenderGameBoard")]
+    script = f"""
+var window={{}};
+{helpers}
+function fp(x){{ return window._rzFieldPosition(Object.assign({{status:'live',field_position_reliable:true,away:'MIA',home:'OAK'}},x)); }}
+console.log(JSON.stringify([
+ fp({{possession:'MIA',yard_line:'MIA 31'}}),
+ fp({{possession:'LV',yard_line:'LV 31'}}),
+ fp({{possession:'MIA',yard_line:'LV 31'}}),
+ fp({{possession:'LV',yard_line:'MIA 31'}}),
+ fp({{possession:'MIA',yard_line:'50'}}),
+ fp({{possession:'MIA',yard_line:'LV 1'}}),
+ fp({{possession:'MIA',yard_line:'MIA 1'}}),
+ fp({{status:'halftime',possession:'MIA',yard_line:'MIA 20'}}),
+ fp({{field_position_reliable:false,possession:'MIA',yard_line:'MIA 20'}}),
+ fp({{possession:'XXX',yard_line:'MIA 20'}})
+]));
+"""
+    out = json.loads(subprocess.check_output(["node", "-e", script], text=True))
+    assert out == [
+        {"spot": 31, "side": "away"}, {"spot": 69, "side": "home"},
+        {"spot": 69, "side": "away"}, {"spot": 31, "side": "home"},
+        {"spot": 50, "side": "away"}, {"spot": 99, "side": "away"},
+        {"spot": 1, "side": "away"}, None, None, None,
+    ]
+
+
+def test_shared_board_and_modal_refresh_contract():
+    app_js = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+    assert "window._rzRenderGameBoard(game, { modal:true })" in app_js
+    assert "field_position_reliable" in app_js
+    assert "requestGeneration === _generation" in app_js
+    assert "setTimeout(function tick()" in app_js
+    assert "Live box-score stats are temporarily unavailable." in app_js
+    assert "Stat breakdown appears once the game is underway." not in app_js
+    assert ".rz-field-fill.is-away" in DASHBOARD_CSS
+    assert ".rz-field-fill.is-home" in DASHBOARD_CSS
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node.js not available")
+def test_player_modal_log_uses_each_players_latest_canonical_contribution():
+    app_js = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+    helper = app_js[app_js.index("window._rzPlayerLogEvents") : app_js.index("// Player summary renderer.")]
+    script = f"""
+var window={{}};
+{helper}
+var completion={{playId:'p1',gameId:'g',seq:1,playSortTs:1,gameQuarter:'Q1',gameClock:'12:00',pid:'wr',desc:'10-yard reception',playState:'VALID',contributions:[
+  {{pid:101,name:'Quarter Back',pos:'QB',line:{{pass_yds:10,pass_td:0}},pts:0.4,kind:'gain'}},
+  {{pid:'202',name:'Justin Jefferson',pos:'WR',line:{{rec:1,rec_yds:10}},pts:2,kind:'gain'}}
+]}};
+var revised=JSON.parse(JSON.stringify(completion)); revised.seq=2; revised.playSortTs=2;
+revised.contributions[0].line.pass_yds=12; revised.contributions[0].pts=.48;
+revised.contributions[1].line.rec_yds=12; revised.contributions[1].pts=2.2;
+var zero={{playId:'p0',seq:3,playSortTs:3,pid:'wr',desc:'Reception',playState:'VALID',contributions:[
+  {{pid:'101',name:'Quarter Back',pos:'QB',line:{{pass_yds:0}},pts:0}},
+  {{pid:'202',name:'Justin Jefferson',pos:'WR',line:{{rec:1,rec_yds:0}},pts:1}}
+]}};
+var loss={{playId:'pn',seq:4,playSortTs:4,pid:'wr',desc:'loss',playState:'VALID',contributions:[
+  {{pid:'101',name:'Quarter Back',pos:'QB',line:{{pass_yds:-3}},pts:-.12}},
+  {{pid:'202',name:'Justin Jefferson',pos:'WR',line:{{rec:1,rec_yds:-3}},pts:.7}}
+]}};
+var td={{playId:'td',seq:5,playSortTs:5,pid:'wr',desc:'TD reception',playState:'VALID',contributions:[
+  {{pid:'101',name:'Quarter Back',pos:'QB',line:{{pass_yds:10,pass_td:1}},pts:4.4}},
+  {{pid:'202',name:'Justin Jefferson',pos:'WR',line:{{rec:1,rec_yds:10,rec_td:1}},pts:8,kind:'td'}}
+]}};
+var nul=JSON.parse(JSON.stringify(td)); nul.playId='nullified'; nul.playState='NULLIFIED'; nul.isNullified=true; nul.desc='Play nullified by penalty'; nul.contributions.forEach(c=>c.isInvalid=true);
+var qb=window._rzPlayerLogEvents('101',[completion,revised,zero,loss,td,nul]);
+var wr=window._rzPlayerLogEvents(202,[completion,revised,zero,loss]);
+var legacy=window._rzPlayerLogEvents('101',[{{pid:101,playId:'legacy',seq:9,desc:'Demo pass',pts:1}}]);
+console.log(JSON.stringify({{qb:qb,wr:wr,legacy:legacy}}));
+"""
+    out = json.loads(subprocess.check_output(["node", "-e", script], text=True))
+    qb = {row["playId"]: row for row in out["qb"]}
+    wr = {row["playId"]: row for row in out["wr"]}
+    assert qb["p1"]["pts"] == 0.48 and qb["p1"]["desc"] == "12-yard completion to Justin Jefferson"
+    assert wr["p1"]["pts"] == 2.2 and wr["p1"]["desc"] == "10-yard reception"
+    assert qb["p0"]["desc"] == "0-yard completion to Justin Jefferson"
+    assert qb["pn"]["desc"] == "-3-yard completion to Justin Jefferson"
+    assert qb["td"]["pts"] == 4.4 and qb["td"]["desc"] == "10-yard TD pass"
+    assert qb["nullified"]["pts"] == 0 and qb["nullified"]["isNullified"] is True
+    assert qb["nullified"]["desc"] == "Play nullified by penalty"
+    assert len(out["legacy"]) == 1
+
+
+def test_modal_history_comes_from_uncapped_latest_play_groups():
+    redzone = REDZONE_JS.split("function _modalPlayHistory()", 1)[1].split(
+        "window.__rzGetPlayerLive", 1
+    )[0]
+    assert "Object.keys(_playGroupsByKey)" in redzone
+    assert "primaryEvent" in redzone
+    assert "_PAGE_SIZE" not in redzone
+    assert "_feed.filter(function(ev) { return !ev.fromPbp; })" in redzone
+    live = REDZONE_JS.split("window.__rzGetPlayerLive = function(pid)", 1)[1][:180]
+    assert "_modalPlayHistory()" in live

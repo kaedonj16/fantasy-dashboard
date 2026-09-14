@@ -82,6 +82,51 @@ def rz_stat_line_from_ps(ps: dict) -> dict:
     }
 
 
+def resolve_boxscore_player_stats(pstats: dict, player_id: str, player: dict) -> dict | None:
+    """Resolve a provider box-score row without relying on exact display names.
+
+    Tank01 has alternated between player ids as mapping keys and names in
+    ``longName`` (including punctuation/suffix variations).  PBP already uses
+    canonical ids, which is why a player could have a log but no summary.
+    Prefer a canonical id match, then compare normalized names within the
+    player's team; ambiguous matches deliberately return ``None``.
+    """
+    if not isinstance(pstats, dict):
+        return None
+    pid = str(player_id or "")
+    direct = pstats.get(pid)
+    if isinstance(direct, dict):
+        return direct
+
+    import re
+    import unicodedata
+
+    def norm(value):
+        value = unicodedata.normalize("NFKD", str(value or ""))
+        value = "".join(c for c in value if not unicodedata.combining(c)).lower()
+        value = re.sub(r"\b(jr|sr|ii|iii|iv)\b", "", value)
+        return re.sub(r"[^a-z0-9]", "", value)
+
+    wanted = norm(player.get("full_name") or player.get("name"))
+    wanted_team = str(player.get("team") or "").upper()
+    if not wanted:
+        return None
+    matches = []
+    for key, row in pstats.items():
+        if not isinstance(row, dict):
+            continue
+        row_pid = str(row.get("playerID") or row.get("playerId") or row.get("player_id") or "")
+        if row_pid and row_pid == pid:
+            return row
+        if norm(row.get("longName") or row.get("playerName") or key) != wanted:
+            continue
+        row_team = str(row.get("team") or row.get("teamAbv") or "").upper()
+        if wanted_team and row_team and row_team != wanted_team:
+            continue
+        matches.append(row)
+    return matches[0] if len(matches) == 1 else None
+
+
 def rz_def_stat_line(team_side: dict) -> dict:
     """Build DEF stat_line from Tank01 teamStats[home/away] entry.
 
