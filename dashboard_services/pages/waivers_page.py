@@ -68,13 +68,21 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-player-row:hover { background: var(--row); }
 .wv-player-name { font-weight: 600; font-size: 14px; color: var(--text); }
 .wv-player-sub { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
-.wv-right { display: flex; align-items: center; gap: 12px; }
-.wv-advice-metric { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 48px; }
+/* Right cluster: qualitative signal chips grouped together, then the key
+   numbers (Proj / Value) as a bold, right-aligned figure block set off by a
+   thin divider -- so the row reads "why add" then "how much", instead of a
+   flat wall of equal-weight tiny columns. */
+.wv-right { display: flex; align-items: center; gap: 10px 16px; flex-wrap: wrap; justify-content: flex-end; }
+.wv-signals { display: flex; flex-wrap: wrap; gap: 7px 10px; align-items: center; justify-content: flex-end; }
+.wv-advice-metric { display: flex; flex-direction: column; align-items: center; gap: 3px; min-width: 0; }
 .wv-advice-label {
   font-size: 9px; line-height: 1; font-weight: 800; letter-spacing: .05em;
   text-transform: uppercase; color: var(--text-subtle); white-space: nowrap;
 }
-.wv-value { font-size: 13px; font-weight: 700; color: var(--text); }
+.wv-value { font-size: 13px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+.wv-nums { display: flex; align-items: flex-start; gap: 18px; padding-left: 16px; border-left: 1px solid var(--border); flex-shrink: 0; }
+.wv-nums .wv-advice-metric { align-items: flex-end; }
+.wv-nums .wv-value { font-size: 18px; font-weight: 800; letter-spacing: -.01em; }
 .wv-ctx-links { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
 .wv-ctx-link { font-size: 11px; font-weight: 600; color: var(--accent); text-decoration: none; padding: 3px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface); }
 .wv-ctx-link:hover { background: var(--accent-soft); }
@@ -89,11 +97,12 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
      evenly spread stat strip that wraps only as a last resort on tiny screens. */
   .wv-player-row { flex-direction: column; align-items: stretch; gap: 10px; }
   .wv-right {
-    width: 100%; gap: 8px 12px; flex-wrap: wrap;
-    justify-content: space-between;
-    padding-top: 9px; border-top: 1px solid var(--border);
+    width: 100%; gap: 10px 14px; flex-wrap: wrap;
+    justify-content: space-between; align-items: flex-end;
+    padding-top: 10px; border-top: 1px solid var(--border);
   }
-  .wv-advice-metric { min-width: 0; }
+  .wv-signals { justify-content: flex-start; }
+  .wv-nums { margin-left: auto; }
 }
 /* Waiver signal chips use the site's canonical `.chip .chip--sm` + a .signal-*
    colour alias (all defined once in dashboard.css). Nothing chip-related is
@@ -969,13 +978,14 @@ function wvRenderWaivers() {{
         </div>
       </div>
       <div class="wv-right">
-        <span class="wv-advice-metric"><span class="wv-advice-label">Why add</span><span class="chip chip--sm ${{p.signal_class}}">${{p.signal}}</span></span>
-        ${{bigGameChip}}
-        ${{outcomeChip}}
-        ${{marketChip}}
-        ${{faabChip}}
-        ${{projChip}}
-        ${{p.value > 0 ? `<span class="wv-advice-metric"><span class="wv-advice-label">Value</span><span class="wv-value">${{Math.round(p.value)}}</span></span>` : ''}}
+        <div class="wv-signals">
+          <span class="wv-advice-metric"><span class="wv-advice-label">Why add</span><span class="chip chip--sm ${{p.signal_class}}">${{p.signal}}</span></span>
+          ${{bigGameChip}}
+          ${{outcomeChip}}
+          ${{marketChip}}
+          ${{faabChip}}
+        </div>
+        ${{(projChip || p.value > 0) ? `<div class="wv-nums">${{projChip}}${{p.value > 0 ? `<span class="wv-advice-metric"><span class="wv-advice-label">Value</span><span class="wv-value">${{Math.round(p.value)}}</span></span>` : ''}}</div>` : ''}}
       </div>
     </div>
   `;
