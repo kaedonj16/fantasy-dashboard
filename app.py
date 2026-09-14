@@ -21339,6 +21339,34 @@ def _game_logs_cache_key(player_id: str, season: int, scoring_settings: dict) ->
     return f"{player_id}|{season}|{ss}"
 
 
+def _game_log_proj_from_week(upcoming, cur_season, cur_week, season_type) -> int:
+    """First week the game-log Stats tab should (re)project.
+
+    Weeks before the cutoff are finished — they show real stats, or a DNP when
+    the player didn't play — so only weeks at/after the cutoff get projections.
+    A finished game the player missed therefore stays DNP instead of being
+    overwritten by a projection.
+
+    - ``upcoming`` before the current season -> 99 (completed year: project none).
+    - ``upcoming`` after the current season -> 1 (future year: project all).
+    - current season, regular/post -> the current week (project it and later).
+    - current season not yet started (pre/off) or unknown -> 1 (project all).
+    """
+    try:
+        upcoming = int(upcoming)
+        cur_season = int(cur_season)
+        cur_week = int(cur_week)
+    except (TypeError, ValueError):
+        return 1
+    if upcoming < cur_season:
+        return 99
+    if upcoming > cur_season:
+        return 1
+    if str(season_type or "").lower() in ("regular", "post"):
+        return max(1, cur_week)
+    return 1
+
+
 @app.route("/api/player-game-logs/<player_id>")
 def api_player_game_logs(player_id: str):
     """Game logs for the Stats tab -- lazy-loaded separately from player-details."""
@@ -21525,10 +21553,15 @@ def api_player_game_logs(player_id: str):
                     _upcoming = _upcoming + 1
             except Exception:
                 logger.debug("suppressed exception", exc_info=True)
-        # Weeks already covered by actual stats - skip those when projecting
+        # Weeks that already have a *real* result (a played game, or a bye) — the
+        # only ones to skip when projecting. The schedule loop above pre-adds a
+        # blank placeholder row (fantasy_pts None) for every FUTURE week too;
+        # those are NOT covered and must still be projected, otherwise the rest of
+        # the season renders blank/DNP the moment a player has one finished game.
         _actual_weeks = {
             g.get("week") for g in (game_logs_by_year.get(_upcoming) or [])
             if not g.get("is_projection")
+            and (g.get("fantasy_pts") is not None or g.get("is_bye"))
         }
         # Show projections if: no actual data yet (pre-season) OR some weeks
         # are still in the future (active season - fill the remaining weeks).
@@ -21581,6 +21614,23 @@ def api_player_game_logs(player_id: str):
                     _mv = list(_proj_vals.values())
                     _med = _med_fn(_mv) if _mv else 0
 
+                    # Only project weeks that have NOT been played yet, so a
+                    # finished game the player missed stays a real DNP rather than
+                    # being overwritten with a projection. The boundary is the
+                    # current NFL week (see _game_log_proj_from_week).
+                    _proj_from_week = 1
+                    try:
+                        from dashboard_services.api import get_nfl_state as _get_nfl_state
+                        _nfl_state = _get_nfl_state() or {}
+                        _proj_from_week = _game_log_proj_from_week(
+                            _upcoming,
+                            _nfl_state.get("season") or _upcoming,
+                            _nfl_state.get("week") or 1,
+                            _nfl_state.get("season_type"),
+                        )
+                    except Exception:
+                        _proj_from_week = 1
+
                     # Load upcoming season schedule for opponent lookup
                     _sched: dict = {}
                     for _sf in glob.glob(os.path.join("cache", "schedule", f"schedule_s{_upcoming}_w*.json")):
@@ -21598,6 +21648,8 @@ def api_player_game_logs(player_id: str):
                     for _w in range(1, 19):
                         if _w in _actual_weeks:
                             continue  # already have real stats for this week
+                        if _w < _proj_from_week:
+                            continue  # finished week with no stats -> leave as DNP
                         _pv = _proj_vals.get(_w)
                         if _pv is None and _med > 0 and not _ir_zero:
                             _pv = _med
@@ -21631,10 +21683,18 @@ def api_player_game_logs(player_id: str):
                             "is_projection": True,
                         })
                     if _proj_logs and any(g["fantasy_pts"] is not None for g in _proj_logs):
+                        _proj_weeks = {g.get("week") for g in _proj_logs}
                         existing = game_logs_by_year.get(_upcoming) or []
-                        # Merge: keep real games, append future projected weeks
+                        # Keep the real (played) and bye weeks; drop the blank
+                        # future placeholders the schedule loop pre-added for the
+                        # weeks we just projected, so each week appears exactly
+                        # once — a real result if the game is finished, else a
+                        # projection.
+                        existing_kept = [
+                            g for g in existing if g.get("week") not in _proj_weeks
+                        ]
                         combined = sorted(
-                            existing + _proj_logs,
+                            existing_kept + _proj_logs,
                             key=lambda g: g.get("week") or 0
                         )
                         game_logs_by_year[_upcoming] = combined
