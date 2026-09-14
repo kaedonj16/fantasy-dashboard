@@ -34219,6 +34219,71 @@ a.rz-demo-link:hover {
     background: rgba(220, 38, 38, .1);
 }
 
+/* Live state keeps the red pulsing dot (base .weekly-rz-cta-dot animation). */
+
+/* Pregame state: calm, no pulse. Shows only within the hour before kickoff,
+   so it reads as "coming up" rather than "happening now". Amber, not red. */
+.weekly-rz-cta-pregame {
+    background: rgba(245, 158, 11, .08);
+    border-color: rgba(245, 158, 11, .28);
+}
+
+.weekly-rz-cta-pregame .weekly-rz-cta-dot {
+    background: var(--warning, #f59e0b);
+    animation: none;
+}
+
+.weekly-rz-cta-pregame .weekly-rz-cta-link {
+    color: #b45309;
+    border-color: rgba(245, 158, 11, .38);
+}
+
+.weekly-rz-cta-pregame .weekly-rz-cta-link:hover {
+    background: rgba(245, 158, 11, .12);
+}
+
+:root[data-theme="dark"] .weekly-rz-cta-pregame .weekly-rz-cta-link {
+    color: #fbbf24;
+}
+
+/* ── Weekly Hub: Redzone entry button (by the week selector) ─────────────
+   Replaces the old CTA banner on this page. Deliberately static (no pulse):
+   the dashboard carries the animated live/pregame CTA. */
+.weekly-hub .week-selector {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.weekly-rz-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--rz-red, #dc2626);
+    text-decoration: none;
+    padding: 6px 12px;
+    border: 1px solid rgba(220, 38, 38, .3);
+    border-radius: 10px;
+    background: rgba(220, 38, 38, .06);
+    white-space: nowrap;
+    transition: background .15s, border-color .15s;
+}
+
+.weekly-rz-btn:hover {
+    background: rgba(220, 38, 38, .12);
+    border-color: rgba(220, 38, 38, .45);
+}
+
+.weekly-rz-btn-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--rz-red, #dc2626);
+    flex-shrink: 0;
+}
+
 /* ── Weekly live-refresh indicator ───── */
 .weekly-live-badge {
     display: inline-flex;
