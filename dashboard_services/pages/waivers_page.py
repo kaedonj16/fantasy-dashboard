@@ -56,20 +56,23 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-skel-left { display: flex; flex-direction: column; gap: 7px; flex: 1; min-width: 0; }
 .wv-skel-row .skeleton-line { margin: 0; }
 
-/* Waiver wire rows */
+/* Waiver wire rows -- one bordered container per list, rows separated by
+   hairlines instead of each row owning a full border (no stack-of-boxes). */
+.wv-list-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; margin-bottom: 8px; }
 .wv-player-row {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 10px 12px; border-radius: 8px; background: var(--card);
-  border: 1px solid var(--border); margin-bottom: 8px; cursor: pointer;
+  padding: 13px 15px; background: transparent;
+  border: 0; margin: 0; cursor: pointer; transition: background .12s;
 }
-.wv-player-row:hover { border-color: var(--accent); }
+.wv-player-row + .wv-player-row { border-top: 1px solid var(--border); }
+.wv-player-row:hover { background: var(--row); }
 .wv-player-name { font-weight: 600; font-size: 14px; color: var(--text); }
 .wv-player-sub { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
 .wv-right { display: flex; align-items: center; gap: 12px; }
 .wv-advice-metric { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 48px; }
 .wv-advice-label {
-  font-size: 8px; line-height: 1; font-weight: 800; letter-spacing: .06em;
-  text-transform: uppercase; color: var(--text-muted); white-space: nowrap;
+  font-size: 9px; line-height: 1; font-weight: 800; letter-spacing: .05em;
+  text-transform: uppercase; color: var(--text-subtle); white-space: nowrap;
 }
 .wv-value { font-size: 13px; font-weight: 700; color: var(--text); }
 .wv-ctx-links { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
@@ -201,16 +204,28 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-ss-winprob strong { color: var(--win); font-variant-numeric: tabular-nums; }
 .wv-ss-demote { font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 5px; background: color-mix(in srgb, var(--loss) 12%, transparent); color: var(--loss); margin-left: 6px; }
 
-/* Start/Sit player cards */
-.wv-ss-pos-group { margin-bottom: 16px; }
-.wv-ss-pos-label { font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 8px; }
+/* Start/Sit player cards -- one bordered container per position, players as
+   hairline-separated rows (no card-in-card borders); each row leads with its
+   verdict badge and pulls the projection out as a hero number. */
+.wv-ss-pos-group { margin-bottom: 16px; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.wv-ss-pos-label { font-size: 12px; font-weight: 800; color: var(--text); text-transform: uppercase; letter-spacing: .05em; margin: 0; padding: 12px 15px 11px; border-bottom: 1px solid var(--border); background: var(--row); }
 .wv-ss-player {
-  padding: 10px 12px; border-radius: 8px; background: var(--card);
-  border: 1px solid var(--border); margin-bottom: 6px;
+  padding: 13px 15px; border-radius: 0; background: transparent;
+  border: 0; margin: 0;
 }
-.wv-ss-player.wv-ss-start  { border-color: var(--win); background: color-mix(in srgb, var(--win) 6%, transparent); }
+.wv-ss-player + .wv-ss-player { border-top: 1px solid var(--border); }
+.wv-ss-player.wv-ss-start  { background: color-mix(in srgb, var(--win) 6%, transparent); }
 .wv-ss-player.wv-ss-bye    { opacity: .55; }
-.wv-ss-player.wv-ss-selected { border-color: var(--accent); background: var(--accent-soft); box-shadow: 0 0 0 2px var(--accent-soft); }
+.wv-ss-player.wv-ss-selected { background: var(--accent-soft); box-shadow: inset 0 0 0 2px var(--accent); }
+
+/* Body row under the name: demoted stat strip on the left, hero projection
+   pinned to the right. The dashed rule separates the read (who + verdict) from
+   the supporting detail. */
+.wv-ss-body { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-top: 9px; padding-top: 9px; border-top: 1px dashed var(--border); }
+.wv-ss-body .wv-ss-stats { margin-top: 0; flex: 1 1 auto; min-width: 0; }
+.wv-ss-proj { flex: 0 0 auto; text-align: right; line-height: 1; }
+.wv-ss-proj-num { font-size: 23px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+.wv-ss-proj-lbl { font-size: 9px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; color: var(--text-subtle); margin-top: 3px; }
 
 /* Top row: name + badge */
 .wv-ss-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -306,7 +321,7 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 
 /* Compare panel */
 .wv-compare-panel {
-  background: var(--card); border: 1px solid var(--accent); border-radius: 10px;
+  background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
   margin-bottom: 16px; overflow: hidden;
 }
 .wv-compare-header {
@@ -333,16 +348,18 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-compare-lose { color: var(--loss); }
 
 /* Shared-label compare: value(a) · LABEL · value(b), one label per metric */
-.wv-cmp { padding: 6px 14px 12px; }
+.wv-cmp { padding: 6px 16px 14px; }
 .wv-cmp-row, .wv-cmp-head {
   display: grid; grid-template-columns: 1fr minmax(86px, auto) 1fr;
-  align-items: center; gap: 10px; padding: 7px 0;
-  border-bottom: 1px solid var(--border);
+  align-items: center; gap: 10px; padding: 9px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
 }
 .wv-cmp-row:last-child { border-bottom: none; }
 .wv-cmp-head { border-bottom: 2px solid var(--border); padding: 4px 0 10px; align-items: end; }
-.wv-cmp-a { text-align: right; font-weight: 700; font-size: 13px; color: var(--text); }
-.wv-cmp-b { text-align: left;  font-weight: 700; font-size: 13px; color: var(--text); }
+/* Values are muted by default so a highlighted winner actually stands out; the
+   winner keeps full-strength colour + a soft pill (rules below). */
+.wv-cmp-a { text-align: right; font-weight: 700; font-size: 13px; color: var(--text-muted); }
+.wv-cmp-b { text-align: left;  font-weight: 700; font-size: 13px; color: var(--text-muted); }
 .wv-cmp-lbl {
   text-align: center; color: var(--text-subtle); font-size: 10.5px;
   text-transform: uppercase; letter-spacing: .04em; font-weight: 700;
@@ -353,10 +370,10 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-cmp-v { display: inline-block; }
 .wv-cmp-a.wv-compare-win, .wv-cmp-b.wv-compare-win { color: var(--win); font-weight: 800; }
 .wv-compare-win .wv-cmp-v {
-  background: color-mix(in srgb, var(--win) 14%, transparent);
-  padding: 2px 9px; border-radius: var(--radius-pill, 8px);
+  background: color-mix(in srgb, var(--win) 15%, transparent);
+  padding: 3px 10px; border-radius: 999px;
 }
-.wv-compare-lose { color: var(--text); font-weight: 700; }
+.wv-compare-lose { color: var(--text-muted); font-weight: 700; }
 .wv-cmp-hcol:first-child { text-align: right; }
 .wv-cmp-name { font-size: 15px; font-weight: 800; color: var(--text); line-height: 1.15; }
 .wv-cmp-sub  { font-size: 11px; color: var(--text-muted); }
@@ -373,9 +390,9 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 }
 /* Verdict banner: the advisor's actual call, up top where it's read first. */
 .wv-cmp-verdict {
-  display: flex; align-items: center; gap: 9px; flex-wrap: wrap;
-  padding: 11px 14px; border-bottom: 1px solid var(--border);
-  background: color-mix(in srgb, var(--win) 9%, transparent);
+  display: flex; align-items: center; gap: 11px; flex-wrap: wrap;
+  padding: 13px 16px; border-bottom: 1px solid var(--border);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--win) 12%, transparent), transparent);
 }
 .wv-cmp-verdict.toss { background: rgba(148,163,184,.10); }
 .wv-cmp-verdict-pill {
@@ -677,8 +694,9 @@ function wvStatsRow(p) {{
     '<div class="wv-ss-stat"><span class="wv-ss-stat-lbl">' + lbl + '</span>' +
     '<span class="wv-ss-stat-val ' + (cls || '') + '">' + val + '</span></div>';
 
+  // Proj PPG is pulled out of the strip and rendered as the card's hero number
+  // (see the card template), so it is intentionally not pushed here.
   const g1 = [];
-  if (p.proj_pts > 0)   g1.push(chip('Proj PPG', p.proj_pts));
   if (p.recent_ppg > 0) g1.push(chip('L4 PPG', p.recent_ppg));
   if (p.value > 0)      g1.push(chip('Value', Math.round(p.value)));
   if (p.market_signal) {{
@@ -810,7 +828,7 @@ function wvRenderBigGames(items) {{
   if (wvCurrentPos !== 'ALL') rows = rows.filter(d => d.position === wvCurrentPos);
   if (!rows.length) {{ wrap.hidden = true; list.innerHTML = ''; return; }}
   wrap.hidden = false;
-  list.innerHTML = rows.slice(0, 8).map(d => {{
+  list.innerHTML = '<div class="wv-list-card">' + rows.slice(0, 8).map(d => {{
     const cat = WV_BG_CATEGORY[d.category] || {{ label: d.category, cls: 'chip--muted' }};
     const live = d.status === 'in_progress'
       ? '<span class="chip chip--sm chip--muted" title="Provisional — scored live during the game">Game in progress</span>' : '';
@@ -833,7 +851,7 @@ function wvRenderBigGames(items) {{
         ${{live}}
       </div>
     </div>`;
-  }}).join('');
+  }}).join('') + '</div>';
 }}
 
 // ── Waiver list ───────────────────────────────────────────────────────────────
@@ -842,7 +860,7 @@ function wvRenderWaivers() {{
   let players = wvWaiverData;
   if (wvCurrentPos !== 'ALL') players = players.filter(p => p.position === wvCurrentPos);
   if (!players.length) {{ window.brEmptyState('wvWaiverList', {{ icon: 'search', title: 'No waiver targets', message: 'Nothing to add at this position right now.', compact: true }}); return; }}
-  list.innerHTML = players.slice(0, 20).map(p => {{
+  list.innerHTML = '<div class="wv-list-card">' + players.slice(0, 20).map(p => {{
     let usageChip = '';
     if (p.usage_delta != null && p.usage_delta >= 1) {{
       const statLbl = p.usage_stat === 'snap_pct' ? 'snap%' : (p.usage_stat === 'touches' ? 'touches' : 'targets');
@@ -961,7 +979,7 @@ function wvRenderWaivers() {{
       </div>
     </div>
   `;
-  }}).join('');
+  }}).join('') + '</div>';
 }}
 
 // ── Trending across leagues (Sleeper league-wide add counts) ───────────────────
@@ -1312,6 +1330,11 @@ function wvRenderStartSit() {{
         : '';
       const cmpCls   = isSelected ? 'selected' : '';
       const statsRow = wvStatsRow(p);
+      // Projection is the answer to "start or sit?", so it leads as a hero
+      // number to the right of the supporting strip.
+      const projBlock = (p.proj_pts > 0)
+        ? `<div class="wv-ss-proj"><div class="wv-ss-proj-num">${{p.proj_pts}}</div><div class="wv-ss-proj-lbl">proj pts</div></div>`
+        : '';
       const demoteNote = (p.demotion === 'low_total')
         ? '<span class="wv-ss-demote">Low team total</span>' : '';
       // Win-probability on the marginal start/sit call (last starter vs first
@@ -1324,9 +1347,9 @@ function wvRenderStartSit() {{
         <div class="wv-ss-player ${{isStart ? 'wv-ss-start' : ''}} ${{isBye ? 'wv-ss-bye' : ''}} ${{isSelected ? 'wv-ss-selected' : ''}}">
           <div class="wv-ss-top">
             <div class="wv-ss-name-block" onclick="openPlayerModal('${{p.player_id}}', '${{(p.name||'').replace(/'/g,"\\'")}}')">
+              ${{badge}}
               <span class="wv-player-name">${{p.name}}</span>
               ${{injBadge}}
-              ${{badge}}
               ${{demoteNote}}
               ${{planNote}}
             </div>
@@ -1342,7 +1365,7 @@ function wvRenderStartSit() {{
               </button>
             </div>
           </div>
-          ${{statsRow}}
+          <div class="wv-ss-body">${{statsRow}}${{projBlock}}</div>
           ${{wpChip}}
         </div>`;
     }}).join('');
