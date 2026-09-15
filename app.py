@@ -797,16 +797,19 @@ _CSP_POLICY = "; ".join([
     "https://pagead2.googlesyndication.com https://*.googlesyndication.com "
     "https://*.googleadservices.com https://*.google.com https://*.gstatic.com "
     "https://*.doubleclick.net https://fundingchoicesmessages.google.com "
-    "https://cdn.jsdelivr.net https://browser.sentry-cdn.com",
+    "https://cdn.jsdelivr.net https://browser.sentry-cdn.com "
+    "https://*.cloudflareinsights.com",
     "style-src 'self' 'unsafe-inline' https://*.googlesyndication.com "
-    "https://fundingchoicesmessages.google.com",
+    "https://fundingchoicesmessages.google.com "
+    "https://fonts.googleapis.com",
     "img-src 'self' data: blob: https:",
-    "font-src 'self' data:",
+    "font-src 'self' data: https://*.gstatic.com",
     # XHR/fetch/beacon: Sentry ingest + the ad / CMP reporting endpoints.
     "connect-src 'self' https://*.sentry.io https://*.google.com "
     "https://*.googlesyndication.com https://*.doubleclick.net "
     "https://pagead2.googlesyndication.com https://fundingchoicesmessages.google.com "
-    "https://cdn.jsdelivr.net",
+    "https://cdn.jsdelivr.net "
+    "https://*.cloudflareinsights.com",
     # 'self' lets the app embed its own pages (the Draft Room's in-draft cheat
     # sheet overlay iframes /draft/cheat-sheet/embed). Ads and Google's consent
     # messaging render inside iframes from Google ad / CMP hosts.
