@@ -1038,8 +1038,13 @@ def api_portfolio_matchup():
     if not viewer_rid:
         return jsonify({"live": False})
 
+    from zoneinfo import ZoneInfo
+    today = datetime.now(ZoneInfo("America/New_York")).date()
     finalized_week = _finalized_fantasy_week(ctx, viewer_rid, week)
-    if finalized_week == week - 1:
+    # Some feeds advance nfl_state before the just-finished fantasy result has
+    # cleared on Tuesday. Use that final only during the rollover window; later
+    # in the week the card must move on to the scheduled/current matchup.
+    if finalized_week == week - 1 and today.weekday() == 1:
         week = finalized_week
 
     # Scheduled weeks stay hidden until kickoff approaches, while a provider-
@@ -1156,14 +1161,6 @@ def api_portfolio_matchup():
         pids += [p.get("pid") for p in (opp.get("starters") or [])]
     status = "final" if fantasy_final else _matchup_status_label(status_by_pid, pids)
 
-    # Keep the compact result visible through Tuesday (including a one-week NFL
-    # state rollover), then leave older finals to matchup history.
-    from zoneinfo import ZoneInfo
-    today = datetime.now(ZoneInfo("America/New_York")).date()
-    is_live = True
-    if status == "final" and today.weekday() not in (6, 0, 1):
-        is_live = False
-
     matchup_result, margin = None, None
     if has_opp and status == "final":
         my_score = you_side["score"]
@@ -1177,7 +1174,7 @@ def api_portfolio_matchup():
         margin = round(abs(my_score - opp_score), 2)
 
     return jsonify({
-        "live": is_live,
+        "live": True,
         "week": week,
         "status": status,
         "you": you_side,

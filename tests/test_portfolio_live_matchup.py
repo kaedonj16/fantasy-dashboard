@@ -164,8 +164,11 @@ def test_matchup_endpoint_fantasy_final_exposes_result_and_margin():
     assert 'team.get("pts_total")' in fn
     assert 'result' in fn
     assert 'margin' in fn
-    # Sunday through Monday keep the live/final slot visible; Wednesday onward hides it.
-    assert "today.weekday() not in (6, 0, 1)" in fn
+    # Tuesday may use the just-finished week, but completed current-week results
+    # are not hidden based on an unrelated wall-clock weekday.
+    assert "finalized_week == week - 1 and today.weekday() == 1" in fn
+    assert "today.weekday() not in (6, 0, 1)" not in fn
+    assert '"live": True' in fn
 
 
 def test_finalized_fantasy_week_supports_tuesday_rollover():
