@@ -114,6 +114,9 @@ def api_my_leagues():
             )
         else:  # compatibility for injected/legacy resolvers
             leagues, _season = resolve_my_leagues(*_args)
+        if session.get("account_id"):
+            from dashboard_services.accounts import schedule_account_league_reconciliation
+            schedule_account_league_reconciliation(session.get("account_id"), _season)
         from utils.league_chrome import fields_from_provider_league, format_label
         for m in leagues:
             plat = m.get("platform") or "sleeper"

@@ -21,12 +21,15 @@ import os
 import base64
 import hashlib
 import secrets
+import threading
 from typing import Optional
 
 logger = logging.getLogger(__name__)
 
 _TABLES_READY = False
 _ENCRYPTION_FALLBACK_LOGGED = False
+_RECONCILING_ACCOUNTS: set[int] = set()
+_RECONCILE_LOCK = threading.Lock()
 
 
 class ProviderCredentialConfigurationError(RuntimeError):
@@ -164,6 +167,17 @@ def init_accounts_tables() -> None:
                 UNIQUE (account_id, platform, league_id, season)
             )
             """
+        )
+        conn.execute(
+            """CREATE TABLE IF NOT EXISTS user_league_exclusions (
+                account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+                platform TEXT NOT NULL,
+                league_id TEXT NOT NULL,
+                season INTEGER NOT NULL,
+                reason TEXT NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                PRIMARY KEY (account_id, platform, league_id, season)
+            )"""
         )
         conn.execute(
             """ALTER TABLE user_leagues ADD COLUMN IF NOT EXISTS
@@ -682,6 +696,13 @@ def add_user_league(
     init_accounts_tables()
     from dashboard_services.db import get_conn
     with get_conn() as conn:
+        # An explicit link is authoritative and is the only operation which may
+        # clear an unlink/deletion tombstone.
+        conn.execute(
+            "DELETE FROM user_league_exclusions WHERE account_id=%s AND platform=%s "
+            "AND league_id=%s AND season=%s",
+            (account_id, platform, str(league_id), int(season or 0)),
+        )
         conn.execute(
             """
             INSERT INTO user_leagues (account_id, platform, league_id, season, team_id, name)
@@ -703,6 +724,19 @@ def remove_user_league(
     init_accounts_tables()
     from dashboard_services.db import get_conn
     with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT season FROM user_leagues WHERE account_id=%s AND platform=%s AND league_id=%s"
+            + (" AND season=%s" if season is not None else ""),
+            ((account_id, platform, str(league_id), season) if season is not None
+             else (account_id, platform, str(league_id))),
+        ).fetchall()
+        for row in rows:
+            conn.execute(
+                """INSERT INTO user_league_exclusions(account_id,platform,league_id,season,reason)
+                   VALUES(%s,%s,%s,%s,'unlinked') ON CONFLICT(account_id,platform,league_id,season)
+                   DO UPDATE SET reason='unlinked',created_at=now()""",
+                (account_id, platform, str(league_id), int(row.get("season") or 0)),
+            )
         if season is None:
             conn.execute(
                 "DELETE FROM user_leagues WHERE account_id = %s AND platform = %s AND league_id = %s",
@@ -763,7 +797,10 @@ def list_user_leagues(account_id: int) -> list[dict]:
                       c.last_successful_sync_at,c.last_error_code
                FROM user_leagues l LEFT JOIN fantasy_provider_connections c
                  ON c.id=l.provider_connection_id
-               WHERE l.account_id=%s
+               WHERE l.account_id=%s AND NOT EXISTS (
+                 SELECT 1 FROM user_league_exclusions x WHERE x.account_id=l.account_id
+                 AND x.platform=l.platform AND x.league_id=l.league_id
+                 AND x.season=COALESCE(l.season,0))
                ORDER BY l.is_favorite DESC, l.favorited_at DESC NULLS LAST, l.added_at DESC""",
             (account_id,),
         ).fetchall()
@@ -873,7 +910,8 @@ def _hide_confirmed_deleted_sleeper_leagues(leagues: list[dict], live_leagues: l
     may have left it, the response may be stale, or Sleeper may be degraded. We
     retain the durable association on every request error and only suppress the
     card when Sleeper's direct league lookup successfully returns no league.
-    The database row is intentionally preserved for outage safety and audit.
+    The background reconciliation path persists confirmed deletions as
+    exclusions so subsequent fast reads do not resurrect them.
     """
     live_ids = {str(league.get("league_id") or "") for league in live_leagues}
     candidates = [
@@ -896,6 +934,8 @@ def _hide_confirmed_deleted_sleeper_leagues(leagues: list[dict], live_leagues: l
             continue
     if not deleted_ids:
         return leagues
+    # Historical callers do not carry account_id. Reconciliation below does,
+    # and is the canonical persistence path.
     return [
         league for league in leagues
         if not (
@@ -903,6 +943,76 @@ def _hide_confirmed_deleted_sleeper_leagues(leagues: list[dict], live_leagues: l
             and str(league.get("league_id") or "") in deleted_ids
         )
     ]
+
+
+def reconcile_account_leagues(account_id: int, current_season: int) -> bool:
+    """Reconcile saved Sleeper memberships without making the fast read wait.
+
+    A missing membership is only a candidate. Every linked identity's
+    membership request must succeed, and Sleeper's canonical league endpoint
+    must explicitly report non-existence before an exclusion is persisted.
+    """
+    if not account_id:
+        return False
+    identities = list_account_platform_ids(account_id, "sleeper")
+    if not identities:
+        return True
+    from dashboard_services.api import get_sleeper_user_leagues, sleeper_league_exists
+    live_ids: set[str] = set()
+    for user_id in identities:
+        try:
+            rows = get_sleeper_user_leagues(user_id, int(current_season))
+        except Exception:
+            return False
+        if rows is None:
+            return False
+        live_ids.update(str(r.get("league_id") or "") for r in rows)
+    candidates = [l for l in list_user_leagues(account_id)
+                  if l.get("platform") == "sleeper"
+                  and str(l.get("league_id")) not in live_ids]
+    confirmed = []
+    for league in candidates:
+        try:
+            exists = sleeper_league_exists(str(league["league_id"]))
+        except Exception:
+            continue
+        if exists is False:
+            confirmed.append(league)
+    if confirmed:
+        init_accounts_tables()
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            for league in confirmed:
+                conn.execute(
+                    """INSERT INTO user_league_exclusions(account_id,platform,league_id,season,reason)
+                       VALUES(%s,'sleeper',%s,%s,'provider_deleted')
+                       ON CONFLICT(account_id,platform,league_id,season)
+                       DO UPDATE SET reason='provider_deleted',created_at=now()""",
+                    (int(account_id), str(league["league_id"]), int(league.get("season") or 0)),
+                )
+            conn.commit()
+    return True
+
+
+def schedule_account_league_reconciliation(account_id: int, current_season: int) -> None:
+    """Start at most one bounded reconciliation worker per account/process."""
+    if not account_id:
+        return
+    account_id = int(account_id)
+    with _RECONCILE_LOCK:
+        if account_id in _RECONCILING_ACCOUNTS:
+            return
+        _RECONCILING_ACCOUNTS.add(account_id)
+
+    def run():
+        try:
+            reconcile_account_leagues(account_id, int(current_season))
+        except Exception:
+            logger.warning("account league reconciliation failed", exc_info=True)
+        finally:
+            with _RECONCILE_LOCK:
+                _RECONCILING_ACCOUNTS.discard(account_id)
+    threading.Thread(target=run, name=f"league-reconcile-{account_id}", daemon=True).start()
 
 
 def resolve_my_leagues(viewer_user_id, account_id, current_season, *, enrich_live=True):

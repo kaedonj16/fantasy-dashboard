@@ -3455,6 +3455,11 @@ function bindOnce(el, key, type, handler, options) {
     // Match the top chrome / PWA splash (navy in dark, soft slate in light)
     // so the OS status bar doesn't flash pure white against the app surface.
     m.setAttribute('content', dark ? '#020617' : '#f8fafc');
+    const status = document.getElementById('br-status-bar-style');
+    // Unlike black-translucent, `black` is opaque. It keeps light status icons
+    // readable in dark standalone mode without allowing page content to frost
+    // the header; light mode uses adaptive/default dark icons.
+    if (status) status.setAttribute('content', dark ? 'black' : 'default');
   }
   syncThemeColor();
 
@@ -12610,13 +12615,14 @@ document.addEventListener('click', function (e) {
   e.preventDefault();
   const platform = btn.getAttribute('data-platform');
   const leagueId = btn.getAttribute('data-league');
+  const season = btn.getAttribute('data-season');
   if (!platform || !leagueId) return;
   if (!window.confirm('Remove this linked league from your account?')) return;
   btn.disabled = true;
   fetch('/api/link/remove', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ platform: platform, league_id: leagueId }),
+    body: JSON.stringify({ platform: platform, league_id: leagueId, season: season }),
   })
     .then(r => r.json())
     .then(d => {

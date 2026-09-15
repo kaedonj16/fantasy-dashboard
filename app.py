@@ -1908,10 +1908,10 @@ BASE_HTML = """
          would mismatch a user on OS-dark who hasn't switched the app to dark. -->
     <meta name="theme-color" id="br-theme-color" content="#f8fafc">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-status-bar-style" id="br-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="BR Fantasy">
     <meta name="mobile-web-app-capable" content="yes">
-    <meta name="mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="mobile-web-app-status-bar-style" content="default">
     <meta name="mobile-web-app-title" content="BR Fantasy">
 
     <!-- Instant branded splash (covers the PWA/first-paint white screen) -->
@@ -28666,16 +28666,18 @@ def build_portfolio_body(
 
     # ── League list - standings-table ─────────────────────────────────────
     league_rows = ""
-    # Unlink control: only for account-linked ESPN/Yahoo leagues (Sleeper leagues
-    # come from live discovery, not the account, so there's nothing to unlink).
+    # Every card in an account shell came from durable membership and can be
+    # unlinked. The season is explicit: removing one season must not silently
+    # remove historical rows for the same provider league.
     _can_unlink = bool(session.get("account_id"))
 
-    def _unlink_btn(_plat, _lid):
-        if not (_can_unlink and _plat in ("espn", "yahoo") and _lid):
+    def _unlink_btn(_plat, _lid, _season=None):
+        if not (_can_unlink and _lid):
             return ""
         return (
             f"<button type='button' class='pf-unlink' data-platform='{_plat}' "
-            f"data-league='{_lid}' title='Unlink this league' aria-label='Unlink league'>&times;</button>"
+            f"data-league='{_lid}' data-season='{int(_season or season)}' "
+            f"title='Unlink this league' aria-label='Unlink league'>&times;</button>"
         )
 
     def _lg_tools(is_favorite=False, *extra):
@@ -28752,7 +28754,8 @@ def build_portfolio_body(
     for lg in all_rows:
         lid = lg.get("league_id") or ""
         plat = lg.get("platform") or "sleeper"
-        href = f"/{plat}/{season}/{lid}/dashboard"
+        card_season = int(lg.get("season") or season)
+        href = f"/{plat}/{card_season}/{lid}/dashboard"
         _raw_name = lg.get("name") or "?"
         name = html.escape(_raw_name)
         name_link = f"<a href='{href}' class='pf-league-link pf-lg-name'>{name}</a>"
@@ -28766,17 +28769,19 @@ def build_portfolio_body(
             _lg_season_shell = lg.get("season") or season
             _updated = html.escape(str(lg.get("last_updated") or "Awaiting first refresh"))
             league_rows += (
-                f"<div class='pf-lg-card' data-lg-key='{plat}:{lid}' data-favorite='{'true' if lg.get('is_favorite') else 'false'}'>"
+                f"<div class='pf-lg-card' data-summary-card data-lg-key='{plat}:{lid}' data-favorite='{'true' if lg.get('is_favorite') else 'false'}' "
+                f"data-platform='{html.escape(str(plat), quote=True)}' data-league-id='{html.escape(str(lid), quote=True)}' data-season='{card_season}'>"
                 f"<div class='pf-lg-top'><span class='pf-lg-crest' style='background:{_crest_hue};'>{_ini}</span>"
-                f"{_lg_id(name_link, plat)}{_lg_tools(bool(lg.get('is_favorite')), _unlink_btn(plat, lid))}</div>"
+                f"{_lg_id(name_link, plat)}{_lg_tools(bool(lg.get('is_favorite')), _unlink_btn(plat, lid, card_season))}</div>"
                 f"<div class='pf-lg-live' aria-busy='true' data-lg-live data-platform='{html.escape(str(plat), quote=True)}' "
                 f"data-league-id='{html.escape(str(lid), quote=True)}' data-season='{html.escape(str(_lg_season_shell), quote=True)}'>"
                 "<div class='pf-live-skel' aria-hidden='true'><div class='skeleton pf-live-skel-status'></div>"
                 "<div class='pf-live-grid'><div class='pf-live-side'><div class='skeleton pf-live-skel-score'></div></div>"
                 "<div class='pf-live-side opp'><div class='skeleton pf-live-skel-score'></div></div></div></div></div>"
-                f"<div class='pf-lg-stats'><span class='pf-lg-stat'><span class='pf-lg-v'>&mdash;</span><span class='pf-lg-l'>Record loading</span></span>"
+                f"<div class='pf-lg-stats' data-summary-stats><span class='pf-lg-stat'><span class='pf-lg-v'>&mdash;</span><span class='pf-lg-l'>Record loading</span></span>"
                 f"<span class='pf-lg-stat'><span class='pf-lg-v'>&mdash;</span><span class='pf-lg-l'>Standing loading</span></span></div>"
-                f"<div class='pf-lg-foot'><span class='pf-lg-l'>Updated {_updated}</span><a href='{href}' class='pf-lg-open'>Open &rarr;</a></div></div>"
+                f"<div class='pf-lg-foot'><span class='pf-lg-l' data-summary-updated>Updated {_updated}</span>"
+                f"<button type='button' data-summary-retry hidden>Retry</button><a href='{href}' class='pf-lg-open'>Open &rarr;</a></div></div>"
             )
             continue
 
@@ -28842,7 +28847,7 @@ def build_portfolio_body(
                 f"<div class='pf-lg-top'>"
                 f"<span class='pf-lg-crest' style='background:{_crest_hue};'>{_ini}</span>"
                 f"{_lg_id(name_link, plat)}"
-                f"{_lg_tools(bool(lg.get('is_favorite')), _unlink_btn(plat, lid))}"
+                f"{_lg_tools(bool(lg.get('is_favorite')), _unlink_btn(plat, lid, card_season))}"
                 f"</div>"
                 f"{countdown}"
                 f"<div class='pf-lg-pending-row'>"
@@ -28859,7 +28864,7 @@ def build_portfolio_body(
                 f"<div class='pf-lg-top'>"
                 f"<span class='pf-lg-crest' style='background:var(--border);color:var(--text-muted);'>{_ini}</span>"
                 f"{_lg_id(name_muted, plat)}"
-                f"{_lg_tools(bool(lg.get('is_favorite')), _unlink_btn(plat, lid))}"
+                f"{_lg_tools(bool(lg.get('is_favorite')), _unlink_btn(plat, lid, card_season))}"
                 f"</div>"
                 f"<div class='pf-lg-err'>couldn’t load</div>"
                 f"</div>"
@@ -28983,7 +28988,7 @@ def build_portfolio_body(
             f"<div class='pf-lg-top'>"
             f"<span class='pf-lg-crest' style='background:{_crest_hue};'>{_ini}</span>"
             f"{_lg_id(name_link, plat, off_note, '', lg.get('team_name') or '')}"
-            f"{_lg_tools(bool(lg.get('is_favorite')), _unlink_btn(plat, lid))}"
+            f"{_lg_tools(bool(lg.get('is_favorite')), _unlink_btn(plat, lid, card_season))}"
             f"</div>"
             f"{live_slot}"
             f"<div class='pf-lg-stats'>"
@@ -29205,6 +29210,36 @@ def build_portfolio_body(
         "if(prev)prev.addEventListener('click',function(){if(page>0){page--;render();}});"
         "if(next)next.addEventListener('click',function(){page++;render();});"
         "render();})();</script>"
+        # Summary hydration is separate from matchup hydration: a perfectly
+        # normal live:false response must not leave record/standing placeholders.
+        # A generation controller makes soft navigation/back-forward harmless.
+        "<script>(function(){"
+        "if(window.__pfSummaryAbort)window.__pfSummaryAbort.abort();"
+        "if(window.__pfLeagueReconcileTimer)clearInterval(window.__pfLeagueReconcileTimer);"
+        "var ctl=typeof AbortController!=='undefined'?new AbortController():null;window.__pfSummaryAbort=ctl;"
+        "var cards=[].slice.call(document.querySelectorAll('[data-summary-card]')),active=0,MAX=3,q=[];"
+        "function esc(s){var d=document.createElement('div');d.textContent=s==null?'':s;return d.innerHTML;}"
+        "function when(s){try{return new Date(s).toLocaleString();}catch(e){return s||'';}}"
+        "function render(c,d){var stats=c.querySelector('[data-summary-stats]'),up=c.querySelector('[data-summary-updated]'),retry=c.querySelector('[data-summary-retry]');"
+        "if(!stats)return;if(d&&d.state==='ready'){stats.innerHTML='<span class=\"pf-lg-stat\"><span class=\"pf-lg-v\">'+esc(d.record)+'</span><span class=\"pf-lg-l\">Record</span></span>'"
+        "+'<span class=\"pf-lg-stat\"><span class=\"pf-lg-v\">'+esc(d.rank)+' <small>/ '+esc(d.total_teams)+'</small></span><span class=\"pf-lg-l\">Standing</span></span>';"
+        "if(d.team_name){var id=c.querySelector('.pf-lg-id'),meta=id&&id.querySelector('.pf-lg-meta');if(id&&!meta){meta=document.createElement('div');meta.className='pf-lg-meta';id.appendChild(meta);}if(meta)meta.innerHTML='<span class=\"pf-lg-team\">'+esc(d.team_name)+'</span>';}"
+        "if(up)up.textContent='Updated '+when(d.refreshed_at)+(d.stale?' (stale)':'');if(retry)retry.hidden=true;return;}"
+        "var msg=(d&&d.message)||'Summary unavailable. Retry.';stats.innerHTML='<span class=\"pf-lg-l\">'+esc(msg)+'</span>';"
+        "if(up)up.textContent=d&&d.state==='reconnect_required'?'Reconnect required':'Update failed';if(retry)retry.hidden=false;}"
+        "function load(c){if(c._summaryLoading)return;c._summaryLoading=true;active++;var p=c.dataset.platform,l=c.dataset.leagueId,s=c.dataset.season;"
+        "var u='/api/portfolio/summary?platform='+encodeURIComponent(p)+'&league_id='+encodeURIComponent(l)+'&season='+encodeURIComponent(s),timer;"
+        "var local=typeof AbortController!=='undefined'?new AbortController():null;if(local)timer=setTimeout(function(){local.abort();},12000);"
+        "fetch(u,{cache:'no-store',signal:local?local.signal:(ctl?ctl.signal:undefined)}).then(function(r){return r.json().then(function(d){if(!r.ok)throw d;return d;});})"
+        ".then(function(d){if(!ctl||!ctl.signal.aborted)render(c,d);}).catch(function(e){if(!ctl||!ctl.signal.aborted)render(c,e&&e.message?e:{message:'Summary timed out. Retry.'});})"
+        ".then(function(){if(timer)clearTimeout(timer);c._summaryLoading=false;active--;pump();});}"
+        "function pump(){while(active<MAX&&q.length)load(q.shift());}"
+        "cards.sort(function(a,b){var af=a.dataset.favorite==='true',bf=b.dataset.favorite==='true';return (bf-af)||((a.getBoundingClientRect().top<innerHeight)?-1:1);});q=cards.slice();pump();"
+        "document.addEventListener('click',function(e){var b=e.target.closest&&e.target.closest('[data-summary-retry]');if(!b)return;var c=b.closest('[data-summary-card]');if(c){b.hidden=true;q.unshift(c);pump();}},{signal:ctl?ctl.signal:undefined});"
+        "var checks=0;window.__pfLeagueReconcileTimer=setInterval(function(){if(++checks>4){clearInterval(window.__pfLeagueReconcileTimer);return;}"
+        "fetch('/api/my-leagues',{cache:'no-store'}).then(function(r){return r.json();}).then(function(d){var server=(d.leagues||[]).map(function(x){return x.platform+':'+x.league_id;}).sort().join('|');"
+        "var shown=cards.map(function(c){return c.dataset.platform+':'+c.dataset.leagueId;}).sort().join('|');if(server!==shown)location.reload();}).catch(function(){});},5000);"
+        "})();</script>"
         # Live-tick draft countdowns on undrafted league cards.
         "<script>(function(){"
         "function pad(n){return (n<10?'0':'')+n;}"
@@ -29228,6 +29263,7 @@ def build_portfolio_body(
         # one slow provider never blocks the page. Only in-progress matchups
         # refresh, and only while the tab is visible.
         "<script>(function(){"
+        "if(window.__pfLiveTimer)clearInterval(window.__pfLiveTimer);"
         "var slots=[].slice.call(document.querySelectorAll('[data-lg-live]'));if(!slots.length)return;"
         "function esc(s){var d=document.createElement('div');d.textContent=(s==null?'':s);return d.innerHTML;}"
         "function fmt(n){return (Math.round((n||0)*10)/10).toFixed(1);}"
@@ -29266,7 +29302,7 @@ def build_portfolio_body(
         "var controller=typeof AbortController!=='undefined'?new AbortController():null;"
         "var timer=controller?setTimeout(function(){controller.abort();},12000):null;"
         "slot._loading=fetch(u,{headers:{'X-Requested-With':'fetch'},signal:controller?controller.signal:undefined}).then(function(r){return r.ok?r.json():null;})"
-        ".then(function(d){if(slot._generation===generation)render(slot,d);return d;}).catch(function(){return null;})"
+        ".then(function(d){if(slot._generation===generation)render(slot,d);return d;}).catch(function(){if(slot._generation===generation)render(slot,null);return null;})"
         ".then(function(d){if(timer)clearTimeout(timer);slot._loading=null;return d;});return slot._loading;}"
         "var i=0,LIVE=[];slots.sort(function(a,b){var ac=a.closest('.pf-lg-card'),bc=b.closest('.pf-lg-card');"
         "var af=ac&&ac.getAttribute('data-favorite')==='true',bf=bc&&bc.getAttribute('data-favorite')==='true';"
@@ -29274,7 +29310,7 @@ def build_portfolio_body(
         "function pump(){if(i>=slots.length)return;var slot=slots[i++];"
         "load(slot).then(function(d){if(d&&d.live&&d.status==='in')LIVE.push(slot);pump();});}"
         "for(var k=0;k<3;k++)pump();"
-        "setInterval(function(){if(document.hidden||!LIVE.length)return;LIVE.forEach(load);},45000);"
+        "window.__pfLiveTimer=setInterval(function(){if(document.hidden||!LIVE.length)return;LIVE.forEach(load);},45000);"
         "})();</script>"
     )
 
