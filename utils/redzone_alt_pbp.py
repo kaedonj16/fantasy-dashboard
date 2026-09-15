@@ -130,13 +130,19 @@ def parse_pbp_play_stats(text: str) -> dict[str, dict]:
     if not text:
         return {}
     out: dict[str, dict] = {}
+    # A combined "TD + TWO-POINT CONVERSION" line scores its scrimmage play from
+    # the touchdown portion only; the conversion is handled below with the 2PT
+    # keys. Splitting first prevents the conversion pass from either flipping the
+    # rusher's TD credit or reading as ordinary passing/receiving yardage.
+    from utils.redzone_pbp import _two_point_segments, parse_two_point_conversion
+    main, _conv = _two_point_segments(text)
     # A TD only counts for the offense when the ball wasn't turned over first.
     # Match the touchdown token case-insensitively (and accept "TD"): ESPN --
     # the primary live source -- writes "Touchdown"/"td", not only Tank01's
     # uppercase "TOUCHDOWN". A case-sensitive check credited the yards on a
     # scoring play but silently dropped the 4/6 TD points, so a QB's live total
     # ran ~20 points light versus the box score.
-    low = text.lower()
+    low = main.lower()
     scored = (
         ("touchdown" in low or " td" in low)
         and "intercepted" not in low
@@ -145,7 +151,7 @@ def parse_pbp_play_stats(text: str) -> dict[str, dict]:
 
     # pass_att / pass_cmp are display-only (running CMP/ATT); _lineToPts ignores
     # them. Every pass — complete, incomplete, or picked — is one attempt.
-    m = _RE_PASS.search(text)
+    m = _RE_PASS.search(main)
     if m:
         passer, receiver, yds = m.group(1), m.group(2), _yards(m.group(3))
         _accum(out, passer, pass_yds=yds, pass_cmp=1, pass_att=1)
@@ -154,40 +160,49 @@ def parse_pbp_play_stats(text: str) -> dict[str, dict]:
             _accum(out, passer, pass_td=1)
             _accum(out, receiver, rec_td=1)
 
-    mi = _RE_INT.search(text)
+    mi = _RE_INT.search(main)
     if mi:
         _accum(out, mi.group(1), int=1, pass_att=1)
 
-    mc = _RE_INCOMP.search(text)
+    mc = _RE_INCOMP.search(main)
     if mc:
         _accum(out, mc.group(1), pass_att=1)
 
     # Rushes only — never a pass, sack, kick or punt (those carry "for N yards"
     # too but must not be scored as rushing).
     if (
-        not re.search(r"\bpass\b", text)
-        and "sacked" not in text
-        and "field goal" not in text
-        and "extra point" not in text
-        and "kicks" not in text
-        and "punts" not in text
+        not re.search(r"\bpass\b", main)
+        and "sacked" not in main
+        and "field goal" not in main
+        and "extra point" not in main
+        and "kicks" not in main
+        and "punts" not in main
     ):
-        mr = _RE_RUSH.search(text)
+        mr = _RE_RUSH.search(main)
         if mr:
             rusher, yds = mr.group(1), _yards(mr.group(2))
             _accum(out, rusher, rush_yds=yds, carries=1)
             if scored:
                 _accum(out, rusher, rush_td=1)
 
-    mf = _RE_FG.search(text)
+    mf = _RE_FG.search(main)
     if mf:
         # Keep the distance so the client can score distance-based FG buckets
         # (fgm_40_49, fgm_50p, …) rather than only a flat fgm.
         distance = int(mf.group(2))
         _accum(out, mf.group(1), fgm=1, fg_yds=distance, **{_fg_bucket(distance): 1})
-    mx = _RE_XP.search(text)
+    mx = _RE_XP.search(main)
     if mx:
         _accum(out, mx.group(1), xpm=1)
+
+    # Successful two-point conversion: credit pass_2pt / rush_2pt / rec_2pt to the
+    # conversion actors (distinct from the TD actor), never scrimmage yardage.
+    for conv_actor in parse_two_point_conversion(text):
+        conv_name = conv_actor.get("name")
+        if not conv_name:
+            continue
+        for stat_key, stat_val in (conv_actor.get("stat_line") or {}).items():
+            _accum(out, conv_name, **{stat_key: stat_val})
     return out
 
 
@@ -578,10 +593,18 @@ def extract_sleeper_pbp_plays(
                 pids.append(pid)
         if pids:
             for pid in pids:
+                sl = stat_by_pid.get(pid, {})
+                # A 2PT conversion actor shares the TD play's line but is not the
+                # scorer — never let a 2PT-only row inherit the play's TD flag.
+                row_is_td = base["is_td"]
+                if row_is_td and not (
+                    sl.get("rec_td") or sl.get("rush_td") or sl.get("pass_td") or sl.get("def_td")
+                ) and (sl.get("pass_2pt") or sl.get("rush_2pt") or sl.get("rec_2pt")):
+                    row_is_td = False
                 out.append({
                     **base, "pid": pid, "name": long_name,
                     "team": _s(play.get("team")),
-                    "stat_line": stat_by_pid.get(pid, {}),
+                    "stat_line": sl, "is_td": row_is_td,
                 })
         else:
             out.append({**base, "pid": "", "name": long_name, "team": _s(play.get("team"))})
@@ -985,9 +1008,19 @@ def extract_espn_pbp_plays(
                     pids.append(pid)
             if pids:
                 for pid in pids:
+                    sl = stat_by_pid.get(pid, {})
+                    # A two-point conversion actor shares the TD play's booth
+                    # line but is not the scorer: a row that only carries a 2PT
+                    # stat (no rec/rush/pass TD) must never inherit the play's TD
+                    # flag, or it would fire a TD alert for a 2-point catch.
+                    row_is_td = base["is_td"]
+                    if row_is_td and not (
+                        sl.get("rec_td") or sl.get("rush_td") or sl.get("pass_td") or sl.get("def_td")
+                    ) and (sl.get("pass_2pt") or sl.get("rush_2pt") or sl.get("rec_2pt")):
+                        row_is_td = False
                     out.append({
                         **base, "pid": pid, "name": "", "team": drive_team,
-                        "stat_line": stat_by_pid.get(pid, {}),
+                        "stat_line": sl, "is_td": row_is_td,
                     })
             else:
                 # Keep scoring lines even without a name match — client may

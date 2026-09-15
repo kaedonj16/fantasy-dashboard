@@ -46,11 +46,35 @@
   var _lastPollFailed = false;
   var _hadInteraction = false;
   var _notifDismissed = !!(localStorage && localStorage.getItem('rz-notif-dismissed'));
+  // Real device-push readiness (async): 'granted' (permission + live
+  // PushSubscription), 'granted-unsubscribed' (permission but no subscription
+  // yet), 'default' (undecided), 'denied', 'unsupported', or null (unknown).
+  // Notification.permission alone is NOT sufficient for push with the tab closed
+  // -- a registered PushSubscription is -- so the CTA reflects this real state.
+  var _pushState = null;
+  function _refreshPushState() {
+    try {
+      if (typeof window.brPushStatus !== 'function') { _pushState = null; return; }
+      window.brPushStatus().then(function(s) {
+        if (s !== _pushState) { _pushState = s; _render(); }
+      }).catch(function() {});
+    } catch (_) {}
+  }
   var _notifHistory = (function() {
     try { return JSON.parse(localStorage.getItem('rz-notif-history') || '[]'); } catch (_) { return []; }
   }());
   var _historyOpen = false;
   var _unreadCount = 0;
+  // Deterministic alert identity → already-fired, so the same TD / injury /
+  // lead-change / milestone never re-alerts on a later poll or a play revision.
+  // Seeded from persisted history so a reload doesn't replay old alerts.
+  var _alertedKeys = (function() {
+    var s = new Set();
+    try {
+      _notifHistory.forEach(function(h) { if (h && h.key) s.add(h.key); });
+    } catch (_) {}
+    return s;
+  }());
   var _milestonesSeen = {};
   var _prevInjury = {};
   var _prevLeader = {}; // matchup_id → leading roster_id (for lead-change events)
@@ -625,6 +649,11 @@
     var pts = _n(L.pass_yds) * _n(s.pass_yd) + _n(L.pass_td) * _n(s.pass_td) + _n(L.int) * _n(s.pass_int)
       + _n(L.rush_yds) * _n(s.rush_yd) + _n(L.rush_td) * _n(s.rush_td)
       + _n(L.rec) * _n(s.rec) + _n(L.rec_yds) * _n(s.rec_yd) + _n(L.rec_td) * _n(s.rec_td);
+    // Two-point conversions (passing / rushing / receiving) resolve through the
+    // same league scoring dictionary as every other stat -- never a hard-coded 2.
+    // A league that omits or customizes these keys is respected exactly.
+    pts += _n(L.pass_2pt) * _n(s.pass_2pt) + _n(L.rush_2pt) * _n(s.rush_2pt)
+      + _n(L.rec_2pt) * _n(s.rec_2pt);
     // TE reception premium (bonus_rec_te) when the league runs one.
     if (String(pos || '').toUpperCase() === 'TE') pts += _n(L.rec) * _n(s.bonus_rec_te);
     // Kicker (distance-aware) + defense (Sleeper-style keys with common aliases)
@@ -786,16 +815,16 @@
     // TDs discovered by subsequent live polls, never on this initial backfill.
     _alertsArmed = true;
   }
+  var _MS_THRS = [
+    { key: 'rush_yds_100', field: 'rush_yds', thr: 100, label: '100+ rushing yards' },
+    { key: 'rush_yds_150', field: 'rush_yds', thr: 150, label: '150+ rushing yards' },
+    { key: 'pass_yds_300', field: 'pass_yds', thr: 300, label: '300+ passing yards' },
+    { key: 'pass_yds_400', field: 'pass_yds', thr: 400, label: '400+ passing yards' },
+    { key: 'rec_yds_100', field: 'rec_yds', thr: 100, label: '100+ receiving yards' },
+    { key: 'td_2', field: '__tds', thr: 2, label: '2 touchdowns' },
+    { key: 'td_3', field: '__tds', thr: 3, label: '3 touchdowns' },
+  ];
   function _seedMilestones(data) {
-    var _MS_THRS = [
-      { key: 'rush_yds_100', field: 'rush_yds', thr: 100 },
-      { key: 'rush_yds_150', field: 'rush_yds', thr: 150 },
-      { key: 'pass_yds_300', field: 'pass_yds', thr: 300 },
-      { key: 'pass_yds_400', field: 'pass_yds', thr: 400 },
-      { key: 'rec_yds_100', field: 'rec_yds', thr: 100 },
-      { key: 'td_2', field: '__tds', thr: 2 },
-      { key: 'td_3', field: '__tds', thr: 3 },
-    ];
     Object.keys(data.player_info || {}).forEach(function(pid) {
       var sl = (data.player_info[pid] || {}).stat_line;
       if (!sl) return;
@@ -1274,9 +1303,14 @@
     return gid + ':' + playId;
   }
   
-  // Fantasy contribution identity: NFL play + pid
+  // Fantasy contribution identity: NFL play + pid + contribution role.
+  // The role suffix keeps a touchdown and a two-point conversion by the SAME
+  // player on the SAME provider play as distinct, individually-revisable
+  // contributions (e.g. a QB sneak TD then a QB-sneak 2PT try) while both still
+  // group under one canonical NFL play card.
   function _contributionKey(play, gid, pid) {
-    return _nflPlayKey(play, gid) + ':' + pid;
+    var role = play.contrib_role ? ':' + play.contrib_role : '';
+    return _nflPlayKey(play, gid) + ':' + pid + role;
   }
   
   // Check if contribution data changed (for detecting revisions)
@@ -1292,7 +1326,8 @@
     
     // Key stats to compare
     var keys = ['rec', 'rec_yds', 'rec_td', 'targets', 'carries', 'rush_yds', 'rush_td',
-                'pass_yds', 'pass_td', 'int', 'fgm', 'fg_yds', 'fg_long',
+                'pass_yds', 'pass_td', 'int', 'pass_2pt', 'rush_2pt', 'rec_2pt',
+                'fgm', 'fg_yds', 'fg_long',
                 'fgm_0_19', 'fgm_20_29', 'fgm_30_39', 'fgm_0_39', 'fgm_40_49',
                 'fgm_50_59', 'fgm_50p', 'fgm_60p', 'xpm', 'sacks', 'def_int', 'fum_rec', 'def_td'];
     
@@ -1379,6 +1414,19 @@
     var line = primary.line || {};
     var pos = primary.pos;
     var yds = Math.round(line.rec_yds || line.rush_yds || line.pass_yds || 0);
+    // Two-point conversion (only when this actor's whole contribution is the
+    // conversion -- a TD scorer who also ran the try still headlines the TD).
+    if ((line.pass_2pt || line.rush_2pt || line.rec_2pt) && !line.rec_td && !line.rush_td && !line.pass_td) {
+      if (line.rec_2pt) {
+        var cqb = contributions.find(function(c) { return c.line.pass_2pt > 0 && c.pid !== primary.pid; });
+        return 'Two-point conversion' + (cqb ? ' from ' + cqb.name : '');
+      }
+      if (line.pass_2pt) {
+        var cwr = contributions.find(function(c) { return c.line.rec_2pt > 0 && c.pid !== primary.pid; });
+        return 'Two-point conversion' + (cwr ? ' to ' + cwr.name : '');
+      }
+      return 'Two-point conversion';
+    }
     // Receiving TD
     if (line.rec_td > 0 && line.rec > 0) {
       var qb = contributions.find(function(c) { return c.line.pass_td > 0 && c.pid !== primary.pid; });
@@ -1465,6 +1513,7 @@
       rec: 0, rec_yds: 0, rec_td: 0, targets: 0,
       carries: 0, rush_yds: 0, rush_td: 0,
       pass_yds: 0, pass_td: 0, pass_att: 0, pass_cmp: 0, int: 0,
+      pass_2pt: 0, rush_2pt: 0, rec_2pt: 0,
       fgm: 0, fga: 0, xpm: 0, xpa: 0,
       fgm_0_19: 0, fgm_20_29: 0, fgm_30_39: 0, fgm_0_39: 0,
       fgm_40_49: 0, fgm_50_59: 0, fgm_50p: 0, fgm_60p: 0,
@@ -1558,14 +1607,21 @@
         // Post-play total: use cume if available, else fall back to current total
         var cumePts = _cumeToFantasyPts(play.cume, scoring, pos);
         var totalPts = cumePts !== null ? cumePts : parseFloat(_totalPtsForPid(pid, scoring, newData).toFixed(2));
-        var kind = play.is_td ? 'td' : (line.int > 0 ? 'neg'
+        var isTwoPoint = !!(line.pass_2pt || line.rush_2pt || line.rec_2pt);
+        // A two-point conversion is its own event kind -- never 'td' -- so it can
+        // never trigger a TD alert (Part 4) even when it appears as a standalone
+        // event rather than a secondary contributor under the touchdown card.
+        var kind = play.is_td ? 'td'
+                 : (line.int > 0 ? 'neg'
+                 : (isTwoPoint ? 'two_point'
                  : ((line.rec || line.carries || line.pass_yds || line.fgm || line.sacks || line.sack
-                     || line.def_td || line.def_int || line.fum_rec) ? 'gain' : 'target'));
+                     || line.def_td || line.def_int || line.fum_rec) ? 'gain' : 'target')));
         var stats = [];
         if (line.rec) stats.push('reception');
         if (line.carries) stats.push('carry');
         if (line.pass_yds || line.pass_td) stats.push('pass');
         if (play.is_td || line.pass_td || line.rush_td || line.rec_td || line.def_td) stats.push('td');
+        if (isTwoPoint) stats.push('two_point');
         if (line.int || line.def_int) stats.push('int');
         if (line.targets && !line.rec) stats.push('target');
         if (line.fgm || line.xpm) stats.push('kick');
@@ -1575,6 +1631,8 @@
           rosterId: rid || '', owner: rid ? _ownerName(rid) : '', league: rid ? _leagueOfRid(rid) : '',
           mine: rid ? tags.my.has(rid) : false, opp: rid ? tags.opp.has(rid) : false,
           line: line, pts: pts, kind: kind, stats: stats,
+          isTwoPoint: isTwoPoint,
+          contribRole: play.contrib_role || '',
           playKey: playKey,
           contribKey: contribKey,
           rawPlayText: play.play_text || '',
@@ -1810,6 +1868,67 @@
     return events;
   }
 
+  // ── Alert history (on-site "Alerts" + local device signals) ─────────────────
+  // The Alerts control represents MEANINGFUL RedZone alerts -- not the whole
+  // Plays feed. Supported categories: my player's TD, opponent TD in my matchup,
+  // meaningful injury changes, lead changes, and major milestones. Each entry
+  // carries enough to render (time / type / player / desc / point delta /
+  // league-matchup context) and a deterministic dedupe key so an alert never
+  // fires twice across polls or a play revision.
+  var ALERT_TD = 'TD', ALERT_OPP_TD = 'OPPONENT_TD', ALERT_INJURY = 'INJURY',
+      ALERT_LEAD = 'LEAD_CHANGE', ALERT_MILESTONE = 'MILESTONE';
+  function _pushAlert(entry) {
+    if (!entry || !entry.key || _alertedKeys.has(entry.key)) return false;
+    _alertedKeys.add(entry.key);
+    _notifHistory.unshift({
+      ts: entry.ts || Date.now(),
+      key: entry.key,
+      type: entry.type || ALERT_TD,
+      // Legacy field kept so existing history CSS (.td/.score) still applies.
+      kind: entry.kind || (entry.type === ALERT_TD ? 'td' : ''),
+      name: entry.name || '',
+      team: entry.team || '',
+      desc: entry.desc || '',
+      pts: (entry.pts != null ? entry.pts : 0),
+      league: entry.league || '',
+      matchup: entry.matchup || ''
+    });
+    if (_notifHistory.length > 50) _notifHistory = _notifHistory.slice(0, 50);
+    try { localStorage.setItem('rz-notif-history', JSON.stringify(_notifHistory)); } catch (_) {}
+    return true;
+  }
+  // Deterministic alert identity, e.g. td:{league}:{game}:{playId}.
+  function _alertKey() {
+    return Array.prototype.slice.call(arguments).map(function(x) {
+      return String(x == null ? '' : x);
+    }).join(':');
+  }
+  // Scoring-alert candidates from one poll batch. Each eligible event is
+  // evaluated INDEPENDENTLY -- there is deliberately NO gate on the batch size,
+  // so my TD still alerts when the same poll also carried the QB contribution,
+  // another game's play, an injury, a lead change, or a revision. A two-point
+  // conversion (kind 'two_point') and an overturned TD (kind 'nullified') are
+  // NOT candidates, so a 2PT try never fires a TD alert and a tombstone never
+  // re-alerts. Grouped play identity (one canonical playId per NFL scoring play)
+  // plus the deterministic key means a passing TD's QB + receiver contributions
+  // collapse to a single alert.
+  function _scoringAlertCandidates(allEvents, leagueId) {
+    var out = [];
+    (allEvents || []).forEach(function(ev) {
+      if (!ev || ev.kind !== 'td' || ev.isUpdate || ev.isNullified) return;
+      if (!ev.mine && !ev.opp) return;
+      var leagueCtx = ev.league || leagueId || '';
+      var mine = !!ev.mine;
+      var playRef = ev.playId || (ev.pid + ':' + (ev.ts || ''));
+      out.push({
+        ev: ev,
+        type: mine ? ALERT_TD : ALERT_OPP_TD,
+        key: _alertKey(mine ? 'td' : 'opp_td', leagueCtx, ev.gameId || '', playRef)
+      });
+    });
+    return out;
+  }
+
   function _detectChanges(newData, animationIntent) {
     var knownFeedIds = new Set(_feed.map(_eid));
     var tags = _rosterTags(newData);
@@ -1906,28 +2025,43 @@
     _feed = _chronoSort(_feed);
     // No arbitrary cap - full history retained, rendering controlled by pagination
 
-    // Push notification + audio chime for my TDs + log to history. Only for TDs
-    // found by a live poll -- never the initial backfill of already-played snaps.
-    // Dedupe by playId so grouped plays (QB+receiver) only trigger ONE alert.
-    var myTDs = _alertsArmed && animationIntent === 'live' && allEvents.length === 1
-      ? allEvents.filter(function(ev) { return ev.kind === 'td' && ev.mine && !ev.isUpdate; })
-      : [];
-    // Dedupe by playId - one alert per NFL play regardless of contributors
-    var seenTdPlays = new Set();
-    myTDs = myTDs.filter(function(ev) {
-      var key = ev.playId || (ev.pid + ':' + ev.ts);
-      if (seenTdPlays.has(key)) return false;
-      seenTdPlays.add(key);
-      return true;
-    });
-    if (myTDs.length) {
-      myTDs.forEach(function(ev) {
-        _notifHistory.unshift({ ts: Date.now(), name: ev.name, desc: ev.desc, pts: ev.pts, kind: ev.kind });
+    // Push notification + audio chime for TDs + log to Alerts history. Only for
+    // TDs found by a LIVE poll -- never the initial backfill of already-played
+    // snaps. Each eligible TD is evaluated INDEPENDENTLY: a normal poll carries
+    // many events (QB + receiver contributions, other games, injuries, lead
+    // changes, revisions), and my TD must still alert even when it is not the
+    // only event in the batch. We deliberately do NOT gate on allEvents.length.
+    //
+    // Canonical play-level dedupe: a passing TD arrives as two contributions
+    // (QB pass_td + WR rec_td) that share ONE canonical playId, so the grouped
+    // event is single per NFL play already; the deterministic td:{league}:
+    // {game}:{playId} key guarantees one notification per scoring play and
+    // suppresses repeats on later polls. A two-point conversion is kind
+    // 'two_point', never 'td', so it can never masquerade as a TD alert. An
+    // overturned TD becomes a 'nullified' event (kind !== 'td'), so a tombstone
+    // reverses scoring WITHOUT emitting another TD notification.
+    var _liveAlerts = _alertsArmed && animationIntent === 'live';
+    var myTDs = [];
+    if (_liveAlerts) {
+      _scoringAlertCandidates(allEvents, newData.league_id || _state.league_id).forEach(function(cand) {
+        var ev = cand.ev;
+        // Opponent TD: recorded in Alerts (a matchup swing I care about) but
+        // WITHOUT the celebratory local chime/vibration reserved for my TDs.
+        var pushed = _pushAlert({
+          key: cand.key, type: cand.type, name: ev.name, team: ev.nflTeam,
+          desc: ev.desc, pts: ev.pts, league: ev.league || '',
+          matchup: ev.rosterId || ''
+        });
+        if (pushed && cand.type === ALERT_TD) myTDs.push(ev);
       });
-      if (_notifHistory.length > 50) _notifHistory = _notifHistory.slice(0, 50);
-      try { localStorage.setItem('rz-notif-history', JSON.stringify(_notifHistory)); } catch (_) {}
+    }
+    if (myTDs.length) {
       _playTDBeep();
       try { if (navigator.vibrate) navigator.vibrate([100, 50, 200]); } catch (_) {}
+      // Immediate in-page notification while RedZone is open. Real device push
+      // (works with the tab closed) is delivered server-side via the shared
+      // push_subscriptions/VAPID path, deduped once per canonical play so
+      // multiple polling clients cannot double-send.
       try {
         if (navigator.serviceWorker && navigator.serviceWorker.ready) {
           navigator.serviceWorker.ready.then(function(sw) {
@@ -1957,14 +2091,24 @@
       // Only for players in a viewable matchup (mine or opp), to keep the feed relevant
       if (!tags.my.has(rid) && !tags.opp.has(rid)) return;
       _specialCount++;
+      var injDesc = 'Injury: now ' + _injLabel(now);
       _feed.unshift({
         pid: pid, name: _name(pid), pos: _pos(pid), nflTeam: _team(pid),
         rosterId: rid, owner: _ownerName(rid), league: _leagueOfRid(rid),
         mine: tags.my.has(rid), opp: tags.opp.has(rid),
-        desc: 'Injury: now ' + _injLabel(now), kind: 'neg', stats: ['injury'],
+        desc: injDesc, kind: 'neg', stats: ['injury'],
         pts: 0, ts: Date.now(),
         line: '', gameQuarter: info.game_quarter || '', gameClock: info.game_clock || ''
       });
+      // Meaningful injury change involving my team/opponent → Alerts history.
+      // Keyed by the new status so each distinct worsening records once.
+      if (_liveAlerts) {
+        _pushAlert({
+          key: _alertKey('injury', _leagueOfRid(rid) || '', pid, now),
+          type: ALERT_INJURY, name: _name(pid), team: _team(pid),
+          desc: injDesc, pts: 0, league: _leagueOfRid(rid) || '', matchup: rid
+        });
+      }
     });
 
     // Lead change alerts: fire once when the leading side flips in a matchup
@@ -1988,17 +2132,53 @@
       _specialCount++;
       var trailRid = newLdr === String(a.roster_id) ? String(b.roster_id) : String(a.roster_id);
       var leadPts = Math.max(ptsA, ptsB), trailPts = Math.min(ptsA, ptsB);
+      var leadDesc = (_ownerName(newLdr) || 'Team') + ' takes the lead (' + _fmt(leadPts) + ' – ' + _fmt(trailPts) + ')';
       _feed.unshift({
         pid: '0', name: 'Lead Change', pos: '', nflTeam: '',
         rosterId: newLdr, owner: _ownerName(newLdr) || 'Team',
         league: _leagueOfRid(newLdr),
         mine: isMyMid && _isMyRid(newLdr), opp: isMyMid && _isMyRid(trailRid),
-        desc: (_ownerName(newLdr) || 'Team') + ' takes the lead (' + _fmt(leadPts) + ' – ' + _fmt(trailPts) + ')',
+        desc: leadDesc,
         kind: 'gain', stats: ['lead_change'],
         pts: 0, ts: Date.now(),
         line: '', gameQuarter: '', gameClock: ''
       });
+      // Lead change in MY matchup → Alerts history. Keyed by new leader + a
+      // coarse score version so each genuine flip records once (not every poll).
+      if (_liveAlerts && isMyMid) {
+        _pushAlert({
+          key: _alertKey('lead', _leagueOfRid(newLdr) || '', mid, newLdr, Math.round(leadPts)),
+          type: ALERT_LEAD, name: 'Lead Change', team: '',
+          desc: leadDesc, pts: 0, league: _leagueOfRid(newLdr) || '', matchup: mid
+        });
+      }
     });
+
+    // Major player milestones (reusing the seeded thresholds) for players in my
+    // matchup: a newly crossed threshold records once in Alerts, then is marked
+    // seen so it never re-fires. Seeding on cold boot suppresses backfill noise.
+    if (_liveAlerts) {
+      Object.keys(newData.player_info || {}).forEach(function(pid) {
+        var sl = (newData.player_info[pid] || {}).stat_line;
+        if (!sl) return;
+        var rid = tags.pidToRoster[pid] || '';
+        if (!tags.my.has(rid) && !tags.opp.has(rid)) return;
+        var seen = _milestonesSeen[pid] || {};
+        var tds = (sl.rush_td || 0) + (sl.rec_td || 0) + (sl.pass_td || 0);
+        _MS_THRS.forEach(function(ms) {
+          var val = ms.field === '__tds' ? tds : (sl[ms.field] || 0);
+          if (val < ms.thr || seen[ms.key]) return;
+          seen[ms.key] = true;
+          _specialCount++;
+          _pushAlert({
+            key: _alertKey('milestone', pid, ms.key, (newData.player_info[pid] || {}).game_id || ''),
+            type: ALERT_MILESTONE, name: _name(pid), team: _team(pid),
+            desc: ms.label, pts: 0, league: _leagueOfRid(rid) || '', matchup: rid
+          });
+        });
+        _milestonesSeen[pid] = seen;
+      });
+    }
 
     // Determine presentation only after every canonical event for this update
     // exists. Multiple simultaneous arrivals always get the calm bulk reveal.
@@ -3070,7 +3250,10 @@
     var secondaryHtml = secondary.length
       ? '<div class="rz-event-contributors">' + secondary.map(function(c) {
           var pts = _n(c.pts);
-          return '<span class="rz-event-contributor"><span>' + c.name + '</span>'
+          // A conversion contributor is tagged 2PT so the extra points read as a
+          // two-point conversion rather than an unexplained bump on a TD card.
+          var convTag = c.isTwoPoint ? '<span class="rz-event-2pt">2PT</span>' : '';
+          return '<span class="rz-event-contributor"><span>' + c.name + convTag + '</span>'
             + '<strong class="' + (pts > 0 ? 'pos' : (pts < 0 ? 'neg' : 'zero')) + '">'
             + (pts > 0 ? '+' : '') + _fmtFantasyDelta(pts) + '</strong></span>';
         }).join('') + '</div>'
@@ -3775,22 +3958,35 @@
       : [{ key: 'plays', label: 'Plays' }, { key: 'mine', label: 'My Team' }, { key: 'opp', label: 'Opp' }, { key: 'top', label: 'Top' }];
   }
 
+  var _ALERT_TYPE_LABEL = {
+    TD: 'TD', OPPONENT_TD: 'OPP TD', INJURY: 'INJURY',
+    LEAD_CHANGE: 'LEAD', MILESTONE: 'MILESTONE'
+  };
   function _historyPanelHtml() {
     if (!_notifHistory.length) return '';
     var rows = _notifHistory.map(function(h) {
       var d = new Date(h.ts);
       var timeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
       var ptsStr = h.pts > 0 ? '+' + _fmt(h.pts) + ' pts' : '';
-      var kindCls = h.kind === 'td' ? ' td' : h.kind === 'score' ? ' score' : '';
+      var type = h.type || (h.kind === 'td' ? 'TD' : '');
+      var kindCls = (type === 'TD') ? ' td'
+                  : (type === 'OPPONENT_TD') ? ' opp'
+                  : (type === 'INJURY') ? ' injury'
+                  : (type === 'LEAD_CHANGE') ? ' score'
+                  : (type === 'MILESTONE') ? ' milestone' : '';
+      var typeLabel = _ALERT_TYPE_LABEL[type] || '';
+      var ctx = h.league ? ' · ' + h.league : '';
+      var badge = typeLabel ? '<span class="rz-hist-type">' + typeLabel + '</span>' : '';
       return '<div class="rz-hist-row' + kindCls + '">'
         + '<span class="rz-hist-time">' + timeStr + '</span>'
-        + '<span class="rz-hist-desc">' + h.name + ' – ' + h.desc + '</span>'
+        + badge
+        + '<span class="rz-hist-desc">' + (h.name ? h.name + ' – ' : '') + h.desc + ctx + '</span>'
         + (ptsStr ? '<span class="rz-hist-pts">' + ptsStr + '</span>' : '')
         + '</div>';
     }).join('');
     return '<div class="rz-hist-overlay" id="rz-hist-overlay">'
       + '<div class="rz-hist-panel">'
-      + '<div class="rz-hist-hdr"><span>TD Alert History</span>'
+      + '<div class="rz-hist-hdr"><span>RedZone Alerts</span>'
       + '<button class="rz-hist-clear" id="rz-hist-clear">Clear</button>'
       + '<button class="rz-hist-close" id="rz-hist-close">✕</button>'
       + '</div>'
@@ -3843,9 +4039,25 @@
     var exitBtn  = _isDemo ? '<button class="rz-demo-exit" id="rz-demo-exit">Exit Demo</button>' : '';
     var staleChip = _lastPollFailed ? '<span class="rz-stale-badge">Stale' + (_lastDataAt ? ' · updated ' + new Date(_lastDataAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '') + '</span>' : '';
     var timerLabel = _lastPollFailed ? '↻' : (idle ? '↻' : _fmtTimer(_countdown));
-    var notifCta = (!_notifDismissed && 'Notification' in window && Notification.permission === 'default')
-      ? '<div class="rz-notif-cta" id="rz-notif-cta"><span>Enable TD alerts</span><button class="rz-notif-cta-btn" id="rz-notif-enable">Enable</button><button class="rz-notif-cta-x" id="rz-notif-dismiss">✕</button></div>'
-      : '';
+    // Show the CTA based on REAL push readiness, not merely whether permission
+    // was requested. 'granted' (subscribed) shows nothing; a browser-level
+    // block shows a useful disabled state instead of silently doing nothing.
+    var notifCta = '';
+    var _ps = _pushState;
+    if (!('Notification' in window)) {
+      notifCta = '';
+    } else if (_ps === 'denied') {
+      notifCta = !_notifDismissed
+        ? '<div class="rz-notif-cta is-blocked" id="rz-notif-cta"><span>TD alerts are blocked. Enable notifications for this site in your browser settings.</span><button class="rz-notif-cta-x" id="rz-notif-dismiss">✕</button></div>'
+        : '';
+    } else if (_ps === 'granted') {
+      notifCta = '';  // permission + live subscription: alerts enabled
+    } else if (_ps === 'default' || _ps === 'granted-unsubscribed'
+               || (_ps === null && Notification.permission === 'default')) {
+      notifCta = !_notifDismissed
+        ? '<div class="rz-notif-cta" id="rz-notif-cta"><span>Enable TD alerts</span><button class="rz-notif-cta-btn" id="rz-notif-enable">Enable</button><button class="rz-notif-cta-x" id="rz-notif-dismiss">✕</button></div>'
+        : '';
+    }
     root.innerHTML =
       notifCta
       + '<div class="rz-header">'
@@ -4013,7 +4225,26 @@
 
     var notifEnable = root.querySelector('#rz-notif-enable');
     if (notifEnable) notifEnable.addEventListener('click', function() {
-      Notification.requestPermission().then(function() { _notifDismissed = true; _render(); });
+      // Run the FULL device-push flow: permission → service worker →
+      // PushSubscription (create/reuse) → persist to push_subscriptions. Only
+      // treat alerts as enabled when the browser actually GRANTED permission and
+      // a subscription was registered -- never merely because the prompt
+      // resolved (a dismissed or denied prompt must not fake an enabled state).
+      var done = function(status) {
+        _pushState = (status === 'granted') ? 'granted'
+                   : (status === 'denied') ? 'denied'
+                   : (status === 'unsupported') ? 'unsupported'
+                   : (status === 'error') ? 'granted-unsubscribed'
+                   : 'default';
+        _render();
+      };
+      if (typeof window.brEnablePush === 'function') {
+        window.brEnablePush().then(done).catch(function() { done('error'); });
+      } else if ('Notification' in window) {
+        // Fallback: at least request permission, but do not claim enabled unless
+        // it was granted.
+        Notification.requestPermission().then(function(p) { done(p); }).catch(function() { done('error'); });
+      }
     });
     var notifDismiss = root.querySelector('#rz-notif-dismiss');
     if (notifDismiss) notifDismiss.addEventListener('click', function() {
@@ -4548,6 +4779,7 @@
   if (_state && Object.keys(_state).length) { _lastDataAt = Date.now(); _lastSuccessAt = Date.now(); }
 
   _render();
+  _refreshPushState();       // resolve real device-push readiness for the CTA
   if (_isDemo) setTimeout(_refresh, 300);
   _timer = setInterval(_tick, 1000);
   // Re-evaluate hero-strip arrows when the viewport width changes.

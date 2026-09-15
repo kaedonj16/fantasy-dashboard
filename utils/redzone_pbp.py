@@ -259,6 +259,136 @@ def _extract_target_from_text(play_text: str) -> str:
     return ""
 
 
+# ── Two-point conversion parsing ─────────────────────────────────────────────
+# A single provider play can pack a touchdown, the two-point attempt, and its
+# result into one booth line, e.g.::
+#
+#     A.Jones left end for 3 yards, TOUCHDOWN.
+#     TWO-POINT CONVERSION ATTEMPT.
+#     C.Wentz pass to J.Jefferson is complete.
+#     ATTEMPT SUCCEEDS.
+#
+# The conversion is scored with its own canonical keys (``pass_2pt`` /
+# ``rush_2pt`` / ``rec_2pt``) — never as ordinary scrimmage yardage — and only
+# when the attempt actually succeeds. Keeping the conversion actors distinct
+# from the TD actor is what stops the whole narrative from being attributed to
+# the ball-carrier who happened to appear first.
+import re as _re2pt
+
+_TWO_POINT_MARKER = _re2pt.compile(
+    r"(?:two[\s-]?point|2[\s-]?point|2\s*pt)\b[^.]*?(?:conversion|attempt|try)(?:\s+attempt)?",
+    _re2pt.IGNORECASE,
+)
+# Result sentences ("ATTEMPT SUCCEEDS.", "conversion is good", "ATTEMPT FAILS")
+# carry no actor and would otherwise be misread as an abbreviated name.
+_TWO_POINT_RESULT = _re2pt.compile(
+    r"\b(?:attempt|conversion|try)\s+(?:is\s+)?"
+    r"(?:succeeds?|successful|good|is good|fails?|failed|no good|unsuccessful)\b[.!]?",
+    _re2pt.IGNORECASE,
+)
+# Name token accepting booth abbreviations ("C.Wentz", "J.Jefferson",
+# "A.St. Brown") and full names ("Carson Wentz"). Non-initial words must be
+# Title-case (an upper followed by a lower) so all-caps booth keywords
+# (ATTEMPT, SUCCEEDS, TOUCHDOWN, CONVERSION) are never swept into a name.
+_2PT_NAME = (
+    r"([A-Z][A-Za-z'\-]*\.\s?[A-Z][A-Za-z'\-]*(?:[.\s]+[A-Z][a-z][A-Za-z'\-]*)*"
+    r"|[A-Z][a-z][A-Za-z'\-]*(?:\s+[A-Z][a-z][A-Za-z'\-]*)+)"
+)
+_2PT_PASS = _re2pt.compile(
+    _2PT_NAME + r"\s+pass(?:es|ed)?\b[^.]*?\bto\s+" + _2PT_NAME + r"\b"
+)
+_2PT_RUSH_ACTION = (
+    r"(?:up the middle|(?:left|right|up)\s+(?:end|guard|tackle|middle)"
+    r"|scrambles?|rushe[sd]?|rush(?:es|ed)?|runs?|dives?|sneaks?|kneels?"
+    r"|straight ahead)"
+)
+_2PT_RUSH = _re2pt.compile(_2PT_NAME + r"\s+" + _2PT_RUSH_ACTION + r"\b")
+
+
+def _two_point_segments(text: str) -> tuple[str, str]:
+    """Split a booth line into (main_text, conversion_text) around the 2pt marker.
+
+    ``main_text`` is the scrimmage play preceding the try (the touchdown, if
+    any); ``conversion_text`` is everything from the two-point marker onward.
+    When no two-point attempt is described, ``conversion_text`` is empty and
+    ``main_text`` is the whole line.
+    """
+    if not text:
+        return text or "", ""
+    m = _TWO_POINT_MARKER.search(text)
+    if not m:
+        return text, ""
+    return text[: m.start()].strip(), text[m.start():].strip()
+
+
+def two_point_attempted(text: str) -> bool:
+    """True when the booth line describes a two-point conversion attempt."""
+    return bool(text) and bool(_TWO_POINT_MARKER.search(text))
+
+
+def two_point_succeeded(conversion_text: str) -> bool:
+    """Whether a two-point conversion clause reports a *successful* attempt.
+
+    Explicit failure/turnover wins over any success wording. A bare attempt with
+    neither an explicit success nor failure marker is treated conservatively as
+    unsuccessful (no points) — a wrong point is worse than none.
+    """
+    if not conversion_text:
+        return False
+    low = conversion_text.lower()
+    if _re2pt.search(
+        r"\bfails?\b|\bfailed\b|no good|unsuccessful|intercepted|"
+        r"\bincomplete\b|\bstopped\b|\bturnover\b|\breturn(?:ed|s)?\b",
+        low,
+    ):
+        return False
+    return bool(_re2pt.search(r"succeeds?|successful|is good|conversion good|attempt good", low))
+
+
+def parse_two_point_conversion(text: str, *, require_success: bool = True) -> list[dict]:
+    """Parse a two-point conversion's actors from a combined booth line.
+
+    Returns ``[{"name": str, "role": str, "stat_line": dict}]`` for the
+    conversion actors, where ``role`` is one of ``conv_passer`` /
+    ``conv_receiver`` / ``conv_rusher`` and ``stat_line`` carries exactly the
+    canonical two-point key (``pass_2pt`` / ``rec_2pt`` / ``rush_2pt``). Yardage
+    is deliberately omitted — a two-point pass/reception/rush contributes the 2PT
+    stat, not normal scrimmage yardage.
+
+    With ``require_success=True`` (the default, for scoring) a failed,
+    incomplete, intercepted, or absent attempt yields ``[]``. Revision handling
+    passes ``require_success=False`` so it can emit identity-preserving zero
+    tombstones for whichever actors a now-nullified try previously credited.
+    """
+    main, conv = _two_point_segments(text)
+    if not conv or (require_success and not two_point_succeeded(conv)):
+        return []
+    # Isolate the action clause: drop the marker ("TWO-POINT CONVERSION ATTEMPT")
+    # and the result sentence ("ATTEMPT SUCCEEDS") so neither is misread as an
+    # abbreviated player name.
+    action = _TWO_POINT_RESULT.sub(" ", _TWO_POINT_MARKER.sub(" ", conv)).strip()
+    contribs: list[dict] = []
+    m = _2PT_PASS.search(action)
+    if m:
+        passer = m.group(1).strip()
+        receiver = m.group(2).strip()
+        contribs.append({"name": passer, "role": "conv_passer", "stat_line": {"pass_2pt": 1}})
+        contribs.append({"name": receiver, "role": "conv_receiver", "stat_line": {"rec_2pt": 1}})
+        return contribs
+    mr = _2PT_RUSH.search(action)
+    if mr:
+        rusher = mr.group(1).strip()
+        contribs.append({"name": rusher, "role": "conv_rusher", "stat_line": {"rush_2pt": 1}})
+    return contribs
+
+
+_CONV_ROLE_TO_IDENTITY_ROLE = {
+    "conv_passer": "passer",
+    "conv_receiver": "receiver",
+    "conv_rusher": "rusher",
+}
+
+
 def _opponent_team(game_context: dict, offense_team: str) -> str:
     """Determine opposing team from game context.
     
@@ -470,6 +600,40 @@ def extract_pbp_plays(
                     ),
                 })
                 emitted += 1
+            # Conversion actors are parsed from the narrative, not playerStats, so
+            # a nullified/overturned play must ALSO emit identity-preserving zero
+            # tombstones for them (same pid + contribution role) — otherwise the
+            # 2PT points a client already applied would be left behind. The
+            # conversion is scored from the CORRECTED text; if the corrected line
+            # no longer describes a successful try, this yields no tombstone here,
+            # but the client still reverses via the stat-line change on the row it
+            # last saw. Only the offense team is known pre-loop; recover it from
+            # any structured actor on the play.
+            _rev_offense = ""
+            for ps in _iter_player_stats(pstats):
+                _rev_offense = _s(_first(ps, "teamAbv", "team", "teamAbbreviation"))
+                if _rev_offense:
+                    break
+            for conv in parse_two_point_conversion(text, require_success=False):
+                conv_name = _s(conv.get("name"))
+                if not conv_name:
+                    continue
+                conv_role = conv.get("role") or ""
+                conv_identity = identity_resolver.resolve(
+                    provider="tank01", name=conv_name, team=_rev_offense,
+                    role=_CONV_ROLE_TO_IDENTITY_ROLE.get(conv_role, ""),
+                )
+                conv_pid = conv_identity["canonical_player_id"] or (
+                    _resolve_player_name(conv_name, _rev_offense, name_to_pid, team_players)
+                )
+                if not conv_pid:
+                    continue
+                out.append({
+                    **base, "pid": conv_pid, "name": conv_name, "team": _rev_offense,
+                    "stat_line": {}, "is_td": False, "identity": conv_identity,
+                    "contrib_role": conv_role,
+                })
+                emitted += 1
             if emitted == 0:
                 out.append({**base, "pid": "", "name": "", "team": "",
                             "stat_line": {}, "is_td": False})
@@ -482,7 +646,13 @@ def extract_pbp_plays(
         has_any_receiver_contrib = False
         has_resolved_receiver_contrib = False
         offense_team = ""
-        
+        # Score the scrimmage play from the touchdown/run portion only. A combined
+        # "TD + TWO-POINT CONVERSION" line must not let the conversion pass flip a
+        # rusher's TD credit or read as ordinary passing yardage — the conversion
+        # is handled separately, below, with pass_2pt / rush_2pt / rec_2pt keys.
+        main_text, _conv_text = _two_point_segments(text)
+        main_lower = main_text.lower()
+
         for ps in _iter_player_stats(pstats):
             line = _normalize_player_delta(ps)
 
@@ -490,7 +660,7 @@ def extract_pbp_plays(
             # omits the per-player TD flag (and, less often, the reception).
             # Recover only the unambiguous role represented by this stat row so
             # a receiving score includes the catch, yards, and six-point TD.
-            text_is_td = "touchdown" in text.lower() or " td" in text.lower()
+            text_is_td = "touchdown" in main_lower or " td" in main_lower
             receiving = ps.get("Receiving") or ps.get("receiving")
             passing = ps.get("Passing") or ps.get("passing")
             rushing = ps.get("Rushing") or ps.get("rushing")
@@ -512,7 +682,7 @@ def extract_pbp_plays(
             # completion implies. Receiving yards only accrue on a caught ball,
             # and an incomplete target ("incomplete" in the booth line) carries
             # no yardage, so this never turns an incompletion into a catch.
-            text_is_completion = "pass" in text.lower() and "incomplete" not in text.lower()
+            text_is_completion = "pass" in main_lower and "incomplete" not in main_lower
             if (
                 not line.get("rec")
                 and isinstance(receiving, dict)
@@ -591,6 +761,44 @@ def extract_pbp_plays(
             })
             emitted += 1
 
+        # Successful two-point conversion actors packed into the same booth line.
+        # These are separate fantasy contributions on the SAME NFL play (distinct
+        # canonical players, distinct contribution roles), scored with the 2PT
+        # keys only — never the TD player's, and never conversion yardage.
+        for conv in parse_two_point_conversion(text):
+            conv_name = _s(conv.get("name"))
+            if not conv_name:
+                continue
+            conv_role = conv.get("role") or ""
+            id_role = _CONV_ROLE_TO_IDENTITY_ROLE.get(conv_role, "")
+            conv_identity = identity_resolver.resolve(
+                provider="tank01", name=conv_name, team=offense_team, role=id_role,
+            )
+            conv_pid = conv_identity["canonical_player_id"]
+            if not conv_pid and conv_identity["confidence"] == "unresolved":
+                conv_pid = _resolve_player_name(conv_name, offense_team, name_to_pid, team_players)
+                if conv_pid:
+                    conv_identity = {**conv_identity, "canonical_player_id": conv_pid,
+                                     "confidence": "strong", "resolution_method": "caller_crosswalk"}
+            logger.debug(
+                "[redzone] conversion game=%s play=%s result=success role=%s name=%s pid=%s",
+                game_id, play_id, conv_role, conv_name, conv_pid or "unresolved",
+            )
+            if not conv_pid:
+                continue
+            out.append({
+                **base,
+                "pid": conv_pid,
+                "name": conv_name,
+                "team": offense_team,
+                "stat_line": dict(conv.get("stat_line") or {}),
+                "is_td": False,
+                "actor_role": conv_role,
+                "contrib_role": conv_role,
+                "identity": conv_identity,
+            })
+            emitted += 1
+
         # DST / team defense deltas on the play
         tstats = play.get("teamStats") or play.get("team_stats") or {}
         dst_emitted = False
@@ -640,9 +848,11 @@ def extract_pbp_plays(
                 })
                 emitted += 1
 
-        # Fallback: Extract target from incomplete pass text (only if no receiver row exists)
-        if not has_any_receiver_contrib and not is_no_play and "pass" in text.lower() and "incomplete" in text.lower():
-            target_name = _extract_target_from_text(text)
+        # Fallback: Extract target from incomplete pass text (only if no receiver
+        # row exists). Runs on the scrimmage portion only so a two-point
+        # conversion pass is never reparsed here as an ordinary target.
+        if not has_any_receiver_contrib and not is_no_play and "pass" in main_lower and "incomplete" in main_lower:
+            target_name = _extract_target_from_text(main_text)
             if target_name:
                 target_identity = identity_resolver.resolve(
                     provider="tank01", name=target_name, team=offense_team, role="target")
@@ -663,10 +873,12 @@ def extract_pbp_plays(
                     emitted += 1
                     has_resolved_receiver_contrib = True
         
-        # Fallback: Extract receiver from completed pass text (runs when receiver exists but pid is empty)
-        if not has_resolved_receiver_contrib and not is_no_play and "pass" in text.lower() and "incomplete" not in text.lower():
+        # Fallback: Extract receiver from completed pass text (runs when receiver
+        # exists but pid is empty). Scrimmage portion only, so a two-point
+        # conversion completion is never scored as an ordinary reception/yardage.
+        if not has_resolved_receiver_contrib and not is_no_play and "pass" in main_lower and "incomplete" not in main_lower:
             # Look for patterns like "to <Name> for X yards"
-            receiver_name = _extract_target_from_text(text)
+            receiver_name = _extract_target_from_text(main_text)
             if receiver_name:
                 receiver_identity = identity_resolver.resolve(
                     provider="tank01", name=receiver_name, team=offense_team, role="receiver")
@@ -674,9 +886,9 @@ def extract_pbp_plays(
                 if not receiver_pid and receiver_identity["confidence"] == "unresolved":
                     receiver_pid = _resolve_player_name(receiver_name, offense_team, name_to_pid, team_players)
                 if receiver_pid:
-                    # Try to extract yardage
+                    # Try to extract yardage (scrimmage portion only)
                     import re
-                    yds_match = re.search(r'for\s+(-?\d+)\s+yard', text)
+                    yds_match = re.search(r'for\s+(-?\d+)\s+yard', main_text)
                     rec_yds = int(yds_match.group(1)) if yds_match else 0
                     
                     out.append({
