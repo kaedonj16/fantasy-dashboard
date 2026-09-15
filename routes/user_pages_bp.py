@@ -331,9 +331,12 @@ def page_portfolio():
                 if not my_rows.empty and "week" in my_rows.columns:
                     my_rows = my_rows.sort_values("week", ascending=False).head(3)
                     for _, row in my_rows.iterrows():
-                        pts = float(row.get("pts") or row.get("PF") or 0)
-                        opp = float(row.get("opp_pts") or row.get("PA") or 0)
-                        streak.append("W" if pts > opp else "L")
+                        pts = row.get("points")
+                        opp = row.get("points_against")
+                        if pts is None or opp is None or pts != pts or opp != opp:
+                            continue
+                        pts, opp = float(pts), float(opp)
+                        streak.append("W" if pts > opp else ("L" if pts < opp else "T"))
         except Exception:
             logger.debug("suppressed exception", exc_info=True)
         # Urgency score: lower = needs more attention
