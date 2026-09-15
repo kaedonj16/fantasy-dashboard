@@ -28577,7 +28577,7 @@ def build_portfolio_body(
         f" · <a class='pf-reset-user' href='/reset-user'>Not me?</a></div>"
         f"</div>"
         f"<div class='pf-stat-bar'>"
-        f"<div class='pf-stat'><div class='pf-stat-val'>{num_leagues}</div><div class='pf-stat-label'>Leagues</div></div>"
+        f"<div class='pf-stat'><div class='pf-stat-val' data-portfolio-league-count>{num_leagues}</div><div class='pf-stat-label'>Leagues</div></div>"
         f"<div class='pf-stat'><div class='pf-stat-val {rec_cls}'>{rec_str}</div><div class='pf-stat-label'>Record</div></div>"
         f"<div class='pf-stat'><div class='pf-stat-val'>{season}</div><div class='pf-stat-label'>Season</div></div>"
         f"</div>"
@@ -29142,6 +29142,8 @@ def build_portfolio_body(
         "font-variant-numeric:tabular-nums;letter-spacing:.02em;}"
         ".pf-live-wp-you{color:var(--win);}"
         ".pf-live-wp-opp{color:var(--loss);}"
+        ".pf-live-result{font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;"
+        "text-align:center;color:var(--text);margin-top:4px;}"
         "@media(max-width:640px){"
         ".pf-lg-grid{grid-template-columns:minmax(0,1fr);gap:7px;}"
         ".pf-lg-card{padding:9px 10px;gap:6px;}"
@@ -29261,13 +29263,13 @@ def build_portfolio_body(
         "if(window.__pfLiveTimer)clearInterval(window.__pfLiveTimer);"
         "var slots=[].slice.call(document.querySelectorAll('[data-lg-live]'));if(!slots.length)return;"
         "function esc(s){var d=document.createElement('div');d.textContent=(s==null?'':s);return d.innerHTML;}"
-        "function fmt(n){return (Math.round((n||0)*10)/10).toFixed(1);}"
+        "function fmt(n,digits){digits=digits==null?1:digits;var scale=Math.pow(10,digits);return (Math.round((n||0)*scale)/scale).toFixed(digits);}"
         "function side(t,lbl,isOpp,win,showProj){"
         "var cls='pf-live-side'+(isOpp?' opp':'')+(win?' win':'');"
         "if(!t)return '<div class=\"'+cls+'\"><div class=\"pf-live-lbl\">'+esc(lbl)+'</div>'"
         "+'<div class=\"pf-live-score\">-</div></div>';"
         "return '<div class=\"'+cls+'\"><div class=\"pf-live-lbl\">'+esc(lbl)+'</div>'"
-        "+'<div class=\"pf-live-score\">'+fmt(t.score)+'</div>'"
+        "+'<div class=\"pf-live-score\">'+fmt(t.score,showProj===false?2:1)+'</div>'"
         "+(showProj!==false?'<div class=\"pf-live-proj\">proj '+fmt(t.proj)+'</div>':'')+'</div>';}"
         "function wpBar(d){"
         # No bar without an opponent, or once the result is settled (the scores
@@ -29289,8 +29291,8 @@ def build_portfolio_body(
         "+'<span class=\"pf-live-dot\"></span>'+esc(txt)+'</div>'"
         "+'<div class=\"pf-live-grid\">'+side(you,'You',false,yWin,!isFinal)"
         "+side(opp,opp?(opp.name||'Opp'):'Bye',true,oWin,!isFinal)+'</div>';"
-        "if(isFinal&&opp){var res=d.result||'T';var margin=fmt(d.margin||0);var resTxt=res==='W'?'WON BY '+margin:(res==='L'?'LOST BY '+margin:'TIED');"
-        "html+='<div class=\"pf-live-result\" style=\"font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;text-align:center;color:var(--text);margin-top:4px;\">'+esc(resTxt)+'</div>';}"
+        "if(isFinal&&opp){var res=d.result||'T';var margin=fmt(d.margin||0,2);var resTxt=res==='W'?'WON BY '+margin:(res==='L'?'LOST BY '+margin:'TIED');"
+        "html+='<div class=\"pf-live-result\">'+esc(resTxt)+'</div>';}"
         "else if(!isFinal){html+=wpBar(d);}"
         "slot.innerHTML=html;slot.removeAttribute('aria-busy');slot.hidden=false;}"
         "function load(slot){if(slot._loading)return slot._loading;var generation=(slot._generation||0)+1;slot._generation=generation;"
@@ -29501,8 +29503,12 @@ def build_portfolio_body(
     )
     # Constrain to a centered column so the page doesn't stretch edge-to-edge on
     # wide monitors (matches the League Health treatment).
+    insights = ""
+    if insights_label or insight_top or bottom_row:
+        insights = ("<section data-portfolio-cross-league>" + insights_label
+                    + insight_top + bottom_row + "</section>")
     return (css + '<div style="max-width:1040px;margin:0 auto;">'
-            + top_strip + moves_card + league_card + insights_label + insight_top + bottom_row + '</div>')
+            + top_strip + moves_card + league_card + insights + '</div>')
 
 
 # build_scout_body / _week_proj_points live in dashboard_services/pages/scout_page.py

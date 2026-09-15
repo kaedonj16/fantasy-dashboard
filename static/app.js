@@ -12608,7 +12608,8 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 // Unlink a linked league from the My Leagues page (delegated so it works for any
-// row). Removes the account's user_leagues row, then reloads the list.
+// row). The durable delete is reflected immediately; the background membership
+// reconciliation cannot re-add it because remove_user_league records a tombstone.
 document.addEventListener('click', function (e) {
   const btn = e.target.closest && e.target.closest('.pf-unlink');
   if (!btn) return;
@@ -12626,7 +12627,22 @@ document.addEventListener('click', function (e) {
   })
     .then(r => r.json())
     .then(d => {
-      if (d && d.ok) { window.location.reload(); return; }
+      if (d && d.ok) {
+        const card = btn.closest('.pf-lg-card');
+        if (card) card.remove();
+        const leagueCount = document.querySelector('.pf-stat-val[data-portfolio-league-count]');
+        if (leagueCount) {
+          leagueCount.textContent = String(Math.max(0, Number(leagueCount.textContent || 0) - 1));
+        }
+        // Cross-league sections were calculated from the old membership set.
+        // Remove them rather than displaying confidently stale exposure data;
+        // the next normal navigation rebuilds them from the canonical set.
+        document.querySelectorAll('[data-portfolio-cross-league]').forEach(el => el.remove());
+        document.dispatchEvent(new CustomEvent('portfolio:league-removed', {
+          detail: { platform: platform, leagueId: leagueId, season: season },
+        }));
+        return;
+      }
       btn.disabled = false;
       if (window.showToast) showToast((d && d.error) || 'Could not remove that league.');
     })

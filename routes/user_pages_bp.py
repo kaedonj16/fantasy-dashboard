@@ -139,32 +139,6 @@ def page_portfolio():
     if account_id:
         from dashboard_services.accounts import schedule_account_league_reconciliation
         schedule_account_league_reconciliation(account_id, season)
-        # Fast stable first paint from durable membership. Cards hydrate in place.
-        all_leagues_data = [
-            {
-                "league_id": str(lg.get("league_id") or ""),
-                "platform": str(lg.get("platform") or "sleeper").lower(),
-                "season": int(lg.get("season") or season),
-                "name": lg.get("name") or "Unknown",
-                "is_favorite": bool(lg.get("is_favorite")),
-                "loading": True,
-            }
-            for lg in (league_inputs or [])
-        ]
-        body = build_portfolio_body(
-            portfolio_signed_in_label(),
-            [], all_leagues_data, season,
-            [], len(all_leagues_data), [], {},
-            0, 0, 0,
-        )
-        nav_league_id = from_league
-        nav_platform = from_platform
-        nav_season = from_season or season
-        if not nav_league_id and all_leagues_data:
-            nav_league_id = all_leagues_data[0].get("league_id")
-            nav_platform = all_leagues_data[0].get("platform") or "sleeper"
-            nav_season = all_leagues_data[0].get("season") or season
-        return render_page("My Leagues - BR Fantasy", nav_league_id, "portfolio", body, nav_platform, nav_season)
     def _league_summary(lg):
         lid = str(lg.get("league_id") or "")
         if not lid:
@@ -878,6 +852,35 @@ def _matchup_status_label(status_by_pid: dict, pids: list) -> str:
     return "pre"
 
 
+def _finalized_fantasy_week(ctx: dict, roster_id: str, requested_week: int):
+    """Return the applicable finalized fantasy week, if the provider has one.
+
+    NFL player statuses are useful for live projections, but they are not the
+    authority for a fantasy matchup result (stat corrections and Monday-night
+    games make that especially visible).  The normalized weekly table is the
+    provider-backed fantasy-week authority and also lets Tuesday rollover show
+    the matchup that just completed rather than an empty next-week preview.
+    """
+    df_weekly = (ctx or {}).get("df_weekly")
+    if df_weekly is None or getattr(df_weekly, "empty", True):
+        return None
+    try:
+        rows = df_weekly[df_weekly["roster_id"].astype(str) == str(roster_id)]
+        if "finalized" not in rows.columns or "week" not in rows.columns:
+            return None
+        rows = rows[rows["finalized"] == True]
+        weeks = [int(value) for value in rows["week"].tolist()
+                 if int(value) <= int(requested_week)]
+        if not weeks:
+            return None
+        latest = max(weeks)
+        # Only fall back one week. Older finals belong in matchup history, not
+        # in the compact current-week Portfolio card.
+        return latest if latest >= int(requested_week) - 1 else None
+    except Exception:
+        return None
+
+
 def _week_scores_visible(games, now=None, lead_seconds=90 * 60) -> bool:
     """Show from ~90 min before the week's first kickoff through the rest of the
     week, so live scores appear at kickoff and the final result stays up after.
@@ -1026,18 +1029,6 @@ def api_portfolio_matchup():
     if week < 1:
         return jsonify({"live": False})
 
-    # Not up all week: hide the pre-week projection-only stretch, then show from
-    # ~90 min before the first kickoff through the rest of the week (live, then
-    # the final result). Cached schedule read, league-independent, so gate here
-    # before the per-league ctx/matchup work.
-    from utils.utils import get_nfl_games_for_week
-    try:
-        games = get_nfl_games_for_week(week, default_season)
-    except Exception:
-        games = []
-    if not _week_scores_visible(games):
-        return jsonify({"live": False})
-
     try:
         ctx = get_league_ctx_from_cache(platform, league_id, season)
     except Exception:
@@ -1048,6 +1039,25 @@ def api_portfolio_matchup():
 
     viewer_rid = str((ctx.get("viewer") or {}).get("viewer_roster_id") or "")
     if not viewer_rid:
+        return jsonify({"live": False})
+
+    from zoneinfo import ZoneInfo
+    today = datetime.now(ZoneInfo("America/New_York")).date()
+    finalized_week = _finalized_fantasy_week(ctx, viewer_rid, week)
+    # Some feeds advance nfl_state before the just-finished fantasy result has
+    # cleared on Tuesday. Use that final only during the rollover window; later
+    # in the week the card must move on to the scheduled/current matchup.
+    if finalized_week == week - 1 and today.weekday() == 1:
+        week = finalized_week
+
+    # Scheduled weeks stay hidden until kickoff approaches, while a provider-
+    # finalized fantasy week remains eligible even after the NFL state rolls.
+    from utils.utils import get_nfl_games_for_week
+    try:
+        games = get_nfl_games_for_week(week, default_season)
+    except Exception:
+        games = []
+    if finalized_week != week and not _week_scores_visible(games):
         return jsonify({"live": False})
 
     resolved_league_id = ctx.get("resolved_league_id") or league_id
@@ -1117,13 +1127,20 @@ def api_portfolio_matchup():
                 if _val:
                     proj_map[str(_pid)] = _val
 
+    fantasy_final = finalized_week == week
+
     def _side(team):
         actual, proj = team_live_totals(
             team, status_by_pid, proj_map, frac_lookup=_frac_lookup,
         )
+        # Provider matchup totals are authoritative once the fantasy matchup is
+        # finalized. Recomputing from NFL statuses can omit stat corrections or
+        # provider-specific scoring and must never replace the final score.
+        if fantasy_final and isinstance(team.get("pts_total"), (int, float)):
+            actual = float(team["pts_total"])
         return {
             "name": team.get("name") or "",
-            "score": round(float(actual or 0.0), 1),
+            "score": round(float(actual or 0.0), 2 if fantasy_final else 1),
             "proj": round(float(proj or 0.0), 1),
         }
 
@@ -1145,18 +1162,10 @@ def api_portfolio_matchup():
     pids = [p.get("pid") for p in (you.get("starters") or [])]
     if has_opp:
         pids += [p.get("pid") for p in (opp.get("starters") or [])]
-    status = _matchup_status_label(status_by_pid, pids)
-
-    # The final result is highlighted as "FINAL" on Tuesday; the live card stays
-    # visible Sunday through Monday, then hides Wednesday onward.
-    from zoneinfo import ZoneInfo
-    today = datetime.now(ZoneInfo("America/New_York")).date()
-    is_live = True
-    if status == "final" and today.weekday() not in (6, 0, 1):
-        is_live = False
+    status = "final" if fantasy_final else _matchup_status_label(status_by_pid, pids)
 
     matchup_result, margin = None, None
-    if has_opp and status == "final" and today.weekday() == 1:
+    if has_opp and status == "final":
         my_score = you_side["score"]
         opp_score = opp_side["score"]
         if my_score > opp_score:
@@ -1165,10 +1174,10 @@ def api_portfolio_matchup():
             matchup_result = "L"
         else:
             matchup_result = "T"
-        margin = round(abs(my_score - opp_score), 1)
+        margin = round(abs(my_score - opp_score), 2)
 
     return jsonify({
-        "live": is_live,
+        "live": True,
         "week": week,
         "status": status,
         "you": you_side,

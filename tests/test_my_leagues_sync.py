@@ -75,6 +75,16 @@ def test_clients_refetch_my_leagues_without_browser_cache():
     assert "paintLeagueChromeChip(cur)" in script
 
 
+def test_portfolio_unlink_updates_dom_without_full_reload():
+    script = (ROOT / "static" / "app.js").read_text()
+    block = script.split("const btn = e.target.closest && e.target.closest('.pf-unlink');", 1)[1]
+    block = block.split("// Mobile nav toggle", 1)[0]
+    assert "card.remove()" in block
+    assert "data-portfolio-league-count" in block
+    assert "data-portfolio-cross-league" in block
+    assert "window.location.reload()" not in block
+
+
 def test_my_leagues_endpoint_sets_no_store_header_in_source():
     source = (ROOT / "routes" / "league_meta_bp.py").read_text()
     block = source[source.index('def api_my_leagues'):source.index("@league_meta_bp.route(\"/api/weekly-trends\")")]
