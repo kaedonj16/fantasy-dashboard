@@ -180,6 +180,14 @@ def init_accounts_tables() -> None:
             )"""
         )
         conn.execute(
+            """CREATE TABLE IF NOT EXISTS portfolio_summary_cache (
+                account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+                platform TEXT NOT NULL, league_id TEXT NOT NULL, season INTEGER NOT NULL,
+                summary JSONB NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                PRIMARY KEY (account_id, platform, league_id, season)
+            )"""
+        )
+        conn.execute(
             """ALTER TABLE user_leagues ADD COLUMN IF NOT EXISTS
                provider_connection_id INTEGER REFERENCES fantasy_provider_connections(id)
                ON DELETE SET NULL"""

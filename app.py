@@ -16021,11 +16021,11 @@ def _build_lineup_analysis_html(
     skill_starters = [s for s in all_starters if str(s[3].get("pos") or "").upper() in {"QB", "RB", "WR", "TE"}]
     bust_pool = skill_starters or all_starters
     bust_pool.sort(key=lambda x: float(x[3].get("pts") or 0))
-    busts = bust_pool[:3]
+    busts = bust_pool[:6]
 
     # Sleeper = best bench player
     all_bench.sort(key=lambda x: -float(x[3].get("pts") or 0))
-    sleepers = all_bench[:3]
+    sleepers = all_bench[:6]
 
     bench_misses.sort(key=lambda x: -x["gap"])
     coaching_mistakes = bench_misses[:3]
@@ -28779,7 +28779,9 @@ def build_portfolio_body(
                 "<div class='pf-live-grid'><div class='pf-live-side'><div class='skeleton pf-live-skel-score'></div></div>"
                 "<div class='pf-live-side opp'><div class='skeleton pf-live-skel-score'></div></div></div></div></div>"
                 f"<div class='pf-lg-stats' data-summary-stats><span class='pf-lg-stat'><span class='pf-lg-v'>&mdash;</span><span class='pf-lg-l'>Record loading</span></span>"
-                f"<span class='pf-lg-stat'><span class='pf-lg-v'>&mdash;</span><span class='pf-lg-l'>Standing loading</span></span></div>"
+                f"<span class='pf-lg-stat'><span class='pf-lg-v'>&mdash;</span><span class='pf-lg-l'>Standing loading</span></span>"
+                f"<span class='pf-lg-stat'><span class='pf-lg-v' data-summary-streak>...</span><span class='pf-lg-l'>Streak loading</span></span></div>"
+                f"<div class='pf-pos-chips' data-summary-positions>QB ... &nbsp; RB ... &nbsp; WR ... &nbsp; TE ...</div>"
                 f"<div class='pf-lg-foot'><span class='pf-lg-l' data-summary-updated>Updated {_updated}</span>"
                 f"<button type='button' data-summary-retry hidden>Retry</button><a href='{href}' class='pf-lg-open'>Open &rarr;</a></div></div>"
             )
@@ -29221,21 +29223,23 @@ def build_portfolio_body(
         "function esc(s){var d=document.createElement('div');d.textContent=s==null?'':s;return d.innerHTML;}"
         "function when(s){try{return new Date(s).toLocaleString();}catch(e){return s||'';}}"
         "function render(c,d){var stats=c.querySelector('[data-summary-stats]'),up=c.querySelector('[data-summary-updated]'),retry=c.querySelector('[data-summary-retry]');"
-        "if(!stats)return;if(d&&d.state==='ready'){stats.innerHTML='<span class=\"pf-lg-stat\"><span class=\"pf-lg-v\">'+esc(d.record)+'</span><span class=\"pf-lg-l\">Record</span></span>'"
-        "+'<span class=\"pf-lg-stat\"><span class=\"pf-lg-v\">'+esc(d.rank)+' <small>/ '+esc(d.total_teams)+'</small></span><span class=\"pf-lg-l\">Standing</span></span>';"
+        "if(!stats)return;if(d&&(d.state==='ready'||d.state==='partial')){stats.innerHTML='<span class=\"pf-lg-stat\"><span class=\"pf-lg-v\">'+esc(d.record)+'</span><span class=\"pf-lg-l\">Record</span></span>'"
+        "+'<span class=\"pf-lg-stat\"><span class=\"pf-lg-v\">'+esc(d.rank)+' <small>/ '+esc(d.total_teams)+'</small></span><span class=\"pf-lg-l\">Standing</span></span>'"
+        "+'<span class=\"pf-lg-stat\"><span class=\"pf-lg-v\" data-summary-streak>...</span><span class=\"pf-lg-l\">Streak</span></span>';"
+        "var streak=c.querySelector('[data-summary-streak]'),positions=c.querySelector('[data-summary-positions]'),sec=d.sections||{};if(streak)streak.textContent=(d.streak||[]).join(' ')||(sec.streak&&sec.streak.status==='unavailable'?'-':'...');if(positions){var pr=d.pos_user_rank||{};positions.textContent=['QB','RB','WR','TE'].map(function(p){return p+' '+(pr[p]?'#'+pr[p]:(sec.position_rankings&&sec.position_rankings.status==='unavailable'?'-':'...'));}).join(' | ');}"
         "if(d.team_name){var id=c.querySelector('.pf-lg-id'),meta=id&&id.querySelector('.pf-lg-meta');if(id&&!meta){meta=document.createElement('div');meta.className='pf-lg-meta';id.appendChild(meta);}if(meta)meta.innerHTML='<span class=\"pf-lg-team\">'+esc(d.team_name)+'</span>';}"
-        "if(up)up.textContent='Updated '+when(d.refreshed_at)+(d.stale?' (stale)':'');if(retry)retry.hidden=true;return;}"
+        "if(up)up.textContent=(d.stale?'Last good data, refreshing: ':'Updated ')+when(d.refreshed_at);if(retry)retry.hidden=true;return;}"
         "var msg=(d&&d.message)||'Summary unavailable. Retry.';stats.innerHTML='<span class=\"pf-lg-l\">'+esc(msg)+'</span>';"
         "if(up)up.textContent=d&&d.state==='reconnect_required'?'Reconnect required':'Update failed';if(retry)retry.hidden=false;}"
-        "function load(c){if(c._summaryLoading)return;c._summaryLoading=true;active++;var p=c.dataset.platform,l=c.dataset.leagueId,s=c.dataset.season;"
+        "function load(c){if(c._summaryLoading)return;c._summaryLoading=true;c._summaryAttempt=c._summaryAttempt||0;active++;var p=c.dataset.platform,l=c.dataset.leagueId,s=c.dataset.season;"
         "var u='/api/portfolio/summary?platform='+encodeURIComponent(p)+'&league_id='+encodeURIComponent(l)+'&season='+encodeURIComponent(s),timer;"
         "var local=typeof AbortController!=='undefined'?new AbortController():null;if(local)timer=setTimeout(function(){local.abort();},12000);"
         "fetch(u,{cache:'no-store',signal:local?local.signal:(ctl?ctl.signal:undefined)}).then(function(r){return r.json().then(function(d){if(!r.ok)throw d;return d;});})"
-        ".then(function(d){if(!ctl||!ctl.signal.aborted)render(c,d);}).catch(function(e){if(!ctl||!ctl.signal.aborted)render(c,e&&e.message?e:{message:'Summary timed out. Retry.'});})"
+        ".then(function(d){c._summaryAttempt=0;if(!ctl||!ctl.signal.aborted)render(c,d);}).catch(function(e){c._summaryAttempt++;var again=e&&e.retryable!==false&&c._summaryAttempt<4;if(again){var wait=[0,1000,3000,7000][c._summaryAttempt]+Math.random()*350;var up=c.querySelector('[data-summary-updated]');if(up)up.textContent='Retrying...';setTimeout(function(){q.unshift(c);pump();},wait);}else if(!ctl||!ctl.signal.aborted)render(c,e&&e.message?e:{message:'Summary timed out. Retry.'});})"
         ".then(function(){if(timer)clearTimeout(timer);c._summaryLoading=false;active--;pump();});}"
         "function pump(){while(active<MAX&&q.length)load(q.shift());}"
         "cards.sort(function(a,b){var af=a.dataset.favorite==='true',bf=b.dataset.favorite==='true';return (bf-af)||((a.getBoundingClientRect().top<innerHeight)?-1:1);});q=cards.slice();pump();"
-        "document.addEventListener('click',function(e){var b=e.target.closest&&e.target.closest('[data-summary-retry]');if(!b)return;var c=b.closest('[data-summary-card]');if(c){b.hidden=true;q.unshift(c);pump();}},{signal:ctl?ctl.signal:undefined});"
+        "document.addEventListener('click',function(e){var b=e.target.closest&&e.target.closest('[data-summary-retry]');if(!b)return;var c=b.closest('[data-summary-card]');if(c){b.hidden=true;c._summaryAttempt=0;q.unshift(c);pump();}},{signal:ctl?ctl.signal:undefined});"
         "var checks=0;window.__pfLeagueReconcileTimer=setInterval(function(){if(++checks>4){clearInterval(window.__pfLeagueReconcileTimer);return;}"
         "fetch('/api/my-leagues',{cache:'no-store'}).then(function(r){return r.json();}).then(function(d){var server=(d.leagues||[]).map(function(x){return x.platform+':'+x.league_id;}).sort().join('|');"
         "var shown=cards.map(function(c){return c.dataset.platform+':'+c.dataset.leagueId;}).sort().join('|');if(server!==shown)location.reload();}).catch(function(){});},5000);"

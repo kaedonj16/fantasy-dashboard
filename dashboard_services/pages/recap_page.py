@@ -12,6 +12,7 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
         _build_lineup_analysis_html,
         _build_next_week_ctx,
         _build_recap_preview_df,
+        build_standings_as_of_week,
         _mock_lineup_analysis_html,
         has_premium_for_viewer,
         html,
@@ -58,6 +59,14 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
             df_weekly = _build_recap_preview_df(team_names)
             roster_map = {str(i + 1): n for i, n in enumerate(team_names)}
 
+    # Resolve pictures through the same roster-identity resolver used everywhere
+    # else. It handles provider team art, owner art, then a generated crest.
+    from dashboard_services.api import team_avatar
+    roster_by_rid = {str(r.get("roster_id")): r for r in (ctx.get("rosters") or [])}
+    avatar_by_rid = {
+        rid: team_avatar(_platform, roster, users) or ""
+        for rid, roster in roster_by_rid.items()
+    }
     # avatar by owner name
     owner_avatar: dict = {}
     for u in users:
@@ -116,7 +125,7 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
     season_high = float(high_row["points"]) >= fin_max
 
     def ava_img(owner_name, rid="", size=32):
-        ava = owner_avatar.get(owner_name, "")
+        ava = avatar_by_rid.get(str(rid)) or owner_avatar.get(owner_name, "")
         if ava:
             return f"<img src='{ava}' alt='' loading='lazy' decoding='async' style='width:{size}px;height:{size}px;border-radius:50%;object-fit:cover;flex-shrink:0;' onerror=\"this.style.display='none'\">"
         return team_crest(team_by_rid.get(rid) or owner_name or "?", size)
@@ -344,9 +353,19 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
   {scoreboard_rows}
 </div>"""
 
-    # ── Season standings snapshot ──────────────────────────────────────────
-    # Compute cumulative wins/losses/PF through selected_week
-    cum_df = fin_df[fin_df["week"] <= selected_week].copy()
+    # ── Shared historical standings + power snapshot ───────────────────────
+    # Preview mode replaces the empty provider frame with deterministic sample
+    # rows. Feed that same frame into the shared historical builder rather than
+    # accidentally asking it to index the original zero-column DataFrame.
+    recap_ctx = dict(ctx)
+    recap_ctx["df_weekly"] = fin_df
+    historical_ctx = build_standings_as_of_week(recap_ctx, selected_week)
+    from dashboard_services.ai.context_builders import build_power_rankings_context
+    from utils.standings_divisions import resolve_divisions
+    division_info = resolve_divisions(historical_ctx) or {}
+    division_by_rid = division_info.get("by_rid") or {}
+    division_names = division_info.get("names") or {}
+    cum_df = historical_ctx["df_weekly"]
     cum_df["win"] = cum_df["points"] > cum_df["points_against"]
     standings_rows_data = []
     for rid, grp in cum_df.groupby("roster_id"):
@@ -357,8 +376,9 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
         standings_rows_data.append({
             "rid": str(rid), "owner": owner,
             "wins": wins, "losses": losses, "pf": pf,
+            "division": division_by_rid.get(int(rid)) if str(rid).isdigit() else None,
         })
-    standings_rows_data.sort(key=lambda x: (-x["wins"], -x["pf"]))
+    standings_rows_data.sort(key=lambda x: (x.get("division") or 9999, -x["wins"], -x["pf"]))
 
     def standing_row(rank, s):
         bar_pct = s["pf"] / max(r["pf"] for r in standings_rows_data) * 100 if standings_rows_data else 0
@@ -377,7 +397,18 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
   </div>
 </div>"""
 
-    standing_rows_html = "".join(standing_row(i + 1, s) for i, s in enumerate(standings_rows_data))
+    standing_parts, division_rank = [], {}
+    last_div = object()
+    for s in standings_rows_data:
+        div = s.get("division")
+        if div != last_div and div:
+            standing_parts.append(f'<div class="st-division">{html.escape(division_names.get(div) or f"Division {div}")}</div>')
+        peers = [x for x in standings_rows_data if x.get("division") == div] if div else standings_rows_data
+        rank = peers.index(s) + 1
+        division_rank[s["rid"]] = rank if div else None
+        standing_parts.append(standing_row(rank, s))
+        last_div = div
+    standing_rows_html = "".join(standing_parts)
     standings_html = f"""
 <div class="card" style="overflow:hidden;">
   <div class="card-header">
@@ -386,6 +417,30 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
   </div>
   {standing_rows_html}
 </div>"""
+
+    power_teams = (build_power_rankings_context(historical_ctx) or {}).get("teams") or []
+    power_rows = []
+    for i, p in enumerate(power_teams, 1):
+        rid = str(p.get("roster_id") or "")
+        p["power_rank"] = i
+        score = p.get("power_score")
+        score_text = f"{float(score):.1f}" if score is not None else ""
+        power_rows.append(f'<div class="st-row"><div class="st-rank{(" lead" if i == 1 else "")}">{i}</div>'
+                          f'{ava_img(team_by_rid.get(rid, ""), rid, 28)}<div class="st-main"><div class="st-name">'
+                          f'{team_name(team_by_rid.get(rid, ""), rid)}</div></div><div class="st-rec"><div class="wl">{score_text}</div></div></div>')
+    power_html = f'<div class="card" style="overflow:hidden"><div class="card-header"><h3>Power Rankings</h3>' \
+                 f'<span style="font-size:12px;color:var(--muted)">Through week {selected_week}</span></div>{"".join(power_rows)}</div>'
+    standings_html = f'<div class="recap-rank-grid">{standings_html}{power_html}</div><style>.recap-rank-grid{{display:grid;grid-template-columns:1fr 1fr;gap:16px}}.st-division{{padding:9px 16px 5px;font-size:10px;font-weight:800;letter-spacing:.08em;color:var(--muted);text-transform:uppercase}}@media(max-width:700px){{.recap-rank-grid{{grid-template-columns:1fr}}}}</style>'
+
+    power_by_rid = {str(p.get("roster_id")): p for p in power_teams}
+    recap_team_context = {}
+    for overall_rank, s in enumerate(sorted(standings_rows_data, key=lambda x: (-x["wins"], -x["pf"])), 1):
+        rid, power = s["rid"], power_by_rid.get(s["rid"], {})
+        item = {"standing_rank": overall_rank, "division_rank": division_rank.get(rid),
+                "division_name": division_names.get(s.get("division")), "points_for": round(s["pf"], 1)}
+        if power:
+            item.update(power_rank=power.get("power_rank"), power_score=power.get("power_score"))
+        recap_team_context[rid] = {k: v for k, v in item.items() if v is not None}
 
     # ── AI weekly storyline column + next-week game-of-the-week ────────────
     if preview_mode:
@@ -419,6 +474,7 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
                 league_id=ctx.get("league_id") or "",
                 season=ctx.get("season") or "",
                 next_week_ctx=next_week_ctx,
+                team_context=recap_team_context,
             )
 
     # ── Lineup analysis: busts, sleepers, coaching mistakes ────────────────
@@ -459,4 +515,3 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
 
     return (preview_banner + history_banner + week_selector + cards_html
             + scoreboard_and_recap + (next_week_html or "") + lineup_html + standings_html)
-
