@@ -950,17 +950,20 @@ def api_portfolio_summary():
                        and int(lg.get("season") or 0) == season), None)
     if not membership:
         return jsonify({"ok": False, "state": "unavailable", "message": "League is no longer linked"}), 403
-    from dashboard_services.portfolio_summary import build_league_summary, get_cached_summary
+    from dashboard_services.portfolio_summary import build_league_summary, classify_failure, get_cached_summary
     stale = get_cached_summary(account_id, platform, league_id, season)
     try:
         result = build_league_summary(account_id, membership, get_league_ctx_from_cache)
         return jsonify({"ok": True, **result})
-    except Exception:
+    except Exception as exc:
         logger.warning("portfolio summary failed for %s:%s", platform, league_id, exc_info=True)
+        category = classify_failure(exc)
         if stale:
-            return jsonify({"ok": True, "stale": True, **stale})
+            return jsonify({"ok": True, "stale": True, "refresh_failure_category": category, **stale})
         return jsonify({"ok": False, "state": "unavailable",
-                        "message": "Summary unavailable. Retry."}), 503
+                        "failure_category": category,
+                        "retryable": category in {"transient_timeout", "rate_limited", "provider_5xx", "unknown"},
+                        "message": "Summary temporarily unavailable."}), 503
 
 
 @user_pages_bp.route("/api/portfolio/matchup")

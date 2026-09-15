@@ -544,6 +544,10 @@ def _build_next_week_preview(
             "avatar_a": sa.get("avatar", ""), "avatar_b": sb.get("avatar", ""),
             "record_a": sa["record_after"], "record_b": sb["record_after"],
             "rank_a": rank_a, "rank_b": rank_b,
+            "power_rank_a": sa.get("power_rank"), "power_rank_b": sb.get("power_rank"),
+            "power_score_a": sa.get("power_score"), "power_score_b": sb.get("power_score"),
+            "division_rank_a": sa.get("division_rank"), "division_rank_b": sb.get("division_rank"),
+            "division_name_a": sa.get("division_name"), "division_name_b": sb.get("division_name"),
             "streak_a": sa.get("streak"), "streak_b": sb.get("streak"),
             "win_prob_a": round(win_prob * 100) if have_proj else None,
             "proj_a": round(_team_proj_total(left.get("starters"), proj_by_pid), 1) if have_proj else None,
@@ -583,14 +587,17 @@ def _build_next_week_preview(
 
 
 def build_weekly_recap_payload(
-        df_weekly: pd.DataFrame,
-        matchups_by_week: dict,
-        selected_week: int,
-        team_by_rid: dict,
-        league: dict,
-        next_week_ctx: dict | None = None,
+    df_weekly: pd.DataFrame,
+    matchups_by_week: dict,
+    selected_week: int,
+    team_by_rid: dict,
+    league: dict,
+    next_week_ctx: dict | None = None,
+    team_context: dict | None = None,
 ) -> dict:
     storylines = _build_team_storylines(df_weekly, selected_week, team_by_rid)
+    for storyline in storylines:
+        storyline.update((team_context or {}).get(str(storyline["rid"]), {}))
     matchup_context = _build_matchup_context(df_weekly, selected_week, team_by_rid)
 
     settings = (league or {}).get("settings") or {}
@@ -688,6 +695,9 @@ def build_weekly_recap_payload(
                 "opp_pts": round(s["opp_pts"], 1) if s["opp_pts"] is not None else None,
                 "rank_change": s["rank_change"],
                 "season_weeks": s["season_weeks"],
+                **(team_context or {}).get(str(s["rid"]), {}),
+                **({"rank_gap": s["rank_after"] - (team_context or {}).get(str(s["rid"]), {}).get("power_rank")}
+                   if (team_context or {}).get(str(s["rid"]), {}).get("power_rank") is not None else {}),
             } for s in storylines
         ],
         "high_scorer": {"team": high_scorer["team"], "pts": round(high_scorer["this_week_pts"], 1)} if high_scorer and high_scorer["this_week_pts"] else None,
@@ -741,7 +751,7 @@ Voice:
 Hard rules:
 - 2-4 paragraphs, 2-4 sentences each.
 - DO NOT invent facts, scores, or players not in the data.
-- No em dashes (–). Use a comma, period, or just rewrite the sentence.
+- Do not use an em dash character. Use a comma, period, colon, semicolon, or rewrite it.
 - No markdown, bullets, or headers.
 - Don't open with filler ("What a week", "Here's your recap"). Start with the actual news.
 - Grounded tone - not mean, not hype, just real.
@@ -769,10 +779,12 @@ Playoff race: {json.dumps(payload['playoff_race'])}
 
 Use the h2h and season_weeks data where it adds something real to the story - rematches, revenge games, scoring trends, a team peaking or fading. Lead with the most compelling storyline.
 
+Standings describe what has happened and playoff or division stakes. Power rank describes how strong a team looks. Never equate W-L standing with quality, walk down the standings table, or dump power scores. Look for useful standing_rank versus power_rank disagreement, using rank_gap only when it adds a real storyline. Division name and division rank are preferable to meaningless overall-rank chatter. In Weeks 1-2 prioritize power rank, weekly output, all-play strength, projections, then record, with standing rank last. In Weeks 3-5 blend standings and power. From Week 6 onward, divisions, records, and playoff stakes may carry more weight. Never declare a contender or playoff team from one game. Avoid cliches including statement win, sent a message, put the league on notice, marquee matchup, and heavyweight clash.
+
 Next week's game of the week (already picked for you). The "why" field is the single biggest reason it was chosen (playoff stakes, a projected coin-flip, two top teams, a rivalry rematch, a missing star, or momentum); "reasons" lists the supporting angles; out_a/out_b/maybe_a/maybe_b/bye_a/bye_b are missing, questionable, and on-bye starters with their projections:
 {json.dumps(payload.get('next_week_preview'))}
 
-For "looking_ahead": if next_week_preview is null, return an empty string. Otherwise write 2-3 sentences on that game_of_the_week in the SAME low-key group-chat voice as the recap paragraphs - like you're texting the group about the game you're most looking forward to next week. Jump straight into the matchup - the teams, the records, the stakes. Never announce or label the pick: the card already shows a "Game of the Week" banner, so any opener that names it as the game of the week (or "the marquee matchup", "the one to watch", etc.), or that spells out the reason as a because-clause, reads as copy-paste filler. Instead let the reason it matters (playoff stakes, a coin-flip, two top teams, a rivalry rematch, a missing star, momentum) come through inside what you say about the teams - this blurb is the only place that reason reaches the reader, so it has to land, just woven in rather than declared. Lead with whatever's actually interesting. Ground it in the records, ranks, streaks, h2h, or the specific missing starter (name + status), but do NOT restate every number. Only mention the other games if it's natural.
+For "looking_ahead": if next_week_preview is null, return an empty string. Otherwise write 2-3 conversational sentences, narrative first and metrics second, with at most 2-3 useful numbers. Format records naturally as 1-0, never as tuples or "record: 1, 0". Never write raw "rank 1" language; say leads the league, sits first, or sits sixth when rank matters. Use % rather than the word percent. Do not call it "the most interesting game", "the marquee matchup", or a "heavyweight clash" or "heavyweight test". Do not announce the selection. Let justified stakes, closeness, strength, rivalry, availability, or momentum emerge naturally. In Weeks 1-2, a 1-0 team is not automatically elite and an 0-1 team is not weak, so prefer underlying power and scoring output over record.
 """.strip()
 
     resp = client.responses.create(
@@ -802,10 +814,10 @@ For "looking_ahead": if next_week_preview is null, return an empty string. Other
 
 
 def _render_recap_html(result: dict) -> str:
-    headline = html.escape(str(result.get("headline") or "Week Recap"))
+    headline = html.escape(str(result.get("headline") or "Week Recap").replace("—", ","))
     paragraphs = result.get("paragraphs") or []
     paragraphs_html = "\n".join(
-        f"<p style='margin:0 0 10px 0;'>{html.escape(str(p))}</p>"
+        f"<p style='margin:0 0 10px 0;'>{html.escape(str(p).replace('—', ','))}</p>"
         for p in paragraphs[:4] if str(p).strip()
     )
 
@@ -894,7 +906,7 @@ def _render_next_week_html(preview: dict, looking_ahead: str) -> str:
     if looking_ahead and str(looking_ahead).strip():
         blurb_html = (
             f"<p style='margin:0 0 12px 0;font-size:13px;line-height:1.55;color:var(--text);'>"
-            f"{html.escape(str(looking_ahead))}</p>"
+            f"{html.escape(str(looking_ahead).replace('—', ','))}</p>"
         )
 
     # Availability chips: out (red) / questionable (amber) / bye (muted), each
@@ -968,6 +980,7 @@ def get_weekly_ai_recap(
         league_id: str,
         season,
         next_week_ctx: dict | None = None,
+        team_context: dict | None = None,
 ) -> tuple[str, str]:
     """Return (recap_column_html, next_week_card_html). Either may be ''.
 
@@ -978,7 +991,7 @@ def get_weekly_ai_recap(
     if df_weekly is None or df_weekly.empty:
         return empty
 
-    cache_key = f"weekly_recap_{league_id}_{season}_w{selected_week}_v10_chat"
+    cache_key = f"weekly_recap_{league_id}_{season}_w{selected_week}_v11_power_divisions"
     cached = _load_recap_no_ttl(cache_key)
     if cached is not None:
         recap_html, _, next_html = cached.partition(_NEXT_WEEK_SPLIT)
@@ -988,6 +1001,7 @@ def get_weekly_ai_recap(
         payload = build_weekly_recap_payload(
             df_weekly, matchups_by_week, selected_week, team_by_rid, league,
             next_week_ctx=next_week_ctx,
+            team_context=team_context,
         )
     except Exception as exc:
         logger.warning("[weekly-recap] payload build failed: %s", exc)
