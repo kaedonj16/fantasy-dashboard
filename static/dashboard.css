@@ -1993,7 +1993,15 @@ html[data-theme="dark"] img[src*="discord-brands-solid.png"] {
     /* Pad past the notch / status bar in a standalone PWA (viewport-fit=cover),
      while keeping the normal padding in a browser tab where the insets are 0. */
     padding: max(12px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) 12px max(20px, env(safe-area-inset-left));
-    background: var(--bg);
+    /* Keep iOS' sticky compositor on an opaque layer. A translucent standalone
+       status bar can otherwise sample scrolling content and wash out this
+       entire layer even though the authored background is already var(--bg). */
+    background-color: var(--bg) !important;
+    background-image: none !important;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    opacity: 1;
+    isolation: isolate;
     border-bottom: 1px solid var(--border);
     position: sticky;
     top: 0;

@@ -8,10 +8,49 @@ pytest.importorskip("requests")
 pytest.importorskip("flask")
 
 from dashboard_services import accounts
+from contextlib import contextmanager
 
 
 def _existing_sleeper_league(league_id):
     return True
+
+
+def test_reconciliation_persists_only_canonical_confirmed_deletion(monkeypatch):
+    monkeypatch.setattr(accounts, "list_account_platform_ids", lambda *a: ["viewer"])
+    monkeypatch.setattr(accounts, "list_user_leagues", lambda *a: [
+        {"platform": "sleeper", "league_id": "gone", "season": 2026},
+        {"platform": "sleeper", "league_id": "still-there", "season": 2026},
+    ])
+    monkeypatch.setattr("dashboard_services.api.get_sleeper_user_leagues",
+                        lambda *a: [{"league_id": "still-there"}])
+    monkeypatch.setattr("dashboard_services.api.sleeper_league_exists",
+                        lambda league_id: False if league_id == "gone" else True)
+    writes = []
+    class Conn:
+        def execute(self, sql, args=()):
+            writes.append((sql, args)); return self
+        def commit(self): pass
+    @contextmanager
+    def conn(): yield Conn()
+    monkeypatch.setattr(accounts, "init_accounts_tables", lambda: None)
+    monkeypatch.setattr("dashboard_services.db.get_conn", conn)
+
+    assert accounts.reconcile_account_leagues(42, 2026) is True
+    assert any("provider_deleted" in sql and args[1] == "gone" for sql, args in writes)
+
+
+def test_reconciliation_provider_outage_retains_saved_leagues(monkeypatch):
+    monkeypatch.setattr(accounts, "list_account_platform_ids", lambda *a: ["viewer"])
+    monkeypatch.setattr(accounts, "list_user_leagues", lambda *a: [
+        {"platform": "sleeper", "league_id": "keep", "season": 2026},
+    ])
+    monkeypatch.setattr("dashboard_services.api.get_sleeper_user_leagues",
+                        lambda *a: (_ for _ in ()).throw(TimeoutError()))
+    called = []
+    monkeypatch.setattr("dashboard_services.api.sleeper_league_exists",
+                        lambda *a: called.append(a))
+    assert accounts.reconcile_account_leagues(42, 2026) is False
+    assert called == []
 
 
 def test_google_account_uses_every_linked_sleeper_identity(monkeypatch):

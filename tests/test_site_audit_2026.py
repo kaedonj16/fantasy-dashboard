@@ -227,10 +227,10 @@ def test_default_og_card_is_large_branded_image():
 
 
 def test_manifest_and_offline_theme_match_brand():
-    """PWA splash uses a white canvas; offline honors saved theme."""
+    """PWA splash uses the same solid light canvas; offline honors saved theme."""
     manifest = (ROOT / "static" / "manifest.json").read_text(encoding="utf-8")
-    assert '"theme_color": "#ffffff"' in manifest
-    assert '"background_color": "#ffffff"' in manifest
+    assert '"theme_color": "#f8fafc"' in manifest
+    assert '"background_color": "#f8fafc"' in manifest
     offline = (ROOT / "static" / "offline.html").read_text(encoding="utf-8")
     assert "localStorage.getItem('theme')" in offline
     assert "BR_Mark_dark.png" in offline
@@ -385,4 +385,3 @@ def test_paywall_mobile_uses_bottom_sheet_layout():
     assert "align-items: flex-end" in mobile
     assert "100dvh" in mobile
     assert "env(safe-area-inset-bottom)" in mobile
-

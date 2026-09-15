@@ -20,7 +20,7 @@ import logging
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
-from flask import Blueprint, redirect, request, session, url_for
+from flask import Blueprint, jsonify, redirect, request, session, url_for
 
 logger = logging.getLogger(__name__)
 
@@ -136,6 +136,8 @@ def page_portfolio():
     # Provider-only login has no durable DB membership, so resolution above is
     # necessarily live, but context builds are still deferred per card.
     if account_id:
+        from dashboard_services.accounts import schedule_account_league_reconciliation
+        schedule_account_league_reconciliation(account_id, season)
         leagues_data = [
             {
                 "league_id": str(lg.get("league_id") or ""),
@@ -926,6 +928,39 @@ def _build_live_matchups(platform, resolved_league_id, season, week, ctx):
         for k in [k for k, v in _LIVE_MATCHUP_CACHE.items() if v[0] < cutoff]:
             _LIVE_MATCHUP_CACHE.pop(k, None)
     return result
+
+
+@user_pages_bp.route("/api/portfolio/summary")
+def api_portfolio_summary():
+    """Authenticated summary hydration, independent of live matchup state."""
+    account_id = session.get("account_id")
+    if not account_id:
+        return jsonify({"ok": False, "state": "unavailable", "message": "Sign in again"}), 401
+    platform = str(request.args.get("platform") or "").strip().lower()
+    league_id = str(request.args.get("league_id") or "").strip()
+    try:
+        season = int(request.args.get("season") or 0)
+    except (TypeError, ValueError):
+        season = 0
+    from dashboard_services.accounts import resolve_account_leagues
+    allowed = resolve_account_leagues(account_id, current_season=season)
+    membership = next((lg for lg in allowed
+                       if str(lg.get("platform") or "").lower() == platform
+                       and str(lg.get("league_id") or "") == league_id
+                       and int(lg.get("season") or 0) == season), None)
+    if not membership:
+        return jsonify({"ok": False, "state": "unavailable", "message": "League is no longer linked"}), 403
+    from dashboard_services.portfolio_summary import build_league_summary, get_cached_summary
+    stale = get_cached_summary(account_id, platform, league_id, season)
+    try:
+        result = build_league_summary(account_id, membership, get_league_ctx_from_cache)
+        return jsonify({"ok": True, **result})
+    except Exception:
+        logger.warning("portfolio summary failed for %s:%s", platform, league_id, exc_info=True)
+        if stale:
+            return jsonify({"ok": True, "stale": True, **stale})
+        return jsonify({"ok": False, "state": "unavailable",
+                        "message": "Summary unavailable. Retry."}), 503
 
 
 @user_pages_bp.route("/api/portfolio/matchup")
