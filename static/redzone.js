@@ -670,20 +670,18 @@
     if (lid && sbl[lid]) return sbl[lid];
     return _state.scoring || {};
   }
-  // Platform players_points can lag behind Tank01 boxscores (Yahoo often sends
-  // {}). Prefer max(platform, boxscore) while the NFL game is live/final so
-  // My Teams doesn't show 0.0 for active players.
+  // League-provider actuals are authoritative when published.  In particular,
+  // zero and negative scores are real values and must not be replaced by a
+  // larger independently calculated score.  The live stat line is only a
+  // fallback when the provider has no actual for this player.
   function _playerPts(pid, matchup) {
     var pp = (matchup && matchup.players_points) || {};
     var platformN = (pp[pid] != null && pp[pid] !== '') ? parseFloat(pp[pid]) : NaN;
     var live = _lineToPts(_statLine(pid), _scoringForPid(pid, matchup));
     var gs = _gameStatus(pid);
-    if (gs.type === 'live' || gs.type === 'final') {
-      if (isNaN(platformN)) return live;
-      return Math.max(platformN, live);
-    }
     if (!isNaN(platformN)) return platformN;
-    return live || 0;
+    if ((gs.type === 'live' || gs.type === 'final') && _statLine(pid)) return live;
+    return null;
   }
   function _totalPtsForPid(pid, scoring, newData) {
     var infoSrc = (newData && newData.player_info) || _state.player_info || {};
@@ -2686,20 +2684,23 @@
       + '<div class="rz-player-info"><div class="rz-player-name">' + _name(pid) + _injuryDot(pid) + '</div>'
       + '<div class="rz-player-meta">' + dot + meta + '</div></div>'
       + '<div class="rz-player-pts' + (isLive ? ' live-pts' : '') + '" data-pid="' + pid + '">'
-      + (pts != null ? _fmt(pts) : '0') + '</div></div>'
+      + (pts != null ? _fmt(pts) : '–') + '</div></div>'
     );
   }
   function _rosterCard(matchup) {
     if (!matchup) return '<div class="rz-feed-empty">No lineup data.</div>';
     var starters = matchup.starters || [];
-    var bench = (matchup.players || []).filter(function(pid) { return pid !== '0' && !starters.includes(pid); });
+    var bench = matchup.bench_slots || matchup.bench || (matchup.players || []).filter(function(pid) { return pid !== '0' && !starters.includes(pid); });
     var rows = starters.map(function(pid) {
-      if (pid === '0') return '<div class="rz-player-row"><span class="rz-pos-badge rz-pos-" style="opacity:.25"></span><div class="rz-player-info"><div class="rz-player-name" style="color:var(--rz-muted)">Empty slot</div></div><div class="rz-player-pts">0</div></div>';
+      if (pid === '0') return '<div class="rz-player-row"><span class="rz-pos-badge rz-pos-" style="opacity:.25"></span><div class="rz-player-info"><div class="rz-player-name" style="color:var(--rz-muted)">Empty slot</div></div><div class="rz-player-pts">–</div></div>';
       return _playerRowHtml(pid, _playerPts(pid, matchup), false);
     }).join('');
-    var benchRows = bench.slice(0, 6).map(function(pid) { return _playerRowHtml(pid, _playerPts(pid, matchup), true); }).join('');
+    var benchRows = bench.map(function(pid) {
+      if (pid === '0') return '<div class="rz-player-row bench-row"><span class="rz-pos-badge rz-pos-" style="opacity:.25"></span><div class="rz-player-info"><div class="rz-player-name" style="color:var(--rz-muted)">Empty bench slot</div></div><div class="rz-player-pts">–</div></div>';
+      return _playerRowHtml(pid, _playerPts(pid, matchup), true);
+    }).join('');
     return '<div class="rz-roster-card">' + rows
-      + (bench.length ? '<div class="rz-section-label">Bench</div>' + benchRows : '') + '</div>';
+      + (bench.length ? '<details class="rz-mt-bench"><summary class="rz-mt-bench-sum">Bench (' + bench.length + ')</summary>' + benchRows + '</details>' : '') + '</div>';
   }
 
   function _myMatchups() {
@@ -3025,7 +3026,7 @@
     if (pid === '0') {
       return '<div class="rz-mt-row is-empty"><span class="rz-pos-badge" style="opacity:.25">--</span>'
         + '<span class="rz-mt-name" style="color:var(--rz-muted)">Empty</span>'
-        + '<span class="rz-mt-pts">0.0</span></div>';
+        + '<span class="rz-mt-pts">–</span></div>';
     }
     var gs = _gameStatus(pid);
     var pts = _playerPts(pid, matchup);
@@ -3041,7 +3042,7 @@
       + _posHtml(_pos(pid))
       + '<span class="rz-mt-name" title="' + full + '">' + short + _injuryDot(pid) + '</span>'
       + status
-      + '<span class="rz-mt-pts' + (live ? ' live-pts' : '') + '">' + _fmt(pts) + '</span>'
+      + '<span class="rz-mt-pts' + (live ? ' live-pts' : '') + '">' + (pts != null ? _fmt(pts) : '–') + '</span>'
       + '</div>'
     );
   }
@@ -3059,11 +3060,13 @@
       var score = _fmt(myPts) + ' – ' + _fmt(oppPts);
       var liveBadge = anyLive ? '<span class="rz-mt-sum-live">LIVE</span>' : '';
       var rows = starters.map(function(pid) { return _mtRowHtml(pid, m); }).join('');
-      var bench = (m.players || []).filter(function(pid) { return pid !== '0' && starters.indexOf(pid) < 0; });
+      var bench = m.bench_slots || m.bench || (m.players || []).filter(function(pid) { return pid !== '0' && starters.indexOf(pid) < 0; });
       var benchHtml = '';
       if (bench.length) {
         benchHtml = '<details class="rz-mt-bench"><summary class="rz-mt-bench-sum">Bench (' + bench.length + ')</summary>'
-          + bench.slice(0, 8).map(function(pid) { return _mtRowHtml(pid, m); }).join('')
+          + bench.map(function(pid) { return pid === '0'
+            ? '<div class="rz-mt-row"><span class="rz-pos-badge rz-pos-"></span><span class="rz-mt-name">Empty slot</span><span class="rz-mt-pts">–</span></div>'
+            : _mtRowHtml(pid, m); }).join('')
           + '</details>';
       }
       return (
