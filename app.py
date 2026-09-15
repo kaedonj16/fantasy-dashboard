@@ -2611,6 +2611,50 @@ def _games_live_or_imminent(season, week, *, lead_minutes=60) -> bool:
         return False
 
 
+def _redzone_cta_state(season, week, *, lead_minutes=60) -> str:
+    """Redzone CTA state for today's slate: ``'live'``, ``'pregame'`` or ``''``.
+
+    ``'live'``    - a game dated today is in progress (kickoff -> +4h).
+    ``'pregame'`` - a game dated today kicks off within ``lead_minutes`` (the hour
+                    before kickoff) and none is live yet.
+    ``''``        - no game today, or every game is past its live tail.
+
+    Splits :func:`_games_live_or_imminent`'s window at kickoff so the dashboard CTA
+    can show a calm pregame banner and a pulsing live one over the same overall
+    window the nav glow uses. A live game always wins over a pregame one. Missing
+    or bad kickoff epochs are skipped; any failure resolves to ``''``.
+    """
+    try:
+        if not season or not week:
+            return ""
+        today = datetime.now().strftime("%Y%m%d")
+        now = datetime.now().timestamp()
+        lead = lead_minutes * 60
+        live_tail = 4 * 60 * 60  # kickoff + 4h covers overtime/long games
+        sched = load_week_schedule(int(season), int(week)) or []
+        state = ""
+        for g in sched:
+            if not isinstance(g, dict):
+                continue
+            if str(g.get("gameDate") or "") != today:
+                continue
+            raw = g.get("gameTime_epoch") or g.get("gameTimeEpoch")
+            if raw is None:
+                continue
+            try:
+                ep = float(raw)
+            except (ValueError, TypeError):
+                continue
+            if ep <= now <= (ep + live_tail):
+                return "live"  # any live game wins immediately
+            if (ep - lead) <= now < ep:
+                state = "pregame"
+        return state
+    except Exception as _e:
+        logger.info(f"[rz-cta] state check failed (s{season} w{week}): {_e}")
+        return ""
+
+
 def _parse_schedule_game_date(value) -> Optional[date]:
     """Parse Tank01 ``gameDate`` (YYYYMMDD, int or str) to a date."""
     raw = str(value or "").strip()
@@ -3127,9 +3171,19 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
     def _category_row(label):
         slug = label.lower()
         current = active_norm in category_keys[label]
-        dot = '<span class="br-sheet-active-dot" aria-label="Current section"></span>' if current else ""
+        # Redzone lives in the Weekly section, so the Weekly root row pulses red
+        # while a game is live/imminent -- same gate and keyframes as the More tab
+        # dot and the Redzone sheet row. Only Weekly pulses; other rows never do.
+        live = (label == "Weekly" and rz_live)
+        live_cls = " rz-mnav-live" if live else ""
+        if live:
+            dot = '<span class="rz-mnav-dot" aria-hidden="true"></span>'
+        elif current:
+            dot = '<span class="br-sheet-active-dot" aria-label="Current section"></span>'
+        else:
+            dot = ""
         return (
-            f"<button type='button' class='br-sheet-link br-sheet-category{' active' if current else ''}' "
+            f"<button type='button' class='br-sheet-link br-sheet-category{' active' if current else ''}{live_cls}' "
             f"data-br-sheet-target='{slug}' aria-controls='brMorePanel-{slug}'>"
             f"<span>{label}</span>{dot}"
             "<span class='br-sheet-chevron' aria-hidden='true'>&#8250;</span></button>"
@@ -28708,6 +28762,24 @@ def build_portfolio_body(
         _ini = html.escape("".join(w[0] for w in _raw_name.split()[:2]).upper() or "?")
         _crest_hue = f"hsl({sum(ord(c) for c in _raw_name) % 360} 52% 46%)"
 
+        if lg.get("loading"):
+            _lg_season_shell = lg.get("season") or season
+            _updated = html.escape(str(lg.get("last_updated") or "Awaiting first refresh"))
+            league_rows += (
+                f"<div class='pf-lg-card' data-lg-key='{plat}:{lid}' data-favorite='{'true' if lg.get('is_favorite') else 'false'}'>"
+                f"<div class='pf-lg-top'><span class='pf-lg-crest' style='background:{_crest_hue};'>{_ini}</span>"
+                f"{_lg_id(name_link, plat)}{_lg_tools(bool(lg.get('is_favorite')), _unlink_btn(plat, lid))}</div>"
+                f"<div class='pf-lg-live' aria-busy='true' data-lg-live data-platform='{html.escape(str(plat), quote=True)}' "
+                f"data-league-id='{html.escape(str(lid), quote=True)}' data-season='{html.escape(str(_lg_season_shell), quote=True)}'>"
+                "<div class='pf-live-skel' aria-hidden='true'><div class='skeleton pf-live-skel-status'></div>"
+                "<div class='pf-live-grid'><div class='pf-live-side'><div class='skeleton pf-live-skel-score'></div></div>"
+                "<div class='pf-live-side opp'><div class='skeleton pf-live-skel-score'></div></div></div></div></div>"
+                f"<div class='pf-lg-stats'><span class='pf-lg-stat'><span class='pf-lg-v'>&mdash;</span><span class='pf-lg-l'>Record loading</span></span>"
+                f"<span class='pf-lg-stat'><span class='pf-lg-v'>&mdash;</span><span class='pf-lg-l'>Standing loading</span></span></div>"
+                f"<div class='pf-lg-foot'><span class='pf-lg-l'>Updated {_updated}</span><a href='{href}' class='pf-lg-open'>Open &rarr;</a></div></div>"
+            )
+            continue
+
         # Linked-but-not-drafted (or team-not-yet-linked) league: a normal pending
         # state, so give it a proper row -- name link, a soft status pill, a
         # "practice in the Draft Room" nudge for pre-draft -- instead of a bare
@@ -29188,12 +29260,17 @@ def build_portfolio_body(
         "+wpBar(d);"
         "slot.removeAttribute('aria-busy');"
         "slot.hidden=false;}"
-        "function load(slot){"
+        "function load(slot){if(slot._loading)return slot._loading;var generation=(slot._generation||0)+1;slot._generation=generation;"
         "var p=slot.getAttribute('data-platform'),l=slot.getAttribute('data-league-id'),s=slot.getAttribute('data-season');"
         "var u='/api/portfolio/matchup?platform='+encodeURIComponent(p)+'&league_id='+encodeURIComponent(l)+'&season='+encodeURIComponent(s);"
-        "return fetch(u,{headers:{'X-Requested-With':'fetch'}}).then(function(r){return r.ok?r.json():null;})"
-        ".then(function(d){render(slot,d);return d;}).catch(function(){return null;});}"
-        "var i=0,LIVE=[];"
+        "var controller=typeof AbortController!=='undefined'?new AbortController():null;"
+        "var timer=controller?setTimeout(function(){controller.abort();},12000):null;"
+        "slot._loading=fetch(u,{headers:{'X-Requested-With':'fetch'},signal:controller?controller.signal:undefined}).then(function(r){return r.ok?r.json():null;})"
+        ".then(function(d){if(slot._generation===generation)render(slot,d);return d;}).catch(function(){return null;})"
+        ".then(function(d){if(timer)clearTimeout(timer);slot._loading=null;return d;});return slot._loading;}"
+        "var i=0,LIVE=[];slots.sort(function(a,b){var ac=a.closest('.pf-lg-card'),bc=b.closest('.pf-lg-card');"
+        "var af=ac&&ac.getAttribute('data-favorite')==='true',bf=bc&&bc.getAttribute('data-favorite')==='true';"
+        "var av=a.getBoundingClientRect().top<innerHeight,bv=b.getBoundingClientRect().top<innerHeight;return (bf-af)||(bv-av);});"
         "function pump(){if(i>=slots.length)return;var slot=slots[i++];"
         "load(slot).then(function(d){if(d&&d.live&&d.status==='in')LIVE.push(slot);pump();});}"
         "for(var k=0;k<3;k++)pump();"

@@ -471,8 +471,10 @@ def test_td_alerts_only_after_initial_backfill():
     """Cold boot ingests a whole game at once; no TD beep/push for old snaps."""
     src = _rz()
     assert "var _alertsArmed = false;" in src
-    # The alert set is gated on the arm flag, not raw allEvents.
-    assert "var myTDs = _alertsArmed" in src
+    # The alert set is gated on the arm flag (and a live poll), never on the raw
+    # batch size -- each eligible event is evaluated independently below.
+    assert "var _liveAlerts = _alertsArmed && animationIntent === 'live';" in src
+    assert "allEvents.length === 1" not in src
     # A scope switch re-hydrates silently, then re-arms.
     assert "_alertsArmed = false;" in src
     assert "_alertsArmed = true;" in src

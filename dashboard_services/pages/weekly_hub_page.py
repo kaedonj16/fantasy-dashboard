@@ -159,6 +159,17 @@ def build_weekly_hub_body(ctx: dict) -> str:
         options.append(f"<option value='{w}'{sel}>Week {w}</option>")
     week_select_html = "".join(options)
 
+    # In-season entry point to the live Redzone, sitting by the week selector.
+    # The animated CTA banner now lives on the dashboard; here a calm static
+    # button keeps Redzone one tap away without adding more motion to this page.
+    _rz_btn_html = ""
+    if not offseason_mode:
+        _rz_btn_html = (
+            '<a class="weekly-rz-btn" href="./redzone" '
+            'title="Live scoring and red-zone alerts">'
+            '<span class="weekly-rz-btn-dot" aria-hidden="true"></span>Redzone</a>'
+        )
+
     top_scorers_html = render_weekly_top_scorers_for_week(
         league_id,
         df_weekly,
@@ -266,17 +277,12 @@ def build_weekly_hub_body(ctx: dict) -> str:
               <h2>Weekly Hub</h2>
             </div>
             <div class="week-selector">
+              {_rz_btn_html}
               <select id="hubWeek" class="search">
                 {week_select_html}
               </select>
             </div>
           </div>
-        </div>
-
-        <div id="weekly-rz-cta" class="weekly-rz-cta" style="display:none">
-          <span class="weekly-rz-cta-dot"></span>
-          <span class="weekly-rz-cta-text">NFL games are live right now, track your players in real time.</span>
-          <a href="./redzone" class="weekly-rz-cta-link">Watch on Redzone →</a>
         </div>
 
         <div class="card-tabs weekly-hub-tabs" id="weeklyLeftTabs">
@@ -422,10 +428,6 @@ def build_weekly_hub_body(ctx: dict) -> str:
   // Live only when the current week's schedule actually has a game dated today
   // (computed server-side from the schedule file), not merely a typical NFL day.
   function liveActive() {{ return {games_today_js}; }}
-
-  // Show/hide Redzone CTA banner
-  var cta = document.getElementById('weekly-rz-cta');
-  if (cta && liveActive()) cta.style.display = '';
 
   // Live badge next to "Weekly Hub" h2
   if (liveActive()) {{

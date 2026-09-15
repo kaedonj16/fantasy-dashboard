@@ -7,6 +7,7 @@ from __future__ import annotations
 
 def build_dashboard_body(ctx: dict) -> str:
     from app import (  # noqa: E402  (lazy: avoids a circular import at module load)
+        _redzone_cta_state,
         _render_do_next_waiver_card,
         _compute_fpts_against,
         _scoring_format_from_settings,
@@ -442,6 +443,36 @@ def build_dashboard_body(ctx: dict) -> str:
         <div class="os-action-queue os-tab-panel os-tab-active" id="os-jump-actions">{_action_inner}
         </div>"""
 
+    # Redzone CTA: a calm pregame banner within the hour before kickoff, then a
+    # pulsing live banner once a game is in progress. Shown only in that window
+    # (server-computed like the nav glow); nothing renders otherwise.
+    _rz_cta_html = ""
+    try:
+        _rz_cta_state = _redzone_cta_state(season, current_week)
+    except Exception:
+        logger.debug("dashboard redzone cta state failed", exc_info=True)
+        _rz_cta_state = ""
+    if _rz_cta_state:
+        try:
+            _rz_href = url_for(
+                "page_redzone", platform=platform, season=season, league_id=str(league_id)
+            )
+        except Exception:
+            _rz_href = "./redzone"
+        if _rz_cta_state == "live":
+            _rz_msg = "NFL games are live right now, track your players in real time."
+            _rz_link = "Watch on Redzone"
+        else:  # pregame
+            _rz_msg = "Kickoff is coming up. Get set to track your players live."
+            _rz_link = "Open Redzone"
+        _rz_cta_html = (
+            f'<div class="weekly-rz-cta weekly-rz-cta-{_rz_cta_state}">'
+            '<span class="weekly-rz-cta-dot"></span>'
+            f'<span class="weekly-rz-cta-text">{_rz_msg}</span>'
+            f'<a href="{html.escape(str(_rz_href), quote=True)}" class="weekly-rz-cta-link">{_rz_link} &rarr;</a>'
+            '</div>'
+        )
+
     body = f"""
     <div class="os-layout">
       <aside class="os-left-col os-side-rail">
@@ -481,6 +512,8 @@ def build_dashboard_body(ctx: dict) -> str:
             {_hero_stats_html}
           </div>
         </section>
+
+        {_rz_cta_html}
 
         {_bb_outlook_html}
 

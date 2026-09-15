@@ -1273,6 +1273,16 @@
     if (pid && pid !== '0' && Object.prototype.hasOwnProperty.call(info, String(pid))) {
       return String(pid);
     }
+    // Backend identity evidence is canonical even when the fantasy roster/player
+    // metadata snapshot is stale.  Never accept a raw provider id here.
+    var identity = play.identity || {};
+    var canonical = String(identity.canonical_player_id || '');
+    if (canonical && canonical !== '0' && ['exact','strong','fallback'].indexOf(identity.confidence) >= 0) {
+      if (!Object.prototype.hasOwnProperty.call(info, canonical)) {
+        info[canonical] = {name: identity.name || play.name || '', team: identity.team || play.team || '', pos: identity.position || ''};
+      }
+      return canonical;
+    }
     
     // Explicit PID was either missing or not in canonical index - resolve by name
     var want = String(play.name || '').toLowerCase().trim();
@@ -1319,6 +1329,9 @@
     
     // If validity changed, it's a revision
     if (!!existingContrib.isInvalid !== !!isInvalid) return true;
+    // Provider revisions can toggle only the TD marker while retaining text and
+    // sparse stat rows.  That still requires replacement/alert reconciliation.
+    if (!!existingContrib.isTd !== !!newPlay.is_td) return true;
     
     // Compare stat lines
     var oldLine = existingContrib.line || {};
@@ -1576,7 +1589,7 @@
         var contribKey = _contributionKey(play, gid, pid);
         var playKey = _nflPlayKey(play, gid);
         var playState = play.play_state || 'VALID';
-        var isInvalid = playState !== 'VALID';
+        var isInvalid = playState === 'NO_PLAY' || playState === 'NULLIFIED' || playState === 'OVERTURNED';
         
         // Check if this is a revision of an existing contribution
         var existingContrib = _contributionsByKey[contribKey];
@@ -1635,7 +1648,7 @@
           contribRole: play.contrib_role || '',
           playKey: playKey,
           contribKey: contribKey,
-          rawPlayText: play.play_text || '',
+          rawPlayText: play.play_text || '', isTd: !!play.is_td,
           quarter: play.quarter || ((newData.player_info || {})[pid] || {}).game_quarter || '',
           clock: play.clock || ((newData.player_info || {})[pid] || {}).game_clock || '',
           down: play.down || '',

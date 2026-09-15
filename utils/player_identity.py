@@ -24,6 +24,10 @@ _ROLE_POSITIONS = {
     "target": {"WR", "TE", "RB"}, "rusher": {"QB", "RB", "WR"},
     "fumbler": {"QB", "RB", "WR", "TE"}, "kicker": {"K"},
 }
+# Deliberately tiny, verified football-name crosswalk.  These are not fuzzy
+# matches: aliases are only considered with the same normalized surname, team,
+# and role/position evidence, and ambiguity still fails closed.
+_VERIFIED_GIVEN_ALIASES = {"ken": "kenneth", "kenneth": "ken"}
 
 
 def normalize_player_name(value: Any) -> str:
@@ -90,8 +94,21 @@ class PlayerIdentityResolver:
         if len(candidates) > 1:
             return self._result(confidence="ambiguous", method="name_collision")
 
-        # Initial+surnames are accepted only inside a known team and role/position.
         parts = wanted_name.split()
+        if len(parts) >= 2 and parts[0] in _VERIFIED_GIVEN_ALIASES and wanted_team:
+            alias_name = " ".join([_VERIFIED_GIVEN_ALIASES[parts[0]], *parts[1:]])
+            alias_candidates = set(self.by_name.get(alias_name, set()))
+            alias_candidates = {
+                p for p in alias_candidates
+                if normalize_nfl_team(self.players[p].get("team")) == wanted_team
+                and (not role_positions or str(self.players[p].get("pos") or self.players[p].get("position") or "").upper() in role_positions)
+            }
+            if len(alias_candidates) == 1:
+                return self._result(next(iter(alias_candidates)), confidence="strong", method="verified_given_alias")
+            if len(alias_candidates) > 1:
+                return self._result(confidence="ambiguous", method="verified_alias_collision")
+
+        # Initial+surnames are accepted only inside a known team and role/position.
         if wanted_team and len(parts) >= 2 and len(parts[0]) == 1:
             suffix = parts[-1]
             matches = []

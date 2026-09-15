@@ -905,7 +905,7 @@ def _hide_confirmed_deleted_sleeper_leagues(leagues: list[dict], live_leagues: l
     ]
 
 
-def resolve_my_leagues(viewer_user_id, account_id, current_season):
+def resolve_my_leagues(viewer_user_id, account_id, current_season, *, enrich_live=True):
     """The canonical "my leagues" set, shared by the My Leagues page
     (/portfolio) and the league switcher (/api/my-leagues) so the two never show
     different leagues.
@@ -933,6 +933,14 @@ def resolve_my_leagues(viewer_user_id, account_id, current_season):
     Yahoo entries are the stored account rows.
     """
     season = int(current_season or 0)
+    # Account pages may request the durable set only.  This is intentionally an
+    # explicit mode rather than a short TTL: opening My Leagues must never wait
+    # for membership discovery or one-by-one deletion probes.  Background sync
+    # remains responsible for enrichment/deletion confirmation.  Provider-only
+    # sessions still require discovery because they have no durable account set.
+    if account_id and not enrich_live:
+        return resolve_account_leagues(account_id, current_season=current_season), season
+
     sleeper_ids = []
     if account_id:
         # Google account: only Sleeper identities actually linked to the
