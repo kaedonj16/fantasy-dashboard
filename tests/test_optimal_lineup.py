@@ -127,10 +127,19 @@ def test_equal_score_tie_retains_actual_starter():
 
 
 def test_completed_week_selection_uses_final_status_and_keeps_playoffs():
-    import pandas as pd
-    current = pd.DataFrame([{"week": 1, "finalized": True}, {"week": 2, "finalized": False}])
+    class FrameStub:
+        def __init__(self, rows):
+            self._rows = rows
+            self.empty = not rows
+            self.columns = set().union(*(row.keys() for row in rows)) if rows else set()
+
+        def to_dict(self, orient):
+            assert orient == "records"
+            return list(self._rows)
+
+    current = FrameStub([{"week": 1, "finalized": True}, {"week": 2, "finalized": False}])
     assert verified_completed_weeks(current) == [1]
-    historical = pd.DataFrame([{"week": 14, "finalized": True}, {"week": 15, "finalized": True}])
+    historical = FrameStub([{"week": 14, "finalized": True}, {"week": 15, "finalized": True}])
     assert verified_completed_weeks(historical) == [14, 15]
     assert verified_completed_weeks(None, season_complete=True,
                                     matchups_by_week={1: [], 17: []}) == [1, 17]

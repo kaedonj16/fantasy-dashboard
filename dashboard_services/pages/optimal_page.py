@@ -15,7 +15,12 @@ def verified_completed_weeks(df_weekly, *, season_complete=False, matchups_by_we
     """Return provider-verified completed weeks, retaining playoff weeks."""
     if (df_weekly is not None and not getattr(df_weekly, "empty", True)
             and {"week", "finalized"}.issubset(df_weekly.columns)):
-        return sorted({int(w) for w in df_weekly.loc[df_weekly["finalized"] == True, "week"].tolist()})
+        # ``to_dict`` also keeps this helper testable in the lightweight CI job,
+        # which intentionally does not install pandas.  Do not use truthiness:
+        # only an explicit provider-finalized value makes a week complete.
+        records = df_weekly.to_dict("records")
+        return sorted({int(row["week"]) for row in records
+                       if row.get("finalized") is True and row.get("week") is not None})
     if season_complete:
         return sorted(int(w) for w in (matchups_by_week or {}).keys())
     return []
