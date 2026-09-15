@@ -29,6 +29,8 @@ from data_building.simulate_playoff_odds import (  # noqa: E402
     _build_teams,
     _games_played,
     _projection_actual_weights,
+    _regular_season_progress,
+    _run_mc,
     _strength_weights_for_teams,
     _team_stats_signature,
     _team_week_profile,
@@ -207,3 +209,50 @@ def test_team_stats_signature_stable_for_identical_frames():
 def test_team_stats_signature_empty_is_stable_and_falsy():
     assert _team_stats_signature(None) == ""
     assert _team_stats_signature(pd.DataFrame()) == ""
+
+
+@pytest.mark.parametrize("games,remaining", [(0, 14), (1, 13), (5, 9)])
+def test_regular_season_progress_uses_completed_records(games, remaining):
+    teams = [
+        {"roster_id": 1, "wins": games, "losses": 0, "ties": 0},
+        {"roster_id": 2, "wins": 0, "losses": games, "ties": 0},
+    ]
+    completed, weeks = _regular_season_progress(
+        teams, 15, current_week=games + 1,
+    )
+    assert len(completed) == games
+    assert len(weeks) == remaining
+    assert len(completed) + len(weeks) == 14
+    if weeks:
+        assert weeks[-1] == 14
+
+
+def test_active_provider_week_is_not_treated_as_completed():
+    teams = [
+        {"roster_id": 1, "wins": 1, "losses": 0, "ties": 0},
+        {"roster_id": 2, "wins": 0, "losses": 1, "ties": 0},
+    ]
+    completed, remaining = _regular_season_progress(teams, 15, current_week=2)
+    assert completed == [1]
+    assert remaining == list(range(2, 15))
+
+
+def test_projected_records_preserve_actual_and_cover_full_season():
+    teams = [
+        {"roster_id": 1, "name": "A", "wins": 1, "losses": 0, "ties": 0,
+         "pf": 120.0, "avg": 110.0, "std": 12.0},
+        {"roster_id": 2, "name": "B", "wins": 0, "losses": 1, "ties": 0,
+         "pf": 90.0, "avg": 100.0, "std": 12.0},
+    ]
+    weeks = list(range(2, 15))
+    schedule = {week: [(1, 2)] for week in weeks}
+    profile = {"mean": 105.0, "std": 12.0,
+               "lost": __import__("numpy").array([], dtype="float32"),
+               "haz": __import__("numpy").array([], dtype="float32")}
+    profiles = {week: {1: profile, 2: profile} for week in weeks}
+    result = _run_mc(teams, schedule, profiles, 1, 500, 7)
+    by_id = {row["roster_id"]: row for row in result}
+    assert (by_id[1]["wins"], by_id[1]["losses"]) == (1, 0)
+    assert (by_id[2]["wins"], by_id[2]["losses"]) == (0, 1)
+    for row in result:
+        assert row["avg_final_wins"] + row["avg_final_losses"] + row["avg_final_ties"] == pytest.approx(14.0, abs=0.2)

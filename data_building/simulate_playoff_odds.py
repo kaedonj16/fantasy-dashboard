@@ -321,7 +321,6 @@ def _build_sim_state_impl(ctx: dict, platform: str = "sleeper") -> Optional[dict
     current_week       = int(ctx.get("current_week") or 0)
     season             = int(ctx.get("season") or 0)
     league_id          = str(ctx.get("league_id") or "")
-    regular_season_end = playoff_week_start - 1
 
     seed: Optional[int] = None
     if league_id:
@@ -356,12 +355,14 @@ def _build_sim_state_impl(ctx: dict, platform: str = "sleeper") -> Optional[dict
         hist_avg_by_rid = {t["roster_id"]: 0.0 for t in teams}
         hist_std_by_rid = {t["roster_id"]: 0.0 for t in teams}
     else:
-        if current_week > regular_season_end:
-            return None  # season complete — no simulation
         teams = _build_teams(team_stats, roster_map)
         if not teams:
             return None
-        remaining_weeks = list(range(current_week + 1, playoff_week_start))
+        completed_weeks, remaining_weeks = _regular_season_progress(
+            teams, playoff_week_start, current_week=current_week,
+        )
+        if not remaining_weeks and completed_weeks:
+            return None  # season complete — no simulation
         # In-season: per-week mean blends that week's projection with the
         # team's season-to-date average (captured here BEFORE any mutation)
         # and realized weekly std. Each roster's own games-played count
@@ -372,6 +373,9 @@ def _build_sim_state_impl(ctx: dict, platform: str = "sleeper") -> Optional[dict
         hist_std_by_rid = {t["roster_id"]: float(t["std"]) for t in teams}
 
     strength_weights_by_rid = _strength_weights_for_teams(teams)
+    if not has_games:
+        completed_weeks = []
+    _log_schedule_progress(teams, playoff_week_start, completed_weeks, remaining_weeks)
 
     matchups = _resolve_schedule(
         platform, league_id, season, remaining_weeks, teams, division_map
@@ -406,6 +410,8 @@ def _build_sim_state_impl(ctx: dict, platform: str = "sleeper") -> Optional[dict
         "week_profiles":    week_profiles,
         "hist_avg_by_rid":  hist_avg_by_rid,
         "hist_std_by_rid":  hist_std_by_rid,
+        "completed_weeks":  completed_weeks,
+        "remaining_weeks":  remaining_weeks,
     }
 
 
@@ -680,7 +686,6 @@ def build_ppg_map(ctx: dict) -> tuple[dict, dict]:
         pos_map  — {str(player_id): str(position)}   (position fallback)
     """
     season       = int(ctx.get("season") or 0)
-    current_week = int(ctx.get("current_week") or 0)
     _rss   = ctx.get("raw_scoring_settings") or {}
 
     # pos_map built first — needed as position fallback for all PPG sources
@@ -698,12 +703,17 @@ def build_ppg_map(ctx: dict) -> tuple[dict, dict]:
     ppg_map: dict = {}
 
     # Priority 1: Sleeper projections — the primary source at ALL points.
-    # In-season we use the upcoming week; offseason/preseason (current_week == 0)
-    # we use week 1 of the season as a representative weekly baseline. This keeps
+    # In-season we use the next uncompleted week; offseason/preseason uses week 1
+    # as a representative weekly baseline. This keeps
     # the simulation on Sleeper's numbers year-round, with the usage cache only
     # filling players Sleeper doesn't cover.
     if season > 0:
-        proj_week = current_week + 1 if current_week > 0 else 1
+        projection_base = 0
+        if team_stats_have_played_games(ctx.get("team_stats")):
+            projection_base = _last_completed_week(_build_teams(
+                ctx.get("team_stats"), ctx.get("roster_map") or {},
+            ))
+        proj_week = projection_base + 1
         try:
             from utils.utils import fetch_week_projections
             multi_map = fetch_week_projections(season, proj_week, _rss)
@@ -747,7 +757,6 @@ def simulate_playoff_odds(
     current_week       = int(ctx.get("current_week") or 0)
     season             = int(ctx.get("season") or 0)
     league_id          = str(ctx.get("league_id") or "")
-    regular_season_end = playoff_week_start - 1
 
     # Deterministic seed per league+season so odds don't drift on each reload.
     # Caller-supplied seed overrides (useful for testing).
@@ -800,11 +809,13 @@ def simulate_playoff_odds(
     if not teams:
         return []
 
-    if current_week > regular_season_end:
-        return _actual_results(teams, playoff_teams)
-
     # ── Case 3: in-season projection ─────────────────────────────────────────
-    remaining_weeks = list(range(current_week + 1, playoff_week_start))
+    completed_weeks, remaining_weeks = _regular_season_progress(
+        teams, playoff_week_start, current_week=current_week,
+    )
+    if not remaining_weeks and completed_weeks:
+        return _actual_results(teams, playoff_teams)
+    _log_schedule_progress(teams, playoff_week_start, completed_weeks, remaining_weeks)
     matchups_by_week = _resolve_schedule(
         platform, league_id, season, remaining_weeks, teams, division_map
     )
@@ -824,6 +835,11 @@ def simulate_playoff_odds(
     result = _run_mc(teams, matchups_by_week, week_profiles, playoff_teams, n_sims, seed)
     for r in result:
         r["is_projected"] = False
+        logger.debug(
+            "[playoff_odds] rid=%s record=%s-%s-%s avg_final_record=%.1f-%.1f-%.1f",
+            r["roster_id"], r["wins"], r["losses"], r["ties"],
+            r["avg_final_wins"], r["avg_final_losses"], r.get("avg_final_ties", 0.0),
+        )
     return result
 
 
@@ -1392,6 +1408,55 @@ def _games_played(team: dict) -> int:
                    + int(team.get("ties", 0) or 0))
     except (TypeError, ValueError):
         return 0
+
+
+def _last_completed_week(teams: list[dict]) -> int:
+    """Last week finalized for every roster, based on authoritative records."""
+    samples = [_games_played(team) for team in teams]
+    return min(samples) if samples else 0
+
+
+def _regular_season_progress(
+    teams: list[dict], playoff_week_start: int, *, current_week: int = 0,
+) -> tuple[list[int], list[int]]:
+    """Return explicit completed and remaining regular-season week numbers.
+
+    Provider ``current_week`` is frequently the active scoring/NFL period.  It
+    is diagnostic only here; finalized W/L/T records decide which matchups are
+    complete.  The exclusive stop is the playoff start, so Week 14 is included
+    for a Week 15 playoff start.
+    """
+    expected = max(0, int(playoff_week_start) - 1)
+    completed_count = min(_last_completed_week(teams), expected)
+    completed = list(range(1, completed_count + 1))
+    remaining = list(range(completed_count + 1, int(playoff_week_start)))
+    if current_week and current_week != completed_count:
+        logger.debug(
+            "[playoff_odds] provider current_week=%s differs from last_completed_week=%s",
+            current_week, completed_count,
+        )
+    return completed, remaining
+
+
+def _log_schedule_progress(
+    teams: list[dict], playoff_week_start: int,
+    completed_weeks: list[int], remaining_weeks: list[int],
+) -> None:
+    expected = max(0, int(playoff_week_start) - 1)
+    logger.debug(
+        "[playoff_odds] playoff_week_start=%s regular_season_weeks=1..%s "
+        "completed_weeks=%s remaining_weeks=%s completed_count=%s remaining_count=%s",
+        playoff_week_start, expected, completed_weeks, remaining_weeks,
+        len(completed_weeks), len(remaining_weeks),
+    )
+    for team in teams:
+        completed = _games_played(team)
+        if completed + len(remaining_weeks) != expected:
+            logger.warning(
+                "[playoff_odds] schedule length mismatch rid=%s completed=%s "
+                "remaining=%s expected=%s",
+                team.get("roster_id"), completed, len(remaining_weeks), expected,
+            )
 
 
 def _projection_actual_weights(games_played: int) -> tuple[float, float]:
@@ -2008,6 +2073,9 @@ def _pack_mc_results(
     avg_wins    = wins.mean(axis=0)
     avg_ties_gained = ties_gained.mean(axis=0)
     avg_final_ties  = init_ties + avg_ties_gained
+    # ``wins`` is the standings value and credits half a win per tie.  Projected
+    # record output is conventional W-L-T, so remove that half-credit there.
+    avg_record_wins = avg_wins - 0.5 * avg_ties_gained
     # Use per-team games scheduled so bye weeks don't inflate projected losses.
     # `wins` already credits 0.5 per tie, so subtract that half back out — a tie is
     # a tie, not half a loss.
@@ -2055,7 +2123,7 @@ def _pack_mc_results(
         "top3_pick_pct":    round(min(99.9, float(top3_pick[i])), 1),
         "avg_draft_slot":   round(float(avg_slot[i]),     1),
         "miss_pct":         round(100 - _playoff_pct(i), 1),
-        "avg_final_wins":   round(float(avg_wins[i]),     1),
+        "avg_final_wins":   round(float(avg_record_wins[i]), 1),
         "avg_final_losses": round(float(avg_losses[i]),   1),
         "avg_final_ties":   round(float(avg_final_ties[i]), 1),
         "n_sims":           n_sims,
