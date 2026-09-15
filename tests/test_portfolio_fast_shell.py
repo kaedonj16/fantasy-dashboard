@@ -109,11 +109,13 @@ def test_fast_shell_renders_all_cards_in_durable_order(offline_client, monkeypat
     response = offline_client.get("/portfolio")
     assert response.status_code == 200
     # All cards are in the first paint, not appended as responses finish.
-    assert response.data.count(b'data-summary-card') == 4
+    # (Match the real card markup, not the hydration script's own
+    # `[data-summary-card]` selector literals, which also contain the substring.)
+    assert response.data.count(b'data-summary-card data-lg-key=') == 4
     # Order is locked to the durable membership.
     order = response.data.decode()
-    c = order.index('data-league-id="C"')
-    a = order.index('data-league-id="A"')
-    d = order.index('data-league-id="D"')
-    b = order.index('data-league-id="B"')
+    c = order.index("data-league-id='C'")
+    a = order.index("data-league-id='A'")
+    d = order.index("data-league-id='D'")
+    b = order.index("data-league-id='B'")
     assert c < a < d < b

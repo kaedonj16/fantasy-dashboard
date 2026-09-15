@@ -28746,7 +28746,7 @@ def build_portfolio_body(
 
     all_rows = valid_leagues + [
         lg for lg in all_leagues_data
-        if lg.get("error") or lg.get("not_in_league") or lg.get("pending")
+        if lg.get("error") or lg.get("not_in_league") or lg.get("pending") or lg.get("loading")
     ]
     # Do this on the server as well as in the browser so favorites never flash
     # on a later page, including favorite cards currently in an error state.
