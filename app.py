@@ -29210,7 +29210,6 @@ def build_portfolio_body(
         "if(window.__pfSummaryInit)return;"
         "window.__pfSummaryInit=true;"
         "if(window.__pfSummaryAbort){try{window.__pfSummaryAbort.abort();}catch(e){}}"
-        "if(window.__pfLeagueReconcileTimer)clearInterval(window.__pfLeagueReconcileTimer);"
         "var ctl=typeof AbortController!=='undefined'?new AbortController():null;window.__pfSummaryAbort=ctl;"
         "var cards=[].slice.call(document.querySelectorAll('[data-summary-card]')),active=0,MAX=4,q=[];"
         "function esc(s){var d=document.createElement('div');d.textContent=s==null?'':s;return d.innerHTML;}"
@@ -29233,9 +29232,6 @@ def build_portfolio_body(
         "function pump(){while(active<MAX&&q.length)load(q.shift());}"
         "cards.sort(function(a,b){var af=a.dataset.favorite==='true',bf=b.dataset.favorite==='true';return (bf-af)||((a.getBoundingClientRect().top<innerHeight)?-1:1);});q=cards.slice();pump();"
         "document.addEventListener('click',function(e){var b=e.target.closest&&e.target.closest('[data-summary-retry]');if(!b)return;var c=b.closest('[data-summary-card]');if(c){b.hidden=true;c._summaryAttempt=0;q.unshift(c);pump();}},{signal:ctl?ctl.signal:undefined});"
-        "var checks=0;window.__pfLeagueReconcileTimer=setInterval(function(){if(++checks>4){clearInterval(window.__pfLeagueReconcileTimer);return;}"
-        "fetch('/api/my-leagues',{cache:'no-store'}).then(function(r){return r.json();}).then(function(d){var server=(d.leagues||[]).map(function(x){return x.platform+':'+x.league_id;}).sort().join('|');"
-        "var shown=cards.map(function(c){return c.dataset.platform+':'+c.dataset.leagueId;}).sort().join('|');if(server!==shown)location.reload();}).catch(function(){});},5000);"
         "})();</script>"
         # Live-tick draft countdowns on undrafted league cards.
         "<script>(function(){"

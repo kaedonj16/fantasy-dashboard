@@ -169,3 +169,21 @@ def test_my_leagues_cards_are_compact():
     assert ".pf-lg-mid{display:flex;align-items:center;flex-wrap:wrap;" in fn
     assert "padding:9px 10px;gap:6px;" in fn
     assert "overflow:hidden;box-sizing:border-box;" in fn
+
+
+def test_my_leagues_does_not_poll_and_reload_the_whole_page():
+    """The old reconciliation loop fetched the whole account every five
+    seconds and called location.reload whenever an async/stale response differed.
+    Card summaries and isolated live scores may refresh; the league list may not.
+    """
+    fn = _portfolio_fn()
+    assert "__pfLeagueReconcileTimer" not in fn
+    assert "server!==shown" not in fn
+    assert "location.reload()" not in fn
+    assert "},5000);" not in fn
+    # Existing summary cards stay mounted while their local payload hydrates.
+    assert "data-summary-card" in fn
+    assert "if(c._summaryLoading)return" in fn
+    # Live score polling remains isolated to live slots and is non-destructive.
+    assert "window.__pfLiveTimer=setInterval" in fn
+    assert "if(document.hidden||!LIVE.length)return" in fn
