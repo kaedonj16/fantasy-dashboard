@@ -42,6 +42,24 @@ def test_cache_budget_is_shared_across_decorated_functions(monkeypatch):
     assert len(first._cache) + len(second._cache) <= 2
 
 
+def test_budget_eviction_is_safe_when_wall_clock_moves_backwards(monkeypatch):
+    monkeypatch.setattr(api, "DASHBOARD_CACHE_MAX", 2)
+    now = [2_000_000_000.0]
+    monkeypatch.setattr(api.time, "time", lambda: now[0])
+    calls = []
+
+    @api.ttl_cache(ttl=300)
+    def load(key):
+        calls.append(key)
+        return key
+
+    load("old-clock")
+    now[0] = 1_000.0
+    assert load("new-clock") == "new-clock"
+    assert load("new-clock") == "new-clock"
+    assert calls.count("new-clock") == 1
+
+
 def test_expired_entries_are_removed_and_stale_fallback_is_time_limited(monkeypatch):
     now = [100.0]
     monkeypatch.setattr(api.time, "time", lambda: now[0])

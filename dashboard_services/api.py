@@ -178,20 +178,22 @@ def ttl_cache(ttl: int = 300):
                     _prune(now)
                 while True:
                     total = 0
-                    oldest = None
+                    largest = None
                     for item in _TTL_CACHES:
                         with item["lock"]:
-                            total += len(item["cache"])
-                            if item["cache"]:
-                                candidate_key = next(iter(item["cache"]))
-                                candidate_ts = item["cache"][candidate_key][0]
-                                if oldest is None or candidate_ts < oldest[0]:
-                                    oldest = (candidate_ts, item, candidate_key)
-                    if total <= DASHBOARD_CACHE_MAX or oldest is None:
+                            size = len(item["cache"])
+                            total += size
+                            # Evict the LRU entry from the largest contributing
+                            # cache. Do not compare wall-clock timestamps across
+                            # caches: tests, NTP, and VM clock corrections can
+                            # move time backwards and evict a just-refreshed row.
+                            if size and (largest is None or size > largest[0]):
+                                largest = (size, item)
+                    if total <= DASHBOARD_CACHE_MAX or largest is None:
                         break
-                    _, item, old_key = oldest
+                    _, item = largest
                     with item["lock"]:
-                        item["cache"].pop(old_key, None)
+                        item["cache"].popitem(last=False)
 
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
