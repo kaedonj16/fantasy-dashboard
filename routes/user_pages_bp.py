@@ -130,34 +130,15 @@ def page_portfolio():
         )
     else:  # compatibility for injected/legacy resolvers
         league_inputs, season = resolve_my_leagues(viewer_user_id, account_id, season)
-    # Account-backed first paint is deliberately a durable shell.  Context,
-    # provider membership, holdings/exposure and positional analytics are all
-    # secondary work and cannot delay usable league links or matchup skeletons.
-    # Provider-only login has no durable DB membership, so resolution above is
-    # necessarily live, but context builds are still deferred per card.
+    # Keep the durable membership reconciliation asynchronous, but build the
+    # portfolio from league contexts below for account users too.  Returning a
+    # membership-only shell here meant that only Record/Standing were ever
+    # hydrated: the server never computed player holdings, team exposure, or
+    # cross-league positional rankings, leaving the entire insights section
+    # absent for every signed-in account.
     if account_id:
         from dashboard_services.accounts import schedule_account_league_reconciliation
         schedule_account_league_reconciliation(account_id, season)
-        leagues_data = [
-            {
-                "league_id": str(lg.get("league_id") or ""),
-                "name": lg.get("name") or "Unknown",
-                "platform": (lg.get("platform") or "sleeper").lower(),
-                "season": int(lg.get("season") or season),
-                "is_favorite": bool(lg.get("is_favorite")),
-                "loading": True,
-                "last_updated": lg.get("last_successful_sync_at") or lg.get("last_synced_at"),
-            }
-            for lg in league_inputs if lg.get("league_id")
-        ]
-        leagues_data.sort(key=lambda x: (not x["is_favorite"], x["name"]))
-        body = build_portfolio_body(
-            portfolio_signed_in_label(), leagues_data, leagues_data, season,
-            [], len(leagues_data), [], {}, 0, 0, 0,
-        )
-        # Generic account navigation avoids render_page resolving an arbitrary
-        # league context and undoing the non-blocking first paint.
-        return render_page("My Leagues – BR Fantasy", None, "portfolio", body, None, season)
     def _league_summary(lg):
         lid = str(lg.get("league_id") or "")
         if not lid:
