@@ -103,10 +103,17 @@ def api_my_leagues():
         _cur_season = None
     try:
         from dashboard_services.accounts import resolve_my_leagues
-        leagues, _season = resolve_my_leagues(
+        import inspect
+        _params = inspect.signature(resolve_my_leagues).parameters
+        _args = (
             session.get("viewer_user_id"), session.get("account_id"), _cur_season,
-            enrich_live=not bool(session.get("account_id")),
         )
+        if "enrich_live" in _params:
+            leagues, _season = resolve_my_leagues(
+                *_args, enrich_live=not bool(session.get("account_id")),
+            )
+        else:  # compatibility for injected/legacy resolvers
+            leagues, _season = resolve_my_leagues(*_args)
         from utils.league_chrome import fields_from_provider_league, format_label
         for m in leagues:
             plat = m.get("platform") or "sleeper"
