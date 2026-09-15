@@ -2000,17 +2000,6 @@ html[data-theme="dark"] img[src*="discord-brands-solid.png"] {
     z-index: 100;
 }
 
-/* Frosted, translucent app-bar: content scrolls softly under it like a native
-   PWA. Falls back to the opaque background above where backdrop-filter or
-   color-mix isn't supported. */
-@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-    .top-nav {
-        background: color-mix(in srgb, var(--bg) 78%, transparent);
-        -webkit-backdrop-filter: saturate(180%) blur(18px);
-        backdrop-filter: saturate(180%) blur(18px);
-        border-bottom: 1px solid color-mix(in srgb, var(--border) 65%, transparent);
-    }
-}
 
 .nav-left {
     display: flex;
