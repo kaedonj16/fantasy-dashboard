@@ -122,9 +122,40 @@ def page_portfolio():
     # below run in a worker pool where Flask's request-local ``session`` is not
     # bound, so every session value they need is captured here first.
     account_id = session.get("account_id")
-    league_inputs, season = resolve_my_leagues(
-        viewer_user_id, account_id, season
-    )
+    import inspect
+    _resolver_params = inspect.signature(resolve_my_leagues).parameters
+    if "enrich_live" in _resolver_params:
+        league_inputs, season = resolve_my_leagues(
+            viewer_user_id, account_id, season, enrich_live=not bool(account_id)
+        )
+    else:  # compatibility for injected/legacy resolvers
+        league_inputs, season = resolve_my_leagues(viewer_user_id, account_id, season)
+    # Account-backed first paint is deliberately a durable shell.  Context,
+    # provider membership, holdings/exposure and positional analytics are all
+    # secondary work and cannot delay usable league links or matchup skeletons.
+    # Provider-only login has no durable DB membership, so resolution above is
+    # necessarily live, but context builds are still deferred per card.
+    if account_id:
+        leagues_data = [
+            {
+                "league_id": str(lg.get("league_id") or ""),
+                "name": lg.get("name") or "Unknown",
+                "platform": (lg.get("platform") or "sleeper").lower(),
+                "season": int(lg.get("season") or season),
+                "is_favorite": bool(lg.get("is_favorite")),
+                "loading": True,
+                "last_updated": lg.get("last_successful_sync_at") or lg.get("last_synced_at"),
+            }
+            for lg in league_inputs if lg.get("league_id")
+        ]
+        leagues_data.sort(key=lambda x: (not x["is_favorite"], x["name"]))
+        body = build_portfolio_body(
+            portfolio_signed_in_label(), leagues_data, leagues_data, season,
+            [], len(leagues_data), [], {}, 0, 0, 0,
+        )
+        # Generic account navigation avoids render_page resolving an arbitrary
+        # league context and undoing the non-blocking first paint.
+        return render_page("My Leagues – BR Fantasy", None, "portfolio", body, None, season)
     def _league_summary(lg):
         lid = str(lg.get("league_id") or "")
         if not lid:
@@ -916,6 +947,23 @@ def api_portfolio_matchup():
     league_id = (request.args.get("league_id") or "").strip()
     if not league_id:
         return jsonify({"live": False})
+
+    # Cache/build keys are league-scoped, but authorization is viewer-scoped and
+    # must be rechecked on every request (including cache hits).
+    account_id = session.get("account_id")
+    if account_id:
+        from dashboard_services.accounts import resolve_my_leagues
+        allowed, _ = resolve_my_leagues(
+            viewer_user_id, account_id, (get_nfl_state() or {}).get("season") or datetime.now().year,
+            enrich_live=False,
+        )
+        if not any(
+            str(lg.get("league_id") or "") == league_id
+            and str(lg.get("platform") or "sleeper").lower() == platform
+            for lg in allowed
+        ):
+            logger.info("[portfolio-matchup] dropped unauthorized account=%s platform=%s league=%s", account_id, platform, league_id)
+            return jsonify({"live": False}), 403
 
     nfl_state = get_nfl_state() or {}
     # Live scoring only makes sense in the regular season or playoffs.
