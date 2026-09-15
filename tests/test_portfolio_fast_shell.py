@@ -1,4 +1,6 @@
 """Account portfolios populate cards and cross-league insights on first paint."""
+
+
 def test_account_portfolio_builds_full_league_data(offline_client, monkeypatch):
     import routes.user_pages_bp as pages
 
@@ -11,6 +13,12 @@ def test_account_portfolio_builds_full_league_data(offline_client, monkeypatch):
             "name": "Fast League", "is_favorite": True,
         }], 2026)
     monkeypatch.setattr("dashboard_services.accounts.resolve_my_leagues", resolve)
+    # Do not let the fire-and-forget reconciliation thread outlive this test or
+    # attempt to reach CI's intentionally absent database.
+    monkeypatch.setattr(
+        "dashboard_services.accounts.schedule_account_league_reconciliation",
+        lambda *a, **k: None,
+    )
     monkeypatch.setattr(pages, "get_league_ctx_from_cache", lambda *a: {
         "league": {"name": "Fast League"},
         "rosters": [{"roster_id": 9, "owner_id": "u1", "players": ["p1", "p2", "p3", "p4", "p5"]}],
