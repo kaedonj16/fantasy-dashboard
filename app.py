@@ -12384,6 +12384,57 @@ def _redzone_demo_data(t: float = _RZ_DEMO_START, scope: str = "league"):
     return _apply_real_ids(base)
 
 
+# Process-local set of canonical TD play keys already handed to the push
+# pipeline, so a live game's repeated polls don't spawn a background thread for
+# the same touchdown over and over. This is only an optimization: the AUTHORITATIVE
+# cross-worker dedupe is the atomic app_state claim inside notify_redzone_scores,
+# which is what makes multiple gunicorn workers safe.
+_RZ_PUSH_SEEN_TD: set = set()
+
+
+def _redzone_trigger_scoring_push(platform, league_id, season, week,
+                                  pbp_by_game, player_info, rosters, scoring):
+    """Off-thread, best-effort trigger for RedZone touchdown device pushes.
+
+    Only spawns work when a valid TD play has not yet been handled in THIS
+    process, then delegates to utils.push_notifications.notify_redzone_scores,
+    which owner-targets and atomically dedupes across workers.
+    """
+    if not (pbp_by_game and rosters):
+        return
+    fresh = []
+    for gid, plays in (pbp_by_game or {}).items():
+        for play in plays or []:
+            if not isinstance(play, dict) or play.get("play_state", "VALID") != "VALID":
+                continue
+            if not play.get("is_td") or not play.get("pid"):
+                continue
+            key = f"{league_id}:{gid}:{play.get('play_id') or play.get('seq')}"
+            if key not in _RZ_PUSH_SEEN_TD:
+                _RZ_PUSH_SEEN_TD.add(key)
+                fresh.append(key)
+    if not fresh:
+        return
+    # Cap the process-local memo so a long season can't grow it unbounded.
+    if len(_RZ_PUSH_SEEN_TD) > 5000:
+        for k in list(_RZ_PUSH_SEEN_TD)[:2500]:
+            _RZ_PUSH_SEEN_TD.discard(k)
+
+    import threading as _threading
+
+    def _run():
+        try:
+            from utils.push_notifications import notify_redzone_scores
+            notify_redzone_scores(
+                league_id, platform, pbp_by_game, player_info, rosters, scoring,
+                season=season, week=week,
+            )
+        except Exception:
+            logger.debug("[redzone] notify_redzone_scores failed", exc_info=True)
+
+    _threading.Thread(target=_run, daemon=True).start()
+
+
 def _redzone_collect(platform, league_id, season, week):
     """Build the raw per-league Redzone pieces (no top-level wrapper)."""
     from dashboard_services.api import (
@@ -12774,6 +12825,18 @@ def _redzone_collect(platform, league_id, season, week):
         matchups_out.append({**m, "projected_pts": round(proj_total, 2)})
 
     games = _rz_build_games_snapshot(player_info, pbp_by_game)
+
+    # Best-effort device push for live touchdowns via the shared Web Push system
+    # (push_subscriptions / VAPID), so alerts reach the phone even with RedZone
+    # closed. Fired off-thread and deduped server-side per canonical play+owner,
+    # so multiple polling clients/workers cannot double-send. Never blocks or
+    # breaks the poll response.
+    try:
+        _redzone_trigger_scoring_push(
+            platform, league_id, season, week, pbp_by_game, player_info, rosters, scoring
+        )
+    except Exception:
+        logger.debug("[redzone] scoring push trigger failed", exc_info=True)
 
     return {
         "matchups": matchups_out,

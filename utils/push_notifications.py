@@ -202,6 +202,148 @@ def _app_state_set(conn, key, value):
     )
 
 
+def _app_state_claim(conn, key, value="1"):
+    """Atomically claim a one-shot event key. Returns True iff THIS call inserted
+    the row (won the claim); a concurrent worker/poll that already claimed the
+    same key gets False.
+
+    This is the multi-worker-safe dedupe primitive behind RedZone scoring pushes:
+    N users polling the same live game all try to claim the same
+    ``redzone_td:{league}:{game}:{play}`` key, but the row is inserted once, so
+    the device push is sent exactly once regardless of how many workers/polls
+    observed the play. Unlike a read-then-write on ``_app_state_get`` it has no
+    check-then-act race across workers.
+    """
+    row = conn.execute(
+        "INSERT INTO app_state (key, value) VALUES (%s, %s) "
+        "ON CONFLICT (key) DO NOTHING RETURNING key",
+        (key, value),
+    ).fetchone()
+    return row is not None
+
+
+# ── RedZone live scoring push (owner-targeted, canonical-play deduped) ─────────
+
+def _redzone_roster_owner(pid, rosters):
+    """Canonical player id → (owner_id, roster_id, is_starter) in this league.
+
+    Starters win over bench players so a scoring alert targets the owner who is
+    actually playing the scorer this week. Returns (None, None, False) for an
+    unrostered player so a random NFL player's TD is never broadcast league-wide.
+    """
+    pid = str(pid)
+    bench = None
+    for r in rosters or []:
+        if pid in {str(s) for s in (r.get("starters") or [])}:
+            return r.get("owner_id"), r.get("roster_id"), True
+        if bench is None and pid in {str(s) for s in (r.get("players") or [])}:
+            bench = (r.get("owner_id"), r.get("roster_id"), False)
+    return bench or (None, None, False)
+
+
+def notify_redzone_scores(league_id, platform, pbp_by_game, player_info,
+                          rosters, scoring, *, season=None, week=None):
+    """Send at most one device push per canonical touchdown to each affected
+    fantasy owner, reusing push_subscriptions + VAPID via ``_broadcast_owner``.
+
+    Owner targeting: canonical player → league roster → roster owner → that
+    owner's push subscriptions (never a league-wide broadcast). A passing TD is
+    two contributions (QB pass_td + WR rec_td) grouped under one canonical NFL
+    play, so each owner is notified once about their own scorer.
+
+    Multi-worker/multi-poll safe: the notification event key
+    ``redzone_td:{league}:{game}:{play}:{owner}`` is atomically claimed in
+    app_state (see ``_app_state_claim``), so N users polling the same live game —
+    across several gunicorn workers — send the push exactly once. This is the
+    canonical-live-play → reconcile → owners → stable key → atomic claim → send
+    pipeline; it depends on shared Postgres state, never process-local memory.
+    """
+    if not league_id or not pbp_by_game:
+        return 0
+    try:
+        from dashboard_services.db import get_conn
+        from utils.fantasy_scoring import week_stats_line_points
+    except Exception:
+        return 0
+
+    sent = 0
+    for gid, plays in (pbp_by_game or {}).items():
+        # Group scoring contributions by canonical NFL play, then by owner.
+        by_play: dict = {}
+        for play in plays or []:
+            if not isinstance(play, dict) or play.get("play_state", "VALID") != "VALID":
+                continue
+            if not play.get("is_td"):
+                continue
+            pid = str(play.get("pid") or "")
+            if not pid:
+                continue
+            play_key = str(play.get("play_id") or play.get("seq") or "")
+            by_play.setdefault(play_key, []).append(play)
+
+        for play_key, rows in by_play.items():
+            # owner_id → best scoring contribution for that owner on this play.
+            owner_rows: dict = {}
+            for play in rows:
+                pid = str(play.get("pid"))
+                owner_id, roster_id, is_starter = _redzone_roster_owner(pid, rosters)
+                if not owner_id:
+                    continue
+                sl = play.get("stat_line") or {}
+                is_scorer = bool(sl.get("rush_td") or sl.get("rec_td")
+                                 or sl.get("pass_td") or sl.get("def_td"))
+                cur = owner_rows.get(owner_id)
+                # Prefer the explicit TD scorer over a merely-present contributor.
+                if cur is None or (is_scorer and not cur[1]):
+                    owner_rows[owner_id] = (play, is_scorer)
+
+            if not owner_rows:
+                # No rostered owner for any scorer on this play: never broadcast
+                # a random player's touchdown league-wide.
+                logger.debug("[redzone-alert] play=%s type=td owner=none dedupe=ineligible",
+                             f"{gid}:{play_key}")
+                continue
+
+            for owner_id, (play, _is_scorer) in owner_rows.items():
+                event_key = f"redzone_td:{league_id}:{gid}:{play_key}:{owner_id}"
+                try:
+                    with get_conn() as conn:
+                        claimed = _app_state_claim(conn, event_key)
+                        conn.commit()
+                except Exception as exc:
+                    logger.debug("[redzone-push] claim failed key=%s: %s", event_key, exc)
+                    continue
+                if not claimed:
+                    logger.debug("[redzone-alert] play=%s type=td owner=%s dedupe=duplicate",
+                                 f"{gid}:{play_key}", owner_id)
+                    continue
+                pid = str(play.get("pid"))
+                info = (player_info or {}).get(pid) or {}
+                name = info.get("name") or play.get("name") or "Your player"
+                pos = info.get("pos") or ""
+                try:
+                    pts = float(week_stats_line_points(play.get("stat_line") or {}, scoring or {}, pos) or 0)
+                except Exception:
+                    pts = 0.0
+                body = play.get("play_text") or "Touchdown!"
+                if pts:
+                    body = f"{body}  +{round(pts, 1)} pts"
+                url = (f"/{platform}/{season}/{league_id}/redzone" if season
+                       else f"/{platform}/{league_id}/redzone")
+                n = _broadcast_owner(
+                    league_id, owner_id,
+                    title=("TD: " + name + (f" · {pos}" if pos else "")),
+                    body=body,
+                    url=url,
+                    tag=f"rz-td-{gid}-{play_key}",
+                    notif_type="redzone_scores",
+                )
+                sent += (n or 0)
+                logger.info("[redzone-alert] play=%s type=td owner=%s dedupe=sent recipients=%d",
+                            f"{gid}:{play_key}", owner_id, n or 0)
+    return sent
+
+
 def _get_subscribed_leagues():
     """Return [(league_id, platform)] for all leagues with active subscribers."""
     try:

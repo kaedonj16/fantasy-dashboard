@@ -33770,6 +33770,35 @@ button:disabled {
 .rz-event-contributor strong { font-variant-numeric: tabular-nums; }
 .rz-event-contributor strong.pos { color: var(--rz-green); }
 .rz-event-contributor strong.neg { color: var(--rz-red); }
+/* Two-point conversion tag on a secondary contributor (e.g. "Wentz 2PT +2.0"). */
+.rz-event-2pt {
+    display: inline-block;
+    margin-left: 4px;
+    background: var(--rz-accent, #7c5cff);
+    color: #fff;
+    font-weight: 800;
+    font-size: 8px;
+    line-height: 1;
+    padding: 2px 4px;
+    border-radius: 4px;
+    letter-spacing: 0.03em;
+    vertical-align: middle;
+}
+/* Alert-history type chip (TD / OPP TD / INJURY / LEAD / MILESTONE). */
+.rz-hist-type {
+    flex: 0 0 auto;
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 0.03em;
+    padding: 2px 5px;
+    border-radius: 4px;
+    background: var(--rz-chip-bg, rgba(120,120,140,0.18));
+    color: var(--rz-muted);
+}
+.rz-hist-row.td .rz-hist-type { background: var(--rz-green); color: #fff; }
+.rz-hist-row.opp .rz-hist-type { background: var(--rz-red); color: #fff; }
+.rz-hist-row.injury .rz-hist-type { background: #b45309; color: #fff; }
+.rz-hist-row.milestone .rz-hist-type { background: var(--rz-accent, #7c5cff); color: #fff; }
 
 /* ── Pagination ───────────────────────── */
 #rz-feed-pagination {
@@ -34327,6 +34356,14 @@ a.rz-demo-link:hover {
     font-size: 12px;
     font-weight: 600;
     color: var(--rz-text);
+}
+
+/* Permission blocked at the browser level: a useful disabled state, not a
+   silently dead "Enable" button. */
+.rz-notif-cta.is-blocked {
+    background: rgba(120, 120, 140, .10);
+    border-bottom-color: rgba(120, 120, 140, .22);
+    color: var(--rz-muted);
 }
 
 .rz-notif-cta-icon {

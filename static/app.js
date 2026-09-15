@@ -2283,16 +2283,61 @@ window._brPromoEligible = function () {
     var resp     = await fetch('/api/push/vapid-public-key');
     if (!resp.ok) return false;
     var { publicKey } = await resp.json();
-    var sub = await reg.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(publicKey),
-    });
+    // Reuse an existing PushSubscription for this device before creating a new
+    // one, so re-enabling from RedZone doesn't churn the subscription/endpoint.
+    var sub = await reg.pushManager.getSubscription();
+    if (!sub) {
+      sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(publicKey),
+      });
+    }
     await _registerPushSub(sub);
     return true;
   }
 
+  // Shared "enable real device push" entry point for any feature (RedZone score
+  // alerts, etc.). Runs the FULL Web Push flow -- permission → service worker →
+  // PushSubscription (create or reuse) → persist to push_subscriptions -- and
+  // returns a status the caller can render. Notification permission alone is not
+  // enough for push with the tab closed; a registered PushSubscription is.
+  window.brEnablePush = async function brEnablePush() {
+    if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) {
+      return 'unsupported';
+    }
+    var perm = Notification.permission;
+    if (perm === 'default') {
+      try { perm = await Notification.requestPermission(); } catch (_) { return 'error'; }
+    }
+    if (perm !== 'granted') return perm === 'denied' ? 'denied' : 'default';
+    try {
+      var ok = await subscribePush();  // creates/reuses + persists the subscription
+      return ok ? 'granted' : 'error';
+    } catch (_) {
+      return 'error';
+    }
+  };
+
+  // Report whether this device already has a live PushSubscription, so a feature
+  // can show "alerts enabled" only when device push will actually work.
+  window.brPushStatus = async function brPushStatus() {
+    if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) {
+      return 'unsupported';
+    }
+    if (Notification.permission === 'denied') return 'denied';
+    if (Notification.permission !== 'granted') return 'default';
+    try {
+      var reg = await navigator.serviceWorker.ready;
+      var sub = await reg.pushManager.getSubscription();
+      return sub ? 'granted' : 'granted-unsubscribed';
+    } catch (_) {
+      return 'granted-unsubscribed';
+    }
+  };
+
   var _NOTIF_TYPES = [
     { category: 'Your Team' },
+    { key: 'redzone_scores',    label: 'RedZone Score Alerts' },
     { key: 'lineup_lock',       label: 'Lineup Lock Reminders' },
     { key: 'injury',            label: 'Starter Injury Alerts' },
     { key: 'close_game',        label: 'Close Game Alerts' },

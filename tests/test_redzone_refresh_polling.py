@@ -55,6 +55,31 @@ def test_clock_freshness_behavioral_harness():
     _run_harness("redzone_clock_harness.mjs")
 
 
+# ── First-load freshness ─────────────────────────────────────────────────────
+def test_first_load_kicks_off_immediate_catchup_on_game_day():
+    """On a live game day the boot must not wait out the first poll interval --
+    it paints the server-injected snapshot, then immediately reconciles to the
+    latest plays (self-healing a stale service-worker-cached shell). Previously
+    only demo mode refreshed on load."""
+    boot = REDZONE_JS.rsplit("_render();", 1)[1]  # the boot tail after first paint
+    assert "if (_isDemo) {" in boot
+    assert "} else if (_isGameDay()) {" in boot
+    # Scope-aware immediate refresh, guarded against piling onto an in-flight poll.
+    assert "_refresh({ backfill: true })" in boot
+    assert "_refreshUserStream()" in boot
+    assert "if (_inflight || _streaming) return;" in boot
+
+
+def test_backfill_poll_reconciles_as_bulk_never_live_alerts():
+    """The first-load catch-up brings in newer plays as HISTORY, not live events,
+    so a stale snapshot can't fire a burst of TD alerts for plays that already
+    happened. The live-vs-bulk decision must honor opts.backfill."""
+    refresh = REDZONE_JS.split("async function _refresh(opts) {", 1)[1].split(
+        "// ── Progressive My Leagues", 1
+    )[0]
+    assert "(!opts.backfill && wasContinuouslyActive) ? 'live' : 'bulk'" in refresh
+
+
 # ── Frontend source contracts (structure the harnesses rely on) ───────────────
 def test_client_deadline_exceeds_retired_12s_and_covers_server_budget():
     assert "var _RZ_FETCH_DEADLINE_MS  = 25000" in REDZONE_JS
