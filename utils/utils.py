@@ -9,7 +9,7 @@ import requests
 import time
 import traceback
 from bs4 import BeautifulSoup
-from collections import defaultdict
+from collections import OrderedDict as _OrderedDict, defaultdict
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Dict, Optional, Any, Callable, List, Iterable, TYPE_CHECKING
@@ -326,7 +326,11 @@ def read_json(path: str) -> Optional[dict]:
 # (e.g. the 1.1 MB players_index, weekly projections, usage_rows). Avoids re-parsing
 # the same file dozens of times per request. The cached object is SHARED — treat
 # it as read-only.
-_JSON_CACHE: Dict[str, tuple] = {}
+try:
+    _JSON_CACHE_MAX = max(1, int(os.getenv("JSON_CACHE_MAX", "16")))
+except (TypeError, ValueError):
+    _JSON_CACHE_MAX = 16
+_JSON_CACHE: Dict[str, tuple] = _OrderedDict()
 _JSON_CACHE_LOCK = _threading.Lock()
 
 
@@ -336,13 +340,20 @@ def read_json_cached(path: str) -> Optional[dict]:
     except OSError:
         return None
     sig = (st.st_mtime_ns, st.st_size)
-    hit = _JSON_CACHE.get(path)
-    if hit is not None and hit[0] == sig:
-        return hit[1]
+    with _JSON_CACHE_LOCK:
+        hit = _JSON_CACHE.get(path)
+        if hit is not None and hit[0] == sig:
+            _JSON_CACHE.move_to_end(path)
+            return hit[1]
+        if hit is not None:
+            _JSON_CACHE.pop(path, None)
     data = read_json(path)
     if data is not None:
         with _JSON_CACHE_LOCK:
             _JSON_CACHE[path] = (sig, data)
+            _JSON_CACHE.move_to_end(path)
+            while len(_JSON_CACHE) > _JSON_CACHE_MAX:
+                _JSON_CACHE.popitem(last=False)
     return data
 
 
@@ -1738,11 +1749,14 @@ def _clear_func_cache_for_league(func: Any, expected_name: str, league_id: str) 
         return
 
     cache = func._cache
+    cache_lock = getattr(func, "_cache_lock", _threading.Lock())
     league_id = str(league_id)
 
     keys_to_del = []
 
-    for key in list(cache.keys()):
+    with cache_lock:
+        cache_keys = list(cache.keys())
+    for key in cache_keys:
         # Defensive unpack, in case something else ever gets put in the cache
         try:
             func_name, args, kwargs = key
@@ -1760,8 +1774,9 @@ def _clear_func_cache_for_league(func: Any, expected_name: str, league_id: str) 
         if str(args[0]) == league_id:
             keys_to_del.append(key)
 
-    for k in keys_to_del:
-        cache.pop(k, None)
+    with cache_lock:
+        for k in keys_to_del:
+            cache.pop(k, None)
 
 
 def clear_activity_cache_for_league(league_id: str) -> None:

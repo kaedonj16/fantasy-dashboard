@@ -45,8 +45,7 @@ def test_post_deploy_puts_repo_root_on_sys_path():
     Render's startup spawns this as a file path, so Python puts scripts/ on
     sys.path instead of the repo root. Without an explicit insert, the
     post-deploy imports of scripts / dashboard_services / data_building all
-    raise ModuleNotFoundError and migrations, ADP refresh, and breakout
-    rebuilds silently no-op.
+    raise ModuleNotFoundError and migrations / ADP refresh silently no-op.
     """
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     scripts_dir = os.path.join(repo_root, "scripts")
@@ -65,9 +64,23 @@ def test_post_deploy_puts_repo_root_on_sys_path():
         # Repo-root-first is what makes these production imports resolve:
         #   from scripts.run_migrations import run_migrations
         #   from dashboard_services.adp_service import refresh_global_adp_sources
-        #   from data_building.breakout_engine.build_historical_scores import run
         assert os.path.isdir(os.path.join(repo_root, "dashboard_services"))
         assert os.path.isdir(os.path.join(repo_root, "data_building"))
         assert os.path.isfile(os.path.join(repo_root, "scripts", "run_migrations.py"))
     finally:
         sys.path[:] = original
+
+
+def test_web_worker_default_is_two_and_post_deploy_omits_breakout_rebuild():
+    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    startup = open(os.path.join(repo_root, "data_building", "updates", "startup.py"), encoding="utf-8").read()
+    post_deploy = open(os.path.join(repo_root, "scripts", "post_deploy.py"), encoding="utf-8").read()
+    cron = open(os.path.join(repo_root, "cron_daily.py"), encoding="utf-8").read()
+    breakout = open(os.path.join(
+        repo_root, "data_building", "breakout_engine", "calculate_breakouts_with_real_data.py"
+    ), encoding="utf-8").read()
+    assert "os.environ.get('WEB_WORKERS', 2)" in startup
+    assert "build_historical_scores" not in post_deploy
+    assert "run_breakouts()" in cron
+    assert "stats_season = season - 1" in breakout
+    assert "as_of_date_override=as_of" in breakout

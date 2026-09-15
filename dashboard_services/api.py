@@ -5,6 +5,7 @@ import logging
 import os
 import threading
 import time
+from collections import OrderedDict
 from typing import Any, List, Dict, Optional, Union
 
 import requests
@@ -118,6 +119,19 @@ def _make_hashable(x: Any):
 cache = {}
 
 
+def _positive_env_int(name: str, default: int) -> int:
+    try:
+        return max(1, int(os.getenv(name, str(default))))
+    except (TypeError, ValueError):
+        return default
+
+
+DASHBOARD_CACHE_MAX = _positive_env_int("DASHBOARD_CACHE_MAX", 75)
+DASHBOARD_CACHE_STALE_TTL = _positive_env_int("DASHBOARD_CACHE_STALE_TTL", 900)
+_TTL_CACHES: list[dict] = []
+_CACHE_BUDGET_LOCK = threading.Lock()
+
+
 def _freeze(obj):
     """Recursively convert unhashable types into hashable ones for cache keys."""
     if isinstance(obj, (list, tuple)):
@@ -140,7 +154,44 @@ def ttl_cache(ttl: int = 300):
     """
 
     def decorator(func):
-        _cache: Dict[Any, tuple[float, Any]] = {}
+        _cache: OrderedDict[Any, tuple[float, Any]] = OrderedDict()
+        _cache_lock = threading.RLock()
+        _cache_changed = threading.Condition(_cache_lock)
+        _inflight: set[Any] = set()
+
+        def _prune(now: float) -> None:
+            """Drop entries too old even for stale-on-error, then enforce LRU."""
+            stale_limit = float(ttl) + DASHBOARD_CACHE_STALE_TTL
+            for old_key, (created, _) in list(_cache.items()):
+                if now - created > stale_limit:
+                    _cache.pop(old_key, None)
+            while len(_cache) > DASHBOARD_CACHE_MAX:
+                _cache.popitem(last=False)
+
+        def _store(key, result, now: float) -> None:
+            # One budget spans every @ttl_cache in this worker; otherwise N
+            # decorated functions could each retain DASHBOARD_CACHE_MAX values.
+            with _CACHE_BUDGET_LOCK:
+                with _cache_lock:
+                    _cache[key] = (now, result)
+                    _cache.move_to_end(key)
+                    _prune(now)
+                while True:
+                    total = 0
+                    oldest = None
+                    for item in _TTL_CACHES:
+                        with item["lock"]:
+                            total += len(item["cache"])
+                            if item["cache"]:
+                                candidate_key = next(iter(item["cache"]))
+                                candidate_ts = item["cache"][candidate_key][0]
+                                if oldest is None or candidate_ts < oldest[0]:
+                                    oldest = (candidate_ts, item, candidate_key)
+                    if total <= DASHBOARD_CACHE_MAX or oldest is None:
+                        break
+                    _, item, old_key = oldest
+                    with item["lock"]:
+                        item["cache"].pop(old_key, None)
 
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
@@ -156,38 +207,73 @@ def ttl_cache(ttl: int = 300):
             frozen_kwargs = _freeze(kwargs)
             key = (func.__name__, frozen_args, frozen_kwargs)
 
-            entry = _cache.get(key)
-            if entry is not None:
-                ts, cached_result = entry
-                if time.time() - ts < effective_ttl:
-                    return cached_result
-                # Expired: try to refresh, but if the upstream call fails (e.g. a
-                # slow/down Sleeper API) serve the stale value instead of raising.
-                # Keeping the last-known-good value out of the cache until a
-                # successful refresh means an outage never takes a page down.
-                try:
-                    result = func(*args, **kwargs)
-                except Exception:
-                    return cached_result
-                _cache[key] = (time.time(), result)
-                return result
+            now = time.time()
+            wait_started = None
+            with _cache_lock:
+                while True:
+                    now = time.time()
+                    _prune(now)
+                    entry = _cache.get(key)
+                    if entry is not None and (
+                            now - entry[0] < effective_ttl
+                            or (wait_started is not None and entry[0] >= wait_started)):
+                        _cache.move_to_end(key)
+                        return entry[1]
+                    if key not in _inflight:
+                        _inflight.add(key)
+                        break
+                    # Serialize only identical keys; unrelated provider calls
+                    # remain outside this lock and continue concurrently.
+                    if wait_started is None:
+                        wait_started = now
+                    _cache_changed.wait()
 
-            # Cold cache: nothing to fall back to, so a failure propagates.
-            result = func(*args, **kwargs)
-            _cache[key] = (time.time(), result)
-            return result
+            try:
+                result = func(*args, **kwargs)
+            except Exception:
+                now = time.time()
+                with _cache_lock:
+                    _prune(now)
+                    stale = _cache.get(key)
+                    if (stale is not None
+                            and now - stale[0] <= float(ttl) + DASHBOARD_CACHE_STALE_TTL):
+                        _cache.move_to_end(key)
+                        return stale[1]
+                raise
+            else:
+                _store(key, result, time.time())
+                return result
+            finally:
+                with _cache_lock:
+                    _inflight.discard(key)
+                    _cache_changed.notify_all()
 
         # expose cache and a convenience clearer if you ever want it
         wrapper._cache = _cache
+        wrapper._cache_lock = _cache_lock
 
         def clear_cache():
-            _cache.clear()
+            with _cache_lock:
+                _cache.clear()
+                _inflight.clear()
+                _cache_changed.notify_all()
 
         wrapper.clear_cache = clear_cache
+        _TTL_CACHES.append({"name": func.__name__, "cache": _cache, "lock": _cache_lock})
 
         return wrapper
 
     return decorator
+
+
+def ttl_cache_entry_counts() -> Dict[str, int]:
+    """Small, credential-free snapshot for startup memory diagnostics."""
+    counts: Dict[str, int] = {}
+    for item in _TTL_CACHES:
+        with item["lock"]:
+            name = item["name"]
+            counts[name] = counts.get(name, 0) + len(item["cache"])
+    return counts
 
 
 def _headers(rapidapi_key: str) -> Dict[str, str]:
