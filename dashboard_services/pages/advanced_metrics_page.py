@@ -107,7 +107,13 @@ def build_advanced_metrics_body(
     if has_premium:
         try:
             from dashboard_services.db import get_conn
-            _ref_season = season or (available_seasons[0] if available_seasons else 2025)
+            if season:
+                _ref_season = int(season)
+            elif available_seasons:
+                _ref_season = int(available_seasons[0])
+            else:
+                from dashboard_services.api import get_nfl_state
+                _ref_season = int(get_nfl_state()["season"])
             with get_conn() as _conn:
                 _wrow = _conn.execute(
                     "SELECT MAX(week) AS mw FROM player_weekly_metrics WHERE season = %s",

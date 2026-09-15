@@ -179,6 +179,7 @@ def ttl_cache(ttl: int = 300):
                 while True:
                     total = 0
                     largest = None
+                    largest_other = None
                     for item in _TTL_CACHES:
                         with item["lock"]:
                             size = len(item["cache"])
@@ -189,9 +190,18 @@ def ttl_cache(ttl: int = 300):
                             # move time backwards and evict a just-refreshed row.
                             if size and (largest is None or size > largest[0]):
                                 largest = (size, item)
+                            # Prefer reclaiming an older/other function's cache
+                            # before evicting the entry we just refreshed.  This
+                            # matters when the process-wide budget is lowered at
+                            # runtime (or in a test): otherwise equal-size ties
+                            # repeatedly select the newly active cache and it can
+                            # never retain its own LRU window.
+                            if (item["cache"] is not _cache and size and
+                                    (largest_other is None or size > largest_other[0])):
+                                largest_other = (size, item)
                     if total <= DASHBOARD_CACHE_MAX or largest is None:
                         break
-                    _, item = largest
+                    _, item = largest_other or largest
                     with item["lock"]:
                         item["cache"].popitem(last=False)
 
@@ -529,13 +539,14 @@ def get_nfl_state() -> dict:
     # loads snappy. On failure, fall back to the last-known-good state so a
     # Sleeper outage never takes the site down.
     global _LAST_NFL_STATE
+    from utils.nfl_context import normalize_nfl_state
     try:
         state = fetch_json("/state/nfl", timeout=6, retries=2) or {}
     except Exception:
-        return _LAST_NFL_STATE
+        return normalize_nfl_state(_LAST_NFL_STATE)
     if state:
         _LAST_NFL_STATE = state
-    return state
+    return normalize_nfl_state(state or _LAST_NFL_STATE)
 
 
 @ttl_cache(ttl=300)
