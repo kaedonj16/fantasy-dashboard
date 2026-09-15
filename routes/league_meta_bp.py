@@ -104,7 +104,8 @@ def api_my_leagues():
     try:
         from dashboard_services.accounts import resolve_my_leagues
         leagues, _season = resolve_my_leagues(
-            session.get("viewer_user_id"), session.get("account_id"), _cur_season
+            session.get("viewer_user_id"), session.get("account_id"), _cur_season,
+            enrich_live=not bool(session.get("account_id")),
         )
         from utils.league_chrome import fields_from_provider_league, format_label
         for m in leagues:

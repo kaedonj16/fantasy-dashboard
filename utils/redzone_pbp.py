@@ -174,13 +174,24 @@ def _detect_play_state(play: dict, play_text: str) -> str:
     play_status = str(play.get("playStatus") or play.get("play_status") or "").lower()
     play_result = str(play.get("playResult") or play.get("play_result") or "").lower()
     
+    # A replay marker describes the *change*, not necessarily the final result.
+    # Explicit final scoring fields/descriptions win in both reversal directions.
+    final_td = any(str(play.get(k) or "").lower() in ("touchdown", "td", "true", "1")
+                   for k in ("finalResult", "final_result", "isTouchdown", "touchdown"))
+    awarded_td = final_td or bool(__import__("re").search(
+        r"(?:overturned|reversed).{0,60}(?:is |to |result(?:ing)? in (?:a )?)?(?:a )?(?:touchdown|td)\b",
+        text_lower,
+    ))
+
     if play_status in ("no_play", "no play", "nullified", "overturned"):
         if "overturned" in play_status:
-            return PLAY_STATE_OVERTURNED
+            return PLAY_STATE_CORRECTED if awarded_td else PLAY_STATE_OVERTURNED
         if "nullified" in play_status:
             return PLAY_STATE_NULLIFIED
         return PLAY_STATE_NO_PLAY
     
+    if play_result in ("touchdown", "td"):
+        return PLAY_STATE_CORRECTED if "overturned" in text_lower else PLAY_STATE_VALID
     if play_result in ("no_play", "no play", "nullified", "overturned"):
         if "overturned" in play_result:
             return PLAY_STATE_OVERTURNED
@@ -191,7 +202,7 @@ def _detect_play_state(play: dict, play_text: str) -> str:
     # Text-based detection (fallback)
     # Overturned by replay
     if "overturned" in text_lower or "ruling overturned" in text_lower:
-        return PLAY_STATE_OVERTURNED
+        return PLAY_STATE_CORRECTED if awarded_td else PLAY_STATE_OVERTURNED
     
     # Nullified by penalty (play occurred but called back)
     if "nullified" in text_lower:
@@ -257,6 +268,30 @@ def _extract_target_from_text(play_text: str) -> str:
     if match:
         return match.group(1).strip()
     return ""
+
+
+def _extract_rusher_from_text(play_text: str) -> tuple[str, int | None, bool]:
+    """Return a conservative narrative ball carrier, yards, and final TD.
+
+    Only actor-at-the-start rushing grammar is accepted, which avoids tacklers,
+    penalty actors and players mentioned later in a booth description.  Zero and
+    negative yards remain meaningful and are therefore not treated as missing.
+    """
+    import re
+    text = _s(play_text)
+    if not text or "pass" in text.lower() or "no play" in text.lower():
+        return "", None, False
+    match = re.match(
+        r"^\s*([A-Z][A-Za-z.'-]*(?:\s+[A-Z][A-Za-z.'-]*){0,3})\s+"
+        r"(?:rush(?:es|ed)?|runs?|scrambles?)\b.*?"
+        r"(?:for\s+)?(-?\d+)\s*(?:-|\s)yard(?:s)?\b",
+        text,
+        re.IGNORECASE,
+    )
+    if not match:
+        return "", None, False
+    final_td = bool(re.search(r"\b(?:touchdown|td)\b", text, re.IGNORECASE))
+    return match.group(1).strip(), int(match.group(2)), final_td
 
 
 def _opponent_team(game_context: dict, offense_team: str) -> str:
@@ -423,7 +458,9 @@ def extract_pbp_plays(
 
         # Detect play state
         play_state = _detect_play_state(play, text)
-        is_no_play = play_state != PLAY_STATE_VALID
+        is_no_play = play_state in (
+            PLAY_STATE_NO_PLAY, PLAY_STATE_NULLIFIED, PLAY_STATE_OVERTURNED,
+        )
         
         base = {
             "play_id": play_id,
@@ -481,7 +518,8 @@ def extract_pbp_plays(
         # Track if we have ANY receiver contribution (resolved or not)
         has_any_receiver_contrib = False
         has_resolved_receiver_contrib = False
-        offense_team = ""
+        has_resolved_rusher_contrib = False
+        offense_team = _s(_first(play, "possession", "possessionTeam", "teamAbv", "offenseTeam", "team"))
         
         for ps in _iter_player_stats(pstats):
             line = _normalize_player_delta(ps)
@@ -578,6 +616,8 @@ def extract_pbp_plays(
                 has_any_receiver_contrib = True
                 if pid:
                     has_resolved_receiver_contrib = True
+            if pid and (line.get("carries") or line.get("rush_yds") or line.get("rush_td")):
+                has_resolved_rusher_contrib = True
             
             out.append({
                 **base,
@@ -662,6 +702,30 @@ def extract_pbp_plays(
                     })
                     emitted += 1
                     has_resolved_receiver_contrib = True
+
+        # Tank01 sometimes supplies only the final booth narrative for a rush.
+        # Recover one carry (including a zero-yard goal-line score), its yards,
+        # and a TD only when the actor resolves canonically with team+role proof.
+        if not has_resolved_rusher_contrib and not is_no_play:
+            rusher_name, rush_yds, narrative_td = _extract_rusher_from_text(text)
+            if rusher_name and rush_yds is not None:
+                rusher_identity = identity_resolver.resolve(
+                    provider="tank01", name=rusher_name, team=offense_team, role="rusher",
+                )
+                rusher_pid = rusher_identity["canonical_player_id"]
+                if not rusher_pid and rusher_identity["confidence"] == "unresolved":
+                    rusher_pid = _resolve_player_name(rusher_name, offense_team, name_to_pid, team_players)
+                if rusher_pid:
+                    out.append({
+                        **base, "pid": rusher_pid, "name": rusher_name,
+                        "team": offense_team, "stat_line": {
+                            "carries": 1, "rush_yds": rush_yds,
+                            "rush_td": 1 if narrative_td else 0,
+                        }, "is_td": narrative_td, "actor_role": "rusher",
+                        "identity": {**rusher_identity, "canonical_player_id": rusher_pid},
+                    })
+                    emitted += 1
+                    logger.debug("[pbp-narrative-rush] play=%s pid=%s td=%s", play_id, rusher_pid, narrative_td)
         
         # Fallback: Extract receiver from completed pass text (runs when receiver exists but pid is empty)
         if not has_resolved_receiver_contrib and not is_no_play and "pass" in text.lower() and "incomplete" not in text.lower():

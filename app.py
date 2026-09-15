@@ -28699,6 +28699,24 @@ def build_portfolio_body(
         _ini = html.escape("".join(w[0] for w in _raw_name.split()[:2]).upper() or "?")
         _crest_hue = f"hsl({sum(ord(c) for c in _raw_name) % 360} 52% 46%)"
 
+        if lg.get("loading"):
+            _lg_season_shell = lg.get("season") or season
+            _updated = html.escape(str(lg.get("last_updated") or "Awaiting first refresh"))
+            league_rows += (
+                f"<div class='pf-lg-card' data-lg-key='{plat}:{lid}' data-favorite='{'true' if lg.get('is_favorite') else 'false'}'>"
+                f"<div class='pf-lg-top'><span class='pf-lg-crest' style='background:{_crest_hue};'>{_ini}</span>"
+                f"{_lg_id(name_link, plat)}{_lg_tools(bool(lg.get('is_favorite')), _unlink_btn(plat, lid))}</div>"
+                f"<div class='pf-lg-live' aria-busy='true' data-lg-live data-platform='{html.escape(str(plat), quote=True)}' "
+                f"data-league-id='{html.escape(str(lid), quote=True)}' data-season='{html.escape(str(_lg_season_shell), quote=True)}'>"
+                "<div class='pf-live-skel' aria-hidden='true'><div class='skeleton pf-live-skel-status'></div>"
+                "<div class='pf-live-grid'><div class='pf-live-side'><div class='skeleton pf-live-skel-score'></div></div>"
+                "<div class='pf-live-side opp'><div class='skeleton pf-live-skel-score'></div></div></div></div></div>"
+                f"<div class='pf-lg-stats'><span class='pf-lg-stat'><span class='pf-lg-v'>&mdash;</span><span class='pf-lg-l'>Record loading</span></span>"
+                f"<span class='pf-lg-stat'><span class='pf-lg-v'>&mdash;</span><span class='pf-lg-l'>Standing loading</span></span></div>"
+                f"<div class='pf-lg-foot'><span class='pf-lg-l'>Updated {_updated}</span><a href='{href}' class='pf-lg-open'>Open &rarr;</a></div></div>"
+            )
+            continue
+
         # Linked-but-not-drafted (or team-not-yet-linked) league: a normal pending
         # state, so give it a proper row -- name link, a soft status pill, a
         # "practice in the Draft Room" nudge for pre-draft -- instead of a bare
@@ -29179,12 +29197,17 @@ def build_portfolio_body(
         "+wpBar(d);"
         "slot.removeAttribute('aria-busy');"
         "slot.hidden=false;}"
-        "function load(slot){"
+        "function load(slot){if(slot._loading)return slot._loading;var generation=(slot._generation||0)+1;slot._generation=generation;"
         "var p=slot.getAttribute('data-platform'),l=slot.getAttribute('data-league-id'),s=slot.getAttribute('data-season');"
         "var u='/api/portfolio/matchup?platform='+encodeURIComponent(p)+'&league_id='+encodeURIComponent(l)+'&season='+encodeURIComponent(s);"
-        "return fetch(u,{headers:{'X-Requested-With':'fetch'}}).then(function(r){return r.ok?r.json():null;})"
-        ".then(function(d){render(slot,d);return d;}).catch(function(){return null;});}"
-        "var i=0,LIVE=[];"
+        "var controller=typeof AbortController!=='undefined'?new AbortController():null;"
+        "var timer=controller?setTimeout(function(){controller.abort();},12000):null;"
+        "slot._loading=fetch(u,{headers:{'X-Requested-With':'fetch'},signal:controller?controller.signal:undefined}).then(function(r){return r.ok?r.json():null;})"
+        ".then(function(d){if(slot._generation===generation)render(slot,d);return d;}).catch(function(){return null;})"
+        ".then(function(d){if(timer)clearTimeout(timer);slot._loading=null;return d;});return slot._loading;}"
+        "var i=0,LIVE=[];slots.sort(function(a,b){var ac=a.closest('.pf-lg-card'),bc=b.closest('.pf-lg-card');"
+        "var af=ac&&ac.getAttribute('data-favorite')==='true',bf=bc&&bc.getAttribute('data-favorite')==='true';"
+        "var av=a.getBoundingClientRect().top<innerHeight,bv=b.getBoundingClientRect().top<innerHeight;return (bf-af)||(bv-av);});"
         "function pump(){if(i>=slots.length)return;var slot=slots[i++];"
         "load(slot).then(function(d){if(d&&d.live&&d.status==='in')LIVE.push(slot);pump();});}"
         "for(var k=0;k<3;k++)pump();"
