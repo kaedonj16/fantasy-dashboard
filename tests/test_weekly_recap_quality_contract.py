@@ -22,7 +22,8 @@ def test_lineup_selectors_supply_six_real_candidates():
 
 def test_recap_uses_shared_historical_and_picture_resolvers():
     source = (ROOT / "dashboard_services/pages/recap_page.py").read_text()
-    assert "build_standings_as_of_week(ctx, selected_week)" in source
+    assert 'recap_ctx["df_weekly"] = fin_df' in source
+    assert "build_standings_as_of_week(recap_ctx, selected_week)" in source
     assert "build_power_rankings_context(historical_ctx)" in source
     assert "team_avatar(_platform, roster, users)" in source
     assert "recap-rank-grid" in source
