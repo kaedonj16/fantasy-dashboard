@@ -1,7 +1,7 @@
 """Account portfolios populate cards and cross-league insights on first paint."""
 
 
-def test_account_portfolio_renders_fast_shell(offline_client, monkeypatch):
+def test_account_portfolio_renders_complete_cross_league_data(offline_client, monkeypatch):
     import routes.user_pages_bp as pages
 
     seen = {}
@@ -17,16 +17,34 @@ def test_account_portfolio_renders_fast_shell(offline_client, monkeypatch):
         "dashboard_services.accounts.schedule_account_league_reconciliation",
         lambda *a, **k: None,
     )
+    monkeypatch.setattr(pages, "get_league_ctx_from_cache", lambda *a: {
+        "league": {"name": "Fast League"},
+        "rosters": [{"roster_id": 9, "owner_id": "u1",
+                     "players": ["p1", "p2", "p3", "p4", "p5"]}],
+        "users": [{"user_id": "u1", "display_name": "My Team"}],
+        "players_index": {"p1": {"name": "Player One", "pos": "WR", "team": "BUF"}},
+        "total_rosters": 1, "roster_positions": ["QB", "RB", "WR", "TE"],
+        "latest_draft": {"status": "complete"},
+    })
+    monkeypatch.setattr("dashboard_services.accounts.resolve_account_viewer_for_league",
+                        lambda *a, **k: {"viewer_roster_id": "9"})
+    monkeypatch.setattr("dashboard_services.ai.context_builders.league_format_value_lookup",
+                        lambda ctx: {"p1": {"name": "Player One", "position": "WR",
+                                              "team": "BUF", "value": 321,
+                                              "pos_rank_label": "WR12"}})
+    monkeypatch.setattr("dashboard_services.ai.context_builders.portfolio_record_and_rank",
+                        lambda *a: (7, 4, 0, 1234.5, 2))
     with offline_client.session_transaction() as sess:
         sess["account_id"] = 7
         sess["account_email"] = "a@example.com"
     response = offline_client.get("/portfolio")
     assert response.status_code == 200
     assert b"Fast League" in response.data
-    assert b'data-summary-card' in response.data
-    assert b"Record loading" in response.data
-    assert b"7-4" not in response.data
-    assert b"Player One" not in response.data
+    assert b"7-4" in response.data
+    assert b"Player Holdings" in response.data and b"Player One" in response.data
+    assert b"NFL Exposure" in response.data
+    assert b"Positional Strength" in response.data
+    assert b"Record loading" not in response.data
     assert seen["kwargs"]["enrich_live"] is False
 
 
@@ -77,11 +95,13 @@ def test_fast_shell_keeps_card_seasons_in_navigation_and_pagination(offline_clie
                         lambda *a, **k: (leagues, 2026))
     monkeypatch.setattr("dashboard_services.accounts.schedule_account_league_reconciliation",
                         lambda *a: None)
+    monkeypatch.setattr(pages, "get_league_ctx_from_cache",
+                        lambda *a: (_ for _ in ()).throw(RuntimeError("offline")))
     with offline_client.session_transaction() as sess:
         sess["account_id"] = 9
     response = offline_client.get("/portfolio")
     assert response.status_code == 200
-    assert b"/yahoo/2025/L1/dashboard" in response.data
+    assert b"data-lg-key='yahoo:L1'" in response.data
     assert b"Page '+(page+1)+' of '+pages" in response.data
     assert b"pager.hidden=ord.length<=PAGE" in response.data
 
@@ -104,6 +124,8 @@ def test_fast_shell_renders_all_cards_in_durable_order(offline_client, monkeypat
                         lambda *a, **k: (leagues, 2026))
     monkeypatch.setattr("dashboard_services.accounts.schedule_account_league_reconciliation",
                         lambda *a: None)
+    monkeypatch.setattr(pages, "get_league_ctx_from_cache",
+                        lambda *a: (_ for _ in ()).throw(RuntimeError("offline")))
     with offline_client.session_transaction() as sess:
         sess["account_id"] = 10
     response = offline_client.get("/portfolio")
@@ -111,11 +133,11 @@ def test_fast_shell_renders_all_cards_in_durable_order(offline_client, monkeypat
     # All cards are in the first paint, not appended as responses finish.
     # (Match the real card markup, not the hydration script's own
     # `[data-summary-card]` selector literals, which also contain the substring.)
-    assert response.data.count(b'data-summary-card data-lg-key=') == 4
+    assert response.data.count(b"data-lg-key='") == 4
     # Order is locked to the durable membership.
     order = response.data.decode()
-    c = order.index("data-league-id='C'")
-    a = order.index("data-league-id='A'")
-    d = order.index("data-league-id='D'")
-    b = order.index("data-league-id='B'")
-    assert c < a < d < b
+    c = order.index("data-lg-key='sleeper:C'")
+    a = order.index("data-lg-key='sleeper:A'")
+    d = order.index("data-lg-key='espn:D'")
+    b = order.index("data-lg-key='espn:B'")
+    assert a < c < b < d
