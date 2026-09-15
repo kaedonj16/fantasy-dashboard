@@ -12,10 +12,19 @@ from __future__ import annotations
 
 import math
 
-import pandas as pd
 import pytest
 
-from data_building.simulate_playoff_odds import (
+# simulate_playoff_odds imports numpy unconditionally at module level, and
+# this file also needs pandas to build team_stats fixtures. The CI "unit"
+# job only installs requests/beautifulsoup4/flask (no scientific stack), so
+# both must be import-or-skipped *before* importing the module under test —
+# otherwise collection raises ModuleNotFoundError (a hard error) instead of
+# skipping, exactly like tests/test_playoff_sim_swaps.py already does for
+# numpy.
+pytest.importorskip("numpy")
+pd = pytest.importorskip("pandas")
+
+from data_building.simulate_playoff_odds import (  # noqa: E402
     _PRESEASON_PRIOR_GAMES,
     _build_teams,
     _games_played,
