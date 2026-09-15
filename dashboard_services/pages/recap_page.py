@@ -354,7 +354,12 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
 </div>"""
 
     # ── Shared historical standings + power snapshot ───────────────────────
-    historical_ctx = build_standings_as_of_week(ctx, selected_week)
+    # Preview mode replaces the empty provider frame with deterministic sample
+    # rows. Feed that same frame into the shared historical builder rather than
+    # accidentally asking it to index the original zero-column DataFrame.
+    recap_ctx = dict(ctx)
+    recap_ctx["df_weekly"] = fin_df
+    historical_ctx = build_standings_as_of_week(recap_ctx, selected_week)
     from dashboard_services.ai.context_builders import build_power_rankings_context
     from utils.standings_divisions import resolve_divisions
     division_info = resolve_divisions(historical_ctx) or {}
