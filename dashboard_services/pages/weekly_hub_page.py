@@ -241,7 +241,8 @@ def build_weekly_hub_body(ctx: dict) -> str:
     optimal_panel_content = ""
     try:
         optimal_panel_content = build_optimal_body(ctx)
-    except Exception:
+    except (LookupError, ValueError, RuntimeError, OSError):
+        logger.warning("weekly: lineup analysis unavailable", exc_info=True)
         optimal_panel_content = ("<div style='padding:20px;text-align:center;color:var(--muted);font-size:0.9em;'>"
                                  "Optimal lineup data unavailable.</div>")
 

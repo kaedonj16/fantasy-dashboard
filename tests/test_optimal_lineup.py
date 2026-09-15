@@ -2,7 +2,8 @@
 
 Pure logic — no app / DB import — so these run anywhere pytest does.
 """
-from utils.optimal_lineup import compute_optimal_lineup
+from utils.optimal_lineup import analyze_lineup, compute_optimal_lineup
+from dashboard_services.pages.optimal_page import verified_completed_weeks
 
 
 def test_single_position_slots_pick_top_scorers():
@@ -80,3 +81,56 @@ def test_case_insensitive_positions_and_slots():
     starters, total = compute_optimal_lineup(pts, pos, ["qb", "flex"], list(pts))
     assert starters == {"a", "b"}
     assert total == 35.0
+
+
+def test_complete_actual_is_optimizer_candidate_and_adjustment_is_separate():
+    result = analyze_lineup({"a": 7.2, "b": 18.4}, {"a": "WR", "b": "WR"},
+                            ["WR"], ["a", "b"], ["a"], official_total=8.2)
+    assert result["complete"] is True
+    assert (result["actual"], result["optimal"], result["missed"]) == (7.2, 18.4, 11.2)
+    assert result["official_total"] == 8.2
+    assert sum(group["gain"] for group in result["groups"]) == result["missed"]
+
+
+def test_missing_score_is_unknown_but_zero_is_complete():
+    missing = analyze_lineup({"a": 0.0}, {"a": "RB", "b": "RB"}, ["RB"], ["a", "b"], ["a"])
+    assert missing["complete"] is False
+    assert missing["missing_scores"] == ["b"]
+    zero = analyze_lineup({"a": 0.0}, {"a": "RB"}, ["RB"], ["a"], ["a"])
+    assert zero["complete"] is True
+    assert zero["actual"] == zero["optimal"] == 0.0
+
+
+def test_negative_starter_and_empty_slot_are_supported():
+    result = analyze_lineup({"bad": -3.0}, {"bad": "K"}, ["K"], ["bad"], ["bad"])
+    assert result["complete"] is True
+    assert result["actual"] == -3.0
+    assert result["optimal"] == 0.0
+    assert result["optimal_assignment"] == [None]
+
+
+def test_superflex_chain_reconciles_as_one_group():
+    scores = {"qb1": 20, "qb2": 19, "rb1": 18, "rb2": 5}
+    pos = {"qb1": "QB", "qb2": "QB", "rb1": "RB", "rb2": "RB"}
+    result = analyze_lineup(scores, pos, ["QB", "RB", "SUPER_FLEX"], list(scores),
+                            ["qb1", "rb2", "rb1"])
+    assert result["optimal"] >= result["actual"]
+    assert len(result["groups"]) == 1
+    assert result["groups"][0]["gain"] == result["missed"]
+
+
+def test_equal_score_tie_retains_actual_starter():
+    result = analyze_lineup({"a": 10, "b": 10}, {"a": "WR", "b": "WR"},
+                            ["WR"], ["b", "a"], ["a"])
+    assert result["optimal_assignment"] == ["a"]
+    assert result["groups"] == []
+
+
+def test_completed_week_selection_uses_final_status_and_keeps_playoffs():
+    import pandas as pd
+    current = pd.DataFrame([{"week": 1, "finalized": True}, {"week": 2, "finalized": False}])
+    assert verified_completed_weeks(current) == [1]
+    historical = pd.DataFrame([{"week": 14, "finalized": True}, {"week": 15, "finalized": True}])
+    assert verified_completed_weeks(historical) == [14, 15]
+    assert verified_completed_weeks(None, season_complete=True,
+                                    matchups_by_week={1: [], 17: []}) == [1, 17]
