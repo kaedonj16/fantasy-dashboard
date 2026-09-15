@@ -13542,6 +13542,21 @@ a.signed-home-league:hover {
     color: var(--text-muted);
 }
 
+.m-bench-label {
+    display: flex;
+    justify-content: space-between;
+    padding: 7px 8px 3px;
+    color: var(--text-muted);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+}
+
+.m-row--bench {
+    opacity: .88;
+}
+
 /* ── Matchup header ──────────────────────────────────────── */
 
 /* Three-column row: [team col] [scoreboard] [team col] */

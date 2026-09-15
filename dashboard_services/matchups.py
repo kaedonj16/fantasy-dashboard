@@ -1029,15 +1029,13 @@ def format_player_stats(
         pa = first_key(combined, "pts_allow", "points_allowed", "def_pts_allow", "dst_pa", default=0)
         ya = first_key(combined, "yds_allow", "yards_allowed", "def_yds_allow", "dst_ya", default=0)
 
-        if sack: parts.append(phrase(sack, "sack", "sacks"))
-        if ints: parts.append(phrase(ints, "int", "ints"))
-        if ff:   parts.append(phrase(ff, "FF", "FF"))
-        if fr:   parts.append(phrase(fr, "FR", "FR"))
-        if td:   parts.append(phrase(td, "TD", "TD"))
-
-        # only show PA/YA if present (avoid spamming zeros)
-        if pa: parts.append(f"{int(pa)} PA")
-        if ya: parts.append(f"{int(ya)} YA")
+        # PA is useful even when it is zero (a shutout); the other categories
+        # are compact enough to show together as the defense's weekly line.
+        if any(k in combined for k in ("pts_allow", "points_allowed", "def_pts_allow", "dst_pa")):
+            parts.append(f"PA {int(pa)}")
+        parts.extend((f"SACK {int(sack)}", f"INT {int(ints)}", f"FR {int(fr)}", f"TD {int(td)}"))
+        if ff: parts.append(f"FF {int(ff)}")
+        if ya: parts.append(f"YA {int(ya)}")
 
         return ", ".join(parts)
 
@@ -1080,6 +1078,8 @@ def format_player_stats(
 
     # ---------------- QB / RB / WR / TE ----------------
     if lookup_pos == "QB":
+        cmp = first_key(player_stats, "pass_cmp", "pass_comp", "cmp", "completions", default=0)
+        att = first_key(player_stats, "pass_att", "att", "attempts", default=0)
         py = player_stats.get("pass_yds", 0)
         ptd = player_stats.get("pass_td", 0)
         ints = player_stats.get("int", 0)
@@ -1087,28 +1087,25 @@ def format_player_stats(
         ry = player_stats.get("rush_yds", 0)
         rtd = player_stats.get("rush_td", 0)
 
-        if py: parts.append(phrase(py, "yd", "yds"))
-        if ptd > 0: parts.append(phrase(ptd, "td", "tds"))
-        if ints: parts.append(phrase(ints, "int", "ints"))
+        if att or cmp: parts.append(f"{int(cmp)}/{int(att)} cmp/att")
+        parts.extend((phrase(py, "yd", "yds"), phrase(ptd, "td", "tds"), phrase(ints, "int", "ints")))
         if ra: parts.append(phrase(ra, "car", "car"))
-        if ry: parts.append(phrase(ry, "yd", "yds"))
-        if rtd > 0: parts.append(phrase(rtd, "td", "tds"))
+        if ra or ry or rtd: parts.append(f"{int(ry)} yds/{int(rtd)} TD rush")
 
     elif lookup_pos in {"RB", "WR", "TE"}:
         ra = player_stats.get("rush_att", 0)
         ry = player_stats.get("rush_yds", 0)
         rtd = player_stats.get("rush_td", 0)
         rec = player_stats.get("rec", 0)
+        tgt = first_key(player_stats, "tgt", "targets", "rec_tgt", default=0)
         rec_yds = player_stats.get("rec_yds", 0)
         rec_td = player_stats.get("rec_td", 0)
 
-        if rec: parts.append(phrase(rec, "rec", "rec"))
-        if rec_yds: parts.append(phrase(rec_yds, "yd", "yds"))
-        if rec_td > 0: parts.append(phrase(rec_td, "td", "tds"))
-
-        if ra: parts.append(phrase(ra, "car", "car"))
-        if ry: parts.append(phrase(ry, "yd", "yds"))
-        if rtd > 0: parts.append(phrase(rtd, "td", "tds"))
+        if lookup_pos == "RB":
+            parts.extend((f"CAR {int(ra)}", f"RUSH YD/TD {int(ry)}/{int(rtd)}"))
+        parts.extend((f"REC {int(rec)}", f"TGT {int(tgt)}", f"REC YD/TD {int(rec_yds)}/{int(rec_td)}"))
+        if lookup_pos in {"WR", "TE"} and (ra or ry or rtd):
+            parts.append(f"RUSH YD/TD {int(ry)}/{int(rtd)}")
 
     # ---------------- K / PK ----------------
     elif lookup_pos == "K":
@@ -1276,6 +1273,7 @@ def render_matchup_slide(
     compact: dashboard slides render only m-head + m-win-bar (no starter body).
     """
     proj = w > proj_week
+    completed_week = not proj
     compact = bool(compact)
     allow_live = _allow_live_game_indicators(season)
 
@@ -1546,7 +1544,10 @@ def render_matchup_slide(
                     status = status_by_pid[alt]
                     break
         if status is None:
-            status = STATUS_NOT_STARTED
+            # Historical status maps are commonly absent.  The selected week,
+            # not today's player status, decides whether normalized matchup
+            # points are final and whether its cached weekly box score is shown.
+            status = STATUS_FINAL if completed_week else STATUS_NOT_STARTED
 
         if status == "BYE":
             is_bye = True
@@ -1710,6 +1711,41 @@ def render_matchup_slide(
 
     rows_html: List[str] = []
 
+    def score_stack(actual_val, proj_val, side: str, is_bye: bool, more: bool, not_started: bool = False) -> str:
+        if is_bye:
+            return (
+                "<div class='num-stack' style='display:grid'>"
+                f"<span class='num mid {side}' style='opacity:0.4;'>BYE</span>"
+                "</div>"
+            )
+        if not_started:
+            # hasn't played yet - projection only, no zero actual
+            return (
+                "<div class='num-stack' style='display:grid'>"
+                f"<span class='num mid {side} proj' style='opacity:0.55;'>{proj_val:.1f}</span>"
+                "</div>"
+            )
+        if actual_val is None:
+            return (
+                "<div class='num-stack' style='display:grid'>"
+                f"<span class='num mid {side}' title='Weekly fantasy points unavailable'>—</span>"
+                "</div>"
+            )
+        if proj_val is None:
+            cls = f"num mid {side}" + (" more" if more else "")
+            return (
+                "<div class='num-stack' style='display:grid'>"
+                f"<span class='{cls}'>{actual_val:.1f}</span>"
+                "</div>"
+            )
+        cls_actual = f"num mid {side}" + (" more" if more else "")
+        return (
+            "<div class='num-stack' style='display:grid'>"
+            f"<span class='{cls_actual}'>{actual_val:.1f}</span>"
+            f"<span class='num mid {side} proj' style='opacity:0.4;'>{proj_val:.1f}</span>"
+            "</div>"
+        )
+
     _starter_pairs = () if compact else zip_longest(
             m["left"].get("starters", []),
             m["right"].get("starters", []),
@@ -1729,41 +1765,6 @@ def render_matchup_slide(
         left_more = la is not None and ra is not None and la > ra
         right_more = la is not None and ra is not None and ra > la
 
-        def score_stack(actual_val, proj_val, side: str, is_bye: bool, more: bool, not_started: bool = False) -> str:
-            if is_bye:
-                return (
-                    "<div class='num-stack' style='display:grid'>"
-                    f"<span class='num mid {side}' style='opacity:0.4;'>BYE</span>"
-                    "</div>"
-                )
-            if not_started:
-                # hasn't played yet - projection only, no zero actual
-                return (
-                    "<div class='num-stack' style='display:grid'>"
-                    f"<span class='num mid {side} proj' style='opacity:0.55;'>{proj_val:.1f}</span>"
-                    "</div>"
-                )
-            if actual_val is None:
-                return (
-                    "<div class='num-stack' style='display:grid'>"
-                    f"<span class='num mid {side}' title='Weekly fantasy points unavailable'>—</span>"
-                    "</div>"
-                )
-            if proj_val is None:
-                cls = f"num mid {side}" + (" more" if more else "")
-                return (
-                    "<div class='num-stack' style='display:grid'>"
-                    f"<span class='{cls}'>{actual_val:.1f}</span>"
-                    "</div>"
-                )
-            cls_actual = f"num mid {side}" + (" more" if more else "")
-            return (
-                "<div class='num-stack' style='display:grid'>"
-                f"<span class='{cls_actual}'>{actual_val:.1f}</span>"
-                f"<span class='num mid {side} proj' style='opacity:0.4;'>{proj_val:.1f}</span>"
-                "</div>"
-            )
-
         left_points_html = score_stack(left_actual, left_proj, "l", left_is_bye, left_more, left_not_started)
         right_points_html = score_stack(right_actual, right_proj, "r", right_is_bye, right_more, right_not_started)
         points = f"{left_points_html}{right_points_html}"
@@ -1777,6 +1778,24 @@ def render_matchup_slide(
                   {right_cell}
                 </div>"""
         )
+
+    # Bench players are already part of every normalized provider team block.
+    # Render them with the exact same player/score row as starters so historical
+    # rosters remain authoritative and zero-point bench players are not dropped.
+    if not compact and (m["left"].get("bench") or m["right"].get("bench")):
+        rows_html.append("<div class='m-bench-label'><span>Bench</span><span>Bench</span></div>")
+        for L, R in zip_longest(
+            m["left"].get("bench", []), m["right"].get("bench", []), fillvalue=None
+        ):
+            left_cell, left_actual, left_proj, left_is_bye, left_not_started, _ = player_bits(L, "left", True)
+            right_cell, right_actual, right_proj, right_is_bye, right_not_started, _ = player_bits(R, "right", False)
+            la = 0.0 if left_is_bye else left_actual
+            ra = 0.0 if right_is_bye else right_actual
+            left_points_html = score_stack(left_actual, left_proj, "l", left_is_bye, bool(la is not None and ra is not None and la > ra), left_not_started)
+            right_points_html = score_stack(right_actual, right_proj, "r", right_is_bye, bool(la is not None and ra is not None and ra > la), right_not_started)
+            rows_html.append(
+                f'<div class="m-row m-row--bench">{left_cell}{left_points_html}{right_points_html}{right_cell}</div>'
+            )
 
     # Win probability: only for live/projection weeks (skip completed weeks)
     win_bar_html = ""
