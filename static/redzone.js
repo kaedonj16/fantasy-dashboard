@@ -4448,7 +4448,11 @@
       // Apply state before detect so owner/league labels read the new payload.
       _setState(newData);
       _scopeCache[myScope] = newData;
-      _detectChanges(newData, wasContinuouslyActive ? 'live' : 'bulk');
+      // A backfill poll (the first-load catch-up) reconciles to the latest plays
+      // as history, never as live events -- so a snapshot that was stale (e.g. a
+      // service-worker-cached shell) can't fire a burst of TD alerts for plays
+      // that already happened. Subsequent polls animate/alert normally.
+      _detectChanges(newData, (!opts.backfill && wasContinuouslyActive) ? 'live' : 'bulk');
       _seedPrevStats(newData);
       _saveScopeRuntime(myScope);
       // After a scope switch the first fetch backfills history silently; arm
@@ -4793,7 +4797,24 @@
 
   _render();
   _refreshPushState();       // resolve real device-push readiness for the CTA
-  if (_isDemo) setTimeout(_refresh, 300);
+  // First load paints the server-injected snapshot immediately (never a blank
+  // feed), then pulls the very latest plays right away instead of waiting out
+  // the first poll interval. This also self-heals a stale snapshot served from
+  // the service-worker page cache on a repeat/PWA launch — the injected
+  // window.__rz__ there can be from a previous visit. Canonical PBP dedupe means
+  // the catch-up only adds genuinely newer plays, so nothing double-renders.
+  // Gated to demo and real game days; off-days have no live plays to refresh.
+  if (_isDemo) {
+    setTimeout(_refresh, 300);
+  } else if (_isGameDay()) {
+    setTimeout(function() {
+      if (_inflight || _streaming) return; // a poll already started — let it own the feed
+      // Reconcile as backfill: bring in the newest plays without treating them
+      // as live alerts. The user-scope stream already reconciles as 'bulk'.
+      if (_scope === 'user') _refreshUserStream();
+      else _refresh({ backfill: true });
+    }, 250);
+  }
   _timer = setInterval(_tick, 1000);
   // Re-evaluate hero-strip arrows when the viewport width changes.
   window.addEventListener('resize', _updateHeroArrows);

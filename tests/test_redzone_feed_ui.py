@@ -104,7 +104,9 @@ def test_refresh_uses_fresh_canonical_incremental_update_and_no_browser_cache():
     )[0]
     assert "fetch(url, { cache: 'no-store', signal:" in refresh
     assert "AbortController" in refresh
-    detect_at = refresh.index("_detectChanges(newData, wasContinuouslyActive ? 'live' : 'bulk');")
+    detect_at = refresh.index(
+        "_detectChanges(newData, (!opts.backfill && wasContinuouslyActive) ? 'live' : 'bulk');"
+    )
     assert detect_at < refresh.index("if (wasLoading) _render(); else _partialUpdate();", detect_at)
     assert "savedFeedHtml" not in refresh
     assert "newFeedEl.innerHTML" not in refresh
