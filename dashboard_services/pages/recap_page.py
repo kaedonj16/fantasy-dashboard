@@ -514,4 +514,4 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
 </div>"""
 
     return (preview_banner + history_banner + week_selector + cards_html
-            + scoreboard_and_recap + (next_week_html or "") + lineup_html + standings_html)
+            + scoreboard_and_recap + lineup_html + (next_week_html or "") + standings_html)

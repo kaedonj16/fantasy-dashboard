@@ -27,3 +27,11 @@ def test_recap_uses_shared_historical_and_picture_resolvers():
     assert "build_power_rankings_context(historical_ctx)" in source
     assert "team_avatar(_platform, roster, users)" in source
     assert "recap-rank-grid" in source
+
+
+def test_gotw_card_appears_right_before_standings():
+    """Game of the Week card must sit directly above the ranking recap."""
+    source = (ROOT / "dashboard_services/pages/recap_page.py").read_text()
+    # The return concatenation must place next_week_html immediately before standings_html
+    assert "lineup_html + (next_week_html" in source
+    assert "(next_week_html or \"\") + standings_html" in source
