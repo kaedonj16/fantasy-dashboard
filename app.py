@@ -8476,13 +8476,6 @@ def render_power_and_playoffs(
         ties_val = safe_int(row.get("Ties"), 0)
         return f"{wins}-{losses}" + (f"-{ties_val}" if ties_val else "")
 
-    def _pwr_net(row):
-        """(diff_value, css_class) for PF/G − PA/G, or (None, '') offseason."""
-        if not _has_games:
-            return None, ""
-        games = safe_int(row.get("G"), 0) or 1
-        diff = safe_float(row.get("PF"), 0.0) / games - safe_float(row.get("PA"), 0.0) / games
-        return diff, ("pwr-pos" if diff > 0 else "pwr-neg" if diff < 0 else "")
 
     # ---- #1 hero card ----
     lead = pr_sorted.iloc[0]
@@ -8494,10 +8487,7 @@ def render_power_and_playoffs(
         else "<span class='avatar pwr-noav'></span>"
     )
     lead_rec = _pwr_record(lead) if _has_games else ""
-    lead_diff, lead_diff_cls = _pwr_net(lead)
-    lead_sub = " &middot; ".join(
-        p for p in [lead_rec, (f"{lead_diff:+.1f} net" if lead_diff is not None else "")] if p
-    )
+    lead_sub = lead_rec
     podium_html = (
         f"<div class='pwr-lead {streak_class(lead)}' "
         f"data-rk-key='{html.escape(str(lead_name), quote=True)}'>"
@@ -8524,11 +8514,7 @@ def render_power_and_playoffs(
             "onerror=\"this.style.visibility='hidden'\">" if av
             else "<span class='avatar sm pwr-noav'></span>"
         )
-        diff, diff_cls = _pwr_net(row)
-        right = (
-            f"<div class='pwr-diff {diff_cls}'>{diff:+.1f} net</div>"
-            if diff is not None else ""
-        )
+        right = ""
         rows_html.append(
             f"<div class='pwr-row {streak_class(row)}' data-rk-key='{html.escape(str(team), quote=True)}'>"
             f"<span class='pwr-pos'>{pos}</span>{img}"
