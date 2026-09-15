@@ -2611,6 +2611,50 @@ def _games_live_or_imminent(season, week, *, lead_minutes=60) -> bool:
         return False
 
 
+def _redzone_cta_state(season, week, *, lead_minutes=60) -> str:
+    """Redzone CTA state for today's slate: ``'live'``, ``'pregame'`` or ``''``.
+
+    ``'live'``    - a game dated today is in progress (kickoff -> +4h).
+    ``'pregame'`` - a game dated today kicks off within ``lead_minutes`` (the hour
+                    before kickoff) and none is live yet.
+    ``''``        - no game today, or every game is past its live tail.
+
+    Splits :func:`_games_live_or_imminent`'s window at kickoff so the dashboard CTA
+    can show a calm pregame banner and a pulsing live one over the same overall
+    window the nav glow uses. A live game always wins over a pregame one. Missing
+    or bad kickoff epochs are skipped; any failure resolves to ``''``.
+    """
+    try:
+        if not season or not week:
+            return ""
+        today = datetime.now().strftime("%Y%m%d")
+        now = datetime.now().timestamp()
+        lead = lead_minutes * 60
+        live_tail = 4 * 60 * 60  # kickoff + 4h covers overtime/long games
+        sched = load_week_schedule(int(season), int(week)) or []
+        state = ""
+        for g in sched:
+            if not isinstance(g, dict):
+                continue
+            if str(g.get("gameDate") or "") != today:
+                continue
+            raw = g.get("gameTime_epoch") or g.get("gameTimeEpoch")
+            if raw is None:
+                continue
+            try:
+                ep = float(raw)
+            except (ValueError, TypeError):
+                continue
+            if ep <= now <= (ep + live_tail):
+                return "live"  # any live game wins immediately
+            if (ep - lead) <= now < ep:
+                state = "pregame"
+        return state
+    except Exception as _e:
+        logger.info(f"[rz-cta] state check failed (s{season} w{week}): {_e}")
+        return ""
+
+
 def _parse_schedule_game_date(value) -> Optional[date]:
     """Parse Tank01 ``gameDate`` (YYYYMMDD, int or str) to a date."""
     raw = str(value or "").strip()
@@ -3127,9 +3171,19 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
     def _category_row(label):
         slug = label.lower()
         current = active_norm in category_keys[label]
-        dot = '<span class="br-sheet-active-dot" aria-label="Current section"></span>' if current else ""
+        # Redzone lives in the Weekly section, so the Weekly root row pulses red
+        # while a game is live/imminent -- same gate and keyframes as the More tab
+        # dot and the Redzone sheet row. Only Weekly pulses; other rows never do.
+        live = (label == "Weekly" and rz_live)
+        live_cls = " rz-mnav-live" if live else ""
+        if live:
+            dot = '<span class="rz-mnav-dot" aria-hidden="true"></span>'
+        elif current:
+            dot = '<span class="br-sheet-active-dot" aria-label="Current section"></span>'
+        else:
+            dot = ""
         return (
-            f"<button type='button' class='br-sheet-link br-sheet-category{' active' if current else ''}' "
+            f"<button type='button' class='br-sheet-link br-sheet-category{' active' if current else ''}{live_cls}' "
             f"data-br-sheet-target='{slug}' aria-controls='brMorePanel-{slug}'>"
             f"<span>{label}</span>{dot}"
             "<span class='br-sheet-chevron' aria-hidden='true'>&#8250;</span></button>"
