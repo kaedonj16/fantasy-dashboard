@@ -28951,7 +28951,7 @@ button:disabled {
 .opt-team>summary { display:grid; grid-template-columns:38px minmax(140px,1fr) repeat(5,minmax(72px,auto)); gap:12px; align-items:center; padding:12px; font-variant-numeric:tabular-nums; }
 .opt-team>summary span { color:var(--text-muted, var(--muted)); }.opt-team[open] { padding:0 12px 12px; }.opt-team[open]>summary { margin:0 -12px 8px; }
 .opt-empty-state { padding:30px; text-align:center; color:var(--text-muted, var(--muted)); }
-@media (max-width:700px) {
+@media (max-width:720px) {
   .opt-summary { grid-template-columns:repeat(2,minmax(0,1fr)); }
   .opt-nav { gap:7px; margin-bottom:16px; }.opt-tab { padding:7px 11px; }
   .opt-lineup-row { grid-template-columns:54px minmax(0,1fr) 48px; align-items:start; }

@@ -143,3 +143,15 @@ def test_completed_week_selection_uses_final_status_and_keeps_playoffs():
     assert verified_completed_weeks(historical) == [14, 15]
     assert verified_completed_weeks(None, season_complete=True,
                                     matchups_by_week={1: [], 17: []}) == [1, 17]
+
+
+def test_large_roster_search_is_bounded_by_starter_slots():
+    # Regression: a player-bitmask search grows as 2**roster_size and caused the
+    # complete CI shard to time out on deep dynasty rosters.
+    points = {f"wr{i}": float(i) for i in range(40)}
+    positions = {pid: "WR" for pid in points}
+    starters, total = compute_optimal_lineup(
+        points, positions, ["WR", "WR", "FLEX"], list(points),
+    )
+    assert starters == {"wr37", "wr38", "wr39"}
+    assert total == 114.0

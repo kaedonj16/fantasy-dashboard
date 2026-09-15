@@ -51,24 +51,30 @@ def assign_optimal_lineup(
     pids = list(dict.fromkeys(_pid(p) for p in all_pids if _pid(p) not in {"", "0"}))
     pids = [p for p in pids if p in scores and positions.get(p)]
 
-    @lru_cache(maxsize=None)
-    def solve(slot_i: int, used_mask: int):
-        if slot_i == len(slots):
-            return (0.0, 0, ())
-        # Leaving a slot empty is legal and preferable to taking negative points.
-        best = (*solve(slot_i + 1, used_mask)[:2], (None,) + solve(slot_i + 1, used_mask)[2])
-        eligible = slot_eligible_positions(slots[slot_i])
-        for i, pid in enumerate(pids):
-            if used_mask & (1 << i) or positions[pid] not in eligible:
-                continue
-            tail_score, tail_keep, tail_assignment = solve(slot_i + 1, used_mask | (1 << i))
-            candidate = (scores[pid] + tail_score, tail_keep + int(pid in preferred), (pid,) + tail_assignment)
-            # Deterministic final tie break; score and retention are the meaningful keys.
-            if candidate[:2] > best[:2]:
-                best = candidate
-        return best
+    # Key by occupied *slots*, not used players.  Fantasy rosters can contain
+    # 25-40 players but generally have <= 12 starter slots, so this bounds the
+    # exact search at O(players * slots * 2**slots) rather than O(2**players).
+    empty_assignment = (None,) * len(slots)
+    states = {0: (0.0, 0, empty_assignment)}
+    eligible_slots = [slot_eligible_positions(slot) for slot in slots]
+    for pid in pids:
+        next_states = dict(states)  # bench this player
+        for occupied, (score, retained, assignment) in states.items():
+            for slot_i, eligible in enumerate(eligible_slots):
+                bit = 1 << slot_i
+                if occupied & bit or positions[pid] not in eligible:
+                    continue
+                updated = list(assignment)
+                updated[slot_i] = pid
+                candidate = (score + scores[pid], retained + int(pid in preferred), tuple(updated))
+                current = next_states.get(occupied | bit)
+                # Score then actual-starter retention are the meaningful keys.
+                if current is None or candidate[:2] > current[:2]:
+                    next_states[occupied | bit] = candidate
+        states = next_states
 
-    total, retained, assignment = solve(0, 0)
+    # Any occupancy is allowed: an empty slot beats an eligible negative score.
+    total, retained, assignment = max(states.values(), key=lambda result: result[:2])
     return {"slots": slots, "assignment": list(assignment), "total": round(total, 2),
             "starters": {p for p in assignment if p}, "retained": retained}
 
