@@ -68,21 +68,39 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-player-row:hover { background: var(--row); }
 .wv-player-name { font-weight: 600; font-size: 14px; color: var(--text); }
 .wv-player-sub { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
-/* Right cluster: qualitative signal chips grouped together, then the key
-   numbers (Proj / Value) as a bold, right-aligned figure block set off by a
-   thin divider -- so the row reads "why add" then "how much", instead of a
-   flat wall of equal-weight tiny columns. */
-.wv-right { display: flex; align-items: center; gap: 10px 16px; flex-wrap: wrap; justify-content: flex-end; }
-.wv-signals { display: flex; flex-wrap: wrap; gap: 7px 10px; align-items: center; justify-content: flex-end; }
+/* Right cluster -- still used by the big-game strip (single metric + live tag). */
+.wv-right { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: flex-end; }
 .wv-advice-metric { display: flex; flex-direction: column; align-items: center; gap: 3px; min-width: 0; }
 .wv-advice-label {
   font-size: 9px; line-height: 1; font-weight: 800; letter-spacing: .05em;
   text-transform: uppercase; color: var(--text-subtle); white-space: nowrap;
 }
 .wv-value { font-size: 13px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
-.wv-nums { display: flex; align-items: flex-start; gap: 18px; padding-left: 16px; border-left: 1px solid var(--border); flex-shrink: 0; }
-.wv-nums .wv-advice-metric { align-items: flex-end; }
-.wv-nums .wv-value { font-size: 18px; font-weight: 800; letter-spacing: -.01em; }
+
+/* Best-moves grid: Action | Player | Proj | Value with a labeled header row,
+   so the "why add" reason leads on the left and the two key numbers line up in
+   their own right-aligned columns instead of a flat wall of tiny stats. */
+.wv-bm-head, .wv-bm-row { display: grid; grid-template-columns: 158px minmax(0,1fr) auto; gap: 16px; }
+.wv-bm-head { padding: 9px 16px; border-bottom: 1px solid var(--border); background: var(--row); }
+.wv-bm-head span { font-size: 9px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; color: var(--text-subtle); }
+.wv-bm-row { align-items: start; padding: 13px 16px; cursor: pointer; transition: background .12s; }
+.wv-bm-row + .wv-bm-row { border-top: 1px solid var(--border); }
+.wv-bm-row:hover { background: var(--row); }
+.wv-bm-action { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; min-width: 0; }
+.wv-bm-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.wv-bm-claim { font-size: 10.5px; font-weight: 700; color: var(--text-subtle); line-height: 1.3; }
+.wv-bm-claim.hi { color: var(--warning); }
+.wv-bm-main { min-width: 0; }
+.wv-bm-name { font-weight: 700; font-size: 14px; color: var(--text); line-height: 1.2; }
+.wv-bm-sub { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+/* Proj / Value grouped into one right-hand cell so the columns line up and can
+   collapse together on small screens. */
+.wv-bm-nums, .wv-bm-h-nums { display: flex; gap: 18px; }
+.wv-bm-num, .wv-bm-h-nums span { min-width: 46px; text-align: right; }
+.wv-bm-num { line-height: 1.05; }
+.wv-bm-num b { font-weight: 800; font-size: 16px; color: var(--text); font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+.wv-bm-num.empty b { color: var(--text-subtle); font-weight: 700; }
+.wv-bm-num i { display: block; font-style: normal; font-size: 9px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: var(--text-subtle); margin-top: 3px; }
 .wv-ctx-links { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
 .wv-ctx-link { font-size: 11px; font-weight: 600; color: var(--accent); text-decoration: none; padding: 3px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface); }
 .wv-ctx-link:hover { background: var(--accent-soft); }
@@ -90,19 +108,23 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-faab-toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-muted); cursor: pointer; }
 .wv-faab-toggle input { accent-color: var(--accent); width: 14px; height: 14px; margin: 0; }
 @media (max-width: 700px) {
-  /* On phones the player info and the metric columns can't share one line: with
-     FAAB shown there are up to five columns, which overflowed the card (Value
-     fell off the right edge) and crushed the name into three lines. Drop the
-     metrics onto their own full-width row beneath the player instead, as an
-     evenly spread stat strip that wraps only as a last resort on tiny screens. */
+  /* Big-game strip: drop its single metric onto a full-width row under the name. */
   .wv-player-row { flex-direction: column; align-items: stretch; gap: 10px; }
   .wv-right {
     width: 100%; gap: 10px 14px; flex-wrap: wrap;
-    justify-content: space-between; align-items: flex-end;
-    padding-top: 10px; border-top: 1px solid var(--border);
+    justify-content: flex-start; padding-top: 10px; border-top: 1px solid var(--border);
   }
-  .wv-signals { justify-content: flex-start; }
-  .wv-nums { margin-left: auto; }
+}
+@media (max-width: 560px) {
+  /* Best-moves grid: the Action pills can't share a narrow line with the player
+     and the numbers, so lift them to their own full-width row and keep Player +
+     the grouped numbers on the row below. The header (redundant with the
+     per-cell captions) is dropped. */
+  .wv-bm-head { display: none; }
+  .wv-bm-row { grid-template-columns: minmax(0,1fr) auto; gap: 10px 12px; }
+  .wv-bm-action { grid-column: 1 / -1; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+  .wv-bm-nums { gap: 14px; }
+  .wv-bm-num, .wv-bm-h-nums span { min-width: 40px; }
 }
 /* Waiver signal chips use the site's canonical `.chip .chip--sm` + a .signal-*
    colour alias (all defined once in dashboard.css). Nothing chip-related is
@@ -869,45 +891,50 @@ function wvRenderWaivers() {{
   let players = wvWaiverData;
   if (wvCurrentPos !== 'ALL') players = players.filter(p => p.position === wvCurrentPos);
   if (!players.length) {{ window.brEmptyState('wvWaiverList', {{ icon: 'search', title: 'No waiver targets', message: 'Nothing to add at this position right now.', compact: true }}); return; }}
-  list.innerHTML = '<div class="wv-list-card">' + players.slice(0, 20).map(p => {{
+  list.innerHTML = '<div class="wv-list-card"><div class="wv-bm-head"><span class="wv-bm-h-action">Action</span><span class="wv-bm-h-player">Player</span><span class="wv-bm-h-nums"><span>Proj</span><span>Value</span></span></div>' + players.slice(0, 20).map(p => {{
     let usageChip = '';
     if (p.usage_delta != null && p.usage_delta >= 1) {{
       const statLbl = p.usage_stat === 'snap_pct' ? 'snap%' : (p.usage_stat === 'touches' ? 'touches' : 'targets');
       usageChip = `<span class="wv-usage-chip" title="Last-3-week avg vs season avg">&#9650; +${{p.usage_delta}} ${{statLbl}}</span>`;
     }}
-    let faabChip = '';
+    // Secondary signal chips shown next to the "why add" pill in the Action cell.
+    // Roster verdict (Add / Stash) leads, then any big-game / market signal.
+    let signalExtra = '';
+    const OUTCOME = {{ add: ['Add', 'chip--accent'], add_drop: ['Add & drop', 'chip--accent'], stash: ['Stash', 'chip--neutral'] }};
+    if (p.outcome && OUTCOME[p.outcome]) {{
+      signalExtra += `<span class="chip chip--sm ${{OUTCOME[p.outcome][1]}}" title="Roster-aware move for your team">${{OUTCOME[p.outcome][0]}}</span>`;
+    }}
+    if (p.big_game && p.big_game.category) {{
+      const BG = {{ priority: ['Priority', 'chip--accent'], speculative: ['Speculative', 'chip--neutral'], watchlist: ['Watchlist', 'chip--muted'] }};
+      const meta = BG[p.big_game.category] || [p.big_game.category, 'chip--muted'];
+      const facts = (p.big_game.factors || []).join(' · ');
+      signalExtra += `<span class="chip chip--sm ${{meta[1]}}" title="Unexpected performance last week${{facts ? ': ' + facts : ''}}">${{meta[0]}}</span>`;
+    }}
+    if (p.market_opportunity) {{
+      signalExtra += `<span class="chip chip--sm chip--neutral" title="Market Projection ${{p.market_projection}}, difference ${{p.market_opportunity.delta > 0 ? '+' : ''}}${{p.market_opportunity.delta}}">${{p.market_opportunity.label}}</span>`;
+    }}
+    // Claim line under the pills: how to claim -- FAAB bid or qualitative waiver
+    // priority -- as one muted line.
+    let claimBid = '', claimTip = '', claimHi = false;
     if (p.faab_mode === 'waiver_priority' && p.faab_claim_guidance) {{
-      // Non-FAAB (waiver-priority) leagues get qualitative claim guidance (#4).
-      faabChip = `<span class="wv-advice-metric"><span class="wv-advice-label">Waiver claim</span><span class="chip chip--sm chip--neutral" title="${{p.faab_rationale || ''}}">${{p.faab_claim_guidance}}</span></span>`;
+      claimBid = p.faab_claim_guidance;
+      claimTip = p.faab_rationale || '';
+      claimHi = /high/i.test(p.faab_claim_guidance);
     }} else if (window.wvFaabEnabled && wvShowFaab && (p.faab_high != null || p.faab_target != null || p.faab_dollars_target != null)) {{
-      // Prefer dollars when a real budget is known; otherwise clearly-labeled %.
       const hasDollars = p.faab_dollars_target != null;
-      let bid, unit, denomTip;
       if (hasDollars) {{
-        const dl = p.faab_dollars_low, dm = p.faab_dollars_target, dh = p.faab_dollars_high;
-        bid = '$' + dl + ' · $' + dm + ' · $' + dh;
-        unit = '';
-        denomTip = 'Suggested FAAB bid (low · target · stretch), capped at your remaining budget. ';
+        claimBid = 'FAAB bid $' + p.faab_dollars_low + ' · $' + p.faab_dollars_target + ' · $' + p.faab_dollars_high;
+        claimTip = 'Suggested FAAB bid (low · target · stretch), capped at your remaining budget. ';
       }} else {{
-        const low = p.faab_low != null ? p.faab_low : '';
-        const mid = p.faab_target != null ? p.faab_target : '';
-        const hi = p.faab_high != null ? p.faab_high : '';
-        bid = [low, mid, hi].filter(v => v !== '').join(' · ');
-        unit = '%';
+        const parts = [p.faab_low, p.faab_target, p.faab_high].filter(v => v != null);
+        claimBid = 'FAAB bid ' + parts.join(' · ') + '%';
         const denom = p.faab_pct_denominator === 'remaining_budget' ? 'remaining budget' : 'season budget';
-        denomTip = 'Suggested FAAB as % of your ' + denom + ' (low · target · stretch). ';
+        claimTip = 'Suggested FAAB as % of your ' + denom + ' (low · target · stretch). ';
       }}
-      const tip = denomTip + (p.faab_rationale || '') + (p.faab_heuristic ? ' (heuristic estimate)' : '');
-      faabChip = `<span class="wv-advice-metric"><span class="wv-advice-label">FAAB bid</span><span class="chip chip--sm chip--accent" title="${{tip}}">${{bid}}${{unit}}</span></span>`;
+      claimTip += (p.faab_rationale || '') + (p.faab_heuristic ? ' (heuristic estimate)' : '');
     }}
-    // Roster-aware outcome + lineup gain (#1/#3).
-    let outcomeChip = '';
-    const OUTCOME_LBL = {{add: 'Add', add_drop: 'Add & drop', stash: 'Stash', hold: 'Hold', cannot_evaluate: ''}};
-    if (p.outcome && OUTCOME_LBL[p.outcome]) {{
-      const cls = (p.outcome === 'add' || p.outcome === 'add_drop') ? 'chip--accent'
-                : (p.outcome === 'stash' ? 'chip--neutral' : 'chip--muted');
-      outcomeChip = `<span class="wv-advice-metric"><span class="wv-advice-label">Move</span><span class="chip chip--sm ${{cls}}">${{OUTCOME_LBL[p.outcome]}}</span></span>`;
-    }}
+    const claimLine = claimBid
+      ? `<div class="wv-bm-claim${{claimHi ? ' hi' : ''}}" title="${{String(claimTip).replace(/"/g, '&quot;')}}">${{claimBid}}</div>` : '';
     let gainHint = '';
     if (p.lineup_gain != null && p.lineup_gain > 0) {{
       const wk4 = (p.lineup_gain_4wk != null && p.lineup_gain_4wk > 0)
@@ -920,23 +947,6 @@ function wvRenderWaivers() {{
       replacesHint = `<div class="wv-drop-hint" title="Who this pickup would bump from your starting lineup">`
         + `<span class="wv-drop-lbl">Starts over</span> `
         + `<span class="wv-drop-pos">${{p.replaces.position}}</span> ${{p.replaces.name}}</div>`;
-    }}
-    const marketChip = p.market_opportunity
-      ? `<span class="wv-advice-metric"><span class="wv-advice-label">Market Opportunity</span><span class="chip chip--sm chip--neutral" title="Market Projection ${{p.market_projection}}, difference ${{p.market_opportunity.delta > 0 ? '+' : ''}}${{p.market_opportunity.delta}}">${{p.market_opportunity.label}}</span></span>`
-      : '';
-    // Projected points/gm — the useful number for a streamer whose dynasty value
-    // is ~0 (#1). Shown whenever a projection exists, next to (or instead of) Value.
-    const projChip = (p.ros_ppg != null)
-      ? `<span class="wv-advice-metric"><span class="wv-advice-label">Proj</span><span class="wv-value" title="Projected fantasy points per game (rest of season)">${{p.ros_ppg}}</span></span>`
-      : '';
-    // Unexpected big game last week (#3), folded into the ranking as a bounded
-    // boost. Chip makes the boost transparent; tooltip carries the evidence.
-    let bigGameChip = '';
-    if (p.big_game && p.big_game.category) {{
-      const BG = {{ priority: ['Priority', 'chip--accent'], speculative: ['Speculative', 'chip--neutral'], watchlist: ['Watchlist', 'chip--muted'] }};
-      const meta = BG[p.big_game.category] || [p.big_game.category, 'chip--muted'];
-      const facts = (p.big_game.factors || []).join(' · ');
-      bigGameChip = `<span class="wv-advice-metric"><span class="wv-advice-label">Big game</span><span class="chip chip--sm ${{meta[1]}}" title="Unexpected performance last week${{facts ? ': ' + facts : ''}}">${{meta[0]}}</span></span>`;
     }}
     let dropHint = '';
     if (p.drop && p.drop.name) {{
@@ -962,11 +972,19 @@ function wvRenderWaivers() {{
       returnHint = `<div class="wv-drop-hint" title="${{srcTip}}">`
         + `<span class="wv-drop-lbl">${{srcLbl}}</span>${{wkLbl}}</div>`;
     }}
+    const sub = [p.position, p.team, p.pos_rank_label, p.age ? 'Age ' + parseFloat(p.age).toFixed(1) : '', p.rostered_pct != null ? Math.round(p.rostered_pct) + '% rostered' : '', p.adds_48h ? ('+' + p.adds_48h + ' adds') : ''].filter(Boolean).join(' · ');
     return `
-    <div class="wv-player-row" onclick="openPlayerModal('${{p.player_id}}', '${{p.name.replace(/'/g,"\\'")}}')">
-      <div>
-        <div class="wv-player-name">${{p.name}}</div>
-        <div class="wv-player-sub">${{[p.position, p.team, p.pos_rank_label, p.age ? 'Age ' + parseFloat(p.age).toFixed(1) : '', p.rostered_pct != null ? Math.round(p.rostered_pct) + '% rostered' : '', p.adds_48h ? ('+' + p.adds_48h + ' adds') : ''].filter(Boolean).join(' · ')}}${{usageChip}}</div>
+    <div class="wv-bm-row" onclick="openPlayerModal('${{p.player_id}}', '${{p.name.replace(/'/g,"\\'")}}')">
+      <div class="wv-bm-action">
+        <div class="wv-bm-chips">
+          <span class="chip chip--sm ${{p.signal_class}}" title="Why add">${{p.signal}}</span>
+          ${{signalExtra}}
+        </div>
+        ${{claimLine}}
+      </div>
+      <div class="wv-bm-main">
+        <div class="wv-bm-name">${{p.name}}</div>
+        <div class="wv-bm-sub">${{sub}}${{usageChip}}</div>
         ${{gainHint}}
         ${{replacesHint}}
         ${{dropHint}}
@@ -977,15 +995,9 @@ function wvRenderWaivers() {{
           <a class="wv-ctx-link" href="#" onclick="event.preventDefault();openPlayerModal('${{p.player_id}}', '${{p.name.replace(/'/g,"\\'")}}')">Open player</a>
         </div>
       </div>
-      <div class="wv-right">
-        <div class="wv-signals">
-          <span class="wv-advice-metric"><span class="wv-advice-label">Why add</span><span class="chip chip--sm ${{p.signal_class}}">${{p.signal}}</span></span>
-          ${{bigGameChip}}
-          ${{outcomeChip}}
-          ${{marketChip}}
-          ${{faabChip}}
-        </div>
-        ${{(projChip || p.value > 0) ? `<div class="wv-nums">${{projChip}}${{p.value > 0 ? `<span class="wv-advice-metric"><span class="wv-advice-label">Value</span><span class="wv-value">${{Math.round(p.value)}}</span></span>` : ''}}</div>` : ''}}
+      <div class="wv-bm-nums">
+        <div class="wv-bm-num${{p.ros_ppg == null ? ' empty' : ''}}"><b>${{p.ros_ppg != null ? p.ros_ppg : '–'}}</b><i>proj</i></div>
+        <div class="wv-bm-num val${{p.value > 0 ? '' : ' empty'}}"><b>${{p.value > 0 ? Math.round(p.value) : '–'}}</b><i>value</i></div>
       </div>
     </div>
   `;

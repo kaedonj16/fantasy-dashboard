@@ -41,9 +41,14 @@ def test_faab_checkbox_controls_bid_visibility():
 
 
 def test_advice_pills_use_canonical_chip_styles():
+    """Advice pills use the design-system chip classes (base + canonical
+    modifier), not one-off inline styles. The best-moves rework renders some
+    modifiers from a lookup map, so assert the base class and both canonical
+    modifier tokens are present rather than one fixed contiguous string."""
     body = build_waivers_body("sleeper", 2026, "league", {})
-    assert 'chip chip--sm chip--accent' in body
-    assert 'chip chip--sm chip--neutral' in body
+    assert 'chip chip--sm' in body
+    assert 'chip--accent' in body
+    assert 'chip--neutral' in body
 
 
 def test_mobile_stacks_metrics_below_player():
