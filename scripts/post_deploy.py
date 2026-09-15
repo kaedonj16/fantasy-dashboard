@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """
-Post-deploy breakout score rebuild.
+Post-deploy migrations and global ADP refresh.
 
 Spawned as a background process by startup.py on every Render deployment.
-Checks whether the current season's breakout scores include the projections
-block in component_details, and rebuilds via build_historical_scores if not.
+Breakout rebuilding intentionally belongs to the daily cron, not web startup.
 """
 
 import os
@@ -36,29 +35,6 @@ def _get_season() -> int:
         return datetime.now().year
 
 
-def _needs_rebuild(target_season: int) -> bool:
-    """True if no rows for target_season with today's as_of_date have projections set."""
-    from datetime import date
-    try:
-        from dashboard_services.db import get_conn
-        with get_conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT COUNT(*) FROM breakout_opportunity_scores
-                    WHERE season = %s
-                      AND as_of_date = %s
-                      AND component_details->'projections' IS NOT NULL
-                    """,
-                    [target_season, date.today()],
-                )
-                row = cur.fetchone()
-                return (row[0] if row else 0) == 0
-    except Exception as e:
-        print(f"[post-deploy] DB check failed: {e}")
-        return True
-
-
 def _refresh_global_adp(season: int) -> None:
     """Populate the tokenless global ADP snapshots (Yahoo/ESPN/MFL) on THIS
     container's disk.
@@ -82,17 +58,19 @@ def _refresh_global_adp(season: int) -> None:
 
 
 def main():
+    from dashboard_services.memory_diagnostics import format_memory_snapshot
     _load_dotenv()
     print(f"[post-deploy] Starting at {datetime.now().isoformat()}")
+    print(format_memory_snapshot("post-deploy begin"))
     # Allow 5 seconds for gunicorn to start before hammering the DB.
     time.sleep(5)
 
     target_season = _get_season()
-    stats_season = target_season - 1
 
     # Always run migrations first — all SQL uses IF NOT EXISTS so it's safe
     # to run on every deploy even if nothing changed.
     print("[post-deploy] Running DB migrations...")
+    print(format_memory_snapshot("before migrations"))
     try:
         from scripts.run_migrations import run_migrations
         run_migrations()
@@ -100,32 +78,14 @@ def main():
         print(f"[post-deploy] Migrations failed: {e}")
         import traceback
         traceback.print_exc()
+    print(format_memory_snapshot("after migrations"))
 
     # Populate this web container's ADP snapshots so the source columns / modal
     # work right after a deploy without a manual fetch. Independent of the
-    # breakout rebuild below (which may early-return), so it runs every deploy.
+    # daily cron, so it runs every deploy without loading the breakout model.
+    print(format_memory_snapshot("before global ADP refresh"))
     _refresh_global_adp(target_season)
-
-    if not _needs_rebuild(target_season):
-        print(
-            f"[post-deploy] Breakout scores for {target_season} already contain "
-            "projections data — skipping rebuild"
-        )
-        return
-
-    print(
-        f"[post-deploy] Breakout scores for {target_season} are missing projections "
-        f"— rebuilding from {stats_season} stats..."
-    )
-    try:
-        from datetime import date
-        from data_building.breakout_engine.build_historical_scores import run
-        run(seasons=[stats_season], min_score=55.0, as_of_date_override=date.today())
-        print(f"[post-deploy] Rebuild complete at {datetime.now().isoformat()}")
-    except Exception as e:
-        print(f"[post-deploy] Rebuild failed: {e}")
-        import traceback
-        traceback.print_exc()
+    print(format_memory_snapshot("after global ADP refresh"))
 
 
 if __name__ == "__main__":

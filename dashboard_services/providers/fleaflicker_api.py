@@ -89,6 +89,9 @@ _IDP_POS = frozenset({
     "DL", "DE", "DT", "EDGE", "IDP",
 })
 _START_GROUPS = frozenset({"START", "STARTERS", "STARTING"})
+_BENCH_GROUPS = frozenset({"BENCH", "BN", "RESERVE_BENCH"})
+_IR_GROUPS = frozenset({"INJURED", "IR", "INJURED_RESERVE", "RESERVE"})
+_TAXI_GROUPS = frozenset({"TAXI", "TAXI_SQUAD", "PRACTICE"})
 # Keep local so this module still collects in the slim CI job (no utils.utils).
 _TEAM_ABBR_ALIASES = {
     "WAS": "WSH", "WSH": "WAS",
@@ -580,6 +583,20 @@ def _num(value, default=0.0):
         return default
 
 
+def _optional_num(value):
+    """Return a published numeric value, without turning absence into zero."""
+    if isinstance(value, dict):
+        value = value.get("value")
+        if isinstance(value, dict):
+            value = value.get("value")
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _int(value, default=0):
     try:
         return int(_num(value, default))
@@ -848,7 +865,11 @@ class FleaflickerProvider(ProviderAdapter):
                 payload = response.json()
             except (ProviderAuthenticationError, LeagueNotFoundError, ProviderUnavailableError) as exc:
                 _remember_failure(key, exc)
-                if isinstance(exc, ProviderUnavailableError):
+                # Optional detail endpoints fail independently in practice.  A
+                # single game boxscore must not poison the league-wide host
+                # breaker and prevent the next game's boxscore from loading.
+                if (isinstance(exc, ProviderUnavailableError)
+                        and method != "FetchLeagueBoxscore"):
                     _trip_host_down(auth, exc)
                 raise
             except ValueError as exc:
@@ -1024,27 +1045,35 @@ class FleaflickerProvider(ProviderAdapter):
 
     def _parse_fetch_roster_groups(
         self, detail: dict, xwalk: dict, by_name: dict,
-    ) -> tuple[list[str], list[str], list[str], set[str]]:
-        players, starters, reserve = [], [], []
+    ) -> tuple[list[str], list[str], list[str], list[str], set[str]]:
+        players, starters, reserve, taxi = [], [], [], []
         seen: set[str] = set()
         for group in detail.get("groups") or []:
             group_label = str(group.get("group") or "").upper()
             for slot in group.get("slots") or []:
                 lp = slot.get("leaguePlayer") or slot.get("league_player") or {}
                 pro = lp.get("proPlayer") or lp.get("pro_player") or {}
+                bucket = self._slot_group_label(group_label, slot)
                 if _get(pro, "id") is None:
+                    if bucket in _START_GROUPS:
+                        starters.append("0")
                     continue
                 cid = self._canonical_lookup(pro, xwalk, by_name)
-                if not cid or cid in seen:
+                if not cid:
+                    if bucket in _START_GROUPS:
+                        starters.append("0")
+                    continue
+                if cid in seen:
                     continue
                 seen.add(cid)
                 players.append(cid)
-                bucket = self._slot_group_label(group_label, slot)
                 if bucket in _START_GROUPS:
                     starters.append(cid)
-                elif bucket in {"INJURED", "IR", "INJURED_RESERVE", "TAXI"}:
+                elif bucket in _IR_GROUPS:
                     reserve.append(cid)
-        return players, starters, reserve, seen
+                elif bucket in _TAXI_GROUPS:
+                    taxi.append(cid)
+        return players, starters, reserve, taxi, seen
 
     def _canonical_map(self, league_id, season, *, token: Optional[str] = None):
         auth = resolve_credentials(str(league_id), season, token=token) or ""
@@ -1119,7 +1148,7 @@ class FleaflickerProvider(ProviderAdapter):
                 continue
             team_name = team_names.get(str(team_id)) or _get(team, "name") or f"Team {team_id}"
             entries = roster.get("players") or []
-            players, starters, reserve = [], [], []
+            players, starters, reserve, taxi = [], [], [], []
             seen: set[str] = set()
             mapped_flat = 0
             # FetchRoster carries START/BENCH groups; the bulk roster list does not.
@@ -1130,7 +1159,7 @@ class FleaflickerProvider(ProviderAdapter):
                         "FetchRoster", league_id, season, ttl=300, token=token,
                         team_id=int(team_id),
                     )
-                    players, starters, reserve, seen = self._parse_fetch_roster_groups(
+                    players, starters, reserve, taxi, seen = self._parse_fetch_roster_groups(
                         detail, xwalk, by_name,
                     )
                 except ProviderUnavailableError:
@@ -1161,7 +1190,7 @@ class FleaflickerProvider(ProviderAdapter):
             out.append({
                 "league_id": str(league_id), "roster_id": _int(team_id),
                 "owner_id": str(team_id), "players": players,
-                "starters": starters, "reserve": reserve, "taxi": None,
+                "starters": starters, "reserve": reserve, "taxi": taxi,
                 "settings": {}, "metadata": {
                     "unmapped_player_count": max(0, len(entries) - mapped_flat),
                     "provider_team_id": str(team_id),
@@ -1172,35 +1201,70 @@ class FleaflickerProvider(ProviderAdapter):
 
     def _starters_from_boxscore(
         self, lineups: list, side: str, xwalk: dict, by_name: dict,
-    ) -> tuple[list[str], dict[str, float]]:
-        """Slot-ordered START players for home/away from FetchLeagueBoxscore."""
+    ) -> dict:
+        """Parse the complete official weekly lineup for one boxscore side."""
         starters: list[str] = []
+        bench_slots: list[str] = []
+        reserve: list[str] = []
+        taxi: list[str] = []
+        players: list[str] = []
         points: dict[str, float] = {}
+        unavailable_points: list[str] = []
+        slot_diagnostics: list[dict] = []
         seen: set[str] = set()
         for group in lineups or []:
             group_label = str(group.get("group") or "").upper()
             for slot in group.get("slots") or []:
                 bucket = self._slot_group_label(group_label, slot)
-                if bucket not in _START_GROUPS:
+                if bucket not in (_START_GROUPS | _BENCH_GROUPS | _IR_GROUPS | _TAXI_GROUPS):
                     continue
                 player = slot.get(side) or {}
                 if not isinstance(player, dict):
-                    continue
+                    player = {}
                 pro = player.get("proPlayer") or player.get("pro_player") or {}
                 if _get(pro, "id") is None:
+                    if bucket in _START_GROUPS:
+                        starters.append("0")
+                    elif bucket in _BENCH_GROUPS:
+                        bench_slots.append("0")
                     continue
                 cid = self._canonical_lookup(pro, xwalk, by_name)
-                if not cid or cid in seen:
+                if not cid:
+                    if bucket in _START_GROUPS:
+                        starters.append("0")
+                    elif bucket in _BENCH_GROUPS:
+                        bench_slots.append("0")
+                    slot_diagnostics.append({
+                        "group": bucket, "slot": len(starters) - 1 if bucket in _START_GROUPS else len(bench_slots) - 1,
+                        "status": "occupied_unresolved", "provider_player_id": str(_get(pro, "id")),
+                    })
                     continue
-                seen.add(cid)
-                starters.append(cid)
-                raw_pts = (
-                    player.get("viewingActualPoints")
-                    or player.get("viewing_actual_points")
-                    or {}
-                )
-                points[cid] = _num(raw_pts)
-        return starters, points
+                if cid not in seen:
+                    seen.add(cid)
+                    players.append(cid)
+                if bucket in _START_GROUPS:
+                    starters.append(cid)
+                elif bucket in _BENCH_GROUPS:
+                    bench_slots.append(cid)
+                elif bucket in _IR_GROUPS:
+                    reserve.append(cid)
+                else:
+                    taxi.append(cid)
+                raw_pts = player.get("viewingActualPoints")
+                if raw_pts is None:
+                    raw_pts = player.get("viewing_actual_points")
+                actual = _optional_num(raw_pts)
+                if actual is None:
+                    unavailable_points.append(cid)
+                else:
+                    points[cid] = actual
+        return {
+            "starters": starters, "bench_slots": bench_slots,
+            "bench": [p for p in bench_slots if p != "0"],
+            "reserve": reserve, "taxi": taxi, "players": players,
+            "players_points": points, "unavailable_points": unavailable_points,
+            "slot_diagnostics": slot_diagnostics,
+        }
 
     def get_matchups(self, league_id, season, week, *, token: Optional[str] = None, cache_ttl=None):
         live_ttl = min(600, max(0, float(cache_ttl))) if cache_ttl is not None else 600
@@ -1215,11 +1279,11 @@ class FleaflickerProvider(ProviderAdapter):
         except Exception:
             logger.debug("Fleaflicker matchup crosswalk unavailable", exc_info=True)
         out = []
-        boxscore_failed = False
         for mid, game in enumerate(raw.get("games") or [], 1):
             game_id = _get(game, "id")
             lineups: list = []
-            if game_id is not None and not boxscore_failed:
+            lineup_available = False
+            if game_id is not None:
                 try:
                     box = self._call(
                         "FetchLeagueBoxscore", league_id, season, ttl=min(300, live_ttl),
@@ -1228,11 +1292,12 @@ class FleaflickerProvider(ProviderAdapter):
                         fantasy_game_id=int(game_id),
                     )
                     lineups = box.get("lineups") or []
+                    lineup_available = bool(lineups)
+                except ProviderAuthenticationError:
+                    raise
                 except Exception:
-                    boxscore_failed = True
                     logger.debug(
-                        "Fleaflicker FetchLeagueBoxscore failed game=%s; "
-                        "skipping remaining boxscores for week %s",
+                        "Fleaflicker FetchLeagueBoxscore failed game=%s week=%s; continuing",
                         game_id, week, exc_info=True,
                     )
             for side, score_key in (("home", "homeScore"), ("away", "awayScore")):
@@ -1253,19 +1318,29 @@ class FleaflickerProvider(ProviderAdapter):
                 projected_points = None
                 if score_block.get("projected") is not None:
                     projected_points = _num(score_block.get("projected"))
-                starters, players_points = self._starters_from_boxscore(
+                lineup = self._starters_from_boxscore(
                     lineups, side, xwalk, by_name,
                 )
+                starters = lineup["starters"]
+                players_points = lineup["players_points"]
                 out.append({
                     "matchup_id": mid, "roster_id": _int(team_id),
                     "points": points,
                     "projected_points": projected_points,
-                    "players": list(starters),
+                    "players": lineup["players"],
                     "starters": starters,
-                    "starters_points": [players_points.get(pid, 0.0) for pid in starters],
+                    "starters_points": [players_points.get(pid) if pid != "0" else None for pid in starters],
                     "players_points": players_points,
+                    "bench": lineup["bench"], "bench_slots": lineup["bench_slots"],
+                    "reserve": lineup["reserve"], "taxi": lineup["taxi"],
                     "week": int(week), "custom_points": None,
-                    "metadata": {"provider_game_id": str(_get(game, "id") or "")},
+                    "metadata": {
+                        "provider_game_id": str(_get(game, "id") or ""),
+                        "lineup_available": lineup_available,
+                        "lineup_state": "available" if lineup_available else "unavailable",
+                        "unavailable_points": lineup["unavailable_points"],
+                        "slot_diagnostics": lineup["slot_diagnostics"],
+                    },
                 })
         return out
 

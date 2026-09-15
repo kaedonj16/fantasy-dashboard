@@ -76,6 +76,25 @@ def test_league_slice_none_when_viewer_absent(fake_collect):
     assert s is None
 
 
+def test_league_slice_preserves_bench_membership_and_provider_score(monkeypatch):
+    payload = _league_payload("LA")
+    payload["matchups"][0].update({
+        "starters": ["p1"], "players": ["p1", "p2"],
+        "bench": ["p2"], "bench_slots": ["p2", "0"],
+        "players_points": {"p1": 5.0, "p2": 7.25},
+        "starters_points": [5.0],
+    })
+    monkeypatch.setattr(app, "_redzone_collect", lambda *_args: payload)
+    out = app._redzone_user_league_slice(
+        0, {"platform": "sleeper", "league_id": "LA", "name": "A"},
+        2025, 1, None, "u1", {},
+    )
+    mine = next(m for m in out["matchups"] if m["roster_id"] == "0:1")
+    assert mine["bench_slots"] == ["p2", "0"]
+    assert mine["players_points"]["p2"] == 7.25
+    assert mine["starters_points"] == [5.0]
+
+
 def test_fetch_user_aggregates_slices(monkeypatch, fake_collect):
     portfolio = [
         {"platform": "sleeper", "league_id": "LA", "name": "League A", "season": 2025},

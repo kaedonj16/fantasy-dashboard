@@ -21,8 +21,10 @@ def resolve_post_deploy_script(repo_root=None):
 
 
 def main():
+    from dashboard_services.memory_diagnostics import format_memory_snapshot
     print("Production Startup - Fantasy Dashboard")
     print(f"Started: {datetime.now().isoformat()}")
+    print(format_memory_snapshot("web startup begin"))
 
     first_run_flag = os.path.join(
         __import__("tempfile").gettempdir(), "fantasy_dashboard_initialized"
@@ -30,6 +32,7 @@ def main():
 
     if not os.path.exists(first_run_flag):
         print("First deployment detected - running initialization...")
+        print(format_memory_snapshot("before first-time initialization"))
         try:
             from scripts.initialize_production import main as init_main
             init_main()
@@ -39,22 +42,24 @@ def main():
         except Exception as e:
             print(f"First-time initialization failed: {e}")
             print("Continuing with app startup (manual initialization may be needed)")
+        finally:
+            print(format_memory_snapshot("after first-time initialization"))
     else:
         print("Existing deployment detected - skipping initialization")
         with open(first_run_flag, 'r', encoding='utf-8') as f:
             print(f"Previously initialized: {f.read().strip()}")
 
     # Spawn post-deploy in the background so it doesn't delay gunicorn startup.
-    # That process refreshes tokenless global ADP snapshots (Yahoo/ESPN/MFL) onto
-    # THIS web container's disk (cron writes a different disk), then optionally
-    # rebuilds breakout scores. The subprocess outlives this process (execvp
+    # That process runs migrations and refreshes tokenless global ADP snapshots
+    # (Yahoo/ESPN/MFL) onto THIS web container's disk (cron writes a different
+    # disk). The subprocess outlives this process (execvp
     # replaces us with gunicorn) and writes to stdout/stderr for Render logs.
     import subprocess
     post_deploy_script = resolve_post_deploy_script()
     if os.path.exists(post_deploy_script):
         print(
             "Spawning background post-deploy "
-            "(global ADP refresh + breakout check)..."
+            "(migrations + global ADP refresh)..."
         )
         env = os.environ.copy()
         existing_pp = env.get("PYTHONPATH", "")
@@ -76,10 +81,11 @@ def main():
         )
 
     port = int(os.environ.get('PORT', 5000))
-    workers = int(os.environ.get('WEB_WORKERS', 3))
+    workers = int(os.environ.get('WEB_WORKERS', 2))
     threads = int(os.environ.get('WEB_THREADS', 2))
 
     print(f"\nStarting gunicorn on port {port} ({workers} workers x {threads} threads)")
+    print(format_memory_snapshot("before gunicorn exec"))
 
     cmd = [
         sys.executable, "-m", "gunicorn",

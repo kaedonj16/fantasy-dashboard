@@ -1152,8 +1152,10 @@ def test_scoreboard_keeps_fleaflicker_team_projected_points(monkeypatch):
     assert by_rid[1]["projected_points"] == pytest.approx(118.42)
     assert by_rid[2]["projected_points"] == pytest.approx(104.10)
     assert by_rid[1]["points"] == 0.0
-    assert by_rid[1]["starters"] == []
-    assert by_rid[2]["starters"] == []
+    # The provider published one genuinely empty official starting slot.
+    assert by_rid[1]["starters"] == ["0"]
+    assert by_rid[1]["starters_points"] == [None]
+    assert by_rid[2]["starters"] == ["0"]
 
 
 def test_fleaflicker_bracket_projects_from_seeds(monkeypatch):
