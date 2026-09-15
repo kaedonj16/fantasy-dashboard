@@ -13,6 +13,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from dashboard_services.api import get_nfl_state
+from utils.nfl_context import calendar_nfl_season
 from utils.paths import DATA_DIR, CACHE_DIR
 
 # Named cron steps recorded in pipeline_health.json. Intentional skips use
@@ -262,7 +263,7 @@ def record_pipeline_health(step_name: str, status: str, path: Optional[Path] = N
 
 def main():
     state = get_nfl_state() or {}
-    season = int(state.get("season") or date.today().year)
+    season = int(state.get("season") or calendar_nfl_season())
     week = int(state.get("week") or 0)
     season_type = str(state.get("season_type", "")).lower().strip()
     today_weekday = date.today().weekday()  # 6 = Sunday

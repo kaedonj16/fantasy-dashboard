@@ -54,6 +54,29 @@ def test_cache_budget_is_shared_across_decorated_functions(monkeypatch):
     assert len(first._cache) + len(second._cache) <= 2
 
 
+def test_active_cache_keeps_lru_window_when_budget_shrinks(monkeypatch):
+    """Previously populated caches must not evict every new active-cache row."""
+    monkeypatch.setattr(api, "DASHBOARD_CACHE_MAX", 2)
+
+    @api.ttl_cache(ttl=60)
+    def old_cache(key):
+        return key
+
+    @api.ttl_cache(ttl=60)
+    def active_cache(key):
+        return key
+
+    old_cache("old-a")
+    old_cache("old-b")
+    active_cache("new-a")
+    active_cache("new-b")
+
+    assert list(key[1] for key in active_cache._cache) == [
+        ("new-a",), ("new-b",),
+    ]
+    assert len(old_cache._cache) + len(active_cache._cache) <= 2
+
+
 def test_budget_eviction_is_safe_when_wall_clock_moves_backwards(monkeypatch):
     monkeypatch.setattr(api, "DASHBOARD_CACHE_MAX", 2)
     now = [2_000_000_000.0]
