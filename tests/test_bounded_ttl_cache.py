@@ -6,6 +6,18 @@ import pytest
 import dashboard_services.api as api
 
 
+@pytest.fixture(autouse=True)
+def isolate_ttl_cache_registry():
+    """Keep per-test cache budgets independent of collection/execution order."""
+    for item in api._TTL_CACHES:
+        with item["lock"]:
+            item["cache"].clear()
+    yield
+    for item in api._TTL_CACHES:
+        with item["lock"]:
+            item["cache"].clear()
+
+
 def test_ttl_cache_evicts_lru_and_exposes_clear(monkeypatch):
     monkeypatch.setattr(api, "DASHBOARD_CACHE_MAX", 2)
     calls = []
