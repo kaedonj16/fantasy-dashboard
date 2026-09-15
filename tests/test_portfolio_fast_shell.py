@@ -1,5 +1,7 @@
-"""The account portfolio first paint never performs provider/context work."""
-def test_account_portfolio_uses_durable_shell(offline_client, monkeypatch):
+"""Account portfolios populate cards and cross-league insights on first paint."""
+
+
+def test_account_portfolio_builds_full_league_data(offline_client, monkeypatch):
     import routes.user_pages_bp as pages
 
     seen = {}
@@ -11,18 +13,45 @@ def test_account_portfolio_uses_durable_shell(offline_client, monkeypatch):
             "name": "Fast League", "is_favorite": True,
         }], 2026)
     monkeypatch.setattr("dashboard_services.accounts.resolve_my_leagues", resolve)
-    monkeypatch.setattr(pages, "get_league_ctx_from_cache", lambda *a: (_ for _ in ()).throw(AssertionError("context loaded")))
+    # Do not let the fire-and-forget reconciliation thread outlive this test or
+    # attempt to reach CI's intentionally absent database.
+    monkeypatch.setattr(
+        "dashboard_services.accounts.schedule_account_league_reconciliation",
+        lambda *a, **k: None,
+    )
+    monkeypatch.setattr(pages, "get_league_ctx_from_cache", lambda *a: {
+        "league": {"name": "Fast League"},
+        "rosters": [{"roster_id": 9, "owner_id": "u1", "players": ["p1", "p2", "p3", "p4", "p5"]}],
+        "users": [{"user_id": "u1", "display_name": "My Team"}],
+        "players_index": {"p1": {"name": "Player One", "pos": "WR", "team": "BUF"}},
+        "total_rosters": 1,
+        "roster_positions": ["QB", "RB", "WR", "TE"],
+        "latest_draft": {"status": "complete"},
+    })
+    monkeypatch.setattr(
+        "dashboard_services.accounts.resolve_account_viewer_for_league",
+        lambda *a, **k: {"viewer_roster_id": "9"},
+    )
+    monkeypatch.setattr(
+        "dashboard_services.ai.context_builders.league_format_value_lookup",
+        lambda ctx: {"p1": {"name": "Player One", "position": "WR", "team": "BUF",
+                              "value": 321, "pos_rank_label": "WR12"}},
+    )
+    monkeypatch.setattr(
+        "dashboard_services.ai.context_builders.portfolio_record_and_rank",
+        lambda *a: (7, 4, 0, 1234.5, 2),
+    )
     with offline_client.session_transaction() as sess:
         sess["account_id"] = 7
         sess["account_email"] = "a@example.com"
     response = offline_client.get("/portfolio")
     assert response.status_code == 200
     assert b"Fast League" in response.data
-    assert b"Record loading" in response.data
-    assert b"/api/portfolio/summary" in response.data
-    assert b"data-summary-stats" in response.data
-    assert b"Summary timed out. Retry." in response.data
-    assert b"var cards=" in response.data and b"MAX=3" in response.data
+    assert b"7-4" in response.data
+    assert b"Player Holdings" in response.data
+    assert b"Player One" in response.data
+    assert b"NFL Exposure" in response.data
+    assert b"Positional Strength" in response.data
     assert seen["kwargs"]["enrich_live"] is False
 
 
