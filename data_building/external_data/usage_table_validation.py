@@ -49,12 +49,14 @@ def validate_usage_table(
     with_usage = sum(1 for p in players_out if p.get("usage", {}).get("ppr_ppg", 0) > 0)
 
     no_games_expected = season_type in ("off", "pre")
-    # Week 1 with a table that would fail the in-season checks is the
+    # Week 1/2 with a table that would fail the in-season checks is the
     # pre-kickoff (or stats-not-in-yet) snapshot, not a broken fetch.
-    # Mid-season (week 2+) still uses the strict checks below.
+    # Sleeper often bumps "week" to 2 while Week 1 games are still in
+    # progress (e.g. Monday night), so stats may not have propagated yet.
+    # By week 3 every team has played at least once; strict checks apply.
     if (
         not no_games_expected
-        and week <= 1
+        and week <= 2
         and (zero_games_pct > 0.6 or with_usage < 200)
     ):
         no_games_expected = True

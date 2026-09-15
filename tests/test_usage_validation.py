@@ -51,8 +51,21 @@ def test_regular_week1_with_real_stats_is_accepted():
     validate_usage_table(_mixed_rows(), {}, 2026, {"season_type": "regular", "week": 1})
 
 
+def test_regular_week2_all_zero_games_is_accepted():
+    # Sleeper bumps week to 2 while Week 1 MNF is still in progress;
+    # stats haven't propagated yet, so this is NOT a broken fetch.
+    validate_usage_table(
+        _rows(games=0, ppg=0.0), {}, 2026, {"season_type": "regular", "week": 2}
+    )
+
+
+def test_regular_week2_with_real_stats_is_accepted():
+    # Week 2 with real stats from Week 1 is a normal in-season table.
+    validate_usage_table(_mixed_rows(), {}, 2026, {"season_type": "regular", "week": 2})
+
+
 def test_in_season_all_zero_games_is_rejected():
-    # Mid-season, 100% zero games really does mean a broken fetch — keep raising.
+    # Mid-season (week 3+), 100% zero games really does mean a broken fetch.
     with pytest.raises(ValueError, match="Too many players with 0 games"):
         validate_usage_table(
             _rows(games=0, ppg=0.0), {}, 2026, {"season_type": "regular", "week": 9}

@@ -14,6 +14,7 @@ from dashboard_services.ai.client import (
     clean_ai_text,
     get_ai_client,
 )
+from dashboard_services.ai.prompts import OPENAI_MODEL
 from dashboard_services.ai.renderer import ai_available
 from utils.all_play import all_play_analysis
 
@@ -788,7 +789,7 @@ For "looking_ahead": if next_week_preview is null, return an empty string. Other
 """.strip()
 
     resp = client.responses.create(
-        model="gpt-5-mini",
+        model=OPENAI_MODEL,
         input=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},

@@ -133,3 +133,30 @@ def test_live_slot_not_on_pending_or_error_cards():
     # (The JS querySelectorAll also references the attribute, hence the exact
     # "data-lg-live aria-busy" match here rather than a bare attribute count.)
     assert fn.count("data-lg-live aria-busy='true'") == 1
+
+
+def test_final_matchup_card_tuesday_shows_won_by_margin():
+    source = (ROOT / "app.py").read_text()
+    fn = source.split("def build_portfolio_body")[1].split("\ndef ")[0]
+    live_fn = fn.split("function side(t,lbl,isOpp,win")[1].split("function load(slot)")[0]
+    # Final scores do not show projections and show W/L/margin.
+    assert "WON BY" in live_fn
+    assert "LOST BY" in live_fn
+    assert "TIED" in live_fn
+    assert "d.result" in live_fn
+    assert "d.margin" in live_fn
+    # The status header uses a plain "FINAL" label only when a result is present.
+    assert "'FINAL'" in live_fn
+    assert r"'Final \\u00b7 Wk '" in live_fn or "'Final'" in live_fn
+
+
+def test_matchup_endpoint_tuesday_final_exposes_result_and_margin():
+    source = (ROOT / "routes" / "user_pages_bp.py").read_text()
+    fn = source.split("def api_portfolio_matchup")[1].split("\n@user_pages_bp.route")[0]
+    # The Tuesday final card uses Eastern time to decide the day.
+    assert 'ZoneInfo("America/New_York")' in fn
+    assert 'today.weekday() == 1' in fn
+    assert 'result' in fn
+    assert 'margin' in fn
+    # Sunday through Monday keep the live/final slot visible; Wednesday onward hides it.
+    assert "today.weekday() not in (6, 0, 1)" in fn

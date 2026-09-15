@@ -139,6 +139,32 @@ def page_portfolio():
     if account_id:
         from dashboard_services.accounts import schedule_account_league_reconciliation
         schedule_account_league_reconciliation(account_id, season)
+        # Fast stable first paint from durable membership. Cards hydrate in place.
+        all_leagues_data = [
+            {
+                "league_id": str(lg.get("league_id") or ""),
+                "platform": str(lg.get("platform") or "sleeper").lower(),
+                "season": int(lg.get("season") or season),
+                "name": lg.get("name") or "Unknown",
+                "is_favorite": bool(lg.get("is_favorite")),
+                "loading": True,
+            }
+            for lg in (league_inputs or [])
+        ]
+        body = build_portfolio_body(
+            portfolio_signed_in_label(),
+            [], all_leagues_data, season,
+            [], len(all_leagues_data), [], {},
+            0, 0, 0,
+        )
+        nav_league_id = from_league
+        nav_platform = from_platform
+        nav_season = from_season or season
+        if not nav_league_id and all_leagues_data:
+            nav_league_id = all_leagues_data[0].get("league_id")
+            nav_platform = all_leagues_data[0].get("platform") or "sleeper"
+            nav_season = all_leagues_data[0].get("season") or season
+        return render_page("My Leagues - BR Fantasy", nav_league_id, "portfolio", body, nav_platform, nav_season)
     def _league_summary(lg):
         lid = str(lg.get("league_id") or "")
         if not lid:
@@ -1118,13 +1144,35 @@ def api_portfolio_matchup():
         pids += [p.get("pid") for p in (opp.get("starters") or [])]
     status = _matchup_status_label(status_by_pid, pids)
 
+    # The final result is highlighted as "FINAL" on Tuesday; the live card stays
+    # visible Sunday through Monday, then hides Wednesday onward.
+    from zoneinfo import ZoneInfo
+    today = datetime.now(ZoneInfo("America/New_York")).date()
+    is_live = True
+    if status == "final" and today.weekday() not in (6, 0, 1):
+        is_live = False
+
+    matchup_result, margin = None, None
+    if has_opp and status == "final" and today.weekday() == 1:
+        my_score = you_side["score"]
+        opp_score = opp_side["score"]
+        if my_score > opp_score:
+            matchup_result = "W"
+        elif my_score < opp_score:
+            matchup_result = "L"
+        else:
+            matchup_result = "T"
+        margin = round(abs(my_score - opp_score), 1)
+
     return jsonify({
-        "live": True,
+        "live": is_live,
         "week": week,
         "status": status,
         "you": you_side,
         "opp": opp_side,
         "win_prob": win_prob,
+        "result": matchup_result,
+        "margin": margin,
     })
 
 

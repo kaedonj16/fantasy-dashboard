@@ -149,9 +149,10 @@ def build_league_summary(account_id, membership, context_loader):
         sections["streak"] = {"status": "unavailable", "failure_category": "analytics_unavailable"}
 
     result["pos_user_rank"] = {pos: None for pos in POSITIONS}
+    values = {}
     try:
         from dashboard_services.ai.context_builders import league_format_value_lookup
-        from utils.roster_strength import rank_rosters_by_position, roster_pos_value_lists
+        from utils.roster_strength import rank_rosters_by_position, roster_pos_value_lists, strength_percentile
         values = league_format_value_lookup(ctx)
         if not values:
             raise ValueError("model values unavailable")
@@ -163,9 +164,37 @@ def build_league_summary(account_id, membership, context_loader):
         pos_values = roster_pos_value_lists(rosters, values, players_index=ctx.get("players_index") or {}, rid_cast=str)
         _strengths, ranks = rank_rosters_by_position(pos_values, slots)
         result["pos_user_rank"] = {pos: (ranks.get(pos) or {}).get(rid) for pos in POSITIONS}
+        result["pos_user_pctile"] = {pos: None for pos in POSITIONS}
+        for pos in POSITIONS:
+            league_strengths = [s.get(pos, 0.0) for s in _strengths.values()]
+            user_strength = (_strengths.get(rid) or {}).get(pos, 0.0)
+            result["pos_user_pctile"][pos] = strength_percentile(user_strength, league_strengths)
         sections["position_rankings"] = {"status": "ready"}
     except Exception:
         sections["position_rankings"] = {"status": "unavailable", "failure_category": "analytics_unavailable"}
+
+    player_ids = [str(p) for p in (roster.get("players") or [])]
+    all_players = {}
+    total_value = 0.0
+    for pid in player_ids:
+        v = values.get(pid) or {}
+        val = float(v.get("value") or 0)
+        total_value += val
+        meta = ctx.get("players_index", {}).get(pid) or {}
+        pos = (v.get("position") or meta.get("pos") or "").upper()
+        all_players[pid] = {
+            "name": v.get("name") or meta.get("name") or f"Player {pid}",
+            "position": pos,
+            "value": val,
+            "pos_rank": v.get("pos_rank_label") or "",
+            "nfl_team": (v.get("team") or meta.get("team") or "").upper(),
+        }
+    result.update(
+        all_players=all_players,
+        total_value=round(total_value, 1),
+        offseason=bool(ctx.get("offseason_mode")),
+        urgency=result.get("wins", 0) - result.get("losses", 0) + (result.get("rank") or 0) * -0.1,
+    )
 
     result["state"] = "ready" if all(s["status"] == "ready" for s in sections.values()) else "partial"
     now = datetime.now(timezone.utc).isoformat()
