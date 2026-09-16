@@ -89,10 +89,33 @@ def api_schedule():
         ws = max(1, min(ws, 18))
         we = max(1, min(we, 18))
         weeks = list(range(ws, we + 1))
+        league_id = (request.args.get("league_id") or "").strip()
+        platform = (request.args.get("platform") or "sleeper").strip()
+        scoring = {}
+        if league_id:
+            try:
+                scoring = (get_league_ctx_from_cache(platform, league_id, season).get("raw_scoring_settings") or {})
+            except Exception:
+                logger.debug("schedule scoring settings unavailable", exc_info=True)
         if not pids:
             return jsonify({"weeks": weeks, "players": []})
-        players = _compute_schedule_grid(season, pids, weeks)
-        return jsonify({"weeks": weeks, "players": players})
+        players = _compute_schedule_grid(season, pids, weeks, scoring)
+        diagnostic_info = {}
+        defenses_ranked = 0
+        if players:
+            _rank, defenses_ranked, info, _ = _matchup_rank_table(
+                season, players[0].get("pos") or "RB", scoring,
+            )
+            diagnostic_info = next(iter(info.values()), {})
+        return jsonify({"weeks": weeks, "players": players, "diagnostics": {
+            "selected_season": season,
+            "completed_through_week": diagnostic_info.get("completed_through_week", 0),
+            "weights": diagnostic_info.get("weights", {}),
+            "baseline_season": diagnostic_info.get("baseline_season"),
+            "scoring_profile": diagnostic_info.get("scoring_profile"),
+            "cache_status": "memory-or-rebuilt",
+            "defenses_ranked": defenses_ranked,
+        }})
     except Exception as e:
         return _api_err("Schedule unavailable", e)
 
@@ -157,10 +180,6 @@ def api_schedule_rankings():
                     lookup[away] = {"opp": home, "is_home": False}
             schedules[w] = lookup
 
-        # Rank teams by strength-of-schedule-adjusted z-score (rank 1 = easiest).
-        # Falls back to raw fpts-allowed until the cron builds the ratings table.
-        rank_map, total_teams, rating_info, _is_z = _matchup_rank_table(season, position)
-
         # Get roster pids (+ owning team name) for the on-roster badge
         roster_pids: set = set()
         owner_by_pid: dict = {}
@@ -180,6 +199,12 @@ def api_schedule_rankings():
                             owner_by_pid[str(pid)] = tname
             except Exception:
                 logger.debug("suppressed exception", exc_info=True)
+
+        # Rank exactly the league-scored, season-aware FPA value displayed in
+        # each weekly cell.  Settings must be loaded before building the table.
+        rank_map, total_teams, rating_info, _is_z = _matchup_rank_table(
+            season, position, _sched_scoring,
+        )
 
         # Build value lookup once - used for depth-chart cap and final sort
         value_by_pid: dict = {}
@@ -261,6 +286,7 @@ def api_schedule_rankings():
             cells = []
             rank_sum  = 0
             ease_sum  = 0.0
+            matchup_values = []
             valid_wks = 0
             for w in weeks:
                 game = schedules.get(w, {}).get(team)
@@ -270,7 +296,7 @@ def api_schedule_rankings():
                 opp      = game["opp"]
                 rank     = rank_map.get(opp)
                 rinfo    = rating_info.get(opp, {})
-                fpts_val = rinfo.get("fpts", 0)
+                fpts_val = rinfo.get("fpts")
                 txt, bg  = _sched_rank_color(rank, total_teams) if rank else ("#94a3b8", "transparent")
                 actual   = player_pts_actual.get(str(pid), {}).get(w)
                 proj     = player_pts_proj.get(str(pid), {}).get(w)
@@ -281,7 +307,7 @@ def api_schedule_rankings():
                     "opp": opp,
                     "at": "" if game["is_home"] else "@",
                     "rank": rank, "total": total_teams,
-                    "fpts": round(fpts_val, 1) if fpts_val else 0,
+                    "fpts": round(fpts_val, 1) if fpts_val is not None else None,
                     "txt": txt, "bg": bg,
                     "pts": p_pts, "pts_type": p_type,
                 })
@@ -289,6 +315,8 @@ def api_schedule_rankings():
                     rank_sum  += rank
                     ease_sum  += _matchup_cell_ease(rank, total_teams, rinfo)
                     valid_wks += 1
+                if fpts_val is not None:
+                    matchup_values.append(float(fpts_val))
 
             avg_rank   = round(rank_sum / valid_wks, 1) if valid_wks else 999
             # Ease from the z-score scale (avg over scheduled weeks); higher = easier
@@ -307,7 +335,21 @@ def api_schedule_rankings():
                 "avg_rank":   avg_rank,
                 "ease_score": ease_score,
                 "valid_weeks": valid_wks,
+                "avg_matchup_value": (round(sum(matchup_values) / len(matchup_values), 2)
+                                        if matchup_values else None),
             })
+
+        # Aggregate SOS ranks the average underlying points-allowed metric,
+        # never an average of ordinal weekly ranks. Teammates share one slate.
+        from utils.defensive_matchup_ratings import rank_values
+        team_values = {}
+        for row in results:
+            if row["avg_matchup_value"] is not None:
+                team_values[row["team"]] = row["avg_matchup_value"]
+        team_sos_ranks, team_sos_total = rank_values(team_values)
+        for row in results:
+            row["sos_rank"] = team_sos_ranks.get(row["team"])
+            row["sos_total"] = team_sos_total
 
         # Sort by ease first, then group teammates together under the best player
         # on that team.  Rank #1 = the most valuable player with the easiest
@@ -330,6 +372,15 @@ def api_schedule_rankings():
             "position":    position,
             "total_teams": total_teams,
             "rankings":    results,
+            "diagnostics": ({
+                "selected_season": season,
+                "completed_through_week": next(iter(rating_info.values()), {}).get("completed_through_week", 0),
+                "weights": next(iter(rating_info.values()), {}).get("weights", {}),
+                "baseline_season": next(iter(rating_info.values()), {}).get("baseline_season"),
+                "scoring_profile": next(iter(rating_info.values()), {}).get("scoring_profile"),
+                "defenses_ranked": total_teams,
+                "cache_status": "memory-or-rebuilt",
+            }),
         })
     except Exception as e:
         return _api_err("Schedule rankings unavailable", e)
