@@ -26,7 +26,14 @@ def build_schedule_body(ctx):
     max_week = 18
     start_week = current_week if current_week >= 1 else 1
     def_start = start_week
-    def_end = min(start_week + 3, max_week)
+    def_end = max_week
+    playoff_start = int((ctx.get("league_settings") or {}).get("playoff_week_start") or 15)
+    playoff_end = min(max_week, playoff_start + 2)
+    from utils.defensive_matchup_ratings import season_weights
+    from utils.season_qualification import qualification_policy
+    active_season = int(ctx.get("current_season") or season)
+    completed_week = max(qualification_policy(season).completed_weeks, default=0) if season == active_season else (18 if season < active_season else 0)
+    previous_weight, current_weight = season_weights(completed_week, blend=season >= active_season)
 
     viewer_roster = next((r for r in rosters if str(r.get("roster_id")) == viewer_rid), None)
     roster_pids = [str(p) for p in (viewer_roster.get("players") if viewer_roster else []) or []]
@@ -47,6 +54,9 @@ def build_schedule_body(ctx):
         "season": season, "leagueId": league_id, "platform": platform,
         "startWeek": start_week, "maxWeek": max_week,
         "defStart": def_start, "defEnd": def_end,
+        "playoffStart": playoff_start, "playoffEnd": playoff_end,
+        "completedWeek": completed_week, "activeSeason": active_season,
+        "previousWeight": previous_weight, "currentWeight": current_weight,
         "initPids": init_pids,
     })
 
@@ -74,10 +84,12 @@ def build_schedule_body(ctx):
           <select id="schedWkStart" class="sched-select"></select>
           <span class="sched-ctrl-sep">to</span>
           <select id="schedWkEnd" class="sched-select"></select>
+          <button type="button" class="sched-preset-btn" id="schedRosPreset"
+            title="Current NFL week through Week 18">ROS</button>
           <button type="button" class="sched-preset-btn" id="schedFullPreset"
-            title="Show every remaining week">Full Season</button>
+            title="Show Weeks 1 through 18">Full Season</button>
           <button type="button" class="sched-preset-btn" id="schedPlayoffPreset"
-            title="Jump to the fantasy playoff weeks (15-17)">Playoffs</button>
+            title="Jump to this league's fantasy playoff weeks">Playoffs</button>
         </div>
 
         <!-- My Players: player search -->
@@ -116,7 +128,8 @@ def build_schedule_body(ctx):
           <span><span class="sched-chip" style="background:#84cc16;"></span>Good</span>
           <span><span class="sched-chip" style="background:#f59e0b;"></span>Tough</span>
           <span><span class="sched-chip" style="background:#ef4444;"></span>Brutal (bottom 25%)</span>
-          <span class="sched-legend-note">Rank = fantasy pts allowed per game at that position (PPR). #1 = easiest matchup.</span>
+          <span class="sched-legend-note">#1 = easiest matchup · Points below = fantasy points allowed per game</span>
+          <button type="button" class="sched-info" aria-label="Seasonal rating data source" title="__SOURCE_COPY__"><i class="fa-solid fa-circle-info" aria-hidden="true"></i></button>
         </div>
 
         <div id="schedGrid" class="sched-grid-wrap">
@@ -145,7 +158,7 @@ def build_schedule_body(ctx):
     (function() {
       var CFG = __CFG__;
       var LS_PIDS = 'sched_pids_' + CFG.leagueId;
-      var LS_WKS  = 'sched_wks_'  + CFG.leagueId;
+      var LS_WKS  = 'sched_wks_'  + CFG.leagueId + '_' + CFG.season;
 
       var selPids = [];
       try { selPids = JSON.parse(localStorage.getItem(LS_PIDS) || 'null'); } catch (e) {}
@@ -160,7 +173,7 @@ def build_schedule_body(ctx):
         var saved = JSON.parse(localStorage.getItem(LS_WKS) || 'null');
         if (saved && saved.s) { wkStart = saved.s; wkEnd = saved.e; }
       } catch (e) {}
-      if (wkStart < CFG.startWeek) wkStart = CFG.startWeek;
+      if (wkStart < 1) wkStart = 1;
       if (wkEnd > CFG.maxWeek) wkEnd = CFG.maxWeek;
       if (wkEnd < wkStart) wkEnd = wkStart;
 
@@ -183,7 +196,7 @@ def build_schedule_body(ctx):
 
       function fillWeekSelects() {
         var optsS = '', optsE = '';
-        for (var w = CFG.startWeek; w <= CFG.maxWeek; w++) {
+        for (var w = 1; w <= CFG.maxWeek; w++) {
           optsS += '<option value="' + w + '"' + (w === wkStart ? ' selected' : '') + '>Week ' + w + '</option>';
           optsE += '<option value="' + w + '"' + (w === wkEnd   ? ' selected' : '') + '>Week ' + w + '</option>';
         }
@@ -212,7 +225,8 @@ def build_schedule_body(ctx):
         gridEl.innerHTML = '<div class="loading-state-msg"><div class="loading-spinner" aria-hidden="true"></div><span>Loading schedule…</span></div>';
         var url = '/api/schedule?season=' + CFG.season +
                   '&week_start=' + wkStart + '&week_end=' + wkEnd +
-                  '&pids=' + encodeURIComponent(selPids.join(','));
+                  '&pids=' + encodeURIComponent(selPids.join(',')) +
+                  '&league_id=' + encodeURIComponent(CFG.leagueId) + '&platform=' + encodeURIComponent(CFG.platform);
         fetch(url).then(function(r) { return r.json(); }).then(function(data) {
           var weeks   = data.weeks   || [];
           var players = data.players || [];
@@ -221,16 +235,17 @@ def build_schedule_body(ctx):
             return;
           }
           var head = '<th class="sched-th sched-th-player">Player</th>' +
-                     '<th class="sched-th sched-th-sos" title="Strength of schedule rank for this position over the selected weeks (1 = easiest)">SoS</th>';
+                     '<th class="sched-th sched-th-sos">SOS <button type="button" class="sched-info" aria-label="About strength of schedule" title="SOS measures a player’s matchup difficulty across the selected weeks using fantasy points allowed to that player’s position. #1 is the easiest schedule and #32 is the hardest. Bye weeks are excluded."><i class="fa-solid fa-circle-info" aria-hidden="true"></i></button></th>';
           for (var i = 0; i < weeks.length; i++) head += '<th class="sched-th">WK ' + weeks[i] + '</th>';
           var rows = '';
           players.forEach(function(p) {
             var cells = '';
             (p.cells || []).forEach(function(c) {
               if (c.bye) { cells += '<td class="sched-td sched-bye">BYE</td>'; return; }
-              var rankLabel = c.rank ? ('#' + c.rank) : '–';
-              var fptsLabel = c.fpts ? (c.fpts + ' pts') : '';
-              cells += '<td class="sched-td" style="background:' + c.bg + ';">' +
+              var rankLabel = c.rank ? ('#' + c.rank) : 'N/A';
+              var fptsLabel = c.fpts != null ? (c.fpts + ' pts') : 'N/A';
+              var meaning = c.opp + ' is matchup #' + (c.rank || 'N/A') + ' (where #1 is easiest) for ' + p.pos + 's and allows ' + (c.fpts != null ? c.fpts : 'N/A') + ' fantasy points per game to the position. This is not ' + p.name + '’s projected score.';
+              cells += '<td class="sched-td" title="' + esc(meaning) + '" aria-label="' + esc(meaning) + '" style="background:' + c.bg + ';">' +
                          '<div class="sched-opp">'  + esc(c.at + c.opp) + '</div>' +
                          '<div class="sched-rank" style="color:' + c.txt + ';">' + rankLabel + '</div>' +
                          '<div class="sched-fpts">' + esc(fptsLabel) + '</div>' +
@@ -351,15 +366,16 @@ def build_schedule_body(ctx):
           var cells = '';
           (p.cells || []).forEach(function(c) {
             if (c.bye) { cells += '<td class="sched-td sched-bye">BYE</td>'; return; }
-            var rankLabel = c.rank ? ('#' + c.rank) : '–';
+            var rankLabel = c.rank ? ('#' + c.rank) : 'N/A';
             cells += '<td class="sched-td" style="background:' + c.bg + ';">' +
                        '<div class="sched-opp">'  + esc((c.at || '') + c.opp) + '</div>' +
                        '<div class="sched-rank" style="color:' + c.txt + ';">' + rankLabel + '</div>' +
+                       '<div class="sched-fpts">' + (c.fpts != null ? esc(c.fpts + ' pts') : 'N/A') + '</div>' +
                      '</td>';
           });
 
-          var ar = p.avg_rank;
-          var avgTxt   = ar < 900 ? ('#' + ar) : '–';
+          var ar = p.sos_rank || 999;
+          var avgTxt   = ar < 900 ? ('#' + ar + '/' + (p.sos_total || total)) : 'N/A';
           var avgColor = ar <= total * 0.25 ? '#22c55e'
                        : ar <= total * 0.50 ? '#84cc16'
                        : ar <= total * 0.75 ? '#f59e0b' : '#ef4444';
@@ -444,11 +460,13 @@ def build_schedule_body(ctx):
 
       // One-click range presets: Full Season (every remaining week) and
       // Playoffs (weeks 15-17), each clamped to what's still selectable.
+      var rosBtn     = document.getElementById('schedRosPreset');
       var fullBtn    = document.getElementById('schedFullPreset');
       var playoffBtn = document.getElementById('schedPlayoffPreset');
       function syncPresetBtns() {
-        var ps = Math.max(CFG.startWeek, 15), pe = Math.min(CFG.maxWeek, 17);
-        if (fullBtn) fullBtn.classList.toggle('active', wkStart === CFG.startWeek && wkEnd === CFG.maxWeek);
+        var ps = CFG.playoffStart, pe = CFG.playoffEnd;
+        if (rosBtn) rosBtn.classList.toggle('active', wkStart === CFG.startWeek && wkEnd === CFG.maxWeek);
+        if (fullBtn) fullBtn.classList.toggle('active', wkStart === 1 && wkEnd === CFG.maxWeek);
         if (playoffBtn) {
           playoffBtn.classList.toggle('active', wkStart === ps && wkEnd === pe);
           playoffBtn.disabled = ps > pe;
@@ -460,12 +478,13 @@ def build_schedule_body(ctx):
         fillWeekSelects(); persist(); syncPresetBtns();
         if (currentView === 'my-players') renderGrid(); else { rankPage = 0; rankingsCache = null; renderRankings(); }
       }
+      if (rosBtn) rosBtn.addEventListener('click', function() { applyPreset(CFG.startWeek, CFG.maxWeek); });
       if (fullBtn) {
-        fullBtn.addEventListener('click', function() { applyPreset(CFG.startWeek, CFG.maxWeek); });
+        fullBtn.addEventListener('click', function() { applyPreset(1, CFG.maxWeek); });
       }
       if (playoffBtn) {
         playoffBtn.addEventListener('click', function() {
-          applyPreset(Math.max(CFG.startWeek, 15), Math.min(CFG.maxWeek, 17));
+          applyPreset(CFG.playoffStart, CFG.playoffEnd);
         });
       }
       syncPresetBtns();
@@ -542,6 +561,17 @@ def build_schedule_body(ctx):
     </script>
     """.replace("__CFG__", cfg)
 
+    if season < active_season:
+        source_copy = f"Ratings use final completed {season} games."
+    elif current_weight >= 1:
+        source_copy = f"Ratings use completed {season} games."
+    elif completed_week == 0:
+        source_copy = f"{season} ratings use {season - 1} defensive results until {season} games are completed."
+    else:
+        source_copy = (f"Early-season ratings blend {season - 1} defensive results with completed {season} games. "
+                       f"Through Week {completed_week}: {current_weight:.0%} {season} data and {previous_weight:.0%} {season - 1} data.")
+    shell = shell.replace("__SOURCE_COPY__", source_copy)
+
     # ── Bye-week outlook strip: upcoming weeks where the viewer's roster has
     # multiple players sharing a bye, so waiver moves can be planned ahead. ──
     bye_banner = ""
@@ -600,4 +630,3 @@ def build_schedule_body(ctx):
 
     shell = shell.replace("__BYE_BANNER__", bye_banner)
     return shell + script
-

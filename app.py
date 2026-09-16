@@ -15290,7 +15290,8 @@ def _scoring_format_from_settings(scoring_settings) -> str:
     return "std"
 
 
-def _compute_fpts_against(season: int, scoring: str = "ppr") -> dict:
+def _compute_fpts_against(season: int, scoring_settings=None, completed_through_week: int = 18,
+                          *, scoring=None) -> dict:
     """
     Compute fantasy points allowed per game by each NFL defense, broken down by position.
     Uses cached weekly stats + schedule files to attribute each player's output
@@ -15305,7 +15306,12 @@ def _compute_fpts_against(season: int, scoring: str = "ppr") -> dict:
     import glob as _glob
     global _FPTS_AGAINST_CACHE, _FPTS_AGAINST_CACHE_TS
 
-    scoring = str(scoring or "ppr").strip().lower()
+    from utils.defensive_matchup_ratings import scoring_profile_hash
+    from utils.fantasy_scoring import week_stat_points
+    if scoring_settings is None and scoring is not None:
+        scoring_settings = {"rec": {"ppr": 1.0, "half": .5, "std": 0.0}.get(str(scoring), 1.0)}
+    scoring_settings = scoring_settings or {"rec": 1.0}
+    scoring = _scoring_format_from_settings(scoring_settings)
     pts_key = {
         "ppr": "pts_ppr",
         "half": "pts_half_ppr",
@@ -15316,7 +15322,7 @@ def _compute_fpts_against(season: int, scoring: str = "ppr") -> dict:
         "non_ppr": "pts_std",
     }.get(scoring, "pts_ppr")
 
-    cache_key = f"{season}:{pts_key}"
+    cache_key = f"{season}:{int(completed_through_week)}:{scoring_profile_hash(scoring_settings)}"
     now = time.time()
     if _FPTS_AGAINST_CACHE.get(cache_key) and now - _FPTS_AGAINST_CACHE_TS.get(cache_key, 0) < _FPTS_AGAINST_TTL:
         return _FPTS_AGAINST_CACHE[cache_key]
@@ -15327,7 +15333,7 @@ def _compute_fpts_against(season: int, scoring: str = "ppr") -> dict:
     for pid, info in players_idx.items():
         team = (info.get("team") or "").upper()
         pos = (info.get("pos") or "").upper()
-        if team and pos in {"QB", "RB", "WR", "TE", "K"}:
+        if team and pos in {"QB", "RB", "WR", "TE", "K", "DEF"}:
             pid_to_info[str(pid)] = (team, pos)
 
     # Weekly stats files: sleeper_stats_s{year}_w{week}_*.json
@@ -15348,6 +15354,8 @@ def _compute_fpts_against(season: int, scoring: str = "ppr") -> dict:
             if not m:
                 continue
             week = int(m.group(2))
+            if week > int(completed_through_week):
+                continue
 
             # Load schedule for this week to build team→opponent map
             sched_files = _glob.glob(
@@ -15384,8 +15392,11 @@ def _compute_fpts_against(season: int, scoring: str = "ppr") -> dict:
                 opp = opp_map.get(player_team)
                 if not opp:
                     continue  # on bye or no schedule data
-                pts = float(stats.get(pts_key) or stats.get("pts_ppr") or 0)
-                if pts == 0:
+                # Raw weekly categories are rescored with the active league's
+                # complete settings (passing/rushing/receiving, TEP, turnovers,
+                # kicker and DST categories where supplied by the feed).
+                pts = week_stat_points(stats, scoring_settings, pos)
+                if pts is None:
                     continue
                 totals[opp][pos].append(pts)
         except Exception:
@@ -15408,7 +15419,9 @@ def _compute_fpts_against(season: int, scoring: str = "ppr") -> dict:
 _FPTS_BLEND_FULL = 6
 
 
-def _fpts_against_effective(season: int, scoring: str = "ppr") -> dict:
+def _fpts_against_effective(season: int, scoring_settings=None, completed_week: int = 0,
+                            *, blend: bool = True, baseline_season: int | None = None,
+                            scoring=None) -> dict:
     """Points allowed to each position, starting from last season and molding
     toward the current one as games are played (same idea as the consistency
     profile's blend). Early in the year the current season has no games, so this
@@ -15416,29 +15429,31 @@ def _fpts_against_effective(season: int, scoring: str = "ppr") -> dict:
     it is effectively the current season. Weight is ``min(1, games / full)``.
     Falls back to whichever season actually has data.
     """
-    cur = _compute_fpts_against(season, scoring) or {}
-    max_g = max((int(d.get("games", 0)) for d in cur.values()), default=0)
-    if max_g >= _FPTS_BLEND_FULL:
+    from utils.defensive_matchup_ratings import blend_value, season_weights
+    if scoring_settings is None and scoring is not None:
+        scoring_settings = {"rec": {"ppr": 1.0, "half": .5, "std": 0.0}.get(str(scoring), 1.0)}
+    cur = _compute_fpts_against(season, scoring_settings, completed_week) or {}
+    prior_year = int(baseline_season if baseline_season is not None else season - 1)
+    prior = _compute_fpts_against(prior_year, scoring_settings, 18) or {}
+    if not blend:
         return cur
-    prior = _compute_fpts_against(int(season) - 1, scoring) or {}
     if not prior:
         return cur
     if not cur:
         return prior
-    w = max(0.0, min(1.0, max_g / float(_FPTS_BLEND_FULL)))
     out: dict = {}
     for team in set(cur) | set(prior):
         c = cur.get(team) or {}
         p = prior.get(team) or {}
         row: dict = {"games": int(c.get("games", 0))}
-        for pos in ("QB", "RB", "WR", "TE", "K"):
+        for pos in ("QB", "RB", "WR", "TE", "K", "DEF"):
             cv, pv = c.get(pos), p.get(pos)
-            if cv is not None and pv is not None:
-                row[pos] = round(w * float(cv) + (1.0 - w) * float(pv), 1)
-            elif cv is not None:
-                row[pos] = cv
-            elif pv is not None:
-                row[pos] = pv
+            value, source = blend_value(pv, cv, completed_week)
+            if value is not None:
+                row[pos] = round(float(value), 2)
+                row.setdefault("sources", {})[pos] = source
+        pw, cw = season_weights(completed_week)
+        row["weights"] = {"previous": pw, "current": cw}
         out[team] = row
     return out
 
@@ -15696,33 +15711,38 @@ def _play_volume_context(teams_tbl: dict, opponent: str, nfl_avg):
     return out
 
 
-def _matchup_rank_table(season: int, position: str):
+def _matchup_rank_table(season: int, position: str, scoring_settings=None):
     """Return (rank_map, total_teams, info_by_team, is_z).
 
     rank_map[team] -> rank where 1 = easiest matchup for `position`. Uses the
     strength-of-schedule-adjusted z-score ratings when available, otherwise
     falls back to raw fpts-allowed so the schedule views keep working before
     the first cron build. info_by_team[team] carries {"z","ease","fpts"}."""
-    ratings = _load_matchup_ratings(season)
-    pairs = []
-    info: dict = {}
-    if ratings:
-        for team, posd in ratings.items():
-            r = posd.get(position)
-            if not r:
-                continue
-            pairs.append((team, r.get("z", 0.0)))
-            info[team] = r
-    if pairs:
-        pairs.sort(key=lambda x: -x[1])  # highest z = easiest = rank 1
-        return {t: i + 1 for i, (t, _) in enumerate(pairs)}, len(pairs), info, True
-
-    # Fallback: raw fantasy points allowed (pre-z behavior)
-    fa = _compute_fpts_against(season)
-    fpairs = [(t, d.get(position, 0)) for t, d in fa.items() if position in d]
-    fpairs.sort(key=lambda x: -x[1])
-    finfo = {t: {"fpts": fa.get(t, {}).get(position, 0)} for t, _ in fpairs}
-    return {t: i + 1 for i, (t, _) in enumerate(fpairs)}, len(fpairs), finfo, False
+    from dashboard_services.api import get_nfl_state
+    from utils.defensive_matchup_ratings import rank_values, season_weights
+    from utils.season_qualification import qualification_policy
+    state = get_nfl_state() or {}
+    active_season = int(state.get("season") or datetime.now().year)
+    completed = tuple(qualification_policy(int(season)).completed_weeks)
+    completed_week = max(completed, default=0)
+    is_active = int(season) == active_season
+    is_historical = int(season) < active_season
+    baseline = active_season - 1 if int(season) > active_season else int(season) - 1
+    fa = _fpts_against_effective(
+        season, scoring_settings, completed_week if is_active else (18 if is_historical else 0),
+        blend=is_active or int(season) > active_season, baseline_season=baseline,
+    )
+    values = {team: row.get(position) for team, row in fa.items()}
+    ranks, total = rank_values(values)
+    pw, cw = season_weights(completed_week if is_active else (18 if is_historical else 0),
+                            blend=not is_historical)
+    info = {team: {"fpts": value, "source": (fa.get(team, {}).get("sources") or {}).get(position),
+                   "completed_through_week": completed_week if is_active else (18 if is_historical else 0),
+                   "weights": {"previous": pw, "current": cw}, "baseline_season": baseline,
+                   "selected_season": int(season), "scoring_profile":
+                   __import__('utils.defensive_matchup_ratings', fromlist=['scoring_profile_hash']).scoring_profile_hash(scoring_settings)}
+            for team, value in values.items() if value is not None}
+    return ranks, total, info, False
 
 
 from utils.schedule_ease import matchup_cell_ease as _matchup_cell_ease  # noqa: E402
@@ -15781,7 +15801,7 @@ def _playoff_sos_for(season: int, team: str, pos: str):
     return by_pos[pos].get(team)
 
 
-def _compute_schedule_grid(season: int, pids, weeks):
+def _compute_schedule_grid(season: int, pids, weeks, scoring_settings=None):
     """For each pid over the given weeks, return matchup + difficulty cells.
     Reuses the cached fpts-allowed table so this is cheap per request."""
     players_idx = get_players_index_global() or {}
@@ -15791,7 +15811,7 @@ def _compute_schedule_grid(season: int, pids, weeks):
 
     def _fpts_rank(team: str, pos: str):
         if pos not in _pos_rank_cache:
-            _pos_rank_cache[pos] = _matchup_rank_table(season, pos)
+            _pos_rank_cache[pos] = _matchup_rank_table(season, pos, scoring_settings)
         rank_map, total, info, _is_z = _pos_rank_cache[pos]
         rinfo = info.get(team, {})
         fpts_val = rinfo.get("fpts", 0)
@@ -15823,23 +15843,13 @@ def _compute_schedule_grid(season: int, pids, weeks):
         if pos in _team_sos_cache:
             return _team_sos_cache[pos]
         if pos not in _pos_rank_cache:
-            _pos_rank_cache[pos] = _matchup_rank_table(season, pos)
+            _pos_rank_cache[pos] = _matchup_rank_table(season, pos, scoring_settings)
         rank_map, total, info, _is_z = _pos_rank_cache[pos]
-        team_ease: dict = {}
-        for t in rank_map.keys():
-            eases = []
-            for w in weeks:
-                game = schedules.get(w, {}).get(t)
-                if not game:
-                    continue
-                r = rank_map.get(game["opp"])
-                ease = _matchup_cell_ease(r, total, info.get(game["opp"], {}))
-                if ease is not None:
-                    eases.append(ease)
-            if eases:
-                team_ease[t] = sum(eases) / len(eases)
-        ranked = sorted(team_ease.items(), key=lambda x: -x[1])
-        sos = {t: (i + 1, len(ranked), round(e, 1)) for i, (t, e) in enumerate(ranked)}
+        from utils.defensive_matchup_ratings import rank_team_schedules
+        values = {team: row.get("fpts") for team, row in info.items()}
+        opponents = {t: [(schedules.get(w, {}).get(t) or {}).get("opp") for w in weeks]
+                     for t in rank_map}
+        sos = rank_team_schedules(opponents, values)
         _team_sos_cache[pos] = sos
         return sos
 
@@ -15861,7 +15871,7 @@ def _compute_schedule_grid(season: int, pids, weeks):
                 "week": w, "bye": False, "opp": opp,
                 "at": "" if game["is_home"] else "@",
                 "rank": rank, "total": total,
-                "fpts": round(fpts_val, 1) if fpts_val else 0,
+                "fpts": round(fpts_val, 1) if fpts_val is not None else None,
                 "txt": txt, "bg": bg,
             })
         _sos = _team_sos(pos).get(nfl)
