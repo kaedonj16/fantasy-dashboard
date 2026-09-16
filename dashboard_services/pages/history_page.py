@@ -13,6 +13,7 @@ from plotly.offline import plot as plotly_plot
 
 from dashboard_services.ai.history_recap import get_league_season_summary
 from dashboard_services.platform_api import get_bracket
+from dashboard_services.service import playoff_bracket as _render_playoff_bracket
 from utils.coerce import safe_int as _safe_int
 
 
@@ -747,6 +748,84 @@ def get_history_standings_html(history_ctx: dict) -> str:
 
     regular_season_team_stats = build_regular_season_team_stats(df_weekly, league)
     return _standings_table(regular_season_team_stats)
+
+
+def _build_match_scores(winners_bracket, df_weekly, league) -> dict:
+    """Build {match_id: {"t1_score": float, "t2_score": float}} from df_weekly.
+
+    Each bracket round maps to a playoff week:
+      round 1 → playoff_week_start, round 2 → playoff_week_start + 1, etc.
+    We look up each team's points in that week to populate scores.
+    """
+    if df_weekly is None or getattr(df_weekly, "empty", True):
+        return {}
+    needed = {"roster_id", "week", "points"}
+    if not needed.issubset(df_weekly.columns):
+        return {}
+
+    pw_start = _playoff_start_week(league)
+    scores: dict = {}
+
+    # Index: (roster_id_str, week_int) → points
+    pts_lookup: dict = {}
+    try:
+        for _, row in df_weekly.iterrows():
+            rid = row.get("roster_id")
+            wk = row.get("week")
+            pts = row.get("points")
+            if rid is not None and wk is not None and pts is not None:
+                pts_lookup[(str(rid), int(wk))] = float(pts)
+    except Exception:
+        return {}
+
+    for m in winners_bracket:
+        mid = m.get("m")
+        rnd = m.get("r")
+        t1 = m.get("t1")
+        t2 = m.get("t2")
+        if mid is None or rnd is None:
+            continue
+        week = pw_start + rnd - 1
+        s1 = pts_lookup.get((str(t1), week)) if t1 is not None else None
+        s2 = pts_lookup.get((str(t2), week)) if t2 is not None else None
+        if s1 is not None or s2 is not None:
+            scores[mid] = {"t1_score": s1, "t2_score": s2}
+
+    return scores
+
+
+def _get_history_bracket_html(history_ctx: dict) -> str:
+    """Build the playoff bracket HTML for the history standings card."""
+    platform = history_ctx.get("platform", "sleeper")
+    season = history_ctx.get("season")
+    league_id = history_ctx.get("resolved_league_id") or history_ctx.get("league_id") or ""
+    roster_map = history_ctx.get("roster_map") or {}
+    league = history_ctx.get("league") or {}
+    df_weekly = history_ctx.get("df_weekly")
+
+    try:
+        wb = get_bracket(platform, league_id, "winners", season) or []
+    except Exception:
+        wb = []
+
+    if not wb:
+        return ""
+
+    roster_avatar_map = {}
+    roster_name_map = dict(roster_map)
+    match_scores = _build_match_scores(wb, df_weekly, league)
+
+    bracket_html = _render_playoff_bracket(
+        wb,
+        roster_name_map=roster_name_map,
+        roster_avatar_map=roster_avatar_map,
+        match_scores=match_scores,
+    )
+
+    if bracket_html.strip().startswith("<div class='po-empty'>"):
+        return ""
+
+    return bracket_html
 
 
 def _build_rivalry_card(
@@ -1889,6 +1968,8 @@ def build_history_body(
     chart_html     = prerendered["chart"]     if prerendered else chart_skeleton
     tour_input     = '<input type="hidden" id="historyTourMode" value="1">' if prerendered else ""
 
+    bracket_html = _get_history_bracket_html(history_ctx)
+
     rivalry_html = _build_rivalry_card(
         history_ctx, base_platform, base_season, base_league_id,
     )
@@ -1942,9 +2023,17 @@ def build_history_body(
         </div>
 
         <div class="card history-standings-panel">
-          <div class="card-header"><h2>Regular Season Standings</h2></div>
-          <div class="card-body" style="padding-top:0;" id="historyStandingsContent">
-            {standings_html}
+          <div class="card-tabs" data-card="history-standings">
+            <div class="tab-strip">
+              <button class="tab-btn active" data-tab="standings">Standings</button>
+              {'<button class="tab-btn" data-tab="bracket">Playoff Bracket</button>' if bracket_html else ''}
+            </div>
+            <div class="tab-panels" style="padding:0;">
+              <div class="tab-panel active" data-tab="standings" id="historyStandingsContent" style="padding-top:0;">
+                {standings_html}
+              </div>
+              {'<div class="tab-panel" data-tab="bracket">' + bracket_html + '</div>' if bracket_html else ''}
+            </div>
           </div>
         </div>
       </div>
