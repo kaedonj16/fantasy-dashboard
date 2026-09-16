@@ -396,29 +396,33 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
         margin_color = "var(--loss)" if m["margin"] > 50 else ("var(--warning)" if m["margin"] > 20 else "var(--win)")
         return f"""
 <div class="recap-matchup-row">
-  <div class="recap-team recap-team--left">
-    <div class="recap-team-identity">
-      {ava_img(m["winner"], m["w_rid"], 30)}
-      <div class="recap-team-copy">
-        <div class="recap-team-name">{w_team}</div>
-        <div class="recap-team-manager">@{html.escape(m["winner"])}</div>
+  <div class="recap-matchup-main">
+    <div class="recap-team recap-team--left">
+      <div class="recap-team-identity">
+        {ava_img(m["winner"], m["w_rid"], 30)}
+        <div class="recap-team-copy">
+          <div class="recap-team-name">{w_team}</div>
+          <div class="recap-team-manager">@{html.escape(m["winner"])}</div>
+        </div>
       </div>
     </div>
-      {top_performer_html(m["w_rid"])}
-  </div>
-  <div class="recap-matchup-score">
-    <div class="recap-matchup-scoreline">{m['w_pts']:.2f} <span>–</span> {m['l_pts']:.2f}</div>
-    <div class="recap-matchup-margin" style="color:{margin_color};">+{m['margin']:.2f}</div>
-  </div>
-  <div class="recap-team recap-team--right">
-    <div class="recap-team-identity">
-      <div class="recap-team-copy">
-        <div class="recap-team-name">{l_team}</div>
-        <div class="recap-team-manager">@{html.escape(m["loser"])}</div>
-      </div>
-      {ava_img(m["loser"], m["l_rid"], 30)}
+    <div class="recap-matchup-score">
+      <div class="recap-matchup-scoreline">{m['w_pts']:.2f} <span>–</span> {m['l_pts']:.2f}</div>
+      <div class="recap-matchup-margin" style="color:{margin_color};">+{m['margin']:.2f}</div>
     </div>
-      {top_performer_html(m["l_rid"])}
+    <div class="recap-team recap-team--right">
+      <div class="recap-team-identity">
+        <div class="recap-team-copy">
+          <div class="recap-team-name">{l_team}</div>
+          <div class="recap-team-manager">@{html.escape(m["loser"])}</div>
+        </div>
+        {ava_img(m["loser"], m["l_rid"], 30)}
+      </div>
+    </div>
+  </div>
+  <div class="recap-matchup-performers">
+    {top_performer_html(m["w_rid"])}
+    {top_performer_html(m["l_rid"])}
   </div>
 </div>"""
 
