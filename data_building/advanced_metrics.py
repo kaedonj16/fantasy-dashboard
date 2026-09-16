@@ -459,10 +459,19 @@ def calculate_usage_metrics(usage: Dict[str, float], position: str) -> Dict[str,
     """Calculate usage and opportunity metrics."""
     snap_share = usage.get("avg_off_snap_pct", 0) or 0
 
-    # Opportunity share: targets + carries normalized by games
-    targets = usage.get("avg_targets", 0) or 0
-    carries = usage.get("avg_carries", 0) or 0
-    opportunity_share = targets + carries  # per-game touches
+    # True team-relative percentage from cumulative season totals.  Missing team
+    # context is not interchangeable with opportunities/game, and an observed
+    # zero remains a valid value when the team denominator exists.
+    team_opportunities = usage.get("team_opportunities")
+    player_opportunities = None
+    if usage.get("season_targets") is not None or usage.get("season_carries") is not None:
+        player_opportunities = ((usage.get("season_targets") or 0) +
+                                (usage.get("season_carries") or 0))
+    opportunity_share = (
+        100.0 * player_opportunities / float(team_opportunities)
+        if player_opportunities is not None and team_opportunities is not None
+        and float(team_opportunities) > 0 else None
+    )
 
     # Red zone usage
     rz_targets = usage.get("rec_rz_tgt_pg", 0) or 0
@@ -471,7 +480,7 @@ def calculate_usage_metrics(usage: Dict[str, float], position: str) -> Dict[str,
 
     return {
         "snap_share": snap_share if snap_share > 0 else None,
-        "opportunity_share": opportunity_share if opportunity_share > 0 else None,
+        "opportunity_share": opportunity_share,
         "red_zone_usage": red_zone_usage if red_zone_usage > 0 else None,
         "rz_targets_pg": rz_targets if rz_targets > 0 else None,
         "rz_carries_pg": rz_carries if rz_carries > 0 else None,
@@ -1100,9 +1109,9 @@ def save_metrics_snapshot(metrics_list: List[Dict[str, Any]], as_of_date: str, s
                 DO UPDATE SET
                     season = EXCLUDED.season,
                     position = EXCLUDED.position,
-                    yards_per_target = EXCLUDED.yards_per_target,
-                    catch_rate = EXCLUDED.catch_rate,
-                    yards_per_reception = EXCLUDED.yards_per_reception,
+                    yards_per_target = COALESCE(EXCLUDED.yards_per_target, player_advanced_metrics.yards_per_target),
+                    catch_rate = COALESCE(EXCLUDED.catch_rate, player_advanced_metrics.catch_rate),
+                    yards_per_reception = COALESCE(EXCLUDED.yards_per_reception, player_advanced_metrics.yards_per_reception),
                     target_quality_score = EXCLUDED.target_quality_score,
                     yards_per_carry = EXCLUDED.yards_per_carry,
                     yards_per_touch = EXCLUDED.yards_per_touch,
@@ -1111,8 +1120,8 @@ def save_metrics_snapshot(metrics_list: List[Dict[str, Any]], as_of_date: str, s
                     completion_pct = EXCLUDED.completion_pct,
                     td_rate = EXCLUDED.td_rate,
                     int_rate = EXCLUDED.int_rate,
-                    snap_share = EXCLUDED.snap_share,
-                    opportunity_share = EXCLUDED.opportunity_share,
+                    snap_share = COALESCE(EXCLUDED.snap_share, player_advanced_metrics.snap_share),
+                    opportunity_share = COALESCE(EXCLUDED.opportunity_share, player_advanced_metrics.opportunity_share),
                     red_zone_usage = EXCLUDED.red_zone_usage,
                     rz_targets_pg = EXCLUDED.rz_targets_pg,
                     rz_carries_pg = EXCLUDED.rz_carries_pg,
@@ -1125,7 +1134,7 @@ def save_metrics_snapshot(metrics_list: List[Dict[str, Any]], as_of_date: str, s
                     total_carries = EXCLUDED.total_carries,
                     total_touches = EXCLUDED.total_touches,
                     total_pass_att = EXCLUDED.total_pass_att,
-                    target_share = EXCLUDED.target_share,
+                    target_share = COALESCE(EXCLUDED.target_share, player_advanced_metrics.target_share),
                     route_participation = COALESCE(EXCLUDED.route_participation, player_advanced_metrics.route_participation),
                     total_rush_tds = EXCLUDED.total_rush_tds,
                     total_rec_tds = EXCLUDED.total_rec_tds,

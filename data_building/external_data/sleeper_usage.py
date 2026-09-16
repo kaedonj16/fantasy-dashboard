@@ -4,15 +4,19 @@ from __future__ import annotations
 
 import gc
 import json
-from datetime import date, timedelta
 from pathlib import Path
-from typing import Dict, Iterable, List
+from typing import Dict, Iterable, List, Optional
 
-from dashboard_services.service import age_from_bday
-from data_building.external_data.nfl_target_share import fetch_league_target_share
-from data_building.external_data.pfr_snap_counts import fetch_season_snap_counts
 from data_building.external_data.sleeper_bulk_stats import fetch_week_stats, fetch_season_redzone_stats
 from utils.utils import canon_team, load_players_index
+
+_LEGACY_TEAM_CODES = {"JAC": "JAX", "WSH": "WAS", "LA": "LAR", "OAK": "LV", "SD": "LAC"}
+
+
+def _usage_team(raw_team) -> Optional[str]:
+    """Return the site's one-way canonical code for usage grouping."""
+    team = canon_team(raw_team) if raw_team else None
+    return _LEGACY_TEAM_CODES.get(team, team)
 
 
 def build_usage_map_for_season(
@@ -21,13 +25,13 @@ def build_usage_map_for_season(
 ) -> Dict[str, Dict[str, float]]:
     """
     Aggregate Sleeper season stats for the given season + weeks and
-    enrich with red-zone stats + Footballguys target share + PFR snap counts.
+    enrich with Sleeper red-zone stats.
 
     Returns per player:
       {
         "games": int,
-        "avg_off_snap_pct": float,  # From PFR (0-1)
-        "avg_off_snaps": float,      # From PFR
+        "avg_off_snap_pct": float,  # Sleeper when published (0-1)
+        "avg_off_snaps": float,      # Sleeper when published
         "avg_targets": float,
         "avg_receptions": float,
         "avg_rec_yards": float,
@@ -49,23 +53,23 @@ def build_usage_map_for_season(
         "rec_rz_tgt_pg": float,
         "rush_rz_att_pg": float,
 
-        # Footballguys
-        "total_targets": float,   # FBG season total
-        "target_share": float,    # FBG season target share (0–1)
+        "total_targets": float,
+        "target_share": float,    # derived from Sleeper weekly targets (0–1)
       }
     """
 
-    # Fetch enrichment data first (these are compact, season-level)
+    # Sleeper is the authoritative dependency for this base usage build. Avoid
+    # blocking current-season data on name-matched scrapers or nfl_data_py.
     rz_map = fetch_season_redzone_stats(season)
-    ts_map = fetch_league_target_share(season)
-
-    print(f"[build_usage] Fetching PFR snap counts for {season}...")
-    snap_counts_map = fetch_season_snap_counts(season, weeks)
 
     # Load once - reused for both the accumulation loop and snap merging below
     players_index = load_players_index() or {}
 
     accum: Dict[str, Dict[str, float]] = {}
+    player_team: Dict[str, Optional[str]] = {}
+    player_team_weeks: Dict[str, set] = {}
+    team_week_opportunities: Dict[tuple, float] = {}
+    team_week_targets: Dict[tuple, float] = {}
     weeks_list = list(weeks)
 
     # Stream one week at a time so we never hold all 18 weeks in RAM simultaneously
@@ -79,6 +83,9 @@ def build_usage_map_for_season(
             if not isinstance(row, dict):
                 continue
             stats = row
+            raw_week_team = stats.get("team") or stats.get("club") or stats.get("player_team")
+            if raw_week_team:
+                player_team[str(pid)] = _usage_team(raw_week_team)
 
             # Core usage
             off_snaps = float(stats.get("off_snp", 0) or 0)
@@ -99,6 +106,16 @@ def build_usage_map_for_season(
                 _ry = stats.get("rushing_yd", 0)
             rush_yards = float(_ry or 0)
             rush_tds = float(stats.get("rush_td", stats.get("rushing_td", 0)) or 0)
+
+            attributed_team = player_team.get(str(pid))
+            if not attributed_team:
+                meta = players_index.get(str(pid)) or players_index.get(pid) or {}
+                attributed_team = _usage_team(meta.get("team"))
+            if attributed_team:
+                team_week = (attributed_team, int(w))
+                player_team_weeks.setdefault(str(pid), set()).add(team_week)
+                team_week_opportunities[team_week] = team_week_opportunities.get(team_week, 0.0) + targets + carries
+                team_week_targets[team_week] = team_week_targets.get(team_week, 0.0) + targets
 
             ppr = float(stats.get("pts_ppr", 0) or 0)
             half_ppr = float(stats.get("pts_half_ppr", 0) or 0)
@@ -180,21 +197,38 @@ def build_usage_map_for_season(
             acc["pass_tds"] += pass_tds
             acc["pass_int"] += pass_int
 
-            # NEW: Footballguys target share – season-level, so we just overwrite with same value each week
-            meta = players_index.get(str(pid)) or players_index.get(pid) or {}
-            name = meta.get("name")
-            raw_team = meta.get("team")
-            team = canon_team(raw_team) if raw_team else None
-
-            if name and team:
-                ts_info = ts_map.get((team, name))
-                if ts_info:
-                    acc["total_targets"] = float(ts_info.get("total_targets", 0.0) or 0.0)
-                    acc["target_share"] = float(ts_info.get("target_share", 0.0) or 0.0)
-
         # Free this week's raw data before loading the next one
         del week_players
         gc.collect()
+
+    # Sum cumulative player totals, not per-game averages: players on the same
+    # team frequently have different games played. Prefer player-week team
+    # attribution (important after trades), falling back to current metadata.
+    player_team_opportunities: Dict[str, float] = {}
+    player_team_targets: Dict[str, float] = {}
+    team_season_opportunities: Dict[str, float] = {}
+    team_season_targets: Dict[str, float] = {}
+    for (team, _week), total in team_week_opportunities.items():
+        team_season_opportunities[team] = team_season_opportunities.get(team, 0.0) + total
+    for (team, _week), total in team_week_targets.items():
+        team_season_targets[team] = team_season_targets.get(team, 0.0) + total
+    for pid, acc in accum.items():
+        meta = players_index.get(str(pid)) or players_index.get(pid) or {}
+        team = player_team.get(str(pid))
+        if not team and meta.get("team"):
+            team = _usage_team(meta.get("team"))
+        player_team[str(pid)] = team
+        contexts = player_team_weeks.get(str(pid), set())
+        teams = {team_code for team_code, _week in contexts}
+        if len(teams) == 1:
+            only_team = next(iter(teams))
+            player_team_opportunities[str(pid)] = team_season_opportunities.get(only_team, 0)
+            player_team_targets[str(pid)] = team_season_targets.get(only_team, 0)
+        else:
+            # For traded players, use the actual team-week segments rather than
+            # assigning their entire season to the current roster team.
+            player_team_opportunities[str(pid)] = sum(team_week_opportunities.get(k, 0) for k in contexts)
+            player_team_targets[str(pid)] = sum(team_week_targets.get(k, 0) for k in contexts)
 
     # ---- Collapse to per-game usage dict ----
     usage: Dict[str, Dict[str, float]] = {}
@@ -231,8 +265,6 @@ def build_usage_map_for_season(
 
         usage[pid] = {
             "games": g,
-            # NOTE: Sleeper doesn't provide snap data, so these are placeholders
-            # Will be overwritten by PFR data below
             "avg_off_snap_pct": acc["off_snap_pct"] / g,
             "avg_off_snaps": acc["off_snaps"] / g,
             "avg_targets": acc["targets"] / g,
@@ -256,70 +288,16 @@ def build_usage_map_for_season(
             "avg_pass_tds": acc["pass_tds"] / g,
             "avg_pass_int": acc["pass_int"] / g,
 
-            # Footballguys season-level (not per-game)
-            "total_targets": acc.get("total_targets", 0.0),
-            "target_share": acc.get("target_share", 0.0),
+            "total_targets": acc["targets"],
+            "target_share": (
+                acc["targets"] / player_team_targets[str(pid)]
+                if player_team_targets.get(str(pid), 0) > 0 else 0.0
+            ),
+            "season_targets": acc["targets"],
+            "season_carries": acc["carries"],
+            "team_opportunities": player_team_opportunities.get(str(pid)),
+            "season_team": player_team.get(str(pid)),
         }
-
-    # ---- Merge PFR snap count data ----
-    # Match players by name + team since PFR doesn't have Sleeper IDs
-    # players_index already loaded above - no need to reload
-    print(f"[build_usage] Merging PFR snap counts for {len(snap_counts_map)} players...")
-    snap_matches = 0
-
-    for pid, player_usage in usage.items():
-        if player_usage["games"] == 0:
-            continue
-
-        # Get player name and team from players_index
-        player_meta = players_index.get(pid, {})
-        player_name = player_meta.get("name", "")
-        player_team = canon_team(player_meta.get("team", ""))
-
-        if not player_name or not player_team:
-            continue
-
-        # Try to find matching snap data by name
-        snap_data = snap_counts_map.get(player_name)
-
-        if snap_data and snap_data["team"] == player_team:
-            # Found a match! Overwrite Sleeper's empty snap data with PFR data
-            player_usage["avg_off_snap_pct"] = snap_data["avg_off_snap_pct"]
-            player_usage["avg_off_snaps"] = snap_data["avg_off_snaps"]
-            snap_matches += 1
-
-    print(f"[build_usage] Matched snap data for {snap_matches} players")
-
-    # ---- Apply snap share estimation for players without real snap data ----
-    from data_building.external_data.pfr_snap_counts import estimate_snap_share_from_usage
-
-    estimated_count = 0
-    for pid, player_usage in usage.items():
-        if player_usage["games"] == 0:
-            continue
-
-        # If no snap data was matched (avg_off_snap_pct is still 0 or very low)
-        if player_usage["avg_off_snap_pct"] < 0.01:
-            # Get player position
-            player_meta = players_index.get(pid, {})
-            position = player_meta.get("pos", "")
-
-            if position in ["QB", "RB", "WR", "TE"]:
-                # Estimate snap share from usage
-                estimated_snap_share = estimate_snap_share_from_usage(
-                    position=position,
-                    avg_targets=player_usage["avg_targets"],
-                    avg_carries=player_usage["avg_carries"],
-                    avg_pass_att=player_usage.get("avg_pass_att", 0)
-                )
-
-                if estimated_snap_share > 0:
-                    player_usage["avg_off_snap_pct"] = estimated_snap_share
-                    # Estimate total snaps (assuming ~65 offensive snaps per game as average)
-                    player_usage["avg_off_snaps"] = estimated_snap_share * 65.0
-                    estimated_count += 1
-
-    print(f"[build_usage] Estimated snap share for {estimated_count} players without real data")
 
     return usage
 
@@ -353,6 +331,10 @@ def write_usage_table_snapshot(
 
     It uses the usage data from build_usage_map_for_season(season, weeks).
     """
+    # Keep the heavier dashboard service graph out of the weekly usage build;
+    # age calculation is only needed by this legacy JSON export.
+    from dashboard_services.service import age_from_bday
+
     DATA_DIR = Path(__file__).resolve().parents[2] / "data"
     players_index: Dict[str, dict] = load_players_index()
     usage_by_pid: Dict[str, dict] = build_usage_map_for_season(season, weeks)

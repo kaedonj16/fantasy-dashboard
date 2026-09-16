@@ -26,7 +26,7 @@ underlying data) is unavailable, mirroring pfr_snap_counts.py.
 
 from __future__ import annotations
 
-from typing import Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 # NGS / FTN player-tracking data only exists from these seasons on.
 NGS_FLOOR = 2016
@@ -161,6 +161,75 @@ def _apply_created_separation(row: Dict[str, float]) -> None:
         row["ngs_created_separation"] = created
 
 
+def _aggregate_ngs_weekly_records(records: List[Dict[str, Any]], stat_type: str) -> List[Dict[str, Any]]:
+    """Aggregate NGS record dictionaries without importing pandas."""
+    weights = {
+        "receiving": {
+            "avg_separation": "targets", "avg_cushion": "targets",
+            "avg_intended_air_yards": "targets", "catch_percentage": "targets",
+            "avg_yac": "receptions", "avg_expected_yac": "receptions",
+            "avg_yac_above_expectation": "receptions",
+        },
+        "passing": {
+            "avg_time_to_throw": "attempts", "aggressiveness": "attempts",
+            "avg_completed_air_yards": "attempts",
+            "avg_air_yards_differential": "attempts",
+            "avg_air_yards_to_sticks": "attempts",
+            "completion_percentage_above_expectation": "attempts",
+        },
+        "rushing": {
+            "rush_yards_over_expected_per_att": "rush_attempts",
+            "efficiency": "rush_attempts", "avg_time_to_los": "rush_attempts",
+            "percent_attempts_gte_eight_defenders": "rush_attempts",
+        },
+    }[stat_type]
+    grouped: Dict[str, List[Dict[str, Any]]] = {}
+    for record in records:
+        grouped.setdefault(str(record.get("player_gsis_id") or ""), []).append(record)
+    output = []
+    for gsis, group in grouped.items():
+        row: Dict[str, Any] = {"player_gsis_id": gsis, "season_type": "REG", "week": 0}
+        if stat_type == "rushing":
+            values = [_f(r.get("rush_yards_over_expected")) for r in group]
+            present = [v for v in values if v is not None]
+            if present:
+                row["rush_yards_over_expected"] = sum(present)
+        if stat_type == "passing":
+            values = [_f(r.get("max_completed_air_distance")) for r in group]
+            present = [v for v in values if v is not None]
+            if present:
+                row["max_completed_air_distance"] = max(present)
+        for metric, weight in weights.items():
+            pairs = [(_f(r.get(metric)), _f(r.get(weight))) for r in group]
+            valid = [(value, volume) for value, volume in pairs
+                     if value is not None and volume is not None and volume > 0]
+            denominator = sum(volume for _, volume in valid)
+            if denominator > 0:
+                row[metric] = sum(value * volume for value, volume in valid) / denominator
+        output.append(row)
+    return output
+
+
+def _ngs_season_rows(df, stat_type: str):
+    """Prefer NGS week-zero summaries; safely aggregate published weeks.
+
+    Weekly rates are volume-weighted by their natural opportunity count.  A
+    rate without a usable denominator is left null rather than averaging weekly
+    percentages. Counting metrics sum and max-distance metrics take the max.
+    """
+    reg = df[df["season_type"] == "REG"]
+    summary = reg[reg["week"] == 0]
+    if not summary.empty:
+        return summary
+    weekly = reg[reg["week"] > 0]
+    if weekly.empty:
+        return weekly
+    records = _aggregate_ngs_weekly_records(weekly.to_dict("records"), stat_type)
+    # Intended-air-yards team share cannot be reconstructed without its team
+    # denominator, so it intentionally remains null in weekly fallback.
+    return type(df)(records)
+
+
 def build_ngs_receiving_for_season(season: int) -> Dict[str, Dict[str, float]]:
     """Return {sleeper_id: {ngs columns}} for a season's NGS receiving data.
 
@@ -181,8 +250,7 @@ def build_ngs_receiving_for_season(season: int) -> Dict[str, Dict[str, float]]:
     if df is None or df.empty:
         return {}
 
-    # Keep only the regular-season summary rows (week 0 = season aggregate).
-    df = df[(df["season_type"] == "REG") & (df["week"] == 0)]
+    df = _ngs_season_rows(df, "receiving")
     crosswalk = _gsis_to_sleeper()
 
     out: Dict[str, Dict[str, float]] = {}
@@ -237,7 +305,7 @@ def build_ngs_passing_for_season(season: int) -> Dict[str, Dict[str, float]]:
     if df is None or df.empty:
         return {}
 
-    df = df[(df["season_type"] == "REG") & (df["week"] == 0)]
+    df = _ngs_season_rows(df, "passing")
     crosswalk = _gsis_to_sleeper()
 
     out: Dict[str, Dict[str, float]] = {}
@@ -282,7 +350,7 @@ def build_ngs_rushing_for_season(season: int) -> Dict[str, Dict[str, float]]:
     if df is None or df.empty:
         return {}
 
-    df = df[(df["season_type"] == "REG") & (df["week"] == 0)]
+    df = _ngs_season_rows(df, "rushing")
     crosswalk = _gsis_to_sleeper()
 
     out: Dict[str, Dict[str, float]] = {}
