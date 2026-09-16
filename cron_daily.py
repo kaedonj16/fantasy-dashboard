@@ -387,6 +387,52 @@ n = save_pregame_snapshot({season!r}, {week!r})
 print(f"[cron] Pregame projection snapshot week {week}: {{n}} rows")
 """, "save_pregame_snapshot")
 
+    # Advanced Metrics dependency order:
+    # 1) completed-week caches are fetched above; 2) weekly usage;
+    # 3) weekly nflverse; 4) base season snapshot; 5) season aggregation.
+    # ------------------------------------------------------------------ #
+    # Step 4a: Weekly usage metrics (snap/target share per week)          #
+    # Powers usage risers, trend sparklines, and start/sit usage factor.  #
+    # ------------------------------------------------------------------ #
+    _run_step("""
+from dotenv import load_dotenv; load_dotenv()
+from datetime import datetime
+from dashboard_services.api import get_nfl_state
+from data_building.weekly_metrics import build_weekly_metrics
+
+nfl_state = get_nfl_state() or {}
+season_type = str(nfl_state.get("season_type", "")).lower().strip()
+current_season = int(nfl_state.get("season") or datetime.now().year)
+if season_type == "off":
+    print("[cron] Offseason - refreshing weekly metrics for prior season")
+    n = build_weekly_metrics(current_season - 1)
+else:
+    n = build_weekly_metrics(current_season)
+print(f"[cron] Weekly metrics: {n} rows upserted")
+""", "build_weekly_metrics")
+
+    # Per-week rows run daily. Providers publish on different schedules and a
+    # missed Tuesday deployment must not postpone Week 1 until the next week.
+    _run_step("""
+from dotenv import load_dotenv; load_dotenv()
+from datetime import datetime
+from dashboard_services.api import get_nfl_state
+from data_building.advanced_metrics import init_advanced_metrics_db
+from scripts.sync_nflverse_metrics import upsert_weekly_season
+from utils.utils import load_players_index
+
+nfl_state = get_nfl_state() or {}
+season_type = str(nfl_state.get("season_type", "")).lower().strip()
+is_offseason = season_type == "off"
+current_season = int(nfl_state.get("season") or datetime.now().year)
+target_season = current_season - 1 if is_offseason else current_season
+
+init_advanced_metrics_db()
+players_index = load_players_index() or {}
+wn = upsert_weekly_season(target_season, players_index)
+print(f"[cron] nflverse weekly metrics: {wn} player-weeks for season {target_season}")
+""", "sync_nflverse_weekly_metrics")
+
     # ------------------------------------------------------------------ #
     # Step 4: Advanced metrics                                            #
     # ------------------------------------------------------------------ #
@@ -433,13 +479,6 @@ except Exception as _e:
 """, "build_daily_advanced_metrics")
 
     # ------------------------------------------------------------------ #
-    # Step 4-nflverse: Free advanced metrics (NGS / FTN / pbp EPA)        #
-    # Season-aggregate metrics run daily (fast upsert).                   #
-    # Per-week rows run daily so delayed provider data is picked up promptly     #
-    # and the data doesn't change until the next week's games complete.   #
-    # Historical seasons are handled by a one-time manual backfill:       #
-    #   scripts.sync_nflverse_metrics --seasons ...                       #
-    # ------------------------------------------------------------------ #
     _run_step("""
 from dotenv import load_dotenv; load_dotenv()
 from datetime import datetime
@@ -462,49 +501,13 @@ n = upsert_season(target_season, players_index, purge_pff=True)
 print(f"[cron] nflverse (NGS/FTN/EPA) season metrics: {n} rows for season {target_season}")
 """, "sync_nflverse_season_metrics")
 
-    # Per-week rows run daily. Providers publish on different schedules and a
-    # missed Tuesday deployment must not postpone Week 1 until the next week.
-    _run_step("""
-from dotenv import load_dotenv; load_dotenv()
-from datetime import datetime
-from dashboard_services.api import get_nfl_state
-from data_building.advanced_metrics import init_advanced_metrics_db
-from scripts.sync_nflverse_metrics import upsert_weekly_season
-from utils.utils import load_players_index
-
-nfl_state = get_nfl_state() or {}
-season_type = str(nfl_state.get("season_type", "")).lower().strip()
-is_offseason = season_type == "off"
-current_season = int(nfl_state.get("season") or datetime.now().year)
-target_season = current_season - 1 if is_offseason else current_season
-
-init_advanced_metrics_db()
-players_index = load_players_index() or {}
-wn = upsert_weekly_season(target_season, players_index)
-print(f"[cron] nflverse weekly metrics: {wn} player-weeks for season {target_season}")
-""", "sync_nflverse_weekly_metrics")
-
     # ------------------------------------------------------------------ #
-    # Step 4a: Weekly usage metrics (snap/target share per week)          #
-    # Powers usage risers, trend sparklines, and start/sit usage factor.  #
-    # ------------------------------------------------------------------ #
-    _run_step("""
-from dotenv import load_dotenv; load_dotenv()
-from datetime import datetime
-from dashboard_services.api import get_nfl_state
-from data_building.weekly_metrics import build_weekly_metrics
-
-nfl_state = get_nfl_state() or {{}}
-season_type = str(nfl_state.get("season_type", "")).lower().strip()
-current_season = int(nfl_state.get("season") or datetime.now().year)
-if season_type == "off":
-    print("[cron] Offseason - refreshing weekly metrics for prior season")
-    n = build_weekly_metrics(current_season - 1)
-else:
-    n = build_weekly_metrics(current_season)
-print(f"[cron] Weekly metrics: {{n}} rows upserted")
-""", "build_weekly_metrics")
-
+    # Step 4-nflverse: Free advanced metrics (NGS / FTN / pbp EPA)        #
+    # Season-aggregate metrics run daily (fast upsert).                   #
+    # Per-week rows run daily so delayed provider data is picked up promptly     #
+    # and the data doesn't change until the next week's games complete.   #
+    # Historical seasons are handled by a one-time manual backfill:       #
+    #   scripts.sync_nflverse_metrics --seasons ...                       #
     # ------------------------------------------------------------------ #
     # Step 4a1b: Detect unexpected big games for the completed week.       #
     # Reuses the weekly metrics just built + the pregame snapshot and       #

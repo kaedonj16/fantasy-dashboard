@@ -102,11 +102,7 @@ def upsert_season(season: int, players_index: dict, purge_pff: bool = True) -> i
     by_pid = build_nflverse_metrics_for_season(season)
     if not by_pid:
         print(f"  No nflverse metrics resolved for {season}")
-        if purge_pff:
-            with get_conn() as conn:
-                purged = purge_pff_shared_values(conn, season)
-            if purged:
-                print(f"  Purged PFF shared values on {purged} row(s) for {season}")
+        # A provider outage must never erase the last successful snapshot.
         return 0
 
     # Distinct snapshot date per season; later than the computed (01-10) and PFF
@@ -126,7 +122,8 @@ def upsert_season(season: int, players_index: dict, purge_pff: bool = True) -> i
             vals = [pid, as_of_date, season, pos] + [cols[k] for k in keys]
             placeholders = ", ".join(["%s"] * len(db_cols))
             set_clause = ", ".join(
-                f"{c}=EXCLUDED.{c}" for c in ["season", "position", *keys]
+                f"{c}=COALESCE(EXCLUDED.{c}, player_advanced_metrics.{c})"
+                for c in ["season", "position", *keys]
             )
             conn.execute(
                 f"""
@@ -174,7 +171,8 @@ def upsert_weekly_season(season: int, players_index: dict) -> int:
             vals = [pid, int(season), int(week), pos] + [cols[c] for c in present]
             placeholders = ", ".join(["%s"] * len(db_cols))
             set_clause = ", ".join(
-                f"{c}=EXCLUDED.{c}" for c in ["position", *present]
+                f"{c}=COALESCE(EXCLUDED.{c}, player_weekly_advanced_metrics.{c})"
+                for c in ["position", *present]
             )
             conn.execute(
                 f"""

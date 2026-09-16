@@ -8,6 +8,7 @@ from data_building.external_data.nflverse_metrics import (
     build_ngs_passing_for_season,
     build_ngs_receiving_for_season,
     build_ngs_rushing_for_season,
+    _aggregate_ngs_weekly_records,
 )
 
 
@@ -45,3 +46,17 @@ def test_ngs_builders_skip_below_floor():
     assert build_ngs_passing_for_season(2015) == {}
     assert build_ngs_receiving_for_season(2015) == {}
     assert build_ngs_rushing_for_season(2015) == {}
+
+
+def test_ngs_weekly_fallback_uses_volume_weights_and_max():
+    weekly = [
+        {"player_gsis_id": "p1", "season_type": "REG", "week": 1,
+         "attempts": 10, "avg_time_to_throw": 2.0,
+         "max_completed_air_distance": 20},
+        {"player_gsis_id": "p1", "season_type": "REG", "week": 2,
+         "attempts": 30, "avg_time_to_throw": 4.0,
+         "max_completed_air_distance": 50},
+    ]
+    row = _aggregate_ngs_weekly_records(weekly, "passing")[0]
+    assert row["avg_time_to_throw"] == 3.5
+    assert row["max_completed_air_distance"] == 50

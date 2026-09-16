@@ -1,5 +1,7 @@
 """Regression coverage for partial, early-season Advanced Metrics builds."""
 
+from pathlib import Path
+
 def _usage(games=1):
     return {
         "games": games, "avg_targets": 10, "avg_receptions": 6,
@@ -93,3 +95,52 @@ def test_available_seasons_and_week_one_queries_use_stored_2026(monkeypatch):
     monkeypatch.setattr(am, "init_weekly_advanced_metrics_db", lambda: None)
     assert am.get_available_seasons_for_player("wr1") == [2026, 2025]
     assert am.get_available_metric_weeks("wr1", 2026) == [1]
+
+
+def test_opportunity_share_is_team_relative_cumulative_percentage():
+    from data_building.advanced_metrics import calculate_usage_metrics
+    result = calculate_usage_metrics({
+        "games": 1, "avg_targets": 6, "avg_carries": 5,
+        "season_targets": 6, "season_carries": 5,
+        "team_opportunities": 60,
+    }, "RB")
+    assert round(result["opportunity_share"], 1) == 18.3
+
+
+def test_opportunity_share_does_not_sum_per_game_averages():
+    from data_building.advanced_metrics import calculate_usage_metrics
+    # Player has 11 opportunities in one game; teammates accumulated the other
+    # 49 over different game counts. The supplied cumulative team total wins.
+    result = calculate_usage_metrics({
+        "games": 1, "avg_targets": 6, "avg_carries": 5,
+        "season_targets": 6, "season_carries": 5,
+        "team_opportunities": 60,
+    }, "RB")
+    assert result["opportunity_share"] != 11
+    assert round(result["opportunity_share"], 1) == 18.3
+
+
+def test_opportunity_share_missing_team_is_null_not_opportunities_per_game():
+    from data_building.advanced_metrics import calculate_usage_metrics
+    result = calculate_usage_metrics({"avg_targets": 7, "avg_carries": 4}, "WR")
+    assert result["opportunity_share"] is None
+
+
+def test_opportunity_share_preserves_observed_zero():
+    from data_building.advanced_metrics import calculate_usage_metrics
+    result = calculate_usage_metrics({
+        "season_targets": 0, "season_carries": 0, "team_opportunities": 60,
+    }, "TE")
+    assert result["opportunity_share"] == 0.0
+
+
+def test_modal_renders_opportunity_share_once_for_all_skill_positions():
+    js = (Path(__file__).resolve().parents[1] / "static" / "player_modal.js").read_text()
+    fn = js[js.index("function buildAdvancedMetricsHTML"):]
+    shared = fn.index("['RB', 'WR', 'TE'].includes(position)")
+    rb_branch = fn.index("} else if (position === 'RB')")
+    assert shared < rb_branch
+    # Exactly one explicit tile definition; the generic renderer recognizes the
+    # key via _shownKeys rather than emitting another copy.
+    assert fn.count("label: 'Opp Share'") == 1
+    assert "'role_score','snap_share','route_participation','opportunity_share'" in fn

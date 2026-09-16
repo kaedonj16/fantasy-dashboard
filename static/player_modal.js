@@ -4684,6 +4684,12 @@ function buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive, counts, b
     const pct = metrics.snap_share * 100;
     defs.push({ label: 'Snap Share', fill: Math.min(pct / 85 * 100, 100), display: pct.toFixed(1) + '%', key: 'snap_share', sub: _rankSub('snap_share'), cat: 'General' });
   }
+  // Shared skill-position usage metric (rather than RB-only). _shownKeys below
+  // then guarantees the generic renderer cannot add a duplicate.
+  if (['RB', 'WR', 'TE'].includes(position) && metrics.opportunity_share != null) {
+    const oppShare = metrics.opportunity_share;
+    defs.push({ label: 'Opp Share', fill: Math.min(oppShare * 4, 100), display: oppShare.toFixed(1) + '%', key: 'opportunity_share', sub: _rankSub('opportunity_share'), cat: 'General' });
+  }
 
   if (position === 'QB') {
     if (metrics.pff_passing_grade != null) {
@@ -4787,12 +4793,6 @@ function buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive, counts, b
     if (metrics.rush_td_rate != null) {
       const v = metrics.rush_td_rate;
       defs.push({ label: 'Rush TD Rate', fill: Math.min(v * 1000, 100), display: (v * 100).toFixed(1) + '%', key: 'rush_td_rate', sub: _rankSub('rush_td_rate'), cat: 'Rushing' });
-    }
-    if (metrics.opportunity_share != null) {
-      const oppShare = metrics.opportunity_share;
-      const fillPercent = Math.min(oppShare * 4, 100);
-      const color = oppShare >= 25 ? '#10b981' : oppShare >= 15 ? '#3b82f6' : oppShare >= 10 ? '#f59e0b' : '#6b7280';
-      defs.push({ label: 'Opp Share', fill: fillPercent, display: oppShare.toFixed(1) + '%', key: 'opportunity_share', sub: _rankSub('opportunity_share'), cat: 'General' });
     }
     if (metrics.catch_rate != null) {
       const pct = metrics.catch_rate * 100;
