@@ -992,7 +992,7 @@ def get_weekly_ai_recap(
     if df_weekly is None or df_weekly.empty:
         return empty
 
-    cache_key = f"weekly_recap_{league_id}_{season}_w{selected_week}_v11_power_divisions"
+    cache_key = f"weekly_recap_{league_id}_{season}_w{selected_week}_v12_top_performers"
     cached = _load_recap_no_ttl(cache_key)
     if cached is not None:
         recap_html, _, next_html = cached.partition(_NEXT_WEEK_SPLIT)

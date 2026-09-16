@@ -11,7 +11,7 @@ def test_recap_prompt_has_natural_record_and_power_rules():
     assert "Standings describe what has happened" in source
     assert "Power rank describes how strong a team looks" in source
     assert "rank_gap" in source
-    assert "v11_power_divisions" in source
+    assert "v12_top_performers" in source
 
 
 def test_lineup_selectors_supply_six_real_candidates():
