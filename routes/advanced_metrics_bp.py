@@ -84,6 +84,20 @@ def api_advanced_metrics_leaderboard():
     is_multi_season  = isinstance(season, list)
     is_week_filtered = bool(week_start or week_end) and weekly_capable and not is_multi_season
 
+    # An omitted threshold means "use the shared default for this completed
+    # portion". An explicit value (including a stricter one) is never changed.
+    qualification = None
+    if isinstance(season, int):
+        from utils.season_qualification import qualification_policy
+        qualification = qualification_policy(
+            season, week_start=week_start if is_week_filtered else None,
+            week_end=week_end if is_week_filtered else None)
+        if not min_vol_str:
+            _mv = (LEADERBOARD_METRICS[metric].get("min_vol") or {})
+            _opts = _mv.get("opts") or []
+            _full_default = int(_opts[0]) if _opts else 1
+            min_vol = qualification.minimum(_mv.get("col") or "games", _full_default)
+
     try:
         if metric in VALUE_METRICS and not is_multi_season:
             # Value metrics (VORP/WAR) are league-size aware; derive num_teams
@@ -187,6 +201,10 @@ def api_advanced_metrics_leaderboard():
         "is_week_filtered": is_week_filtered,
         "selected_seasons": selected_seasons,
         "combine": bool(combine) and is_multi_season,
+        "qualification": ({"games_min": qualification.games_min,
+            "completed_rounds": len(qualification.completed_weeks),
+            "provisional": qualification.provisional, "note": qualification.note(),
+            "default_min_vol": min_vol} if qualification else None),
         "players": players,
     })
     # Leaderboard data is rebuilt at most daily, so let the browser reuse the

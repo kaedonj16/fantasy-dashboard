@@ -25,7 +25,10 @@ def build_advanced_metrics_body(
         PREMIUM_METRICS, premium_metrics_exposed,
     )
     _hide_premium = not premium_metrics_exposed()
-    available_seasons: list = get_available_seasons() if has_premium else []
+    # Public metrics also live in this table; season discovery must not depend
+    # on PFF entitlement (otherwise a newly ingested season such as 2026 is
+    # hidden from the selector for ordinary users).
+    available_seasons: list = get_available_seasons()
     # Week-filterable metrics: usage-derived (_WEEKLY_METRICS) plus the
     # NGS/FTN/EPA metrics that have a per-week store (ADV_WEEKLY_METRIC_KEYS).
     weekly_metric_keys: list = sorted(
@@ -79,7 +82,8 @@ def build_advanced_metrics_body(
         mv = spec.get("min_vol")
         if not mv:
             return None
-        return {"label": mv["label"], "opts": mv["opts"]}
+        # One is always selectable for explicit Week 1/small-sample analysis.
+        return {"label": mv["label"], "opts": sorted(set([1, *mv["opts"]]))}
 
     # Glossary: every metric grouped by category (same order as the dropdown).
     _legend_sections = []
@@ -2271,10 +2275,9 @@ _AM_JS = r"""
   // Lowest threshold for a metric - the sensible default so the leaderboard
   // isn't dominated by tiny-sample players (e.g. 1-carry QBs at 198 yds/carry).
   function defaultVol(m) {
-    const isWeekly = state.weekRange && state.weekRange !== '';
-    if (isWeekly) return '';  // default "Any" for weekly mode
-    const spec = cfg.metrics[m] && cfg.metrics[m].minVol;
-    return (spec && spec.opts && spec.opts.length) ? String(spec.opts[0]) : '';
+    // Empty means "server-selected shared qualification", not unrestricted.
+    // Explicit user choices remain in state.minVol and are sent unchanged.
+    return '';
   }
   // Volume filter: switches between season options and weekly-appropriate options
   // depending on whether a week range is active.

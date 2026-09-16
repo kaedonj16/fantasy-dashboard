@@ -14,6 +14,18 @@ _DEFAULT_RATES = {
 }
 
 
+def completed_points_summary(points: list[float] | tuple[float, ...]) -> dict | None:
+    """Aggregate actual appearances without rounding drift.
+
+    An empty sequence means no appearance (missing/N/A), while ``[0.0]`` is a
+    genuine score and remains distinguishable from missing data.
+    """
+    if not points:
+        return None
+    total = sum(float(p) for p in points)
+    return {"games": len(points), "total": total, "ppg": total / len(points)}
+
+
 def _rate(settings: dict, key: str) -> float:
     """Respect explicit zero scoring; only use defaults when a key is absent."""
     value = settings[key] if key in settings else _DEFAULT_RATES.get(key, 0.0)

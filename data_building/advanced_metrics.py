@@ -2994,8 +2994,8 @@ _PER_GAME_BOUNDS = {
 }
 
 
-def _compute_position_bounds(srows: List[dict]) -> Dict[str, list]:
-    """Per-metric [min, max] across the position's qualified players (4+ games).
+def _compute_position_bounds(srows: List[dict], games_min: int = 4) -> Dict[str, list]:
+    """Per-metric bounds across the same games-qualified rank population.
 
     Used by the player/compare modals to scale each bar by the metric's actual
     value within its positional range — so a large lead at the top of the
@@ -3026,7 +3026,7 @@ def _compute_position_bounds(srows: List[dict]) -> Dict[str, list]:
         # rows predating the column → treat as passing).
         if g is not None:
             try:
-                if float(g) < 4:
+                if float(g) < games_min:
                     continue
             except (TypeError, ValueError):
                 logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
@@ -3087,17 +3087,29 @@ def get_player_metric_ranks(player_id: str, season: Optional[int] = None) -> Dic
         if season is None:
             season = int(row["season"])
 
+        from utils.season_qualification import qualification_policy
+        _policy = qualification_policy(int(season))
+        _games_min = _policy.games_min
+        _pass_min = _policy.minimum("total_pass_att", 50)
+        _carry_min = _policy.minimum("total_carries", 20)
+        _target_min = _policy.minimum("total_targets", 15)
+        _rec_min = _policy.minimum("total_receptions", 10)
+
         # Cache hit: return this player's slice of the cached position ranks.
-        _cache_key = (_today, position, season)
+        _cache_key = (_today, position, season, tuple(_policy.completed_weeks),
+                      _games_min, _pass_min, _carry_min, _target_min, _rec_min)
         _cached_all = _POSITION_RANKS_CACHE.get(_cache_key)
         if _cached_all is not None:
             return {"position": position, "season": season,
                     "ranks": _cached_all.get(str(player_id), {}),
                     "counts": _rank_counts(_cached_all),
-                    "bounds": _POSITION_BOUNDS_CACHE.get(_cache_key, {})}
+                    "bounds": _POSITION_BOUNDS_CACHE.get(_cache_key, {}),
+                    "qualification": {"games_min": _games_min,
+                        "completed_rounds": len(_policy.completed_weeks),
+                        "provisional": _policy.provisional, "note": _policy.note()}}
 
         try:
-            result = conn.execute("""
+            result = conn.execute(f"""
                 WITH snapshot AS (
                     SELECT player_id,
                         MAX(total_carries) AS total_carries,
@@ -3170,7 +3182,7 @@ def get_player_metric_ranks(player_id: str, season: Optional[int] = None) -> Dic
                         MAX(games),
                         CASE WHEN COALESCE(MAX(total_carries),0)+COALESCE(MAX(total_targets),0) > 0
                              THEN 1 END
-                    ) >= 4
+                    ) >= {_games_min}
                 ),
                 r AS (
                     SELECT player_id,
@@ -3197,128 +3209,128 @@ def get_player_metric_ranks(player_id: str, season: Optional[int] = None) -> Dic
                         CASE WHEN opportunity_share IS NOT NULL THEN RANK() OVER (PARTITION BY (opportunity_share IS NULL) ORDER BY opportunity_share DESC) ELSE NULL END AS opportunity_share,
                         CASE WHEN red_zone_usage   IS NOT NULL THEN RANK() OVER (PARTITION BY (red_zone_usage   IS NULL) ORDER BY red_zone_usage   DESC) ELSE NULL END AS red_zone_usage,
                         -- QB passing metrics: require 50+ pass attempts
-                        CASE WHEN pff_passing_grade IS NOT NULL AND COALESCE(total_pass_att,0) >= 50
-                             THEN RANK() OVER (PARTITION BY (pff_passing_grade IS NULL OR COALESCE(total_pass_att,0) < 50) ORDER BY pff_passing_grade DESC)
+                        CASE WHEN pff_passing_grade IS NOT NULL AND COALESCE(total_pass_att,0) >= {_pass_min}
+                             THEN RANK() OVER (PARTITION BY (pff_passing_grade IS NULL OR COALESCE(total_pass_att,0) < {_pass_min}) ORDER BY pff_passing_grade DESC)
                              ELSE NULL END AS pff_passing_grade,
-                        CASE WHEN big_time_throw_rate IS NOT NULL AND COALESCE(total_pass_att,0) >= 50
-                             THEN RANK() OVER (PARTITION BY (big_time_throw_rate IS NULL OR COALESCE(total_pass_att,0) < 50) ORDER BY big_time_throw_rate DESC)
+                        CASE WHEN big_time_throw_rate IS NOT NULL AND COALESCE(total_pass_att,0) >= {_pass_min}
+                             THEN RANK() OVER (PARTITION BY (big_time_throw_rate IS NULL OR COALESCE(total_pass_att,0) < {_pass_min}) ORDER BY big_time_throw_rate DESC)
                              ELSE NULL END AS big_time_throw_rate,
-                        CASE WHEN adjusted_completion_rate IS NOT NULL AND COALESCE(total_pass_att,0) >= 50
-                             THEN RANK() OVER (PARTITION BY (adjusted_completion_rate IS NULL OR COALESCE(total_pass_att,0) < 50) ORDER BY adjusted_completion_rate DESC)
+                        CASE WHEN adjusted_completion_rate IS NOT NULL AND COALESCE(total_pass_att,0) >= {_pass_min}
+                             THEN RANK() OVER (PARTITION BY (adjusted_completion_rate IS NULL OR COALESCE(total_pass_att,0) < {_pass_min}) ORDER BY adjusted_completion_rate DESC)
                              ELSE NULL END AS adjusted_completion_rate,
-                        CASE WHEN nfl_passer_rating IS NOT NULL AND COALESCE(total_pass_att,0) >= 50
-                             THEN RANK() OVER (PARTITION BY (nfl_passer_rating IS NULL OR COALESCE(total_pass_att,0) < 50) ORDER BY nfl_passer_rating DESC)
+                        CASE WHEN nfl_passer_rating IS NOT NULL AND COALESCE(total_pass_att,0) >= {_pass_min}
+                             THEN RANK() OVER (PARTITION BY (nfl_passer_rating IS NULL OR COALESCE(total_pass_att,0) < {_pass_min}) ORDER BY nfl_passer_rating DESC)
                              ELSE NULL END AS nfl_passer_rating,
-                        CASE WHEN yards_per_attempt IS NOT NULL AND COALESCE(total_pass_att,0) >= 50
-                             THEN RANK() OVER (PARTITION BY (yards_per_attempt IS NULL OR COALESCE(total_pass_att,0) < 50) ORDER BY yards_per_attempt DESC)
+                        CASE WHEN yards_per_attempt IS NOT NULL AND COALESCE(total_pass_att,0) >= {_pass_min}
+                             THEN RANK() OVER (PARTITION BY (yards_per_attempt IS NULL OR COALESCE(total_pass_att,0) < {_pass_min}) ORDER BY yards_per_attempt DESC)
                              ELSE NULL END AS yards_per_attempt,
-                        CASE WHEN completion_pct IS NOT NULL AND COALESCE(total_pass_att,0) >= 50
-                             THEN RANK() OVER (PARTITION BY (completion_pct IS NULL OR COALESCE(total_pass_att,0) < 50) ORDER BY completion_pct DESC)
+                        CASE WHEN completion_pct IS NOT NULL AND COALESCE(total_pass_att,0) >= {_pass_min}
+                             THEN RANK() OVER (PARTITION BY (completion_pct IS NULL OR COALESCE(total_pass_att,0) < {_pass_min}) ORDER BY completion_pct DESC)
                              ELSE NULL END AS completion_pct,
-                        CASE WHEN td_rate IS NOT NULL AND COALESCE(total_pass_att,0) >= 50
-                             THEN RANK() OVER (PARTITION BY (td_rate IS NULL OR COALESCE(total_pass_att,0) < 50) ORDER BY td_rate DESC)
+                        CASE WHEN td_rate IS NOT NULL AND COALESCE(total_pass_att,0) >= {_pass_min}
+                             THEN RANK() OVER (PARTITION BY (td_rate IS NULL OR COALESCE(total_pass_att,0) < {_pass_min}) ORDER BY td_rate DESC)
                              ELSE NULL END AS td_rate,
-                        CASE WHEN int_rate IS NOT NULL AND COALESCE(total_pass_att,0) >= 50
-                             THEN RANK() OVER (PARTITION BY (int_rate IS NULL OR COALESCE(total_pass_att,0) < 50) ORDER BY int_rate ASC)
+                        CASE WHEN int_rate IS NOT NULL AND COALESCE(total_pass_att,0) >= {_pass_min}
+                             THEN RANK() OVER (PARTITION BY (int_rate IS NULL OR COALESCE(total_pass_att,0) < {_pass_min}) ORDER BY int_rate ASC)
                              ELSE NULL END AS int_rate,
-                        CASE WHEN pressure_to_sack_rate IS NOT NULL AND COALESCE(total_pass_att,0) >= 50
-                             THEN RANK() OVER (PARTITION BY (pressure_to_sack_rate IS NULL OR COALESCE(total_pass_att,0) < 50) ORDER BY pressure_to_sack_rate ASC)
+                        CASE WHEN pressure_to_sack_rate IS NOT NULL AND COALESCE(total_pass_att,0) >= {_pass_min}
+                             THEN RANK() OVER (PARTITION BY (pressure_to_sack_rate IS NULL OR COALESCE(total_pass_att,0) < {_pass_min}) ORDER BY pressure_to_sack_rate ASC)
                              ELSE NULL END AS pressure_to_sack_rate,
-                        CASE WHEN passing_epa IS NOT NULL AND COALESCE(total_pass_att,0) >= 50
-                             THEN RANK() OVER (PARTITION BY (passing_epa IS NULL OR COALESCE(total_pass_att,0) < 50) ORDER BY passing_epa DESC)
+                        CASE WHEN passing_epa IS NOT NULL AND COALESCE(total_pass_att,0) >= {_pass_min}
+                             THEN RANK() OVER (PARTITION BY (passing_epa IS NULL OR COALESCE(total_pass_att,0) < {_pass_min}) ORDER BY passing_epa DESC)
                              ELSE NULL END AS passing_epa,
-                        CASE WHEN epa_per_play IS NOT NULL AND COALESCE(total_pass_att,0) >= 50
-                             THEN RANK() OVER (PARTITION BY (epa_per_play IS NULL OR COALESCE(total_pass_att,0) < 50) ORDER BY epa_per_play DESC)
+                        CASE WHEN epa_per_play IS NOT NULL AND COALESCE(total_pass_att,0) >= {_pass_min}
+                             THEN RANK() OVER (PARTITION BY (epa_per_play IS NULL OR COALESCE(total_pass_att,0) < {_pass_min}) ORDER BY epa_per_play DESC)
                              ELSE NULL END AS epa_per_play,
-                        CASE WHEN cpoe IS NOT NULL AND COALESCE(total_pass_att,0) >= 50
-                             THEN RANK() OVER (PARTITION BY (cpoe IS NULL OR COALESCE(total_pass_att,0) < 50) ORDER BY cpoe DESC)
+                        CASE WHEN cpoe IS NOT NULL AND COALESCE(total_pass_att,0) >= {_pass_min}
+                             THEN RANK() OVER (PARTITION BY (cpoe IS NULL OR COALESCE(total_pass_att,0) < {_pass_min}) ORDER BY cpoe DESC)
                              ELSE NULL END AS cpoe,
-                        CASE WHEN success_rate IS NOT NULL AND COALESCE(total_pass_att,0) >= 50
-                             THEN RANK() OVER (PARTITION BY (success_rate IS NULL OR COALESCE(total_pass_att,0) < 50) ORDER BY success_rate DESC)
+                        CASE WHEN success_rate IS NOT NULL AND COALESCE(total_pass_att,0) >= {_pass_min}
+                             THEN RANK() OVER (PARTITION BY (success_rate IS NULL OR COALESCE(total_pass_att,0) < {_pass_min}) ORDER BY success_rate DESC)
                              ELSE NULL END AS success_rate,
-                        CASE WHEN sack_rate IS NOT NULL AND COALESCE(total_pass_att,0) >= 50
-                             THEN RANK() OVER (PARTITION BY (sack_rate IS NULL OR COALESCE(total_pass_att,0) < 50) ORDER BY sack_rate ASC)
+                        CASE WHEN sack_rate IS NOT NULL AND COALESCE(total_pass_att,0) >= {_pass_min}
+                             THEN RANK() OVER (PARTITION BY (sack_rate IS NULL OR COALESCE(total_pass_att,0) < {_pass_min}) ORDER BY sack_rate ASC)
                              ELSE NULL END AS sack_rate,
                         -- RB rushing metrics: require 20+ carries
-                        CASE WHEN pff_rushing_grade IS NOT NULL AND COALESCE(total_carries,0) >= 20
-                             THEN RANK() OVER (PARTITION BY (pff_rushing_grade IS NULL OR COALESCE(total_carries,0) < 20) ORDER BY pff_rushing_grade DESC)
+                        CASE WHEN pff_rushing_grade IS NOT NULL AND COALESCE(total_carries,0) >= {_carry_min}
+                             THEN RANK() OVER (PARTITION BY (pff_rushing_grade IS NULL OR COALESCE(total_carries,0) < {_carry_min}) ORDER BY pff_rushing_grade DESC)
                              ELSE NULL END AS pff_rushing_grade,
-                        CASE WHEN yards_per_carry IS NOT NULL AND COALESCE(total_carries,0) >= 20
-                             THEN RANK() OVER (PARTITION BY (yards_per_carry IS NULL OR COALESCE(total_carries,0) < 20) ORDER BY yards_per_carry DESC)
+                        CASE WHEN yards_per_carry IS NOT NULL AND COALESCE(total_carries,0) >= {_carry_min}
+                             THEN RANK() OVER (PARTITION BY (yards_per_carry IS NULL OR COALESCE(total_carries,0) < {_carry_min}) ORDER BY yards_per_carry DESC)
                              ELSE NULL END AS yards_per_carry,
-                        CASE WHEN rush_td_rate IS NOT NULL AND COALESCE(total_carries,0) >= 20
-                             THEN RANK() OVER (PARTITION BY (rush_td_rate IS NULL OR COALESCE(total_carries,0) < 20) ORDER BY rush_td_rate DESC)
+                        CASE WHEN rush_td_rate IS NOT NULL AND COALESCE(total_carries,0) >= {_carry_min}
+                             THEN RANK() OVER (PARTITION BY (rush_td_rate IS NULL OR COALESCE(total_carries,0) < {_carry_min}) ORDER BY rush_td_rate DESC)
                              ELSE NULL END AS rush_td_rate,
-                        CASE WHEN elusive_rating IS NOT NULL AND COALESCE(total_carries,0) >= 20
-                             THEN RANK() OVER (PARTITION BY (elusive_rating IS NULL OR COALESCE(total_carries,0) < 20) ORDER BY elusive_rating DESC)
+                        CASE WHEN elusive_rating IS NOT NULL AND COALESCE(total_carries,0) >= {_carry_min}
+                             THEN RANK() OVER (PARTITION BY (elusive_rating IS NULL OR COALESCE(total_carries,0) < {_carry_min}) ORDER BY elusive_rating DESC)
                              ELSE NULL END AS elusive_rating,
-                        CASE WHEN breakaway_percentage IS NOT NULL AND COALESCE(total_carries,0) >= 20
-                             THEN RANK() OVER (PARTITION BY (breakaway_percentage IS NULL OR COALESCE(total_carries,0) < 20) ORDER BY breakaway_percentage DESC)
+                        CASE WHEN breakaway_percentage IS NOT NULL AND COALESCE(total_carries,0) >= {_carry_min}
+                             THEN RANK() OVER (PARTITION BY (breakaway_percentage IS NULL OR COALESCE(total_carries,0) < {_carry_min}) ORDER BY breakaway_percentage DESC)
                              ELSE NULL END AS breakaway_percentage,
-                        CASE WHEN explosive_runs_10_plus IS NOT NULL AND COALESCE(total_carries,0) >= 20
-                             THEN RANK() OVER (PARTITION BY (explosive_runs_10_plus IS NULL OR COALESCE(total_carries,0) < 20) ORDER BY explosive_runs_10_plus DESC)
+                        CASE WHEN explosive_runs_10_plus IS NOT NULL AND COALESCE(total_carries,0) >= {_carry_min}
+                             THEN RANK() OVER (PARTITION BY (explosive_runs_10_plus IS NULL OR COALESCE(total_carries,0) < {_carry_min}) ORDER BY explosive_runs_10_plus DESC)
                              ELSE NULL END AS explosive_runs_10_plus,
-                        CASE WHEN avoided_tackles IS NOT NULL AND COALESCE(total_carries,0) >= 20
-                             THEN RANK() OVER (PARTITION BY (avoided_tackles IS NULL OR COALESCE(total_carries,0) < 20) ORDER BY avoided_tackles DESC)
+                        CASE WHEN avoided_tackles IS NOT NULL AND COALESCE(total_carries,0) >= {_carry_min}
+                             THEN RANK() OVER (PARTITION BY (avoided_tackles IS NULL OR COALESCE(total_carries,0) < {_carry_min}) ORDER BY avoided_tackles DESC)
                              ELSE NULL END AS avoided_tackles,
-                        CASE WHEN rushing_epa IS NOT NULL AND COALESCE(total_carries,0) >= 20
-                             THEN RANK() OVER (PARTITION BY (rushing_epa IS NULL OR COALESCE(total_carries,0) < 20) ORDER BY rushing_epa DESC)
+                        CASE WHEN rushing_epa IS NOT NULL AND COALESCE(total_carries,0) >= {_carry_min}
+                             THEN RANK() OVER (PARTITION BY (rushing_epa IS NULL OR COALESCE(total_carries,0) < {_carry_min}) ORDER BY rushing_epa DESC)
                              ELSE NULL END AS rushing_epa,
-                        CASE WHEN ngs_rush_yards_over_expected_per_att IS NOT NULL AND COALESCE(total_carries,0) >= 20
-                             THEN RANK() OVER (PARTITION BY (ngs_rush_yards_over_expected_per_att IS NULL OR COALESCE(total_carries,0) < 20) ORDER BY ngs_rush_yards_over_expected_per_att DESC)
+                        CASE WHEN ngs_rush_yards_over_expected_per_att IS NOT NULL AND COALESCE(total_carries,0) >= {_carry_min}
+                             THEN RANK() OVER (PARTITION BY (ngs_rush_yards_over_expected_per_att IS NULL OR COALESCE(total_carries,0) < {_carry_min}) ORDER BY ngs_rush_yards_over_expected_per_att DESC)
                              ELSE NULL END AS ngs_rush_yards_over_expected_per_att,
                         -- Touch-based metric: require 20+ touches
-                        CASE WHEN yards_per_touch IS NOT NULL AND COALESCE(total_touches,0) >= 20
-                             THEN RANK() OVER (PARTITION BY (yards_per_touch IS NULL OR COALESCE(total_touches,0) < 20) ORDER BY yards_per_touch DESC)
+                        CASE WHEN yards_per_touch IS NOT NULL AND COALESCE(total_touches,0) >= {_carry_min}
+                             THEN RANK() OVER (PARTITION BY (yards_per_touch IS NULL OR COALESCE(total_touches,0) < {_carry_min}) ORDER BY yards_per_touch DESC)
                              ELSE NULL END AS yards_per_touch,
                         -- Receiving/route metrics: require 15+ targets
-                        CASE WHEN catch_rate IS NOT NULL AND COALESCE(total_targets,0) >= 15
-                             THEN RANK() OVER (PARTITION BY (catch_rate IS NULL OR COALESCE(total_targets,0) < 15) ORDER BY catch_rate DESC)
+                        CASE WHEN catch_rate IS NOT NULL AND COALESCE(total_targets,0) >= {_target_min}
+                             THEN RANK() OVER (PARTITION BY (catch_rate IS NULL OR COALESCE(total_targets,0) < {_target_min}) ORDER BY catch_rate DESC)
                              ELSE NULL END AS catch_rate,
-                        CASE WHEN yprr IS NOT NULL AND COALESCE(total_targets,0) >= 15
-                             THEN RANK() OVER (PARTITION BY (yprr IS NULL OR COALESCE(total_targets,0) < 15) ORDER BY yprr DESC)
+                        CASE WHEN yprr IS NOT NULL AND COALESCE(total_targets,0) >= {_target_min}
+                             THEN RANK() OVER (PARTITION BY (yprr IS NULL OR COALESCE(total_targets,0) < {_target_min}) ORDER BY yprr DESC)
                              ELSE NULL END AS yprr,
-                        CASE WHEN yards_per_target IS NOT NULL AND COALESCE(total_targets,0) >= 15
-                             THEN RANK() OVER (PARTITION BY (yards_per_target IS NULL OR COALESCE(total_targets,0) < 15) ORDER BY yards_per_target DESC)
+                        CASE WHEN yards_per_target IS NOT NULL AND COALESCE(total_targets,0) >= {_target_min}
+                             THEN RANK() OVER (PARTITION BY (yards_per_target IS NULL OR COALESCE(total_targets,0) < {_target_min}) ORDER BY yards_per_target DESC)
                              ELSE NULL END AS yards_per_target,
-                        CASE WHEN yards_per_reception IS NOT NULL AND COALESCE(total_targets,0) >= 15
-                             THEN RANK() OVER (PARTITION BY (yards_per_reception IS NULL OR COALESCE(total_targets,0) < 15) ORDER BY yards_per_reception DESC)
+                        CASE WHEN yards_per_reception IS NOT NULL AND COALESCE(total_targets,0) >= {_target_min}
+                             THEN RANK() OVER (PARTITION BY (yards_per_reception IS NULL OR COALESCE(total_targets,0) < {_target_min}) ORDER BY yards_per_reception DESC)
                              ELSE NULL END AS yards_per_reception,
-                        CASE WHEN yards_after_catch_per_reception IS NOT NULL AND COALESCE(total_targets,0) >= 15
-                             THEN RANK() OVER (PARTITION BY (yards_after_catch_per_reception IS NULL OR COALESCE(total_targets,0) < 15) ORDER BY yards_after_catch_per_reception DESC)
+                        CASE WHEN yards_after_catch_per_reception IS NOT NULL AND COALESCE(total_targets,0) >= {_target_min}
+                             THEN RANK() OVER (PARTITION BY (yards_after_catch_per_reception IS NULL OR COALESCE(total_targets,0) < {_target_min}) ORDER BY yards_after_catch_per_reception DESC)
                              ELSE NULL END AS yards_after_catch_per_reception,
-                        CASE WHEN avg_depth_of_target IS NOT NULL AND COALESCE(total_targets,0) >= 15
-                             THEN RANK() OVER (PARTITION BY (avg_depth_of_target IS NULL OR COALESCE(total_targets,0) < 15) ORDER BY avg_depth_of_target DESC)
+                        CASE WHEN avg_depth_of_target IS NOT NULL AND COALESCE(total_targets,0) >= {_target_min}
+                             THEN RANK() OVER (PARTITION BY (avg_depth_of_target IS NULL OR COALESCE(total_targets,0) < {_target_min}) ORDER BY avg_depth_of_target DESC)
                              ELSE NULL END AS avg_depth_of_target,
-                        CASE WHEN target_share IS NOT NULL AND COALESCE(total_targets,0) >= 15
-                             THEN RANK() OVER (PARTITION BY (target_share IS NULL OR COALESCE(total_targets,0) < 15) ORDER BY target_share DESC)
+                        CASE WHEN target_share IS NOT NULL AND COALESCE(total_targets,0) >= {_target_min}
+                             THEN RANK() OVER (PARTITION BY (target_share IS NULL OR COALESCE(total_targets,0) < {_target_min}) ORDER BY target_share DESC)
                              ELSE NULL END AS target_share,
-                        CASE WHEN air_yards_per_game IS NOT NULL AND COALESCE(total_targets,0) >= 15
-                             THEN RANK() OVER (PARTITION BY (air_yards_per_game IS NULL OR COALESCE(total_targets,0) < 15) ORDER BY air_yards_per_game DESC)
+                        CASE WHEN air_yards_per_game IS NOT NULL AND COALESCE(total_targets,0) >= {_target_min}
+                             THEN RANK() OVER (PARTITION BY (air_yards_per_game IS NULL OR COALESCE(total_targets,0) < {_target_min}) ORDER BY air_yards_per_game DESC)
                              ELSE NULL END AS air_yards_per_game,
-                        CASE WHEN air_yards_share IS NOT NULL AND COALESCE(total_targets,0) >= 15
-                             THEN RANK() OVER (PARTITION BY (air_yards_share IS NULL OR COALESCE(total_targets,0) < 15) ORDER BY air_yards_share DESC)
+                        CASE WHEN air_yards_share IS NOT NULL AND COALESCE(total_targets,0) >= {_target_min}
+                             THEN RANK() OVER (PARTITION BY (air_yards_share IS NULL OR COALESCE(total_targets,0) < {_target_min}) ORDER BY air_yards_share DESC)
                              ELSE NULL END AS air_yards_share,
-                        CASE WHEN target_quality_score IS NOT NULL AND COALESCE(total_targets,0) >= 15
-                             THEN RANK() OVER (PARTITION BY (target_quality_score IS NULL OR COALESCE(total_targets,0) < 15) ORDER BY target_quality_score DESC)
+                        CASE WHEN target_quality_score IS NOT NULL AND COALESCE(total_targets,0) >= {_target_min}
+                             THEN RANK() OVER (PARTITION BY (target_quality_score IS NULL OR COALESCE(total_targets,0) < {_target_min}) ORDER BY target_quality_score DESC)
                              ELSE NULL END AS target_quality_score,
-                        CASE WHEN contested_catch_rate IS NOT NULL AND COALESCE(total_targets,0) >= 15
-                             THEN RANK() OVER (PARTITION BY (contested_catch_rate IS NULL OR COALESCE(total_targets,0) < 15) ORDER BY contested_catch_rate DESC)
+                        CASE WHEN contested_catch_rate IS NOT NULL AND COALESCE(total_targets,0) >= {_target_min}
+                             THEN RANK() OVER (PARTITION BY (contested_catch_rate IS NULL OR COALESCE(total_targets,0) < {_target_min}) ORDER BY contested_catch_rate DESC)
                              ELSE NULL END AS contested_catch_rate,
-                        CASE WHEN drop_rate IS NOT NULL AND COALESCE(total_targets,0) >= 15
-                             THEN RANK() OVER (PARTITION BY (drop_rate IS NULL OR COALESCE(total_targets,0) < 15) ORDER BY drop_rate ASC)
+                        CASE WHEN drop_rate IS NOT NULL AND COALESCE(total_targets,0) >= {_target_min}
+                             THEN RANK() OVER (PARTITION BY (drop_rate IS NULL OR COALESCE(total_targets,0) < {_target_min}) ORDER BY drop_rate ASC)
                              ELSE NULL END AS drop_rate,
-                        CASE WHEN receiving_epa IS NOT NULL AND COALESCE(total_targets,0) >= 15
-                             THEN RANK() OVER (PARTITION BY (receiving_epa IS NULL OR COALESCE(total_targets,0) < 15) ORDER BY receiving_epa DESC)
+                        CASE WHEN receiving_epa IS NOT NULL AND COALESCE(total_targets,0) >= {_target_min}
+                             THEN RANK() OVER (PARTITION BY (receiving_epa IS NULL OR COALESCE(total_targets,0) < {_target_min}) ORDER BY receiving_epa DESC)
                              ELSE NULL END AS receiving_epa,
-                        CASE WHEN ngs_avg_separation IS NOT NULL AND COALESCE(total_targets,0) >= 15
-                             THEN RANK() OVER (PARTITION BY (ngs_avg_separation IS NULL OR COALESCE(total_targets,0) < 15) ORDER BY ngs_avg_separation DESC)
+                        CASE WHEN ngs_avg_separation IS NOT NULL AND COALESCE(total_targets,0) >= {_target_min}
+                             THEN RANK() OVER (PARTITION BY (ngs_avg_separation IS NULL OR COALESCE(total_targets,0) < {_target_min}) ORDER BY ngs_avg_separation DESC)
                              ELSE NULL END AS ngs_avg_separation,
-                        CASE WHEN ngs_avg_cushion IS NOT NULL AND COALESCE(total_targets,0) >= 15
-                             THEN RANK() OVER (PARTITION BY (ngs_avg_cushion IS NULL OR COALESCE(total_targets,0) < 15) ORDER BY ngs_avg_cushion DESC)
+                        CASE WHEN ngs_avg_cushion IS NOT NULL AND COALESCE(total_targets,0) >= {_target_min}
+                             THEN RANK() OVER (PARTITION BY (ngs_avg_cushion IS NULL OR COALESCE(total_targets,0) < {_target_min}) ORDER BY ngs_avg_cushion DESC)
                              ELSE NULL END AS ngs_avg_cushion,
-                        CASE WHEN ngs_avg_yac_above_expectation IS NOT NULL AND COALESCE(total_targets,0) >= 15
-                             THEN RANK() OVER (PARTITION BY (ngs_avg_yac_above_expectation IS NULL OR COALESCE(total_targets,0) < 15) ORDER BY ngs_avg_yac_above_expectation DESC)
+                        CASE WHEN ngs_avg_yac_above_expectation IS NOT NULL AND COALESCE(total_targets,0) >= {_target_min}
+                             THEN RANK() OVER (PARTITION BY (ngs_avg_yac_above_expectation IS NULL OR COALESCE(total_targets,0) < {_target_min}) ORDER BY ngs_avg_yac_above_expectation DESC)
                              ELSE NULL END AS ngs_avg_yac_above_expectation
                     FROM snapshot
                 )
@@ -3387,6 +3399,7 @@ def get_player_metric_ranks(player_id: str, season: Optional[int] = None) -> Dic
                 (season, position),
             ).fetchall()]
             for metric, (gate_col, gate_min) in _SUPP_GATES.items():
+                gate_min = _policy.minimum(gate_col, gate_min)
                 if not srows or metric not in srows[0]:
                     continue
                 lower_better = bool(LEADERBOARD_METRICS.get(metric, {}).get("lower_better"))
@@ -3416,7 +3429,7 @@ def get_player_metric_ranks(player_id: str, season: Optional[int] = None) -> Dic
         # client can scale bars by the metric's actual value within its
         # positional range (real magnitude gaps preserved). Derived from the
         # same DISTINCT-on-player snapshot used for the supplement ranks.
-        bounds = _compute_position_bounds(srows)
+        bounds = _compute_position_bounds(srows, _games_min)
 
         # Store in position caches and evict stale dates.
         _POSITION_RANKS_CACHE[_cache_key] = all_ranks
@@ -3429,7 +3442,9 @@ def get_player_metric_ranks(player_id: str, season: Optional[int] = None) -> Dic
         return {"position": position, "season": season,
                 "ranks": all_ranks.get(str(player_id), {}),
                 "counts": _rank_counts(all_ranks),
-                "bounds": bounds}
+                "bounds": bounds, "qualification": {
+                    "games_min": _games_min, "completed_rounds": len(_policy.completed_weeks),
+                    "provisional": _policy.provisional, "note": _policy.note()}}
 
 
 def get_player_weekly_metric_ranks(
@@ -3447,6 +3462,8 @@ def get_player_weekly_metric_ranks(
     {position, season, week_start, week_end, ranks: {metric_key: rank}}.
     """
     lo, hi = (week_start, week_end) if week_start <= week_end else (week_end, week_start)
+    from utils.season_qualification import qualification_policy
+    _policy = qualification_policy(int(season), week_start=int(lo), week_end=int(hi))
     init_weekly_advanced_metrics_db()
     target = str(player_id)
 
@@ -3586,7 +3603,10 @@ def get_player_weekly_metric_ranks(
 
     return {"position": position, "season": season,
             "week_start": lo, "week_end": hi, "ranks": ranks, "counts": counts,
-            "bounds": bounds}
+            "bounds": bounds, "qualification": {
+                "games_min": _policy.games_min,
+                "completed_rounds": len(_policy.completed_weeks),
+                "provisional": _policy.provisional, "note": _policy.note()}}
 
 
 def get_top_role_players(position: Optional[str] = None, limit: int = 50) -> List[Dict[str, Any]]:

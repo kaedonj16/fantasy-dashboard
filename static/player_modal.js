@@ -52,7 +52,7 @@ function openPlayerModal(playerId, playerName, opts) {
   // Build API URL with league context if available
   const apiUrl = leagueId
     ? `/api/player-details/${playerId}?league_id=${leagueId}&platform=${platform}&season=${season}&${leagueParams}`
-    : `/api/player-details/${playerId}?${leagueParams}`;
+    : `/api/player-details/${playerId}?season=${season}&${leagueParams}`;
   
   // Create modal overlay
   const overlay = document.createElement('div');
@@ -442,21 +442,20 @@ function openPlayerModal(playerId, playerName, opts) {
       const totalPts     = data.stats?.total_pts;
       const totalPtsRank = data.stats?.total_pts_rank;
       const totalPtsOvrRank = data.stats?.total_pts_ovr_rank;
-      const seasonLabel  = ppgSeason ? ` · ${ppgSeason}` : '';
-      const ppgCard = ppgVal != null
-        ? `<div class="pm-hero-stat">
+      const seasonLabel  = ` · ${ppgSeason || season}`;
+      const gamesLabel = data.stats?.ppg_games != null ? `${data.stats.ppg_games}G · ` : '';
+      // Scoring cards are permanent: absence of an appearance/data is not zero,
+      // and we never silently replace the selected season with last season.
+      const ppgCard = `<div class="pm-hero-stat">
             <div class="pm-hero-label">PPG${seasonLabel}</div>
-            <div class="pm-hero-val">${ppgVal}</div>
-            <div class="pm-hero-sub">${ppgRank ? `POS : ${ppgRank} · OVR : ${ppgOvrRank ?? '–'}` : '-'}</div>
-          </div>`
-        : '';
-      const totalCard = totalPts != null
-        ? `<div class="pm-hero-stat">
+            <div class="pm-hero-val">${ppgVal != null ? Number(ppgVal).toFixed(1) : 'N/A'}</div>
+            <div class="pm-hero-sub">${gamesLabel}${ppgRank ? `POS : ${ppgRank} · OVR : ${ppgOvrRank ?? '–'}` : 'rank N/A'}</div>
+          </div>`;
+      const totalCard = `<div class="pm-hero-stat">
             <div class="pm-hero-label">Total Pts${seasonLabel}</div>
-            <div class="pm-hero-val">${fmtPts(totalPts)}</div>
-            <div class="pm-hero-sub">${totalPtsRank ? `POS : ${totalPtsRank} · OVR : ${totalPtsOvrRank ?? '–'}` : '-'}</div>
-          </div>`
-        : '';
+            <div class="pm-hero-val">${totalPts != null ? fmtPts(totalPts) : 'N/A'}</div>
+            <div class="pm-hero-sub">${gamesLabel}${totalPtsRank ? `POS : ${totalPtsRank} · OVR : ${totalPtsOvrRank ?? '–'}` : 'rank N/A'}</div>
+          </div>`;
 
       // ── Prospect Profile tab ─────────────────────────────────────────────────
       const pd = data.prospect_data;
@@ -3786,7 +3785,7 @@ function loadAdvancedMetrics(playerId, leagueId, season, weekStart, weekEnd) {
               ? ranksData.ranks : null;
             const counts = (ranksData && ranksData.counts) ? ranksData.counts : null;
             const bounds = (ranksData && ranksData.bounds) ? ranksData.bounds : null;
-            contentEl.innerHTML = buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive, counts, bounds);
+            contentEl.innerHTML = buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive, counts, bounds, ranksData && ranksData.qualification);
           }).catch(function() {
             contentEl.innerHTML = buildAdvancedMetricsHTML(metricsData, null, cfg, weekActive, null, null);
           });
@@ -4587,7 +4586,7 @@ const _ADV_METRIC_DESCS = {
   'Rush Yards': "Total rushing yards in the season.",
 };
 
-function buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive, counts, bounds) {
+function buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive, counts, bounds, qualification) {
   counts = counts || {};
   bounds = bounds || {};
   let metrics = metricsData.metrics || {};
@@ -5127,8 +5126,9 @@ function buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive, counts, b
     return `<div class="adv-metrics-grid">${rows}</div>`;
   }
 
+  const _sampleNote = qualification && qualification.note ? ' · ' + qualification.note : '';
   const rankNote = ranks && Object.keys(ranks).length
-    ? '<div class="am-rank-note" title="Minimums: 4+ games · efficiency metrics also require 20+ carries (rush) · 15+ targets (receiving) · 50+ attempts (passing)">Ranked among qualified players</div>'
+    ? '<div class="am-rank-note">Ranked among qualified players' + _sampleNote + '</div>'
     : '';
 
   // Annotate defs with keys from cfg by matching labels

@@ -11108,16 +11108,28 @@ def _load_season_weekly_points(season: int, scoring_settings: dict) -> dict:
     sig = hashlib.md5(
         json.dumps(scoring_settings or {}, sort_keys=True, default=str).encode()
     ).hexdigest()[:10]
-    key = (int(season), sig)
+    from utils.season_qualification import qualification_policy
+    completed_weeks = tuple(qualification_policy(int(season)).completed_weeks)
+    key = (int(season), sig, completed_weeks)
     hit = _WEEKLY_PTS_CACHE.get(key)
-    if hit and time.time() - hit[0] < _WEEKLY_PTS_TTL:
+    pattern = os.path.join(CACHE_DIR, "sleeper_stats", f"sleeper_stats_s{season}_w*.json")
+    files = glob.glob(pattern)
+    newest = max((os.path.getmtime(p) for p in files), default=0.0)
+    if hit and time.time() - hit[0] < _WEEKLY_PTS_TTL and newest <= hit[0]:
         return hit[1]
     out: dict = {}
+    positions = {}
+    try:
+        positions = {str(pid): str(meta.get("pos") or meta.get("position") or "")
+                     for pid, meta in (load_players_index() or {}).items()}
+    except Exception:
+        positions = {}
     try:
         # Absolute cache path: a relative "cache" glob silently yields nothing
         # when the server's working directory isn't the repo root.
-        pattern = os.path.join(CACHE_DIR, "sleeper_stats", f"sleeper_stats_s{season}_w*.json")
-        for wf in sorted(glob.glob(pattern), key=_sleeper_stats_week_num):
+        for wf in sorted(files, key=_sleeper_stats_week_num):
+            if _sleeper_stats_week_num(wf) not in completed_weeks:
+                continue
             try:
                 with open(wf) as f:
                     week_stats = json.load(f)
@@ -11129,7 +11141,9 @@ def _load_season_weekly_points(season: int, scoring_settings: dict) -> dict:
                 if not isinstance(st, dict):
                     continue
                 try:
-                    out.setdefault(str(pid), []).append(round(float(_score_stats(st, scoring_settings)), 2))
+                    # Keep full precision until the response display boundary.
+                    pos = str(st.get("position") or st.get("pos") or positions.get(str(pid)) or "")
+                    out.setdefault(str(pid), []).append(float(_score_stats(st, scoring_settings, pos)))
                 except Exception:
                     continue
     except Exception:
@@ -20606,15 +20620,16 @@ def api_player_details(player_id: str):
         else:
             # Default scoring settings if no league context
             scoring_settings = {
-                "passYards": 0.04,
-                "passTD": 4.0,
-                "passInterceptions": -2.0,
-                "rushYards": 0.1,
-                "rushTD": 6.0,
+                "pass_yd": 0.04,
+                "pass_td": 4.0,
+                "pass_int": -2.0,
+                "rush_yd": 0.1,
+                "rush_td": 6.0,
+                "rec": 1.0,
+                "rec_yd": 0.1,
+                "rec_td": 6.0,
+                "fum_lost": -2.0,
                 "pointsPerReception": 1.0,
-                "receivingYards": 0.1,
-                "receivingTD": 6.0,
-                "fumbles": -2.0
             }
 
         players_index = load_relevant_index() or {}
@@ -20816,108 +20831,60 @@ def api_player_details(player_id: str):
             except Exception as _fe:
                 logger.debug("[api_player_details] roster lookup failed: %s", _fe)
 
-        # Compute PPG and positional scoring rank from usage cache
-        _ppg = None
-        _ppg_rank = None
-        _ppg_ovr_rank = None
+        # Current-season scoring comes from completed weekly stat lines, scored
+        # with the league's exact settings.  Never substitute a prior season.
+        _ppg = _ppg_rank = _ppg_ovr_rank = None
         _ppg_games = None
-        _ppg_season_used = None
-        _total_pts = None
-        _total_pts_rank = None
-        _total_pts_ovr_rank = None
+        _ppg_season_used = season
+        _total_pts = _total_pts_rank = _total_pts_ovr_rank = None
+        _scoring_data_status = "missing"
         try:
-            import os as _os, json as _json2
-            _ppr_val = scoring_settings.get("rec")
-            if _ppr_val is None:
-                _ppr_val = scoring_settings.get("pointsPerReception")
-            if _ppr_val is None:
-                _ppr_val = 0.5
+            from utils.season_qualification import qualification_policy
+            _score_policy = qualification_policy(season)
+            _weekly_points = _load_season_weekly_points(season, scoring_settings)
+            _completed = tuple(_score_policy.completed_weeks)
+            if not _completed:
+                _scoring_data_status = "no_completed_rounds"
+            elif not _weekly_points:
+                # A completed schedule with no stats cache is an ingestion gap,
+                # not evidence that every player played zero games.
+                _scoring_data_status = "missing"
+            else:
+                _scoring_data_status = "available"
+                _player_points = _weekly_points.get(str(player_id))
+                _ppg_games = len(_player_points) if _player_points is not None else 0
+                if _player_points is not None:
+                    if _ppg_games:
+                        from utils.fantasy_scoring import completed_points_summary
+                        _summary = completed_points_summary(_player_points)
+                        _total_raw = _summary["total"]
+                        _ppg_raw = _summary["ppg"]
+                        _ppg = round(_ppg_raw, 1)
+                        _total_pts = round(_total_raw, 1)
 
-            def _pick_ppg(u):
-                if _ppr_val >= 1.0:
-                    return u.get("ppr_ppg")
-                if _ppr_val <= 0:
-                    return u.get("std_scoring_ppg") or u.get("std_ppg")
-                return u.get("half_ppr_ppg")
+                        _pos = str(player_meta.get("pos") or "").upper()
+                        _meta_idx = load_players_index() or {}
+                        _rank_rows = []
+                        for _pid, _pts in _weekly_points.items():
+                            if not _pts:
+                                continue
+                            _rpos = str((_meta_idx.get(str(_pid)) or {}).get("pos") or "").upper()
+                            if _rpos not in {"QB", "RB", "WR", "TE"}:
+                                continue
+                            _tot = sum(_pts)
+                            _rank_rows.append((_pid, _rpos, _tot / len(_pts), _tot))
 
-            for _ppg_s in [season, season - 1]:
-                _ud = _load_usage_rows_cached(_ppg_s)
-                if not _ud:
-                    continue
-                _pe = next((p for p in _ud if str(p.get("id")) == str(player_id)), None)
-                if not _pe:
-                    continue
-                _pu = _pe.get("usage") or {}
-                _pg = int(_pu.get("games") or 0)
-                if _pg < 4:
-                    continue
-                _ppg = _pick_ppg(_pu)
-                if _ppg is None:
-                    continue
-                _ppg = round(float(_ppg), 1)
-                _total_pts = round(_ppg * _pg, 1)
-                _ppg_games = _pg
-                _ppg_season_used = _ppg_s
-                # Scoring rank within position (min 4 games)
-                _pos_str = player_meta.get("pos", "")
-                if _pos_str:
-                    _pos_players = [
-                        p for p in _ud
-                        if p.get("position") == _pos_str
-                           and int((p.get("usage") or {}).get("games") or 0) >= 4
-                           and _pick_ppg(p.get("usage") or {}) is not None
-                    ]
-                    _all_ppg = sorted(
-                        [round(float(_pick_ppg(p.get("usage") or {})), 1) for p in _pos_players],
-                        reverse=True,
-                    )
-                    try:
-                        _ppg_rank = _all_ppg.index(_ppg) + 1
-                    except ValueError:
-                        _ppg_rank = None
-                    # Total points rank - round ppg before multiplying so values match
-                    _all_total = sorted(
-                        [round(round(float(_pick_ppg(p.get("usage") or {})), 1) * int(
-                            (p.get("usage") or {}).get("games") or 0), 1)
-                         for p in _pos_players],
-                        reverse=True,
-                    )
-                    try:
-                        _total_pts_rank = _all_total.index(_total_pts) + 1
-                    except ValueError:
-                        _total_pts_rank = None
+                        def _competition_rank(rows, value, idx):
+                            # RANK semantics: equal unrounded values share rank.
+                            return 1 + sum(1 for row in rows if row[idx] > value)
 
-                # Overall rank across all skill positions
-                _ppg_ovr_rank = None
-                _total_pts_ovr_rank = None
-                _ovr_positions = {"QB", "RB", "WR", "TE"}
-                _ovr_players = [
-                    p for p in _ud
-                    if p.get("position") in _ovr_positions
-                       and int((p.get("usage") or {}).get("games") or 0) >= 4
-                       and _pick_ppg(p.get("usage") or {}) is not None
-                ]
-                _all_ppg_ovr = sorted(
-                    [round(float(_pick_ppg(p.get("usage") or {})), 1) for p in _ovr_players],
-                    reverse=True,
-                )
-                try:
-                    _ppg_ovr_rank = _all_ppg_ovr.index(_ppg) + 1
-                except ValueError:
-                    _ppg_ovr_rank = None
-                _all_total_ovr = sorted(
-                    [round(round(float(_pick_ppg(p.get("usage") or {})), 1) * int(
-                        (p.get("usage") or {}).get("games") or 0), 1)
-                     for p in _ovr_players],
-                    reverse=True,
-                )
-                try:
-                    _total_pts_ovr_rank = _all_total_ovr.index(_total_pts) + 1
-                except ValueError:
-                    _total_pts_ovr_rank = None
-                break
+                        _pos_rows = [r for r in _rank_rows if r[1] == _pos]
+                        _ppg_rank = _competition_rank(_pos_rows, _ppg_raw, 2)
+                        _total_pts_rank = _competition_rank(_pos_rows, _total_raw, 3)
+                        _ppg_ovr_rank = _competition_rank(_rank_rows, _ppg_raw, 2)
+                        _total_pts_ovr_rank = _competition_rank(_rank_rows, _total_raw, 3)
         except Exception:
-            logger.debug("suppressed exception", exc_info=True)
+            logger.debug("player scoring aggregation failed", exc_info=True)
 
         # TE-premium leagues make tight ends worth more. Scale a TE's value (and its
         # whole value history) so the modal shows the value as it counts in THIS
@@ -21347,6 +21314,7 @@ def api_player_details(player_id: str):
                 "total_pts": _total_pts,
                 "total_pts_rank": _total_pts_rank,
                 "total_pts_ovr_rank": _total_pts_ovr_rank,
+                "scoring_data_status": _scoring_data_status,
                 "adp": _adp,
                 "start_score": _start_score,
                 "start_score_pct": _start_score_pct,
