@@ -75,7 +75,7 @@ def test_missing_points_and_current_roster_fallback_produce_na():
     assert "fallback" not in result
 
 
-def test_scoreboard_contract_includes_modal_context_na_and_mobile_wrapping():
+def test_scoreboard_contract_includes_modal_context_and_protected_mobile_score_lane():
     page = (ROOT / "dashboard_services/pages/recap_page.py").read_text()
     css = (ROOT / "static/dashboard.css").read_text()
 
@@ -83,7 +83,10 @@ def test_scoreboard_contract_includes_modal_context_na_and_mobile_wrapping():
     assert 'data-league-id=' in page and 'data-platform=' in page and 'data-season=' in page
     assert "recap-top-performer-players" in page
     assert "white-space: normal" in css
-    assert "grid-template-columns: minmax(0, 31fr) minmax(0, 38fr) minmax(0, 31fr)" in css
+    assert "recap-matchup-main" in page and "recap-matchup-performers" in page
+    assert "grid-template-columns: minmax(0, 1fr) minmax(150px, auto) minmax(0, 1fr)" in css
+    assert "font-size: clamp(22px, 6.5vw, 30px)" in css
+    assert "word-break: normal" in css
     assert "-webkit-line-clamp: 2" in css
     assert ".recap-top-label-long" in css
 
