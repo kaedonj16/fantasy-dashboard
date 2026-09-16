@@ -1,3 +1,5 @@
+from datetime import date, timedelta
+
 from utils.fantasy_scoring import completed_points_summary, score_stats
 from utils.season_qualification import (
     completed_regular_season_rounds,
@@ -31,6 +33,36 @@ def test_one_complete_round_uses_one_game_and_scaled_volume_minimums():
 def test_staggered_completion_and_byes_do_not_advance_round():
     assert completed_regular_season_rounds(
         2026, load_week=_schedule({1}, {2})) == [1]
+
+
+def test_stale_scheduled_status_qualifies_after_entire_round_date_passes():
+    """Preseason schedule caches must not blank every current-season modal."""
+    yesterday = (date.today() - timedelta(days=1)).strftime("%Y%m%d")
+    tomorrow = (date.today() + timedelta(days=1)).strftime("%Y%m%d")
+
+    def load(_season, week):
+        dates = {1: [yesterday, yesterday], 2: [yesterday, tomorrow]}.get(week, [])
+        return [{"seasonType": "Regular", "gameStatus": "Scheduled",
+                 "gameStatusCode": "0", "gameDate": value} for value in dates]
+
+    # Week 1's games are all on prior calendar dates despite stale provider
+    # statuses. Week 2 remains excluded until its complete slate has passed.
+    assert completed_regular_season_rounds(2026, load_week=load) == [1]
+
+
+def test_date_fallback_rejects_postponed_and_invalid_schedule_rows():
+    yesterday = (date.today() - timedelta(days=1)).strftime("%Y%m%d")
+
+    def load(_season, week):
+        if week == 1:
+            return [{"seasonType": "Regular", "gameStatus": "Postponed",
+                     "gameStatusCode": "0", "gameDate": yesterday}]
+        if week == 2:
+            return [{"seasonType": "Regular", "gameStatus": "Scheduled",
+                     "gameStatusCode": "0", "gameDate": "20261399"}]
+        return []
+
+    assert completed_regular_season_rounds(2026, load_week=load) == []
 
 
 def test_qualification_increases_to_existing_four_game_gate():

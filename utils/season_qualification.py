@@ -7,6 +7,7 @@ is still being played, and a bye never counts against an individual player.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from typing import Callable, Iterable, Optional
 
 
@@ -22,12 +23,36 @@ def _is_regular(game: dict) -> bool:
 
 
 def _is_final(game: dict) -> bool:
-    """Use provider completion flags, never kickoff time or today's date."""
+    """Return whether a game is safely known to be complete.
+
+    Provider completion flags are authoritative.  The schedule cache can,
+    however, retain its preseason ``Scheduled`` status after a game has been
+    played.  Once the game's *calendar date* is in the past, it is also safe to
+    consider it complete.  This deliberately does not use kickoff timestamps,
+    so a round cannot qualify while games on its final calendar day are live.
+    """
     if game.get("completed") is True or game.get("is_complete") is True:
         return True
     code = str(game.get("gameStatusCode") or game.get("status_code") or "").strip()
     status = str(game.get("gameStatus") or game.get("status") or "").lower()
-    return code in ("2", "3") or "final" in status or "completed" in status
+    if code in ("2", "3") or "final" in status or "completed" in status:
+        return True
+    # A date fallback must not convert an explicitly postponed/cancelled game
+    # into a final merely because its original date has passed.
+    if any(word in status for word in ("postpon", "cancel", "suspend")):
+        return False
+
+    game_date = str(game.get("gameDate") or game.get("game_date") or "")[:10]
+    compact = game_date.replace("-", "")
+    if len(compact) != 8 or not compact.isdigit():
+        return False
+    try:
+        scheduled_date = date.fromisoformat(
+            f"{compact[:4]}-{compact[4:6]}-{compact[6:]}"
+        )
+    except ValueError:
+        return False
+    return scheduled_date < date.today()
 
 
 def completed_regular_season_rounds(
