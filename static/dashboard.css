@@ -28349,7 +28349,13 @@ button:disabled {
     font-weight: 500;
     line-height: 1.35;
     white-space: normal;
-    overflow-wrap: anywhere;
+    overflow-wrap: normal;
+    word-break: normal;
+}
+
+.recap-top-label-short,
+.recap-summary-mobile {
+    display: none;
 }
 
 .recap-top-performer-name {
@@ -28368,6 +28374,93 @@ button:disabled {
     white-space: nowrap;
 }
 
+.recap-matchup-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 110px minmax(0, 1fr);
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+}
+
+.recap-team,
+.recap-team-identity,
+.recap-team-copy {
+    min-width: 0;
+}
+
+.recap-team-identity {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.recap-team--right,
+.recap-team--right .recap-top-performer {
+    text-align: right;
+}
+
+.recap-team--right .recap-team-identity {
+    justify-content: flex-end;
+}
+
+.recap-team-name {
+    overflow: hidden;
+    font-size: 13px;
+    font-weight: 700;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.recap-team--right .recap-team-name {
+    font-weight: 600;
+}
+
+.recap-team-manager {
+    overflow: hidden;
+    color: var(--muted);
+    font-size: 10px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.recap-team--left .recap-top-performer {
+    margin-left: 38px;
+}
+
+.recap-team--right .recap-top-performer {
+    margin-right: 38px;
+}
+
+.recap-matchup-score {
+    min-width: 0;
+    text-align: center;
+}
+
+.recap-matchup-scoreline {
+    font-size: 15px;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.recap-matchup-scoreline span {
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 400;
+}
+
+.recap-matchup-margin {
+    font-size: 10px;
+    font-weight: 700;
+}
+
+.recap-scoreboard-summary {
+    color: var(--muted);
+    font-size: 12px;
+    white-space: nowrap;
+}
+
 @media (max-width: 720px) {
     .recap-scoreboard-grid {
         grid-template-columns: 1fr !important;
@@ -28377,8 +28470,138 @@ button:disabled {
         grid-template-columns: 1fr !important;
     }
 
-    .recap-top-performer {
-        max-width: 34vw;
+    .recap-scoreboard-header {
+        gap: 10px;
+    }
+
+    .recap-scoreboard-header h3 {
+        flex: 0 1 auto;
+    }
+
+    .recap-scoreboard-summary {
+        min-width: 0;
+        font-size: 11px;
+        letter-spacing: -0.01em;
+    }
+
+    .recap-summary-desktop {
+        display: none;
+    }
+
+    .recap-summary-mobile {
+        display: inline;
+    }
+
+    .recap-matchup-row {
+        grid-template-columns: minmax(0, 31fr) minmax(0, 38fr) minmax(0, 31fr);
+        align-items: start;
+        gap: 0;
+        min-height: 112px;
+        padding: 14px 10px 13px;
+    }
+
+    .recap-team-identity {
+        align-items: flex-start;
+        gap: 6px;
+    }
+
+    .recap-team-identity > img,
+    .recap-team-identity > svg {
+        width: 38px !important;
+        height: 38px !important;
+    }
+
+    .recap-team-copy {
+        flex: 1 1 auto;
+        padding-top: 1px;
+    }
+
+    .recap-team-name {
+        display: -webkit-box;
+        overflow: hidden;
+        font-size: 15px;
+        font-weight: 700;
+        line-height: 1.12;
+        overflow-wrap: normal;
+        word-break: normal;
+        white-space: normal;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
+    }
+
+    .recap-team--right .recap-team-name {
+        font-weight: 700;
+    }
+
+    .recap-team-manager {
+        margin-top: 3px;
+        font-size: 12px;
+        line-height: 1.15;
+    }
+
+    .recap-matchup-score {
+        align-self: start;
+        padding-top: 7px;
+    }
+
+    .recap-matchup-scoreline {
+        font-size: clamp(19px, 5.7vw, 23px);
+        letter-spacing: -0.045em;
+        line-height: 1.05;
+    }
+
+    .recap-matchup-scoreline span {
+        font-size: .68em;
+    }
+
+    .recap-matchup-margin {
+        margin-top: 5px;
+        font-size: 12px;
+        line-height: 1;
+    }
+
+    .recap-team .recap-top-performer {
+        display: flex;
+        flex-direction: column;
+        max-width: 100%;
+        margin: 10px 0 0;
+        font-size: 12px;
+        line-height: 1.15;
+    }
+
+    .recap-top-label-long,
+    .recap-top-points-separator {
+        display: none;
+    }
+
+    .recap-top-label-short {
+        display: block;
+        margin-bottom: 2px;
+        color: var(--muted);
+        font-size: 9px;
+        font-weight: 800;
+        letter-spacing: .08em;
+        text-transform: uppercase;
+    }
+
+    .recap-top-performer-players {
+        display: -webkit-box;
+        overflow: hidden;
+        color: var(--text);
+        font-size: 13px;
+        font-weight: 650;
+        line-height: 1.15;
+        overflow-wrap: normal;
+        word-break: normal;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
+    }
+
+    .recap-top-performer-points {
+        margin-top: 2px;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.1;
     }
 }
 

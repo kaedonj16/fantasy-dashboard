@@ -360,7 +360,11 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
     def top_performer_html(rid: str) -> str:
         performers = top_performers.get(str(rid)) or []
         if not performers:
-            return '<div class="recap-top-performer">Top performer: N/A</div>'
+            return ('<div class="recap-top-performer">'
+                    '<span class="recap-top-label"><span class="recap-top-label-long">Top performer: </span>'
+                    '<span class="recap-top-label-short">Top</span></span>'
+                    '<span class="recap-top-performer-players"><span class="recap-top-performer-name">N/A</span></span>'
+                    '</div>')
         links = []
         for player in performers:
             safe_name = html.escape(player["name"])
@@ -379,8 +383,11 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
                 links.append(f'<span class="recap-top-performer-name">{safe_name}</span>')
         names = '<span class="recap-top-performer-players">' + ' / '.join(links) + '</span>'
         return (
-            f'<div class="recap-top-performer">Top performer: {names}'
-            f'<span class="recap-top-performer-points"> &middot; {performers[0]["pts"]:.1f} pts</span></div>'
+            f'<div class="recap-top-performer"><span class="recap-top-label">'
+            f'<span class="recap-top-label-long">Top performer: </span>'
+            f'<span class="recap-top-label-short">Top</span></span>{names}'
+            f'<span class="recap-top-performer-points"><span class="recap-top-points-separator"> &middot; </span>'
+            f'{performers[0]["pts"]:.1f} pts</span></div>'
         )
 
     def matchup_result_row(m):
@@ -388,36 +395,41 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
         l_team = team_name(m["loser"], m["l_rid"])
         margin_color = "var(--loss)" if m["margin"] > 50 else ("var(--warning)" if m["margin"] > 20 else "var(--win)")
         return f"""
-<div style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--border);">
-  <div style="flex:1;min-width:0;display:flex;align-items:center;gap:8px;">
-    {ava_img(m["winner"], m["w_rid"], 30)}
-    <div style="min-width:0;">
-      <div style="font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{w_team}</div>
-      <div style="font-size:10px;color:var(--muted);">@{html.escape(m["winner"])}</div>
+<div class="recap-matchup-row">
+  <div class="recap-team recap-team--left">
+    <div class="recap-team-identity">
+      {ava_img(m["winner"], m["w_rid"], 30)}
+      <div class="recap-team-copy">
+        <div class="recap-team-name">{w_team}</div>
+        <div class="recap-team-manager">@{html.escape(m["winner"])}</div>
+      </div>
+    </div>
       {top_performer_html(m["w_rid"])}
+  </div>
+  <div class="recap-matchup-score">
+    <div class="recap-matchup-scoreline">{m['w_pts']:.2f} <span>–</span> {m['l_pts']:.2f}</div>
+    <div class="recap-matchup-margin" style="color:{margin_color};">+{m['margin']:.2f}</div>
+  </div>
+  <div class="recap-team recap-team--right">
+    <div class="recap-team-identity">
+      <div class="recap-team-copy">
+        <div class="recap-team-name">{l_team}</div>
+        <div class="recap-team-manager">@{html.escape(m["loser"])}</div>
+      </div>
+      {ava_img(m["loser"], m["l_rid"], 30)}
     </div>
-  </div>
-  <div style="text-align:center;flex-shrink:0;min-width:110px;">
-    <div style="font-size:15px;font-weight:800;">{m['w_pts']:.2f} <span style="color:var(--muted);font-weight:400;font-size:12px;">–</span> {m['l_pts']:.2f}</div>
-    <div style="font-size:10px;color:{margin_color};font-weight:700;">+{m['margin']:.2f}</div>
-  </div>
-  <div style="flex:1;min-width:0;display:flex;align-items:center;gap:8px;justify-content:flex-end;">
-    <div style="min-width:0;text-align:right;">
-      <div style="font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{l_team}</div>
-      <div style="font-size:10px;color:var(--muted);">@{html.escape(m["loser"])}</div>
       {top_performer_html(m["l_rid"])}
-    </div>
-    {ava_img(m["loser"], m["l_rid"], 30)}
   </div>
 </div>"""
 
     scoreboard_rows = "".join(matchup_result_row(m) for m in matchups)
     scoreboard_html = f"""
 <div class="card" style="overflow:hidden;">
-  <div class="card-header">
+  <div class="card-header recap-scoreboard-header">
     <h3>Scoreboard</h3>
-    <span style="font-size:12px;color:var(--muted);">
-      Avg: {league_avg:.1f} &nbsp;·&nbsp; Total: {league_total:.1f}
+    <span class="recap-scoreboard-summary">
+      <span class="recap-summary-desktop">Avg: {league_avg:.1f} &nbsp;·&nbsp; Total: {league_total:.1f}</span>
+      <span class="recap-summary-mobile">Avg {league_avg:.1f} &nbsp;·&nbsp; Total {league_total:,.1f}</span>
     </span>
   </div>
   {scoreboard_rows}
