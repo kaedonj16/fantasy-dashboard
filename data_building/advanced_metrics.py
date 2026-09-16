@@ -19,6 +19,8 @@ from typing import Dict, Any, List, Optional, Tuple, TYPE_CHECKING
 if TYPE_CHECKING:
     from datetime import datetime
 
+logger = logging.getLogger(__name__)
+
 from dashboard_services.api import get_nfl_state
 from dashboard_services.db import get_conn
 from utils.vorp import (
@@ -926,6 +928,99 @@ def calculate_player_metrics(
     }
 
 
+def build_advanced_metrics_snapshot(
+        season: int,
+        completed_week: int,
+        *,
+        as_of_date: Optional[str] = None,
+        players_index: Optional[Dict[str, Dict[str, Any]]] = None,
+        usage_builder=None,
+) -> Dict[str, Any]:
+    """Build the current season snapshot directly from completed game weeks.
+
+    This is the production entry point for base Advanced Metrics.  It deliberately
+    does not read ``usage_table.json``: that file is a value-model artifact and can
+    validly lag or belong to the previous season.  Sleeper weekly stats are the
+    minimum viable source; PFR snaps/target-share enrichment is best-effort inside
+    ``build_usage_map_for_season`` and missing premium providers never gate writes.
+    One completed game is a valid sample.
+    """
+    from collections import Counter
+    from datetime import date as _date
+    from utils.utils import load_players_index
+
+    # Keep the pure calculation path importable in the lightweight CI shard.
+    # sleeper_usage pulls in pandas/numpy through player metadata services, while
+    # tests and callers with pre-fetched stats can inject a tiny usage builder.
+    if usage_builder is None:
+        from data_building.external_data.sleeper_usage import build_usage_map_for_season
+        usage_builder = build_usage_map_for_season
+
+    season, completed_week = int(season), int(completed_week)
+    summary: Dict[str, Any] = {
+        "season": season, "week": completed_week, "player_stats_rows": 0,
+        "pbp_rows": 0, "pfr_rows": 0, "ngs_rows": 0, "snap_rows": 0,
+        "players_calculated": 0, "players_inserted": 0, "players_updated": 0,
+        "players_skipped": 0, "skip_reasons": {},
+    }
+    if completed_week < 1:
+        summary["skip_reasons"] = {"no_completed_weeks": 1}
+        _log_advanced_build_summary(summary)
+        return summary
+
+    index = players_index if players_index is not None else (load_players_index() or {})
+    usage_map = usage_builder(season, range(1, completed_week + 1)) or {}
+    summary["player_stats_rows"] = len(usage_map)
+    skips: Counter = Counter()
+    metrics_list: List[Dict[str, Any]] = []
+    usage_table: List[Dict[str, Any]] = []
+    ease_map = load_matchup_ease(season)
+    for pid, usage in usage_map.items():
+        if not usage or (_safe(usage.get("games")) or 0) < 1:
+            skips["no_games"] += 1
+            continue
+        meta = index.get(pid) or index.get(str(pid)) or {}
+        pos = _normalize_position(meta.get("pos") or meta.get("position"))
+        if pos not in ("QB", "RB", "WR", "TE"):
+            skips["unsupported_position"] += 1
+            continue
+        try:
+            metric = calculate_player_metrics(str(pid), usage, pos)
+            team = meta.get("team") or ""
+            metric["nfl_team"] = team or None
+            metric["schedule_ease"] = (ease_map.get(team) or {}).get(pos) if team else None
+            metrics_list.append(metric)
+            usage_table.append({"id": str(pid), "team": team, "position": pos, "usage": usage})
+            if _safe(usage.get("avg_off_snap_pct")):
+                summary["snap_rows"] += 1
+        except Exception:
+            logger.exception("Advanced metrics calculation failed for player %s", pid)
+            skips["calculation_error"] += 1
+
+    summary["players_calculated"] = len(metrics_list)
+    summary["players_skipped"] = sum(skips.values())
+    summary["skip_reasons"] = dict(sorted(skips.items()))
+    if metrics_list:
+        finalize_role_scores_v2(metrics_list, usage_table)
+        snapshot_date = as_of_date or _date.today().isoformat()
+        inserted, updated = save_metrics_snapshot(
+            metrics_list, snapshot_date, season=season, return_counts=True)
+        summary["players_inserted"] = inserted
+        summary["players_updated"] = updated
+    _log_advanced_build_summary(summary)
+    return summary
+
+
+def _log_advanced_build_summary(summary: Dict[str, Any]) -> None:
+    """Emit one concise, grep-friendly production diagnostic block."""
+    keys = ("season", "week", "player_stats_rows", "pbp_rows", "pfr_rows",
+            "ngs_rows", "snap_rows", "players_calculated", "players_inserted",
+            "players_updated", "players_skipped", "skip_reasons")
+    print("ADV METRICS BUILD")
+    for key in keys:
+        print(f"{key}={summary.get(key)}")
+
+
 def load_matchup_ease(season: int) -> Dict[str, Dict[str, float]]:
     """Return {team: {pos: ease}} from the matchup_ratings cache for a season.
 
@@ -944,7 +1039,7 @@ def load_matchup_ease(season: int) -> Dict[str, Dict[str, float]]:
         return {}
 
 
-def save_metrics_snapshot(metrics_list: List[Dict[str, Any]], as_of_date: str, season: Optional[int] = None):
+def save_metrics_snapshot(metrics_list: List[Dict[str, Any]], as_of_date: str, season: Optional[int] = None, *, return_counts: bool = False):
     """
     Save calculated metrics to database for a specific date.
 
@@ -960,12 +1055,20 @@ def save_metrics_snapshot(metrics_list: List[Dict[str, Any]], as_of_date: str, s
         _d = _dt.strptime(as_of_date, "%Y-%m-%d")
         season = _d.year - 1 if _d.month <= 2 else _d.year
 
+    inserted = updated = 0
     with get_conn() as conn:
         for metrics in metrics_list:
             pos = (metrics.get("position") or "").upper()
             route_partic = metrics.get("snap_share") if pos in ("WR", "TE") else None
 
-            # Upsert: update if exists, insert if not
+            # Count insert/update outcomes for aggregate build diagnostics. The
+            # existing UNIQUE(player_id, as_of_date) is safe because every daily
+            # snapshot has its own date and the conflict path explicitly refreshes
+            # season; provider snapshots use separate deterministic dates.
+            existed = conn.execute(
+                "SELECT 1 FROM player_advanced_metrics WHERE player_id=%s AND as_of_date=%s",
+                (metrics["player_id"], as_of_date),
+            ).fetchone()
             conn.execute("""
                 INSERT INTO player_advanced_metrics (
                     player_id, as_of_date, season, position,
@@ -1053,8 +1156,14 @@ def save_metrics_snapshot(metrics_list: List[Dict[str, Any]], as_of_date: str, s
                 metrics.get("nfl_team") or None,
                 metrics.get("schedule_ease"),
             ))
+            if existed:
+                updated += 1
+            else:
+                inserted += 1
 
     print(f"[advanced_metrics] Saved {len(metrics_list)} player metrics for {as_of_date} (season {season})")
+    if return_counts:
+        return inserted, updated
 
 
 def import_air_yards_from_stats_csv(season: int) -> int:

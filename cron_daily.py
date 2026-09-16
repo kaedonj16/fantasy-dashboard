@@ -394,47 +394,22 @@ print(f"[cron] Pregame projection snapshot week {week}: {{n}} rows")
 from dotenv import load_dotenv; load_dotenv()
 from datetime import datetime, date
 from dashboard_services.api import get_nfl_state
-from data_building.advanced_metrics import calculate_player_metrics, finalize_role_scores_v2, save_metrics_snapshot, load_matchup_ease
-from utils.utils import load_usage_table
+from data_building.advanced_metrics import build_advanced_metrics_snapshot
 
 nfl_state = get_nfl_state() or {{}}
 season_type = str(nfl_state.get("season_type", "")).lower().strip()
 is_offseason = season_type == "off"
 current_season = int(nfl_state.get("season") or datetime.now().year)
 
-usage_table = load_usage_table()
-if not usage_table:
-    print("[cron] No usage table found, skipping advanced metrics")
-else:
-    players_with_games = sum(1 for p in usage_table if p.get("usage", {{}}).get("games", 0) > 0)
-    if players_with_games == 0 and is_offseason:
-        print("[cron] Offseason detected, skipping advanced metrics")
-    else:
-        metrics_list = []
-        failed_count = 0
-        ease_map = load_matchup_ease(current_season)
-        for player in usage_table:
-            player_id = player.get("id")
-            position = player.get("position")
-            usage = player.get("usage", {{}})
-            team = player.get("team") or ""
-            if not player_id or not position or not usage or usage.get("games", 0) == 0:
-                continue
-            try:
-                m = calculate_player_metrics(player_id, usage, position)
-                m["nfl_team"] = team or None
-                m["schedule_ease"] = (ease_map.get(team) or {{}}).get(position) if team else None
-                metrics_list.append(m)
-            except Exception:
-                failed_count += 1
-        # Role score v2: percentile within position from team-relative shares
-        # (needs the whole cohort, so it runs once after the per-player loop).
-        finalize_role_scores_v2(metrics_list, usage_table)
-        if metrics_list:
-            save_metrics_snapshot(metrics_list, date.today().isoformat(), season=current_season)
-            print(f"[cron] Advanced metrics: {{len(metrics_list)}} processed, {{failed_count}} failed")
-        else:
-            print("[cron] No advanced metrics calculated")
+# The NFL state week is the week currently being played.  Earlier weeks are
+# certainly complete; on Tuesday+ the just-finished week (including MNF) is too.
+# Asking Sleeper for an unfinished week is harmless, but avoiding it keeps the
+# snapshot's games/sample size honest.
+completed_week = max(0, int({week!r}) - 1)
+if {today_weekday!r} == 1 and str({season_type!r}) in ("reg", "post"):
+    completed_week = max(completed_week, int({week!r}))
+summary = build_advanced_metrics_snapshot({season!r}, completed_week)
+print(f"[cron] Advanced metrics snapshot: {{summary}}")
 
 # Air yards + WOPR from stats CSV — runs unconditionally (not gated on the
 # usage table or the offseason check), since the CSV is independent of the daily
@@ -460,7 +435,7 @@ except Exception as _e:
     # ------------------------------------------------------------------ #
     # Step 4-nflverse: Free advanced metrics (NGS / FTN / pbp EPA)        #
     # Season-aggregate metrics run daily (fast upsert).                   #
-    # Per-week rows run Tuesdays only — all games are finished by then     #
+    # Per-week rows run daily so delayed provider data is picked up promptly     #
     # and the data doesn't change until the next week's games complete.   #
     # Historical seasons are handled by a one-time manual backfill:       #
     #   scripts.sync_nflverse_metrics --seasons ...                       #
@@ -487,9 +462,9 @@ n = upsert_season(target_season, players_index, purge_pff=True)
 print(f"[cron] nflverse (NGS/FTN/EPA) season metrics: {n} rows for season {target_season}")
 """, "sync_nflverse_season_metrics")
 
-    # Per-week rows: Tuesdays only (weekday=1) — data is stable after MNF.
-    if today_weekday == 1:
-        _run_step("""
+    # Per-week rows run daily. Providers publish on different schedules and a
+    # missed Tuesday deployment must not postpone Week 1 until the next week.
+    _run_step("""
 from dotenv import load_dotenv; load_dotenv()
 from datetime import datetime
 from dashboard_services.api import get_nfl_state
@@ -508,8 +483,6 @@ players_index = load_players_index() or {}
 wn = upsert_weekly_season(target_season, players_index)
 print(f"[cron] nflverse weekly metrics: {wn} player-weeks for season {target_season}")
 """, "sync_nflverse_weekly_metrics")
-    else:
-        print(f"[cron] nflverse weekly metrics skipped - runs Tuesdays only (weekday={today_weekday})")
 
     # ------------------------------------------------------------------ #
     # Step 4a: Weekly usage metrics (snap/target share per week)          #
