@@ -44,6 +44,12 @@ def build_recap_body(*args, **kwargs):
     from app import build_recap_body as _fn
     return _fn(*args, **kwargs)
 
+
+def ensure_weekly_bits(*args, **kwargs):
+    from app import ensure_weekly_bits as _fn
+    return _fn(*args, **kwargs)
+
+
 def build_commissioner_body(*args, **kwargs):
     from app import build_commissioner_body as _fn
     return _fn(*args, **kwargs)
@@ -155,6 +161,9 @@ def page_scout(platform: str, season: int, league_id: str):
 @league_pages_bp.route("/<platform>/<int:season>/<league_id>/recap")
 def page_recap(platform: str, season: int, league_id: str):
     ctx = get_league_ctx_from_cache(platform, league_id, season)
+    # Reuse the same normalized historical lineups and authoritative scoring as
+    # Matchups. This cached league-level hydrate avoids per-team/player calls.
+    ensure_weekly_bits(ctx)
     try:
         week = int(request.args.get("week") or 0) or None
     except (ValueError, TypeError):

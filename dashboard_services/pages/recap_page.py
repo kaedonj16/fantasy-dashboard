@@ -7,6 +7,40 @@ from __future__ import annotations
 
 from typing import Optional
 
+
+def _top_performers_by_roster(matchups: list[dict]) -> dict[str, list[dict]]:
+    """Return each roster's highest-scoring actual weekly starter(s).
+
+    The normalized Matchups data supplies provider-authoritative, league-scored
+    totals. Missing values are not coerced to zero, while real zero and negative
+    totals remain eligible. The historical marker blocks current-roster fallback
+    data from rewriting an old lineup.
+    """
+    out: dict[str, list[dict]] = {}
+    for matchup in matchups or []:
+        for team in (matchup.get("left") or {}, matchup.get("right") or {}):
+            rid = str(team.get("roster_id") or "")
+            if not rid or team.get("lineup_is_historical") is not True:
+                continue
+            scored = []
+            for player in team.get("starters") or []:
+                pts = player.get("pts")
+                if isinstance(pts, (int, float)) and not isinstance(pts, bool):
+                    scored.append({
+                        "pid": str(player.get("pid") or ""),
+                        "name": str(player.get("name") or "Unknown player"),
+                        "pts": float(pts),
+                    })
+            if not scored:
+                continue
+            high = max(player["pts"] for player in scored)
+            out[rid] = sorted(
+                (player for player in scored if player["pts"] == high),
+                key=lambda player: (player["name"].casefold(), player["pid"]),
+            )
+    return out
+
+
 def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
     from app import (  # noqa: E402  (lazy: avoids a circular import at module load)
         _build_lineup_analysis_html,
@@ -91,6 +125,14 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
         selected_week = reg_weeks[-1]
 
     week_df = fin_df[fin_df["week"] == selected_week].copy()
+
+    normalized_weeks = ctx.get("matchups_by_week") or {}
+    normalized_matchups = (
+        normalized_weeks.get(selected_week)
+        or normalized_weeks.get(str(selected_week))
+        or []
+    )
+    top_performers = {} if preview_mode else _top_performers_by_roster(normalized_matchups)
 
     # ── Matchup pairs ──────────────────────────────────────────────────────
     matchups: list[dict] = []
@@ -315,6 +357,32 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
 </div>"""
 
     # ── Scoreboard ─────────────────────────────────────────────────────────
+    def top_performer_html(rid: str) -> str:
+        performers = top_performers.get(str(rid)) or []
+        if not performers:
+            return '<div class="recap-top-performer">Top performer: N/A</div>'
+        links = []
+        for player in performers:
+            safe_name = html.escape(player["name"])
+            safe_name_attr = html.escape(player["name"], quote=True)
+            safe_pid = html.escape(player["pid"], quote=True)
+            if player["pid"]:
+                links.append(
+                    f'<span class="player-clickable recap-top-performer-name" tabindex="0" role="button" '
+                    f'data-player-id="{safe_pid}" data-player-name="{safe_name_attr}" '
+                    f'data-league-id="{html.escape(str(_league_id), quote=True)}" '
+                    f'data-platform="{html.escape(str(_platform), quote=True)}" '
+                    f'data-season="{html.escape(str(_season), quote=True)}" '
+                    f'aria-label="Open {safe_name_attr} player details">{safe_name}</span>'
+                )
+            else:
+                links.append(f'<span class="recap-top-performer-name">{safe_name}</span>')
+        names = '<span class="recap-top-performer-players">' + ' / '.join(links) + '</span>'
+        return (
+            f'<div class="recap-top-performer">Top performer: {names}'
+            f'<span class="recap-top-performer-points"> &middot; {performers[0]["pts"]:.1f} pts</span></div>'
+        )
+
     def matchup_result_row(m):
         w_team = team_name(m["winner"], m["w_rid"])
         l_team = team_name(m["loser"], m["l_rid"])
@@ -326,6 +394,7 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
     <div style="min-width:0;">
       <div style="font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{w_team}</div>
       <div style="font-size:10px;color:var(--muted);">@{html.escape(m["winner"])}</div>
+      {top_performer_html(m["w_rid"])}
     </div>
   </div>
   <div style="text-align:center;flex-shrink:0;min-width:110px;">
@@ -336,6 +405,7 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
     <div style="min-width:0;text-align:right;">
       <div style="font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{l_team}</div>
       <div style="font-size:10px;color:var(--muted);">@{html.escape(m["loser"])}</div>
+      {top_performer_html(m["l_rid"])}
     </div>
     {ava_img(m["loser"], m["l_rid"], 30)}
   </div>
