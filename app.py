@@ -17082,6 +17082,92 @@ def _load_usage_rows_cached(season_year: int):
     return data
 
 
+def _sleeper_stats_by_week(player_id: str, season_year: int) -> dict:
+    """Return the player's real Sleeper stat lines for one season.
+
+    This is deliberately the same cache family consumed by the game-log route.
+    Keeping the small lookup here prevents player-details from deciding that a
+    rookie has not played merely because the derived usage_rows snapshot lags.
+    """
+    import glob as _glob, json as _json, os as _os, re as _re
+    out = {}
+    pattern = _os.path.join(
+        CACHE_DIR, "sleeper_stats", f"sleeper_stats_s{int(season_year)}_w*.json"
+    )
+    for path in _glob.glob(pattern):
+        match = _re.match(r"sleeper_stats_s\d+_w(\d+)", _os.path.basename(path))
+        if not match:
+            continue
+        try:
+            with open(path) as handle:
+                weekly = _json.load(handle) or {}
+            row = weekly.get(str(player_id)) or weekly.get(player_id)
+            if isinstance(row, dict):
+                out[int(match.group(1))] = row
+        except Exception:
+            continue
+    return out
+
+
+def _player_nfl_eligibility(player_id: str, season: int) -> tuple[bool, bool]:
+    """Return ``(has_game_logs, has_any_metrics_row)`` for modal eligibility.
+
+    The indexed weekly-usage lookup is authoritative when the database is
+    available.  Sleeper's real weekly stat cache is the primary disk fallback;
+    usage_rows is retained only as a final compatibility fallback.
+    """
+    pid = str(player_id)
+    has_game_logs = False
+    has_metrics = False
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            weekly = conn.execute(
+                "SELECT 1 FROM player_weekly_metrics WHERE player_id = %s LIMIT 1",
+                (pid,),
+            ).fetchone()
+            has_game_logs = bool(weekly)
+            has_metrics = bool(weekly)
+            weekly_adv = conn.execute(
+                "SELECT 1 FROM player_weekly_advanced_metrics WHERE player_id = %s LIMIT 1",
+                (pid,),
+            ).fetchone()
+            has_metrics = has_metrics or bool(weekly_adv)
+            # A snapshot whose NFL metric fields are all NULL is not evidence of
+            # available metrics (metadata such as season/position does not count).
+            base = conn.execute(
+                """SELECT 1 FROM player_advanced_metrics p
+                   WHERE player_id = %s AND EXISTS (
+                     SELECT 1 FROM jsonb_each(to_jsonb(p) -
+                       ARRAY['id','player_id','position','season','as_of_date','nfl_team']) item
+                     WHERE item.key NOT LIKE 'rookie_eval_%'
+                       AND item.value <> 'null'::jsonb
+                   ) LIMIT 1""",
+                (pid,),
+            ).fetchone()
+            has_metrics = has_metrics or bool(base)
+    except Exception:
+        # Missing tables / unavailable DB must not turn a real cached appearance
+        # into a prospect-only modal.
+        logger.debug("[player-eligibility] DB lookup failed", exc_info=True)
+
+    if not has_game_logs and _sleeper_stats_by_week(pid, season):
+        has_game_logs = True
+
+    if not has_game_logs:
+        for year in (season, season - 1, season - 2):
+            rows = _load_usage_rows_cached(year)
+            if not rows:
+                continue
+            entry = next((row for row in rows
+                          if str(row.get("id") or row.get("player_id")) == pid), None)
+            if entry and int((entry.get("usage") or {}).get("games") or 0) >= 1:
+                has_game_logs = True
+                break
+
+    return has_game_logs, has_metrics
+
+
 # Cache for bulk PPG stats (2-hour TTL) - computed from sleeper_stats files
 _PPG_STATS_CACHE: dict = {}  # player_id → {ppg, total_pts, games, season}
 _PPG_STATS_CACHE_TS = 0.0
@@ -20697,117 +20783,103 @@ def api_player_details(player_id: str):
                         _ratio_primary = _ratio_sf if _is_sf else _ratio_1qb
                         _h["delta_from_prev"] = round(_h["delta_from_prev"] * _ratio_primary, 1)
 
-        # Game logs are lazy-loaded by the Stats tab via /api/player-game-logs, so
-        # we deliberately DON'T build them here -- doing so read ~100 MB of per-week
-        # JSON on every modal open just to power a single "has any game logs"
-        # boolean (rookie badge). Instead derive that boolean cheaply from the
-        # per-season usage_rows files (one ~2 MB file per season, cached), which
-        # also feed the PPG ranks below.
+        # Game logs remain lazy-loaded, but eligibility uses the same authoritative
+        # DB/Sleeper-cache helper as /api/player-game-logs.
         game_logs_by_year = {}
-        has_game_logs = False
+        has_game_logs, has_metrics_rows = _player_nfl_eligibility(player_id, season)
+        _metrics_position = str(player_meta.get("pos") or "").upper()
+        has_advanced_metrics = _metrics_position in {"QB", "RB", "WR", "TE"} and (
+            has_game_logs or has_metrics_rows
+        )
         prospect_data = None
-        for _hs in (season, season - 1, season - 2):
-            _hu = _load_usage_rows_cached(_hs)
-            if not _hu:
-                continue
-            _he = next(
-                (p for p in _hu
-                 if str(p.get("id")) == str(player_id)
-                 or str(p.get("player_id")) == str(player_id)),
-                None,
-            )
-            if _he and int((_he.get("usage") or {}).get("games") or 0) >= 1:
-                has_game_logs = True
-                break
 
-        # Try to attach prospect data when the player has no NFL game history
-        # (has_game_logs was determined cheaply above from usage_rows).
-        if not has_game_logs:
-            try:
-                import re as _re
-                from dashboard_services.rookie_api import _cache as _rookie_cache
-                from data_building.rookie_pipeline.pipeline import get_active_rookie_class
-                from data_building.rookie_pipeline.value_translation import format_draft_capital
+        # Prospect history may remain attached after an NFL debut. The frontend
+        # uses has_game_logs/current draft class to decide whether to expose it.
+        try:
+            import re as _re
+            from dashboard_services.rookie_api import _cache as _rookie_cache
+            from data_building.rookie_pipeline.pipeline import get_active_rookie_class
+            from data_building.rookie_pipeline.value_translation import format_draft_capital
 
-                active_year = get_active_rookie_class()
-                found_row = None
-                for check_year in [active_year, active_year - 1]:
-                    if check_year not in _rookie_cache:
-                        from data_building.rookie_pipeline.pipeline import get_rookie_rankings_from_db
-                        _rookie_cache[check_year] = get_rookie_rankings_from_db(check_year)
-                    for r in _rookie_cache.get(check_year, []):
-                        if str(r.get("sleeper_id") or "") == str(player_id):
-                            found_row = r
-                            break
-                    if found_row:
+            active_year = get_active_rookie_class()
+            found_row = None
+            for check_year in [active_year, active_year - 1]:
+                if check_year not in _rookie_cache:
+                    from data_building.rookie_pipeline.pipeline import get_rookie_rankings_from_db
+                    _rookie_cache[check_year] = get_rookie_rankings_from_db(check_year)
+                for r in _rookie_cache.get(check_year, []):
+                    if str(r.get("sleeper_id") or "") == str(player_id):
+                        found_row = r
                         break
-
-                # Fallback: match by name from players_index when sleeper_id not yet linked
-                if not found_row:
-                    def _norm_name(n):
-                        n = n.lower()
-                        n = _re.sub(r"['\.\-]", "", n)
-                        n = _re.sub(r"\b(jr|sr|ii|iii|iv)\b", "", n)
-                        return _re.sub(r"\s+", " ", n).strip()
-
-                    players_idx = get_players_index_global() or {}
-                    idx_entry = players_idx.get(str(player_id)) or {}
-                    idx_name = idx_entry.get("name", "")
-                    if idx_name:
-                        norm_target = _norm_name(idx_name)
-                        for check_year in [active_year, active_year - 1]:
-                            for r in _rookie_cache.get(check_year, []):
-                                if _norm_name(r.get("name", "")) == norm_target:
-                                    found_row = r
-                                    # Cache the link so future calls use sleeper_id
-                                    r["sleeper_id"] = str(player_id)
-                                    break
-                            if found_row:
-                                break
-
                 if found_row:
-                    def _sf(v):
-                        try:
-                            return float(v) if v is not None else None
-                        except (TypeError, ValueError):
-                            return None
+                    break
 
-                    prospect_data = {
-                        "player_id": found_row.get("player_id"),
-                        "draft_class_year": found_row.get("draft_class_year"),
-                        "school": found_row.get("school"),
-                        "prospect_score": _sf(found_row.get("prospect_score")),
-                        "tier": found_row.get("tier"),
-                        "tier_label": found_row.get("tier_label"),
-                        "overall_rank": found_row.get("overall_rank"),
-                        "position_rank": found_row.get("position_rank"),
-                        "production_score": _sf(found_row.get("production_score")),
-                        "efficiency_score": _sf(found_row.get("efficiency_score")),
-                        "age_score": _sf(found_row.get("age_score")),
-                        "breakout_profile_score": _sf(found_row.get("breakout_profile_score")),
-                        "athleticism_score": _sf(found_row.get("athleticism_score")),
-                        "competition_score": _sf(found_row.get("competition_score")),
-                        "projected_draft_capital_score": _sf(found_row.get("projected_draft_capital_score")),
-                        "confidence_score": _sf(found_row.get("confidence_score")),
-                        "key_reasons": found_row.get("key_reasons"),
-                        "rookie_value": _sf(found_row.get("rookie_value")),
-                        "rookie_sf_value": _sf(found_row.get("rookie_sf_value")),
-                        "projected_round": found_row.get("projected_round"),
-                        "projected_pick": found_row.get("projected_pick"),
-                        "num_mocks_used": found_row.get("num_mocks_used"),
-                        "height_inches": found_row.get("height_inches"),
-                        "weight_lbs": found_row.get("weight_lbs"),
-                        "forty_yard": _sf(found_row.get("forty_yard")),
-                        "ras_score": _sf(found_row.get("ras_score")),
-                        "draft_capital_label": format_draft_capital(
-                            found_row.get("projected_round"),
-                            found_row.get("projected_pick"),
-                            found_row.get("projected_pick_low"),
-                            found_row.get("projected_pick_high"),
-                        ),
-                    }
-            except Exception as pe:
-                logger.info(f"[api_player_details] prospect lookup error: {pe}")
+            # Fallback: match by name from players_index when sleeper_id not yet linked
+            if not found_row:
+                def _norm_name(n):
+                    n = n.lower()
+                    n = _re.sub(r"['\.\-]", "", n)
+                    n = _re.sub(r"\b(jr|sr|ii|iii|iv)\b", "", n)
+                    return _re.sub(r"\s+", " ", n).strip()
+
+                players_idx = get_players_index_global() or {}
+                idx_entry = players_idx.get(str(player_id)) or {}
+                idx_name = idx_entry.get("name", "")
+                if idx_name:
+                    norm_target = _norm_name(idx_name)
+                    for check_year in [active_year, active_year - 1]:
+                        for r in _rookie_cache.get(check_year, []):
+                            if _norm_name(r.get("name", "")) == norm_target:
+                                found_row = r
+                                # Cache the link so future calls use sleeper_id
+                                r["sleeper_id"] = str(player_id)
+                                break
+                        if found_row:
+                            break
+
+            if found_row:
+                def _sf(v):
+                    try:
+                        return float(v) if v is not None else None
+                    except (TypeError, ValueError):
+                        return None
+
+                prospect_data = {
+                    "player_id": found_row.get("player_id"),
+                    "draft_class_year": found_row.get("draft_class_year"),
+                    "school": found_row.get("school"),
+                    "prospect_score": _sf(found_row.get("prospect_score")),
+                    "tier": found_row.get("tier"),
+                    "tier_label": found_row.get("tier_label"),
+                    "overall_rank": found_row.get("overall_rank"),
+                    "position_rank": found_row.get("position_rank"),
+                    "production_score": _sf(found_row.get("production_score")),
+                    "efficiency_score": _sf(found_row.get("efficiency_score")),
+                    "age_score": _sf(found_row.get("age_score")),
+                    "breakout_profile_score": _sf(found_row.get("breakout_profile_score")),
+                    "athleticism_score": _sf(found_row.get("athleticism_score")),
+                    "competition_score": _sf(found_row.get("competition_score")),
+                    "projected_draft_capital_score": _sf(found_row.get("projected_draft_capital_score")),
+                    "confidence_score": _sf(found_row.get("confidence_score")),
+                    "key_reasons": found_row.get("key_reasons"),
+                    "rookie_value": _sf(found_row.get("rookie_value")),
+                    "rookie_sf_value": _sf(found_row.get("rookie_sf_value")),
+                    "projected_round": found_row.get("projected_round"),
+                    "projected_pick": found_row.get("projected_pick"),
+                    "num_mocks_used": found_row.get("num_mocks_used"),
+                    "height_inches": found_row.get("height_inches"),
+                    "weight_lbs": found_row.get("weight_lbs"),
+                    "forty_yard": _sf(found_row.get("forty_yard")),
+                    "ras_score": _sf(found_row.get("ras_score")),
+                    "draft_capital_label": format_draft_capital(
+                        found_row.get("projected_round"),
+                        found_row.get("projected_pick"),
+                        found_row.get("projected_pick_low"),
+                        found_row.get("projected_pick_high"),
+                    ),
+                }
+        except Exception as pe:
+            logger.info(f"[api_player_details] prospect lookup error: {pe}")
 
         # ── Fantasy team ownership (only when league context is provided) ──
         fantasy_team = None
@@ -21325,6 +21397,8 @@ def api_player_details(player_id: str):
             "value_history": value_history,
             "game_logs_by_year": game_logs_by_year,
             "has_game_logs": has_game_logs,
+            "has_advanced_metrics": has_advanced_metrics,
+            "has_prospect_data": bool(prospect_data),
             "prospect_data": prospect_data,
         }
 
@@ -21472,6 +21546,7 @@ def api_player_game_logs(player_id: str):
         league_id = request.args.get("league_id")
         platform = request.args.get("platform", "sleeper")
         season = int(request.args.get("season", datetime.now().year))
+        has_game_logs, _ = _player_nfl_eligibility(player_id, season)
 
         if league_id:
             # sync_league_globals is a no-op for Sleeper - must call get_league explicitly
@@ -21493,7 +21568,8 @@ def api_player_game_logs(player_id: str):
         _cache_key = _game_logs_cache_key(player_id, season, scoring_settings)
         _cached = _GAME_LOGS_CACHE.get(_cache_key)
         if _cached and time.time() - _cached[0] < _GAME_LOGS_CACHE_TTL:
-            return jsonify({"game_logs_by_year": _cached[1]})
+            return jsonify({"game_logs_by_year": _cached[1],
+                            "has_game_logs": has_game_logs})
 
         players_index = load_relevant_index() or {}
         player_meta = players_index.get(player_id) or {}
@@ -21535,19 +21611,11 @@ def api_player_game_logs(player_id: str):
                 except Exception:
                     continue
 
-            stats_by_week: dict = {}
-            for week_file in glob.glob(
-                    os.path.join(CACHE_DIR, "sleeper_stats", f"sleeper_stats_s{season_year}_w*.json")):
-                try:
-                    m = re.match(r'sleeper_stats_s(\d+)_w(\d+)', os.path.basename(week_file))
-                    if m:
-                        with open(week_file) as f:
-                            stats_by_week[int(m.group(2))] = json.load(f)
-                except Exception:
-                    continue
-
-            if not any(player_id in ws for ws in stats_by_week.values()):
+            player_stats_by_week = _sleeper_stats_by_week(player_id, season_year)
+            if not player_stats_by_week:
                 continue
+            stats_by_week = {week: {str(player_id): stats}
+                             for week, stats in player_stats_by_week.items()}
 
             def _calc_pts(s):
                 return round(_score_stats(s, scoring_settings), 2)
@@ -21833,7 +21901,8 @@ def api_player_game_logs(player_id: str):
                 _GAME_LOGS_CACHE.pop(_k, None)
         _GAME_LOGS_CACHE[_cache_key] = (time.time(), game_logs_by_year)
 
-        return jsonify({"game_logs_by_year": game_logs_by_year})
+        return jsonify({"game_logs_by_year": game_logs_by_year,
+                        "has_game_logs": has_game_logs})
     except Exception as e:
         logger.exception("[api_player_game_logs] error")
         return _api_err("Request failed", e)
