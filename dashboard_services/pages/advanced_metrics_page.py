@@ -1232,28 +1232,29 @@ _AM_JS = r"""
 
   // Aggregate weekly rows over [lo,hi] into the week-sliceable metric keys, using
   // the SAME formulas as the server's _WEEKLY_METRICS (advanced_metrics.py) so a
-  // range here matches the week-range leaderboard exactly. Metrics that need data
-  // the weekly endpoint doesn't carry (TDs → fpts_*, PFF grades, role score) are
-  // omitted and render as "–" in range mode.
+  // range here matches the week-range leaderboard exactly. Provider-only metrics
+  // such as PFF grades and role score remain unavailable in range mode.
   function _amCmpAgg(weeks, lo, hi) {
     const sel = (weeks || []).filter(w => { const wk = Number(w.week); return wk >= lo && wk <= hi; });
     const out = { _games: sel.length };
     if (!sel.length) return out;
     let snap = 0, snapN = 0, ts = 0, tsN = 0;
     let tgt = 0, rec = 0, car = 0, tch = 0, recYds = 0, rushYds = 0;
+    let rzTgt = 0, rzCar = 0;
     sel.forEach(w => {
       const sp = parseFloat(w.snap_pct); if (!isNaN(sp)) { snap += sp; snapN++; }
       const tsv = parseFloat(w.target_share); if (!isNaN(tsv)) { ts += tsv; tsN++; }
       tgt += Number(w.targets || 0); rec += Number(w.receptions || 0);
       car += Number(w.carries || 0); tch += Number(w.touches || 0);
       recYds += Number(w.rec_yards || 0); rushYds += Number(w.rush_yards || 0);
+      rzTgt += Number(w.rz_targets || 0); rzCar += Number(w.rz_carries || 0);
     });
     const n = sel.length;
     const div = (a, b) => b > 0 ? a / b : null;
     let pprPts = 0;
     sel.forEach(w => { pprPts += Number(w.ppr_pts || 0); });
     out.snap_share = snapN ? (snap / snapN) / 100 : null;
-    out.target_share = tsN ? (ts / tsN) / 100 : null;
+    out.target_share = tsN ? (ts / tsN) : null;
     out.yards_per_target = div(recYds, tgt);
     out.yards_per_reception = div(recYds, rec);
     out.catch_rate = div(rec, tgt);
@@ -1266,8 +1267,11 @@ _AM_JS = r"""
     out.total_rush_yards = rushYds; out.rush_yards_per_game = div(rushYds, n);
     out.total_touches = tch;       out.touches_per_game = div(tch, n);
     out.ppr_pts = pprPts;          out.ppr_pts_per_game = div(pprPts, n);
-    out.fpts_per_reception = rec > 0 ? (rec + recYds * 0.1 + (sel.reduce((s,w) => s + Number(w.rec_tds||0),0)) * 6) / rec : null;
+    out.fpts_per_target = tgt > 0 ? (rec + recYds * 0.1 + (sel.reduce((s,w) => s + Number(w.rec_tds||0),0)) * 6) / tgt : null;
     out.fpts_per_carry = car > 0 ? (rushYds * 0.1 + (sel.reduce((s,w) => s + Number(w.rush_tds||0),0)) * 6) / car : null;
+    out.rz_targets_pg = div(rzTgt, n);
+    out.rz_carries_pg = div(rzCar, n);
+    out.red_zone_usage = div(rzTgt + rzCar, n);
 
     // NGS/FTN/EPA metrics: totals summed, rates volume-weighted -- parity with
     // the server's get_adv_weekly_range_leaderboard so ranges match the board.
@@ -1326,7 +1330,7 @@ _AM_JS = r"""
   const _PRESETS = {
     'QB':        ['epa_per_play', 'cpoe', 'ngs_avg_time_to_throw', 'success_rate', 'td_rate', 'int_rate', 'pass_tds_per_game'],
     'RB':        ['opportunity_share', 'yards_per_carry', 'rushing_epa', 'rushing_success_rate', 'breakaway_percentage', 'red_zone_usage', 'total_tds_per_game'],
-    'WR':        ['target_share', 'yards_per_target', 'receiving_epa', 'ngs_created_separation', 'air_yards_share', 'rec_tds_per_game', 'fpts_per_reception'],
+    'WR':        ['target_share', 'yards_per_target', 'receiving_epa', 'ngs_created_separation', 'air_yards_share', 'rec_tds_per_game', 'fpts_per_target'],
     'TE':        ['target_share', 'yards_per_target', 'receiving_epa', 'ngs_avg_yac_above_expectation', 'rz_targets_pg', 'rec_tds_per_game'],
     'General':   ['snap_share', 'opportunity_share', 'red_zone_usage', 'yards_per_touch', 'total_tds_per_game'],
     'Rushing':   ['yards_per_carry', 'rushing_epa', 'breakaway_percentage', 'explosive_runs_10_plus', 'opportunity_share', 'carries_per_game', 'red_zone_usage'],
