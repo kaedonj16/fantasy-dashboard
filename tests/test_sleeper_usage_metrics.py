@@ -35,3 +35,32 @@ def test_sleeper_totals_drive_opportunity_and_target_share(monkeypatch):
     assert result["rb"]["season_targets"] + result["rb"]["season_carries"] == 11
     assert round(100 * 11 / result["rb"]["team_opportunities"], 1) == 15.7
     assert result["wr"]["target_share"] == 59 / 65
+
+
+def test_weekly_red_zone_stats_populate_without_per_player_requests(monkeypatch):
+    import data_building.external_data.sleeper_usage as usage
+
+    weeks = {
+        1: {
+            "wr": {"team": "KC", "rec_tgt": 6, "rec_rz_tgt": 2, "pts_ppr": 1},
+            "rb": {"team": "KC", "rush_att": 10, "rush_rz_att": 3, "pts_ppr": 1},
+        },
+        2: {
+            "wr": {"team": "KC", "rec_tgt": 4, "pts_ppr": 1},
+            "rb": {"team": "KC", "rush_att": 8, "rush_rz_att": 1, "pts_ppr": 1},
+        },
+    }
+    monkeypatch.setattr(usage, "fetch_week_stats", lambda season, week: weeks[week])
+    monkeypatch.setattr(
+        usage, "fetch_season_redzone_stats",
+        lambda season: (_ for _ in ()).throw(AssertionError("fallback must not run")),
+    )
+    monkeypatch.setattr(usage, "load_players_index", lambda: {
+        "wr": {"team": "KC", "pos": "WR"}, "rb": {"team": "KC", "pos": "RB"},
+    })
+
+    result = usage.build_usage_map_for_season(2026, [1, 2])
+    assert result["wr"]["rec_rz_tgt_pg"] == 1.0
+    assert result["wr"]["rush_rz_att_pg"] == 0.0
+    assert result["rb"]["rush_rz_att_pg"] == 2.0
+    assert result["wr"]["red_zone_available"] is True

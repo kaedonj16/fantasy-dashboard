@@ -4655,7 +4655,7 @@ function buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive, counts, b
     rec_yards_per_game: 100, rush_yards_per_game: 110,
     yprr: 3, route_participation: 100, routes_per_game: 40,
     pass_tds_per_game: 2.5, rush_tds_per_game: 1, rec_tds_per_game: 1,
-    total_tds_per_game: 1.5, fpts_per_carry: 1.5, fpts_per_reception: 3,
+    total_tds_per_game: 1.5, fpts_per_carry: 1.5, fpts_per_target: 3,
     explosive_runs_pg: 2, avoided_tackles_pg: 2.5,
     ngs_created_separation: 3, ngs_avg_time_to_throw: 3.5,
     ngs_aggressiveness: 25, ngs_avg_completed_air_yards: 12,

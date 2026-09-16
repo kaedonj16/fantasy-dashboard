@@ -15663,7 +15663,7 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2, counts1, c
       'yprr': 3, 'route_participation': 100, 'total_routes': 650, 'routes_per_game': 40,
       'pass_tds_per_game': 2.5, 'rush_tds_per_game': 1, 'rec_tds_per_game': 1,
       'total_tds_per_game': 1.5,
-      'fpts_per_carry': 1.5, 'fpts_per_reception': 3,
+      'fpts_per_carry': 1.5, 'fpts_per_target': 3,
       'explosive_runs_pg': 2, 'avoided_tackles_pg': 2.5,
     };
     
