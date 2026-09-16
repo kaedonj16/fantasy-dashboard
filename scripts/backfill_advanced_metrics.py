@@ -98,7 +98,10 @@ def main():
                   "Example: python scripts/backfill_advanced_metrics.py 2023 2024 2025")
             sys.exit(1)
     else:
-        seasons = [2022, 2023, 2024, 2025]
+        from dashboard_services.api import get_nfl_state
+        from datetime import date
+        current = int((get_nfl_state() or {}).get("season") or date.today().year)
+        seasons = list(range(max(2022, current - 3), current + 1))
 
     print(f"Backfilling advanced metrics for seasons: {seasons}")
     print("=" * 60)
