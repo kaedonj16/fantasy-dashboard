@@ -75,12 +75,17 @@ def init_weekly_metrics_db() -> None:
                 targets      INTEGER,
                 receptions   INTEGER,
                 rec_yards    NUMERIC,
+                rec_tds      INTEGER,
                 carries      INTEGER,
                 rush_yards   NUMERIC,
+                rush_tds     INTEGER,
                 touches      INTEGER,
+                rz_targets   INTEGER,
+                rz_carries   INTEGER,
                 target_share NUMERIC,
                 ppr_pts      NUMERIC,
                 pass_att     INTEGER,
+                pass_tds     INTEGER,
                 PRIMARY KEY (player_id, season, week)
             )
             """
@@ -91,6 +96,10 @@ def init_weekly_metrics_db() -> None:
         conn.execute(
             "ALTER TABLE player_weekly_metrics ADD COLUMN IF NOT EXISTS pass_att INTEGER"
         )
+        for column in ("rec_tds", "rush_tds", "pass_tds", "rz_targets", "rz_carries"):
+            conn.execute(
+                f"ALTER TABLE player_weekly_metrics ADD COLUMN IF NOT EXISTS {column} INTEGER"
+            )
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_pwm_season_week "
             "ON player_weekly_metrics (season, week)"
@@ -179,9 +188,10 @@ def build_weekly_metrics(season: int, weeks: Optional[List[int]] = None) -> int:
                     """
                     INSERT INTO player_weekly_metrics
                         (player_id, season, week, position, snap_pct, snaps, team_snaps,
-                         targets, receptions, rec_yards, carries, rush_yards, touches,
-                         target_share, ppr_pts, pass_att)
-                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                         targets, receptions, rec_yards, rec_tds,
+                         carries, rush_yards, rush_tds, touches, rz_targets, rz_carries,
+                         target_share, ppr_pts, pass_att, pass_tds)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                     ON CONFLICT (player_id, season, week) DO UPDATE SET
                         position = EXCLUDED.position,
                         snap_pct = EXCLUDED.snap_pct,
@@ -190,18 +200,26 @@ def build_weekly_metrics(season: int, weeks: Optional[List[int]] = None) -> int:
                         targets = EXCLUDED.targets,
                         receptions = EXCLUDED.receptions,
                         rec_yards = EXCLUDED.rec_yards,
+                        rec_tds = EXCLUDED.rec_tds,
                         carries = EXCLUDED.carries,
                         rush_yards = EXCLUDED.rush_yards,
+                        rush_tds = EXCLUDED.rush_tds,
                         touches = EXCLUDED.touches,
+                        rz_targets = EXCLUDED.rz_targets,
+                        rz_carries = EXCLUDED.rz_carries,
                         target_share = EXCLUDED.target_share,
                         ppr_pts = EXCLUDED.ppr_pts,
-                        pass_att = EXCLUDED.pass_att
+                        pass_att = EXCLUDED.pass_att,
+                        pass_tds = EXCLUDED.pass_tds
                     """,
                     (
                         pid, int(season), int(week), pos, snap_pct, int(snaps),
                         int(team_snaps), int(targets), int(receptions),
-                        _f(st.get("rec_yd")), int(carries), _f(st.get("rush_yd")),
-                        int(touches), tgt_share, _f(st.get("pts_ppr")), int(pass_att),
+                        _f(st.get("rec_yd")), int(_f(st.get("rec_td"))),
+                        int(carries), _f(st.get("rush_yd")), int(_f(st.get("rush_td"))),
+                        int(touches), int(_f(st.get("rec_rz_tgt"))),
+                        int(_f(st.get("rush_rz_att"))), tgt_share,
+                        _f(st.get("pts_ppr")), int(pass_att), int(_f(st.get("pass_td"))),
                     ),
                 )
                 count += 1
@@ -218,7 +236,8 @@ def get_player_weekly_series(player_id: str, season: int) -> List[Dict[str, Any]
         rows = conn.execute(
             """
             SELECT week, snap_pct, snaps, team_snaps, targets, receptions, carries,
-                   touches, target_share, ppr_pts, rec_yards, rush_yards, pass_att
+                   touches, target_share, ppr_pts, rec_yards, rush_yards, pass_att,
+                   rec_tds, rush_tds, pass_tds, rz_targets, rz_carries
             FROM player_weekly_metrics
             WHERE player_id = %s AND season = %s
             ORDER BY week
