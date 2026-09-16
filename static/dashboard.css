@@ -8097,7 +8097,8 @@ select:focus {
     overflow: hidden;
 }
 
-.trade-card .teams {
+.trade-card .teams,
+.activity-page .act-trade-body > .teams {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 10px;
@@ -16136,7 +16137,8 @@ img, svg, canvas {
 }
 
 @media (max-width: 900px) {
-    .trade-card .teams {
+    .trade-card .teams,
+    .activity-page .act-trade-body > .teams {
         grid-template-columns: 1fr;
     }
 
