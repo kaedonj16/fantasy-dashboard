@@ -60,7 +60,12 @@ def build_usage_map_for_season(
 
     # Sleeper is the authoritative dependency for this base usage build. Avoid
     # blocking current-season data on name-matched scrapers or nfl_data_py.
-    rz_map = fetch_season_redzone_stats(season)
+    # Prefer the already-fetched weekly feed for red-zone usage.  It contains
+    # rec_rz_tgt / rush_rz_att on the same player rows used for the rest of this
+    # snapshot and avoids hundreds of slow per-player season requests.  The
+    # season endpoint remains a compatibility fallback for older seasons whose
+    # weekly payloads do not expose either field.
+    weekly_rz_available = False
 
     # Load once - reused for both the accumulation loop and snap merging below
     players_index = load_players_index() or {}
@@ -148,8 +153,8 @@ def build_usage_map_for_season(
                 "ppr_total": 0.0,
                 "half_ppr_total": 0.0,
                 "std_total": 0.0,
-                "rec_rz_tgt_pg": 0.0,
-                "rush_rz_att_pg": 0.0,
+                "rec_rz_tgt": 0.0,
+                "rush_rz_att": 0.0,
                 "pass_att": 0.0,
                 "pass_cmp": 0.0,
                 "pass_yds": 0.0,
@@ -185,10 +190,13 @@ def build_usage_map_for_season(
             acc["half_ppr_total"] += half_ppr
             acc["std_total"] += std_pts
 
-            # Red zone usage (already per-game in rz_map)
-            rz_info = rz_map.get(pid, {}) or {}
-            acc["rec_rz_tgt_pg"] = float(rz_info.get("rec_rz_tgt_pg", 0.0))
-            acc["rush_rz_att_pg"] = float(rz_info.get("rush_rz_att_pg", 0.0))
+            # Sleeper's weekly rows omit zero-valued fields, so the presence of
+            # either key anywhere in the slate establishes that the source is
+            # available; missing keys for an individual player then mean zero.
+            if "rec_rz_tgt" in stats or "rush_rz_att" in stats:
+                weekly_rz_available = True
+            acc["rec_rz_tgt"] += float(stats.get("rec_rz_tgt", 0) or 0)
+            acc["rush_rz_att"] += float(stats.get("rush_rz_att", 0) or 0)
 
             # QB aggregates
             acc["pass_att"] += pass_att
@@ -200,6 +208,11 @@ def build_usage_map_for_season(
         # Free this week's raw data before loading the next one
         del week_players
         gc.collect()
+
+    # Older cached weekly schemas may lack red-zone fields entirely. Preserve
+    # the legacy season endpoint only for that case; current-season builds stay
+    # on the single weekly-data path.
+    rz_map = {} if weekly_rz_available else fetch_season_redzone_stats(season)
 
     # Sum cumulative player totals, not per-game averages: players on the same
     # team frequently have different games played. Prefer player-week team
@@ -278,8 +291,15 @@ def build_usage_map_for_season(
             "half_ppr_ppg": acc["half_ppr_total"] / g,
             "std_scoring_ppg": acc["std_total"] / g,
             "std_ppg": 0.0,
-            "rec_rz_tgt_pg": acc["rec_rz_tgt_pg"],
-            "rush_rz_att_pg": acc["rush_rz_att_pg"],
+            "rec_rz_tgt_pg": (
+                acc["rec_rz_tgt"] / g if weekly_rz_available else
+                float((rz_map.get(pid) or {}).get("rec_rz_tgt_pg", 0.0))
+            ),
+            "rush_rz_att_pg": (
+                acc["rush_rz_att"] / g if weekly_rz_available else
+                float((rz_map.get(pid) or {}).get("rush_rz_att_pg", 0.0))
+            ),
+            "red_zone_available": bool(weekly_rz_available or pid in rz_map),
 
             # QB passing per-game
             "avg_pass_att": acc["pass_att"] / g,
