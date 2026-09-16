@@ -1,6 +1,4 @@
 """Regression coverage for partial, early-season Advanced Metrics builds."""
-from datetime import date
-
 
 def _usage(games=1):
     return {
@@ -14,9 +12,8 @@ def _usage(games=1):
 
 def test_week_one_base_stats_create_current_season_without_secondary_providers(monkeypatch):
     import data_building.advanced_metrics as am
-    import data_building.external_data.sleeper_usage as su
 
-    monkeypatch.setattr(su, "build_usage_map_for_season", lambda season, weeks: {"wr1": _usage()})
+    usage_builder = lambda season, weeks: {"wr1": _usage()}
     monkeypatch.setattr(am, "load_matchup_ease", lambda season: {})
     monkeypatch.setattr(am, "finalize_role_scores_v2", lambda metrics, usage: None)
     saved = {}
@@ -28,6 +25,7 @@ def test_week_one_base_stats_create_current_season_without_secondary_providers(m
     result = am.build_advanced_metrics_snapshot(
         2026, 1, as_of_date="2026-09-15",
         players_index={"wr1": {"pos": "WR", "team": "KC"}},
+        usage_builder=usage_builder,
     )
 
     assert result["players_inserted"] == 1
@@ -40,22 +38,23 @@ def test_week_one_base_stats_create_current_season_without_secondary_providers(m
 
 def test_zero_completed_weeks_does_not_fetch_or_write(monkeypatch):
     import data_building.advanced_metrics as am
-    import data_building.external_data.sleeper_usage as su
-    monkeypatch.setattr(su, "build_usage_map_for_season", lambda *a, **k: (_ for _ in ()).throw(AssertionError()))
-    result = am.build_advanced_metrics_snapshot(2031, 0, players_index={})
+    usage_builder = lambda *a, **k: (_ for _ in ()).throw(AssertionError())
+    result = am.build_advanced_metrics_snapshot(
+        2031, 0, players_index={}, usage_builder=usage_builder)
     assert result["players_calculated"] == 0
     assert result["skip_reasons"] == {"no_completed_weeks": 1}
 
 
 def test_future_season_is_not_hard_coded(monkeypatch):
     import data_building.advanced_metrics as am
-    import data_building.external_data.sleeper_usage as su
-    monkeypatch.setattr(su, "build_usage_map_for_season", lambda season, weeks: {"qb": dict(_usage(), avg_pass_att=30, avg_pass_cmp=20, avg_pass_yds=250)})
+    usage_builder = lambda season, weeks: {
+        "qb": dict(_usage(), avg_pass_att=30, avg_pass_cmp=20, avg_pass_yds=250)}
     monkeypatch.setattr(am, "load_matchup_ease", lambda season: {})
     monkeypatch.setattr(am, "finalize_role_scores_v2", lambda *a: None)
     seen = {}
     monkeypatch.setattr(am, "save_metrics_snapshot", lambda rows, dt, season=None, return_counts=False: (seen.setdefault("season", season) and 1, 0))
-    am.build_advanced_metrics_snapshot(2031, 1, players_index={"qb": {"pos": "QB"}})
+    am.build_advanced_metrics_snapshot(
+        2031, 1, players_index={"qb": {"pos": "QB"}}, usage_builder=usage_builder)
     assert seen["season"] == 2031
 
 

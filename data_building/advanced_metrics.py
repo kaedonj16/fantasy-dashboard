@@ -934,6 +934,7 @@ def build_advanced_metrics_snapshot(
         *,
         as_of_date: Optional[str] = None,
         players_index: Optional[Dict[str, Dict[str, Any]]] = None,
+        usage_builder=None,
 ) -> Dict[str, Any]:
     """Build the current season snapshot directly from completed game weeks.
 
@@ -946,8 +947,14 @@ def build_advanced_metrics_snapshot(
     """
     from collections import Counter
     from datetime import date as _date
-    from data_building.external_data.sleeper_usage import build_usage_map_for_season
     from utils.utils import load_players_index
+
+    # Keep the pure calculation path importable in the lightweight CI shard.
+    # sleeper_usage pulls in pandas/numpy through player metadata services, while
+    # tests and callers with pre-fetched stats can inject a tiny usage builder.
+    if usage_builder is None:
+        from data_building.external_data.sleeper_usage import build_usage_map_for_season
+        usage_builder = build_usage_map_for_season
 
     season, completed_week = int(season), int(completed_week)
     summary: Dict[str, Any] = {
@@ -962,7 +969,7 @@ def build_advanced_metrics_snapshot(
         return summary
 
     index = players_index if players_index is not None else (load_players_index() or {})
-    usage_map = build_usage_map_for_season(season, range(1, completed_week + 1)) or {}
+    usage_map = usage_builder(season, range(1, completed_week + 1)) or {}
     summary["player_stats_rows"] = len(usage_map)
     skips: Counter = Counter()
     metrics_list: List[Dict[str, Any]] = []
