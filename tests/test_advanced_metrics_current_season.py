@@ -134,6 +134,28 @@ def test_opportunity_share_preserves_observed_zero():
     assert result["opportunity_share"] == 0.0
 
 
+def test_red_zone_metrics_preserve_observed_zero_when_feed_is_available():
+    from data_building.advanced_metrics import calculate_usage_metrics
+    result = calculate_usage_metrics({
+        "red_zone_available": True,
+        "rec_rz_tgt_pg": 0,
+        "rush_rz_att_pg": 0,
+    }, "WR")
+    assert result["red_zone_usage"] == 0.0
+    assert result["rz_targets_pg"] == 0.0
+    assert result["rz_carries_pg"] == 0.0
+
+
+def test_fpts_per_target_uses_targets_as_denominator():
+    from data_building.advanced_metrics import LEADERBOARD_METRICS, _WEEKLY_METRICS
+    spec = LEADERBOARD_METRICS["fpts_per_target"]
+    assert spec["label"] == "FPTs/Target"
+    assert spec["min_vol"]["col"] == "total_targets"
+    assert "NULLIF(m.total_targets, 0)" in spec["computed_sql"]
+    assert "NULLIF(SUM(targets), 0)" in _WEEKLY_METRICS["fpts_per_target"]["sql"]
+    assert "fpts_per_reception" not in LEADERBOARD_METRICS
+
+
 def test_modal_renders_opportunity_share_once_for_all_skill_positions():
     js = (Path(__file__).resolve().parents[1] / "static" / "player_modal.js").read_text()
     fn = js[js.index("function buildAdvancedMetricsHTML"):]
