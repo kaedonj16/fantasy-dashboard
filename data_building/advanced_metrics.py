@@ -474,6 +474,7 @@ def calculate_usage_metrics(usage: Dict[str, float], position: str) -> Dict[str,
     )
 
     # Red zone usage
+    rz_available = bool(usage.get("red_zone_available"))
     rz_targets = usage.get("rec_rz_tgt_pg", 0) or 0
     rz_carries = usage.get("rush_rz_att_pg", 0) or 0
     red_zone_usage = rz_targets + rz_carries
@@ -481,9 +482,9 @@ def calculate_usage_metrics(usage: Dict[str, float], position: str) -> Dict[str,
     return {
         "snap_share": snap_share if snap_share > 0 else None,
         "opportunity_share": opportunity_share,
-        "red_zone_usage": red_zone_usage if red_zone_usage > 0 else None,
-        "rz_targets_pg": rz_targets if rz_targets > 0 else None,
-        "rz_carries_pg": rz_carries if rz_carries > 0 else None,
+        "red_zone_usage": red_zone_usage if rz_available else None,
+        "rz_targets_pg": rz_targets if rz_available else None,
+        "rz_carries_pg": rz_carries if rz_available else None,
     }
 
 
@@ -1575,7 +1576,7 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     "war":                  {"label": "WAR",                 "category": "Value", "positions": ["QB", "RB", "WR", "TE"], "value_metric": True, "desc": "Wins Above Replacement: season VORP divided by points-per-win (≈ the league's weekly scoring spread). Translates points above replacement into the wins they were worth; elite players are typically 4-6+."},
     # ── General (cross-position production, usage, and grade) ─────────────────
     # Fantasy output first, then combined production, then usage/role, then grade.
-    "ppr_pts":              {"label": "PPR Points",          "category": "General", "positions": ["QB", "RB", "WR", "TE"], "desc": "Total PPR fantasy points for the period (0.5 PPR scoring)."},
+    "ppr_pts":              {"label": "PPR Points",          "category": "General", "positions": ["QB", "RB", "WR", "TE"], "desc": "Total fantasy points for the period using full-PPR scoring."},
     "ppr_pts_per_game":     {"label": "Fantasy PPG",         "category": "General", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "PPR fantasy points per game."},
     # Total yards = rushing + receiving + passing, each derived from stored
     # efficiency x volume columns (no dedicated yardage column exists) so this
@@ -1588,7 +1589,7 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     "yards_per_touch":      {"label": "Yards / Touch",       "category": "General", "positions": ["RB", "WR", "TE"], "efficiency": True, "min_vol": _V_TOUCHES, "desc": "Yards gained per combined carry and reception."},
     "role_score":           {"label": "Role Score",          "category": "General", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "hidden": True, "desc": "Internal opportunity signal (feeds breakout detection); not shown on the front end. Share of team targets/carries, red-zone usage, and (QB) passing + rushing workload."},
     "snap_share":           {"label": "Snap Share",          "category": "General", "positions": ["QB", "RB", "WR", "TE"], "pct": True, "pct_frac": True, "min_vol": _V_GAMES, "desc": "Percent of the team's offensive snaps the player was on the field for."},
-    "opportunity_share":    {"label": "Opportunity Share",   "category": "General", "positions": ["RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Share of the team's targets plus carries that went to this player."},
+    "opportunity_share":    {"label": "Opportunity Share",   "category": "General", "positions": ["RB", "WR", "TE"], "pct": True, "min_vol": _V_GAMES, "desc": "Share of the team's targets plus carries that went to this player."},
     "red_zone_usage":       {"label": "Red Zone Usage",      "category": "General", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Targets and carries inside the opponent's 20-yard line per game; a proxy for scoring opportunity."},
     "grades_offense":       {"label": "PFF Off Grade",       "category": "General", "positions": ["QB", "RB", "WR", "TE"], "efficiency": True, "min_vol": _V_GAMES, "desc": "PFF's overall offensive grade (0-100) from play-by-play charting."},
     "schedule_ease":        {"label": "Schedule Ease",       "category": "General", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "hidden": True, "desc": "How easy the player's remaining schedule is vs. their position (0-100, 100 = easiest). Based on opponent defensive ratings from matchup_ratings."},
@@ -1669,12 +1670,12 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     "route_participation":  {"label": "Route Partic %",      "category": "Receiving", "positions": ["WR", "TE"], "pct": True, "pct_frac": True, "min_vol": _V_GAMES, "desc": "Percent of the team's pass-play snaps on which the WR/TE ran a route. High route participation means the player is a consistent full-time route runner."},
     "air_yards_per_game":   {"label": "Air Yards / Game",    "category": "Receiving", "positions": ["WR", "TE"], "min_vol": _V_GAMES, "desc": "Receiving air yards (distance thrown in the air to the player) per game; a measure of downfield target volume."},
     "air_yards_share":      {"label": "Air Yards Share",     "category": "Receiving", "positions": ["WR", "TE"], "pct": True, "min_vol": _V_GAMES, "desc": "Share of the team's total passing air yards directed at this player; combines target share with depth of target."},
-    "wopr":                 {"label": "WOPR",                "category": "Receiving", "positions": ["WR", "TE", "RB"], "min_vol": _V_GAMES, "desc": "Weighted Opportunity Rate: (1.5 × target share) + (0.7 × rush share). Combines air and ground touches into a single opportunity share signal; elite receivers typically exceed 0.50."},
-    "rz_targets_pg":        {"label": "RZ Targets/G",        "category": "Receiving", "positions": ["QB", "WR", "TE", "RB"], "min_vol": _V_GAMES, "desc": "Red zone targets per game (inside opponent's 20-yard line)."},
+    "wopr":                 {"label": "WOPR",                "category": "Receiving", "positions": ["WR", "TE", "RB"], "min_vol": _V_GAMES, "desc": "Weighted Opportunity Rating: 1.5 × target share + 0.7 × air-yards share. Combines target volume and downfield opportunity."},
+    "rz_targets_pg":        {"label": "RZ Targets/G",        "category": "Receiving", "positions": ["WR", "TE", "RB"], "min_vol": _V_GAMES, "desc": "Red zone targets per game (inside opponent's 20-yard line)."},
     "yards_per_target":     {"label": "Yards / Target",      "category": "Receiving", "positions": ["WR", "RB", "TE"], "efficiency": True, "min_vol": _V_TARGETS, "desc": "Receiving yards earned per time targeted; measures efficiency on volume."},
     "yards_per_reception":  {"label": "Yards / Reception",   "category": "Receiving", "positions": ["WR", "RB", "TE"], "efficiency": True, "min_vol": _V_RECS, "desc": "Average yards gained per catch; higher means a more downfield/explosive role."},
     "catch_rate":           {"label": "Catch Rate",          "category": "Receiving", "positions": ["WR", "RB", "TE"], "efficiency": True, "pct": True, "pct_frac": True, "min_vol": _V_TARGETS, "desc": "Percent of targets caught."},
-    "fpts_per_reception":   {"label": "FPTs/Rec",            "category": "Receiving", "positions": ["WR", "TE", "RB"], "efficiency": True, "min_vol": _V_RECS, "desc": "PPR fantasy points per reception (PPR scoring: 1 pt/rec + 0.1 × yards/rec + 6 × rec TDs/rec). Captures the full PPR value of each catch.", "computed_sql": "1.0 + m.yards_per_reception * 0.1 + (m.total_rec_tds::float / NULLIF(m.total_receptions, 0)) * 6", "computed_null": "m.yards_per_reception IS NOT NULL AND m.total_rec_tds IS NOT NULL AND m.total_receptions IS NOT NULL"},
+    "fpts_per_target":      {"label": "FPTs/Target",         "category": "Receiving", "positions": ["WR", "TE", "RB"], "efficiency": True, "min_vol": _V_TARGETS, "desc": "PPR receiving fantasy points per target: (receptions + 0.1 × receiving yards + 6 × receiving TDs) ÷ targets.", "computed_sql": "(m.total_receptions + m.yards_per_reception * m.total_receptions * 0.1 + m.total_rec_tds * 6)::float / NULLIF(m.total_targets, 0)", "computed_null": "m.yards_per_reception IS NOT NULL AND m.total_rec_tds IS NOT NULL AND m.total_receptions IS NOT NULL AND m.total_targets IS NOT NULL"},
     "yprr":                 {"label": "Yards / Route Run",   "category": "Receiving", "positions": ["WR", "TE", "RB"], "efficiency": True, "min_vol": _V_GAMES, "desc": "Receiving yards earned per route run (from PFF). Elite WRs are typically 2.0+; accounts for targets indirectly by rewarding yards on every snap."},
     "avg_depth_of_target":  {"label": "aDOT",                "category": "Receiving", "positions": ["WR", "RB", "TE"], "efficiency": True, "min_vol": _V_TARGETS, "desc": "Average depth of target: how far downfield (in yards) the player is thrown to."},
     "yards_after_catch_per_reception": {"label": "YAC / Reception", "category": "Receiving", "positions": ["WR", "RB", "TE"], "efficiency": True, "min_vol": _V_RECS, "desc": "Average yards gained after the catch per reception."},
@@ -1687,7 +1688,7 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     "racr":                 {"label": "RACR",                "category": "Receiving", "positions": ["WR", "TE", "RB"], "efficiency": True, "min_vol": _V_TARGETS, "desc": "Receiver Air Conversion Ratio: receiving yards ÷ air yards. How much of the yards thrown at the player actually come in (catch + YAC)."},
     "contested_catch_rate": {"label": "Contested Catch %",   "category": "Receiving", "positions": ["WR", "TE"], "efficiency": True, "pct": True, "min_vol": _V_TARGETS, "desc": "Percent of contested (tightly covered) targets the player came down with."},
     "drop_rate":            {"label": "Drop Rate",           "category": "Receiving", "positions": ["WR", "RB", "TE"], "efficiency": True, "pct": True, "lower_better": True, "min_vol": _V_TARGETS, "desc": "Percent of catchable targets dropped. Lower is better."},
-    "target_quality_score": {"label": "Target Quality",      "category": "Receiving", "positions": ["WR", "RB", "TE"], "efficiency": True, "min_vol": _V_TARGETS, "desc": "Composite of how valuable a player's targets are (depth, location, situation)."},
+    "target_quality_score": {"label": "Target Quality",      "category": "Receiving", "positions": ["WR", "RB", "TE"], "efficiency": True, "min_vol": _V_TARGETS, "hidden": True, "desc": "Legacy internal composite of targets per game, yards per target, and receiving touchdowns; hidden because it does not adjust for target depth, location, or game situation."},
     "receiving_epa":        {"label": "Receiving EPA",       "category": "Receiving", "positions": ["WR", "TE", "RB"], "min_vol": _V_TARGETS, "desc": "Total Expected Points Added on targets over the season (nflverse)."},
     # Touchdown group: season total and per-game kept adjacent.
     "total_rec_tds":        {"label": "Rec TDs",             "category": "Receiving", "subcategory": "Receiving", "positions": ["WR", "TE", "RB"], "integer": True, "desc": "Total receiving touchdowns in the season."},
@@ -1709,7 +1710,7 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
 # min_opts:  options offered in that control; [] means the control is hidden.
 _WEEKLY_METRICS: Dict[str, Any] = {
     "snap_share":          {"sql": "AVG(snap_pct) / 100.0",                                                "min_col": None,              "min_label": "Min Weeks", "min_opts": []},
-    "target_share":        {"sql": "AVG(target_share) / 100.0",                                            "min_col": None,              "min_label": "Min Weeks", "min_opts": []},
+    "target_share":        {"sql": "AVG(target_share)",                                                    "min_col": None,              "min_label": "Min Weeks", "min_opts": []},
     "yards_per_target":    {"sql": "SUM(rec_yards)::float / NULLIF(SUM(targets), 0)",                      "min_col": "SUM(targets)",    "min_label": "Min Targets", "min_opts": [5, 10, 20, 40]},
     "yards_per_reception": {"sql": "SUM(rec_yards)::float / NULLIF(SUM(receptions), 0)",                   "min_col": "SUM(receptions)", "min_label": "Min Recs",    "min_opts": [5, 10, 20]},
     "catch_rate":          {"sql": "SUM(receptions)::float / NULLIF(SUM(targets), 0)",                     "min_col": "SUM(targets)",    "min_label": "Min Targets", "min_opts": [5, 10, 20, 40]},
@@ -1728,7 +1729,10 @@ _WEEKLY_METRICS: Dict[str, Any] = {
     "total_touches":       {"sql": "SUM(touches)",                                                                                                           "min_col": None,              "min_label": "Min Weeks",   "min_opts": []},
     "touches_per_game":    {"sql": "AVG(touches)",                                                                                                           "min_col": None,              "min_label": "Min Weeks",   "min_opts": []},
     "fpts_per_carry":      {"sql": "(SUM(rush_yards) * 0.1 + SUM(rush_tds) * 6)::float / NULLIF(SUM(carries), 0)",                                          "min_col": "SUM(carries)",    "min_label": "Min Carries", "min_opts": [5, 10, 20, 40]},
-    "fpts_per_reception":  {"sql": "(SUM(receptions) + SUM(rec_yards) * 0.1 + SUM(rec_tds) * 6)::float / NULLIF(SUM(receptions), 0)",                       "min_col": "SUM(receptions)", "min_label": "Min Recs",    "min_opts": [3, 5, 10, 20]},
+    "fpts_per_target":     {"sql": "(SUM(receptions) + SUM(rec_yards) * 0.1 + SUM(rec_tds) * 6)::float / NULLIF(SUM(targets), 0)",                          "min_col": "SUM(targets)",    "min_label": "Min Targets", "min_opts": [5, 10, 20, 40]},
+    "rz_targets_pg":       {"sql": "AVG(rz_targets)",                                                        "min_col": None,              "min_label": "Min Weeks",   "min_opts": []},
+    "rz_carries_pg":       {"sql": "AVG(rz_carries)",                                                        "min_col": None,              "min_label": "Min Weeks",   "min_opts": []},
+    "red_zone_usage":      {"sql": "AVG(COALESCE(rz_targets, 0) + COALESCE(rz_carries, 0))",                 "min_col": None,              "min_label": "Min Weeks",   "min_opts": []},
     "ppr_pts":          {"sql": "SUM(ppr_pts)",  "min_col": None, "min_label": "Min Weeks", "min_opts": []},
     "ppr_pts_per_game": {"sql": "AVG(ppr_pts)",  "min_col": None, "min_label": "Min Weeks", "min_opts": []},
 }
@@ -1980,7 +1984,8 @@ def _get_player_weekly_usage_range(
         with get_conn() as conn:
             rows = conn.execute(
                 "SELECT position, snap_pct, targets, receptions, rec_yards, "
-                "carries, rush_yards, touches, target_share, ppr_pts "
+                "carries, rush_yards, touches, target_share, ppr_pts, "
+                "rec_tds, rush_tds, rz_targets, rz_carries "
                 "FROM player_weekly_metrics "
                 "WHERE player_id = %s AND season = %s AND week BETWEEN %s AND %s",
                 (str(player_id), int(season), int(lo), int(hi)),
@@ -2005,6 +2010,10 @@ def _get_player_weekly_usage_range(
     carries = _sum("carries")
     rush_yards = _sum("rush_yards")
     touches = _sum("touches")
+    rec_tds = _sum("rec_tds")
+    rush_tds = _sum("rush_tds")
+    rz_targets = _sum("rz_targets")
+    rz_carries = _sum("rz_carries")
 
     out: Dict[str, Any] = {}
 
@@ -2024,6 +2033,17 @@ def _get_player_weekly_usage_range(
         out["yards_per_carry"] = rush_yards / carries
     if touches > 0:
         out["yards_per_touch"] = (rec_yards + rush_yards) / touches
+    if targets > 0:
+        out["fpts_per_target"] = (
+            receptions + rec_yards * 0.1 + rec_tds * 6.0
+        ) / targets
+    if carries > 0:
+        out["fpts_per_carry"] = (rush_yards * 0.1 + rush_tds * 6.0) / carries
+
+    # Weekly rows establish observed zeroes, so expose 0.0 rather than N/A.
+    out["rz_targets_pg"] = rz_targets / n
+    out["rz_carries_pg"] = rz_carries / n
+    out["red_zone_usage"] = (rz_targets + rz_carries) / n
 
     # Volume totals + per-game.
     if targets:
@@ -3010,6 +3030,7 @@ def get_metric_leaderboard(
         else:
             metric_value_expr = f"m.{metric} AS value"
             metric_where = f"m.{metric} IS NOT NULL"
+        metric_order = "ASC" if _spec.get("lower_better") else "DESC"
 
         # DISTINCT ON picks each player's most recent non-null snapshot for this
         # metric within the season. This prevents the old single-max-date approach
@@ -3025,7 +3046,7 @@ def get_metric_leaderboard(
                     WHERE {metric_where}{gate}
                     ORDER BY m.player_id, m.as_of_date DESC
                 ) t
-                ORDER BY t.value DESC NULLS LAST LIMIT %s""",
+                ORDER BY t.value {metric_order} NULLS LAST LIMIT %s""",
             tuple(params),
         ).fetchall()
 
@@ -3240,51 +3261,51 @@ def get_player_metric_ranks(player_id: str, season: Optional[int] = None) -> Dic
                         MAX(total_tds) AS total_tds,
                         MAX(total_pass_att) AS total_pass_att,
                         MAX(games) AS games,
-                        MAX(role_score) AS role_score,
-                        MAX(snap_share) AS snap_share,
-                        MAX(grades_offense) AS grades_offense,
-                        MAX(pff_passing_grade) AS pff_passing_grade,
-                        MAX(big_time_throw_rate) AS big_time_throw_rate,
-                        MAX(adjusted_completion_rate) AS adjusted_completion_rate,
-                        MAX(nfl_passer_rating) AS nfl_passer_rating,
-                        MAX(yards_per_attempt) AS yards_per_attempt,
-                        MAX(completion_pct) AS completion_pct,
-                        MAX(td_rate) AS td_rate,
-                        MIN(int_rate) AS int_rate,
-                        MIN(pressure_to_sack_rate) AS pressure_to_sack_rate,
-                        MAX(passing_epa) AS passing_epa,
-                        MAX(epa_per_play) AS epa_per_play,
-                        MAX(cpoe) AS cpoe,
-                        MAX(success_rate) AS success_rate,
-                        MIN(sack_rate) AS sack_rate,
-                        MAX(pff_rushing_grade) AS pff_rushing_grade,
-                        MAX(yards_per_carry) AS yards_per_carry,
-                        MAX(yards_per_touch) AS yards_per_touch,
-                        MAX(rush_td_rate) AS rush_td_rate,
-                        MAX(elusive_rating) AS elusive_rating,
-                        MAX(breakaway_percentage) AS breakaway_percentage,
+                        (ARRAY_AGG(role_score ORDER BY as_of_date DESC) FILTER (WHERE role_score IS NOT NULL))[1] AS role_score,
+                        (ARRAY_AGG(snap_share ORDER BY as_of_date DESC) FILTER (WHERE snap_share IS NOT NULL))[1] AS snap_share,
+                        (ARRAY_AGG(grades_offense ORDER BY as_of_date DESC) FILTER (WHERE grades_offense IS NOT NULL))[1] AS grades_offense,
+                        (ARRAY_AGG(pff_passing_grade ORDER BY as_of_date DESC) FILTER (WHERE pff_passing_grade IS NOT NULL))[1] AS pff_passing_grade,
+                        (ARRAY_AGG(big_time_throw_rate ORDER BY as_of_date DESC) FILTER (WHERE big_time_throw_rate IS NOT NULL))[1] AS big_time_throw_rate,
+                        (ARRAY_AGG(adjusted_completion_rate ORDER BY as_of_date DESC) FILTER (WHERE adjusted_completion_rate IS NOT NULL))[1] AS adjusted_completion_rate,
+                        (ARRAY_AGG(nfl_passer_rating ORDER BY as_of_date DESC) FILTER (WHERE nfl_passer_rating IS NOT NULL))[1] AS nfl_passer_rating,
+                        (ARRAY_AGG(yards_per_attempt ORDER BY as_of_date DESC) FILTER (WHERE yards_per_attempt IS NOT NULL))[1] AS yards_per_attempt,
+                        (ARRAY_AGG(completion_pct ORDER BY as_of_date DESC) FILTER (WHERE completion_pct IS NOT NULL))[1] AS completion_pct,
+                        (ARRAY_AGG(td_rate ORDER BY as_of_date DESC) FILTER (WHERE td_rate IS NOT NULL))[1] AS td_rate,
+                        (ARRAY_AGG(int_rate ORDER BY as_of_date DESC) FILTER (WHERE int_rate IS NOT NULL))[1] AS int_rate,
+                        (ARRAY_AGG(pressure_to_sack_rate ORDER BY as_of_date DESC) FILTER (WHERE pressure_to_sack_rate IS NOT NULL))[1] AS pressure_to_sack_rate,
+                        (ARRAY_AGG(passing_epa ORDER BY as_of_date DESC) FILTER (WHERE passing_epa IS NOT NULL))[1] AS passing_epa,
+                        (ARRAY_AGG(epa_per_play ORDER BY as_of_date DESC) FILTER (WHERE epa_per_play IS NOT NULL))[1] AS epa_per_play,
+                        (ARRAY_AGG(cpoe ORDER BY as_of_date DESC) FILTER (WHERE cpoe IS NOT NULL))[1] AS cpoe,
+                        (ARRAY_AGG(success_rate ORDER BY as_of_date DESC) FILTER (WHERE success_rate IS NOT NULL))[1] AS success_rate,
+                        (ARRAY_AGG(sack_rate ORDER BY as_of_date DESC) FILTER (WHERE sack_rate IS NOT NULL))[1] AS sack_rate,
+                        (ARRAY_AGG(pff_rushing_grade ORDER BY as_of_date DESC) FILTER (WHERE pff_rushing_grade IS NOT NULL))[1] AS pff_rushing_grade,
+                        (ARRAY_AGG(yards_per_carry ORDER BY as_of_date DESC) FILTER (WHERE yards_per_carry IS NOT NULL))[1] AS yards_per_carry,
+                        (ARRAY_AGG(yards_per_touch ORDER BY as_of_date DESC) FILTER (WHERE yards_per_touch IS NOT NULL))[1] AS yards_per_touch,
+                        (ARRAY_AGG(rush_td_rate ORDER BY as_of_date DESC) FILTER (WHERE rush_td_rate IS NOT NULL))[1] AS rush_td_rate,
+                        (ARRAY_AGG(elusive_rating ORDER BY as_of_date DESC) FILTER (WHERE elusive_rating IS NOT NULL))[1] AS elusive_rating,
+                        (ARRAY_AGG(breakaway_percentage ORDER BY as_of_date DESC) FILTER (WHERE breakaway_percentage IS NOT NULL))[1] AS breakaway_percentage,
                         MAX(explosive_runs_10_plus) AS explosive_runs_10_plus,
-                        MAX(rushing_epa) AS rushing_epa,
-                        MAX(ngs_rush_yards_over_expected_per_att) AS ngs_rush_yards_over_expected_per_att,
-                        MAX(opportunity_share) AS opportunity_share,
-                        MAX(catch_rate) AS catch_rate,
+                        (ARRAY_AGG(rushing_epa ORDER BY as_of_date DESC) FILTER (WHERE rushing_epa IS NOT NULL))[1] AS rushing_epa,
+                        (ARRAY_AGG(ngs_rush_yards_over_expected_per_att ORDER BY as_of_date DESC) FILTER (WHERE ngs_rush_yards_over_expected_per_att IS NOT NULL))[1] AS ngs_rush_yards_over_expected_per_att,
+                        (ARRAY_AGG(opportunity_share ORDER BY as_of_date DESC) FILTER (WHERE opportunity_share IS NOT NULL))[1] AS opportunity_share,
+                        (ARRAY_AGG(catch_rate ORDER BY as_of_date DESC) FILTER (WHERE catch_rate IS NOT NULL))[1] AS catch_rate,
                         MAX(avoided_tackles) AS avoided_tackles,
-                        MAX(yprr) AS yprr,
-                        MAX(yards_per_target) AS yards_per_target,
-                        MAX(yards_per_reception) AS yards_per_reception,
-                        MAX(yards_after_catch_per_reception) AS yards_after_catch_per_reception,
-                        MAX(avg_depth_of_target) AS avg_depth_of_target,
-                        MAX(target_share) AS target_share,
-                        MAX(air_yards_per_game) AS air_yards_per_game,
-                        MAX(air_yards_share) AS air_yards_share,
-                        MAX(target_quality_score) AS target_quality_score,
-                        MAX(contested_catch_rate) AS contested_catch_rate,
-                        MIN(drop_rate) AS drop_rate,
-                        MAX(red_zone_usage) AS red_zone_usage,
-                        MAX(receiving_epa) AS receiving_epa,
-                        MAX(ngs_avg_separation) AS ngs_avg_separation,
-                        MAX(ngs_avg_cushion) AS ngs_avg_cushion,
-                        MAX(ngs_avg_yac_above_expectation) AS ngs_avg_yac_above_expectation,
+                        (ARRAY_AGG(yprr ORDER BY as_of_date DESC) FILTER (WHERE yprr IS NOT NULL))[1] AS yprr,
+                        (ARRAY_AGG(yards_per_target ORDER BY as_of_date DESC) FILTER (WHERE yards_per_target IS NOT NULL))[1] AS yards_per_target,
+                        (ARRAY_AGG(yards_per_reception ORDER BY as_of_date DESC) FILTER (WHERE yards_per_reception IS NOT NULL))[1] AS yards_per_reception,
+                        (ARRAY_AGG(yards_after_catch_per_reception ORDER BY as_of_date DESC) FILTER (WHERE yards_after_catch_per_reception IS NOT NULL))[1] AS yards_after_catch_per_reception,
+                        (ARRAY_AGG(avg_depth_of_target ORDER BY as_of_date DESC) FILTER (WHERE avg_depth_of_target IS NOT NULL))[1] AS avg_depth_of_target,
+                        (ARRAY_AGG(target_share ORDER BY as_of_date DESC) FILTER (WHERE target_share IS NOT NULL))[1] AS target_share,
+                        (ARRAY_AGG(air_yards_per_game ORDER BY as_of_date DESC) FILTER (WHERE air_yards_per_game IS NOT NULL))[1] AS air_yards_per_game,
+                        (ARRAY_AGG(air_yards_share ORDER BY as_of_date DESC) FILTER (WHERE air_yards_share IS NOT NULL))[1] AS air_yards_share,
+                        (ARRAY_AGG(target_quality_score ORDER BY as_of_date DESC) FILTER (WHERE target_quality_score IS NOT NULL))[1] AS target_quality_score,
+                        (ARRAY_AGG(contested_catch_rate ORDER BY as_of_date DESC) FILTER (WHERE contested_catch_rate IS NOT NULL))[1] AS contested_catch_rate,
+                        (ARRAY_AGG(drop_rate ORDER BY as_of_date DESC) FILTER (WHERE drop_rate IS NOT NULL))[1] AS drop_rate,
+                        (ARRAY_AGG(red_zone_usage ORDER BY as_of_date DESC) FILTER (WHERE red_zone_usage IS NOT NULL))[1] AS red_zone_usage,
+                        (ARRAY_AGG(receiving_epa ORDER BY as_of_date DESC) FILTER (WHERE receiving_epa IS NOT NULL))[1] AS receiving_epa,
+                        (ARRAY_AGG(ngs_avg_separation ORDER BY as_of_date DESC) FILTER (WHERE ngs_avg_separation IS NOT NULL))[1] AS ngs_avg_separation,
+                        (ARRAY_AGG(ngs_avg_cushion ORDER BY as_of_date DESC) FILTER (WHERE ngs_avg_cushion IS NOT NULL))[1] AS ngs_avg_cushion,
+                        (ARRAY_AGG(ngs_avg_yac_above_expectation ORDER BY as_of_date DESC) FILTER (WHERE ngs_avg_yac_above_expectation IS NOT NULL))[1] AS ngs_avg_yac_above_expectation,
                         CASE WHEN MAX(games) > 0 THEN MAX(total_carries)::float / MAX(games)    END AS carries_pg,
                         CASE WHEN MAX(games) > 0 THEN MAX(total_targets)::float / MAX(games)    END AS targets_pg,
                         CASE WHEN MAX(games) > 0 THEN MAX(total_receptions)::float / MAX(games) END AS recs_pg,
@@ -3484,7 +3505,7 @@ def get_player_metric_ranks(player_id: str, season: Optional[int] = None) -> Dic
                 "explosive_runs_pg":  ("total_carries", 20),
                 "avoided_tackles_pg": ("total_carries", 20),
                 "fpts_per_carry":     ("total_carries", 20),
-                "fpts_per_reception": ("total_receptions", 10),
+                "fpts_per_target":    ("total_targets", 15),
                 "ngs_avg_time_to_throw": ("total_pass_att", 50),
                 "ngs_aggressiveness": ("total_pass_att", 50),
                 "ngs_avg_completed_air_yards": ("total_pass_att", 50),
@@ -3510,15 +3531,51 @@ def get_player_metric_ranks(player_id: str, season: Optional[int] = None) -> Dic
                 "receiving_epa_per_target": ("total_targets", 15),
                 "racr": ("total_targets", 15),
             }
-            srows = [dict(r) for r in conn.execute(
-                "SELECT DISTINCT ON (player_id) * FROM player_advanced_metrics "
+            # A season can have complementary rows written by the base usage,
+            # NGS/FTN and optional premium importers. Coalesce newest-first per
+            # column instead of selecting only the newest physical row, which
+            # silently dropped metrics written by an older provider snapshot.
+            _raw_rows = [dict(r) for r in conn.execute(
+                "SELECT * FROM player_advanced_metrics "
                 "WHERE season = %s AND position = %s "
                 "ORDER BY player_id, as_of_date DESC",
                 (season, position),
             ).fetchall()]
+            _merged_rows: Dict[str, dict] = {}
+            for _row in _raw_rows:
+                _pid = str(_row.get("player_id"))
+                if _pid not in _merged_rows:
+                    _merged_rows[_pid] = dict(_row)
+                    continue
+                _merged = _merged_rows[_pid]
+                for _key, _value in _row.items():
+                    if _merged.get(_key) is None and _value is not None:
+                        _merged[_key] = _value
+            srows = list(_merged_rows.values())
+
+            # Materialize computed leaderboard metrics for the rank cache. They
+            # are SQL expressions on the main leaderboard and therefore are not
+            # physical columns in player_advanced_metrics.
+            for _row in srows:
+                _games = _safe(_row.get("games"))
+                _targets = _safe(_row.get("total_targets"))
+                _recs = _safe(_row.get("total_receptions"))
+                _rec_tds = _safe(_row.get("total_rec_tds"))
+                _ypr = _safe(_row.get("yards_per_reception"))
+                _carries = _safe(_row.get("total_carries"))
+                if _targets > 0 and _row.get("yards_per_reception") is not None:
+                    _row["fpts_per_target"] = (
+                        _recs + (_ypr * _recs * 0.1) + (_rec_tds * 6.0)
+                    ) / _targets
+                if _games > 0 and _row.get("total_routes") is not None:
+                    _row["routes_per_game"] = _safe(_row.get("total_routes")) / _games
+                if _carries > 0 and _row.get("explosive_runs_10_plus") is not None:
+                    _row["explosive_runs_pg"] = _safe(_row.get("explosive_runs_10_plus")) / _carries
+                if _carries > 0 and _row.get("avoided_tackles") is not None:
+                    _row["avoided_tackles_pg"] = _safe(_row.get("avoided_tackles")) / _carries
             for metric, (gate_col, gate_min) in _SUPP_GATES.items():
                 gate_min = _policy.minimum(gate_col, gate_min)
-                if not srows or metric not in srows[0]:
+                if not srows or not any(r.get(metric) is not None for r in srows):
                     continue
                 lower_better = bool(LEADERBOARD_METRICS.get(metric, {}).get("lower_better"))
                 vals: Dict[str, float] = {}
