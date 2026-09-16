@@ -583,7 +583,11 @@ function openPlayerModal(playerId, playerName, opts) {
       }
 
       // ── Advanced Metrics / Prospect Profile + Value History flags ──
-      const hasMetrics = !hasProspectData && pos && pos !== 'K' && pos !== 'DEF';
+      const supportedMetricsPosition =
+        ['QB', 'RB', 'WR', 'TE'].includes(String(pos || '').toUpperCase());
+      const hasMetrics =
+        supportedMetricsPosition &&
+        (data.has_advanced_metrics === true || hasGameLogs);
       const hasChart   = data.value_history && data.value_history.length > 0;
 
       const vtTrendBadge = '';
@@ -3669,7 +3673,7 @@ function loadAdvancedMetrics(playerId, leagueId, season, weekStart, weekEnd) {
       if (token !== _advMetricsToken) return; // superseded by a newer call
       if (metricsData.error || metricsData.premium_required) {
         contentEl.innerHTML = '<div class="player-modal-loading" style="padding:32px 0;">'
-          + '<div style="color:var(--text-muted);font-size:13px;">Advanced metrics not available for this player.</div></div>';
+          + '<div style="color:var(--text-muted);font-size:13px;">Metrics are being processed for the current week.</div></div>';
         return;
       }
 
