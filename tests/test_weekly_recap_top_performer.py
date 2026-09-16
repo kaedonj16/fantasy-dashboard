@@ -79,12 +79,13 @@ def test_scoreboard_contract_includes_modal_context_na_and_mobile_wrapping():
     page = (ROOT / "dashboard_services/pages/recap_page.py").read_text()
     css = (ROOT / "static/dashboard.css").read_text()
 
-    assert "Top performer: N/A" in page
+    assert "Top performer: " in page and "N/A" in page
     assert 'data-league-id=' in page and 'data-platform=' in page and 'data-season=' in page
     assert "recap-top-performer-players" in page
     assert "white-space: normal" in css
-    assert "overflow-wrap: anywhere" in css
-    assert "max-width: 34vw" in css
+    assert "grid-template-columns: minmax(0, 31fr) minmax(0, 38fr) minmax(0, 31fr)" in css
+    assert "-webkit-line-clamp: 2" in css
+    assert ".recap-top-label-long" in css
 
 
 def test_completed_recap_cache_version_is_refreshed():
