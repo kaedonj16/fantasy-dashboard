@@ -7,6 +7,23 @@ from __future__ import annotations
 
 from typing import Dict, Optional, Tuple
 
+
+def _activity_pick_label(year: int, rnd: int, current_season: int,
+                         exact_slot: Optional[int] = None) -> str:
+    """Format a pick without inventing an order for an unfinished season."""
+    if not year or not rnd:
+        return "Pick"
+    if year <= current_season and exact_slot is not None and exact_slot > 0:
+        return f"{year} {rnd}.{exact_slot:02d}"
+    suffix = {1: "st", 2: "nd", 3: "rd"}.get(rnd, "th")
+    return f"{year} {rnd}{suffix}"
+
+
+def _activity_pick_order_is_final(year: int, current_season: int) -> bool:
+    """Return whether standings can represent a completed draft order."""
+    return year > 0 and current_season > 0 and year <= current_season
+
+
 def build_activity_body(ctx: dict) -> str:
     from app import (  # noqa: E402  (lazy: avoids a circular import at module load)
         _activity_your_players_block,
@@ -14,7 +31,6 @@ def build_activity_body(ctx: dict) -> str:
         _safe_int,
         apply_te_premium,
         apply_tier_stack_adjustment,
-        format_pick_display_label,
         get_users,
         html,
         load_pick_value_table,
@@ -104,12 +120,14 @@ def build_activity_body(ctx: dict) -> str:
         if not year or not rnd:
             return 0.0
 
-        exact_slot = resolve_exact_pick_slot(
-            platform=platform,
-            root_league_id=league_id,
-            current_season=season,
-            pick=pick,
-        )
+        exact_slot = None
+        if _activity_pick_order_is_final(year, season):
+            exact_slot = resolve_exact_pick_slot(
+                platform=platform,
+                root_league_id=league_id,
+                current_season=season,
+                pick=pick,
+            )
 
         if exact_slot is not None:
             exact_key = f"{year}_{rnd}_{exact_slot:02d}"
@@ -147,6 +165,8 @@ def build_activity_body(ctx: dict) -> str:
         return 0.0
 
     def pick_subline(pick: dict, rid_to_name: dict, users: list, num_teams: int = 10) -> str:
+        pick_year = _safe_int(pick.get("season"), 0)
+        order_is_final = _activity_pick_order_is_final(pick_year, season)
         prev_owner = pick.get("previous_owner_id")
         seed = None
         try:
@@ -155,19 +175,21 @@ def build_activity_body(ctx: dict) -> str:
         except Exception:
             seed = None
 
-        exact_slot = resolve_exact_pick_slot(
-            platform=platform,
-            root_league_id=league_id,
-            current_season=season,
-            pick=pick,
-        )
+        exact_slot = None
+        if order_is_final:
+            exact_slot = resolve_exact_pick_slot(
+                platform=platform,
+                root_league_id=league_id,
+                current_season=season,
+                pick=pick,
+            )
 
         bucket = pick_bucket_from_seed(seed, num_teams=num_teams)
         bucket_label = None
 
-        if exact_slot is not None:
+        if order_is_final and exact_slot is not None and exact_slot > 0:
             bucket_label = f"Pick {pick.get('round')}.{int(exact_slot):02d}"
-        elif bucket:
+        elif order_is_final and bucket:
             bucket_label = bucket.capitalize()
 
         orig_rid = pick.get("roster_id")
@@ -318,19 +340,22 @@ def build_activity_body(ctx: dict) -> str:
                 import json as _json
                 traded_asset_counts["Draft Pick"] = traded_asset_counts.get("Draft Pick", 0) + 1
 
-                pick_label = format_pick_display_label(
-                    platform=platform,
-                    root_league_id=league_id,
-                    current_season=season,
-                    pick=pick,
-                )
+                yr = _safe_int(pick.get("season"), 0)
+                rnd = _safe_int(pick.get("round"), 0)
+                exact_slot = None
+                if _activity_pick_order_is_final(yr, season):
+                    exact_slot = resolve_exact_pick_slot(
+                        platform=platform,
+                        root_league_id=league_id,
+                        current_season=season,
+                        pick=pick,
+                    )
+                pick_label = _activity_pick_label(yr, rnd, season, exact_slot)
                 subline = pick_subline(pick, rid_to_name, users)
                 val = pick_value(pick, standings_map)
                 val_txt = f"{val:.1f}" if val > 0 else ""
                 val_html = f'<div class="player-trade-value">{val_txt}</div>' if val_txt else ""
 
-                yr = _safe_int(pick.get("season"), 0)
-                rnd = _safe_int(pick.get("round"), 0)
                 _pv = pick_values
                 tier_vals = {
                     "early": float(_pv.get(f"{yr}_{rnd}_early") or _pv.get(f"{yr}_{rnd}") or 0),
@@ -515,33 +540,36 @@ def build_activity_body(ctx: dict) -> str:
                 # Include picks with asset_type and pick details
                 gets_picks = []
                 for pick in picks_by_receiver.get(rid, []):
-                    season = pick.get('season', '')
+                    pick_season = pick.get('season', '')
+                    pick_year = _safe_int(pick_season, 0)
                     round_num = pick.get('round', '')
                     roster_id = pick.get('roster_id', '')
 
                     # Try to resolve exact slot from roster_id
                     exact_slot = None
-                    if roster_id:
+                    if roster_id and _activity_pick_order_is_final(pick_year, season):
                         try:
-                            exact_slot = resolve_exact_pick_slot(platform, resolved_league_id, int(season), pick)
+                            exact_slot = resolve_exact_pick_slot(platform, resolved_league_id, season, pick)
                         except Exception:
                             logger.debug("suppressed exception", exc_info=True)
 
-                    # Use exact slot if available, otherwise fall back to mid
+                    # Use an exact slot only after that draft order is final.
                     if exact_slot:
-                        pick_id = f"{season} {round_num}.{exact_slot:02d}"
+                        pick_id = f"{pick_season} {round_num}.{exact_slot:02d}"
                         display_name = pick_id
                         slot_value = exact_slot
                     else:
-                        pick_id = f"{season} {round_num}.{roster_id}" if roster_id else f"{season} {round_num}.XX"
-                        display_name = f"{season} {round_num} (Mid)"
+                        pick_id = f"{pick_season} {round_num}.{roster_id}" if roster_id else f"{pick_season} {round_num}.XX"
+                        display_name = _activity_pick_label(
+                            pick_year, _safe_int(round_num, 0), season
+                        )
                         slot_value = None
 
                     gets_picks.append({
                         "id": pick_id,
                         "name": display_name,
                         "asset_type": "pick",
-                        "pick_season": season,
+                        "pick_season": pick_season,
                         "pick_round": round_num,
                         "pick_order": pick.get("order"),
                         "pick_slot": slot_value,
@@ -549,33 +577,36 @@ def build_activity_body(ctx: dict) -> str:
 
                 sends_picks = []
                 for pick in picks_by_sender.get(rid, []):
-                    season = pick.get('season', '')
+                    pick_season = pick.get('season', '')
+                    pick_year = _safe_int(pick_season, 0)
                     round_num = pick.get('round', '')
                     roster_id = pick.get('roster_id', '')
 
                     # Try to resolve exact slot from roster_id
                     exact_slot = None
-                    if roster_id:
+                    if roster_id and _activity_pick_order_is_final(pick_year, season):
                         try:
-                            exact_slot = resolve_exact_pick_slot(platform, resolved_league_id, int(season), pick)
+                            exact_slot = resolve_exact_pick_slot(platform, resolved_league_id, season, pick)
                         except Exception:
                             logger.debug("suppressed exception", exc_info=True)
 
-                    # Use exact slot if available, otherwise fall back to mid
+                    # Use an exact slot only after that draft order is final.
                     if exact_slot:
-                        pick_id = f"{season} {round_num}.{exact_slot:02d}"
+                        pick_id = f"{pick_season} {round_num}.{exact_slot:02d}"
                         display_name = pick_id
                         slot_value = exact_slot
                     else:
-                        pick_id = f"{season} {round_num}.{roster_id}" if roster_id else f"{season} {round_num}.XX"
-                        display_name = f"{season} {round_num} (Mid)"
+                        pick_id = f"{pick_season} {round_num}.{roster_id}" if roster_id else f"{pick_season} {round_num}.XX"
+                        display_name = _activity_pick_label(
+                            pick_year, _safe_int(round_num, 0), season
+                        )
                         slot_value = None
 
                     sends_picks.append({
                         "id": pick_id,
                         "name": display_name,
                         "asset_type": "pick",
-                        "pick_season": season,
+                        "pick_season": pick_season,
                         "pick_round": round_num,
                         "pick_order": pick.get("order"),
                         "pick_slot": slot_value,
@@ -1281,4 +1312,3 @@ def build_activity_body(ctx: dict) -> str:
     }})();
     </script>
     """
-
