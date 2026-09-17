@@ -1,20 +1,11 @@
 """
-Defense-vs-position matchup ratings via strength-of-schedule-adjusted z-scores.
+Opponent-adjusted defense-vs-position matchup ratings.
 
 Methodology
 -----------
-For a defense D and position P, we look at how each opponent's P *position group*
-performed against D relative to that group's own weekly average, expressed as a
-z-score. Averaging those z-scores (weighting current-season games twice as
-heavily) gives D's matchup rating for P:
-
-    z = (group_points_vs_D - group_weekly_mean) / group_weekly_std
-    rating(D, P) = weighted_mean(z over every game D played)
-
-A positive rating means offenses score *better than their own average* against D
-(an easy matchup); negative means D suppresses the position. Because each game is
-measured against the opponent's own baseline, the rating adjusts for strength of
-schedule — unlike raw "fantasy points allowed".
+Each qualifying player's actual points are compared with a rolling expectation
+built exclusively from games before the evaluated game. RB/WR/TE are summed to
+position units before defense effects are aggregated, winsorized and shrunk.
 
 Window
 ------
@@ -29,7 +20,7 @@ cache/matchup_ratings_s{season}.json:
     {
       "season": 2025, "through_week": 6, "window": [[2025,6],...],
       "generated_at": "...",
-      "ratings": { "DEN": { "QB": {"z": 0.012, "ease": 51.2, "n": 5, "fpts": 18.3}, ... }, ... }
+      "ratings": { "DEN": { "QB": {"adjusted_multiplier": .91, ...}, ... } }
     }
 
 Run directly:  python -m data_building.matchup_ratings [season] [through_week]
@@ -63,8 +54,12 @@ def _norm_team(t) -> str:
     return _TEAM_ALIAS.get(t, t)
 
 
-def out_path(season: int) -> str:
-    return os.path.join(str(CACHE_DIR), f"matchup_ratings_s{season}.json")
+def out_path(season: int, scoring_settings: dict | None = None) -> str:
+    if scoring_settings is None:
+        return os.path.join(str(CACHE_DIR), f"matchup_ratings_s{season}.json")
+    from utils.defensive_matchup_ratings import scoring_profile_hash
+    return os.path.join(str(CACHE_DIR),
+                        f"matchup_ratings_s{season}_{scoring_profile_hash(scoring_settings)}.json")
 
 
 # Direct nflverse release assets. nfl_data_py (older versions) only reads the
@@ -110,7 +105,7 @@ def _pick_col(df, *names):
     return None
 
 
-def _normalize_weekly(d, pd):
+def _normalize_weekly(d, pd, scoring_settings=None):
     """Reduce a weekly-stats frame to a common schema, tolerating the differing
     column names of nfl_data_py vs. the raw nflverse `stats_player_week` asset.
     Returns columns: season, week, season_type, pos, team, opp, pts (or None)."""
@@ -124,7 +119,10 @@ def _normalize_weekly(d, pd):
     if not all((c_seas, c_week, c_pos, c_team, c_opp, c_pts)):
         print(f"[matchup_ratings] unusable columns: {list(d.columns)[:25]}")
         return None
-    return pd.DataFrame({
+    def col(*names, default=0):
+        picked = _pick_col(d, *names)
+        return pd.to_numeric(d[picked], errors="coerce").fillna(default) if picked else default
+    out = pd.DataFrame({
         "season": pd.to_numeric(d[c_seas], errors="coerce"),
         "week": pd.to_numeric(d[c_week], errors="coerce"),
         "season_type": d[c_styp].astype(str).str.upper() if c_styp else "REG",
@@ -132,11 +130,30 @@ def _normalize_weekly(d, pd):
         "team": d[c_team].map(_norm_team),
         "opp": d[c_opp].map(_norm_team),
         "pts": pd.to_numeric(d[c_pts], errors="coerce").fillna(0.0),
+        "player_id": d[_pick_col(d, "player_id", "sleeper_id", "gsis_id")].astype(str)
+                     if _pick_col(d, "player_id", "sleeper_id", "gsis_id") else d.index.astype(str),
+        "snaps": col("offense_snaps", "snap_count"),
+        "routes": col("routes", "routes_run"),
+        "carries": col("carries", "rushing_attempts"),
+        "targets": col("targets"),
+        "attempts": col("attempts", "passing_attempts"),
     })
+    if scoring_settings:
+        from utils.fantasy_scoring import week_stat_points
+        # nflverse exposes the underlying passing/rushing/receiving categories;
+        # use the same scorer as the rest of the app for custom league profiles.
+        out["pts"] = [week_stat_points(raw, scoring_settings, pos)
+                      for raw, pos in zip(d.to_dict("records"), out["pos"])]
+    return out
 
 
-def build_matchup_ratings(season: int, through_week: int | None = None, save: bool = True) -> dict:
-    """Compute and (optionally) cache z-score matchup ratings for `season`."""
+def build_matchup_ratings(season: int, through_week: int | None = None, save: bool = True,
+                          scoring_settings: dict | None = None) -> dict:
+    """Compute and atomically cache leak-free opponent-adjusted ratings."""
+    from utils.defensive_matchup_ratings import (
+        aggregate_defense_games, meaningful_participation, pregame_baseline,
+        scoring_profile_hash, season_weights,
+    )
     import pandas as pd
     try:
         import nfl_data_py as nfl
@@ -150,7 +167,7 @@ def build_matchup_ratings(season: int, through_week: int | None = None, save: bo
         if d is None or d.empty:
             print(f"[matchup_ratings] skipping {y}: no data")
             continue
-        nd = _normalize_weekly(d, pd)
+        nd = _normalize_weekly(d, pd, scoring_settings)
         if nd is None or nd.empty:
             print(f"[matchup_ratings] skipping {y}: unusable schema")
             continue
@@ -170,79 +187,66 @@ def build_matchup_ratings(season: int, through_week: int | None = None, save: bo
     if df.empty:
         return {}
 
-    # Position-group game totals: one row per (season, week, team, opponent, pos).
-    grp = (df.groupby(["season", "week", "team", "opp", "pos"], as_index=False)
-             .agg(pts=("pts", "sum")))
+    df = df.sort_values(["season", "week"])
+    position_baselines = {}
+    for p in POSITIONS:
+        median = df.loc[(df.pos == p) & (df.pts > 0), "pts"].median()
+        position_baselines[p] = float(median) if median == median else 1.0
+    histories = defaultdict(list)
+    units = defaultdict(lambda: {"actual": 0., "expected": 0., "reliability": [], "opportunities": 0.})
+    for row in df.to_dict("records"):
+        row["position"], row["fantasy_points"] = row["pos"], row["pts"]
+        row["touches"] = float(row.get("carries", 0)) + float(row.get("targets", 0))
+        if int(row["season"]) == season and meaningful_participation(row):
+            # History cannot contain this game or future games: append happens below.
+            hist = [{**h, "is_current_season": int(h["season"]) == season}
+                    for h in histories[row["player_id"]]]
+            expected, reliability = pregame_baseline(hist, position_baselines[row["pos"]])
+            key = (row["opp"], int(row["week"]), row["pos"])
+            units[key]["actual"] += float(row["pts"])
+            units[key]["expected"] += expected
+            units[key]["reliability"].append(reliability)
+            units[key]["opportunities"] += max(float(row.get("attempts", 0)),
+                                                 float(row.get("touches", 0)),
+                                                 float(row.get("targets", 0)))
+        if meaningful_participation(row):
+            histories[row["player_id"]].append(row)
 
-    # Pick the window: current-season weeks first (newest first), then prior seasons.
-    avail = (grp[["season", "week"]].drop_duplicates()
-             .sort_values(["season", "week"], ascending=[False, False]))
-    window = [(int(s), int(w)) for s, w in avail.itertuples(index=False)][:WINDOW_WEEKS]
-    window_set = set(window)
-    gw = grp[[(int(s), int(w)) in window_set for s, w in zip(grp["season"], grp["week"])]]
-
-    # Each offense's own baseline per position, over the window.
-    agg = (gw.groupby(["team", "pos"])["pts"].agg(["mean", "std", "count"]).reset_index()
-             .rename(columns={"mean": "mu", "std": "sigma", "count": "n"}))
-    mu: dict = {}
-    sd: dict = {}
-    for r in agg.itertuples(index=False):
-        key = (r.team, r.pos)
-        mu[key] = float(r.mu)
-        # sample std; needs >= 2 games and a finite, non-zero spread
-        sd[key] = float(r.sigma) if (r.n >= 2 and r.sigma == r.sigma and r.sigma > 0) else None
-
-    # Accumulate each defense's weighted z-score (and raw points allowed) per position.
-    zacc = defaultdict(lambda: defaultdict(lambda: [0.0, 0.0, 0]))   # D -> P -> [wz_sum, w_sum, n]
-    fptsacc = defaultdict(lambda: defaultdict(list))                  # D -> P -> [pts,...]
-    for r in gw.itertuples(index=False):
-        offense, defense, pos, pts, s = r.team, r.opp, r.pos, r.pts, int(r.season)
-        if not defense or defense == "NAN":
-            continue
-        fptsacc[defense][pos].append(pts)
-        mean = mu.get((offense, pos))
-        std = sd.get((offense, pos))
-        if mean is None or std is None:
-            continue
-        z = (pts - mean) / std
-        wt = CURRENT_SEASON_WEIGHT if s == season else 1.0
-        acc = zacc[defense][pos]
-        acc[0] += wt * z
-        acc[1] += wt
-        acc[2] += 1
-
-    ratings: dict = {}
-    teams = set(zacc) | set(fptsacc)
-    for defense in teams:
-        pos_out = {}
-        for pos in POSITIONS:
-            fl = fptsacc[defense].get(pos) or []
-            acc = zacc[defense].get(pos)
-            if acc and acc[1] > 0:
-                z = acc[0] / acc[1]
-                ease = max(0.0, min(100.0, (z + 0.5) * 100.0))
-                pos_out[pos] = {
-                    "z": round(z, 4),
-                    "ease": round(ease, 1),
-                    "n": acc[2],
-                    "fpts": round(sum(fl) / len(fl), 1) if fl else 0.0,
-                }
-        if pos_out:
-            ratings[defense] = pos_out
+    games = defaultdict(lambda: defaultdict(list))
+    for (defense, week, pos), unit in units.items():
+        unit["week"] = week
+        unit["reliability"] = sum(unit["reliability"]) / len(unit["reliability"])
+        games[defense][pos].append(unit)
+    completed = int(through_week or max((w for _, w, _ in units), default=0))
+    prior_w, current_w = season_weights(completed)
+    ratings = {}
+    for defense, positions in games.items():
+        ratings[defense] = {}
+        for pos, pos_games in positions.items():
+            result = aggregate_defense_games(pos_games, prior_multiplier=1., prior_weight=4. * prior_w)
+            if result:
+                result.update({"completed_through_week": completed, "prior_season_weight": prior_w,
+                               "current_season_weight": current_w,
+                               "scoring_profile": scoring_profile_hash(scoring_settings or {"rec": 1}),
+                               "season": season, "fpts": round(result["raw_allowed_per_game"], 1),
+                               "n": result["sample_size"]})
+                ratings[defense][pos] = result
 
     out = {
         "season": season,
-        "through_week": through_week,
-        "window": [[s, w] for s, w in window],
+        "through_week": completed,
+        "scoring_profile": scoring_profile_hash(scoring_settings or {"rec": 1}),
+        "method": "opponent_adjusted_v1",
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "ratings": ratings,
     }
     if save:
         os.makedirs(str(CACHE_DIR), exist_ok=True)
-        tmp = out_path(season) + ".tmp"
+        destination = out_path(season, scoring_settings) if scoring_settings else out_path(season)
+        tmp = destination + ".tmp"
         with open(tmp, "w") as f:
             json.dump(out, f)
-        os.replace(tmp, out_path(season))
+        os.replace(tmp, destination)
     return out
 
 
@@ -252,4 +256,4 @@ if __name__ == "__main__":
     tw = int(sys.argv[2]) if len(sys.argv) > 2 else None
     res = build_matchup_ratings(yr, tw)
     print(f"[matchup_ratings] season={yr} teams_rated={len(res.get('ratings', {}))} "
-          f"window={len(res.get('window', []))}wk -> {out_path(yr)}")
+          f"through_week={res.get('through_week')} -> {out_path(yr)}")

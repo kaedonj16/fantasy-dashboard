@@ -84,12 +84,14 @@ def build_schedule_body(ctx):
           <select id="schedWkStart" class="sched-select"></select>
           <span class="sched-ctrl-sep">to</span>
           <select id="schedWkEnd" class="sched-select"></select>
-          <button type="button" class="sched-preset-btn" id="schedRosPreset"
-            title="Current NFL week through Week 18">ROS</button>
-          <button type="button" class="sched-preset-btn" id="schedFullPreset"
-            title="Show Weeks 1 through 18">Full Season</button>
-          <button type="button" class="sched-preset-btn" id="schedPlayoffPreset"
-            title="Jump to this league's fantasy playoff weeks">Playoffs</button>
+          <div class="sched-presets" role="group" aria-label="Schedule range presets">
+            <button type="button" class="sched-preset-btn" id="schedRosPreset"
+              title="Current NFL week through Week 18">ROS</button>
+            <button type="button" class="sched-preset-btn" id="schedFullPreset"
+              title="Show Weeks 1 through 18">Full Season</button>
+            <button type="button" class="sched-preset-btn" id="schedPlayoffPreset"
+              title="Jump to this league's fantasy playoff weeks">Playoffs</button>
+          </div>
         </div>
 
         <!-- My Players: player search -->
@@ -128,7 +130,7 @@ def build_schedule_body(ctx):
           <span><span class="sched-chip" style="background:#84cc16;"></span>Good</span>
           <span><span class="sched-chip" style="background:#f59e0b;"></span>Tough</span>
           <span><span class="sched-chip" style="background:#ef4444;"></span>Brutal (bottom 25%)</span>
-          <span class="sched-legend-note">#1 = easiest matchup · Points below = fantasy points allowed per game</span>
+          <span class="sched-legend-note">Adjusted matchup ratings compare what a defense allowed with what its opponents were expected to score.</span>
           <button type="button" class="sched-info" aria-label="Seasonal rating data source" title="__SOURCE_COPY__"><i class="fa-solid fa-circle-info" aria-hidden="true"></i></button>
         </div>
 
@@ -144,7 +146,8 @@ def build_schedule_body(ctx):
           <span><span class="sched-chip" style="background:#84cc16;"></span>Good</span>
           <span><span class="sched-chip" style="background:#f59e0b;"></span>Tough</span>
           <span><span class="sched-chip" style="background:#ef4444;"></span>Brutal</span>
-          <span class="sched-legend-note">Ease score: 100 = easiest schedule, 0 = hardest. Rank = fpts allowed rank vs. that position.</span>
+          <span class="sched-legend-note">Adjusted matchup ratings compare what a defense allowed with what its opponents were expected to score.</span>
+          <button type="button" class="sched-info" aria-label="About adjusted ratings" title="Raw points allowed can be misleading because defenses face opponents of different quality. Adjusted value measures how much a defense increased or suppressed fantasy production compared with each opponent’s pregame baseline. Positive values are easier; negative values are harder."><i class="fa-solid fa-circle-info" aria-hidden="true"></i></button>
         </div>
         <div id="schedRankingsGrid" class="sched-grid-wrap">
           <div class="sched-empty">Loading&#8230;</div>
@@ -235,7 +238,7 @@ def build_schedule_body(ctx):
             return;
           }
           var head = '<th class="sched-th sched-th-player">Player</th>' +
-                     '<th class="sched-th sched-th-sos">SOS <button type="button" class="sched-info" aria-label="About strength of schedule" title="SOS measures a player’s matchup difficulty across the selected weeks using fantasy points allowed to that player’s position. #1 is the easiest schedule and #32 is the hardest. Bye weeks are excluded."><i class="fa-solid fa-circle-info" aria-hidden="true"></i></button></th>';
+                     '<th class="sched-th sched-th-sos">SOS <button type="button" class="sched-info" aria-label="About strength of schedule" title="Ease ranks the selected schedule using opponent-adjusted defensive performance. #1 is easiest. Bye weeks are excluded."><i class="fa-solid fa-circle-info" aria-hidden="true"></i></button></th>';
           for (var i = 0; i < weeks.length; i++) head += '<th class="sched-th">WK ' + weeks[i] + '</th>';
           var rows = '';
           players.forEach(function(p) {
@@ -243,8 +246,8 @@ def build_schedule_body(ctx):
             (p.cells || []).forEach(function(c) {
               if (c.bye) { cells += '<td class="sched-td sched-bye">BYE</td>'; return; }
               var rankLabel = c.rank ? ('#' + c.rank) : 'N/A';
-              var fptsLabel = c.fpts != null ? (c.fpts + ' pts') : 'N/A';
-              var meaning = c.opp + ' is matchup #' + (c.rank || 'N/A') + ' (where #1 is easiest) for ' + p.pos + 's and allows ' + (c.fpts != null ? c.fpts : 'N/A') + ' fantasy points per game to the position. This is not ' + p.name + '’s projected score.';
+              var fptsLabel = c.adjusted_percent != null ? ((c.adjusted_percent > 0 ? '+' : '') + c.adjusted_percent + '%') : 'N/A';
+              var meaning = c.opp + ' is matchup #' + (c.rank || 'N/A') + ' among defenses after adjusting for opponent quality. Defense effect: ' + fptsLabel + '. This is not ' + p.name + '’s projected score.';
               cells += '<td class="sched-td" title="' + esc(meaning) + '" aria-label="' + esc(meaning) + '" style="background:' + c.bg + ';">' +
                          '<div class="sched-opp">'  + esc(c.at + c.opp) + '</div>' +
                          '<div class="sched-rank" style="color:' + c.txt + ';">' + rankLabel + '</div>' +
@@ -339,9 +342,9 @@ def build_schedule_body(ctx):
         });
 
         var head = '<th class="sched-th sched-th-player">Team</th>' +
-                   '<th class="sched-th sched-th-sos">Avg</th>';
+                   '<th class="sched-th sched-th-ease">Ease <button type="button" class="sched-info" title="Ease ranks the selected schedule using opponent-adjusted defensive performance. #1 is easiest. The 0–100 score summarizes the strength of the selected schedule.">ⓘ</button></th>' +
+                   '<th class="sched-th sched-th-sos">Adj Avg <button type="button" class="sched-info" title="Average percentage by which the selected defenses increase or suppress expected production at this position.">ⓘ</button></th>';
         for (var i = 0; i < weeks.length; i++) head += '<th class="sched-th">WK ' + weeks[i] + '</th>';
-        head += '<th class="sched-th sched-th-ease" style="min-width:90px;">Ease</th>';
 
         var rows = '';
         groups.forEach(function(g, idx) {
@@ -367,15 +370,17 @@ def build_schedule_body(ctx):
           (p.cells || []).forEach(function(c) {
             if (c.bye) { cells += '<td class="sched-td sched-bye">BYE</td>'; return; }
             var rankLabel = c.rank ? ('#' + c.rank) : 'N/A';
-            cells += '<td class="sched-td" style="background:' + c.bg + ';">' +
+            var effect = c.adjusted_percent != null ? ((c.adjusted_percent > 0 ? '+' : '') + c.adjusted_percent + '%') : 'N/A';
+            var detail = 'Raw points allowed: ' + (c.fpts != null ? c.fpts : 'N/A') + ' · Opponent expected points: ' + (c.expected_points != null ? c.expected_points : 'N/A') + ' · Adjusted difference: ' + (c.adjusted_difference != null ? c.adjusted_difference : 'N/A') + ' · Adjusted percentage: ' + effect + ' · Sample: ' + (c.sample_size || 'N/A') + ' · Confidence: ' + (c.confidence || 'N/A') + ' · Through week: ' + (c.completed_through_week || 'N/A');
+            cells += '<td class="sched-td" title="' + esc(detail) + '" style="background:' + c.bg + ';">' +
                        '<div class="sched-opp">'  + esc((c.at || '') + c.opp) + '</div>' +
                        '<div class="sched-rank" style="color:' + c.txt + ';">' + rankLabel + '</div>' +
-                       '<div class="sched-fpts">' + (c.fpts != null ? esc(c.fpts + ' pts') : 'N/A') + '</div>' +
+                       '<div class="sched-fpts">' + esc(effect) + '</div>' +
                      '</td>';
           });
 
           var ar = p.sos_rank || 999;
-          var avgTxt   = ar < 900 ? ('#' + ar + '/' + (p.sos_total || total)) : 'N/A';
+          var avgTxt   = p.adjusted_avg_percent != null ? ((p.adjusted_avg_percent > 0 ? '+' : '') + p.adjusted_avg_percent + '%') : 'N/A';
           var avgColor = ar <= total * 0.25 ? '#22c55e'
                        : ar <= total * 0.50 ? '#84cc16'
                        : ar <= total * 0.75 ? '#f59e0b' : '#ef4444';
@@ -398,9 +403,9 @@ def build_schedule_body(ctx):
                 '<span class="sched-nfl">' + esc(g.team) + '</span>' +
               '</div>' +
             '</td>' +
+            '<td class="sched-td sched-ease-td"><strong>#' + (p.sos_rank || 'N/A') + '</strong>' + easeBar + '</td>' +
             '<td class="sched-td sched-sos-td" style="color:' + avgColor + ';">' + avgTxt + '</td>' +
             cells +
-            '<td class="sched-td sched-ease-td">' + easeBar + '</td>' +
           '</tr>';
         });
 
