@@ -624,6 +624,7 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
                 season=ctx.get("season") or "",
                 next_week_ctx=next_week_ctx,
                 team_context=recap_team_context,
+                platform=_platform,
             )
 
     # ── Lineup analysis: busts, sleepers, coaching mistakes ────────────────

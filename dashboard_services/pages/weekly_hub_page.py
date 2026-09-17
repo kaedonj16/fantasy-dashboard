@@ -15,6 +15,7 @@ def build_weekly_hub_body(ctx: dict) -> str:
     import json
     import pandas as pd
     from dashboard_services.matchups import (
+        matchup_matches_gotw,
         render_matchup_carousel_weeks,
         render_matchup_slide,
     )
@@ -91,6 +92,14 @@ def build_weekly_hub_body(ctx: dict) -> str:
         key=lambda m: 0 if _hub_vid and _hub_vid in (str((m.get("left") or {}).get("roster_id", "")),
                                                      str((m.get("right") or {}).get("roster_id", ""))) else 1,
     ) if _show_matchup_preview else []
+    from dashboard_services.ai.weekly_recap import get_cached_gotw_selection
+    _gotw_selection = get_cached_gotw_selection(
+        platform, ctx.get("resolved_league_id") or league_id, season, default_week,
+    )
+    if _gotw_selection and not any(
+        matchup_matches_gotw(m, _gotw_selection) for m in default_matchups
+    ):
+        _gotw_selection = None
 
     # Pre-compute head-to-head records for each current-week matchup
     def _h2h_record(rid_a: str, rid_b: str) -> tuple[int, int]:
@@ -138,6 +147,7 @@ def build_weekly_hub_body(ctx: dict) -> str:
             fpts_against=_fpts_against_weekly,
             viewer_roster_id=_hub_vid,
             scoring_settings=ctx.get("raw_scoring_settings") or ctx.get("scoring_settings"),
+            is_gotw=matchup_matches_gotw(m, _gotw_selection),
         )
         for m in default_matchups
     ]
@@ -149,6 +159,7 @@ def build_weekly_hub_body(ctx: dict) -> str:
             slides_by_week,
             dashboard=False,
             active_week=default_week,
+            gotw_selection=_gotw_selection,
         )
         if _show_matchup_preview else ""
     )

@@ -16778,6 +16778,11 @@ def api_weekly_week():
         season,
         scoring=_scoring_format_from_settings(ctx.get("scoring_settings")),
     )
+    from dashboard_services.ai.weekly_recap import get_cached_gotw_selection
+    from dashboard_services.matchups import matchup_matches_gotw
+    _api_gotw = get_cached_gotw_selection(platform, resolved_league_id, season, week)
+    if _api_gotw and not any(matchup_matches_gotw(m, _api_gotw) for m in matchups):
+        _api_gotw = None
 
     # Attach H2H records for this week's matchups
     for _m in matchups:
@@ -16816,6 +16821,7 @@ def api_weekly_week():
             fpts_against=_fpts_against_api,
             viewer_roster_id=_api_vid,
             scoring_settings=ctx.get("raw_scoring_settings") or ctx.get("scoring_settings"),
+            is_gotw=matchup_matches_gotw(m, _api_gotw),
         )
         for m in matchups
     ]
@@ -16827,6 +16833,7 @@ def api_weekly_week():
         slides_by_week,
         dashboard=False,
         active_week=week,
+        gotw_selection=_api_gotw,
     )
 
     return jsonify({

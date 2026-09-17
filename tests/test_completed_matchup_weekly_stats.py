@@ -17,7 +17,7 @@ def test_position_stat_lines_include_requested_weekly_volume():
     assert "REC 3" in wr and "TGT 7" in wr and "REC YD/TD 51/1" in wr
 
 
-def test_completed_week_renders_starter_and_bench_stats_and_zero_points(monkeypatch):
+def test_completed_week_renders_starter_stats_but_not_bench(monkeypatch):
     weekly = {"BUF": {"QB": {"starter qb": {"pass_yds": 200}}, "WR": {"bench wr": {"rec": 2, "tgt": 4, "rec_yds": 20}}}}
     monkeypatch.setattr(mmod, "load_teams_index", lambda: {})
     monkeypatch.setattr(mmod, "build_offense_rankings", lambda *_: {})
@@ -30,5 +30,23 @@ def test_completed_week_renders_starter_and_bench_stats_and_zero_points(monkeypa
     }
     html = mmod.render_matchup_slide("2025", matchup, 2, 2, {}, {}, {}, {}, {})
     assert "Starter QB" in html and "200 yds" in html
-    assert "Bench WR" in html and "TGT 4" in html
-    assert "m-row--bench" in html and ">0.0</span>" in html
+    assert "Bench WR" not in html and "TGT 4" not in html
+    assert "m-row--bench" not in html
+
+
+def test_completed_week_keeps_canonical_stats_when_schedule_is_final(monkeypatch):
+    weekly = {"BUF": {"QB": {"starter qb": {"pass_yds": 200}}}}
+    monkeypatch.setattr(mmod, "load_teams_index", lambda: {})
+    monkeypatch.setattr(mmod, "build_offense_rankings", lambda *_: {})
+    monkeypatch.setattr(mmod, "load_week_stats", lambda *_: weekly)
+    monkeypatch.setattr(mmod, "load_week_schedule", lambda *_: [{
+        "teamAbv": "BUF", "opponent": "MIA", "gameStatusCode": "2",
+        "gameDate": "20250907",
+    }])
+    monkeypatch.setattr(mmod, "build_team_schedule_lookup", lambda rows: {"BUF": rows[0]})
+    matchup = {
+        "left": {"name": "Left", "roster_id": "1", "starters": [{"pid": "1", "name": "Starter QB", "pos": "QB", "nfl": "BUF", "pts": 12.0}], "pts_total": 12.0},
+        "right": {"name": "Right", "roster_id": "2", "starters": [], "pts_total": 0.0},
+    }
+    rendered = mmod.render_matchup_slide("2025", matchup, 1, 1, {}, {}, {}, {}, {})
+    assert "200 yds" in rendered

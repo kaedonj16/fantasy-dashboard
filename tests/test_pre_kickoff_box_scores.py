@@ -262,7 +262,7 @@ def test_matchup_hides_footballguys_leftovers_when_tank_code_still_zero(monkeypa
     )
     assert "Final" in html
     assert "233 yds" not in html
-    assert "m-cell-stats" not in html
+    assert "Stats unavailable" in html
 
 
 def test_matchup_shows_tank_overlaid_box_score_when_code_still_zero(monkeypatch):
@@ -350,7 +350,7 @@ def test_matchup_hides_stale_line_when_points_contradict_it(monkeypatch):
         scoring_settings=_PPR_SCORING,
     )
     assert "233" not in html
-    assert "m-cell-stats" not in html
+    assert "Stats unavailable" in html
     assert "Jayden Daniels" in html
 
 
