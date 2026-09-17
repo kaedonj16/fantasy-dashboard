@@ -15,6 +15,7 @@ from flask import Blueprint, jsonify, request
 
 from dashboard_services.api import get_nfl_state
 from dashboard_services.service import age_from_bday
+from utils.lineup_slots import canonicalize_slot as _canonicalize_slot
 from utils.lineup_slots import starter_need_counts as _starter_need_counts
 from utils.validation import safe_int as _safe_int
 from utils.value_helpers import apply_te_premium, te_premium_from_settings
@@ -43,6 +44,52 @@ from utils.waiver_score import (
 logger = logging.getLogger(__name__)
 
 waiver_api_bp = Blueprint("waiver_api", __name__)
+
+
+def _curate_big_game_discoveries(rows, *, superflex=False, qb_need=False, limit=5):
+    """League-aware final ranking for the small discovery strip.
+
+    The detector's two dimensions remain distinct; value, scarcity, need, and
+    uncertainty are only layered on here, where league context is available.
+    """
+    ranked = []
+    for original in rows or []:
+        d = dict(original)
+        pos = str(d.get("position") or "").upper()
+        surprise = float(d.get("performance_surprise") or 0)
+        sustain = float(d.get("role_sustainability") or 0)
+        absolute = float(d.get("absolute_score") or 0)
+        value = max(0.0, float(d.get("value") or 0))
+        need = 1.0 if (pos == "QB" and qb_need) else float(d.get("viewer_need") or 0)
+        caution_count = len(d.get("cautions") or [])
+        uncertainty = (0.12 if not d.get("role_confirmed") else 0.0) + 0.05 * caution_count
+        scarcity = 0.14 if (pos == "QB" and superflex) else (0.04 if pos in ("RB", "WR", "TE") else 0)
+        ros = min(1.0, value / 5000.0)
+        score = 0.34 * surprise + 0.29 * sustain + 0.16 * ros + scarcity + 0.12 * need - uncertainty
+        d["curated_score"] = round(score, 3)
+
+        # In 1QB, a replacement passer needs an actual differentiator. Starting
+        # snaps alone cannot supply one because the shared detector ignores them.
+        if pos == "QB" and not superflex:
+            differentiated = (absolute >= 0.9 or sustain >= 0.65 or qb_need or ros >= 0.65)
+            if not differentiated:
+                continue
+        ranked.append(d)
+
+    ranked.sort(key=lambda row: (row["curated_score"], row.get("role_sustainability", 0)),
+                reverse=True)
+    if not superflex:
+        result, ordinary_qbs = [], 0
+        for d in ranked:
+            if d.get("position") == "QB" and not qb_need and float(d.get("absolute_score") or 0) < 0.9:
+                ordinary_qbs += 1
+                if ordinary_qbs > 1:
+                    continue
+            result.append(d)
+            if len(result) >= limit:
+                break
+        return result
+    return ranked[:limit]
 
 
 # ── Lazy shims to app.py internals (resolved at request time) ─────────────────
@@ -1035,6 +1082,26 @@ def api_waiver_big_games():
     players_index = ctx.get("players_index") or get_players_index_global() or {}
     _mvt = {str(r.get("id")): r for r in (get_model_value_table_cached() or [])
             if isinstance(r, dict) and r.get("id")}
+    roster_positions = ctx.get("roster_positions") or []
+    superflex = any(_canonicalize_slot(slot) == "SUPER_FLEX" for slot in roster_positions)
+    qb_need = False
+    try:
+        required_qbs = _starter_need_counts(roster_positions).get("QB", 1)
+        viewer = get_viewer_session_for_league(ctx.get("users") or [], ctx.get("rosters") or []) or {}
+        viewer_id = str(viewer.get("viewer_roster_id") or "")
+        viewer_roster = next((r for r in (ctx.get("rosters") or [])
+                              if str(r.get("roster_id")) == viewer_id), None)
+        if viewer_roster:
+            qb_count = sum(1 for player_id in (viewer_roster.get("players") or [])
+                           if str((players_index.get(str(player_id)) or {}).get("pos") or
+                                  (players_index.get(str(player_id)) or {}).get("position") or "").upper() == "QB")
+            qb_need = qb_count < required_qbs
+    except Exception:
+        logger.debug("could not resolve viewer QB need", exc_info=True)
+    try:
+        value_key, fallback_key = _waiver_value_keys(ctx)
+    except Exception:
+        value_key, fallback_key = "value", "value"
 
     out = []
     for d in discoveries:
@@ -1049,13 +1116,13 @@ def api_waiver_big_games():
         d["name"] = row.get("name") or meta.get("name") or f"Player {pid}"
         d["position"] = str(row.get("position") or meta.get("pos") or "").upper()
         d["team"] = (row.get("team") or meta.get("team") or "").upper()
+        d["value"] = float(row.get(value_key) or row.get(fallback_key) or row.get("value") or 0)
         # We know it's unrostered in this league; true "claimable now" (waiver vs
         # FA) needs provider transaction data we don't confirm here.
         d["availability"] = "unrostered"
         out.append(d)
-        if len(out) >= 15:
-            break
 
+    out = _curate_big_game_discoveries(out, superflex=superflex, qb_need=qb_need)
     return jsonify({"discoveries": out, "week": _week, "season": _dseason})
 
 

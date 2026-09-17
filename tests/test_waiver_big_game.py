@@ -113,6 +113,54 @@ def test_rising_usage_lifts_sustainability():
     assert any("target" in f or "snap" in f for f in factors)
 
 
+def test_ordinary_qb_snap_share_does_not_confirm_role_or_make_priority():
+    g = GameContext(player_id="qb", position="QB", season=2025, week=6,
+                    actual_points=15.0, pregame_projection=11.0,
+                    projection_saved_at="t", snap_share=1.0, snap_share_prev=0.98)
+    a = assess_big_game(g)
+    assert a.category != "priority"
+    assert a.role_confirmed is False
+    assert a.absolute_score == 0
+
+
+def test_adequate_qb_without_projection_or_role_change_is_not_priority():
+    a = assess_big_game(GameContext(player_id="qb", position="QB", season=2025,
+                                    week=6, actual_points=18.0, snap_share=1.0))
+    assert a.category != "priority"
+
+
+@pytest.mark.parametrize("kwargs", [
+    {"actual_points": 36.0, "carries": 9, "carries_prev": 2},
+    {"actual_points": 29.0, "pass_attempts": 38, "pass_attempts_prev": 16},
+])
+def test_exceptional_or_newly_starting_qb_can_surface(kwargs):
+    g = GameContext(player_id="qb", position="QB", season=2025, week=6,
+                    pregame_projection=10.0, projection_saved_at="t", **kwargs)
+    a = assess_big_game(g)
+    assert a.category in ("priority", "speculative")
+    assert a.role_confirmed is True
+
+
+def test_te_and_wr_position_relevant_usage_can_surface_at_15_points():
+    te = assess_big_game(GameContext(
+        player_id="te", position="TE", season=2025, week=6, actual_points=15,
+        pregame_projection=5, projection_saved_at="t", targets=8, targets_prev=3,
+        routes=31, routes_prev=17))
+    wr = assess_big_game(GameContext(
+        player_id="wr", position="WR", season=2025, week=6, actual_points=15,
+        pregame_projection=5, projection_saved_at="t", target_share=.28,
+        target_share_prev=.10, targets=8, targets_prev=3))
+    assert te.category in ("priority", "speculative")
+    assert wr.category in ("priority", "speculative")
+
+
+def test_missing_usage_can_never_produce_priority():
+    a = assess_big_game(GameContext(player_id="wr", position="WR", season=2025,
+                                    week=6, actual_points=40,
+                                    pregame_projection=3, projection_saved_at="t"))
+    assert a.category != "priority"
+
+
 def test_td_dependence_flagged_and_discounts_role():
     # 4 touches, ~two long TDs => TD-dependent, capped sustainability.
     g = GameContext(player_id="p", position="RB", season=2025, week=7,
