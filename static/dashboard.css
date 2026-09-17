@@ -13524,6 +13524,50 @@ a.signed-home-league:hover {
     margin-bottom: 8px;
 }
 
+.m-week-context {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 3px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.m-head-badges {
+    display: flex;
+    justify-content: flex-end;
+    min-height: 20px;
+    margin-bottom: 5px;
+}
+
+.m-gotw-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 7px;
+    border: 1px solid color-mix(in srgb, var(--warning) 55%, var(--border));
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--warning) 12%, var(--card));
+    color: var(--warning);
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: .06em;
+    line-height: 1.1;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.m-gotw-badge i { font-size: 10px; }
+.m-gotw-short { display: none; }
+.m-cell-stats--unavailable { opacity: .65; font-style: italic; }
+
+@media (max-width: 600px) {
+    .m-gotw-long { display: none; }
+    .m-gotw-short { display: inline; }
+    .m-head-badges { margin-bottom: 3px; }
+}
+
 .m-row {
     /* Name | actual | proj | name -- box scores sit under the name via
        .m-cell-stats (not in middle columns that pulled team abbrs apart). */

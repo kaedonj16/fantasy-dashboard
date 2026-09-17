@@ -408,14 +408,15 @@ def build_matchup_preview(
             oid = owner_id_by_rid.get(rid)
             if oid:
                 roster = next((r for r in rosters if str(r.get("owner_id")) == str(oid)), {})
-        need_roster_lineup = (
-            not starters_raw
-            or _starters_look_like_full_roster(starters_raw, all_players)
-        )
+        # A provider's week-specific player list is authoritative.  Never
+        # replace an empty/malformed historical assignment with today's roster:
+        # that silently turns traded players and bench slots into starters.
+        if _starters_look_like_full_roster(starters_raw, all_players):
+            starters_raw = []
+            starter_set = set()
+            bench_raw = list(all_players)
+        need_roster_lineup = not starters_raw and not all_players
         if need_roster_lineup and roster:
-            starters_raw, bench_raw = lineup_from_roster(roster)
-            all_players = [str(p) for p in (roster.get("players") or []) if p] or all_players
-        elif not starters_raw and roster:
             starters_raw, bench_raw = lineup_from_roster(roster)
             all_players = [str(p) for p in (roster.get("players") or []) if p] or all_players
 
@@ -610,11 +611,28 @@ def build_matchup_preview(
     return out
 
 
+def matchup_matches_gotw(matchup: dict, selection: Optional[dict]) -> bool:
+    """Match persisted stable roster ids without depending on display order."""
+    if not selection:
+        return False
+    expected = {str(x) for x in (selection.get("roster_ids") or []) if str(x)}
+    actual = {
+        str((matchup.get("left") or {}).get("roster_id") or ""),
+        str((matchup.get("right") or {}).get("roster_id") or ""),
+    }
+    if len(expected) != 2 or expected != actual:
+        return False
+    selected_mid = selection.get("matchup_id")
+    actual_mid = matchup.get("matchup_id")
+    return selected_mid is None or actual_mid is None or str(selected_mid) == str(actual_mid)
+
+
 def render_matchup_carousel_weeks(
         slides_by_week: dict[int, str],
         dashboard: bool,
         active_week: Optional[int] = None,
         title_href: Optional[str] = None,
+        gotw_selection: Optional[dict] = None,
 ) -> str:
     """
     Render a single matchup carousel card.
@@ -649,10 +667,20 @@ def render_matchup_carousel_weeks(
     else:
         title_html = "<h2>Matchup Preview</h2>"
 
+    week_context_html = ""
+    if active_week is not None and not dashboard:
+        gotw_header = ""
+        if gotw_selection:
+            gotw_header = ("<span class='m-gotw-badge m-gotw-badge--full'>"
+                           "<i class='fa-solid fa-fire' aria-hidden='true'></i>"
+                           "<span class='m-gotw-long'>Game of the Week</span>"
+                           "<span class='m-gotw-short'>GOTW</span></span>")
+        week_context_html = f"<div class='m-week-context'><span>Week {int(active_week)}</span>{gotw_header}</div>"
+
     return f"""
       <div class="card matchup-carousel {central}{compact_cls}" data-section="matchups" style="{style} margin-bottom:30px;">
         <div class="m-nav">
-          {title_html}
+          <div>{title_html}{week_context_html}</div>
           <div class="m-controls">
             <button class="m-btn m-btn-prev" type="button">‹ Prev</button>
             <button class="m-btn m-btn-next" type="button">Next ›</button>
@@ -1269,6 +1297,7 @@ def render_matchup_slide(
         viewer_roster_id: Optional[str] = None,
         compact: bool = False,
         scoring_settings: Optional[dict] = None,
+        is_gotw: bool = False,
 ) -> str:
     """One slide with rows like:
        [Left Name] [Left Pts/Proj] [Right Pts/Proj] [Right Name]
@@ -1639,7 +1668,7 @@ def render_matchup_slide(
             and pos in ("QB", "RB", "WR", "TE")
             and isinstance(raw_stat_entry, dict)
             and raw_stat_entry.get("_src") != "tank"
-            and status in (STATUS_IN_PROGRESS, STATUS_FINAL)
+            and status == STATUS_IN_PROGRESS
             and scoring_settings and "rec" in scoring_settings
         ):
             live_pts = p.get("pts")
@@ -1667,6 +1696,10 @@ def render_matchup_slide(
 
         stats_inline_l = f"<span class='meta m-cell-stats'>{stats}</span>" if stats else ""
         stats_inline_r = f"<span class='meta m-cell-stats' style='text-align:right;'>{stats}</span>" if stats else ""
+        if status == STATUS_FINAL and raw_stat_entry is None and not is_bye:
+            unavailable = "Stats unavailable"
+            stats_inline_l = f"<span class='meta m-cell-stats m-cell-stats--unavailable'>{unavailable}</span>"
+            stats_inline_r = f"<span class='meta m-cell-stats m-cell-stats--unavailable' style='text-align:right;'>{unavailable}</span>"
         team_span = f"<span class='meta p-team'>{meta_content}</span>" if meta_content else ""
 
         if left_side:
@@ -1786,24 +1819,6 @@ def render_matchup_slide(
                 </div>"""
         )
 
-    # Bench players are already part of every normalized provider team block.
-    # Render them with the exact same player/score row as starters so historical
-    # rosters remain authoritative and zero-point bench players are not dropped.
-    if not compact and (m["left"].get("bench") or m["right"].get("bench")):
-        rows_html.append("<div class='m-bench-label'><span>Bench</span><span>Bench</span></div>")
-        for L, R in zip_longest(
-            m["left"].get("bench", []), m["right"].get("bench", []), fillvalue=None
-        ):
-            left_cell, left_actual, left_proj, left_is_bye, left_not_started, _ = player_bits(L, "left", True)
-            right_cell, right_actual, right_proj, right_is_bye, right_not_started, _ = player_bits(R, "right", False)
-            la = 0.0 if left_is_bye else left_actual
-            ra = 0.0 if right_is_bye else right_actual
-            left_points_html = score_stack(left_actual, left_proj, "l", left_is_bye, bool(la is not None and ra is not None and la > ra), left_not_started)
-            right_points_html = score_stack(right_actual, right_proj, "r", right_is_bye, bool(la is not None and ra is not None and ra > la), right_not_started)
-            rows_html.append(
-                f'<div class="m-row m-row--bench">{left_cell}{left_points_html}{right_points_html}{right_cell}</div>'
-            )
-
     # Win probability: only for live/projection weeks (skip completed weeks)
     win_bar_html = ""
     if proj:
@@ -1873,9 +1888,13 @@ def render_matchup_slide(
         </div>
       </div>"""
 
+    gotw_badge_html = ("<div class='m-head-badges'><span class='m-gotw-badge'>"
+                       "<i class='fa-solid fa-fire' aria-hidden='true'></i>GOTW</span></div>") if is_gotw else ""
+
     return f"""
     <div class="{slide_cls}"{win_attr}>
       <div class="m-head">
+        {gotw_badge_html}
         <div class="m-head-row">
           {_team_col(m['left'], 'left')}
           <div class="m-scoreboard{proj_class}">

@@ -40,6 +40,40 @@ def _load_recap_no_ttl(cache_key: str) -> str | None:
         return None
 
 
+def _recap_cache_key(league_id: str, season, source_week: int) -> str:
+    return f"weekly_recap_{league_id}_{season}_w{source_week}_v12_top_performers"
+
+
+def get_cached_gotw_selection(platform: str, league_id: str, season, target_week: int) -> dict | None:
+    """Return only a recap-persisted GOTW selection; never generate one here."""
+    try:
+        source_week = int(target_week) - 1
+    except (TypeError, ValueError):
+        return None
+    if source_week < 1:
+        return None
+    path = AI_CACHE_DIR / f"{_recap_cache_key(league_id, season, source_week)}.json"
+    try:
+        obj = json.loads(path.read_text(encoding="utf-8"))
+        selection = (obj.get("metadata") or {}).get("gotw_selection")
+    except (OSError, ValueError, TypeError):
+        return None
+    if not isinstance(selection, dict):
+        return None
+    expected = {
+        "platform": str(platform or "").lower(),
+        "league_id": str(league_id),
+        "season": str(season),
+        "target_week": int(target_week),
+    }
+    if any(str(selection.get(k, "")).lower() != str(v).lower() for k, v in expected.items()):
+        return None
+    ids = selection.get("roster_ids")
+    if not isinstance(ids, list) or len(ids) != 2 or not all(str(x) for x in ids):
+        return None
+    return selection
+
+
 def _streak_for(results: list[str]) -> str:
     """Compute current streak like 'W3' or 'L2' from a list of 'W'/'L' results."""
     if not results:
@@ -541,6 +575,8 @@ def _build_next_week_preview(
                    if phrase.get(k) and contrib[k] > 0.05]
 
         games.append({
+            "matchup_id": m.get("matchup_id"),
+            "roster_id_a": rid_a, "roster_id_b": rid_b,
             "team_a": sa["team"], "team_b": sb["team"],
             "avatar_a": sa.get("avatar", ""), "avatar_b": sb.get("avatar", ""),
             "record_a": sa["record_after"], "record_b": sb["record_after"],
@@ -982,6 +1018,7 @@ def get_weekly_ai_recap(
         season,
         next_week_ctx: dict | None = None,
         team_context: dict | None = None,
+        platform: str = "sleeper",
 ) -> tuple[str, str]:
     """Return (recap_column_html, next_week_card_html). Either may be ''.
 
@@ -992,7 +1029,7 @@ def get_weekly_ai_recap(
     if df_weekly is None or df_weekly.empty:
         return empty
 
-    cache_key = f"weekly_recap_{league_id}_{season}_w{selected_week}_v12_top_performers"
+    cache_key = _recap_cache_key(league_id, season, selected_week)
     cached = _load_recap_no_ttl(cache_key)
     if cached is not None:
         recap_html, _, next_html = cached.partition(_NEXT_WEEK_SPLIT)
@@ -1017,7 +1054,24 @@ def get_weekly_ai_recap(
         next_html = _render_next_week_html(
             payload.get("next_week_preview"), result.get("looking_ahead") or "",
         )
-        save_cached_ai_text(cache_key, recap_html + _NEXT_WEEK_SPLIT + next_html)
+        preview = payload.get("next_week_preview") or {}
+        game = preview.get("game_of_the_week") or {}
+        gotw_selection = None
+        roster_ids = [str(game.get("roster_id_a") or ""), str(game.get("roster_id_b") or "")]
+        if all(roster_ids) and preview.get("next_week"):
+            gotw_selection = {
+                "platform": str(platform or "").lower(),
+                "league_id": str(league_id),
+                "season": str(season),
+                "source_week": int(selected_week),
+                "target_week": int(preview["next_week"]),
+                "matchup_id": game.get("matchup_id"),
+                "roster_ids": roster_ids,
+            }
+        save_cached_ai_text(
+            cache_key, recap_html + _NEXT_WEEK_SPLIT + next_html,
+            metadata={"gotw_selection": gotw_selection},
+        )
         return recap_html, next_html
     except (AIRateLimitError, AIUnavailableError) as exc:
         logger.warning("[weekly-recap] AI unavailable: %s", exc)

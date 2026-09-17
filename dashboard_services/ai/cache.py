@@ -37,12 +37,14 @@ def load_cached_ai_text(cache_key: str) -> str | None:
         return None
 
 
-def save_cached_ai_text(cache_key: str, content: str) -> None:
+def save_cached_ai_text(cache_key: str, content: str, *, metadata: dict | None = None) -> None:
     path = AI_CACHE_DIR / f"{cache_key}.json"
     obj = {
         "ts": time.time(),
         "content": content,
     }
+    if metadata is not None:
+        obj["metadata"] = metadata
     # Write to a temp file then atomically rename so a crash mid-write can't
     # leave a half-written (corrupt) cache entry.
     tmp = path.with_suffix(".json.tmp")
