@@ -179,8 +179,23 @@ def test_league_cache_ts_ms_uses_entry_ts(monkeypatch):
     built = 1_700_000_000.0
     monkeypatch.setitem(app.DASHBOARD_CACHE, key, {"ts": built, "ctx": {}})
     assert app._league_cache_ts_ms("sleeper", 2026, "tsleague") == int(built * 1000)
-    # Missing / zero ts falls back to "now", not 0 (which would hide the chip).
-    assert app._league_cache_ts_ms("sleeper", 2026, "missing-league") > 0
+    # Missing freshness is not a successful refresh and must stay unknown.
+    assert app._league_cache_ts_ms("sleeper", 2026, "missing-league") == 0
+
+
+def test_freshness_labels_handle_unknown_seconds_future_and_days():
+    src = _freshness_iife()
+    assert "value < 100000000000" in src
+    assert "value > Date.now() + 5 * 60000" in src
+    assert "Update time unknown" in src
+    assert "'d ago'" in src
+
+
+def test_root_swap_rejects_an_older_same_league_snapshot():
+    assert "sameSnapshot" in APP_JS
+    assert "incomingTs < currentTs" in APP_JS
+    assert "stale league snapshot" in APP_JS
+    assert "['platform', 'season', 'leagueId']" in APP_JS
 
 
 def test_invalidated_context_rebuild_advances_authoritative_timestamp(tmp_path, monkeypatch):
