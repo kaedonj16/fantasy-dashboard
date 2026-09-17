@@ -13547,7 +13547,7 @@ a.signed-home-league:hover {
     gap: 5px;
     padding: 3px 7px;
     border: 1px solid color-mix(in srgb, var(--warning) 55%, var(--border));
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     background: color-mix(in srgb, var(--warning) 12%, var(--card));
     color: var(--warning);
     font-size: 10px;
