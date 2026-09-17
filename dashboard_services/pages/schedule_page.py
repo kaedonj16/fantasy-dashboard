@@ -84,12 +84,14 @@ def build_schedule_body(ctx):
           <select id="schedWkStart" class="sched-select"></select>
           <span class="sched-ctrl-sep">to</span>
           <select id="schedWkEnd" class="sched-select"></select>
-          <button type="button" class="sched-preset-btn" id="schedRosPreset"
-            title="Current NFL week through Week 18">ROS</button>
-          <button type="button" class="sched-preset-btn" id="schedFullPreset"
-            title="Show Weeks 1 through 18">Full Season</button>
-          <button type="button" class="sched-preset-btn" id="schedPlayoffPreset"
-            title="Jump to this league's fantasy playoff weeks">Playoffs</button>
+          <div class="sched-presets" role="group" aria-label="Schedule range presets">
+            <button type="button" class="sched-preset-btn" id="schedRosPreset"
+              title="Current NFL week through Week 18">ROS</button>
+            <button type="button" class="sched-preset-btn" id="schedFullPreset"
+              title="Show Weeks 1 through 18">Full Season</button>
+            <button type="button" class="sched-preset-btn" id="schedPlayoffPreset"
+              title="Jump to this league's fantasy playoff weeks">Playoffs</button>
+          </div>
         </div>
 
         <!-- My Players: player search -->

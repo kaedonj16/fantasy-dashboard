@@ -29317,6 +29317,13 @@ button:disabled {
     display: flex;
     align-items: center;
     gap: 8px;
+    min-width: 0;
+}
+
+.sched-presets {
+    display: flex;
+    align-items: center;
+    gap: 8px;
 }
 
 .sched-ctrl-label {
@@ -29773,6 +29780,27 @@ button:disabled {
 
     .sched-week-range {
         gap: 6px;
+        flex-wrap: wrap;
+        width: 100%;
+    }
+
+    .sched-week-range .sched-select {
+        flex: 1 1 0;
+        min-width: 0;
+    }
+
+    .sched-presets {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 6px;
+        flex: 0 0 100%;
+        width: 100%;
+    }
+
+    .sched-presets .sched-preset-btn {
+        width: 100%;
+        min-width: 0;
+        padding-inline: 8px;
     }
 
     .sched-ctrl-label {
