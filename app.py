@@ -15991,150 +15991,73 @@ def _build_lineup_analysis_html(
         selected_week: int,
         team_by_rid: dict,
         owner_avatar: dict,
+        roster_positions: list | None = None,
+        viewer_rid: str = "",
 ) -> str:
-    """Compute league-wide bust/sleeper/coaching mistake from raw matchup data."""
-    week_matchups = matchups_by_week.get(selected_week) or []
-    if not week_matchups:
-        return ""
+    """Render the shared, historical and slot-legal weekly lineup review."""
+    from dashboard_services.recap_calculations import build_lineup_analysis
 
-    def _ava_small(owner_name: str, rid: str = "", size: int = 30) -> str:
-        ava = owner_avatar.get(owner_name, "")
-        if ava:
-            return f"<img src='{ava}' alt='' loading='lazy' decoding='async' style='width:{size}px;height:{size}px;border-radius:50%;object-fit:cover;flex-shrink:0;' onerror=\"this.style.display='none'\">"
-        initials = "".join(w[0].upper() for w in (team_by_rid.get(rid) or owner_name or "?").split()[:2])
-        return (f"<div style='width:{size}px;height:{size}px;border-radius:50%;background:var(--accent);color:#fff;"
-                f"display:flex;align-items:center;justify-content:center;font-weight:700;font-size:11px;flex-shrink:0;'>{initials}</div>")
-
-    # Flatten: collect all starters and bench across the league for this week
-    all_starters: list = []  # (team_rid, team_name, owner, player_dict)
-    all_bench: list = []
-    bench_misses: list = []  # per team: best bench miss
-
-    for m in week_matchups:
-        for side in ("left", "right"):
-            team = m.get(side) or {}
-            rid = str(team.get("roster_id") or "")
-            owner = str(team.get("username") or "")
-            tname = team.get("name") or owner
-
-            starters = team.get("starters") or []
-            bench = team.get("bench") or []
-
-            for p in starters:
-                if p.get("pts") is not None:
-                    all_starters.append((rid, tname, owner, p))
-            for p in bench:
-                if p.get("pts") is not None:
-                    all_bench.append((rid, tname, owner, p))
-
-            # Coaching mistake: for each starter, find best bench player at same pos
-            bench_by_pos: dict = {}
-            for p in bench:
-                pos = str(p.get("pos") or "").upper()
-                if pos and p.get("pts") is not None:
-                    bench_by_pos.setdefault(pos, []).append(p)
-
-            biggest_swap = None
-            biggest_gap = 0.0
-            for s in starters:
-                pos = str(s.get("pos") or "").upper()
-                s_pts = float(s.get("pts") or 0)
-                candidates = bench_by_pos.get(pos, [])
-                if not candidates:
-                    continue
-                best = max(candidates, key=lambda x: float(x.get("pts") or 0))
-                gap = float(best.get("pts") or 0) - s_pts
-                if gap > biggest_gap:
-                    biggest_gap = gap
-                    biggest_swap = (s, best)
-
-            if biggest_swap and biggest_gap >= 1.0:
-                bench_misses.append({
-                    "rid": rid, "team": tname, "owner": owner,
-                    "starter": biggest_swap[0], "bench": biggest_swap[1],
-                    "gap": biggest_gap,
-                })
-
-    if not all_starters:
-        return ""
-
-    # Bust = worst starter (lowest scoring, exclude K/DEF where lows are common)
-    skill_starters = [s for s in all_starters if str(s[3].get("pos") or "").upper() in {"QB", "RB", "WR", "TE"}]
-    bust_pool = skill_starters or all_starters
-    bust_pool.sort(key=lambda x: float(x[3].get("pts") or 0))
-    busts = bust_pool[:6]
-
-    # Sleeper = best bench player
-    all_bench.sort(key=lambda x: -float(x[3].get("pts") or 0))
-    sleepers = all_bench[:6]
-
-    bench_misses.sort(key=lambda x: -x["gap"])
-    coaching_mistakes = bench_misses[:3]
-
-    bust_rows = "".join(
-        _player_row(p, owner, team, _face_html(p, "loss"),
-                    "BUST", "loss")
-        for (rid, team, owner, p) in busts
+    analysis = build_lineup_analysis(
+        matchups_by_week, selected_week, roster_positions=roster_positions,
     )
-    sleeper_rows = "".join(
-        _player_row(p, owner, team, _face_html(p, "win"),
-                    "GEM", "win")
-        for (rid, team, owner, p) in sleepers
-    )
+    if not analysis.get("available"):
+        return ("<div class='card recap-lineup-unavailable' role='status'>"
+                f"{html.escape(analysis.get('reason') or 'Lineup data unavailable.')}</div>")
 
-    def mistake_row(item):
-        s = item["starter"];
-        b = item["bench"]
-        team = html.escape(item["team"])
-        s_name = html.escape(str(s.get("name") or ""))
-        s_pos = html.escape(str(s.get("pos") or ""))
-        s_nfl = html.escape(str(s.get("nfl") or ""))
-        s_pts = float(s.get("pts") or 0)
-        b_name = html.escape(str(b.get("name") or ""))
-        b_pos = html.escape(str(b.get("pos") or ""))
-        b_nfl = html.escape(str(b.get("nfl") or ""))
-        b_pts = float(b.get("pts") or 0)
-        gap = item["gap"]
-        return f"""
-<div class="rc-mistake">
-  <div class="rc-row">
-    {_face_html(s, "loss")}
-    <div class="rc-main">
-      <div class="rc-name">{s_name}</div>
-      <div class="rc-meta">{s_pos} · {s_nfl} &nbsp;·&nbsp; {team}</div>
-    </div>
-    <div class="rc-score"><div class="v loss">{s_pts:.2f}</div><div class="t">STARTED</div></div>
-  </div>
-  <div class="rc-row">
-    {_face_html(b, "win")}
-    <div class="rc-main">
-      <div class="rc-name">{b_name}</div>
-      <div class="rc-meta">{b_pos} · {b_nfl} &nbsp;·&nbsp; <span class="rc-gap">-{gap:.1f} pts</span></div>
-    </div>
-    <div class="rc-score"><div class="v win">{b_pts:.2f}</div><div class="t">BENCHED</div></div>
-  </div>
-</div>"""
+    def player_row(player, tag, tone, extra=""):
+        name = html.escape(str(player.get("name") or "Unknown player"))
+        pos = html.escape(str(player.get("pos") or "–"))
+        nfl = html.escape(str(player.get("nfl") or ""))
+        team = html.escape(str(player.get("team") or team_by_rid.get(str(player.get("rid") or "")) or "Team"))
+        pts = float(player["pts"])
+        return (f'<div class="rc-row">{_face_html(player, tone)}<div class="rc-main">'
+                f'<div class="rc-name">{name}</div><div class="rc-meta">{pos} · {nfl} · {team}{extra}</div>'
+                f'</div><div class="rc-score"><div class="v {tone}">{pts:.2f}</div><div class="t">{tag}</div></div></div>')
 
-    mistakes_rows = "".join(mistake_row(item) for item in coaching_mistakes) \
-                    or "<div style='padding:18px;color:var(--muted);font-size:13px;text-align:center;'>No major lineup mistakes this week - nice job, league.</div>"
+    under_rows = []
+    for player in analysis["underperformers"]:
+        extra = ""
+        if analysis["historical_projections"]:
+            extra = f" · {float(player['projected_pts']):.2f} projected"
+        under_rows.append(player_row(player, "LOW" if not extra else "BELOW PROJ", "loss", extra))
+    gem_rows = [player_row(p, "GEM", "win") for p in analysis["bench_gems"]]
 
-    return f"""
-<div class="card" style="overflow:hidden;margin-bottom:20px;">
-  <div class="recap-lineup-cols">
-    <div class="rlc-col">
-      <div class="rlc-head"><h3>Busts</h3><span>Worst starters</span></div>
-      {bust_rows or '<div style="padding:14px;color:var(--muted);">–</div>'}
-    </div>
-    <div class="rlc-col">
-      <div class="rlc-head"><h3>Bench Gems</h3><span>Best bench performers</span></div>
-      {sleeper_rows or '<div style="padding:14px;color:var(--muted);">–</div>'}
-    </div>
-    <div class="rlc-col">
-      <div class="rlc-head"><h3>Coaching Mistakes</h3><span>Bench vs starter (same pos)</span></div>
-      {mistakes_rows}
-    </div>
-  </div>
-</div>"""
+    def missed_row(item):
+        started, reserve = item["starter"], item["bench_player"]
+        return ("<div class='rc-mistake'>"
+                + player_row(started, "STARTED", "loss")
+                + player_row({**reserve, "team": item["team"]}, "BENCHED", "win",
+                             f" · +{item['gap']:.2f} hindsight") + "</div>")
+
+    missed_rows = [missed_row(item) for item in analysis["missed_opportunities"]]
+    if not missed_rows:
+        missed_rows = ["<div class='recap-lineup-empty'>No qualifying legal missed opportunities.</div>"]
+
+    def column(title, note, rows):
+        visible = "".join(rows[:3])
+        rest = "".join(rows[3:])
+        more = (f"<details class='recap-lineup-more'><summary>Show all ({len(rows)})</summary>{rest}</details>"
+                if rest else "")
+        return (f"<div class='rlc-col'><div class='rlc-head'><h3>{html.escape(title)}</h3>"
+                f"<span>{html.escape(note)}</span></div>{visible}{more}</div>")
+
+    viewer = ""
+    own = next((x for x in analysis["missed_opportunities"] if str(x["rid"]) == str(viewer_rid)), None)
+    team = next((x for x in analysis["teams"] if str(x["rid"]) == str(viewer_rid)), None)
+    if team:
+        actual = next((side.get("points") for matchup in (matchups_by_week.get(selected_week) or matchups_by_week.get(str(selected_week)) or [])
+                       for side in (matchup.get("left") or {}, matchup.get("right") or {})
+                       if str(side.get("roster_id") or "") == str(viewer_rid)), None)
+        actual_text = f"<strong>{float(actual):.2f}</strong> points" if isinstance(actual, (int, float)) and not isinstance(actual, bool) else "Score unavailable"
+        hindsight = (f" Best legal hindsight swap: {html.escape(str(own['bench_player'].get('name') or 'Bench player'))} "
+                     f"for {html.escape(str(own['starter'].get('name') or 'starter'))} (+{own['gap']:.2f})." if own else "")
+        viewer = f"<div class='recap-viewer-decision'><b>Your team · {html.escape(str(team['team']))}</b><span>{actual_text}.{hindsight}</span></div>"
+
+    return (viewer + "<div class='card recap-lineup-card'><div class='recap-lineup-cols'>"
+            + column(analysis["under_title"], analysis["under_note"], under_rows)
+            + column("Bench Gems", "Format-aware bench performances", gem_rows)
+            + column("Missed Opportunities", "Legal hindsight alternatives", missed_rows)
+            + "</div></div>")
 
 
 def _mock_lineup_analysis_html(team_names: list[str]) -> str:
@@ -16198,7 +16121,7 @@ def _mock_lineup_analysis_html(team_names: list[str]) -> str:
 <div class="card" style="overflow:hidden;margin-bottom:20px;">
   <div class="recap-lineup-cols">
     <div class="rlc-col">
-      <div class="rlc-head"><h3>Busts</h3><span>Worst starters</span></div>
+      <div class="rlc-head"><h3>Lowest-scoring starters</h3><span>Sample historical lineup</span></div>
       {bust_rows}
     </div>
     <div class="rlc-col">
@@ -16206,7 +16129,7 @@ def _mock_lineup_analysis_html(team_names: list[str]) -> str:
       {sleeper_rows}
     </div>
     <div class="rlc-col">
-      <div class="rlc-head"><h3>Coaching Mistakes</h3><span>Bench vs starter (same pos)</span></div>
+      <div class="rlc-head"><h3>Missed Opportunities</h3><span>Legal hindsight alternatives</span></div>
       {mock_mistake}
     </div>
   </div>

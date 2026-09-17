@@ -28407,474 +28407,85 @@ button:disabled {
     border-bottom: 1px solid var(--border);
 }
 
-/* ── Recap page mobile layout ─────────────────────────────────────────────── */
-.recap-top-performer {
-    margin-top: 4px;
-    color: var(--text-muted);
-    font-size: 10px;
-    font-weight: 500;
-    line-height: 1.35;
-    white-space: normal;
-    overflow-wrap: normal;
-    word-break: normal;
+/* ── Weekly recap page ───────────────────────────────────────────────────── */
+.weekly-recap {
+    width: 100%;
+    max-width: 1240px;
+    margin-inline: auto;
+    padding-inline: 20px;
+    box-sizing: border-box;
+}
+.weekly-recap .recap-section { margin-bottom: 24px; min-width: 0; }
+.weekly-recap .recap-section-heading { display:flex; align-items:baseline; justify-content:space-between; flex-wrap:wrap; gap:8px 16px; margin:0 0 10px; }
+.weekly-recap .recap-section-heading h2 { margin:0; color:var(--text); font-size:18px; font-weight:800; letter-spacing:-.01em; }
+.weekly-recap .recap-section-heading small { color:var(--muted); font-size:11px; font-weight:600; }
+.weekly-recap .recap-history-link { color:var(--accent); font-size:13px; font-weight:650; text-decoration:none; }
+.weekly-recap .recap-story > .card { max-width:820px; border-left:3px solid var(--accent); }
+.weekly-recap .recap-story [data-br-reveal-text] { max-width:72ch; }
+.weekly-recap .rc-awards { display:grid; grid-template-columns:repeat(auto-fit,minmax(245px,1fr)); gap:10px; margin-bottom:0; }
+.weekly-recap .rc-award { min-width:0; }
+.weekly-recap .recap-scoreboard-card { overflow:hidden; }
+.weekly-recap .recap-scoreboard-summary { color:var(--muted); font-size:12px; white-space:normal; }
+.weekly-recap .recap-summary-mobile { display:none; }
+.weekly-recap .recap-matchup-row { padding:13px 16px; border-bottom:1px solid var(--border); }
+.weekly-recap .recap-matchup-row:last-child { border-bottom:0; }
+.weekly-recap .recap-matchup-badges { display:flex; gap:5px; margin-bottom:6px; }
+.weekly-recap .recap-matchup-badges:empty { display:none; }
+.weekly-recap .recap-matchup-badges span { padding:2px 7px; border:1px solid color-mix(in srgb,var(--accent) 35%,var(--border)); border-radius:6px; color:var(--accent); font-size:9px; font-weight:800; text-transform:uppercase; }
+.weekly-recap .recap-matchup-main { display:grid; grid-template-columns:minmax(0,1fr) 150px minmax(0,1fr); align-items:center; gap:18px; }
+.weekly-recap .recap-team { min-width:0; }
+.weekly-recap .recap-team:last-child { text-align:right; }
+.weekly-recap .recap-team-identity { display:flex; align-items:center; gap:9px; min-width:0; }
+.weekly-recap .recap-team:last-child .recap-team-identity { flex-direction:row-reverse; }
+.weekly-recap .recap-team-copy { min-width:0; flex:1; }
+.weekly-recap .recap-team-name { color:var(--text); font-size:14px; font-weight:650; overflow-wrap:anywhere; }
+.weekly-recap .recap-team--winner .recap-team-name, .weekly-recap .recap-team--winner .recap-team-score { font-weight:850; }
+.weekly-recap .recap-team-manager { color:var(--muted); font-size:10px; overflow-wrap:anywhere; }
+.weekly-recap .recap-team-score { display:none; font-size:20px; font-variant-numeric:tabular-nums; white-space:nowrap; }
+.weekly-recap .recap-matchup-score { text-align:center; }
+.weekly-recap .recap-matchup-scoreline { font-size:17px; font-weight:800; font-variant-numeric:tabular-nums; white-space:nowrap; }
+.weekly-recap .recap-matchup-scoreline span { color:var(--muted); font-weight:400; }
+.weekly-recap .recap-matchup-margin { margin-top:2px; color:var(--muted); font-size:11px; font-weight:650; }
+.weekly-recap .recap-top-performer { margin:5px 0 0 45px; color:var(--muted); font-size:11px; line-height:1.35; overflow-wrap:anywhere; }
+.weekly-recap .recap-team:last-child .recap-top-performer { margin:5px 45px 0 0; }
+.weekly-recap .recap-top-label-short { display:none; }
+.weekly-recap .recap-top-performer-name { color:var(--text); font-weight:650; cursor:pointer; }
+.weekly-recap .recap-top-performer-name:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+.weekly-recap .recap-rank-grid { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); align-items:start; gap:14px; }
+.weekly-recap .st-division { padding:9px 16px 5px; color:var(--muted); font-size:10px; font-weight:800; text-transform:uppercase; }
+.weekly-recap .st-movement { min-width:25px; font-size:11px; font-weight:800; text-align:right; }
+.weekly-recap .st-movement.up { color:var(--win); } .weekly-recap .st-movement.down { color:var(--loss); } .weekly-recap .st-movement.flat { color:var(--muted); }
+.weekly-recap .recap-lineup-cols { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); }
+.weekly-recap .rlc-col { min-width:0; }
+.weekly-recap .rlc-col + .rlc-col { border-left:1px solid var(--border); }
+.weekly-recap .rlc-head { display:block; padding:13px 16px; border-bottom:1px solid var(--border); }
+.weekly-recap .rlc-head h3 { margin:0; font-size:15px; } .weekly-recap .rlc-head span { display:block; margin-top:3px; color:var(--muted); font-size:11px; white-space:normal; }
+.weekly-recap .recap-lineup-more summary { padding:10px 16px; color:var(--accent); font-size:12px; font-weight:700; cursor:pointer; }
+.weekly-recap .recap-lineup-empty, .weekly-recap .recap-lineup-unavailable { padding:16px; color:var(--muted); font-size:13px; }
+.weekly-recap .recap-viewer-decision { display:flex; justify-content:space-between; gap:12px; margin-bottom:10px; padding:12px 15px; border-left:3px solid var(--accent); border-radius:8px; background:var(--surface2); font-size:12px; }
+.weekly-recap .recap-up-next { margin-bottom:0; }
+
+@media (max-width:900px) { .weekly-recap .recap-rank-grid { grid-template-columns:1fr; } }
+@media (max-width:720px) {
+    .weekly-recap { padding-inline:12px; }
+    .weekly-recap .rc-awards { grid-template-columns:1fr; }
+    .weekly-recap .rc-award [style*="white-space:nowrap"] { white-space:normal !important; overflow:visible !important; text-overflow:clip !important; overflow-wrap:anywhere; }
+    .weekly-recap .recap-summary-desktop { display:none; } .weekly-recap .recap-summary-mobile { display:inline; }
+    .weekly-recap .recap-matchup-row { padding:14px 12px; }
+    .weekly-recap .recap-matchup-main { grid-template-columns:1fr; gap:10px; }
+    .weekly-recap .recap-team, .weekly-recap .recap-team:last-child { text-align:left; }
+    .weekly-recap .recap-team:last-child .recap-team-identity { flex-direction:row; }
+    .weekly-recap .recap-team-score { display:block; }
+    .weekly-recap .recap-matchup-scoreline { display:none; }
+    .weekly-recap .recap-matchup-score { order:2; text-align:left; padding-block:2px; border-block:1px solid var(--border); }
+    .weekly-recap .recap-team:last-child { order:3; }
+    .weekly-recap .recap-top-performer, .weekly-recap .recap-team:last-child .recap-top-performer { margin:5px 0 0 45px; text-align:left; }
+    .weekly-recap .recap-lineup-cols { grid-template-columns:1fr; }
+    .weekly-recap .rlc-col + .rlc-col { border-left:0; border-top:1px solid var(--border); }
+    .weekly-recap .recap-viewer-decision { flex-direction:column; }
+    .weekly-recap .rc-name { white-space:normal; overflow-wrap:anywhere; }
 }
 
-.recap-top-label-short,
-.recap-summary-mobile {
-    display: none;
-}
-
-.recap-top-performer-name {
-    color: var(--text);
-    font-weight: 650;
-    cursor: pointer;
-}
-
-.recap-top-performer-name:hover,
-.recap-top-performer-name:focus-visible {
-    color: var(--accent);
-    text-decoration: underline;
-}
-
-.recap-top-performer-points {
-    white-space: nowrap;
-}
-
-.recap-matchup-row {
-    padding: 12px 16px;
-    border-bottom: 1px solid var(--border);
-}
-
-.recap-section {
-    margin-bottom: 22px;
-    min-width: 0;
-}
-
-.recap-section-heading {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 12px;
-    margin: 0 0 10px;
-    color: var(--text);
-    font-size: 17px;
-    font-weight: 800;
-    letter-spacing: -.01em;
-}
-
-.recap-section-heading small {
-    color: var(--muted);
-    font-size: 11px;
-    font-weight: 600;
-}
-
-.recap-story > .card {
-    border-left: 3px solid var(--accent);
-}
-
-.recap-matchup-badges {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 5px;
-    min-height: 0;
-    margin-bottom: 5px;
-}
-
-.recap-matchup-badges:empty { display: none; }
-
-.recap-matchup-badges span {
-    padding: 2px 7px;
-    border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
-    border-radius: 6px;
-    color: var(--accent);
-    font-size: 9px;
-    font-weight: 800;
-    letter-spacing: .04em;
-    text-transform: uppercase;
-}
-
-.st-movement { min-width: 24px; font-size: 11px; font-weight: 800; text-align: right; }
-.st-movement.up { color: var(--win); }
-.st-movement.down { color: var(--loss); }
-.st-movement.flat { color: var(--muted); }
-
-.recap-rank-grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, .85fr); gap: 14px; }
-.st-division { padding: 9px 16px 5px; color: var(--muted); font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
-
-.recap-around ul {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 1px;
-    margin: 0;
-    padding: 0;
-    overflow: hidden;
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    background: var(--border);
-    list-style: none;
-}
-
-.recap-around li { display: flex; gap: 10px; padding: 13px 14px; background: var(--card); font-size: 12px; line-height: 1.45; }
-.recap-around li i { margin-top: 3px; color: var(--accent); font-size: 10px; }
-.recap-viewer-decision { margin-bottom: 10px; padding: 13px 15px; border-left: 3px solid var(--accent); border-radius: 8px; background: var(--surface2); }
-.recap-viewer-title { margin-bottom: 7px; font-size: 13px; font-weight: 800; }
-.recap-viewer-metrics { display: flex; gap: 18px; }
-.recap-viewer-metrics div { display: flex; align-items: baseline; gap: 7px; }
-.recap-viewer-metrics span { color: var(--muted); font-size: 10px; font-weight: 700; text-transform: uppercase; }
-.recap-viewer-metrics strong { font-size: 18px; }
-.recap-viewer-decision p { margin: 7px 0 0; font-size: 12px; line-height: 1.4; }
-.recap-up-next { margin-bottom: 0; padding-top: 4px; }
-.recap-up-next > .card { border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); box-shadow: 0 8px 30px rgba(0,0,0,.12); }
-
-.recap-matchup-main,
-.recap-matchup-performers {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 110px minmax(0, 1fr);
-    align-items: center;
-    gap: 12px;
-}
-
-.recap-matchup-performers {
-    margin-top: 4px;
-}
-
-.recap-matchup-performers .recap-top-performer:last-child {
-    grid-column: 3;
-    text-align: right;
-}
-
-.recap-matchup-performers .recap-top-performer:first-child {
-    margin-left: 38px;
-}
-
-.recap-matchup-performers .recap-top-performer:last-child {
-    margin-right: 38px;
-}
-
-.recap-team,
-.recap-team-identity,
-.recap-team-copy {
-    min-width: 0;
-}
-
-.recap-team-identity {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.recap-team--right,
-.recap-team--right .recap-top-performer {
-    text-align: right;
-}
-
-.recap-team--right .recap-team-identity {
-    justify-content: flex-end;
-}
-
-.recap-team-name {
-    overflow: hidden;
-    font-size: 13px;
-    font-weight: 700;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.recap-team--right .recap-team-name {
-    font-weight: 600;
-}
-
-.recap-team-manager {
-    overflow: hidden;
-    color: var(--muted);
-    font-size: 10px;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.recap-team-mobile-score { display: none; }
-
-.recap-team--left .recap-top-performer {
-    margin-left: 38px;
-}
-
-.recap-team--right .recap-top-performer {
-    margin-right: 38px;
-}
-
-.recap-matchup-score {
-    min-width: 0;
-    text-align: center;
-}
-
-.recap-matchup-scoreline {
-    font-size: 15px;
-    font-weight: 800;
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-}
-
-.recap-matchup-scoreline span {
-    color: var(--muted);
-    font-size: 12px;
-    font-weight: 400;
-}
-
-.recap-matchup-margin {
-    font-size: 10px;
-    font-weight: 700;
-}
-
-.recap-scoreboard-summary {
-    color: var(--muted);
-    font-size: 12px;
-    white-space: nowrap;
-}
-
-@media (max-width: 720px) {
-    .recap-lineup-grid {
-        grid-template-columns: 1fr !important;
-    }
-
-    .recap-scoreboard-header {
-        gap: 10px;
-    }
-
-    .recap-scoreboard-header h3 {
-        flex: 0 1 auto;
-    }
-
-    .recap-scoreboard-summary {
-        min-width: 0;
-        font-size: 11px;
-        letter-spacing: -0.01em;
-    }
-
-    .recap-summary-desktop {
-        display: none;
-    }
-
-    .recap-summary-mobile {
-        display: inline;
-    }
-
-    .recap-matchup-row {
-        min-height: 112px;
-        padding: 14px 6px 13px;
-        overflow: hidden;
-    }
-
-    .recap-matchup-main,
-    .recap-matchup-performers {
-        grid-template-columns: minmax(0, 1fr) minmax(88px, 30vw) minmax(0, 1fr);
-        gap: 4px;
-    }
-
-    .recap-matchup-main {
-        align-items: center;
-    }
-
-    .recap-matchup-performers {
-        align-items: start;
-        margin-top: 10px;
-    }
-
-    .recap-team,
-    .recap-team-identity,
-    .recap-team-copy {
-        overflow: hidden;
-    }
-
-    .recap-team-identity {
-        display: grid;
-        grid-template-columns: auto minmax(0, 1fr);
-        align-items: center;
-        gap: 4px;
-        width: 100%;
-    }
-
-    .recap-team--right .recap-team-identity {
-        grid-template-columns: minmax(0, 1fr) auto;
-    }
-
-    .recap-team-identity > img,
-    .recap-team-identity > svg {
-        width: 36px !important;
-        height: 36px !important;
-    }
-
-    .recap-team-copy {
-        flex: 1 1 auto;
-        padding-top: 1px;
-    }
-
-    .recap-team-name {
-        display: -webkit-box;
-        overflow: hidden;
-        font-size: 15px;
-        font-weight: 700;
-        line-height: 1.12;
-        overflow-wrap: normal;
-        word-break: normal;
-        white-space: normal;
-        -webkit-box-orient: vertical;
-        -webkit-line-clamp: 2;
-    }
-
-    .recap-team--right .recap-team-name {
-        font-weight: 700;
-    }
-
-    .recap-team-manager {
-        display: block;
-        max-width: 100%;
-        margin-top: 3px;
-        font-size: 12px;
-        line-height: 1.15;
-    }
-
-    .recap-matchup-score {
-        position: relative;
-        z-index: 2;
-        align-self: center;
-        min-width: 0;
-        padding: 0 2px;
-    }
-
-    .recap-matchup-scoreline {
-        font-size: clamp(16px, 5vw, 24px);
-        font-weight: 800;
-        letter-spacing: -0.055em;
-        line-height: 1.05;
-        white-space: nowrap;
-    }
-
-    .recap-matchup-scoreline span {
-        font-size: .68em;
-    }
-
-    .recap-matchup-margin {
-        margin-top: 5px;
-        font-size: clamp(14px, 4vw, 16px);
-        line-height: 1;
-    }
-
-    .recap-matchup-performers .recap-top-performer {
-        display: flex;
-        flex-direction: column;
-        max-width: 100%;
-        margin: 0;
-        font-size: 12px;
-        line-height: 1.15;
-    }
-
-    .recap-matchup-performers .recap-top-performer:last-child {
-        text-align: right;
-    }
-
-    .recap-matchup-performers .recap-top-performer:first-child,
-    .recap-matchup-performers .recap-top-performer:last-child {
-        margin-right: 0;
-        margin-left: 0;
-    }
-
-    .recap-top-label-long,
-    .recap-top-points-separator {
-        display: none;
-    }
-
-    .recap-top-label-short {
-        display: block;
-        margin-bottom: 2px;
-        color: var(--muted);
-        font-size: 9px;
-        font-weight: 800;
-        letter-spacing: .08em;
-        text-transform: uppercase;
-    }
-
-    .recap-top-performer-players {
-        display: -webkit-box;
-        overflow: hidden;
-        color: var(--text);
-        font-size: 13px;
-        font-weight: 650;
-        line-height: 1.15;
-        overflow-wrap: normal;
-        word-break: normal;
-        -webkit-box-orient: vertical;
-        -webkit-line-clamp: 2;
-    }
-
-    .recap-top-performer-points {
-        margin-top: 2px;
-        color: var(--muted);
-        font-size: 12px;
-        line-height: 1.1;
-    }
-
-    .recap-rank-grid,
-    .recap-around ul { grid-template-columns: 1fr; }
-
-    .recap-section { margin-bottom: 18px; }
-}
-
-/* Recap lineup: one card, three divider-separated columns. Full-height
-   dividers make an uneven column (e.g. a short Coaching Mistakes list) read as
-   intentional instead of a floating short card with empty space beside it. */
-.recap-lineup-cols {
-    display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
-}
-
-.rlc-col {
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-}
-
-.rlc-col + .rlc-col {
-    border-left: 1px solid var(--border);
-}
-
-.rlc-head {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 8px;
-    padding: 14px 16px;
-    border-bottom: 1px solid var(--border);
-}
-
-.rlc-head h3 {
-    margin: 0;
-    font-size: 15px;
-    font-weight: 750;
-    color: var(--text);
-}
-
-.rlc-head span {
-    font-size: 12px;
-    color: var(--text-muted);
-    white-space: nowrap;
-}
-
-/* Drop the trailing row border so a column doesn't end on a stray line. */
-.rlc-col > .rc-row:last-child,
-.rlc-col > .rc-mistake:last-child {
-    border-bottom: none;
-}
-
-@media (max-width: 720px) {
-    .recap-lineup-cols {
-        grid-template-columns: 1fr;
-    }
-
-    .rlc-col + .rlc-col {
-        border-left: none;
-        border-top: 1px solid var(--border);
-    }
-}
 
 /* ── Toast notifications ──────────────────────────────────────────────────── */
 #toast-container {
@@ -40451,76 +40062,6 @@ a, button, [role="button"], [role="tab"], summary, label,
 #amQuickRanges .am-qr:disabled { opacity:.45; cursor:not-allowed; }
 
 
-/* Phone recap: preserve the desktop scorecard, but turn each result into two
-   natural-height team rows. Kept here with the recap component rather than in
-   global card/layout rules so the dock and other pages are unaffected. */
-@media (max-width: 720px) {
-    .rc-awards { grid-template-columns: 1fr !important; }
-    .rc-award { min-height: 0; }
-    .rc-award [style*="white-space:nowrap"] {
-        white-space: normal !important;
-        overflow: visible !important;
-        text-overflow: clip !important;
-        overflow-wrap: anywhere;
-    }
-
-    .recap-matchup-row { min-height: 0; overflow: visible; padding: 14px 12px 13px; }
-    .recap-matchup-main { display: grid; grid-template-columns: 1fr; gap: 8px; }
-    .recap-matchup-performers { display: contents; }
-    .recap-team, .recap-team-identity, .recap-team-copy { min-width: 0; overflow: visible; }
-    .recap-team-identity,
-    .recap-team--right .recap-team-identity {
-        display: grid;
-        grid-template-columns: 36px minmax(0, 1fr) auto;
-        align-items: center;
-        gap: 8px;
-        width: 100%;
-    }
-    .recap-team--right { grid-row: 3; text-align: left; }
-    .recap-team--right .recap-team-identity > img,
-    .recap-team--right .recap-team-identity > svg { grid-column: 1; grid-row: 1; }
-    .recap-team--right .recap-team-copy { grid-column: 2; grid-row: 1; text-align: left; }
-    .recap-team-mobile-score {
-        display: block;
-        grid-column: 3;
-        grid-row: 1;
-        align-self: center;
-        font-size: 19px;
-        font-variant-numeric: tabular-nums;
-        white-space: nowrap;
-    }
-    .recap-team-name, .recap-team--right .recap-team-name {
-        display: block;
-        overflow: visible;
-        white-space: normal;
-        text-overflow: clip;
-        overflow-wrap: anywhere;
-        -webkit-line-clamp: unset;
-    }
-    .recap-matchup-score { grid-row: 5; padding: 0; }
-    .recap-matchup-scoreline { display: none; }
-    .recap-matchup-margin { margin-top: 0; font-size: 12px; }
-    .recap-matchup-performers .recap-top-performer:first-child {
-        grid-row: 2;
-        margin: 0;
-        padding: 0 0 8px 44px;
-        border-bottom: 1px solid var(--border);
-        text-align: left;
-    }
-    .recap-matchup-performers .recap-top-performer:last-child {
-        grid-row: 4;
-        margin: 0;
-        padding-left: 44px;
-        text-align: left;
-    }
-    .recap-top-performer-players {
-        display: block;
-        overflow: visible;
-        overflow-wrap: anywhere;
-        -webkit-line-clamp: unset;
-    }
-}
-
 @media (max-width: 720px) {
     .br-gotw { overflow: visible; }
     .br-gotw-matchup { display: grid; grid-template-columns: 1fr; gap: 10px; }
@@ -40530,3 +40071,7 @@ a, button, [role="button"], [role="tab"], summary, label,
     .br-gotw-vs { display: none; }
     .br-gotw-name { display: block; overflow: visible; word-break: normal; overflow-wrap: anywhere; -webkit-line-clamp: unset; }
 }
+
+.weekly-recap .st-row.recap-viewer-team { background:color-mix(in srgb,var(--accent) 8%,var(--card)); box-shadow:inset 3px 0 var(--accent); }
+.weekly-recap .recap-data-unavailable, .weekly-recap .recap-next-history { padding:16px; color:var(--muted); font-size:13px; }
+.weekly-recap .recap-next-link { display:inline-block; margin-top:-8px; color:var(--accent); font-size:12px; font-weight:700; }
