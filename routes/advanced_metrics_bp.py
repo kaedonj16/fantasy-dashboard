@@ -73,8 +73,17 @@ def api_advanced_metrics_leaderboard():
     combine = combine_raw in ("1", "true", "yes")
     week_start_str = (request.args.get("week_start") or "").strip()
     week_end_str   = (request.args.get("week_end") or "").strip()
+    # Week filtering is all-or-nothing. Invalid values are ignored; valid NFL
+    # weeks are clamped and reversed ranges are normalized.
     week_start = int(week_start_str) if week_start_str.isdigit() else None
     week_end   = int(week_end_str)   if week_end_str.isdigit()   else None
+    if week_start is None or week_end is None:
+        week_start = week_end = None
+    else:
+        week_start = max(1, min(18, week_start))
+        week_end = max(1, min(18, week_end))
+        if week_start > week_end:
+            week_start, week_end = week_end, week_start
 
     # A metric is week-filterable if it has a usage-table aggregation
     # (_WEEKLY_METRICS) or an NGS/FTN/EPA weekly aggregation. Week ranges are
@@ -82,7 +91,7 @@ def api_advanced_metrics_leaderboard():
     adv_weekly       = adv_weekly_metric_supported(metric)
     weekly_capable   = (metric in _WEEKLY_METRICS) or adv_weekly
     is_multi_season  = isinstance(season, list)
-    is_week_filtered = bool(week_start or week_end) and weekly_capable and not is_multi_season
+    is_week_filtered = week_start is not None and week_end is not None and weekly_capable and not is_multi_season
 
     # An omitted threshold means "use the shared default for this completed
     # portion". An explicit value (including a stricter one) is never changed.
@@ -199,6 +208,8 @@ def api_advanced_metrics_leaderboard():
         "vol_col": vol_col,
         "weekly_capable": weekly_capable,
         "is_week_filtered": is_week_filtered,
+        "week_start": week_start if is_week_filtered else None,
+        "week_end": week_end if is_week_filtered else None,
         "selected_seasons": selected_seasons,
         "combine": bool(combine) and is_multi_season,
         "qualification": ({"games_min": qualification.games_min,

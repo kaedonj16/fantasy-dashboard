@@ -20,7 +20,7 @@ def build_advanced_metrics_body(
         platform: Optional[str] = None,
 ) -> str:
     from data_building.advanced_metrics import (
-        get_available_seasons, _WEEKLY_METRICS,
+        get_available_seasons, get_available_weeks_by_season, _WEEKLY_METRICS,
         ADV_WEEKLY_METRIC_KEYS, adv_weekly_vol_spec,
         PREMIUM_METRICS, premium_metrics_exposed,
     )
@@ -106,34 +106,15 @@ def build_advanced_metrics_body(
         )
     legend_html = "".join(_legend_sections)
 
-    # Determine the max week with data for the current season (for "Last N weeks" presets)
-    _current_week = 18
-    if has_premium:
-        try:
-            from dashboard_services.db import get_conn
-            if season:
-                _ref_season = int(season)
-            elif available_seasons:
-                _ref_season = int(available_seasons[0])
-            else:
-                from dashboard_services.api import get_nfl_state
-                _ref_season = int(get_nfl_state()["season"])
-            with get_conn() as _conn:
-                _wrow = _conn.execute(
-                    "SELECT MAX(week) AS mw FROM player_weekly_metrics WHERE season = %s",
-                    (_ref_season,),
-                ).fetchone()
-                if _wrow and _wrow["mw"]:
-                    _current_week = int(_wrow["mw"])
-        except Exception:
-            logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
+    # Week availability is the union of both weekly stores, per season.
+    _weeks_by_season = get_available_weeks_by_season()
 
     cfg = json.dumps({
         "hasPremium": bool(has_premium),
         "leagueId": league_id or "",
         "platform": platform or "sleeper",
         "seasons": available_seasons,
-        "currentWeek": _current_week,
+        "availableWeeksBySeason": _weeks_by_season,
         "weeklyMetrics": weekly_metric_keys,
         "metrics": {
             key: {
@@ -1170,6 +1151,10 @@ _AM_JS = r"""
     if (state.combine && amIsMultiSeason()) p.set('combine', '1');
     if (state.minVol) p.set('minvol', String(state.minVol));
     if (state.team) p.set('team', state.team);
+    const urlRange = resolveWeekRange();
+    if (isMetricWeeklyCapable() && urlRange.ws != null && urlRange.we != null) {
+      p.set('week_start', String(urlRange.ws)); p.set('week_end', String(urlRange.we));
+    }
     const qs = p.toString();
     history.replaceState(null, '', qs ? '?' + qs : window.location.pathname);
   }
@@ -1360,6 +1345,7 @@ _AM_JS = r"""
     const picker = document.getElementById('amStatPicker');
     if (picker) picker.style.display = 'none';
     updateSortBtn(); updatePosButtons(); updateMetricTip(); updateVolCtrl(); updateVolHeader();
+    _amRefreshWeekControls();
     updateSortHeaders(); updateCompareBar(); syncExtraCols(); updateFilterBar();
     fetchData();
   };
@@ -2777,7 +2763,7 @@ _AM_JS = r"""
       th.title = title;
     }
     // Show the Wks column only when a week range is active.
-    const isWeekly = !!(state.weekRange && state.weekRange !== '');
+    const isWeekly = !!state.responseWeekFiltered;
     const thWks = document.querySelector('#amTable thead th.am-weeks');
     if (thWks) thWks.style.display = isWeekly ? '' : 'none';
     const mh = document.getElementById('amMetricHeader');
@@ -2787,27 +2773,39 @@ _AM_JS = r"""
     }
     syncExtraCols();
   }
-  // Resolve the active week range into {week_start, week_end} integers or null.
+  // Resolve ranges against the selected season's actual populated weeks.
+  function availableWeeks() {
+    if (amIsMultiSeason()) return [];
+    const year = amSelectedSeasons()[0];
+    return ((cfg.availableWeeksBySeason || {})[String(year)] || []).map(Number).sort(function(a,b){return a-b;});
+  }
+  function isMetricWeeklyCapable() {
+    return !!(cfg.metrics[state.metric] && cfg.metrics[state.metric].weeklyCapable) && !amIsMultiSeason();
+  }
   function resolveWeekRange() {
-    const cw = cfg.currentWeek || 18;
-    if (!state.weekRange) return { ws: null, we: null };
-    if (state.weekRange === 'last2')  return { ws: Math.max(1, cw - 1), we: cw };
-    if (state.weekRange === 'last4')  return { ws: Math.max(1, cw - 3), we: cw };
-    if (state.weekRange === 'last8')  return { ws: Math.max(1, cw - 7), we: cw };
-    if (state.weekRange === 'last12') return { ws: Math.max(1, cw - 11), we: cw };
-    if (state.weekRange === 'custom') return { ws: state.weekStart, we: state.weekEnd };
+    const weeks = availableWeeks();
+    if (!state.weekRange || !weeks.length || !isMetricWeeklyCapable()) return { ws: null, we: null };
+    const lo = weeks[0], hi = weeks[weeks.length - 1];
+    if (state.weekRange === 'last2' || state.weekRange === 'last4') {
+      const count = state.weekRange === 'last2' ? 2 : 4;
+      const picked = weeks.slice(-count);
+      return { ws: picked[0], we: picked[picked.length - 1] };
+    }
+    if (state.weekRange === 'custom') {
+      const ws = Math.max(lo, Math.min(hi, Number(state.weekStart)));
+      const we = Math.max(lo, Math.min(hi, Number(state.weekEnd)));
+      return { ws: Math.min(ws,we), we: Math.max(ws,we) };
+    }
     return { ws: null, we: null };
   }
 
   function updateWeekNote(isWeekFiltered, weekCapable) {
     const el = document.getElementById('amWeekNote');
     if (!el) return;
-    const hasFilter = state.weekRange && state.weekRange !== '';
-    if (hasFilter && !weekCapable) {
-      el.style.display = 'flex';
-    } else {
-      el.style.display = 'none';
-    }
+    // The response is authoritative about whether filtering was applied. For a
+    // non-weekly metric, always explain why the disabled control is season-only.
+    if (!weekCapable) el.style.display = 'flex';
+    else el.style.display = 'none';
   }
 
   // ── Graph Metrics (scatter X vs Y, optional bubble = 3rd metric) ──────────
@@ -3727,6 +3725,7 @@ _AM_JS = r"""
         } else {
           state.prevData = {};
         }
+        state.responseWeekFiltered = !!d.is_week_filtered;
         updateWeekNote(d.is_week_filtered, weekCapable);
         updateVolHeader();
         populateTeamFilter();
@@ -3893,6 +3892,7 @@ _AM_JS = r"""
     state.sortBy = state.metric;
     state.minVol = defaultVol(state.metric);
     updateSortBtn(); updatePosButtons(); updateMetricTip(); updateVolCtrl(); updateVolHeader();
+    _amRefreshWeekControls();
     updateSortHeaders(); updateCompareBar(); updateFilterBar();
     syncURL(); fetchData();
   });
@@ -3945,6 +3945,7 @@ _AM_JS = r"""
     state.season = next.join(',');
     if (seasonSel && next.length) seasonSel.value = String(next[0]);
     syncMultiSeasonUI();
+    _amRefreshWeekControls(true);
     state.page = 0;
     syncURL();
     fetchData();
@@ -4020,9 +4021,7 @@ _AM_JS = r"""
   if (minGamesSel) {
     minGamesSel.addEventListener('change', () => { state.minVol = minGamesSel.value || ''; state.page = 0; syncURL(); fetchData(); });
   }
-  // Week-bar range selector: deferred via 'load' so app.js defines _wkBarBuild
-  // before we call it (the inline script runs before the <script src="app.js"> tag).
-  const amMaxWk     = cfg.currentWeek || 18;
+  // Week-range helpers are provided by static/week_range.js, loaded before this page script.
   const amWkBarHost = document.getElementById('amWkBarHost');
   function _amSyncQuickChips(key) {
     document.querySelectorAll('#amQuickRanges .am-qr').forEach(function(b) {
@@ -4030,47 +4029,53 @@ _AM_JS = r"""
     });
   }
   function _amBuildWkBar(selWs, selWe) {
-    if (typeof _wkBarBuild !== 'function' || !amWkBarHost) return;
-    amWkBarHost.innerHTML = _wkBarBuild('amWkBar', 1, amMaxWk, selWs, selWe);
+    if (!amWkBarHost) return;
+    const weeks = availableWeeks();
+    if (!weeks.length) { amWkBarHost.innerHTML = ''; return; }
+    const minW = weeks[0], maxW = weeks[weeks.length - 1];
+    amWkBarHost.innerHTML = _wkBarBuild('amWkBar', minW, maxW, selWs, selWe, weeks);
     _wkBarInit('amWkBar', function(ws, we) {
-      const isFull = (ws <= 1 && we >= amMaxWk);
-      state.weekRange = isFull ? '' : 'custom';
-      state.weekStart = isFull ? null : ws;
-      state.weekEnd   = isFull ? null : we;
-      state.minVol    = '';
-      if (minGamesSel) minGamesSel.value = '';
-      updateVolCtrl();
-      updateVolHeader();
-      // A drag is either back-to-season or a custom range; no quick chip matches
-      // custom, so all chips clear (Season re-lights when the drag spans all).
-      _amSyncQuickChips(isFull ? '' : 'custom');
-      state.page = 0; fetchData();
+      // A direct interaction is always an explicit week filter, even when the
+      // season currently contains only one populated week (minW === maxW).
+      // Only the Season quick button clears week_start/week_end.
+      state.weekRange = 'custom';
+      state.weekStart = ws; state.weekEnd = we;
+      state.minVol = ''; if (minGamesSel) minGamesSel.value = '';
+      updateVolCtrl(); _amSyncQuickChips('custom');
+      state.page = 0; syncURL(); fetchData();
     });
   }
-  if (amWkBarHost) {
-    window.addEventListener('load', function() { _amBuildWkBar(1, amMaxWk); });
+  function _amRefreshWeekControls(resetInvalid) {
+    const capable = isMetricWeeklyCapable(), weeks = availableWeeks();
+    const controls = document.getElementById('amWeekCtrl');
+    if (controls) controls.classList.toggle('am-week-disabled', !capable);
+    document.querySelectorAll('#amQuickRanges .am-qr').forEach(function(b){ b.disabled = !capable; });
+    if (!capable) { if (amWkBarHost) amWkBarHost.innerHTML = ''; updateWeekNote(false, false); return; }
+    const lo=weeks[0], hi=weeks[weeks.length-1];
+    if (!weeks.length) return;
+    if (resetInvalid && state.weekRange === 'custom' && (state.weekStart < lo || state.weekEnd > hi)) {
+      state.weekRange=''; state.weekStart=null; state.weekEnd=null;
+    }
+    const r=resolveWeekRange(); _amSyncQuickChips(state.weekRange || '');
+    _amBuildWkBar(r.ws == null ? lo : r.ws, r.we == null ? hi : r.we);
+    updateWeekNote(false, true);
   }
-  // Quick range chips: Season / Last 2 / Last 4 (rolling windows ending at the
-  // current week) -- the scouting workflow without dragging the bar each time.
+  const initialWs = Number(_initParams.get('week_start'));
+  const initialWe = Number(_initParams.get('week_end'));
+  if (_initParams.has('week_start') && _initParams.has('week_end') && Number.isFinite(initialWs) && Number.isFinite(initialWe)) {
+    state.weekRange='custom'; state.weekStart=Math.min(initialWs,initialWe); state.weekEnd=Math.max(initialWs,initialWe);
+  }
+  _amRefreshWeekControls(true);
   const quickWrap = document.getElementById('amQuickRanges');
-  if (quickWrap) {
-    quickWrap.addEventListener('click', function(e) {
-      const btn = e.target.closest('.am-qr');
-      if (!btn) return;
-      const key = btn.getAttribute('data-range') || '';
-      state.weekRange = key;
-      state.weekStart = null;
-      state.weekEnd   = null;
-      state.minVol    = '';
-      if (minGamesSel) minGamesSel.value = '';
-      updateVolCtrl();
-      updateVolHeader();
-      _amSyncQuickChips(key);
-      const r = resolveWeekRange();
-      _amBuildWkBar(r.ws || 1, r.we || amMaxWk);
-      state.page = 0; fetchData();
-    });
-  }
+  if (quickWrap) quickWrap.addEventListener('click', function(e) {
+    const btn=e.target.closest('.am-qr'); if(!btn || btn.disabled)return;
+    const key=btn.getAttribute('data-range')||'';
+    state.weekRange=key; state.weekStart=null; state.weekEnd=null; state.minVol='';
+    if(minGamesSel)minGamesSel.value=''; updateVolCtrl(); _amSyncQuickChips(key);
+    const weeks=availableWeeks(),r=resolveWeekRange();
+    _amBuildWkBar(r.ws == null ? weeks[0] : r.ws, r.we == null ? weeks[weeks.length-1] : r.we);
+    state.page=0; syncURL(); fetchData();
+  });
   // CSV export of the current filtered/sorted view (all pages, not just the
   // visible one). Columns: identity + primary metric + any added metrics.
   const exportBtn = document.getElementById('amExportBtn');
