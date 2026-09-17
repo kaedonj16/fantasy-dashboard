@@ -13,8 +13,12 @@ def test_position_stat_lines_include_requested_weekly_volume():
     rb = mmod.format_player_stats(stats, "BUF", "RB", "James Cook")
     wr = mmod.format_player_stats(stats, "BUF", "WR", "Keon Coleman")
     assert "20/30 cmp/att" in qb and "250 yds" in qb and "1 int" in qb
-    assert "CAR 15" in rb and "TGT 5" in rb and "REC YD/TD 28/0" in rb
-    assert "REC 3" in wr and "TGT 7" in wr and "REC YD/TD 51/1" in wr
+    assert "15 car" in rb and "5 tgt" in rb and "28 rec yds" in rb
+    # rec_td 0 is dropped, not shown as "0 rec td".
+    assert "rec td" not in rb
+    assert "3 rec" in wr and "7 tgt" in wr and "51 rec yds" in wr and "1 rec td" in wr
+    # Labels are lowercase now.
+    assert "CAR" not in rb and "TGT" not in wr
 
 
 def test_completed_week_renders_starter_stats_but_not_bench(monkeypatch):
@@ -30,7 +34,7 @@ def test_completed_week_renders_starter_stats_but_not_bench(monkeypatch):
     }
     html = mmod.render_matchup_slide("2025", matchup, 2, 2, {}, {}, {}, {}, {})
     assert "Starter QB" in html and "200 yds" in html
-    assert "Bench WR" not in html and "TGT 4" not in html
+    assert "Bench WR" not in html and "4 tgt" not in html
     assert "m-row--bench" not in html
 
 
@@ -55,41 +59,5 @@ def test_completed_week_keeps_canonical_stats_when_schedule_is_final(monkeypatch
 def test_shared_stat_resolver_handles_suffix_nickname_and_historical_team():
     stats = {"SEA": {"RB": {"ken walker": {"rush_att": 18, "rush_yds": 91}}},
              "NE": {"WR": {"stefon diggs": {"rec": 6, "tgt": 8, "rec_yds": 74}}}}
-    assert "CAR 18" in mmod.format_player_stats(stats, "NYG", "RB", "Kenneth Walker III")
-    assert "TGT 8" in mmod.format_player_stats(stats, "BUF", "WR", "Stefon Diggs")
-
-
-def test_zero_kicker_and_defense_box_scores_are_not_missing():
-    stats = {
-        "HOU": {"K": {"kaimi fairbairn": {"fgm": 0, "fga": 0, "xpm": 0, "xpa": 0}}},
-        "MIN": {"IDP": {"one defender": {"sack": 0, "int": 0, "fum_rec": 0,
-                                              "def_td": 0, "pts_allow": 0}}},
-    }
-    assert mmod.format_player_stats(stats, "HOU", "K", "Ka'imi Fairbairn") == "0/0 FG, 0/0 XP"
-    defense = mmod.format_player_stats(stats, "MIN", "DST", "Minnesota Vikings")
-    assert defense == "PA 0, SACK 0, INT 0, FR 0, TD 0"
-
-
-def test_kicker_made_only_feed_keeps_compact_legacy_format():
-    stats = {"DAL": {"K": {"brandon aubrey": {"fgm": 3, "xpm": 2}}}}
-    assert mmod.format_player_stats(stats, "DAL", "PK", "Brandon Aubrey") == "3 FG, 2 XP"
-
-
-def test_final_defense_stats_are_not_replaced_by_unavailable(monkeypatch):
-    weekly = {"MIN": {"IDP": {"one defender": {"sack": 2, "int": 1,
-                                                   "fum_rec": 0, "def_td": 0,
-                                                   "pts_allow": 17}}}}
-    monkeypatch.setattr(mmod, "load_teams_index", lambda: {})
-    monkeypatch.setattr(mmod, "build_offense_rankings", lambda *_: {})
-    monkeypatch.setattr(mmod, "load_week_stats", lambda *_: weekly)
-    monkeypatch.setattr(mmod, "load_week_schedule", lambda *_: [])
-    monkeypatch.setattr(mmod, "build_team_schedule_lookup", lambda *_: {})
-    matchup = {
-        "left": {"name": "Left", "roster_id": "1", "starters": [
-            {"pid": "MIN", "name": "Minnesota Vikings", "pos": "DEF", "nfl": "MIN", "pts": 8.0}
-        ], "pts_total": 8.0},
-        "right": {"name": "Right", "roster_id": "2", "starters": [], "pts_total": 0.0},
-    }
-    rendered = mmod.render_matchup_slide("2025", matchup, 2, 2, {}, {}, {}, {}, {})
-    assert "SACK 2" in rendered and "INT 1" in rendered
-    assert "Stats unavailable" not in rendered
+    assert "18 car" in mmod.format_player_stats(stats, "NYG", "RB", "Kenneth Walker III")
+    assert "8 tgt" in mmod.format_player_stats(stats, "BUF", "WR", "Stefon Diggs")

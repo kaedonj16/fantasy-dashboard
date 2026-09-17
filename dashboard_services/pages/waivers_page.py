@@ -77,21 +77,19 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 }
 .wv-value { font-size: 13px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
 
-/* Best-moves grid: Action | Player | Proj | Value with a labeled header row,
-   so the "why add" reason leads on the left and the two key numbers line up in
-   their own right-aligned columns instead of a flat wall of tiny stats. */
-.wv-bm-head, .wv-bm-row { display: grid; grid-template-columns: 158px minmax(0,1fr) auto; gap: 16px; }
+/* Best-moves grid: Player | Recommendation | Proj | Value. */
+.wv-bm-head, .wv-bm-row { display: grid; grid-template-columns: minmax(180px,.8fr) minmax(220px,1.2fr) auto; gap: 16px; }
 .wv-bm-head { padding: 9px 16px; border-bottom: 1px solid var(--border); background: var(--row); }
 .wv-bm-head span { font-size: 9px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; color: var(--text-subtle); }
 .wv-bm-row { align-items: start; padding: 13px 16px; cursor: pointer; transition: background .12s; }
 .wv-bm-row + .wv-bm-row { border-top: 1px solid var(--border); }
 .wv-bm-row:hover { background: var(--row); }
 .wv-bm-action { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; min-width: 0; }
-.wv-bm-chips { display: flex; flex-wrap: wrap; gap: 5px; }
-.wv-bm-claim { font-size: 10.5px; font-weight: 700; color: var(--text-subtle); line-height: 1.3; }
+.wv-bm-chips { display: flex; flex-wrap: wrap; gap: 5px; min-width: 0; }
+.wv-bm-claim { font-size: 10.5px; font-weight: 700; color: var(--text-subtle); line-height: 1.3; max-width: 100%; overflow-wrap: anywhere; }
 .wv-bm-claim.hi { color: var(--warning); }
 .wv-bm-main { min-width: 0; }
-.wv-bm-name { font-weight: 700; font-size: 14px; color: var(--text); line-height: 1.2; }
+.wv-bm-name { font-weight: 700; font-size: 14px; color: var(--text); line-height: 1.2; overflow-wrap: anywhere; }
 .wv-bm-sub { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
 /* Proj / Value grouped into one right-hand cell so the columns line up and can
    collapse together on small screens. */
@@ -101,10 +99,11 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-bm-num b { font-weight: 800; font-size: 16px; color: var(--text); font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
 .wv-bm-num.empty b { color: var(--text-subtle); font-weight: 700; }
 .wv-bm-num i { display: block; font-style: normal; font-size: 9px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: var(--text-subtle); margin-top: 3px; }
-.wv-ctx-links { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.wv-ctx-links { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; min-width: 0; }
+.wv-bm-links { grid-column: 1; margin-top: -8px; }
 .wv-ctx-link { font-size: 11px; font-weight: 600; color: var(--accent); text-decoration: none; padding: 3px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface); }
 .wv-ctx-link:hover { background: var(--accent-soft); }
-.wv-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.wv-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px 12px; flex-wrap: wrap; }
 .wv-faab-toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-muted); cursor: pointer; }
 .wv-faab-toggle input { accent-color: var(--accent); width: 14px; height: 14px; margin: 0; }
 @media (max-width: 700px) {
@@ -115,16 +114,21 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
     justify-content: flex-start; padding-top: 10px; border-top: 1px solid var(--border);
   }
 }
-@media (max-width: 560px) {
-  /* Best-moves grid: the Action pills can't share a narrow line with the player
-     and the numbers, so lift them to their own full-width row and keep Player +
-     the grouped numbers on the row below. The header (redundant with the
-     per-cell captions) is dropped. */
+@media (max-width: 720px) {
+  /* Compact card: identity first, fixed metric cluster upper-right, then
+     recommendation, claim guidance, and contextual actions. */
   .wv-bm-head { display: none; }
-  .wv-bm-row { grid-template-columns: minmax(0,1fr) auto; gap: 10px 12px; }
-  .wv-bm-action { grid-column: 1 / -1; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+  .wv-list-card { overflow: clip; }
+  .wv-bm-row { grid-template-columns: minmax(0,1fr) max-content; gap: 9px 12px; padding: 13px 12px; }
+  .wv-bm-main { grid-column: 1; grid-row: 1; }
+  .wv-bm-nums { grid-column: 2; grid-row: 1; align-self: start; }
+  .wv-bm-action { grid-column: 1 / -1; grid-row: 2; gap: 7px; }
+  .wv-bm-links { grid-column: 1 / -1; grid-row: 3; margin-top: 0; }
+  .wv-bm-chips { width: 100%; }
   .wv-bm-nums { gap: 14px; }
   .wv-bm-num, .wv-bm-h-nums span { min-width: 40px; }
+  .wv-ctx-links { margin-top: 2px; }
+  .wv-horizon { max-width: 100%; flex-wrap: wrap; }
 }
 /* Waiver signal chips use the site's canonical `.chip .chip--sm` + a .signal-*
    colour alias (all defined once in dashboard.css). Nothing chip-related is
@@ -891,7 +895,7 @@ function wvRenderWaivers() {{
   let players = wvWaiverData;
   if (wvCurrentPos !== 'ALL') players = players.filter(p => p.position === wvCurrentPos);
   if (!players.length) {{ window.brEmptyState('wvWaiverList', {{ icon: 'search', title: 'No waiver targets', message: 'Nothing to add at this position right now.', compact: true }}); return; }}
-  list.innerHTML = '<div class="wv-list-card"><div class="wv-bm-head"><span class="wv-bm-h-action">Action</span><span class="wv-bm-h-player">Player</span><span class="wv-bm-h-nums"><span>Proj</span><span>Value</span></span></div>' + players.slice(0, 20).map(p => {{
+  list.innerHTML = '<div class="wv-list-card"><div class="wv-bm-head"><span class="wv-bm-h-player">Player</span><span class="wv-bm-h-action">Recommendation</span><span class="wv-bm-h-nums"><span>Proj</span><span>Value</span></span></div>' + players.slice(0, 20).map(p => {{
     let usageChip = '';
     if (p.usage_delta != null && p.usage_delta >= 1) {{
       const statLbl = p.usage_stat === 'snap_pct' ? 'snap%' : (p.usage_stat === 'touches' ? 'touches' : 'targets');
@@ -975,13 +979,6 @@ function wvRenderWaivers() {{
     const sub = [p.position, p.team, p.pos_rank_label, p.age ? 'Age ' + parseFloat(p.age).toFixed(1) : '', p.rostered_pct != null ? Math.round(p.rostered_pct) + '% rostered' : '', p.adds_48h ? ('+' + p.adds_48h + ' adds') : ''].filter(Boolean).join(' · ');
     return `
     <div class="wv-bm-row" onclick="openPlayerModal('${{p.player_id}}', '${{p.name.replace(/'/g,"\\'")}}')">
-      <div class="wv-bm-action">
-        <div class="wv-bm-chips">
-          <span class="chip chip--sm ${{p.signal_class}}" title="Why add">${{p.signal}}</span>
-          ${{signalExtra}}
-        </div>
-        ${{claimLine}}
-      </div>
       <div class="wv-bm-main">
         <div class="wv-bm-name">${{p.name}}</div>
         <div class="wv-bm-sub">${{sub}}${{usageChip}}</div>
@@ -990,14 +987,21 @@ function wvRenderWaivers() {{
         ${{dropHint}}
         ${{urgencyHint}}
         ${{returnHint}}
-        <div class="wv-ctx-links" onclick="event.stopPropagation()">
-          <a class="wv-ctx-link" href="${{wvLeaguePath('/compare')}}?p1=${{encodeURIComponent(p.player_id)}}">Compare to roster</a>
-          <a class="wv-ctx-link" href="#" onclick="event.preventDefault();openPlayerModal('${{p.player_id}}', '${{p.name.replace(/'/g,"\\'")}}')">Open player</a>
+      </div>
+      <div class="wv-bm-action">
+        <div class="wv-bm-chips">
+          <span class="chip chip--sm ${{p.signal_class}}" title="Why add">${{p.signal}}</span>
+          ${{signalExtra}}
         </div>
+        ${{claimLine}}
       </div>
       <div class="wv-bm-nums">
         <div class="wv-bm-num${{p.ros_ppg == null ? ' empty' : ''}}"><b>${{p.ros_ppg != null ? p.ros_ppg : '–'}}</b><i>proj</i></div>
         <div class="wv-bm-num val${{p.value > 0 ? '' : ' empty'}}"><b>${{p.value > 0 ? Math.round(p.value) : '–'}}</b><i>value</i></div>
+      </div>
+      <div class="wv-ctx-links wv-bm-links" onclick="event.stopPropagation()">
+        <a class="wv-ctx-link" href="${{wvLeaguePath('/compare')}}?p1=${{encodeURIComponent(p.player_id)}}">Compare to roster</a>
+        <a class="wv-ctx-link" href="#" onclick="event.preventDefault();openPlayerModal('${{p.player_id}}', '${{p.name.replace(/'/g,"\\'")}}')">Open player</a>
       </div>
     </div>
   `;
