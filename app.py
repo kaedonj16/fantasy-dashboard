@@ -16807,9 +16807,14 @@ def api_weekly_week():
         scoring=_scoring_format_from_settings(ctx.get("scoring_settings")),
     )
     from dashboard_services.ai.weekly_recap import get_cached_gotw_selection
-    from dashboard_services.matchups import matchup_matches_gotw
+    from dashboard_services.matchups import gotw_identity_for_context, matchup_gotw_flags
     _api_gotw = get_cached_gotw_selection(platform, resolved_league_id, season, week)
-    if _api_gotw and not any(matchup_matches_gotw(m, _api_gotw) for m in matchups):
+    _api_gotw_key = gotw_identity_for_context(
+        _api_gotw, loaded=True, platform=platform, league_id=resolved_league_id,
+        season=season, week=week,
+    )
+    _api_gotw_flags = matchup_gotw_flags(matchups, _api_gotw_key)
+    if not any(_api_gotw_flags):
         _api_gotw = None
 
     # Attach H2H records for this week's matchups
@@ -16849,9 +16854,9 @@ def api_weekly_week():
             fpts_against=_fpts_against_api,
             viewer_roster_id=_api_vid,
             scoring_settings=ctx.get("raw_scoring_settings") or ctx.get("scoring_settings"),
-            is_gotw=matchup_matches_gotw(m, _api_gotw),
+            is_gotw=is_gotw,
         )
-        for m in matchups
+        for m, is_gotw in zip(matchups, _api_gotw_flags)
     ]
 
     slides_html = "".join(slides) if slides else "<div class='m-empty'>No matchups</div>"

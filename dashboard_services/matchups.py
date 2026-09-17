@@ -652,20 +652,82 @@ def build_matchup_preview(
     return out
 
 
-def matchup_matches_gotw(matchup: dict, selection: Optional[dict]) -> bool:
-    """Match persisted stable roster ids without depending on display order."""
-    if not selection:
-        return False
-    expected = {str(x) for x in (selection.get("roster_ids") or []) if str(x)}
-    actual = {
-        str((matchup.get("left") or {}).get("roster_id") or ""),
-        str((matchup.get("right") or {}).get("roster_id") or ""),
+def _identity_part(value: Any) -> Optional[str]:
+    """Normalize a provider id while rejecting absent/invalid id values."""
+    if value is None or isinstance(value, bool):
+        return None
+    value = str(value).strip()
+    if not value or value.lower() in {"none", "null", "nan", "undefined"}:
+        return None
+    return value
+
+
+def normalized_matchup_identity(matchup: Optional[dict]) -> Optional[str]:
+    """Return one canonical identity for a displayed matchup or GOTW record.
+
+    Provider matchup ids are preferred.  Recap selections carry ``roster_ids``
+    while rendered matchups carry ``left``/``right``; the order-independent
+    team-pair key is the common fallback for all supported providers.
+    """
+    if not isinstance(matchup, dict):
+        return None
+    matchup_id = _identity_part(matchup.get("matchup_id"))
+    if matchup_id is not None:
+        return f"matchup:{matchup_id}"
+
+    roster_ids = matchup.get("roster_ids")
+    if not isinstance(roster_ids, (list, tuple)):
+        roster_ids = [
+            (matchup.get("left") or {}).get("roster_id"),
+            (matchup.get("right") or {}).get("roster_id"),
+        ]
+    team_ids = [_identity_part(value) for value in roster_ids]
+    if len(team_ids) != 2 or any(value is None for value in team_ids):
+        return None
+    if team_ids[0] == team_ids[1]:
+        return None
+    return "teams:" + ":".join(sorted(team_ids))
+
+
+def gotw_identity_for_context(
+        selection: Optional[dict], *, loaded: bool, platform: str,
+        league_id: str, season: Any, week: int,
+) -> Optional[str]:
+    """Normalize a GOTW only after it is loaded and belongs to this view."""
+    if not loaded or not isinstance(selection, dict):
+        return None
+    expected = {
+        "platform": _identity_part(platform),
+        "league_id": _identity_part(league_id),
+        "season": _identity_part(season),
+        "target_week": _identity_part(week),
     }
-    if len(expected) != 2 or expected != actual:
-        return False
-    selected_mid = selection.get("matchup_id")
-    actual_mid = matchup.get("matchup_id")
-    return selected_mid is None or actual_mid is None or str(selected_mid) == str(actual_mid)
+    for field, value in expected.items():
+        actual = _identity_part(selection.get(field))
+        if value is None or actual is None or actual.lower() != value.lower():
+            return None
+    return normalized_matchup_identity(selection)
+
+
+def matchup_gotw_flags(matchups: List[dict], gotw_key: Optional[str]) -> List[bool]:
+    """Return row-specific flags, defensively allowing at most one badge."""
+    claimed = False
+    flags = []
+    for matchup in matchups:
+        matchup_key = normalized_matchup_identity(matchup)
+        is_game_of_week = bool(
+            not claimed and gotw_key and matchup_key and gotw_key == matchup_key
+        )
+        flags.append(is_game_of_week)
+        claimed = claimed or is_game_of_week
+    return flags
+
+
+def matchup_matches_gotw(matchup: dict, selection: Optional[dict]) -> bool:
+    """Compatibility helper for callers that already hold a scoped selection."""
+    gotw_key = normalized_matchup_identity(selection)
+    matchup_key = normalized_matchup_identity(matchup)
+    return bool(gotw_key and matchup_key and gotw_key == matchup_key)
 
 
 def render_matchup_carousel_weeks(
@@ -710,13 +772,7 @@ def render_matchup_carousel_weeks(
 
     week_context_html = ""
     if active_week is not None and not dashboard:
-        gotw_header = ""
-        if gotw_selection:
-            gotw_header = ("<span class='m-gotw-badge m-gotw-badge--full'>"
-                           "<i class='fa-solid fa-fire' aria-hidden='true'></i>"
-                           "<span class='m-gotw-long'>Game of the Week</span>"
-                           "<span class='m-gotw-short'>GOTW</span></span>")
-        week_context_html = f"<div class='m-week-context'><span>Week {int(active_week)}</span>{gotw_header}</div>"
+        week_context_html = f"<div class='m-week-context'><span>Week {int(active_week)}</span></div>"
 
     return f"""
       <div class="card matchup-carousel {central}{compact_cls}" data-section="matchups" style="{style} margin-bottom:30px;">
