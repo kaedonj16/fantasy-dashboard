@@ -688,6 +688,7 @@ def _ensure_minified_css() -> str:
         return "dashboard.css"
 
 
+_WEEK_RANGE_JS_V = _static_hash("week_range.js")
 _APP_JS_FILE = _ensure_minified_appjs()
 _APP_JS_V = _static_hash(_APP_JS_FILE)
 _PUBLIC_JS_FILE = _ensure_public_js()
@@ -1951,6 +1952,7 @@ BASE_HTML = """
     <!-- Deferred shell JS in <head> so the preload scanner finds it before the
          (often large) body HTML, instead of after footer. defer = parse-order,
          run after document parse, same as the old bottom-of-body tags. -->
+    <script src="/static/week_range.js?v={week_range_v}"></script>
     <script src="/static/{app_js_file}?v={app_js_v}" defer></script>
     <script src="/static/{paywall_js_file}?v={paywall_js_v}" defer></script>
     <script>
@@ -5603,6 +5605,7 @@ def render_page(
         sentry_js="" if _soft_nav else _SENTRY_JS_SNIPPET,
         plotly_loader="" if _soft_nav else _PLOTLY_LOADER,
         app_js_v=_page_js_v,
+        week_range_v=_WEEK_RANGE_JS_V,
         paywall_js_file=_PAYWALL_JS_FILE,
         paywall_js_v=_PAYWALL_JS_V,
         paywall_css_file=_PAYWALL_CSS_FILE,

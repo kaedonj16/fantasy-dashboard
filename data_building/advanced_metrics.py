@@ -2565,6 +2565,26 @@ def _multi_season_leaderboard(
     return combined[:limit] if limit else combined
 
 
+
+def get_available_weeks_by_season() -> Dict[str, List[int]]:
+    """Return populated NFL weeks by season across both weekly metric stores."""
+    try:
+        with get_conn() as conn:
+            rows = conn.execute(
+                "SELECT DISTINCT season, week FROM ("
+                " SELECT season, week FROM player_weekly_metrics"
+                " UNION SELECT season, week FROM player_weekly_advanced_metrics"
+                ") weeks WHERE season IS NOT NULL AND week BETWEEN 1 AND 18 "
+                "ORDER BY season DESC, week"
+            ).fetchall()
+        out: Dict[str, List[int]] = {}
+        for row in rows:
+            out.setdefault(str(int(row["season"])), []).append(int(row["week"]))
+        return out
+    except Exception:
+        logging.getLogger(__name__).debug("available weekly seasons query failed", exc_info=True)
+        return {}
+
 def get_available_seasons() -> List[int]:
     """Return distinct seasons that have real player data, newest first.
 
