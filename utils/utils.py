@@ -2205,28 +2205,41 @@ def overlay_idp_and_k_stats_from_sleeper(
         print("[week_stats][IDP/K] players_index not available; kicker overlay may be skipped.")
 
     # ----- Find the Sleeper stats file for this season/week -----
-    pattern = CACHE_DIR / f"sleeper_stats/sleeper_stats_s{season}_w{week}_*.json"
-    candidates = sorted(glob.glob(str(pattern)))
+    # The live in-season fetcher (data_building/external_data/sleeper_bulk_stats
+    # .fetch_week_stats) and the history backfill both write the *non-dated*
+    # name ``sleeper_stats_s{Y}_w{W}.json`` into cache/sleeper_stats/. A glob that
+    # only matched a dated ``..._w{W}_{date}.json`` variant found nothing, so the
+    # K/IDP/DEF overlay silently no-oped and every kicker and defense rendered as
+    # "Stats unavailable" on completed weeks. Match both shapes, and keep the old
+    # root-level fallback last for any legacy layout.
+    stats_dir = CACHE_DIR / "sleeper_stats"
+    candidates = list(glob.glob(str(stats_dir / f"sleeper_stats_s{season}_w{week}_*.json")))
+    non_dated = stats_dir / f"sleeper_stats_s{season}_w{week}.json"
+    if non_dated.exists():
+        candidates.append(str(non_dated))
     if not candidates:
-        fallback = CACHE_DIR / f"sleeper_stats_s{season}_w{week}.json"
-        if fallback.exists():
-            candidates = [str(fallback)]
+        legacy = CACHE_DIR / f"sleeper_stats_s{season}_w{week}.json"
+        if legacy.exists():
+            candidates = [str(legacy)]
         else:
-            print(f"[week_stats][IDP/K] No sleeper stats file matching {pattern} or {fallback}")
+            print(
+                f"[week_stats][IDP/K] No sleeper stats file matching "
+                f"{stats_dir}/sleeper_stats_s{season}_w{week}[_*].json"
+            )
             return
 
-    sleeper_stats_path = Path(candidates[-1])
+    # Prefer the freshest snapshot when several are present (a dated backfill
+    # alongside the live non-dated file for the same week).
+    sleeper_stats_path = Path(max(candidates, key=os.path.getmtime))
     print(f"[week_stats][IDP/K] Using Sleeper stats file: {sleeper_stats_path.name}")
 
-    try:
-        with sleeper_stats_path.open("r", encoding="utf-8") as f:
-            sleeper_stats = json.load(f)
-    except Exception as e:
-        print(f"[week_stats][IDP/K] Failed to load {sleeper_stats_path}: {e}")
-        return
-
+    # mtime-guarded shared read: this overlay also runs lazily at render time for
+    # legacy weekly snapshots that predate the fixed file lookup, so the multi-MB
+    # Sleeper file must not be re-parsed for every matchup slide. The cached dict
+    # is read-only here (only league_week_stats is mutated).
+    sleeper_stats = read_json_cached(str(sleeper_stats_path))
     if not isinstance(sleeper_stats, dict):
-        print("[week_stats][IDP/K] Sleeper stats JSON not a dict, skipping.")
+        print("[week_stats][IDP/K] Sleeper stats JSON missing or not a dict, skipping.")
         return
 
     valid_teams = set((teams_index or {}).keys())

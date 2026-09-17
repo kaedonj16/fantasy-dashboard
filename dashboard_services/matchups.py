@@ -30,6 +30,7 @@ from utils.utils import (
     canonical_teams_index,
     box_score_line_is_trusted,
     player_week_stat_entry,
+    overlay_idp_and_k_stats_from_sleeper,
 )
 from utils.matchup_schedule import lineup_from_roster, _starters_look_like_full_roster
 from utils.week_proj import week_proj_map_from_bundles as _week_proj_map_from_bundles
@@ -37,6 +38,45 @@ from utils.week_proj import week_proj_map_from_bundles as _week_proj_map_from_bu
 STATUS_NOT_STARTED = "not_started"
 STATUS_IN_PROGRESS = "in_progress"
 STATUS_FINAL = "final"
+
+logger = logging.getLogger(__name__)
+
+
+def _week_stats_for_slide(season, w) -> dict:
+    """Week stats for a matchup slide, with a lazy K/IDP/DEF overlay.
+
+    Completed weeks that were cached before the Sleeper stats-file lookup was
+    fixed hold only QB/RB/WR/TE lines, so every kicker and defense rendered as
+    "Stats unavailable" and skill players missing from Footballguys had no line
+    at all. Those on-disk snapshots are only rebuilt for the live week, so past
+    weeks would stay broken until a manual backfill. Overlay the K/IDP/DEF (and
+    any missing skill) lines from the week's Sleeper snapshot in memory when they
+    are absent -- the underlying index and Sleeper reads are mtime-cached, so
+    this stays cheap across the several slides on a page and is never written
+    back to disk.
+    """
+    week_stats = load_week_stats(season, w) or {}
+    if not week_stats:
+        return week_stats
+    has_k_or_idp = any(
+        isinstance(v, dict) and (v.get("K") or v.get("IDP"))
+        for v in week_stats.values()
+    )
+    if has_k_or_idp:
+        return week_stats
+    try:
+        overlay_idp_and_k_stats_from_sleeper(
+            league_week_stats=week_stats,
+            season=int(season),
+            week=int(w),
+            teams_index=load_teams_index() or {},
+        )
+    except Exception:
+        logger.info(
+            "[matchups] K/IDP/DEF overlay skipped for season=%s week=%s",
+            season, w, exc_info=True,
+        )
+    return week_stats
 
 # NFL regulation clock: 4 quarters of 15 minutes.
 _QUARTERS = 4
@@ -1308,6 +1348,13 @@ def render_matchup_slide(
     """
     proj = w > proj_week
     completed_week = not proj
+    # A week strictly before the current/last-final week (proj_week) is fully
+    # finalized: its box scores come from that week's own snapshot file
+    # (load_week_stats(season, w)), which is season+week specific and cannot be
+    # a "last year's Week N" leftover. The stale-leftover trust gate only needs
+    # to guard the live/most-recent week, so past weeks show their real lines
+    # for every position (K/DEF/IDP included) once the game has started.
+    past_week = w < proj_week
     compact = bool(compact)
     allow_live = _allow_live_game_indicators(season)
 
@@ -1322,7 +1369,7 @@ def render_matchup_slide(
         teams_index = load_teams_index()
         offense_ranks = build_offense_rankings(teams_index)
         _fpts_data = fpts_against or {}
-        week_stats = load_week_stats(season, w)
+        week_stats = _week_stats_for_slide(season, w)
         team_schedule_lookup = build_team_schedule_lookup(load_week_schedule(season, w))
 
     # Live game progress: lets in-progress starters project their finish (banked
@@ -1654,7 +1701,7 @@ def render_matchup_slide(
         elif game is not None:
             if not game_has_started(game):
                 stats = None
-            elif not box_score_line_is_trusted(game, raw_stat_entry):
+            elif not past_week and not box_score_line_is_trusted(game, raw_stat_entry):
                 # Tank01's cached schedule can lag "Final" for a game that has
                 # clearly already been played (game_has_started already treats
                 # calendar-past as started). Rather than blanket-hiding a
