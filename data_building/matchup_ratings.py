@@ -62,6 +62,61 @@ def out_path(season: int, scoring_settings: dict | None = None) -> str:
                         f"matchup_ratings_s{season}_{scoring_profile_hash(scoring_settings)}.json")
 
 
+# A deliberately bounded set.  These are application presets, not a scan of
+# every connected league, so HTTP requests never trigger an nflverse build.
+COMMON_SCORING_PROFILES = (
+    ("standard/non-PPR", {"rec": 0.0}),
+    ("half-PPR", {"rec": 0.5}),
+    ("full PPR", {"rec": 1.0}),
+    ("standard TEP", {"rec": 1.0, "bonus_rec_te": 0.5}),
+)
+
+
+def build_matchup_rating_profiles(season: int, *, builder=None, logger=print) -> list[dict]:
+    """Build the mandatory default plus deduplicated common profile snapshots.
+
+    Each optional profile is isolated so a scorer/source failure cannot block
+    subsequent profiles (or remove the already-built default availability
+    snapshot).  The returned/logged status intentionally contains no paths.
+    """
+    from utils.defensive_matchup_ratings import scoring_profile_hash
+    builder = builder or build_matchup_ratings
+    jobs = [("default PPR", None), *COMMON_SCORING_PROFILES]
+    seen = set()
+    statuses = []
+    for label, settings in jobs:
+        profile_hash = ("standard-ppr" if settings is None
+                        else scoring_profile_hash(settings))
+        dedupe_key = scoring_profile_hash(settings) if settings is not None else None
+        if dedupe_key is not None and dedupe_key in seen:
+            logger(f"[matchup_ratings] profile hash={profile_hash} label={label} "
+                   "teams=0 status=deduplicated")
+            statuses.append({"hash": profile_hash, "label": label, "team_count": 0,
+                             "status": "deduplicated"})
+            continue
+        if dedupe_key is not None:
+            seen.add(dedupe_key)
+        try:
+            result = builder(season, scoring_settings=settings)
+            team_count = len((result or {}).get("ratings") or {})
+            status = "built" if team_count else "unavailable"
+            entry = {"hash": profile_hash, "label": label,
+                     "team_count": team_count, "status": status}
+            if not team_count:
+                entry["failure_reason"] = "builder returned no ratings"
+            statuses.append(entry)
+            logger(f"[matchup_ratings] profile hash={profile_hash} label={label} "
+                   f"teams={team_count} status={status}" +
+                   (f" reason={entry['failure_reason']}" if "failure_reason" in entry else ""))
+        except Exception as exc:
+            entry = {"hash": profile_hash, "label": label, "team_count": 0,
+                     "status": "failed", "failure_reason": str(exc)}
+            statuses.append(entry)
+            logger(f"[matchup_ratings] profile hash={profile_hash} label={label} "
+                   f"teams=0 status=failed reason={exc}")
+    return statuses
+
+
 # Direct nflverse release assets. nfl_data_py (older versions) only reads the
 # legacy player_stats/player_stats_{year} asset, which nflverse stopped updating
 # after 2024, so recent seasons 404 there. nflverse moved weekly player stats to
