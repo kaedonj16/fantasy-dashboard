@@ -13,8 +13,12 @@ def test_position_stat_lines_include_requested_weekly_volume():
     rb = mmod.format_player_stats(stats, "BUF", "RB", "James Cook")
     wr = mmod.format_player_stats(stats, "BUF", "WR", "Keon Coleman")
     assert "20/30 cmp/att" in qb and "250 yds" in qb and "1 int" in qb
-    assert "CAR 15" in rb and "TGT 5" in rb and "REC YD/TD 28/0" in rb
-    assert "REC 3" in wr and "TGT 7" in wr and "REC YD/TD 51/1" in wr
+    assert "15 car" in rb and "5 tgt" in rb and "28 rec yds" in rb
+    # rec_td 0 is dropped, not shown as "0 rec td".
+    assert "rec td" not in rb
+    assert "3 rec" in wr and "7 tgt" in wr and "51 rec yds" in wr and "1 rec td" in wr
+    # Labels are lowercase now.
+    assert "CAR" not in rb and "TGT" not in wr
 
 
 def test_completed_week_renders_starter_stats_but_not_bench(monkeypatch):
@@ -30,7 +34,7 @@ def test_completed_week_renders_starter_stats_but_not_bench(monkeypatch):
     }
     html = mmod.render_matchup_slide("2025", matchup, 2, 2, {}, {}, {}, {}, {})
     assert "Starter QB" in html and "200 yds" in html
-    assert "Bench WR" not in html and "TGT 4" not in html
+    assert "Bench WR" not in html and "4 tgt" not in html
     assert "m-row--bench" not in html
 
 

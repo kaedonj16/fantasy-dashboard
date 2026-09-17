@@ -30,6 +30,8 @@ from utils.utils import (
     canonical_teams_index,
     box_score_line_is_trusted,
     player_week_stat_entry,
+    overlay_idp_and_k_stats_from_sleeper,
+    load_sleeper_week_stats,
 )
 from utils.matchup_schedule import lineup_from_roster, _starters_look_like_full_roster
 from utils.week_proj import week_proj_map_from_bundles as _week_proj_map_from_bundles
@@ -37,6 +39,45 @@ from utils.week_proj import week_proj_map_from_bundles as _week_proj_map_from_bu
 STATUS_NOT_STARTED = "not_started"
 STATUS_IN_PROGRESS = "in_progress"
 STATUS_FINAL = "final"
+
+logger = logging.getLogger(__name__)
+
+
+def _week_stats_for_slide(season, w) -> dict:
+    """Week stats for a matchup slide, with a lazy K/IDP/DEF overlay.
+
+    Completed weeks that were cached before the Sleeper stats-file lookup was
+    fixed hold only QB/RB/WR/TE lines, so every kicker and defense rendered as
+    "Stats unavailable" and skill players missing from Footballguys had no line
+    at all. Those on-disk snapshots are only rebuilt for the live week, so past
+    weeks would stay broken until a manual backfill. Overlay the K/IDP/DEF (and
+    any missing skill) lines from the week's Sleeper snapshot in memory when they
+    are absent -- the underlying index and Sleeper reads are mtime-cached, so
+    this stays cheap across the several slides on a page and is never written
+    back to disk.
+    """
+    week_stats = load_week_stats(season, w) or {}
+    if not week_stats:
+        return week_stats
+    has_k_or_idp = any(
+        isinstance(v, dict) and (v.get("K") or v.get("IDP"))
+        for v in week_stats.values()
+    )
+    if has_k_or_idp:
+        return week_stats
+    try:
+        overlay_idp_and_k_stats_from_sleeper(
+            league_week_stats=week_stats,
+            season=int(season),
+            week=int(w),
+            teams_index=load_teams_index() or {},
+        )
+    except Exception:
+        logger.info(
+            "[matchups] K/IDP/DEF overlay skipped for season=%s week=%s",
+            season, w, exc_info=True,
+        )
+    return week_stats
 
 # NFL regulation clock: 4 quarters of 15 minutes.
 _QUARTERS = 4
@@ -1054,13 +1095,17 @@ def format_player_stats(
         pa = first_key(combined, "pts_allow", "points_allowed", "def_pts_allow", "dst_pa", default=0)
         ya = first_key(combined, "yds_allow", "yards_allowed", "def_yds_allow", "dst_ya", default=0)
 
-        # PA is useful even when it is zero (a shutout); the other categories
-        # are compact enough to show together as the defense's weekly line.
+        # Points allowed is meaningful even at zero (a shutout), so it shows
+        # whenever the feed reports it. Everything else is a tally, so a 0 means
+        # it did not happen -- drop it rather than pad the line with empties.
         if any(k in combined for k in ("pts_allow", "points_allowed", "def_pts_allow", "dst_pa")):
-            parts.append(f"PA {int(pa)}")
-        parts.extend((f"SACK {int(sack)}", f"INT {int(ints)}", f"FR {int(fr)}", f"TD {int(td)}"))
-        if ff: parts.append(f"FF {int(ff)}")
-        if ya: parts.append(f"YA {int(ya)}")
+            parts.append(f"{int(pa)} pa")
+        if sack: parts.append(phrase(sack, "sack", "sacks"))
+        if ints: parts.append(phrase(ints, "int", "ints"))
+        if fr: parts.append(phrase(fr, "fr", "fr"))
+        if td: parts.append(phrase(td, "td", "tds"))
+        if ff: parts.append(phrase(ff, "ff", "ff"))
+        if ya: parts.append(f"{int(ya)} ya")
 
         return ", ".join(parts)
 
@@ -1076,6 +1121,12 @@ def format_player_stats(
     team_data = lookup_team_map(teams_stats, team) or {}
 
     parts: list[str] = []
+
+    def add(v, singular: str, plural: str | None = None) -> None:
+        """Append ``"N label"`` only when the value is truthy. A 0 means the
+        event did not happen, so it is left off the line entirely."""
+        if v:
+            parts.append(phrase(v, singular, plural if plural is not None else singular))
 
     # ---------- DEF/DST combined branch ----------
     if lookup_pos == "DEF":
@@ -1114,9 +1165,12 @@ def format_player_stats(
         rtd = player_stats.get("rush_td", 0)
 
         if att or cmp: parts.append(f"{int(cmp)}/{int(att)} cmp/att")
-        parts.extend((phrase(py, "yd", "yds"), phrase(ptd, "td", "tds"), phrase(ints, "int", "ints")))
-        if ra: parts.append(phrase(ra, "car", "car"))
-        if ra or ry or rtd: parts.append(f"{int(ry)} yds/{int(rtd)} TD rush")
+        add(py, "yd", "yds")
+        add(ptd, "td", "tds")
+        add(ints, "int", "ints")
+        add(ra, "car", "car")
+        add(ry, "rush yd", "rush yds")
+        add(rtd, "rush td", "rush tds")
 
     elif lookup_pos in {"RB", "WR", "TE"}:
         ra = player_stats.get("rush_att", 0)
@@ -1128,10 +1182,17 @@ def format_player_stats(
         rec_td = player_stats.get("rec_td", 0)
 
         if lookup_pos == "RB":
-            parts.extend((f"CAR {int(ra)}", f"RUSH YD/TD {int(ry)}/{int(rtd)}"))
-        parts.extend((f"REC {int(rec)}", f"TGT {int(tgt)}", f"REC YD/TD {int(rec_yds)}/{int(rec_td)}"))
-        if lookup_pos in {"WR", "TE"} and (ra or ry or rtd):
-            parts.append(f"RUSH YD/TD {int(ry)}/{int(rtd)}")
+            add(ra, "car", "car")
+            add(ry, "rush yd", "rush yds")
+            add(rtd, "rush td", "rush tds")
+        add(rec, "rec", "rec")
+        add(tgt, "tgt", "tgt")
+        add(rec_yds, "rec yd", "rec yds")
+        add(rec_td, "rec td", "rec tds")
+        if lookup_pos in {"WR", "TE"}:
+            add(ra, "car", "car")
+            add(ry, "rush yd", "rush yds")
+            add(rtd, "rush td", "rush tds")
 
     # ---------------- K / PK ----------------
     elif lookup_pos == "K":
@@ -1176,11 +1237,11 @@ def format_player_stats(
             if breakdown_bits:
                 parts[-1] += f" ({', '.join(breakdown_bits)})"
 
-        if sack: parts.append(phrase(sack, "sack", "sacks"))
-        if ff: parts.append(phrase(ff, "FF", "FF"))
-        if qb_hit: parts.append(phrase(qb_hit, "QB hit", "QB hits"))
-        if int_def: parts.append(phrase(int_def, "int", "ints"))
-        if pd: parts.append(phrase(pd, "PD", "PD"))
+        add(sack, "sack", "sacks")
+        add(ff, "ff", "ff")
+        add(qb_hit, "qb hit", "qb hits")
+        add(int_def, "int", "ints")
+        add(pd, "pd", "pd")
 
     # ---------------- fallback ----------------
     else:
@@ -1191,6 +1252,49 @@ def format_player_stats(
     if not parts:
         return None
     return ", ".join(parts)
+
+
+# Sleeper's per-player feed keys differ slightly from the Footballguys weekly
+# scrape that format_player_stats reads. Map them so a Sleeper line can reuse
+# the exact same formatter (lowercase labels, zero-suppression, and all).
+_SLEEPER_TO_WEEKSTATS = {
+    "pass_cmp": "pass_cmp", "pass_att": "pass_att", "pass_yd": "pass_yds",
+    "pass_td": "pass_td", "pass_int": "int",
+    "rush_att": "rush_att", "rush_yd": "rush_yds", "rush_td": "rush_td",
+    "rec": "rec", "rec_tgt": "tgt", "rec_yd": "rec_yds", "rec_td": "rec_td",
+    "fum_lost": "fum_lost",
+}
+
+
+def _sleeper_skill_stat_line(season, w, pid, pos, name, team_code) -> Optional[str]:
+    """A QB/RB/WR/TE box-score line built from the Sleeper per-player feed.
+
+    Footballguys can miss a player entirely (rookies, mid-week adds), leaving a
+    starter who clearly played with no line. Sleeper's feed -- the same source
+    the player-modal game log reads -- has everyone, keyed by the starter's own
+    pid, so this fills the gap. The Sleeper line is this week's real data (it is
+    what the points are scored from), never a stale leftover.
+    """
+    if pos not in ("QB", "RB", "WR", "TE") or not pid or not team_code:
+        return None
+    try:
+        week = load_sleeper_week_stats(season, w)
+    except Exception:
+        return None
+    row = week.get(str(pid))
+    if not isinstance(row, dict):
+        return None
+    mapped: Dict[str, Any] = {}
+    for src, dst in _SLEEPER_TO_WEEKSTATS.items():
+        v = row.get(src)
+        if isinstance(v, (int, float)) and not isinstance(v, bool):
+            mapped[dst] = v
+    if not mapped:
+        return None
+    # Reuse the real formatter by handing it a one-player, one-team snapshot in
+    # the shape it already understands.
+    synthetic = {team_code: {pos: {normalize_name(name): mapped}}}
+    return format_player_stats(synthetic, team_code, pos, name)
 
 
 def build_offense_rankings(teams_index: dict) -> dict:
@@ -1305,6 +1409,13 @@ def render_matchup_slide(
     """
     proj = w > proj_week
     completed_week = not proj
+    # A week strictly before the current/last-final week (proj_week) is fully
+    # finalized: its box scores come from that week's own snapshot file
+    # (load_week_stats(season, w)), which is season+week specific and cannot be
+    # a "last year's Week N" leftover. The stale-leftover trust gate only needs
+    # to guard the live/most-recent week, so past weeks show their real lines
+    # for every position (K/DEF/IDP included) once the game has started.
+    past_week = w < proj_week
     compact = bool(compact)
     allow_live = _allow_live_game_indicators(season)
 
@@ -1319,7 +1430,7 @@ def render_matchup_slide(
         teams_index = load_teams_index()
         offense_ranks = build_offense_rankings(teams_index)
         _fpts_data = fpts_against or {}
-        week_stats = load_week_stats(season, w)
+        week_stats = _week_stats_for_slide(season, w)
         team_schedule_lookup = build_team_schedule_lookup(load_week_schedule(season, w))
 
     # Live game progress: lets in-progress starters project their finish (banked
@@ -1649,8 +1760,34 @@ def render_matchup_slide(
         if is_bye:
             stats = None
         elif game is not None:
-            if not game_has_started(game) or not box_score_line_is_trusted(game, raw_stat_entry):
+            if not game_has_started(game):
                 stats = None
+            elif not past_week and not box_score_line_is_trusted(game, raw_stat_entry):
+                # Tank01's cached schedule can lag "Final" for a game that has
+                # clearly already been played (game_has_started already treats
+                # calendar-past as started). Rather than blanket-hiding a
+                # completed game's real stats until the code catches up, trust
+                # the line anyway when its implied fantasy points line up with
+                # Sleeper's authoritative live/final total -- a genuine match
+                # means this is this week's box score, not a stale leftover.
+                rescued = False
+                if (
+                    pos in ("QB", "RB", "WR", "TE")
+                    and isinstance(raw_stat_entry, dict)
+                    and scoring_settings and "rec" in scoring_settings
+                ):
+                    live_pts = p.get("pts")
+                    if isinstance(live_pts, (int, float)) and not isinstance(live_pts, bool):
+                        try:
+                            from utils.fantasy_scoring import week_stats_line_points
+                            implied = week_stats_line_points(raw_stat_entry, scoring_settings, pos)
+                        except Exception:
+                            implied = None
+                        if implied is not None:
+                            tol = max(4.0, 0.4 * max(abs(implied), abs(float(live_pts))))
+                            rescued = abs(implied - float(live_pts)) <= tol
+                if not rescued:
+                    stats = None
         elif is_not_started:
             stats = None
 
@@ -1680,6 +1817,19 @@ def render_matchup_slide(
                     tol = max(4.0, 0.4 * max(abs(implied), abs(float(live_pts))))
                     if abs(implied - float(live_pts)) > tol:
                         stats = None
+
+        # Gap fill: a skill starter whose game has started but who has no line
+        # (Footballguys missed them, or a stale leftover was just dropped) still
+        # gets a box score from the Sleeper per-player feed, keyed by their pid.
+        if stats is None and not is_bye and pid and nfl and pos in ("QB", "RB", "WR", "TE"):
+            _played = (
+                game_has_started(game) if game is not None
+                else status in (STATUS_FINAL, STATUS_IN_PROGRESS)
+            )
+            if _played:
+                stats = _sleeper_skill_stat_line(
+                    season, w, pid, pos, name, str(nfl).upper(),
+                )
 
         meta_content = html.escape(str(nfl or "").strip())
 
