@@ -2499,6 +2499,10 @@ def normalize_name(name: str) -> str:
 
     # remove periods from initials (K.C. -> KC, K. C. -> K C)
     s = re.sub(r'\.', '', s)
+    # Provider feeds disagree on apostrophes and hyphens (Ka'imi/Kaimi,
+    # Amon-Ra/Amon Ra). Normalize punctuation before identity comparison.
+    s = re.sub(r"['’`]", "", s)
+    s = re.sub(r"[-‐‑‒–—]", " ", s)
     
     # collapse whitespace
     s = re.sub(r"\s+", " ", s).strip()

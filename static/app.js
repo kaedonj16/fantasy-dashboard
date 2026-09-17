@@ -3103,14 +3103,17 @@ function showLoginGate(target, opts) {
   function updateSheetTime() {
     var t = document.getElementById('brSheetRefreshTime');
     if (!t) return;
-    var ts = cacheTs();
-    t.textContent = ts ? 'Updated ' + fmtAge(ts) : 'Update time unknown';
+    var ts = normalizeTimestamp(cacheTs());
+    // Keep the original compact refresh-row presentation when freshness is
+    // unknown. The underlying timestamp remains unknown (0); an empty helper
+    // label avoids widening/restyling the button with status copy.
+    t.textContent = ts ? 'Updated ' + fmtAge(ts) : '';
     t.classList.toggle('cf-stale', !!ts && (Date.now() - ts > STALE_MS));
   }
   function updateChip() {
     var chip = document.getElementById('cache-freshness');
     if (!chip) return;
-    var t = cacheTs();
+    var t = normalizeTimestamp(cacheTs());
     var el = chip.querySelector('.fp-pill-time');
     if (el) el.textContent = t ? fmtAge(t) : 'Unknown';
     chip.classList.toggle('cf-stale', !!t && (Date.now() - t > STALE_MS));

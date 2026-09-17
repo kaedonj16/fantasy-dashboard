@@ -1036,8 +1036,6 @@ def parse_game_datetime(game_time_str: str) -> datetime:
     return dt
 
 
-
-
 def has_any_stats(stats: Dict[str, Any]) -> bool:
     """
     Returns True if at least one numeric stat is non-zero.
