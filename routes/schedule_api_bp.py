@@ -40,6 +40,10 @@ def _matchup_rank_table(*a, **k):
     from app import _matchup_rank_table as _fn
     return _fn(*a, **k)
 
+def _matchup_ratings_metadata(*a, **k):
+    from app import _matchup_ratings_metadata as _fn
+    return _fn(*a, **k)
+
 def _norm_sched_team(*a, **k):
     from app import _norm_sched_team as _fn
     return _fn(*a, **k)
@@ -91,15 +95,20 @@ def api_schedule():
         weeks = list(range(ws, we + 1))
         league_id = (request.args.get("league_id") or "").strip()
         platform = (request.args.get("platform") or "sleeper").strip()
-        scoring = {}
+        scoring = None
         if league_id:
             try:
                 scoring = (get_league_ctx_from_cache(platform, league_id, season).get("raw_scoring_settings") or {})
             except Exception:
                 logger.debug("schedule scoring settings unavailable", exc_info=True)
         if not pids:
-            return jsonify({"weeks": weeks, "players": []})
+            return jsonify({"weeks": weeks, "players": [], "diagnostics": {
+                "selected_season": season,
+                **_matchup_ratings_metadata(season, scoring),
+                "defenses_ranked": 0,
+            }})
         players = _compute_schedule_grid(season, pids, weeks, scoring)
+        rating_metadata = _matchup_ratings_metadata(season, scoring)
         diagnostic_info = {}
         defenses_ranked = 0
         if players:
@@ -113,6 +122,7 @@ def api_schedule():
             "weights": diagnostic_info.get("weights", {}),
             "baseline_season": diagnostic_info.get("baseline_season"),
             "scoring_profile": diagnostic_info.get("scoring_profile"),
+            **rating_metadata,
             "cache_status": "memory-or-rebuilt",
             "defenses_ranked": defenses_ranked,
         }})
@@ -183,7 +193,7 @@ def api_schedule_rankings():
         # Get roster pids (+ owning team name) for the on-roster badge
         roster_pids: set = set()
         owner_by_pid: dict = {}
-        _sched_scoring: dict = {}
+        _sched_scoring: dict | None = None
         if league_id:
             try:
                 ctx = get_league_ctx_from_cache(platform, league_id, season)
@@ -205,6 +215,7 @@ def api_schedule_rankings():
         rank_map, total_teams, rating_info, _is_z = _matchup_rank_table(
             season, position, _sched_scoring,
         )
+        rating_metadata = _matchup_ratings_metadata(season, _sched_scoring)
 
         # Build value lookup once - used for depth-chart cap and final sort
         value_by_pid: dict = {}
@@ -285,6 +296,7 @@ def api_schedule_rankings():
 
             cells = []
             matchup_values = []
+            adjusted_multipliers = []
             valid_wks = 0
             for w in weeks:
                 game = schedules.get(w, {}).get(team)
@@ -295,6 +307,7 @@ def api_schedule_rankings():
                 rank     = rank_map.get(opp)
                 rinfo    = rating_info.get(opp, {})
                 fpts_val = rinfo.get("fpts")
+                rank_value = rinfo.get("rank_value")
                 multiplier = rinfo.get("multiplier")
                 txt, bg  = _sched_rank_color(rank, total_teams) if rank else ("#94a3b8", "transparent")
                 actual   = player_pts_actual.get(str(pid), {}).get(w)
@@ -317,10 +330,14 @@ def api_schedule_rankings():
                 })
                 if rank:
                     valid_wks += 1
+                if rank_value is not None:
+                    matchup_values.append(float(rank_value))
                 if multiplier is not None:
-                    matchup_values.append(float(multiplier))
+                    adjusted_multipliers.append(float(multiplier))
 
-            schedule_multiplier = (sum(matchup_values) / len(matchup_values)) if matchup_values else None
+            schedule_value = (sum(matchup_values) / len(matchup_values)) if matchup_values else None
+            schedule_multiplier = (sum(adjusted_multipliers) / len(adjusted_multipliers)
+                                   if adjusted_multipliers else None)
 
             results.append({
                 "pid":        str(pid),
@@ -335,7 +352,7 @@ def api_schedule_rankings():
                 "avg_rank":   None,
                 "ease_score": None,
                 "valid_weeks": valid_wks,
-                "avg_matchup_value": schedule_multiplier,
+                "avg_matchup_value": schedule_value,
                 "adjusted_avg_percent": round((schedule_multiplier - 1) * 100, 1) if schedule_multiplier is not None else None,
             })
 
@@ -380,6 +397,7 @@ def api_schedule_rankings():
                 "weights": next(iter(rating_info.values()), {}).get("weights", {}),
                 "baseline_season": next(iter(rating_info.values()), {}).get("baseline_season"),
                 "scoring_profile": next(iter(rating_info.values()), {}).get("scoring_profile"),
+                **rating_metadata,
                 "defenses_ranked": total_teams,
                 "cache_status": "memory-or-rebuilt",
             }),
