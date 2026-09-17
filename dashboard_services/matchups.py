@@ -1104,13 +1104,17 @@ def format_player_stats(
         pa = first_key(combined, "pts_allow", "points_allowed", "def_pts_allow", "dst_pa", default=0)
         ya = first_key(combined, "yds_allow", "yards_allowed", "def_yds_allow", "dst_ya", default=0)
 
-        # PA is useful even when it is zero (a shutout); the other categories
-        # are compact enough to show together as the defense's weekly line.
+        # Points allowed is meaningful even at zero (a shutout), so it shows
+        # whenever the feed reports it. Everything else is a tally, so a 0 means
+        # it did not happen -- drop it rather than pad the line with empties.
         if any(k in combined for k in ("pts_allow", "points_allowed", "def_pts_allow", "dst_pa")):
-            parts.append(f"PA {int(pa)}")
-        parts.extend((f"SACK {int(sack)}", f"INT {int(ints)}", f"FR {int(fr)}", f"TD {int(td)}"))
-        if ff: parts.append(f"FF {int(ff)}")
-        if ya: parts.append(f"YA {int(ya)}")
+            parts.append(f"{int(pa)} pa")
+        if sack: parts.append(phrase(sack, "sack", "sacks"))
+        if ints: parts.append(phrase(ints, "int", "ints"))
+        if fr: parts.append(phrase(fr, "fr", "fr"))
+        if td: parts.append(phrase(td, "td", "tds"))
+        if ff: parts.append(phrase(ff, "ff", "ff"))
+        if ya: parts.append(f"{int(ya)} ya")
 
         return ", ".join(parts)
 
@@ -1126,6 +1130,12 @@ def format_player_stats(
     team_data = lookup_team_map(teams_stats, team) or {}
 
     parts: list[str] = []
+
+    def add(v, singular: str, plural: str | None = None) -> None:
+        """Append ``"N label"`` only when the value is truthy. A 0 means the
+        event did not happen, so it is left off the line entirely."""
+        if v:
+            parts.append(phrase(v, singular, plural if plural is not None else singular))
 
     # ---------- DEF/DST combined branch ----------
     if lookup_pos == "DEF":
@@ -1161,9 +1171,12 @@ def format_player_stats(
         rtd = player_stats.get("rush_td", 0)
 
         if att or cmp: parts.append(f"{int(cmp)}/{int(att)} cmp/att")
-        parts.extend((phrase(py, "yd", "yds"), phrase(ptd, "td", "tds"), phrase(ints, "int", "ints")))
-        if ra: parts.append(phrase(ra, "car", "car"))
-        if ra or ry or rtd: parts.append(f"{int(ry)} yds/{int(rtd)} TD rush")
+        add(py, "yd", "yds")
+        add(ptd, "td", "tds")
+        add(ints, "int", "ints")
+        add(ra, "car", "car")
+        add(ry, "rush yd", "rush yds")
+        add(rtd, "rush td", "rush tds")
 
     elif lookup_pos in {"RB", "WR", "TE"}:
         ra = player_stats.get("rush_att", 0)
@@ -1175,10 +1188,17 @@ def format_player_stats(
         rec_td = player_stats.get("rec_td", 0)
 
         if lookup_pos == "RB":
-            parts.extend((f"CAR {int(ra)}", f"RUSH YD/TD {int(ry)}/{int(rtd)}"))
-        parts.extend((f"REC {int(rec)}", f"TGT {int(tgt)}", f"REC YD/TD {int(rec_yds)}/{int(rec_td)}"))
-        if lookup_pos in {"WR", "TE"} and (ra or ry or rtd):
-            parts.append(f"RUSH YD/TD {int(ry)}/{int(rtd)}")
+            add(ra, "car", "car")
+            add(ry, "rush yd", "rush yds")
+            add(rtd, "rush td", "rush tds")
+        add(rec, "rec", "rec")
+        add(tgt, "tgt", "tgt")
+        add(rec_yds, "rec yd", "rec yds")
+        add(rec_td, "rec td", "rec tds")
+        if lookup_pos in {"WR", "TE"}:
+            add(ra, "car", "car")
+            add(ry, "rush yd", "rush yds")
+            add(rtd, "rush td", "rush tds")
 
     # ---------------- K / PK ----------------
     elif lookup_pos == "K":
@@ -1189,14 +1209,14 @@ def format_player_stats(
         fg_long = first_key(player_stats, "fg_long", "fg_longest", "fg_lng", "lng", default=0)
 
         if fg_a:
-            parts.append(f"{int(fg_m)}/{int(fg_a)} FG")
+            parts.append(f"{int(fg_m)}/{int(fg_a)} fg")
         elif fg_m:
-            parts.append(phrase(fg_m, "FG", "FG"))
+            parts.append(phrase(fg_m, "fg", "fg"))
 
         if xp_a:
-            parts.append(f"{int(xp_m)}/{int(xp_a)} XP")
+            parts.append(f"{int(xp_m)}/{int(xp_a)} xp")
         elif xp_m:
-            parts.append(phrase(xp_m, "XP", "XP"))
+            parts.append(phrase(xp_m, "xp", "xp"))
 
         if fg_long: parts.append(f"long {int(fg_long)}")
 
@@ -1219,11 +1239,11 @@ def format_player_stats(
             if breakdown_bits:
                 parts[-1] += f" ({', '.join(breakdown_bits)})"
 
-        if sack: parts.append(phrase(sack, "sack", "sacks"))
-        if ff: parts.append(phrase(ff, "FF", "FF"))
-        if qb_hit: parts.append(phrase(qb_hit, "QB hit", "QB hits"))
-        if int_def: parts.append(phrase(int_def, "int", "ints"))
-        if pd: parts.append(phrase(pd, "PD", "PD"))
+        add(sack, "sack", "sacks")
+        add(ff, "ff", "ff")
+        add(qb_hit, "qb hit", "qb hits")
+        add(int_def, "int", "ints")
+        add(pd, "pd", "pd")
 
     # ---------------- fallback ----------------
     else:

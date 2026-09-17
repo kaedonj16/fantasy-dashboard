@@ -227,7 +227,9 @@ def test_matchup_shows_box_score_once_game_is_live(monkeypatch):
     assert "233 yds" in html
     assert "1 td" in html
     assert "11 car" in html
-    assert "68 yds" in html
+    assert "68 rush yds" in html
+    # int 0 / rush td 0 are dropped, not shown as "0 int".
+    assert "0 int" not in html
     assert "m-cell-stats" in html
 
 
@@ -508,8 +510,8 @@ def test_matchup_shows_def_box_score_instead_of_unavailable(monkeypatch):
         teams={},
         team_game_lookup={"SF": finished},
     )
-    assert "PA 17" in html
-    assert "SACK 3" in html
+    assert "17 pa" in html
+    assert "3 sacks" in html
     assert "Stats unavailable" not in html
     assert "m-cell-stats--unavailable" not in html
 
@@ -611,8 +613,8 @@ def test_matchup_overlays_missing_k_and_def_for_completed_week(monkeypatch):
         team_game_lookup={"BAL": finished_bal, "KC": finished_kc},
     )
     assert "Stats unavailable" not in html
-    assert "3/3 FG" in html
-    assert "SACK 3" in html
+    assert "3/3 fg" in html
+    assert "3 sacks" in html
 
 
 def test_week_stats_builder_writes_empty_before_kickoff(monkeypatch, tmp_path):
