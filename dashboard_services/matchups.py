@@ -31,6 +31,7 @@ from utils.utils import (
     box_score_line_is_trusted,
     player_week_stat_entry,
     overlay_idp_and_k_stats_from_sleeper,
+    load_sleeper_week_stats,
 )
 from utils.matchup_schedule import lineup_from_roster, _starters_look_like_full_roster
 from utils.week_proj import week_proj_map_from_bundles as _week_proj_map_from_bundles
@@ -1256,6 +1257,49 @@ def format_player_stats(
     return ", ".join(parts)
 
 
+# Sleeper's per-player feed keys differ slightly from the Footballguys weekly
+# scrape that format_player_stats reads. Map them so a Sleeper line can reuse
+# the exact same formatter (lowercase labels, zero-suppression, and all).
+_SLEEPER_TO_WEEKSTATS = {
+    "pass_cmp": "pass_cmp", "pass_att": "pass_att", "pass_yd": "pass_yds",
+    "pass_td": "pass_td", "pass_int": "int",
+    "rush_att": "rush_att", "rush_yd": "rush_yds", "rush_td": "rush_td",
+    "rec": "rec", "rec_tgt": "tgt", "rec_yd": "rec_yds", "rec_td": "rec_td",
+    "fum_lost": "fum_lost",
+}
+
+
+def _sleeper_skill_stat_line(season, w, pid, pos, name, team_code) -> Optional[str]:
+    """A QB/RB/WR/TE box-score line built from the Sleeper per-player feed.
+
+    Footballguys can miss a player entirely (rookies, mid-week adds), leaving a
+    starter who clearly played with no line. Sleeper's feed -- the same source
+    the player-modal game log reads -- has everyone, keyed by the starter's own
+    pid, so this fills the gap. The Sleeper line is this week's real data (it is
+    what the points are scored from), never a stale leftover.
+    """
+    if pos not in ("QB", "RB", "WR", "TE") or not pid or not team_code:
+        return None
+    try:
+        week = load_sleeper_week_stats(season, w)
+    except Exception:
+        return None
+    row = week.get(str(pid))
+    if not isinstance(row, dict):
+        return None
+    mapped: Dict[str, Any] = {}
+    for src, dst in _SLEEPER_TO_WEEKSTATS.items():
+        v = row.get(src)
+        if isinstance(v, (int, float)) and not isinstance(v, bool):
+            mapped[dst] = v
+    if not mapped:
+        return None
+    # Reuse the real formatter by handing it a one-player, one-team snapshot in
+    # the shape it already understands.
+    synthetic = {team_code: {pos: {normalize_name(name): mapped}}}
+    return format_player_stats(synthetic, team_code, pos, name)
+
+
 def build_offense_rankings(teams_index: dict) -> dict:
     """
     Returns a dictionary ranking all teams by offensive metrics:
@@ -1776,6 +1820,19 @@ def render_matchup_slide(
                     tol = max(4.0, 0.4 * max(abs(implied), abs(float(live_pts))))
                     if abs(implied - float(live_pts)) > tol:
                         stats = None
+
+        # Gap fill: a skill starter whose game has started but who has no line
+        # (Footballguys missed them, or a stale leftover was just dropped) still
+        # gets a box score from the Sleeper per-player feed, keyed by their pid.
+        if stats is None and not is_bye and pid and nfl and pos in ("QB", "RB", "WR", "TE"):
+            _played = (
+                game_has_started(game) if game is not None
+                else status in (STATUS_FINAL, STATUS_IN_PROGRESS)
+            )
+            if _played:
+                stats = _sleeper_skill_stat_line(
+                    season, w, pid, pos, name, str(nfl).upper(),
+                )
 
         meta_content = html.escape(str(nfl or "").strip())
 

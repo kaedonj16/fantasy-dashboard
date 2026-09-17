@@ -617,6 +617,48 @@ def test_matchup_overlays_missing_k_and_def_for_completed_week(monkeypatch):
     assert "3 sacks" in html
 
 
+def test_matchup_fills_skill_gap_from_sleeper_feed(monkeypatch):
+    """A skill starter missing from the Footballguys scrape still gets a box
+    score from the Sleeper per-player feed, keyed by their pid -- the same
+    source the player-modal game log reads."""
+    mmod = _matchups()
+    finished = {
+        "home": "NYG", "away": "WSH",
+        "gameDate": "20260909", "gameTime": "8:20p",
+        "gameStatus": "Final", "gameStatusCode": "2",
+        "gameTime_epoch": "1788999600.0", "gameID": "20260909_WSH@NYG",
+    }
+    # Footballguys scrape has nothing for WAS -> the old path showed nothing.
+    monkeypatch.setattr(mmod, "load_teams_index", lambda: {})
+    monkeypatch.setattr(mmod, "build_offense_rankings", lambda *_a, **_k: {})
+    monkeypatch.setattr(mmod, "load_week_stats", lambda *_a, **_k: {})
+    monkeypatch.setattr(mmod, "load_week_schedule", lambda *_a, **_k: [])
+    monkeypatch.setattr(mmod, "build_team_schedule_lookup", lambda *_a, **_k: {})
+    monkeypatch.setattr(mmod, "_allow_live_game_indicators", lambda *_a, **_k: True)
+    monkeypatch.setattr(mmod, "get_nfl_scores_for_date", lambda *_a, **_k: None)
+    # Sleeper feed, keyed by Sleeper pid, has the real line (note Sleeper keys).
+    monkeypatch.setattr(
+        mmod, "load_sleeper_week_stats",
+        lambda *_a, **_k: {"11566": {
+            "pass_yd": 233, "pass_td": 1, "pass_int": 0,
+            "rush_att": 11, "rush_yd": 68, "rush_td": 0,
+        }},
+    )
+
+    html = mmod.render_matchup_slide(
+        "2026", _daniels_matchup(), w=1, proj_week=1,
+        status_by_pid={"11566": mmod.STATUS_FINAL, "4984": mmod.STATUS_NOT_STARTED},
+        projections={},
+        players={},
+        teams={},
+        team_game_lookup={"WSH": finished, "WAS": finished},
+    )
+    assert "233 yds" in html
+    assert "68 rush yds" in html
+    assert "0 int" not in html
+    assert "Stats unavailable" not in html
+
+
 def test_week_stats_builder_writes_empty_before_kickoff(monkeypatch, tmp_path):
     import utils.utils as umod
 
