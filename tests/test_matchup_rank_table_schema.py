@@ -10,7 +10,11 @@ from __future__ import annotations
 
 import pytest
 
+# app imports pandas (first) then openai/stripe/etc. at module load, so gate on
+# the heavy deps before importing it -- the lint CI job runs the unit suite with
+# a minimal dependency set and must skip this module cleanly, not error on it.
 pytest.importorskip("flask")
+pytest.importorskip("pandas")
 pytest.importorskip("openai")
 
 import app as appmod
