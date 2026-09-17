@@ -119,7 +119,7 @@ def build_optimal_body(ctx):
            f'<div class="opt-tab-group">{tab("Weekly", "period", "weekly", period == "weekly")}'
            f'{tab("Season", "period", "season", period == "season")}</div>'
            + (f'<label class="sr-only" for="optWeek">Completed week</label><select id="optWeek" class="opt-week-select" '
-              f'onchange="location.href=\'{base}&view={view}&period=weekly&week=\'+this.value">{options}</select>' if period == "weekly" else "")
+              f'data-base-url="{base}&view={view}&period=weekly">{options}</select>' if period == "weekly" else "")
            + '</nav><p class="opt-method">Optimal lineup uses final results and your league’s roster rules.</p>')
 
     weeks_to_fetch = [selected] if period == "weekly" else completed
@@ -150,7 +150,16 @@ def build_optimal_body(ctx):
 
     def incomplete(d):
         reason = d.get("reason") or "one or more player scores or positions are unavailable"
-        return f'<div class="card opt-incomplete"><strong>Incomplete scoring data</strong><span>{_esc(reason)}. Efficiency and missed points are withheld.</span></div>'
+        details = []
+        for field, label in (("missing_scores", "missing score"),
+                             ("unknown_positions", "missing position")):
+            for pid in d.get(field) or []:
+                name = (players.get(str(pid)) or {}).get("name") or str(pid)
+                details.append(f"{name}: {label}")
+        detail_html = (f'<ul>{"".join(f"<li>{_esc(item)}</li>" for item in details)}</ul>'
+                       if details else "")
+        return (f'<div class="card opt-incomplete"><strong>Incomplete scoring data</strong>'
+                f'<span>{_esc(reason)}. Efficiency and missed points are withheld.</span>{detail_html}</div>')
 
     def weekly_panel(d, title=""):
         if not d.get("complete"):

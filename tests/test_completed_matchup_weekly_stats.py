@@ -50,3 +50,41 @@ def test_completed_week_keeps_canonical_stats_when_schedule_is_final(monkeypatch
     }
     rendered = mmod.render_matchup_slide("2025", matchup, 1, 1, {}, {}, {}, {}, {})
     assert "200 yds" in rendered
+
+
+def test_shared_stat_resolver_handles_suffix_nickname_and_historical_team():
+    stats = {"SEA": {"RB": {"ken walker": {"rush_att": 18, "rush_yds": 91}}},
+             "NE": {"WR": {"stefon diggs": {"rec": 6, "tgt": 8, "rec_yds": 74}}}}
+    assert "CAR 18" in mmod.format_player_stats(stats, "NYG", "RB", "Kenneth Walker III")
+    assert "TGT 8" in mmod.format_player_stats(stats, "BUF", "WR", "Stefon Diggs")
+
+
+def test_zero_kicker_and_defense_box_scores_are_not_missing():
+    stats = {
+        "HOU": {"K": {"kaimi fairbairn": {"fgm": 0, "fga": 0, "xpm": 0, "xpa": 0}}},
+        "MIN": {"IDP": {"one defender": {"sack": 0, "int": 0, "fum_rec": 0,
+                                              "def_td": 0, "pts_allow": 0}}},
+    }
+    assert mmod.format_player_stats(stats, "HOU", "K", "Ka'imi Fairbairn") == "0/0 FG, 0/0 XP"
+    defense = mmod.format_player_stats(stats, "MIN", "DST", "Minnesota Vikings")
+    assert defense == "PA 0, SACK 0, INT 0, FR 0, TD 0"
+
+
+def test_final_defense_stats_are_not_replaced_by_unavailable(monkeypatch):
+    weekly = {"MIN": {"IDP": {"one defender": {"sack": 2, "int": 1,
+                                                   "fum_rec": 0, "def_td": 0,
+                                                   "pts_allow": 17}}}}
+    monkeypatch.setattr(mmod, "load_teams_index", lambda: {})
+    monkeypatch.setattr(mmod, "build_offense_rankings", lambda *_: {})
+    monkeypatch.setattr(mmod, "load_week_stats", lambda *_: weekly)
+    monkeypatch.setattr(mmod, "load_week_schedule", lambda *_: [])
+    monkeypatch.setattr(mmod, "build_team_schedule_lookup", lambda *_: {})
+    matchup = {
+        "left": {"name": "Left", "roster_id": "1", "starters": [
+            {"pid": "MIN", "name": "Minnesota Vikings", "pos": "DEF", "nfl": "MIN", "pts": 8.0}
+        ], "pts_total": 8.0},
+        "right": {"name": "Right", "roster_id": "2", "starters": [], "pts_total": 0.0},
+    }
+    rendered = mmod.render_matchup_slide("2025", matchup, 2, 2, {}, {}, {}, {}, {})
+    assert "SACK 2" in rendered and "INT 1" in rendered
+    assert "Stats unavailable" not in rendered

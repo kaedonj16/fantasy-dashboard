@@ -13561,6 +13561,21 @@ a.signed-home-league:hover {
 .m-gotw-badge i { font-size: 10px; }
 .m-gotw-short { display: none; }
 .m-cell-stats--unavailable { opacity: .65; font-style: italic; }
+.m-combo .p,
+.m-combo .p-text,
+.m-combo .p-name-line { min-width: 0; }
+.m-combo .p-game-line {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1px 4px;
+    max-width: 100%;
+    height: auto;
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+    line-height: 1.25;
+}
+.m-game-kickoff, .m-game-opponent, .m-game-rank { white-space: nowrap; }
 
 @media (max-width: 600px) {
     .m-gotw-long { display: none; }
@@ -28572,6 +28587,8 @@ button:disabled {
     white-space: nowrap;
 }
 
+.recap-team-mobile-score { display: none; }
+
 .recap-team--left .recap-top-performer {
     margin-left: 38px;
 }
@@ -40427,3 +40444,84 @@ a, button, [role="button"], [role="tab"], summary, label,
 .wk-tick.wk-tick-unavailable { opacity:.3; text-decoration:line-through; }
 .am-week-disabled .wk-bar { opacity:.45; pointer-events:none; }
 #amQuickRanges .am-qr:disabled { opacity:.45; cursor:not-allowed; }
+
+
+/* Phone recap: preserve the desktop scorecard, but turn each result into two
+   natural-height team rows. Kept here with the recap component rather than in
+   global card/layout rules so the dock and other pages are unaffected. */
+@media (max-width: 720px) {
+    .rc-awards { grid-template-columns: 1fr !important; }
+    .rc-award { min-height: 0; }
+    .rc-award [style*="white-space:nowrap"] {
+        white-space: normal !important;
+        overflow: visible !important;
+        text-overflow: clip !important;
+        overflow-wrap: anywhere;
+    }
+
+    .recap-matchup-row { min-height: 0; overflow: visible; padding: 14px 12px 13px; }
+    .recap-matchup-main { display: grid; grid-template-columns: 1fr; gap: 8px; }
+    .recap-matchup-performers { display: contents; }
+    .recap-team, .recap-team-identity, .recap-team-copy { min-width: 0; overflow: visible; }
+    .recap-team-identity,
+    .recap-team--right .recap-team-identity {
+        display: grid;
+        grid-template-columns: 36px minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 8px;
+        width: 100%;
+    }
+    .recap-team--right { grid-row: 3; text-align: left; }
+    .recap-team--right .recap-team-identity > img,
+    .recap-team--right .recap-team-identity > svg { grid-column: 1; grid-row: 1; }
+    .recap-team--right .recap-team-copy { grid-column: 2; grid-row: 1; text-align: left; }
+    .recap-team-mobile-score {
+        display: block;
+        grid-column: 3;
+        grid-row: 1;
+        align-self: center;
+        font-size: 19px;
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+    }
+    .recap-team-name, .recap-team--right .recap-team-name {
+        display: block;
+        overflow: visible;
+        white-space: normal;
+        text-overflow: clip;
+        overflow-wrap: anywhere;
+        -webkit-line-clamp: unset;
+    }
+    .recap-matchup-score { grid-row: 5; padding: 0; }
+    .recap-matchup-scoreline { display: none; }
+    .recap-matchup-margin { margin-top: 0; font-size: 12px; }
+    .recap-matchup-performers .recap-top-performer:first-child {
+        grid-row: 2;
+        margin: 0;
+        padding: 0 0 8px 44px;
+        border-bottom: 1px solid var(--border);
+        text-align: left;
+    }
+    .recap-matchup-performers .recap-top-performer:last-child {
+        grid-row: 4;
+        margin: 0;
+        padding-left: 44px;
+        text-align: left;
+    }
+    .recap-top-performer-players {
+        display: block;
+        overflow: visible;
+        overflow-wrap: anywhere;
+        -webkit-line-clamp: unset;
+    }
+}
+
+@media (max-width: 720px) {
+    .br-gotw { overflow: visible; }
+    .br-gotw-matchup { display: grid; grid-template-columns: 1fr; gap: 10px; }
+    .br-gotw-side, .br-gotw-r { flex-direction: row; width: 100%; }
+    .br-gotw-r .br-gotw-side-txt { text-align: left; }
+    .br-gotw-proj { margin-left: auto; text-align: right; white-space: nowrap; }
+    .br-gotw-vs { display: none; }
+    .br-gotw-name { display: block; overflow: visible; word-break: normal; overflow-wrap: anywhere; -webkit-line-clamp: unset; }
+}

@@ -997,16 +997,6 @@ def parse_game_datetime(game_time_str: str) -> datetime:
 
 
 
-def has_any_stats(stats: Dict[str, Any]) -> bool:
-    """
-    Returns True if at least one numeric stat is non-zero.
-    """
-    for v in stats.values():
-        if isinstance(v, (int, float)) and v != 0:
-            return True
-    return False
-
-
 def format_player_stats(
         teams_stats: Dict[str, Dict[str, Dict[str, Dict[str, Any]]]],
         team: str,
@@ -1084,31 +1074,32 @@ def format_player_stats(
 
     teams_stats = teams_stats or {}
     team_data = lookup_team_map(teams_stats, team) or {}
-    if not team_data:
-        return None
 
     parts: list[str] = []
 
     # ---------- DEF/DST combined branch ----------
     if lookup_pos == "DEF":
+        if not team_data:
+            return None
         if isinstance(team_data.get("IDP"), dict) and team_data.get("IDP"):
             combined = sum_numeric_fields(team_data["IDP"])
         else:
             return None
 
-        if not has_any_stats(combined):
+        # A finalized defense can legitimately record zero in every category.
+        # Presence of provider fields, not truthiness of their values, makes the
+        # box score usable.
+        if not combined:
             return None
 
         return fmt_dst_line(combined)
 
     # ---------- normal per-player lookup ----------
-    pos_data = team_data.get(lookup_pos)
-    if not pos_data:
-        return None
+    # Use the same canonical, historical-team-aware resolver used by the raw
+    # entry/trust path; formatting must not have a weaker identity lookup.
+    player_stats = player_week_stat_entry(teams_stats, team, lookup_pos, player)
 
-    player_stats = pos_data.get(normalize_name(player))
-
-    if not player_stats or not has_any_stats(player_stats):
+    if not player_stats:
         return None
 
     # ---------------- QB / RB / WR / TE ----------------
@@ -1150,15 +1141,19 @@ def format_player_stats(
         xp_a = first_key(player_stats, "xpa", "xp_att", "pat_att", "extra_points_attempted", default=0)
         fg_long = first_key(player_stats, "fg_long", "fg_longest", "fg_lng", "lng", default=0)
 
-        if fg_a:
+        has_fg = any(k in player_stats for k in (
+            "fgm", "fg_made", "field_goals_made",
+            "fga", "fg_att", "field_goals_attempted",
+        ))
+        has_xp = any(k in player_stats for k in (
+            "xpm", "xp_made", "pat_made", "extra_points_made",
+            "xpa", "xp_att", "pat_att", "extra_points_attempted",
+        ))
+        if fg_a or has_fg:
             parts.append(f"{int(fg_m)}/{int(fg_a)} FG")
-        elif fg_m:
-            parts.append(phrase(fg_m, "FG", "FG"))
 
-        if xp_a:
+        if xp_a or has_xp:
             parts.append(f"{int(xp_m)}/{int(xp_a)} XP")
-        elif xp_m:
-            parts.append(phrase(xp_m, "XP", "XP"))
 
         if fg_long: parts.append(f"long {int(fg_long)}")
 
@@ -1497,8 +1492,12 @@ def render_matchup_slide(
                 opp_rank = off_ranks.get("total_off_rank")
                 if opp_rank is not None:
                     suffix = f" (#{opp_rank})"
-            prefix = ("@ " + opp + suffix) if not is_home else ("vs " + opp + suffix)
-            return " ".join(x for x in [dow, display_time, prefix] if x).strip()
+            opponent = ("@ " + opp) if not is_home else ("vs " + opp)
+            # Separate semantic pieces so narrow matchup columns can wrap at
+            # useful boundaries instead of clipping one long metadata string.
+            return (f"<span class='m-game-kickoff'>{html.escape(' '.join(x for x in [dow, display_time] if x))}</span> "
+                    f"<span class='m-game-opponent'>{html.escape(opponent)}</span> "
+                    f"<span class='m-game-rank'>{html.escape(suffix.strip())}</span>").strip()
 
         # For live/final, pull from scores API once per date
         game_date_std = game_date  # already YYYYMMDD
@@ -1622,8 +1621,7 @@ def render_matchup_slide(
         stats = None
         if nfl:
             team_code = str(nfl).upper()
-            # normalized name (special-case Ken Walker)
-            lookup_name = "ken walker" if name == "Kenneth Walker" else name
+            lookup_name = name
             if game:
                 game_line = format_team_game_line(team_code, game, pos, side)
 
@@ -1696,7 +1694,7 @@ def render_matchup_slide(
 
         stats_inline_l = f"<span class='meta m-cell-stats'>{stats}</span>" if stats else ""
         stats_inline_r = f"<span class='meta m-cell-stats' style='text-align:right;'>{stats}</span>" if stats else ""
-        if status == STATUS_FINAL and raw_stat_entry is None and not is_bye:
+        if status == STATUS_FINAL and not stats and raw_stat_entry is None and not is_bye:
             unavailable = "Stats unavailable"
             stats_inline_l = f"<span class='meta m-cell-stats m-cell-stats--unavailable'>{unavailable}</span>"
             stats_inline_r = f"<span class='meta m-cell-stats m-cell-stats--unavailable' style='text-align:right;'>{unavailable}</span>"
