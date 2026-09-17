@@ -2178,6 +2178,38 @@ def box_score_line_is_trusted(
 # from dashboard_services.utils import load_idp_index, load_players_index
 # from dashboard_services.paths import CACHE_DIR
 
+def sleeper_week_stats_path(season: int, week: int) -> Optional[str]:
+    """Path to the Sleeper per-player stats file for one NFL week, or None.
+
+    Both the live in-season fetcher and the history backfill write the
+    non-dated ``sleeper_stats_s{Y}_w{W}.json`` into cache/sleeper_stats/; some
+    backfills also leave a dated ``..._w{W}_{date}.json``. Prefer the freshest.
+    """
+    stats_dir = CACHE_DIR / "sleeper_stats"
+    candidates = list(glob.glob(str(stats_dir / f"sleeper_stats_s{int(season)}_w{int(week)}_*.json")))
+    non_dated = stats_dir / f"sleeper_stats_s{int(season)}_w{int(week)}.json"
+    if non_dated.exists():
+        candidates.append(str(non_dated))
+    if not candidates:
+        legacy = CACHE_DIR / f"sleeper_stats_s{int(season)}_w{int(week)}.json"
+        return str(legacy) if legacy.exists() else None
+    return max(candidates, key=os.path.getmtime)
+
+
+def load_sleeper_week_stats(season: int, week: int) -> Dict[str, Any]:
+    """Per-player-id Sleeper stat lines for one NFL week (cached, read-only).
+
+    This is the same cache family the player-modal game log reads, so it has a
+    line for every player who played -- unlike the Footballguys team scrape,
+    which can miss rookies and mid-week adds. Returns ``{}`` when absent.
+    """
+    path = sleeper_week_stats_path(season, week)
+    if not path:
+        return {}
+    data = read_json_cached(path)
+    return data if isinstance(data, dict) else {}
+
+
 def overlay_idp_and_k_stats_from_sleeper(
         league_week_stats: Dict[str, Dict[str, Dict[str, Dict[str, float]]]],
         season: int,
@@ -2205,39 +2237,18 @@ def overlay_idp_and_k_stats_from_sleeper(
         print("[week_stats][IDP/K] players_index not available; kicker overlay may be skipped.")
 
     # ----- Find the Sleeper stats file for this season/week -----
-    # The live in-season fetcher (data_building/external_data/sleeper_bulk_stats
-    # .fetch_week_stats) and the history backfill both write the *non-dated*
-    # name ``sleeper_stats_s{Y}_w{W}.json`` into cache/sleeper_stats/. A glob that
-    # only matched a dated ``..._w{W}_{date}.json`` variant found nothing, so the
-    # K/IDP/DEF overlay silently no-oped and every kicker and defense rendered as
-    # "Stats unavailable" on completed weeks. Match both shapes, and keep the old
-    # root-level fallback last for any legacy layout.
-    stats_dir = CACHE_DIR / "sleeper_stats"
-    candidates = list(glob.glob(str(stats_dir / f"sleeper_stats_s{season}_w{week}_*.json")))
-    non_dated = stats_dir / f"sleeper_stats_s{season}_w{week}.json"
-    if non_dated.exists():
-        candidates.append(str(non_dated))
-    if not candidates:
-        legacy = CACHE_DIR / f"sleeper_stats_s{season}_w{week}.json"
-        if legacy.exists():
-            candidates = [str(legacy)]
-        else:
-            print(
-                f"[week_stats][IDP/K] No sleeper stats file matching "
-                f"{stats_dir}/sleeper_stats_s{season}_w{week}[_*].json"
-            )
-            return
+    # The overlay runs at build time and lazily at render time for legacy weekly
+    # snapshots, so use the shared, mtime-cached loader (it matches both the
+    # non-dated live file and any dated backfill).
+    sleeper_stats_path = sleeper_week_stats_path(season, week)
+    if not sleeper_stats_path:
+        print(
+            f"[week_stats][IDP/K] No sleeper stats file for season={season} week={week}"
+        )
+        return
+    print(f"[week_stats][IDP/K] Using Sleeper stats file: {os.path.basename(sleeper_stats_path)}")
 
-    # Prefer the freshest snapshot when several are present (a dated backfill
-    # alongside the live non-dated file for the same week).
-    sleeper_stats_path = Path(max(candidates, key=os.path.getmtime))
-    print(f"[week_stats][IDP/K] Using Sleeper stats file: {sleeper_stats_path.name}")
-
-    # mtime-guarded shared read: this overlay also runs lazily at render time for
-    # legacy weekly snapshots that predate the fixed file lookup, so the multi-MB
-    # Sleeper file must not be re-parsed for every matchup slide. The cached dict
-    # is read-only here (only league_week_stats is mutated).
-    sleeper_stats = read_json_cached(str(sleeper_stats_path))
+    sleeper_stats = read_json_cached(sleeper_stats_path)
     if not isinstance(sleeper_stats, dict):
         print("[week_stats][IDP/K] Sleeper stats JSON missing or not a dict, skipping.")
         return

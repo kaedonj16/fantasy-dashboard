@@ -15738,16 +15738,35 @@ def _matchup_rank_table(season: int, position: str, scoring_settings=None):
     adjusted = _load_matchup_ratings(season, scoring_settings)
     rows = {team: positions.get(position) for team, positions in adjusted.items()
             if positions.get(position)}
-    values = {team: row.get("adjusted_multiplier") for team, row in rows.items()}
+
+    # The ratings file schema is opponent-adjusted where higher == easier for the
+    # position. The current pipeline stores a z-score / 0-100 ``ease`` per team;
+    # older files stored an ``adjusted_multiplier``. Rank by whichever this file
+    # carries (all rows share one schema) so rank 1 stays "easiest" either way --
+    # reading only ``adjusted_multiplier`` left every rank empty on the new files,
+    # which is why the player-modal game log lost its schedule-rank chips.
+    def _ease_value(row):
+        for k in ("adjusted_multiplier", "ease", "z"):
+            v = row.get(k)
+            if isinstance(v, (int, float)) and not isinstance(v, bool):
+                return float(v)
+        return None
+
+    values = {team: _ease_value(row) for team, row in rows.items()}
     ranks, total = rank_values(values)
     info = {}
     for team, value in values.items():
         row = dict(rows[team])
-        row.update({"multiplier": value, "adjusted_percent": (float(value) - 1) * 100,
-                    "fpts": row.get("raw_allowed_per_game"), "source": "opponent-adjusted",
-                    "weights": {"previous": row.get("prior_season_weight", 0),
-                                "current": row.get("current_season_weight", 1)},
-                    "selected_season": int(season)})
+        _mult = row.get("adjusted_multiplier")
+        info_extra = {"multiplier": value, "source": "opponent-adjusted",
+                      "fpts": row.get("raw_allowed_per_game", row.get("fpts")),
+                      "weights": {"previous": row.get("prior_season_weight", 0),
+                                  "current": row.get("current_season_weight", 1)},
+                      "selected_season": int(season)}
+        # Only the multiplier schema has a meaningful "percent above expected".
+        if isinstance(_mult, (int, float)) and not isinstance(_mult, bool):
+            info_extra["adjusted_percent"] = (float(_mult) - 1) * 100
+        row.update(info_extra)
         info[team] = row
     return ranks, total, info, True
 

@@ -13575,6 +13575,11 @@ a.signed-home-league:hover {
     text-overflow: clip;
     line-height: 1.25;
 }
+/* The game line is a flex row here, so text-align can't right-align its spans.
+   On the right side they used to fall to flex-start and float toward the middle
+   of the row while the name and box score hugged the right edge. Align the flex
+   items (and their wrapped rows) to the right so the whole cell reads as one. */
+.m-combo .p-text--right .p-game-line { justify-content: flex-end; }
 .m-game-kickoff, .m-game-opponent, .m-game-rank { white-space: nowrap; }
 
 @media (max-width: 600px) {
