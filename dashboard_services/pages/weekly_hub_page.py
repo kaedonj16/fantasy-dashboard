@@ -15,7 +15,8 @@ def build_weekly_hub_body(ctx: dict) -> str:
     import json
     import pandas as pd
     from dashboard_services.matchups import (
-        matchup_matches_gotw,
+        gotw_identity_for_context,
+        matchup_gotw_flags,
         render_matchup_carousel_weeks,
         render_matchup_slide,
     )
@@ -96,9 +97,13 @@ def build_weekly_hub_body(ctx: dict) -> str:
     _gotw_selection = get_cached_gotw_selection(
         platform, ctx.get("resolved_league_id") or league_id, season, default_week,
     )
-    if _gotw_selection and not any(
-        matchup_matches_gotw(m, _gotw_selection) for m in default_matchups
-    ):
+    _gotw_key = gotw_identity_for_context(
+        _gotw_selection, loaded=True, platform=platform,
+        league_id=ctx.get("resolved_league_id") or league_id,
+        season=season, week=default_week,
+    )
+    _gotw_flags = matchup_gotw_flags(default_matchups, _gotw_key)
+    if not any(_gotw_flags):
         _gotw_selection = None
 
     # Pre-compute head-to-head records for each current-week matchup
@@ -147,9 +152,9 @@ def build_weekly_hub_body(ctx: dict) -> str:
             fpts_against=_fpts_against_weekly,
             viewer_roster_id=_hub_vid,
             scoring_settings=ctx.get("raw_scoring_settings") or ctx.get("scoring_settings"),
-            is_gotw=matchup_matches_gotw(m, _gotw_selection),
+            is_gotw=is_gotw,
         )
-        for m in default_matchups
+        for m, is_gotw in zip(default_matchups, _gotw_flags)
     ]
     slides_html = "".join(slides) if slides else "<div class='m-empty'>No matchups</div>"
     slides_by_week = {default_week: slides_html}
@@ -351,6 +356,13 @@ def build_weekly_hub_body(ctx: dict) -> str:
   var sideContainer = document.querySelector('.week-side-panels');
 
   function showLoading() {{
+    // Invalidate the old week's marker before the replacement request starts.
+    // The rest of the old card may remain visible beneath the loading overlay.
+    if (matchupsContainer) {{
+      matchupsContainer.querySelectorAll('.m-gotw-badge').forEach(function(badge) {{
+        badge.remove();
+      }});
+    }}
     if (loadingOverlay) loadingOverlay.classList.remove('hidden');
     sel.disabled = true;
   }}
