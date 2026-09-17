@@ -1652,8 +1652,34 @@ def render_matchup_slide(
         if is_bye:
             stats = None
         elif game is not None:
-            if not game_has_started(game) or not box_score_line_is_trusted(game, raw_stat_entry):
+            if not game_has_started(game):
                 stats = None
+            elif not box_score_line_is_trusted(game, raw_stat_entry):
+                # Tank01's cached schedule can lag "Final" for a game that has
+                # clearly already been played (game_has_started already treats
+                # calendar-past as started). Rather than blanket-hiding a
+                # completed game's real stats until the code catches up, trust
+                # the line anyway when its implied fantasy points line up with
+                # Sleeper's authoritative live/final total -- a genuine match
+                # means this is this week's box score, not a stale leftover.
+                rescued = False
+                if (
+                    pos in ("QB", "RB", "WR", "TE")
+                    and isinstance(raw_stat_entry, dict)
+                    and scoring_settings and "rec" in scoring_settings
+                ):
+                    live_pts = p.get("pts")
+                    if isinstance(live_pts, (int, float)) and not isinstance(live_pts, bool):
+                        try:
+                            from utils.fantasy_scoring import week_stats_line_points
+                            implied = week_stats_line_points(raw_stat_entry, scoring_settings, pos)
+                        except Exception:
+                            implied = None
+                        if implied is not None:
+                            tol = max(4.0, 0.4 * max(abs(implied), abs(float(live_pts))))
+                            rescued = abs(implied - float(live_pts)) <= tol
+                if not rescued:
+                    stats = None
         elif is_not_started:
             stats = None
 
@@ -1697,7 +1723,7 @@ def render_matchup_slide(
 
         stats_inline_l = f"<span class='meta m-cell-stats'>{stats}</span>" if stats else ""
         stats_inline_r = f"<span class='meta m-cell-stats' style='text-align:right;'>{stats}</span>" if stats else ""
-        if status == STATUS_FINAL and raw_stat_entry is None and not is_bye:
+        if status == STATUS_FINAL and not stats and raw_stat_entry is None and not is_bye:
             unavailable = "Stats unavailable"
             stats_inline_l = f"<span class='meta m-cell-stats m-cell-stats--unavailable'>{unavailable}</span>"
             stats_inline_r = f"<span class='meta m-cell-stats m-cell-stats--unavailable' style='text-align:right;'>{unavailable}</span>"

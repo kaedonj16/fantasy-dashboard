@@ -265,6 +265,45 @@ def test_matchup_hides_footballguys_leftovers_when_tank_code_still_zero(monkeypa
     assert "Stats unavailable" in html
 
 
+def test_matchup_rescues_completed_line_when_points_match_despite_lagging_code(monkeypatch):
+    """A truly completed game (calendar-past) whose Tank01 schedule cache still
+    reports code 0 must not hide a real, current-week line -- only genuine
+    leftovers (implied points far from Sleeper's live/final total) get hidden."""
+    mmod = _matchups()
+    finished = {
+        "home": "NYG",
+        "away": "WSH",
+        "gameDate": "20260909",
+        "gameTime": "8:20p",
+        "gameStatus": "Scheduled",
+        "gameStatusCode": "0",
+        "gameTime_epoch": "1788999600.0",
+        "gameID": "20260909_WSH@NYG",
+    }
+    monkeypatch.setattr(mmod, "load_teams_index", lambda: {})
+    monkeypatch.setattr(mmod, "build_offense_rankings", lambda *_a, **_k: {})
+    monkeypatch.setattr(mmod, "load_week_stats", lambda *_a, **_k: DANIELS_STATS)
+    monkeypatch.setattr(mmod, "load_week_schedule", lambda *_a, **_k: [])
+    monkeypatch.setattr(mmod, "build_team_schedule_lookup", lambda *_a, **_k: {})
+    monkeypatch.setattr(mmod, "_allow_live_game_indicators", lambda *_a, **_k: True)
+    monkeypatch.setattr(mmod, "get_nfl_scores_for_date", lambda *_a, **_k: None)
+
+    html = mmod.render_matchup_slide(
+        "2026", _daniels_matchup_pts(20.1), w=1, proj_week=1,
+        # Herbert has no stats fixture at all -- leave him not_started so his
+        # (unrelated, legitimate) "Stats unavailable" doesn't muddy this test.
+        status_by_pid={"11566": mmod.STATUS_FINAL, "4984": mmod.STATUS_NOT_STARTED},
+        projections={},
+        players={},
+        teams={},
+        team_game_lookup={"WSH": finished, "WAS": finished},
+        scoring_settings=_PPR_SCORING,
+    )
+    assert "233 yds" in html
+    assert "m-cell-stats" in html
+    assert "m-cell-stats--unavailable" not in html
+
+
 def test_matchup_shows_tank_overlaid_box_score_when_code_still_zero(monkeypatch):
     """Tank-backed lines (_src) are trusted even if schedule code lags at 0."""
     mmod = _matchups()
@@ -406,6 +445,73 @@ def test_matchup_trusts_tank_line_even_when_points_lag(monkeypatch):
     )
     assert "233 yds" in html
     assert "m-cell-stats" in html
+
+
+def _def_matchup():
+    return {
+        "left": {
+            "name": "JiggyJay30", "roster_id": "1", "record": "0-0",
+            "username": "a", "avatar": "", "pts_total": 0.0,
+            "starters": [{
+                "pid": "4984", "name": "Justin Herbert", "pos": "QB",
+                "nfl": "LAC", "pts": 0.0,
+            }],
+        },
+        "right": {
+            "name": "JJettas 2 Holiday", "roster_id": "2", "record": "0-0",
+            "username": "b", "avatar": "", "pts_total": 0.0,
+            "starters": [{
+                "pid": None, "name": "49ers", "pos": "DEF",
+                "nfl": "SF", "pts": 12.0,
+            }],
+        },
+    }
+
+
+def test_matchup_shows_def_box_score_instead_of_unavailable(monkeypatch):
+    """DEF/DST lines never resolve a per-player raw_stat_entry (that lookup
+    always returns None for team defenses), so the FINAL "Stats unavailable"
+    guard must not clobber a real, already-formatted DST line."""
+    mmod = _matchups()
+    finished = {
+        "home": "SF", "away": "SEA",
+        "gameDate": "20260909", "gameTime": "8:20p",
+        "gameStatus": "Final", "gameStatusCode": "2",
+        "gameTime_epoch": "1788999600.0",
+        "gameID": "20260909_SF@SEA",
+    }
+    def_stats = {
+        "SF": {
+            "IDP": {
+                "team defense": {
+                    "sack": 3, "int": 1, "fum_rec": 1, "def_td": 0,
+                    "pts_allow": 17,
+                }
+            }
+        }
+    }
+    monkeypatch.setattr(mmod, "load_teams_index", lambda: {})
+    monkeypatch.setattr(mmod, "build_offense_rankings", lambda *_a, **_k: {})
+    monkeypatch.setattr(mmod, "load_week_stats", lambda *_a, **_k: def_stats)
+    monkeypatch.setattr(mmod, "load_week_schedule", lambda *_a, **_k: [])
+    monkeypatch.setattr(mmod, "build_team_schedule_lookup", lambda *_a, **_k: {})
+    monkeypatch.setattr(mmod, "_allow_live_game_indicators", lambda *_a, **_k: True)
+    monkeypatch.setattr(mmod, "get_nfl_scores_for_date", lambda *_a, **_k: None)
+
+    html = mmod.render_matchup_slide(
+        "2026", _def_matchup(), w=1, proj_week=1,
+        # Herbert has no stats fixture at all -- leave him not_started so his
+        # (unrelated, legitimate) "Stats unavailable" doesn't muddy this test.
+        status_by_pid={"4984": mmod.STATUS_NOT_STARTED},
+        projections={},
+        players={},
+        teams={},
+        team_game_lookup={"SF": finished},
+    )
+    assert "PA 17" in html
+    assert "SACK 3" in html
+    assert "Stats unavailable" not in html
+    assert "m-cell-stats--unavailable" not in html
 
 
 def test_week_stats_builder_writes_empty_before_kickoff(monkeypatch, tmp_path):

@@ -3115,7 +3115,7 @@ function showLoginGate(target, opts) {
     if (!chip) return;
     var t = cacheTs();
     var el = chip.querySelector('.fp-pill-time');
-    if (el) el.textContent = t ? fmtAge(t) : '…';
+    if (el) el.textContent = t ? fmtAge(t) : 'Unknown';
     chip.classList.toggle('cf-stale', !!t && (Date.now() - t > STALE_MS));
     chip.style.opacity = '';
   }

@@ -15,6 +15,8 @@ from flask import Blueprint, jsonify, request
 
 from dashboard_services.api import get_nfl_state
 from dashboard_services.service import age_from_bday
+from dashboard_services.waiver_discovery_curation import curate_big_game_discoveries
+from utils.lineup_slots import canonicalize_slot as _canonicalize_slot
 from utils.lineup_slots import starter_need_counts as _starter_need_counts
 from utils.validation import safe_int as _safe_int
 from utils.value_helpers import apply_te_premium, te_premium_from_settings
@@ -1035,6 +1037,26 @@ def api_waiver_big_games():
     players_index = ctx.get("players_index") or get_players_index_global() or {}
     _mvt = {str(r.get("id")): r for r in (get_model_value_table_cached() or [])
             if isinstance(r, dict) and r.get("id")}
+    roster_positions = ctx.get("roster_positions") or []
+    superflex = any(_canonicalize_slot(slot) == "SUPER_FLEX" for slot in roster_positions)
+    qb_need = False
+    try:
+        required_qbs = _starter_need_counts(roster_positions).get("QB", 1)
+        viewer = get_viewer_session_for_league(ctx.get("users") or [], ctx.get("rosters") or []) or {}
+        viewer_id = str(viewer.get("viewer_roster_id") or "")
+        viewer_roster = next((r for r in (ctx.get("rosters") or [])
+                              if str(r.get("roster_id")) == viewer_id), None)
+        if viewer_roster:
+            qb_count = sum(1 for player_id in (viewer_roster.get("players") or [])
+                           if str((players_index.get(str(player_id)) or {}).get("pos") or
+                                  (players_index.get(str(player_id)) or {}).get("position") or "").upper() == "QB")
+            qb_need = qb_count < required_qbs
+    except Exception:
+        logger.debug("could not resolve viewer QB need", exc_info=True)
+    try:
+        value_key, fallback_key = _waiver_value_keys(ctx)
+    except Exception:
+        value_key, fallback_key = "value", "value"
 
     out = []
     for d in discoveries:
@@ -1049,13 +1071,13 @@ def api_waiver_big_games():
         d["name"] = row.get("name") or meta.get("name") or f"Player {pid}"
         d["position"] = str(row.get("position") or meta.get("pos") or "").upper()
         d["team"] = (row.get("team") or meta.get("team") or "").upper()
+        d["value"] = float(row.get(value_key) or row.get(fallback_key) or row.get("value") or 0)
         # We know it's unrostered in this league; true "claimable now" (waiver vs
         # FA) needs provider transaction data we don't confirm here.
         d["availability"] = "unrostered"
         out.append(d)
-        if len(out) >= 15:
-            break
 
+    out = curate_big_game_discoveries(out, superflex=superflex, qb_need=qb_need)
     return jsonify({"discoveries": out, "week": _week, "season": _dseason})
 
 
