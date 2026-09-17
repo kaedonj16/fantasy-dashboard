@@ -613,6 +613,24 @@ else:
     print("[cron] weekly target-share backfill complete: %d rows" % total)
 """, "backfill_weekly_target_share")
 
+    # The RZ source fix alone cannot repair stored historical snapshots. Run a
+    # targeted repair once; keep retrying if the provider has unavailable data.
+    _run_step("""
+from dotenv import load_dotenv; load_dotenv()
+from pathlib import Path
+from scripts.backfill_redzone_metrics import backfill_redzone_metrics
+marker = Path("cache/.redzone_snapshots_v1.done")
+if not marker.exists():
+    result = backfill_redzone_metrics()
+    print(f"[cron] red-zone snapshot repair: {result}")
+    if result["updated"] and not result["unavailable"]:
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text("done")
+else:
+    print("[cron] red-zone snapshot repair already complete")
+""", "backfill_redzone_metrics")
+
+
     # ------------------------------------------------------------------ #
     # Step 4b: Defense-vs-position matchup ratings (z-scores)             #
     # Powers the Schedule Assistant rankings / ease scores.               #

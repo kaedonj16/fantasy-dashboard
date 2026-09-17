@@ -119,7 +119,7 @@ def build_weekly_metrics(season: int, weeks: Optional[List[int]] = None) -> int:
 
     When `weeks` is None, builds weeks 1-18, skipping weeks already in the DB
     except the two most recent stored weeks (which are rebuilt to pick up
-    stat corrections).
+    stat corrections), plus any weeks with missing red-zone columns).
     """
     init_weekly_metrics_db()
     idx = load_players_index() or {}
@@ -127,11 +127,13 @@ def build_weekly_metrics(season: int, weeks: Optional[List[int]] = None) -> int:
     if weeks is None:
         with get_conn() as conn:
             rows = conn.execute(
-                "SELECT DISTINCT week FROM player_weekly_metrics WHERE season = %s",
+                "SELECT week, BOOL_OR(rz_targets IS NULL OR rz_carries IS NULL) AS needs_rz "
+                "FROM player_weekly_metrics WHERE season = %s GROUP BY week",
                 (int(season),),
             ).fetchall()
         have = sorted(int(r["week"]) for r in rows)
         refresh = set(have[-2:])  # rebuild the latest two stored weeks
+        refresh.update(int(r["week"]) for r in rows if r["needs_rz"])
         weeks = [w for w in range(1, 19) if w not in have or w in refresh]
 
     total = 0
