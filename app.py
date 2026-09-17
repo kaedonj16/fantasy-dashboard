@@ -15517,21 +15517,25 @@ def _team_bye_map(season: int) -> dict:
 from utils.schedule_ease import sched_rank_color as _sched_rank_color  # noqa: E402
 
 
-def _load_matchup_ratings(season: int) -> dict:
+def _load_matchup_ratings(season: int, scoring_settings=None) -> dict:
     """Load the cron-precomputed z-score matchup ratings table.
 
     Shape: {team: {pos: {"z": float, "ease": 0-100, "n": int, "fpts": float}}}.
     Returns {} when the cache file is absent so callers fall back to raw
     fpts-allowed (the table is produced by data_building/matchup_ratings.py via
     the daily cron)."""
-    key = str(season)
+    from utils.defensive_matchup_ratings import scoring_profile_hash
+    profile = scoring_profile_hash(scoring_settings) if scoring_settings else "standard-ppr"
+    key = f"{season}:{profile}"
     now = time.time()
     if (_MATCHUP_RATINGS_CACHE.get(key) is not None
             and now - _MATCHUP_RATINGS_TS.get(key, 0) < _MATCHUP_RATINGS_TTL):
         return _MATCHUP_RATINGS_CACHE[key]
     data: dict = {}
     try:
-        path = os.path.join("cache", f"matchup_ratings_s{season}.json")
+        profiled = os.path.join("cache", f"matchup_ratings_s{season}_{profile}.json")
+        path = profiled if os.path.exists(profiled) else (
+            os.path.join("cache", f"matchup_ratings_s{season}.json") if not scoring_settings else profiled)
         if os.path.exists(path):
             blob = json.load(open(path))
             data = blob.get("ratings") or {}
@@ -15718,31 +15722,22 @@ def _matchup_rank_table(season: int, position: str, scoring_settings=None):
     strength-of-schedule-adjusted z-score ratings when available, otherwise
     falls back to raw fpts-allowed so the schedule views keep working before
     the first cron build. info_by_team[team] carries {"z","ease","fpts"}."""
-    from dashboard_services.api import get_nfl_state
-    from utils.defensive_matchup_ratings import rank_values, season_weights
-    from utils.season_qualification import qualification_policy
-    state = get_nfl_state() or {}
-    active_season = int(state.get("season") or datetime.now().year)
-    completed = tuple(qualification_policy(int(season)).completed_weeks)
-    completed_week = max(completed, default=0)
-    is_active = int(season) == active_season
-    is_historical = int(season) < active_season
-    baseline = active_season - 1 if int(season) > active_season else int(season) - 1
-    fa = _fpts_against_effective(
-        season, scoring_settings, completed_week if is_active else (18 if is_historical else 0),
-        blend=is_active or int(season) > active_season, baseline_season=baseline,
-    )
-    values = {team: row.get(position) for team, row in fa.items()}
+    from utils.defensive_matchup_ratings import rank_values
+    adjusted = _load_matchup_ratings(season, scoring_settings)
+    rows = {team: positions.get(position) for team, positions in adjusted.items()
+            if positions.get(position)}
+    values = {team: row.get("adjusted_multiplier") for team, row in rows.items()}
     ranks, total = rank_values(values)
-    pw, cw = season_weights(completed_week if is_active else (18 if is_historical else 0),
-                            blend=not is_historical)
-    info = {team: {"fpts": value, "source": (fa.get(team, {}).get("sources") or {}).get(position),
-                   "completed_through_week": completed_week if is_active else (18 if is_historical else 0),
-                   "weights": {"previous": pw, "current": cw}, "baseline_season": baseline,
-                   "selected_season": int(season), "scoring_profile":
-                   __import__('utils.defensive_matchup_ratings', fromlist=['scoring_profile_hash']).scoring_profile_hash(scoring_settings)}
-            for team, value in values.items() if value is not None}
-    return ranks, total, info, False
+    info = {}
+    for team, value in values.items():
+        row = dict(rows[team])
+        row.update({"multiplier": value, "adjusted_percent": (float(value) - 1) * 100,
+                    "fpts": row.get("raw_allowed_per_game"), "source": "opponent-adjusted",
+                    "weights": {"previous": row.get("prior_season_weight", 0),
+                                "current": row.get("current_season_weight", 1)},
+                    "selected_season": int(season)})
+        info[team] = row
+    return ranks, total, info, True
 
 
 from utils.schedule_ease import matchup_cell_ease as _matchup_cell_ease  # noqa: E402
@@ -15814,9 +15809,9 @@ def _compute_schedule_grid(season: int, pids, weeks, scoring_settings=None):
             _pos_rank_cache[pos] = _matchup_rank_table(season, pos, scoring_settings)
         rank_map, total, info, _is_z = _pos_rank_cache[pos]
         rinfo = info.get(team, {})
-        fpts_val = rinfo.get("fpts", 0)
+        fpts_val = rinfo.get("fpts")
         rank = rank_map.get(team)
-        return rank, (total if rank else None), fpts_val
+        return rank, (total if rank else None), fpts_val, rinfo
 
     schedules: dict = {}
     for w in weeks:
@@ -15846,7 +15841,7 @@ def _compute_schedule_grid(season: int, pids, weeks, scoring_settings=None):
             _pos_rank_cache[pos] = _matchup_rank_table(season, pos, scoring_settings)
         rank_map, total, info, _is_z = _pos_rank_cache[pos]
         from utils.defensive_matchup_ratings import rank_team_schedules
-        values = {team: row.get("fpts") for team, row in info.items()}
+        values = {team: row.get("multiplier") for team, row in info.items()}
         opponents = {t: [(schedules.get(w, {}).get(t) or {}).get("opp") for w in weeks]
                      for t in rank_map}
         sos = rank_team_schedules(opponents, values)
@@ -15865,13 +15860,15 @@ def _compute_schedule_grid(season: int, pids, weeks, scoring_settings=None):
                 cells.append({"week": w, "bye": True})
                 continue
             opp = game["opp"]
-            rank, total, fpts_val = _fpts_rank(opp, pos)
+            rank, total, fpts_val, rinfo = _fpts_rank(opp, pos)
             txt, bg = _sched_rank_color(rank, total)
             cells.append({
                 "week": w, "bye": False, "opp": opp,
                 "at": "" if game["is_home"] else "@",
                 "rank": rank, "total": total,
                 "fpts": round(fpts_val, 1) if fpts_val is not None else None,
+                "adjusted_percent": round(rinfo.get("adjusted_percent"), 1) if rinfo.get("adjusted_percent") is not None else None,
+                "confidence": rinfo.get("confidence"),
                 "txt": txt, "bg": bg,
             })
         _sos = _team_sos(pos).get(nfl)

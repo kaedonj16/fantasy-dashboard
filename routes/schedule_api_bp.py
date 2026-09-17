@@ -284,8 +284,6 @@ def api_schedule_rankings():
                 continue
 
             cells = []
-            rank_sum  = 0
-            ease_sum  = 0.0
             matchup_values = []
             valid_wks = 0
             for w in weeks:
@@ -297,6 +295,7 @@ def api_schedule_rankings():
                 rank     = rank_map.get(opp)
                 rinfo    = rating_info.get(opp, {})
                 fpts_val = rinfo.get("fpts")
+                multiplier = rinfo.get("multiplier")
                 txt, bg  = _sched_rank_color(rank, total_teams) if rank else ("#94a3b8", "transparent")
                 actual   = player_pts_actual.get(str(pid), {}).get(w)
                 proj     = player_pts_proj.get(str(pid), {}).get(w)
@@ -308,19 +307,20 @@ def api_schedule_rankings():
                     "at": "" if game["is_home"] else "@",
                     "rank": rank, "total": total_teams,
                     "fpts": round(fpts_val, 1) if fpts_val is not None else None,
+                    "adjusted_percent": round(rinfo.get("adjusted_percent"), 1) if rinfo.get("adjusted_percent") is not None else None,
+                    "expected_points": round(rinfo.get("expected_opponent_points"), 1) if rinfo.get("expected_opponent_points") is not None else None,
+                    "adjusted_difference": round(rinfo.get("adjusted_points_over_expected"), 1) if rinfo.get("adjusted_points_over_expected") is not None else None,
+                    "sample_size": rinfo.get("sample_size"), "confidence": rinfo.get("confidence"),
+                    "completed_through_week": rinfo.get("completed_through_week"),
                     "txt": txt, "bg": bg,
                     "pts": p_pts, "pts_type": p_type,
                 })
                 if rank:
-                    rank_sum  += rank
-                    ease_sum  += _matchup_cell_ease(rank, total_teams, rinfo)
                     valid_wks += 1
-                if fpts_val is not None:
-                    matchup_values.append(float(fpts_val))
+                if multiplier is not None:
+                    matchup_values.append(float(multiplier))
 
-            avg_rank   = round(rank_sum / valid_wks, 1) if valid_wks else 999
-            # Ease from the z-score scale (avg over scheduled weeks); higher = easier
-            ease_score = round(ease_sum / valid_wks, 1) if valid_wks else 0
+            schedule_multiplier = (sum(matchup_values) / len(matchup_values)) if matchup_values else None
 
             results.append({
                 "pid":        str(pid),
@@ -332,24 +332,26 @@ def api_schedule_rankings():
                 "on_roster":  str(pid) in roster_pids,
                 "owner":      owner_by_pid.get(str(pid)),
                 "cells":      cells,
-                "avg_rank":   avg_rank,
-                "ease_score": ease_score,
+                "avg_rank":   None,
+                "ease_score": None,
                 "valid_weeks": valid_wks,
-                "avg_matchup_value": (round(sum(matchup_values) / len(matchup_values), 2)
-                                        if matchup_values else None),
+                "avg_matchup_value": schedule_multiplier,
+                "adjusted_avg_percent": round((schedule_multiplier - 1) * 100, 1) if schedule_multiplier is not None else None,
             })
 
         # Aggregate SOS ranks the average underlying points-allowed metric,
         # never an average of ordinal weekly ranks. Teammates share one slate.
-        from utils.defensive_matchup_ratings import rank_values
+        from utils.defensive_matchup_ratings import normalize_schedule, rank_values
         team_values = {}
         for row in results:
             if row["avg_matchup_value"] is not None:
                 team_values[row["team"]] = row["avg_matchup_value"]
         team_sos_ranks, team_sos_total = rank_values(team_values)
+        team_ease_scores = normalize_schedule(team_values)
         for row in results:
             row["sos_rank"] = team_sos_ranks.get(row["team"])
             row["sos_total"] = team_sos_total
+            row["ease_score"] = round(team_ease_scores[row["team"]], 1) if row["team"] in team_ease_scores else None
 
         # Sort by ease first, then group teammates together under the best player
         # on that team.  Rank #1 = the most valuable player with the easiest
@@ -358,7 +360,7 @@ def api_schedule_rankings():
         _team_max_val:  dict = {}
         for r in results:
             t = r["team"]
-            if r["ease_score"] > _team_max_ease.get(t, -1):
+            if r["ease_score"] is not None and r["ease_score"] > _team_max_ease.get(t, -1):
                 _team_max_ease[t] = r["ease_score"]
             if r["value"] > _team_max_val.get(t, -1):
                 _team_max_val[t] = r["value"]

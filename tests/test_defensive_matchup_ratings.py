@@ -4,6 +4,11 @@ from utils.defensive_matchup_ratings import (
     rank_values,
     rating_cache_key,
     season_weights,
+    aggregate_defense_games,
+    game_adjustment,
+    meaningful_participation,
+    normalize_schedule,
+    pregame_baseline,
 )
 
 
@@ -57,3 +62,31 @@ def test_cache_key_isolates_season_week_position_and_full_scoring_profile():
     assert base != rating_cache_key(2026, 2, {"rec": .5, "pass_td": 4}, "QB")
     assert base != rating_cache_key(2026, 2, {"rec": 1, "pass_td": 4}, "RB")
 
+
+def test_17_5_against_20_8_is_suppression():
+    result = game_adjustment(17.5, 20.8)
+    assert round(result["points_over_expected"], 1) == -3.3
+    assert round(result["adjusted_percent"], 1) == -15.9
+
+
+def test_baseline_uses_only_supplied_pregame_history_and_never_zero():
+    before = [{"fantasy_points": 10, "is_current_season": True},
+              {"fantasy_points": 20, "is_current_season": True}]
+    expected, reliability = pregame_baseline(before, 12)
+    with_future, _ = pregame_baseline(before + [{"fantasy_points": 100, "is_current_season": True}], 12)
+    assert expected > 0 and reliability < 1
+    assert with_future != expected  # caller controls the strict pregame cut
+
+
+def test_position_unit_shrinkage_and_schedule_normalization():
+    result = aggregate_defense_games([{"actual": 17.5, "expected": 20.8,
+                                      "opportunities": 30, "reliability": 1}],
+                                     prior_multiplier=1, prior_weight=4)
+    assert result["adjusted_multiplier"] < 1
+    assert result["confidence"] == "low"
+    assert normalize_schedule({"easy": 1.2, "hard": .8}) == {"easy": 100.0, "hard": 0.0}
+
+
+def test_barely_active_player_is_excluded():
+    assert not meaningful_participation({"position": "RB", "carries": 1, "targets": 0, "snaps": 3})
+    assert meaningful_participation({"position": "RB", "touches": 3, "snaps": 3})
