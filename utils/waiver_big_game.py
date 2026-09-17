@@ -38,7 +38,7 @@ the digest, dashboard, and notifications without dragging a league in.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Mapping, Optional
 
 from utils.draft_grade import clamp01 as _clamp01
 
@@ -46,6 +46,29 @@ from utils.draft_grade import clamp01 as _clamp01
 # ---------------------------------------------------------------------------
 # Tunables (one surface, mirroring utils.waiver_score.WEIGHTS)
 # ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class PositionProductionThresholds:
+    """Fantasy-point landmarks for a notable, strong, and elite game."""
+    floor: float
+    strong: float
+    elite: float
+
+
+POSITION_PRODUCTION_THRESHOLDS: Mapping[str, PositionProductionThresholds] = {
+    "QB": PositionProductionThresholds(20.0, 28.0, 35.0),
+    "RB": PositionProductionThresholds(13.0, 20.0, 28.0),
+    "WR": PositionProductionThresholds(13.0, 20.0, 28.0),
+    "TE": PositionProductionThresholds(10.0, 15.0, 22.0),
+}
+DEFAULT_PRODUCTION_THRESHOLDS = PositionProductionThresholds(13.0, 20.0, 28.0)
+
+
+def production_thresholds(position: Optional[str]) -> PositionProductionThresholds:
+    """Return the configured scale, safely using the skill-position default."""
+    return POSITION_PRODUCTION_THRESHOLDS.get(
+        str(position or "").strip().upper(), DEFAULT_PRODUCTION_THRESHOLDS)
+
 
 @dataclass(frozen=True)
 class BigGameConfig:
@@ -58,8 +81,10 @@ class BigGameConfig:
     # Absolute production gate: a game below `abs_floor` league points isn't a
     # "big game" no matter how far it beat a microscopic projection; `abs_ceiling`
     # is a genuinely elite day.
-    abs_floor: float = 10.0
-    abs_ceiling: float = 30.0
+    # Legacy defaults retained for callers constructing custom configurations;
+    # normal assessment uses POSITION_PRODUCTION_THRESHOLDS above.
+    abs_floor: float = 13.0
+    abs_ceiling: float = 28.0
     # Weight of the absolute vs relative component in the surprise blend.
     abs_weight: float = 0.45
     # Usage-sustainability: snap-share delta (fraction, 0..1) that reads as a full
@@ -87,7 +112,7 @@ class BigGameConfig:
     # surprise was only moderate (the "fewer points, real usage" case), provided
     # the game cleared a minimum surprise and a minimum absolute production.
     role_surface_min: float = 0.2
-    role_surface_abs: float = 0.2
+    role_surface_abs: float = 0.1
     # Sustainability credited to a confirmed teammate-vacancy alone (no usage data
     # yet), bounded because the starter may return.
     vacancy_sustain_max: float = 0.6
@@ -140,6 +165,8 @@ class GameContext:
     target_share_prev: Optional[float] = None
     carries: Optional[float] = None
     carries_prev: Optional[float] = None
+    pass_attempts: Optional[float] = None
+    pass_attempts_prev: Optional[float] = None
     touches: Optional[float] = None
     touches_prev: Optional[float] = None
     redzone_touches: Optional[float] = None
@@ -235,22 +262,34 @@ def resolve_expectation(g: GameContext) -> "tuple[Optional[float], str, bool]":
 # Performance surprise (relative + absolute, so tiny baselines don't explode)
 # ---------------------------------------------------------------------------
 
-def absolute_component(actual: Optional[float], cfg: BigGameConfig = CONFIG) -> float:
+def absolute_component(actual: Optional[float], cfg: BigGameConfig = CONFIG,
+                       position: Optional[str] = None) -> float:
     """0..1 for how big the raw box score was, independent of expectation."""
     if actual is None:
         return 0.0
-    return _clamp01((float(actual) - cfg.abs_floor) / max(1e-6, cfg.abs_ceiling - cfg.abs_floor))
+    scale = production_thresholds(position) if position else PositionProductionThresholds(
+        cfg.abs_floor, (cfg.abs_floor + cfg.abs_ceiling) / 2.0, cfg.abs_ceiling)
+    points = float(actual)
+    if points <= scale.floor:
+        return 0.0
+    # The explicit "strong" landmark matters: 15 TE points is a much more
+    # meaningful absolute performance than 15 QB points.
+    if points <= scale.strong:
+        return 0.6 * (points - scale.floor) / max(1e-6, scale.strong - scale.floor)
+    return _clamp01(0.6 + 0.4 * (points - scale.strong) /
+                    max(1e-6, scale.elite - scale.strong))
 
 
 def relative_component(actual: Optional[float], expectation: Optional[float],
-                       cfg: BigGameConfig = CONFIG) -> float:
+                       cfg: BigGameConfig = CONFIG,
+                       position: Optional[str] = None) -> float:
     """0..1 for how far the game beat expectation, shrunk so a microscopic
     expectation can't produce an absurd ratio. Falls back to the absolute read
     when there's no expectation at all."""
     if actual is None:
         return 0.0
     if expectation is None:
-        return absolute_component(actual, cfg)
+        return absolute_component(actual, cfg, position)
     over = float(actual) - float(expectation)
     if over <= 0:
         return 0.0
@@ -265,8 +304,8 @@ def performance_surprise(g: GameContext, cfg: BigGameConfig = CONFIG) -> "tuple[
     production to count, and a merely-good absolute day that was fully expected is
     no surprise. Returns ``(surprise, absolute_score)``.
     """
-    rel = relative_component(g.actual_points, _resolve_pts(g), cfg)
-    ab = absolute_component(g.actual_points, cfg)
+    rel = relative_component(g.actual_points, _resolve_pts(g), cfg, g.position)
+    ab = absolute_component(g.actual_points, cfg, g.position)
     # Blend relative surprise with absolute production: a huge *ratio* off a tiny
     # box score (2->14) lands below a big absolute day (18->31), while the
     # shrinkage in `relative_component` keeps a real low-baseline breakout in play.
@@ -322,13 +361,18 @@ def role_sustainability(g: GameContext, cfg: BigGameConfig = CONFIG) -> "tuple[f
     growth: list = []
     factors: list = []
 
-    snap_growth = _delta_component(g.snap_share, g.snap_share_prev, cfg.snap_share_full_delta)
-    snap_level = _level_component(g.snap_share, 0.85)
+    pos = str(g.position or "").upper()
+    # An every-down snap rate is ordinary for a starting QB.  It is neither a
+    # role level nor a role confirmation; QB opportunity must move materially.
+    snap_growth = (_delta_component(g.snap_share, g.snap_share_prev, cfg.snap_share_full_delta)
+                   if pos != "QB" else None)
+    snap_level = _level_component(g.snap_share, 0.85) if pos != "QB" else None
     tgt_share_growth = _delta_component(g.target_share, g.target_share_prev, cfg.target_share_full_delta)
     tgt_growth = _delta_component(g.targets, g.targets_prev, cfg.targets_full_delta)
     route_growth = _delta_component(g.routes, g.routes_prev, cfg.routes_full_delta)
     touch_growth = _delta_component(g.touches, g.touches_prev, cfg.touches_full_delta)
     carry_growth = _delta_component(g.carries, g.carries_prev, cfg.touches_full_delta)
+    pass_growth = _delta_component(g.pass_attempts, g.pass_attempts_prev, 12.0)
 
     def _note(val, label):
         if val is not None and val > 0.15:
@@ -340,19 +384,37 @@ def role_sustainability(g: GameContext, cfg: BigGameConfig = CONFIG) -> "tuple[f
     _note(route_growth, _fmt_delta("routes", g.routes_prev, g.routes))
     _note(touch_growth, _fmt_delta("touches", g.touches_prev, g.touches))
     _note(carry_growth, _fmt_delta("carries", g.carries_prev, g.carries))
+    _note(pass_growth, _fmt_delta("pass attempts", g.pass_attempts_prev, g.pass_attempts))
 
-    for c in (snap_growth, tgt_share_growth, tgt_growth, route_growth, touch_growth, carry_growth):
-        if c is not None:
+    if pos == "QB":
+        relevant = (pass_growth, carry_growth)
+    elif pos == "RB":
+        relevant = (snap_growth, tgt_growth, touch_growth, carry_growth)
+    elif pos == "TE":
+        relevant = (snap_growth, tgt_share_growth, tgt_growth, route_growth)
+    else:  # WR and unknown skill positions
+        relevant = (snap_growth, tgt_share_growth, tgt_growth, route_growth)
+    for c in relevant:
+        if c is not None and c > 0:
             growth.append(c)
 
     # High absolute role even without a prior comparison (e.g. an 85% snap share
     # the first week a starter is out) is itself a sustainability signal.
-    level_signals = [x for x in (snap_level, _level_component(g.target_share, 0.28)) if x is not None]
+    level_signals = []
+    if pos != "QB" and snap_level is not None:
+        level_signals.append(snap_level)
+    if pos in ("WR", "TE"):
+        target_level = _level_component(g.target_share, 0.28)
+        if target_level is not None:
+            level_signals.append(target_level)
 
-    if g.redzone_touches and g.redzone_touches >= 2:
+    high_value_work = []
+    if pos == "RB" and g.redzone_touches and g.redzone_touches >= 2:
         factors.append((0.5, f"{int(g.redzone_touches)} red-zone touches"))
-    if g.goalline_touches and g.goalline_touches >= 1:
+        high_value_work.append(min(1.0, float(g.redzone_touches) / 4.0))
+    if pos == "RB" and g.goalline_touches and g.goalline_touches >= 1:
         factors.append((0.55, f"{int(g.goalline_touches)} goal-line touches"))
+        high_value_work.append(min(1.0, float(g.goalline_touches) / 2.0))
 
     # Opportunity from a confirmed teammate absence, committee-adjusted: we do NOT
     # assume the whole workload transfers to one player (item 6). It's bounded
@@ -369,9 +431,11 @@ def role_sustainability(g: GameContext, cfg: BigGameConfig = CONFIG) -> "tuple[f
 
     # A real, rising or high-level usage read confirms the role; a confirmed
     # vacancy is opportunity even without usage data yet.
-    role_confirmed = bool(growth) or bool(level_signals)
+    role_confirmed = bool(growth) or bool(level_signals) or bool(high_value_work)
+    if pos == "QB" and g.teammate_out:
+        role_confirmed = True
 
-    base_signals = growth + level_signals
+    base_signals = growth + level_signals + high_value_work
     base = max(base_signals) if base_signals else 0.0
     # Corroboration: a second independent rising signal lifts confidence with
     # diminishing returns (mirrors the opportunity-combine in waiver_score, so we
@@ -452,7 +516,8 @@ def _fmt_delta(label, prev, cur, pct=False) -> str:
 # ---------------------------------------------------------------------------
 
 def classify(surprise: float, sustainability: float, absolute: float,
-             cfg: BigGameConfig = CONFIG) -> str:
+             cfg: BigGameConfig = CONFIG, role_confirmed: bool = True,
+             uncertain_expectation: bool = False) -> str:
     """Map the (surprise, sustainability) plane onto an explainable category.
 
     priority    — the game was a real surprise AND the role looks like it sticks.
@@ -468,8 +533,8 @@ def classify(surprise: float, sustainability: float, absolute: float,
                     and absolute >= cfg.role_surface_abs)
     if surprise < cfg.speculative_surprise and not role_surface:
         return "none"
-    if sustainability >= cfg.priority_sustain and (surprise >= cfg.priority_surprise
-                                                   or role_surface):
+    if (role_confirmed and sustainability >= cfg.priority_sustain
+            and (surprise >= cfg.priority_surprise or role_surface)):
         return "priority"
     if surprise >= cfg.speculative_surprise:
         return "speculative" if sustainability >= 0.3 else "watchlist"
@@ -479,18 +544,18 @@ def classify(surprise: float, sustainability: float, absolute: float,
 def assess_big_game(g: GameContext, cfg: BigGameConfig = CONFIG) -> BigGameAssessment:
     """Full assessment for one player-game. Pure; safe on partial data."""
     cfg = cfg or CONFIG
-    exp, basis, _uncertain = resolve_expectation(g)
+    exp, basis, uncertain = resolve_expectation(g)
     surprise, absolute = performance_surprise(g, cfg)
     sustain, role_confirmed, cautions, role_factors = role_sustainability(g, cfg)
-    category = classify(surprise, sustain, absolute, cfg)
+    category = classify(surprise, sustain, absolute, cfg, role_confirmed, uncertain)
 
     factors: list = []
     if g.actual_points is not None:
         if exp is not None:
             factors.append(f"{round(g.actual_points, 1)} pts vs {round(exp, 1)} expected "
                            f"({_basis_phrase(basis)})")
-        else:
-            factors.append(f"{round(g.actual_points, 1)} pts (no pregame projection saved)")
+        elif absolute > 0:
+            factors.append(f"{round(g.actual_points, 1)} points")
     factors.extend(role_factors)
     if "td_dependent" in cautions:
         factors.append("leaned on touchdowns")
@@ -499,7 +564,7 @@ def assess_big_game(g: GameContext, cfg: BigGameConfig = CONFIG) -> BigGameAsses
     if "hot_efficiency" in cautions:
         factors.append("efficiency unlikely to hold")
     if "role_unconfirmed" in cautions:
-        factors.append("snap/usage not yet reported")
+        factors.append("Usage not yet confirmed")
 
     return BigGameAssessment(
         player_id=g.player_id,

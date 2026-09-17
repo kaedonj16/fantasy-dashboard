@@ -123,10 +123,16 @@ def game_context_from_rows(player_id: str, position: str, season: int, week: int
         targets_prev=_mean([r.get("targets") for r in prior_rows]),
         target_share=_pct(week_row.get("target_share")),
         target_share_prev=_pct(_mean([r.get("target_share") for r in prior_rows])),
+        routes=week_row.get("routes"),
+        routes_prev=_mean([r.get("routes") for r in prior_rows]),
         carries=week_row.get("carries"),
         carries_prev=_mean([r.get("carries") for r in prior_rows]),
+        pass_attempts=week_row.get("pass_att"),
+        pass_attempts_prev=_mean([r.get("pass_att") for r in prior_rows]),
         touches=week_row.get("touches"),
         touches_prev=_mean([r.get("touches") for r in prior_rows]),
+        redzone_touches=(extra.get("redzone_touches") if extra.get("redzone_touches") is not None
+                         else _sum_known(week_row.get("rz_targets"), week_row.get("rz_carries"))),
         total_yards=total_yards,
         touchdowns=extra.get("touchdowns"),
         td_points=extra.get("td_points"),
@@ -140,6 +146,11 @@ def game_context_from_rows(player_id: str, position: str, season: int, week: int
         limited_history=limited,
         status=status,
     )
+
+
+def _sum_known(*values) -> Optional[float]:
+    known = [float(value) for value in values if value is not None]
+    return sum(known) if known else None
 
 
 # ---------------------------------------------------------------------------
@@ -405,7 +416,8 @@ def detect_week(season: int, week: int, *, status: str = "final",
         with get_conn() as conn:
             rows = conn.execute(
                 "SELECT player_id, week, position, snap_pct, targets, touches, carries, "
-                "target_share, ppr_pts, rec_yards, rush_yards "
+                "target_share, ppr_pts, rec_yards, rush_yards, pass_att, "
+                "rz_targets, rz_carries, rec_tds, rush_tds "
                 "FROM player_weekly_metrics WHERE season=%s AND week<=%s ORDER BY player_id, week",
                 (int(season), int(week)),
             ).fetchall()
@@ -429,7 +441,11 @@ def detect_week(season: int, week: int, *, status: str = "final",
         prior = [w for w in weeks if int(w["week"]) < int(week)]
         ctx = game_context_from_rows(
             pid, pos, season, week, this, prior,
-            pregame=snapshot.get(str(pid)), status=status)
+            pregame=snapshot.get(str(pid)), status=status,
+            extra_features={
+                "redzone_touches": _sum_known(this.get("rz_targets"), this.get("rz_carries")),
+                "touchdowns": _sum_known(this.get("rec_tds"), this.get("rush_tds")),
+            })
         assessment = assess_big_game(ctx)
         if assessment.category == "none":
             continue
