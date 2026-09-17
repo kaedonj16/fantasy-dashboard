@@ -647,9 +647,12 @@ else:
     else:
         _run_step(f"""
 from dotenv import load_dotenv; load_dotenv()
-from data_building.matchup_ratings import build_matchup_ratings, out_path
-res = build_matchup_ratings({season!r})
-print(f"[cron] Matchup ratings: {{len(res.get('ratings', {{}}))}} teams -> {{out_path({season!r})}}")
+from data_building.matchup_ratings import build_matchup_rating_profiles
+statuses = build_matchup_rating_profiles({season!r})
+failed = [s for s in statuses if s['label'] == 'default PPR' and s['status'] != 'built']
+if failed:
+    raise RuntimeError(f"default matchup ratings unavailable: {{failed[0].get('failure_reason', failed[0]['status'])}}")
+print(f"[cron] Matchup rating profiles complete: {{len(statuses)}} statuses")
 """, "build_matchup_ratings", timeout=900)
 
     # ------------------------------------------------------------------ #
