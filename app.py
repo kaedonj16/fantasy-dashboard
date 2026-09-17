@@ -15286,6 +15286,7 @@ _FPTS_AGAINST_TTL = 3600  # 1 hour
 
 _MATCHUP_RATINGS_CACHE: dict = {}
 _MATCHUP_RATINGS_TS: dict = {}
+_MATCHUP_RATINGS_META: dict = {}
 _MATCHUP_RATINGS_TTL = 3600  # 1 hour
 
 
@@ -15530,32 +15531,81 @@ from utils.schedule_ease import sched_rank_color as _sched_rank_color  # noqa: E
 
 
 def _load_matchup_ratings(season: int, scoring_settings=None) -> dict:
-    """Load the cron-precomputed z-score matchup ratings table.
+    """Load the best cron-precomputed matchup ratings table.
 
-    Shape: {team: {pos: {"z": float, "ease": 0-100, "n": int, "fpts": float}}}.
-    Returns {} when the cache file is absent so callers fall back to raw
-    fpts-allowed (the table is produced by data_building/matchup_ratings.py via
-    the daily cron)."""
+    An exact scoring-profile snapshot is preferred.  The unprofiled standard
+    PPR snapshot is the explicit availability fallback, including for custom
+    leagues.  Cache entries remain isolated by season and *requested* profile
+    even when two requests currently resolve to that same fallback file.
+    """
     from utils.defensive_matchup_ratings import scoring_profile_hash
-    profile = scoring_profile_hash(scoring_settings) if scoring_settings else "standard-ppr"
-    key = f"{season}:{profile}"
+    requested_profile = (scoring_profile_hash(scoring_settings)
+                         if scoring_settings is not None else "standard-ppr")
+    key = f"{int(season)}:{requested_profile}"
     now = time.time()
     if (_MATCHUP_RATINGS_CACHE.get(key) is not None
             and now - _MATCHUP_RATINGS_TS.get(key, 0) < _MATCHUP_RATINGS_TTL):
+        _MATCHUP_RATINGS_META.setdefault(key, {
+            "rating_source": "unavailable",
+            "requested_scoring_profile": requested_profile,
+            "loaded_scoring_profile": None,
+        })
         return _MATCHUP_RATINGS_CACHE[key]
     data: dict = {}
+    metadata = {
+        "rating_source": "unavailable",
+        "requested_scoring_profile": requested_profile,
+        "loaded_scoring_profile": None,
+    }
     try:
-        profiled = os.path.join("cache", f"matchup_ratings_s{season}_{profile}.json")
-        path = profiled if os.path.exists(profiled) else (
-            os.path.join("cache", f"matchup_ratings_s{season}.json") if not scoring_settings else profiled)
-        if os.path.exists(path):
-            blob = json.load(open(path))
-            data = blob.get("ratings") or {}
+        profiled = os.path.join("cache", f"matchup_ratings_s{season}_{requested_profile}.json")
+        default = os.path.join("cache", f"matchup_ratings_s{season}.json")
+        candidates = []
+        if scoring_settings is not None:
+            candidates.append((profiled, "exact-profile"))
+        candidates.append((default, ("default-profile-fallback"
+                                     if scoring_settings is not None else "exact-profile")))
+        for path, source in candidates:
+            if not os.path.exists(path):
+                continue
+            try:
+                with open(path, encoding="utf-8") as ratings_file:
+                    blob = json.load(ratings_file)
+                candidate_data = blob.get("ratings") or {}
+            except Exception:
+                logger.warning("[matchup-ratings] invalid %s snapshot for season %s",
+                               source, season, exc_info=True)
+                continue
+            if candidate_data:
+                data = candidate_data
+                metadata.update({
+                    "rating_source": source,
+                    "loaded_scoring_profile": (blob.get("scoring_profile")
+                                               or "standard-ppr"),
+                })
+                break
     except Exception:
         data = {}
+        metadata.update({"rating_source": "unavailable", "loaded_scoring_profile": None})
     _MATCHUP_RATINGS_CACHE[key] = data
     _MATCHUP_RATINGS_TS[key] = now
+    _MATCHUP_RATINGS_META[key] = metadata
     return data
+
+
+def _matchup_ratings_metadata(season: int, scoring_settings=None) -> dict:
+    """Return path-free metadata for the requested ratings cache entry."""
+    from utils.defensive_matchup_ratings import scoring_profile_hash
+    requested = (scoring_profile_hash(scoring_settings)
+                 if scoring_settings is not None else "standard-ppr")
+    key = f"{int(season)}:{requested}"
+    if key not in _MATCHUP_RATINGS_META:
+        _load_matchup_ratings(season, scoring_settings)
+    return dict(_MATCHUP_RATINGS_META.get(key) or {
+        "rating_source": "unavailable",
+        "requested_scoring_profile": requested,
+        "loaded_scoring_profile": None,
+    })
 
 
 _OLINE_RATINGS_CACHE: dict = {}
@@ -15736,6 +15786,7 @@ def _matchup_rank_table(season: int, position: str, scoring_settings=None):
     the first cron build. info_by_team[team] carries {"z","ease","fpts"}."""
     from utils.defensive_matchup_ratings import rank_values
     adjusted = _load_matchup_ratings(season, scoring_settings)
+    rating_metadata = _matchup_ratings_metadata(season, scoring_settings)
     rows = {team: positions.get(position) for team, positions in adjusted.items()
             if positions.get(position)}
 
@@ -15758,14 +15809,21 @@ def _matchup_rank_table(season: int, position: str, scoring_settings=None):
     for team, value in values.items():
         row = dict(rows[team])
         _mult = row.get("adjusted_multiplier")
-        info_extra = {"multiplier": value, "source": "opponent-adjusted",
+        valid_multiplier = (_mult if isinstance(_mult, (int, float))
+                            and not isinstance(_mult, bool) else None)
+        info_extra = {"rank_value": value, "multiplier": valid_multiplier,
+                      "source": "opponent-adjusted", **rating_metadata,
                       "fpts": row.get("raw_allowed_per_game", row.get("fpts")),
                       "weights": {"previous": row.get("prior_season_weight", 0),
                                   "current": row.get("current_season_weight", 1)},
                       "selected_season": int(season)}
         # Only the multiplier schema has a meaningful "percent above expected".
-        if isinstance(_mult, (int, float)) and not isinstance(_mult, bool):
-            info_extra["adjusted_percent"] = (float(_mult) - 1) * 100
+        if valid_multiplier is not None:
+            stored_percent = row.get("adjusted_percent")
+            info_extra["adjusted_percent"] = (float(stored_percent)
+                                               if isinstance(stored_percent, (int, float))
+                                               and not isinstance(stored_percent, bool)
+                                               else (float(valid_multiplier) - 1) * 100)
         row.update(info_extra)
         info[team] = row
     return ranks, total, info, True
@@ -15872,7 +15930,7 @@ def _compute_schedule_grid(season: int, pids, weeks, scoring_settings=None):
             _pos_rank_cache[pos] = _matchup_rank_table(season, pos, scoring_settings)
         rank_map, total, info, _is_z = _pos_rank_cache[pos]
         from utils.defensive_matchup_ratings import rank_team_schedules
-        values = {team: row.get("multiplier") for team, row in info.items()}
+        values = {team: row.get("rank_value") for team, row in info.items()}
         opponents = {t: [(schedules.get(w, {}).get(t) or {}).get("opp") for w in weeks]
                      for t in rank_map}
         sos = rank_team_schedules(opponents, values)
