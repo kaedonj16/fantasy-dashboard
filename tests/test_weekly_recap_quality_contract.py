@@ -29,9 +29,51 @@ def test_recap_uses_shared_historical_and_picture_resolvers():
     assert "recap-rank-grid" in source
 
 
-def test_gotw_card_appears_right_before_standings():
-    """Game of the Week card must sit directly above the ranking recap."""
+def test_recap_sections_follow_editorial_order_and_end_with_up_next():
+    """The recap moves from the completed week to its forward-looking ending."""
     source = (ROOT / "dashboard_services/pages/recap_page.py").read_text()
-    # The return concatenation must place next_week_html immediately before standings_html
-    assert "lineup_html + (next_week_html" in source
-    assert "(next_week_html or \"\") + standings_html" in source
+    returned = source.split("    return (preview_banner + history_banner + week_selector", 1)[1]
+    expected = ["cards_html", "story_html", "scoreboard_html", "lineup_html",
+                "standings_html", "around_html", "up_next_html"]
+    positions = [returned.index(item) for item in expected]
+    assert positions == sorted(positions)
+    assert returned.index("up_next_html") < returned.index(")\n", returned.index("up_next_html"))
+
+
+def test_historical_movement_is_week_capped_and_week_one_safe():
+    source = (ROOT / "dashboard_services/pages/recap_page.py").read_text()
+    assert "if selected_week > 1:" in source
+    assert "build_standings_as_of_week(recap_ctx, selected_week - 1)" in source
+    assert "build_power_rankings_context(prior_ctx)" in source
+    assert "prior_standings else ''" in source
+
+
+def test_recap_keeps_preview_entitlements_divisions_and_new_section_names():
+    source = (ROOT / "dashboard_services/pages/recap_page.py").read_text()
+    for text in ("get_weekly_ai_recap_preview", "get_weekly_ai_recap_teaser",
+                 "resolve_divisions", "Week at a Glance", "The Story of Week",
+                 "How the Week Finished", "Decisions That Mattered", "What Changed",
+                 "Around the League", "Up Next — Week"):
+        assert text in source
+
+
+def test_matchup_badges_are_selective_and_do_not_use_fake_upsets():
+    from dashboard_services.pages.recap_page import _matchup_badges
+
+    games = [
+        {"margin": 1, "w_pts": 100, "l_pts": 99},
+        {"margin": 40, "w_pts": 140, "l_pts": 100},
+        {"margin": 10, "w_pts": 120, "l_pts": 110},
+    ]
+    labels = _matchup_badges(games)
+    assert len(labels) < len(games)
+    assert all(len(badges) <= 2 for badges in labels.values())
+    assert all("Upset" not in badge for badges in labels.values() for badge in badges)
+
+
+def test_mobile_recap_no_longer_depends_on_sidebar_grid():
+    page = (ROOT / "dashboard_services/pages/recap_page.py").read_text()
+    css = (ROOT / "static/dashboard.css").read_text()
+    assert "recap-scoreboard-grid" not in page
+    assert "grid-template-columns: repeat(2, minmax(0, 1fr))" in css
+    assert "grid-template-columns: minmax(0, 1fr) minmax(88px, 30vw) minmax(0, 1fr)" in css
