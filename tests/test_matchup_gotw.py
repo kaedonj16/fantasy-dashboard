@@ -1,5 +1,11 @@
 import json
 
+import pytest
+
+# weekly_recap imports pandas at module load.  Keep this module in the
+# full-stack shard so the minimal unit-test job can collect without pandas.
+pytest.importorskip("pandas")
+
 from dashboard_services.ai import weekly_recap
 from dashboard_services import matchups
 
