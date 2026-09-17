@@ -12,7 +12,7 @@ from dashboard_services import matchups
 
 def test_cached_gotw_is_scoped_to_platform_league_season_and_target_week(tmp_path, monkeypatch):
     monkeypatch.setattr(weekly_recap, "AI_CACHE_DIR", tmp_path)
-    key = weekly_recap._recap_cache_key("league-1", 2025, 1)
+    key = weekly_recap._gotw_cache_key("sleeper", "league-1", 2025, 2)
     (tmp_path / f"{key}.json").write_text(json.dumps({
         "content": "cached recap",
         "metadata": {"gotw_selection": {
