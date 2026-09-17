@@ -2118,8 +2118,45 @@ def player_week_stat_entry(
     pos_data = team_data.get(lookup_pos) or {}
     if not isinstance(pos_data, dict):
         return None
-    entry = pos_data.get(normalize_name(player))
-    return entry if isinstance(entry, dict) else None
+    wanted = normalize_name(player)
+
+    def find_in(bucket):
+        if not isinstance(bucket, dict):
+            return None
+        direct = bucket.get(wanted)
+        if isinstance(direct, dict):
+            return direct
+        # Feeds disagree on common given-name forms (Kenneth/Ken) while the
+        # canonical surname and first stem remain stable. Only accept a unique
+        # candidate so namesakes can never acquire one another's box score.
+        parts = wanted.split()
+        if len(parts) >= 2:
+            matches = []
+            for raw_name, value in bucket.items():
+                candidate = normalize_name(raw_name).split()
+                if (isinstance(value, dict) and len(candidate) >= 2
+                        and candidate[-1] == parts[-1]
+                        and candidate[0][:3] == parts[0][:3]):
+                    matches.append(value)
+            if len(matches) == 1:
+                return matches[0]
+        return None
+
+    entry = find_in(pos_data)
+    if entry is not None:
+        return entry
+
+    # Historical stats belong to the team the player represented that week,
+    # not necessarily the current team in the player index. Search other team
+    # buckets only when the identity match is unique across the weekly snapshot.
+    matches = []
+    for other_team in (teams_stats or {}).values():
+        if not isinstance(other_team, dict):
+            continue
+        found = find_in(other_team.get(lookup_pos) or {})
+        if found is not None and all(found is not existing for existing in matches):
+            matches.append(found)
+    return matches[0] if len(matches) == 1 else None
 
 
 def box_score_line_is_trusted(

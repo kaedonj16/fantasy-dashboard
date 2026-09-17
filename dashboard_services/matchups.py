@@ -1084,13 +1084,13 @@ def format_player_stats(
 
     teams_stats = teams_stats or {}
     team_data = lookup_team_map(teams_stats, team) or {}
-    if not team_data:
-        return None
 
     parts: list[str] = []
 
     # ---------- DEF/DST combined branch ----------
     if lookup_pos == "DEF":
+        if not team_data:
+            return None
         if isinstance(team_data.get("IDP"), dict) and team_data.get("IDP"):
             combined = sum_numeric_fields(team_data["IDP"])
         else:
@@ -1102,11 +1102,9 @@ def format_player_stats(
         return fmt_dst_line(combined)
 
     # ---------- normal per-player lookup ----------
-    pos_data = team_data.get(lookup_pos)
-    if not pos_data:
-        return None
-
-    player_stats = pos_data.get(normalize_name(player))
+    # Use the same canonical, historical-team-aware resolver used by the raw
+    # entry/trust path; formatting must not have a weaker identity lookup.
+    player_stats = player_week_stat_entry(teams_stats, team, lookup_pos, player)
 
     if not player_stats or not has_any_stats(player_stats):
         return None
@@ -1497,8 +1495,12 @@ def render_matchup_slide(
                 opp_rank = off_ranks.get("total_off_rank")
                 if opp_rank is not None:
                     suffix = f" (#{opp_rank})"
-            prefix = ("@ " + opp + suffix) if not is_home else ("vs " + opp + suffix)
-            return " ".join(x for x in [dow, display_time, prefix] if x).strip()
+            opponent = ("@ " + opp) if not is_home else ("vs " + opp)
+            # Separate semantic pieces so narrow matchup columns can wrap at
+            # useful boundaries instead of clipping one long metadata string.
+            return (f"<span class='m-game-kickoff'>{html.escape(' '.join(x for x in [dow, display_time] if x))}</span> "
+                    f"<span class='m-game-opponent'>{html.escape(opponent)}</span> "
+                    f"<span class='m-game-rank'>{html.escape(suffix.strip())}</span>").strip()
 
         # For live/final, pull from scores API once per date
         game_date_std = game_date  # already YYYYMMDD
@@ -1622,8 +1624,7 @@ def render_matchup_slide(
         stats = None
         if nfl:
             team_code = str(nfl).upper()
-            # normalized name (special-case Ken Walker)
-            lookup_name = "ken walker" if name == "Kenneth Walker" else name
+            lookup_name = name
             if game:
                 game_line = format_team_game_line(team_code, game, pos, side)
 

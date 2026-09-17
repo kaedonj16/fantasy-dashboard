@@ -1330,6 +1330,17 @@ window.brHaptic = function (pattern) {
   function applyNewRoot(doc, curRoot) {
     var newRoot = doc.getElementById('page-root');
     if (!newRoot) throw new Error('no page-root');
+    var sameSnapshot = ['platform', 'season', 'leagueId'].every(function (key) {
+      return String(curRoot.dataset[key] || '') === String(newRoot.dataset[key] || '');
+    });
+    var currentTs = parseInt(curRoot.dataset.cacheTs || '0', 10);
+    var incomingTs = parseInt(newRoot.dataset.cacheTs || '0', 10);
+    // Back/forward, a prefetched response, or a late SW response must never
+    // restore a pre-refresh snapshot for this league. Unknown is also older
+    // than a known successful refresh.
+    if (sameSnapshot && currentTs > 0 && (!incomingTs || incomingTs < currentTs)) {
+      throw new Error('stale league snapshot');
+    }
     var ext = newRoot.querySelectorAll('script[src]');
     for (var i = 0; i < ext.length; i++) {
       if (!scriptReRunnable(ext[i].getAttribute('src') || '')) throw new Error('unhandled external script');
@@ -1338,6 +1349,9 @@ window.brHaptic = function (pattern) {
     curRoot.innerHTML = newRoot.innerHTML;
     if (newRoot.dataset.premium != null) curRoot.dataset.premium = newRoot.dataset.premium;
     if (newRoot.dataset.cacheTs != null) curRoot.dataset.cacheTs = newRoot.dataset.cacheTs;
+    ['platform', 'season', 'leagueId'].forEach(function (key) {
+      if (newRoot.dataset[key] != null) curRoot.dataset[key] = newRoot.dataset[key];
+    });
     reexecScripts(curRoot);
     if (doc.title) document.title = doc.title;
     syncHomeTicker(doc);
@@ -1382,6 +1396,8 @@ window.brHaptic = function (pattern) {
   }
 
   function softNavTargetFromEvent(e) {
+    var lineupControl = e.target.closest && e.target.closest('.opt-nav a.opt-tab');
+    if (lineupControl) return lineupControl;
     // Mobile navigates from the dock + sheet; desktop from the top nav pills,
     // dropdown items and the logo.
     return mq.matches
@@ -1427,6 +1443,16 @@ window.brHaptic = function (pattern) {
     }
     softNav(href, false);
   }, true);   // capture: run before the nav-overlay / other click handlers
+
+  // The Lineup panel is server rendered, but its controls are still an in-place
+  // interaction. Delegation survives page-root swaps and the shared softNav
+  // token/AbortController prevents an older selection winning the race.
+  document.addEventListener('change', function (e) {
+    var select = e.target.closest && e.target.closest('.opt-week-select[data-base-url]');
+    if (!select) return;
+    var href = select.dataset.baseUrl + '&week=' + encodeURIComponent(select.value);
+    softNav(href, false);
+  }, true);
 
   window.addEventListener('popstate', function () {
     var params = new URLSearchParams(location.search);
@@ -3050,19 +3076,38 @@ function showLoginGate(target, opts) {
   var STALE_MS = 6 * 60 * 60 * 1000;
   var mq = window.matchMedia('(max-width: 768px)');
 
+  function normalizeTimestamp(ts) {
+    var value = Number(ts);
+    if (!Number.isFinite(value) || value <= 0) return 0;
+    // Accept API timestamps in seconds, but keep DOM timestamps in ms.
+    if (value < 100000000000) value *= 1000;
+    // A clock a little ahead is still "just now"; a wildly future value is bad data.
+    if (value > Date.now() + 5 * 60000) return 0;
+    return Math.floor(value);
+  }
   function fmtAge(ts) {
-    var mins = Math.floor((Date.now() - ts) / 60000);
-    return mins < 1 ? 'now' : mins < 60 ? mins + 'm' : Math.floor(mins / 60) + 'h';
+    ts = normalizeTimestamp(ts);
+    if (!ts) return '';
+    var mins = Math.max(0, Math.floor((Date.now() - ts) / 60000));
+    if (mins < 1) return 'just now';
+    if (mins < 60) return mins + 'm ago';
+    var hours = Math.floor(mins / 60);
+    return hours < 24 ? hours + 'h ago' : Math.floor(hours / 24) + 'd ago';
   }
   function cacheTs() {
     var main = document.getElementById('page-root');
+    // DOM contract is milliseconds; keep the raw value for refresh ordering.
+    // normalizeTimestamp remains tolerant of seconds at display boundaries.
     return main ? parseInt(main.dataset.cacheTs || '0', 10) : 0;
   }
   function updateSheetTime() {
     var t = document.getElementById('brSheetRefreshTime');
     if (!t) return;
     var ts = cacheTs();
-    t.textContent = ts ? 'Updated ' + (fmtAge(ts) === 'now' ? 'just now' : fmtAge(ts) + ' ago') : '';
+    // Keep the original compact refresh-row presentation when freshness is
+    // unknown. The underlying timestamp remains unknown (0); an empty helper
+    // label avoids widening/restyling the button with status copy.
+    t.textContent = ts ? 'Updated ' + fmtAge(ts) : '';
     t.classList.toggle('cf-stale', !!ts && (Date.now() - ts > STALE_MS));
   }
   function updateChip() {
