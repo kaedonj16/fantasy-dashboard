@@ -155,3 +155,12 @@ def test_large_roster_search_is_bounded_by_starter_slots():
     )
     assert starters == {"wr37", "wr38", "wr39"}
     assert total == 114.0
+
+
+def test_kicker_and_defense_aliases_are_legal_and_zero_is_authoritative():
+    scores = {"k": 0.0, "dst": 12.0, "bench_dst": 4.0}
+    positions = {"k": "PK", "dst": "D/ST", "bench_dst": "DST"}
+    result = analyze_lineup(scores, positions, ["K", "DEF"], list(scores), ["k", "dst"])
+    assert result["complete"] is True
+    assert result["actual"] == result["optimal"] == 12.0
+    assert result["missing_scores"] == []

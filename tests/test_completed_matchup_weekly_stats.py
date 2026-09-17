@@ -50,3 +50,10 @@ def test_completed_week_keeps_canonical_stats_when_schedule_is_final(monkeypatch
     }
     rendered = mmod.render_matchup_slide("2025", matchup, 1, 1, {}, {}, {}, {}, {})
     assert "200 yds" in rendered
+
+
+def test_shared_stat_resolver_handles_suffix_nickname_and_historical_team():
+    stats = {"SEA": {"RB": {"ken walker": {"rush_att": 18, "rush_yds": 91}}},
+             "NE": {"WR": {"stefon diggs": {"rec": 6, "tgt": 8, "rec_yds": 74}}}}
+    assert "CAR 18" in mmod.format_player_stats(stats, "NYG", "RB", "Kenneth Walker III")
+    assert "TGT 8" in mmod.format_player_stats(stats, "BUF", "WR", "Stefon Diggs")

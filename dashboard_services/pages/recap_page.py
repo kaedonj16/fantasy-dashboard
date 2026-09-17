@@ -437,14 +437,16 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
           <div class="recap-team-name">{w_team}</div>
           <div class="recap-team-manager">@{html.escape(m["winner"])}</div>
         </div>
+        <strong class="recap-team-mobile-score">{m['w_pts']:.2f}</strong>
       </div>
     </div>
     <div class="recap-matchup-score">
       <div class="recap-matchup-scoreline">{m['w_pts']:.2f} <span>–</span> {m['l_pts']:.2f}</div>
-      <div class="recap-matchup-margin" style="color:{margin_color};">+{m['margin']:.2f}</div>
+      <div class="recap-matchup-margin" style="color:{margin_color};">Margin +{m['margin']:.2f}</div>
     </div>
     <div class="recap-team recap-team--right">
       <div class="recap-team-identity">
+        <strong class="recap-team-mobile-score">{m['l_pts']:.2f}</strong>
         <div class="recap-team-copy">
           <div class="recap-team-name">{l_team}</div>
           <div class="recap-team-manager">@{html.escape(m["loser"])}</div>
