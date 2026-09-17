@@ -227,7 +227,9 @@ def test_matchup_shows_box_score_once_game_is_live(monkeypatch):
     assert "233 yds" in html
     assert "1 td" in html
     assert "11 car" in html
-    assert "68 yds" in html
+    assert "68 rush yds" in html
+    # int 0 / rush td 0 are dropped, not shown as "0 int".
+    assert "0 int" not in html
     assert "m-cell-stats" in html
 
 
@@ -508,10 +510,111 @@ def test_matchup_shows_def_box_score_instead_of_unavailable(monkeypatch):
         teams={},
         team_game_lookup={"SF": finished},
     )
-    assert "PA 17" in html
-    assert "SACK 3" in html
+    assert "17 pa" in html
+    assert "3 sacks" in html
     assert "Stats unavailable" not in html
     assert "m-cell-stats--unavailable" not in html
+
+
+def test_matchup_trusts_past_week_line_despite_lagging_code(monkeypatch):
+    """A strictly-past week (w < proj_week) is finalized: its own week snapshot
+    is authoritative, so a real box-score line shows even when Tank01's schedule
+    cache still lags at code 0 and there is no live-points 'rescue' available."""
+    mmod = _matchups()
+    finished = {
+        "home": "NYG",
+        "away": "WSH",
+        "gameDate": "20260909",
+        "gameTime": "8:20p",
+        "gameStatus": "Scheduled",
+        "gameStatusCode": "0",
+        "gameTime_epoch": "1788999600.0",
+        "gameID": "20260909_WSH@NYG",
+    }
+    monkeypatch.setattr(mmod, "load_teams_index", lambda: {})
+    monkeypatch.setattr(mmod, "build_offense_rankings", lambda *_a, **_k: {})
+    monkeypatch.setattr(mmod, "load_week_stats", lambda *_a, **_k: DANIELS_STATS)
+    monkeypatch.setattr(mmod, "load_week_schedule", lambda *_a, **_k: [])
+    monkeypatch.setattr(mmod, "build_team_schedule_lookup", lambda *_a, **_k: {})
+    monkeypatch.setattr(mmod, "_allow_live_game_indicators", lambda *_a, **_k: True)
+    monkeypatch.setattr(mmod, "get_nfl_scores_for_date", lambda *_a, **_k: None)
+
+    html = mmod.render_matchup_slide(
+        "2026", _daniels_matchup(), w=1, proj_week=3,
+        # No scoring_settings: the current-week rescue can't fire, so this proves
+        # the past-week path itself trusts the line.
+        status_by_pid={"11566": mmod.STATUS_FINAL, "4984": mmod.STATUS_NOT_STARTED},
+        projections={},
+        players={},
+        teams={},
+        team_game_lookup={"WSH": finished, "WAS": finished},
+    )
+    assert "233 yds" in html
+    assert "m-cell-stats" in html
+    assert "m-cell-stats--unavailable" not in html
+
+
+def test_matchup_overlays_missing_k_and_def_for_completed_week(monkeypatch):
+    """Legacy weekly snapshots cached only QB/RB/WR/TE, so kickers and defenses
+    rendered as 'Stats unavailable'. When those buckets are missing the slide
+    lazily overlays K/IDP/DEF from the week's Sleeper snapshot and renders them."""
+    mmod = _matchups()
+    finished_bal = {
+        "home": "BAL", "away": "BUF",
+        "gameDate": "20260909", "gameTime": "8:20p",
+        "gameStatus": "Final", "gameStatusCode": "2",
+        "gameTime_epoch": "1788999600.0", "gameID": "20260909_BUF@BAL",
+    }
+    finished_kc = {
+        "home": "KC", "away": "LAC",
+        "gameDate": "20260909", "gameTime": "8:20p",
+        "gameStatus": "Final", "gameStatusCode": "2",
+        "gameTime_epoch": "1788999600.0", "gameID": "20260909_LAC@KC",
+    }
+    # Snapshot with only offensive buckets -- the pre-fix on-disk shape.
+    base_stats = {"KC": {"QB": {"patrick mahomes": {"pass_yds": 250, "pass_td": 2, "int": 0}}}}
+
+    def fake_overlay(*, league_week_stats, season, week, teams_index):
+        league_week_stats.setdefault("KC", {}).setdefault("K", {})["harrison butker"] = {
+            "fgm": 3, "fga": 3, "xpm": 2, "xpa": 2, "pos": "PK",
+        }
+        league_week_stats.setdefault("BAL", {}).setdefault("IDP", {})["team defense"] = {
+            "sack": 3, "int": 1, "fum_rec": 1, "def_td": 0, "pts_allow": 17, "pos": "LB",
+        }
+
+    monkeypatch.setattr(mmod, "load_teams_index", lambda: {"KC": {}, "BAL": {}})
+    monkeypatch.setattr(mmod, "build_offense_rankings", lambda *_a, **_k: {})
+    monkeypatch.setattr(mmod, "load_week_stats", lambda *_a, **_k: dict(base_stats))
+    monkeypatch.setattr(mmod, "overlay_idp_and_k_stats_from_sleeper", fake_overlay)
+    monkeypatch.setattr(mmod, "load_week_schedule", lambda *_a, **_k: [])
+    monkeypatch.setattr(mmod, "build_team_schedule_lookup", lambda *_a, **_k: {})
+    monkeypatch.setattr(mmod, "_allow_live_game_indicators", lambda *_a, **_k: True)
+    monkeypatch.setattr(mmod, "get_nfl_scores_for_date", lambda *_a, **_k: None)
+
+    m = {
+        "left": {
+            "name": "A", "roster_id": "1", "record": "0-0",
+            "username": "a", "avatar": "", "pts_total": 0.0,
+            "starters": [{"pid": None, "name": "Ravens", "pos": "DEF", "nfl": "BAL", "pts": 10.0}],
+        },
+        "right": {
+            "name": "B", "roster_id": "2", "record": "0-0",
+            "username": "b", "avatar": "", "pts_total": 0.0,
+            "starters": [{"pid": "3068", "name": "Harrison Butker", "pos": "K", "nfl": "KC", "pts": 11.0}],
+        },
+    }
+
+    html = mmod.render_matchup_slide(
+        "2025", m, w=1, proj_week=3,
+        status_by_pid={"3068": mmod.STATUS_FINAL},
+        projections={},
+        players={},
+        teams={},
+        team_game_lookup={"BAL": finished_bal, "KC": finished_kc},
+    )
+    assert "Stats unavailable" not in html
+    assert "3/3 fg" in html
+    assert "3 sacks" in html
 
 
 def test_week_stats_builder_writes_empty_before_kickoff(monkeypatch, tmp_path):
