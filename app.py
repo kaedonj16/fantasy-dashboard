@@ -2018,7 +2018,7 @@ BASE_HTML = """
       {ad_top}
 
       <script>window._viewerRid = {viewer_roster_id_js}; window._viewerUid = {viewer_user_id_js}; window._isSignedIn = {signed_in_js}; window._hasAccount = {has_account_js}; window._accountEmail = {account_email_js}; window.__FEATURES_JS = {features_js_js}; window.__PLAYER_MODAL_JS = {player_modal_js_js}; window.__DASHBOARD_CSS = {dashboard_css_js}; window.__brctx = {{is_logged_in:{signed_in_js},isPremium:{user_premium},platform:{platform_js},season:{season_js},leagueId:{league_id_js},leagueName:{league_name_js},leagueFormat:{league_format_js},currentWeek:{current_week_js},leagueType:{league_type_js},leagueSize:{league_size_js},scoringType:{league_scoring_type_js}}};</script>
-      <main id="page-root" role="main" tabindex="-1" class="overview-layout" data-cache-ts="{cache_ts}" data-premium="{user_premium}">
+      <main id="page-root" role="main" tabindex="-1" class="overview-layout" data-cache-ts="{cache_ts}" data-platform="{platform_attr}" data-season="{season_attr}" data-league-id="{league_id_attr}" data-premium="{user_premium}">
         {body}
       </main>
 
@@ -2338,10 +2338,14 @@ def _league_ctx_cache_valid(entry, platform, season, league_id) -> bool:
 
 
 def _league_cache_ts_ms(platform, season, league_id) -> int:
-    """data-cache-ts for the freshness chip: when league data was last built."""
-    now_ms = int(time.time() * 1000)
+    """Last successful build of the league snapshot, in milliseconds.
+
+    Zero deliberately means "unknown".  A page render is not a data refresh,
+    and substituting its wall-clock time made an unbuilt/evicted context look
+    freshly updated while the page could still contain an older snapshot.
+    """
     if not (platform and season and league_id):
-        return now_ms
+        return 0
     try:
         entry = DASHBOARD_CACHE.get(_cache_key(str(platform), int(season), str(league_id))) or {}
         ts = float(entry.get("ts") or 0)
@@ -2349,7 +2353,7 @@ def _league_cache_ts_ms(platform, season, league_id) -> int:
             return int(ts * 1000)
     except (TypeError, ValueError):
         pass
-    return now_ms
+    return 0
 
 
 def get_page_html_from_cache(platform: str, season: int, league_id: str, page: str) -> Optional[str]:
@@ -5404,6 +5408,8 @@ def render_page(
         noindex: Optional[bool] = None,
         **kwargs,
 ) -> str:
+    import html as _html_module
+
     if league_id and platform and season:
         session["last_league_id"] = league_id
         session["last_platform"] = platform
@@ -5587,6 +5593,9 @@ def render_page(
         body=wrapped_body,
         bottom_nav=_bottom,
         cache_ts=_league_cache_ts_ms(platform, season, league_id),
+        platform_attr=_html_module.escape(str(platform or ""), quote=True),
+        season_attr=_html_module.escape(str(season or ""), quote=True),
+        league_id_attr=_html_module.escape(str(league_id or ""), quote=True),
         user_premium="true" if is_premium else "false",
         adsense_script="" if (_soft_nav or not show_ads) else _AD_SCRIPT,
         ad_top="" if (_soft_nav or not show_ads) else _AD_TOP,

@@ -99,6 +99,8 @@ def canonicalize_slot(slot) -> str:
         return "RB_TE"
     if s in DEF_SLOT_NAMES:
         return "DEF"
+    if s in {"K", "PK", "KICKER"}:
+        return "K"
     if s in {"BE", "BENCH"}:
         return "BN"
     if s == "RESERVE":
