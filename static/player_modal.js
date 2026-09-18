@@ -277,7 +277,15 @@ function openPlayerModal(playerId, playerName, opts) {
       } else if (isProspect(pid)) {
         badges += '<span class="player-badge player-badge-prospect"><i class="fa-solid fa-seedling" aria-hidden="true"></i> PROSPECT</span>';
       }
-      const boardEligible = breakoutData && breakoutData.board_eligible === true;
+      // A card rendered by the Breakout Engine is authoritative even if the
+      // player-specific membership request is stale or resolves differently.
+      const contextBreakoutCandidate = opts.isBreakoutCandidate === true && opts.breakoutCandidate
+        ? opts.breakoutCandidate
+        : null;
+      const boardEligible = !!contextBreakoutCandidate || (breakoutData && breakoutData.board_eligible === true);
+      const resolvedBreakoutData = contextBreakoutCandidate
+        ? { ...(breakoutData || {}), ...contextBreakoutCandidate, available: true, board_eligible: true }
+        : breakoutData;
       if (boardEligible) {
         badges += '<span class="player-badge player-badge-breakout"><i class="fa-solid fa-fire" aria-hidden="true"></i> BREAKOUT</span>';
       }
@@ -1046,7 +1054,7 @@ function openPlayerModal(playerId, playerName, opts) {
       const tabBreakout = document.getElementById('pmTabBreakout');
       if (tabBreakout) tabBreakout.style.display = boardEligible ? '' : 'none';
       const breakoutPanel = document.getElementById('pm-panel-breakout');
-      if (breakoutPanel) breakoutPanel._breakoutData = breakoutData;
+      if (breakoutPanel) breakoutPanel._breakoutData = resolvedBreakoutData;
 
       // Must be set before pmSwitchTab is called so the metrics lazy-load check works
       if (pmTabBar) pmTabBar.dataset.pmHasMetrics = hasMetrics ? '1' : '';
