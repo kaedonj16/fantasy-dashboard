@@ -627,10 +627,8 @@ def _unavailable_breakout_payload(season: Optional[int]) -> Dict:
 # =============================================================================
 # During the season the board is served from the weekly usage engine
 # (weekly_breakout / weekly_store), not the offseason opportunity table. The
-# payloads keep the legacy field names the UI already reads
-# (breakout_opportunity_score, confidence_score, key_reasons, breakout_blend) and
-# add weekly-specific fields (classification, usage_comparison, freshness,
-# provisional, risks) under a ``weekly`` flag so the modal can branch.
+# Weekly payloads intentionally use their own contract. They do not manufacture
+# offseason projections/components; every consumer must branch on mode/weekly.
 
 _WEEKLY_SIGNAL_UNITS = {
     "snap_share": "%", "target_share": "%",
@@ -643,6 +641,7 @@ _WEEKLY_SIGNAL_LABELS = {
 }
 _WEEKLY_CLASS_LABELS = {
     "emerging_breakout": "Emerging Breakout",
+    "provisional_emerging": "Provisional Emerging",
     "temporary_opportunity": "Temporary Opportunity",
     "watchlist": "Watchlist",
 }
@@ -655,6 +654,15 @@ def _weekly_breakout_available(season: int) -> bool:
         return latest_scored_week(season) is not None
     except Exception:
         logger.debug("weekly breakout availability check failed", exc_info=True)
+        return False
+
+
+def _weekly_history_exists(season: int) -> bool:
+    try:
+        from data_building.breakout_engine.weekly_store import has_any_weekly_snapshot
+        return has_any_weekly_snapshot(season)
+    except Exception:
+        logger.debug("weekly breakout history check failed", exc_info=True)
         return False
 
 
@@ -691,20 +699,27 @@ def _weekly_row_to_candidate(row: Dict) -> Dict:
     score = float(row.get("breakout_score") or 0)
     conf = float(row.get("confidence") or 0)
     classification = row.get("classification") or "watchlist"
-    reasons_text = row.get("reasons") or "\n".join(evidence.get("reasons") or [])
-    risks_list = (row.get("risks") or "").split("\n") if row.get("risks") else (evidence.get("risks") or [])
+    raw_reasons = row.get("reasons") or evidence.get("reasons") or []
+    reasons_text = ("\n".join(raw_reasons) if isinstance(raw_reasons, list)
+                    else str(raw_reasons))
+    raw_risks = row.get("risks") or evidence.get("risks") or []
+    risks_list = raw_risks if isinstance(raw_risks, list) else str(raw_risks).split("\n")
     risks_list = [r for r in risks_list if r]
+    subscores = evidence.get("subscores") or {}
+    diagnostics = evidence.get("signal_diagnostics") or {}
+    opportunity = evidence.get("opportunity") or {}
+    lifecycle = evidence.get("lifecycle") or {}
     return {
         "player_id": str(row.get("player_id") or ""),
         "player_name": row.get("player_name"),
         "team": row.get("team"),
         "position": row.get("position"),
-        # legacy field names the existing UI/consumers read
+        "key_reasons": reasons_text,
+        # Existing generic breakout consumers use these score aliases. They map
+        # to real weekly values (not fabricated offseason components/projections).
         "breakout_opportunity_score": round(score, 1),
         "confidence_score": round(conf, 1),
-        "key_reasons": reasons_text,
         "breakout_blend": round(score / 100.0, 4),
-        "hit_probability": None,
         "breakout_type": {
             "type": classification,
             "label": _WEEKLY_CLASS_LABELS.get(classification, classification.title()),
@@ -712,12 +727,31 @@ def _weekly_row_to_candidate(row: Dict) -> Dict:
         # weekly-specific
         "weekly": True,
         "mode": "weekly",
+        "scoring_version": row.get("scoring_version") or evidence.get("scoring_version"),
         "classification": classification,
         "classification_label": _WEEKLY_CLASS_LABELS.get(classification, classification.title()),
         "breakout_score": round(score, 1),
+        "final_breakout_score": round(score, 1),
+        "ranking_score": subscores.get("ranking_score", evidence.get("ranking_score")),
         "confidence": round(conf, 1),
         "provisional": bool(row.get("provisional")),
         "baseline_source": row.get("baseline_source"),
+        "score_basis": evidence.get("score_basis"),
+        "previous_breakout_status": evidence.get("previous_breakout_status"),
+        "established_role_penalty": evidence.get("established_role_penalty"),
+        "role_novelty_reason": evidence.get("role_novelty_reason"),
+        "role_change_score": subscores.get("role_change_score", evidence.get("role_change_score")),
+        "current_role_score": subscores.get("current_role_score", evidence.get("current_role_score")),
+        "sustainability_score": subscores.get("sustainability_score", evidence.get("sustainability_score")),
+        "breakout_novelty_score": subscores.get("breakout_novelty_score", evidence.get("breakout_novelty_score")),
+        "expectation_delta_score": subscores.get("expectation_delta_score", evidence.get("expectation_delta_score")),
+        "supporting_signal_count": diagnostics.get("supporting_signal_count", evidence.get("supporting_signal_count")),
+        "supporting_signals": diagnostics.get("supporting_signals", evidence.get("supporting_signals")) or [],
+        "conflicting_signals": diagnostics.get("conflicting_signals", evidence.get("conflicting_signals")) or [],
+        "signal_agreement_score": diagnostics.get("signal_agreement_score", evidence.get("signal_agreement_score")),
+        "opportunity_source": opportunity.get("opportunity_source", evidence.get("opportunity_source")),
+        "opportunity_source_confidence": opportunity.get("opportunity_source_confidence", evidence.get("opportunity_source_confidence")),
+        "opportunity_source_reason": opportunity.get("opportunity_source_reason", evidence.get("opportunity_source_reason")),
         "as_of_week": row.get("as_of_week"),
         "evaluated_weeks": list(row.get("evaluated_weeks") or []),
         "recent_weeks": list(row.get("recent_weeks") or []),
@@ -726,6 +760,12 @@ def _weekly_row_to_candidate(row: Dict) -> Dict:
         "risks": risks_list,
         "usage_comparison": _weekly_usage_comparison(evidence),
         "sample": evidence.get("sample"),
+        "lifecycle": lifecycle,
+        "previous_score": lifecycle.get("previous_score"),
+        "score_change": lifecycle.get("score_change"),
+        "first_detected_week": lifecycle.get("first_detected_week"),
+        "consecutive_flagged_weeks": lifecycle.get("consecutive_flagged_weeks"),
+        "lifecycle_state": lifecycle.get("lifecycle_state"),
         "fantasy": evidence.get("fantasy"),
         "coverage_fraction": (float(row["coverage_fraction"])
                               if row.get("coverage_fraction") is not None else None),
@@ -736,14 +776,21 @@ def get_weekly_breakout_candidates(season: int, min_score: float = 0.0,
                                    limit: Optional[int] = None) -> Dict:
     """In-season board served from the weekly engine."""
     from data_building.breakout_engine.weekly_store import load_weekly_candidates
-    from data_building.breakout_engine.weekly_breakout import WATCHLIST_MIN_SCORE
+    from data_building.breakout_engine.weekly_breakout import (
+        WATCHLIST_MIN_SCORE, INITIAL_ROLE_DISCOVERY_MIN,
+    )
 
     payload = load_weekly_candidates(
         season, min_score=max(min_score, WATCHLIST_MIN_SCORE), limit=None
     )
     rows = payload.get("candidates", [])
     candidates = [_weekly_row_to_candidate(r) for r in rows]
-    candidates.sort(key=lambda c: (c.get("breakout_score") or 0, c.get("confidence") or 0),
+    candidates = [candidate for candidate in candidates
+                  if candidate.get("score_basis") != "initial_role"
+                  or float(candidate.get("current_role_score") or 0) >= INITIAL_ROLE_DISCOVERY_MIN]
+    candidates.sort(key=lambda c: (c.get("ranking_score") if c.get("ranking_score") is not None
+                                   else c.get("breakout_score") or 0,
+                                   c.get("breakout_score") or 0),
                     reverse=True)
     if limit and limit > 0:
         candidates = candidates[:limit]
@@ -838,6 +885,16 @@ def get_breakout_candidates(season: Optional[int] = None, min_score: float = 0.0
     # In-season: serve the weekly usage engine's board when it has a snapshot.
     if _weekly_breakout_available(season):
         return get_weekly_breakout_candidates(season, min_score=min_score, limit=limit)
+
+    # Weekly history exists but no row is compatible with the current scorer.
+    # Never disguise that deployment state as an offseason board.
+    if _weekly_history_exists(season):
+        from data_building.breakout_engine.weekly_breakout import SCORING_VERSION
+        return {"season": season, "candidates": [], "count": 0,
+                "mode": "weekly", "weekly": True, "data_available": False,
+                "data_status": "incompatible_snapshot",
+                "required_scoring_version": SCORING_VERSION,
+                "reason": "Weekly snapshot requires recalculation."}
 
     if not opportunity_data_ready(season):
         return _unavailable_breakout_payload(season)

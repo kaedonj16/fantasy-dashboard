@@ -17927,7 +17927,7 @@ function _renderBkModalContent(data, playerId) {
   const name  = data.player_name || 'Unknown';
   const team  = data.team || '';
   const pos   = data.position || '';
-  const score = parseFloat(data.breakout_opportunity_score || 0);
+  const score = parseFloat(data.weekly ? (data.breakout_score || 0) : (data.breakout_opportunity_score || 0));
   const scoreStr = score.toFixed(1);
 
   const formattedPhase = data.phase

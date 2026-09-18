@@ -108,6 +108,20 @@ def _result_row(result: Dict[str, Any], season: int, as_of_week: int, as_of_date
         "coverage": result.get("coverage"),
         "confidence_detail": result.get("confidence_detail"),
         "fantasy": result.get("fantasy"),
+        "score_basis": result.get("score_basis"),
+        "previous_breakout_status": result.get("previous_breakout_status"),
+        "established_role_penalty": result.get("established_role_penalty"),
+        "role_novelty_reason": result.get("role_novelty_reason"),
+        "subscores": {key: result.get(key) for key in (
+            "role_change_score", "current_role_score", "sustainability_score",
+            "breakout_novelty_score", "expectation_delta_score", "ranking_score")},
+        "signal_diagnostics": {key: result.get(key) for key in (
+            "supporting_signal_count", "supporting_signals", "conflicting_signals",
+            "signal_agreement_score")},
+        "opportunity": {key: result.get(key) for key in (
+            "opportunity_source", "opportunity_source_confidence",
+            "opportunity_source_reason")},
+        "lifecycle": result.get("lifecycle"),
         "reasons": result.get("reasons"),
         "risks": result.get("risks"),
     }
@@ -222,14 +236,45 @@ def record_run(
 
 
 def latest_scored_week(season: int) -> Optional[int]:
-    """The most recent as_of_week that actually has saved score rows, or None."""
+    """Most recent snapshot compatible with the current scorer.
+
+    Old rows remain as history, but are never advertised as the current board.
+    """
+    from data_building.breakout_engine.weekly_breakout import SCORING_VERSION
     init_weekly_breakout_db()
     with get_conn() as conn:
         row = conn.execute(
-            f"SELECT MAX(as_of_week) AS w FROM {WEEKLY_SCORES_TABLE} WHERE season = %s",
-            (int(season),),
+            f"SELECT MAX(as_of_week) AS w FROM {WEEKLY_SCORES_TABLE} "
+            f"WHERE season = %s AND scoring_version = %s",
+            (int(season), SCORING_VERSION),
         ).fetchone()
     return int(row["w"]) if row and row.get("w") is not None else None
+
+
+def has_any_weekly_snapshot(season: int) -> bool:
+    """Whether history exists, including an incompatible old scoring version."""
+    init_weekly_breakout_db()
+    with get_conn() as conn:
+        row = conn.execute(
+            f"SELECT 1 AS present FROM {WEEKLY_SCORES_TABLE} WHERE season = %s LIMIT 1",
+            (int(season),),
+        ).fetchone()
+    return bool(row)
+
+
+def load_previous_week_scores(season: int, before_week: int) -> Dict[str, Dict[str, Any]]:
+    """Latest compatible score per player before a new snapshot (lifecycle input)."""
+    from data_building.breakout_engine.weekly_breakout import SCORING_VERSION
+    init_weekly_breakout_db()
+    with get_conn() as conn:
+        rows = conn.execute(
+            f"SELECT DISTINCT ON (player_id) player_id, as_of_week, breakout_score, "
+            f"classification, evidence FROM {WEEKLY_SCORES_TABLE} "
+            f"WHERE season=%s AND as_of_week < %s AND scoring_version=%s "
+            f"ORDER BY player_id, as_of_week DESC",
+            (int(season), int(before_week), SCORING_VERSION),
+        ).fetchall()
+    return {str(row["player_id"]): dict(row) for row in rows}
 
 
 def get_latest_run(season: int) -> Optional[Dict[str, Any]]:
@@ -259,6 +304,7 @@ def load_weekly_candidates(
     a payload with candidates plus freshness metadata.
     """
     init_weekly_breakout_db()
+    from data_building.breakout_engine.weekly_breakout import SCORING_VERSION
     week = as_of_week if as_of_week is not None else latest_scored_week(season)
     if week is None:
         return {
@@ -266,14 +312,15 @@ def load_weekly_candidates(
             "data_available": False, "data_status": "unavailable",
         }
 
-    params: List[Any] = [int(season), int(week), float(min_score)]
+    params: List[Any] = [int(season), int(week), SCORING_VERSION, float(min_score)]
     clause = ""
     if classifications:
         clause = " AND classification = ANY(%s)"
         params.append(list(classifications))
     query = (
         f"SELECT * FROM {WEEKLY_SCORES_TABLE} "
-        f"WHERE season = %s AND as_of_week = %s AND breakout_score >= %s{clause} "
+        f"WHERE season = %s AND as_of_week = %s AND scoring_version = %s "
+        f"AND breakout_score >= %s{clause} "
         f"ORDER BY breakout_score DESC, confidence DESC"
     )
     with get_conn() as conn:
@@ -298,7 +345,7 @@ def load_weekly_candidates(
         "data_available": True,
         "data_status": "stale" if weeks_stale >= 1 else "ok",
         "weeks_stale": weeks_stale,
-        "scoring_version": (run or {}).get("scoring_version"),
+        "scoring_version": SCORING_VERSION,
         "last_run_status": (run or {}).get("status"),
     }
 
@@ -313,10 +360,12 @@ def get_weekly_candidate(
     week = as_of_week if as_of_week is not None else latest_scored_week(season)
     if week is None:
         return None
+    from data_building.breakout_engine.weekly_breakout import SCORING_VERSION
     with get_conn() as conn:
         row = conn.execute(
             f"SELECT * FROM {WEEKLY_SCORES_TABLE} "
-            f"WHERE player_id = %s AND season = %s AND as_of_week = %s",
-            (str(player_id), int(season), int(week)),
+            f"WHERE player_id = %s AND season = %s AND as_of_week = %s "
+            f"AND scoring_version = %s",
+            (str(player_id), int(season), int(week), SCORING_VERSION),
         ).fetchone()
     return dict(row) if row else None

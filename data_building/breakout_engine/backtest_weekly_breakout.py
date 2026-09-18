@@ -173,6 +173,26 @@ def _lead_time(rows: List[Dict], cutoff_week: int, horizon: int) -> Optional[int
     return None
 
 
+def _retained_rest_of_season(rows: List[Dict], position: str,
+                             cutoff_week: int) -> Optional[bool]:
+    """Did at least half of the detected role gain persist over all later games?"""
+    future = [row for row in rows if int(row["week"]) > cutoff_week and _positive_usage(row)]
+    if not future:
+        return None
+    through = [row for row in rows if int(row["week"]) <= cutoff_week and _positive_usage(row)]
+    baseline, recent = _window_avgs(through, position)
+    key = _key_stat(position)
+    future_avg, _ = _mean_present(future, key)
+    if recent is None or future_avg is None:
+        return None
+    if baseline is None:
+        return future_avg >= recent * .65
+    gain = recent - baseline
+    if gain <= 0:
+        return False
+    return future_avg >= baseline + .5 * gain
+
+
 # =============================================================================
 # baseline pickers
 # =============================================================================
@@ -207,7 +227,7 @@ def run_backtest(
     """Evaluate model vs baselines across ``eval_weeks``. Pure. See module doc."""
     methods = ("model", "recent_points", "usage_growth")
     agg = {m: {"picks": 0, "hits": 0, "useful_picks": 0, "useful_hits": 0,
-               "lead_times": []} for m in methods}
+               "ros_picks": 0, "ros_hits": 0, "lead_times": []} for m in methods}
     coverage_num = {m: 0 for m in methods}
     coverage_den = 0
 
@@ -219,6 +239,7 @@ def run_backtest(
         usage_scored: List[Tuple[str, float]] = []
         sustain_by_pid: Dict[str, Optional[bool]] = {}
         useful_by_pid: Dict[str, Optional[bool]] = {}
+        ros_by_pid: Dict[str, Optional[bool]] = {}
 
         for pid, rows in series_by_player.items():
             meta = meta_by_player.get(pid, {})
@@ -229,13 +250,18 @@ def run_backtest(
             universe.append(pid)
             sustain_by_pid[pid] = _did_sustain(rows, pos, W, horizon)
             useful_by_pid[pid] = _became_useful(rows, pos, W, horizon)
+            ros_by_pid[pid] = _retained_rest_of_season(rows, pos, W)
 
             res = score_player(
                 {"player_id": pid, "position": pos, "team": meta.get("team")},
                 rows, cutoff_week=W,
             )
             if res["classification"] in ("emerging_breakout", "temporary_opportunity"):
-                model_scored.append((pid, res["breakout_score"]))
+                # Selected ranking formula: magnitude × (0.75 + 0.25 confidence).
+                # Confidence can move ordering by at most 25%; it cannot turn a
+                # weak signal into a candidate because classification happens
+                # first on the unadjusted final score and role-quality gates.
+                model_scored.append((pid, res.get("ranking_score", res["breakout_score"])))
             recent_scored.append((pid, _recent_ppg(rows, W)))
             usage_scored.append((pid, _usage_delta(rows, pos, W)))
 
@@ -264,6 +290,11 @@ def run_backtest(
                     agg[m]["useful_picks"] += 1
                     if u:
                         agg[m]["useful_hits"] += 1
+                ros = ros_by_pid.get(pid)
+                if ros is not None:
+                    agg[m]["ros_picks"] += 1
+                    if ros:
+                        agg[m]["ros_hits"] += 1
             coverage_num[m] += len(set(plist) & true_risers)
 
     report = {"eval_weeks": eval_weeks, "top_n": top_n, "horizon": horizon, "methods": {}}
@@ -273,14 +304,19 @@ def run_backtest(
         lts = agg[m]["lead_times"]
         u_picks = agg[m]["useful_picks"]
         u_hits = agg[m]["useful_hits"]
+        ros_picks = agg[m]["ros_picks"]
+        ros_hits = agg[m]["ros_hits"]
+        ordered_lts = sorted(lts)
         report["methods"][m] = {
             "picks_evaluated": picks,
             "hits": hits,
             "precision": round(hits / picks, 3) if picks else None,
             "precision_useful": round(u_hits / u_picks, 3) if u_picks else None,
+            "rest_of_season_role_retention": round(ros_hits / ros_picks, 3) if ros_picks else None,
             "false_positive_rate": round((picks - hits) / picks, 3) if picks else None,
             "coverage": round(coverage_num[m] / coverage_den, 3) if coverage_den else None,
             "avg_lead_time_games": round(sum(lts) / len(lts), 2) if lts else None,
+            "median_lead_time_games": ordered_lts[len(ordered_lts) // 2] if ordered_lts else None,
         }
     return report
 
@@ -290,7 +326,7 @@ _BUCKETS = ((0, 49), (50, 59), (60, 69), (70, 79), (80, 89), (90, 100))
 
 def build_evaluation_records(series_by_player, meta_by_player, *, season,
                              eval_weeks, horizons=(1, 3, 6)) -> List[Dict[str, Any]]:
-    """Leakage-safe weekly-v2 rows suitable for calibration and later replay."""
+    """Leakage-safe current-version rows suitable for calibration and replay."""
     records = []
     for week in eval_weeks:
         for pid, rows in series_by_player.items():

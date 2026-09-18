@@ -1672,11 +1672,11 @@ function pmSwitchTab(tab, clickEvent) {
       .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
       .then(data => {
         if (!panel.isConnected) return;
-        if (!data || data.available === false || (data.breakout_opportunity_score == null && !data.breakout_blend)) {
+        if (!data || data.available === false || (!data.weekly && data.breakout_opportunity_score == null && !data.breakout_blend)) {
           panel.innerHTML = '<div class="player-modal-loading" style="padding:32px 0;"><div style="color:var(--text-muted);font-size:13px;">Not in this week’s board.</div></div>';
           return;
         }
-        const score = parseFloat(data.breakout_opportunity_score || 0);
+        const score = parseFloat(data.weekly ? (data.breakout_score || 0) : (data.breakout_opportunity_score || 0));
         let scoreColor = '#10b981';
         if (score < 50) scoreColor = '#3b82f6';
         if (score < 40) scoreColor = '#f59e0b';
@@ -2818,7 +2818,7 @@ function _buildWeeklyBkTabHTML(data) {
   const conf  = Math.round(parseFloat(data.confidence != null ? data.confidence : (data.confidence_score || 0)));
   const cls   = data.classification || 'watchlist';
   const clsLabel = data.classification_label ||
-    ({emerging_breakout:'Emerging Breakout', temporary_opportunity:'Temporary Opportunity', watchlist:'Watchlist'}[cls] || cls);
+    ({emerging_breakout:'Emerging Breakout', provisional_emerging:'Provisional Emerging', temporary_opportunity:'Temporary Opportunity', watchlist:'Watchlist'}[cls] || cls);
 
   // Classification drives the accent; score drives the tier word.
   const clsColor = cls === 'emerging_breakout' ? '#10b981'
@@ -2849,9 +2849,9 @@ function _buildWeeklyBkTabHTML(data) {
   html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:6px;">`;
   html += `
     <div class="pm-hero-stat" style="background:${scoreColor}1a;border-color:${scoreColor}33;">
-      <div class="pm-hero-label" style="color:${scoreColor};">Breakout Score</div>
+      <div class="pm-hero-label" style="color:${scoreColor};">${data.score_basis === 'initial_role' ? 'Initial Role Score' : 'Role Change Score'}</div>
       <div class="pm-hero-val" style="color:${scoreColor};">${score}</div>
-      <div style="font-size:11px;font-weight:700;color:${scoreColor};text-transform:uppercase;letter-spacing:0.03em;margin-top:1px;">${tier} role change</div>
+      <div style="font-size:11px;font-weight:700;color:${scoreColor};text-transform:uppercase;letter-spacing:0.03em;margin-top:1px;">${data.score_basis === 'initial_role' ? 'No prior NFL baseline' : tier + ' role change'}</div>
     </div>`;
   html += `
     <div class="pm-hero-stat">
@@ -2892,7 +2892,7 @@ function _buildWeeklyBkTabHTML(data) {
       html += `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:12.5px;">
                  <span style="color:var(--text-muted);">${_pmEsc(u.label || u.key)}</span>
                  <span style="display:flex;align-items:center;gap:8px;">
-                   <span style="color:var(--text);font-variant-numeric:tabular-nums;">${fmt(u.baseline)} → <strong>${fmt(u.recent)}</strong></span>
+                   <span style="color:var(--text);font-variant-numeric:tabular-nums;">${u.baseline == null ? 'Initial role: ' : fmt(u.baseline) + ' → '}<strong>${fmt(u.recent)}</strong></span>
                    <span style="color:${dColor};font-weight:700;min-width:52px;text-align:right;font-variant-numeric:tabular-nums;">${dStr}</span>
                  </span>
                </div>`;

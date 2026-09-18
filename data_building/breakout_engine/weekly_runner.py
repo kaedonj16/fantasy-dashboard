@@ -151,7 +151,9 @@ def _prior_baseline_map(season: int) -> Dict[str, Dict[str, Any]]:
         return {}
     out: Dict[str, Dict[str, Any]] = {}
     for row in rows or []:
-        pid = str(row.get("id") or "")
+        # Historical exports normally contain both keys, but older/backfilled
+        # caches may contain only one. Both values are Sleeper player IDs.
+        pid = str(row.get("id") or row.get("player_id") or "")
         u = row.get("usage") or {}
         games = float(u.get("games") or 0)
         if not pid or games <= 0:
@@ -172,25 +174,66 @@ def _prior_baseline_map(season: int) -> Dict[str, Dict[str, Any]]:
                     pass
             return None
 
-        snap = u.get("snap_share", u.get("avg_off_snap_pct"))
+        def _observed_value(key, *, evidence_keys=()):
+            """Reject provider-shaped zero defaults unless corroborated.
+
+            nflverse history rows contain every usage key, frequently filled
+            with zero even when that statistic was not collected. Positive
+            values are observed; zero is observed only when another raw field
+            proves the player participated in the relevant phase.
+            """
+            value = u.get(key)
+            if value in (None, ""):
+                return None
+            try:
+                value = float(value)
+            except (TypeError, ValueError):
+                return None
+            if value != 0:
+                return value
+            for evidence_key in evidence_keys:
+                evidence = u.get(evidence_key)
+                try:
+                    if evidence not in (None, "") and float(evidence) > 0:
+                        return 0.0
+                except (TypeError, ValueError):
+                    continue
+            return None
+
+        # A zero snap percentage alongside positive offensive snaps is
+        # contradictory and is a known provider default, not an observed zero.
+        snap = _observed_value("snap_share")
+        if snap is None:
+            snap = _observed_value("avg_off_snap_pct")
         try:
             snap = float(snap) * 100.0 if snap is not None and float(snap) <= 1.0 else (
                 float(snap) if snap is not None else None)
         except (TypeError, ValueError):
             snap = None
-        ts = u.get("target_share")
+        ts = _observed_value(
+            "target_share", evidence_keys=("total_targets", "targets", "avg_targets"))
         try:
             ts = float(ts) * 100.0 if ts is not None and float(ts) <= 1.0 else (
                 float(ts) if ts is not None else None)
         except (TypeError, ValueError):
             ts = None
-        out[pid] = {
+        baseline = {
             "snap_pct": snap,
             "target_share": ts,
-            "targets_pg": _pg("targets", "avg_targets"),
-            "carries_pg": _pg("carries", "avg_carries"),
-            "pass_att_pg": _pg("pass_attempts", "avg_pass_att"),
+            "targets_pg": _observed_value(
+                "avg_targets", evidence_keys=("total_targets", "targets", "avg_off_snaps")),
+            "carries_pg": _observed_value(
+                "avg_carries", evidence_keys=("carries", "avg_off_snaps")),
+            "pass_att_pg": _observed_value(
+                "avg_pass_att", evidence_keys=("pass_attempts", "avg_off_snaps")),
         }
+        baseline["usable_signals"] = [k for k, v in baseline.items() if v is not None]
+        baseline["history_status"] = (
+            "usable" if len(baseline["usable_signals"]) >= 2 else
+            "partial" if baseline["usable_signals"] else "provider_defaults_only"
+        )
+        baseline["games"] = int(games)
+        out[pid] = baseline
     return out
 
 
@@ -241,6 +284,42 @@ def _injury_context_map(full_players: Dict[str, Any]) -> Dict[str, Dict[str, Any
 # orchestration
 # =============================================================================
 
+def derive_lifecycle(result: Dict[str, Any], previous: Optional[Dict[str, Any]],
+                     cutoff_week: int, watchlist_min: float) -> Dict[str, Any]:
+    """Deterministic lifecycle transition, separated for replay/tests."""
+    previous_score = float(previous.get("breakout_score") or 0) if previous else None
+    previous_evidence = (previous or {}).get("evidence") or {}
+    if isinstance(previous_evidence, str):
+        try:
+            previous_evidence = json.loads(previous_evidence)
+        except ValueError:
+            previous_evidence = {}
+    previous_lifecycle = previous_evidence.get("lifecycle") or {}
+    flagged = float(result.get("breakout_score") or 0) >= watchlist_min
+    prior_streak = int(previous_lifecycle.get("consecutive_flagged_weeks") or 0)
+    score_change = (round(float(result["breakout_score"]) - previous_score, 1)
+                    if previous_score is not None else None)
+    if previous is None:
+        state = "new"
+    elif not flagged and previous_score >= watchlist_min:
+        state = ("graduated" if prior_streak >= 4 and
+                 float(result.get("current_role_score") or 0) >= 50 else "invalidated")
+    elif score_change is not None and score_change <= -8:
+        state = "cooling"
+    elif prior_streak >= 2 and result.get("classification") == "emerging_breakout":
+        state = "confirmed"
+    elif flagged:
+        state = "rising"
+    else:
+        state = "graduated"
+    first_week = previous_lifecycle.get("first_detected_week")
+    if first_week is None:
+        first_week = (previous or {}).get("as_of_week", cutoff_week)
+    return {"previous_score": previous_score, "score_change": score_change,
+            "first_detected_week": first_week,
+            "consecutive_flagged_weeks": prior_streak + 1 if flagged else 0,
+            "lifecycle_state": state}
+
 def run_weekly_breakout(
     context: ScoringContext,
     *,
@@ -256,7 +335,9 @@ def run_weekly_breakout(
     # Local imports keep this module importable in the pure test suite; only the
     # actual run touches the DB / feeds.
     from data_building.weekly_metrics import build_weekly_metrics, get_player_weekly_series
-    from data_building.breakout_engine.weekly_breakout import score_player, SCORING_VERSION
+    from data_building.breakout_engine.weekly_breakout import (
+        score_player, SCORING_VERSION, WATCHLIST_MIN_SCORE,
+    )
     from data_building.breakout_engine import weekly_store
     from utils.utils import load_players_index
 
@@ -295,6 +376,10 @@ def run_weekly_breakout(
     # ── candidate universe: skill players on active rosters ──────────────────
     players_index = load_players_index() or {}
     prior = _prior_baseline_map(season)
+    try:
+        previous_scores = weekly_store.load_previous_week_scores(season, cutoff)
+    except Exception:
+        previous_scores = {}
 
     full_players: Dict[str, Any] = {}
     try:
@@ -306,6 +391,7 @@ def run_weekly_breakout(
 
     results: List[Dict[str, Any]] = []
     scanned = 0
+    baseline_counts = {"current_season": 0, "prior_season": 0, "none": 0}
     for pid, meta in players_index.items():
         pos = (meta.get("pos") or meta.get("position") or "").upper()
         team = meta.get("team")
@@ -323,6 +409,14 @@ def run_weekly_breakout(
             "player_name": meta.get("name") or meta.get("full_name"),
             "team": team,
             "position": pos,
+            "season": season,
+            "years_exp": (full_players.get(str(pid)) or {}).get("years_exp", meta.get("years_exp")),
+            "rookie_year": (full_players.get(str(pid)) or {}).get("rookie_year", meta.get("rookie_year")),
+            "draft_year": ((full_players.get(str(pid)) or {}).get("draft_year") or
+                           meta.get("draft_year") or meta.get("draft_yr")),
+            "draft_round": ((full_players.get(str(pid)) or {}).get("draft_round") or
+                            meta.get("draft_round")),
+            "depth_chart_order": (full_players.get(str(pid)) or {}).get("depth_chart_order"),
         }
         res = score_player(
             player, series,
@@ -330,6 +424,14 @@ def run_weekly_breakout(
             injury_context=injuries.get(str(pid)),
             cutoff_week=cutoff,
         )
+        source = res.get("baseline_source") or "none"
+        baseline_counts[source] = baseline_counts.get(source, 0) + 1
+        previous = previous_scores.get(str(pid))
+        res["previous_breakout_status"] = ((previous or {}).get("classification")
+                                           if previous else None)
+        lifecycle = derive_lifecycle(res, previous, cutoff, WATCHLIST_MIN_SCORE)
+        res["lifecycle"] = lifecycle
+        res.update(lifecycle)
         # Only keep players who cleared the candidacy floor; watchlist below the
         # floor is noise on the board (still reproducible from the raw data).
         if (res.get("breakout_score") or 0) >= min_score:
@@ -339,13 +441,48 @@ def run_weekly_breakout(
     n = len(results) or 1
     with_snap = sum(1 for r in results if r["signals"].get("snap_share", {}).get("available"))
     coverage = round(with_snap / n, 3)
+    scores = [float(r.get("breakout_score") or 0) for r in results]
+    hundreds = sum(1 for score in scores if score == 100.0)
+    distribution = {
+        "min": round(min(scores), 1) if scores else None,
+        "median": round(sorted(scores)[len(scores) // 2], 1) if scores else None,
+        "max": round(max(scores), 1) if scores else None,
+        "exactly_100": hundreds,
+        "exactly_100_pct": round(100.0 * hundreds / len(scores), 2) if scores else 0.0,
+    }
+    def _percentiles(values):
+        ordered = sorted(values)
+        if not ordered:
+            return {"p50": None, "p90": None, "p95": None}
+        return {name: round(ordered[int(frac * (len(ordered) - 1))], 1)
+                for name, frac in (("p50", .50), ("p90", .90), ("p95", .95))}
+
+    distribution["by_position"] = {
+        pos: _percentiles([float(r["breakout_score"]) for r in results if r.get("position") == pos])
+        for pos in ("QB", "RB", "WR", "TE")
+    }
+    distribution["season_phase"] = "early" if cutoff <= 4 else "mid" if cutoff <= 11 else "late"
+    prior_statuses = {status: sum(1 for value in prior.values()
+                                  if value.get("history_status") == status)
+                      for status in ("usable", "partial", "provider_defaults_only")}
+    coverage_detail = {"players_scored": scanned, **baseline_counts,
+                       "prior_cache_rows": len(prior), "prior_cache_status": prior_statuses}
+    # Once games exist, a near-empty prior map means an ID/schema/unit pipeline
+    # regression, not a rookie-heavy class. Make that operationally obvious.
+    prior_eligible = baseline_counts["prior_season"] + baseline_counts["none"]
+    if prior_eligible >= 20 and baseline_counts["prior_season"] / prior_eligible < 0.25:
+        print("[weekly_breakout] WARNING: prior-season baseline coverage collapsed "
+              f"({baseline_counts['prior_season']}/{prior_eligible}); check Sleeper IDs "
+              "and cache/player_history usage units")
 
     # ── preserve on empty: never wipe a good board with nothing ──────────────
     if not results:
         weekly_store.record_run(
             season, cutoff, mode=context.mode, status="stale",
             candidates_scored=scanned, records_saved=0, weeks_covered=weeks_covered,
-            detail={**summary, "note": "no candidates scored; previous snapshot preserved"},
+            detail={**summary, "baseline_coverage": coverage_detail,
+                    "score_distribution": distribution,
+                    "note": "no candidates scored; previous snapshot preserved"},
             as_of_date=context.as_of_date,
         )
         summary.update(status="stale", candidates_scanned=scanned, records_saved=0,
@@ -357,12 +494,15 @@ def run_weekly_breakout(
     weekly_store.record_run(
         season, cutoff, mode=context.mode, status="success",
         candidates_scored=scanned, records_saved=saved, weeks_covered=weeks_covered,
-        detail={**summary, "coverage": coverage,
+        detail={**summary, "coverage": coverage, "baseline_coverage": coverage_detail,
+                "score_distribution": distribution,
                 "classifications": _class_counts(results)},
         as_of_date=context.as_of_date,
     )
     summary.update(status="success", candidates_scanned=scanned, records_saved=saved,
-                   coverage=coverage, classifications=_class_counts(results))
+                   coverage=coverage, baseline_coverage=coverage_detail,
+                   score_distribution=distribution,
+                   classifications=_class_counts(results))
     _log_summary(summary, context)
     return summary
 
@@ -385,6 +525,8 @@ def _log_summary(summary: Dict[str, Any], context: ScoringContext) -> None:
         f"coverage={summary.get('coverage')} "
         f"candidates_scanned={summary.get('candidates_scanned')} "
         f"records_saved={summary.get('records_saved')} "
+        f"baselines={summary.get('baseline_coverage')} "
+        f"scores={summary.get('score_distribution')} "
         f"status={summary.get('status')} "
         f"classes={summary.get('classifications')}"
     )
