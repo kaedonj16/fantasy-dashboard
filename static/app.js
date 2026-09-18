@@ -1330,6 +1330,17 @@ window.brHaptic = function (pattern) {
   function applyNewRoot(doc, curRoot) {
     var newRoot = doc.getElementById('page-root');
     if (!newRoot) throw new Error('no page-root');
+    var incomingAds = newRoot.dataset.adEligible === 'true';
+    var currentAds = curRoot.dataset.adEligible === 'true';
+    // Ad containers live outside #page-root. Entering an ineligible response
+    // must remove them before the content swap. In the reverse direction use a
+    // normal navigation so the server supplies fresh containers and exactly one
+    // initializer; trying to synthesize slots here risks duplicate AdSense
+    // initialization and script loads.
+    if (incomingAds && !currentAds) throw new Error('ad eligibility requires full navigation');
+    if (!incomingAds) {
+      document.querySelectorAll('.ad-container').forEach(function (el) { el.remove(); });
+    }
     var sameSnapshot = ['platform', 'season', 'leagueId'].every(function (key) {
       return String(curRoot.dataset[key] || '') === String(newRoot.dataset[key] || '');
     });
@@ -1348,6 +1359,7 @@ window.brHaptic = function (pattern) {
     if (window.brEvacuateMobileNav) window.brEvacuateMobileNav();
     curRoot.innerHTML = newRoot.innerHTML;
     if (newRoot.dataset.premium != null) curRoot.dataset.premium = newRoot.dataset.premium;
+    if (newRoot.dataset.adEligible != null) curRoot.dataset.adEligible = newRoot.dataset.adEligible;
     if (newRoot.dataset.cacheTs != null) curRoot.dataset.cacheTs = newRoot.dataset.cacheTs;
     ['platform', 'season', 'leagueId'].forEach(function (key) {
       if (newRoot.dataset[key] != null) curRoot.dataset[key] = newRoot.dataset[key];
