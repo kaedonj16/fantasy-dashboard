@@ -62,8 +62,9 @@ def init_weekly_breakout_db() -> None:
                 reasons          TEXT,
                 risks            TEXT,
                 evidence         JSONB,
+                run_id           BIGINT,
                 calculated_at    TIMESTAMP DEFAULT NOW(),
-                UNIQUE (player_id, season, as_of_week)
+                UNIQUE (player_id, season, as_of_week, scoring_version)
             )
             """
         )
@@ -87,16 +88,59 @@ def init_weekly_breakout_db() -> None:
                 status           VARCHAR(20),
                 candidates_scored INTEGER DEFAULT 0,
                 records_saved    INTEGER DEFAULT 0,
+                expected_row_count INTEGER DEFAULT 0,
+                inserted_row_count INTEGER DEFAULT 0,
                 weeks_covered    INTEGER DEFAULT 0,
                 detail           JSONB,
+                completed_at     TIMESTAMP,
                 calculated_at    TIMESTAMP DEFAULT NOW(),
-                UNIQUE (season, as_of_week, status)
+                UNIQUE (season, as_of_week, scoring_version)
             )
             """
         )
         conn.execute(
             f"CREATE INDEX IF NOT EXISTS idx_wbr_season "
             f"ON {WEEKLY_RUNS_TABLE} (season, calculated_at DESC)"
+        )
+        # Online migration for pre-completeness deployments.  The score-table
+        # uniqueness migration is deliberately done after adding scoring_version
+        # to the key: two scorer versions are separate immutable snapshots.
+        conn.execute(f"ALTER TABLE {WEEKLY_SCORES_TABLE} ADD COLUMN IF NOT EXISTS run_id BIGINT")
+        conn.execute(f"ALTER TABLE {WEEKLY_RUNS_TABLE} ADD COLUMN IF NOT EXISTS expected_row_count INTEGER DEFAULT 0")
+        conn.execute(f"ALTER TABLE {WEEKLY_RUNS_TABLE} ADD COLUMN IF NOT EXISTS inserted_row_count INTEGER DEFAULT 0")
+        conn.execute(f"ALTER TABLE {WEEKLY_RUNS_TABLE} ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP")
+        conn.execute(
+            f"ALTER TABLE {WEEKLY_SCORES_TABLE} DROP CONSTRAINT IF EXISTS "
+            f"weekly_breakout_scores_player_id_season_as_of_week_key"
+        )
+        conn.execute(
+            f"ALTER TABLE {WEEKLY_RUNS_TABLE} DROP CONSTRAINT IF EXISTS "
+            f"weekly_breakout_runs_season_as_of_week_status_key"
+        )
+        conn.execute(
+            f"UPDATE {WEEKLY_RUNS_TABLE} SET scoring_version=NULL "
+            f"WHERE status <> 'success' AND status <> 'completed'"
+        )
+        conn.execute(
+            f"CREATE UNIQUE INDEX IF NOT EXISTS uq_wbs_snapshot_player_version "
+            f"ON {WEEKLY_SCORES_TABLE} (player_id, season, as_of_week, scoring_version)"
+        )
+        conn.execute(
+            f"CREATE UNIQUE INDEX IF NOT EXISTS uq_wbr_snapshot_version "
+            f"ON {WEEKLY_RUNS_TABLE} (season, as_of_week, scoring_version)"
+        )
+        conn.execute(
+            f"UPDATE {WEEKLY_SCORES_TABLE} s SET run_id=r.id "
+            f"FROM {WEEKLY_RUNS_TABLE} r WHERE s.run_id IS NULL "
+            f"AND r.status='success' AND r.records_saved > 0 "
+            f"AND s.season=r.season AND s.as_of_week=r.as_of_week "
+            f"AND s.scoring_version=r.scoring_version"
+        )
+        conn.execute(
+            f"UPDATE {WEEKLY_RUNS_TABLE} SET status='completed', "
+            f"expected_row_count=records_saved, inserted_row_count=records_saved, "
+            f"completed_at=COALESCE(completed_at, calculated_at) "
+            f"WHERE status='success' AND records_saved > 0"
         )
     _INIT_DONE = True
 
@@ -168,39 +212,106 @@ def save_weekly_scores(
     results: List[Dict[str, Any]],
     as_of_date: Optional[date] = None,
 ) -> int:
-    """Replace the snapshot for (season, as_of_week) with these results.
+    """Backward-compatible entry point using the atomic publisher."""
+    return publish_weekly_snapshot(
+        season, as_of_week, results, mode="weekly", as_of_date=as_of_date,
+        detail={"source": "legacy_save_weekly_scores"},
+    )
 
-    Deletes the existing rows for that exact (season, as_of_week) first so a
-    player who drops off the list is not left behind, then inserts. Other weeks'
-    snapshots are untouched, so history is preserved. Returns rows written.
 
-    Caller must NOT invoke this with an empty list when it wants to preserve the
-    previous snapshot - an empty save wipes the week. The runner guards this.
+def publish_weekly_snapshot(
+    season: int,
+    as_of_week: int,
+    results: List[Dict[str, Any]],
+    *,
+    mode: str,
+    weeks_covered: int = 0,
+    detail: Optional[Dict[str, Any]] = None,
+    as_of_date: Optional[date] = None,
+) -> int:
+    """Atomically publish one complete, versioned weekly snapshot.
+
+    Calculation happens before this function is called.  The run row, target
+    snapshot replacement, inserts, count validation, and completed marker share
+    one transaction.  Any exception therefore leaves the formerly completed
+    snapshot visible and rolls back every byte of the attempted replacement.
     """
-    if as_of_date is None:
-        as_of_date = date.today()
+    if not results:
+        raise ValueError("refusing to publish an empty weekly breakout snapshot")
+    as_of_date = as_of_date or date.today()
     init_weekly_breakout_db()
-    rows = [_result_row(r, season, as_of_week, as_of_date) for r in results]
+    versions = {str(row.get("scoring_version") or "") for row in results}
+    if len(versions) != 1 or not next(iter(versions)):
+        raise ValueError("snapshot rows must have one non-empty scoring_version")
+    scoring_version = next(iter(versions))
+    rows = [_result_row(row, season, as_of_week, as_of_date) for row in results]
     cols = [
         "player_id", "player_name", "season", "as_of_week", "as_of_date", "team",
         "position", "scoring_version", "classification", "breakout_score",
         "confidence", "provisional", "baseline_source", "evaluated_weeks",
         "recent_weeks", "baseline_weeks", "recent_games", "baseline_games",
-        "coverage_fraction", "reasons", "risks", "evidence",
+        "coverage_fraction", "reasons", "risks", "evidence", "run_id",
     ]
     placeholders = ", ".join(
-        f"%({c})s::jsonb" if c == "evidence" else f"%({c})s" for c in cols
+        f"%({column})s::jsonb" if column == "evidence" else f"%({column})s"
+        for column in cols
     )
-    insert = f"INSERT INTO {WEEKLY_SCORES_TABLE} ({', '.join(cols)}) VALUES ({placeholders})"
+    expected = len(rows)
     with get_conn() as conn:
+        run = conn.execute(
+            f"""
+            INSERT INTO {WEEKLY_RUNS_TABLE}
+                (season, as_of_week, as_of_date, scoring_version, mode, status,
+                 candidates_scored, records_saved, expected_row_count,
+                 inserted_row_count, weeks_covered, detail, completed_at)
+            VALUES (%s,%s,%s,%s,%s,'writing',%s,0,%s,0,%s,%s::jsonb,NULL)
+            ON CONFLICT (season, as_of_week, scoring_version) DO UPDATE SET
+                as_of_date=EXCLUDED.as_of_date, mode=EXCLUDED.mode,
+                status='writing', candidates_scored=EXCLUDED.candidates_scored,
+                records_saved=0, expected_row_count=EXCLUDED.expected_row_count,
+                inserted_row_count=0, weeks_covered=EXCLUDED.weeks_covered,
+                detail=EXCLUDED.detail, completed_at=NULL, calculated_at=NOW()
+            RETURNING id
+            """,
+            (int(season), int(as_of_week), as_of_date, scoring_version, mode,
+             expected, expected, int(weeks_covered), json.dumps(detail or {})),
+        ).fetchone()
+        run_id = int(run["id"])
+        conn.execute(
+            f"DELETE FROM {WEEKLY_SCORES_TABLE} WHERE season=%s AND as_of_week=%s "
+            f"AND scoring_version=%s",
+            (int(season), int(as_of_week), scoring_version),
+        )
+        for row in rows:
+            row["run_id"] = run_id
         with conn.cursor() as cur:
-            cur.execute(
-                f"DELETE FROM {WEEKLY_SCORES_TABLE} WHERE season = %s AND as_of_week = %s",
-                (int(season), int(as_of_week)),
+            cur.executemany(
+                f"INSERT INTO {WEEKLY_SCORES_TABLE} ({', '.join(cols)}) "
+                f"VALUES ({placeholders})", rows,
             )
-            if rows:
-                cur.executemany(insert, rows)
-            return len(rows)
+        inserted = conn.execute(
+            f"SELECT COUNT(*) AS n FROM {WEEKLY_SCORES_TABLE} WHERE run_id=%s",
+            (run_id,),
+        ).fetchone()
+        inserted_count = int(inserted["n"])
+        if inserted_count != expected:
+            raise RuntimeError(
+                f"weekly snapshot incomplete: expected {expected}, inserted {inserted_count}"
+            )
+        completed_detail = dict(detail or {})
+        completed_telemetry = dict(completed_detail.get("pipeline_telemetry") or {})
+        completed_telemetry["inserted_rows"] = inserted_count
+        completed_detail.update({
+            "pipeline_telemetry": completed_telemetry,
+            "expected_row_count": expected,
+            "inserted_row_count": inserted_count,
+        })
+        conn.execute(
+            f"UPDATE {WEEKLY_RUNS_TABLE} SET status='completed', records_saved=%s, "
+            f"inserted_row_count=%s, completed_at=NOW(), detail=%s::jsonb WHERE id=%s",
+            (inserted_count, inserted_count, json.dumps(completed_detail), run_id),
+        )
+    return expected
 
 
 def record_run(
@@ -215,7 +326,11 @@ def record_run(
     detail: Optional[Dict[str, Any]] = None,
     as_of_date: Optional[date] = None,
 ) -> None:
-    """Record one run's metadata. status is 'success', 'skipped', or 'stale'."""
+    """Record a non-published attempt (normally ``skipped`` or ``stale``).
+
+    Completed runs are created only by :func:`publish_weekly_snapshot`, so an
+    error report can never overwrite the completion marker for a served run.
+    """
     if as_of_date is None:
         as_of_date = date.today()
     init_weekly_breakout_db()
@@ -225,21 +340,11 @@ def record_run(
             INSERT INTO {WEEKLY_RUNS_TABLE}
                 (season, as_of_week, as_of_date, scoring_version, mode, status,
                  candidates_scored, records_saved, weeks_covered, detail)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb)
-            ON CONFLICT (season, as_of_week, status) DO UPDATE SET
-                as_of_date = EXCLUDED.as_of_date,
-                scoring_version = EXCLUDED.scoring_version,
-                mode = EXCLUDED.mode,
-                candidates_scored = EXCLUDED.candidates_scored,
-                records_saved = EXCLUDED.records_saved,
-                weeks_covered = EXCLUDED.weeks_covered,
-                detail = EXCLUDED.detail,
-                calculated_at = NOW()
+            VALUES (%s,%s,%s,NULL,%s,%s,%s,%s,%s,%s::jsonb)
             """,
             (
                 int(season), int(as_of_week), as_of_date,
-                (detail or {}).get("scoring_version"), mode, status,
-                int(candidates_scored), int(records_saved), int(weeks_covered),
+                mode, status, int(candidates_scored), int(records_saved), int(weeks_covered),
                 json.dumps(detail or {}),
             ),
         )
@@ -254,8 +359,13 @@ def latest_scored_week(season: int) -> Optional[int]:
     init_weekly_breakout_db()
     with get_conn() as conn:
         row = conn.execute(
-            f"SELECT MAX(as_of_week) AS w FROM {WEEKLY_SCORES_TABLE} "
-            f"WHERE season = %s AND scoring_version = %s",
+            f"SELECT MAX(r.as_of_week) AS w FROM {WEEKLY_RUNS_TABLE} r "
+            f"WHERE r.season = %s AND r.scoring_version = %s "
+            f"AND r.status='completed' AND r.completed_at IS NOT NULL "
+            f"AND r.expected_row_count > 0 "
+            f"AND r.inserted_row_count = r.expected_row_count "
+            f"AND (SELECT COUNT(*) FROM {WEEKLY_SCORES_TABLE} s "
+            f"     WHERE s.run_id=r.id) = r.inserted_row_count",
             (int(season), SCORING_VERSION),
         ).fetchone()
     return int(row["w"]) if row and row.get("w") is not None else None
@@ -279,8 +389,11 @@ def load_previous_week_scores(season: int, before_week: int) -> Dict[str, Dict[s
     with get_conn() as conn:
         rows = conn.execute(
             f"SELECT DISTINCT ON (player_id) player_id, as_of_week, breakout_score, "
-            f"classification, evidence FROM {WEEKLY_SCORES_TABLE} "
+            f"classification, evidence FROM {WEEKLY_SCORES_TABLE} s "
             f"WHERE season=%s AND as_of_week < %s AND scoring_version=%s "
+            f"AND EXISTS (SELECT 1 FROM {WEEKLY_RUNS_TABLE} r WHERE r.id=s.run_id "
+            f"AND r.status='completed' AND r.completed_at IS NOT NULL "
+            f"AND r.expected_row_count=r.inserted_row_count) "
             f"ORDER BY player_id, as_of_week DESC",
             (int(season), int(before_week), SCORING_VERSION),
         ).fetchall()
@@ -295,6 +408,19 @@ def get_latest_run(season: int) -> Optional[Dict[str, Any]]:
             f"SELECT * FROM {WEEKLY_RUNS_TABLE} WHERE season = %s "
             f"ORDER BY calculated_at DESC LIMIT 1",
             (int(season),),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def get_completed_run(season: int, as_of_week: int, scoring_version: str) -> Optional[Dict[str, Any]]:
+    """Completion metadata for the exact snapshot selected by the reader."""
+    init_weekly_breakout_db()
+    with get_conn() as conn:
+        row = conn.execute(
+            f"SELECT * FROM {WEEKLY_RUNS_TABLE} WHERE season=%s AND as_of_week=%s "
+            f"AND scoring_version=%s AND status='completed' AND completed_at IS NOT NULL "
+            f"AND expected_row_count=inserted_row_count",
+            (int(season), int(as_of_week), scoring_version),
         ).fetchone()
     return dict(row) if row else None
 
@@ -328,8 +454,11 @@ def load_weekly_candidates(
         clause = " AND classification = ANY(%s)"
         params.append(list(classifications))
     query = (
-        f"SELECT * FROM {WEEKLY_SCORES_TABLE} "
-        f"WHERE season = %s AND as_of_week = %s AND scoring_version = %s "
+        f"SELECT s.* FROM {WEEKLY_SCORES_TABLE} s "
+        f"JOIN {WEEKLY_RUNS_TABLE} r ON r.id=s.run_id "
+        f"WHERE s.season = %s AND s.as_of_week = %s AND s.scoring_version = %s "
+        f"AND r.status='completed' AND r.completed_at IS NOT NULL "
+        f"AND r.expected_row_count=r.inserted_row_count "
         f"AND breakout_score >= %s{clause} "
         f"ORDER BY breakout_score DESC, confidence DESC"
     )
@@ -341,11 +470,18 @@ def load_weekly_candidates(
     if limit and limit > 0:
         rows = rows[:limit]
 
+    completed_run = get_completed_run(season, int(week), SCORING_VERSION)
     run = get_latest_run(season)
     latest_run_week = run.get("as_of_week") if run else week
     weeks_stale = max(0, int(latest_run_week or week) - int(week)) if latest_run_week else 0
 
-    as_of_date = rows[0]["as_of_date"] if rows else (run or {}).get("as_of_date")
+    as_of_date = rows[0]["as_of_date"] if rows else (completed_run or {}).get("as_of_date")
+    detail = (completed_run or {}).get("detail") or {}
+    if isinstance(detail, str):
+        try:
+            detail = json.loads(detail)
+        except ValueError:
+            detail = {}
     return {
         "season": season,
         "as_of_week": int(week),
@@ -357,6 +493,11 @@ def load_weekly_candidates(
         "weeks_stale": weeks_stale,
         "scoring_version": SCORING_VERSION,
         "last_run_status": (run or {}).get("status"),
+        "snapshot_status": (completed_run or {}).get("status"),
+        "completed_at": (completed_run or {}).get("completed_at"),
+        "expected_row_count": (completed_run or {}).get("expected_row_count"),
+        "inserted_row_count": (completed_run or {}).get("inserted_row_count"),
+        "pipeline_telemetry": detail.get("pipeline_telemetry") or {},
     }
 
 
@@ -373,9 +514,11 @@ def get_weekly_candidate(
     from data_building.breakout_engine.weekly_breakout import SCORING_VERSION
     with get_conn() as conn:
         row = conn.execute(
-            f"SELECT * FROM {WEEKLY_SCORES_TABLE} "
+            f"SELECT s.* FROM {WEEKLY_SCORES_TABLE} s "
+            f"JOIN {WEEKLY_RUNS_TABLE} r ON r.id=s.run_id "
             f"WHERE player_id = %s AND season = %s AND as_of_week = %s "
-            f"AND scoring_version = %s",
+            f"AND s.scoring_version = %s AND r.status='completed' "
+            f"AND r.completed_at IS NOT NULL AND r.expected_row_count=r.inserted_row_count",
             (str(player_id), int(season), int(week), SCORING_VERSION),
         ).fetchone()
     return dict(row) if row else None

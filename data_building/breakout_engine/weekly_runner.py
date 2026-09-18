@@ -20,6 +20,7 @@ tested without disk or network.
 """
 from __future__ import annotations
 
+import importlib
 import json
 import os
 from dataclasses import dataclass, field
@@ -31,6 +32,12 @@ MODE_OFFSEASON = "offseason"
 
 # Regular-season game dates in a week's schedule file look like "20250904".
 _SCHEDULE_DIR = os.path.join("cache", "schedule")
+
+AUDIT_PLAYERS = {
+    "Bhayshul Tuten", "DeMario Douglas", "Isaiah Likely",
+    "Jacory Croskey-Merritt", "Matthew Golden", "Malik Washington",
+    "Kalif Raymond",
+}
 
 
 # =============================================================================
@@ -334,7 +341,10 @@ def run_weekly_breakout(
     """
     # Local imports keep this module importable in the pure test suite; only the
     # actual run touches the DB / feeds.
-    from data_building.weekly_metrics import build_weekly_metrics, get_player_weekly_series
+    # Resolve through sys.modules rather than ``from data_building import ...``.
+    # The latter can retain a stale package attribute after a test or rolling
+    # deploy replaces the submodule, bypassing the injected adapter entirely.
+    weekly_metrics = importlib.import_module("data_building.weekly_metrics")
     from data_building.breakout_engine.weekly_breakout import (
         score_player, SCORING_VERSION, WATCHLIST_MIN_SCORE,
     )
@@ -360,7 +370,7 @@ def run_weekly_breakout(
             # Incremental: fills any missing weeks and rebuilds the latest two to
             # pick up stat corrections. Cheaper than refetching every week, and it
             # ensures all weeks 1..cutoff are present for the windows.
-            build_weekly_metrics(season)
+            weekly_metrics.build_weekly_metrics(season)
             weeks_covered = cutoff
         except Exception as exc:  # noqa: BLE001 - refresh failure must not wipe results
             print(f"[weekly_breakout] data refresh failed: {exc}; preserving last snapshot")
@@ -392,31 +402,81 @@ def run_weekly_breakout(
     results: List[Dict[str, Any]] = []
     scanned = 0
     baseline_counts = {"current_season": 0, "prior_season": 0, "none": 0}
-    for pid, meta in players_index.items():
+    if hasattr(weekly_metrics, "get_weekly_series_by_player"):
+        raw_series = weekly_metrics.get_weekly_series_by_player(season, cutoff)
+    else:  # compatibility for injected legacy adapters during rolling deploys
+        raw_series = {}
+        for pid in players_index:
+            series = weekly_metrics.get_player_weekly_series(str(pid), season)
+            if series:
+                raw_series[str(pid)] = series
+    telemetry: Dict[str, Any] = {
+        "raw_rows": sum(len(rows) for rows in raw_series.values()),
+        "raw_players": len(raw_series),
+        "matched_players": 0,
+        "baseline_attached": 0,
+        "weekly_signals_calculated": 0,
+        "scores_calculated": 0,
+        "provisional_caps_applied": 0,
+        "classifications_assigned": 0,
+        "minimum_sample_checked": 0,
+        "scored_players": 0,
+        "excluded_established": 0,
+        "excluded_low_usage": 0,
+        "excluded_low_sample": 0,
+        "excluded_missing_identity": 0,
+        "provisional_candidates": 0,
+        "final_candidates": 0,
+        "inserted_rows": 0,
+        "served_rows": 0,
+        "eliminated": {},
+        "excluded_names": {
+            "established": [], "low_usage": [], "low_sample": [],
+            "missing_identity": [],
+        },
+        "player_trace": {},
+    }
+    for pid, series in raw_series.items():
+        meta = players_index.get(str(pid))
+        if not isinstance(meta, dict):
+            telemetry["excluded_missing_identity"] += 1
+            telemetry["excluded_names"]["missing_identity"].append(str(pid))
+            telemetry["eliminated"][str(pid)] = {
+                "stage": "player_identity", "reason": "no player-index match"
+            }
+            continue
+        player_name = meta.get("name") or meta.get("full_name") or str(pid)
         pos = (meta.get("pos") or meta.get("position") or "").upper()
         team = meta.get("team")
         if pos not in ("QB", "RB", "WR", "TE") or not team:
+            telemetry["excluded_missing_identity"] += 1
+            telemetry["excluded_names"]["missing_identity"].append(player_name)
+            telemetry["eliminated"][player_name] = {
+                "stage": "player_identity",
+                "reason": "missing active team or supported position",
+            }
             continue
-        try:
-            series = get_player_weekly_series(str(pid), season)
-        except Exception:
-            continue
-        if not series:
-            continue
+        telemetry["matched_players"] += 1
         scanned += 1
+        feed_meta = full_players.get(str(pid)) or {}
         player = {
             "player_id": str(pid),
             "player_name": meta.get("name") or meta.get("full_name"),
             "team": team,
             "position": pos,
             "season": season,
-            "years_exp": (full_players.get(str(pid)) or {}).get("years_exp", meta.get("years_exp")),
-            "rookie_year": (full_players.get(str(pid)) or {}).get("rookie_year", meta.get("rookie_year")),
-            "draft_year": ((full_players.get(str(pid)) or {}).get("draft_year") or
+            "years_exp": feed_meta.get("years_exp", meta.get("years_exp")),
+            "age": feed_meta.get("age", meta.get("age")),
+            "career_games": feed_meta.get("career_games", meta.get("career_games")),
+            "career_starts": feed_meta.get("career_starts", meta.get("career_starts")),
+            "career_seasons": feed_meta.get("career_seasons", meta.get("career_seasons")),
+            "prior_fantasy_ppg": feed_meta.get("prior_fantasy_ppg", meta.get("prior_fantasy_ppg")),
+            "rookie_year": feed_meta.get("rookie_year", meta.get("rookie_year")),
+            "draft_year": (feed_meta.get("draft_year") or
                            meta.get("draft_year") or meta.get("draft_yr")),
-            "draft_round": ((full_players.get(str(pid)) or {}).get("draft_round") or
-                            meta.get("draft_round")),
-            "depth_chart_order": (full_players.get(str(pid)) or {}).get("depth_chart_order"),
+            "draft_round": (feed_meta.get("draft_round") or
+                             meta.get("draft_round")),
+            "depth_chart_order": feed_meta.get("depth_chart_order"),
         }
         res = score_player(
             player, series,
@@ -426,16 +486,59 @@ def run_weekly_breakout(
         )
         source = res.get("baseline_source") or "none"
         baseline_counts[source] = baseline_counts.get(source, 0) + 1
+        if source != "none":
+            telemetry["baseline_attached"] += 1
         previous = previous_scores.get(str(pid))
         res["previous_breakout_status"] = ((previous or {}).get("classification")
                                            if previous else None)
         lifecycle = derive_lifecycle(res, previous, cutoff, WATCHLIST_MIN_SCORE)
         res["lifecycle"] = lifecycle
         res.update(lifecycle)
-        # Only keep players who cleared the candidacy floor; watchlist below the
-        # floor is noise on the board (still reproducible from the raw data).
-        if (res.get("breakout_score") or 0) >= min_score:
-            results.append(res)
+        telemetry["scored_players"] += 1
+        telemetry["weekly_signals_calculated"] += 1
+        telemetry["scores_calculated"] += 1
+        telemetry["classifications_assigned"] += 1
+        telemetry["minimum_sample_checked"] += 1
+        if res.get("provisional_adjustment_applied"):
+            telemetry["provisional_caps_applied"] += 1
+        if res.get("established_player"):
+            telemetry["excluded_established"] += 1
+            telemetry["excluded_names"]["established"].append(player_name)
+        rejection = list(res.get("main_board_rejection_reasons") or [])
+        if "position_specific_role_floor_not_met" in rejection:
+            telemetry["excluded_low_usage"] += 1
+            telemetry["excluded_names"]["low_usage"].append(player_name)
+        if "one_game_evidence_not_exceptional" in rejection:
+            telemetry["excluded_low_sample"] += 1
+            telemetry["excluded_names"]["low_sample"].append(player_name)
+        if res.get("provisional") and (res.get("breakout_score") or 0) >= WATCHLIST_MIN_SCORE:
+            telemetry["provisional_candidates"] += 1
+        if res.get("main_board_eligible") or res.get("classification") == "early_watch":
+            telemetry["final_candidates"] += 1
+        res["exclusion_reasons"] = rejection
+        if player_name in AUDIT_PLAYERS:
+            telemetry["player_trace"][player_name] = {
+                "player_id": str(pid),
+                "raw_rows": len(series),
+                "identity_matched": True,
+                "baseline_source": source,
+                "weekly_signals_calculated": True,
+                "pre_cap_score": res.get("pre_provisional_adjustment_score"),
+                "final_score": res.get("breakout_score"),
+                "provisional": bool(res.get("provisional")),
+                "classification": res.get("classification"),
+                "established_player": bool(res.get("established_player")),
+                "main_board_eligible": bool(res.get("main_board_eligible")),
+                "rejection_reasons": rejection,
+                "written": True,
+                "first_nonqualifying_stage": (
+                    "established_player_exclusion" if res.get("established_player") else
+                    "minimum_sample_rules" if "one_game_evidence_not_exceptional" in rejection else
+                    "weekly_opportunity_signals" if "position_specific_role_floor_not_met" in rejection else
+                    None
+                ),
+            }
+        results.append(res)
 
     # ── coverage: how many scored candidates had each signal ─────────────────
     n = len(results) or 1
@@ -507,19 +610,33 @@ def run_weekly_breakout(
         _log_summary(summary, context)
         return summary
 
-    saved = weekly_store.save_weekly_scores(season, cutoff, results, as_of_date=context.as_of_date)
-    weekly_store.record_run(
-        season, cutoff, mode=context.mode, status="success",
-        candidates_scored=scanned, records_saved=saved, weeks_covered=weeks_covered,
-        detail={**summary, "coverage": coverage, "baseline_coverage": coverage_detail,
-                "score_distribution": distribution,
-                "classifications": _class_counts(results)},
-        as_of_date=context.as_of_date,
-    )
-    summary.update(status="success", candidates_scanned=scanned, records_saved=saved,
+    publish_detail = {**summary, "coverage": coverage,
+                      "baseline_coverage": coverage_detail,
+                      "score_distribution": distribution,
+                      "classifications": _class_counts(results),
+                      "pipeline_telemetry": telemetry}
+    try:
+        saved = weekly_store.publish_weekly_snapshot(
+            season, cutoff, results, mode=context.mode, weeks_covered=weeks_covered,
+            detail=publish_detail, as_of_date=context.as_of_date,
+        )
+    except Exception as exc:  # transaction rollback keeps prior completion visible
+        weekly_store.record_run(
+            season, cutoff, mode=context.mode, status="stale",
+            candidates_scored=scanned, records_saved=0, weeks_covered=weeks_covered,
+            detail={**publish_detail, "publication_error": str(exc)},
+            as_of_date=context.as_of_date,
+        )
+        summary.update(status="stale", reason=f"snapshot publication failed: {exc}",
+                       candidates_scanned=scanned, records_saved=0,
+                       pipeline_telemetry=telemetry)
+        _log_summary(summary, context)
+        return summary
+    telemetry["inserted_rows"] = saved
+    summary.update(status="completed", candidates_scanned=scanned, records_saved=saved,
                    coverage=coverage, baseline_coverage=coverage_detail,
                    score_distribution=distribution,
-                   classifications=_class_counts(results))
+                   classifications=_class_counts(results), pipeline_telemetry=telemetry)
     _log_summary(summary, context)
     return summary
 

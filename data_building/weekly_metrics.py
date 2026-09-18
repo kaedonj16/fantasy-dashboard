@@ -249,6 +249,35 @@ def get_player_weekly_series(player_id: str, season: int) -> List[Dict[str, Any]
     return [dict(r) for r in rows]
 
 
+def get_weekly_series_by_player(season: int, through_week: int) -> Dict[str, List[Dict[str, Any]]]:
+    """Load the raw scoring universe in one query, including unmatched IDs.
+
+    Iterating the player index first made identity misses invisible and issued a
+    query per player.  This raw-first shape is both faster and makes the first
+    two pipeline stages auditable.
+    """
+    init_weekly_metrics_db()
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT player_id, week, position, snap_pct, snaps, team_snaps,
+                   targets, receptions, carries, touches, target_share, ppr_pts,
+                   rec_yards, rush_yards, pass_att, rec_tds, rush_tds, pass_tds,
+                   rz_targets, rz_carries
+            FROM player_weekly_metrics
+            WHERE season=%s AND week <= %s
+            ORDER BY player_id, week
+            """,
+            (int(season), int(through_week)),
+        ).fetchall()
+    out: Dict[str, List[Dict[str, Any]]] = {}
+    for raw in rows:
+        row = dict(raw)
+        player_id = str(row.pop("player_id"))
+        out.setdefault(player_id, []).append(row)
+    return out
+
+
 def get_usage_trends(season: int) -> Dict[str, Dict[str, Any]]:
     """Per-player usage trend map for the season.
 

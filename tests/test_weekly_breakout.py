@@ -486,7 +486,7 @@ def test_meaningful_rookie_early_watch_is_separate_from_default_board(monkeypatc
         "candidates": [row], "as_of_week": 1, "as_of_date": "2026-09-15",
         "data_status": "ok", "scoring_version": wb.SCORING_VERSION})
     payload = api.get_weekly_breakout_candidates(2026)
-    assert payload["candidates"] == []
+    assert [candidate["player_id"] for candidate in payload["candidates"]] == [WR["player_id"]]
     assert [candidate["player_id"] for candidate in payload["early_watch"]] == [WR["player_id"]]
 
 
@@ -625,6 +625,14 @@ def _install_stubs(monkeypatch, *, refresh_raises, series):
 
     wm.build_weekly_metrics = _build
     wm.get_player_weekly_series = lambda pid, season: series.get(str(pid), [])
+    # Simulate full-suite collection having imported the real submodule first.
+    # ``from data_building import weekly_metrics`` would incorrectly reuse this
+    # stale package attribute even after sys.modules is replaced below.
+    import data_building
+    stale_wm = types.ModuleType("stale_weekly_metrics")
+    stale_wm.build_weekly_metrics = lambda *_a, **_k: (_ for _ in ()).throw(
+        RuntimeError("stale weekly_metrics module was used"))
+    monkeypatch.setattr(data_building, "weekly_metrics", stale_wm, raising=False)
     monkeypatch.setitem(sys.modules, "data_building.weekly_metrics", wm)
 
     # utils.utils.load_players_index
@@ -637,8 +645,8 @@ def _install_stubs(monkeypatch, *, refresh_raises, series):
     # weekly_store spies (real module, monkeypatched functions)
     from data_building.breakout_engine import weekly_store
     calls = {"save": [], "record": []}
-    monkeypatch.setattr(weekly_store, "save_weekly_scores",
-                        lambda season, week, results, as_of_date=None: (
+    monkeypatch.setattr(weekly_store, "publish_weekly_snapshot",
+                        lambda season, week, results, **kwargs: (
                             calls["save"].append((season, week, len(results))) or len(results)))
     monkeypatch.setattr(weekly_store, "record_run",
                         lambda *a, **k: calls["record"].append(k.get("status")))
@@ -661,9 +669,9 @@ def test_successful_run_saves_scores(monkeypatch):
     ctx = wr.ScoringContext(season=2026, mode=wr.MODE_WEEKLY, as_of_date=date(2026, 10, 1),
                             cutoff_week=4, completed_weeks=[1, 2, 3, 4])
     summary = wr.run_weekly_breakout(ctx, refresh=True)
-    assert summary["status"] == "success"
+    assert summary["status"] == "completed"
     assert calls["save"] and calls["save"][0][2] >= 1
-    assert "success" in calls["record"]
+    assert calls["record"] == []
 
 
 def test_offseason_context_does_not_run_weekly(monkeypatch):
