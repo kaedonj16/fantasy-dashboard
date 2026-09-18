@@ -14067,7 +14067,9 @@ def page_breakouts(platform: str, season: int, league_id: str):
       const PAGE_SIZE = 12;
 
       // Fetch breakout candidates on page load (using new BreakoutEngine API)
-      fetch('/api/breakout/candidates?season={bo_season}&min_score=50&limit=15&league_id={league_id}&platform={platform}')
+      // Server selects the engine-specific floor: weekly watchlist calibration
+      // is intentionally different from the offseason 50-point board.
+      fetch('/api/breakout/candidates?season={bo_season}&limit=15&league_id={league_id}&platform={platform}')
         .then(res => res.json())
         .then(data => {{
           breakoutCandidates = (data && data.candidates) || [];
@@ -14148,6 +14150,22 @@ def page_breakouts(platform: str, season: int, league_id: str):
         return comps.reduce((best, c) => c.val > best.val ? c : best, comps[0]);
       }}
 
+      function _boWeeklySignal(candidate) {{
+        const rows = Array.isArray(candidate.usage_comparison) ? candidate.usage_comparison : [];
+        return rows.find(row => row && row.recent != null) || null;
+      }}
+
+      function _boWeeklySignalText(signal) {{
+        if (!signal) return 'Usage detail unavailable';
+        const fmt = value => signal.unit === '%'
+          ? `${{Number(value).toFixed(1)}}%`
+          : Number(value).toFixed(1);
+        if (signal.baseline == null) {{
+          return `Initial role: ${{fmt(signal.recent)}} ${{signal.label.toLowerCase()}}`;
+        }}
+        return `${{signal.label}}: ${{fmt(signal.baseline)}} → ${{fmt(signal.recent)}}`;
+      }}
+
       function renderBreakouts() {{
         const container = document.getElementById('breakoutsContainer');
         const filtered = currentFilter === 'ALL'
@@ -14216,6 +14234,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
       }}
 
       function renderBreakoutCard(candidate) {{
+          const isWeekly = candidate.weekly === true || candidate.mode === 'weekly';
           const name = candidate.player_name || 'Unknown';
           const team = candidate.team || '?';
           const pos = candidate.position || '?';
@@ -14223,11 +14242,12 @@ def page_breakouts(platform: str, season: int, league_id: str):
           const pid = candidate.player_id || '';
           // Headline = blended 0-100 breakout score (opportunity + model probability);
           // the model's raw hit chance is shown as a secondary chip.
-          const prob = candidate.hit_probability != null ? parseFloat(candidate.hit_probability) : null;
+          const prob = !isWeekly && candidate.hit_probability != null ? parseFloat(candidate.hit_probability) : null;
           const hitProb = prob != null ? Math.round(prob * 100) : null;
           const blend = candidate.breakout_blend != null ? parseFloat(candidate.breakout_blend)
                       : (prob != null ? prob : 0);
-          const score = Math.round(blend * 100);  // 0-100 headline
+          const score = isWeekly ? Math.round(parseFloat(candidate.breakout_score || 0))
+                                 : Math.round(blend * 100);
 
           let scoreColor = '#6b7280', tier = 'Low';
           if (score >= 60) {{ scoreColor = '#10b981'; tier = 'Elite'; }}
@@ -14235,15 +14255,26 @@ def page_breakouts(platform: str, season: int, league_id: str):
           else if (score >= 30) {{ scoreColor = '#f59e0b'; tier = 'Moderate'; }}
           else {{ scoreColor = '#6b7280'; tier = 'Low'; }}
 
-          const range = _boPpgRange(candidate);
-          const topComp = _boTopComponent(candidate);
+          const range = isWeekly ? null : _boPpgRange(candidate);
+          const weeklySignal = isWeekly ? _boWeeklySignal(candidate) : null;
+          const topComp = isWeekly ? null : _boTopComponent(candidate);
 
-          const reasons = (candidate.key_reasons || '').split('\\n')
-            .filter(r => r.trim() && r.startsWith('•'))
-            .map(r => r.substring(1).trim());
+          const reasons = isWeekly
+            ? (Array.isArray(candidate.reasons) ? candidate.reasons : (candidate.key_reasons || '').split('\\n'))
+                .filter(r => String(r).trim())
+            : (candidate.key_reasons || '').split('\\n')
+                .filter(r => r.trim() && r.startsWith('•'))
+                .map(r => r.substring(1).trim());
           const topReason = reasons[0] || '';
 
-          const ppgHtml = range
+          const ppgHtml = isWeekly
+            ? `<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;">
+                 <span style="font-size:13px;font-weight:800;color:var(--text);">${{candidate.classification_label || 'Weekly Watchlist'}}</span>
+                 <span style="font-size:11px;padding:2px 7px;border-radius:8px;background:var(--surface-alt);color:var(--text-muted);">${{Math.round(parseFloat(candidate.confidence || 0))}}% confidence</span>
+                 ${{candidate.provisional ? '<span style="font-size:10px;font-weight:800;color:#f59e0b;">PROVISIONAL</span>' : ''}}
+               </div>
+               <div style="font-size:11px;color:var(--text-muted);margin-top:5px;">${{candidate.score_basis === 'initial_role' ? 'Initial Role Score · No prior NFL baseline' : 'Role Change Score'}} · ${{candidate.sample && candidate.sample.recent_games ? candidate.sample.recent_games + ' recent game' + (candidate.sample.recent_games === 1 ? '' : 's') : 'Through Week ' + (candidate.as_of_week || '?')}}${{candidate.lifecycle_state ? ' · ' + candidate.lifecycle_state.replace('_', ' ') : ''}}</div>`
+            : range
             ? `<div style="font-size:22px;font-weight:800;letter-spacing:-0.5px;color:var(--text);line-height:1;">
                  ${{range.lowStr}}–${{range.highStr}}
                  <span style="font-size:13px;font-weight:500;color:var(--text-muted);">PPG</span>
@@ -14260,7 +14291,11 @@ def page_breakouts(platform: str, season: int, league_id: str):
                </div>`
             : '';
 
-          const barFill = Math.min(100, Math.max(0, topComp.val));
+          const signalPoints = weeklySignal ? parseFloat(weeklySignal.points || 0) : 0;
+          const barFill = Math.min(100, Math.max(0, isWeekly ? signalPoints : topComp.val));
+          const driverLabel = isWeekly ? _boWeeklySignalText(weeklySignal) : `Top Driver: ${{topComp.label}}`;
+          const driverValue = isWeekly ? signalPoints : topComp.val;
+          const driverColor = isWeekly ? '#3b82f6' : topComp.color;
           // Elite-tier candidates "ignite": the card catches fire (glow + score
           // badge pop) the first time it scrolls into view.
           const isElite = score >= 60;
@@ -14284,11 +14319,11 @@ def page_breakouts(platform: str, season: int, league_id: str):
               <div style="margin-bottom:12px;">${{ppgHtml}}</div>
               <div style="margin-bottom:10px;">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
-                  <span style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;">Top Driver: ${{topComp.label}}</span>
-                  <span style="font-size:11px;font-weight:700;color:${{topComp.color}};">${{topComp.val.toFixed(1)}}</span>
+                  <span style="font-size:11px;color:var(--text-muted);">${{driverLabel}}</span>
+                  <span style="font-size:11px;font-weight:700;color:${{driverColor}};">${{driverValue.toFixed(1)}}</span>
                 </div>
                 <div style="height:5px;background:var(--border-color);border-radius:3px;overflow:hidden;">
-                  <div style="height:100%;width:${{barFill}}%;background:${{topComp.color}};border-radius:3px;transition:width 0.3s;"></div>
+                  <div style="height:100%;width:${{barFill}}%;background:${{driverColor}};border-radius:3px;transition:width 0.3s;"></div>
                 </div>
               </div>
               ${{topReason ? `<div style="font-size:11px;color:var(--text-muted);line-height:1.4;border-top:1px solid var(--border-color);padding-top:8px;">${{topReason}}</div>` : ''}}

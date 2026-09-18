@@ -123,7 +123,7 @@ def test_garbage_time_and_returning_starter_lower_sustainability():
     assert risky["components"]["sustainability"] < normal["components"]["sustainability"]
 
 
-def test_v2_backtest_emits_calibration_records_without_future_leakage():
+def test_current_backtest_emits_calibration_records_without_future_leakage():
     from data_building.breakout_engine.backtest_weekly_breakout import (
         build_evaluation_records, calibration_report,
     )
@@ -169,6 +169,9 @@ def test_rookie_week1_is_provisional_without_prior_history():
     assert res["baseline_source"] == "none"
     assert res["confidence"] <= 35.0            # provisional cap
     assert res["classification"] in ("watchlist", "temporary_opportunity")
+    assert res["signals"]["snap_share"]["baseline"] is None
+    assert res["signals"]["snap_share"]["delta"] is None
+    assert res["breakout_score"] < 100
 
 
 def test_prior_season_baseline_used_when_thin_current_data():
@@ -179,6 +182,59 @@ def test_prior_season_baseline_used_when_thin_current_data():
     # growth is measured off the prior baseline, not zero
     assert res["signals"]["snap_share"]["baseline"] == pytest.approx(20.0)
     assert any("last season" in r.lower() for r in res["risks"])
+
+
+def test_flat_week_one_usage_against_prior_is_not_breakout():
+    prior = {"snap_pct": 64.0, "target_share": 21.0, "targets_pg": 7.0,
+             "carries_pg": 0.0, "pass_att_pg": 0.0}
+    res = wb.score_player(WR, [wk(1, 64, 21, 7)], prior_baseline=prior, cutoff_week=1)
+    assert res["baseline_source"] == "prior_season"
+    assert res["breakout_score"] == 0
+
+
+def test_large_multi_signal_growth_outranks_mild_without_saturation():
+    mild = [wk(1, 40, 12, 4), wk(2, 42, 13, 4), wk(3, 54, 17, 6)]
+    large = [wk(1, 20, 6, 2), wk(2, 22, 7, 2), wk(3, 72, 27, 10)]
+    mild_score = wb.score_player(WR, mild, cutoff_week=3)["breakout_score"]
+    large_score = wb.score_player(WR, large, cutoff_week=3)["breakout_score"]
+    assert large_score > mild_score
+    assert large_score < 100
+
+
+def test_prior_cache_accepts_player_id_and_normalizes_percent_units(tmp_path, monkeypatch):
+    cache = tmp_path / "cache" / "player_history"
+    cache.mkdir(parents=True)
+    (cache / "usage_rows_2025.json").write_text(
+        '[{"player_id":"abc","usage":{"games":10,"avg_off_snap_pct":0.64,'
+        '"target_share":0.21,"avg_targets":7}}]')
+    monkeypatch.chdir(tmp_path)
+    prior = wr._prior_baseline_map(2026)
+    assert prior["abc"]["snap_pct"] == pytest.approx(64.0)
+    assert prior["abc"]["target_share"] == pytest.approx(21.0)
+
+
+def test_prior_cache_accepts_id_and_does_not_double_scale_percent(tmp_path, monkeypatch):
+    cache = tmp_path / "cache" / "player_history"
+    cache.mkdir(parents=True)
+    (cache / "usage_rows_2025.json").write_text(
+        '[{"id":"xyz","usage":{"games":10,"avg_off_snap_pct":64,'
+        '"target_share":21,"avg_targets":7}}]')
+    monkeypatch.chdir(tmp_path)
+    prior = wr._prior_baseline_map(2026)
+    assert prior["xyz"]["snap_pct"] == pytest.approx(64.0)
+    assert prior["xyz"]["target_share"] == pytest.approx(21.0)
+
+
+def test_prior_cache_rejects_provider_default_zero_share(tmp_path, monkeypatch):
+    cache = tmp_path / "cache" / "player_history"
+    cache.mkdir(parents=True)
+    (cache / "usage_rows_2025.json").write_text(
+        '[{"id":"qb","usage":{"games":17,"avg_off_snap_pct":0,'
+        '"avg_off_snaps":65,"avg_pass_att":32}}]')
+    monkeypatch.chdir(tmp_path)
+    prior = wr._prior_baseline_map(2026)
+    assert prior["qb"]["snap_pct"] is None
+    assert prior["qb"]["pass_att_pg"] == pytest.approx(32.0)
 
 
 def test_week1_candidate_without_prior_history_still_scores():
@@ -258,6 +314,230 @@ def test_shares_are_percent_scale():
     res = wb.score_player(WR, [wk(1, 30, 10, 3), wk(2, 32, 11, 3), wk(3, 68, 24, 8)],
                           cutoff_week=3)
     assert res["signals"]["snap_share"]["recent"] > 1.0
+
+
+def test_weekly_api_payload_is_card_complete_without_offseason_projections():
+    from dashboard_services.breakout_api import _weekly_row_to_candidate
+    evidence = wb.score_player(
+        WR, [wk(1, 25, 8, 2), wk(2, 65, 24, 8)], cutoff_week=2)
+    row = {**evidence, "as_of_week": 2, "evidence": evidence,
+           "reasons": "\n".join(evidence["reasons"]),
+           "risks": "\n".join(evidence["risks"])}
+    card = _weekly_row_to_candidate(row)
+    required = {"breakout_score", "confidence", "classification",
+                "classification_label", "provisional", "baseline_source",
+                "as_of_week", "reasons", "risks", "usage_comparison", "sample"}
+    assert required <= card.keys()
+    assert card["weekly"] is True and card["mode"] == "weekly"
+    assert card["usage_comparison"][0]["points"] >= card["usage_comparison"][-1]["points"]
+    assert not ({"season1_ppr", "hit_probability", "opportunity_opened_score"} & card.keys())
+
+
+def test_weekly_card_has_explicit_branch_and_plain_reason_support():
+    source = open("app.py", encoding="utf-8").read()
+    assert "candidate.weekly === true || candidate.mode === 'weekly'" in source
+    assert "Array.isArray(candidate.reasons)" in source
+    assert "Initial role:" in source
+    # Offseason fallback remains, but is behind the explicit weekly branch.
+    assert "No projection available" in source
+    weekly_block = source[source.index("const ppgHtml = isWeekly"):source.index("const hitHtml", source.index("const ppgHtml = isWeekly"))]
+    assert "No projection available" not in weekly_block.split(": range", 1)[0]
+
+
+def test_observed_zero_and_unknown_baselines_are_distinct():
+    observed = wb._share_growth(0.0, 20.0, allow_initial=False)
+    unknown = wb._share_growth(None, 20.0, allow_initial=False)
+    assert observed["delta"] == 20.0 and observed["points"] > 0
+    assert unknown["baseline"] is None and unknown["delta"] is None
+    assert unknown["points"] == 0
+
+
+def test_partial_prior_only_compares_observed_signals():
+    prior = {"snap_pct": None, "target_share": 8.0, "targets_pg": None,
+             "carries_pg": None, "pass_att_pg": None}
+    res = wb.score_player({**WR, "years_exp": 2}, [wk(1, 70, 24, 8)],
+                          prior_baseline=prior, cutoff_week=1)
+    assert res["baseline_source"] == "prior_season"
+    assert res["signals"]["snap_share"]["baseline"] is None
+    assert res["signals"]["snap_share"]["delta"] is None
+    assert res["signals"]["snap_share"]["points"] == 0
+    assert res["signals"]["target_share"]["delta"] == 16.0
+
+
+def test_elite_rookie_debut_is_initial_role_watchlist():
+    rookie = {**WR, "years_exp": 0, "season": 2026, "draft_year": 2026,
+              "draft_round": 1}
+    res = wb.score_player(rookie, [wk(1, 90, 35, 13)], cutoff_week=1)
+    assert res["score_basis"] == "initial_role"
+    assert res["role_change_score"] is None
+    assert res["classification"] == "watchlist"
+    assert res["breakout_score"] <= wb.INITIAL_ONE_GAME_CAP
+
+
+def test_two_persistent_rookie_games_can_be_provisional_emerging():
+    rookie = {**WR, "years_exp": 0, "season": 2026, "draft_year": 2026,
+              "draft_round": 5}
+    rows = [wk(1, 72, 23, 8), wk(2, 75, 25, 9)]
+    res = wb.score_player(rookie, rows, cutoff_week=2)
+    assert res["classification"] == "provisional_emerging"
+    assert res["score_basis"] == "initial_role"
+    assert res["breakout_score"] <= wb.INITIAL_PERSISTENT_CAP
+
+
+def test_rookie_transitions_to_real_change_window_in_week_three():
+    rookie = {**WR, "years_exp": 0, "season": 2026, "draft_year": 2026}
+    rows = [wk(1, 20, 6, 2), wk(2, 25, 8, 3), wk(3, 65, 24, 8)]
+    res = wb.score_player(rookie, rows, cutoff_week=3)
+    assert res["score_basis"] == "role_change"
+    assert res["role_change_score"] is not None
+    assert res["baseline_weeks"] == [1, 2]
+
+
+def test_missing_cache_veteran_is_not_assumed_rookie():
+    veteran = {**WR, "years_exp": 4, "season": 2026}
+    res = wb.score_player(veteran, [wk(1, 75, 25, 9)], cutoff_week=1)
+    assert res["is_rookie"] is False
+    assert res["classification"] == "watchlist"
+    assert res["breakout_score"] < wb.WATCHLIST_MIN_SCORE + 2
+
+
+def test_target_spike_without_route_growth_is_conflicting():
+    rows = [wk(1, 50, 12, 4), wk(2, 52, 13, 4), wk(3, 60, 25, 10)]
+    rows[0]["routes"], rows[1]["routes"], rows[2]["routes"] = 28, 29, 24
+    res = wb.score_player(WR, rows, cutoff_week=3)
+    assert "targets_up_without_route_growth" in res["conflicting_signals"]
+
+
+def test_te_blocking_snap_increase_does_not_clear_emerging_quality():
+    te = {"player_id": "te", "position": "TE", "years_exp": 2}
+    rows = [wk(1, 35, 8, 2), wk(2, 38, 8, 2), wk(3, 75, 8, 2)]
+    for row, routes in zip(rows, (18, 19, 12)):
+        row["routes"] = routes
+    res = wb.score_player(te, rows, cutoff_week=3)
+    assert "snaps_up_routes_down" in res["conflicting_signals"]
+    assert res["classification"] == "watchlist"
+
+
+def test_team_volume_count_spike_without_share_growth_stays_watchlist():
+    rows = [wk(1, 60, 20, 6), wk(2, 62, 20, 6), wk(3, 63, 20, 10)]
+    res = wb.score_player(WR, rows, cutoff_week=3)
+    assert res["signals"]["target_share"]["points"] == 0
+    assert res["supporting_signal_count"] < wb.MIN_SUPPORTING_SIGNALS
+    assert res["classification"] == "watchlist"
+
+
+def test_role_held_after_starter_return_increases_sustainability():
+    rows = [wk(1, 25, tgt=2, car=4), wk(2, 65, tgt=5, car=14),
+            wk(3, 66, tgt=5, car=15)]
+    normal = wb.score_player(RB, rows, cutoff_week=3,
+                             injury_context={"vacated": True, "multi_week": True})
+    held = wb.score_player(RB, rows, cutoff_week=3,
+                           injury_context={"vacated": True, "multi_week": True,
+                                           "starter_returned": True})
+    assert held["sustainability_score"] > normal["sustainability_score"]
+
+
+def test_garbage_time_qb_is_watchlist_and_discounted():
+    qb = {"player_id": "q", "position": "QB", "years_exp": 2}
+    rows = [wk(1, 10, pa=3, car=1), wk(2, 95, pa=35, car=6)]
+    rows[-1]["garbage_time"] = True
+    res = wb.score_player(qb, rows, cutoff_week=2)
+    assert res["opportunity_source"] == "garbage_time"
+    assert res["classification"] == "watchlist"
+
+
+def test_ranking_confidence_cannot_overpower_signal_magnitude():
+    def rank(score, confidence):
+        return score * (.75 + .25 * confidence / 100)
+    assert rank(40, 25) < rank(38, 80)
+
+
+def test_lifecycle_transitions_across_snapshots():
+    previous = {"breakout_score": 42, "evidence": {"lifecycle": {
+        "first_detected_week": 2, "consecutive_flagged_weeks": 2}}}
+    confirmed = wr.derive_lifecycle(
+        {"breakout_score": 48, "classification": "emerging_breakout"},
+        previous, 4, wb.WATCHLIST_MIN_SCORE)
+    assert confirmed["lifecycle_state"] == "confirmed"
+    cooled = wr.derive_lifecycle(
+        {"breakout_score": 12, "classification": "watchlist"},
+        previous, 4, wb.WATCHLIST_MIN_SCORE)
+    assert cooled["lifecycle_state"] == "invalidated"
+
+
+def test_breakout_page_does_not_send_offseason_floor_for_weekly_mode():
+    source = open("app.py", encoding="utf-8").read()
+    request_line = next(line for line in source.splitlines()
+                        if "fetch('/api/breakout/candidates?season=" in line)
+    assert "min_score=50" not in request_line
+
+
+def test_meaningful_rookie_watchlist_survives_weekly_default_filter(monkeypatch):
+    import dashboard_services.breakout_api as api
+    from data_building.breakout_engine import weekly_store
+    rookie = wb.score_player(
+        {**WR, "years_exp": 0, "season": 2026, "draft_year": 2026},
+        [wk(1, 90, 35, 13)], cutoff_week=1)
+    assert rookie["classification"] == "watchlist" and rookie["breakout_score"] < 50
+    row = {**rookie, "season": 2026, "as_of_week": 1, "evidence": rookie}
+    monkeypatch.setattr(weekly_store, "load_weekly_candidates", lambda *a, **k: {
+        "candidates": [row], "as_of_week": 1, "as_of_date": "2026-09-15",
+        "data_status": "ok", "scoring_version": wb.SCORING_VERSION})
+    payload = api.get_weekly_breakout_candidates(2026)
+    assert [candidate["player_id"] for candidate in payload["candidates"]] == [WR["player_id"]]
+
+
+def test_current_version_filter_rejects_incompatible_snapshots(monkeypatch):
+    from data_building.breakout_engine import weekly_store
+    captured = {}
+
+    class Result:
+        def fetchone(self):
+            return {"w": None}
+
+    class Conn:
+        def __enter__(self): return self
+        def __exit__(self, *args): return False
+        def execute(self, query, params):
+            captured["query"], captured["params"] = query, params
+            return Result()
+
+    monkeypatch.setattr(weekly_store, "init_weekly_breakout_db", lambda: None)
+    monkeypatch.setattr(weekly_store, "get_conn", lambda: Conn())
+    assert weekly_store.latest_scored_week(2026) is None
+    assert "scoring_version = %s" in captured["query"]
+    assert captured["params"][-1] == wb.SCORING_VERSION
+
+
+def test_incompatible_weekly_history_does_not_fall_back_to_offseason(monkeypatch):
+    import dashboard_services.breakout_api as api
+    monkeypatch.setattr(api, "_weekly_breakout_available", lambda season: False)
+    monkeypatch.setattr(api, "_weekly_history_exists", lambda season: True)
+    payload = api.get_breakout_candidates(2026)
+    assert payload["mode"] == "weekly"
+    assert payload["data_status"] == "incompatible_snapshot"
+    assert payload["required_scoring_version"] == wb.SCORING_VERSION
+
+
+def test_weekly_contract_exposes_detection_and_lifecycle_fields():
+    from dashboard_services.breakout_api import _weekly_row_to_candidate
+    result = wb.score_player(
+        {**WR, "years_exp": 0, "season": 2026, "draft_year": 2026},
+        [wk(1, 72, 22, 8), wk(2, 75, 24, 9)], cutoff_week=2)
+    result["lifecycle"] = {"previous_score": None, "score_change": None,
+                           "first_detected_week": 1, "consecutive_flagged_weeks": 1,
+                           "lifecycle_state": "new"}
+    row = {**result, "as_of_week": 2, "evidence": result}
+    card = _weekly_row_to_candidate(row)
+    assert card["final_breakout_score"] == card["breakout_score"]
+    for key in ("ranking_score", "score_basis", "role_change_score",
+                "current_role_score", "sustainability_score",
+                "breakout_novelty_score", "expectation_delta_score",
+                "supporting_signal_count", "conflicting_signals",
+                "opportunity_source", "lifecycle_state"):
+        assert key in card
+    assert card["role_change_score"] is None
+    assert "hit_probability" not in card and "season1_ppr" not in card
 
 
 # ---------------------------------------------------------------------------
@@ -447,3 +727,5 @@ def test_backtest_reports_both_precisions():
                           eval_weeks=[5], top_n=1, horizon=3)
     assert "precision" in rep["methods"]["model"]
     assert "precision_useful" in rep["methods"]["model"]
+    assert "rest_of_season_role_retention" in rep["methods"]["model"]
+    assert "median_lead_time_games" in rep["methods"]["model"]
