@@ -625,6 +625,14 @@ def _install_stubs(monkeypatch, *, refresh_raises, series):
 
     wm.build_weekly_metrics = _build
     wm.get_player_weekly_series = lambda pid, season: series.get(str(pid), [])
+    # Simulate full-suite collection having imported the real submodule first.
+    # ``from data_building import weekly_metrics`` would incorrectly reuse this
+    # stale package attribute even after sys.modules is replaced below.
+    import data_building
+    stale_wm = types.ModuleType("stale_weekly_metrics")
+    stale_wm.build_weekly_metrics = lambda *_a, **_k: (_ for _ in ()).throw(
+        RuntimeError("stale weekly_metrics module was used"))
+    monkeypatch.setattr(data_building, "weekly_metrics", stale_wm, raising=False)
     monkeypatch.setitem(sys.modules, "data_building.weekly_metrics", wm)
 
     # utils.utils.load_players_index

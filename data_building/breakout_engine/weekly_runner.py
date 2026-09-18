@@ -20,6 +20,7 @@ tested without disk or network.
 """
 from __future__ import annotations
 
+import importlib
 import json
 import os
 from dataclasses import dataclass, field
@@ -340,7 +341,10 @@ def run_weekly_breakout(
     """
     # Local imports keep this module importable in the pure test suite; only the
     # actual run touches the DB / feeds.
-    from data_building import weekly_metrics
+    # Resolve through sys.modules rather than ``from data_building import ...``.
+    # The latter can retain a stale package attribute after a test or rolling
+    # deploy replaces the submodule, bypassing the injected adapter entirely.
+    weekly_metrics = importlib.import_module("data_building.weekly_metrics")
     from data_building.breakout_engine.weekly_breakout import (
         score_player, SCORING_VERSION, WATCHLIST_MIN_SCORE,
     )
