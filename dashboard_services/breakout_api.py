@@ -40,6 +40,12 @@ def _breakout_blend(candidate: dict) -> float:
 # Create Blueprint for breakout routes
 breakout_bp = Blueprint('breakout', __name__, url_prefix='/api/breakout')
 
+# The Breakout Engine board is a product surface, not every player for whom the
+# engine has produced a score.  Keep its selection defaults here so every
+# consumer (the page, modal eligibility, badges, etc.) asks the same question.
+BREAKOUT_BOARD_MIN_SCORE = 0.0
+BREAKOUT_BOARD_LIMIT = 15
+
 
 # =============================================================================
 # BREAKOUT TYPE CLASSIFICATION
@@ -1038,6 +1044,38 @@ def get_breakout_candidates(season: Optional[int] = None, min_score: float = 0.0
     }
 
 
+def get_breakout_board_candidates(
+    requested_season: Optional[int] = None,
+    min_score: float = BREAKOUT_BOARD_MIN_SCORE,
+    limit: Optional[int] = BREAKOUT_BOARD_LIMIT,
+) -> Dict:
+    """Return the authoritative candidate set rendered by the main board.
+
+    Position is intentionally not accepted: it is a client-side view filter and
+    does not change board membership.  Season resolution, weekly/offseason
+    selection, classifications, exclusions, ranking, and the top-N cap all flow
+    through the same candidate pipeline used by the page endpoint.
+    """
+    season = _resolve_bo_season(requested_season)
+    return get_breakout_candidates(season, min_score=min_score, limit=limit)
+
+
+def breakout_board_membership(
+    player_id: object,
+    requested_season: Optional[int] = None,
+    min_score: float = BREAKOUT_BOARD_MIN_SCORE,
+    limit: Optional[int] = BREAKOUT_BOARD_LIMIT,
+) -> tuple[bool, Dict]:
+    """Return normalized player membership and the authoritative board payload."""
+    board = get_breakout_board_candidates(requested_season, min_score, limit)
+    normalized_id = str(player_id).strip()
+    eligible = any(
+        str(candidate.get("player_id", "")).strip() == normalized_id
+        for candidate in (board.get("candidates") or [])
+    )
+    return eligible, board
+
+
 def get_breakout_candidates_by_position(
     position: str,
     season: Optional[int] = None,
@@ -1527,12 +1565,6 @@ def _resolve_bo_season(requested: Optional[int]) -> Optional[int]:
     return requested
 
 
-# Mirror the /candidates route defaults so the waiver 'Breakout' tag reflects
-# exactly the set the Breakout Engine page displays. Keep in sync with the route.
-_BO_PAGE_MIN_SCORE = 0.0
-_BO_PAGE_LIMIT = 15
-
-
 def aligned_breakout_scores(player_ids, requested_season: Optional[int] = None) -> Dict[str, float]:
     """Breakout scores for the given players that MATCH the Breakout Engine page.
 
@@ -1549,56 +1581,13 @@ def aligned_breakout_scores(player_ids, requested_season: Optional[int] = None) 
     if not pids:
         return out
     try:
-        season = _resolve_bo_season(requested_season)
-        if not season:
-            return out
-        # In-season: reproduce the weekly board's displayed set (top-N by score)
-        # so the waiver 'Breakout' tag matches the Breakout page. Breakout
-        # detection stays independent of league availability - this only maps
-        # scores for whichever players the caller asked about.
-        if _weekly_breakout_available(season):
-            board = get_weekly_breakout_candidates(season, min_score=0.0,
-                                                   limit=_BO_PAGE_LIMIT)
-            for c in board.get("candidates", []):
-                pid = str(c.get("player_id"))
-                if pid in pids:
-                    out[pid] = float(c.get("breakout_score") or 0)
-            return out
-        if not opportunity_data_ready(season):
-            return out
-        # Same selection as get_breakout_candidates: latest snapshot + floor.
-        query = """
-            SELECT DISTINCT ON (player_id)
-                player_id,
-                breakout_opportunity_score,
-                position,
-                (component_details->'player_readiness'->>'age')::numeric AS age,
-                (component_details->'player_readiness'->>'usage_baseline_score')::numeric AS readiness_usage_baseline
-            FROM breakout_opportunity_scores
-            WHERE season = %s
-              AND as_of_date = (
-                  SELECT MAX(as_of_date) FROM breakout_opportunity_scores WHERE season = %s
-              )
-              AND breakout_opportunity_score >= %s
-            ORDER BY player_id, as_of_date DESC, calculated_at DESC
-        """
-        with get_conn() as conn:
-            with conn.cursor() as cursor:
-                cursor.execute(query, [season, season, _BO_PAGE_MIN_SCORE])
-                rows = [dict(r) for r in cursor.fetchall()]
-        # Same exclusion + top-N ranking the page applies before display.
-        eligible = []
-        for r in rows:
-            score = r.get("breakout_opportunity_score")
-            if score is None:
-                continue
-            if engine_breakout_excluded(r.get("position"), r.get("age"), r.get("readiness_usage_baseline")):
-                continue
-            eligible.append((str(r["player_id"]), float(score)))
-        eligible.sort(key=lambda t: t[1], reverse=True)
-        for pid, score in eligible[:_BO_PAGE_LIMIT]:
+        board = get_breakout_board_candidates(requested_season)
+        for candidate in board.get("candidates", []):
+            pid = str(candidate.get("player_id"))
             if pid in pids:
-                out[pid] = score
+                score = (candidate.get("breakout_score") if candidate.get("weekly")
+                         else candidate.get("breakout_opportunity_score"))
+                out[pid] = float(score or 0)
     except Exception:
         logger.debug("aligned_breakout_scores failed", exc_info=True)
     return out
@@ -1609,23 +1598,23 @@ def candidates():
     """Get breakout candidates. Non-premium users receive a 3-candidate preview."""
     from flask import session
     from dashboard_services.subscriptions import has_premium_for_viewer
-    season = _resolve_bo_season(request.args.get('season', type=int))
-    min_score = request.args.get('min_score', default=0.0, type=float)
-    limit = request.args.get('limit', default=15, type=int)
+    requested_season = request.args.get('season', type=int)
+    min_score = request.args.get('min_score', default=BREAKOUT_BOARD_MIN_SCORE, type=float)
+    limit = request.args.get('limit', default=BREAKOUT_BOARD_LIMIT, type=int)
     league_id = request.args.get('league_id')
     platform = request.args.get('platform', 'sleeper')
     has_premium = has_premium_for_viewer(
         session.get('viewer_username'), session.get('viewer_user_id'),
-        league_id, platform, None,
+        league_id, platform, requested_season,
     )
     if not has_premium:
-        all_result = get_breakout_candidates(season, min_score, limit=None)
+        all_result = get_breakout_board_candidates(requested_season, min_score, limit)
         all_cands = all_result.get('candidates', [])
         preview = dict(all_result)
         preview['candidates'] = all_cands[:3]
         preview['locked_count'] = max(0, len(all_cands) - 3)
         return jsonify(preview)
-    return jsonify(get_breakout_candidates(season, min_score, limit=limit or None))
+    return jsonify(get_breakout_board_candidates(requested_season, min_score, limit or None))
 
 
 @breakout_bp.route('/candidates/<position>')
@@ -1639,11 +1628,33 @@ def candidates_by_position(position):
 
 
 @breakout_bp.route('/player/<player_id>')
-@premium_required
 def player_detail(player_id):
-    """Get detailed breakout info for a player."""
-    season = _resolve_bo_season(request.args.get('season', type=int))
-    return jsonify(get_breakout_candidate_detail(player_id, season))
+    """Get player detail plus authoritative main-board membership.
+
+    Membership is safe to expose to every signed-in page so the modal can gate
+    its tab without waiting for the global indicator list.  The premium detail
+    remains protected and is omitted for viewers without access.
+    """
+    from flask import session
+    from dashboard_services.subscriptions import has_premium_for_viewer
+    requested_season = request.args.get('season', type=int)
+    league_id = request.args.get('league_id')
+    platform = request.args.get('platform', 'sleeper')
+    eligible, board = breakout_board_membership(player_id, requested_season)
+    membership = {
+        'player_id': str(player_id),
+        'season': board.get('season'),
+        'board_eligible': eligible,
+        'data_available': board.get('data_available', True),
+    }
+    if not has_premium_for_viewer(
+        session.get('viewer_username'), session.get('viewer_user_id'),
+        league_id, platform, requested_season,
+    ):
+        return jsonify(membership)
+    detail = get_breakout_candidate_detail(player_id, board.get('season'))
+    detail.update(membership)
+    return jsonify(detail)
 
 
 @breakout_bp.route('/statistics')
