@@ -14233,6 +14233,22 @@ def page_breakouts(platform: str, season: int, league_id: str):
         if (window.brInitMoments) window.brInitMoments(container);
       }}
 
+      function openBreakoutCandidateModal(encodedPlayerId) {{
+        const playerId = decodeURIComponent(encodedPlayerId);
+        const candidate = breakoutCandidates.find(item => String(item.player_id) === playerId);
+        if (!candidate) return;
+        const existingContext = {{ tab: 'breakout' }};
+        openPlayerModal(
+          String(candidate.player_id),
+          candidate.player_name,
+          {{
+            ...existingContext,
+            isBreakoutCandidate: true,
+            breakoutCandidate: candidate
+          }}
+        );
+      }}
+
       function renderBreakoutCard(candidate) {{
           const isWeekly = candidate.weekly === true || candidate.mode === 'weekly';
           const name = candidate.player_name || 'Unknown';
@@ -14301,8 +14317,9 @@ def page_breakouts(platform: str, season: int, league_id: str):
           const isElite = score >= 60;
           const cardCls = isElite ? 'breakout-card br-brk' : 'breakout-card';
           const moAttr = isElite ? ' data-br-moment="breakout"' : '';
+          const encodedPid = encodeURIComponent(String(candidate.player_id));
           return `
-            <div class="` + cardCls + `"` + moAttr + ` style="cursor:pointer;" onclick="openPlayerModal('` + pid + `', '` + name + `', {{tab:'breakout'}})">
+            <div class="` + cardCls + `"` + moAttr + ` style="cursor:pointer;" onclick="openBreakoutCandidateModal('` + encodedPid + `')">
               <div class="breakout-card-header">
                 <div class="breakout-id">
                   <div class="breakout-headshot">${{(name[0] || '?').toUpperCase()}}<img src="https://sleepercdn.com/content/nfl/players/` + pid + `.jpg" alt="" loading="lazy" decoding="async" onerror="this.remove()"></div>
