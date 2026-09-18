@@ -125,7 +125,10 @@ window.brFetchWithTimeout = function (url, opts, ms) {
     if (outer.aborted) ctl.abort();
     else outer.addEventListener('abort', function () { ctl.abort(); }, { once: true });
   }
-  var timer = setTimeout(function () { ctl.abort(); }, ms);
+  var timer = setTimeout(function () {
+    try { ctl.abort(new DOMException('Request timed out', 'TimeoutError')); }
+    catch (_) { ctl.abort(); }
+  }, ms);
   var merged = Object.assign({}, opts, { signal: ctl.signal });
   return fetch(url, merged).finally(function () { clearTimeout(timer); });
 };
@@ -3190,12 +3193,7 @@ function showLoginGate(target, opts) {
         slowMessage: 'Still refreshing… rebuilding league data can take a moment.',
         hardMessage: 'Refresh is taking longer than usual.',
         onCancel: function () {
-          el.style.display = 'none';
-          doRefresh._run = (doRefresh._run || 0) + 1;
-          doRefresh._busy = false;
-          var btn = document.getElementById('brSheetRefresh');
-          if (btn) { btn.disabled = false; btn.removeAttribute('aria-busy'); }
-          updateLabels();
+          cancelRefresh();
         },
         onRetry: function () { doRefresh(); },
         fallbackHref: location.href,
@@ -3221,7 +3219,7 @@ function showLoginGate(target, opts) {
     });
   }
 
-  function expireLeague() {
+  function expireLeague(signal) {
     var parts = window.location.pathname.split('/').filter(Boolean);
     if (parts.length < 3) return Promise.resolve();
     var body = JSON.stringify({
@@ -3233,7 +3231,8 @@ function showLoginGate(target, opts) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'same-origin',
-      body: body
+      body: body,
+      signal: signal
     };
     var p = (typeof window.brFetchWithTimeout === 'function')
       ? window.brFetchWithTimeout('/api/refresh-league', req, 20000)
@@ -3287,34 +3286,39 @@ function showLoginGate(target, opts) {
     return { html: html, cacheTs: nextTs };
   }
 
-  function fetchFreshDocument(beforeTs) {
-    var attempts = 3;
-    function attempt(n) {
-      var opts = {
-        cache: 'reload',
-        credentials: 'same-origin',
-        headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache', 'X-BR-Refresh': '1' }
-      };
-      var request = typeof window.brFetchWithTimeout === 'function'
-        ? window.brFetchWithTimeout(location.href, opts, 30000)
-        : fetch(location.href, opts);
-      return request.then(function (res) {
-        if (!res.ok) throw new Error('page ' + res.status);
-        return res.text();
-      }).then(function (html) {
-        return extractFreshDocument(html, beforeTs);
-      }).catch(function (err) {
-        if (n + 1 >= attempts) throw err;
-        return new Promise(function (resolve) { setTimeout(resolve, 350 * (n + 1)); })
-          .then(function () { return attempt(n + 1); });
-      });
-    }
-    return attempt(0);
+  function fetchFreshDocument(beforeTs, signal) {
+    var opts = {
+      cache: 'reload', signal: signal,
+      credentials: 'same-origin',
+      headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache', 'X-BR-Refresh': '1' }
+    };
+    var request = typeof window.brFetchWithTimeout === 'function'
+      ? window.brFetchWithTimeout(location.href, opts, 30000)
+      : fetch(location.href, opts);
+    return request.then(function (res) {
+      if (!res.ok) throw new Error('page ' + res.status);
+      return res.text();
+    }).then(function (html) { return extractFreshDocument(html, beforeTs); });
+  }
+
+  function cancelRefresh() {
+    doRefresh._run = (doRefresh._run || 0) + 1;
+    if (doRefresh._controller) doRefresh._controller.abort();
+    doRefresh._controller = null;
+    doRefresh._busy = false;
+    var btn = document.getElementById('brSheetRefresh');
+    if (btn) { btn.disabled = false; btn.removeAttribute('aria-busy'); }
+    showRefreshOverlay(false);
+    updateLabels();
   }
 
   async function doRefresh() {
     if (doRefresh._busy) return;
+    if (doRefresh._controller) doRefresh._controller.abort();
+    if (window.brCancelPrewarm) window.brCancelPrewarm();
     doRefresh._busy = true;
+    var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    doRefresh._controller = controller;
     var runId = doRefresh._run = (doRefresh._run || 0) + 1;
     var beforeTs = cacheTs();
     var acceptedTs = 0;
@@ -3325,9 +3329,21 @@ function showLoginGate(target, opts) {
     showRefreshOverlay(true);
 
     try {
-      await expireLeague();
+      var pageHandler = window.brRefreshCurrentPage;
+      if (typeof pageHandler === 'function') {
+        var result = await pageHandler({ signal: controller ? controller.signal : undefined, runId: runId });
+        if (runId !== doRefresh._run) return;
+        if (!result || result.handled !== false) {
+          if (!result || (!result.success && !result.partial)) throw new Error('page refresh failed');
+          updateLabels(result.refreshedAt);
+          var pageLabel = btn && btn.querySelector && btn.querySelector('span:not(.br-sheet-time)');
+          if (pageLabel) pageLabel.textContent = result.partial ? 'Partially updated' : 'Refresh Data';
+          return;
+        }
+      }
+      await expireLeague(controller ? controller.signal : undefined);
       if (runId !== doRefresh._run) throw new Error('refresh cancelled');
-      var fresh = await fetchFreshDocument(beforeTs);
+      var fresh = await fetchFreshDocument(beforeTs, controller ? controller.signal : undefined);
       if (runId !== doRefresh._run) throw new Error('refresh cancelled');
       acceptedTs = fresh.cacheTs;
       if (canSwapInPlace() && window.brSwapPageRoot(fresh.html)) {
@@ -3344,19 +3360,21 @@ function showLoginGate(target, opts) {
         hardReload();
       }
     } catch (err) {
-      if (runId === doRefresh._run) {
+      if (runId === doRefresh._run && !(err && err.name === 'AbortError')) {
         console.error('Refresh failed:', err);
         setRefreshFailure();
       }
     } finally {
       if (runId === doRefresh._run && !reloadStarted) {
         doRefresh._busy = false;
+        if (doRefresh._controller === controller) doRefresh._controller = null;
         if (btn) { btn.disabled = false; btn.removeAttribute('aria-busy'); }
         showRefreshOverlay(false);
       }
     }
   }
   window.brRefreshLeague = doRefresh;
+  window.brCancelRefresh = cancelRefresh;
 
   // Mobile More-sheet Refresh row (persists across soft-navs, so wire once).
   function wireSheetRefresh() {
@@ -3438,7 +3456,13 @@ function showLoginGate(target, opts) {
 })();
 
 window.addEventListener('beforeunload', function() {
+  if (window.brCancelPrewarm) window.brCancelPrewarm();
+  if (window.brCancelRefresh) window.brCancelRefresh();
   window.scrollTo(0, 0);
+});
+window.addEventListener('pagehide', function() {
+  if (window.brCancelPrewarm) window.brCancelPrewarm();
+  if (window.brCancelRefresh) window.brCancelRefresh();
 });
 
 // Prevent any programmatic scrolls during initial page load
@@ -12456,21 +12480,35 @@ document.addEventListener('DOMContentLoaded', function() {
               (String(b.season) === String(currentSeason)) -
               (String(a.season) === String(currentSeason))
             );
-            const warmList = others.slice(0, 6);
+            const warmList = others.slice(0, 2);
             let wi = 0;
+            if (window.brCancelPrewarm) window.brCancelPrewarm();
+            const prewarmCtl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+            window.__brPrewarmController = prewarmCtl;
+            window.brCancelPrewarm = function () {
+              if (window.__brPrewarmController) window.__brPrewarmController.abort();
+              window.__brPrewarmController = null;
+            };
             const warmNext = () => {
-              if (wi >= warmList.length) return;
+              if (wi >= warmList.length || doRefresh._busy || document.hidden ||
+                  window.__brLeagueSwitching || (prewarmCtl && prewarmCtl.signal.aborted)) return;
               const l = warmList[wi++];
               const season = l.season || currentSeason;
-              fetch('/api/prewarm-league?platform=' + encodeURIComponent(l.platform || currentPlatform) +
+              const req = fetch('/api/prewarm-league?platform=' + encodeURIComponent(l.platform || currentPlatform) +
                     '&season=' + encodeURIComponent(season) +
                     '&league_id=' + encodeURIComponent(l.league_id),
-                    { credentials: 'same-origin' })
+                    { credentials: 'same-origin', signal: prewarmCtl ? prewarmCtl.signal : undefined });
+              const timeout = setTimeout(function () { if (prewarmCtl) prewarmCtl.abort(); }, 5000);
+              req
                 .catch(() => {})
-                .finally(() => setTimeout(warmNext, 400));
+                .finally(() => { clearTimeout(timeout); setTimeout(warmNext, 400); });
             };
-            if ('requestIdleCallback' in window) requestIdleCallback(warmNext, { timeout: 3000 });
-            else setTimeout(warmNext, 1500);
+            const enabled = window.__brPrewarmEnabled === true ||
+              (window.__brPrewarmEnabled == null && /^(localhost|127\.0\.0\.1)$/.test(location.hostname));
+            if (enabled && !doRefresh._busy && !document.hidden) {
+              if ('requestIdleCallback' in window) requestIdleCallback(warmNext, { timeout: 3000 });
+              else setTimeout(warmNext, 1500);
+            }
           } catch (_) { /* prewarm is best-effort */ }
           fillLeagueChromeMenu(leagues);
         } else {
@@ -12498,6 +12536,9 @@ document.addEventListener('DOMContentLoaded', function() {
     // current per-league page.
     function navigateToLeague(leagueId, platform, season) {
       if (!leagueId || String(leagueId) === String(currentLeagueId)) return;
+      window.__brLeagueSwitching = true;
+      if (window.brCancelPrewarm) window.brCancelPrewarm();
+      if (window.brCancelRefresh) window.brCancelRefresh();
       showFullscreenLoading('Switching leagues...');
       const destPlatform = platform || currentPlatform;
       const destSeason = season || currentSeason;
