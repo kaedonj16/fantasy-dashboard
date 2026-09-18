@@ -443,13 +443,30 @@ def run_weekly_breakout(
     coverage = round(with_snap / n, 3)
     scores = [float(r.get("breakout_score") or 0) for r in results]
     hundreds = sum(1 for score in scores if score == 100.0)
+    provisional = [r for r in results if r.get("provisional")]
+    provisional_max = max((float(r.get("breakout_score") or 0) for r in provisional), default=None)
+    tied_at_provisional_max = sum(
+        1 for r in provisional if float(r.get("breakout_score") or 0) == provisional_max)
+    tied_pct = (100.0 * tied_at_provisional_max / len(provisional)) if provisional else 0.0
+    cap_reduced = sum(1 for r in provisional if r.get("provisional_adjustment_applied"))
     distribution = {
         "min": round(min(scores), 1) if scores else None,
         "median": round(sorted(scores)[len(scores) // 2], 1) if scores else None,
         "max": round(max(scores), 1) if scores else None,
         "exactly_100": hundreds,
         "exactly_100_pct": round(100.0 * hundreds / len(scores), 2) if scores else 0.0,
+        "tied_score_counts": {str(score): scores.count(score) for score in sorted(set(scores))
+                              if scores.count(score) > 1},
+        "provisional_max": provisional_max,
+        "provisional_max_tied": tied_at_provisional_max,
+        "provisional_max_tied_pct": round(tied_pct, 2),
+        "provisional_adjusted_pct": round(100.0 * cap_reduced / len(provisional), 2)
+                                    if provisional else 0.0,
     }
+    if len(provisional) >= 10 and tied_pct > 20.0:
+        print("[weekly_breakout] WARNING: provisional ranking separation guard failed: "
+              f"{tied_at_provisional_max}/{len(provisional)} ({tied_pct:.1f}%) share "
+              f"the maximum score {provisional_max}")
     def _percentiles(values):
         ordered = sorted(values)
         if not ordered:
