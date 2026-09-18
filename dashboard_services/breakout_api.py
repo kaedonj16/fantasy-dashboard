@@ -643,6 +643,7 @@ _WEEKLY_CLASS_LABELS = {
     "emerging_breakout": "Emerging Breakout",
     "provisional_emerging": "Provisional Emerging",
     "temporary_opportunity": "Temporary Opportunity",
+    "early_watch": "Early Watch",
     "watchlist": "Watchlist",
 }
 
@@ -739,7 +740,17 @@ def _weekly_row_to_candidate(row: Dict) -> Dict:
         "score_basis": evidence.get("score_basis"),
         "previous_breakout_status": evidence.get("previous_breakout_status"),
         "established_role_penalty": evidence.get("established_role_penalty"),
+        "established_player": bool(evidence.get("established_player")),
+        "established_role_score": evidence.get("established_role_score"),
+        "role_novelty_score": evidence.get("role_novelty_score"),
         "role_novelty_reason": evidence.get("role_novelty_reason"),
+        "early_watch": bool(evidence.get("early_watch")),
+        "main_board_eligible": bool(evidence.get("main_board_eligible")),
+        "main_board_rejection_reasons": evidence.get("main_board_rejection_reasons") or [],
+        "baseline_method": evidence.get("baseline_method"),
+        "baseline_games_used": evidence.get("baseline_games_used"),
+        "partial_games_excluded": evidence.get("partial_games_excluded"),
+        "baseline_quality": evidence.get("baseline_quality"),
         "role_change_score": subscores.get("role_change_score", evidence.get("role_change_score")),
         "current_role_score": subscores.get("current_role_score", evidence.get("current_role_score")),
         "sustainability_score": subscores.get("sustainability_score", evidence.get("sustainability_score")),
@@ -792,6 +803,15 @@ def get_weekly_breakout_candidates(season: int, min_score: float = 0.0,
                                    else c.get("breakout_score") or 0,
                                    c.get("breakout_score") or 0),
                     reverse=True)
+    groups = {
+        "breakouts": [c for c in candidates if c.get("main_board_eligible")],
+        "early_watch": [c for c in candidates if c.get("classification") == "early_watch"],
+        "temporary_opportunities": [c for c in candidates if c.get("classification") == "temporary_opportunity"],
+        "cooling": [c for c in candidates if c.get("lifecycle_state") == "cooling"],
+    }
+    # The default endpoint is deliberately curated. Secondary cohorts remain in
+    # named payload groups so consumers can offer explicit opt-in filters.
+    candidates = groups["breakouts"]
     if limit and limit > 0:
         candidates = candidates[:limit]
 
@@ -814,6 +834,7 @@ def get_weekly_breakout_candidates(season: int, min_score: float = 0.0,
     return {
         "season": season,
         "candidates": candidates,
+        **groups,
         "count": len(candidates),
         "as_of_date": payload.get("as_of_date"),
         "as_of_week": payload.get("as_of_week"),

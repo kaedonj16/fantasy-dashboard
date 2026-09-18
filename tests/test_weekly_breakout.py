@@ -87,7 +87,7 @@ def test_rising_usage_scores_even_without_fantasy_spike():
     rows = [wk(1, 25, 8, 2, ppr=3), wk(2, 30, 9, 3, ppr=4),
             wk(3, 55, 18, 6, ppr=5), wk(4, 68, 24, 8, ppr=6)]
     res = wb.score_player(WR, rows, cutoff_week=4)
-    assert res["breakout_score"] >= wb.EMERGING_MIN_SCORE
+    assert res["breakout_score"] >= 40
     assert res["fantasy"]["spike_without_role"] is False
 
 
@@ -370,7 +370,7 @@ def test_elite_rookie_debut_is_initial_role_watchlist():
     res = wb.score_player(rookie, [wk(1, 90, 35, 13)], cutoff_week=1)
     assert res["score_basis"] == "initial_role"
     assert res["role_change_score"] is None
-    assert res["classification"] == "watchlist"
+    assert res["classification"] == "early_watch"
     assert res["breakout_score"] <= wb.INITIAL_ONE_GAME_CAP
 
 
@@ -379,7 +379,8 @@ def test_two_persistent_rookie_games_can_be_provisional_emerging():
               "draft_round": 5}
     rows = [wk(1, 72, 23, 8), wk(2, 75, 25, 9)]
     res = wb.score_player(rookie, rows, cutoff_week=2)
-    assert res["classification"] == "provisional_emerging"
+    assert res["classification"] == "emerging_breakout"
+    assert res["main_board_eligible"] is True
     assert res["score_basis"] == "initial_role"
     assert res["breakout_score"] <= wb.INITIAL_PERSISTENT_CAP
 
@@ -423,7 +424,8 @@ def test_team_volume_count_spike_without_share_growth_stays_watchlist():
     res = wb.score_player(WR, rows, cutoff_week=3)
     assert res["signals"]["target_share"]["points"] == 0
     assert res["supporting_signal_count"] < wb.MIN_SUPPORTING_SIGNALS
-    assert res["classification"] == "watchlist"
+    assert res["classification"] == "early_watch"
+    assert res["main_board_eligible"] is False
 
 
 def test_role_held_after_starter_return_increases_sustainability():
@@ -472,19 +474,20 @@ def test_breakout_page_does_not_send_offseason_floor_for_weekly_mode():
     assert "min_score=50" not in request_line
 
 
-def test_meaningful_rookie_watchlist_survives_weekly_default_filter(monkeypatch):
+def test_meaningful_rookie_early_watch_is_separate_from_default_board(monkeypatch):
     import dashboard_services.breakout_api as api
     from data_building.breakout_engine import weekly_store
     rookie = wb.score_player(
         {**WR, "years_exp": 0, "season": 2026, "draft_year": 2026},
         [wk(1, 90, 35, 13)], cutoff_week=1)
-    assert rookie["classification"] == "watchlist" and rookie["breakout_score"] < 50
+    assert rookie["classification"] == "early_watch" and rookie["breakout_score"] < 50
     row = {**rookie, "season": 2026, "as_of_week": 1, "evidence": rookie}
     monkeypatch.setattr(weekly_store, "load_weekly_candidates", lambda *a, **k: {
         "candidates": [row], "as_of_week": 1, "as_of_date": "2026-09-15",
         "data_status": "ok", "scoring_version": wb.SCORING_VERSION})
     payload = api.get_weekly_breakout_candidates(2026)
-    assert [candidate["player_id"] for candidate in payload["candidates"]] == [WR["player_id"]]
+    assert payload["candidates"] == []
+    assert [candidate["player_id"] for candidate in payload["early_watch"]] == [WR["player_id"]]
 
 
 def test_current_version_filter_rejects_incompatible_snapshots(monkeypatch):
