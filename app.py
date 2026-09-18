@@ -251,7 +251,15 @@ DASHBOARD_CACHE = {}
 # so without eviction this dict grows without limit (a slow OOM on a
 # long-running worker). Cap the entry count and evict the oldest ~10% when
 # exceeded -- the same bounded pattern used by _GAME_LOGS_CACHE below.
-DASHBOARD_CACHE_MAX = 400
+def _positive_env_int(name: str, default: int) -> int:
+    try:
+        return max(1, int(os.getenv(name, str(default))))
+    except (TypeError, ValueError):
+        return default
+
+
+DASHBOARD_CACHE_MAX = _positive_env_int("DASHBOARD_CACHE_MAX", 24)
+_DASHBOARD_CACHE_LOCK = threading.RLock()
 
 
 def _prune_dashboard_cache(keep: Optional[str] = None) -> None:
@@ -260,25 +268,28 @@ def _prune_dashboard_cache(keep: Optional[str] = None) -> None:
     stays bounded regardless of how many distinct leagues get looked up. ``keep``
     is the key about to be written; it is never evicted, so a caller updating a
     hot entry can't lose the ctx it's building on."""
-    if len(DASHBOARD_CACHE) < DASHBOARD_CACHE_MAX:
-        return
-
+    limit = max(1, int(DASHBOARD_CACHE_MAX or 1))
     def _age(k):
         e = DASHBOARD_CACHE.get(k) or {}
         ts = e.get("ts")
         if ts is not None:
             return ts
-        # Entries created only via the page_html/awards setdefault paths carry
-        # their timestamps one level down; use the most recent as the age.
         cand = [r[0] for r in (e.get("page_html") or {}).values() if isinstance(r, tuple)]
         aw = e.get("awards_agg")
         if isinstance(aw, tuple):
             cand.append(aw[0])
         return max(cand) if cand else 0.0
 
-    candidates = [k for k in DASHBOARD_CACHE if k != keep]
-    for k in sorted(candidates, key=_age)[:max(1, DASHBOARD_CACHE_MAX // 10)]:
-        DASHBOARD_CACHE.pop(k, None)
+    with _DASHBOARD_CACHE_LOCK:
+        if len(DASHBOARD_CACHE) < limit:
+            return
+        candidates = [k for k in DASHBOARD_CACHE if k != keep]
+        # Drop enough complete entries (ctx and rendered page_html together) for
+        # the pending insertion.  Removing the dict releases all owned strong
+        # references; forced collection on each request would only add latency.
+        remove_count = max(1, len(DASHBOARD_CACHE) - limit + 1)
+        for k in sorted(candidates, key=_age)[:remove_count]:
+            DASHBOARD_CACHE.pop(k, None)
 
 
 def _prune_ttl_cache(cache: dict, max_entries: int) -> None:
@@ -307,6 +318,50 @@ def _prune_ttl_cache(cache: dict, max_entries: int) -> None:
 # running the full build_league_context (~40 API calls) at the same time.
 _CTX_LOCKS: dict = {}
 _CTX_LOCKS_LOCK = threading.Lock()
+_CTX_LOCKS_MAX = _positive_env_int("DASHBOARD_CTX_LOCKS_MAX", 128)
+
+
+class _ContextLock:
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.users = 0
+        self.last_used = time.monotonic()
+
+
+def _acquire_context_lock(key):
+    """Acquire a ref-counted lock and prune only entries with no owner/waiter."""
+    with _CTX_LOCKS_LOCK:
+        state = _CTX_LOCKS.get(key)
+        if state is None:
+            state = _CTX_LOCKS[key] = _ContextLock()
+        state.users += 1
+        state.last_used = time.monotonic()
+        if len(_CTX_LOCKS) > _CTX_LOCKS_MAX:
+            idle = sorted(
+                ((k, v) for k, v in _CTX_LOCKS.items()
+                 if k != key and v.users == 0 and not v.lock.locked()),
+                key=lambda item: item[1].last_used,
+            )
+            for old_key, _ in idle[:len(_CTX_LOCKS) - _CTX_LOCKS_MAX]:
+                _CTX_LOCKS.pop(old_key, None)
+    started = time.monotonic()
+    state.lock.acquire()
+    return state, time.monotonic() - started
+
+
+def _release_context_lock(key, state):
+    state.lock.release()
+    with _CTX_LOCKS_LOCK:
+        state.users -= 1
+        state.last_used = time.monotonic()
+        if len(_CTX_LOCKS) > _CTX_LOCKS_MAX:
+            idle = sorted(
+                ((k, v) for k, v in _CTX_LOCKS.items()
+                 if v.users == 0 and not v.lock.locked()),
+                key=lambda item: item[1].last_used,
+            )
+            for old_key, _ in idle[:len(_CTX_LOCKS) - _CTX_LOCKS_MAX]:
+                _CTX_LOCKS.pop(old_key, None)
 # Short-lived cache for /api/league-rosters responses (pick-slot resolution is expensive).
 _ROSTER_API_CACHE: dict = {}
 _ROSTER_API_CACHE_TTL = 180  # seconds
@@ -2017,7 +2072,7 @@ BASE_HTML = """
 
       {ad_top}
 
-      <script>window._viewerRid = {viewer_roster_id_js}; window._viewerUid = {viewer_user_id_js}; window._isSignedIn = {signed_in_js}; window._hasAccount = {has_account_js}; window._accountEmail = {account_email_js}; window.__FEATURES_JS = {features_js_js}; window.__PLAYER_MODAL_JS = {player_modal_js_js}; window.__DASHBOARD_CSS = {dashboard_css_js}; window.__brctx = {{is_logged_in:{signed_in_js},isPremium:{user_premium},platform:{platform_js},season:{season_js},leagueId:{league_id_js},leagueName:{league_name_js},leagueFormat:{league_format_js},currentWeek:{current_week_js},leagueType:{league_type_js},leagueSize:{league_size_js},scoringType:{league_scoring_type_js}}};</script>
+      <script>window._viewerRid = {viewer_roster_id_js}; window._viewerUid = {viewer_user_id_js}; window._isSignedIn = {signed_in_js}; window._hasAccount = {has_account_js}; window._accountEmail = {account_email_js}; window.__brPrewarmEnabled = {prewarm_enabled_js}; window.__FEATURES_JS = {features_js_js}; window.__PLAYER_MODAL_JS = {player_modal_js_js}; window.__DASHBOARD_CSS = {dashboard_css_js}; window.__brctx = {{is_logged_in:{signed_in_js},isPremium:{user_premium},platform:{platform_js},season:{season_js},leagueId:{league_id_js},leagueName:{league_name_js},leagueFormat:{league_format_js},currentWeek:{current_week_js},leagueType:{league_type_js},leagueSize:{league_size_js},scoringType:{league_scoring_type_js}}};</script>
       <main id="page-root" role="main" tabindex="-1" class="overview-layout" data-cache-ts="{cache_ts}" data-platform="{platform_attr}" data-season="{season_attr}" data-league-id="{league_id_attr}" data-premium="{user_premium}" data-ad-eligible="{ad_eligible}">
         {body}
       </main>
@@ -2375,9 +2430,10 @@ def get_page_html_from_cache(platform: str, season: int, league_id: str, page: s
             if time.time() - mtime <= PAGE_HTML_TTL and mtime >= bust:
                 html = open(path, encoding="utf-8").read()
                 _ck = _cache_key(platform, season, league_id)
-                _prune_dashboard_cache(keep=_ck)
-                mem_entry = DASHBOARD_CACHE.setdefault(_ck, {})
-                mem_entry.setdefault("page_html", {})[page] = (time.time(), html)
+                with _DASHBOARD_CACHE_LOCK:
+                    _prune_dashboard_cache(keep=_ck)
+                    mem_entry = DASHBOARD_CACHE.setdefault(_ck, {})
+                    mem_entry.setdefault("page_html", {})[page] = (time.time(), html)
                 return html
     except Exception:
         logger.debug("suppressed exception", exc_info=True)
@@ -2387,9 +2443,10 @@ def get_page_html_from_cache(platform: str, season: int, league_id: str, page: s
 
 def store_page_html(platform: str, season: int, league_id: str, page: str, html: str) -> None:
     _k = _cache_key(platform, season, league_id)
-    _prune_dashboard_cache(keep=_k)
-    entry = DASHBOARD_CACHE.setdefault(_k, {})
-    entry.setdefault("page_html", {})[page] = (time.time(), html)
+    with _DASHBOARD_CACHE_LOCK:
+        _prune_dashboard_cache(keep=_k)
+        entry = DASHBOARD_CACHE.setdefault(_k, {})
+        entry.setdefault("page_html", {})[page] = (time.time(), html)
     try:
         path = _page_html_tmp_path(platform, season, league_id, page)
         tmp = path + ".tmp"
@@ -2415,9 +2472,10 @@ def get_awards_agg_from_cache(platform: str, season: int, league_id: str):
 
 def store_awards_agg(platform: str, season: int, league_id: str, payload) -> None:
     _k = _cache_key(platform, season, league_id)
-    _prune_dashboard_cache(keep=_k)
-    entry = DASHBOARD_CACHE.setdefault(_k, {})
-    entry["awards_agg"] = (time.time(), payload)
+    with _DASHBOARD_CACHE_LOCK:
+        _prune_dashboard_cache(keep=_k)
+        entry = DASHBOARD_CACHE.setdefault(_k, {})
+        entry["awards_agg"] = (time.time(), payload)
 
 
 # -------- global NFL data caches (shared across leagues) --------
@@ -5633,6 +5691,7 @@ def render_page(
         viewer_roster_id_js=_json.dumps(str(viewer_roster_id)),
         viewer_user_id_js=_json.dumps(str(viewer_user_id)),
         signed_in_js="true" if _session_signed_in() else "false",
+        prewarm_enabled_js="true" if os.getenv("LEAGUE_PREWARM_ENABLED", "").lower() in {"1", "true", "yes", "on"} else "false",
         has_account_js="true" if session.get("account_id") else "false",
         account_email_js=_json.dumps(session.get("account_email") or ""),
         features_js_js=_features_js_js,
@@ -6783,10 +6842,7 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
     entry = DASHBOARD_CACHE.get(key)
 
     if not entry:
-        ctx = build_league_context(platform, league_id, season)
-        _prune_dashboard_cache()
-        DASHBOARD_CACHE[key] = {"ctx": ctx, "ts": time.time(), "page_html": {}}
-        return ctx
+        return get_league_ctx_from_cache(platform, league_id, season)
 
     ctx = entry["ctx"]
 
@@ -10888,12 +10944,9 @@ def get_league_ctx_from_cache(platform: str, league_id: str, season: int) -> dic
         _maybe_check_roster_freshness(platform, league_id, season, key, _roster_sig(ctx))
         return ctx
 
-    with _CTX_LOCKS_LOCK:
-        if key not in _CTX_LOCKS:
-            _CTX_LOCKS[key] = threading.Lock()
-        key_lock = _CTX_LOCKS[key]
-
-    with key_lock:
+    stale_entry = entry
+    key_lock, local_wait = _acquire_context_lock(key)
+    try:
         # Re-check after acquiring lock - another thread may have built it while we waited
         entry = DASHBOARD_CACHE.get(key)
         if _league_ctx_cache_valid(entry, platform, season, league_id):
@@ -10902,26 +10955,91 @@ def get_league_ctx_from_cache(platform: str, league_id: str, season: int) -> dic
                 ctx.get("users") or [], ctx.get("rosters") or [], platform, league_id, season
             )
             return ctx
-        # A context bust must also evict the provider-layer payloads used to
-        # rebuild it. Otherwise a new context timestamp could wrap old Sleeper
-        # rosters/matchups and falsely look fresh. This is league-scoped; Yahoo
-        # remains token-backed and ESPN owns its separately scoped cache below.
-        if platform == "sleeper":
+        from dashboard_services.league_singleflight import (
+            LeagueBuildBusy, league_build_lock, mark_success, read_generation,
+        )
+        generation_before = read_generation(platform, season, league_id)
+        cross_wait = 0.0
+        build_started = time.monotonic()
+        try:
+            cross_lock = league_build_lock(
+                platform, season, league_id,
+                timeout=float(os.getenv("LEAGUE_BUILD_LOCK_TIMEOUT_SECONDS", "20")),
+            )
+            cross_wait = cross_lock.__enter__()
+        except LeagueBuildBusy:
+            old = (stale_entry or {}).get("ctx")
+            old_ts = float((stale_entry or {}).get("ts") or 0)
+            stale_window = _positive_env_int("LEAGUE_STALE_IF_ERROR_SECONDS", 21600)
+            if old and time.time() - old_ts <= stale_window:
+                old["_cache_stale"] = True
+                return old
+            raise
+        try:
+            # A sibling may have completed while this worker waited.  Its full
+            # context is process-local, so reuse our bounded last-known-good
+            # rather than serially repeating the same expensive provider work.
+            generation_now = read_generation(platform, season, league_id)
+            old = (stale_entry or {}).get("ctx")
+            if generation_now["generation"] > generation_before["generation"] and old:
+                old["_cache_stale"] = True
+                return old
+            entry = DASHBOARD_CACHE.get(key)
+            if _league_ctx_cache_valid(entry, platform, season, league_id):
+                return entry["ctx"]
+            # Clear provider payloads only after both lock layers are owned.
+            if platform == "sleeper":
+                try:
+                    from utils.utils import clear_league_provider_cache_for_league
+                    clear_league_provider_cache_for_league(league_id)
+                except Exception:
+                    logger.debug("[refresh] Sleeper provider cache clear failed", exc_info=True)
+            elif platform == "espn":
+                try:
+                    from dashboard_services.providers.espn_api import clear_espn_league_caches
+                    clear_espn_league_caches(league_id, season)
+                except Exception:
+                    logger.debug("[refresh] ESPN provider cache clear failed", exc_info=True)
+            rss_before = None
             try:
-                from utils.utils import clear_league_provider_cache_for_league
-                clear_league_provider_cache_for_league(league_id)
+                import psutil
+                rss_before = psutil.Process().memory_info().rss
             except Exception:
-                logger.debug("[refresh] Sleeper provider cache clear failed", exc_info=True)
-        elif platform == "espn":
+                pass
             try:
-                from dashboard_services.providers.espn_api import clear_espn_league_caches
-                clear_espn_league_caches(league_id, season)
+                ctx = build_league_context(platform, league_id, season)
+                built_at = time.time()
+                with _DASHBOARD_CACHE_LOCK:
+                    _prune_dashboard_cache(keep=key)
+                    DASHBOARD_CACHE[key] = {"ctx": ctx, "ts": built_at, "page_html": {}}
+                mark_success(platform, season, league_id)
+                rss_after = None
+                try:
+                    import psutil
+                    rss_after = psutil.Process().memory_info().rss
+                except Exception:
+                    pass
+                logger.info("league_context_build %s", json.dumps({
+                    "platform": platform, "season": int(season), "league_id": str(league_id),
+                    "source": request.path if has_request_context() else "internal",
+                    "cache": "stale" if stale_entry else "miss", "local_lock_wait_ms": round(local_wait * 1000),
+                    "cross_worker_lock_wait_ms": round(cross_wait * 1000), "result": "built",
+                    "build_ms": round((time.monotonic() - build_started) * 1000), "success": True,
+                    "cache_entries": len(DASHBOARD_CACHE), "rss_before": rss_before, "rss_after": rss_after,
+                }, separators=(",", ":")))
+                return ctx
             except Exception:
-                logger.debug("[refresh] ESPN provider cache clear failed", exc_info=True)
-        ctx = build_league_context(platform, league_id, season)
-        _prune_dashboard_cache()
-        DASHBOARD_CACHE[key] = {"ctx": ctx, "ts": time.time(), "page_html": {}}
-        return ctx
+                old = (stale_entry or {}).get("ctx")
+                old_ts = float((stale_entry or {}).get("ts") or 0)
+                stale_window = _positive_env_int("LEAGUE_STALE_IF_ERROR_SECONDS", 21600)
+                if old and time.time() - old_ts <= stale_window:
+                    old["_cache_stale"] = True
+                    return old
+                raise
+        finally:
+            cross_lock.__exit__(None, None, None)
+    finally:
+        _release_context_lock(key, key_lock)
 
 
 # /api/trade-count extracted to routes/misc_api_bp.py
@@ -16631,13 +16749,7 @@ def index():
                 league_id=league_id,
             ))
 
-        ctx = build_league_context(
-            platform=platform,
-            league_id=league_id,
-            season=season,
-        )
-        _prune_dashboard_cache()
-        DASHBOARD_CACHE[key] = {"ctx": ctx, "ts": time.time(), "page_html": {}}
+        ctx = get_league_ctx_from_cache(platform, league_id, season)
 
         # Preload historical season contexts in the background so History/Awards/Graphs
         # pages are fast on first click.
@@ -18053,7 +18165,7 @@ def api_trade_eval_playoff_impact():
             simulate_swap_impact as _simulate_swap_impact,
             shape_playoff_impact_for_league as _shape_pi,
         )
-        ctx = build_league_context(platform, league_id, season)
+        ctx = get_league_ctx_from_cache(platform, league_id, season)
         sim_state = _build_sim_state(ctx, platform)
         if sim_state is None:
             return jsonify({"available": False, "reason": "season_complete"})
@@ -29286,7 +29398,7 @@ def build_portfolio_body(
         "window.__pfSummaryInit=true;"
         "if(window.__pfSummaryAbort){try{window.__pfSummaryAbort.abort();}catch(e){}}"
         "var ctl=typeof AbortController!=='undefined'?new AbortController():null;window.__pfSummaryAbort=ctl;"
-        "var cards=[].slice.call(document.querySelectorAll('[data-summary-card]')),active=0,MAX=4,q=[];"
+        "var cards=[].slice.call(document.querySelectorAll('[data-summary-card]')),active=0,MAX=2,q=[];"
         "function esc(s){var d=document.createElement('div');d.textContent=s==null?'':s;return d.innerHTML;}"
         "function when(s){try{return new Date(s).toLocaleString();}catch(e){return s||'';}}"
         "function render(c,d){var stats=c.querySelector('[data-summary-stats]'),up=c.querySelector('[data-summary-updated]'),retry=c.querySelector('[data-summary-retry]');"
@@ -29298,9 +29410,10 @@ def build_portfolio_body(
         "if(up)up.textContent=(d.stale?'Last good data, refreshing: ':'Updated ')+when(d.refreshed_at);if(retry)retry.hidden=true;return;}"
         "var msg=(d&&d.message)||'Summary unavailable. Retry.';stats.innerHTML='<span class=\"pf-lg-l\">'+esc(msg)+'</span>';"
         "if(up)up.textContent=d&&d.state==='reconnect_required'?'Reconnect required':'Update failed';if(retry)retry.hidden=false;}"
+        "window.__pfRenderSummary=render;"
         "function load(c){if(c._summaryLoading)return;c._summaryLoading=true;c._summaryAttempt=c._summaryAttempt||0;active++;var p=c.dataset.platform,l=c.dataset.leagueId,s=c.dataset.season;"
         "var u='/api/portfolio/summary?platform='+encodeURIComponent(p)+'&league_id='+encodeURIComponent(l)+'&season='+encodeURIComponent(s),timer;"
-        "var local=typeof AbortController!=='undefined'?new AbortController():null;if(local)timer=setTimeout(function(){local.abort();},12000);"
+        "var local=typeof AbortController!=='undefined'?new AbortController():null;if(local&&ctl)ctl.signal.addEventListener('abort',function(){local.abort();},{once:true});if(local)timer=setTimeout(function(){local.abort();},12000);"
         "fetch(u,{cache:'no-store',signal:local?local.signal:(ctl?ctl.signal:undefined)}).then(function(r){return r.json().then(function(d){if(!r.ok)throw d;return d;});})"
         ".then(function(d){c._summaryAttempt=0;if(!ctl||!ctl.signal.aborted)render(c,d);}).catch(function(e){c._summaryAttempt++;var again=e&&e.retryable!==false&&c._summaryAttempt<4;if(again){var wait=[0,1000,3000,7000][c._summaryAttempt]+Math.random()*350;var up=c.querySelector('[data-summary-updated]');if(up)up.textContent='Retrying...';setTimeout(function(){q.unshift(c);pump();},wait);}else if(!ctl||!ctl.signal.aborted)render(c,e&&e.message?e:{message:'Summary timed out. Retry.'});})"
         ".then(function(){if(timer)clearTimeout(timer);c._summaryLoading=false;active--;pump();});}"
@@ -29374,6 +29487,7 @@ def build_portfolio_body(
         "slot._loading=fetch(u,{headers:{'X-Requested-With':'fetch'},signal:controller?controller.signal:undefined}).then(function(r){return r.ok?r.json():null;})"
         ".then(function(d){if(slot._generation===generation)render(slot,d);return d;}).catch(function(){if(slot._generation===generation)render(slot,null);return null;})"
         ".then(function(d){if(timer)clearTimeout(timer);slot._loading=null;return d;});return slot._loading;}"
+        "window.__pfLoadMatchup=load;window.__pfRenderMatchup=render;"
         "var i=0,LIVE=[];slots.sort(function(a,b){var ac=a.closest('.pf-lg-card'),bc=b.closest('.pf-lg-card');"
         "var af=ac&&ac.getAttribute('data-favorite')==='true',bf=bc&&bc.getAttribute('data-favorite')==='true';"
         "var av=a.getBoundingClientRect().top<innerHeight,bv=b.getBoundingClientRect().top<innerHeight;return (bf-af)||(bv-av);});"
@@ -29382,6 +29496,27 @@ def build_portfolio_body(
         "for(var k=0;k<3;k++)pump();"
         "window.__pfLiveTimer=setInterval(function(){if(document.hidden||!LIVE.length)return;LIVE.forEach(load);},45000);"
         "})();</script>"
+        # Page-specific Refresh Data contract. It updates mounted, paginator-
+        # visible cards in place and never fetches/reloads the Portfolio HTML.
+        "<script>(function(){window.brRefreshCurrentPage=async function(owner){if(location.pathname!=='/portfolio')return {handled:false};"
+        "var signal=owner&&owner.signal;if(window.__pfSummaryAbort)window.__pfSummaryAbort.abort();"
+        "if(window.__pfLiveTimer){clearInterval(window.__pfLiveTimer);window.__pfLiveTimer=null;}"
+        "var cards=[].slice.call(document.querySelectorAll('[data-summary-card]')).filter(function(c){return c.isConnected&&c.style.display!=='none';});"
+        "var keys=cards.map(function(c){return {platform:c.dataset.platform,league_id:c.dataset.leagueId,season:parseInt(c.dataset.season,10)};});"
+        "var success=0,failed=0,stamp=null;try{"
+        "var response=await window.brFetchWithTimeout('/api/portfolio/refresh',{method:'POST',cache:'no-store',credentials:'same-origin',"
+        "headers:{'Content-Type':'application/json','Cache-Control':'no-store'},body:JSON.stringify({leagues:keys}),signal:signal},30000);"
+        "var payload=await response.json();var results=payload.results||[];stamp=payload.refreshed_at||null;"
+        "cards.forEach(function(c,i){var r=results[i]||{};if(r.ok&&r.summary){success++;if(window.__pfRenderSummary)window.__pfRenderSummary(c,r.summary);}"
+        "else{failed++;var retry=c.querySelector('[data-summary-retry]');if(retry)retry.hidden=false;}});"
+        "var jobs=cards.map(function(c){return function(){var slot=c.querySelector('[data-lg-live]');if(!slot)return Promise.resolve();"
+        "var u='/api/portfolio/matchup?platform='+encodeURIComponent(c.dataset.platform)+'&league_id='+encodeURIComponent(c.dataset.leagueId)+'&season='+encodeURIComponent(c.dataset.season);"
+        "return window.brFetchWithTimeout(u,{cache:'no-store',credentials:'same-origin',headers:{'Cache-Control':'no-store'},signal:signal},12000)"
+        ".then(function(r){return r.ok?r.json():null;}).then(function(d){if(!signal||!signal.aborted){if(window.__pfRenderMatchup)window.__pfRenderMatchup(slot,d);}}).catch(function(e){if(e&&e.name==='AbortError')throw e;});};});"
+        "var cursor=0;async function worker(){while(cursor<jobs.length){var job=jobs[cursor++];await job();}}await Promise.all([worker(),worker()]);"
+        "return {success:success>0&&failed===0,partial:success>0&&failed>0,refreshedAt:stamp,failures:failed};"
+        "}finally{cards.forEach(function(c){c._summaryLoading=false;});if(window.__pfLiveTimer)clearInterval(window.__pfLiveTimer);"
+        "window.__pfLiveTimer=setInterval(function(){if(document.hidden||!window.__pfLoadMatchup)return;document.querySelectorAll('[data-lg-live]').forEach(function(s){var c=s.closest('.pf-lg-card');if(c&&c.style.display!=='none')window.__pfLoadMatchup(s);});},45000);}};})();</script>"
     )
 
     # ── Positional strength ───────────────────────────────────────────────

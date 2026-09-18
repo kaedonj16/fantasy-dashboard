@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import html
 import logging
+import os
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
@@ -348,7 +349,11 @@ def page_portfolio():
     # context. Order does not matter: results are sorted by name just below.
     leagues_data = []
     if league_inputs:
-        max_workers = min(8, len(league_inputs))
+        try:
+            configured = max(1, int(os.getenv("PORTFOLIO_SUMMARY_CONCURRENCY", "2")))
+        except (TypeError, ValueError):
+            configured = 2
+        max_workers = min(configured, 2, len(league_inputs))
         if max_workers <= 1:
             leagues_data = [r for r in map(_league_summary, league_inputs) if r]
         else:
@@ -977,6 +982,64 @@ def api_portfolio_summary():
                         "failure_category": category,
                         "retryable": category in {"transient_timeout", "rate_limited", "provider_5xx", "unknown"},
                         "message": "Summary temporarily unavailable."}), 503
+
+
+@user_pages_bp.route("/api/portfolio/refresh", methods=["POST"])
+def api_portfolio_refresh():
+    """Explicitly refresh at most the visible Portfolio cards, two at a time."""
+    account_id = session.get("account_id")
+    if not account_id:
+        return jsonify({"ok": False, "failure_category": "auth_required"}), 401
+    payload = request.get_json(silent=True) or {}
+    if "account_id" in payload or not isinstance(payload.get("leagues"), list):
+        return jsonify({"ok": False, "failure_category": "invalid_request"}), 400
+    submitted = payload["leagues"]
+    if not submitted or len(submitted) > 4:
+        return jsonify({"ok": False, "failure_category": "invalid_request"}), 400
+    from dashboard_services.accounts import resolve_account_leagues
+    allowed = resolve_account_leagues(account_id, current_season=datetime.now().year)
+    allowed_by_key = {
+        (str(x.get("platform") or "").lower(), str(x.get("league_id") or ""), int(x.get("season") or 0)): x
+        for x in allowed
+    }
+    requested = []
+    for raw in submitted:
+        try:
+            key = (str(raw.get("platform") or "").lower(), str(raw.get("league_id") or ""), int(raw.get("season") or 0))
+        except (AttributeError, TypeError, ValueError):
+            return jsonify({"ok": False, "failure_category": "invalid_request"}), 400
+        if key not in allowed_by_key:
+            return jsonify({"ok": False, "failure_category": "unlinked_league"}), 403
+        requested.append((key, allowed_by_key[key]))
+
+    from dashboard_services.portfolio_summary import build_league_summary, classify_failure, get_cached_summary
+    from app import DASHBOARD_CACHE, _cache_key, _touch_league_bust
+    def refresh_one(item):
+        key, membership = item
+        platform, league_id, season = key
+        stale = get_cached_summary(account_id, platform, league_id, season)
+        try:
+            cache_key = _cache_key(platform, season, league_id)
+            if cache_key in DASHBOARD_CACHE:
+                DASHBOARD_CACHE[cache_key]["ts"] = 0
+            _touch_league_bust(platform, season, league_id)
+            return {"ok": True, "summary": build_league_summary(
+                account_id, membership, get_league_ctx_from_cache)}
+        except Exception as exc:
+            result = {"ok": False, "failure_category": classify_failure(exc)}
+            if stale:
+                result["last_good"] = stale
+            return result
+
+    # Browser cancellation cannot terminate an accepted WSGI request; this
+    # bounded pool and league single-flight are therefore the authoritative cap.
+    with ThreadPoolExecutor(max_workers=min(2, len(requested))) as pool:
+        results = list(pool.map(refresh_one, requested))
+    successes = sum(1 for value in results if value.get("ok"))
+    logger.info("portfolio_refresh account=%s visible_card_count=%d concurrency=%d success=%d",
+                account_id, len(requested), min(2, len(requested)), successes)
+    return jsonify({"ok": successes == len(results), "partial": 0 < successes < len(results),
+                    "results": results, "refreshed_at": datetime.now(timezone.utc).isoformat()}), (200 if successes else 503)
 
 
 @user_pages_bp.route("/api/portfolio/matchup")

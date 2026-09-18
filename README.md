@@ -29,6 +29,21 @@ pip install -r requirements.txt
 python3 -m data_building.breakout_engine.setup_database
 ```
 
+### Refresh and memory controls
+
+The league context cache and refresh concurrency are intentionally conservative
+for memory-limited web workers:
+
+* `DASHBOARD_CACHE_MAX` — full league contexts retained per process (default `24`, minimum `1`).
+* `DASHBOARD_CTX_LOCKS_MAX` — idle per-league process locks retained (default `128`).
+* `LEAGUE_BUILD_LOCK_TIMEOUT_SECONDS` — maximum cross-worker single-flight wait (default `20`).
+* `LEAGUE_STALE_IF_ERROR_SECONDS` — last-known-good context window after a failed build (default `21600`).
+* `PORTFOLIO_SUMMARY_CONCURRENCY` — initial Portfolio summary workers (default and hard cap `2`).
+* `LEAGUE_PREWARM_ENABLED` — enables idle league prewarming; disabled by default in production.
+
+Postgres deployments use advisory locks for same-league builds. Deployments
+without Postgres fall back to bounded file locks in the system temporary cache.
+
 Copy `.env.example` to `.env` when present and fill secrets. See `docs/weekly-email.md`
 for Brevo / digest env vars (`BREVO_API_KEY`, etc.).
 

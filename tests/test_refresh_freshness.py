@@ -106,7 +106,8 @@ def test_refresh_requires_new_authoritative_document_timestamp():
     assert "function extractFreshDocument(html, beforeTs)" in src
     assert "nextTs <= beforeTs" in src
     assert "stale refreshed document" in src
-    assert "attempts = 3" in src
+    assert "attempts = 3" not in src
+    assert "function fetchFreshDocument(beforeTs, signal)" in src
     assert "cache: 'reload'" in src
     assert "cacheTs() !== acceptedTs" in src
 
@@ -313,11 +314,11 @@ function wait(ms){ return new Promise(function(resolve){ realSetTimeout(resolve,
 
   mode = 'stale'; root.dataset.cacheTs = '1000'; postCount = 0; getCount = 0;
   await window.brRefreshLeague();
-  if (postCount !== 1 || getCount !== 3 || root.dataset.cacheTs !== '1000' || window.brRefreshLeague._busy || sheetTime.textContent.indexOf('Failed') !== 0) process.exit(3);
+  if (postCount !== 1 || getCount !== 1 || root.dataset.cacheTs !== '1000' || window.brRefreshLeague._busy || sheetTime.textContent.indexOf('Failed') !== 0) process.exit(3);
 
   mode = 'failure'; postCount = 0; getCount = 0;
   await window.brRefreshLeague();
-  if (postCount !== 1 || getCount !== 3 || root.dataset.cacheTs !== '1000' || window.brRefreshLeague._busy || button.disabled) process.exit(4);
+  if (postCount !== 1 || getCount !== 1 || root.dataset.cacheTs !== '1000' || window.brRefreshLeague._busy || button.disabled) process.exit(4);
   process.exit(0);
 })().catch(function(e){ console.error(e); process.exit(5); });
 """
