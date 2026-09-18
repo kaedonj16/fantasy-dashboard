@@ -6,11 +6,20 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_player_modal_breakout_tab_gated_on_is_breakout():
+def test_player_modal_breakout_tab_gated_on_player_endpoint_membership():
     js = (ROOT / "static" / "player_modal.js").read_text(encoding="utf-8")
     assert 'id="pmTabBreakout"' in js
     assert 'id="pm-panel-breakout"' in js
-    # Tab visibility matches the BREAKOUT board badge indicator set.
-    assert "isBreakout(pid) ? '' : 'none'" in js
+    # Tab visibility comes from the authoritative player-specific server result,
+    # not the asynchronously populated global indicator list.
+    assert "breakoutData.board_eligible === true" in js
+    assert "tabBreakout.style.display = boardEligible ? '' : 'none'" in js
+    assert "isBreakout(pid) ? '' : 'none'" not in js
+    assert "/api/breakout/player/${encodeURIComponent(playerId)}" in js
     # Must not unconditionally reveal the tab for every player.
     assert "if (tabBreakout) tabBreakout.style.display = '';" not in js
+
+
+def test_breakout_badge_uses_same_player_membership_result():
+    js = (ROOT / "static" / "player_modal.js").read_text(encoding="utf-8")
+    assert "if (boardEligible)" in js

@@ -53,6 +53,15 @@ function openPlayerModal(playerId, playerName, opts) {
   const apiUrl = leagueId
     ? `/api/player-details/${playerId}?league_id=${leagueId}&platform=${platform}&season=${season}&${leagueParams}`
     : `/api/player-details/${playerId}?season=${season}&${leagueParams}`;
+  // The player-specific breakout endpoint owns board membership.  Fetch it
+  // alongside player details so tab visibility never depends on the global
+  // indicator request's timing or cache.
+  const breakoutParams = new URLSearchParams({
+    season: String(season),
+    league_id: leagueId || '',
+    platform: platform || 'sleeper'
+  });
+  const breakoutUrl = `/api/breakout/player/${encodeURIComponent(playerId)}?${breakoutParams.toString()}`;
   
   // Create modal overlay
   const overlay = document.createElement('div');
@@ -206,8 +215,13 @@ function openPlayerModal(playerId, playerName, opts) {
           return data;
         });
 
-  _fetchPromise
-    .then(data => {
+  Promise.all([
+    _fetchPromise,
+    fetch(breakoutUrl, { cache: 'no-store' })
+      .then(res => { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); })
+      .catch(() => ({ board_eligible: false }))
+  ])
+    .then(([data, breakoutData]) => {
 
       const modalBody = document.getElementById('playerModalBody');
       if (!modalBody || !overlay.isConnected || overlay.dataset.playerId !== String(playerId)) return; // stale/closed request
@@ -263,7 +277,8 @@ function openPlayerModal(playerId, playerName, opts) {
       } else if (isProspect(pid)) {
         badges += '<span class="player-badge player-badge-prospect"><i class="fa-solid fa-seedling" aria-hidden="true"></i> PROSPECT</span>';
       }
-      if (isBreakout(pid)) {
+      const boardEligible = breakoutData && breakoutData.board_eligible === true;
+      if (boardEligible) {
         badges += '<span class="player-badge player-badge-breakout"><i class="fa-solid fa-fire" aria-hidden="true"></i> BREAKOUT</span>';
       }
       // Injury designation (from the full Sleeper feed). Severity by color.
@@ -1026,10 +1041,12 @@ function openPlayerModal(playerId, playerName, opts) {
       const _isCurrentYearProspect = hasProspectData && !hasGameLogs
         && String(pd.draft_class_year) === String(_currentNFLYear);
       if (tabProspect) tabProspect.style.display = _isCurrentYearProspect ? '' : 'none';
-      // Breakout tab: only for players flagged as breakout candidates on the board
-      // (same set as the BREAKOUT badge via /api/player-indicators).
+      // Breakout tab: the server compares this normalized player ID with the
+      // exact, unfiltered top-N board for the resolved page season.
       const tabBreakout = document.getElementById('pmTabBreakout');
-      if (tabBreakout) tabBreakout.style.display = isBreakout(pid) ? '' : 'none';
+      if (tabBreakout) tabBreakout.style.display = boardEligible ? '' : 'none';
+      const breakoutPanel = document.getElementById('pm-panel-breakout');
+      if (breakoutPanel) breakoutPanel._breakoutData = breakoutData;
 
       // Must be set before pmSwitchTab is called so the metrics lazy-load check works
       if (pmTabBar) pmTabBar.dataset.pmHasMetrics = hasMetrics ? '1' : '';
@@ -1663,6 +1680,17 @@ function pmSwitchTab(tab, clickEvent) {
             Upgrade to PRO
           </button>
         </div>`;
+      return;
+    }
+    const _cachedBreakoutData = panel._breakoutData;
+    if (_cachedBreakoutData && _cachedBreakoutData.board_eligible === true &&
+        (_cachedBreakoutData.weekly || _cachedBreakoutData.breakout_opportunity_score != null || _cachedBreakoutData.breakout_blend)) {
+      const score = parseFloat(_cachedBreakoutData.weekly ? (_cachedBreakoutData.breakout_score || 0) : (_cachedBreakoutData.breakout_opportunity_score || 0));
+      let scoreColor = '#10b981';
+      if (score < 50) scoreColor = '#3b82f6';
+      if (score < 40) scoreColor = '#f59e0b';
+      if (score < 30) scoreColor = '#6b7280';
+      panel.innerHTML = _cachedBreakoutData.weekly ? _buildWeeklyBkTabHTML(_cachedBreakoutData) : _buildBkTabHTML(_cachedBreakoutData, scoreColor);
       return;
     }
     const _boMatch = window.location.pathname.match(/\/(sleeper|espn|yahoo|mfl)\/(\d+)\/([^\/]+)/);
