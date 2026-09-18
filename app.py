@@ -2018,7 +2018,7 @@ BASE_HTML = """
       {ad_top}
 
       <script>window._viewerRid = {viewer_roster_id_js}; window._viewerUid = {viewer_user_id_js}; window._isSignedIn = {signed_in_js}; window._hasAccount = {has_account_js}; window._accountEmail = {account_email_js}; window.__FEATURES_JS = {features_js_js}; window.__PLAYER_MODAL_JS = {player_modal_js_js}; window.__DASHBOARD_CSS = {dashboard_css_js}; window.__brctx = {{is_logged_in:{signed_in_js},isPremium:{user_premium},platform:{platform_js},season:{season_js},leagueId:{league_id_js},leagueName:{league_name_js},leagueFormat:{league_format_js},currentWeek:{current_week_js},leagueType:{league_type_js},leagueSize:{league_size_js},scoringType:{league_scoring_type_js}}};</script>
-      <main id="page-root" role="main" tabindex="-1" class="overview-layout" data-cache-ts="{cache_ts}" data-platform="{platform_attr}" data-season="{season_attr}" data-league-id="{league_id_attr}" data-premium="{user_premium}">
+      <main id="page-root" role="main" tabindex="-1" class="overview-layout" data-cache-ts="{cache_ts}" data-platform="{platform_attr}" data-season="{season_attr}" data-league-id="{league_id_attr}" data-premium="{user_premium}" data-ad-eligible="{ad_eligible}">
         {body}
       </main>
 
@@ -5406,6 +5406,7 @@ def render_page(
         description: str = "",
         canonical: Optional[str] = None,
         noindex: Optional[bool] = None,
+        ad_eligible: Optional[bool] = None,
         **kwargs,
 ) -> str:
     import html as _html_module
@@ -5538,8 +5539,13 @@ def render_page(
     user_id = session.get("viewer_username")
     is_premium = has_premium_for_viewer(user_id, session.get("viewer_user_id"), league_id, platform or "sleeper",
                                         season)
-    # Suppress ads on thin/legal/utility pages even for free users.
-    suppress_ads = (not active) or (active in _NO_ADS_PAGES)
+    # Response-level eligibility is authoritative.  ``active`` remains the
+    # conservative default for ordinary pages, but callers rendering an error,
+    # unavailable/empty state, checkout, confirmation, or paywall-only response
+    # must explicitly pass ``ad_eligible=False``.  A page category alone cannot
+    # describe whether this particular response contains publisher content.
+    suppress_ads = ((not active) or (active in _NO_ADS_PAGES)
+                    or ad_eligible is False)
     show_ads = not (is_premium or suppress_ads)
 
     # Viewer context for client JS (player-modal roster context, etc.)
@@ -5597,6 +5603,7 @@ def render_page(
         season_attr=_html_module.escape(str(season or ""), quote=True),
         league_id_attr=_html_module.escape(str(league_id or ""), quote=True),
         user_premium="true" if is_premium else "false",
+        ad_eligible="true" if show_ads else "false",
         adsense_script="" if (_soft_nav or not show_ads) else _AD_SCRIPT,
         ad_top="" if (_soft_nav or not show_ads) else _AD_TOP,
         ad_bottom="" if (_soft_nav or not show_ads) else _AD_BOTTOM,
@@ -30297,7 +30304,10 @@ def shared_trade_page(share_id: str):
           <a href="/trade" style="display:inline-block;padding:10px 24px;background:var(--accent,#3b82f6);color:#fff;border-radius:8px;text-decoration:none;font-weight:600;">Open Trade Calculator</a>
         </div>"""
         from app import render_page
-        return render_page("Trade Not Found | BR Fantasy", None, "trade", body), 404
+        return render_page(
+            "Trade Not Found | BR Fantasy", None, "trade", body,
+            noindex=True, ad_eligible=False,
+        ), 404
     try:
         p = _json.loads(row["params"] if hasattr(row, "__getitem__") else row[0])
     except Exception:
