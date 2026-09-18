@@ -815,11 +815,25 @@ def get_weekly_breakout_candidates(season: int, min_score: float = 0.0,
         "temporary_opportunities": [c for c in candidates if c.get("classification") == "temporary_opportunity"],
         "cooling": [c for c in candidates if c.get("lifecycle_state") == "cooling"],
     }
-    # The default endpoint is deliberately curated. Secondary cohorts remain in
-    # named payload groups so consumers can offer explicit opt-in filters.
-    candidates = groups["breakouts"]
+    # Week-one discovery is necessarily provisional.  Strong early-watch rows
+    # belong on the served board with an explicit label; hiding this cohort made
+    # a single misclassified veteran appear to be the entire candidate set.
+    candidates = groups["breakouts"] + groups["early_watch"]
+    candidates.sort(key=lambda c: (c.get("ranking_score") if c.get("ranking_score") is not None
+                                   else c.get("breakout_score") or 0,
+                                   c.get("breakout_score") or 0), reverse=True)
     if limit and limit > 0:
         candidates = candidates[:limit]
+
+    pipeline_telemetry = dict(payload.get("pipeline_telemetry") or {})
+    player_trace = dict(pipeline_telemetry.get("player_trace") or {})
+    served_ids = {str(candidate.get("player_id")) for candidate in candidates}
+    for trace in player_trace.values():
+        trace["served"] = str(trace.get("player_id")) in served_ids
+        if not trace["served"] and not trace.get("first_nonqualifying_stage"):
+            trace["first_nonqualifying_stage"] = "api_board_filter_or_top_15"
+    pipeline_telemetry["player_trace"] = player_trace
+    pipeline_telemetry["served_rows"] = len(candidates)
 
     # Enrich name / headshot / precise age from players_index (same as offseason).
     try:
@@ -849,6 +863,7 @@ def get_weekly_breakout_candidates(season: int, min_score: float = 0.0,
         "mode": "weekly",
         "data_available": True,
         "data_status": payload.get("data_status", "ok"),
+        "pipeline_telemetry": pipeline_telemetry,
     }
 
 

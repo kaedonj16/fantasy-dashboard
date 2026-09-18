@@ -64,3 +64,23 @@ def test_young_rb_material_opportunity_has_non_snap_evidence():
     assert result["signals"]["carry_opportunity_pg"]["points"] > 0
     assert result["supporting_signal_count"] >= 2
     assert result["breakout_score"] > 30
+
+
+def test_final_capped_score_cannot_retain_emerging_classification():
+    result = score_player(
+        player("WR", years_exp=0, draft_year=2026, draft_round=2),
+        [row(1, 92, 32, 11, routes=36, team_dropbacks=39)], cutoff_week=1,
+    )
+    assert result["breakout_score"] < 42
+    assert result["classification"] == "early_watch"
+    assert result["main_board_eligible"] is False
+
+
+def test_known_veteran_without_baseline_is_not_an_emerging_breakout():
+    result = score_player(
+        player("WR", years_exp=8, age=32, career_games=110),
+        [row(1, 85, 28, 9, routes=31, team_dropbacks=38)], cutoff_week=1,
+    )
+    assert result["established_player"] is True
+    assert result["classification"] == "watchlist"
+    assert result["main_board_eligible"] is False

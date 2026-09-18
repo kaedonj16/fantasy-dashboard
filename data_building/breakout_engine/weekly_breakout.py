@@ -746,6 +746,19 @@ def score_player(
         elif position == "QB":
             established_evidence = ((prior_baseline.get("snap_pct") or 0) >= 75 or
                                     (prior_baseline.get("pass_att_pg") or 0) >= 24)
+    # A missing prior-season cache must not turn a known veteran into a career
+    # breakout.  Use independent career/age evidence as well as usage history.
+    career_games = _num(player.get("career_games")) or 0
+    career_starts = _num(player.get("career_starts")) or 0
+    career_seasons = _num(player.get("career_seasons")) or 0
+    age = _num(player.get("age"))
+    veteran_by_career = bool(
+        (years_exp is not None and years_exp >= 4) or career_seasons >= 4 or
+        career_games >= 48 or career_starts >= 32 or
+        (age is not None and age >= (29 if position == "QB" else 27)) or
+        (_num(player.get("prior_fantasy_ppg")) or 0) >= 10
+    )
+    established_evidence = established_evidence or veteran_by_career
     established_role_penalty = 35.0 if established_evidence else (
         min(35.0, (prior_level - 55.0) * 1.4)
         if prior_level is not None and prior_level >= 60.0 else 0.0)
@@ -878,24 +891,18 @@ def score_player(
     if len(active) == 1 and not exceptional_one_game:
         rejection_reasons.append("one_game_evidence_not_exceptional")
     main_board_eligible = not rejection_reasons and (
-        exceptional_one_game or (len(active) >= 2 and trend["persistent"] and
-                                 final_score >= EMERGING_MIN_SCORE))
-    if garbage_time:
-        classification = "watchlist"
-    elif main_board_eligible:
-        classification = "emerging_breakout"
-    elif score_basis == "initial_role":
-        if injury_vacated and not (injury_context or {}).get("multi_week"):
-            classification = "temporary_opportunity"
-        else:
-            classification = ("early_watch" if final_score >= WATCHLIST_MIN_SCORE else "watchlist")
-    elif injury_vacated and not (injury_context or {}).get("multi_week"):
-        classification = "temporary_opportunity"
-    elif (final_score >= EMERGING_MIN_SCORE and meaningful_role and
-          diagnostics["supporting_signal_count"] >= MIN_SUPPORTING_SIGNALS):
-        classification = "emerging_breakout"
-    else:
-        classification = ("early_watch" if final_score >= WATCHLIST_MIN_SCORE else "watchlist")
+        len(active) >= 2 and trend["persistent"] and final_score >= EMERGING_MIN_SCORE)
+    classification = _classify_final_evidence(
+        final_score=final_score,
+        recent_games=len(active),
+        persistent=bool(trend["persistent"]),
+        meaningful_role=meaningful_role,
+        supporting_signals=diagnostics["supporting_signal_count"],
+        established=established_evidence,
+        injury_vacated=injury_vacated,
+        garbage_time=garbage_time,
+        provisional=provisional,
+    )
 
     if garbage_time:
         opportunity_source = "garbage_time"
@@ -1045,6 +1052,31 @@ def _classify(
             and persistence >= 0.6):
         return "emerging_breakout"
     return "watchlist"
+
+
+def _classify_final_evidence(
+    *, final_score: float, recent_games: int, persistent: bool,
+    meaningful_role: bool, supporting_signals: int, established: bool,
+    injury_vacated: bool, garbage_time: bool, provisional: bool,
+) -> str:
+    """Single classification gate over the final, capped served score.
+
+    Keeping this after every penalty/cap prevents an intermediate 60 from
+    retaining an emerging label after becoming a final 36.
+    """
+    if garbage_time:
+        return "watchlist"
+    if established:
+        return "temporary_opportunity" if injury_vacated and meaningful_role else "watchlist"
+    if injury_vacated:
+        return "temporary_opportunity" if meaningful_role else "watchlist"
+    if final_score < WATCHLIST_MIN_SCORE:
+        return "watchlist"
+    if (final_score >= EMERGING_MIN_SCORE and recent_games >= 2 and persistent
+            and meaningful_role and supporting_signals >= MIN_SUPPORTING_SIGNALS
+            and (not provisional or recent_games >= 2)):
+        return "emerging_breakout"
+    return "early_watch" if meaningful_role and supporting_signals >= 1 else "watchlist"
 
 
 def _build_risks(
