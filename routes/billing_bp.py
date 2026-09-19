@@ -453,14 +453,17 @@ def _pricing_features_grid(items: list[tuple[str, str]], *, free: bool = False) 
 
 
 _PRO_FEATURES = [
-    ("fa-handshake", "Roster-Based Trade Suggestions"),
-    ("fa-chart-line", "Full Trade Intelligence feed &amp; history"),
-    ("fa-fire", "Breakout Engine candidate predictions"),
-    ("fa-trophy", "Playoff Impact simulations"),
+    ("fa-handshake", "Roster-based trade suggestions"),
+    ("fa-chart-line", "Trade Intel feed &amp; history"),
+    ("fa-wand-magic-sparkles", "AI trade analysis &amp; counters"),
+    ("fa-trophy", "Playoff-impact simulations"),
+    ("fa-fire", "Breakout Engine"),
     ("fa-briefcase", "Front Office Report"),
-    ("fa-newspaper", "Weekly Recap"),
+    ("fa-newspaper", "Premium AI weekly recap storyline"),
+    ("fa-layer-group", "Cross-league This week’s moves"),
     ("fa-clipboard-list", "Custom Draft Board"),
-    ("fa-magnifying-glass-chart", "Draft Deep Dive Analyzer"),
+    ("fa-arrow-trend-up", "Trend Scout"),
+    ("fa-magnifying-glass-chart", "Draft Deep Dive"),
 ]
 
 _FREE_FEATURES = [
@@ -654,115 +657,75 @@ def _pricing_body() -> str:
     </script>
     """
 
-    league_highlight = "border-color:#2563eb;box-shadow:0 8px 24px rgba(37,99,235,.2);" if plan == "league" else ""
-    user_highlight   = "border-color:#2563eb;box-shadow:0 8px 24px rgba(37,99,235,.2);" if plan == "user"   else ""
-    single_highlight = "border-color:#2563eb;box-shadow:0 8px 24px rgba(37,99,235,.2);" if plan == "single_league" else ""
+    selected_plan = plan if plan in {"user", "single_league", "league", "combo"} else ""
+    plans = [
+        ("user", "Personal", "$10/year", "PRO for you across all your leagues", "Choose Personal", True),
+        ("single_league", "Individual — One League", "$5/year", "PRO for you in one selected league. Your league mates are not upgraded.", "Choose one league", False),
+        ("league", "Entire League", "$15/year", "PRO for every manager in one selected league", "Upgrade a league", False),
+        ("combo", "League + Personal", "$20/year", "PRO for every manager in one selected league, plus you across all your leagues. Other managers’ additional leagues are not upgraded.", "Choose League + Personal", False),
+    ]
+    plan_cards = "".join(
+        f'''<article class="pricing-option{' featured' if recommended else ''}{' is-selected' if selected_plan == key else ''}" data-plan-card="{key}">
+          <div class="pricing-header"><h3>{name}</h3>{'<span class="pricing-badge">Recommended</span>' if recommended else ''}</div>
+          <div class="pricing-price">{price.replace('/year', '<span>/year</span>')}</div>
+          <p class="pricing-desc">{coverage}</p>
+          <button type="button" class="btn {'btn-primary' if recommended else 'btn-secondary'} paywall-cta" onclick="initiatePurchase('{key}', this)">{cta}</button>
+        </article>'''
+        for key, name, price, coverage, cta, recommended in plans
+    )
     canceled_banner = """
-    <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:14px 18px;margin-bottom:20px;color:#dc2626;font-size:14px;">
-      <i class="fa-solid fa-circle-xmark" style="margin-right:6px;"></i>
+    <div class="pricing-alert" role="status"><i class="fa-solid fa-circle-xmark" aria-hidden="true"></i>
       Checkout was canceled. You have not been charged.
     </div>""" if canceled else ""
     return f"""
-    {canceled_banner}
-    <div class="card central" style="max-width:920px;">
-      <div class="card-header" style="border-bottom:1px solid var(--border);padding-bottom:16px;margin-bottom:0;text-align:center;">
-        <h2 style="margin:0 0 6px;font-size:22px;">Premium</h2>
-        <div style="font-size:14px;color:var(--text-muted);">
-          Unlock the shipped PRO tools. A Google account is required to subscribe.
-          Calculator, Advanced Metrics, and Auction Values stay free.
+    <main class="pricing-page">
+      {canceled_banner}
+      <header class="pricing-hero">
+        <span class="pricing-eyebrow">BR Fantasy PRO</span>
+        <h1>Make the next move with confidence.</h1>
+        <p>Turn your roster, market activity, and league outlook into clearer trade, waiver, weekly, and draft decisions.</p>
+      </header>
+
+      <section class="pricing-section pricing-plans" aria-labelledby="pricing-plans-title">
+        <div class="pricing-section-heading"><h2 id="pricing-plans-title">Choose who gets PRO</h2><p>One annual charge. No monthly-price shorthand.</p></div>
+        <div class="pricing-plan-grid">{plan_cards}</div>
+        <p class="pricing-auth-note"><i class="fa-brands fa-google" aria-hidden="true"></i> Google sign-in is required to subscribe and keep access with your account.</p>
+      </section>
+
+      <section class="pricing-section" aria-labelledby="pro-includes-title">
+        <div class="pricing-section-heading"><h2 id="pro-includes-title">What PRO includes</h2><p>Decision support built around the teams and leagues your plan covers.</p></div>
+        <div class="pricing-benefit-groups">
+          <article><i class="fa-solid fa-handshake" aria-hidden="true"></i><h3>Trade decisions</h3><p>Roster-based suggestions, Trade Intel, AI trade analysis and counters, and playoff-impact simulations.</p></article>
+          <article><i class="fa-solid fa-fire" aria-hidden="true"></i><h3>Player discovery</h3><p>Breakout Engine opportunity signals, historical peers, and confidence-adjusted projections.</p></article>
+          <article><i class="fa-solid fa-calendar-week" aria-hidden="true"></i><h3>Weekly guidance</h3><p>Front Office Report, the premium AI weekly recap storyline, and cross-league “This week’s moves.” The cross-league digest requires Personal or League + Personal coverage across your leagues.</p></article>
+          <article><i class="fa-solid fa-clipboard-list" aria-hidden="true"></i><h3>Draft tools</h3><p>Custom Draft Board, Trend Scout, and Draft Deep Dive.</p></article>
         </div>
-      </div>
-      <div class="card-body" style="padding-top:28px;">
+      </section>
 
-        <!-- Feature list -- must match static/paywall.js .paywall-features -->
-        <div class="pricing-features-block">
-          <div class="pricing-features-heading">What PRO includes</div>
-          {_pricing_features_grid(_PRO_FEATURES)}
-          <div class="pricing-features-heading pricing-features-heading-secondary">Free includes</div>
-          {_pricing_features_grid(_FREE_FEATURES, free=True)}
+      <section class="pricing-section" aria-labelledby="previews-title">
+        <div class="pricing-section-heading"><h2 id="previews-title">See the value in context</h2><p>Illustrative examples only—not your league results or current player recommendations.</p></div>
+        <div class="pricing-preview-grid">
+          <article class="pricing-preview"><span>Sample preview</span><i class="fa-solid fa-right-left" aria-hidden="true"></i><h3>Roster-fit trade</h3><strong>Turn surplus WR depth into a starting RB</strong><p>Your receiver room can absorb the loss; the return fills the clearest weekly lineup gap without concentrating too much value in one asset.</p></article>
+          <article class="pricing-preview"><span>Sample preview</span><i class="fa-solid fa-arrow-trend-up" aria-hidden="true"></i><h3>Breakout analysis</h3><strong>Opportunity: expanding · Confidence: medium</strong><p>Vacated targets and a clearer route to snaps create upside, while a small sample keeps confidence measured.</p></article>
+          <article class="pricing-preview"><span>Sample preview</span><i class="fa-solid fa-newspaper" aria-hidden="true"></i><h3>Weekly storyline</h3><strong>A narrow win reshapes the race</strong><p>Your flex delivered late, moving the team above .500 as next week’s matchup puts the final playoff spot in reach.</p></article>
         </div>
+      </section>
 
-        <!-- Pricing cards -->
-        <div class="pricing-plan-grid" style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:14px;margin-bottom:28px;">
+      <section class="pricing-section" aria-labelledby="free-title">
+        <div class="pricing-section-heading"><h2 id="free-title">What remains free</h2><p>Upgrade only when the premium guidance fits your game.</p></div>
+        {_pricing_features_grid(_FREE_FEATURES, free=True)}
+        <p class="pricing-free-note">ADP rankings, basic player data, and the non-storyline sections of Weekly Recap also remain free.</p>
+      </section>
 
-          <!-- Single-league personal plan -->
-          <div style="border:2px solid #e5e7eb;border-radius:14px;padding:22px;transition:all .2s;background:var(--card);{single_highlight}">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;min-height:28px;">
-              <div style="font-size:16px;font-weight:700;">One League</div>
-            </div>
-            <div style="font-size:36px;font-weight:800;line-height:1;margin-bottom:4px;">
-              $5<span style="font-size:15px;font-weight:500;color:var(--text-muted);">/year</span>
-            </div>
-            <div style="font-size:13px;color:var(--text-muted);margin-bottom:20px;">PRO for you in one league you choose</div>
-            <button onclick="initiatePurchase('single_league', this)" style="width:100%;padding:11px;border-radius:9px;border:2px solid #2563eb;background:var(--card);color:#2563eb;font-size:14px;font-weight:700;cursor:pointer;">
-              Choose a League
-            </button>
-          </div>
-
-          <!-- League plan -->
-          <div style="border:2px solid #e5e7eb;border-radius:14px;padding:22px;transition:all .2s;background:var(--card);{league_highlight}">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;min-height:28px;">
-              <div style="font-size:16px;font-weight:700;">League Plan</div>
-            </div>
-            <div style="font-size:36px;font-weight:800;line-height:1;margin-bottom:4px;">
-              $15<span style="font-size:15px;font-weight:500;color:var(--text-muted);">/year</span>
-            </div>
-            <div style="font-size:13px;color:var(--text-muted);margin-bottom:20px;">Premium for every manager in your league</div>
-            <button onclick="initiatePurchase('league', this)" style="width:100%;padding:11px;border-radius:9px;border:2px solid #2563eb;background:var(--card);color:#2563eb;font-size:14px;font-weight:700;cursor:pointer;">
-              Subscribe for League
-            </button>
-          </div>
-
-          <!-- Combo plan -->
-          <div style="border:2px solid #2563eb;border-radius:14px;padding:22px;transition:all .2s;background:var(--card);">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
-              <div style="font-size:16px;font-weight:700;">League + Personal</div>
-              <div style="background:linear-gradient(135deg,#122d4b,#2563eb);color:white;font-size:10px;font-weight:700;padding:3px 9px;border-radius:10px;text-transform:uppercase;letter-spacing:.4px;">Best Value</div>
-            </div>
-            <div style="font-size:36px;font-weight:800;line-height:1;margin-bottom:4px;">
-              $20<span style="font-size:15px;font-weight:500;color:var(--text-muted);">/year</span>
-            </div>
-            <div style="font-size:13px;color:var(--text-muted);margin-bottom:20px;">Premium for your league and all your personal leagues</div>
-            <button onclick="initiatePurchase('combo', this)" style="width:100%;padding:11px;border-radius:9px;border:none;background:linear-gradient(135deg,#122d4b,#2563eb);color:white;font-size:14px;font-weight:700;cursor:pointer;">
-              Subscribe Both
-            </button>
-          </div>
-
-          <!-- Personal plan -->
-          <div style="border:2px solid #e5e7eb;border-radius:14px;padding:22px;transition:all .2s;background:var(--card);{user_highlight}">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;min-height:28px;">
-              <div style="font-size:16px;font-weight:700;">Personal Plan</div>
-            </div>
-            <div style="font-size:36px;font-weight:800;line-height:1;margin-bottom:4px;">
-              $10<span style="font-size:15px;font-weight:500;color:var(--text-muted);">/year</span>
-            </div>
-            <div style="font-size:13px;color:var(--text-muted);margin-bottom:20px;">Premium for all your leagues, one account</div>
-            <button onclick="initiatePurchase('user', this)" style="width:100%;padding:11px;border-radius:9px;border:2px solid #2563eb;background:var(--card);color:#2563eb;font-size:14px;font-weight:700;cursor:pointer;">
-              Subscribe Personally
-            </button>
-          </div>
-
-        </div>
-
-        <!-- Free tier note -->
-        <div style="text-align:center;font-size:13px;color:var(--text-muted);padding-top:12px;border-top:1px solid var(--border);">
-          <i class="fa-solid fa-circle-info" style="margin-right:4px;"></i>
-          ADP rankings and basic player data are always free. One League unlocks PRO for you only -- not your league mates.
-        </div>
-
-      </div>
-    </div>
-
-    <style>
-      @media (max-width: 920px) {{
-        .pricing-plan-grid {{ grid-template-columns: 1fr 1fr !important; }}
-      }}
-      @media (max-width: 560px) {{
-        .pricing-plan-grid {{ grid-template-columns: 1fr !important; }}
-      }}
-    </style>
+      <section class="pricing-section pricing-faq" aria-labelledby="faq-title">
+        <div class="pricing-section-heading"><h2 id="faq-title">Plan coverage FAQ</h2></div>
+        <details><summary>Does Individual — One League cover my league mates?</summary><p>No. It gives only you PRO in one selected league.</p></details>
+        <details><summary>What does Entire League cover?</summary><p>Every manager gets PRO in one selected league. It does not give each manager PRO in their other leagues.</p></details>
+        <details><summary>Does League + Personal cover everyone everywhere?</summary><p>No. Everyone gets PRO in the selected league; only the buyer gets PRO across all of their own leagues.</p></details>
+        <details><summary>Is the whole Weekly Recap premium?</summary><p>No. The AI-written storyline is premium; the recap’s other available sections remain free.</p></details>
+      </section>
+    </main>
     """
-
 
 # ── Pricing pages ─────────────────────────────────────────────────────────────
 
