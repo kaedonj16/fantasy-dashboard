@@ -106,6 +106,7 @@ function openPlayerModal(playerId, playerName, opts) {
       <button type="button" class="pm-tab" role="tab" aria-selected="false" id="pmTabMetrics" data-tab="metrics" onclick="pmSwitchTab('metrics', event)" style="display:none">Advanced</button>
       <button type="button" class="pm-tab" role="tab" aria-selected="false" id="pmTabProspect" data-tab="prospect" onclick="pmSwitchTab('prospect', event)" style="display:none">Prospect</button>
       <button type="button" class="pm-tab" role="tab" aria-selected="false" id="pmTabBreakout" data-tab="breakout" onclick="pmSwitchTab('breakout', event)" style="display:none">Breakout</button>
+      <button type="button" id="pmBreakoutStatus" class="pm-tab" style="display:none" aria-live="polite"></button>
       <button type="button" class="pm-tab" role="tab" aria-selected="false" data-tab="trades" onclick="pmSwitchTab('trades', event)">Trades</button>
     </div>
     <div class="player-modal-body" id="playerModalBody">
@@ -206,25 +207,49 @@ function openPlayerModal(playerId, playerName, opts) {
     if (_entry && Date.now() - _entry.ts < _cacheTTL) _cachedRaw = _entry.data;
   } catch (_) {}
 
+  const _modalController = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+  overlay._pmRequestController = _modalController;
+  const _modalFetch = (url, init, timeout) => {
+    const options = Object.assign({}, init || {}, _modalController ? { signal: _modalController.signal } : {});
+    return (typeof window.brFetchWithTimeout === 'function')
+      ? window.brFetchWithTimeout(url, options, timeout || 12000)
+      : fetch(url, options);
+  };
   const _fetchPromise = _cachedRaw
     ? Promise.resolve(_cachedRaw)
-    : fetch(apiUrl)
+    : _modalFetch(apiUrl, {}, 12000)
         .then(res => { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); })
         .then(data => {
           try { localStorage.setItem(_cacheKey, JSON.stringify({ ts: Date.now(), data })); } catch (_) {}
           return data;
         });
 
-  Promise.all([
-    _fetchPromise,
-    fetch(breakoutUrl, { cache: 'no-store' })
+  const contextBreakoutCandidate = opts.isBreakoutCandidate === true && opts.breakoutCandidate
+    ? opts.breakoutCandidate
+    : null;
+  let _breakoutPromise = null;
+  function _loadBreakoutEligibility() {
+    if (contextBreakoutCandidate) return Promise.resolve({ ...contextBreakoutCandidate, available: true, board_eligible: true });
+    if (_breakoutPromise) return _breakoutPromise;
+    _breakoutPromise = _modalFetch(breakoutUrl, { cache: 'no-store' }, 8000)
       .then(res => { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); })
-      .catch(() => ({ board_eligible: false }))
-  ])
-    .then(([data, breakoutData]) => {
+      .finally(() => { _breakoutPromise = null; });
+    return _breakoutPromise;
+  }
+  // Start in parallel, but never join this promise to the details render.
+  const _initialBreakoutPromise = _loadBreakoutEligibility().then(
+    payload => ({ payload }), error => ({ error })
+  );
+
+  // Details and eligibility intentionally have separate lifecycles. A slow or
+  // unavailable Breakout service must never hold the useful player profile.
+  _fetchPromise.then(data => {
+      const breakoutData = contextBreakoutCandidate;
 
       const modalBody = document.getElementById('playerModalBody');
-      if (!modalBody || !overlay.isConnected || overlay.dataset.playerId !== String(playerId)) return; // stale/closed request
+      if (!modalBody || !overlay.isConnected || overlay.dataset.closed === '1'
+          || document.querySelector('.player-modal-overlay') !== overlay
+          || overlay.dataset.playerId !== String(playerId)) return; // stale/closed request
 
       if (data.error) {
         if (window.brErrorState) {
@@ -279,9 +304,6 @@ function openPlayerModal(playerId, playerName, opts) {
       }
       // A card rendered by the Breakout Engine is authoritative even if the
       // player-specific membership request is stale or resolves differently.
-      const contextBreakoutCandidate = opts.isBreakoutCandidate === true && opts.breakoutCandidate
-        ? opts.breakoutCandidate
-        : null;
       const boardEligible = !!contextBreakoutCandidate || (breakoutData && breakoutData.board_eligible === true);
       const resolvedBreakoutData = contextBreakoutCandidate
         ? { ...(breakoutData || {}), ...contextBreakoutCandidate, available: true, board_eligible: true }
@@ -1056,6 +1078,39 @@ function openPlayerModal(playerId, playerName, opts) {
       const breakoutPanel = document.getElementById('pm-panel-breakout');
       if (breakoutPanel) breakoutPanel._breakoutData = resolvedBreakoutData;
 
+      const breakoutStatus = document.getElementById('pmBreakoutStatus');
+      const applyBreakoutEligibility = (payload, failed) => {
+        if (!overlay.isConnected || overlay.dataset.closed === '1'
+            || document.querySelector('.player-modal-overlay') !== overlay
+            || overlay.dataset.playerId !== String(playerId)) return;
+        const eligible = !failed && payload && payload.board_eligible === true;
+        if (tabBreakout) tabBreakout.style.display = eligible ? '' : 'none';
+        if (breakoutPanel && !failed) breakoutPanel._breakoutData = payload;
+        if (breakoutStatus) {
+          breakoutStatus.style.display = failed ? '' : 'none';
+          breakoutStatus.textContent = failed ? 'Breakout unavailable · Retry' : '';
+          breakoutStatus.onclick = failed ? function () {
+            breakoutStatus.textContent = 'Checking breakout…';
+            breakoutStatus.onclick = null;
+            _loadBreakoutEligibility().then(p => applyBreakoutEligibility(p, false)).catch(() => applyBreakoutEligibility(null, true));
+          } : null;
+        }
+        const requested = (opts && opts.tab) || 'overview';
+        if (requested === 'breakout') {
+          if (eligible) pmSwitchTab('breakout');
+          else if (!failed) pmSwitchTab('overview');
+        }
+      };
+      if (!contextBreakoutCandidate) {
+        if (breakoutStatus) { breakoutStatus.style.display = ''; breakoutStatus.textContent = 'Checking breakout…'; }
+        _initialBreakoutPromise.then(result => {
+          if (result.error) applyBreakoutEligibility(null, true);
+          else applyBreakoutEligibility(result.payload, false);
+        });
+      } else {
+        applyBreakoutEligibility(resolvedBreakoutData, false);
+      }
+
       // Must be set before pmSwitchTab is called so the metrics lazy-load check works
       if (pmTabBar) pmTabBar.dataset.pmHasMetrics = hasMetrics ? '1' : '';
 
@@ -1423,6 +1478,8 @@ function openPlayerModal(playerId, playerName, opts) {
 
     })
     .catch(err => {
+      if (!overlay.isConnected || overlay.dataset.closed === '1'
+          || document.querySelector('.player-modal-overlay') !== overlay) return;
       console.error('Error loading player data:', err);
       const b = document.getElementById('playerModalBody');
       if (!b) return;
@@ -5122,6 +5179,8 @@ function closePlayerModal() {
   if (!options.preserveNavigation) { _pmTeamNavHistory = []; _pmTeamRestore = null; }
   const overlay = document.querySelector('.player-modal-overlay');
   if (overlay) {
+    overlay.dataset.closed = '1';
+    if (overlay._pmRequestController) { try { overlay._pmRequestController.abort(); } catch (_) {} }
     const _return = overlay._pmReturnFocus;
     document.body.style.overflow = '';
     overlay.style.opacity = '0';

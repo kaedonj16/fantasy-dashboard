@@ -10938,6 +10938,8 @@ def get_league_ctx_from_cache(platform: str, league_id: str, season: int) -> dic
     entry = DASHBOARD_CACHE.get(key)
     if _league_ctx_cache_valid(entry, platform, season, league_id):
         ctx = entry["ctx"]
+        ctx["_cache_synced_at"] = datetime.fromtimestamp(float(entry.get("ts") or 0), timezone.utc).isoformat() if entry.get("ts") else None
+        ctx["_cache_stale"] = False
         ctx["viewer"] = get_viewer_session_for_league(
             ctx.get("users") or [], ctx.get("rosters") or [], platform, league_id, season
         )
@@ -10951,6 +10953,8 @@ def get_league_ctx_from_cache(platform: str, league_id: str, season: int) -> dic
         entry = DASHBOARD_CACHE.get(key)
         if _league_ctx_cache_valid(entry, platform, season, league_id):
             ctx = entry["ctx"]
+            ctx["_cache_synced_at"] = datetime.fromtimestamp(float(entry.get("ts") or 0), timezone.utc).isoformat() if entry.get("ts") else None
+            ctx["_cache_stale"] = False
             ctx["viewer"] = get_viewer_session_for_league(
                 ctx.get("users") or [], ctx.get("rosters") or [], platform, league_id, season
             )
@@ -10973,6 +10977,7 @@ def get_league_ctx_from_cache(platform: str, league_id: str, season: int) -> dic
             stale_window = _positive_env_int("LEAGUE_STALE_IF_ERROR_SECONDS", 21600)
             if old and time.time() - old_ts <= stale_window:
                 old["_cache_stale"] = True
+                old["_cache_synced_at"] = datetime.fromtimestamp(old_ts, timezone.utc).isoformat() if old_ts else None
                 return old
             raise
         try:
@@ -10983,10 +10988,15 @@ def get_league_ctx_from_cache(platform: str, league_id: str, season: int) -> dic
             old = (stale_entry or {}).get("ctx")
             if generation_now["generation"] > generation_before["generation"] and old:
                 old["_cache_stale"] = True
+                old_ts = float((stale_entry or {}).get("ts") or 0)
+                old["_cache_synced_at"] = datetime.fromtimestamp(old_ts, timezone.utc).isoformat() if old_ts else None
                 return old
             entry = DASHBOARD_CACHE.get(key)
             if _league_ctx_cache_valid(entry, platform, season, league_id):
-                return entry["ctx"]
+                ctx = entry["ctx"]
+                ctx["_cache_synced_at"] = datetime.fromtimestamp(float(entry.get("ts") or 0), timezone.utc).isoformat() if entry.get("ts") else None
+                ctx["_cache_stale"] = False
+                return ctx
             # Clear provider payloads only after both lock layers are owned.
             if platform == "sleeper":
                 try:
@@ -11009,6 +11019,8 @@ def get_league_ctx_from_cache(platform: str, league_id: str, season: int) -> dic
             try:
                 ctx = build_league_context(platform, league_id, season)
                 built_at = time.time()
+                ctx["_cache_synced_at"] = datetime.fromtimestamp(built_at, timezone.utc).isoformat()
+                ctx["_cache_stale"] = False
                 with _DASHBOARD_CACHE_LOCK:
                     _prune_dashboard_cache(keep=key)
                     DASHBOARD_CACHE[key] = {"ctx": ctx, "ts": built_at, "page_html": {}}
@@ -11034,6 +11046,7 @@ def get_league_ctx_from_cache(platform: str, league_id: str, season: int) -> dic
                 stale_window = _positive_env_int("LEAGUE_STALE_IF_ERROR_SECONDS", 21600)
                 if old and time.time() - old_ts <= stale_window:
                     old["_cache_stale"] = True
+                    old["_cache_synced_at"] = datetime.fromtimestamp(old_ts, timezone.utc).isoformat() if old_ts else None
                     return old
                 raise
         finally:
@@ -11458,16 +11471,23 @@ def api_start_sit_options():
     if not league_id:
         return jsonify({"error": "league_id required"}), 400
 
+    if not _session_signed_in():
+        return jsonify({"state": "sign_in_required", "positions": {},
+                        "message": "Sign in to see your lineup."}), 401
+
     try:
         ctx = get_league_ctx_from_cache(platform, league_id, season)
     except Exception as e:
-        return _api_err("Request failed", e)
+        logger.warning("start/sit lineup unavailable", exc_info=True)
+        return jsonify({"state": "temporarily_unavailable", "positions": {},
+                        "retryable": True, "message": "Lineup data is temporarily unavailable."}), 503
 
     viewer = ctx.get("viewer") or {}
     viewer_roster_id = viewer.get("viewer_roster_id")
 
     if not viewer_roster_id:
-        return jsonify({"positions": {}})
+        return jsonify({"state": "team_not_linked", "positions": {},
+                        "message": "Select or link your team to view start/sit advice."}), 409
 
     rosters = ctx.get("rosters") or []
     viewer_roster = next(
@@ -11475,7 +11495,8 @@ def api_start_sit_options():
         None,
     )
     if not viewer_roster:
-        return jsonify({"positions": {}})
+        return jsonify({"state": "team_not_linked", "positions": {},
+                        "message": "Your linked team could not be resolved in this league."}), 409
 
     reserve_set = {str(p) for p in (viewer_roster.get("reserve") or [])}
     taxi_set = {str(p) for p in (viewer_roster.get("taxi") or [])}
@@ -11992,7 +12013,9 @@ def api_start_sit_options():
     except Exception:
         logger.debug("market intelligence unavailable for start/sit", exc_info=True)
 
+    has_eligible = any(bool(players) for players in positions_out.values())
     return jsonify({
+        "state": "loaded" if has_eligible else "empty_roster",
         "positions": positions_out,
         "lineup_requirements": lineup_requirements,
         "flex_slots": flex_slots,
@@ -29459,7 +29482,7 @@ def build_portfolio_body(
         "+'<span class=\"pf-lg-stat\"><span class=\"pf-lg-v\" data-summary-streak>...</span><span class=\"pf-lg-l\">Streak</span></span>';"
         "var streak=c.querySelector('[data-summary-streak]'),positions=c.querySelector('[data-summary-positions]'),sec=d.sections||{};if(streak)streak.textContent=(d.streak||[]).join(' ')||(sec.streak&&sec.streak.status==='unavailable'?'-':'...');if(positions){var pr=d.pos_user_rank||{};positions.textContent=['QB','RB','WR','TE'].map(function(p){return p+' '+(pr[p]?'#'+pr[p]:(sec.position_rankings&&sec.position_rankings.status==='unavailable'?'-':'...'));}).join(' | ');}"
         "if(d.team_name){var id=c.querySelector('.pf-lg-id'),meta=id&&id.querySelector('.pf-lg-meta');if(id&&!meta){meta=document.createElement('div');meta.className='pf-lg-meta';id.appendChild(meta);}if(meta)meta.innerHTML='<span class=\"pf-lg-team\">'+esc(d.team_name)+'</span>';}"
-        "if(up)up.textContent=(d.stale?'Last good data, refreshing: ':'Updated ')+when(d.refreshed_at);if(retry)retry.hidden=true;return;}"
+        "if(up)up.textContent=(d.stale?'Last good data, refreshing: ':'Updated ')+when(d.last_successful_sync_at||d.refreshed_at);if(retry)retry.hidden=true;return;}"
         "var msg=(d&&d.message)||'Summary unavailable. Retry.';stats.innerHTML='<span class=\"pf-lg-l\">'+esc(msg)+'</span>';"
         "if(up)up.textContent=d&&d.state==='reconnect_required'?'Reconnect required':'Update failed';if(retry)retry.hidden=false;}"
         "window.__pfRenderSummary=render;"

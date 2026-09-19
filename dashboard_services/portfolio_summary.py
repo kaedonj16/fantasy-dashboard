@@ -198,7 +198,18 @@ def build_league_summary(account_id, membership, context_loader):
 
     result["state"] = "ready" if all(s["status"] == "ready" for s in sections.values()) else "partial"
     now = datetime.now(timezone.utc).isoformat()
-    result.update(generated_at=now, last_successful_sync_at=now, refreshed_at=now)
+    # ``generated_at`` describes this inexpensive derived summary. Freshness in
+    # the UI must instead describe the authoritative league-context fetch; a
+    # cache read or partial derivation is not a provider sync.
+    synced_at = ctx.get("_cache_synced_at") or ctx.get("last_successful_sync_at")
+    result.update(
+        generated_at=now,
+        last_successful_sync_at=synced_at,
+        refreshed_at=synced_at,  # compatibility alias for existing clients
+        stale=bool(ctx.get("_cache_stale")),
+        _cache_stale=bool(ctx.get("_cache_stale")),
+        partial=result["state"] == "partial",
+    )
     _store_persistent(cache_key(account_id, platform, league_id, season), result)
     logger.info("[portfolio] league=%s provider=%s core=%s record=%s streak=%s position_rank=%s total_ms=%d",
                 league_id, platform, sections["core"]["status"], sections["record"]["status"],

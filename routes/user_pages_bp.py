@@ -977,7 +977,8 @@ def api_portfolio_summary():
         logger.warning("portfolio summary failed for %s:%s", platform, league_id, exc_info=True)
         category = classify_failure(exc)
         if stale:
-            return jsonify({"ok": True, "stale": True, "refresh_failure_category": category, **stale})
+            return jsonify({"ok": True, **stale, "stale": True, "_cache_stale": True,
+                            "refresh_failure_category": category})
         return jsonify({"ok": False, "state": "unavailable",
                         "failure_category": category,
                         "retryable": category in {"transient_timeout", "rate_limited", "provider_5xx", "unknown"},
@@ -1038,8 +1039,13 @@ def api_portfolio_refresh():
     successes = sum(1 for value in results if value.get("ok"))
     logger.info("portfolio_refresh account=%s visible_card_count=%d concurrency=%d success=%d",
                 account_id, len(requested), min(2, len(requested)), successes)
+    successful_syncs = [r.get("summary", {}).get("last_successful_sync_at")
+                        for r in results if r.get("ok") and r.get("summary", {}).get("last_successful_sync_at")]
     return jsonify({"ok": successes == len(results), "partial": 0 < successes < len(results),
-                    "results": results, "refreshed_at": datetime.now(timezone.utc).isoformat()}), (200 if successes else 503)
+                    "results": results,
+                    # Batch generation is not data freshness. This value is
+                    # intentionally unknown when no authoritative sync exists.
+                    "refreshed_at": max(successful_syncs) if successful_syncs else None}), (200 if successes else 503)
 
 
 @user_pages_bp.route("/api/portfolio/matchup")
