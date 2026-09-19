@@ -32,3 +32,46 @@ def test_progressive_hydration_keeps_streak_slot_and_resets_manual_retry():
     render = source[source.index("function render(c,d)"):source.index("function load(c)")]
     assert "data-summary-streak" in render
     assert "c._summaryAttempt=0;q.unshift(c)" in source
+
+
+def test_cached_stale_summary_preserves_underlying_sync_timestamp(monkeypatch):
+    import dashboard_services.accounts as accounts
+    import dashboard_services.portfolio_summary as summaries
+
+    synced = "2026-09-19T10:00:00+00:00"
+    monkeypatch.setattr(accounts, "resolve_account_viewer_for_league",
+                        lambda *a, **k: {"viewer_roster_id": "1"})
+    monkeypatch.setattr(summaries, "_store_persistent", lambda *a: None)
+    ctx = {
+        "_cache_synced_at": synced,
+        "_cache_stale": True,
+        "rosters": [{"roster_id": 1, "owner_id": "u", "players": [], "settings": {}}],
+        "users": [{"user_id": "u", "display_name": "Team"}],
+        "league": {"name": "League"},
+        "players_index": {},
+    }
+    result = summaries.build_league_summary(
+        7, {"platform": "sleeper", "league_id": "L", "season": 2026},
+        lambda *a: ctx,
+    )
+    assert result["generated_at"] != synced
+    assert result["last_successful_sync_at"] == synced
+    assert result["refreshed_at"] == synced
+    assert result["stale"] is True and result["_cache_stale"] is True
+    assert result["partial"] is True
+
+
+def test_missing_context_freshness_stays_unknown(monkeypatch):
+    import dashboard_services.accounts as accounts
+    import dashboard_services.portfolio_summary as summaries
+
+    monkeypatch.setattr(accounts, "resolve_account_viewer_for_league",
+                        lambda *a, **k: {"viewer_roster_id": "1"})
+    monkeypatch.setattr(summaries, "_store_persistent", lambda *a: None)
+    result = summaries.build_league_summary(
+        7, {"platform": "sleeper", "league_id": "L", "season": 2026},
+        lambda *a: {"rosters": [{"roster_id": 1, "players": [], "settings": {}}],
+                    "users": [], "league": {}, "players_index": {}},
+    )
+    assert result["last_successful_sync_at"] is None
+    assert result["refreshed_at"] is None

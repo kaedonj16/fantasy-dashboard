@@ -1023,12 +1023,35 @@ def api_waiver_big_games():
 
     try:
         ctx = get_league_ctx_from_cache(platform, league_id, season)
-    except Exception:
-        ctx = {}
+    except Exception as exc:
+        logger.warning("[waiver-big-games] ownership lookup failed for %s:%s", platform, league_id, exc_info=True)
+        return jsonify({
+            "discoveries": [], "week": _week, "season": _dseason,
+            "availability": "unavailable", "retryable": True,
+            "message": "Player availability could not be verified. Retry to check league rosters.",
+        }), 503
+    rosters = ctx.get("rosters")
+    # An absent/empty/non-roster payload is not proof that every player is a
+    # free agent. Provider adapters normalize player IDs before they reach this
+    # context, so ownership comparisons below remain canonical per platform.
+    if not isinstance(rosters, list) or not rosters or any(
+        not isinstance(r, dict) or "players" not in r for r in rosters
+    ):
+        return jsonify({
+            "discoveries": [], "week": _week, "season": _dseason,
+            "availability": "unavailable", "retryable": True,
+            "message": "League rosters are incomplete, so pickup availability cannot be confirmed.",
+        }), 503
+    if ctx.get("_cache_stale"):
+        return jsonify({
+            "discoveries": [], "week": _week, "season": _dseason,
+            "availability": "stale", "stale": True, "retryable": True,
+            "message": "Last-known rosters are stale; refresh before treating players as available.",
+        }), 503
     # Owned = active + reserve + taxi, so a stashed player never shows as
     # "available" (provider identity: ids are the league's own player ids).
     rostered_ids = set()
-    for r in (ctx.get("rosters") or []):
+    for r in rosters:
         for key in ("players", "reserve", "taxi"):
             for pid in (r.get(key) or []):
                 if pid is not None:
@@ -1078,7 +1101,8 @@ def api_waiver_big_games():
         out.append(d)
 
     out = curate_big_game_discoveries(out, superflex=superflex, qb_need=qb_need)
-    return jsonify({"discoveries": out, "week": _week, "season": _dseason})
+    return jsonify({"discoveries": out, "week": _week, "season": _dseason,
+                    "availability": "verified", "stale": bool(ctx.get("_cache_stale"))})
 
 
 _TRENDING_ADDS_CACHE: dict = {}
