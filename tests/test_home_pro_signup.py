@@ -51,8 +51,10 @@ def test_home_pro_styles_live_in_dashboard_and_landing_css():
 def test_home_pro_js_opens_modal_then_stages_google():
     source = PAYWALL_JS[PAYWALL_JS.index("function openHomeProModal"):]
     assert "className = 'paywall-modal'" in source
-    assert 'data-plan="single_league"' in source
-    assert 'data-plan="combo"' in source
+    assert 'proPlanCards({ dataPlan: true })' in source
+    plans = PAYWALL_JS[PAYWALL_JS.index('const BR_PRO_PLANS'):PAYWALL_JS.index('function proPlanCards')]
+    for key in ('user', 'single_league', 'league', 'combo'):
+        assert f"key: '{key}'" in plans
     assert 'id="homeProGoogle" class="google-continue-btn"' in source
     assert "fetch('/api/pro-signup/pending'" in source
     assert "/auth/google?intent=onboarding&next=/pro/resume-checkout" in source
