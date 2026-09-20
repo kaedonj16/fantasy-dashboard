@@ -20614,6 +20614,31 @@ img, svg, canvas {
 .tm-eff-optimal { background:var(--text-subtle); }
 .tm-eff-season { margin-left:auto; font-weight:700; color:var(--text); }
 
+/* Cross-league "My Actions" indicator (header pill + drawer). */
+.mya-wrap { position: relative; display: inline-flex; align-items: center; }
+.mya-pill { display: inline-flex; align-items: center; gap: 2px; background: var(--accent);
+    color: var(--on-accent); border: 0; border-radius: var(--radius-pill); font-family: inherit;
+    font-size: 12px; font-weight: 700; padding: 6px 11px; cursor: pointer; white-space: nowrap; }
+.mya-pill:hover { filter: brightness(1.06); }
+.mya-bolt { margin-right: 3px; }
+.mya-drawer { position: absolute; top: calc(100% + 8px); right: 0; z-index: 1000; width: min(320px, 90vw);
+    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-sm);
+    box-shadow: var(--shadow-lg); overflow: hidden; max-height: 70vh; overflow-y: auto; }
+.mya-group { padding: 10px 14px; border-bottom: 1px solid var(--border); }
+.mya-group:last-child { border-bottom: 0; }
+.mya-league { font-size: 10px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
+    color: var(--text-subtle); margin-bottom: 7px; }
+.mya-action { display: flex; align-items: center; gap: 9px; padding: 6px 0; font-size: 13px;
+    color: var(--text); text-decoration: none; }
+.mya-action:hover { color: var(--brand-blue); }
+.mya-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+.mya-txt { flex: 1; font-weight: 600; }
+.mya-txt small { display: block; font-weight: 400; color: var(--text-subtle); font-size: 11px; }
+.mya-go { color: var(--text-subtle); flex: none; }
+.mya-viewall { font-size: 12px; font-weight: 700; color: var(--accent); text-decoration: none; }
+.mya-viewall:hover { text-decoration: underline; }
+@media (max-width: 640px) { .mya-wrap { display: none; } }
+
 /* Game of the Week explanation (info icon + popover; mobile inline line). */
 .m-head-badges { position: relative; display: inline-flex; align-items: center; gap: 6px; }
 .m-gotw-info { width: 16px; height: 16px; border-radius: 50%; border: 0; background: var(--accent-soft);

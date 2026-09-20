@@ -19242,6 +19242,79 @@ function renderTeamDetails(data) {
   else start();
 })();
 
+// Cross-league "My Actions" indicator in the global header. Loads the existing
+// cached Portfolio action results once per page session (module CACHE guard, so
+// it does not re-scan leagues on every soft-nav), mounts a compact pill beside
+// the notification bell, and stays hidden when there are no actions.
+(function initMyActions() {
+  var CACHE = null;
+  function urgColor(kind) {
+    if (kind === 'lineup') return 'var(--loss)';
+    if (kind === 'waiver') return 'var(--warning)';
+    return 'var(--brand-blue)';
+  }
+  function buildDrawer(actions) {
+    var groups = {}, order = [];
+    actions.forEach(function (a) {
+      var ln = a.league_name || 'League';
+      if (!groups[ln]) { groups[ln] = []; order.push(ln); }
+      groups[ln].push(a);
+    });
+    var html = '';
+    order.forEach(function (ln) {
+      html += '<div class="mya-group"><div class="mya-league">' + _wlEsc(ln) + '</div>';
+      groups[ln].forEach(function (a) {
+        html += '<a class="mya-action" href="' + _wlEsc(a.href || '#') + '">' +
+          '<span class="mya-dot" style="background:' + urgColor(a.kind) + '"></span>' +
+          '<span class="mya-txt">' + _wlEsc(a.title || 'Action') +
+          (a.detail ? '<small>' + _wlEsc(a.detail) + '</small>' : '') + '</span>' +
+          '<span class="mya-go" aria-hidden="true">&rsaquo;</span></a>';
+      });
+      html += '</div>';
+    });
+    html += '<div class="mya-group"><a class="mya-viewall" href="/portfolio">View all leagues &rsaquo;</a></div>';
+    return html;
+  }
+  function mount(actions) {
+    var wrap = document.querySelector('.changelog-bell-wrapper');
+    if (!wrap || document.getElementById('myActionsPill')) return;
+    var host = document.createElement('div');
+    host.className = 'mya-wrap';
+    host.innerHTML =
+      '<button type="button" id="myActionsPill" class="mya-pill" aria-haspopup="dialog" aria-expanded="false" title="Actions across your leagues">' +
+        '<span class="mya-bolt" aria-hidden="true">&#9889;</span>' +
+        '<span id="myActionsCount">' + actions.length + '</span>&nbsp;actions</button>' +
+      '<div id="myActionsDrawer" class="mya-drawer" role="dialog" aria-label="Actions across your leagues" hidden>' +
+        buildDrawer(actions) + '</div>';
+    wrap.parentNode.insertBefore(host, wrap);
+    var pill = host.querySelector('#myActionsPill');
+    var drawer = host.querySelector('#myActionsDrawer');
+    pill.addEventListener('click', function (e) {
+      e.stopPropagation();
+      var willOpen = drawer.hidden;
+      drawer.hidden = !willOpen;
+      pill.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+    });
+    document.addEventListener('click', function (e) {
+      if (!host.contains(e.target)) { drawer.hidden = true; pill.setAttribute('aria-expanded', 'false'); }
+    });
+  }
+  function load() {
+    if (CACHE !== null) return;
+    fetch('/api/portfolio-actions', { cache: 'default' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) {
+        CACHE = d || {};
+        var actions = (d && Array.isArray(d.actions)) ? d.actions : [];
+        if (actions.length) mount(actions);
+      })
+      .catch(function () { CACHE = {}; });
+  }
+  if (typeof _deferInit === 'function') _deferInit(load);
+  else if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', load);
+  else load();
+})();
+
 // Game of the Week explanation popover (event delegation). Toggling the info
 // icon opens the sibling popover; a click anywhere else closes any open one.
 document.addEventListener('click', (e) => {
