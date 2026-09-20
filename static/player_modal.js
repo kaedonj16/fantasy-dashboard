@@ -361,7 +361,13 @@ function openPlayerModal(playerId, playerName, opts) {
       let metaHTML = `<div style="display:flex;align-items:center;flex-wrap:wrap;gap:0;">${metaParts.join('<span style="opacity:.35;margin:0 3px;">·</span>')}</div>`;
       if (data.fantasy_team) {
         const _ownerStr = data.fantasy_team_owner ? ` · <span style="opacity:.65;">@${escapeHtml(data.fantasy_team_owner)}</span>` : '';
-        metaHTML += `<div style="font-size:11px;font-weight:600;color:var(--accent);margin-top:3px;opacity:.9;">${escapeHtml(data.fantasy_team)}${_ownerStr}</div>`;
+        // The ownership line opens the fantasy team modal when a roster id is
+        // known. Reuses the delegated .team-clickable handler in app.js.
+        const _rid = (data.fantasy_roster_id != null) ? String(data.fantasy_roster_id) : '';
+        const _teamHTML = _rid
+          ? `<span class="team-clickable" role="button" tabindex="0" data-roster-id="${escapeHtml(_rid)}" data-team-name="${escapeHtml(data.fantasy_team)}" style="cursor:pointer;text-decoration:underline;text-underline-offset:2px;">${escapeHtml(data.fantasy_team)}</span>`
+          : escapeHtml(data.fantasy_team);
+        metaHTML += `<div style="font-size:11px;font-weight:600;color:var(--accent);margin-top:3px;opacity:.9;">${_teamHTML}${_ownerStr}</div>`;
       }
       metaEl.innerHTML = metaHTML;
 
@@ -1574,17 +1580,62 @@ function pmInjectContextActions(playerId, playerName, data, leagueId, platform, 
   if (!modal) return;
 
   const slug = pmSlugify(playerName);
-  const actions = [
-    {
-      label: 'Compare',
-      run: function () {
-        if (typeof openCompareSearch === 'function') openCompareSearch(data);
-      },
+  const pid = encodeURIComponent(playerId);
+
+  // ── Ownership state ────────────────────────────────────────────────────────
+  // "Your player" vs "another manager's" is decided by comparing the player's
+  // roster id (from the details API) with the signed-in viewer's roster
+  // (window._viewerRid, set on every page). No league context => no roster data,
+  // so the actions fall back to the platform-neutral set.
+  const hasLeague = !!leagueId;
+  const rosterId = (data && data.fantasy_roster_id != null) ? String(data.fantasy_roster_id) : '';
+  const viewerRid = (window._viewerRid != null && window._viewerRid !== '') ? String(window._viewerRid) : '';
+  const isFreeAgent = hasLeague && !(data && data.fantasy_team);
+  const isMine = hasLeague && !!rosterId && !!viewerRid && rosterId === viewerRid;
+  const isOther = hasLeague && !!(data && data.fantasy_team) && !isMine;
+
+  const compareAction = {
+    label: 'Compare',
+    run: function () { if (typeof openCompareSearch === 'function') openCompareSearch(data); },
+  };
+  const watchAction = {
+    label: 'Watch',
+    run: function () {
+      if (typeof _toggleWatchlist !== 'function') return;
+      _toggleWatchlist({ player_id: playerId, name: playerName || '', position: (data && data.position) || '' });
+      const _wlBtn = document.getElementById('playerModalWatchlistBtn');
+      if (_wlBtn && typeof _updateWatchlistBtn === 'function') _updateWatchlistBtn(_wlBtn, playerId);
     },
-  ];
-  if (leagueId) {
-    actions.push({ label: 'Trade For', href: pmLeaguePath('/trade') + '?add=' + encodeURIComponent(playerId) });
-    actions.push({ label: 'Recent Trades', run: function () { pmSwitchTab('trades'); } });
+  };
+
+  let actions;
+  if (isMine) {
+    actions = [
+      { label: 'Start / Sit', href: pmLeaguePath('/waivers') + '?tab=startsit' },
+      compareAction,
+      { label: 'Explore Trade Away', href: pmLeaguePath('/trade') + '?b=' + pid },
+    ];
+  } else if (isOther) {
+    actions = [
+      { label: 'Trade For', href: pmLeaguePath('/trade') + '?a=' + pid },
+      compareAction,
+      { label: 'View Team', run: function () {
+          if (typeof openTeamModal === 'function' && rosterId) openTeamModal(rosterId, (data && data.fantasy_team) || '');
+        } },
+    ];
+  } else if (isFreeAgent) {
+    actions = [
+      { label: 'Waiver Analysis', href: pmLeaguePath('/waivers') + '?a=' + pid },
+      compareAction,
+      watchAction,
+    ];
+  } else {
+    // No league context.
+    actions = [
+      compareAction,
+      { label: 'Recent Trades', run: function () { pmSwitchTab('trades'); } },
+      watchAction,
+    ];
   }
   if (slug) {
     actions.push({ label: 'Full Analysis', href: '/player/' + slug + '/trade-value' });

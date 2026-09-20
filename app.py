@@ -21109,6 +21109,7 @@ def api_player_details(player_id: str):
         # ── Fantasy team ownership (only when league context is provided) ──
         fantasy_team = None
         fantasy_team_owner = None
+        fantasy_roster_id = None
         if league_id:
             try:
                 from dashboard_services.service import fantasy_team_and_roster_for_player as _ft_lookup
@@ -21119,6 +21120,9 @@ def api_player_details(player_id: str):
                 _team_name, _rid = _ft_lookup(str(player_id), _rosters, _rmap)
                 if _team_name and _team_name != "Free Agent":
                     fantasy_team = _team_name
+                    # Roster id lets the client separate "your player" from another
+                    # manager's when it compares against window._viewerRid.
+                    fantasy_roster_id = _rid
                     # Find the owner's username for the sub-label
                     _roster_obj = next((r for r in _rosters if str(r.get("roster_id")) == _rid), None)
                     if _roster_obj:
@@ -21573,6 +21577,7 @@ def api_player_details(player_id: str):
             "espnHeadshot": player_meta.get("espnHeadshot"),
             "fantasy_team": fantasy_team,
             "fantasy_team_owner": fantasy_team_owner,
+            "fantasy_roster_id": fantasy_roster_id,
             "injury": injury,
             "playoff_sos": playoff_sos,
             "stats": {

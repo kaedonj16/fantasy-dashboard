@@ -17511,6 +17511,20 @@ function openTeamModal(rosterId, teamName) {
 
   window._tmRosterId = rosterId;
 
+  // "Your team" hides the trade / compare actions (you cannot trade with
+  // yourself). Roster id is compared against the signed-in viewer's roster.
+  const _tmViewerRid = (window._viewerRid != null && window._viewerRid !== '') ? String(window._viewerRid) : '';
+  const _tmIsMine = !!_tmViewerRid && String(rosterId) === _tmViewerRid;
+  window._tmIsMine = _tmIsMine;
+  const _tmMenuItems = [];
+  if (!_tmIsMine) {
+    _tmMenuItems.push(`<button type="button" class="tm-menu-item" onclick="tmMenuAction('trade')">Trade with this team</button>`);
+    _tmMenuItems.push(`<button type="button" class="tm-menu-item" onclick="tmMenuAction('compare')">Compare to my team</button>`);
+  }
+  _tmMenuItems.push(`<button type="button" class="tm-menu-item" onclick="tmMenuAction('matchup')">View current matchup</button>`);
+  _tmMenuItems.push(`<button type="button" class="tm-menu-item" onclick="tmMenuAction('activity')">View activity</button>`);
+  _tmMenuItems.push(`<button type="button" class="tm-menu-item" onclick="tmMenuAction('rivalry')">View rivalry history</button>`);
+
   modal.innerHTML = `
     <div class="team-modal-header">
       <div class="team-modal-header-top">
@@ -17524,6 +17538,10 @@ function openTeamModal(rosterId, teamName) {
           </div>
         </div>
         <div class="team-modal-statbar" id="teamModalStatbar" hidden></div>
+        <div class="tm-menu-wrap">
+          <button class="tm-menu-trigger" id="tmMenuTrigger" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="tmMenu" aria-label="Team actions" title="Team actions" onclick="tmToggleMenu(event)">⋮</button>
+          <div class="tm-menu" id="tmMenu" role="menu" hidden>${_tmMenuItems.join('')}</div>
+        </div>
         <button class="team-modal-close" onclick="closeTeamModal()" aria-label="Close">×</button>
       </div>
     </div>
@@ -17569,6 +17587,86 @@ function closeTeamModal() {
   document.body.style.overflow = '';
   window._tmRosterId = null;
   window._tmTradesLoaded = false;
+}
+
+// League-scoped URL for the current league context, mirroring brNavLeagueUrl.
+function _tmLeagueUrl(path, suffix) {
+  const c = window.__brctx || {};
+  const sfx = suffix || '';
+  if (c.leagueId && c.platform && c.season) {
+    return '/' + c.platform + '/' + c.season + '/' + c.leagueId + path + sfx;
+  }
+  return path + sfx;
+}
+
+function tmCloseMenu() {
+  const menu = document.getElementById('tmMenu');
+  const trigger = document.getElementById('tmMenuTrigger');
+  if (menu) menu.hidden = true;
+  if (trigger) trigger.setAttribute('aria-expanded', 'false');
+}
+
+function tmToggleMenu(evt) {
+  if (evt) { evt.preventDefault(); evt.stopPropagation(); }
+  const menu = document.getElementById('tmMenu');
+  const trigger = document.getElementById('tmMenuTrigger');
+  if (!menu || !trigger) return;
+  const willOpen = menu.hidden;
+  menu.hidden = !willOpen;
+  trigger.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+  if (willOpen) {
+    // Close on the next outside click / Escape.
+    setTimeout(function () {
+      document.addEventListener('click', _tmMenuOutside, { once: true });
+    }, 0);
+  }
+}
+
+function _tmMenuOutside(e) {
+  const wrap = e.target.closest && e.target.closest('.tm-menu-wrap');
+  if (!wrap) tmCloseMenu();
+  else document.addEventListener('click', _tmMenuOutside, { once: true });
+}
+
+function tmMenuAction(kind) {
+  tmCloseMenu();
+  const rid = window._tmRosterId;
+  const nameEl = document.querySelector('.team-modal-name');
+  const teamName = nameEl ? nameEl.textContent.trim() : '';
+  switch (kind) {
+    case 'trade':
+      window.location.href = _tmLeagueUrl('/trade');
+      break;
+    case 'compare':
+      window.location.href = _tmLeagueUrl('/graphs');
+      break;
+    case 'matchup':
+      window.location.href = _tmLeagueUrl('/weekly');
+      break;
+    case 'activity':
+      window.location.href = _tmLeagueUrl('/activity');
+      break;
+    case 'rivalry':
+      window.location.href = _tmLeagueUrl('/history');
+      break;
+  }
+}
+
+// Primary "Trade with this team" button pinned at the bottom of the Roster tab
+// for opposing teams. Hidden for the viewer's own team. Idempotent.
+function tmInjectRosterTradeCta() {
+  if (window._tmIsMine) return;
+  const panel = document.getElementById('tm-panel-roster');
+  if (!panel || panel.querySelector('.tm-roster-trade-cta')) return;
+  const cta = document.createElement('div');
+  cta.className = 'tm-roster-trade-cta';
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'tm-trade-cta-btn';
+  btn.textContent = 'Trade with this team';
+  btn.addEventListener('click', function () { window.location.href = _tmLeagueUrl('/trade'); });
+  cta.appendChild(btn);
+  panel.appendChild(cta);
 }
 
 function tmSwitchTab(tab) {
@@ -18810,6 +18908,7 @@ function renderTeamDetails(data) {
     rosterPanel.innerHTML = sideHTML
       ? `<div class="team-modal-body-left">${rosterHTML}</div><div class="team-modal-body-right">${sideHTML}</div>`
       : `<div class="team-modal-body-left" style="flex:1;max-width:100%;">${rosterHTML}</div>`;
+    tmInjectRosterTradeCta();
   }
   const chartsPanel = document.getElementById('tm-panel-charts');
   if (chartsPanel) {
@@ -20115,25 +20214,41 @@ function setupFunAwardsGrid() {
     return path + sfx;
   }
 
+  // group 'page' = a navigational destination (rendered under "Pages");
+  // anything else is a tool (rendered under "Tools"). abs:true opts out of the
+  // league-prefix rewrite for account-level routes (Top Movers, Watchlist).
   var NAV_COMMANDS = [
+    // ── Pages (navigational destinations, in display order) ──────────────────
+    { label: 'Matchups', keywords: ['matchup', 'matchups'], path: '/weekly', icon: 'fa-swords', group: 'page' },
+    { label: 'Standings', keywords: ['standings', 'standing', 'record'], path: '/standings', icon: 'fa-list-ol', group: 'page' },
+    { label: 'Weekly Recap', keywords: ['recap', 'weekly', 'week'], path: '/recap', icon: 'fa-newspaper', group: 'page' },
+    { label: 'Schedule Assistant', keywords: ['schedule', 'assistant', 'sos'], path: '/schedule', icon: 'fa-calendar-days', group: 'page' },
+    { label: 'Redzone', keywords: ['redzone', 'red zone'], path: '/redzone', icon: 'fa-bullseye', group: 'page' },
+    { label: 'Activity', keywords: ['activity', 'transactions', 'moves'], path: '/activity', icon: 'fa-clock-rotate-left', group: 'page' },
+    { label: 'League Health', keywords: ['league', 'health'], path: '/league_health', icon: 'fa-heart-pulse', group: 'page' },
+    { label: 'Awards', keywords: ['awards', 'award', 'trophy'], path: '/awards', icon: 'fa-trophy', group: 'page' },
+    { label: 'Graphs', keywords: ['graphs', 'graph', 'charts'], path: '/graphs', icon: 'fa-chart-line', group: 'page' },
+    { label: 'History', keywords: ['history', 'rivalry', 'all-time'], path: '/history', icon: 'fa-book', group: 'page' },
+    { label: 'Top Movers', keywords: ['top', 'movers', 'risers', 'fallers'], path: '/top-movers', icon: 'fa-arrow-trend-up', group: 'page', abs: true },
+    { label: 'Watchlist', keywords: ['watchlist', 'watch', 'saved'], path: '/watchlist', icon: 'fa-star', group: 'page', abs: true },
+    // ── Tools ────────────────────────────────────────────────────────────────
     { label: 'Trade Calculator', keywords: ['trade', 'calculator', 'otc'], path: '/trade', icon: 'fa-right-left' },
-    { label: 'Trade Database', keywords: ['trade', 'database', 'trades'], path: '/trade/database', icon: 'fa-database' },
+    { label: 'Trade Database', keywords: ['trade', 'database', 'trades'], path: '/trade-database', icon: 'fa-database' },
     { label: 'Trade Targets', keywords: ['trade', 'targets', 'suggestions'], path: '/trade', suffix: '?tab=suggestions', icon: 'fa-bullseye' },
-    { label: 'Trade Intel', keywords: ['trade', 'intel', 'intelligence'], path: '/trade/intel', icon: 'fa-chart-line' },
+    { label: 'Trade Intel', keywords: ['trade', 'intel', 'intelligence'], path: '/trade-intel', icon: 'fa-chart-line' },
     { label: 'Waivers', keywords: ['waiver', 'waivers', 'pickup', 'faab'], path: '/waivers', icon: 'fa-inbox' },
     { label: 'Start/Sit', keywords: ['start', 'sit', 'lineup'], path: '/waivers', suffix: '?tab=startsit', icon: 'fa-clipboard-list' },
     { label: 'Draft Room', keywords: ['draft', 'room'], path: '/draft', icon: 'fa-clipboard' },
-    { label: 'Cheat Sheet', keywords: ['cheat', 'sheet', 'board'], path: '/cheat-sheet', icon: 'fa-table-list' },
+    { label: 'Cheat Sheet', keywords: ['cheat', 'sheet', 'board'], path: '/draft/cheat-sheet', icon: 'fa-table-list' },
     { label: 'Draft History', keywords: ['draft', 'history'], path: '/draft-history', icon: 'fa-clock-rotate-left' },
     { label: 'Keepers', keywords: ['keeper', 'keepers'], path: '/keeper', icon: 'fa-shield' },
     { label: 'Prospects', keywords: ['prospect', 'prospects', 'rookie'], path: '/prospects', icon: 'fa-seedling' },
     { label: 'Player Rankings', keywords: ['rankings', 'players', 'values'], path: '/players', icon: 'fa-ranking-star' },
     { label: 'Dashboard', keywords: ['home', 'dashboard', 'hub'], path: '/dashboard', icon: 'fa-house' },
     { label: 'Teams', keywords: ['teams', 'roster'], path: '/teams', icon: 'fa-users' },
-    { label: 'Matchups', keywords: ['matchup', 'weekly'], path: '/weekly', icon: 'fa-swords' },
     { label: 'Breakout Engine', keywords: ['breakout'], path: '/breakouts', icon: 'fa-fire' },
     { label: 'Compare Players', keywords: ['compare'], path: '/compare', icon: 'fa-scale-balanced' },
-    { label: 'Advanced Metrics', keywords: ['metrics', 'advanced'], path: '/advanced-metrics', icon: 'fa-chart-bar' },
+    { label: 'Advanced Metrics', keywords: ['metrics', 'advanced'], path: '/metrics', icon: 'fa-chart-bar' },
   ];
 
   function setup() {
@@ -20190,7 +20305,7 @@ function setupFunAwardsGrid() {
     const words = q.split(/\s+/);
     return NAV_COMMANDS.filter(cmd =>
       words.every(w => cmd.keywords.some(k => k.includes(w) || w.includes(k)) || cmd.label.toLowerCase().includes(w))
-    ).slice(0, 6);
+    ).slice(0, 8);
   }
 
   function renderResults(query) {
@@ -20237,23 +20352,29 @@ function setupFunAwardsGrid() {
       }
     }
 
-    let cmdHtml = '';
-    if (cmdMatches.length) {
-      cmdHtml = cmdMatches.map((cmd, i) => {
-        const idx = playerCount + i;
-        const href = brNavLeagueUrl(cmd.path, cmd.suffix || '');
-        return `<a class="nav-search-cmd" data-idx="${idx}" data-ns-kind="cmd" href="${href}">` +
-          `<span class="nav-search-cmd-icon"><i class="fa-solid ${cmd.icon}" aria-hidden="true"></i></span>` +
-          `<span><span>${cmd.label}</span><div class="nav-search-cmd-meta">Tool</div></span></a>`;
-      }).join('');
+    // Preserve overall focus order (players, then pages, then tools) while
+    // rendering pages and tools under their own labels.
+    let _cmdIdx = playerCount;
+    function renderCmd(cmd) {
+      const idx = _cmdIdx++;
+      const href = cmd.abs ? (cmd.path + (cmd.suffix || '')) : brNavLeagueUrl(cmd.path, cmd.suffix || '');
+      const meta = cmd.group === 'page' ? 'Page' : 'Tool';
+      return `<a class="nav-search-cmd" data-idx="${idx}" data-ns-kind="cmd" href="${href}">` +
+        `<span class="nav-search-cmd-icon"><i class="fa-solid ${cmd.icon}" aria-hidden="true"></i></span>` +
+        `<span><span>${cmd.label}</span><div class="nav-search-cmd-meta">${meta}</div></span></a>`;
     }
+    const pageMatches = cmdMatches.filter(c => c.group === 'page');
+    const toolMatches = cmdMatches.filter(c => c.group !== 'page');
 
     let html = '';
     if (playerHtml) {
       html += '<div class="nav-search-group-label">Players</div>' + playerHtml;
     }
-    if (cmdHtml) {
-      html += '<div class="nav-search-group-label">Tools</div>' + cmdHtml;
+    if (pageMatches.length) {
+      html += '<div class="nav-search-group-label">Pages</div>' + pageMatches.map(renderCmd).join('');
+    }
+    if (toolMatches.length) {
+      html += '<div class="nav-search-group-label">Tools</div>' + toolMatches.map(renderCmd).join('');
     }
     if (!html) {
       html = '<div class="nav-search-empty">No results found</div>';
