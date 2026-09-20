@@ -269,6 +269,16 @@ _ANON_DENIED_TTL = 300  # seconds -- privacy of a league rarely flips mid-sessio
 _anon_denied_until: Dict[Tuple[int, str], float] = {}
 _AUTH_LEAGUE_TTL = 120  # seconds -- same freshness window as public leagues
 _auth_league_cache: Dict[Tuple[int, str, str], Tuple[float, Any]] = {}
+# Authenticated denials must be remembered like anonymous ones. A private
+# league whose stored cookies ESPN rejects makes every credentialed League()
+# load fail; without a memo, each parallel dashboard task (league/users/rosters/
+# drafts all call _league()) and every later request re-paid a doomed
+# authenticated ESPN round-trip AND an extra heavy-view diagnostic probe --
+# eight round-trips and eight identical WARNING lines for one dashboard GET.
+# Keyed by credential fingerprint so a reconnect with fresh cookies is retried
+# immediately instead of waiting out the window.
+_AUTH_DENIED_TTL = 300  # seconds -- matches the anonymous-denied window
+_auth_denied_until: Dict[Tuple[int, str, str], float] = {}
 _auth_league_lock = threading.Lock()
 _league_load_locks: Dict[Tuple[int, str], threading.Lock] = {}
 _league_load_locks_guard = threading.Lock()
@@ -354,6 +364,38 @@ def _anonymous_denied(key: Tuple[int, str]) -> bool:
             _anon_denied_until.pop(key, None)
             return False
         return True
+
+
+def _mark_authenticated_denied(auth_key: Tuple[int, str, str]) -> None:
+    """Remember that ESPN rejected these exact cookies for this league."""
+    now = time.time()
+    with _auth_league_lock:
+        _auth_denied_until[auth_key] = now + _AUTH_DENIED_TTL
+        if len(_auth_denied_until) > 64:
+            expired = [k for k, until in _auth_denied_until.items() if until <= now]
+            for k in expired:
+                _auth_denied_until.pop(k, None)
+
+
+def _auth_cache_or_denied(auth_key: Tuple[int, str, str], now: float):
+    """Fast-path resolver run under the auth-cache lock.
+
+    Returns a still-fresh cached ``League`` when one exists, re-raises the
+    remembered ``ESPNAccessDenied`` while the denial window is open, and
+    otherwise returns ``None`` so the caller performs a live ESPN load.
+    """
+    with _auth_league_lock:
+        hit = _auth_league_cache.get(auth_key)
+        if hit and (now - hit[0]) < _AUTH_LEAGUE_TTL:
+            return hit[1]
+        denied_until = _auth_denied_until.get(auth_key)
+        if denied_until is not None:
+            if denied_until > now:
+                raise ESPNAccessDenied(
+                    "ESPN denied authenticated access to this league."
+                )
+            _auth_denied_until.pop(auth_key, None)
+    return None
 
 
 def _public_league_cached(season: int, league_id: str) -> League:
@@ -488,17 +530,18 @@ def _authenticated_league_cached(
     fp = _cred_fingerprint(espn_s2, swid)
     auth_key = (key[0], key[1], fp)
     now = time.time()
-    with _auth_league_lock:
-        hit = _auth_league_cache.get(auth_key)
-        if hit and (now - hit[0]) < _AUTH_LEAGUE_TTL:
-            return hit[1]
+    cached = _auth_cache_or_denied(auth_key, now)
+    if cached is not None:
+        return cached
     lock = _load_lock_for(key)
     with lock:
         now = time.time()
-        with _auth_league_lock:
-            hit = _auth_league_cache.get(auth_key)
-            if hit and (now - hit[0]) < _AUTH_LEAGUE_TTL:
-                return hit[1]
+        # Re-check under the load lock: a sibling dashboard task (league/users/
+        # rosters/drafts fan out in parallel) may have populated the cache or
+        # recorded the denial while this waiter blocked on the lock.
+        cached = _auth_cache_or_denied(auth_key, now)
+        if cached is not None:
+            return cached
         try:
             league = League(
                 league_id=int(league_id),
@@ -545,6 +588,10 @@ def _authenticated_league_cached(
                     league_id, season, type(_probe_exc).__name__,
                 )
             if _is_espn_access_denied(exc):
+                # Memoize before raising so the remaining parallel dashboard
+                # tasks (and later requests within the window) short-circuit
+                # instead of re-issuing the same doomed load + diagnostic probe.
+                _mark_authenticated_denied(auth_key)
                 try:
                     from flask import has_request_context, session
                     if has_request_context() and session.get("account_id"):
@@ -1344,6 +1391,7 @@ def clear_espn_league_caches(league_id: Optional[str] = None, season: Optional[i
     with _auth_league_lock:
         if league_id is None:
             _auth_league_cache.clear()
+            _auth_denied_until.clear()
         else:
             lid = str(league_id)
             drop = [
@@ -1352,6 +1400,10 @@ def clear_espn_league_caches(league_id: Optional[str] = None, season: Optional[i
             ]
             for key in drop:
                 _auth_league_cache.pop(key, None)
+            # Keep _auth_denied_until on a targeted clear, mirroring
+            # _anon_denied_until: it is an access-mode hint ("these cookies
+            # can't read this league"), not roster data, and a reconnect
+            # supplies fresh cookies under a new fingerprint that bypasses it.
     with _league_globals_lock:
         if league_id is None:
             _league_globals_cache.clear()
