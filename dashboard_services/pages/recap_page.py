@@ -365,6 +365,44 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
     high_sub = "Season high" if season_high else f"+{float(high_row['points']) - league_avg:.1f} vs avg"
     low_sub = f"{float(low_row['points']) - league_avg:.1f} vs avg"
 
+    # ── Lineup efficiency awards for this week (Best Lineup Manager / Most
+    # Points Benched). Uses the shared, cached actual-vs-optimal aggregation. ──
+    def _eff_award_card(label, icon, rid, big, sub, accent):
+        return (f'<div class="card rc-award" style="--rc-accent:{accent};">'
+                f'<div class="rc-award-h"><span class="rc-award-chip"><i class="{icon}" aria-hidden="true"></i></span>'
+                f'<span class="rc-award-lbl">{label}</span></div>'
+                f'<div style="display:flex;align-items:center;gap:10px;">{ava_img("", rid, 36)}'
+                f'<div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:700;'
+                f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{team_link("", rid)}</div></div>'
+                f'<div style="font-size:22px;font-weight:800;color:{accent};flex-shrink:0;'
+                f'letter-spacing:-.5px;font-variant-numeric:tabular-nums;">{big}</div></div>'
+                f'<div class="rc-award-foot">{sub}</div></div>')
+
+    best_lineup_card = most_benched_card = ""
+    try:
+        from dashboard_services.season_efficiency import compute_league_season_efficiency
+        _eff_by_rid = compute_league_season_efficiency(ctx).get("by_rid") or {}
+        _wk_rows = []
+        for _rid, _v in _eff_by_rid.items():
+            for _wk in (_v.get("weeks") or []):
+                if _wk.get("week") == selected_week and _wk.get("optimal"):
+                    _wk_rows.append({"rid": _rid, "eff": _wk.get("eff"),
+                                     "missed": _wk.get("missed") or 0.0})
+                    break
+        if _wk_rows:
+            _best = max(_wk_rows, key=lambda r: (r["eff"] if r["eff"] is not None else -1.0))
+            _bench = max(_wk_rows, key=lambda r: r["missed"])
+            _best_eff = f'{_best["eff"]:.0f}%' if _best["eff"] is not None else "—"
+            _best_sub = ("Perfect lineup" if _best["missed"] < 0.1
+                         else f'{_best["missed"]:.1f} pts left on bench')
+            best_lineup_card = _eff_award_card(
+                "fa-solid fa-bullseye", "BEST LINEUP", _best["rid"], _best_eff, _best_sub, "var(--win)")
+            most_benched_card = _eff_award_card(
+                "fa-solid fa-arrow-down", "MOST BENCHED", _bench["rid"],
+                f'{_bench["missed"]:.1f}', "points left on bench", "var(--loss)")
+    except Exception:
+        best_lineup_card = most_benched_card = ""
+
     cards_html = f"""
 <style>
   .rc-awards {{ display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; margin-bottom:20px; }}
@@ -397,6 +435,8 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
                low_sub, "var(--loss)" )}
   {matchup_card("fa-solid fa-trophy", "BIGGEST WIN", blowout, "var(--accent)") if blowout else '<div class="card rc-award"><div class="rc-award-h"><span class="rc-award-lbl">BIGGEST WIN</span></div><div class="rc-award-foot">No decisive result</div></div>'}
   {matchup_card("fa-solid fa-bolt", "CLOSEST GAME", closest, "var(--warning)") if closest else ""}
+  {best_lineup_card}
+  {most_benched_card}
 </div></section>"""
 
     # ── Scoreboard ─────────────────────────────────────────────────────────

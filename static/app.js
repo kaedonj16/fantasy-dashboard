@@ -17652,6 +17652,50 @@ function tmMenuAction(kind) {
   }
 }
 
+// Inline SVG line chart of weekly actual vs optimal points. Self-contained
+// (no Plotly) so it renders correctly even while its panel is hidden. Colors
+// come from theme tokens, so it tracks light/dark.
+function _tmBuildEffChart(weeks) {
+  const good = (weeks || []).filter(w => w && w.actual != null && w.optimal != null);
+  if (!good.length) return '';
+  const W = 340, H = 168, padL = 34, padR = 12, padT = 12, padB = 30;
+  const vals = [];
+  good.forEach(w => { vals.push(Number(w.actual), Number(w.optimal)); });
+  let lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals);
+  if (!isFinite(lo) || !isFinite(hi)) return '';
+  if (lo === hi) { lo -= 5; hi += 5; }
+  const span = hi - lo; lo -= span * 0.1; hi += span * 0.1;
+  const n = good.length;
+  const xAt = i => padL + (n === 1 ? (W - padL - padR) / 2 : i * (W - padL - padR) / (n - 1));
+  const yAt = v => padT + (H - padT - padB) * (1 - (v - lo) / (hi - lo));
+  const pts = key => good.map((w, i) => `${xAt(i).toFixed(1)},${yAt(Number(w[key])).toFixed(1)}`).join(' ');
+  const gridY = [lo + (hi - lo) * 0.15, (lo + hi) / 2, hi - (hi - lo) * 0.15];
+  const grid = gridY.map(v =>
+    `<line x1="${padL}" y1="${yAt(v).toFixed(1)}" x2="${W - padR}" y2="${yAt(v).toFixed(1)}" stroke="var(--grid)" stroke-width="1"/>` +
+    `<text x="${padL - 5}" y="${(yAt(v) + 3).toFixed(1)}" font-size="9" fill="var(--text-subtle)" text-anchor="end">${v.toFixed(0)}</text>`
+  ).join('');
+  const xlabels = good.map((w, i) =>
+    `<text x="${xAt(i).toFixed(1)}" y="${H - 10}" font-size="8" fill="var(--text-subtle)" text-anchor="middle">W${w.week}</text>`
+  ).join('');
+  const lastActual = good[good.length - 1];
+  const endDot = `<circle cx="${xAt(n - 1).toFixed(1)}" cy="${yAt(Number(lastActual.actual)).toFixed(1)}" r="3.5" fill="var(--brand-blue)"/>`;
+  const seasonActual = good.reduce((s, w) => s + Number(w.actual), 0);
+  const seasonOpt = good.reduce((s, w) => s + Number(w.optimal), 0);
+  const effPct = seasonOpt > 0 ? (seasonActual / seasonOpt * 100).toFixed(0) : '--';
+  return (
+    '<div class="team-modal-section tm-chart-eff"><h3>Actual vs Optimal Points</h3>' +
+    `<div class="tm-eff-legend"><span><i class="tm-eff-dot tm-eff-actual"></i>Actual</span>` +
+    `<span><i class="tm-eff-dot tm-eff-optimal"></i>Optimal</span>` +
+    `<span class="tm-eff-season">Season efficiency ${effPct}%</span></div>` +
+    `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" role="img" aria-label="Weekly actual versus optimal points">` +
+    grid +
+    `<polyline points="${pts('optimal')}" fill="none" stroke="var(--text-subtle)" stroke-width="2" stroke-dasharray="4 3"/>` +
+    `<polyline points="${pts('actual')}" fill="none" stroke="var(--brand-blue)" stroke-width="2.5"/>` +
+    endDot + xlabels +
+    '</svg></div>'
+  );
+}
+
 // Primary "Trade with this team" button pinned at the bottom of the Roster tab
 // for opposing teams. Hidden for the viewer's own team. Idempotent.
 function tmInjectRosterTradeCta() {
@@ -18700,6 +18744,13 @@ function renderTeamDetails(data) {
           <div class="tm-stat-tile-label">Playoff Odds</div>
         </div>`);
     }
+    if (data.lineup_efficiency != null && !isNaN(parseFloat(data.lineup_efficiency))) {
+      tiles.push(`
+        <div class="tm-stat-tile" title="Actual points divided by optimal points. 100% means the best possible lineup was started.">
+          <div class="tm-stat-tile-value">${Math.round(parseFloat(data.lineup_efficiency))}%</div>
+          <div class="tm-stat-tile-label">Efficiency</div>
+        </div>`);
+    }
     if (tiles.length) {
       statbar.innerHTML = tiles.join('');
       statbar.hidden = false;
@@ -18875,6 +18926,11 @@ function renderTeamDetails(data) {
   // renders it as HTML+SVG so it drops straight in above the charts.
   if (data.trends_html) {
     graphsHTML += data.trends_html;
+  }
+
+  // Weekly actual-vs-optimal points (lineup efficiency over the season).
+  if (Array.isArray(data.efficiency_weeks) && data.efficiency_weeks.length > 0) {
+    graphsHTML += _tmBuildEffChart(data.efficiency_weeks);
   }
 
   if (data.graphs && (data.graphs.weekly_scores || data.graphs.radar)) {
