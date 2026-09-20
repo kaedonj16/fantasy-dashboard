@@ -82,6 +82,17 @@ _RE_RUSH = re.compile(
 )
 _RE_FG = re.compile(rf"({_NAME_TOK})\s+(\d+)\s+yard field goal is GOOD")
 _RE_XP = re.compile(rf"({_NAME_TOK})\s+extra point is GOOD")
+# A combined scoring line packs the touchdown and the ensuing kick into one
+# booth string ("T.Bigsby up the middle for 2 yards, TOUCHDOWN. J.Elliott extra
+# point is GOOD, ..."). The kicker's clause begins with the kicker's name and
+# "extra point" / "N yard field goal"; everything before it is the scrimmage
+# play whose run or pass still belongs to the ball carrier. Splitting on this
+# keeps the rusher's credit instead of dropping it because the word "extra
+# point" appears later in the line.
+_KICK_CLAUSE_RE = re.compile(
+    rf"{_NAME_TOK}\s+(?:extra point|\d+\s+yard field goal)",
+    re.IGNORECASE,
+)
 # "TD" is only ever the uppercase scoring abbreviation; anchor it so it can't
 # match inside another token. "touchdown" is matched case-insensitively below.
 _RE_TD_TOKEN = re.compile(r"\bTD\b")
@@ -169,16 +180,20 @@ def parse_pbp_play_stats(text: str) -> dict[str, dict]:
         _accum(out, mc.group(1), pass_att=1)
 
     # Rushes only — never a pass, sack, kick or punt (those carry "for N yards"
-    # too but must not be scored as rushing).
+    # too but must not be scored as rushing). Parse the scrimmage segment with
+    # any trailing PAT/FG clause removed, so a rushing touchdown followed by a
+    # made extra point still credits the ball carrier (the bare "extra point"
+    # guard used to drop the whole rush).
+    scrimmage = _KICK_CLAUSE_RE.split(main, 1)[0]
     if (
-        not re.search(r"\bpass\b", main)
-        and "sacked" not in main
-        and "field goal" not in main
-        and "extra point" not in main
-        and "kicks" not in main
-        and "punts" not in main
+        not re.search(r"\bpass\b", scrimmage)
+        and "sacked" not in scrimmage
+        and "field goal" not in scrimmage
+        and "extra point" not in scrimmage
+        and "kicks" not in scrimmage
+        and "punts" not in scrimmage
     ):
-        mr = _RE_RUSH.search(main)
+        mr = _RE_RUSH.search(scrimmage)
         if mr:
             rusher, yds = mr.group(1), _yards(mr.group(2))
             _accum(out, rusher, rush_yds=yds, carries=1)
@@ -423,10 +438,53 @@ def pids_mentioned_in_text(
 # the caller from ``_stat_lines_by_pid`` and are unaffected by this.
 _TACKLE_CREDIT_RE = re.compile(r"\([^)]*\)")
 
+# Field-goal and extra-point lines credit the kicking-unit long snapper and
+# holder inline, without parentheses: "J.Elliott extra point is GOOD,
+# Center-R.Underwood, Holder-B.Mann". Those linemen are never the player the
+# scoring play belongs to, but on a TD/kick line the mention pass would resolve
+# them and -- because the row inherits the play's ``is_td`` flag -- surface a
+# phantom scoring card headlined by the snapper instead of the ball carrier.
+# Strip the role-labelled credit (label, hyphen, and the name it introduces) so
+# only real actors remain for mention resolution. The kicker keeps their credit
+# via ``_stat_lines_by_pid`` (the "... extra point is GOOD" / "... field goal is
+# GOOD" clause), so removing these labels never drops the made kick.
+_KICK_CREDIT_RE = re.compile(
+    r"\b(?:Center|Holder|Long[\s-]?Snapper|Snapper|Punter)\s*-\s*" + _NAME_TOK,
+    re.IGNORECASE,
+)
+
 
 def _text_without_credits(text: str) -> str:
-    """Drop parenthetical tackle / defender credits from a booth line."""
-    return _TACKLE_CREDIT_RE.sub(" ", _s(text))
+    """Drop non-actor credits (parenthetical tackles, kicking-unit linemen)."""
+    stripped = _TACKLE_CREDIT_RE.sub(" ", _s(text))
+    return _KICK_CREDIT_RE.sub(" ", stripped)
+
+
+_TD_STAT_KEYS = ("rec_td", "rush_td", "pass_td", "def_td")
+# Non-touchdown scoring stats that can share a TD play's booth line: the two
+# point conversion actors and the kicker who made the following PAT ("... extra
+# point is GOOD") or field goal. None of these is the player who scored the
+# touchdown, so a row carrying only these must never inherit the play's TD flag.
+_NON_TD_SCORE_KEYS = ("pass_2pt", "rush_2pt", "rec_2pt", "xpm", "fgm")
+
+
+def _row_inherits_td(play_is_td: bool, stat_line: dict) -> bool:
+    """Whether a per-player row should keep the play's touchdown flag.
+
+    A combined booth line ("T.Bigsby ... TOUCHDOWN. J.Elliott extra point is
+    GOOD.") credits several players off one TD play. Only the actor who actually
+    scored (a rush/rec/pass/def TD) headlines the score; a row carrying only a
+    two-point-conversion or made-kick stat is demoted so the PAT kicker and the
+    conversion actors never fire a phantom touchdown card. A row with no scoring
+    stat at all keeps the flag — it may be the scorer whose stat parse missed.
+    """
+    if not play_is_td:
+        return False
+    if any(stat_line.get(k) for k in _TD_STAT_KEYS):
+        return True
+    if any(stat_line.get(k) for k in _NON_TD_SCORE_KEYS):
+        return False
+    return True
 
 
 # ── Sleeper ──────────────────────────────────────────────────────────────────
@@ -594,13 +652,10 @@ def extract_sleeper_pbp_plays(
         if pids:
             for pid in pids:
                 sl = stat_by_pid.get(pid, {})
-                # A 2PT conversion actor shares the TD play's line but is not the
-                # scorer — never let a 2PT-only row inherit the play's TD flag.
-                row_is_td = base["is_td"]
-                if row_is_td and not (
-                    sl.get("rec_td") or sl.get("rush_td") or sl.get("pass_td") or sl.get("def_td")
-                ) and (sl.get("pass_2pt") or sl.get("rush_2pt") or sl.get("rec_2pt")):
-                    row_is_td = False
+                # Only the actual TD scorer keeps the play's TD flag; a 2PT
+                # conversion actor or the PAT kicker sharing the booth line does
+                # not (see _row_inherits_td).
+                row_is_td = _row_inherits_td(base["is_td"], sl)
                 out.append({
                     **base, "pid": pid, "name": long_name,
                     "team": _s(play.get("team")),
@@ -1009,15 +1064,11 @@ def extract_espn_pbp_plays(
             if pids:
                 for pid in pids:
                     sl = stat_by_pid.get(pid, {})
-                    # A two-point conversion actor shares the TD play's booth
-                    # line but is not the scorer: a row that only carries a 2PT
-                    # stat (no rec/rush/pass TD) must never inherit the play's TD
-                    # flag, or it would fire a TD alert for a 2-point catch.
-                    row_is_td = base["is_td"]
-                    if row_is_td and not (
-                        sl.get("rec_td") or sl.get("rush_td") or sl.get("pass_td") or sl.get("def_td")
-                    ) and (sl.get("pass_2pt") or sl.get("rush_2pt") or sl.get("rec_2pt")):
-                        row_is_td = False
+                    # Only the actual TD scorer keeps the play's TD flag: a
+                    # two-point conversion actor or the PAT kicker sharing the
+                    # booth line would otherwise fire a phantom TD alert (see
+                    # _row_inherits_td).
+                    row_is_td = _row_inherits_td(base["is_td"], sl)
                     out.append({
                         **base, "pid": pid, "name": "", "team": drive_team,
                         "stat_line": sl, "is_td": row_is_td,
