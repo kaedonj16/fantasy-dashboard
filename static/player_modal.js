@@ -863,6 +863,11 @@ function openPlayerModal(playerId, playerName, opts) {
         ${adpRow}
       `;
 
+      // "In this league" acquisition/ownership timeline: after the value /
+      // production summary, before the longer value-history analysis. Populated
+      // after render (see _pmLoadInLeague); stays hidden when there's nothing.
+      overviewHTML += `<div id="pmInLeague" class="pm-inleague" hidden></div>`;
+
       if (hasChart) {
         overviewHTML += `
           <hr class="pm-section-divider">
@@ -1232,6 +1237,7 @@ function openPlayerModal(playerId, playerName, opts) {
       } catch (e) { /* non-fatal */ }
 
       pmInjectContextActions(playerId, playerName, data, leagueId, platform, season);
+      _pmLoadInLeague(playerId, data, leagueId, platform, season);
 
       // The "vs Avg <pos><tier>" benchmark is reachable from Actions → Compare
       // (it offers the positional-tier averages as pickable opponents),
@@ -1595,6 +1601,60 @@ function pmToggleActionsMenu(wrap) {
   } else {
     pmCloseActionsMenu(wrap);
   }
+}
+
+// "In this league" section on the Overview tab: current ownership plus the
+// player's trade events in this league. Reuses the working player-league-trades
+// endpoint and the same side normalization as the Trades tab. Shows the top 3
+// events, expanding the rest; hides entirely when nothing reliable exists.
+function _pmRenderInLeague(el, events) {
+  if (!el) return;
+  if (!events.length) { el.hidden = true; el.innerHTML = ''; return; }
+  const row = function (e) {
+    return '<div class="pm-inleague-row"><span class="tl-mark ' + e.cls + '"></span>' +
+      '<span class="pm-inleague-text">' + e.text + '</span></div>';
+  };
+  const top = events.slice(0, 3).map(row).join('');
+  const rest = events.slice(3).map(row).join('');
+  el.hidden = false;
+  el.innerHTML =
+    '<hr class="pm-section-divider">' +
+    '<div class="pm-section-header"><span class="pm-section-label">In this league</span></div>' +
+    '<div class="pm-inleague-list">' + top +
+    (rest ? '<div class="pm-inleague-rest" hidden>' + rest + '</div>' +
+      '<button type="button" class="pm-inleague-more" onclick="var r=this.previousElementSibling; r.hidden=!r.hidden; this.textContent=r.hidden?\'View full history\':\'Show less\';">View full history</button>' : '') +
+    '</div>';
+}
+
+function _pmLoadInLeague(playerId, data, leagueId, platform, season) {
+  const el = document.getElementById('pmInLeague');
+  if (!el) return;
+  if (!leagueId) { el.hidden = true; return; }
+  const events = [];
+  if (data && data.fantasy_team) {
+    events.push({ cls: 'add', text: 'On <b>' + escapeHtml(data.fantasy_team) + '</b> now' });
+  }
+  const url = '/api/player-league-trades/' + encodeURIComponent(playerId) +
+    '?platform=' + encodeURIComponent(platform) + '&league_id=' + encodeURIComponent(leagueId) +
+    '&season=' + encodeURIComponent(season) + '&limit=10';
+  fetch(url)
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (d) {
+      const trades = (d && d.trades) || [];
+      trades.forEach(function (t) {
+        const wk = t.week ? ('Week ' + t.week) : (t.date || '');
+        let who = '';
+        if (typeof _pmNormalizeTradeSides === 'function') {
+          const sides = _pmNormalizeTradeSides(t);
+          if (sides && sides.a.team_name && sides.b.team_name) {
+            who = ' (' + escapeHtml(sides.a.team_name) + ' &harr; ' + escapeHtml(sides.b.team_name) + ')';
+          }
+        }
+        events.push({ cls: 'trade', text: 'Traded' + (wk ? ' &middot; ' + escapeHtml(wk) : '') + who });
+      });
+      _pmRenderInLeague(el, events);
+    })
+    .catch(function () { _pmRenderInLeague(el, events); });
 }
 
 function pmInjectContextActions(playerId, playerName, data, leagueId, platform, season) {

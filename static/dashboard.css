@@ -20659,6 +20659,19 @@ img, svg, canvas {
 .pm-wl-note-star { color: var(--gold); flex: none; }
 .pr-wl-star { color: var(--gold); font-size: 11px; margin-left: 5px; vertical-align: 1px; }
 
+/* Player modal "In this league" acquisition/ownership timeline. */
+.pm-inleague-list { display: flex; flex-direction: column; gap: 2px; }
+.pm-inleague-row { display: flex; align-items: baseline; gap: 9px; font-size: 13px; padding: 5px 0; }
+.pm-inleague-text { color: var(--text); }
+.pm-inleague-text b { font-weight: 700; }
+.pm-inleague .tl-mark { width: 8px; height: 8px; border-radius: 50%; flex: none; align-self: center;
+    background: var(--brand-blue); }
+.pm-inleague .tl-mark.trade { background: var(--gold); }
+.pm-inleague .tl-mark.add { background: var(--win); }
+.pm-inleague-more { margin-top: 4px; background: none; border: 0; color: var(--brand-blue);
+    font-family: inherit; font-size: 12px; font-weight: 700; cursor: pointer; padding: 2px 0; }
+.pm-inleague-more:hover { text-decoration: underline; }
+
 /* Team modal trade card "Check Outcome" button + player value-change badge. */
 .pm-trade-outcome-btn { margin-left: auto; border: 1px solid var(--border); background: var(--card);
     color: var(--accent); border-radius: var(--radius-sm); font-family: inherit; font-size: 11px;
