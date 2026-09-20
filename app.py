@@ -23806,10 +23806,12 @@ def api_team_trades(roster_id: str):
 
                 ts_raw = t.get("status_updated") or t.get("created")
                 date_str = ""
+                date_iso = ""
                 if ts_raw:
                     from datetime import timezone as _tz
                     _dt = datetime.fromtimestamp(ts_raw / 1000.0, tz=_tz.utc)
                     date_str = f"{_dt.month}/{_dt.day}/{_dt.strftime('%y')}"
+                    date_iso = _dt.strftime("%Y-%m-%d")
 
                 my_gets = [_pinfo(pid) for pid, to_rid in adds.items() if str(to_rid) == str(roster_id)]
                 my_sends = [_pinfo(pid) for pid, from_rid in drops.items() if str(from_rid) == str(roster_id)]
@@ -23819,6 +23821,7 @@ def api_team_trades(roster_id: str):
                 trades.append({
                     "week": week,
                     "date": date_str,
+                    "date_iso": date_iso,
                     "my_gets": my_gets,
                     "my_sends": my_sends,
                     "my_pick_gets": my_pick_gets,

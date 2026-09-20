@@ -1209,6 +1209,15 @@ function openPlayerModal(playerId, playerName, opts) {
           });
       }
 
+      // Stash this player's value history so the Trades tab can show the
+      // player's value change since each trade (client-side, no extra fetch).
+      try {
+        window.__pmVH = {
+          pid: String(playerId),
+          hist: Array.isArray(data.value_history) ? data.value_history : [],
+        };
+      } catch (e) { /* non-fatal */ }
+
       pmInjectContextActions(playerId, playerName, data, leagueId, platform, season);
 
       // The "vs Avg <pos><tier>" benchmark is reachable from Actions → Compare
@@ -1931,12 +1940,47 @@ function _pmNormalizeTradeSides(t) {
   return { a: norm(t.side_a), b: norm(t.side_b) };
 }
 
+function _pmParseTradeDate(s) {
+  s = String(s || '').trim();
+  let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return new Date(+m[1], +m[2] - 1, +m[3]);
+  m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+  if (m) { let y = +m[3]; if (y < 100) y += 2000; return new Date(y, +m[1] - 1, +m[2]); }
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+// This player's value change from the trade date to now, using the value
+// history already loaded on the modal. Null when there's no reliable match.
+function _pmValueChangeSince(tradeDateStr, playerId) {
+  const vh = window.__pmVH;
+  if (!vh || String(vh.pid) !== String(playerId) || !Array.isArray(vh.hist) || !vh.hist.length) return null;
+  const target = _pmParseTradeDate(tradeDateStr);
+  if (!target) return null;
+  const hist = vh.hist;
+  const val = (h) => Number(h.value_1qb ?? h.value);
+  const nowVal = val(hist[hist.length - 1]);
+  let best = null, bestDiff = Infinity;
+  for (const h of hist) {
+    const d = _pmParseTradeDate(h.as_of_date);
+    if (!d) continue;
+    const diff = Math.abs((d - target) / 86400000);
+    if (diff < bestDiff) { bestDiff = diff; best = val(h); }
+  }
+  if (best == null || isNaN(best) || isNaN(nowVal) || bestDiff > 45) return null;
+  return Math.round(nowVal - best);
+}
+
 function _pmRenderTradeCards(trades, playerId, { showTeams } = {}) {
   return trades.map(t => {
     const dateStr = t.date
       ? (String(t.date).includes('/') ? t.date
         : new Date(t.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }))
       : '-';
+    const _vchg = _pmValueChangeSince(t.date, playerId);
+    const vchgBadge = (_vchg != null && _vchg !== 0)
+      ? `<span class="pm-trade-vchg ${_vchg > 0 ? 'up' : 'down'}" title="This player's value change since the trade">${_vchg > 0 ? '+' : ''}${_vchg} since</span>`
+      : '';
     const seasonBit = t.season ? `<span class="pm-trade-season">${t.season}</span>` : '';
     const sfBadge = (t.is_superflex === true || t.league_type === 'sf' || t.league_type === 'superflex')
       ? '<span class="pm-trade-badge pm-trade-badge-sf">SF</span>'
@@ -1950,7 +1994,7 @@ function _pmRenderTradeCards(trades, playerId, { showTeams } = {}) {
       ? `<div class="pm-trade-team">${sides.b.team_name}</div>` : '';
     return `<div class="pm-trade-card">
       <div class="pm-trade-head">
-        <span class="pm-trade-date">${dateStr}${seasonBit ? ' · ' + seasonBit : ''}</span>
+        <span class="pm-trade-date">${dateStr}${seasonBit ? ' · ' + seasonBit : ''}${vchgBadge}</span>
         <div style="display:flex;gap:5px;">${sfBadge}</div>
       </div>
       <div class="pm-trade-body">

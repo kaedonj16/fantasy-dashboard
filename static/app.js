@@ -17779,9 +17779,20 @@ async function tmLoadTrades(rosterId) {
       const dateLabel = tr.date || '';
       const headRight = weekLabel && dateLabel ? `${weekLabel} · ${dateLabel}` : weekLabel || dateLabel;
 
-      return `<div class="pm-trade-card">
+      // Outcome payload from this team's perspective (players only; picks are
+      // valued separately by the endpoint and are omitted to keep ids clean).
+      const gets = (tr.my_gets || []).map(p => ({ id: String(p.player_id), name: p.name }));
+      const sends = (tr.my_sends || []).map(p => ({ id: String(p.player_id), name: p.name }));
+      const outcomeTeams = JSON.stringify([{ team_name: 'This team', gets, sends }]).replace(/'/g, '&#39;');
+      const canOutcome = (gets.length + sends.length) > 0 && !!tr.date_iso;
+      const outcomeBtn = canOutcome
+        ? `<button type="button" class="pm-trade-outcome-btn" data-trade-teams='${outcomeTeams}' data-trade-date="${tr.date_iso}" onclick="checkTradeOutcome(this)">Check Outcome</button>`
+        : '';
+
+      return `<div class="pm-trade-card trade-card">
         <div class="pm-trade-head">
           <span class="pm-trade-date">${headRight}</span>
+          ${outcomeBtn}
         </div>
         <div class="pm-trade-body">
           <div class="pm-trade-col">
@@ -17794,6 +17805,7 @@ async function tmLoadTrades(rosterId) {
             ${renderAssets(tr.my_sends, tr.my_pick_sends)}
           </div>
         </div>
+        <div class="trade-outcome-result" style="display:none;"></div>
       </div>`;
     }).join('');
 

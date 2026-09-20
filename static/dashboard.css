@@ -20652,6 +20652,17 @@ img, svg, canvas {
     padding: 8px 10px; }
 .bench-check-warn .la-em { font-weight: 800; }
 
+/* Team modal trade card "Check Outcome" button + player value-change badge. */
+.pm-trade-outcome-btn { margin-left: auto; border: 1px solid var(--border); background: var(--card);
+    color: var(--accent); border-radius: var(--radius-sm); font-family: inherit; font-size: 11px;
+    font-weight: 700; padding: 4px 9px; cursor: pointer; }
+.pm-trade-outcome-btn:hover { background: var(--card-soft); }
+.pm-trade-head { display: flex; align-items: center; gap: 8px; }
+.pm-trade-vchg { margin-left: 6px; font-size: 10px; font-weight: 800; border-radius: var(--radius-xs);
+    padding: 1px 5px; }
+.pm-trade-vchg.up { color: var(--win); background: color-mix(in srgb, var(--win) 14%, transparent); }
+.pm-trade-vchg.down { color: var(--loss); background: color-mix(in srgb, var(--loss) 14%, transparent); }
+
 /* Standings lineup-efficiency cell. */
 .st-eff { font-variant-numeric: tabular-nums; font-weight: 600; }
 .st-eff-good { color: var(--win); }
