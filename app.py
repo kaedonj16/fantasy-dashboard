@@ -17074,6 +17074,7 @@ def api_weekly_week():
             viewer_roster_id=_api_vid,
             scoring_settings=ctx.get("raw_scoring_settings") or ctx.get("scoring_settings"),
             is_gotw=is_gotw,
+            gotw_selection=_api_gotw,
         )
         for m, is_gotw in zip(matchups, _api_gotw_flags)
     ]

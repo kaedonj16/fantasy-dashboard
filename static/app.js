@@ -19148,6 +19148,87 @@ function renderTeamDetails(data) {
   }
 }
 
+// All-time rivalry lines on matchup cards. Filled lazily from /api/rivalry so
+// the multi-season scan never blocks the matchups render. Each node hydrates
+// once; a MutationObserver picks up week-switch slide swaps.
+(function initRivalryLines() {
+  function label(data, lname, rname) {
+    const wa = data.wins_a || 0, wb = data.wins_b || 0;
+    const games = Array.isArray(data.games) ? data.games : [];
+    if (wa + wb + (data.ties || 0) === 0 || games.length === 0) return '';
+    let lead, rec;
+    if (wa > wb) { lead = lname; rec = `${wa}–${wb}`; }
+    else if (wb > wa) { lead = rname; rec = `${wb}–${wa}`; }
+    else { lead = null; rec = `${wa}–${wb}`; }
+    // Trailing win streak (from the most recent meeting backwards).
+    let streakWinner = null, streakN = 0;
+    for (let i = games.length - 1; i >= 0; i--) {
+      const g = games[i];
+      const w = g.a_pts > g.b_pts ? 'a' : (g.b_pts > g.a_pts ? 'b' : 't');
+      if (w === 't') break;
+      if (streakWinner === null) { streakWinner = w; streakN = 1; }
+      else if (w === streakWinner) { streakN++; }
+      else break;
+    }
+    let head = lead ? `<b>${lead} ${rec}</b>` : `<b>Tied ${rec}</b>`;
+    let tail = '';
+    if (streakN >= 2) {
+      const swName = streakWinner === 'a' ? lname : rname;
+      tail = (swName === lead) ? ` · Won last ${streakN}` : ` · ${swName} won last ${streakN}`;
+    }
+    return `All-time series: ${head}${tail}`;
+  }
+  async function hydrate(node) {
+    if (!node || node.dataset.rivDone) return;
+    node.dataset.rivDone = '1';
+    const c = window.__brctx || {};
+    if (!c.platform || !c.season || !c.leagueId) return;
+    const a = node.dataset.rivA, b = node.dataset.rivB;
+    if (!a || !b || a === b) return;
+    try {
+      const res = await fetch(`/api/rivalry/${c.platform}/${c.season}/${c.leagueId}?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      const html = label(data, node.dataset.rivLname || 'Left', node.dataset.rivRname || 'Right');
+      if (html) { node.innerHTML = html; node.hidden = false; }
+    } catch (_) { /* leave the line hidden on any failure */ }
+  }
+  function scan(root) {
+    (root || document).querySelectorAll('.m-rivalry[data-riv-a]:not([data-riv-done])').forEach(hydrate);
+  }
+  function start() {
+    scan(document);
+    const container = document.getElementById('weeklyMatchupsContainer');
+    if (container && 'MutationObserver' in window) {
+      new MutationObserver(() => scan(container)).observe(container, { childList: true, subtree: true });
+    }
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+  else start();
+})();
+
+// Game of the Week explanation popover (event delegation). Toggling the info
+// icon opens the sibling popover; a click anywhere else closes any open one.
+document.addEventListener('click', (e) => {
+  const info = e.target.closest && e.target.closest('.m-gotw-info');
+  if (!info) {
+    document.querySelectorAll('.m-gotw-pop:not([hidden])').forEach((p) => {
+      p.hidden = true;
+      const b = p.parentElement && p.parentElement.querySelector('.m-gotw-info');
+      if (b) b.setAttribute('aria-expanded', 'false');
+    });
+    return;
+  }
+  e.preventDefault();
+  e.stopPropagation();
+  const pop = info.parentElement && info.parentElement.querySelector('.m-gotw-pop');
+  if (!pop) return;
+  const willOpen = pop.hidden;
+  document.querySelectorAll('.m-gotw-pop:not([hidden])').forEach((p) => { if (p !== pop) p.hidden = true; });
+  pop.hidden = !willOpen;
+  info.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+});
+
 // Team click handler (event delegation)
 document.addEventListener('click', (e) => {
   const teamCard = e.target.closest('.team-clickable');

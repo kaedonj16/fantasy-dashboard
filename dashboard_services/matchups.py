@@ -479,6 +479,7 @@ def build_matchup_preview(
         return {
             "name": roster_map.get(rid, f"Roster {rid}"),
             "roster_id": rid,
+            "owner_id": owner_id,
             "starters": s_infos,
             "lineup_is_historical": lineup_is_historical,
             "bench": b_infos,
@@ -505,6 +506,7 @@ def build_matchup_preview(
         return {
             "name": name,
             "roster_id": rid_str,
+            "owner_id": owner_id,
             "starters": [],
             "pts_total": None,
             "avatar": get_avatar_for_rid(rid_str) if rid_str else None,
@@ -1454,6 +1456,7 @@ def render_matchup_slide(
         compact: bool = False,
         scoring_settings: Optional[dict] = None,
         is_gotw: bool = False,
+        gotw_selection: Optional[dict] = None,
 ) -> str:
     """One slide with rows like:
        [Left Name] [Left Pts/Proj] [Right Pts/Proj] [Right Name]
@@ -2083,6 +2086,21 @@ def render_matchup_slide(
             f"<b>{h2h_l}</b>–<b>{h2h_r}</b></div>"
         )
 
+    # All-time rivalry line (client fills it from /api/rivalry so the heavy
+    # multi-season scan stays lazy and off the initial render). Needs both
+    # managers' user ids; skipped in compact slides and when either is missing.
+    _riv_a = (m.get("left") or {}).get("owner_id")
+    _riv_b = (m.get("right") or {}).get("owner_id")
+    _riv_ln = str((m.get("left") or {}).get("name") or "")
+    _riv_rn = str((m.get("right") or {}).get("name") or "")
+    if (not compact) and _riv_a and _riv_b:
+        h2h_html += (
+            f"<div class='m-rivalry' data-riv-a=\"{html.escape(str(_riv_a), quote=True)}\" "
+            f"data-riv-b=\"{html.escape(str(_riv_b), quote=True)}\" "
+            f"data-riv-lname=\"{html.escape(_riv_ln, quote=True)}\" "
+            f"data-riv-rname=\"{html.escape(_riv_rn, quote=True)}\" hidden></div>"
+        )
+
     slide_cls = "m-slide m-slide--compact" if compact else "m-slide"
     body_html = ""
     if not compact:
@@ -2093,8 +2111,27 @@ def render_matchup_slide(
         </div>
       </div>"""
 
-    gotw_badge_html = ("<div class='m-head-badges'><span class='m-gotw-badge'>"
-                       "<i class='fa-solid fa-fire' aria-hidden='true'></i>GOTW</span></div>") if is_gotw else ""
+    gotw_badge_html = ""
+    if is_gotw:
+        _gotw_why = str((gotw_selection or {}).get("why") or "").strip()
+        _gotw_reasons = [str(r).strip() for r in ((gotw_selection or {}).get("reasons") or []) if str(r).strip()]
+        _info_html = ""
+        if _gotw_why:
+            _reasons_li = "".join(f"<li>{html.escape(r)}</li>" for r in _gotw_reasons[:2])
+            _info_html = (
+                "<button type='button' class='m-gotw-info' aria-label='Why this is the game of the week' "
+                "aria-expanded='false' title='Why this is the game of the week'>i</button>"
+                "<div class='m-gotw-pop' role='tooltip' hidden>"
+                f"<div class='m-gotw-pop-why'>{html.escape(_gotw_why)}</div>"
+                + (f"<ul class='m-gotw-pop-reasons'>{_reasons_li}</ul>" if _reasons_li else "")
+                + "</div>"
+            )
+        _mobile_line = f"<div class='m-gotw-why-mobile'>{html.escape(_gotw_why)}</div>" if _gotw_why else ""
+        gotw_badge_html = (
+            "<div class='m-head-badges'><span class='m-gotw-badge'>"
+            "<i class='fa-solid fa-fire' aria-hidden='true'></i>GOTW</span>"
+            f"{_info_html}</div>{_mobile_line}"
+        )
 
     return f"""
     <div class="{slide_cls}"{win_attr}>
