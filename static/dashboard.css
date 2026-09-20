@@ -20652,6 +20652,12 @@ img, svg, canvas {
     padding: 8px 10px; }
 .bench-check-warn .la-em { font-weight: 800; }
 
+/* Watchlist note in the player modal + nav alert count badge. */
+.pm-wl-note { display: flex; align-items: flex-start; gap: 5px; font-size: 12px; color: var(--text-muted);
+    margin-top: 6px; background: var(--card-soft); border: 1px solid var(--border);
+    border-radius: var(--radius-xs); padding: 6px 8px; }
+.pm-wl-note-star { color: var(--gold); flex: none; }
+
 /* Team modal trade card "Check Outcome" button + player value-change badge. */
 .pm-trade-outcome-btn { margin-left: auto; border: 1px solid var(--border); background: var(--card);
     color: var(--accent); border-radius: var(--radius-sm); font-family: inherit; font-size: 11px;
@@ -26055,13 +26061,19 @@ tr.team-clickable {
 /* Small alert dot on the star only when a watched player has a value move / injury. */
 .watchlist-alert-dot {
     position: absolute;
-    top: 0;
-    right: 0;
-    width: 9px;
-    height: 9px;
-    border-radius: 50%;
+    top: -4px;
+    right: -4px;
+    min-width: 15px;
+    height: 15px;
+    padding: 0 4px;
+    border-radius: 8px;
     background: #ef4444;
     border: 2px solid var(--card);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 800;
+    line-height: 15px;
+    text-align: center;
     pointer-events: none;
 }
 

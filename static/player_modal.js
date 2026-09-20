@@ -371,6 +371,19 @@ function openPlayerModal(playerId, playerName, opts) {
       }
       metaEl.innerHTML = metaHTML;
 
+      // Saved watchlist note, shown directly beneath the ownership line.
+      try {
+        if (typeof _getWatchlist === 'function') {
+          const _wlItem = _getWatchlist().find(function (p) { return String(p.player_id) === String(playerId); });
+          const _wlNote = _wlItem && _wlItem.note ? String(_wlItem.note).trim() : '';
+          if (_wlNote) {
+            metaEl.insertAdjacentHTML('beforeend',
+              '<div class="pm-wl-note"><span class="pm-wl-note-star" aria-hidden="true">&#9733;</span>' +
+              escapeHtml(_wlNote) + '</div>');
+          }
+        }
+      } catch (e) { /* watchlist store optional */ }
+
       // Update headshot
       const headshotEl = document.getElementById('playerModalHeadshot');
       if (headshotEl && data.espnHeadshot) {

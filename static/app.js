@@ -13552,7 +13552,7 @@ function _refreshWatchlistNav() {
 
   // Enhance rows with alert chips + backfill position/team from the server.
   _fetchWatchlistAlerts(list.map(function (p) { return String(p.player_id); })).then(function (data) {
-    let anyAlert = false;
+    let alertCount = 0;
     list.forEach(function (p) {
       const sel = _wlPidSel(p.player_id);
       const a = data[String(p.player_id)];
@@ -13562,9 +13562,13 @@ function _refreshWatchlistNav() {
       if (metaEl && !metaEl.textContent.trim() && a && (a.position || a.team)) {
         metaEl.textContent = [a.position, a.team].filter(Boolean).join(' · ');
       }
-      if (a && a.alert) anyAlert = true;
+      if (a && a.alert) alertCount++;
     });
-    if (alertEl) alertEl.style.display = anyAlert ? '' : 'none';
+    // Show a small count badge only when at least one player has an alert.
+    if (alertEl) {
+      alertEl.style.display = alertCount ? '' : 'none';
+      alertEl.textContent = alertCount ? String(alertCount) : '';
+    }
   });
 }
 
