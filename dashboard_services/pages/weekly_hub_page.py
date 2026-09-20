@@ -153,6 +153,7 @@ def build_weekly_hub_body(ctx: dict) -> str:
             viewer_roster_id=_hub_vid,
             scoring_settings=ctx.get("raw_scoring_settings") or ctx.get("scoring_settings"),
             is_gotw=is_gotw,
+            gotw_selection=_gotw_selection,
         )
         for m, is_gotw in zip(default_matchups, _gotw_flags)
     ]

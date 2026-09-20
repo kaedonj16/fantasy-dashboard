@@ -870,7 +870,8 @@ def _render_recap_html(result: dict) -> str:
 """
 
 
-def _render_next_week_html(preview: dict, looking_ahead: str) -> str:
+def _render_next_week_html(preview: dict, looking_ahead: str,
+                           platform: str = None, season=None, league_id: str = None) -> str:
     """Render the 'Game of the Week' look-ahead card: a banner header, the
     matchup (with a projected win-prob bar when projections are available), the
     AI blurb (which carries the reason it was picked), availability chips (out /
@@ -940,6 +941,20 @@ def _render_next_week_html(preview: dict, looking_ahead: str) -> str:
             "</div>"
         )
 
+    # Why this is the game of the week: the primary reason plus up to two
+    # supporting reasons, placed under the matchup and above the narrative.
+    why_html = ""
+    _why = str(g.get("why") or "").strip()
+    _reasons = [str(r).strip() for r in (g.get("reasons") or []) if str(r).strip()]
+    if _why:
+        _rl = "".join(f"<li>{html.escape(r)}</li>" for r in _reasons[:2])
+        why_html = (
+            "<div class='br-gotw-why'>"
+            f"<div class='br-gotw-why-lead'>{html.escape(_why)}</div>"
+            + (f"<ul class='br-gotw-why-reasons'>{_rl}</ul>" if _rl else "")
+            + "</div>"
+        )
+
     blurb_html = ""
     if looking_ahead and str(looking_ahead).strip():
         blurb_html = (
@@ -996,15 +1011,25 @@ def _render_next_week_html(preview: dict, looking_ahead: str) -> str:
             f"rgba(148,163,184,0.2));padding-top:10px;'>{label}: {items}</div>"
         )
 
+    # Deep link to the exact Matchups week so the whole card is actionable.
+    link_html = ""
+    if platform and season and league_id and wk:
+        link_html = (
+            f"<a class='br-gotw-link' href='/{platform}/{season}/{league_id}/weekly?week={wk}'>"
+            f"View this matchup <span aria-hidden='true'>&rsaquo;</span></a>"
+        )
+
     return f"""
 <div class="card br-gotw" data-br-moment="gotw" style="padding:18px 20px;margin-bottom:20px;">
   <div class="br-gotw-flash" aria-hidden="true"></div>
   {header_html}
   {matchup_row}
   {winbar_html}
+  {why_html}
   {blurb_html}
   {avail_html}
   {also_html}
+  {link_html}
 </div>
 """
 
@@ -1061,7 +1086,8 @@ def get_weekly_ai_recap(
                          "matchup_id": game.get("matchup_id"), "roster_ids": roster_ids}
             save_cached_ai_text(_gotw_cache_key(platform, league_id, season, preview["next_week"]),
                                 "", metadata={"gotw_selection": selection})
-    return recap_html, _render_next_week_html(preview, looking_ahead)
+    return recap_html, _render_next_week_html(
+        preview, looking_ahead, platform=platform, season=season, league_id=league_id)
 
 
 def get_weekly_ai_recap_teaser() -> tuple[str, str]:

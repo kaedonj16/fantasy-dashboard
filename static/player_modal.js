@@ -361,9 +361,28 @@ function openPlayerModal(playerId, playerName, opts) {
       let metaHTML = `<div style="display:flex;align-items:center;flex-wrap:wrap;gap:0;">${metaParts.join('<span style="opacity:.35;margin:0 3px;">·</span>')}</div>`;
       if (data.fantasy_team) {
         const _ownerStr = data.fantasy_team_owner ? ` · <span style="opacity:.65;">@${escapeHtml(data.fantasy_team_owner)}</span>` : '';
-        metaHTML += `<div style="font-size:11px;font-weight:600;color:var(--accent);margin-top:3px;opacity:.9;">${escapeHtml(data.fantasy_team)}${_ownerStr}</div>`;
+        // The ownership line opens the fantasy team modal when a roster id is
+        // known. Reuses the delegated .team-clickable handler in app.js.
+        const _rid = (data.fantasy_roster_id != null) ? String(data.fantasy_roster_id) : '';
+        const _teamHTML = _rid
+          ? `<span class="team-clickable" role="button" tabindex="0" data-roster-id="${escapeHtml(_rid)}" data-team-name="${escapeHtml(data.fantasy_team)}" style="cursor:pointer;text-decoration:underline;text-underline-offset:2px;">${escapeHtml(data.fantasy_team)}</span>`
+          : escapeHtml(data.fantasy_team);
+        metaHTML += `<div style="font-size:11px;font-weight:600;color:var(--accent);margin-top:3px;opacity:.9;">${_teamHTML}${_ownerStr}</div>`;
       }
       metaEl.innerHTML = metaHTML;
+
+      // Saved watchlist note, shown directly beneath the ownership line.
+      try {
+        if (typeof _getWatchlist === 'function') {
+          const _wlItem = _getWatchlist().find(function (p) { return String(p.player_id) === String(playerId); });
+          const _wlNote = _wlItem && _wlItem.note ? String(_wlItem.note).trim() : '';
+          if (_wlNote) {
+            metaEl.insertAdjacentHTML('beforeend',
+              '<div class="pm-wl-note"><span class="pm-wl-note-star" aria-hidden="true">&#9733;</span>' +
+              escapeHtml(_wlNote) + '</div>');
+          }
+        }
+      } catch (e) { /* watchlist store optional */ }
 
       // Update headshot
       const headshotEl = document.getElementById('playerModalHeadshot');
@@ -844,6 +863,11 @@ function openPlayerModal(playerId, playerName, opts) {
         ${adpRow}
       `;
 
+      // "In this league" acquisition/ownership timeline: after the value /
+      // production summary, before the longer value-history analysis. Populated
+      // after render (see _pmLoadInLeague); stays hidden when there's nothing.
+      overviewHTML += `<div id="pmInLeague" class="pm-inleague" hidden></div>`;
+
       if (hasChart) {
         overviewHTML += `
           <hr class="pm-section-divider">
@@ -1203,7 +1227,17 @@ function openPlayerModal(playerId, playerName, opts) {
           });
       }
 
+      // Stash this player's value history so the Trades tab can show the
+      // player's value change since each trade (client-side, no extra fetch).
+      try {
+        window.__pmVH = {
+          pid: String(playerId),
+          hist: Array.isArray(data.value_history) ? data.value_history : [],
+        };
+      } catch (e) { /* non-fatal */ }
+
       pmInjectContextActions(playerId, playerName, data, leagueId, platform, season);
+      _pmLoadInLeague(playerId, data, leagueId, platform, season);
 
       // The "vs Avg <pos><tier>" benchmark is reachable from Actions → Compare
       // (it offers the positional-tier averages as pickable opponents),
@@ -1569,22 +1603,121 @@ function pmToggleActionsMenu(wrap) {
   }
 }
 
+// "In this league" section on the Overview tab: current ownership plus the
+// player's trade events in this league. Reuses the working player-league-trades
+// endpoint and the same side normalization as the Trades tab. Shows the top 3
+// events, expanding the rest; hides entirely when nothing reliable exists.
+function _pmRenderInLeague(el, events) {
+  if (!el) return;
+  if (!events.length) { el.hidden = true; el.innerHTML = ''; return; }
+  const row = function (e) {
+    return '<div class="pm-inleague-row"><span class="tl-mark ' + e.cls + '"></span>' +
+      '<span class="pm-inleague-text">' + e.text + '</span></div>';
+  };
+  const top = events.slice(0, 3).map(row).join('');
+  const rest = events.slice(3).map(row).join('');
+  el.hidden = false;
+  el.innerHTML =
+    '<hr class="pm-section-divider">' +
+    '<div class="pm-section-header"><span class="pm-section-label">In this league</span></div>' +
+    '<div class="pm-inleague-list">' + top +
+    (rest ? '<div class="pm-inleague-rest" hidden>' + rest + '</div>' +
+      '<button type="button" class="pm-inleague-more" onclick="var r=this.previousElementSibling; r.hidden=!r.hidden; this.textContent=r.hidden?\'View full history\':\'Show less\';">View full history</button>' : '') +
+    '</div>';
+}
+
+function _pmLoadInLeague(playerId, data, leagueId, platform, season) {
+  const el = document.getElementById('pmInLeague');
+  if (!el) return;
+  if (!leagueId) { el.hidden = true; return; }
+  const events = [];
+  if (data && data.fantasy_team) {
+    events.push({ cls: 'add', text: 'On <b>' + escapeHtml(data.fantasy_team) + '</b> now' });
+  }
+  const url = '/api/player-league-trades/' + encodeURIComponent(playerId) +
+    '?platform=' + encodeURIComponent(platform) + '&league_id=' + encodeURIComponent(leagueId) +
+    '&season=' + encodeURIComponent(season) + '&limit=10';
+  fetch(url)
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (d) {
+      const trades = (d && d.trades) || [];
+      trades.forEach(function (t) {
+        const wk = t.week ? ('Week ' + t.week) : (t.date || '');
+        let who = '';
+        if (typeof _pmNormalizeTradeSides === 'function') {
+          const sides = _pmNormalizeTradeSides(t);
+          if (sides && sides.a.team_name && sides.b.team_name) {
+            who = ' (' + escapeHtml(sides.a.team_name) + ' &harr; ' + escapeHtml(sides.b.team_name) + ')';
+          }
+        }
+        events.push({ cls: 'trade', text: 'Traded' + (wk ? ' &middot; ' + escapeHtml(wk) : '') + who });
+      });
+      _pmRenderInLeague(el, events);
+    })
+    .catch(function () { _pmRenderInLeague(el, events); });
+}
+
 function pmInjectContextActions(playerId, playerName, data, leagueId, platform, season) {
   const modal = document.getElementById('playerModal');
   if (!modal) return;
 
   const slug = pmSlugify(playerName);
-  const actions = [
-    {
-      label: 'Compare',
-      run: function () {
-        if (typeof openCompareSearch === 'function') openCompareSearch(data);
-      },
+  const pid = encodeURIComponent(playerId);
+
+  // ── Ownership state ────────────────────────────────────────────────────────
+  // "Your player" vs "another manager's" is decided by comparing the player's
+  // roster id (from the details API) with the signed-in viewer's roster
+  // (window._viewerRid, set on every page). No league context => no roster data,
+  // so the actions fall back to the platform-neutral set.
+  const hasLeague = !!leagueId;
+  const rosterId = (data && data.fantasy_roster_id != null) ? String(data.fantasy_roster_id) : '';
+  const viewerRid = (window._viewerRid != null && window._viewerRid !== '') ? String(window._viewerRid) : '';
+  const isFreeAgent = hasLeague && !(data && data.fantasy_team);
+  const isMine = hasLeague && !!rosterId && !!viewerRid && rosterId === viewerRid;
+  const isOther = hasLeague && !!(data && data.fantasy_team) && !isMine;
+
+  const compareAction = {
+    label: 'Compare',
+    run: function () { if (typeof openCompareSearch === 'function') openCompareSearch(data); },
+  };
+  const watchAction = {
+    label: 'Watch',
+    run: function () {
+      if (typeof _toggleWatchlist !== 'function') return;
+      _toggleWatchlist({ player_id: playerId, name: playerName || '', position: (data && data.position) || '' });
+      const _wlBtn = document.getElementById('playerModalWatchlistBtn');
+      if (_wlBtn && typeof _updateWatchlistBtn === 'function') _updateWatchlistBtn(_wlBtn, playerId);
     },
-  ];
-  if (leagueId) {
-    actions.push({ label: 'Trade For', href: pmLeaguePath('/trade') + '?add=' + encodeURIComponent(playerId) });
-    actions.push({ label: 'Recent Trades', run: function () { pmSwitchTab('trades'); } });
+  };
+
+  let actions;
+  if (isMine) {
+    actions = [
+      { label: 'Start / Sit', href: pmLeaguePath('/waivers') + '?tab=startsit' },
+      compareAction,
+      { label: 'Explore Trade Away', href: pmLeaguePath('/trade') + '?b=' + pid },
+    ];
+  } else if (isOther) {
+    actions = [
+      { label: 'Trade For', href: pmLeaguePath('/trade') + '?a=' + pid },
+      compareAction,
+      { label: 'View Team', run: function () {
+          if (typeof openTeamModal === 'function' && rosterId) openTeamModal(rosterId, (data && data.fantasy_team) || '');
+        } },
+    ];
+  } else if (isFreeAgent) {
+    actions = [
+      { label: 'Waiver Analysis', href: pmLeaguePath('/waivers') + '?a=' + pid },
+      compareAction,
+      watchAction,
+    ];
+  } else {
+    // No league context.
+    actions = [
+      compareAction,
+      { label: 'Recent Trades', run: function () { pmSwitchTab('trades'); } },
+      watchAction,
+    ];
   }
   if (slug) {
     actions.push({ label: 'Full Analysis', href: '/player/' + slug + '/trade-value' });
@@ -1880,12 +2013,47 @@ function _pmNormalizeTradeSides(t) {
   return { a: norm(t.side_a), b: norm(t.side_b) };
 }
 
+function _pmParseTradeDate(s) {
+  s = String(s || '').trim();
+  let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return new Date(+m[1], +m[2] - 1, +m[3]);
+  m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+  if (m) { let y = +m[3]; if (y < 100) y += 2000; return new Date(y, +m[1] - 1, +m[2]); }
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+// This player's value change from the trade date to now, using the value
+// history already loaded on the modal. Null when there's no reliable match.
+function _pmValueChangeSince(tradeDateStr, playerId) {
+  const vh = window.__pmVH;
+  if (!vh || String(vh.pid) !== String(playerId) || !Array.isArray(vh.hist) || !vh.hist.length) return null;
+  const target = _pmParseTradeDate(tradeDateStr);
+  if (!target) return null;
+  const hist = vh.hist;
+  const val = (h) => Number(h.value_1qb ?? h.value);
+  const nowVal = val(hist[hist.length - 1]);
+  let best = null, bestDiff = Infinity;
+  for (const h of hist) {
+    const d = _pmParseTradeDate(h.as_of_date);
+    if (!d) continue;
+    const diff = Math.abs((d - target) / 86400000);
+    if (diff < bestDiff) { bestDiff = diff; best = val(h); }
+  }
+  if (best == null || isNaN(best) || isNaN(nowVal) || bestDiff > 45) return null;
+  return Math.round(nowVal - best);
+}
+
 function _pmRenderTradeCards(trades, playerId, { showTeams } = {}) {
   return trades.map(t => {
     const dateStr = t.date
       ? (String(t.date).includes('/') ? t.date
         : new Date(t.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }))
       : '-';
+    const _vchg = _pmValueChangeSince(t.date, playerId);
+    const vchgBadge = (_vchg != null && _vchg !== 0)
+      ? `<span class="pm-trade-vchg ${_vchg > 0 ? 'up' : 'down'}" title="This player's value change since the trade">${_vchg > 0 ? '+' : ''}${_vchg} since</span>`
+      : '';
     const seasonBit = t.season ? `<span class="pm-trade-season">${t.season}</span>` : '';
     const sfBadge = (t.is_superflex === true || t.league_type === 'sf' || t.league_type === 'superflex')
       ? '<span class="pm-trade-badge pm-trade-badge-sf">SF</span>'
@@ -1899,7 +2067,7 @@ function _pmRenderTradeCards(trades, playerId, { showTeams } = {}) {
       ? `<div class="pm-trade-team">${sides.b.team_name}</div>` : '';
     return `<div class="pm-trade-card">
       <div class="pm-trade-head">
-        <span class="pm-trade-date">${dateStr}${seasonBit ? ' · ' + seasonBit : ''}</span>
+        <span class="pm-trade-date">${dateStr}${seasonBit ? ' · ' + seasonBit : ''}${vchgBadge}</span>
         <div style="display:flex;gap:5px;">${sfBadge}</div>
       </div>
       <div class="pm-trade-body">

@@ -13552,7 +13552,7 @@ function _refreshWatchlistNav() {
 
   // Enhance rows with alert chips + backfill position/team from the server.
   _fetchWatchlistAlerts(list.map(function (p) { return String(p.player_id); })).then(function (data) {
-    let anyAlert = false;
+    let alertCount = 0;
     list.forEach(function (p) {
       const sel = _wlPidSel(p.player_id);
       const a = data[String(p.player_id)];
@@ -13562,9 +13562,13 @@ function _refreshWatchlistNav() {
       if (metaEl && !metaEl.textContent.trim() && a && (a.position || a.team)) {
         metaEl.textContent = [a.position, a.team].filter(Boolean).join(' · ');
       }
-      if (a && a.alert) anyAlert = true;
+      if (a && a.alert) alertCount++;
     });
-    if (alertEl) alertEl.style.display = anyAlert ? '' : 'none';
+    // Show a small count badge only when at least one player has an alert.
+    if (alertEl) {
+      alertEl.style.display = alertCount ? '' : 'none';
+      alertEl.textContent = alertCount ? String(alertCount) : '';
+    }
   });
 }
 
@@ -13933,7 +13937,25 @@ async function initSinceLastVisit() {
         '<span class="slv-item-ago wl-chip wl-chip-inj" title="' + _wlEsc(i.status) + '">' + short + '</span></li>';
     }).join('');
 
-    if (!activityRows && !moverRows && !injuryRows) return;  // nothing new -> stay hidden
+    // Watchlist subsection: watched players that currently carry a meaningful
+    // alert (value swing or injury), reusing the same chip rendering as the nav.
+    let watchRows = '';
+    try {
+      const _wl = (typeof _getWatchlist === 'function') ? _getWatchlist() : [];
+      if (_wl.length && typeof _fetchWatchlistAlerts === 'function') {
+        const _alerts = await _fetchWatchlistAlerts(_wl.map(function (p) { return String(p.player_id); }));
+        watchRows = _wl.filter(function (p) { const a = _alerts[String(p.player_id)]; return a && a.alert; })
+          .map(function (p) {
+            const a = _alerts[String(p.player_id)] || {};
+            return '<li class="slv-item">' + _slvKind('value', 'Watch') +
+              '<span class="slv-item-text">' + _slvName(p.name || p.player_id, p.player_id) +
+              (p.position ? ' <span class="wl-item-pos">' + _wlEsc(p.position) + '</span>' : '') + '</span>' +
+              '<span class="slv-item-ago">' + _wlChipsHtml(a) + '</span></li>';
+          }).join('');
+      }
+    } catch (_) { /* watchlist optional */ }
+
+    if (!activityRows && !moverRows && !injuryRows && !watchRows) return;  // nothing new -> stay hidden
 
     const bits = [];
     if (d.trades) bits.push(d.trades + ' trade' + (d.trades > 1 ? 's' : ''));
@@ -13951,6 +13973,7 @@ async function initSinceLastVisit() {
         '</div>' +
         _slvSection('New activity', activityRows) +
         _slvSection('Value moves on your roster', moverRows) +
+        _slvSection('Watchlist', watchRows) +
         _slvSection('New injuries on your roster', injuryRows) +
       '</section>';
 
@@ -17511,6 +17534,20 @@ function openTeamModal(rosterId, teamName) {
 
   window._tmRosterId = rosterId;
 
+  // "Your team" hides the trade / compare actions (you cannot trade with
+  // yourself). Roster id is compared against the signed-in viewer's roster.
+  const _tmViewerRid = (window._viewerRid != null && window._viewerRid !== '') ? String(window._viewerRid) : '';
+  const _tmIsMine = !!_tmViewerRid && String(rosterId) === _tmViewerRid;
+  window._tmIsMine = _tmIsMine;
+  const _tmMenuItems = [];
+  if (!_tmIsMine) {
+    _tmMenuItems.push(`<button type="button" class="tm-menu-item" onclick="tmMenuAction('trade')">Trade with this team</button>`);
+    _tmMenuItems.push(`<button type="button" class="tm-menu-item" onclick="tmMenuAction('compare')">Compare to my team</button>`);
+  }
+  _tmMenuItems.push(`<button type="button" class="tm-menu-item" onclick="tmMenuAction('matchup')">View current matchup</button>`);
+  _tmMenuItems.push(`<button type="button" class="tm-menu-item" onclick="tmMenuAction('activity')">View activity</button>`);
+  _tmMenuItems.push(`<button type="button" class="tm-menu-item" onclick="tmMenuAction('rivalry')">View rivalry history</button>`);
+
   modal.innerHTML = `
     <div class="team-modal-header">
       <div class="team-modal-header-top">
@@ -17524,6 +17561,10 @@ function openTeamModal(rosterId, teamName) {
           </div>
         </div>
         <div class="team-modal-statbar" id="teamModalStatbar" hidden></div>
+        <div class="tm-menu-wrap">
+          <button class="tm-menu-trigger" id="tmMenuTrigger" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="tmMenu" aria-label="Team actions" title="Team actions" onclick="tmToggleMenu(event)">⋮</button>
+          <div class="tm-menu" id="tmMenu" role="menu" hidden>${_tmMenuItems.join('')}</div>
+        </div>
         <button class="team-modal-close" onclick="closeTeamModal()" aria-label="Close">×</button>
       </div>
     </div>
@@ -17569,6 +17610,130 @@ function closeTeamModal() {
   document.body.style.overflow = '';
   window._tmRosterId = null;
   window._tmTradesLoaded = false;
+}
+
+// League-scoped URL for the current league context, mirroring brNavLeagueUrl.
+function _tmLeagueUrl(path, suffix) {
+  const c = window.__brctx || {};
+  const sfx = suffix || '';
+  if (c.leagueId && c.platform && c.season) {
+    return '/' + c.platform + '/' + c.season + '/' + c.leagueId + path + sfx;
+  }
+  return path + sfx;
+}
+
+function tmCloseMenu() {
+  const menu = document.getElementById('tmMenu');
+  const trigger = document.getElementById('tmMenuTrigger');
+  if (menu) menu.hidden = true;
+  if (trigger) trigger.setAttribute('aria-expanded', 'false');
+}
+
+function tmToggleMenu(evt) {
+  if (evt) { evt.preventDefault(); evt.stopPropagation(); }
+  const menu = document.getElementById('tmMenu');
+  const trigger = document.getElementById('tmMenuTrigger');
+  if (!menu || !trigger) return;
+  const willOpen = menu.hidden;
+  menu.hidden = !willOpen;
+  trigger.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+  if (willOpen) {
+    // Close on the next outside click / Escape.
+    setTimeout(function () {
+      document.addEventListener('click', _tmMenuOutside, { once: true });
+    }, 0);
+  }
+}
+
+function _tmMenuOutside(e) {
+  const wrap = e.target.closest && e.target.closest('.tm-menu-wrap');
+  if (!wrap) tmCloseMenu();
+  else document.addEventListener('click', _tmMenuOutside, { once: true });
+}
+
+function tmMenuAction(kind) {
+  tmCloseMenu();
+  const rid = window._tmRosterId;
+  const nameEl = document.querySelector('.team-modal-name');
+  const teamName = nameEl ? nameEl.textContent.trim() : '';
+  switch (kind) {
+    case 'trade':
+      window.location.href = _tmLeagueUrl('/trade');
+      break;
+    case 'compare':
+      window.location.href = _tmLeagueUrl('/graphs');
+      break;
+    case 'matchup':
+      window.location.href = _tmLeagueUrl('/weekly');
+      break;
+    case 'activity':
+      window.location.href = _tmLeagueUrl('/activity');
+      break;
+    case 'rivalry':
+      window.location.href = _tmLeagueUrl('/history');
+      break;
+  }
+}
+
+// Inline SVG line chart of weekly actual vs optimal points. Self-contained
+// (no Plotly) so it renders correctly even while its panel is hidden. Colors
+// come from theme tokens, so it tracks light/dark.
+function _tmBuildEffChart(weeks) {
+  const good = (weeks || []).filter(w => w && w.actual != null && w.optimal != null);
+  if (!good.length) return '';
+  const W = 340, H = 168, padL = 34, padR = 12, padT = 12, padB = 30;
+  const vals = [];
+  good.forEach(w => { vals.push(Number(w.actual), Number(w.optimal)); });
+  let lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals);
+  if (!isFinite(lo) || !isFinite(hi)) return '';
+  if (lo === hi) { lo -= 5; hi += 5; }
+  const span = hi - lo; lo -= span * 0.1; hi += span * 0.1;
+  const n = good.length;
+  const xAt = i => padL + (n === 1 ? (W - padL - padR) / 2 : i * (W - padL - padR) / (n - 1));
+  const yAt = v => padT + (H - padT - padB) * (1 - (v - lo) / (hi - lo));
+  const pts = key => good.map((w, i) => `${xAt(i).toFixed(1)},${yAt(Number(w[key])).toFixed(1)}`).join(' ');
+  const gridY = [lo + (hi - lo) * 0.15, (lo + hi) / 2, hi - (hi - lo) * 0.15];
+  const grid = gridY.map(v =>
+    `<line x1="${padL}" y1="${yAt(v).toFixed(1)}" x2="${W - padR}" y2="${yAt(v).toFixed(1)}" stroke="var(--grid)" stroke-width="1"/>` +
+    `<text x="${padL - 5}" y="${(yAt(v) + 3).toFixed(1)}" font-size="9" fill="var(--text-subtle)" text-anchor="end">${v.toFixed(0)}</text>`
+  ).join('');
+  const xlabels = good.map((w, i) =>
+    `<text x="${xAt(i).toFixed(1)}" y="${H - 10}" font-size="8" fill="var(--text-subtle)" text-anchor="middle">W${w.week}</text>`
+  ).join('');
+  const lastActual = good[good.length - 1];
+  const endDot = `<circle cx="${xAt(n - 1).toFixed(1)}" cy="${yAt(Number(lastActual.actual)).toFixed(1)}" r="3.5" fill="var(--brand-blue)"/>`;
+  const seasonActual = good.reduce((s, w) => s + Number(w.actual), 0);
+  const seasonOpt = good.reduce((s, w) => s + Number(w.optimal), 0);
+  const effPct = seasonOpt > 0 ? (seasonActual / seasonOpt * 100).toFixed(0) : '--';
+  return (
+    '<div class="team-modal-section tm-chart-eff"><h3>Actual vs Optimal Points</h3>' +
+    `<div class="tm-eff-legend"><span><i class="tm-eff-dot tm-eff-actual"></i>Actual</span>` +
+    `<span><i class="tm-eff-dot tm-eff-optimal"></i>Optimal</span>` +
+    `<span class="tm-eff-season">Season efficiency ${effPct}%</span></div>` +
+    `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" role="img" aria-label="Weekly actual versus optimal points">` +
+    grid +
+    `<polyline points="${pts('optimal')}" fill="none" stroke="var(--text-subtle)" stroke-width="2" stroke-dasharray="4 3"/>` +
+    `<polyline points="${pts('actual')}" fill="none" stroke="var(--brand-blue)" stroke-width="2.5"/>` +
+    endDot + xlabels +
+    '</svg></div>'
+  );
+}
+
+// Primary "Trade with this team" button pinned at the bottom of the Roster tab
+// for opposing teams. Hidden for the viewer's own team. Idempotent.
+function tmInjectRosterTradeCta() {
+  if (window._tmIsMine) return;
+  const panel = document.getElementById('tm-panel-roster');
+  if (!panel || panel.querySelector('.tm-roster-trade-cta')) return;
+  const cta = document.createElement('div');
+  cta.className = 'tm-roster-trade-cta';
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'tm-trade-cta-btn';
+  btn.textContent = 'Trade with this team';
+  btn.addEventListener('click', function () { window.location.href = _tmLeagueUrl('/trade'); });
+  cta.appendChild(btn);
+  panel.appendChild(cta);
 }
 
 function tmSwitchTab(tab) {
@@ -17637,9 +17802,20 @@ async function tmLoadTrades(rosterId) {
       const dateLabel = tr.date || '';
       const headRight = weekLabel && dateLabel ? `${weekLabel} · ${dateLabel}` : weekLabel || dateLabel;
 
-      return `<div class="pm-trade-card">
+      // Outcome payload from this team's perspective (players only; picks are
+      // valued separately by the endpoint and are omitted to keep ids clean).
+      const gets = (tr.my_gets || []).map(p => ({ id: String(p.player_id), name: p.name }));
+      const sends = (tr.my_sends || []).map(p => ({ id: String(p.player_id), name: p.name }));
+      const outcomeTeams = JSON.stringify([{ team_name: 'This team', gets, sends }]).replace(/'/g, '&#39;');
+      const canOutcome = (gets.length + sends.length) > 0 && !!tr.date_iso;
+      const outcomeBtn = canOutcome
+        ? `<button type="button" class="pm-trade-outcome-btn" data-trade-teams='${outcomeTeams}' data-trade-date="${tr.date_iso}" onclick="checkTradeOutcome(this)">Check Outcome</button>`
+        : '';
+
+      return `<div class="pm-trade-card trade-card">
         <div class="pm-trade-head">
           <span class="pm-trade-date">${headRight}</span>
+          ${outcomeBtn}
         </div>
         <div class="pm-trade-body">
           <div class="pm-trade-col">
@@ -17652,6 +17828,7 @@ async function tmLoadTrades(rosterId) {
             ${renderAssets(tr.my_sends, tr.my_pick_sends)}
           </div>
         </div>
+        <div class="trade-outcome-result" style="display:none;"></div>
       </div>`;
     }).join('');
 
@@ -18602,6 +18779,13 @@ function renderTeamDetails(data) {
           <div class="tm-stat-tile-label">Playoff Odds</div>
         </div>`);
     }
+    if (data.lineup_efficiency != null && !isNaN(parseFloat(data.lineup_efficiency))) {
+      tiles.push(`
+        <div class="tm-stat-tile" title="Actual points divided by optimal points. 100% means the best possible lineup was started.">
+          <div class="tm-stat-tile-value">${Math.round(parseFloat(data.lineup_efficiency))}%</div>
+          <div class="tm-stat-tile-label">Efficiency</div>
+        </div>`);
+    }
     if (tiles.length) {
       statbar.innerHTML = tiles.join('');
       statbar.hidden = false;
@@ -18779,6 +18963,11 @@ function renderTeamDetails(data) {
     graphsHTML += data.trends_html;
   }
 
+  // Weekly actual-vs-optimal points (lineup efficiency over the season).
+  if (Array.isArray(data.efficiency_weeks) && data.efficiency_weeks.length > 0) {
+    graphsHTML += _tmBuildEffChart(data.efficiency_weeks);
+  }
+
   if (data.graphs && (data.graphs.weekly_scores || data.graphs.radar)) {
     if (data.graphs.weekly_scores && data.graphs.weekly_scores.length > 0) {
       graphsHTML += '<div class="team-modal-section tm-chart-weekly"><h3>Weekly Scoring</h3><div class="team-chart-container" id="teamWeeklyChart"></div></div>';
@@ -18810,6 +18999,7 @@ function renderTeamDetails(data) {
     rosterPanel.innerHTML = sideHTML
       ? `<div class="team-modal-body-left">${rosterHTML}</div><div class="team-modal-body-right">${sideHTML}</div>`
       : `<div class="team-modal-body-left" style="flex:1;max-width:100%;">${rosterHTML}</div>`;
+    tmInjectRosterTradeCta();
   }
   const chartsPanel = document.getElementById('tm-panel-charts');
   if (chartsPanel) {
@@ -18992,6 +19182,160 @@ function renderTeamDetails(data) {
     }
   }
 }
+
+// All-time rivalry lines on matchup cards. Filled lazily from /api/rivalry so
+// the multi-season scan never blocks the matchups render. Each node hydrates
+// once; a MutationObserver picks up week-switch slide swaps.
+(function initRivalryLines() {
+  function label(data, lname, rname) {
+    const wa = data.wins_a || 0, wb = data.wins_b || 0;
+    const games = Array.isArray(data.games) ? data.games : [];
+    if (wa + wb + (data.ties || 0) === 0 || games.length === 0) return '';
+    let lead, rec;
+    if (wa > wb) { lead = lname; rec = `${wa}–${wb}`; }
+    else if (wb > wa) { lead = rname; rec = `${wb}–${wa}`; }
+    else { lead = null; rec = `${wa}–${wb}`; }
+    // Trailing win streak (from the most recent meeting backwards).
+    let streakWinner = null, streakN = 0;
+    for (let i = games.length - 1; i >= 0; i--) {
+      const g = games[i];
+      const w = g.a_pts > g.b_pts ? 'a' : (g.b_pts > g.a_pts ? 'b' : 't');
+      if (w === 't') break;
+      if (streakWinner === null) { streakWinner = w; streakN = 1; }
+      else if (w === streakWinner) { streakN++; }
+      else break;
+    }
+    let head = lead ? `<b>${lead} ${rec}</b>` : `<b>Tied ${rec}</b>`;
+    let tail = '';
+    if (streakN >= 2) {
+      const swName = streakWinner === 'a' ? lname : rname;
+      tail = (swName === lead) ? ` · Won last ${streakN}` : ` · ${swName} won last ${streakN}`;
+    }
+    return `All-time series: ${head}${tail}`;
+  }
+  async function hydrate(node) {
+    if (!node || node.dataset.rivDone) return;
+    node.dataset.rivDone = '1';
+    const c = window.__brctx || {};
+    if (!c.platform || !c.season || !c.leagueId) return;
+    const a = node.dataset.rivA, b = node.dataset.rivB;
+    if (!a || !b || a === b) return;
+    try {
+      const res = await fetch(`/api/rivalry/${c.platform}/${c.season}/${c.leagueId}?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      const html = label(data, node.dataset.rivLname || 'Left', node.dataset.rivRname || 'Right');
+      if (html) { node.innerHTML = html; node.hidden = false; }
+    } catch (_) { /* leave the line hidden on any failure */ }
+  }
+  function scan(root) {
+    (root || document).querySelectorAll('.m-rivalry[data-riv-a]:not([data-riv-done])').forEach(hydrate);
+  }
+  function start() {
+    scan(document);
+    const container = document.getElementById('weeklyMatchupsContainer');
+    if (container && 'MutationObserver' in window) {
+      new MutationObserver(() => scan(container)).observe(container, { childList: true, subtree: true });
+    }
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+  else start();
+})();
+
+// Cross-league "My Actions" indicator in the global header. Loads the existing
+// cached Portfolio action results once per page session (module CACHE guard, so
+// it does not re-scan leagues on every soft-nav), mounts a compact pill beside
+// the notification bell, and stays hidden when there are no actions.
+(function initMyActions() {
+  var CACHE = null;
+  function urgColor(kind) {
+    if (kind === 'lineup') return 'var(--loss)';
+    if (kind === 'waiver') return 'var(--warning)';
+    return 'var(--brand-blue)';
+  }
+  function buildDrawer(actions) {
+    var groups = {}, order = [];
+    actions.forEach(function (a) {
+      var ln = a.league_name || 'League';
+      if (!groups[ln]) { groups[ln] = []; order.push(ln); }
+      groups[ln].push(a);
+    });
+    var html = '';
+    order.forEach(function (ln) {
+      html += '<div class="mya-group"><div class="mya-league">' + _wlEsc(ln) + '</div>';
+      groups[ln].forEach(function (a) {
+        html += '<a class="mya-action" href="' + _wlEsc(a.href || '#') + '">' +
+          '<span class="mya-dot" style="background:' + urgColor(a.kind) + '"></span>' +
+          '<span class="mya-txt">' + _wlEsc(a.title || 'Action') +
+          (a.detail ? '<small>' + _wlEsc(a.detail) + '</small>' : '') + '</span>' +
+          '<span class="mya-go" aria-hidden="true">&rsaquo;</span></a>';
+      });
+      html += '</div>';
+    });
+    html += '<div class="mya-group"><a class="mya-viewall" href="/portfolio">View all leagues &rsaquo;</a></div>';
+    return html;
+  }
+  function mount(actions) {
+    var wrap = document.querySelector('.changelog-bell-wrapper');
+    if (!wrap || document.getElementById('myActionsPill')) return;
+    var host = document.createElement('div');
+    host.className = 'mya-wrap';
+    host.innerHTML =
+      '<button type="button" id="myActionsPill" class="mya-pill" aria-haspopup="dialog" aria-expanded="false" title="Actions across your leagues">' +
+        '<span class="mya-bolt" aria-hidden="true">&#9889;</span>' +
+        '<span id="myActionsCount">' + actions.length + '</span>&nbsp;actions</button>' +
+      '<div id="myActionsDrawer" class="mya-drawer" role="dialog" aria-label="Actions across your leagues" hidden>' +
+        buildDrawer(actions) + '</div>';
+    wrap.parentNode.insertBefore(host, wrap);
+    var pill = host.querySelector('#myActionsPill');
+    var drawer = host.querySelector('#myActionsDrawer');
+    pill.addEventListener('click', function (e) {
+      e.stopPropagation();
+      var willOpen = drawer.hidden;
+      drawer.hidden = !willOpen;
+      pill.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+    });
+    document.addEventListener('click', function (e) {
+      if (!host.contains(e.target)) { drawer.hidden = true; pill.setAttribute('aria-expanded', 'false'); }
+    });
+  }
+  function load() {
+    if (CACHE !== null) return;
+    fetch('/api/portfolio-actions', { cache: 'default' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) {
+        CACHE = d || {};
+        var actions = (d && Array.isArray(d.actions)) ? d.actions : [];
+        if (actions.length) mount(actions);
+      })
+      .catch(function () { CACHE = {}; });
+  }
+  if (typeof _deferInit === 'function') _deferInit(load);
+  else if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', load);
+  else load();
+})();
+
+// Game of the Week explanation popover (event delegation). Toggling the info
+// icon opens the sibling popover; a click anywhere else closes any open one.
+document.addEventListener('click', (e) => {
+  const info = e.target.closest && e.target.closest('.m-gotw-info');
+  if (!info) {
+    document.querySelectorAll('.m-gotw-pop:not([hidden])').forEach((p) => {
+      p.hidden = true;
+      const b = p.parentElement && p.parentElement.querySelector('.m-gotw-info');
+      if (b) b.setAttribute('aria-expanded', 'false');
+    });
+    return;
+  }
+  e.preventDefault();
+  e.stopPropagation();
+  const pop = info.parentElement && info.parentElement.querySelector('.m-gotw-pop');
+  if (!pop) return;
+  const willOpen = pop.hidden;
+  document.querySelectorAll('.m-gotw-pop:not([hidden])').forEach((p) => { if (p !== pop) p.hidden = true; });
+  pop.hidden = !willOpen;
+  info.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+});
 
 // Team click handler (event delegation)
 document.addEventListener('click', (e) => {
@@ -20115,25 +20459,41 @@ function setupFunAwardsGrid() {
     return path + sfx;
   }
 
+  // group 'page' = a navigational destination (rendered under "Pages");
+  // anything else is a tool (rendered under "Tools"). abs:true opts out of the
+  // league-prefix rewrite for account-level routes (Top Movers, Watchlist).
   var NAV_COMMANDS = [
+    // ── Pages (navigational destinations, in display order) ──────────────────
+    { label: 'Matchups', keywords: ['matchup', 'matchups'], path: '/weekly', icon: 'fa-swords', group: 'page' },
+    { label: 'Standings', keywords: ['standings', 'standing', 'record'], path: '/standings', icon: 'fa-list-ol', group: 'page' },
+    { label: 'Weekly Recap', keywords: ['recap', 'weekly', 'week'], path: '/recap', icon: 'fa-newspaper', group: 'page' },
+    { label: 'Schedule Assistant', keywords: ['schedule', 'assistant', 'sos'], path: '/schedule', icon: 'fa-calendar-days', group: 'page' },
+    { label: 'Redzone', keywords: ['redzone', 'red zone'], path: '/redzone', icon: 'fa-bullseye', group: 'page' },
+    { label: 'Activity', keywords: ['activity', 'transactions', 'moves'], path: '/activity', icon: 'fa-clock-rotate-left', group: 'page' },
+    { label: 'League Health', keywords: ['league', 'health'], path: '/league_health', icon: 'fa-heart-pulse', group: 'page' },
+    { label: 'Awards', keywords: ['awards', 'award', 'trophy'], path: '/awards', icon: 'fa-trophy', group: 'page' },
+    { label: 'Graphs', keywords: ['graphs', 'graph', 'charts'], path: '/graphs', icon: 'fa-chart-line', group: 'page' },
+    { label: 'History', keywords: ['history', 'rivalry', 'all-time'], path: '/history', icon: 'fa-book', group: 'page' },
+    { label: 'Top Movers', keywords: ['top', 'movers', 'risers', 'fallers'], path: '/top-movers', icon: 'fa-arrow-trend-up', group: 'page', abs: true },
+    { label: 'Watchlist', keywords: ['watchlist', 'watch', 'saved'], path: '/watchlist', icon: 'fa-star', group: 'page', abs: true },
+    // ── Tools ────────────────────────────────────────────────────────────────
     { label: 'Trade Calculator', keywords: ['trade', 'calculator', 'otc'], path: '/trade', icon: 'fa-right-left' },
-    { label: 'Trade Database', keywords: ['trade', 'database', 'trades'], path: '/trade/database', icon: 'fa-database' },
+    { label: 'Trade Database', keywords: ['trade', 'database', 'trades'], path: '/trade-database', icon: 'fa-database' },
     { label: 'Trade Targets', keywords: ['trade', 'targets', 'suggestions'], path: '/trade', suffix: '?tab=suggestions', icon: 'fa-bullseye' },
-    { label: 'Trade Intel', keywords: ['trade', 'intel', 'intelligence'], path: '/trade/intel', icon: 'fa-chart-line' },
+    { label: 'Trade Intel', keywords: ['trade', 'intel', 'intelligence'], path: '/trade-intel', icon: 'fa-chart-line' },
     { label: 'Waivers', keywords: ['waiver', 'waivers', 'pickup', 'faab'], path: '/waivers', icon: 'fa-inbox' },
     { label: 'Start/Sit', keywords: ['start', 'sit', 'lineup'], path: '/waivers', suffix: '?tab=startsit', icon: 'fa-clipboard-list' },
     { label: 'Draft Room', keywords: ['draft', 'room'], path: '/draft', icon: 'fa-clipboard' },
-    { label: 'Cheat Sheet', keywords: ['cheat', 'sheet', 'board'], path: '/cheat-sheet', icon: 'fa-table-list' },
+    { label: 'Cheat Sheet', keywords: ['cheat', 'sheet', 'board'], path: '/draft/cheat-sheet', icon: 'fa-table-list' },
     { label: 'Draft History', keywords: ['draft', 'history'], path: '/draft-history', icon: 'fa-clock-rotate-left' },
     { label: 'Keepers', keywords: ['keeper', 'keepers'], path: '/keeper', icon: 'fa-shield' },
     { label: 'Prospects', keywords: ['prospect', 'prospects', 'rookie'], path: '/prospects', icon: 'fa-seedling' },
     { label: 'Player Rankings', keywords: ['rankings', 'players', 'values'], path: '/players', icon: 'fa-ranking-star' },
     { label: 'Dashboard', keywords: ['home', 'dashboard', 'hub'], path: '/dashboard', icon: 'fa-house' },
     { label: 'Teams', keywords: ['teams', 'roster'], path: '/teams', icon: 'fa-users' },
-    { label: 'Matchups', keywords: ['matchup', 'weekly'], path: '/weekly', icon: 'fa-swords' },
     { label: 'Breakout Engine', keywords: ['breakout'], path: '/breakouts', icon: 'fa-fire' },
     { label: 'Compare Players', keywords: ['compare'], path: '/compare', icon: 'fa-scale-balanced' },
-    { label: 'Advanced Metrics', keywords: ['metrics', 'advanced'], path: '/advanced-metrics', icon: 'fa-chart-bar' },
+    { label: 'Advanced Metrics', keywords: ['metrics', 'advanced'], path: '/metrics', icon: 'fa-chart-bar' },
   ];
 
   function setup() {
@@ -20190,7 +20550,7 @@ function setupFunAwardsGrid() {
     const words = q.split(/\s+/);
     return NAV_COMMANDS.filter(cmd =>
       words.every(w => cmd.keywords.some(k => k.includes(w) || w.includes(k)) || cmd.label.toLowerCase().includes(w))
-    ).slice(0, 6);
+    ).slice(0, 8);
   }
 
   function renderResults(query) {
@@ -20237,23 +20597,29 @@ function setupFunAwardsGrid() {
       }
     }
 
-    let cmdHtml = '';
-    if (cmdMatches.length) {
-      cmdHtml = cmdMatches.map((cmd, i) => {
-        const idx = playerCount + i;
-        const href = brNavLeagueUrl(cmd.path, cmd.suffix || '');
-        return `<a class="nav-search-cmd" data-idx="${idx}" data-ns-kind="cmd" href="${href}">` +
-          `<span class="nav-search-cmd-icon"><i class="fa-solid ${cmd.icon}" aria-hidden="true"></i></span>` +
-          `<span><span>${cmd.label}</span><div class="nav-search-cmd-meta">Tool</div></span></a>`;
-      }).join('');
+    // Preserve overall focus order (players, then pages, then tools) while
+    // rendering pages and tools under their own labels.
+    let _cmdIdx = playerCount;
+    function renderCmd(cmd) {
+      const idx = _cmdIdx++;
+      const href = cmd.abs ? (cmd.path + (cmd.suffix || '')) : brNavLeagueUrl(cmd.path, cmd.suffix || '');
+      const meta = cmd.group === 'page' ? 'Page' : 'Tool';
+      return `<a class="nav-search-cmd" data-idx="${idx}" data-ns-kind="cmd" href="${href}">` +
+        `<span class="nav-search-cmd-icon"><i class="fa-solid ${cmd.icon}" aria-hidden="true"></i></span>` +
+        `<span><span>${cmd.label}</span><div class="nav-search-cmd-meta">${meta}</div></span></a>`;
     }
+    const pageMatches = cmdMatches.filter(c => c.group === 'page');
+    const toolMatches = cmdMatches.filter(c => c.group !== 'page');
 
     let html = '';
     if (playerHtml) {
       html += '<div class="nav-search-group-label">Players</div>' + playerHtml;
     }
-    if (cmdHtml) {
-      html += '<div class="nav-search-group-label">Tools</div>' + cmdHtml;
+    if (pageMatches.length) {
+      html += '<div class="nav-search-group-label">Pages</div>' + pageMatches.map(renderCmd).join('');
+    }
+    if (toolMatches.length) {
+      html += '<div class="nav-search-group-label">Tools</div>' + toolMatches.map(renderCmd).join('');
     }
     if (!html) {
       html = '<div class="nav-search-empty">No results found</div>';

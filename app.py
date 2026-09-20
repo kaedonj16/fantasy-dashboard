@@ -7481,7 +7481,8 @@ def _standings_sparkline(points, width: int = 76, height: int = 22) -> str:
 def render_standings(team_stats, length, all_play: dict = None,
                      playoff_spots: int = None, total_regular_weeks: int = None,
                      movement: dict = None, owner_to_rid: dict = None,
-                     sparklines: dict = None, divisions: dict = None) -> str:
+                     sparklines: dict = None, divisions: dict = None,
+                     efficiency: dict = None) -> str:
     if team_stats is None or team_stats.empty:
         return """
         <div class="card-body">
@@ -7692,12 +7693,22 @@ def render_standings(team_stats, length, all_play: dict = None,
             elif _mv < 0:
                 mv_html = f"<span class='rank-move down' title='Down {abs(_mv)} since last week'>&#9660;{abs(_mv)}</span>"
 
+        # Lineup efficiency (actual ÷ optimal points, season to date).
+        _eff_rid = (owner_to_rid or {}).get(str(owner))
+        _eff_val = (efficiency or {}).get(str(_eff_rid)) if _eff_rid is not None else None
+        if _eff_val is None:
+            _eff_cell = "<span class='st-eff st-eff-na'>&mdash;</span>"
+        else:
+            _eff_cls = "st-eff-good" if _eff_val >= 90 else ("st-eff-mid" if _eff_val < 85 else "")
+            _eff_cell = f"<span class='st-eff {_eff_cls}'>{_eff_val:.0f}%</span>"
+
         rows.append(f"""
             <tr class="{_trcls}"{_mo_attr} data-rk-key="{html.escape(owner, quote=True)}">
               <td class="num rank-cell">{rank_mark(int(row['Rank']), size=28, ring_others=False)}{mv_html}</td>
               <td class="{_tdcls}">{team_cell}</td>
               <td>{record}</td>
               <td>{row['PF']:.1f}</td>
+              <td>{_eff_cell}</td>
               <td>{row['PA']:.1f}</td>
               <td class="st-trend-cell">{(sparklines or {}).get(owner) or ''}</td>
               <td>{streak}</td>
@@ -7713,7 +7724,7 @@ def render_standings(team_stats, length, all_play: dict = None,
         if (_p and _p.get("scenario") and _p["status"] == "bubble"
                 and _p["seed"] in (_spots, (_spots or 0) + 1)):
             rows.append(
-                "<tr class='pp-scnrow'><td colspan='11'>"
+                "<tr class='pp-scnrow'><td colspan='12'>"
                 f"<div class='pp-scn'>{html.escape(_p['scenario'])}</div></td></tr>"
             )
 
@@ -7722,7 +7733,7 @@ def render_standings(team_stats, length, all_play: dict = None,
         if (not _use_div and _spots and int(row['Rank']) == _spots
                 and _spots < len(df)):
             rows.append(
-                "<tr class='pp-cutrow'><td colspan='11'>"
+                "<tr class='pp-cutrow'><td colspan='12'>"
                 "<div class='pp-cut'>Playoff line</div></td></tr>"
             )
 
@@ -7741,6 +7752,7 @@ def render_standings(team_stats, length, all_play: dict = None,
               <th scope="col">Team</th>
               <th scope="col">Record</th>
               <th scope="col">PF</th>
+              <th scope="col" title="Lineup efficiency: actual points divided by optimal points. 100% means you started your best possible lineup.">EFF</th>
               <th scope="col">PA</th>
               <th scope="col" class="st-trend-th" title="Points-for by week (most recent at the dot)">Trend</th>
               <th scope="col">Streak</th>
@@ -8412,13 +8424,33 @@ def _render_bench_check(ctx: dict, viewer_roster_id, last_final_week: int) -> st
                 f"{opt_pts:.1f}. You scored {actual:.1f} and left "
                 f'<span class="la-em">{left_on_bench:.1f} points</span> on the bench.'
             )
-        tone_cls = " bench-ok" if left_on_bench < 1.0 else " bench-miss"
+        # Escalate to a warning only on a repeated pattern (not one-off weeks):
+        # three or more weeks with meaningful points left on the bench.
+        warn_html = ""
+        try:
+            from dashboard_services.season_efficiency import compute_league_season_efficiency
+            _wks = ((compute_league_season_efficiency(ctx).get("by_rid") or {})
+                    .get(str(viewer_roster_id)) or {}).get("weeks") or []
+            _bad = [w for w in _wks if (w.get("missed") or 0) >= 5.0]
+            if len(_bad) >= 3:
+                _avg_missed = sum(w["missed"] for w in _bad) / len(_bad)
+                warn_html = (
+                    f'<div class="bench-check-warn">Efficiency watch: you have left meaningful '
+                    f'points on the bench in {len(_bad)} weeks (avg '
+                    f'<span class="la-em">{_avg_missed:.1f}</span> missed). Locking lineups '
+                    f'earlier would meaningfully raise your scoring.</div>'
+                )
+        except Exception:
+            warn_html = ""
+
+        tone_cls = " bench-miss" if warn_html else (" bench-ok" if left_on_bench < 1.0 else " bench-miss")
         return f"""
         <section class="os-card bench-check-card{tone_cls}">
           <div class="bench-check-row">
             <span class="bench-check-msg">{msg}</span>
             <a class="os-section-link" href="{eff_url}">Lineup efficiency &rarr;</a>
           </div>
+          {warn_html}
         </section>"""
     except Exception:
         logger.debug("bench check failed", exc_info=True)
@@ -9571,11 +9603,23 @@ def _standings_panels(ctx: dict, power_rankings=None) -> dict:
     from utils.standings_divisions import resolve_divisions
     _div_info = resolve_divisions(ctx)
 
+    # Season lineup efficiency per team (actual ÷ optimal). Cached per league /
+    # completed-week snapshot, so this does not recompute on every render.
+    try:
+        from dashboard_services.season_efficiency import compute_league_season_efficiency
+        _eff_by_rid = {
+            rid: v.get("eff")
+            for rid, v in (compute_league_season_efficiency(ctx).get("by_rid") or {}).items()
+        }
+    except Exception:
+        logger.debug("[standings] lineup efficiency skipped", exc_info=True)
+        _eff_by_rid = {}
+
     standings_html = render_standings(
         team_stats, num_teams, all_play=_all_play,
         playoff_spots=_pp_spots, total_regular_weeks=_pp_weeks,
         movement=_movement, owner_to_rid=_o2r, sparklines=_sparks,
-        divisions=_div_info,
+        divisions=_div_info, efficiency=_eff_by_rid,
     )
 
     if (
@@ -17030,6 +17074,7 @@ def api_weekly_week():
             viewer_roster_id=_api_vid,
             scoring_settings=ctx.get("raw_scoring_settings") or ctx.get("scoring_settings"),
             is_gotw=is_gotw,
+            gotw_selection=_api_gotw,
         )
         for m, is_gotw in zip(matchups, _api_gotw_flags)
     ]
@@ -21109,6 +21154,7 @@ def api_player_details(player_id: str):
         # ── Fantasy team ownership (only when league context is provided) ──
         fantasy_team = None
         fantasy_team_owner = None
+        fantasy_roster_id = None
         if league_id:
             try:
                 from dashboard_services.service import fantasy_team_and_roster_for_player as _ft_lookup
@@ -21119,6 +21165,9 @@ def api_player_details(player_id: str):
                 _team_name, _rid = _ft_lookup(str(player_id), _rosters, _rmap)
                 if _team_name and _team_name != "Free Agent":
                     fantasy_team = _team_name
+                    # Roster id lets the client separate "your player" from another
+                    # manager's when it compares against window._viewerRid.
+                    fantasy_roster_id = _rid
                     # Find the owner's username for the sub-label
                     _roster_obj = next((r for r in _rosters if str(r.get("roster_id")) == _rid), None)
                     if _roster_obj:
@@ -21573,6 +21622,7 @@ def api_player_details(player_id: str):
             "espnHeadshot": player_meta.get("espnHeadshot"),
             "fantasy_team": fantasy_team,
             "fantasy_team_owner": fantasy_team_owner,
+            "fantasy_roster_id": fantasy_roster_id,
             "injury": injury,
             "playoff_sos": playoff_sos,
             "stats": {
@@ -23613,6 +23663,23 @@ def api_team_details(roster_id: str):
         except Exception:
             logger.debug("[api_team_details] last_finalized_week skipped", exc_info=True)
             last_finalized_week = 0
+            _view_ctx = None
+
+        # Season lineup efficiency (actual / optimal) + weekly series for the
+        # Efficiency header tile and the Graphs tab actual-vs-optimal chart.
+        lineup_efficiency = None
+        efficiency_weeks = []
+        try:
+            _eff_ctx = _view_ctx if _view_ctx is not None else get_league_ctx_from_cache(platform, league_id, season)
+            if _eff_ctx:
+                from dashboard_services.season_efficiency import compute_league_season_efficiency
+                _team_eff = (compute_league_season_efficiency(_eff_ctx).get("by_rid") or {}).get(str(roster_id))
+                if _team_eff:
+                    if _team_eff.get("eff") is not None:
+                        lineup_efficiency = round(float(_team_eff["eff"]))
+                    efficiency_weeks = _team_eff.get("weeks") or []
+        except Exception:
+            logger.debug("[api_team_details] lineup efficiency skipped", exc_info=True)
 
         response = {
             "roster_id": roster_id,
@@ -23629,6 +23696,8 @@ def api_team_details(roster_id: str):
             "points_against": points_against,
             "last_finalized_week": last_finalized_week,
             "playoff_odds": playoff_odds,
+            "lineup_efficiency": lineup_efficiency,
+            "efficiency_weeks": efficiency_weeks,
             "total_value": round(total_value, 1),
             "roster": roster_players,
             "picks": all_picks,
@@ -23737,10 +23806,12 @@ def api_team_trades(roster_id: str):
 
                 ts_raw = t.get("status_updated") or t.get("created")
                 date_str = ""
+                date_iso = ""
                 if ts_raw:
                     from datetime import timezone as _tz
                     _dt = datetime.fromtimestamp(ts_raw / 1000.0, tz=_tz.utc)
                     date_str = f"{_dt.month}/{_dt.day}/{_dt.strftime('%y')}"
+                    date_iso = _dt.strftime("%Y-%m-%d")
 
                 my_gets = [_pinfo(pid) for pid, to_rid in adds.items() if str(to_rid) == str(roster_id)]
                 my_sends = [_pinfo(pid) for pid, from_rid in drops.items() if str(from_rid) == str(roster_id)]
@@ -23750,6 +23821,7 @@ def api_team_trades(roster_id: str):
                 trades.append({
                     "week": week,
                     "date": date_str,
+                    "date_iso": date_iso,
                     "my_gets": my_gets,
                     "my_sends": my_sends,
                     "my_pick_gets": my_pick_gets,
