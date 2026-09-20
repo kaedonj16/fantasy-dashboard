@@ -4,6 +4,8 @@ import logging
 import os
 from datetime import datetime, timezone
 
+from utils.redzone_user import owner_id_variants
+
 logger = logging.getLogger(__name__)
 
 
@@ -175,11 +177,15 @@ def _broadcast_owner(league_id, owner_id, title, body, url="/", tag="update", no
         return _broadcast_league(league_id, title, body, url, tag, notif_type)
     try:
         from dashboard_services.db import get_conn
+        # Match ESPN SWIDs stored with or without braces (and any other owner-id
+        # spelling variants). A subscription may have persisted the id in either
+        # form, so an exact match silently missed the device.
+        variants = list(owner_id_variants(owner_id)) or [str(owner_id)]
         with get_conn() as conn:
             rows = conn.execute(
                 "SELECT endpoint, p256dh, auth, prefs FROM push_subscriptions "
-                "WHERE league_id = %s AND owner_id = %s",
-                (str(league_id), str(owner_id))
+                "WHERE league_id = %s AND owner_id = ANY(%s)",
+                (str(league_id), variants)
             ).fetchall()
         if not rows:
             return 0
@@ -1411,6 +1417,38 @@ def notify_injury_alert():
 
 # ── Notification: Watchlist alerts (value swing / injury on a watched player) ──
 
+def _subscription_owner_ids_for_user_key(user_key):
+    """Owner ids under which an account's push devices may be stored.
+
+    Watchlists key off the account key (``acct:<id>`` for a Google account, or a
+    bare platform user id for a username-only session), but push subscriptions
+    key off the *platform* owner id (Sleeper user id / ESPN SWID). For an account
+    key, expand to every platform identity linked to the account so the account's
+    devices are found regardless of platform; for a bare platform id, include its
+    id-spelling variants (ESPN braces)."""
+    uk = str(user_key or "").strip()
+    if not uk:
+        return []
+    out = {uk}
+    if uk.startswith("acct:"):
+        acct_raw = uk[5:]
+        try:
+            acct_id = int(acct_raw)
+        except (TypeError, ValueError):
+            acct_id = None
+        if acct_id is not None:
+            out.add(acct_raw)  # legacy rows persisted the bare account id
+            try:
+                from dashboard_services.accounts import list_all_account_platform_ids
+                for pid in list_all_account_platform_ids(acct_id):
+                    out |= owner_id_variants(pid)
+            except Exception:
+                logger.debug("[notify] watchlist identity lookup failed", exc_info=True)
+    else:
+        out |= owner_id_variants(uk)
+    return [x for x in out if x]
+
+
 def notify_watchlist_alerts():
     """Push an alert when a player on a signed-in user's WATCHLIST moves sharply
     in value (the value-aware threshold in utils.watchlist_alerts — ~10% of the
@@ -1496,14 +1534,20 @@ def notify_watchlist_alerts():
 
     sent = 0
     for user_key, pmap in watched.items():
-        # This account's devices (one row per endpoint), fetched once.
+        # This account's devices (one row per endpoint), fetched once. Watchlists
+        # are keyed by the account key ("acct:<id>" or a bare platform user id),
+        # but push subscriptions are keyed by the platform owner id, so expand
+        # the account key to every platform identity it owns before matching.
+        owner_candidates = _subscription_owner_ids_for_user_key(user_key)
+        if not owner_candidates:
+            continue
         try:
             with get_conn() as conn:
                 subs = conn.execute(
                     "SELECT DISTINCT ON (endpoint) endpoint, p256dh, auth, prefs "
-                    "FROM push_subscriptions WHERE owner_id = %s "
+                    "FROM push_subscriptions WHERE owner_id = ANY(%s) "
                     "ORDER BY endpoint, id DESC",
-                    (user_key,),
+                    (owner_candidates,),
                 ).fetchall()
         except Exception:
             subs = []

@@ -775,6 +775,24 @@ def list_account_platform_ids(account_id: int, platform: str) -> list[str]:
     return [str(r["platform_user_id"]) for r in rows if r.get("platform_user_id")]
 
 
+def list_all_account_platform_ids(account_id: int) -> list[str]:
+    """Every platform user id linked to this account, across all platforms.
+
+    Push subscriptions are keyed by the platform owner id (Sleeper user id /
+    ESPN SWID), while account-scoped features (watchlist) key off the account.
+    This bridges the two so an account's devices can be found from its id."""
+    if not account_id:
+        return []
+    init_accounts_tables()
+    from dashboard_services.db import get_conn
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT platform_user_id FROM account_identities WHERE account_id = %s",
+            (account_id,),
+        ).fetchall()
+    return [str(r["platform_user_id"]) for r in rows if r.get("platform_user_id")]
+
+
 def get_saved_league_name(account_id, platform, league_id) -> str:
     """The stored display name for one saved league, newest season first."""
     if not (account_id and platform and league_id):
