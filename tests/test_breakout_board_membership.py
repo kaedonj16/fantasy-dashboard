@@ -63,6 +63,75 @@ def test_player_endpoint_exposes_membership_without_premium_detail(monkeypatch):
     }
 
 
+def test_board_membership_degrades_when_pipeline_raises(monkeypatch):
+    """A failing candidate pipeline must never propagate as an exception; the
+    modal treats a raised board lookup as a hard error ("Breakout unavailable")."""
+    import dashboard_services.breakout_api as api
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(api, "get_breakout_candidates", boom)
+
+    eligible, board = api.breakout_board_membership("123", 2026)
+
+    assert eligible is False
+    assert board["data_available"] is False
+    assert board["data_status"] == "unavailable"
+
+
+def test_player_endpoint_returns_200_when_membership_pipeline_raises(monkeypatch):
+    """Regression: a 500 here renders as 'Breakout unavailable - Retry' on every
+    player modal. The endpoint must return a graceful membership payload instead."""
+    flask = pytest.importorskip("flask")
+    import dashboard_services.breakout_api as api
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("db down")
+
+    app = flask.Flask(__name__)
+    app.secret_key = "test"
+    app.register_blueprint(api.breakout_bp)
+    monkeypatch.setattr(api, "get_breakout_candidates", boom)
+
+    response = app.test_client().get("/api/breakout/player/123?season=2026")
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["board_eligible"] is False
+    assert body["data_available"] is False
+
+
+def test_player_endpoint_returns_membership_when_premium_detail_raises(monkeypatch):
+    """Premium detail is best-effort: its failure must not drop the viewer to a
+    500. Membership still gates the tab correctly."""
+    flask = pytest.importorskip("flask")
+    import dashboard_services.breakout_api as api
+    import dashboard_services.subscriptions as subscriptions
+
+    app = flask.Flask(__name__)
+    app.secret_key = "test"
+    app.register_blueprint(api.breakout_bp)
+    monkeypatch.setattr(
+        api,
+        "breakout_board_membership",
+        lambda player_id, season: (True, {"season": 2027, "data_available": True}),
+    )
+    monkeypatch.setattr(subscriptions, "has_premium_for_viewer", lambda *args: True)
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("detail query failed")
+
+    monkeypatch.setattr(api, "get_breakout_candidate_detail", boom)
+
+    response = app.test_client().get("/api/breakout/player/123?season=2026")
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["board_eligible"] is True
+    assert body["data_available"] is True
+
+
 def test_player_endpoint_merges_membership_into_premium_detail(monkeypatch):
     flask = pytest.importorskip("flask")
     import dashboard_services.breakout_api as api

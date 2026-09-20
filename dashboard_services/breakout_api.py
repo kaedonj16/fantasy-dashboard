@@ -1081,8 +1081,29 @@ def breakout_board_membership(
     min_score: float = BREAKOUT_BOARD_MIN_SCORE,
     limit: Optional[int] = BREAKOUT_BOARD_LIMIT,
 ) -> tuple[bool, Dict]:
-    """Return normalized player membership and the authoritative board payload."""
-    board = get_breakout_board_candidates(requested_season, min_score, limit)
+    """Return normalized player membership and the authoritative board payload.
+
+    Membership is a non-critical enhancement to the player modal, so a failure to
+    build the board must never surface as an error to the client. Any exception in
+    the candidate pipeline (e.g. a transient DB error or an incompatible weekly
+    snapshot mid-deploy) degrades to a graceful "unavailable" payload -- the modal
+    then hides the Breakout tab instead of showing a scary retry chip on every
+    player. Mirrors the resilience of ``aligned_breakout_scores``.
+    """
+    try:
+        board = get_breakout_board_candidates(requested_season, min_score, limit)
+    except Exception:
+        logger.warning(
+            "breakout_api: board membership lookup failed for %s (season=%s)",
+            player_id, requested_season, exc_info=True,
+        )
+        return False, {
+            "season": requested_season,
+            "candidates": [],
+            "count": 0,
+            "data_available": False,
+            "data_status": "unavailable",
+        }
     normalized_id = str(player_id).strip()
     eligible = any(
         str(candidate.get("player_id", "")).strip() == normalized_id
@@ -1662,14 +1683,25 @@ def player_detail(player_id):
         'board_eligible': eligible,
         'data_available': board.get('data_available', True),
     }
-    if not has_premium_for_viewer(
-        session.get('viewer_username'), session.get('viewer_user_id'),
-        league_id, platform, requested_season,
-    ):
+    try:
+        is_premium = has_premium_for_viewer(
+            session.get('viewer_username'), session.get('viewer_user_id'),
+            league_id, platform, requested_season,
+        )
+    except Exception:
+        logger.warning("breakout_api: premium check failed for %s", player_id, exc_info=True)
+        is_premium = False
+    if not is_premium:
         return jsonify(membership)
-    detail = get_breakout_candidate_detail(player_id, board.get('season'))
-    detail.update(membership)
-    return jsonify(detail)
+    # Premium detail is best-effort: if it fails, still return the authoritative
+    # membership so the modal gates its tab correctly rather than erroring out.
+    try:
+        detail = get_breakout_candidate_detail(player_id, board.get('season'))
+        detail.update(membership)
+        return jsonify(detail)
+    except Exception:
+        logger.warning("breakout_api: candidate detail failed for %s", player_id, exc_info=True)
+        return jsonify(membership)
 
 
 @breakout_bp.route('/statistics')
