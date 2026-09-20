@@ -140,10 +140,15 @@ def api_push_subscribe():
     p256dh    = (data.get("keys") or {}).get("p256dh", "").strip()
     auth      = (data.get("keys") or {}).get("auth",   "").strip()
     platform  = (data.get("platform")  or "sleeper").strip()
-    # Prefer the signed-in account as the owner so notifications key off the
-    # durable account (one person = one owner) instead of a per-platform id;
-    # fall back to the client-supplied owner for users without an account.
-    owner_id  = (str(session.get("account_id") or "").strip()
+    # owner_id must match the *platform* roster owner id (Sleeper user id / ESPN
+    # SWID) so per-owner pushes (_broadcast_owner: WHERE league_id AND owner_id)
+    # actually reach this device. The signed-in Google account_id lives in a
+    # different namespace and never equals a roster owner_id, so storing it here
+    # silently dropped every owner-targeted notification (value drops, playoff
+    # odds, breakouts, matchup preview, standings, close game, injury, RedZone,
+    # per-owner lineup lock). Prefer the session's resolved platform viewer id,
+    # then the client-supplied owner_id (the settings-modal league toggle path).
+    owner_id  = (str(session.get("viewer_user_id") or "").strip()
                  or (data.get("owner_id") or "").strip() or None)
     # Accept either a single league_id or a league_ids[] array (register the
     # device for every league at once -- the default-to-all subscribe path).
