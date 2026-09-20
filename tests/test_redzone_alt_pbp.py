@@ -503,6 +503,60 @@ def test_espn_plays_attach_real_stat_lines():
     }
 
 
+def test_kicking_unit_linemen_never_headline_a_scoring_play():
+    # Reported bug: a rushing TD followed by a made PAT credited the extra
+    # point's long snapper ("Center-R.Underwood") as the scorer, because the
+    # inline kicking-unit credit resolved as a mention and the row inherited the
+    # play's TD flag. The snapper/holder must never produce a card; only the
+    # ball carrier and the kicker do.
+    text = (
+        "T.Bigsby up the middle for 2 yards, TOUCHDOWN. J.Elliott extra point "
+        "is GOOD, Center-R.Underwood, Holder-B.Mann."
+    )
+    payload = {
+        "gamepackageJSON": {
+            "drives": {
+                "previous": [
+                    {
+                        "plays": [
+                            {
+                                "id": "42",
+                                "text": text,
+                                "clock": {"displayValue": "12:49"},
+                                "period": {"number": 2},
+                                "start": {"down": 2, "distance": 1},
+                                "type": {"text": "Rushing Touchdown"},
+                                "scoringPlay": True,
+                            }
+                        ]
+                    }
+                ]
+            }
+        }
+    }
+    plays = extract_espn_pbp_plays(
+        payload,
+        "20260920_PHI@TEN",
+        name_to_pid={
+            "tank bigsby": "bigsby",
+            "jake elliott": "elliott",
+            "rocco underwood": "underwood",
+            "braden mann": "mann",
+        },
+    )
+    by_pid = {p["pid"]: p for p in plays}
+    # The snapper and holder are stripped as non-actor credits before mention
+    # resolution, so they never surface at all.
+    assert "underwood" not in by_pid
+    assert "mann" not in by_pid
+    # The ball carrier keeps the rushing TD; the kicker keeps the made PAT and
+    # is not falsely flagged as the touchdown scorer.
+    assert by_pid["bigsby"]["is_td"] is True
+    assert by_pid["bigsby"]["stat_line"]["rush_td"] == 1
+    assert by_pid["elliott"]["stat_line"] == {"xpm": 1}
+    assert by_pid["elliott"]["is_td"] is False
+
+
 def test_parse_tank_game_id():
     assert parse_tank_game_id("20260909_NE@SEA") == ("20260909", "NE", "SEA")
     assert parse_tank_game_id("bad") == ("", "", "")
