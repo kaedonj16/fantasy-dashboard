@@ -20657,6 +20657,7 @@ img, svg, canvas {
     margin-top: 6px; background: var(--card-soft); border: 1px solid var(--border);
     border-radius: var(--radius-xs); padding: 6px 8px; }
 .pm-wl-note-star { color: var(--gold); flex: none; }
+.pr-wl-star { color: var(--gold); font-size: 11px; margin-left: 5px; vertical-align: 1px; }
 
 /* Team modal trade card "Check Outcome" button + player value-change badge. */
 .pm-trade-outcome-btn { margin-left: auto; border: 1px solid var(--border); background: var(--card);

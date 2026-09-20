@@ -13937,7 +13937,25 @@ async function initSinceLastVisit() {
         '<span class="slv-item-ago wl-chip wl-chip-inj" title="' + _wlEsc(i.status) + '">' + short + '</span></li>';
     }).join('');
 
-    if (!activityRows && !moverRows && !injuryRows) return;  // nothing new -> stay hidden
+    // Watchlist subsection: watched players that currently carry a meaningful
+    // alert (value swing or injury), reusing the same chip rendering as the nav.
+    let watchRows = '';
+    try {
+      const _wl = (typeof _getWatchlist === 'function') ? _getWatchlist() : [];
+      if (_wl.length && typeof _fetchWatchlistAlerts === 'function') {
+        const _alerts = await _fetchWatchlistAlerts(_wl.map(function (p) { return String(p.player_id); }));
+        watchRows = _wl.filter(function (p) { const a = _alerts[String(p.player_id)]; return a && a.alert; })
+          .map(function (p) {
+            const a = _alerts[String(p.player_id)] || {};
+            return '<li class="slv-item">' + _slvKind('value', 'Watch') +
+              '<span class="slv-item-text">' + _slvName(p.name || p.player_id, p.player_id) +
+              (p.position ? ' <span class="wl-item-pos">' + _wlEsc(p.position) + '</span>' : '') + '</span>' +
+              '<span class="slv-item-ago">' + _wlChipsHtml(a) + '</span></li>';
+          }).join('');
+      }
+    } catch (_) { /* watchlist optional */ }
+
+    if (!activityRows && !moverRows && !injuryRows && !watchRows) return;  // nothing new -> stay hidden
 
     const bits = [];
     if (d.trades) bits.push(d.trades + ' trade' + (d.trades > 1 ? 's' : ''));
@@ -13955,6 +13973,7 @@ async function initSinceLastVisit() {
         '</div>' +
         _slvSection('New activity', activityRows) +
         _slvSection('Value moves on your roster', moverRows) +
+        _slvSection('Watchlist', watchRows) +
         _slvSection('New injuries on your roster', injuryRows) +
       '</section>';
 
