@@ -21276,6 +21276,79 @@ window._rzSyncTabLive = function(panel) {
   if (btn) btn.classList.toggle('pm-rz-is-live', !!isLive);
 };
 
+// ── Off-Redzone-page player game log ─────────────────────────────────────────
+// The Redzone page feeds the modal a rich, grouped event history via
+// _modalPlayHistory(). Everywhere else the modal used to pass an empty feed, so
+// the Redzone tab's game log was ALWAYS "No plays recorded yet" even when the
+// player clearly had plays (e.g. a RB with carries). The redzone-data payload
+// the stub already fetches carries the raw pbp_by_game, so build a per-player
+// event list from it here. Player-id resolution mirrors redzone.js
+// _pidFromPlayName; per-play scoring mirrors the modal's stat block.
+window._rzScoringForPid = function(pid, state) {
+  var sbl = state && state.scoring_by_league;
+  if (sbl) { var lid = (state.pid_league || {})[pid]; if (lid && sbl[lid]) return sbl[lid]; }
+  return (state && state.scoring) || {};
+};
+function _rzStubResolvePlayPid(play, info) {
+  var pid = play && play.pid;
+  if (pid && pid !== '0' && Object.prototype.hasOwnProperty.call(info, String(pid))) return String(pid);
+  var identity = (play && play.identity) || {};
+  var canonical = String(identity.canonical_player_id || '');
+  if (canonical && canonical !== '0'
+      && ['exact', 'strong', 'fallback'].indexOf(identity.confidence) >= 0) return canonical;
+  var want = String((play && play.name) || '').toLowerCase().trim();
+  if (!want) return '';
+  var keys = Object.keys(info || {});
+  for (var i = 0; i < keys.length; i++) {
+    var nm = String((info[keys[i]] || {}).name || '').toLowerCase().trim();
+    if (nm && nm === want) return keys[i];
+  }
+  return '';
+}
+var _RZ_LINE_SCORE_MAP = {
+  rush_yds: 'rush_yd', rush_td: 'rush_td', rec: 'rec', rec_yds: 'rec_yd', rec_td: 'rec_td',
+  pass_yds: 'pass_yd', pass_td: 'pass_td', int: 'pass_int', pass_int: 'pass_int',
+  xpm: 'xpm', rush_2pt: 'rush_2pt', rec_2pt: 'rec_2pt', pass_2pt: 'pass_2pt',
+  fum_lost: 'fum_lost', sacks: 'sack', def_int: 'int', fum_rec: 'fum_rec', def_td: 'def_td'
+};
+function _rzStubLinePts(line, sc) {
+  var total = 0;
+  Object.keys(_RZ_LINE_SCORE_MAP).forEach(function(k) {
+    var v = parseFloat((line || {})[k] || 0), r = parseFloat((sc || {})[_RZ_LINE_SCORE_MAP[k]] || 0);
+    if (v && r) total += v * r;
+  });
+  return parseFloat(total.toFixed(2));
+}
+window._rzStubPbpEvents = function(pid, state) {
+  var want = String(pid == null ? '' : pid);
+  var byGame = (state && state.pbp_by_game) || {};
+  var info = (state && state.player_info) || {};
+  var sc = window._rzScoringForPid(want, state);
+  var events = [];
+  Object.keys(byGame).forEach(function(gid) {
+    (byGame[gid] || []).forEach(function(play, idx) {
+      if (!play || _rzStubResolvePlayPid(play, info) !== want) return;
+      var invalid = !!play.is_no_play || (!!play.play_state && play.play_state !== 'VALID');
+      var seq = play.seq != null ? play.seq : idx;
+      events.push({
+        pid: want,
+        playId: String(play.play_id || (gid + ':' + seq)),
+        gameId: gid,
+        seq: seq,
+        playSortTs: seq,
+        gameQuarter: play.quarter || '',
+        gameClock: play.clock || '',
+        kind: invalid ? 'nullified' : (play.is_td ? 'td' : 'gain'),
+        desc: invalid ? (play.play_text || 'Play nullified') : (play.play_text || 'Play'),
+        pts: invalid ? 0 : _rzStubLinePts(play.stat_line, sc),
+        isNullified: invalid,
+        playState: play.play_state || 'VALID'
+      });
+    });
+  });
+  return events;
+};
+
 // Default stub for non-Redzone pages: one-shot fetch, 30 s cache.
 // Overridden by the Redzone IIFE when #rz-root is present.
 (function() {
@@ -21287,7 +21360,7 @@ window._rzSyncTabLive = function(panel) {
       var pmBar = document.getElementById('pmTabBar');
       // Guard: only update if this player's modal is still the active one
       if (panel && panel.classList.contains('pm-panel-active') && pmBar && pmBar.dataset.pmPlayerId === pid) {
-        panel.innerHTML = window._rzBuildLiveHtml(pid, _cache, []);
+        panel.innerHTML = window._rzBuildLiveHtml(pid, _cache, window._rzStubPbpEvents(pid, _cache));
         window._rzSyncTabLive(panel);
         if (!_timer) _timer = setTimeout(function tick() {
           _timer = null;
@@ -21300,7 +21373,7 @@ window._rzSyncTabLive = function(panel) {
     };
     if (_cache && Date.now() - _cacheTs < STALE) {
       refresh();
-      return window._rzBuildLiveHtml(pid, _cache, []);
+      return window._rzBuildLiveHtml(pid, _cache, window._rzStubPbpEvents(pid, _cache));
     }
     if (!_fetching) {
       _fetching = true;
@@ -21319,7 +21392,7 @@ window._rzSyncTabLive = function(panel) {
     }
     _pending.push(refresh);
     return _cache
-      ? window._rzBuildLiveHtml(pid, _cache, [])
+      ? window._rzBuildLiveHtml(pid, _cache, window._rzStubPbpEvents(pid, _cache))
       : '<div class="rz-pm-live" style="padding:20px;text-align:center;color:var(--text-muted);font-size:13px;">Loading…</div>';
   };
 }());
