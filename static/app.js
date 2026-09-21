@@ -19298,7 +19298,6 @@ function renderTeamDetails(data) {
     host.className = 'mya-wrap';
     host.innerHTML =
       '<button type="button" id="myActionsPill" class="mya-pill" aria-haspopup="dialog" aria-expanded="false" title="Actions across your leagues">' +
-        '<span class="mya-bolt" aria-hidden="true">&#9889;</span>' +
         '<span id="myActionsCount">' + actions.length + '</span>&nbsp;actions</button>' +
       '<div id="myActionsDrawer" class="mya-drawer" role="dialog" aria-label="Actions across your leagues" hidden>' +
         buildDrawer(actions) + '</div>';
