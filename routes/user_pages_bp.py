@@ -969,8 +969,16 @@ def api_portfolio_summary():
         result = build_league_summary(account_id, membership, get_league_ctx_from_cache)
         return jsonify({"ok": True, **result})
     except Exception as exc:
-        logger.warning("portfolio summary failed for %s:%s", platform, league_id, exc_info=True)
+        from dashboard_services.providers.base import ProviderUnavailableError
         category = classify_failure(exc)
+        if isinstance(exc, ProviderUnavailableError):
+            # Expected external outage (the provider host is down / returning 5xx
+            # or a block page). A full traceback here reads like an app crash
+            # during a provider outage; the retryable state + stale fallback below
+            # already handle it, so log it compactly.
+            logger.warning("portfolio summary unavailable for %s:%s: %s", platform, league_id, exc)
+        else:
+            logger.warning("portfolio summary failed for %s:%s", platform, league_id, exc_info=True)
         if stale:
             return jsonify({"ok": True, **stale, "stale": True, "_cache_stale": True,
                             "refresh_failure_category": category})
