@@ -29651,6 +29651,13 @@ def build_portfolio_body(
         "var cards=[].slice.call(document.querySelectorAll('[data-summary-card]')).filter(function(c){return c.isConnected&&c.style.display!=='none';});"
         "var keys=cards.map(function(c){return {platform:c.dataset.platform,league_id:c.dataset.leagueId,season:parseInt(c.dataset.season,10)};});"
         "var success=0,failed=0,stamp=null;try{"
+        # No hydratable summary cards on the visible page (only predraft,
+        # unlinked, or errored league cards, which carry no data-summary-card)
+        # means an empty leagues list, which the refresh endpoint rejects with
+        # 400 invalid_request. Skip the pointless POST and report a no-op
+        # success so doRefresh does not surface a spurious failure; the finally
+        # still rearms the live-matchup timer.
+        "if(!keys.length)return {success:true,refreshedAt:null};"
         "var response=await window.brFetchWithTimeout('/api/portfolio/refresh',{method:'POST',cache:'no-store',credentials:'same-origin',"
         "headers:{'Content-Type':'application/json','Cache-Control':'no-store'},body:JSON.stringify({leagues:keys}),signal:signal},30000);"
         "var payload=await response.json();var results=payload.results||[];stamp=payload.refreshed_at||null;"
