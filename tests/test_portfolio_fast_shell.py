@@ -175,3 +175,35 @@ def test_cold_league_renders_hydratable_shell_not_a_blocking_build(offline_clien
     assert b"data-lg-key='sleeper:L1'" in response.data
     assert b"data-summary-card" in response.data
     assert b"Record loading" in response.data
+
+
+def test_summary_endpoint_handles_provider_outage_gracefully(offline_client, monkeypatch):
+    """A provider host outage (e.g. Fleaflicker 403/5xx -> ProviderUnavailableError)
+    must return a retryable "temporarily unavailable" state, not a 500 crash."""
+    from dashboard_services.providers.base import ProviderUnavailableError
+
+    monkeypatch.setattr(
+        "dashboard_services.accounts.resolve_account_leagues",
+        lambda account_id, current_season=None: [{
+            "platform": "fleaflicker", "league_id": "92916", "season": 2026,
+            "name": "Down League",
+        }],
+    )
+
+    def boom(account_id, membership, loader):
+        raise ProviderUnavailableError("Fleaflicker is temporarily unavailable.")
+
+    monkeypatch.setattr("dashboard_services.portfolio_summary.build_league_summary", boom)
+    # No cached summary -> the endpoint surfaces the unavailable/retryable state.
+    monkeypatch.setattr("dashboard_services.portfolio_summary.get_cached_summary",
+                        lambda *a, **k: None)
+    with offline_client.session_transaction() as sess:
+        sess["account_id"] = 7
+    response = offline_client.get(
+        "/api/portfolio/summary?platform=fleaflicker&league_id=92916&season=2026")
+    assert response.status_code == 503
+    body = response.json
+    assert body["ok"] is False
+    assert body["state"] == "unavailable"
+    assert body["failure_category"] == "provider_5xx"
+    assert body["retryable"] is True

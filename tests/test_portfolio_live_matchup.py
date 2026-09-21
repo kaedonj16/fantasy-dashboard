@@ -19,6 +19,10 @@ def test_live_matchup_endpoint_wired_and_gated():
     assert '("regular", "post")' in endpoint
     assert 'offseason_mode' in endpoint
     assert 'viewer_roster_id' in endpoint
+    # A Google-account viewer's team is linked via the account, not a Sleeper
+    # session identity, so the roster must be resolved through the account (with a
+    # session fallback) -- otherwise every card reads live:false for account users.
+    assert 'resolve_account_viewer_for_league' in endpoint
     # The preview is shown all week (pre / live / final), matching the single-
     # league dashboard -- it is NOT suppressed until ~90 min before kickoff.
     assert "_week_scores_visible" not in endpoint

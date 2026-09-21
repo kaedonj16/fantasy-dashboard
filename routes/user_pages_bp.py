@@ -969,8 +969,16 @@ def api_portfolio_summary():
         result = build_league_summary(account_id, membership, get_league_ctx_from_cache)
         return jsonify({"ok": True, **result})
     except Exception as exc:
-        logger.warning("portfolio summary failed for %s:%s", platform, league_id, exc_info=True)
+        from dashboard_services.providers.base import ProviderUnavailableError
         category = classify_failure(exc)
+        if isinstance(exc, ProviderUnavailableError):
+            # Expected external outage (the provider host is down / returning 5xx
+            # or a block page). A full traceback here reads like an app crash
+            # during a provider outage; the retryable state + stale fallback below
+            # already handle it, so log it compactly.
+            logger.warning("portfolio summary unavailable for %s:%s: %s", platform, league_id, exc)
+        else:
+            logger.warning("portfolio summary failed for %s:%s", platform, league_id, exc_info=True)
         if stale:
             return jsonify({"ok": True, **stale, "stale": True, "_cache_stale": True,
                             "refresh_failure_category": category})
@@ -1106,7 +1114,24 @@ def api_portfolio_matchup():
     if ctx.get("offseason_mode"):
         return jsonify({"live": False})
 
-    viewer_rid = str((ctx.get("viewer") or {}).get("viewer_roster_id") or "")
+    # Which roster is "yours". For a Google-account viewer the team is linked via
+    # the account, not a Sleeper session identity, so the session-based
+    # ctx["viewer"] is empty and every card would read live:false. Resolve through
+    # the account first (as the portfolio summary / page / actions all do), then
+    # fall back to the session viewer for Sleeper-session users.
+    viewer_rid = ""
+    if account_id:
+        try:
+            from dashboard_services.accounts import resolve_account_viewer_for_league
+            _av = resolve_account_viewer_for_league(
+                int(account_id), platform, league_id, season,
+                ctx.get("users") or [], ctx.get("rosters") or [],
+            )
+            viewer_rid = str((_av or {}).get("viewer_roster_id") or "")
+        except Exception:
+            logger.debug("[portfolio-matchup] account viewer resolve failed", exc_info=True)
+    if not viewer_rid:
+        viewer_rid = str((ctx.get("viewer") or {}).get("viewer_roster_id") or "")
     if not viewer_rid:
         return jsonify({"live": False})
 
