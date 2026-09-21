@@ -147,10 +147,22 @@ def page_portfolio():
         lg_platform = (lg.get("platform") or "sleeper").lower()
         lg_season = int(lg.get("season") or season)
         try:
-            lctx = get_league_ctx_from_cache(lg_platform, lid, lg_season)
+            lctx = get_league_ctx_from_cache(lg_platform, lid, lg_season, allow_build=False)
         except Exception:
             return {"league_id": lid, "name": lg.get("name", "Unknown"),
                     "platform": lg_platform, "error": True,
+                    "is_favorite": bool(lg.get("is_favorite"))}
+        if not lctx:
+            # Cold cache: a background warm was kicked. Render a hydratable shell
+            # now rather than block the entire page on this one league's cold
+            # build -- the old behavior built every league here, so a multi-league
+            # cold load took 80s+ and pinned a worker, which starved the very
+            # summary/refresh XHRs the page fires. The client summary + matchup
+            # loaders fill the shell, and its cross-league insights fold in on a
+            # later load once the context is warm.
+            return {"league_id": lid, "name": lg.get("name") or "Unknown",
+                    "platform": lg_platform, "season": lg_season,
+                    "loading": True,
                     "is_favorite": bool(lg.get("is_favorite"))}
         rosters = lctx.get("rosters") or []
         players_index = lctx.get("players_index") or {}
@@ -338,13 +350,12 @@ def page_portfolio():
             "is_favorite": bool(lg.get("is_favorite")),
         }
 
-    # Each league summary is independent and dominated by get_league_ctx_from_cache,
-    # which hits external providers whenever a league's context cache is cold. Built
-    # serially, a multi-league portfolio waited for the sum of every fetch; fanning
-    # out across a small thread pool makes the page wait for the slowest league
-    # instead. Per-league context builds already run safely in worker threads (the
-    # Teams-page warmup does the same, and get_league_ctx_from_cache locks per
-    # league), and nothing here touches request-local state -- account_id was
+    # Each league summary reads the cached context only (allow_build=False): a cold
+    # league renders a hydratable shell and warms in the background instead of
+    # blocking the page render, so a multi-league cold load no longer waits ~80s on
+    # the sum of every provider fetch. The small thread pool still fans out the
+    # cache reads (cheap, but a stale-signature freshness check can touch a
+    # provider), and nothing here uses request-local state -- account_id was
     # captured above and get_viewer_session_for_league no-ops without a request
     # context. Order does not matter: results are sorted by name just below.
     leagues_data = []
@@ -362,7 +373,8 @@ def page_portfolio():
     leagues_data.sort(key=lambda x: (not x.get("is_favorite", False), x.get("name", "")))
 
     valid_leagues = [lg for lg in leagues_data
-                     if not lg.get("error") and not lg.get("not_in_league") and not lg.get("pending")]
+                     if not lg.get("error") and not lg.get("not_in_league")
+                     and not lg.get("pending") and not lg.get("loading")]
     num_leagues = len(leagues_data)
     total_wins = sum(lg.get("wins", 0) for lg in valid_leagues)
     total_losses = sum(lg.get("losses", 0) for lg in valid_leagues)
