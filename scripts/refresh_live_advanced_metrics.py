@@ -58,6 +58,14 @@ from utils.utils import (
 
 STATE_PATH = Path(CACHE_DIR) / "live_advanced_metrics_state.json"
 
+# The whole state dict is stored as one JSON row in Postgres under this key.
+# Postgres is the source of truth because Render cron jobs run in a fresh,
+# diskless container each invocation — a local file would not survive between
+# runs, so the idempotency fingerprint and the nflverse throttle would reset
+# every 15 minutes and both guards would be dead on arrival. The file is only a
+# best-effort local-dev / DB-outage fallback.
+_STATE_DB_KEY = "refresh_live_advanced_metrics"
+
 # Don't re-pull nflverse (NGS/FTN/EPA) more than this often. The provider data
 # lags the games by design; hammering it every few minutes buys nothing.
 NFLVERSE_THROTTLE_SEC = 60 * 60
@@ -69,7 +77,35 @@ NFLVERSE_THROTTLE_SEC = 60 * 60
 NFLVERSE_PUBLISH_WEEKDAYS = frozenset({1, 2})
 
 
+def _ensure_state_table(conn) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS live_refresh_state (
+            key TEXT PRIMARY KEY,
+            value TEXT,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """
+    )
+
+
 def _load_state() -> dict:
+    """Read state from Postgres (durable across ephemeral cron runs), falling
+    back to the local file only when the DB is unavailable."""
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            _ensure_state_table(conn)
+            row = conn.execute(
+                "SELECT value FROM live_refresh_state WHERE key = %s",
+                (_STATE_DB_KEY,),
+            ).fetchone()
+        if row and row.get("value"):
+            data = json.loads(row["value"])
+            if isinstance(data, dict):
+                return data
+    except Exception as e:
+        print(f"[live-adv] DB state read failed, trying file fallback: {e}")
     try:
         with open(STATE_PATH) as f:
             data = json.load(f)
@@ -79,14 +115,31 @@ def _load_state() -> dict:
 
 
 def _save_state(state: dict) -> None:
+    """Persist state durably to Postgres, plus a best-effort local file."""
+    payload = json.dumps(state)
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            _ensure_state_table(conn)
+            conn.execute(
+                """
+                INSERT INTO live_refresh_state (key, value, updated_at)
+                VALUES (%s, %s, NOW())
+                ON CONFLICT (key) DO UPDATE
+                    SET value = excluded.value, updated_at = NOW()
+                """,
+                (_STATE_DB_KEY, payload),
+            )
+    except Exception as e:
+        print(f"[live-adv] DB state write failed, writing file fallback: {e}")
     try:
         STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
         tmp = STATE_PATH.with_suffix(".json.tmp")
         with open(tmp, "w") as f:
-            json.dump(state, f)
+            f.write(payload)
         tmp.replace(STATE_PATH)
     except OSError as e:
-        print(f"[live-adv] could not persist state: {e}")
+        print(f"[live-adv] could not persist state file: {e}")
 
 
 def _flush_app_caches() -> None:

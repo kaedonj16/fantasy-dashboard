@@ -187,7 +187,11 @@ def test_week_has_final_game_reads_schedule_status(monkeypatch):
 def _patch_script(monkeypatch, tmp_path, *, season_type="reg", week=5,
                   finished=("g1",)):
     import scripts.refresh_live_advanced_metrics as live
-    monkeypatch.setattr(live, "STATE_PATH", tmp_path / "state.json")
+    # Back the state store with an in-memory dict so the test neither touches the
+    # DB (present in CI) nor a real file, and stays isolated from other tests.
+    store = {}
+    monkeypatch.setattr(live, "_load_state", lambda: dict(store))
+    monkeypatch.setattr(live, "_save_state", lambda s: store.update(s))
     monkeypatch.setattr(live, "get_nfl_state",
                         lambda: {"season": 2026, "week": week, "season_type": season_type})
     monkeypatch.setattr(live, "finished_game_ids_for_week",
@@ -290,3 +294,20 @@ def test_nflverse_force_overrides_window(monkeypatch, tmp_path):
     _set_weekday(monkeypatch, live, 6)  # Sunday
     assert live.main(["--force"]) == 0
     assert builds.get("nflverse") == 1
+
+
+def test_state_file_fallback_roundtrip(monkeypatch, tmp_path):
+    # When the DB is unreachable, state must still round-trip via the local file
+    # so local dev / DB-outage runs keep their idempotency fingerprint.
+    import scripts.refresh_live_advanced_metrics as live
+    import dashboard_services.db as db
+
+    monkeypatch.setattr(live, "STATE_PATH", tmp_path / "state.json")
+
+    def _boom(*a, **k):
+        raise RuntimeError("no db in this test")
+
+    monkeypatch.setattr(db, "get_conn", _boom)
+
+    live._save_state({"finished_key": "2026:3:g1", "last_build_date": "2026-09-21"})
+    assert live._load_state() == {"finished_key": "2026:3:g1", "last_build_date": "2026-09-21"}
