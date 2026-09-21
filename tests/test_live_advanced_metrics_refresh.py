@@ -107,6 +107,23 @@ def test_snapshot_passes_force_weeks_to_capable_builder(monkeypatch):
     assert got["force_weeks"] == [3]
 
 
+def test_build_weekly_metrics_forces_only_named_weeks(monkeypatch):
+    import data_building.weekly_metrics as wm
+
+    seen = {}
+
+    def fake_fetch(season, week, force=False):
+        seen[int(week)] = force
+        return {}  # empty -> loop continues, no DB writes
+
+    monkeypatch.setattr(wm, "init_weekly_metrics_db", lambda: None)
+    monkeypatch.setattr(wm, "load_players_index", lambda: {})
+    monkeypatch.setattr(wm, "fetch_week_stats", fake_fetch)
+
+    wm.build_weekly_metrics(2026, weeks=[1, 2, 3], force_weeks=[3])
+    assert seen == {1: False, 2: False, 3: True}
+
+
 def test_snapshot_never_hands_force_weeks_to_legacy_builder(monkeypatch):
     import data_building.advanced_metrics as am
 
@@ -184,9 +201,23 @@ def _patch_script(monkeypatch, tmp_path, *, season_type="reg", week=5,
     import data_building.advanced_metrics as am
     monkeypatch.setattr(am, "build_advanced_metrics_snapshot",
                         lambda *a, **k: builds.__setitem__("n", builds["n"] + 1) or {"ok": 1})
+    # The live build branch also refreshes the per-week usage rows; stub it out so
+    # the unit test touches no DB / Sleeper.
+    import data_building.weekly_metrics as wm
+    monkeypatch.setattr(wm, "build_weekly_metrics",
+                        lambda *a, **k: builds.__setitem__("weekly", builds.get("weekly", 0) + 1) or 0)
     # Keep the throttled nflverse pull out of the unit test.
     monkeypatch.setattr(live, "_refresh_nflverse_weekly", lambda s, idx: 0)
     return live, builds
+
+
+def test_live_main_refreshes_weekly_rows_on_build(monkeypatch, tmp_path):
+    # A rebuild must also refresh the per-week usage rows that power the week
+    # filter, not just the season snapshot.
+    live, builds = _patch_script(monkeypatch, tmp_path, finished=("g1",))
+    assert live.main(["--no-nflverse"]) == 0
+    assert builds["n"] == 1
+    assert builds.get("weekly") == 1
 
 
 def test_live_main_skips_in_offseason(monkeypatch, tmp_path):

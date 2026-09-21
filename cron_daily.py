@@ -403,11 +403,15 @@ from data_building.weekly_metrics import build_weekly_metrics
 nfl_state = get_nfl_state() or {}
 season_type = str(nfl_state.get("season_type", "")).lower().strip()
 current_season = int(nfl_state.get("season") or datetime.now().year)
+current_week = int(nfl_state.get("week") or nfl_state.get("display_week") or 0)
 if season_type == "off":
     print("[cron] Offseason - refreshing weekly metrics for prior season")
     n = build_weekly_metrics(current_season - 1)
 else:
-    n = build_weekly_metrics(current_season)
+    # Force-refetch the in-progress week so its box-score cache does not stay
+    # frozen at the pre-game/partial fetch and the week view reflects finals.
+    _force = [current_week] if current_week >= 1 else None
+    n = build_weekly_metrics(current_season, force_weeks=_force)
 print(f"[cron] Weekly metrics: {n} rows upserted")
 """, "build_weekly_metrics")
 

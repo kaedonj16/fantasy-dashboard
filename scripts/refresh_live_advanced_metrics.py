@@ -183,6 +183,21 @@ def main(argv: Optional[List[str]] = None) -> int:
             force_weeks=force_weeks,
         )
         print(f"[live-adv] snapshot rebuilt: {summary}")
+
+        # Refresh the per-week usage rows too, forcing the in-progress week. This
+        # is what powers the Advanced Metrics *week filter*: without it the week
+        # dropdown offers the current week but its usage data stays frozen at the
+        # pre-game fetch, so the view shows only the last completed week.
+        try:
+            from data_building.weekly_metrics import build_weekly_metrics
+            wk_rows = build_weekly_metrics(
+                season, weeks=[current_week], force_weeks=[current_week])
+            print(f"[live-adv] weekly usage rows for week {current_week}: {wk_rows}")
+        except Exception as e:
+            import traceback
+            print(f"[live-adv] weekly usage refresh failed (non-fatal): {e}")
+            traceback.print_exc()
+
         state["last_build_date"] = today
         state["finished_key"] = finished_key
         state["last_build_ts"] = time.time()
