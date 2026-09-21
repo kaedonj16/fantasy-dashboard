@@ -1710,15 +1710,17 @@ def render_matchup_slide(
             period = line_score.get("period", "")
             clock = game.get("gameClock", "")
             prefix = "@ " + opp if not is_home else "vs " + opp
-            extra = " ".join(x for x in [period, clock, prefix] if x).strip()
-            body = f"{score_str} {extra}".strip()
+            live_clock = " ".join(x for x in [period, clock] if x).strip()
+            rest = " ".join(x for x in [score_str, prefix] if x).strip()
 
             if not allow_live:
-                return body
+                return " ".join(x for x in [score_str, live_clock, prefix] if x).strip()
 
-            if side == "right":
-                return f"{body} <span class='live-dot'></span>".strip()
-            return f"<span class='live-dot'></span>{body}".strip()
+            # Live dot glued to the game clock as one non-wrapping unit, so it
+            # sits with the clock instead of orphaning onto its own line once the
+            # box-score text is allowed to wrap.
+            live_unit = f"<span class='mb-live'><span class='live-dot'></span>{live_clock}</span>".strip()
+            return f"{live_unit} {rest}".strip() if rest else live_unit
 
         if status_code == "2":
             prefix = "@ " + opp if not is_home else "vs " + opp
