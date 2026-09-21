@@ -29743,6 +29743,12 @@ def build_portfolio_body(
         "var cards=[].slice.call(document.querySelectorAll('[data-summary-card]')).filter(function(c){return c.isConnected&&c.style.display!=='none';});"
         "var keys=cards.map(function(c){return {platform:c.dataset.platform,league_id:c.dataset.leagueId,season:parseInt(c.dataset.season,10)};});"
         "var success=0,failed=0,stamp=null;try{"
+        # No hydratable summary cards on the visible page (only predraft,
+        # unlinked, or errored league cards, which carry no data-summary-card)
+        # means an empty leagues list and nothing to refresh. Return a no-op
+        # success so doRefresh does not surface a spurious failure; the finally
+        # still rearms the live-matchup timer.
+        "if(!keys.length)return {success:true,refreshedAt:null};"
         # /api/portfolio/refresh caps each batch at 4 leagues; chunk so accounts
         # with more visible cards refresh all of them instead of a blanket 400.
         "var CHUNK=4;var results=new Array(cards.length);"
