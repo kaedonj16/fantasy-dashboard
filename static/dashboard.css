@@ -40293,10 +40293,15 @@ a, button, [role="button"], [role="tab"], summary, label,
 
 .mb-nameline { display: flex; align-items: baseline; gap: 5px; min-width: 0; line-height: 1.2; }
 .mb-cell-r .mb-nameline { flex-direction: row-reverse; }
-.mb-nameline .pname { font-size: 13px; font-weight: 700; color: var(--accent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+/* Full text, no ellipsis: names, game line and box score wrap rather than clip. */
+.mb-nameline { flex-wrap: wrap; }
+.mb-nameline .pname { font-size: 13px; font-weight: 700; color: var(--accent); white-space: normal; overflow-wrap: anywhere; min-width: 0; }
 .mb-team { font-size: 10px; font-weight: 700; color: var(--text-subtle); text-transform: uppercase; flex: 0 0 auto; }
-.mb-game { font-size: 10.5px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
-.mb-stat { display: block; font-size: 10.5px; color: var(--text-subtle); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.mb-game { font-size: 10.5px; color: var(--text-muted); white-space: normal; overflow-wrap: anywhere; max-width: 100%; line-height: 1.3; }
+.mb-stat { display: block; font-size: 10.5px; color: var(--text-subtle); white-space: normal; overflow-wrap: anywhere; max-width: 100%; line-height: 1.3; }
+/* Live indicator: dot glued to the game clock so it never orphans onto its own line. */
+.mb-live { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.mb-game .live-dot { margin: 0; position: relative; top: -1px; }
 
 .mb-score { flex: 0 0 auto; align-self: center; text-align: right; font-variant-numeric: tabular-nums; line-height: 1.1; }
 .mb-cell-r .mb-score { text-align: left; }
