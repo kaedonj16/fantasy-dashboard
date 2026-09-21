@@ -84,7 +84,12 @@ def build_usage_map_for_season(
 
     # Stream one week at a time so we never hold all 18 weeks in RAM simultaneously
     for w in weeks_list:
-        week_players = fetch_week_stats(season, w, force=int(w) in force_set)
+        # Only pass force when actually forcing, so callers/tests that stub
+        # fetch_week_stats with the original 2-arg signature keep working.
+        if int(w) in force_set:
+            week_players = fetch_week_stats(season, w, force=True)
+        else:
+            week_players = fetch_week_stats(season, w)
         if not isinstance(week_players, dict):
             gc.collect()
             continue

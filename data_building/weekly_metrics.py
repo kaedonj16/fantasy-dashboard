@@ -147,8 +147,12 @@ def build_weekly_metrics(season: int, weeks: Optional[List[int]] = None,
     total = 0
     for week in weeks:
         try:
-            stats = fetch_week_stats(int(season), int(week),
-                                     force=int(week) in force_set) or {}
+            # Only pass force when actually forcing, so callers/tests that stub
+            # fetch_week_stats with the original 2-arg signature keep working.
+            if int(week) in force_set:
+                stats = fetch_week_stats(int(season), int(week), force=True) or {}
+            else:
+                stats = fetch_week_stats(int(season), int(week)) or {}
         except Exception as exc:
             print(f"[weekly_metrics] fetch failed s{season} w{week}: {exc}")
             continue
