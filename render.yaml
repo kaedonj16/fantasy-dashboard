@@ -238,7 +238,7 @@ services:
     # (disabled when PYTHON_ENV=production).
     schedule: 5 * * * *
     plan: starter
-    buildCommand: python -c "print('hourly-notifications: no Python deps')"
+    buildCommand: python -c "print('hourly-notifications - no Python deps')"
     startCommand: python scripts/trigger_notifications.py hourly
     envVars:
       - key: PYTHON_VERSION
@@ -262,7 +262,7 @@ services:
     # per account per ISO week, so a retry the same week is a no-op.
     schedule: "0 13 * * 2"
     plan: starter
-    buildCommand: python -c "print('weekly-email: no Python deps')"
+    buildCommand: python -c "print('weekly-email - no Python deps')"
     startCommand: python scripts/trigger_notifications.py weekly
     envVars:
       - key: PYTHON_VERSION
