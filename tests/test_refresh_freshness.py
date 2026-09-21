@@ -188,7 +188,9 @@ def test_freshness_labels_handle_unknown_seconds_future_and_days():
     src = _freshness_iife()
     assert "value < 100000000000" in src
     assert "value > Date.now() + 5 * 60000" in src
-    assert src.count("normalizeTimestamp(cacheTs())") == 2
+    # Two label sites (updateSheetTime + updateChip) plus the auto-revalidate
+    # freshness gate, which reuses the same seconds/future-tolerant normalization.
+    assert src.count("normalizeTimestamp(cacheTs())") == 3
     assert "t.textContent = ts ? 'Updated ' + fmtAge(ts) : ''" in src
     assert "el.textContent = t ? fmtAge(t) : 'Unknown'" in src
     assert "'d ago'" in src
