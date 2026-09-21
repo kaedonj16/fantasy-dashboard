@@ -114,15 +114,23 @@ def _f(v: Any) -> float:
         return 0.0
 
 
-def build_weekly_metrics(season: int, weeks: Optional[List[int]] = None) -> int:
+def build_weekly_metrics(season: int, weeks: Optional[List[int]] = None,
+                         force_weeks: Optional[List[int]] = None) -> int:
     """Compute and upsert weekly usage rows for the given weeks.
 
     When `weeks` is None, builds weeks 1-18, skipping weeks already in the DB
     except the two most recent stored weeks (which are rebuilt to pick up
     stat corrections), plus any weeks with missing red-zone columns).
+
+    `force_weeks` names weeks whose Sleeper box-score cache must be refetched even
+    when it is already populated. The in-progress week's cache otherwise freezes
+    on its first (pre-game / partial) fetch, so the weekly-filter usage rows would
+    never reflect a game that finished later the same week. The live refresh
+    passes the current week here so a just-final slate lands in the week view now.
     """
     init_weekly_metrics_db()
     idx = load_players_index() or {}
+    force_set = {int(w) for w in (force_weeks or [])}
 
     if weeks is None:
         with get_conn() as conn:
@@ -139,7 +147,12 @@ def build_weekly_metrics(season: int, weeks: Optional[List[int]] = None) -> int:
     total = 0
     for week in weeks:
         try:
-            stats = fetch_week_stats(int(season), int(week)) or {}
+            # Only pass force when actually forcing, so callers/tests that stub
+            # fetch_week_stats with the original 2-arg signature keep working.
+            if int(week) in force_set:
+                stats = fetch_week_stats(int(season), int(week), force=True) or {}
+            else:
+                stats = fetch_week_stats(int(season), int(week)) or {}
         except Exception as exc:
             print(f"[weekly_metrics] fetch failed s{season} w{week}: {exc}")
             continue

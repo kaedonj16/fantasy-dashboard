@@ -14,7 +14,7 @@ from __future__ import annotations
 import logging
 import json as _json
 import os
-from typing import Dict, Any, List, Optional, Tuple, TYPE_CHECKING
+from typing import Dict, Any, Iterable, List, Optional, Tuple, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -938,6 +938,23 @@ def calculate_player_metrics(
     }
 
 
+def _usage_builder_accepts_force(usage_builder) -> bool:
+    """True when ``usage_builder`` accepts a ``force_weeks`` keyword.
+
+    The production builder (build_usage_map_for_season) does; the minimal
+    2-arg builders injected by tests do not, and must not be handed the kwarg.
+    """
+    try:
+        import inspect
+        sig = inspect.signature(usage_builder)
+    except (TypeError, ValueError):
+        return False
+    params = sig.parameters
+    if "force_weeks" in params:
+        return True
+    return any(p.kind == p.VAR_KEYWORD for p in params.values())
+
+
 def build_advanced_metrics_snapshot(
         season: int,
         completed_week: int,
@@ -945,6 +962,7 @@ def build_advanced_metrics_snapshot(
         as_of_date: Optional[str] = None,
         players_index: Optional[Dict[str, Dict[str, Any]]] = None,
         usage_builder=None,
+        force_weeks: Optional[Iterable[int]] = None,
 ) -> Dict[str, Any]:
     """Build the current season snapshot directly from completed game weeks.
 
@@ -954,6 +972,13 @@ def build_advanced_metrics_snapshot(
     minimum viable source; PFR snaps/target-share enrichment is best-effort inside
     ``build_usage_map_for_season`` and missing premium providers never gate writes.
     One completed game is a valid sample.
+
+    ``force_weeks`` names weeks whose Sleeper cache must be refetched even when it
+    is already populated. The live refresh passes the in-progress week here so a
+    game that just finished is reflected immediately; without it the current
+    week's box-score cache freezes on its first partial fetch. When a custom
+    ``usage_builder`` is injected that does not accept ``force_weeks`` (e.g. the
+    tiny builders used in tests), the argument is silently ignored.
     """
     from collections import Counter
     from datetime import date as _date
@@ -979,7 +1004,13 @@ def build_advanced_metrics_snapshot(
         return summary
 
     index = players_index if players_index is not None else (load_players_index() or {})
-    usage_map = usage_builder(season, range(1, completed_week + 1)) or {}
+    # Pass force_weeks through only when the builder accepts it, so injected
+    # 2-arg test builders keep working.
+    if force_weeks and _usage_builder_accepts_force(usage_builder):
+        usage_map = usage_builder(season, range(1, completed_week + 1),
+                                  force_weeks=force_weeks) or {}
+    else:
+        usage_map = usage_builder(season, range(1, completed_week + 1)) or {}
     summary["player_stats_rows"] = len(usage_map)
     skips: Counter = Counter()
     metrics_list: List[Dict[str, Any]] = []

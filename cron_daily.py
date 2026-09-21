@@ -403,11 +403,15 @@ from data_building.weekly_metrics import build_weekly_metrics
 nfl_state = get_nfl_state() or {}
 season_type = str(nfl_state.get("season_type", "")).lower().strip()
 current_season = int(nfl_state.get("season") or datetime.now().year)
+current_week = int(nfl_state.get("week") or nfl_state.get("display_week") or 0)
 if season_type == "off":
     print("[cron] Offseason - refreshing weekly metrics for prior season")
     n = build_weekly_metrics(current_season - 1)
 else:
-    n = build_weekly_metrics(current_season)
+    # Force-refetch the in-progress week so its box-score cache does not stay
+    # frozen at the pre-game/partial fetch and the week view reflects finals.
+    _force = [current_week] if current_week >= 1 else None
+    n = build_weekly_metrics(current_season, force_weeks=_force)
 print(f"[cron] Weekly metrics: {n} rows upserted")
 """, "build_weekly_metrics")
 
@@ -447,14 +451,18 @@ season_type = str(nfl_state.get("season_type", "")).lower().strip()
 is_offseason = season_type == "off"
 current_season = int(nfl_state.get("season") or datetime.now().year)
 
-# The NFL state week is the week currently being played.  Earlier weeks are
-# certainly complete; on Tuesday+ the just-finished week (including MNF) is too.
-# Asking Sleeper for an unfinished week is harmless, but avoiding it keeps the
-# snapshot's games/sample size honest.
-completed_week = max(0, int({week!r}) - 1)
-if {today_weekday!r} == 1 and str({season_type!r}) in ("reg", "post"):
-    completed_week = max(completed_week, int({week!r}))
-summary = build_advanced_metrics_snapshot({season!r}, completed_week)
+# The NFL state week is the week currently being played. Include that in-progress
+# week as soon as any of its games have gone final so a just-finished slate lands
+# in the snapshot immediately; otherwise fall back to the last fully-finished week.
+# Per-player game counts stay honest either way (each player only counts games he
+# actually played). The live refresh (scripts.refresh_live_advanced_metrics) uses
+# the same resolver, so the two never regress each other's same-day snapshot row.
+from utils.utils import resolve_adv_metrics_completed_week
+completed_week = resolve_adv_metrics_completed_week({season!r}, int({week!r}))
+# Force-refetch the in-progress week's box scores when it's the one being counted
+# (a populated cache otherwise freezes on its first partial fetch).
+_force_weeks = [int({week!r})] if completed_week == int({week!r}) else None
+summary = build_advanced_metrics_snapshot({season!r}, completed_week, force_weeks=_force_weeks)
 print(f"[cron] Advanced metrics snapshot: {{summary}}")
 
 # Air yards + WOPR from stats CSV — runs unconditionally (not gated on the

@@ -22,6 +22,7 @@ def _usage_team(raw_team) -> Optional[str]:
 def build_usage_map_for_season(
         season: int,
         weeks: Iterable[int],
+        force_weeks: Optional[Iterable[int]] = None,
 ) -> Dict[str, Dict[str, float]]:
     """
     Aggregate Sleeper season stats for the given season + weeks and
@@ -76,10 +77,19 @@ def build_usage_map_for_season(
     team_week_opportunities: Dict[tuple, float] = {}
     team_week_targets: Dict[tuple, float] = {}
     weeks_list = list(weeks)
+    # Weeks whose cache must be refetched even when populated — the in-progress
+    # week, whose file otherwise freezes on its first (partial) fetch and would
+    # never pick up games that finish later the same week.
+    force_set = {int(w) for w in (force_weeks or [])}
 
     # Stream one week at a time so we never hold all 18 weeks in RAM simultaneously
     for w in weeks_list:
-        week_players = fetch_week_stats(season, w)
+        # Only pass force when actually forcing, so callers/tests that stub
+        # fetch_week_stats with the original 2-arg signature keep working.
+        if int(w) in force_set:
+            week_players = fetch_week_stats(season, w, force=True)
+        else:
+            week_players = fetch_week_stats(season, w)
         if not isinstance(week_players, dict):
             gc.collect()
             continue
