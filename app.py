@@ -29862,12 +29862,25 @@ def build_portfolio_body(
         "var cards=[].slice.call(document.querySelectorAll('[data-summary-card]')).filter(function(c){return c.isConnected&&c.style.display!=='none';});"
         "var keys=cards.map(function(c){return {platform:c.dataset.platform,league_id:c.dataset.leagueId,season:parseInt(c.dataset.season,10)};});"
         "var success=0,failed=0,stamp=null;try{"
-        # No hydratable summary cards on the visible page (only predraft,
-        # unlinked, or errored league cards, which carry no data-summary-card)
-        # means an empty leagues list and nothing to refresh. Return a no-op
-        # success so doRefresh does not surface a spurious failure; the finally
-        # still rearms the live-matchup timer.
-        "if(!keys.length)return {success:true,refreshedAt:null};"
+        # No in-place-refreshable summary cards means every visible league is a
+        # warm, server-rendered card (which has no data-summary-card hooks and so
+        # cannot update in place) -- or the list is genuinely empty. Warm cards
+        # still need a way to refresh: rebuild every drafted league from its live
+        # slot (which carries platform/league/season on warm and cold cards
+        # alike), then hand off to doRefresh's full page refresh so the rebuilt
+        # data actually renders. The old silent no-op here made the Refresh
+        # button look dead whenever the portfolio was already warm.
+        "if(!keys.length){"
+        "var xs=[].slice.call(document.querySelectorAll('.pf-lg-card [data-lg-live]'))"
+        ".filter(function(s){var c=s.closest('.pf-lg-card');return c&&c.isConnected&&c.style.display!=='none';})"
+        ".map(function(s){return {platform:s.dataset.platform,league_id:s.dataset.leagueId,season:parseInt(s.dataset.season,10)};})"
+        ".filter(function(k){return k.platform&&k.league_id&&k.season;});"
+        "if(!xs.length)return {handled:false};"
+        "for(var xo=0;xo<xs.length;xo+=4){"
+        "try{await window.brFetchWithTimeout('/api/portfolio/refresh',{method:'POST',cache:'no-store',credentials:'same-origin',"
+        "headers:{'Content-Type':'application/json','Cache-Control':'no-store'},body:JSON.stringify({leagues:xs.slice(xo,xo+4)}),signal:signal},30000);}"
+        "catch(e){}}"
+        "return {handled:false};}"
         # /api/portfolio/refresh caps each batch at 4 leagues; chunk so accounts
         # with more visible cards refresh all of them instead of a blanket 400.
         "var CHUNK=4;var results=new Array(cards.length);"
