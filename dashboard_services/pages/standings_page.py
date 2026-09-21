@@ -32,7 +32,7 @@ def build_standings_body(ctx: dict) -> str:
           <div class="card-tabs">
             <div class="tab-strip">
               <button class="tab-btn active" data-tab="standings">Standings</button>
-              <button class="tab-btn" data-tab="details">Detailed Stats</button>
+              <button class="tab-btn" data-tab="details">Detailed</button>
               <button class="tab-btn" data-tab="shares">Value Share</button>
             </div>
             <div class="tab-panels">
