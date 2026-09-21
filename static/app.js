@@ -1374,6 +1374,10 @@ window.brHaptic = function (pattern) {
     if (!mq.matches) syncDesktopNav(doc);
     else syncMobileDock(doc);
     if (window.brUpdateFreshness) window.brUpdateFreshness();
+    // Soft-nav into another league page: same stale-while-revalidate pass as a
+    // fresh load. Skipped implicitly right after an auto/manual refresh swap,
+    // since that just wrote a fresh cache timestamp.
+    if (window.brMaybeAutoRevalidate) window.brMaybeAutoRevalidate();
   }
 
   window.brSwapPageRoot = function (html) {
@@ -3376,6 +3380,70 @@ function showLoginGate(target, opts) {
   window.brRefreshLeague = doRefresh;
   window.brCancelRefresh = cancelRefresh;
 
+  // ── Auto-revalidate on navigation (stale-while-revalidate) ──────────────────
+  // When you land on a league page, it paints instantly from the cached snapshot
+  // (the 12h server context) and then silently rebuilds from source and swaps the
+  // fresh content in place -- no full-screen overlay, no reload, no manual
+  // "Refresh data" tap. This mirrors what the live surfaces (Redzone) and the
+  // portfolio cards already do for themselves; it fills the gap for the plain
+  // server-rendered league pages (standings, teams, weekly, dashboard, ...).
+  //
+  // Cost is bounded: it only fires when the served snapshot is older than
+  // AUTO_REVALIDATE_MS, it reuses the same per-league context cache key (so
+  // hopping between pages of one league rebuilds at most once per window), and
+  // the server rate-limits /api/refresh-league. It is deliberately silent on
+  // failure -- the cached page stays, and the next eligible navigation retries.
+  var AUTO_REVALIDATE_MS = 60 * 1000;
+
+  function autoRevalidateEligible() {
+    if (doRefresh._busy) return false;             // a manual/auto refresh is already running
+    var root = document.getElementById('page-root');
+    if (!root) return false;
+    // Live surfaces run their own refresh timers; never fight them.
+    if (document.getElementById('rz-root') || document.getElementById('drSideTabs')) return false;
+    // Only real per-league routes (/<platform>/<season>/<league_id>/<page>).
+    // Home and /portfolio have no league to expire and hydrate themselves.
+    var parts = location.pathname.split('/').filter(Boolean);
+    if (parts.length < 3) return false;
+    var ts = normalizeTimestamp(cacheTs());
+    if (!ts || Date.now() - ts < AUTO_REVALIDATE_MS) return false;  // fresh enough already
+    // Past seasons are frozen; only the current season's data still changes.
+    var season = parseInt(root.dataset.season || '0', 10);
+    if (season && season < new Date().getFullYear()) return false;
+    if (document.visibilityState !== 'visible') return false;       // don't refresh a backgrounded tab
+    return true;
+  }
+
+  async function autoRevalidate() {
+    if (!autoRevalidateEligible()) return;
+    doRefresh._busy = true;
+    var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    doRefresh._controller = controller;
+    var runId = doRefresh._run = (doRefresh._run || 0) + 1;
+    var beforeTs = cacheTs();
+    try {
+      await expireLeague(controller ? controller.signal : undefined);
+      if (runId !== doRefresh._run) return;
+      var fresh = await fetchFreshDocument(beforeTs, controller ? controller.signal : undefined);
+      if (runId !== doRefresh._run) return;
+      // Swap in place when the page allows it; otherwise leave the cache warmed
+      // so the next load is fresh. A silent pass must never yank the page out
+      // from under the reader with a full reload the way an explicit Refresh may.
+      if (canSwapInPlace() && window.brSwapPageRoot(fresh.html)) {
+        updateLabels();
+      }
+    } catch (e) {
+      // Silent: keep the cached paint. The freshness pill still shows its age
+      // and the manual Refresh remains available.
+    } finally {
+      if (runId === doRefresh._run) {
+        doRefresh._busy = false;
+        if (doRefresh._controller === controller) doRefresh._controller = null;
+      }
+    }
+  }
+  window.brMaybeAutoRevalidate = autoRevalidate;
+
   // Mobile More-sheet Refresh row (persists across soft-navs, so wire once).
   function wireSheetRefresh() {
     var btn = document.getElementById('brSheetRefresh');
@@ -3438,6 +3506,9 @@ function showLoginGate(target, opts) {
     wireSheetRefresh();
     updateLabels();
     initPills();
+    // Fresh load / native navigation: if the served snapshot is aging, rebuild
+    // it from source in the background and swap it in place.
+    autoRevalidate();
     // A completed user refresh landed with a new cache timestamp -- drop the
     // flag so a later nav-fresh message doesn't bounce the page again.
     try {
