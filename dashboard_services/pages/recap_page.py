@@ -457,6 +457,7 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
                 links.append(
                     f'<span class="player-clickable recap-top-performer-name" tabindex="0" role="button" '
                     f'data-player-id="{safe_pid}" data-player-name="{safe_name_attr}" '
+                    f'data-wl-star-pid="{safe_pid}" '
                     f'data-league-id="{html.escape(str(_league_id), quote=True)}" '
                     f'data-platform="{html.escape(str(_platform), quote=True)}" '
                     f'data-season="{html.escape(str(_season), quote=True)}" '

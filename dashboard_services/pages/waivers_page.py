@@ -925,7 +925,7 @@ function wvRenderBigGames(items) {{
     return `
     <div class="wv-player-row" onclick="openPlayerModal('${{d.player_id}}', '${{(d.name||'').replace(/'/g,"\\'")}}')">
       <div>
-        <div class="wv-player-name">${{d.name || ('Player ' + d.player_id)}}</div>
+        <div class="wv-player-name" data-wl-star-pid="${{d.player_id}}">${{d.name || ('Player ' + d.player_id)}}</div>
         <div class="wv-player-sub">${{sub}}</div>
         ${{facts ? `<div class="wv-drop-hint"><span class="wv-drop-lbl">What changed</span> ${{facts}}</div>` : ''}}
         ${{cautionLine}}
@@ -936,6 +936,7 @@ function wvRenderBigGames(items) {{
       </div>
     </div>`;
   }}).join('') + '</div>';
+  if (window._wlStarDecorate) window._wlStarDecorate(list);
 }}
 
 // ── Waiver list ───────────────────────────────────────────────────────────────

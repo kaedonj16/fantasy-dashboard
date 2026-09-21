@@ -4936,6 +4936,7 @@ window.initTradePage = function initTradePage(root = document) {
     const name = document.createElement("span");
     name.className = "otc-dropdown-name";
     name.textContent = p.name || "Unknown";
+    if (p.id && p.position !== "PICK") name.setAttribute("data-wl-star-pid", String(p.id));
 
     top.appendChild(rank);
     top.appendChild(name);
@@ -9116,6 +9117,7 @@ window.initTradePage = function initTradePage(root = document) {
 
       dropdown.style.display = "block";
       dropdown.parentElement.classList.add("dropdown-open");
+      if (typeof _wlStarDecorate === "function") _wlStarDecorate(dropdown);
     }
 
     input.addEventListener("input", () => { renderSide(input.value); });
@@ -13462,6 +13464,31 @@ function _isWatched(player_id) {
   return _getWatchlist().some(p => String(p.player_id) === pid);
 }
 
+// Decorate any element carrying data-wl-star-pid with a gold star when that
+// player is on the watchlist (and remove it when unwatched). Idempotent, so it
+// is safe to run on load, on watchlist-updated, and after dynamic re-renders.
+function _wlStarDecorate(root) {
+  try {
+    if (typeof _isWatched !== 'function') return;
+    const scope = (root && root.querySelectorAll) ? root : document;
+    scope.querySelectorAll('[data-wl-star-pid]').forEach(function (el) {
+      const pid = el.getAttribute('data-wl-star-pid');
+      const existing = el.querySelector(':scope > .wl-inline-star');
+      const want = pid && _isWatched(pid);
+      if (want && !existing) {
+        const s = document.createElement('span');
+        s.className = 'wl-inline-star';
+        s.setAttribute('aria-hidden', 'true');
+        s.title = 'On your watchlist';
+        s.textContent = '★';
+        el.appendChild(s);
+      } else if (!want && existing) {
+        existing.remove();
+      }
+    });
+  } catch (e) { /* non-fatal */ }
+}
+
 function _toggleWatchlist(player) {
   const pid = String(player.player_id);
   const list = _getWatchlist();
@@ -14003,6 +14030,8 @@ async function initSinceLastVisit() {
 _deferInit(initSinceLastVisit);
 
 window.addEventListener('watchlist-updated', _refreshWatchlistNav);
+window.addEventListener('watchlist-updated', function () { _wlStarDecorate(document); });
+_deferInit(function () { _wlStarDecorate(document); });
 document.addEventListener('click', function(e) {
   const wrapper = document.querySelector('.watchlist-nav-wrapper');
   if (wrapper && !wrapper.contains(e.target)) {
@@ -17735,6 +17764,29 @@ function _tmBuildEffChart(weeks) {
   );
 }
 
+// Bye-conflict warnings: upcoming weeks where two or more players at the same
+// position share a bye, so the roster has a hole to plan around.
+function _tmByeConflictsHtml(conflicts) {
+  if (!Array.isArray(conflicts) || !conflicts.length) return '';
+  const rows = conflicts.map(function (c) {
+    const names = (c.players || []).map(_tmEsc).join(', ');
+    return `<div class="tm-bye-row"><span class="tm-bye-pos">${_tmEsc(c.position)}</span>` +
+      `<span class="tm-bye-txt">${names} share a Week ${_tmEsc(c.week)} bye</span></div>`;
+  }).join('');
+  return `<div class="tm-bye-warn"><div class="tm-bye-title">Bye conflicts</div>${rows}</div>`;
+}
+
+// Persistent achievement chips (max 3) for the team, shown above the roster.
+function _tmAchievementsHtml(achievements) {
+  if (!Array.isArray(achievements) || !achievements.length) return '';
+  const cls = { gold: 'tm-achv-gold', indigo: 'tm-achv-indigo', win: 'tm-achv-win' };
+  const chips = achievements.slice(0, 3).map(function (a) {
+    const k = cls[a.kind] || '';
+    return `<span class="tm-achv-chip ${k}">${_tmEsc(a.label || '')}</span>`;
+  }).join('');
+  return `<div class="tm-achievements">${chips}</div>`;
+}
+
 // Primary "Trade with this team" button pinned at the bottom of the Roster tab
 // for opposing teams. Hidden for the viewer's own team. Idempotent.
 function tmInjectRosterTradeCta() {
@@ -19012,9 +19064,12 @@ function renderTeamDetails(data) {
   const rosterPanel = document.getElementById('tm-panel-roster');
   if (rosterPanel) {
     const sideHTML = picksHTML || strengthHTML;
-    rosterPanel.innerHTML = sideHTML
+    const achieveHTML = _tmAchievementsHtml(data.achievements);
+    const byeHTML = _tmByeConflictsHtml(data.bye_conflicts);
+    const bodyHTML = sideHTML
       ? `<div class="team-modal-body-left">${rosterHTML}</div><div class="team-modal-body-right">${sideHTML}</div>`
       : `<div class="team-modal-body-left" style="flex:1;max-width:100%;">${rosterHTML}</div>`;
+    rosterPanel.innerHTML = achieveHTML + byeHTML + bodyHTML;
     tmInjectRosterTradeCta();
   }
   const chartsPanel = document.getElementById('tm-panel-charts');
@@ -19298,7 +19353,6 @@ function renderTeamDetails(data) {
     host.className = 'mya-wrap';
     host.innerHTML =
       '<button type="button" id="myActionsPill" class="mya-pill" aria-haspopup="dialog" aria-expanded="false" title="Actions across your leagues">' +
-        '<span class="mya-bolt" aria-hidden="true">&#9889;</span>' +
         '<span id="myActionsCount">' + actions.length + '</span>&nbsp;actions</button>' +
       '<div id="myActionsDrawer" class="mya-drawer" role="dialog" aria-label="Actions across your leagues" hidden>' +
         buildDrawer(actions) + '</div>';
@@ -19322,7 +19376,14 @@ function renderTeamDetails(data) {
       .then(function (d) {
         CACHE = d || {};
         var actions = (d && Array.isArray(d.actions)) ? d.actions : [];
-        if (actions.length) mount(actions);
+        if (actions.length) {
+          mount(actions);
+          // Mobile: reveal the More-sheet "My Actions" entry with a count badge.
+          var moreRow = document.getElementById('moreMyActions');
+          var moreCount = document.getElementById('moreMyActionsCount');
+          if (moreRow) moreRow.hidden = false;
+          if (moreCount) moreCount.textContent = String(actions.length);
+        }
       })
       .catch(function () { CACHE = {}; });
   }

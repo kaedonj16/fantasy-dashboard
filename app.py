@@ -3265,12 +3265,21 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
     root_categories = [_category_row(x) for x in root_labels]
     portfolio_root = portfolio_link
     portfolio_fallback = '<a class="br-sheet-link" href="/">Link a league</a>'
+    # Cross-league "My Actions": hidden until app.js confirms cached actions
+    # exist, then unhidden with a count badge (mirrors the desktop header pill).
+    my_actions_row = ""
+    if session.get("viewer_username") or session.get("account_id"):
+        my_actions_row = (
+            "<a class='br-sheet-link' id='moreMyActions' href='/portfolio' hidden>"
+            f"{_nav_icon('list', size=20)}<span>My Actions</span>"
+            "<span class='br-sheet-badge' id='moreMyActionsCount' aria-hidden='true'></span></a>"
+        )
     # The root is deliberately short: primary taxonomy first, core portfolio
     # navigation next, and low-frequency account utilities last.
     root_html = (
         "<section class='br-sheet-panel br-sheet-root' id='brMorePanel-root' data-br-sheet-panel='root'>"
         "<h2 class='br-sheet-root-title' tabindex='-1'>More</h2>"
-        f"{find_html}<h3 class='br-sheet-h'>Navigate</h3><div class='br-sheet-group'>{''.join(root_categories)}{portfolio_root or portfolio_fallback}</div>"
+        f"{find_html}<h3 class='br-sheet-h'>Navigate</h3><div class='br-sheet-group'>{my_actions_row}{''.join(root_categories)}{portfolio_root or portfolio_fallback}</div>"
         "<div class='br-sheet-utility-divider' aria-hidden='true'></div>"
         f"<h3 class='br-sheet-h'>Tools</h3><div class='br-sheet-group'>{tools_html}</div>"
         "<div class='br-sheet-changelog-mount' id='brSheetChangelog'></div>"
@@ -23070,6 +23079,55 @@ def _build_team_trends_html(league_id, season, week, roster_id, owner,
     )
 
 
+def _team_achievements(ctx, roster_id, owner_uid, platform, season, league_id):
+    """Up to three persistent achievement chips for a team: weekly-high-score
+    count and a league-leading win streak (both from the season's finalized
+    rows), plus a reigning championship when the awards cache carries it.
+    Best-effort and defensive: returns whatever it can derive, or []."""
+    out = []
+    rid = str(roster_id)
+    try:
+        df = (ctx or {}).get("df_weekly")
+        if df is not None and not getattr(df, "empty", True) \
+                and {"week", "roster_id", "points"}.issubset(df.columns):
+            fin = df[df["finalized"] == True] if "finalized" in df.columns else df
+            high_weeks = 0
+            for _wk, grp in fin.groupby("week"):
+                if grp.empty:
+                    continue
+                top_rid = str(grp.loc[grp["points"].idxmax(), "roster_id"])
+                if top_rid == rid:
+                    high_weeks += 1
+            if high_weeks >= 1:
+                out.append({"label": f"{high_weeks}× Weekly High", "kind": "gold"})
+            if "points_against" in fin.columns:
+                streaks = {}
+                for _rid, grp in fin.sort_values("week").groupby("roster_id"):
+                    best = cur = 0
+                    for _, row in grp.iterrows():
+                        if float(row["points"]) > float(row.get("points_against", 0)):
+                            cur += 1
+                            best = max(best, cur)
+                        else:
+                            cur = 0
+                    streaks[str(_rid)] = best
+                my_streak = streaks.get(rid, 0)
+                if my_streak >= 3 and streaks and my_streak == max(streaks.values()):
+                    out.append({"label": f"Longest Win Streak ({my_streak})", "kind": "indigo"})
+    except Exception:
+        logger.debug("[achievements] weekly/streak calc failed", exc_info=True)
+    try:
+        agg = get_awards_agg_from_cache(platform, season, league_id)
+        if agg:
+            championships = agg[2] or {}
+            seasons = championships.get(str(owner_uid)) or championships.get(owner_uid) or []
+            for s in sorted((str(x) for x in seasons), reverse=True)[:1]:
+                out.append({"label": f"{s} Champion", "kind": "win"})
+    except Exception:
+        logger.debug("[achievements] championship lookup failed", exc_info=True)
+    return out[:3]
+
+
 @app.route("/api/team-details/<roster_id>")
 def api_team_details(roster_id: str):
     """Get comprehensive team details for modal display."""
@@ -23187,6 +23245,12 @@ def api_team_details(roster_id: str):
 
         # Build roster with values
         roster_players = []
+        # NFL bye week per team, for roster bye-conflict warnings. Empty when no
+        # schedule data is loaded, so nothing fabricated is shown.
+        try:
+            _bye_by_team = _team_bye_map(season) or {}
+        except Exception:
+            _bye_by_team = {}
         total_value = 0.0
 
         ages_found = 0
@@ -23266,11 +23330,30 @@ def api_team_details(roster_id: str):
                 "injury_status": inj_status,
                 "injury_body_part": inj_body,
                 "return_plan": _return_plan,
+                "bye": _bye_by_team.get(player_team) or _bye_by_team.get(canon_team(player_team)),
             })
 
         # Sort by position order (QB, RB, WR, TE, K, DEF), then by value within position
         pos_order = {"QB": 0, "RB": 1, "WR": 2, "TE": 3, "K": 4, "DEF": 5}
         roster_players.sort(key=lambda p: (pos_order.get(p["position"], 99), -(p["value"] or 0)))
+
+        # Bye-conflict warnings: upcoming weeks where two or more players at the
+        # same position share a bye, so the roster has a hole to plan around.
+        bye_conflicts = []
+        try:
+            from collections import defaultdict as _dd
+            _by_pos_week = _dd(lambda: _dd(list))
+            for _p in roster_players:
+                _bw = _p.get("bye")
+                _pos = _p.get("position")
+                if _bw and _pos in ("QB", "RB", "WR", "TE"):
+                    _by_pos_week[_pos][int(_bw)].append(_p["name"])
+            for _pos in ("QB", "RB", "WR", "TE"):
+                for _wk, _names in sorted(_by_pos_week[_pos].items()):
+                    if len(_names) >= 2:
+                        bye_conflicts.append({"position": _pos, "week": _wk, "players": _names})
+        except Exception:
+            logger.debug("[api_team_details] bye conflicts skipped", exc_info=True)
 
         # Get draft picks. ESPN/Yahoo have no pick feed; redraft leagues have
         # no future capital. Inventing default own-picks would fake a dynasty
@@ -23758,6 +23841,16 @@ def api_team_details(roster_id: str):
         except Exception:
             logger.debug("[api_team_details] lineup efficiency skipped", exc_info=True)
 
+        # Persistent achievements (weekly-high count, league-leading win streak,
+        # and reigning championship when the awards cache has it). At most three.
+        achievements = []
+        try:
+            achievements = _team_achievements(
+                _eff_ctx, roster_id, owner_id, platform, season, league_id,
+            )
+        except Exception:
+            logger.debug("[api_team_details] achievements skipped", exc_info=True)
+
         response = {
             "roster_id": roster_id,
             "team_name": team_name,
@@ -23775,6 +23868,8 @@ def api_team_details(roster_id: str):
             "playoff_odds": playoff_odds,
             "lineup_efficiency": lineup_efficiency,
             "efficiency_weeks": efficiency_weeks,
+            "achievements": achievements,
+            "bye_conflicts": bye_conflicts,
             "total_value": round(total_value, 1),
             "roster": roster_players,
             "picks": all_picks,
@@ -23836,6 +23931,30 @@ def api_player_league_trades(player_id: str):
         return jsonify(payload)
     except Exception as e:
         logger.exception("[api_player_league_trades] error")
+        return _api_err("Request failed", e)
+
+
+@app.route("/api/player-acquisition/<player_id>")
+def api_player_acquisition(player_id: str):
+    """Non-trade acquisition events (draft pick, waiver/FAAB adds) for a player
+    in the connected league chain, for the "In this league" timeline."""
+    try:
+        from dashboard_services.player_league_trades import get_player_acquisition_events
+
+        league_id = (request.args.get("league_id") or "").strip()
+        platform = (request.args.get("platform") or "sleeper").strip().lower()
+        try:
+            season = int(request.args.get("season") or datetime.now().year)
+        except (TypeError, ValueError):
+            season = datetime.now().year
+        if not league_id:
+            return jsonify({"error": "league_id required"}), 400
+        payload = get_player_acquisition_events(
+            player_id, platform=platform, league_id=league_id, season=season,
+        )
+        return jsonify(payload)
+    except Exception as e:
+        logger.exception("[api_player_acquisition] error")
         return _api_err("Request failed", e)
 
 
