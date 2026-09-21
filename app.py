@@ -3265,12 +3265,21 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
     root_categories = [_category_row(x) for x in root_labels]
     portfolio_root = portfolio_link
     portfolio_fallback = '<a class="br-sheet-link" href="/">Link a league</a>'
+    # Cross-league "My Actions": hidden until app.js confirms cached actions
+    # exist, then unhidden with a count badge (mirrors the desktop header pill).
+    my_actions_row = ""
+    if session.get("viewer_username") or session.get("account_id"):
+        my_actions_row = (
+            "<a class='br-sheet-link' id='moreMyActions' href='/portfolio' hidden>"
+            f"{_nav_icon('list', size=20)}<span>My Actions</span>"
+            "<span class='br-sheet-badge' id='moreMyActionsCount' aria-hidden='true'></span></a>"
+        )
     # The root is deliberately short: primary taxonomy first, core portfolio
     # navigation next, and low-frequency account utilities last.
     root_html = (
         "<section class='br-sheet-panel br-sheet-root' id='brMorePanel-root' data-br-sheet-panel='root'>"
         "<h2 class='br-sheet-root-title' tabindex='-1'>More</h2>"
-        f"{find_html}<h3 class='br-sheet-h'>Navigate</h3><div class='br-sheet-group'>{''.join(root_categories)}{portfolio_root or portfolio_fallback}</div>"
+        f"{find_html}<h3 class='br-sheet-h'>Navigate</h3><div class='br-sheet-group'>{my_actions_row}{''.join(root_categories)}{portfolio_root or portfolio_fallback}</div>"
         "<div class='br-sheet-utility-divider' aria-hidden='true'></div>"
         f"<h3 class='br-sheet-h'>Tools</h3><div class='br-sheet-group'>{tools_html}</div>"
         "<div class='br-sheet-changelog-mount' id='brSheetChangelog'></div>"

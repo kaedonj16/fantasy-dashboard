@@ -19350,7 +19350,14 @@ function renderTeamDetails(data) {
       .then(function (d) {
         CACHE = d || {};
         var actions = (d && Array.isArray(d.actions)) ? d.actions : [];
-        if (actions.length) mount(actions);
+        if (actions.length) {
+          mount(actions);
+          // Mobile: reveal the More-sheet "My Actions" entry with a count badge.
+          var moreRow = document.getElementById('moreMyActions');
+          var moreCount = document.getElementById('moreMyActionsCount');
+          if (moreRow) moreRow.hidden = false;
+          if (moreCount) moreCount.textContent = String(actions.length);
+        }
       })
       .catch(function () { CACHE = {}; });
   }
