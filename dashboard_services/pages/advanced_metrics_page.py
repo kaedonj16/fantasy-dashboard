@@ -1261,7 +1261,9 @@ _AM_JS = r"""
     // NGS/FTN/EPA metrics: totals summed, rates volume-weighted -- parity with
     // the server's get_adv_weekly_range_leaderboard so ranges match the board.
     const ADV_TOTALS = ['passing_epa', 'rushing_epa', 'receiving_epa',
-      'yards_after_catch', 'explosive_runs_10_plus', 'ngs_rush_yards_over_expected'];
+      'yards_after_catch', 'explosive_runs_10_plus', 'ngs_rush_yards_over_expected',
+      'expected_ppr', 'expected_half_ppr', 'expected_standard',
+      'ppr_over_expected', 'half_ppr_over_expected', 'standard_over_expected'];
     const ADV_WEIGHTED = {
       epa_per_play: 'w_dropbacks', cpoe: 'w_dropbacks', success_rate: 'w_dropbacks',
       sack_rate: 'w_dropbacks', scramble_rate: 'w_dropbacks', nfl_passer_rating: 'w_dropbacks',

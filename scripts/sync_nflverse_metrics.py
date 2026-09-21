@@ -43,6 +43,9 @@ from data_building.external_data.nflverse_metrics import (
     build_nflverse_metrics_for_season,
     build_nflverse_weekly_metrics_for_season,
 )
+from data_building.external_data.expected_points import (
+    build_expected_points_both,
+)
 from utils.utils import load_players_index
 
 
@@ -93,17 +96,29 @@ def resolve_seasons(explicit: Optional[str], last_n: int) -> List[int]:
     return list(range(anchor - last_n + 1, anchor + 1))
 
 
-def upsert_season(season: int, players_index: dict, purge_pff: bool = True) -> int:
+def upsert_season(season: int, players_index: dict, purge_pff: bool = True,
+                  xfp_by_pid: Optional[dict] = None) -> int:
     """Build and upsert NGS + FTN metrics for one season. Returns rows written.
 
     When purge_pff is True (default), clears the PFF-sourced values from the
     overlapping shared columns so the free nflverse values fully replace them.
+
+    xfp_by_pid, when supplied, is the season Expected Fantasy Points map
+    ({sleeper_id: {expected_*_per_game, *_over_expected_per_game}}) built once by
+    the caller; its columns are merged into each player's snapshot row so xFP
+    lands on the same coalesced season row as the other nflverse metrics.
     """
     by_pid = build_nflverse_metrics_for_season(season)
     if not by_pid:
         print(f"  No nflverse metrics resolved for {season}")
         # A provider outage must never erase the last successful snapshot.
         return 0
+
+    # Merge in xFP columns (union of players: a player with opportunities but no
+    # NGS/FTN/EPA row still gets an xFP-only entry).
+    for pid, cols in (xfp_by_pid or {}).items():
+        if cols:
+            by_pid.setdefault(pid, {}).update(cols)
 
     # Distinct snapshot date per season; later than the computed (01-10) and PFF
     # (02-15) snapshots so the coalescing reader prefers these public-safe values.
@@ -145,14 +160,22 @@ def upsert_season(season: int, players_index: dict, purge_pff: bool = True) -> i
     return count
 
 
-def upsert_weekly_season(season: int, players_index: dict) -> int:
+def upsert_weekly_season(season: int, players_index: dict,
+                         xfp_by_pw: Optional[dict] = None) -> int:
     """Build and upsert per-week advanced metrics for one season.
 
     Writes to player_weekly_advanced_metrics so the new free metrics can be
     filtered by week (leaderboard ranges, compare ranges, single-week modal).
     Returns the number of (player, week) rows written.
+
+    xfp_by_pw, when supplied, is the weekly Expected Fantasy Points map
+    ({(sleeper_id, week): {expected_*, *_over_expected}}) built once by the
+    caller; its per-week totals are merged into the matching player-week rows.
     """
     by_pw = build_nflverse_weekly_metrics_for_season(season)
+    for key, cols in (xfp_by_pw or {}).items():
+        if cols:
+            by_pw.setdefault(key, {}).update(cols)
     if not by_pw:
         print(f"  No weekly nflverse metrics resolved for {season}")
         return 0
@@ -219,17 +242,30 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
     weekly_total = 0
     for season in seasons:
         print(f"=== Season {season} ===")
+        # Expected Fantasy Points: one play-by-play pass yields both the season
+        # (per-game) and weekly (per-week total) maps, so we build it once here
+        # and hand each map to the matching upsert.
+        xfp_season, xfp_weekly = {}, {}
+        try:
+            xfp_season, xfp_weekly = build_expected_points_both(season)
+            print(f"  xFP: {len(xfp_season)} players, {len(xfp_weekly)} player-weeks")
+        except Exception as e:
+            import traceback
+            print(f"  [error] xFP {season} failed: {e}")
+            traceback.print_exc()
         if not args.weekly_only:
             try:
                 total += upsert_season(season, players_index,
-                                       purge_pff=not args.keep_pff_shared)
+                                       purge_pff=not args.keep_pff_shared,
+                                       xfp_by_pid=xfp_season)
             except Exception as e:
                 import traceback
                 print(f"  [error] season {season} failed: {e}")
                 traceback.print_exc()
         if not args.no_weekly:
             try:
-                weekly_total += upsert_weekly_season(season, players_index)
+                weekly_total += upsert_weekly_season(season, players_index,
+                                                     xfp_by_pw=xfp_weekly)
             except Exception as e:
                 import traceback
                 print(f"  [error] weekly {season} failed: {e}")

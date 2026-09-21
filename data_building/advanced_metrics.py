@@ -306,6 +306,23 @@ def _add_rookie_eval_columns(conn) -> None:
             ADD COLUMN IF NOT EXISTS total_tds       NUMERIC;
     """)
 
+    # Expected Fantasy Points (xFP): season-total expected points + points over
+    # expected, for each reception format. Derived from open play-by-play in
+    # data_building/external_data/expected_points.py and upserted by
+    # scripts/sync_nflverse_metrics.py. These are season totals (the sum of the
+    # per-week totals in player_weekly_advanced_metrics), mirroring receiving_epa.
+    # A negative *_over_expected is fantasy points left on the board (elite
+    # opportunity that has not converted).
+    conn.execute("""
+        ALTER TABLE player_advanced_metrics
+            ADD COLUMN IF NOT EXISTS expected_ppr            NUMERIC,
+            ADD COLUMN IF NOT EXISTS expected_half_ppr       NUMERIC,
+            ADD COLUMN IF NOT EXISTS expected_standard       NUMERIC,
+            ADD COLUMN IF NOT EXISTS ppr_over_expected       NUMERIC,
+            ADD COLUMN IF NOT EXISTS half_ppr_over_expected  NUMERIC,
+            ADD COLUMN IF NOT EXISTS standard_over_expected  NUMERIC;
+    """)
+
     # Team and schedule ease.
     conn.execute("""
         ALTER TABLE player_advanced_metrics
@@ -1593,6 +1610,20 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     "red_zone_usage":       {"label": "Red Zone Usage",      "category": "General", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Targets and carries inside the opponent's 20-yard line per game; a proxy for scoring opportunity."},
     "grades_offense":       {"label": "PFF Off Grade",       "category": "General", "positions": ["QB", "RB", "WR", "TE"], "efficiency": True, "min_vol": _V_GAMES, "desc": "PFF's overall offensive grade (0-100) from play-by-play charting."},
     "schedule_ease":        {"label": "Schedule Ease",       "category": "General", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "hidden": True, "desc": "How easy the player's remaining schedule is vs. their position (0-100, 100 = easiest). Based on opponent defensive ratings from matchup_ratings."},
+    # ── Expected Points (xFP): opportunity-based value from play-by-play ──────
+    # Every target/carry/dropback is assigned an expected fantasy value from its
+    # context (air yards, completion prob, expected YAC, field position), so xFP
+    # is what a league-average player would have scored on that exact workload.
+    # actual − xFP = points over expected; a NEGATIVE value is fantasy points
+    # "left on the board" (elite usage not yet converted). Stored per reception
+    # format; season mode shows the season total, a week range shows the range
+    # total. See data_building/external_data/expected_points.py.
+    "expected_ppr":         {"label": "Expected FP (PPR)",   "category": "Expected Pts", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Expected fantasy points (full PPR): the points a league-average player would score on this exact target/carry/dropback workload, from play-by-play (air yards, completion probability, expected YAC, field-position TD equity). A pure opportunity/volume measure — outcome-independent."},
+    "ppr_over_expected":    {"label": "FP Over Exp (PPR)",   "category": "Expected Pts", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Actual full-PPR points minus expected (xFP). Positive = converted opportunity into more than expected (often TD-driven, prone to regression); NEGATIVE = fantasy points left on the board (elite usage not yet cashed in), historically a positive-regression signal."},
+    "expected_half_ppr":    {"label": "Expected FP (Half)",  "category": "Expected Pts", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Expected fantasy points in half-PPR scoring (0.5 per reception). Opportunity-based; see Expected FP (PPR)."},
+    "half_ppr_over_expected": {"label": "FP Over Exp (Half)", "category": "Expected Pts", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Actual half-PPR points minus expected. Negative = points left on the board."},
+    "expected_standard":    {"label": "Expected FP (Std)",   "category": "Expected Pts", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Expected fantasy points in standard (non-PPR) scoring. Opportunity-based; see Expected FP (PPR)."},
+    "standard_over_expected": {"label": "FP Over Exp (Std)",  "category": "Expected Pts", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Actual standard (non-PPR) points minus expected. Negative = points left on the board."},
     # ── Passing (volume → efficiency → touchdowns → grade) ───────────────────
     # Passing yards is derived (yards/attempt x attempts) so it needs no new column.
     "total_pass_yards":     {"label": "Pass Yards",          "category": "Passing", "positions": ["QB"], "integer": True, "desc": "Total passing yards in the season.", "computed_sql": "ROUND(m.yards_per_attempt * m.total_pass_att)", "computed_null": "m.yards_per_attempt IS NOT NULL AND m.total_pass_att IS NOT NULL"},
@@ -1878,6 +1909,11 @@ WEEKLY_ADV_METRIC_COLS: List[str] = [
     "rushing_success_rate", "receiving_success_rate",
     "rushing_epa_per_att", "receiving_epa_per_target",
     "qb_hit_rate", "explosive_pass_rate", "pacr", "racr",
+    # Expected Fantasy Points (xFP): that week's expected total + over-expected
+    # total, per reception format. Totals (like passing_epa) so a week range
+    # sums them. See data_building/external_data/expected_points.py.
+    "expected_ppr", "expected_half_ppr", "expected_standard",
+    "ppr_over_expected", "half_ppr_over_expected", "standard_over_expected",
 ]
 # Volume weight columns used to weight rate metrics across a week range.
 WEEKLY_ADV_WEIGHT_COLS: List[str] = [
@@ -2154,6 +2190,10 @@ def get_available_metric_weeks(player_id: str, season: int) -> List[int]:
 _ADV_WEEKLY_TOTAL_METRICS = {
     "passing_epa", "rushing_epa", "receiving_epa", "yards_after_catch",
     "explosive_runs_10_plus", "ngs_rush_yards_over_expected",
+    # Expected Fantasy Points: per-week totals that sum over a range (and to the
+    # season snapshot). Season mode with no week bounds sums the whole season.
+    "expected_ppr", "expected_half_ppr", "expected_standard",
+    "ppr_over_expected", "half_ppr_over_expected", "standard_over_expected",
 }
 _ADV_WEEKLY_WEIGHTED_METRICS = {
     "epa_per_play": "w_dropbacks", "cpoe": "w_dropbacks", "success_rate": "w_dropbacks",
@@ -2420,6 +2460,9 @@ def _stamp_season(rows: List[Dict[str, Any]], season: Optional[int]) -> List[Dic
 _MULTI_SEASON_SUM = frozenset({
     "vorp", "war", "ppr_pts", "rushing_epa", "receiving_epa", "passing_epa",
     "avoided_tackles",
+    # xFP totals sum across seasons like the EPA totals.
+    "expected_ppr", "expected_half_ppr", "expected_standard",
+    "ppr_over_expected", "half_ppr_over_expected", "standard_over_expected",
 })
 
 
