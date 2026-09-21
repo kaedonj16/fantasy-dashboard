@@ -20684,6 +20684,14 @@ img, svg, canvas {
 .pr-wl-star { color: var(--gold); font-size: 11px; margin-left: 5px; vertical-align: 1px; }
 .wl-inline-star { color: var(--gold); font-size: 11px; margin-left: 5px; vertical-align: 1px; }
 
+/* Team modal persistent achievement chips (above the roster). */
+.tm-achievements { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 0 12px; }
+.tm-achv-chip { display: inline-flex; align-items: center; font-size: 11px; font-weight: 700;
+    border-radius: var(--radius-pill); padding: 3px 9px; }
+.tm-achv-gold { color: var(--gold); background: color-mix(in srgb, var(--gold) 15%, transparent); }
+.tm-achv-indigo { color: var(--indigo); background: color-mix(in srgb, var(--indigo) 15%, transparent); }
+.tm-achv-win { color: var(--win); background: color-mix(in srgb, var(--win) 15%, transparent); }
+
 /* More-sheet "My Actions" count badge. */
 .br-sheet-badge { margin-left: auto; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px;
     background: var(--accent); color: var(--on-accent); font-size: 11px; font-weight: 800;

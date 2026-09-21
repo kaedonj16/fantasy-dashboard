@@ -17764,6 +17764,17 @@ function _tmBuildEffChart(weeks) {
   );
 }
 
+// Persistent achievement chips (max 3) for the team, shown above the roster.
+function _tmAchievementsHtml(achievements) {
+  if (!Array.isArray(achievements) || !achievements.length) return '';
+  const cls = { gold: 'tm-achv-gold', indigo: 'tm-achv-indigo', win: 'tm-achv-win' };
+  const chips = achievements.slice(0, 3).map(function (a) {
+    const k = cls[a.kind] || '';
+    return `<span class="tm-achv-chip ${k}">${_tmEsc(a.label || '')}</span>`;
+  }).join('');
+  return `<div class="tm-achievements">${chips}</div>`;
+}
+
 // Primary "Trade with this team" button pinned at the bottom of the Roster tab
 // for opposing teams. Hidden for the viewer's own team. Idempotent.
 function tmInjectRosterTradeCta() {
@@ -19041,9 +19052,11 @@ function renderTeamDetails(data) {
   const rosterPanel = document.getElementById('tm-panel-roster');
   if (rosterPanel) {
     const sideHTML = picksHTML || strengthHTML;
-    rosterPanel.innerHTML = sideHTML
+    const achieveHTML = _tmAchievementsHtml(data.achievements);
+    const bodyHTML = sideHTML
       ? `<div class="team-modal-body-left">${rosterHTML}</div><div class="team-modal-body-right">${sideHTML}</div>`
       : `<div class="team-modal-body-left" style="flex:1;max-width:100%;">${rosterHTML}</div>`;
+    rosterPanel.innerHTML = achieveHTML + bodyHTML;
     tmInjectRosterTradeCta();
   }
   const chartsPanel = document.getElementById('tm-panel-charts');

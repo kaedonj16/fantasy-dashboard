@@ -23079,6 +23079,55 @@ def _build_team_trends_html(league_id, season, week, roster_id, owner,
     )
 
 
+def _team_achievements(ctx, roster_id, owner_uid, platform, season, league_id):
+    """Up to three persistent achievement chips for a team: weekly-high-score
+    count and a league-leading win streak (both from the season's finalized
+    rows), plus a reigning championship when the awards cache carries it.
+    Best-effort and defensive: returns whatever it can derive, or []."""
+    out = []
+    rid = str(roster_id)
+    try:
+        df = (ctx or {}).get("df_weekly")
+        if df is not None and not getattr(df, "empty", True) \
+                and {"week", "roster_id", "points"}.issubset(df.columns):
+            fin = df[df["finalized"] == True] if "finalized" in df.columns else df
+            high_weeks = 0
+            for _wk, grp in fin.groupby("week"):
+                if grp.empty:
+                    continue
+                top_rid = str(grp.loc[grp["points"].idxmax(), "roster_id"])
+                if top_rid == rid:
+                    high_weeks += 1
+            if high_weeks >= 1:
+                out.append({"label": f"{high_weeks}× Weekly High", "kind": "gold"})
+            if "points_against" in fin.columns:
+                streaks = {}
+                for _rid, grp in fin.sort_values("week").groupby("roster_id"):
+                    best = cur = 0
+                    for _, row in grp.iterrows():
+                        if float(row["points"]) > float(row.get("points_against", 0)):
+                            cur += 1
+                            best = max(best, cur)
+                        else:
+                            cur = 0
+                    streaks[str(_rid)] = best
+                my_streak = streaks.get(rid, 0)
+                if my_streak >= 3 and streaks and my_streak == max(streaks.values()):
+                    out.append({"label": f"Longest Win Streak ({my_streak})", "kind": "indigo"})
+    except Exception:
+        logger.debug("[achievements] weekly/streak calc failed", exc_info=True)
+    try:
+        agg = get_awards_agg_from_cache(platform, season, league_id)
+        if agg:
+            championships = agg[2] or {}
+            seasons = championships.get(str(owner_uid)) or championships.get(owner_uid) or []
+            for s in sorted((str(x) for x in seasons), reverse=True)[:1]:
+                out.append({"label": f"{s} Champion", "kind": "win"})
+    except Exception:
+        logger.debug("[achievements] championship lookup failed", exc_info=True)
+    return out[:3]
+
+
 @app.route("/api/team-details/<roster_id>")
 def api_team_details(roster_id: str):
     """Get comprehensive team details for modal display."""
@@ -23767,6 +23816,16 @@ def api_team_details(roster_id: str):
         except Exception:
             logger.debug("[api_team_details] lineup efficiency skipped", exc_info=True)
 
+        # Persistent achievements (weekly-high count, league-leading win streak,
+        # and reigning championship when the awards cache has it). At most three.
+        achievements = []
+        try:
+            achievements = _team_achievements(
+                _eff_ctx, roster_id, owner_id, platform, season, league_id,
+            )
+        except Exception:
+            logger.debug("[api_team_details] achievements skipped", exc_info=True)
+
         response = {
             "roster_id": roster_id,
             "team_name": team_name,
@@ -23784,6 +23843,7 @@ def api_team_details(roster_id: str):
             "playoff_odds": playoff_odds,
             "lineup_efficiency": lineup_efficiency,
             "efficiency_weeks": efficiency_weeks,
+            "achievements": achievements,
             "total_value": round(total_value, 1),
             "roster": roster_players,
             "picks": all_picks,
