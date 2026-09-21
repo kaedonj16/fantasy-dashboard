@@ -29030,6 +29030,10 @@ def build_portfolio_body(
         # Show the card (and its loading line) up front so a PRO user always sees
         # the section, even before the digest resolves or when it comes back empty.
         "card.hidden=false;"
+        # Lazy-load the cross-league digest only after the page has finished
+        # loading (and the browser is idle) so this best-effort, sometimes slow
+        # request never competes with the initial dashboard render.
+        "function __pfMovesGo(){"
         "fetch('/api/portfolio-actions',{cache:'no-store'}).then(function(r){return r.json().then(function(d){return {status:r.status,d:d||{}};});})"
         ".then(function(res){"
         "if(res.status===403&&res.d.paywall){"
@@ -29056,7 +29060,10 @@ def build_portfolio_body(
         "+'<span class=\"pf-move-chevron\" aria-hidden=\"true\">›</span>'"
         "+'</a>';"
         "}).join('')+'</div>';"
-        "}).catch(function(){var c=document.getElementById('pfMovesCard'); if(c) c.hidden=true;});"
+        "}).catch(function(){var c=document.getElementById('pfMovesCard'); if(c) c.hidden=true;});}"
+        "var __pfIdle=window.requestIdleCallback||function(f){return setTimeout(f,200);};"
+        "if(document.readyState==='complete')__pfIdle(__pfMovesGo);"
+        "else window.addEventListener('load',function(){__pfIdle(__pfMovesGo);},{once:true});"
         "})();</script>"
     )
 

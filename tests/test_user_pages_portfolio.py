@@ -91,6 +91,11 @@ def test_portfolio_body_includes_moves_card():
     assert "top_strip + moves_card + league_card" in fn
     assert "pf-move-row" in fn
     assert "pf-moves-list" in fn
+    # The digest is lazy-loaded after page load (idle), not fetched inline, so it
+    # never competes with the initial render.
+    assert "__pfMovesGo" in fn
+    assert "requestIdleCallback" in fn
+    assert "addEventListener('load'" in fn
 
 
 def test_portfolio_empty_digest_shows_all_caught_up_not_hidden():
