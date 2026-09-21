@@ -10961,7 +10961,62 @@ def _maybe_check_roster_freshness(platform: str, league_id: str, season: int,
     threading.Thread(target=_run, daemon=True).start()
 
 
-def get_league_ctx_from_cache(platform: str, league_id: str, season: int) -> dict:
+# Best-effort background warm so latency-sensitive readers (the live matchup
+# overlay, the cross-league digest) never trigger a cold synchronous build on
+# the request path. Deduplicated per league; a small semaphore bounds how many
+# cold builds run at once so a page with many leagues cannot spike worker memory.
+_LEAGUE_WARM_INFLIGHT: set = set()
+_LEAGUE_WARM_LOCK = threading.Lock()
+try:
+    _LEAGUE_WARM_SEM = threading.BoundedSemaphore(
+        max(1, int(os.getenv("LEAGUE_WARM_CONCURRENCY", "2")))
+    )
+except (TypeError, ValueError):
+    _LEAGUE_WARM_SEM = threading.BoundedSemaphore(2)
+
+
+def _warm_league_ctx_async(platform: str, league_id: str, season: int) -> None:
+    """Build a league context off the request path so a later best-effort poll
+    finds it cached. The cross-worker single-flight lock inside
+    get_league_ctx_from_cache prevents duplicate provider work across workers."""
+    try:
+        key = _cache_key(platform, season, league_id)
+    except Exception:
+        return
+    with _LEAGUE_WARM_LOCK:
+        if key in _LEAGUE_WARM_INFLIGHT:
+            return
+        _LEAGUE_WARM_INFLIGHT.add(key)
+
+    def _run() -> None:
+        # Drop the warm rather than queue unbounded work if too many cold builds
+        # are already running; the next client poll re-requests it.
+        if not _LEAGUE_WARM_SEM.acquire(timeout=25):
+            with _LEAGUE_WARM_LOCK:
+                _LEAGUE_WARM_INFLIGHT.discard(key)
+            return
+        try:
+            with app.test_request_context():
+                get_league_ctx_from_cache(platform, league_id, season)
+        except Exception:
+            logger.debug("[warm] league ctx warm failed", exc_info=True)
+        finally:
+            _LEAGUE_WARM_SEM.release()
+            with _LEAGUE_WARM_LOCK:
+                _LEAGUE_WARM_INFLIGHT.discard(key)
+
+    try:
+        threading.Thread(
+            target=_run, name=f"warm-{platform}-{league_id}", daemon=True,
+        ).start()
+    except Exception:
+        with _LEAGUE_WARM_LOCK:
+            _LEAGUE_WARM_INFLIGHT.discard(key)
+
+
+def get_league_ctx_from_cache(
+    platform: str, league_id: str, season: int, *, allow_build: bool = True,
+) -> dict:
     try:
         from utils.ui_audit_fixture import (
             build_ui_audit_league_context,
@@ -10991,6 +11046,24 @@ def get_league_ctx_from_cache(platform: str, league_id: str, season: int) -> dic
         return ctx
 
     stale_entry = entry
+    if not allow_build:
+        # Best-effort readers opt out of the cold synchronous build. Serve
+        # last-known-good if it is still within the stale window, otherwise
+        # nothing, and warm the cache in the background for the next poll.
+        _warm_league_ctx_async(platform, league_id, season)
+        old = (stale_entry or {}).get("ctx")
+        old_ts = float((stale_entry or {}).get("ts") or 0)
+        stale_window = _positive_env_int("LEAGUE_STALE_IF_ERROR_SECONDS", 21600)
+        if old and time.time() - old_ts <= stale_window:
+            old["_cache_stale"] = True
+            old["_cache_synced_at"] = (
+                datetime.fromtimestamp(old_ts, timezone.utc).isoformat() if old_ts else None
+            )
+            old["viewer"] = get_viewer_session_for_league(
+                old.get("users") or [], old.get("rosters") or [], platform, league_id, season
+            )
+            return old
+        return {}
     key_lock, local_wait = _acquire_context_lock(key)
     try:
         # Re-check after acquiring lock - another thread may have built it while we waited
@@ -28957,6 +29030,10 @@ def build_portfolio_body(
         # Show the card (and its loading line) up front so a PRO user always sees
         # the section, even before the digest resolves or when it comes back empty.
         "card.hidden=false;"
+        # Lazy-load the cross-league digest only after the page has finished
+        # loading (and the browser is idle) so this best-effort, sometimes slow
+        # request never competes with the initial dashboard render.
+        "function __pfMovesGo(){"
         "fetch('/api/portfolio-actions',{cache:'no-store'}).then(function(r){return r.json().then(function(d){return {status:r.status,d:d||{}};});})"
         ".then(function(res){"
         "if(res.status===403&&res.d.paywall){"
@@ -28983,7 +29060,10 @@ def build_portfolio_body(
         "+'<span class=\"pf-move-chevron\" aria-hidden=\"true\">›</span>'"
         "+'</a>';"
         "}).join('')+'</div>';"
-        "}).catch(function(){var c=document.getElementById('pfMovesCard'); if(c) c.hidden=true;});"
+        "}).catch(function(){var c=document.getElementById('pfMovesCard'); if(c) c.hidden=true;});}"
+        "var __pfIdle=window.requestIdleCallback||function(f){return setTimeout(f,200);};"
+        "if(document.readyState==='complete')__pfIdle(__pfMovesGo);"
+        "else window.addEventListener('load',function(){__pfIdle(__pfMovesGo);},{once:true});"
         "})();</script>"
     )
 
@@ -29612,7 +29692,7 @@ def build_portfolio_body(
         "+'<div class=\"pf-live-wp-lbls\"><span class=\"pf-live-wp-you\">'+y+'% to win</span>'"
         "+'<span class=\"pf-live-wp-opp\">'+o+'%</span></div></div>';}"
         "function render(slot,d){"
-        "if(!d||!d.live||!d.you){slot.hidden=true;slot.innerHTML='';slot.removeAttribute('aria-busy');return;}"
+        "if(!d||!d.live||!d.you){if(d&&d.pending){slot.hidden=false;return;}slot.hidden=true;slot.innerHTML='';slot.removeAttribute('aria-busy');return;}"
         "var st=d.status||'pre';"
         "var txt=st==='in'?'Live \\u00b7 Wk '+d.week:(st==='final'?(d.result!=null?'FINAL':'Final \\u00b7 Wk '+d.week):('Wk '+d.week));"
         "var you=d.you,opp=d.opp;"
@@ -29632,7 +29712,15 @@ def build_portfolio_body(
         "var controller=typeof AbortController!=='undefined'?new AbortController():null;"
         "var timer=controller?setTimeout(function(){controller.abort();},12000):null;"
         "slot._loading=fetch(u,{headers:{'X-Requested-With':'fetch'},signal:controller?controller.signal:undefined}).then(function(r){return r.ok?r.json():null;})"
-        ".then(function(d){if(slot._generation===generation)render(slot,d);return d;}).catch(function(){if(slot._generation===generation)render(slot,null);return null;})"
+        ".then(function(d){if(slot._generation!==generation)return d;render(slot,d);"
+        # A cold-cache league answers {live:false,pending:true} while a background
+        # warm builds it; re-poll with backoff so the card fills once ready.
+        "if(d&&d.pending){var n=(slot._mAttempt=(slot._mAttempt||0)+1);"
+        "if(n<=8){var W=[0,3000,6000,10000,15000,20000,30000,30000];"
+        "setTimeout(function(){if(slot._generation===generation){slot._loading=null;load(slot);}},W[Math.min(n,7)]);}"
+        "else{render(slot,{live:false});}}"
+        "else{slot._mAttempt=0;if(d&&d.live&&d.status==='in'&&LIVE.indexOf(slot)<0)LIVE.push(slot);}"
+        "return d;}).catch(function(){if(slot._generation===generation)render(slot,null);return null;})"
         ".then(function(d){if(timer)clearTimeout(timer);slot._loading=null;return d;});return slot._loading;}"
         "window.__pfLoadMatchup=load;window.__pfRenderMatchup=render;"
         "var i=0,LIVE=[];slots.sort(function(a,b){var ac=a.closest('.pf-lg-card'),bc=b.closest('.pf-lg-card');"

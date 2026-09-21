@@ -608,8 +608,13 @@ def api_portfolio_actions():
         if not lid:
             continue
         try:
-            lctx = get_league_ctx_from_cache(plat, lid, lg_season) or {}
+            lctx = get_league_ctx_from_cache(plat, lid, lg_season, allow_build=False) or {}
         except Exception:
+            continue
+        if not lctx:
+            # Cold cache: a background warm was kicked. Skip this league for now so
+            # the digest returns promptly instead of blocking on a cold build (the
+            # old behavior serially built every league, taking 100s+ on a miss).
             continue
         rosters = lctx.get("rosters") or []
         league_obj = lctx.get("league") or {}
@@ -1099,11 +1104,16 @@ def api_portfolio_matchup():
         return jsonify({"live": False})
 
     try:
-        ctx = get_league_ctx_from_cache(platform, league_id, season)
+        ctx = get_league_ctx_from_cache(platform, league_id, season, allow_build=False)
     except Exception:
         logger.debug("[portfolio-matchup] ctx load failed", exc_info=True)
         return jsonify({"live": False})
-    if not ctx or ctx.get("offseason_mode"):
+    if not ctx:
+        # Cold cache: a background warm was kicked. Do not block the request on a
+        # cold build (the card's fetch aborts long before it finishes). Tell the
+        # client to poll again shortly, once the warm has populated the cache.
+        return jsonify({"live": False, "pending": True})
+    if ctx.get("offseason_mode"):
         return jsonify({"live": False})
 
     viewer_rid = str((ctx.get("viewer") or {}).get("viewer_roster_id") or "")
