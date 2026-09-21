@@ -21,10 +21,11 @@ What it does each run:
      otherwise freezes on its first partial fetch and never sees later finals).
      This writes today's snapshot row via the same UPSERT path the daily cron
      uses, so the two never conflict.
-  4. Best-effort, throttled: refresh the per-week nflverse metrics so the
-     provider-sourced columns (NGS / FTN / EPA) fill in as soon as nflverse
-     publishes them, rather than waiting for the single daily run. These lag the
-     games by design, so this is throttled to at most once per hour and any
+  4. Best-effort: refresh the per-week nflverse metrics so the provider-sourced
+     columns (NGS / FTN / EPA) fill in as soon as nflverse publishes them, rather
+     than waiting for the single daily run. nflverse publishes a completed week's
+     data on the Tue–Wed after the games, so this pull is gated to those weekdays
+     and throttled to hourly within them — no all-week download storm — and any
      provider outage is a no-op that never erases the last good data.
 
 Designed to be safe to run on any schedule: on a non-game day, or when nothing
@@ -60,6 +61,12 @@ STATE_PATH = Path(CACHE_DIR) / "live_advanced_metrics_state.json"
 # Don't re-pull nflverse (NGS/FTN/EPA) more than this often. The provider data
 # lags the games by design; hammering it every few minutes buys nothing.
 NFLVERSE_THROTTLE_SEC = 60 * 60
+
+# nflverse publishes a completed week's NGS / FTN / play-by-play data on the
+# Tuesday–Wednesday after the games. Outside that window a pull just re-downloads
+# unchanged parquet, so gate it to those weekdays (local time; the cron runs with
+# TZ=America/New_York). Monday=0 .. Sunday=6, so Tue=1, Wed=2. --force overrides.
+NFLVERSE_PUBLISH_WEEKDAYS = frozenset({1, 2})
 
 
 def _load_state() -> dict:
@@ -203,11 +210,19 @@ def main(argv: Optional[List[str]] = None) -> int:
         state["last_build_ts"] = time.time()
         did_work = True
 
-    # Throttled provider (nflverse) refresh so NGS/FTN/EPA columns fill in ASAP
-    # once nflverse publishes, without a per-run download storm.
+    # Provider (nflverse) refresh so NGS/FTN/EPA columns fill in ASAP once
+    # nflverse publishes. Gated to the Tue–Wed publish window (outside it a pull
+    # just re-downloads unchanged parquet) and throttled to hourly within it, so
+    # it picks up the data as it lands without an all-week download storm.
     if not args.no_nflverse:
+        weekday = datetime.now().weekday()
+        in_publish_window = weekday in NFLVERSE_PUBLISH_WEEKDAYS
         last_nflverse = float(state.get("last_nflverse_ts") or 0)
-        if args.force or (time.time() - last_nflverse) >= NFLVERSE_THROTTLE_SEC:
+        throttle_elapsed = (time.time() - last_nflverse) >= NFLVERSE_THROTTLE_SEC
+        if not (args.force or in_publish_window):
+            print("[live-adv] nflverse refresh skipped — outside the Tue–Wed "
+                  "publish window (use --force to override).")
+        elif args.force or throttle_elapsed:
             players_index = load_players_index() or {}
             wn = _refresh_nflverse_weekly(season, players_index)
             print(f"[live-adv] nflverse weekly metrics: {wn} player-weeks for season {season}")

@@ -206,8 +206,11 @@ def _patch_script(monkeypatch, tmp_path, *, season_type="reg", week=5,
     import data_building.weekly_metrics as wm
     monkeypatch.setattr(wm, "build_weekly_metrics",
                         lambda *a, **k: builds.__setitem__("weekly", builds.get("weekly", 0) + 1) or 0)
-    # Keep the throttled nflverse pull out of the unit test.
-    monkeypatch.setattr(live, "_refresh_nflverse_weekly", lambda s, idx: 0)
+    # Count nflverse pulls (return 0 rows so it never writes) so the window /
+    # throttle gate can be asserted.
+    monkeypatch.setattr(
+        live, "_refresh_nflverse_weekly",
+        lambda s, idx: builds.__setitem__("nflverse", builds.get("nflverse", 0) + 1) or 0)
     return live, builds
 
 
@@ -253,3 +256,37 @@ def test_live_main_force_rebuilds_regardless(monkeypatch, tmp_path):
     # --force ignores the unchanged-finals guard.
     assert live.main(["--no-nflverse", "--force"]) == 0
     assert builds["n"] == 2
+
+
+def _set_weekday(monkeypatch, live, weekday):
+    """Freeze live.datetime.now() to a date with the given weekday (Mon=0)."""
+    import datetime as _dt
+
+    class _FakeDateTime(_dt.datetime):
+        @classmethod
+        def now(cls, tz=None):
+            # ISO weekday is 1=Mon..7=Sun; our weekday arg is 0=Mon..6=Sun.
+            return _dt.datetime.fromisocalendar(2026, 39, weekday + 1)
+
+    monkeypatch.setattr(live, "datetime", _FakeDateTime)
+
+
+def test_nflverse_runs_inside_tue_wed_window(monkeypatch, tmp_path):
+    live, builds = _patch_script(monkeypatch, tmp_path, finished=("g1",))
+    _set_weekday(monkeypatch, live, 1)  # Tuesday
+    assert live.main([]) == 0
+    assert builds.get("nflverse") == 1
+
+
+def test_nflverse_skipped_outside_window(monkeypatch, tmp_path):
+    live, builds = _patch_script(monkeypatch, tmp_path, finished=("g1",))
+    _set_weekday(monkeypatch, live, 6)  # Sunday
+    assert live.main([]) == 0
+    assert builds.get("nflverse") is None  # never pulled
+
+
+def test_nflverse_force_overrides_window(monkeypatch, tmp_path):
+    live, builds = _patch_script(monkeypatch, tmp_path, finished=("g1",))
+    _set_weekday(monkeypatch, live, 6)  # Sunday
+    assert live.main(["--force"]) == 0
+    assert builds.get("nflverse") == 1
