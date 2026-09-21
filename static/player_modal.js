@@ -4742,6 +4742,8 @@ const _ADV_METRIC_DESCS = {
   'Rec Yds/G': "Receiving yards per game.",
   'Rec Yards': "Total receiving yards in the season.",
   'Rush Yards': "Total rushing yards in the season.",
+  'Expected FP': "Expected fantasy points (full PPR): what a league-average player would score on this exact target/carry/dropback workload, from play-by-play (air yards, completion probability, expected YAC, field-position TD equity). Opportunity-based and outcome-independent.",
+  'FP Over Exp': "Actual full-PPR points minus expected (xFP). Positive means the player out-scored their opportunity (often TD-driven, prone to regression); NEGATIVE means fantasy points left on the board (elite usage not yet cashed in), historically a positive-regression signal.",
 };
 
 function buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive, counts, bounds, qualification) {
@@ -5109,6 +5111,16 @@ function buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive, counts, b
   }
   if (metrics.ppr_pts_per_game != null) {
     defs.push({ label: 'PPR Pts/G', fill: Math.min(metrics.ppr_pts_per_game / 30 * 100, 100), display: metrics.ppr_pts_per_game.toFixed(1), key: 'ppr_pts_per_game', sub: _rankSub('ppr_pts_per_game'), cat: 'General' });
+  }
+  // Expected Fantasy Points (xFP, full PPR): opportunity value from play-by-play,
+  // and actual-minus-expected. Negative "FP Over Exp" = points left on the board.
+  if (metrics.expected_ppr != null) {
+    const v = metrics.expected_ppr;
+    defs.push({ label: 'Expected FP', fill: Math.min(v / 300 * 100, 100), display: v.toFixed(1), key: 'expected_ppr', sub: _rankSub('expected_ppr'), cat: 'Value' });
+  }
+  if (metrics.ppr_over_expected != null) {
+    const v = metrics.ppr_over_expected;
+    defs.push({ label: 'FP Over Exp', fill: Math.min(Math.max(v, 0) / 40 * 100, 100), display: (v >= 0 ? '+' : '') + v.toFixed(1), key: 'ppr_over_expected', sub: _rankSub('ppr_over_expected'), cat: 'Value' });
   }
 
   // Volume metrics per position (replacing old volDefs section)
