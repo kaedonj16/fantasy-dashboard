@@ -95,3 +95,20 @@ def test_portfolio_refresh_contract_is_targeted():
     assert '@user_pages_bp.route("/api/portfolio/refresh", methods=["POST"])' in routes
     assert 'max_workers=min(2, len(requested))' in routes
     assert '"account_id" in payload' in routes
+
+
+def test_portfolio_refresh_falls_back_for_warm_only_portfolio():
+    """Warm league cards carry no data-summary-card hooks, so an all-warm
+    portfolio produced no keys and the Refresh button silently no-op'd. The
+    handler must instead rebuild every drafted league from its live slot and hand
+    off to a full page refresh (handled:false) so the button always does
+    something, not sit dead."""
+    from pathlib import Path
+    py = (Path(__file__).resolve().parents[1] / "app.py").read_text()
+    handler = py.split("window.brRefreshCurrentPage=async function")[1].split("})();</script>")[0]
+    # The dead no-op is gone.
+    assert "return {success:true,refreshedAt:null}" not in handler
+    # The empty-keys branch rebuilds from the live slots and reloads.
+    assert "if(!keys.length){" in handler
+    assert ".pf-lg-card [data-lg-live]" in handler
+    assert "return {handled:false};}" in handler
