@@ -1614,8 +1614,13 @@ function _pmRenderInLeague(el, events) {
     return '<div class="pm-inleague-row"><span class="tl-mark ' + e.cls + '"></span>' +
       '<span class="pm-inleague-text">' + e.text + '</span></div>';
   };
-  const top = events.slice(0, 3).map(row).join('');
-  const rest = events.slice(3).map(row).join('');
+  // Keep the current-ownership line always visible as a pinned footer; collapse
+  // only older history beyond the first three.
+  const nowEvent = (events[events.length - 1] && events[events.length - 1].cls === 'now')
+    ? events[events.length - 1] : null;
+  const history = nowEvent ? events.slice(0, -1) : events.slice();
+  const top = history.slice(0, 3).map(row).join('');
+  const rest = history.slice(3).map(row).join('');
   el.hidden = false;
   el.innerHTML =
     '<hr class="pm-section-divider">' +
@@ -1623,6 +1628,7 @@ function _pmRenderInLeague(el, events) {
     '<div class="pm-inleague-list">' + top +
     (rest ? '<div class="pm-inleague-rest" hidden>' + rest + '</div>' +
       '<button type="button" class="pm-inleague-more" onclick="var r=this.previousElementSibling; r.hidden=!r.hidden; this.textContent=r.hidden?\'View full history\':\'Show less\';">View full history</button>' : '') +
+    (nowEvent ? row(nowEvent) : '') +
     '</div>';
 }
 
@@ -1630,31 +1636,58 @@ function _pmLoadInLeague(playerId, data, leagueId, platform, season) {
   const el = document.getElementById('pmInLeague');
   if (!el) return;
   if (!leagueId) { el.hidden = true; return; }
-  const events = [];
-  if (data && data.fantasy_team) {
-    events.push({ cls: 'add', text: 'On <b>' + escapeHtml(data.fantasy_team) + '</b> now' });
-  }
-  const url = '/api/player-league-trades/' + encodeURIComponent(playerId) +
-    '?platform=' + encodeURIComponent(platform) + '&league_id=' + encodeURIComponent(leagueId) +
-    '&season=' + encodeURIComponent(season) + '&limit=10';
-  fetch(url)
-    .then(function (r) { return r.ok ? r.json() : null; })
-    .then(function (d) {
-      const trades = (d && d.trades) || [];
-      trades.forEach(function (t) {
-        const wk = t.week ? ('Week ' + t.week) : (t.date || '');
-        let who = '';
-        if (typeof _pmNormalizeTradeSides === 'function') {
-          const sides = _pmNormalizeTradeSides(t);
-          if (sides && sides.a.team_name && sides.b.team_name) {
-            who = ' (' + escapeHtml(sides.a.team_name) + ' &harr; ' + escapeHtml(sides.b.team_name) + ')';
-          }
+  const qs = '?platform=' + encodeURIComponent(platform) + '&league_id=' + encodeURIComponent(leagueId) +
+    '&season=' + encodeURIComponent(season);
+  const tradesUrl = '/api/player-league-trades/' + encodeURIComponent(playerId) + qs + '&limit=10';
+  const acqUrl = '/api/player-acquisition/' + encodeURIComponent(playerId) + qs;
+  const jget = function (u) { return fetch(u).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; }); };
+
+  Promise.all([jget(tradesUrl), jget(acqUrl)]).then(function (res) {
+    const tradesData = res[0] || {};
+    const acqData = res[1] || {};
+    const events = [];
+
+    // Draft + waiver/FAAB add events (chronological base).
+    (acqData.events || []).forEach(function (e) {
+      const wkNum = (e.week != null) ? Number(e.week) : 0;
+      const sortKey = Number(e.season || 0) * 100 + (e.kind === 'draft' ? 0 : wkNum);
+      if (e.kind === 'draft') {
+        let pickLbl = '';
+        if (e.round && e.slot) pickLbl = e.round + '.' + (e.slot < 10 ? '0' + e.slot : e.slot);
+        else if (e.pick_no) pickLbl = 'pick ' + e.pick_no;
+        const by = e.team ? ' by ' + escapeHtml(e.team) : '';
+        events.push({ cls: 'draft', sort: sortKey, text: 'Drafted' + (pickLbl ? ' ' + pickLbl : '') + by });
+      } else {
+        const wk = e.week ? ' &middot; Week ' + e.week : '';
+        const faab = (e.faab != null && e.faab !== '') ? ' &middot; ' + e.faab + ' FAAB' : '';
+        const by = e.team ? ' by ' + escapeHtml(e.team) : '';
+        events.push({ cls: 'add', sort: sortKey, text: 'Added' + by + wk + faab });
+      }
+    });
+
+    // Trade events.
+    (tradesData.trades || []).forEach(function (t) {
+      const wkNum = t.week ? Number(t.week) : 0;
+      const sortKey = Number(t.season || season || 0) * 100 + wkNum;
+      const wk = t.week ? ('Week ' + t.week) : (t.date || '');
+      let who = '';
+      if (typeof _pmNormalizeTradeSides === 'function') {
+        const sides = _pmNormalizeTradeSides(t);
+        if (sides && sides.a.team_name && sides.b.team_name) {
+          who = ' (' + escapeHtml(sides.a.team_name) + ' &harr; ' + escapeHtml(sides.b.team_name) + ')';
         }
-        events.push({ cls: 'trade', text: 'Traded' + (wk ? ' &middot; ' + escapeHtml(wk) : '') + who });
-      });
-      _pmRenderInLeague(el, events);
-    })
-    .catch(function () { _pmRenderInLeague(el, events); });
+      }
+      events.push({ cls: 'trade', sort: sortKey, text: 'Traded' + (wk ? ' &middot; ' + escapeHtml(wk) : '') + who });
+    });
+
+    events.sort(function (a, b) { return (a.sort || 0) - (b.sort || 0); });
+
+    // Current ownership as the final, most-recent line.
+    if (data && data.fantasy_team) {
+      events.push({ cls: 'now', sort: Infinity, text: 'Now on <b>' + escapeHtml(data.fantasy_team) + '</b>' });
+    }
+    _pmRenderInLeague(el, events);
+  });
 }
 
 function pmInjectContextActions(playerId, playerName, data, leagueId, platform, season) {

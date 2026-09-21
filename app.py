@@ -23934,6 +23934,30 @@ def api_player_league_trades(player_id: str):
         return _api_err("Request failed", e)
 
 
+@app.route("/api/player-acquisition/<player_id>")
+def api_player_acquisition(player_id: str):
+    """Non-trade acquisition events (draft pick, waiver/FAAB adds) for a player
+    in the connected league chain, for the "In this league" timeline."""
+    try:
+        from dashboard_services.player_league_trades import get_player_acquisition_events
+
+        league_id = (request.args.get("league_id") or "").strip()
+        platform = (request.args.get("platform") or "sleeper").strip().lower()
+        try:
+            season = int(request.args.get("season") or datetime.now().year)
+        except (TypeError, ValueError):
+            season = datetime.now().year
+        if not league_id:
+            return jsonify({"error": "league_id required"}), 400
+        payload = get_player_acquisition_events(
+            player_id, platform=platform, league_id=league_id, season=season,
+        )
+        return jsonify(payload)
+    except Exception as e:
+        logger.exception("[api_player_acquisition] error")
+        return _api_err("Request failed", e)
+
+
 @app.route("/api/team-trades/<roster_id>")
 def api_team_trades(roster_id: str):
     """Return all trades for a specific team in the current league season."""
