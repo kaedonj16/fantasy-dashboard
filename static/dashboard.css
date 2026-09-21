@@ -20692,6 +20692,16 @@ img, svg, canvas {
 .tm-achv-indigo { color: var(--indigo); background: color-mix(in srgb, var(--indigo) 15%, transparent); }
 .tm-achv-win { color: var(--win); background: color-mix(in srgb, var(--win) 15%, transparent); }
 
+/* Team modal bye-conflict warnings (top of the Roster tab). */
+.tm-bye-warn { background: color-mix(in srgb, var(--warning) 10%, transparent);
+    border: 1px solid color-mix(in srgb, var(--warning) 35%, transparent);
+    border-radius: var(--radius-sm); padding: 10px 12px; margin-bottom: 12px; }
+.tm-bye-title { font-size: 11px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase;
+    color: var(--warning); margin-bottom: 6px; }
+.tm-bye-row { display: flex; align-items: baseline; gap: 8px; font-size: 12px; color: var(--text);
+    padding: 2px 0; }
+.tm-bye-pos { font-weight: 800; color: var(--text-subtle); min-width: 30px; }
+
 /* More-sheet "My Actions" count badge. */
 .br-sheet-badge { margin-left: auto; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px;
     background: var(--accent); color: var(--on-accent); font-size: 11px; font-weight: 800;

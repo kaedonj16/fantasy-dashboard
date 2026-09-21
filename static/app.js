@@ -17764,6 +17764,18 @@ function _tmBuildEffChart(weeks) {
   );
 }
 
+// Bye-conflict warnings: upcoming weeks where two or more players at the same
+// position share a bye, so the roster has a hole to plan around.
+function _tmByeConflictsHtml(conflicts) {
+  if (!Array.isArray(conflicts) || !conflicts.length) return '';
+  const rows = conflicts.map(function (c) {
+    const names = (c.players || []).map(_tmEsc).join(', ');
+    return `<div class="tm-bye-row"><span class="tm-bye-pos">${_tmEsc(c.position)}</span>` +
+      `<span class="tm-bye-txt">${names} share a Week ${_tmEsc(c.week)} bye</span></div>`;
+  }).join('');
+  return `<div class="tm-bye-warn"><div class="tm-bye-title">Bye conflicts</div>${rows}</div>`;
+}
+
 // Persistent achievement chips (max 3) for the team, shown above the roster.
 function _tmAchievementsHtml(achievements) {
   if (!Array.isArray(achievements) || !achievements.length) return '';
@@ -19053,10 +19065,11 @@ function renderTeamDetails(data) {
   if (rosterPanel) {
     const sideHTML = picksHTML || strengthHTML;
     const achieveHTML = _tmAchievementsHtml(data.achievements);
+    const byeHTML = _tmByeConflictsHtml(data.bye_conflicts);
     const bodyHTML = sideHTML
       ? `<div class="team-modal-body-left">${rosterHTML}</div><div class="team-modal-body-right">${sideHTML}</div>`
       : `<div class="team-modal-body-left" style="flex:1;max-width:100%;">${rosterHTML}</div>`;
-    rosterPanel.innerHTML = achieveHTML + bodyHTML;
+    rosterPanel.innerHTML = achieveHTML + byeHTML + bodyHTML;
     tmInjectRosterTradeCta();
   }
   const chartsPanel = document.getElementById('tm-panel-charts');

@@ -23245,6 +23245,12 @@ def api_team_details(roster_id: str):
 
         # Build roster with values
         roster_players = []
+        # NFL bye week per team, for roster bye-conflict warnings. Empty when no
+        # schedule data is loaded, so nothing fabricated is shown.
+        try:
+            _bye_by_team = _team_bye_map(season) or {}
+        except Exception:
+            _bye_by_team = {}
         total_value = 0.0
 
         ages_found = 0
@@ -23324,11 +23330,30 @@ def api_team_details(roster_id: str):
                 "injury_status": inj_status,
                 "injury_body_part": inj_body,
                 "return_plan": _return_plan,
+                "bye": _bye_by_team.get(player_team) or _bye_by_team.get(canon_team(player_team)),
             })
 
         # Sort by position order (QB, RB, WR, TE, K, DEF), then by value within position
         pos_order = {"QB": 0, "RB": 1, "WR": 2, "TE": 3, "K": 4, "DEF": 5}
         roster_players.sort(key=lambda p: (pos_order.get(p["position"], 99), -(p["value"] or 0)))
+
+        # Bye-conflict warnings: upcoming weeks where two or more players at the
+        # same position share a bye, so the roster has a hole to plan around.
+        bye_conflicts = []
+        try:
+            from collections import defaultdict as _dd
+            _by_pos_week = _dd(lambda: _dd(list))
+            for _p in roster_players:
+                _bw = _p.get("bye")
+                _pos = _p.get("position")
+                if _bw and _pos in ("QB", "RB", "WR", "TE"):
+                    _by_pos_week[_pos][int(_bw)].append(_p["name"])
+            for _pos in ("QB", "RB", "WR", "TE"):
+                for _wk, _names in sorted(_by_pos_week[_pos].items()):
+                    if len(_names) >= 2:
+                        bye_conflicts.append({"position": _pos, "week": _wk, "players": _names})
+        except Exception:
+            logger.debug("[api_team_details] bye conflicts skipped", exc_info=True)
 
         # Get draft picks. ESPN/Yahoo have no pick feed; redraft leagues have
         # no future capital. Inventing default own-picks would fake a dynasty
@@ -23844,6 +23869,7 @@ def api_team_details(roster_id: str):
             "lineup_efficiency": lineup_efficiency,
             "efficiency_weeks": efficiency_weeks,
             "achievements": achievements,
+            "bye_conflicts": bye_conflicts,
             "total_value": round(total_value, 1),
             "roster": roster_players,
             "picks": all_picks,
