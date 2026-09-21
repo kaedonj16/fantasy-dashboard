@@ -39738,8 +39738,32 @@ a, button, [role="button"], [role="tab"], summary, label,
 /* Keep the (now wider, with Trend) standings table inside its column: scroll it
    horizontally instead of letting it spill over the Power Rankings card. */
 .two-col-standings > .standings-col { min-width: 0; }
-.st-tblscroll { overflow-x: auto; scrollbar-width: thin; }
-.st-tblscroll > .standings-table { margin: 0; }
+/* Table scroll wrapper for every standings surface (Standings / Detailed Stats /
+   Value Share). The page's html,body set overflow-x:hidden, so a table wider
+   than the viewport is otherwise unreachable on mobile — this container is what
+   makes those extra columns swipe-scrollable. -webkit-overflow-scrolling keeps
+   the momentum scroll on iOS; overscroll-behavior-x stops a sideways swipe from
+   also panning the page. */
+.st-tblscroll {
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: thin;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+    max-width: 100%;
+}
+.st-tblscroll > .standings-table,
+.st-tblscroll > .standings-shares-table { margin: 0; }
+
+/* On phones the Detailed Stats (8 cols) and Value Share (rank + team + two bar
+   columns) tables can't fit; give them a readable min-width so .st-tblscroll
+   scrolls instead of crushing the numbers/bars into an illegible squeeze. */
+@media (max-width: 640px) {
+    .std-rework #stDetailsInner .standings-table { min-width: 620px; }
+    .std-rework #stDetailsInner .standings-table th,
+    .std-rework #stDetailsInner .standings-table td.num { white-space: nowrap; }
+    .std-rework .st-tblscroll > .standings-shares-table { min-width: 340px; }
+}
 
 /* Avatar placeholder so a team without an image still occupies its grid cell
    (otherwise the empty slot collapses the power-leaderboard row layout). */

@@ -9020,10 +9020,12 @@ def render_team_stats(team_stats, df_weekly, owner_to_rid=None) -> str:
         ]) + "</tr>")
 
     table_html = f"""
+        <div class="st-tblscroll">
         <table id="stats" class="standings-table">
           <thead><tr>{"".join([f"<th data-col='{i}'>{c}</th>" for i, c in enumerate(cols)])}</tr></thead>
           <tbody>{''.join(body_rows)}</tbody>
         </table>
+        </div>
     """
     return table_html
 
@@ -9530,6 +9532,7 @@ def render_share_rankings(ctx: dict) -> str:
     <p class="standings-shares-note">
       Fair share per team: {fair_pct}{proj_note} &nbsp;·&nbsp; bar fills to 2× fair share
     </p>
+    <div class="st-tblscroll">
     <table class="standings-shares-table">
       <thead>
         <tr>
@@ -9543,6 +9546,7 @@ def render_share_rankings(ctx: dict) -> str:
         {rows_html}
       </tbody>
     </table>
+    </div>
     </div>"""
 
 
