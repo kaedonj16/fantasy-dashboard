@@ -40075,3 +40075,100 @@ a, button, [role="button"], [role="tab"], summary, label,
 .weekly-recap .st-row.recap-viewer-team { background:color-mix(in srgb,var(--accent) 8%,var(--card)); box-shadow:inset 3px 0 var(--accent); }
 .weekly-recap .recap-data-unavailable, .weekly-recap .recap-next-history { padding:16px; color:var(--muted); font-size:13px; }
 .weekly-recap .recap-next-link { display:inline-block; margin-top:-8px; color:var(--accent); font-size:12px; font-weight:700; }
+
+/* ============================================================================
+   Compact matchup board (mb-*) — mirrored, full-width slot rows with a shared
+   centre position rail, per-player live drive bar, and a Matchup Moments strip.
+   Emitted by dashboard_services/matchups.py::render_matchup_slide. Namespaced
+   mb-* so it never collides with the legacy .m-row / .p player rows other pages
+   still use. Colours come from the site tokens; the centre chip reuses the
+   site-wide .pos-badge palette.
+   ========================================================================== */
+.mb-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 40px minmax(0, 1fr);
+    align-items: center;
+    border-bottom: 1px solid var(--border);
+}
+.m-combo:has(.mb-row) { row-gap: 0; }
+
+.mb-cell { min-width: 0; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; justify-content: center; }
+.mb-cell-row { display: flex; gap: 7px; min-width: 0; align-items: center; }
+.mb-cell-r .mb-cell-row { flex-direction: row-reverse; text-align: right; }
+
+.mb-info { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 1px; }
+.mb-cell-r .mb-info { align-items: flex-end; }
+.mb-info--bye { opacity: .45; }
+
+.mb-nameline { display: flex; align-items: baseline; gap: 5px; min-width: 0; line-height: 1.2; }
+.mb-cell-r .mb-nameline { flex-direction: row-reverse; }
+.mb-nameline .pname { font-size: 13px; font-weight: 700; color: var(--accent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.mb-team { font-size: 10px; font-weight: 700; color: var(--text-subtle); text-transform: uppercase; flex: 0 0 auto; }
+.mb-game { font-size: 10.5px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.mb-stat { display: block; font-size: 10.5px; color: var(--text-subtle); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+
+.mb-score { flex: 0 0 auto; align-self: center; text-align: right; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.mb-cell-r .mb-score { text-align: left; }
+.mb-a { display: block; font-size: 16px; font-weight: 800; color: var(--accent); }
+.mb-a.mb-win { color: var(--win); }
+.mb-a.mb-bye, .mb-a.mb-na, .mb-a.mb-proj-only { color: var(--text-subtle); font-weight: 700; }
+.mb-pj { display: block; font-size: 10px; font-weight: 600; color: var(--text-muted); }
+
+.mb-pos { display: flex; align-items: center; justify-content: center; }
+.mb-pos .pos-badge { width: 34px; height: 20px; font-size: 10px; padding: 1px 4px; }
+
+/* projection trend arrow in the header scoreboard */
+.mb-trend { font-size: 8px; margin-left: 3px; vertical-align: middle; }
+.mb-trend-up { color: var(--win); }
+.mb-trend-down { color: #ef4444; }
+:root[data-theme="dark"] .mb-trend-down, :root:not([data-theme="light"]) .mb-trend-down { color: #f87171; }
+.mb-trend-flat { color: var(--text-subtle); }
+
+/* ---- live drive bar (client-injected into .mb-fld) ---------------------- */
+.mb-fld { min-width: 0; }
+.mb-fld:empty { display: none; }
+.mb-fld-in { display: flex; flex-direction: column; gap: 3px; padding: 0 1px; }
+.mb-fld-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: 9px; font-weight: 800; letter-spacing: .02em; text-transform: uppercase; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.mb-cell-r .mb-fld-head { flex-direction: row-reverse; }
+.mb-fld-head .mb-fld-spot { color: var(--text-subtle); }
+.mb-fld-track { position: relative; height: 11px; border-radius: 6px; border: 1px solid var(--border); background: color-mix(in srgb, var(--text-muted) 14%, transparent); overflow: hidden; }
+.mb-fld-rz { position: absolute; top: 0; bottom: 0; width: 20%; background: rgba(220, 38, 38, .14); }
+:root[data-theme="dark"] .mb-fld-rz, :root:not([data-theme="light"]) .mb-fld-rz { background: rgba(248, 113, 113, .18); }
+.mb-fld-tick { position: absolute; top: 0; bottom: 0; width: 1px; background: color-mix(in srgb, var(--text-muted) 30%, transparent); }
+.mb-fld-fill { position: absolute; top: 0; bottom: 0; background: var(--mb-tc, #334155); }
+.mb-fld-fill.mb-away { left: 0; clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 50%, calc(100% - 8px) 100%, 0 100%); }
+.mb-fld-fill.mb-home { right: 0; clip-path: polygon(8px 0, 100% 0, 100% 100%, 8px 100%, 0 50%); }
+.mb-fld-fd { position: absolute; top: -1px; bottom: -1px; width: 2px; transform: translateX(-50%); background: #eab308; border-radius: 2px; z-index: 3; }
+.mb-fld-mark { position: absolute; top: -2px; bottom: -2px; width: 2px; transform: translateX(-50%); background: var(--accent); border-radius: 2px; z-index: 4; }
+@media (prefers-reduced-motion: reduce) { .mb-fld-fill { transition: none; } }
+
+/* ---- Matchup Moments strip (client-injected into .mb-moments) ------------ */
+.mb-moments { margin: 10px 12px 4px; }
+.mb-moments[hidden] { display: none; }
+.mb-moments-hd { display: flex; align-items: center; gap: 7px; margin-bottom: 7px; }
+.mb-moments-hd .mb-m-t { font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted); }
+.mb-moments-hd .mb-m-live { display: inline-flex; align-items: center; gap: 5px; margin-left: auto; font-size: 10px; font-weight: 800; letter-spacing: .04em; color: var(--win); }
+.mb-moments-hd .mb-m-live .mb-m-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--win); animation: mbLivePulse 1.6s ease-in-out infinite; }
+@keyframes mbLivePulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .mb-moments-hd .mb-m-live .mb-m-dot { animation: none; } }
+.mb-mstrip { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; scrollbar-width: none; }
+.mb-mstrip::-webkit-scrollbar { display: none; }
+.mb-mcard { flex: 0 0 auto; width: 158px; border: 1px solid var(--border); border-radius: 11px; padding: 8px 9px 8px 11px; background: var(--card-soft); position: relative; overflow: hidden; }
+.mb-mcard::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--mb-mc, #64748b); }
+.mb-mcard.mb-mc-r::before { left: auto; right: 0; }
+.mb-mcard.mb-mc-r { padding: 8px 11px 8px 9px; text-align: right; }
+.mb-mc-top { display: flex; align-items: center; gap: 5px; margin-bottom: 3px; }
+.mb-mcard.mb-mc-r .mb-mc-top { flex-direction: row-reverse; }
+.mb-mc-who { font-size: 12px; font-weight: 800; color: var(--accent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.mb-mc-tag { font-size: 8.5px; font-weight: 800; letter-spacing: .04em; color: #fff; background: var(--mb-mc, #64748b); border-radius: 4px; padding: 1px 4px; flex: 0 0 auto; }
+.mb-mc-desc { font-size: 10.5px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mb-mc-foot { display: flex; align-items: center; gap: 6px; margin-top: 3px; font-size: 9.5px; font-weight: 700; color: var(--text-subtle); font-variant-numeric: tabular-nums; }
+.mb-mcard.mb-mc-r .mb-mc-foot { flex-direction: row-reverse; }
+.mb-mc-pts { margin-left: auto; color: var(--win); font-weight: 800; }
+.mb-mcard.mb-mc-r .mb-mc-pts { margin-left: 0; margin-right: auto; }
+
+@media (max-width: 640px) {
+    .mb-cell { padding: 7px 8px; }
+    .mb-a { font-size: 15px; }
+    .mb-pos .pos-badge { width: 30px; height: 19px; font-size: 9px; }
+}

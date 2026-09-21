@@ -1564,12 +1564,29 @@ def render_matchup_slide(
             t, status_by_pid, week_proj_map,
             proj_lookup=_pid_proj, frac_lookup=_frac_lookup,
         )
+
+        def _trend_arrow(live) -> str:
+            """Up/down arrow comparing the live projected final to the pregame
+            projection, so the header shows whether the team is beating or
+            missing its number in real time."""
+            pregame = t.get("proj_total")
+            if not isinstance(pregame, (int, float)) or not isinstance(live, (int, float)):
+                return ""
+            if live > pregame + 0.05:
+                return ("<span class='mb-trend mb-trend-up' "
+                        "aria-label='projection trending up'>&#9650;</span>")
+            if live < pregame - 0.05:
+                return ("<span class='mb-trend mb-trend-down' "
+                        "aria-label='projection trending down'>&#9660;</span>")
+            return "<span class='mb-trend mb-trend-flat' aria-hidden='true'>&#9644;</span>"
+
         any_started = any(
             status_by_pid.get(p.get("pid"), STATUS_NOT_STARTED) in (STATUS_IN_PROGRESS, STATUS_FINAL)
             for p in (t.get("starters") or [])
         )
         if not any_started:
-            return f"<span class='num m-proj-only'>{live_proj_total:.1f}</span>", False
+            return (f"<span class='num m-proj-only'>{live_proj_total:.1f}</span>"
+                    f"{_trend_arrow(live_proj_total)}"), False
         # Provider scoreboard totals remain authoritative.  A partially mapped
         # Yahoo lineup may enrich rows but must never zero the matchup header.
         actual_total = t.get("pts_total")
@@ -1579,7 +1596,9 @@ def render_matchup_slide(
                 isinstance(p.get("pts"), (int, float)) for p in starters
             )
             actual_total = lineup_actual if lineup_complete else 0.0
-        return f"<span class='num'>{actual_total:.1f}</span><span class='proj'>{live_proj_total:.1f}</span>", True
+        return (f"<span class='num'>{actual_total:.1f}</span>"
+                f"<span class='proj'>{live_proj_total:.1f}"
+                f"{_trend_arrow(live_proj_total)}</span>"), True
 
     def _team_col(t, side: str) -> str:
         rid = t.get('roster_id', '')
@@ -1712,10 +1731,10 @@ def render_matchup_slide(
             left_side: bool,
     ):
         if not p:
-            # Must match the 6-tuple success path: cell, actual, proj, bye,
-            # not_started, stats. Empty starter slots (zip_longest fill) hit
-            # this branch and used to 500 the dashboard on league switch.
-            return "", 0.0, None, False, False, None
+            # Must match the 9-tuple success path: info, pos, actual, proj, bye,
+            # not_started, stats, nfl, pid. Empty starter slots (zip_longest fill)
+            # hit this branch and used to 500 the dashboard on league switch.
+            return "", "", 0.0, None, False, False, None, "", ""
 
         pid = p.get("pid")
         name = p.get("name", "")
@@ -1899,97 +1918,72 @@ def render_matchup_slide(
             if pid else " class='pname'"
         )
 
-        stats_inline_l = f"<span class='meta m-cell-stats'>{stats}</span>" if stats else ""
-        stats_inline_r = f"<span class='meta m-cell-stats' style='text-align:right;'>{stats}</span>" if stats else ""
+        stats_inline = f"<span class='meta m-cell-stats mb-stat'>{stats}</span>" if stats else ""
         if status == STATUS_FINAL and not stats and raw_stat_entry is None and not is_bye:
-            unavailable = "Stats unavailable"
-            stats_inline_l = f"<span class='meta m-cell-stats m-cell-stats--unavailable'>{unavailable}</span>"
-            stats_inline_r = f"<span class='meta m-cell-stats m-cell-stats--unavailable' style='text-align:right;'>{unavailable}</span>"
-        team_span = f"<span class='meta p-team'>{meta_content}</span>" if meta_content else ""
+            stats_inline = (
+                "<span class='meta m-cell-stats mb-stat m-cell-stats--unavailable'>"
+                "Stats unavailable</span>"
+            )
+        team_span = f"<span class='meta p-team mb-team'>{meta_content}</span>" if meta_content else ""
 
-        if left_side:
-            if is_bye:
-                cell = (
-                    f"<div class='p {side}' style='opacity:0.4;'>"
-                    f"<span class='pos-badge {pos}'>{pos}</span>"
-                    f"<span{clickable_attrs}>{_safe_name}</span>"
-                    f"{team_span}"
-                    f"</div>"
-                )
-            else:
-                cell = (
-                    f"<div class='p {side}'>"
-                    f"<span class='pos-badge {pos}'>{pos}</span>"
-                    f"<div class='p-text'>"
-                    f"<div class='p-name-line'>"
-                    f"<span{clickable_attrs}>{_safe_name}</span>"
-                    f"{team_span}</div>"
-                    f"<span class='meta p-game-line'>{game_line}</span>"
-                    f"{stats_inline_l}"
-                    f"</div>"
-                    f"</div>"
-                )
-        else:
-            if is_bye:
-                cell = (
-                    f"<div class='p {side}' style='justify-content:flex-end; opacity:0.4;'>"
-                    f"{team_span}"
-                    f"<span{clickable_attrs}>{_safe_name}</span>"
-                    f"<span class='pos-badge {pos}'>{pos}</span>"
-                    f"</div>"
-                )
-            else:
-                cell = (
-                    f"<div class='p {side}' style='justify-content:flex-end;'>"
-                    f"<div class='p-text p-text--right'>"
-                    f"<div class='p-name-line p-name-line--right'>"
-                    f"{team_span}"
-                    f"<span{clickable_attrs}>{_safe_name}</span></div>"
-                    f"<span class='meta p-game-line'>{game_line}</span>"
-                    f"{stats_inline_r}"
-                    f"</div>"
-                    f"<span class='pos-badge {pos}'>{pos}</span>"
-                    f"</div>"
-                )
+        # Compact board cell: name + team on top, then the game line, then the
+        # box score. The position badge is NOT inline here -- it moves to the
+        # shared centre rail (assembled in the row loop) so both players in a
+        # slot read against one coloured chip. Left/right mirroring is handled in
+        # CSS off the parent .mb-cell-r, so the markup is identical either side.
+        bye_cls = " mb-info--bye" if is_bye else ""
+        info_html = (
+            f"<div class='mb-info{bye_cls}'>"
+            "<div class='p-name-line mb-nameline'>"
+            f"<span{clickable_attrs}>{_safe_name}</span>{team_span}"
+            "</div>"
+            f"<span class='meta p-game-line mb-game'>{game_line}</span>"
+            f"{stats_inline}"
+            "</div>"
+        )
 
-        return cell, (float(display_actual) if display_actual is not None else None), display_proj, is_bye, is_not_started, (stats if stats else None)
+        return (
+            info_html,
+            pos,
+            (float(display_actual) if display_actual is not None else None),
+            display_proj,
+            is_bye,
+            is_not_started,
+            (stats if stats else None),
+            str(nfl or "").upper(),
+            str(pid or ""),
+        )
 
     rows_html: List[str] = []
 
-    def score_stack(actual_val, proj_val, side: str, is_bye: bool, more: bool, not_started: bool = False) -> str:
+    def _score_box(actual_val, proj_val, is_bye: bool, more: bool, not_started: bool) -> str:
+        """Compact score cell: big actual on top, small live projection under it.
+        The projection-only (not-started) state keeps ``m-proj-only`` so the
+        existing tests and styling still find it."""
         if is_bye:
-            return (
-                "<div class='num-stack' style='display:grid'>"
-                f"<span class='num mid {side}' style='opacity:0.4;'>BYE</span>"
-                "</div>"
-            )
+            return "<div class='mb-score'><span class='mb-a mb-bye'>BYE</span></div>"
         if not_started:
-            # hasn't played yet - projection only, no zero actual
+            pv = proj_val if isinstance(proj_val, (int, float)) else 0.0
             return (
-                "<div class='num-stack' style='display:grid'>"
-                f"<span class='num mid {side} proj' style='opacity:0.55;'>{proj_val:.1f}</span>"
+                "<div class='mb-score'>"
+                f"<span class='mb-a mb-proj-only m-proj-only'>{pv:.1f}</span>"
                 "</div>"
             )
         if actual_val is None:
             return (
-                "<div class='num-stack' style='display:grid'>"
-                f"<span class='num mid {side}' title='Weekly fantasy points unavailable'>—</span>"
+                "<div class='mb-score'>"
+                "<span class='mb-a mb-na' title='Weekly fantasy points unavailable'>&mdash;</span>"
                 "</div>"
             )
-        if proj_val is None:
-            cls = f"num mid {side}" + (" more" if more else "")
-            return (
-                "<div class='num-stack' style='display:grid'>"
-                f"<span class='{cls}'>{actual_val:.1f}</span>"
-                "</div>"
-            )
-        cls_actual = f"num mid {side}" + (" more" if more else "")
-        return (
-            "<div class='num-stack' style='display:grid'>"
-            f"<span class='{cls_actual}'>{actual_val:.1f}</span>"
-            f"<span class='num mid {side} proj' style='opacity:0.4;'>{proj_val:.1f}</span>"
-            "</div>"
+        a_cls = "mb-a" + (" mb-win" if more else "")
+        proj_line = (
+            f"<span class='mb-pj'>{proj_val:.1f}</span>"
+            if isinstance(proj_val, (int, float)) else ""
         )
+        return f"<div class='mb-score'><span class='{a_cls}'>{actual_val:.1f}</span>{proj_line}</div>"
+
+    def _pos_label(p: str) -> str:
+        return "D/ST" if p in ("DEF", "DST") else (p or "")
 
     _starter_pairs = () if compact else zip_longest(
             m["left"].get("starters", []),
@@ -1997,12 +1991,10 @@ def render_matchup_slide(
             fillvalue=None,
     )
     for L, R in _starter_pairs:
-        left_cell, left_actual, left_proj, left_is_bye, left_not_started, _left_stats = player_bits(
-            L, "left", True
-        )
-        right_cell, right_actual, right_proj, right_is_bye, right_not_started, _right_stats = player_bits(
-            R, "right", False
-        )
+        (left_info, left_pos, left_actual, left_proj, left_is_bye,
+         left_not_started, _left_stats, left_nfl, left_pid) = player_bits(L, "left", True)
+        (right_info, right_pos, right_actual, right_proj, right_is_bye,
+         right_not_started, _right_stats, right_nfl, right_pid) = player_bits(R, "right", False)
 
         la = 0.0 if left_is_bye else left_actual
         ra = 0.0 if right_is_bye else right_actual
@@ -2010,18 +2002,31 @@ def render_matchup_slide(
         left_more = la is not None and ra is not None and la > ra
         right_more = la is not None and ra is not None and ra > la
 
-        left_points_html = score_stack(left_actual, left_proj, "l", left_is_bye, left_more, left_not_started)
-        right_points_html = score_stack(right_actual, right_proj, "r", right_is_bye, right_more, right_not_started)
-        points = f"{left_points_html}{right_points_html}"
+        left_sb = _score_box(left_actual, left_proj, left_is_bye, left_more, left_not_started)
+        right_sb = _score_box(right_actual, right_proj, right_is_bye, right_more, right_not_started)
 
-        # Box scores render under the name via .m-cell-stats inside left/right
-        # cells -- no middle stat-stack columns (those pulled team abbrs away).
+        # Shared centre rail: one coloured position chip per slot (both starters
+        # in a slot are the same position, bar the FLEX edge case where the left
+        # side names it). Reuses the site-wide .pos-badge colours.
+        row_pos = left_pos or right_pos or ""
+        pos_chip = (
+            f"<span class='pos-badge {html.escape(row_pos)}'>{html.escape(_pos_label(row_pos))}</span>"
+            if row_pos else ""
+        )
+
+        # Live drive-bar mounts -- one per player's cell, tagged with the NFL
+        # team. The client fills a bar under whichever player's team currently
+        # has the ball (from the shared live game feed); inert until then and
+        # only for started games.
+        left_fld = f"<div class='mb-fld' data-team='{html.escape(left_nfl)}'></div>"
+        right_fld = f"<div class='mb-fld' data-team='{html.escape(right_nfl)}'></div>"
+
         rows_html.append(
-            f"""<div class="m-row">
-                  {left_cell}
-                  {points}
-                  {right_cell}
-                </div>"""
+            "<div class=\"mb-row\">"
+            f"<div class=\"mb-cell mb-cell-l\"><div class=\"mb-cell-row\">{left_info}{left_sb}</div>{left_fld}</div>"
+            f"<div class=\"mb-pos\">{pos_chip}</div>"
+            f"<div class=\"mb-cell mb-cell-r\"><div class=\"mb-cell-row\">{right_info}{right_sb}</div>{right_fld}</div>"
+            "</div>"
         )
 
     # Win probability: only for live/projection weeks (skip completed weeks)
@@ -2096,8 +2101,26 @@ def render_matchup_slide(
     gotw_badge_html = ("<div class='m-head-badges'><span class='m-gotw-badge'>"
                        "<i class='fa-solid fa-fire' aria-hidden='true'></i>GOTW</span></div>") if is_gotw else ""
 
+    # Matchup Moments: the client (brInitMatchupMoments) filters the shared live
+    # play feed to this slide's starters and paints a big-play strip. Starter
+    # pids are emitted so an arbitrary (Prev/Next) matchup can be filtered, and
+    # the mount stays hidden until the client has something live to show.
+    def _starter_pids(team_block) -> str:
+        pids = [str(s.get("pid")) for s in (team_block.get("starters") or [])
+                if s and s.get("pid")]
+        return html.escape(",".join(pids))
+
+    moments_attrs = ""
+    moments_mount = ""
+    if not compact:
+        moments_attrs = (
+            f" data-mb-left-pids='{_starter_pids(m['left'])}'"
+            f" data-mb-right-pids='{_starter_pids(m['right'])}'"
+        )
+        moments_mount = "<div class=\"mb-moments\" hidden></div>"
+
     return f"""
-    <div class="{slide_cls}"{win_attr}>
+    <div class="{slide_cls}"{win_attr}{moments_attrs}>
       <div class="m-head">
         {gotw_badge_html}
         <div class="m-head-row">
@@ -2112,6 +2135,7 @@ def render_matchup_slide(
         {h2h_html}
       </div>
       {win_bar_html}
+      {moments_mount}
       {body_html}
     </div>
     """
