@@ -1333,6 +1333,50 @@ def game_has_started(game: Optional[dict], now: datetime | None = None) -> bool:
     return normalize_game_status_from_tank01(game, now=now) in ("in", "post")
 
 
+def finished_game_ids_for_week(season: int, week: int) -> list[str]:
+    """IDs of the week's games that are final (Tank01/schedule status ``post``).
+
+    Used by the live advanced-metrics refresh to tell "a new game just finished"
+    from "nothing changed", so a rebuild happens the moment a slate goes final
+    rather than at the next daily cron. Any load/parse failure yields ``[]``.
+    """
+    try:
+        sched = load_week_schedule(int(season), int(week)) or []
+    except Exception:
+        return []
+    out: list[str] = []
+    for g in sched:
+        if not isinstance(g, dict):
+            continue
+        if normalize_game_status_from_tank01(g) == "post":
+            gid = g.get("gameID") or g.get("gameId") or g.get("id")
+            if gid:
+                out.append(str(gid))
+    return sorted(set(out))
+
+
+def week_has_final_game(season: int, week: int) -> bool:
+    """True when at least one of the week's games has gone final."""
+    if not week or int(week) < 1:
+        return False
+    return bool(finished_game_ids_for_week(season, week))
+
+
+def resolve_adv_metrics_completed_week(season: int, current_week: int) -> int:
+    """Highest week whose finished games should feed the metrics snapshot.
+
+    Returns ``current_week`` once that in-progress week has at least one final
+    game (so a just-completed slate is included immediately), otherwise
+    ``current_week - 1`` (the last fully-finished week). Never below 0. Both the
+    live refresh and the daily cron call this so they agree on which week the
+    day's snapshot row covers and neither regresses the other's write.
+    """
+    cw = max(0, int(current_week or 0))
+    if cw >= 1 and week_has_final_game(season, cw):
+        return cw
+    return max(0, cw - 1)
+
+
 def build_games_by_team(games: list[dict]) -> dict[str, dict]:
     """
     games -> { team_abbr: { 'status': 'pre' | 'in' | 'post', 'game': game_obj } }
