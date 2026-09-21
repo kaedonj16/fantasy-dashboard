@@ -903,28 +903,6 @@ def _finalized_fantasy_week(ctx: dict, roster_id: str, requested_week: int):
         return None
 
 
-def _week_scores_visible(games, now=None, lead_seconds=90 * 60) -> bool:
-    """Show from ~90 min before the week's first kickoff through the rest of the
-    week, so live scores appear at kickoff and the final result stays up after.
-
-    Hidden only in the pre-week, projection-only stretch before any game has
-    started (the "up all week" case). Once the earliest kickoff is within the
-    lead window or in the past, the band stays visible until the NFL week rolls
-    over and these become next week's not-yet-played games again."""
-    if now is None:
-        now = datetime.now(timezone.utc)
-    threshold = now.timestamp() + lead_seconds
-    for g in (games or []):
-        raw = g.get("gameTime_epoch")
-        try:
-            ts = float(raw) if raw not in (None, "") else None
-        except (TypeError, ValueError):
-            ts = None
-        if ts is not None and ts <= threshold:
-            return True
-    return False
-
-
 def _build_live_matchups(platform, resolved_league_id, season, week, ctx):
     """(matchups, status_by_pid, proj_map) for one league/week, TTL-cached.
 
@@ -1141,15 +1119,13 @@ def api_portfolio_matchup():
     if finalized_week == week - 1 and today.weekday() == 1:
         week = finalized_week
 
-    # Scheduled weeks stay hidden until kickoff approaches, while a provider-
-    # finalized fantasy week remains eligible even after the NFL state rolls.
-    from utils.utils import get_nfl_games_for_week
-    try:
-        games = get_nfl_games_for_week(week, default_season)
-    except Exception:
-        games = []
-    if finalized_week != week and not _week_scores_visible(games):
-        return jsonify({"live": False})
+    # Show the matchup preview all week, not just from ~90 min before kickoff:
+    # pre-kickoff the card renders a "pre" preview (projected totals + win
+    # probability from the same model), matching the single-league dashboard,
+    # which already previews the upcoming matchup. Live scores still take over at
+    # kickoff and the final result stays up afterward -- the status label the
+    # client renders ("Wk N" / "Live" / "Final") is driven by the players' game
+    # state below, so no game has to have started for the preview to be useful.
 
     resolved_league_id = ctx.get("resolved_league_id") or league_id
     try:
