@@ -29651,9 +29651,15 @@ def build_portfolio_body(
         "var cards=[].slice.call(document.querySelectorAll('[data-summary-card]')).filter(function(c){return c.isConnected&&c.style.display!=='none';});"
         "var keys=cards.map(function(c){return {platform:c.dataset.platform,league_id:c.dataset.leagueId,season:parseInt(c.dataset.season,10)};});"
         "var success=0,failed=0,stamp=null;try{"
+        # /api/portfolio/refresh caps each batch at 4 leagues; chunk so accounts
+        # with more visible cards refresh all of them instead of a blanket 400.
+        "var CHUNK=4;var results=new Array(cards.length);"
+        "for(var off=0;off<keys.length;off+=CHUNK){var batchKeys=keys.slice(off,off+CHUNK);if(!batchKeys.length)break;"
         "var response=await window.brFetchWithTimeout('/api/portfolio/refresh',{method:'POST',cache:'no-store',credentials:'same-origin',"
-        "headers:{'Content-Type':'application/json','Cache-Control':'no-store'},body:JSON.stringify({leagues:keys}),signal:signal},30000);"
-        "var payload=await response.json();var results=payload.results||[];stamp=payload.refreshed_at||null;"
+        "headers:{'Content-Type':'application/json','Cache-Control':'no-store'},body:JSON.stringify({leagues:batchKeys}),signal:signal},30000);"
+        "var payload=await response.json();var batchResults=payload.results||[];"
+        "for(var j=0;j<batchKeys.length;j++)results[off+j]=batchResults[j];"
+        "if(payload.refreshed_at&&(!stamp||payload.refreshed_at>stamp))stamp=payload.refreshed_at;}"
         "cards.forEach(function(c,i){var r=results[i]||{};if(r.ok&&r.summary){success++;if(window.__pfRenderSummary)window.__pfRenderSummary(c,r.summary);}"
         "else{failed++;var retry=c.querySelector('[data-summary-retry]');if(retry)retry.hidden=false;}});"
         "var jobs=cards.map(function(c){return function(){var slot=c.querySelector('[data-lg-live]');if(!slot)return Promise.resolve();"
