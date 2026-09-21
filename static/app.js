@@ -4121,6 +4121,11 @@ function scrollToIndex(card, newIdx) {
   const nextBtn = card.querySelector(".m-btn-next");
   if (prevBtn) prevBtn.disabled = clamped === 0;
   if (nextBtn) nextBtn.disabled = clamped === maxIdx;
+
+  // Live widgets (drive bar / moments) only for the slide now in view -- never
+  // paint them across every league matchup at once.
+  const shown = slides[clamped];
+  if (shown && window.brInitMatchupLive) window.brInitMatchupLive(shown);
 }
 
 function initAllCarousels(scope = document) {
@@ -4129,6 +4134,17 @@ function initAllCarousels(scope = document) {
     scrollToIndex(card, idx || 0);
   });
 }
+
+// Re-paint the live widgets on the visible slide of every matchup carousel.
+// Called on a slow interval so drive bars / moments track the games without
+// touching off-screen slides.
+window.brRefreshVisibleMatchupLive = function (scope) {
+  (scope || document).querySelectorAll(".matchup-carousel").forEach(card => {
+    const { slides, idx } = getCarouselState(card);
+    const shown = slides && slides[idx];
+    if (shown && window.brInitMatchupLive) window.brInitMatchupLive(shown);
+  });
+};
 
 function bindGlobalCarouselHandlersOnce() {
   if (window.__BR_INIT_FLAGS__.globalsBound) return;
@@ -21400,3 +21416,165 @@ window._rzStubPbpEvents = function(pid, state) {
 // ── BR Redzone ──────────────────────────────────────────────────────────────
 // Extracted to static/redzone.js (loaded only on the Redzone page). The
 // shared live helpers used by the player modal remain above this point.
+
+// ── Matchup board live widgets (drive bar + moments) ─────────────────────────
+// Fills the .mb-fld drive-bar mounts (and, when the payload carries a scoring
+// feed, the .mb-moments strip) emitted by render_matchup_slide. Reuses the
+// Redzone field-position helper so there is one field renderer, not two. Live
+// data comes from the same league-scope redzone-data payload the player modal
+// already fetches; only the visible carousel slide is ever painted.
+(function () {
+  var TEAM_COLORS = {ARI:'#97233F',ATL:'#A71930',BAL:'#241773',BUF:'#00338D',CAR:'#0085CA',CHI:'#0B162A',CIN:'#FB4F14',CLE:'#311D00',DAL:'#003594',DEN:'#FB4F14',DET:'#0076B6',GB:'#203731',HOU:'#03202F',IND:'#002C5F',JAX:'#006778',KC:'#E31837',LV:'#000000',LAC:'#0080C6',LAR:'#003594',MIA:'#008E97',MIN:'#4F2683',NE:'#002244',NO:'#D3BC8D',NYG:'#0B2265',NYJ:'#125740',PHI:'#004C54',PIT:'#FFB612',SF:'#AA0000',SEA:'#002244',TB:'#D50A0A',TEN:'#0C2340',WAS:'#5A1414'};
+  var norm = function (t) { return (window._rzNormalizeTeam ? window._rzNormalizeTeam(t) : String(t || '')).toUpperCase(); };
+  var esc = function (v) { var d = document.createElement('div'); d.textContent = String(v == null ? '' : v); return d.innerHTML; };
+
+  // Shared league-scope live cache (own fetch so the weekly hub doesn't depend
+  // on a player modal being open). 20 s staleness, single in-flight request.
+  var _cache = null, _ts = 0, _fetching = false, _waiters = [];
+  function getState(cb) {
+    if (_cache && Date.now() - _ts < 20000) { cb && cb(_cache); return _cache; }
+    if (cb) _waiters.push(cb);
+    if (!_fetching) {
+      _fetching = true;
+      var parts = window.location.pathname.split('/');
+      if (parts.length < 4) { _fetching = false; return _cache; }
+      var url = '/api/' + parts[1] + '/' + parts[2] + '/' + parts[3] + '/redzone-data?scope=league&_cb=' + Date.now();
+      fetch(url).then(function (r) { return r.ok ? r.json() : null; }).then(function (data) {
+        _fetching = false;
+        if (data) { _cache = data; _ts = Date.now(); }
+        var w = _waiters; _waiters = [];
+        w.forEach(function (fn) { try { fn(_cache); } catch (e) {} });
+      }).catch(function () { _fetching = false; _waiters = []; });
+    }
+    return _cache;
+  }
+
+  function gameForTeam(state, team) {
+    var games = (state && state.games) || {}, tn = norm(team);
+    if (!tn) return null;
+    var keys = Object.keys(games);
+    for (var i = 0; i < keys.length; i++) {
+      var g = games[keys[i]];
+      if (!g) continue;
+      if (norm(g.home) === tn || norm(g.away) === tn) return g;
+    }
+    return null;
+  }
+
+  // Build the drive-bar markup for a team that currently has the ball. Returns
+  // '' when the game is not live, the team is on defense, or field position is
+  // not yet reliable -- the mount then clears.
+  function driveBarHtml(game, team) {
+    if (!game || !window._rzFieldPosition) return '';
+    var status = String(game.status || '').toLowerCase();
+    if (status !== 'live') return '';
+    if (game.field_position_reliable === false) return '';
+    var poss = norm(game.possession);
+    if (!poss || poss !== norm(team)) return '';
+    var fp = window._rzFieldPosition(game);
+    if (!fp || fp.spot == null) return '';
+    var atkAway = fp.side === 'away';
+    var ticks = [20, 40, 50, 60, 80].map(function (x) { return '<span class="mb-fld-tick" style="left:' + x + '%"></span>'; }).join('');
+    var rz = '<span class="mb-fld-rz" style="' + (atkAway ? 'right' : 'left') + ':0"></span>';
+    var fillW = 'calc(' + (atkAway ? fp.spot : (100 - fp.spot)) + '% + 8px)';
+    var fd = (fp.ltg != null) ? '<span class="mb-fld-fd" style="left:' + Math.min(Math.max(fp.ltg, 1), 99) + '%"></span>' : '';
+    var markPos = Math.min(Math.max(fp.spot, 3), 97);
+    var dd = '';
+    if (game.down) {
+      var dl = ({1: '1st', 2: '2nd', 3: '3rd', 4: '4th'})[game.down] || game.down;
+      var dist = (fp.goalToGo || /goal/i.test(String(game.distance || ''))) ? 'Goal' : String(game.distance || '');
+      dd = dl + (dist ? (' & ' + dist) : '');
+    }
+    var tc = TEAM_COLORS[norm(team)] || '#334155';
+    return '<div class="mb-fld-in"><div class="mb-fld-head"><span>' + esc(dd) + '</span>'
+      + '<span class="mb-fld-spot">' + esc(fp.label || '') + '</span></div>'
+      + '<div class="mb-fld-track" style="--mb-tc:' + tc + '">' + rz + ticks
+      + '<span class="mb-fld-fill ' + (atkAway ? 'mb-away' : 'mb-home') + '" style="width:' + fillW + '"></span>' + fd
+      + '<span class="mb-fld-mark" style="left:' + markPos + '%"></span></div></div>';
+  }
+
+  function paint(slide, state) {
+    if (!slide || !state) return;
+    var anyLive = false;
+    slide.querySelectorAll('.mb-fld[data-team]').forEach(function (mount) {
+      var team = mount.getAttribute('data-team');
+      var g = team ? gameForTeam(state, team) : null;
+      var html = g ? driveBarHtml(g, team) : '';
+      if (mount.innerHTML !== html) mount.innerHTML = html;
+      if (html) anyLive = true;
+    });
+    // Moments: the league-scope payload carries no play-by-play scoring feed, so
+    // there is nothing to filter yet. Render only when a future payload exposes
+    // state.scoring_moments (a flat list of {pid, team, kind, desc, pts,
+    // quarter, clock}); until then leave the strip hidden rather than fake it.
+    var mstrip = slide.querySelector('.mb-moments');
+    if (mstrip) {
+      var moments = momentsForSlide(slide, state);
+      if (moments && moments.length) {
+        mstrip.innerHTML = momentsHtml(moments);
+        mstrip.hidden = false;
+      } else {
+        mstrip.hidden = true;
+      }
+    }
+  }
+
+  function pidSet(slide, attr) {
+    var raw = slide.getAttribute(attr) || '';
+    var set = {};
+    raw.split(',').forEach(function (p) { p = p.trim(); if (p) set[p] = true; });
+    return set;
+  }
+
+  function momentsForSlide(slide, state) {
+    var feed = state && state.scoring_moments;
+    if (!Array.isArray(feed) || !feed.length) return null;
+    var left = pidSet(slide, 'data-mb-left-pids'), right = pidSet(slide, 'data-mb-right-pids');
+    var out = [];
+    feed.forEach(function (m) {
+      if (!m) return;
+      var pid = String(m.pid == null ? '' : m.pid);
+      var side = left[pid] ? 'L' : (right[pid] ? 'R' : '');
+      if (!side) return;
+      out.push({side: side, team: norm(m.team), who: m.who || m.name || '', kind: m.kind || '',
+                desc: m.desc || '', pts: m.pts, q: m.quarter || m.q || '', clock: m.clock || ''});
+    });
+    // newest first when an order hint exists, else keep feed order
+    out.sort(function (a, b) { return (b.ts || 0) - (a.ts || 0); });
+    return out;
+  }
+
+  function momentsHtml(list) {
+    var cards = list.map(function (m) {
+      var r = m.side === 'R';
+      var tc = TEAM_COLORS[m.team] || '#64748b';
+      var tag = m.kind === 'td' ? 'TD' : 'BIG';
+      var ptsTxt = (typeof m.pts === 'number') ? ('+' + m.pts.toFixed(1)) : (m.pts ? esc(m.pts) : '');
+      var foot = [m.team, [m.q, m.clock].filter(Boolean).join(' ')].filter(Boolean).join(' · ');
+      return '<div class="mb-mcard' + (r ? ' mb-mc-r' : '') + '" style="--mb-mc:' + tc + '">'
+        + '<div class="mb-mc-top"><span class="mb-mc-who">' + esc(m.who) + '</span>'
+        + '<span class="mb-mc-tag">' + tag + '</span></div>'
+        + '<div class="mb-mc-desc">' + esc(m.desc) + '</div>'
+        + '<div class="mb-mc-foot"><span>' + esc(foot) + '</span>'
+        + '<span class="mb-mc-pts">' + ptsTxt + '</span></div></div>';
+    }).join('');
+    return '<div class="mb-moments-hd"><span class="mb-m-t">Matchup Moments</span>'
+      + '<span class="mb-m-live"><span class="mb-m-dot"></span>LIVE · ' + list.length + '</span></div>'
+      + '<div class="mb-mstrip">' + cards + '</div>';
+  }
+
+  window.brInitMatchupLive = function (slide) {
+    if (!slide || !slide.querySelector('.mb-fld, .mb-moments')) return;
+    var state = getState(function (s) { paint(slide, s); });
+    if (state) paint(slide, state);
+  };
+
+  // Slow poll: refresh the visible slide of each carousel while the tab is
+  // visible and a live game is in play. Cheap -- one cached fetch, one slide.
+  setInterval(function () {
+    if (document.hidden) return;
+    if (!document.querySelector('.matchup-carousel .mb-fld, .matchup-carousel .mb-moments')) return;
+    _ts = 0; // force a refresh on the next getState
+    if (window.brRefreshVisibleMatchupLive) window.brRefreshVisibleMatchupLive(document);
+  }, 20000);
+}());
