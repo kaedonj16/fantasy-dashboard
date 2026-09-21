@@ -4936,6 +4936,7 @@ window.initTradePage = function initTradePage(root = document) {
     const name = document.createElement("span");
     name.className = "otc-dropdown-name";
     name.textContent = p.name || "Unknown";
+    if (p.id && p.position !== "PICK") name.setAttribute("data-wl-star-pid", String(p.id));
 
     top.appendChild(rank);
     top.appendChild(name);
@@ -9116,6 +9117,7 @@ window.initTradePage = function initTradePage(root = document) {
 
       dropdown.style.display = "block";
       dropdown.parentElement.classList.add("dropdown-open");
+      if (typeof _wlStarDecorate === "function") _wlStarDecorate(dropdown);
     }
 
     input.addEventListener("input", () => { renderSide(input.value); });
@@ -13462,6 +13464,31 @@ function _isWatched(player_id) {
   return _getWatchlist().some(p => String(p.player_id) === pid);
 }
 
+// Decorate any element carrying data-wl-star-pid with a gold star when that
+// player is on the watchlist (and remove it when unwatched). Idempotent, so it
+// is safe to run on load, on watchlist-updated, and after dynamic re-renders.
+function _wlStarDecorate(root) {
+  try {
+    if (typeof _isWatched !== 'function') return;
+    const scope = (root && root.querySelectorAll) ? root : document;
+    scope.querySelectorAll('[data-wl-star-pid]').forEach(function (el) {
+      const pid = el.getAttribute('data-wl-star-pid');
+      const existing = el.querySelector(':scope > .wl-inline-star');
+      const want = pid && _isWatched(pid);
+      if (want && !existing) {
+        const s = document.createElement('span');
+        s.className = 'wl-inline-star';
+        s.setAttribute('aria-hidden', 'true');
+        s.title = 'On your watchlist';
+        s.textContent = '★';
+        el.appendChild(s);
+      } else if (!want && existing) {
+        existing.remove();
+      }
+    });
+  } catch (e) { /* non-fatal */ }
+}
+
 function _toggleWatchlist(player) {
   const pid = String(player.player_id);
   const list = _getWatchlist();
@@ -14003,6 +14030,8 @@ async function initSinceLastVisit() {
 _deferInit(initSinceLastVisit);
 
 window.addEventListener('watchlist-updated', _refreshWatchlistNav);
+window.addEventListener('watchlist-updated', function () { _wlStarDecorate(document); });
+_deferInit(function () { _wlStarDecorate(document); });
 document.addEventListener('click', function(e) {
   const wrapper = document.querySelector('.watchlist-nav-wrapper');
   if (wrapper && !wrapper.contains(e.target)) {
