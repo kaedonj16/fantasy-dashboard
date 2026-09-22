@@ -12210,7 +12210,7 @@ _RZ_SCOREBOARD_TIMEOUT = 12
 def _redzone_boxscore(
     game_id: str, *, play_by_play: bool = False, ttl: float | None = None
 ) -> dict:
-    """Fetch a Tank01 boxscore with a short shared TTL cache (bounds API calls).
+    """Fetch the shared ESPN boxscore with a short UI-level TTL cache.
 
     ``play_by_play=True`` asks Tank01 for ``allPlayByPlay`` and is cached under a
     separate key so plain boxscore consumers stay light. Pass ``ttl`` to reuse a
@@ -13635,7 +13635,7 @@ def api_redzone_data(platform: str, season: int, league_id: str):
 
 @app.route("/api/<platform>/<int:season>/<league_id>/redzone-player")
 def api_redzone_player(platform: str, season: int, league_id: str):
-    """Return Tank01 boxscore stats for a single player, tagged with fantasy pts."""
+    """Return ESPN NFL detail for a player; provider fantasy points stay authoritative."""
     from dashboard_services.api import (
         get_nfl_players, fetch_tank_boxscore, get_normalized_scoring_settings,
     )
@@ -13652,6 +13652,7 @@ def api_redzone_player(platform: str, season: int, league_id: str):
         pos = (player.get("position") or "").upper()
 
         stats = {}
+        box = {}
         if game_id:
             box = fetch_tank_boxscore(game_id) or {}
             player_stats = box.get("playerStats") or {}
@@ -13691,7 +13692,14 @@ def api_redzone_player(platform: str, season: int, league_id: str):
                 "rec_tds": float(receiving.get("recTD") or 0),
             }
 
-        return jsonify({"pos": pos, "scoring": scoring, "breakdown": breakdown})
+        available = set(box.get("field_availability") or []) if game_id else set()
+        return jsonify({
+            "pos": pos, "scoring": scoring, "breakdown": breakdown,
+            "breakdown_complete": bool(box.get("breakdown_complete", False)) if game_id else False,
+            "field_availability": sorted(available),
+            "source": box.get("source", "espn_nfl") if game_id else "unavailable",
+            "notice": "Fantasy-provider score remains authoritative; unavailable ESPN fields are omitted.",
+        })
     except Exception as _e:
         logger.warning("[redzone] player fetch %s: %s", pid, _e)
         return jsonify({}), 500

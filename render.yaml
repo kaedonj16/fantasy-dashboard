@@ -48,8 +48,6 @@ services:
         sync: false
       - key: SITE_BASE_URL
         value: https://brfantasyfootball.com
-      - key: TANK01_API_KEY
-        sync: false
       - key: FLASK_SECRET_KEY
         sync: false
       # Encrypts user-supplied private provider cookies at rest. Render creates
@@ -163,8 +161,6 @@ services:
         value: smtp.gmail.com
       - key: SMTP_PORT
         value: 587
-      - key: TANK01_API_KEY
-        sync: false
       - key: PYTHON_ENV
         value: production
       # Cache-flush after each cron run — most critical missing vars
@@ -217,8 +213,6 @@ services:
         fromDatabase:
           name: brfantasy-db
           property: connectionString
-      - key: TANK01_API_KEY
-        sync: false
       - key: TZ
         value: America/New_York
       - key: PYTHON_ENV
@@ -319,8 +313,6 @@ services:
         fromDatabase:
           name: brfantasy-db
           property: connectionString
-      - key: TANK01_API_KEY
-        sync: false
       - key: PYTHON_ENV
         value: production
 

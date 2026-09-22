@@ -522,11 +522,11 @@ def test_app_wires_pbp_into_collect_and_demo():
     assert '"pbp_by_game": pbp_by_game' in app
     assert "Try Redzone Demo" in app
     api = (_ROOT / "dashboard_services" / "api.py").read_text(encoding="utf-8")
+    # Compatibility name remains, but the implementation delegates to the
+    # shared ESPN event service and contains no paid request parameters.
     assert 'fetch_tank_boxscore' in api
-    # Tank01 docs use both spellings; fantasyPoints helps per-play deltas.
-    assert 'params["playByPlay"] = "true"' in api
-    assert 'params["playByplay"] = "true"' in api
-    assert 'params["fantasyPoints"] = "true"' in api
+    assert 'boxscore_for_game' in api
+    assert 'params["playByPlay"]' not in api
     # Finals must still request PBP — otherwise Plays falls back to bulk
     # "Scored X pts" cards after the game ends.
     assert 'want_pbp = live or final' in app

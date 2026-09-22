@@ -15,8 +15,9 @@ from dashboard_services.circuit_breaker import get_breaker
 
 logger = logging.getLogger(__name__)
 
-# Shared circuit breaker for all Tank01 calls
-_tank01_breaker = get_breaker("tank01", failure_threshold=5, reset_timeout=300)
+# Retained as an import-compatibility sentinel for older tests/extensions.  The
+# paid provider is permanently disabled; NFL game data is served by ESPN.
+_tank01_breaker = get_breaker("tank01-disabled", failure_threshold=1, reset_timeout=300)
 
 # ---- League context (request-scoped) ----
 # League config (scoring/roster/settings) is stored per-request via Flask's ``g``
@@ -66,9 +67,9 @@ SCORING_DEFAULTS = {
     "xpMade": 1,
     "xpMissed": -1,
 }
-TANK01_HOST = "tank01-nfl-live-in-game-real-time-statistics-nfl.p.rapidapi.com"
-BASE = f"https://{TANK01_HOST}"
-TANK01_API_KEY = os.getenv("TANK01_API_KEY")
+TANK01_HOST = "disabled.invalid"
+BASE = "https://disabled.invalid"
+TANK01_API_KEY = None
 FOOTBALLGUYS_TEAM_LOG_URL = "https://www.footballguys.com/stats/game-logs/teams"
 LEAGUE_HISTORY_CACHE: dict[str, dict] = {}
 LEAGUE_HISTORY_TTL = 60 * 60 * 12  # 12 hours
@@ -601,33 +602,8 @@ def get_draft_picks(draft_id: str) -> List[dict]:
 
 @ttl_cache(ttl=300)
 def get_nfl_games_for_week_raw(week: int, season: int, season_type: str = "reg") -> list[dict]:
-    if _tank01_breaker.is_open():
-        logger.warning("[Tank01] Circuit OPEN - skipping getNFLGamesForWeek w%s s%s", week, season)
-        return []
-    url = f"{BASE}/getNFLGamesForWeek"
-    params = {"week": week, "seasonType": season_type, "season": season}
-    try:
-        resp = SESSION.get(url, headers=TANK01_HEADERS, params=params, timeout=10)
-        resp.raise_for_status()
-        data = resp.json()
-        _tank01_breaker.record_success()
-        return data.get("body") or data
-    except requests.exceptions.HTTPError as e:
-        if e.response.status_code == 429:
-            logger.warning("[Tank01] Rate limited - getNFLGamesForWeek w%s s%s", week, season)
-            _tank01_breaker.record_failure()
-            return []
-        logger.error("[Tank01] HTTP %s - getNFLGamesForWeek w%s s%s", e.response.status_code, week, season)
-        _tank01_breaker.record_failure()
-        raise
-    except requests.exceptions.RequestException as e:
-        logger.error("[Tank01] Request error - getNFLGamesForWeek w%s s%s: %s", week, season, e)
-        _tank01_breaker.record_failure()
-        return []
-    except Exception as e:
-        logger.exception("[Tank01] Unexpected error - getNFLGamesForWeek w%s s%s", week, season)
-        _tank01_breaker.record_failure()
-        return []
+    from dashboard_services.nfl_game_data import games_for_week
+    return games_for_week(week, season, season_type)
 
 
 def avatar_url(avatar_id: str) -> Union[str, None]:
@@ -677,36 +653,11 @@ def get_nfl_scores_for_date(game_date: str, timeout: int = 20) -> dict:
         rather than the client giving up on a request the server would answer.
     Returns: body dict from Tank01 (gameID -> gameDict)
     """
-    url = f"{BASE}/getNFLScoresOnly"
-    params = {"gameDate": game_date, "topPerformers": "true"}
-
-    if _tank01_breaker.is_open():
-        logger.warning("[Tank01] Circuit OPEN - skipping getNFLScoresOnly %s", game_date)
-        return {}
+    from dashboard_services.nfl_game_data import scoreboard_for_date
     try:
-        resp = SESSION.get(url, headers=TANK01_HEADERS, params=params, timeout=timeout)
-        resp.raise_for_status()
-        data = resp.json() or {}
-        _tank01_breaker.record_success()
-        return data.get("body") or {}
-    except requests.exceptions.HTTPError as e:
-        _tank01_breaker.record_failure()
-        _status = getattr(e.response, "status_code", None)
-        if _status == 429:
-            logger.warning("[Tank01] Rate limited - getNFLScoresOnly %s", game_date)
-            return {}
-        # Scores are non-critical page furniture; a 403/4xx/5xx from the
-        # upstream provider must not bubble up and 500 the whole dashboard.
-        # Log and degrade gracefully to an empty scoreboard.
-        logger.error("[Tank01] HTTP %s - getNFLScoresOnly %s", _status, game_date)
-        return {}
-    except requests.exceptions.RequestException as e:
-        logger.error("[Tank01] Request error - getNFLScoresOnly %s: %s", game_date, e)
-        _tank01_breaker.record_failure()
-        return {}
-    except Exception as e:
-        logger.exception("[Tank01] Unexpected error - getNFLScoresOnly %s", game_date)
-        _tank01_breaker.record_failure()
+        return scoreboard_for_date(game_date, timeout=timeout)
+    except Exception:
+        logger.warning("ESPN scoreboard unavailable for %s", game_date, exc_info=True)
         return {}
 
 
@@ -728,42 +679,9 @@ def fetch_tank_boxscore(
     (lowercase ``p`` in ``play``); the playground uses ``playByPlay``. Send both
     plus ``fantasyPoints=true`` so per-play deltas are more likely to populate.
     """
-    sess = session or requests.Session()
-
-    params: dict = {"gameID": game_id}
-    if play_by_play:
-        params["playByPlay"] = "true"
-        params["playByplay"] = "true"
-        params["fantasyPoints"] = "true"
-
-    if _tank01_breaker.is_open():
-        logger.warning("[Tank01] Circuit OPEN - skipping getNFLBoxScore %s", game_id)
-        return {}
-    try:
-        url = f"{BASE}/getNFLBoxScore"
-        # PBP payloads are larger; give them a little more time.
-        resp = sess.get(url, headers=TANK01_HEADERS, params=params, timeout=8 if play_by_play else 5)
-        resp.raise_for_status()
-        data = resp.json()
-        _tank01_breaker.record_success()
-        if isinstance(data, dict) and "body" in data:
-            return data["body"]
-        return data
-    except requests.exceptions.HTTPError as e:
-        _tank01_breaker.record_failure()
-        if e.response.status_code == 429:
-            logger.warning("[Tank01] Rate limited - getNFLBoxScore %s", game_id)
-            return {}
-        logger.error("[Tank01] HTTP %s - getNFLBoxScore %s", e.response.status_code, game_id)
-        raise
-    except requests.exceptions.RequestException as e:
-        logger.error("[Tank01] Request error - getNFLBoxScore %s: %s", game_id, e)
-        _tank01_breaker.record_failure()
-        return {}
-    except Exception as e:
-        logger.exception("[Tank01] Unexpected error - getNFLBoxScore %s", game_id)
-        _tank01_breaker.record_failure()
-        return {}
+    del session
+    from dashboard_services.nfl_game_data import boxscore_for_game
+    return boxscore_for_game(game_id, play_by_play=play_by_play)
 
 
 def build_team_game_lookup(scores_body: dict) -> dict[str, dict]:

@@ -15,6 +15,33 @@ from pathlib import Path
 
 import pytest
 
+
+@pytest.fixture(autouse=True)
+def forbid_paid_nfl_provider(monkeypatch):
+    """Fail fast if any code path attempts the retired paid hostname."""
+    try:
+        import requests
+    except ImportError:
+        yield
+        return
+    original = requests.sessions.Session.request
+
+    def guarded(session, method, url, *args, **kwargs):
+        lowered = str(url).lower()
+        if "tank01-nfl-live-in-game-real-time-statistics-nfl.p.rapidapi.com" in lowered:
+            pytest.fail(f"retired Tank01 outbound request attempted: {url}")
+        # CI must be deterministic and must not spend repeated timeout budgets
+        # on public ESPN. Tests that exercise fetching monkeypatch Session.get
+        # with captured payloads, which bypasses this network-only guard.
+        if any(host in lowered for host in (
+            "site.api.espn.com", "site.web.api.espn.com", "cdn.espn.com",
+        )):
+            raise requests.ConnectionError(f"live ESPN request blocked in tests: {url}")
+        return original(session, method, url, *args, **kwargs)
+
+    monkeypatch.setattr(requests.sessions.Session, "request", guarded)
+    yield
+
 # Files that import Flask/pandas/app belong in the full-stack CI job, not the
 # pure-Python lint job. Auto-marked below so `pytest -m integration` / `-m
 # "not integration"` can split the suite without annotating every module.
@@ -72,6 +99,7 @@ def offline_client(monkeypatch):
     pytest.importorskip("flask")
 
     import dashboard_services.api as api
+    import dashboard_services.nfl_game_data as nfl_game_data
 
     def _fake_fetch_json(path, timeout=25, retries=3):
         if path == "/state/nfl":
@@ -87,6 +115,13 @@ def offline_client(monkeypatch):
     # raise out of get_nfl_games_for_week_raw and add seconds to every page.
     monkeypatch.setattr(api, "get_nfl_games_for_week_raw", lambda *a, **k: [])
     monkeypatch.setattr(api, "get_nfl_scores_for_date", lambda *a, **k: {})
+    # ESPN NFL replaced Tank01 as the shared game-data backend. Keep page
+    # rendering fully offline as promised by this fixture, including callers
+    # that import the new service directly rather than through api.py.
+    monkeypatch.setattr(nfl_game_data, "_request_json", lambda *a, **k: {})
+    monkeypatch.setattr(nfl_game_data, "scoreboard_for_date", lambda *a, **k: {})
+    monkeypatch.setattr(nfl_game_data, "games_for_week", lambda *a, **k: [])
+    monkeypatch.setattr(nfl_game_data, "boxscore_for_game", lambda *a, **k: {})
 
     import app
     # Skip the per-request daily-build hook (it calls get_nfl_state + heavy work).
