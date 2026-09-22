@@ -78,13 +78,15 @@ def _metric(value, label, cls=""):
 def build_optimal_body(ctx):
     from app import get_players_index_global
     from dashboard_services.platform_api import get_matchups
+    from utils.utils import from_players_map
 
     platform = ctx.get("platform") or "sleeper"
     season = int(ctx.get("season") or datetime.now().year)
     league_id = ctx.get("league_id") or ""
     viewer_rid = str((ctx.get("viewer") or {}).get("viewer_roster_id") or "")
     slots = ctx.get("roster_positions") or []
-    players = get_players_index_global() or {}
+    raw_players = get_players_index_global() or {}
+    players = {}
     rosters, roster_map = ctx.get("rosters") or [], ctx.get("roster_map") or {}
 
     # Finalized rows are the source of truth; this works for historical seasons and playoffs.
@@ -142,7 +144,11 @@ def build_optimal_body(ctx):
         pids = [str(p) for p in (row.get("players") or []) if p is not None and str(p) != "0"]
         starters = [str(p) if p is not None else "0" for p in (row.get("starters") or [])]
         raw_scores = {str(k): v for k, v in (row.get("players_points") or {}).items()}
-        positions = {p: (players.get(p) or {}).get("pos") for p in pids}
+        # One canonical metadata path handles provider IDs and team defenses.
+        # It intentionally recognizes only the canonical NFL team set.
+        resolved = {p: from_players_map(p, raw_players) for p in pids}
+        players.update(resolved)
+        positions = {p: resolved[p].get("pos") for p in pids}
         out = analyze_lineup(raw_scores, positions, slots, pids, starters, row.get("points"))
         out.update({"week": week, "pids": pids,
                     "scores": {p: (None if v is None else float(v)) for p, v in raw_scores.items()}})

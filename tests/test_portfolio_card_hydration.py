@@ -64,7 +64,7 @@ def test_my_leagues_loader_is_single_flight_and_force_invalidates():
     block = source.split("window.brGetMyLeagues = function", 1)[1].split("})();", 1)[0]
     assert "if (inflight) return inflight" in block
     assert "if (force) { value = null; expiresAt = 0; }" in block
-    assert ".finally(function () { inflight = null; })" in block
+    assert ".finally(function(){ inflight=null; })" in block
     assert "expiresAt = Date.now() + 5000" in block
 
 

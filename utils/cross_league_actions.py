@@ -120,22 +120,31 @@ def injury_stash_action(
     verdict: str,
     weeks_label: str = "",
     already_on_ir: bool = False,
+    ir_used: Optional[int] = None,
+    ir_slots: Optional[int] = None,
 ) -> Optional[dict]:
     v = str(verdict or "").strip()
-    if v not in ("IR", "Drop candidate", "Stash"):
+    if v not in ("IR", "Move to IR", "Drop candidate", "Stash"):
         return None
     # Already occupying an IR slot — stash/move-to-IR tips are not actionable.
     # Drop candidate can still matter (free the IR slot).
-    if already_on_ir and v in ("IR", "Stash"):
+    if already_on_ir and v in ("IR", "Move to IR", "Stash"):
         return None
+    move = v in ("IR", "Move to IR")
+    if move and (ir_slots is None or ir_used is None or ir_slots <= ir_used):
+        return None
+    title = f"Move {player_name} to IR" if move else f"{v}: {player_name}"
+    detail = f"Approx return {weeks_label}" if weeks_label else "Approximate injury guidance"
+    if move:
+        detail = f"{ir_used} of {ir_slots} IR slots used · {detail}"
     return make_action(
         kind="injury",
         platform=platform,
         season=season,
         league_id=league_id,
         league_name=league_name,
-        title=f"{v}: {player_name}",
-        detail=(f"Approx return {weeks_label}" if weeks_label else "Approximate injury guidance"),
+        title=title,
+        detail=detail,
         href=f"/{(platform or 'sleeper').strip().lower()}/{int(season)}/{league_id}/waivers?tab=startsit",
         severity=0.8 if v == "Drop candidate" else 0.55,
     )

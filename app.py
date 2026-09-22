@@ -163,6 +163,7 @@ from utils.lineup_slots import (
 
 daily_lock = threading.Lock()
 daily_completed = None
+daily_status = {"status": "skipped", "error": None}
 EASTERN = ZoneInfo("America/New_York")
 
 # ── Logging ───────────────────────────────────────────────────────────────────
@@ -2573,20 +2574,55 @@ def start_score_pos_anchors(season, week, scoring_settings=None) -> dict:
     return anchors
 
 
-def run_daily_data_async(season: int, week: int) -> None:
+def run_daily_data_async(season: int, week: int, owner: str = "web") -> bool:
     """Start daily data build in a background thread."""
     # Never kick off the real daily build under tests: build_daily_data scrapes
     # vendor CSVs and hits external value APIs (FantasyCalc, etc.), which would
     # make the suite non-hermetic and reach out to the network in CI. Both the
     # offline_client fixture and test_season_readiness run with TESTING set.
     if app.testing:
-        return
+        return False
+    global daily_status
+    def _boundary():
+        global daily_completed, daily_status
+        import fcntl
+        build_id = f"{season}-{week}-{int(time.time())}"
+        started = time.monotonic()
+        lock_file = None
+        try:
+            lock_path = os.getenv("DAILY_BUILD_LOCK_FILE", "/tmp/fantasy-dashboard-daily.lock")
+            lock_file = open(lock_path, "a+", encoding="utf-8")
+            try:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                daily_status = {"status": "skipped", "error": None, "build_id": build_id}
+                logger.info("daily_build build_id=%s owner=%s season=%s week=%s status=skipped reason=locked",
+                            build_id, owner, season, week)
+                return
+            result = build_daily_data(season, week)
+            if result is False or (isinstance(result, dict) and result.get("ok") is False):
+                raise RuntimeError("daily build reported failure")
+            daily_completed = datetime.now(EASTERN).date()
+            daily_status = {"status": "succeeded", "error": None, "build_id": build_id}
+            logger.info("daily_build build_id=%s owner=%s season=%s week=%s elapsed_ms=%.1f status=succeeded",
+                        build_id, owner, season, week, (time.monotonic()-started)*1000)
+        except Exception as exc:
+            daily_status = {"status": "failed", "error": str(exc), "build_id": build_id}
+            logger.exception("daily_build build_id=%s owner=%s season=%s week=%s elapsed_ms=%.1f status=failed",
+                             build_id, owner, season, week, (time.monotonic()-started)*1000)
+        finally:
+            if lock_file is not None:
+                try:
+                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+                finally:
+                    lock_file.close()
     thread = threading.Thread(
-        target=build_daily_data,
-        args=(season, week),
+        target=_boundary,
+        name=f"daily-{owner}-{season}-{week}",
         daemon=True,
     )
     thread.start()
+    return True
 
 
 def _weeks_hash(weeks):
@@ -16887,6 +16923,10 @@ from dashboard_services.pages.commissioner_page import (  # noqa: E402
 @app.before_request
 def maybe_run_daily():
     global daily_completed
+    # Production cron is the sole owner. Web-request execution is an explicit
+    # escape hatch only; normal traffic must never start heavy duplicate jobs.
+    if os.getenv("RUN_WEB_DAILY_BUILD", "").lower() not in {"1", "true", "yes", "on"}:
+        return
     try:
         today_et: date = datetime.now(EASTERN).date()
 
@@ -16902,14 +16942,9 @@ def maybe_run_daily():
                     season = int(state.get("season") or datetime.now().year)
                     week = int(state.get("week") or 0)
 
-                    daily_thread = threading.Thread(
-                        target=run_daily_data_async,
-                        args=(season, week),
-                        daemon=True
-                    )
-                    daily_thread.start()
-
-                    daily_completed = today_et
+                    # Exactly one thread layer. Completion is recorded by the
+                    # boundary only after build_daily_data returns successfully.
+                    run_daily_data_async(season, week, owner="web")
             finally:
                 daily_lock.release()
     except Exception as _daily_exc:
@@ -29927,8 +29962,8 @@ def build_portfolio_body(
         "cards.forEach(function(c,i){var r=results[i]||{};if(r.ok&&r.summary){success++;if(window.__pfRenderSummary)window.__pfRenderSummary(c,r.summary);}"
         "else{failed++;var retry=c.querySelector('[data-summary-retry]');if(retry)retry.hidden=false;}});"
         "var jobs=cards.map(function(c){return function(){var slot=c.querySelector('[data-lg-live]');if(!slot)return Promise.resolve();"
-        "var u='/api/portfolio/matchup?platform='+encodeURIComponent(c.dataset.platform)+'&league_id='+encodeURIComponent(c.dataset.leagueId)+'&season='+encodeURIComponent(c.dataset.season);"
-        "return window.brFetchWithTimeout(u,{cache:'no-store',credentials:'same-origin',headers:{'Cache-Control':'no-store'},signal:signal},12000)"
+        "var u='/api/portfolio/card?platform='+encodeURIComponent(c.dataset.platform)+'&league_id='+encodeURIComponent(c.dataset.leagueId)+'&season='+encodeURIComponent(c.dataset.season);"
+        "return window.brFetchWithTimeout(u,{cache:'no-store',credentials:'same-origin',headers:{'Cache-Control':'no-store'},signal:signal},25000)"
         ".then(function(r){return r.ok?r.json():null;}).then(function(d){if(!signal||!signal.aborted){if(window.__pfRenderMatchup)window.__pfRenderMatchup(slot,d);}}).catch(function(e){if(e&&e.name==='AbortError')throw e;});};});"
         "var cursor=0;async function worker(){while(cursor<jobs.length){var job=jobs[cursor++];await job();}}await Promise.all([worker(),worker()]);"
         "return {success:success>0&&failed===0,partial:success>0&&failed>0,refreshedAt:stamp,failures:failed};"

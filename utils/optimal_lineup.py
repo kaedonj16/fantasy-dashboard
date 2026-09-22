@@ -32,9 +32,10 @@ def assign_optimal_lineup(
 ) -> dict:
     """Return the exact maximum-weight legal slot assignment.
 
-    Empty slots are valid candidates, which matters when all eligible players
-    have negative scores.  On equal totals the solution retaining the most
-    actual starters wins, preventing hindsight-only, zero-gain substitutions.
+    The objective is lexicographic: fill as many required slots as legally
+    possible, then maximise points, then retain actual starters.  This is
+    important for K/DEF: the only eligible player still has to start even when
+    they scored negative points.
     Players with unknown scores are excluded; callers should separately mark a
     historical result incomplete when any roster score is unknown.
     """
@@ -68,15 +69,20 @@ def assign_optimal_lineup(
                 updated[slot_i] = pid
                 candidate = (score + scores[pid], retained + int(pid in preferred), tuple(updated))
                 current = next_states.get(occupied | bit)
-                # Score then actual-starter retention are the meaningful keys.
+                # All candidates for one occupancy mask have the same fill
+                # count, so score then retention are the meaningful keys here.
                 if current is None or candidate[:2] > current[:2]:
                     next_states[occupied | bit] = candidate
         states = next_states
 
-    # Any occupancy is allowed: an empty slot beats an eligible negative score.
-    total, retained, assignment = max(states.values(), key=lambda result: result[:2])
+    occupied, (total, retained, assignment) = max(
+        states.items(), key=lambda item: (item[0].bit_count(), item[1][0], item[1][1])
+    )
+    unfilled = [slots[i] for i, pid in enumerate(assignment) if pid is None]
     return {"slots": slots, "assignment": list(assignment), "total": round(total, 2),
-            "starters": {p for p in assignment if p}, "retained": retained}
+            "starters": {p for p in assignment if p}, "retained": retained,
+            "filled": occupied.bit_count(), "complete": not unfilled,
+            "unfilled_slots": unfilled}
 
 
 def assign_fixed_lineup(starters: Iterable, player_positions: Mapping,
@@ -124,16 +130,23 @@ def analyze_lineup(pts_map, player_positions, roster_positions, all_pids, starte
     actual_assignment = assign_fixed_lineup(starters, player_positions, roster_positions)
     missing = [p for p in pids if p not in scores or scores[p] is None]
     actual_ids = [_pid(p) for p in starters or [] if _pid(p) not in {"", "0"}]
+    duplicate_starters = sorted({p for p in actual_ids if actual_ids.count(p) > 1})
     missing_starters = [p for p in actual_ids if p not in scores or scores[p] is None]
     unknown_positions = [p for p in pids if not canonicalize_slot(player_positions.get(p))]
-    complete = actual_assignment is not None and not missing and not missing_starters and not unknown_positions
+    complete = (actual_assignment is not None and not duplicate_starters and not missing
+                and not missing_starters and not unknown_positions)
     result = {"complete": complete, "missing_scores": missing, "unknown_positions": unknown_positions,
+              "duplicate_starters": duplicate_starters,
               "actual_assignment": actual_assignment, "official_total": official_total}
     if not complete:
         return result
     actual = round(sum(scores[p] for p in actual_ids), 2)
     optimal = assign_optimal_lineup(scores, player_positions, roster_positions, pids,
                                     prefer_starters=actual_ids)
+    if not optimal["complete"]:
+        details = [f"{slot}: no eligible rostered {slot.lower()}" for slot in optimal["unfilled_slots"]]
+        return {**result, "complete": False, "reason": "incomplete required lineup",
+                "unfilled_slots": optimal["unfilled_slots"], "incomplete_details": details}
     gain = round(optimal["total"] - actual, 2)
     if gain < -0.005:  # invariant: the actual lineup was offered to the optimizer
         return {**result, "complete": False, "reason": "actual lineup was not an optimizer candidate"}

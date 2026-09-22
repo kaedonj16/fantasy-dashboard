@@ -375,7 +375,7 @@ def build_weekly_hub_body(ctx: dict) -> str:
               {scout_panel_content}
             </div>
             <div class="tab-panel" data-tab="optimal">
-              {optimal_panel_content}
+              <div id="optimalLineupContent" aria-live="polite">{optimal_panel_content}</div>
             </div>
           </div>
         </div>
