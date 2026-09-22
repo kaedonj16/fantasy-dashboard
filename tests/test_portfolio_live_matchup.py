@@ -104,7 +104,7 @@ def test_portfolio_card_has_live_slot_and_hydration():
     assert "wpBar" in fn
     assert "win_prob" in fn
     # Client hydration hits the endpoint, caps concurrency, refreshes live games.
-    assert "/api/portfolio/matchup" in fn
+    assert "/api/portfolio/card" in fn
     assert "document.hidden" in fn
     assert "removeAttribute('aria-busy')" in fn
     # Offseason cards do not get a live slot (odds/scores are meaningless there).

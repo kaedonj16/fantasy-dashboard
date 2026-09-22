@@ -23,13 +23,13 @@ def test_injury_plan_verdicts():
     assert mon["approximate"] is True
 
     stash = injury_plan(status="OUT", espn_weeks=2.0, player_value=100)
-    assert stash["verdict"] == "Stash"
+    assert stash["verdict"] == "Hold"
 
     drop = injury_plan(status="OUT", espn_weeks=2.0, player_value=10)
     assert drop["verdict"] == "Drop candidate"
 
     ir = injury_plan(status="IR", espn_weeks=5.0, player_value=50, has_open_ir_slot=True)
-    assert ir["verdict"] == "IR"
+    assert ir["verdict"] == "Move to IR"
     assert "approx" in ir["reason"].lower() or ir["approximate"]
 
 
@@ -54,7 +54,7 @@ def test_injury_roster_verdict_maps_plan_labels():
     drop = injury_roster_verdict(status="OUT", weeks_out=2.0, player_value=10)
     assert drop["verdict"] == "drop"
     stash = injury_roster_verdict(status="OUT", weeks_out=2.0, player_value=100)
-    assert stash["verdict"] == "stash"
+    assert stash["verdict"] == "hold"
     assert "—" not in (ir["reason"] + drop["reason"] + stash["reason"])
 
 

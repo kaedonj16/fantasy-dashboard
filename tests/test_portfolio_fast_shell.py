@@ -194,16 +194,16 @@ def test_summary_endpoint_handles_provider_outage_gracefully(offline_client, mon
         raise ProviderUnavailableError("Fleaflicker is temporarily unavailable.")
 
     monkeypatch.setattr("dashboard_services.portfolio_summary.build_league_summary", boom)
-    # No cached summary -> the endpoint surfaces the unavailable/retryable state.
+    # A cold passive request returns pending before summary/provider work starts.
     monkeypatch.setattr("dashboard_services.portfolio_summary.get_cached_summary",
                         lambda *a, **k: None)
     with offline_client.session_transaction() as sess:
         sess["account_id"] = 7
     response = offline_client.get(
         "/api/portfolio/summary?platform=fleaflicker&league_id=92916&season=2026")
-    assert response.status_code == 503
+    assert response.status_code == 200
     body = response.json
-    assert body["ok"] is False
-    assert body["state"] == "unavailable"
-    assert body["failure_category"] == "provider_5xx"
-    assert body["retryable"] is True
+    assert body["ok"] is True
+    assert body["state"] == "pending"
+    assert body["pending"] is True
+    assert body["retry_after_ms"] == 3000
