@@ -10,6 +10,10 @@ logger = logging.getLogger(__name__)
 POSITIONS = ("QB", "RB", "WR", "TE")
 
 
+class ContextPending(RuntimeError):
+    """The passive portfolio reader scheduled a warm but has no context yet."""
+
+
 def cache_key(account_id, platform, league_id, season):
     return (int(account_id), str(platform).lower(), str(league_id), int(season))
 
@@ -116,6 +120,8 @@ def build_league_summary(account_id, membership, context_loader):
         return {**base, "state": "reconnect_required", "failure_category": "auth_required", "sections": sections,
                 "message": "Reconnect provider"}
     ctx = context_loader(platform, league_id, season)
+    if not ctx:
+        raise ContextPending("league context is warming")
     rosters, league = ctx.get("rosters") or [], ctx.get("league") or {}
     from dashboard_services.accounts import resolve_account_viewer_for_league
     viewer = resolve_account_viewer_for_league(int(account_id), platform, league_id, season, ctx.get("users") or [], rosters)

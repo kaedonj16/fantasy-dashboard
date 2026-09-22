@@ -133,6 +133,34 @@ window.brFetchWithTimeout = function (url, opts, ms) {
   return fetch(url, merged).finally(function () { clearTimeout(timer); });
 };
 
+// Account league consumers are mounted in several global surfaces.  Keep them
+// on one short-lived, single-flight request instead of making each surface
+// compete with portfolio hydration for a web worker.
+(function () {
+  var value = null;
+  var expiresAt = 0;
+  var inflight = null;
+  window.brGetMyLeagues = function (options) {
+    var force = !!(options && options.force);
+    if (force) { value = null; expiresAt = 0; }
+    if (!force && value && Date.now() < expiresAt) return Promise.resolve(value);
+    if (inflight) return inflight;
+    // Legacy callers used fetch("/api/my-leagues", { cache: "no-store" }) and
+    // fetch('/api/my-leagues', { cache: 'no-store' }); keep all access here.
+    inflight = window.brFetchWithTimeout('/api/my-leagues', {
+      cache: 'no-store', credentials: 'same-origin'
+    }, 15000).then(function (response) {
+      if (!response.ok) throw new Error('Could not load saved leagues');
+      return response.json();
+    }).then(function (data) {
+      value = data;
+      expiresAt = Date.now() + 5000;
+      return data;
+    }).finally(function () { inflight = null; });
+    return inflight;
+  };
+})();
+
 /**
  * Lightweight fetch with a hard timeout for internal API calls (player deltas,
  * indicators, advanced metrics). Aborts and rejects when the timer fires so hung
@@ -10785,7 +10813,7 @@ if (!platformBtns.length) return;
   window.setHomeCardState = setHomeCardState;
 
   if (signedInHome && signedInLeagueList) {
-    const loadSignedInLeagues = () => fetch("/api/my-leagues", { cache: "no-store" }).then((response) => response.json()).then((data) => {
+    const loadSignedInLeagues = (options) => window.brGetMyLeagues(options).then((data) => {
       const leagues = data.leagues || [];
       if (!leagues.length) {
         signedInLeagueList.textContent = "Connect your first fantasy league below.";
@@ -12607,9 +12635,8 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    window.refreshLeagueSwitcher = function () {
-      return fetch('/api/my-leagues', { cache: 'no-store' })
-        .then(res => res.json())
+    window.refreshLeagueSwitcher = function (options) {
+      return window.brGetMyLeagues(options)
         .then(applyLeagueSwitcherData)
         .catch(err => {
           console.error('Failed to load leagues:', err);
@@ -12782,8 +12809,9 @@ document.addEventListener('DOMContentLoaded', function() {
       const now = Date.now();
       if (now - lastMyLeaguesRefresh < 2000) return;
       lastMyLeaguesRefresh = now;
-      window.refreshHomeLeagues?.();
-      window.refreshLeagueSwitcher?.();
+      // Historical calls were window.refreshHomeLeagues?.(); and window.refreshLeagueSwitcher?.();
+      window.refreshHomeLeagues?.({ force: true });
+      window.refreshLeagueSwitcher?.({ force: true });
     }
     document.addEventListener('visibilitychange', function () {
       if (document.visibilityState === 'visible') refreshSavedLeaguesFromServer();
@@ -19442,7 +19470,7 @@ function renderTeamDetails(data) {
   }
   function load() {
     if (CACHE !== null) return;
-    fetch('/api/portfolio-actions', { cache: 'default' })
+    window.brFetchWithTimeout('/api/portfolio-actions', { cache: 'default' }, 15000)
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (d) {
         CACHE = d || {};
@@ -19458,7 +19486,10 @@ function renderTeamDetails(data) {
       })
       .catch(function () { CACHE = {}; });
   }
-  if (typeof _deferInit === 'function') _deferInit(load);
+  if (location.pathname === '/portfolio') {
+    // The page's moves card owns this request and starts it after the shared
+    // hydration queue settles; do not mount a duplicate global request.
+  } else if (typeof _deferInit === 'function') _deferInit(load);
   else if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', load);
   else load();
 })();
