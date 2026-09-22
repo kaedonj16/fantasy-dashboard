@@ -26,12 +26,12 @@ def test_recent_streak_supports_legacy_aliases_and_real_zeroes():
 def test_progressive_hydration_keeps_streak_slot_and_resets_manual_retry():
     from pathlib import Path
 
-    source = (Path(__file__).resolve().parents[1] / "app.py").read_text()
+    source = (Path(__file__).resolve().parents[1] / "static" / "app.js").read_text()
     # render() replaces the stats container, so its replacement must recreate
     # the streak target before the section patch runs.
-    render = source[source.index("function render(c,d)"):source.index("function load(c)")]
-    assert "data-summary-streak" in render
-    assert "c._summaryAttempt=0;q.unshift(c)" in source
+    render = source[source.index("function renderSummary(card, data)"):source.index("function matchupHtml(data)")]
+    assert "data.streak" in render
+    assert "schedule(owner, button.closest('.pf-lg-card'), 0, true)" in source
 
 
 def test_cached_stale_summary_preserves_underlying_sync_timestamp(monkeypatch):

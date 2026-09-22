@@ -55,8 +55,9 @@ def test_portfolio_actions_skips_cold_leagues():
 
 
 def test_matchup_client_repolls_pending_slots():
-    source = (ROOT / "app.py").read_text()
+    source = (ROOT / "static" / "app.js").read_text()
     # The live-matchup loader re-polls a pending league with backoff and keeps the
     # skeleton visible meanwhile instead of hiding the card.
-    assert "d.pending" in source
-    assert "slot._mAttempt" in source
+    assert "if (data.pending)" in source
+    assert "if (result.pending)" in source
+    assert "RETRY_DELAYS[card._pfAttempts - 1]" in source

@@ -101,12 +101,12 @@ def test_portfolio_card_has_live_slot_and_hydration():
     assert ".pf-lg-live[hidden]{display:none;}" in fn
     # Win-probability bar is rendered (hidden at final / bye inside wpBar).
     assert "pf-live-wp" in fn
-    assert "wpBar" in fn
-    assert "win_prob" in fn
+    client = (ROOT / "static" / "app.js").read_text()
+    assert "data.win_prob" in client
     # Client hydration hits the endpoint, caps concurrency, refreshes live games.
-    assert "/api/portfolio/card" in fn
-    assert "document.hidden" in fn
-    assert "removeAttribute('aria-busy')" in fn
+    assert "/api/portfolio/card" in client
+    assert "document.hidden" in client
+    assert "removeAttribute('aria-busy')" in client
     # Offseason cards do not get a live slot (odds/scores are meaningless there).
     live_block = fn.split("_lg_season_live")[1].split("league_rows +=")[0]
     assert 'lg.get("offseason")' in live_block
@@ -125,19 +125,18 @@ def test_live_slot_not_on_pending_or_error_cards():
 def test_final_matchup_card_tuesday_shows_won_by_margin():
     source = (ROOT / "app.py").read_text()
     fn = source.split("def build_portfolio_body")[1].split("\ndef ")[0]
-    live_fn = fn.split("function side(t,lbl,isOpp,win")[1].split("function load(slot)")[0]
+    live_fn = (ROOT / "static" / "app.js").read_text().split("function matchupHtml(data)")[1].split("function renderMatchup")[0]
     # Final scores do not show projections and show W/L/margin.
     assert "WON BY" in live_fn
     assert "LOST BY" in live_fn
     assert "TIED" in live_fn
-    assert "d.result" in live_fn
-    assert "d.margin" in live_fn
-    assert "fmt(t.score,showProj===false?2:1)" in live_fn
+    assert "data.result" in live_fn
+    assert "data.margin" in live_fn
+    assert "number(team.score, status === 'final' ? 2 : 1)" in live_fn
     assert '.pf-live-result{' in fn
     assert 'class=\\"pf-live-result\\" style=' not in live_fn
     # The status header uses a plain "FINAL" label only when a result is present.
-    assert "'FINAL'" in live_fn
-    assert r"'Final \\u00b7 Wk '" in live_fn or "'Final'" in live_fn
+    assert "'Final · Wk '" in live_fn
 
 
 def test_matchup_endpoint_fantasy_final_exposes_result_and_margin():
