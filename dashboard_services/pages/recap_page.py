@@ -494,15 +494,19 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
                    f'href="/{_platform}/{_season}/{_league_id}/weekly?week={selected_week}">'
                    f'View matchup <span aria-hidden="true">&rsaquo;</span></a>')
         return f"""
-<div class="recap-matchup-row">
+<article class="recap-matchup-row">
   <div class="recap-matchup-badges">{''.join(f'<span>{label}</span>' for label in badge_map.get(matchup_index, []))}</div>
   <div class="recap-matchup-main">
     {team_block(m['winner'], m['w_rid'], w_team, m['w_pts'], not m.get('tied'))}
     <div class="recap-matchup-score"><div class="recap-matchup-scoreline">{m['w_pts']:.2f} <span>–</span> {m['l_pts']:.2f}</div>
       <div class="recap-matchup-margin">{result}</div>{view_mu}</div>
+    <div class="recap-matchup-vs" aria-hidden="true"><span>VS</span></div>
     {team_block(m['loser'], m['l_rid'], l_team, m['l_pts'])}
+    <div class="recap-matchup-footer">
+      <span class="recap-matchup-margin">{result}</span>{view_mu}
+    </div>
   </div>
-</div>"""
+</article>"""
 
 
     scoreboard_rows = "".join(matchup_result_row(m, i) for i, m in enumerate(matchups))

@@ -74,6 +74,21 @@ def test_matchup_badges_are_selective_and_do_not_use_fake_upsets():
     assert all("Upset" not in badge for badges in labels.values() for badge in badges)
 
 
+def test_mobile_scoreboard_groups_each_matchup_before_its_footer():
+    """A matchup owns both teams, its VS cue, badges, result, and navigation."""
+    page = (ROOT / "dashboard_services/pages/recap_page.py").read_text()
+    css = (ROOT / "static/dashboard.css").read_text()
+    markup = page.split('<article class="recap-matchup-row">', 1)[1].split('</article>', 1)[0]
+
+    assert markup.index("recap-matchup-badges") < markup.index("m['winner']")
+    assert markup.index("m['winner']") < markup.index("recap-matchup-vs")
+    assert markup.index("recap-matchup-vs") < markup.index("m['loser']")
+    assert markup.index("m['loser']") < markup.index("recap-matchup-footer")
+    assert "recap-matchup-footer" in css
+    assert ".weekly-recap .recap-matchup-score { display:none; }" in css
+    assert "border-bottom-width:2px" in css
+
+
 def test_mobile_recap_no_longer_depends_on_sidebar_grid():
     page = (ROOT / "dashboard_services/pages/recap_page.py").read_text()
     css = (ROOT / "static/dashboard.css").read_text()
