@@ -13,6 +13,8 @@ from collections import OrderedDict
 from datetime import datetime, timedelta
 from typing import Any
 
+from email.utils import parsedate_to_datetime
+
 import requests
 
 log = logging.getLogger(__name__)
@@ -27,8 +29,51 @@ _session = requests.Session()
 _cache: OrderedDict[str, tuple[float, dict]] = OrderedDict()
 _last_good: OrderedDict[str, tuple[float, dict]] = OrderedDict()
 _locks: dict[str, threading.Lock] = {}
+_failures: OrderedDict[str, tuple[float, str]] = OrderedDict()
 _guard = threading.Lock()
 _MAX = 96
+_FAILURE_COOLDOWN = 60.0
+_LAST_GOOD_MAX_AGE = 3600.0
+
+
+class NFLDataUnavailable(RuntimeError):
+    """A classified public-feed failure safe for consumers to inspect."""
+    def __init__(self, kind: str, message: str = "NFL data unavailable"):
+        super().__init__(message)
+        self.kind = kind
+
+
+class ScoreboardResult(dict):
+    """Mapping-compatible scoreboard with availability metadata.
+
+    An unavailable result and a successfully fetched empty date are both empty
+    mappings, but are no longer semantically indistinguishable.
+    """
+    def __init__(self, *args, availability="available", stale=False,
+                 source="espn_nfl", fetched_at=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.availability, self.stale, self.source = availability, stale, source
+        self.fetched_at = fetched_at
+
+
+def _failure_kind(exc: Exception) -> str:
+    response = getattr(exc, "response", None)
+    code = getattr(response, "status_code", None)
+    if code in (401, 403): return "forbidden"
+    if code == 429: return "rate_limited"
+    if code is not None and code >= 500: return "server"
+    if isinstance(exc, (requests.Timeout, requests.ConnectionError)): return "transport"
+    if isinstance(exc, (ValueError, TypeError)): return "invalid_response"
+    return "transport"
+
+
+def _retry_after(response) -> float:
+    raw = (getattr(response, "headers", {}) or {}).get("Retry-After")
+    if not raw: return 0.0
+    try: return min(5.0, max(0.0, float(raw)))
+    except (TypeError, ValueError):
+        try: return min(5.0, max(0.0, parsedate_to_datetime(raw).timestamp() - time.time()))
+        except (TypeError, ValueError, OverflowError): return 0.0
 
 
 def _team(value: Any) -> str:
@@ -37,29 +82,30 @@ def _team(value: Any) -> str:
 
 
 def _request_json(url: str, *, params: dict, timeout: float = 10.0) -> dict:
-    """Bounded ESPN request with 429 Retry-After and one retry."""
+    """Bounded public request. Authentication failures are never retried."""
     for attempt in range(2):
         try:
             response = _session.get(
                 url, params=params, headers={"User-Agent": UA, "Accept": "application/json"},
                 timeout=(3.05, min(float(timeout), 12.0)),
             )
+            if response.status_code in (401, 403):
+                response.raise_for_status()
             if response.status_code == 429 and attempt == 0:
-                try:
-                    delay = min(2.0, max(0.0, float(response.headers.get("Retry-After", "1"))))
-                except ValueError:
-                    delay = 1.0
-                time.sleep(delay)
-                continue
+                time.sleep(_retry_after(response) or 1.0); continue
+            if response.status_code >= 500 and attempt == 0:
+                time.sleep(.2); continue
             response.raise_for_status()
             value = response.json()
-            return value if isinstance(value, dict) else {}
-        except requests.RequestException:
-            if attempt == 0:
+            if not isinstance(value, dict):
+                raise NFLDataUnavailable("invalid_response")
+            return value
+        except requests.RequestException as exc:
+            if attempt == 0 and _failure_kind(exc) in {"transport", "server"}:
                 time.sleep(.2)
                 continue
             raise
-    return {}
+    raise NFLDataUnavailable("transport")
 
 
 def _single_flight(key: str, fetch, ttl: float) -> tuple[dict, bool]:
@@ -69,6 +115,12 @@ def _single_flight(key: str, fetch, ttl: float) -> tuple[dict, bool]:
         if hit and now - hit[0] < ttl:
             _cache.move_to_end(key)
             return hit[1], False
+        failed = _failures.get(key)
+        if failed and now < failed[0]:
+            old = _last_good.get(key)
+            if old and now - old[0] <= _LAST_GOOD_MAX_AGE:
+                return old[1], True
+            return {}, True
         lock = _locks.setdefault(key, threading.Lock())
     with lock:
         now = time.time()
@@ -78,20 +130,30 @@ def _single_flight(key: str, fetch, ttl: float) -> tuple[dict, bool]:
                 return hit[1], False
         try:
             value = fetch()
-            if not isinstance(value, dict) or not value:
-                raise ValueError("empty ESPN response")
-        except Exception:
-            log.warning("ESPN NFL fetch failed for %s; using last-good data", key, exc_info=True)
+            if not isinstance(value, dict):
+                raise NFLDataUnavailable("invalid_response")
+        except Exception as exc:
+            kind = getattr(exc, "kind", None) or _failure_kind(exc)
             with _guard:
                 old = _last_good.get(key)
-            return (old[1], True) if old else ({}, True)
+                entering = key not in _failures or now >= _failures[key][0]
+                _failures[key] = (now + _FAILURE_COOLDOWN, kind)
+            usable = old and now - old[0] <= _LAST_GOOD_MAX_AGE
+            if entering:
+                log.warning("ESPN NFL %s failure for %s%s", kind, key,
+                            "; using compatible last-good data" if usable else "; data unavailable")
+                log.debug("ESPN NFL diagnostic for %s", key, exc_info=True)
+            return (old[1], True) if usable else ({}, True)
         with _guard:
+            recovered = key in _failures
+            _failures.pop(key, None)
             _cache[key] = (now, value)
             _last_good[key] = (now, value)
             for store in (_cache, _last_good):
                 while len(store) > _MAX:
                     store.popitem(last=False)
             _locks.pop(key, None)
+        if recovered: log.info("ESPN NFL feed recovered for %s", key)
         return value, False
 
 
@@ -182,7 +244,16 @@ def _iso_epoch(value: str) -> int:
 
 def scoreboard_for_date(game_date: str, *, timeout: float = 10) -> dict[str, dict]:
     payload, stale = fetch_scoreboard(dates=game_date, ttl=20, timeout=timeout)
-    return {game["gameID"]: game for game in normalize_scoreboard(payload, stale=stale)}
+    key = "scoreboard:dates=" + str(game_date)
+    with _guard:
+        successful = _last_good.get(key)
+    usable_success = bool(successful and time.time() - successful[0] <= _LAST_GOOD_MAX_AGE)
+    availability = "stale" if stale and usable_success else ("unavailable" if stale else "available")
+    fetched_at = datetime.utcfromtimestamp(successful[0]).isoformat() + "Z" if usable_success else None
+    return ScoreboardResult(
+        {game["gameID"]: game for game in normalize_scoreboard(payload, stale=stale)},
+        availability=availability, stale=bool(stale and usable_success), fetched_at=fetched_at,
+    )
 
 
 def games_for_week(week: int, season: int, season_type: str = "reg") -> list[dict]:

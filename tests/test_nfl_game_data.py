@@ -78,3 +78,46 @@ def test_paid_hostname_absent_from_production_reachable_files():
                 if hostname in path.read_text(errors="ignore"):
                     offenders.append(str(path))
     assert offenders == []
+
+
+def test_forbidden_enters_cooldown_without_retry_or_false_last_good(monkeypatch):
+    nfl._cache.clear(); nfl._last_good.clear(); nfl._locks.clear(); nfl._failures.clear()
+    calls = []
+    class Response:
+        status_code = 403
+        headers = {}
+        def raise_for_status(self):
+            error = __import__('requests').HTTPError('forbidden'); error.response = self; raise error
+    monkeypatch.setattr(nfl._session, "get", lambda *a, **k: calls.append(1) or Response())
+    first = nfl.scoreboard_for_date("20260922")
+    second = nfl.scoreboard_for_date("20260922")
+    assert len(calls) == 1
+    assert first == second == {}
+    assert first.availability == second.availability == "unavailable"
+    assert first.stale is False
+
+
+def test_empty_scoreboard_is_success_not_unavailable(monkeypatch):
+    nfl._cache.clear(); nfl._last_good.clear(); nfl._locks.clear(); nfl._failures.clear()
+    monkeypatch.setattr(nfl, "_request_json", lambda *a, **k: {"events": []})
+    result = nfl.scoreboard_for_date("20260923")
+    assert result == {}
+    assert result.availability == "available"
+    assert result.stale is False
+
+
+def test_last_good_is_exact_scope_aged_and_labeled(monkeypatch):
+    nfl._cache.clear(); nfl._last_good.clear(); nfl._locks.clear(); nfl._failures.clear()
+    now = time.time()
+    monkeypatch.setattr(nfl, "_request_json", lambda *a, **k: {"events": [_event("post", True)]})
+    good = nfl.scoreboard_for_date("20260911")
+    assert good.availability == "available"
+    nfl._cache.clear()
+    monkeypatch.setattr(nfl, "_request_json", lambda *a, **k: (_ for _ in ()).throw(TimeoutError()))
+    stale = nfl.scoreboard_for_date("20260911")
+    other = nfl.scoreboard_for_date("20260912")
+    assert stale.availability == "stale" and stale.stale and stale.fetched_at
+    assert other.availability == "unavailable" and not other.stale
+    nfl._failures.clear(); nfl._last_good["scoreboard:dates=20260911"] = (now - nfl._LAST_GOOD_MAX_AGE - 1, {"events": [_event()]})
+    expired = nfl.scoreboard_for_date("20260911")
+    assert expired.availability == "unavailable"
