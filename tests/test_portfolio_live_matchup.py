@@ -16,7 +16,11 @@ def test_live_matchup_endpoint_wired_and_gated():
     assert '"live": False' in endpoint
     # Only in-season / playoffs, and never offseason or an unlinked team.
     assert 'season_type' in endpoint
-    assert '("regular", "post")' in endpoint
+    # Gate must accept the NORMALIZED phase "reg" (get_nfl_state maps Sleeper's
+    # "regular" onto off/pre/reg/post) -- a "regular"-only check never matched
+    # in-season and hid every card.
+    assert '"reg"' in endpoint
+    assert '"post"' in endpoint
     assert 'offseason_mode' in endpoint
     assert 'viewer_roster_id' in endpoint
     # A Google-account viewer's team is linked via the account, not a Sleeper

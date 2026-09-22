@@ -21908,7 +21908,10 @@ def _game_log_proj_from_week(upcoming, cur_season, cur_week, season_type) -> int
         return 99
     if upcoming > cur_season:
         return 1
-    if str(season_type or "").lower() in ("regular", "post"):
+    # season_type comes from get_nfl_state(), normalized to off/pre/reg/post --
+    # "reg", never "regular", so the old "regular"-only check never matched
+    # in-season. Accept both the normalized "reg" and the raw "regular".
+    if str(season_type or "").lower() in ("reg", "regular", "post"):
         return max(1, cur_week)
     return 1
 
