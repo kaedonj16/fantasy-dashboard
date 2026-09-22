@@ -3154,12 +3154,23 @@ def get_metric_leaderboard(
             "ctx_carries": "total_carries",
             "ctx_attempts": "total_pass_att",
         }
-        _ctx_parts = [f"m.{col} AS {alias}" for alias, col in _ctx_map.items()
-                      if col in existing_cols]
+        # Advanced-provider values and basic volume totals may be written on
+        # different snapshot dates. Resolve context counts across every snapshot
+        # for this player-season; otherwise an EPA row can carry NULL here even
+        # though its metric-specific volume join found the real total.
+        _ctx_parts = [
+            f"COALESCE(m.{col}, (SELECT MAX(cx.{col}) FROM player_advanced_metrics cx "
+            f"WHERE cx.player_id=m.player_id AND cx.season=m.season)) AS {alias}"
+            for alias, col in _ctx_map.items() if col in existing_cols
+        ]
         if "total_pass_att" in existing_cols and "completion_pct" in existing_cols:
             _ctx_parts.append(
-                "CASE WHEN m.total_pass_att IS NOT NULL AND m.completion_pct IS NOT NULL "
-                "THEN ROUND(m.total_pass_att * m.completion_pct / 100.0) END AS ctx_completions")
+                "CASE WHEN COALESCE(m.total_pass_att, (SELECT MAX(cx.total_pass_att) FROM "
+                "player_advanced_metrics cx WHERE cx.player_id=m.player_id AND cx.season=m.season)) IS NOT NULL "
+                "AND m.completion_pct IS NOT NULL THEN ROUND(COALESCE(m.total_pass_att, "
+                "(SELECT MAX(cx.total_pass_att) FROM player_advanced_metrics cx WHERE "
+                "cx.player_id=m.player_id AND cx.season=m.season)) * m.completion_pct / 100.0) "
+                "END AS ctx_completions")
         ctx_cols = (", ".join(_ctx_parts) + ", ") if _ctx_parts else ""
 
         # Computed metrics (per-game rates) use SQL expressions instead of columns.

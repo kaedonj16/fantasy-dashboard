@@ -1,5 +1,6 @@
 """Focused contracts for Advanced Metrics preset and aggregation metadata."""
 from dashboard_services.pages.advanced_metrics_page import ADVANCED_METRIC_PRESETS
+from dashboard_services.pages.advanced_metrics_page import _AM_JS
 from data_building.advanced_metrics import (
     LEADERBOARD_METRICS,
     _ADV_WEEKLY_DERIVED_METRICS,
@@ -68,3 +69,56 @@ def test_expected_actual_and_fpoe_share_matched_components():
     assert "expected_ppr + ppr_over_expected" in actual_sql
     assert "expected_ppr" in expected_sql
     assert "ppr_over_expected" in fpoe_sql
+
+
+def test_preset_context_counts_are_ordered_and_complete():
+    assert ADVANCED_METRIC_PRESETS["rushing"]["samples"] == ["games", "carries"]
+    assert ADVANCED_METRIC_PRESETS["receiving"]["samples"] == ["games", "targets", "receptions"]
+    assert ADVANCED_METRIC_PRESETS["wr"]["samples"] == ["games", "targets", "receptions"]
+    assert ADVANCED_METRIC_PRESETS["te"]["samples"] == ["games", "targets", "receptions"]
+    assert ADVANCED_METRIC_PRESETS["rb"]["samples"] == ["games", "carries", "targets", "receptions"]
+    assert ADVANCED_METRIC_PRESETS["passing"]["samples"] == ["games", "attempts", "dropbacks"]
+    assert ADVANCED_METRIC_PRESETS["qb"]["samples"] == ["games", "attempts", "dropbacks", "carries"]
+
+
+def test_table_uses_one_semantic_schema_for_headers_rows_skeletons_and_exports():
+    assert "function tableColumnSchema()" in _AM_JS
+    assert "tableColumnSchema().forEach" in _AM_JS
+    assert "data-column-id=\"' + c.id" in _AM_JS
+    assert "schemaSkeletonRows()" in _AM_JS
+    assert "const sampleCols = contextColsFor();" in _AM_JS
+    # Regression: never relabel the Games header from the primary metric's
+    # volume field. That was the extra CAR/Att header which shifted perception.
+    assert "VOL_LABELS[state.volCol]" not in _AM_JS
+
+
+def test_distinct_fixture_values_bind_to_semantic_metric_keys():
+    # Primary and comparison values are looked up from the schema's metric key,
+    # never from a neighboring sample cell or a parallel positional array.
+    assert "function schemaValue(column, row)" in _AM_JS
+    assert "if (column.metricKey === state.metric) return row.value" in _AM_JS
+    assert "state.extraData[column.metricKey]" in _AM_JS
+    assert "data-column-id=\"metric:' + state.metric" in _AM_JS
+    assert "data-column-id=\"metric:' + key" in _AM_JS
+
+
+def test_context_values_preserve_zero_and_do_not_alias_attempts_to_dropbacks():
+    assert "if (row[key] != null) return row[key]" in _AM_JS
+    assert "attempts:{key:'att'" in _AM_JS
+    assert "dropbacks:{key:'db'" in _AM_JS
+    assert "r.att || r.db" not in _AM_JS
+    assert "r.db || r.att" not in _AM_JS
+
+
+def test_stale_schema_responses_are_discarded():
+    assert "requestToken: 0" in _AM_JS
+    assert "requestToken !== state.requestToken" in _AM_JS
+
+
+def test_season_context_counts_resolve_across_provider_snapshot_dates():
+    import inspect
+    from data_building.advanced_metrics import get_metric_leaderboard
+
+    source = inspect.getsource(get_metric_leaderboard)
+    assert "SELECT MAX(cx.{col})" in source
+    assert "cx.player_id=m.player_id AND cx.season=m.season" in source
