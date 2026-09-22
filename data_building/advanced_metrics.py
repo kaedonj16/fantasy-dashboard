@@ -1651,6 +1651,9 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     # total. See data_building/external_data/expected_points.py.
     "expected_ppr":         {"label": "Expected FP (PPR)",   "category": "Expected Pts", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Expected fantasy points (full PPR): the points a league-average player would score on this exact target/carry/dropback workload, from play-by-play (air yards, completion probability, expected YAC, field-position TD equity). A pure opportunity/volume measure — outcome-independent."},
     "ppr_over_expected":    {"label": "FP Over Exp (PPR)",   "category": "Expected Pts", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Actual full-PPR points minus expected (xFP). Positive = converted opportunity into more than expected (often TD-driven, prone to regression); NEGATIVE = fantasy points left on the board (elite usage not yet cashed in), historically a positive-regression signal."},
+    "expected_ppr_per_game": {"label": "Expected FPTS/G", "category": "Expected Pts", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Opportunity-based expected full-PPR fantasy points per covered game. This is an expectation, not guaranteed future scoring or an unrealized-points balance.", "computed_sql": "m.expected_ppr::float / NULLIF(m.games, 0)", "computed_null": "m.expected_ppr IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
+    "actual_ppr_per_game": {"label": "Actual FPTS/G", "category": "Expected Pts", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Actual full-PPR points reconstructed from the same covered play-by-play opportunities and games as expected points.", "computed_sql": "(m.expected_ppr + m.ppr_over_expected)::float / NULLIF(m.games, 0)", "computed_null": "m.expected_ppr IS NOT NULL AND m.ppr_over_expected IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
+    "ppr_over_expected_per_game": {"label": "FPOE/G", "category": "Expected Pts", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Actual minus opportunity-based expected full-PPR points per matched covered game. It is not guaranteed future scoring or an unrealized-points balance.", "computed_sql": "m.ppr_over_expected::float / NULLIF(m.games, 0)", "computed_null": "m.ppr_over_expected IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
     "expected_half_ppr":    {"label": "Expected FP (Half)",  "category": "Expected Pts", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Expected fantasy points in half-PPR scoring (0.5 per reception). Opportunity-based; see Expected FP (PPR)."},
     "half_ppr_over_expected": {"label": "FP Over Exp (Half)", "category": "Expected Pts", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Actual half-PPR points minus expected. Negative = points left on the board."},
     "expected_standard":    {"label": "Expected FP (Std)",   "category": "Expected Pts", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Expected fantasy points in standard (non-PPR) scoring. Opportunity-based; see Expected FP (PPR)."},
@@ -1663,7 +1666,7 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     "adjusted_completion_rate": {"label": "Adj Completion %", "category": "Passing", "positions": ["QB"], "efficiency": True, "pct": True, "min_vol": _V_PASS_ATT, "desc": "Completion percent adjusted for drops, throwaways, spikes, and batted passes."},
     "cpoe":                 {"label": "CPOE",                "category": "Passing", "positions": ["QB"], "efficiency": True, "pct": True, "min_vol": _V_PASS_ATT, "desc": "Completion Percentage Over Expected — accuracy adjusted for throw difficulty (nflverse)."},
     "nfl_passer_rating":    {"label": "Passer Rating",       "category": "Passing", "positions": ["QB"], "efficiency": True, "min_vol": _V_PASS_ATT, "desc": "Standard NFL passer rating (0-158.3)."},
-    "epa_per_play":         {"label": "EPA / Play",          "category": "Passing", "positions": ["QB"], "efficiency": True, "min_vol": _V_PASS_ATT, "desc": "Expected Points Added per play (from nflverse play-by-play). The single best efficiency summary for a passer."},
+    "epa_per_play":         {"label": "Passing EPA / Dropback", "category": "Passing", "positions": ["QB"], "efficiency": True, "min_vol": _V_PASS_ATT, "desc": "Passing Expected Points Added per qualifying quarterback dropback (nflverse play-by-play). Week ranges are weighted by covered dropbacks, never by an unweighted mean of weekly rates."},
     "passing_epa":          {"label": "Passing EPA",         "category": "Passing", "positions": ["QB"], "min_vol": _V_PASS_ATT, "desc": "Total Expected Points Added on pass attempts over the season (nflverse)."},
     "success_rate":         {"label": "Success Rate",        "category": "Passing", "positions": ["QB"], "efficiency": True, "pct": True, "min_vol": _V_PASS_ATT, "desc": "Percent of plays with positive EPA (nflverse)."},
     "ngs_avg_time_to_throw": {"label": "Time to Throw",      "category": "Passing", "positions": ["QB"], "efficiency": True, "min_vol": _V_PASS_ATT, "desc": "Average seconds from snap to throw (NFL Next Gen Stats). Lower often means a quicker processor; higher can mean holding to push the ball downfield."},
@@ -2256,10 +2259,28 @@ _ADV_WEEKLY_WEIGHTED_METRICS = {
     "ngs_avg_expected_yac": "w_receptions", "ngs_avg_yac_above_expectation": "w_receptions",
 }
 
+# Per-game Expected-vs-Actual views are derived from the same weekly PBP rows.
+# Actual is reconstructed as expected + over-expected, guaranteeing (within
+# rounding) actual/G - expected/G == FPOE/G on an identical covered sample.
+_ADV_WEEKLY_DERIVED_METRICS = {
+    "expected_ppr_per_game": (
+        "(SUM(expected_ppr) FILTER (WHERE expected_ppr IS NOT NULL AND ppr_over_expected IS NOT NULL))::float / NULLIF(COUNT(*) FILTER (WHERE expected_ppr IS NOT NULL AND ppr_over_expected IS NOT NULL), 0)",
+        "expected_ppr IS NOT NULL AND ppr_over_expected IS NOT NULL",
+    ),
+    "actual_ppr_per_game": (
+        "SUM(expected_ppr + ppr_over_expected)::float / NULLIF(COUNT(*) FILTER (WHERE expected_ppr IS NOT NULL AND ppr_over_expected IS NOT NULL), 0)",
+        "expected_ppr IS NOT NULL AND ppr_over_expected IS NOT NULL",
+    ),
+    "ppr_over_expected_per_game": (
+        "(SUM(ppr_over_expected) FILTER (WHERE expected_ppr IS NOT NULL AND ppr_over_expected IS NOT NULL))::float / NULLIF(COUNT(*) FILTER (WHERE expected_ppr IS NOT NULL AND ppr_over_expected IS NOT NULL), 0)",
+        "expected_ppr IS NOT NULL AND ppr_over_expected IS NOT NULL",
+    ),
+}
+
 
 # All metrics that support week-range filtering via the weekly advanced table.
 ADV_WEEKLY_METRIC_KEYS = frozenset(_ADV_WEEKLY_TOTAL_METRICS) | frozenset(
-    _ADV_WEEKLY_WEIGHTED_METRICS.keys())
+    _ADV_WEEKLY_WEIGHTED_METRICS.keys()) | frozenset(_ADV_WEEKLY_DERIVED_METRICS)
 
 # Volume-filter spec shown when week-range mode is active for an adv-weekly metric.
 # Keyed by the weight column the metric aggregates on.
@@ -2284,6 +2305,8 @@ def _adv_weekly_agg_sql(metric: str):
     """Return (value_sql, min_col_sql) for aggregating a weekly metric, or None."""
     if metric in _ADV_WEEKLY_TOTAL_METRICS:
         return f"SUM({metric})", None
+    if metric in _ADV_WEEKLY_DERIVED_METRICS:
+        return _ADV_WEEKLY_DERIVED_METRICS[metric][0], None
     w = _ADV_WEEKLY_WEIGHTED_METRICS.get(metric)
     if not w:
         return None
@@ -2295,7 +2318,8 @@ def _adv_weekly_agg_sql(metric: str):
 
 
 def adv_weekly_metric_supported(metric: str) -> bool:
-    return metric in _ADV_WEEKLY_TOTAL_METRICS or metric in _ADV_WEEKLY_WEIGHTED_METRICS
+    return (metric in _ADV_WEEKLY_TOTAL_METRICS or metric in _ADV_WEEKLY_WEIGHTED_METRICS
+            or metric in _ADV_WEEKLY_DERIVED_METRICS)
 
 
 def get_adv_weekly_range_leaderboard(
@@ -2334,10 +2358,20 @@ def get_adv_weekly_range_leaderboard(
 
     has_min = bool(min_col)
     use_vol_filter = has_min and bool(min_vol and int(min_vol) > 0)
+    # Coverage counts use only rows where the selected metric exists. This keeps
+    # the displayed sample identical to the denominator used by weighted rates.
+    coverage_pred = _ADV_WEEKLY_DERIVED_METRICS.get(metric, (None, f"{metric} IS NOT NULL"))[1]
+    coverage_sql = (
+        f", SUM(CASE WHEN {coverage_pred} THEN w_dropbacks END) AS ctx_dropbacks"
+        f", SUM(CASE WHEN {coverage_pred} THEN w_pass_att END) AS ctx_attempts"
+        f", SUM(CASE WHEN {coverage_pred} THEN w_carries END) AS ctx_carries"
+        f", SUM(CASE WHEN {coverage_pred} THEN w_targets END) AS ctx_targets"
+        f", SUM(CASE WHEN {coverage_pred} THEN w_receptions END) AS ctx_receptions"
+    )
     inner_select = (
-        f"player_id, position, COUNT(*) AS weeks_played, {value_sql} AS value, {min_col} AS _wvol"
+        f"player_id, position, COUNT(*) FILTER (WHERE {coverage_pred}) AS weeks_played, {value_sql} AS value, {min_col} AS _wvol{coverage_sql}"
         if has_min else
-        f"player_id, position, COUNT(*) AS weeks_played, {value_sql} AS value"
+        f"player_id, position, COUNT(*) FILTER (WHERE {coverage_pred}) AS weeks_played, {value_sql} AS value{coverage_sql}"
     )
     outer_where = "t.value IS NOT NULL"
     if use_vol_filter:
@@ -2350,7 +2384,9 @@ def get_adv_weekly_range_leaderboard(
     with get_conn() as conn:
         rows = conn.execute(
             f"""
-            SELECT t.player_id, t.position, t.weeks_played, t.value{', t._wvol' if has_min else ''}
+            SELECT t.player_id, t.position, t.weeks_played, t.value,
+                   t.ctx_dropbacks, t.ctx_attempts, t.ctx_carries, t.ctx_targets,
+                   t.ctx_receptions{', t._wvol' if has_min else ''}
             FROM (
                 SELECT {inner_select}
                 FROM player_weekly_advanced_metrics
@@ -2392,10 +2428,12 @@ def get_adv_weekly_range_leaderboard(
             "games": weeks,
             "vol": vol_val if vol_val is not None else weeks,
             "weeks": weeks,
-            # Context volume (receiving/rushing; passing has no weekly data).
+            # Provider-covered denominator counts for this exact metric/range.
             "rec": _ci("ctx_receptions"),
             "tgt": _ci("ctx_targets"),
             "car": _ci("ctx_carries"),
+            "att": _ci("ctx_attempts"),
+            "db": _ci("ctx_dropbacks"),
         })
     return out
 
@@ -2955,6 +2993,13 @@ def get_metric_leaderboard(
     if metric in VALUE_METRICS:
         return _stamp_season(
             get_value_leaderboard(metric, position=position, limit=limit, season=season),
+            season,
+        )
+    if metric in _ADV_WEEKLY_DERIVED_METRICS:
+        return _stamp_season(
+            get_adv_weekly_range_leaderboard(
+                metric, position=position, season=season, min_vol=min_vol, limit=limit,
+            ),
             season,
         )
     # ppr_pts / ppr_pts_per_game have no column in player_advanced_metrics — the
