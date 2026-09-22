@@ -34,28 +34,32 @@ def _pick_label(season: Any, round_: Any, slot: Optional[int], order: Optional[s
     s = str(season) if season not in (None, "") else "?"
     r = str(round_) if round_ not in (None, "") else "?"
     if slot:
-        return f"{s} Pick {r}.{str(int(slot)).zfill(2)}"
+        return f"{s} {r}.{str(int(slot)).zfill(2)}"
     if order:
-        return f"{s} Round {r} ({order})"
-    return f"{s} Round {r}"
+        return f"{s} {r}st ({order})" if r == "1" else f"{s} Round {r} ({order})"
+    return f"{s} {r}st" if r == "1" else f"{s} Round {r}"
 
 
 def build_draft_resolution_map(
     platform: str,
     league_id: str,
     seasons: list[int] | set[int] | None = None,
-) -> dict[tuple[int, int, int], dict]:
+) -> dict[tuple[int, int, str], dict]:
     """
-    Map (pick_season, pick_round, pick_slot) -> drafted player info.
+    Map ``(season, round, original_roster_id)`` to an authoritative selection.
 
-    Sleeper-only today (completed drafts). Empty for other platforms.
+    The original owner is the stable identity Sleeper puts on every transaction
+    pick as ``roster_id``.  It survives repeated trades.  ``pick_no`` supplies
+    the displayed within-round position, so snake/3RR/custom orders are not
+    inferred from a roster's starting slot.  Multiple matching drafts are left
+    unresolved rather than guessed.
     """
     plat = (platform or "sleeper").strip().lower()
     if plat != "sleeper" or not league_id:
         return {}
 
     try:
-        from dashboard_services.api import get_draft_picks, get_drafts
+        from dashboard_services.api import get_draft, get_draft_picks, get_drafts
         from utils.utils import load_players_index
     except Exception:
         logger.debug("[player-league-trades] draft imports failed", exc_info=True)
@@ -63,7 +67,7 @@ def build_draft_resolution_map(
 
     players_index = load_players_index() or {}
     season_filter = {int(s) for s in seasons} if seasons else None
-    out: dict[tuple[int, int, int], dict] = {}
+    candidates: dict[tuple[int, int, str], list[dict]] = {}
 
     try:
         drafts = get_drafts(str(league_id)) or []
@@ -84,9 +88,14 @@ def build_draft_resolution_map(
         if not draft_id:
             continue
         try:
+            detail = get_draft(str(draft_id)) or {}
             picks = get_draft_picks(str(draft_id)) or []
         except Exception:
             logger.debug("[player-league-trades] picks failed for %s", draft_id, exc_info=True)
+            continue
+        slot_to_roster = detail.get("slot_to_roster_id") or d.get("slot_to_roster_id") or {}
+        team_count = int(detail.get("settings", {}).get("teams") or d.get("settings", {}).get("teams") or 0)
+        if not slot_to_roster or team_count <= 0:
             continue
         for p in picks:
             pid = str(p.get("player_id") or "").strip()
@@ -94,17 +103,23 @@ def build_draft_resolution_map(
                 continue
             try:
                 rnd = int(p.get("round"))
-                slot = int(p.get("draft_slot") or 0)
+                draft_slot = int(p.get("draft_slot") or 0)
+                pick_no = int(p.get("pick_no") or 0)
             except (TypeError, ValueError):
                 continue
-            if rnd <= 0 or slot <= 0:
+            if rnd <= 0 or draft_slot <= 0 or pick_no <= 0:
                 continue
-            key = (d_season, rnd, slot)
-            if key in out:
+            original_roster = slot_to_roster.get(str(draft_slot), slot_to_roster.get(draft_slot))
+            if original_roster in (None, ""):
                 continue
-            out[key] = _player_info(pid, players_index)
+            within_round = ((pick_no - 1) % team_count) + 1
+            key = (d_season, rnd, str(original_roster))
+            resolved = _player_info(pid, players_index)
+            resolved.update({"draft_id": str(draft_id), "pick_no": pick_no,
+                             "within_round": within_round, "original_roster_id": str(original_roster)})
+            candidates.setdefault(key, []).append(resolved)
 
-    return out
+    return {key: rows[0] for key, rows in candidates.items() if len(rows) == 1}
 
 
 def resolve_pick_asset(
@@ -112,8 +127,9 @@ def resolve_pick_asset(
     pick_season: Any,
     pick_round: Any,
     pick_slot: Any,
+    pick_roster_id: Any = None,
     pick_order: Any = None,
-    resolution_map: dict[tuple[int, int, int], dict] | None = None,
+    resolution_map: dict[tuple[int, int, str], dict] | None = None,
 ) -> dict:
     """Build a pick asset dict, attaching drafted_player when the draft is done."""
     slot_i: Optional[int] = None
@@ -134,20 +150,25 @@ def resolve_pick_asset(
     }
 
     drafted = None
-    if resolution_map and slot_i:
+    if resolution_map and pick_roster_id not in (None, ""):
         try:
-            key = (int(pick_season), int(pick_round), int(slot_i))
+            key = (int(pick_season), int(pick_round), str(pick_roster_id))
             drafted = resolution_map.get(key)
         except (TypeError, ValueError):
             drafted = None
     if drafted:
+        actual_slot = int(drafted.get("within_round") or slot_i or 0) or None
+        name = _pick_label(pick_season, pick_round, actual_slot, None)
+        asset["pick_slot"] = actual_slot
+        asset["pick_roster_id"] = str(pick_roster_id)
+        asset["resolved_draft_id"] = drafted.get("draft_id")
         asset["drafted_player"] = {
             "player_id": drafted.get("player_id"),
             "name": drafted.get("name"),
             "position": drafted.get("position") or "",
         }
         # Surface the outcome in the primary label once known.
-        asset["name"] = f"{name} → {drafted.get('name')}"
+        asset["name"] = f"{name} ({drafted.get('name')})"
 
     return asset
 
@@ -175,6 +196,43 @@ def _roster_names(platform: str, league_id: str, season: int) -> dict[str, str]:
         return {}
 
 
+def _cached_resolution_map(league_ids: set[str], players_index: dict) -> dict[tuple[int, int, str], dict]:
+    """Read verified resolutions without contacting a provider.
+
+    Deploys remain compatible while migration 037 is rolling out: an absent
+    table column simply means there is no cache yet.
+    """
+    if not league_ids:
+        return {}
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            rows = conn.execute(
+                "SELECT a.pick_season, a.pick_round, a.pick_roster_id, "
+                "a.resolved_draft_id, a.resolved_player_id, a.resolved_pick_no, "
+                "a.resolved_round_slot FROM trade_intel_assets a "
+                "JOIN trade_intel_trades t ON t.id=a.trade_id "
+                "WHERE t.league_id = ANY(%s) AND a.resolved_player_id IS NOT NULL",
+                (list(league_ids),),
+            ).fetchall()
+    except Exception:
+        logger.debug("[player-league-trades] verified resolution cache unavailable", exc_info=True)
+        return {}
+    out = {}
+    conflicts = set()
+    for row in rows:
+        key = (int(row["pick_season"]), int(row["pick_round"]), str(row["pick_roster_id"]))
+        value = _player_info(str(row["resolved_player_id"]), players_index)
+        value.update({"draft_id": row["resolved_draft_id"], "pick_no": row["resolved_pick_no"],
+                      "within_round": row["resolved_round_slot"],
+                      "original_roster_id": str(row["pick_roster_id"])})
+        if key in out and (out[key]["draft_id"], out[key]["player_id"]) != (value["draft_id"], value["player_id"]):
+            conflicts.add(key)
+        else:
+            out[key] = value
+    return {key: value for key, value in out.items() if key not in conflicts}
+
+
 def _trade_timestamp(txn: dict) -> Optional[datetime]:
     ts_raw = txn.get("status_updated") or txn.get("created")
     if not ts_raw:
@@ -192,7 +250,7 @@ def _format_trade_sides(
     roster_names: dict[str, str],
     players_index: dict,
     slot_map: dict[tuple[str, str], int],
-    resolution_map: dict[tuple[int, int, int], dict],
+    resolution_map: dict[tuple[int, int, str], dict],
 ) -> tuple[dict, dict] | None:
     """
     Split a Sleeper-style trade into two sides centered on the focus player.
@@ -205,19 +263,25 @@ def _format_trade_sides(
     draft_picks = txn.get("draft_picks") or []
 
     focus = str(focus_pid)
-    if focus not in {str(k) for k in adds.keys()} and focus not in {str(k) for k in drops.keys()}:
-        # Player must appear in the trade (add or drop). Adds cover both sides
-        # on Sleeper; require an add for the focus player.
-        if focus not in {str(k) for k in adds.keys()}:
-            return None
+    matching_pick = None
+    for pick in draft_picks:
+        try:
+            key = (int(pick.get("season")), int(pick.get("round")), str(pick.get("roster_id")))
+        except (TypeError, ValueError):
+            continue
+        if str((resolution_map.get(key) or {}).get("player_id") or "") == focus:
+            matching_pick = pick
+            break
 
-    # Receiver of the focus player
-    recv_rid = str(adds.get(focus) or "")
+    # Direction always comes from transaction participants.  A resolved player
+    # did not exist as a player asset at trade time; its pick's owner/previous
+    # owner determine received/sent instead.
+    recv_rid = str((matching_pick or {}).get("owner_id") or adds.get(focus) or "")
     if not recv_rid:
         return None
 
     # Sender: drop map values are the roster losing the player
-    send_rid = str(drops.get(focus) or "")
+    send_rid = str((matching_pick or {}).get("previous_owner_id") or drops.get(focus) or "")
     if not send_rid:
         # Infer other roster from roster_ids / adds
         rids = {str(r) for r in (txn.get("roster_ids") or [])}
@@ -243,14 +307,17 @@ def _format_trade_sides(
             slot = None
             if slot_map and roster_id is not None and p_season is not None:
                 slot = slot_map.get((str(p_season), str(roster_id)))
-            out.append(
-                resolve_pick_asset(
+            asset = resolve_pick_asset(
                     pick_season=p_season,
                     pick_round=p_round,
                     pick_slot=slot,
+                    pick_roster_id=roster_id,
                     resolution_map=resolution_map,
                 )
-            )
+            if matching_pick is pick:
+                asset["is_focus"] = True
+                asset["via_draft_pick"] = True
+            out.append(asset)
         return out
 
     side_a_assets = assets_for(recv_rid)
@@ -263,11 +330,13 @@ def _format_trade_sides(
             "team_name": roster_names.get(str(recv_rid)) or roster_names.get(recv_rid) or f"Team {recv_rid}",
             "roster_id": recv_rid,
             "assets": side_a_assets,
+            "direction": "Received",
         },
         {
             "team_name": roster_names.get(str(send_rid)) or roster_names.get(send_rid) or f"Team {send_rid}",
             "roster_id": send_rid,
             "assets": side_b_assets,
+            "direction": "Sent",
         },
     )
 
@@ -300,7 +369,7 @@ def get_player_league_trades(
 
     # Prefetch draft resolution for every league_id in the chain (picks resolve
     # against the season the pick belongs to, which may be a later league year).
-    resolution_by_league: dict[str, dict[tuple[int, int, int], dict]] = {}
+    resolution_by_league: dict[str, dict[tuple[int, int, str], dict]] = {}
     slot_by_league: dict[str, dict[tuple[str, str], int]] = {}
     for hist_lid in {str(v) for v in season_map.values()}:
         resolution_by_league[hist_lid] = build_draft_resolution_map(plat, hist_lid)
@@ -311,11 +380,21 @@ def get_player_league_trades(
     if lid not in resolution_by_league:
         resolution_by_league[lid] = build_draft_resolution_map(plat, lid)
     # Merge all resolution maps (later seasons / newer leagues win on conflict)
-    merged_resolution: dict[tuple[int, int, int], dict] = {}
+    lineage_ids = {str(v) for v in season_map.values()} | {lid}
+    merged_resolution: dict[tuple[int, int, str], dict] = _cached_resolution_map(lineage_ids, players_index)
+    ambiguous: set[tuple[int, int, str]] = set()
     for m in resolution_by_league.values():
-        merged_resolution.update(m)
+        for key, value in m.items():
+            prior = merged_resolution.get(key)
+            if prior and (prior.get("draft_id"), prior.get("player_id")) != (value.get("draft_id"), value.get("player_id")):
+                ambiguous.add(key)
+            else:
+                merged_resolution[key] = value
+    for key in ambiguous:
+        merged_resolution.pop(key, None)
 
     collected: list[dict] = []
+    seen_txn_ids: set[str] = set()
     for hist_season in sorted(season_map.keys(), reverse=True):
         hist_lid = str(season_map[hist_season])
         roster_names = _roster_names(plat, hist_lid, int(hist_season))
@@ -331,7 +410,6 @@ def get_player_league_trades(
             )
             continue
 
-        seen_txn_ids: set[str] = set()
         for week in sorted(tx_by_week.keys(), reverse=True):
             for txn in (tx_by_week[week] or []):
                 if (txn.get("type") or "") != "trade":
@@ -344,9 +422,6 @@ def get_player_league_trades(
                     if txn_id in seen_txn_ids:
                         continue
                     seen_txn_ids.add(txn_id)
-                adds = txn.get("adds") or {}
-                if str(pid) not in {str(k) for k in adds.keys()}:
-                    continue
                 sides = _format_trade_sides(
                     txn,
                     focus_pid=pid,
@@ -374,6 +449,11 @@ def get_player_league_trades(
                     "side_b": side_b,
                     "is_superflex": None,
                     "source": "league",
+                    "via_draft_pick": any(
+                        asset.get("via_draft_pick")
+                        for side in (side_a, side_b)
+                        for asset in side.get("assets", [])
+                    ),
                 })
 
     collected.sort(key=lambda t: (t.get("ts") or 0), reverse=True)
@@ -526,7 +606,7 @@ def attach_drafted_players_to_trade_db_assets(
                 except (TypeError, ValueError):
                     pass
 
-    res_cache: dict[str, dict[tuple[int, int, int], dict]] = {}
+    res_cache: dict[str, dict[tuple[int, int, str], dict]] = {}
     for lid in league_ids[:40]:  # hard cap: one page of trades
         res_cache[lid] = build_draft_resolution_map(platform, lid, pick_seasons or None)
 
@@ -547,6 +627,7 @@ def attach_drafted_players_to_trade_db_assets(
                         pick_season=a.get("pick_season"),
                         pick_round=a.get("pick_round"),
                         pick_slot=a.get("pick_slot"),
+                        pick_roster_id=a.get("pick_roster_id"),
                         pick_order=a.get("pick_order"),
                         resolution_map=res_map,
                     )

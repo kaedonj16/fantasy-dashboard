@@ -28235,6 +28235,9 @@ button:disabled {
     font-size: 13px;
     font-weight: 500;
     color: var(--text);
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    white-space: normal;
 }
 
 .pm-trade-asset.pm-focus {
@@ -28288,6 +28291,12 @@ button:disabled {
     background: rgba(139, 92, 246, 0.15);
     color: #8b5cf6;
     border: 1px solid rgba(139, 92, 246, 0.3);
+}
+
+.pm-trade-badge-pick {
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    color: var(--accent);
+    border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
 }
 
 .pm-trade-badge-1qb {
