@@ -554,6 +554,9 @@ let wvCurrentPos = 'ALL';
 let wvWaiverData = [];
 let wvHorizon = 'this_week';  // #2: default in-season to personalized immediate help
 let wvShowFaab = false;  // FAAB hidden by default; the toggle opts it in
+let wvFaabPreferenceSet = false;
+let wvCandidateRequestSeq = 0;
+let wvCandidateController = null;
 let wvTrendingData = [];
 let wvBigGamesData = [];
 let wvStartSitData = {{}};
@@ -590,6 +593,7 @@ function wvSetPos(pos) {{
 
 function wvToggleFaab(show) {{
   wvShowFaab = !!show;
+  wvFaabPreferenceSet = true;
   wvRenderWaivers();
 }}
 
@@ -773,14 +777,22 @@ function wvStatsRow(p) {{
 
 // ── Load ──────────────────────────────────────────────────────────────────────
 function wvLoadCandidates() {{
+  const requestSeq = ++wvCandidateRequestSeq;
+  const requestedHorizon = wvHorizon;
+  const requestedContext = `${{WV_PLATFORM}}:${{WV_SEASON}}:${{WV_LEAGUE_ID}}`;
+  if (wvCandidateController) wvCandidateController.abort();
+  wvCandidateController = typeof AbortController !== 'undefined' ? new AbortController() : null;
   const _wvRid = window._viewerRid ? ('&rid=' + encodeURIComponent(window._viewerRid)) : '';
-  const _h = '&horizon=' + encodeURIComponent(wvHorizon);
+  const _h = '&horizon=' + encodeURIComponent(requestedHorizon);
   // Without an identified roster we can't claim personalized improvement (#1).
   const bm = document.getElementById('wvBestMovesTitle');
   if (bm) bm.textContent = window._viewerRid ? 'Best moves for your team' : 'Top available players';
-  fetch(`/api/waiver-candidates?platform=${{WV_PLATFORM}}&league_id=${{WV_LEAGUE_ID}}&season=${{WV_SEASON}}${{_wvRid}}${{_h}}`)
+  window.brLoadingState('wvWaiverList', {{ rows: 4, compact: true, message: 'Loading ' + requestedHorizon.replace('_', ' ') + ' recommendations' }});
+  fetch(`/api/waiver-candidates?platform=${{WV_PLATFORM}}&league_id=${{WV_LEAGUE_ID}}&season=${{WV_SEASON}}${{_wvRid}}${{_h}}`,
+        wvCandidateController ? {{ signal: wvCandidateController.signal }} : {{}})
     .then(r => r.json().then(d => ({{ ok: r.ok, d }})))
     .then(({{ ok, d }}) => {{
+      if (requestSeq !== wvCandidateRequestSeq || requestedHorizon !== wvHorizon || requestedContext !== `${{WV_PLATFORM}}:${{WV_SEASON}}:${{WV_LEAGUE_ID}}`) return;
       if (!ok || d.error) {{
         window.brErrorState('wvWaiverList', (d && d.error) || 'Unable to load waiver data.', wvLoadCandidates);
         return;
@@ -791,44 +803,81 @@ function wvLoadCandidates() {{
       if (toggle) toggle.hidden = !window.wvFaabEnabled;
       // FAAB leagues: show bid bands by default so managers don't have to hunt
       // for the toggle. Non-FAAB leagues keep the control hidden.
-      if (window.wvFaabEnabled) {{
+      if (window.wvFaabEnabled && !wvFaabPreferenceSet) {{
         wvShowFaab = true;
         const cb = document.getElementById('wvShowFaab');
         if (cb) cb.checked = true;
       }}
       wvRenderWaivers();
     }})
-    .catch(() => {{ window.brErrorState('wvWaiverList', 'Unable to load waiver data.', wvLoadCandidates); }});
+    .catch(err => {{
+      if (requestSeq !== wvCandidateRequestSeq || (err && err.name === 'AbortError')) return;
+      window.brErrorState('wvWaiverList', 'Unable to load waiver data.', wvLoadCandidates);
+    }});
 }}
 
 function wvLoad() {{
   wvLoadCandidates();
 
   // Unexpected performances available in your league (#6/#7). Best-effort strip;
-  // stays hidden when nothing has been ingested for the completed week.
-  fetch(`/api/waiver-big-games?platform=${{WV_PLATFORM}}&league_id=${{WV_LEAGUE_ID}}&season=${{WV_SEASON}}`)
-    .then(r => r.json())
-    .then(d => {{ wvBigGamesData = (d && d.discoveries) || []; wvRenderBigGames(wvBigGamesData); }})
-    .catch(() => {{}});
+  // an ownership failure is visible rather than masquerading as no discoveries.
+  wvLoadBigGames();
 
   fetch(`/api/trending-adds?platform=${{WV_PLATFORM}}&league_id=${{WV_LEAGUE_ID}}&season=${{WV_SEASON}}`)
     .then(r => r.json())
     .then(d => {{ wvTrendingData = d.trending || []; wvRenderTrending(wvTrendingData); }})
-    .catch(() => {{}});   // strip is a bonus; stay silent on failure
+    .catch(() => {{}});
 
   fetch(`/api/streaming-options?platform=${{WV_PLATFORM}}&league_id=${{WV_LEAGUE_ID}}&season=${{WV_SEASON}}`)
     .then(r => r.json())
     .then(d => wvRenderStreaming(d))
-    .catch(() => {{}});   // in-season only; silent otherwise
+    .catch(() => {{}});
 
+  wvLoadStartSit();
+}}
+
+function wvLoadBigGames() {{
+  fetch(`/api/waiver-big-games?platform=${{WV_PLATFORM}}&league_id=${{WV_LEAGUE_ID}}&season=${{WV_SEASON}}`)
+    .then(r => r.json().then(d => ({{ ok: r.ok, d }})))
+    .then(({{ok, d}}) => {{
+      if (!ok || d.availability === 'unavailable' || d.availability === 'stale') {{
+        const wrap = document.getElementById('wvBigGamesWrap');
+        if (wrap) wrap.hidden = false;
+        window.brErrorState('wvBigGamesList', d.message || 'Availability could not be verified.', wvLoadBigGames, {{ title: 'Availability unavailable' }});
+        return;
+      }}
+      wvBigGamesData = d.discoveries || []; wvRenderBigGames(wvBigGamesData);
+    }})
+    .catch(() => {{
+      const wrap = document.getElementById('wvBigGamesWrap'); if (wrap) wrap.hidden = false;
+      window.brErrorState('wvBigGamesList', 'Availability could not be verified.', wvLoadBigGames);
+    }});
+}}
+
+function wvLoadStartSit() {{
+  window.brLoadingState('wvStartSit', {{ rows: 3, compact: true, message: 'Loading lineup' }});
   fetch(`/api/start-sit-options?platform=${{WV_PLATFORM}}&league_id=${{WV_LEAGUE_ID}}&season=${{WV_SEASON}}`)
-    .then(r => r.json())
-    .then(d => {{
-      if (!d.positions || !Object.keys(d.positions).length) {{
+    .then(r => r.json().then(d => ({{ ok: r.ok, d }})))
+    .then(({{ok, d}}) => {{
+      const state = d.state || (ok ? 'loaded' : 'temporarily_unavailable');
+      if (state === 'sign_in_required') {{
         showLoginGate('wvStartSit', {{
           title: 'Sign in to see your lineup',
           description: 'Sign in to get personalized start/sit recommendations for your roster.'
         }});
+        return;
+      }}
+      if (state === 'team_not_linked') {{
+        window.brEmptyState('wvStartSit', {{ icon: 'users', title: 'Select your team', message: d.message,
+          cta: '<a class="empty-state-cta" href="' + wvLeaguePath('/teams') + '">Select or link team</a>' }});
+        return;
+      }}
+      if (!ok || state === 'temporarily_unavailable') {{
+        window.brErrorState('wvStartSit', d.message || 'Unable to load lineup data.', wvLoadStartSit);
+        return;
+      }}
+      if (state === 'empty_roster') {{
+        window.brEmptyState('wvStartSit', {{ icon: 'users', title: 'No eligible players', message: 'This roster has no active players in supported lineup positions.' }});
         return;
       }}
       wvStartSitData = d;
@@ -837,7 +886,7 @@ function wvLoad() {{
       wvRenderStartSit();
     }})
     .catch(() => {{
-      window.brErrorState('wvStartSit', 'Unable to load lineup data.', wvLoad);
+      window.brErrorState('wvStartSit', 'Unable to load lineup data.', wvLoadStartSit);
     }});
 }}
 
@@ -876,7 +925,7 @@ function wvRenderBigGames(items) {{
     return `
     <div class="wv-player-row" onclick="openPlayerModal('${{d.player_id}}', '${{(d.name||'').replace(/'/g,"\\'")}}')">
       <div>
-        <div class="wv-player-name">${{d.name || ('Player ' + d.player_id)}}</div>
+        <div class="wv-player-name" data-wl-star-pid="${{d.player_id}}">${{d.name || ('Player ' + d.player_id)}}</div>
         <div class="wv-player-sub">${{sub}}</div>
         ${{facts ? `<div class="wv-drop-hint"><span class="wv-drop-lbl">What changed</span> ${{facts}}</div>` : ''}}
         ${{cautionLine}}
@@ -887,6 +936,7 @@ function wvRenderBigGames(items) {{
       </div>
     </div>`;
   }}).join('') + '</div>';
+  if (window._wlStarDecorate) window._wlStarDecorate(list);
 }}
 
 // ── Waiver list ───────────────────────────────────────────────────────────────

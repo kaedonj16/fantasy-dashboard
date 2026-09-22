@@ -163,6 +163,7 @@ from utils.lineup_slots import (
 
 daily_lock = threading.Lock()
 daily_completed = None
+daily_status = {"status": "skipped", "error": None}
 EASTERN = ZoneInfo("America/New_York")
 
 # ── Logging ───────────────────────────────────────────────────────────────────
@@ -251,7 +252,15 @@ DASHBOARD_CACHE = {}
 # so without eviction this dict grows without limit (a slow OOM on a
 # long-running worker). Cap the entry count and evict the oldest ~10% when
 # exceeded -- the same bounded pattern used by _GAME_LOGS_CACHE below.
-DASHBOARD_CACHE_MAX = 400
+def _positive_env_int(name: str, default: int) -> int:
+    try:
+        return max(1, int(os.getenv(name, str(default))))
+    except (TypeError, ValueError):
+        return default
+
+
+DASHBOARD_CACHE_MAX = _positive_env_int("DASHBOARD_CACHE_MAX", 24)
+_DASHBOARD_CACHE_LOCK = threading.RLock()
 
 
 def _prune_dashboard_cache(keep: Optional[str] = None) -> None:
@@ -260,25 +269,28 @@ def _prune_dashboard_cache(keep: Optional[str] = None) -> None:
     stays bounded regardless of how many distinct leagues get looked up. ``keep``
     is the key about to be written; it is never evicted, so a caller updating a
     hot entry can't lose the ctx it's building on."""
-    if len(DASHBOARD_CACHE) < DASHBOARD_CACHE_MAX:
-        return
-
+    limit = max(1, int(DASHBOARD_CACHE_MAX or 1))
     def _age(k):
         e = DASHBOARD_CACHE.get(k) or {}
         ts = e.get("ts")
         if ts is not None:
             return ts
-        # Entries created only via the page_html/awards setdefault paths carry
-        # their timestamps one level down; use the most recent as the age.
         cand = [r[0] for r in (e.get("page_html") or {}).values() if isinstance(r, tuple)]
         aw = e.get("awards_agg")
         if isinstance(aw, tuple):
             cand.append(aw[0])
         return max(cand) if cand else 0.0
 
-    candidates = [k for k in DASHBOARD_CACHE if k != keep]
-    for k in sorted(candidates, key=_age)[:max(1, DASHBOARD_CACHE_MAX // 10)]:
-        DASHBOARD_CACHE.pop(k, None)
+    with _DASHBOARD_CACHE_LOCK:
+        if len(DASHBOARD_CACHE) < limit:
+            return
+        candidates = [k for k in DASHBOARD_CACHE if k != keep]
+        # Drop enough complete entries (ctx and rendered page_html together) for
+        # the pending insertion.  Removing the dict releases all owned strong
+        # references; forced collection on each request would only add latency.
+        remove_count = max(1, len(DASHBOARD_CACHE) - limit + 1)
+        for k in sorted(candidates, key=_age)[:remove_count]:
+            DASHBOARD_CACHE.pop(k, None)
 
 
 def _prune_ttl_cache(cache: dict, max_entries: int) -> None:
@@ -307,6 +319,50 @@ def _prune_ttl_cache(cache: dict, max_entries: int) -> None:
 # running the full build_league_context (~40 API calls) at the same time.
 _CTX_LOCKS: dict = {}
 _CTX_LOCKS_LOCK = threading.Lock()
+_CTX_LOCKS_MAX = _positive_env_int("DASHBOARD_CTX_LOCKS_MAX", 128)
+
+
+class _ContextLock:
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.users = 0
+        self.last_used = time.monotonic()
+
+
+def _acquire_context_lock(key):
+    """Acquire a ref-counted lock and prune only entries with no owner/waiter."""
+    with _CTX_LOCKS_LOCK:
+        state = _CTX_LOCKS.get(key)
+        if state is None:
+            state = _CTX_LOCKS[key] = _ContextLock()
+        state.users += 1
+        state.last_used = time.monotonic()
+        if len(_CTX_LOCKS) > _CTX_LOCKS_MAX:
+            idle = sorted(
+                ((k, v) for k, v in _CTX_LOCKS.items()
+                 if k != key and v.users == 0 and not v.lock.locked()),
+                key=lambda item: item[1].last_used,
+            )
+            for old_key, _ in idle[:len(_CTX_LOCKS) - _CTX_LOCKS_MAX]:
+                _CTX_LOCKS.pop(old_key, None)
+    started = time.monotonic()
+    state.lock.acquire()
+    return state, time.monotonic() - started
+
+
+def _release_context_lock(key, state):
+    state.lock.release()
+    with _CTX_LOCKS_LOCK:
+        state.users -= 1
+        state.last_used = time.monotonic()
+        if len(_CTX_LOCKS) > _CTX_LOCKS_MAX:
+            idle = sorted(
+                ((k, v) for k, v in _CTX_LOCKS.items()
+                 if v.users == 0 and not v.lock.locked()),
+                key=lambda item: item[1].last_used,
+            )
+            for old_key, _ in idle[:len(_CTX_LOCKS) - _CTX_LOCKS_MAX]:
+                _CTX_LOCKS.pop(old_key, None)
 # Short-lived cache for /api/league-rosters responses (pick-slot resolution is expensive).
 _ROSTER_API_CACHE: dict = {}
 _ROSTER_API_CACHE_TTL = 180  # seconds
@@ -2017,8 +2073,8 @@ BASE_HTML = """
 
       {ad_top}
 
-      <script>window._viewerRid = {viewer_roster_id_js}; window._viewerUid = {viewer_user_id_js}; window._isSignedIn = {signed_in_js}; window._hasAccount = {has_account_js}; window._accountEmail = {account_email_js}; window.__FEATURES_JS = {features_js_js}; window.__PLAYER_MODAL_JS = {player_modal_js_js}; window.__DASHBOARD_CSS = {dashboard_css_js}; window.__brctx = {{is_logged_in:{signed_in_js},isPremium:{user_premium},platform:{platform_js},season:{season_js},leagueId:{league_id_js},leagueName:{league_name_js},leagueFormat:{league_format_js},currentWeek:{current_week_js},leagueType:{league_type_js},leagueSize:{league_size_js},scoringType:{league_scoring_type_js}}};</script>
-      <main id="page-root" role="main" tabindex="-1" class="overview-layout" data-cache-ts="{cache_ts}" data-platform="{platform_attr}" data-season="{season_attr}" data-league-id="{league_id_attr}" data-premium="{user_premium}">
+      <script>window._viewerRid = {viewer_roster_id_js}; window._viewerUid = {viewer_user_id_js}; window._isSignedIn = {signed_in_js}; window._hasAccount = {has_account_js}; window._accountEmail = {account_email_js}; window.__brPrewarmEnabled = {prewarm_enabled_js}; window.__FEATURES_JS = {features_js_js}; window.__PLAYER_MODAL_JS = {player_modal_js_js}; window.__DASHBOARD_CSS = {dashboard_css_js}; window.__brctx = {{is_logged_in:{signed_in_js},isPremium:{user_premium},platform:{platform_js},season:{season_js},leagueId:{league_id_js},leagueName:{league_name_js},leagueFormat:{league_format_js},currentWeek:{current_week_js},leagueType:{league_type_js},leagueSize:{league_size_js},scoringType:{league_scoring_type_js}}};</script>
+      <main id="page-root" role="main" tabindex="-1" class="overview-layout" data-cache-ts="{cache_ts}" data-platform="{platform_attr}" data-season="{season_attr}" data-league-id="{league_id_attr}" data-premium="{user_premium}" data-ad-eligible="{ad_eligible}">
         {body}
       </main>
 
@@ -2375,9 +2431,10 @@ def get_page_html_from_cache(platform: str, season: int, league_id: str, page: s
             if time.time() - mtime <= PAGE_HTML_TTL and mtime >= bust:
                 html = open(path, encoding="utf-8").read()
                 _ck = _cache_key(platform, season, league_id)
-                _prune_dashboard_cache(keep=_ck)
-                mem_entry = DASHBOARD_CACHE.setdefault(_ck, {})
-                mem_entry.setdefault("page_html", {})[page] = (time.time(), html)
+                with _DASHBOARD_CACHE_LOCK:
+                    _prune_dashboard_cache(keep=_ck)
+                    mem_entry = DASHBOARD_CACHE.setdefault(_ck, {})
+                    mem_entry.setdefault("page_html", {})[page] = (time.time(), html)
                 return html
     except Exception:
         logger.debug("suppressed exception", exc_info=True)
@@ -2387,9 +2444,10 @@ def get_page_html_from_cache(platform: str, season: int, league_id: str, page: s
 
 def store_page_html(platform: str, season: int, league_id: str, page: str, html: str) -> None:
     _k = _cache_key(platform, season, league_id)
-    _prune_dashboard_cache(keep=_k)
-    entry = DASHBOARD_CACHE.setdefault(_k, {})
-    entry.setdefault("page_html", {})[page] = (time.time(), html)
+    with _DASHBOARD_CACHE_LOCK:
+        _prune_dashboard_cache(keep=_k)
+        entry = DASHBOARD_CACHE.setdefault(_k, {})
+        entry.setdefault("page_html", {})[page] = (time.time(), html)
     try:
         path = _page_html_tmp_path(platform, season, league_id, page)
         tmp = path + ".tmp"
@@ -2415,9 +2473,10 @@ def get_awards_agg_from_cache(platform: str, season: int, league_id: str):
 
 def store_awards_agg(platform: str, season: int, league_id: str, payload) -> None:
     _k = _cache_key(platform, season, league_id)
-    _prune_dashboard_cache(keep=_k)
-    entry = DASHBOARD_CACHE.setdefault(_k, {})
-    entry["awards_agg"] = (time.time(), payload)
+    with _DASHBOARD_CACHE_LOCK:
+        _prune_dashboard_cache(keep=_k)
+        entry = DASHBOARD_CACHE.setdefault(_k, {})
+        entry["awards_agg"] = (time.time(), payload)
 
 
 # -------- global NFL data caches (shared across leagues) --------
@@ -2515,20 +2574,55 @@ def start_score_pos_anchors(season, week, scoring_settings=None) -> dict:
     return anchors
 
 
-def run_daily_data_async(season: int, week: int) -> None:
+def run_daily_data_async(season: int, week: int, owner: str = "web") -> bool:
     """Start daily data build in a background thread."""
     # Never kick off the real daily build under tests: build_daily_data scrapes
     # vendor CSVs and hits external value APIs (FantasyCalc, etc.), which would
     # make the suite non-hermetic and reach out to the network in CI. Both the
     # offline_client fixture and test_season_readiness run with TESTING set.
     if app.testing:
-        return
+        return False
+    global daily_status
+    def _boundary():
+        global daily_completed, daily_status
+        import fcntl
+        build_id = f"{season}-{week}-{int(time.time())}"
+        started = time.monotonic()
+        lock_file = None
+        try:
+            lock_path = os.getenv("DAILY_BUILD_LOCK_FILE", "/tmp/fantasy-dashboard-daily.lock")
+            lock_file = open(lock_path, "a+", encoding="utf-8")
+            try:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                daily_status = {"status": "skipped", "error": None, "build_id": build_id}
+                logger.info("daily_build build_id=%s owner=%s season=%s week=%s status=skipped reason=locked",
+                            build_id, owner, season, week)
+                return
+            result = build_daily_data(season, week)
+            if result is False or (isinstance(result, dict) and result.get("ok") is False):
+                raise RuntimeError("daily build reported failure")
+            daily_completed = datetime.now(EASTERN).date()
+            daily_status = {"status": "succeeded", "error": None, "build_id": build_id}
+            logger.info("daily_build build_id=%s owner=%s season=%s week=%s elapsed_ms=%.1f status=succeeded",
+                        build_id, owner, season, week, (time.monotonic()-started)*1000)
+        except Exception as exc:
+            daily_status = {"status": "failed", "error": str(exc), "build_id": build_id}
+            logger.exception("daily_build build_id=%s owner=%s season=%s week=%s elapsed_ms=%.1f status=failed",
+                             build_id, owner, season, week, (time.monotonic()-started)*1000)
+        finally:
+            if lock_file is not None:
+                try:
+                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+                finally:
+                    lock_file.close()
     thread = threading.Thread(
-        target=build_daily_data,
-        args=(season, week),
+        target=_boundary,
+        name=f"daily-{owner}-{season}-{week}",
         daemon=True,
     )
     thread.start()
+    return True
 
 
 def _weeks_hash(weeks):
@@ -3207,12 +3301,21 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
     root_categories = [_category_row(x) for x in root_labels]
     portfolio_root = portfolio_link
     portfolio_fallback = '<a class="br-sheet-link" href="/">Link a league</a>'
+    # Cross-league "My Actions": hidden until app.js confirms cached actions
+    # exist, then unhidden with a count badge (mirrors the desktop header pill).
+    my_actions_row = ""
+    if session.get("viewer_username") or session.get("account_id"):
+        my_actions_row = (
+            "<a class='br-sheet-link' id='moreMyActions' href='/portfolio' hidden>"
+            f"{_nav_icon('list', size=20)}<span>My Actions</span>"
+            "<span class='br-sheet-badge' id='moreMyActionsCount' aria-hidden='true'></span></a>"
+        )
     # The root is deliberately short: primary taxonomy first, core portfolio
     # navigation next, and low-frequency account utilities last.
     root_html = (
         "<section class='br-sheet-panel br-sheet-root' id='brMorePanel-root' data-br-sheet-panel='root'>"
         "<h2 class='br-sheet-root-title' tabindex='-1'>More</h2>"
-        f"{find_html}<h3 class='br-sheet-h'>Navigate</h3><div class='br-sheet-group'>{''.join(root_categories)}{portfolio_root or portfolio_fallback}</div>"
+        f"{find_html}<h3 class='br-sheet-h'>Navigate</h3><div class='br-sheet-group'>{my_actions_row}{''.join(root_categories)}{portfolio_root or portfolio_fallback}</div>"
         "<div class='br-sheet-utility-divider' aria-hidden='true'></div>"
         f"<h3 class='br-sheet-h'>Tools</h3><div class='br-sheet-group'>{tools_html}</div>"
         "<div class='br-sheet-changelog-mount' id='brSheetChangelog'></div>"
@@ -5406,6 +5509,7 @@ def render_page(
         description: str = "",
         canonical: Optional[str] = None,
         noindex: Optional[bool] = None,
+        ad_eligible: Optional[bool] = None,
         **kwargs,
 ) -> str:
     import html as _html_module
@@ -5538,8 +5642,13 @@ def render_page(
     user_id = session.get("viewer_username")
     is_premium = has_premium_for_viewer(user_id, session.get("viewer_user_id"), league_id, platform or "sleeper",
                                         season)
-    # Suppress ads on thin/legal/utility pages even for free users.
-    suppress_ads = (not active) or (active in _NO_ADS_PAGES)
+    # Response-level eligibility is authoritative.  ``active`` remains the
+    # conservative default for ordinary pages, but callers rendering an error,
+    # unavailable/empty state, checkout, confirmation, or paywall-only response
+    # must explicitly pass ``ad_eligible=False``.  A page category alone cannot
+    # describe whether this particular response contains publisher content.
+    suppress_ads = ((not active) or (active in _NO_ADS_PAGES)
+                    or ad_eligible is False)
     show_ads = not (is_premium or suppress_ads)
 
     # Viewer context for client JS (player-modal roster context, etc.)
@@ -5597,6 +5706,7 @@ def render_page(
         season_attr=_html_module.escape(str(season or ""), quote=True),
         league_id_attr=_html_module.escape(str(league_id or ""), quote=True),
         user_premium="true" if is_premium else "false",
+        ad_eligible="true" if show_ads else "false",
         adsense_script="" if (_soft_nav or not show_ads) else _AD_SCRIPT,
         ad_top="" if (_soft_nav or not show_ads) else _AD_TOP,
         ad_bottom="" if (_soft_nav or not show_ads) else _AD_BOTTOM,
@@ -5626,6 +5736,7 @@ def render_page(
         viewer_roster_id_js=_json.dumps(str(viewer_roster_id)),
         viewer_user_id_js=_json.dumps(str(viewer_user_id)),
         signed_in_js="true" if _session_signed_in() else "false",
+        prewarm_enabled_js="true" if os.getenv("LEAGUE_PREWARM_ENABLED", "").lower() in {"1", "true", "yes", "on"} else "false",
         has_account_js="true" if session.get("account_id") else "false",
         account_email_js=_json.dumps(session.get("account_email") or ""),
         features_js_js=_features_js_js,
@@ -6776,10 +6887,7 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
     entry = DASHBOARD_CACHE.get(key)
 
     if not entry:
-        ctx = build_league_context(platform, league_id, season)
-        _prune_dashboard_cache()
-        DASHBOARD_CACHE[key] = {"ctx": ctx, "ts": time.time(), "page_html": {}}
-        return ctx
+        return get_league_ctx_from_cache(platform, league_id, season)
 
     ctx = entry["ctx"]
 
@@ -7640,8 +7748,6 @@ def render_standings(team_stats, length, all_play: dict = None,
               <td>{streak}</td>
               <td>{_luck_cell}</td>
               <td>{_seed_cell}</td>
-              <td>{row.get('past_sos', 0.0):.1f}</td>
-              <td>{row.get('ros_sos', 0.0):.1f}</td>
             </tr>
         """)
 
@@ -7650,7 +7756,7 @@ def render_standings(team_stats, length, all_play: dict = None,
         if (_p and _p.get("scenario") and _p["status"] == "bubble"
                 and _p["seed"] in (_spots, (_spots or 0) + 1)):
             rows.append(
-                "<tr class='pp-scnrow'><td colspan='11'>"
+                "<tr class='pp-scnrow'><td colspan='9'>"
                 f"<div class='pp-scn'>{html.escape(_p['scenario'])}</div></td></tr>"
             )
 
@@ -7659,7 +7765,7 @@ def render_standings(team_stats, length, all_play: dict = None,
         if (not _use_div and _spots and int(row['Rank']) == _spots
                 and _spots < len(df)):
             rows.append(
-                "<tr class='pp-cutrow'><td colspan='11'>"
+                "<tr class='pp-cutrow'><td colspan='9'>"
                 "<div class='pp-cut'>Playoff line</div></td></tr>"
             )
 
@@ -7683,8 +7789,6 @@ def render_standings(team_stats, length, all_play: dict = None,
               <th scope="col">Streak</th>
               <th scope="col" title="Actual wins minus expected wins (from all-play). + = luckier than your scoring earned.">Luck</th>
               <th scope="col" title="Where you'd be seeded by all-play record instead of actual wins.">Exp. Seed</th>
-              <th scope="col" title="Opponent strength faced so far. 100 is league average; higher means a tougher schedule.">SOS Past</th>
-              <th scope="col" title="Opponent strength remaining in the regular season. 100 is league average; higher means a tougher schedule.">SOS Future</th>
             </tr>
           </thead>
           <tbody>
@@ -8349,13 +8453,33 @@ def _render_bench_check(ctx: dict, viewer_roster_id, last_final_week: int) -> st
                 f"{opt_pts:.1f}. You scored {actual:.1f} and left "
                 f'<span class="la-em">{left_on_bench:.1f} points</span> on the bench.'
             )
-        tone_cls = " bench-ok" if left_on_bench < 1.0 else " bench-miss"
+        # Escalate to a warning only on a repeated pattern (not one-off weeks):
+        # three or more weeks with meaningful points left on the bench.
+        warn_html = ""
+        try:
+            from dashboard_services.season_efficiency import compute_league_season_efficiency
+            _wks = ((compute_league_season_efficiency(ctx).get("by_rid") or {})
+                    .get(str(viewer_roster_id)) or {}).get("weeks") or []
+            _bad = [w for w in _wks if (w.get("missed") or 0) >= 5.0]
+            if len(_bad) >= 3:
+                _avg_missed = sum(w["missed"] for w in _bad) / len(_bad)
+                warn_html = (
+                    f'<div class="bench-check-warn">Efficiency watch: you have left meaningful '
+                    f'points on the bench in {len(_bad)} weeks (avg '
+                    f'<span class="la-em">{_avg_missed:.1f}</span> missed). Locking lineups '
+                    f'earlier would meaningfully raise your scoring.</div>'
+                )
+        except Exception:
+            warn_html = ""
+
+        tone_cls = " bench-miss" if warn_html else (" bench-ok" if left_on_bench < 1.0 else " bench-miss")
         return f"""
         <section class="os-card bench-check-card{tone_cls}">
           <div class="bench-check-row">
             <span class="bench-check-msg">{msg}</span>
             <a class="os-section-link" href="{eff_url}">Lineup efficiency &rarr;</a>
           </div>
+          {warn_html}
         </section>"""
     except Exception:
         logger.debug("bench check failed", exc_info=True)
@@ -8874,7 +8998,7 @@ def render_standings_insights(team_stats, *, all_play=None, weekly_points=None,
     return f"<div class='st-insights'>{''.join(cards)}</div>"
 
 
-def render_team_stats(team_stats, df_weekly, owner_to_rid=None) -> str:
+def render_team_stats(team_stats, df_weekly, owner_to_rid=None, efficiency=None) -> str:
     # Show the table whenever there are teams. The season aggregates (Win %, PF,
     # PA, …) exist from preseason on; only Best/Worst Week come from finalized
     # weekly games, so those fall back to "–" before any week is final rather than
@@ -8887,7 +9011,8 @@ def render_team_stats(team_stats, df_weekly, owner_to_rid=None) -> str:
         """
 
     stats_tbl = team_stats.rename(
-        columns={"owner": "Team", "AVG": "Average", "STD": "Std Dev", "Win%": "Win %"}
+        columns={"owner": "Team", "AVG": "Average", "STD": "Std Dev", "Win%": "Win %",
+                 "past_sos": "SOS Past", "ros_sos": "SOS Future"}
     ).copy()
 
     if df_weekly is not None and not df_weekly.empty:
@@ -8902,33 +9027,50 @@ def render_team_stats(team_stats, df_weekly, owner_to_rid=None) -> str:
         stats_tbl["Best Week"] = float("nan")
         stats_tbl["Worst Week"] = float("nan")
 
-    cols = ["Team", "Win %", "PF", "PA", "Average", "Std Dev", "Best Week", "Worst Week"]
+    # Lineup efficiency (moved here from the Standings table), keyed owner->rid->eff.
+    def _eff_for(owner):
+        rid = (owner_to_rid or {}).get(str(owner))
+        return (efficiency or {}).get(str(rid)) if rid is not None else None
+    stats_tbl["EFF"] = stats_tbl["Team"].map(_eff_for)
+
+    # SOS columns are optional depending on schedule data availability.
+    for c in ("SOS Past", "SOS Future"):
+        if c not in stats_tbl.columns:
+            stats_tbl[c] = float("nan")
+
+    cols = ["Team", "Win %", "PF", "EFF", "PA", "Average", "Std Dev",
+            "Best Week", "Worst Week", "SOS Past", "SOS Future"]
     stats_tbl = stats_tbl[cols].copy()
 
-    for c in ["Win %", "PF", "PA", "Average", "Std Dev", "Best Week", "Worst Week"]:
+    for c in ("Win %", "PF", "PA", "Average", "Std Dev", "Best Week", "Worst Week",
+              "SOS Past", "SOS Future"):
         stats_tbl[c] = stats_tbl[c].astype(float).round(3 if c == "Win %" else 2)
 
     def _num(v, nd: int) -> str:
         return "–" if pd.isna(v) else f"{float(v):.{nd}f}"
 
+    def _cell(col, v) -> str:
+        if col == "Team":
+            return f"<td class='team'>{_clickable_team_name(v, owner_to_rid)}</td>"
+        if col == "EFF":
+            return f"<td class='num'>{'–' if pd.isna(v) else f'{float(v):.0f}%'}</td>"
+        if col == "Win %":
+            return f"<td class='num'>{_num(v, 3)}</td>"
+        if col in ("SOS Past", "SOS Future"):
+            return f"<td class='num'>{_num(v, 1)}</td>"
+        return f"<td class='num'>{_num(v, 2)}</td>"
+
     body_rows = []
     for _, r in stats_tbl[cols].iterrows():
-        body_rows.append("<tr>" + "".join([
-            f"<td class='team'>{_clickable_team_name(r['Team'], owner_to_rid)}</td>",
-            f"<td class='num'>{_num(r['Win %'], 3)}</td>",
-            f"<td class='num'>{_num(r['PF'], 2)}</td>",
-            f"<td class='num'>{_num(r['PA'], 2)}</td>",
-            f"<td class='num'>{_num(r['Average'], 2)}</td>",
-            f"<td class='num'>{_num(r['Std Dev'], 2)}</td>",
-            f"<td class='num'>{_num(r['Best Week'], 2)}</td>",
-            f"<td class='num'>{_num(r['Worst Week'], 2)}</td>",
-        ]) + "</tr>")
+        body_rows.append("<tr>" + "".join(_cell(c, r[c]) for c in cols) + "</tr>")
 
     table_html = f"""
+        <div class="st-tblscroll">
         <table id="stats" class="standings-table">
           <thead><tr>{"".join([f"<th data-col='{i}'>{c}</th>" for i, c in enumerate(cols)])}</tr></thead>
           <tbody>{''.join(body_rows)}</tbody>
         </table>
+        </div>
     """
     return table_html
 
@@ -9435,6 +9577,7 @@ def render_share_rankings(ctx: dict) -> str:
     <p class="standings-shares-note">
       Fair share per team: {fair_pct}{proj_note} &nbsp;·&nbsp; bar fills to 2× fair share
     </p>
+    <div class="st-tblscroll">
     <table class="standings-shares-table">
       <thead>
         <tr>
@@ -9448,6 +9591,7 @@ def render_share_rankings(ctx: dict) -> str:
         {rows_html}
       </tbody>
     </table>
+    </div>
     </div>"""
 
 
@@ -9508,6 +9652,18 @@ def _standings_panels(ctx: dict, power_rankings=None) -> dict:
     from utils.standings_divisions import resolve_divisions
     _div_info = resolve_divisions(ctx)
 
+    # Season lineup efficiency per team (actual ÷ optimal). Cached per league /
+    # completed-week snapshot, so this does not recompute on every render.
+    try:
+        from dashboard_services.season_efficiency import compute_league_season_efficiency
+        _eff_by_rid = {
+            rid: v.get("eff")
+            for rid, v in (compute_league_season_efficiency(ctx).get("by_rid") or {}).items()
+        }
+    except Exception:
+        logger.debug("[standings] lineup efficiency skipped", exc_info=True)
+        _eff_by_rid = {}
+
     standings_html = render_standings(
         team_stats, num_teams, all_play=_all_play,
         playoff_spots=_pp_spots, total_regular_weeks=_pp_weeks,
@@ -9523,7 +9679,7 @@ def _standings_panels(ctx: dict, power_rankings=None) -> dict:
         detailed_df = df_weekly[df_weekly["finalized"] == True].copy()
     else:
         detailed_df = pd.DataFrame()
-    details_html = render_team_stats(team_stats, detailed_df, owner_to_rid=_o2r)
+    details_html = render_team_stats(team_stats, detailed_df, owner_to_rid=_o2r, efficiency=_eff_by_rid)
 
     power_html = render_power_and_playoffs(
         team_stats,
@@ -10854,7 +11010,75 @@ def _maybe_check_roster_freshness(platform: str, league_id: str, season: int,
     threading.Thread(target=_run, daemon=True).start()
 
 
-def get_league_ctx_from_cache(platform: str, league_id: str, season: int) -> dict:
+# Best-effort background warm so latency-sensitive readers (the live matchup
+# overlay, the cross-league digest) never trigger a cold synchronous build on
+# the request path. Deduplicated per league; a small semaphore bounds how many
+# cold builds run at once so a page with many leagues cannot spike worker memory.
+_LEAGUE_WARM_INFLIGHT: set = set()
+_LEAGUE_WARM_LOCK = threading.Lock()
+try:
+    _LEAGUE_WARM_SEM = threading.BoundedSemaphore(
+        max(1, int(os.getenv("LEAGUE_WARM_CONCURRENCY", "2")))
+    )
+except (TypeError, ValueError):
+    _LEAGUE_WARM_SEM = threading.BoundedSemaphore(2)
+
+# Process-wide cap on how many league contexts build at once. Each build fans out
+# ~6 parallel provider fetches and holds a full roster/players payload in memory,
+# so several concurrent builds (a portfolio refresh rebuilding every league, plus
+# per-card summary hydration and background warms) can OOM a memory-limited
+# worker. Bounding it here -- regardless of which endpoint triggered the build --
+# keeps peak memory near the old single-page-render level (2 at a time).
+try:
+    _LEAGUE_BUILD_SEM = threading.BoundedSemaphore(
+        max(1, int(os.getenv("LEAGUE_BUILD_CONCURRENCY", "2")))
+    )
+except (TypeError, ValueError):
+    _LEAGUE_BUILD_SEM = threading.BoundedSemaphore(2)
+
+
+def _warm_league_ctx_async(platform: str, league_id: str, season: int) -> None:
+    """Build a league context off the request path so a later best-effort poll
+    finds it cached. The cross-worker single-flight lock inside
+    get_league_ctx_from_cache prevents duplicate provider work across workers."""
+    try:
+        key = _cache_key(platform, season, league_id)
+    except Exception:
+        return
+    with _LEAGUE_WARM_LOCK:
+        if key in _LEAGUE_WARM_INFLIGHT:
+            return
+        _LEAGUE_WARM_INFLIGHT.add(key)
+
+    def _run() -> None:
+        # Drop the warm rather than queue unbounded work if too many cold builds
+        # are already running; the next client poll re-requests it.
+        if not _LEAGUE_WARM_SEM.acquire(timeout=25):
+            with _LEAGUE_WARM_LOCK:
+                _LEAGUE_WARM_INFLIGHT.discard(key)
+            return
+        try:
+            with app.test_request_context():
+                get_league_ctx_from_cache(platform, league_id, season)
+        except Exception:
+            logger.debug("[warm] league ctx warm failed", exc_info=True)
+        finally:
+            _LEAGUE_WARM_SEM.release()
+            with _LEAGUE_WARM_LOCK:
+                _LEAGUE_WARM_INFLIGHT.discard(key)
+
+    try:
+        threading.Thread(
+            target=_run, name=f"warm-{platform}-{league_id}", daemon=True,
+        ).start()
+    except Exception:
+        with _LEAGUE_WARM_LOCK:
+            _LEAGUE_WARM_INFLIGHT.discard(key)
+
+
+def get_league_ctx_from_cache(
+    platform: str, league_id: str, season: int, *, allow_build: bool = True,
+) -> dict:
     try:
         from utils.ui_audit_fixture import (
             build_ui_audit_league_context,
@@ -10875,46 +11099,143 @@ def get_league_ctx_from_cache(platform: str, league_id: str, season: int) -> dic
     entry = DASHBOARD_CACHE.get(key)
     if _league_ctx_cache_valid(entry, platform, season, league_id):
         ctx = entry["ctx"]
+        ctx["_cache_synced_at"] = datetime.fromtimestamp(float(entry.get("ts") or 0), timezone.utc).isoformat() if entry.get("ts") else None
+        ctx["_cache_stale"] = False
         ctx["viewer"] = get_viewer_session_for_league(
             ctx.get("users") or [], ctx.get("rosters") or [], platform, league_id, season
         )
         _maybe_check_roster_freshness(platform, league_id, season, key, _roster_sig(ctx))
         return ctx
 
-    with _CTX_LOCKS_LOCK:
-        if key not in _CTX_LOCKS:
-            _CTX_LOCKS[key] = threading.Lock()
-        key_lock = _CTX_LOCKS[key]
-
-    with key_lock:
+    stale_entry = entry
+    if not allow_build:
+        # Best-effort readers opt out of the cold synchronous build. Serve
+        # last-known-good if it is still within the stale window, otherwise
+        # nothing, and warm the cache in the background for the next poll.
+        _warm_league_ctx_async(platform, league_id, season)
+        old = (stale_entry or {}).get("ctx")
+        old_ts = float((stale_entry or {}).get("ts") or 0)
+        stale_window = _positive_env_int("LEAGUE_STALE_IF_ERROR_SECONDS", 21600)
+        if old and time.time() - old_ts <= stale_window:
+            old["_cache_stale"] = True
+            old["_cache_synced_at"] = (
+                datetime.fromtimestamp(old_ts, timezone.utc).isoformat() if old_ts else None
+            )
+            old["viewer"] = get_viewer_session_for_league(
+                old.get("users") or [], old.get("rosters") or [], platform, league_id, season
+            )
+            return old
+        return {}
+    key_lock, local_wait = _acquire_context_lock(key)
+    try:
         # Re-check after acquiring lock - another thread may have built it while we waited
         entry = DASHBOARD_CACHE.get(key)
         if _league_ctx_cache_valid(entry, platform, season, league_id):
             ctx = entry["ctx"]
+            ctx["_cache_synced_at"] = datetime.fromtimestamp(float(entry.get("ts") or 0), timezone.utc).isoformat() if entry.get("ts") else None
+            ctx["_cache_stale"] = False
             ctx["viewer"] = get_viewer_session_for_league(
                 ctx.get("users") or [], ctx.get("rosters") or [], platform, league_id, season
             )
             return ctx
-        # A context bust must also evict the provider-layer payloads used to
-        # rebuild it. Otherwise a new context timestamp could wrap old Sleeper
-        # rosters/matchups and falsely look fresh. This is league-scoped; Yahoo
-        # remains token-backed and ESPN owns its separately scoped cache below.
-        if platform == "sleeper":
+        from dashboard_services.league_singleflight import (
+            LeagueBuildBusy, league_build_lock, mark_success, read_generation,
+        )
+        generation_before = read_generation(platform, season, league_id)
+        cross_wait = 0.0
+        build_started = time.monotonic()
+        try:
+            cross_lock = league_build_lock(
+                platform, season, league_id,
+                timeout=float(os.getenv("LEAGUE_BUILD_LOCK_TIMEOUT_SECONDS", "20")),
+            )
+            cross_wait = cross_lock.__enter__()
+        except LeagueBuildBusy:
+            old = (stale_entry or {}).get("ctx")
+            old_ts = float((stale_entry or {}).get("ts") or 0)
+            stale_window = _positive_env_int("LEAGUE_STALE_IF_ERROR_SECONDS", 21600)
+            if old and time.time() - old_ts <= stale_window:
+                old["_cache_stale"] = True
+                old["_cache_synced_at"] = datetime.fromtimestamp(old_ts, timezone.utc).isoformat() if old_ts else None
+                return old
+            raise
+        try:
+            # A sibling may have completed while this worker waited.  Its full
+            # context is process-local, so reuse our bounded last-known-good
+            # rather than serially repeating the same expensive provider work.
+            generation_now = read_generation(platform, season, league_id)
+            old = (stale_entry or {}).get("ctx")
+            if generation_now["generation"] > generation_before["generation"] and old:
+                old["_cache_stale"] = True
+                old_ts = float((stale_entry or {}).get("ts") or 0)
+                old["_cache_synced_at"] = datetime.fromtimestamp(old_ts, timezone.utc).isoformat() if old_ts else None
+                return old
+            entry = DASHBOARD_CACHE.get(key)
+            if _league_ctx_cache_valid(entry, platform, season, league_id):
+                ctx = entry["ctx"]
+                ctx["_cache_synced_at"] = datetime.fromtimestamp(float(entry.get("ts") or 0), timezone.utc).isoformat() if entry.get("ts") else None
+                ctx["_cache_stale"] = False
+                return ctx
+            # Clear provider payloads only after both lock layers are owned.
+            if platform == "sleeper":
+                try:
+                    from utils.utils import clear_league_provider_cache_for_league
+                    clear_league_provider_cache_for_league(league_id)
+                except Exception:
+                    logger.debug("[refresh] Sleeper provider cache clear failed", exc_info=True)
+            elif platform == "espn":
+                try:
+                    from dashboard_services.providers.espn_api import clear_espn_league_caches
+                    clear_espn_league_caches(league_id, season)
+                except Exception:
+                    logger.debug("[refresh] ESPN provider cache clear failed", exc_info=True)
+            rss_before = None
             try:
-                from utils.utils import clear_league_provider_cache_for_league
-                clear_league_provider_cache_for_league(league_id)
+                import psutil
+                rss_before = psutil.Process().memory_info().rss
             except Exception:
-                logger.debug("[refresh] Sleeper provider cache clear failed", exc_info=True)
-        elif platform == "espn":
+                pass
             try:
-                from dashboard_services.providers.espn_api import clear_espn_league_caches
-                clear_espn_league_caches(league_id, season)
+                # Bound concurrent builds process-wide so a burst of build
+                # requests (portfolio refresh + summary hydration + warms) cannot
+                # stack enough in-flight contexts to OOM the worker.
+                with _LEAGUE_BUILD_SEM:
+                    ctx = build_league_context(platform, league_id, season)
+                built_at = time.time()
+                ctx["_cache_synced_at"] = datetime.fromtimestamp(built_at, timezone.utc).isoformat()
+                ctx["_cache_stale"] = False
+                with _DASHBOARD_CACHE_LOCK:
+                    _prune_dashboard_cache(keep=key)
+                    DASHBOARD_CACHE[key] = {"ctx": ctx, "ts": built_at, "page_html": {}}
+                mark_success(platform, season, league_id)
+                rss_after = None
+                try:
+                    import psutil
+                    rss_after = psutil.Process().memory_info().rss
+                except Exception:
+                    pass
+                logger.info("league_context_build %s", json.dumps({
+                    "platform": platform, "season": int(season), "league_id": str(league_id),
+                    "source": request.path if has_request_context() else "internal",
+                    "cache": "stale" if stale_entry else "miss", "local_lock_wait_ms": round(local_wait * 1000),
+                    "cross_worker_lock_wait_ms": round(cross_wait * 1000), "result": "built",
+                    "build_ms": round((time.monotonic() - build_started) * 1000), "success": True,
+                    "cache_entries": len(DASHBOARD_CACHE), "rss_before": rss_before, "rss_after": rss_after,
+                }, separators=(",", ":")))
+                return ctx
             except Exception:
-                logger.debug("[refresh] ESPN provider cache clear failed", exc_info=True)
-        ctx = build_league_context(platform, league_id, season)
-        _prune_dashboard_cache()
-        DASHBOARD_CACHE[key] = {"ctx": ctx, "ts": time.time(), "page_html": {}}
-        return ctx
+                old = (stale_entry or {}).get("ctx")
+                old_ts = float((stale_entry or {}).get("ts") or 0)
+                stale_window = _positive_env_int("LEAGUE_STALE_IF_ERROR_SECONDS", 21600)
+                if old and time.time() - old_ts <= stale_window:
+                    old["_cache_stale"] = True
+                    old["_cache_synced_at"] = datetime.fromtimestamp(old_ts, timezone.utc).isoformat() if old_ts else None
+                    return old
+                raise
+        finally:
+            cross_lock.__exit__(None, None, None)
+    finally:
+        _release_context_lock(key, key_lock)
 
 
 # /api/trade-count extracted to routes/misc_api_bp.py
@@ -11333,16 +11654,23 @@ def api_start_sit_options():
     if not league_id:
         return jsonify({"error": "league_id required"}), 400
 
+    if not _session_signed_in():
+        return jsonify({"state": "sign_in_required", "positions": {},
+                        "message": "Sign in to see your lineup."}), 401
+
     try:
         ctx = get_league_ctx_from_cache(platform, league_id, season)
     except Exception as e:
-        return _api_err("Request failed", e)
+        logger.warning("start/sit lineup unavailable", exc_info=True)
+        return jsonify({"state": "temporarily_unavailable", "positions": {},
+                        "retryable": True, "message": "Lineup data is temporarily unavailable."}), 503
 
     viewer = ctx.get("viewer") or {}
     viewer_roster_id = viewer.get("viewer_roster_id")
 
     if not viewer_roster_id:
-        return jsonify({"positions": {}})
+        return jsonify({"state": "team_not_linked", "positions": {},
+                        "message": "Select or link your team to view start/sit advice."}), 409
 
     rosters = ctx.get("rosters") or []
     viewer_roster = next(
@@ -11350,7 +11678,8 @@ def api_start_sit_options():
         None,
     )
     if not viewer_roster:
-        return jsonify({"positions": {}})
+        return jsonify({"state": "team_not_linked", "positions": {},
+                        "message": "Your linked team could not be resolved in this league."}), 409
 
     reserve_set = {str(p) for p in (viewer_roster.get("reserve") or [])}
     taxi_set = {str(p) for p in (viewer_roster.get("taxi") or [])}
@@ -11867,7 +12196,9 @@ def api_start_sit_options():
     except Exception:
         logger.debug("market intelligence unavailable for start/sit", exc_info=True)
 
+    has_eligible = any(bool(players) for players in positions_out.values())
     return jsonify({
+        "state": "loaded" if has_eligible else "empty_roster",
         "positions": positions_out,
         "lineup_requirements": lineup_requirements,
         "flex_slots": flex_slots,
@@ -11915,7 +12246,7 @@ _RZ_SCOREBOARD_TIMEOUT = 12
 def _redzone_boxscore(
     game_id: str, *, play_by_play: bool = False, ttl: float | None = None
 ) -> dict:
-    """Fetch a Tank01 boxscore with a short shared TTL cache (bounds API calls).
+    """Fetch the shared ESPN boxscore with a short UI-level TTL cache.
 
     ``play_by_play=True`` asks Tank01 for ``allPlayByPlay`` and is cached under a
     separate key so plain boxscore consumers stay light. Pass ``ttl`` to reuse a
@@ -13340,7 +13671,7 @@ def api_redzone_data(platform: str, season: int, league_id: str):
 
 @app.route("/api/<platform>/<int:season>/<league_id>/redzone-player")
 def api_redzone_player(platform: str, season: int, league_id: str):
-    """Return Tank01 boxscore stats for a single player, tagged with fantasy pts."""
+    """Return ESPN NFL detail for a player; provider fantasy points stay authoritative."""
     from dashboard_services.api import (
         get_nfl_players, fetch_tank_boxscore, get_normalized_scoring_settings,
     )
@@ -13357,6 +13688,7 @@ def api_redzone_player(platform: str, season: int, league_id: str):
         pos = (player.get("position") or "").upper()
 
         stats = {}
+        box = {}
         if game_id:
             box = fetch_tank_boxscore(game_id) or {}
             player_stats = box.get("playerStats") or {}
@@ -13396,7 +13728,14 @@ def api_redzone_player(platform: str, season: int, league_id: str):
                 "rec_tds": float(receiving.get("recTD") or 0),
             }
 
-        return jsonify({"pos": pos, "scoring": scoring, "breakdown": breakdown})
+        available = set(box.get("field_availability") or []) if game_id else set()
+        return jsonify({
+            "pos": pos, "scoring": scoring, "breakdown": breakdown,
+            "breakdown_complete": bool(box.get("breakdown_complete", False)) if game_id else False,
+            "field_availability": sorted(available),
+            "source": box.get("source", "espn_nfl") if game_id else "unavailable",
+            "notice": "Fantasy-provider score remains authoritative; unavailable ESPN fields are omitted.",
+        })
     except Exception as _e:
         logger.warning("[redzone] player fetch %s: %s", pid, _e)
         return jsonify({}), 500
@@ -13942,7 +14281,9 @@ def page_breakouts(platform: str, season: int, league_id: str):
       const PAGE_SIZE = 12;
 
       // Fetch breakout candidates on page load (using new BreakoutEngine API)
-      fetch('/api/breakout/candidates?season={bo_season}&min_score=50&limit=15&league_id={league_id}&platform={platform}')
+      // Server selects the engine-specific floor: weekly watchlist calibration
+      // is intentionally different from the offseason 50-point board.
+      fetch('/api/breakout/candidates?season={bo_season}&limit=15&league_id={league_id}&platform={platform}')
         .then(res => res.json())
         .then(data => {{
           breakoutCandidates = (data && data.candidates) || [];
@@ -14023,6 +14364,22 @@ def page_breakouts(platform: str, season: int, league_id: str):
         return comps.reduce((best, c) => c.val > best.val ? c : best, comps[0]);
       }}
 
+      function _boWeeklySignal(candidate) {{
+        const rows = Array.isArray(candidate.usage_comparison) ? candidate.usage_comparison : [];
+        return rows.find(row => row && row.recent != null) || null;
+      }}
+
+      function _boWeeklySignalText(signal) {{
+        if (!signal) return 'Usage detail unavailable';
+        const fmt = value => signal.unit === '%'
+          ? `${{Number(value).toFixed(1)}}%`
+          : Number(value).toFixed(1);
+        if (signal.baseline == null) {{
+          return `Initial role: ${{fmt(signal.recent)}} ${{signal.label.toLowerCase()}}`;
+        }}
+        return `${{signal.label}}: ${{fmt(signal.baseline)}} → ${{fmt(signal.recent)}}`;
+      }}
+
       function renderBreakouts() {{
         const container = document.getElementById('breakoutsContainer');
         const filtered = currentFilter === 'ALL'
@@ -14090,7 +14447,24 @@ def page_breakouts(platform: str, season: int, league_id: str):
         if (window.brInitMoments) window.brInitMoments(container);
       }}
 
+      function openBreakoutCandidateModal(encodedPlayerId) {{
+        const playerId = decodeURIComponent(encodedPlayerId);
+        const candidate = breakoutCandidates.find(item => String(item.player_id) === playerId);
+        if (!candidate) return;
+        const existingContext = {{ tab: 'breakout' }};
+        openPlayerModal(
+          String(candidate.player_id),
+          candidate.player_name,
+          {{
+            ...existingContext,
+            isBreakoutCandidate: true,
+            breakoutCandidate: candidate
+          }}
+        );
+      }}
+
       function renderBreakoutCard(candidate) {{
+          const isWeekly = candidate.weekly === true || candidate.mode === 'weekly';
           const name = candidate.player_name || 'Unknown';
           const team = candidate.team || '?';
           const pos = candidate.position || '?';
@@ -14098,11 +14472,12 @@ def page_breakouts(platform: str, season: int, league_id: str):
           const pid = candidate.player_id || '';
           // Headline = blended 0-100 breakout score (opportunity + model probability);
           // the model's raw hit chance is shown as a secondary chip.
-          const prob = candidate.hit_probability != null ? parseFloat(candidate.hit_probability) : null;
+          const prob = !isWeekly && candidate.hit_probability != null ? parseFloat(candidate.hit_probability) : null;
           const hitProb = prob != null ? Math.round(prob * 100) : null;
           const blend = candidate.breakout_blend != null ? parseFloat(candidate.breakout_blend)
                       : (prob != null ? prob : 0);
-          const score = Math.round(blend * 100);  // 0-100 headline
+          const score = isWeekly ? Math.round(parseFloat(candidate.breakout_score || 0))
+                                 : Math.round(blend * 100);
 
           let scoreColor = '#6b7280', tier = 'Low';
           if (score >= 60) {{ scoreColor = '#10b981'; tier = 'Elite'; }}
@@ -14110,15 +14485,26 @@ def page_breakouts(platform: str, season: int, league_id: str):
           else if (score >= 30) {{ scoreColor = '#f59e0b'; tier = 'Moderate'; }}
           else {{ scoreColor = '#6b7280'; tier = 'Low'; }}
 
-          const range = _boPpgRange(candidate);
-          const topComp = _boTopComponent(candidate);
+          const range = isWeekly ? null : _boPpgRange(candidate);
+          const weeklySignal = isWeekly ? _boWeeklySignal(candidate) : null;
+          const topComp = isWeekly ? null : _boTopComponent(candidate);
 
-          const reasons = (candidate.key_reasons || '').split('\\n')
-            .filter(r => r.trim() && r.startsWith('•'))
-            .map(r => r.substring(1).trim());
+          const reasons = isWeekly
+            ? (Array.isArray(candidate.reasons) ? candidate.reasons : (candidate.key_reasons || '').split('\\n'))
+                .filter(r => String(r).trim())
+            : (candidate.key_reasons || '').split('\\n')
+                .filter(r => r.trim() && r.startsWith('•'))
+                .map(r => r.substring(1).trim());
           const topReason = reasons[0] || '';
 
-          const ppgHtml = range
+          const ppgHtml = isWeekly
+            ? `<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;">
+                 <span style="font-size:13px;font-weight:800;color:var(--text);">${{candidate.classification_label || 'Weekly Watchlist'}}</span>
+                 <span style="font-size:11px;padding:2px 7px;border-radius:8px;background:var(--surface-alt);color:var(--text-muted);">${{Math.round(parseFloat(candidate.confidence || 0))}}% confidence</span>
+                 ${{candidate.provisional ? '<span style="font-size:10px;font-weight:800;color:#f59e0b;">PROVISIONAL</span>' : ''}}
+               </div>
+               <div style="font-size:11px;color:var(--text-muted);margin-top:5px;">${{candidate.score_basis === 'initial_role' ? 'Initial Role Score · No prior NFL baseline' : 'Role Change Score'}} · ${{candidate.sample && candidate.sample.recent_games ? candidate.sample.recent_games + ' recent game' + (candidate.sample.recent_games === 1 ? '' : 's') : 'Through Week ' + (candidate.as_of_week || '?')}}${{candidate.lifecycle_state ? ' · ' + candidate.lifecycle_state.replace('_', ' ') : ''}}</div>`
+            : range
             ? `<div style="font-size:22px;font-weight:800;letter-spacing:-0.5px;color:var(--text);line-height:1;">
                  ${{range.lowStr}}–${{range.highStr}}
                  <span style="font-size:13px;font-weight:500;color:var(--text-muted);">PPG</span>
@@ -14135,14 +14521,19 @@ def page_breakouts(platform: str, season: int, league_id: str):
                </div>`
             : '';
 
-          const barFill = Math.min(100, Math.max(0, topComp.val));
+          const signalPoints = weeklySignal ? parseFloat(weeklySignal.points || 0) : 0;
+          const barFill = Math.min(100, Math.max(0, isWeekly ? signalPoints : topComp.val));
+          const driverLabel = isWeekly ? _boWeeklySignalText(weeklySignal) : `Top Driver: ${{topComp.label}}`;
+          const driverValue = isWeekly ? signalPoints : topComp.val;
+          const driverColor = isWeekly ? '#3b82f6' : topComp.color;
           // Elite-tier candidates "ignite": the card catches fire (glow + score
           // badge pop) the first time it scrolls into view.
           const isElite = score >= 60;
           const cardCls = isElite ? 'breakout-card br-brk' : 'breakout-card';
           const moAttr = isElite ? ' data-br-moment="breakout"' : '';
+          const encodedPid = encodeURIComponent(String(candidate.player_id));
           return `
-            <div class="` + cardCls + `"` + moAttr + ` style="cursor:pointer;" onclick="openPlayerModal('` + pid + `', '` + name + `', {{tab:'breakout'}})">
+            <div class="` + cardCls + `"` + moAttr + ` style="cursor:pointer;" onclick="openBreakoutCandidateModal('` + encodedPid + `')">
               <div class="breakout-card-header">
                 <div class="breakout-id">
                   <div class="breakout-headshot">${{(name[0] || '?').toUpperCase()}}<img src="https://sleepercdn.com/content/nfl/players/` + pid + `.jpg" alt="" loading="lazy" decoding="async" onerror="this.remove()"></div>
@@ -14159,11 +14550,11 @@ def page_breakouts(platform: str, season: int, league_id: str):
               <div style="margin-bottom:12px;">${{ppgHtml}}</div>
               <div style="margin-bottom:10px;">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
-                  <span style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;">Top Driver: ${{topComp.label}}</span>
-                  <span style="font-size:11px;font-weight:700;color:${{topComp.color}};">${{topComp.val.toFixed(1)}}</span>
+                  <span style="font-size:11px;color:var(--text-muted);">${{driverLabel}}</span>
+                  <span style="font-size:11px;font-weight:700;color:${{driverColor}};">${{driverValue.toFixed(1)}}</span>
                 </div>
                 <div style="height:5px;background:var(--border-color);border-radius:3px;overflow:hidden;">
-                  <div style="height:100%;width:${{barFill}}%;background:${{topComp.color}};border-radius:3px;transition:width 0.3s;"></div>
+                  <div style="height:100%;width:${{barFill}}%;background:${{driverColor}};border-radius:3px;transition:width 0.3s;"></div>
                 </div>
               </div>
               ${{topReason ? `<div style="font-size:11px;color:var(--text-muted);line-height:1.4;border-top:1px solid var(--border-color);padding-top:8px;">${{topReason}}</div>` : ''}}
@@ -15286,6 +15677,7 @@ _FPTS_AGAINST_TTL = 3600  # 1 hour
 
 _MATCHUP_RATINGS_CACHE: dict = {}
 _MATCHUP_RATINGS_TS: dict = {}
+_MATCHUP_RATINGS_META: dict = {}
 _MATCHUP_RATINGS_TTL = 3600  # 1 hour
 
 
@@ -15530,32 +15922,81 @@ from utils.schedule_ease import sched_rank_color as _sched_rank_color  # noqa: E
 
 
 def _load_matchup_ratings(season: int, scoring_settings=None) -> dict:
-    """Load the cron-precomputed z-score matchup ratings table.
+    """Load the best cron-precomputed matchup ratings table.
 
-    Shape: {team: {pos: {"z": float, "ease": 0-100, "n": int, "fpts": float}}}.
-    Returns {} when the cache file is absent so callers fall back to raw
-    fpts-allowed (the table is produced by data_building/matchup_ratings.py via
-    the daily cron)."""
+    An exact scoring-profile snapshot is preferred.  The unprofiled standard
+    PPR snapshot is the explicit availability fallback, including for custom
+    leagues.  Cache entries remain isolated by season and *requested* profile
+    even when two requests currently resolve to that same fallback file.
+    """
     from utils.defensive_matchup_ratings import scoring_profile_hash
-    profile = scoring_profile_hash(scoring_settings) if scoring_settings else "standard-ppr"
-    key = f"{season}:{profile}"
+    requested_profile = (scoring_profile_hash(scoring_settings)
+                         if scoring_settings is not None else "standard-ppr")
+    key = f"{int(season)}:{requested_profile}"
     now = time.time()
     if (_MATCHUP_RATINGS_CACHE.get(key) is not None
             and now - _MATCHUP_RATINGS_TS.get(key, 0) < _MATCHUP_RATINGS_TTL):
+        _MATCHUP_RATINGS_META.setdefault(key, {
+            "rating_source": "unavailable",
+            "requested_scoring_profile": requested_profile,
+            "loaded_scoring_profile": None,
+        })
         return _MATCHUP_RATINGS_CACHE[key]
     data: dict = {}
+    metadata = {
+        "rating_source": "unavailable",
+        "requested_scoring_profile": requested_profile,
+        "loaded_scoring_profile": None,
+    }
     try:
-        profiled = os.path.join("cache", f"matchup_ratings_s{season}_{profile}.json")
-        path = profiled if os.path.exists(profiled) else (
-            os.path.join("cache", f"matchup_ratings_s{season}.json") if not scoring_settings else profiled)
-        if os.path.exists(path):
-            blob = json.load(open(path))
-            data = blob.get("ratings") or {}
+        profiled = os.path.join("cache", f"matchup_ratings_s{season}_{requested_profile}.json")
+        default = os.path.join("cache", f"matchup_ratings_s{season}.json")
+        candidates = []
+        if scoring_settings is not None:
+            candidates.append((profiled, "exact-profile"))
+        candidates.append((default, ("default-profile-fallback"
+                                     if scoring_settings is not None else "exact-profile")))
+        for path, source in candidates:
+            if not os.path.exists(path):
+                continue
+            try:
+                with open(path, encoding="utf-8") as ratings_file:
+                    blob = json.load(ratings_file)
+                candidate_data = blob.get("ratings") or {}
+            except Exception:
+                logger.warning("[matchup-ratings] invalid %s snapshot for season %s",
+                               source, season, exc_info=True)
+                continue
+            if candidate_data:
+                data = candidate_data
+                metadata.update({
+                    "rating_source": source,
+                    "loaded_scoring_profile": (blob.get("scoring_profile")
+                                               or "standard-ppr"),
+                })
+                break
     except Exception:
         data = {}
+        metadata.update({"rating_source": "unavailable", "loaded_scoring_profile": None})
     _MATCHUP_RATINGS_CACHE[key] = data
     _MATCHUP_RATINGS_TS[key] = now
+    _MATCHUP_RATINGS_META[key] = metadata
     return data
+
+
+def _matchup_ratings_metadata(season: int, scoring_settings=None) -> dict:
+    """Return path-free metadata for the requested ratings cache entry."""
+    from utils.defensive_matchup_ratings import scoring_profile_hash
+    requested = (scoring_profile_hash(scoring_settings)
+                 if scoring_settings is not None else "standard-ppr")
+    key = f"{int(season)}:{requested}"
+    if key not in _MATCHUP_RATINGS_META:
+        _load_matchup_ratings(season, scoring_settings)
+    return dict(_MATCHUP_RATINGS_META.get(key) or {
+        "rating_source": "unavailable",
+        "requested_scoring_profile": requested,
+        "loaded_scoring_profile": None,
+    })
 
 
 _OLINE_RATINGS_CACHE: dict = {}
@@ -15736,6 +16177,7 @@ def _matchup_rank_table(season: int, position: str, scoring_settings=None):
     the first cron build. info_by_team[team] carries {"z","ease","fpts"}."""
     from utils.defensive_matchup_ratings import rank_values
     adjusted = _load_matchup_ratings(season, scoring_settings)
+    rating_metadata = _matchup_ratings_metadata(season, scoring_settings)
     rows = {team: positions.get(position) for team, positions in adjusted.items()
             if positions.get(position)}
 
@@ -15758,14 +16200,21 @@ def _matchup_rank_table(season: int, position: str, scoring_settings=None):
     for team, value in values.items():
         row = dict(rows[team])
         _mult = row.get("adjusted_multiplier")
-        info_extra = {"multiplier": value, "source": "opponent-adjusted",
+        valid_multiplier = (_mult if isinstance(_mult, (int, float))
+                            and not isinstance(_mult, bool) else None)
+        info_extra = {"rank_value": value, "multiplier": valid_multiplier,
+                      "source": "opponent-adjusted", **rating_metadata,
                       "fpts": row.get("raw_allowed_per_game", row.get("fpts")),
                       "weights": {"previous": row.get("prior_season_weight", 0),
                                   "current": row.get("current_season_weight", 1)},
                       "selected_season": int(season)}
         # Only the multiplier schema has a meaningful "percent above expected".
-        if isinstance(_mult, (int, float)) and not isinstance(_mult, bool):
-            info_extra["adjusted_percent"] = (float(_mult) - 1) * 100
+        if valid_multiplier is not None:
+            stored_percent = row.get("adjusted_percent")
+            info_extra["adjusted_percent"] = (float(stored_percent)
+                                               if isinstance(stored_percent, (int, float))
+                                               and not isinstance(stored_percent, bool)
+                                               else (float(valid_multiplier) - 1) * 100)
         row.update(info_extra)
         info[team] = row
     return ranks, total, info, True
@@ -15872,7 +16321,7 @@ def _compute_schedule_grid(season: int, pids, weeks, scoring_settings=None):
             _pos_rank_cache[pos] = _matchup_rank_table(season, pos, scoring_settings)
         rank_map, total, info, _is_z = _pos_rank_cache[pos]
         from utils.defensive_matchup_ratings import rank_team_schedules
-        values = {team: row.get("multiplier") for team, row in info.items()}
+        values = {team: row.get("rank_value") for team, row in info.items()}
         opponents = {t: [(schedules.get(w, {}).get(t) or {}).get("opp") for w in weeks]
                      for t in rank_map}
         sos = rank_team_schedules(opponents, values)
@@ -15991,150 +16440,99 @@ def _build_lineup_analysis_html(
         selected_week: int,
         team_by_rid: dict,
         owner_avatar: dict,
+        roster_positions: list | None = None,
+        viewer_rid: str = "",
 ) -> str:
-    """Compute league-wide bust/sleeper/coaching mistake from raw matchup data."""
-    week_matchups = matchups_by_week.get(selected_week) or []
-    if not week_matchups:
-        return ""
+    """Render the shared, historical and slot-legal weekly lineup review."""
+    from dashboard_services.recap_calculations import build_lineup_analysis
 
-    def _ava_small(owner_name: str, rid: str = "", size: int = 30) -> str:
-        ava = owner_avatar.get(owner_name, "")
-        if ava:
-            return f"<img src='{ava}' alt='' loading='lazy' decoding='async' style='width:{size}px;height:{size}px;border-radius:50%;object-fit:cover;flex-shrink:0;' onerror=\"this.style.display='none'\">"
-        initials = "".join(w[0].upper() for w in (team_by_rid.get(rid) or owner_name or "?").split()[:2])
-        return (f"<div style='width:{size}px;height:{size}px;border-radius:50%;background:var(--accent);color:#fff;"
-                f"display:flex;align-items:center;justify-content:center;font-weight:700;font-size:11px;flex-shrink:0;'>{initials}</div>")
-
-    # Flatten: collect all starters and bench across the league for this week
-    all_starters: list = []  # (team_rid, team_name, owner, player_dict)
-    all_bench: list = []
-    bench_misses: list = []  # per team: best bench miss
-
-    for m in week_matchups:
-        for side in ("left", "right"):
-            team = m.get(side) or {}
-            rid = str(team.get("roster_id") or "")
-            owner = str(team.get("username") or "")
-            tname = team.get("name") or owner
-
-            starters = team.get("starters") or []
-            bench = team.get("bench") or []
-
-            for p in starters:
-                if p.get("pts") is not None:
-                    all_starters.append((rid, tname, owner, p))
-            for p in bench:
-                if p.get("pts") is not None:
-                    all_bench.append((rid, tname, owner, p))
-
-            # Coaching mistake: for each starter, find best bench player at same pos
-            bench_by_pos: dict = {}
-            for p in bench:
-                pos = str(p.get("pos") or "").upper()
-                if pos and p.get("pts") is not None:
-                    bench_by_pos.setdefault(pos, []).append(p)
-
-            biggest_swap = None
-            biggest_gap = 0.0
-            for s in starters:
-                pos = str(s.get("pos") or "").upper()
-                s_pts = float(s.get("pts") or 0)
-                candidates = bench_by_pos.get(pos, [])
-                if not candidates:
-                    continue
-                best = max(candidates, key=lambda x: float(x.get("pts") or 0))
-                gap = float(best.get("pts") or 0) - s_pts
-                if gap > biggest_gap:
-                    biggest_gap = gap
-                    biggest_swap = (s, best)
-
-            if biggest_swap and biggest_gap >= 1.0:
-                bench_misses.append({
-                    "rid": rid, "team": tname, "owner": owner,
-                    "starter": biggest_swap[0], "bench": biggest_swap[1],
-                    "gap": biggest_gap,
-                })
-
-    if not all_starters:
-        return ""
-
-    # Bust = worst starter (lowest scoring, exclude K/DEF where lows are common)
-    skill_starters = [s for s in all_starters if str(s[3].get("pos") or "").upper() in {"QB", "RB", "WR", "TE"}]
-    bust_pool = skill_starters or all_starters
-    bust_pool.sort(key=lambda x: float(x[3].get("pts") or 0))
-    busts = bust_pool[:6]
-
-    # Sleeper = best bench player
-    all_bench.sort(key=lambda x: -float(x[3].get("pts") or 0))
-    sleepers = all_bench[:6]
-
-    bench_misses.sort(key=lambda x: -x["gap"])
-    coaching_mistakes = bench_misses[:3]
-
-    bust_rows = "".join(
-        _player_row(p, owner, team, _face_html(p, "loss"),
-                    "BUST", "loss")
-        for (rid, team, owner, p) in busts
+    analysis = build_lineup_analysis(
+        matchups_by_week, selected_week, roster_positions=roster_positions,
     )
-    sleeper_rows = "".join(
-        _player_row(p, owner, team, _face_html(p, "win"),
-                    "GEM", "win")
-        for (rid, team, owner, p) in sleepers
-    )
+    if not analysis.get("available"):
+        return ("<div class='card recap-lineup-unavailable' role='status'>"
+                f"{html.escape(analysis.get('reason') or 'Lineup data unavailable.')}</div>")
 
-    def mistake_row(item):
-        s = item["starter"];
-        b = item["bench"]
-        team = html.escape(item["team"])
-        s_name = html.escape(str(s.get("name") or ""))
-        s_pos = html.escape(str(s.get("pos") or ""))
-        s_nfl = html.escape(str(s.get("nfl") or ""))
-        s_pts = float(s.get("pts") or 0)
-        b_name = html.escape(str(b.get("name") or ""))
-        b_pos = html.escape(str(b.get("pos") or ""))
-        b_nfl = html.escape(str(b.get("nfl") or ""))
-        b_pts = float(b.get("pts") or 0)
-        gap = item["gap"]
-        return f"""
-<div class="rc-mistake">
-  <div class="rc-row">
-    {_face_html(s, "loss")}
-    <div class="rc-main">
-      <div class="rc-name">{s_name}</div>
-      <div class="rc-meta">{s_pos} · {s_nfl} &nbsp;·&nbsp; {team}</div>
-    </div>
-    <div class="rc-score"><div class="v loss">{s_pts:.2f}</div><div class="t">STARTED</div></div>
-  </div>
-  <div class="rc-row">
-    {_face_html(b, "win")}
-    <div class="rc-main">
-      <div class="rc-name">{b_name}</div>
-      <div class="rc-meta">{b_pos} · {b_nfl} &nbsp;·&nbsp; <span class="rc-gap">-{gap:.1f} pts</span></div>
-    </div>
-    <div class="rc-score"><div class="v win">{b_pts:.2f}</div><div class="t">BENCHED</div></div>
-  </div>
-</div>"""
+    def player_row(player, tag, tone, extra=""):
+        name = html.escape(str(player.get("name") or "Unknown player"))
+        name_attr = html.escape(str(player.get("name") or "Unknown player"), quote=True)
+        pid = html.escape(str(player.get("pid") or player.get("player_id") or ""), quote=True)
+        pos = html.escape(str(player.get("pos") or "–"))
+        nfl = html.escape(str(player.get("nfl") or ""))
+        team_text = str(player.get("team") or team_by_rid.get(str(player.get("rid") or "")) or "Team")
+        team = html.escape(team_text)
+        pts = float(player["pts"])
+        name_html = (f'<span class="rc-name player-clickable" tabindex="0" role="button" '
+                     f'data-player-id="{pid}" data-player-name="{name_attr}">{name}</span>' if pid
+                     else f'<span class="rc-name">{name}</span>')
+        return (f'<div class="rc-row rc-player-row">{_face_html(player, tone)}<div class="rc-main">'
+                f'{name_html}<div class="rc-meta">{pos} · {nfl}{extra}</div>'
+                f'</div><div class="rc-team-name" title="{html.escape(team_text, quote=True)}">{team}</div>'
+                f'<div class="rc-score"><div class="v {tone}">{pts:.2f}</div><div class="t">{tag}</div></div></div>')
 
-    mistakes_rows = "".join(mistake_row(item) for item in coaching_mistakes) \
-                    or "<div style='padding:18px;color:var(--muted);font-size:13px;text-align:center;'>No major lineup mistakes this week - nice job, league.</div>"
+    under_rows = []
+    for player in analysis["underperformers"]:
+        extra = ""
+        if analysis["historical_projections"]:
+            extra = f" · {float(player['projected_pts']):.2f} projected"
+        under_rows.append(player_row(player, "LOW" if not extra else "BELOW PROJ", "loss", extra))
+    gem_rows = [player_row(p, "GEM", "win") for p in analysis["bench_gems"]]
 
-    return f"""
-<div class="card" style="overflow:hidden;margin-bottom:20px;">
-  <div class="recap-lineup-cols">
-    <div class="rlc-col">
-      <div class="rlc-head"><h3>Busts</h3><span>Worst starters</span></div>
-      {bust_rows or '<div style="padding:14px;color:var(--muted);">–</div>'}
-    </div>
-    <div class="rlc-col">
-      <div class="rlc-head"><h3>Bench Gems</h3><span>Best bench performers</span></div>
-      {sleeper_rows or '<div style="padding:14px;color:var(--muted);">–</div>'}
-    </div>
-    <div class="rlc-col">
-      <div class="rlc-head"><h3>Coaching Mistakes</h3><span>Bench vs starter (same pos)</span></div>
-      {mistakes_rows}
-    </div>
-  </div>
-</div>"""
+    def missed_row(item):
+        started, reserve = item["starter"], item["bench_player"]
+
+        def swap_player(player, label, tone):
+            name = html.escape(str(player.get("name") or "Unknown player"))
+            name_attr = html.escape(str(player.get("name") or "Unknown player"), quote=True)
+            pid = html.escape(str(player.get("pid") or player.get("player_id") or ""), quote=True)
+            pos = html.escape(str(player.get("pos") or "–"))
+            nfl = html.escape(str(player.get("nfl") or ""))
+            points = float(player["pts"])
+            name_html = (f'<span class="rc-swap-name player-clickable" tabindex="0" role="button" '
+                         f'data-player-id="{pid}" data-player-name="{name_attr}">{name}</span>' if pid
+                         else f'<span class="rc-swap-name">{name}</span>')
+            return (f'<div class="rc-swap-player rc-swap-player--{tone}">{_face_html(player, tone)}'
+                    f'<div class="rc-swap-copy"><span class="rc-swap-label">{label}</span>{name_html}'
+                    f'<span class="rc-meta">{pos} · {nfl}</span></div>'
+                    f'<strong class="rc-swap-points" aria-label="{points:.2f} points">{points:.2f}</strong></div>')
+
+        team = html.escape(str(item.get("team") or team_by_rid.get(str(item.get("rid") or "")) or "Team"))
+        return (f'<div class="rc-swap-row"><div class="rc-swap-team">{team}</div>'
+                f'<div class="rc-swap-pair">{swap_player(started, "Started", "loss")}'
+                f'<i class="fa-solid fa-arrow-right rc-swap-arrow" aria-hidden="true"></i>'
+                f'{swap_player(reserve, "Benched", "win")}</div>'
+                f'<div class="rc-swap-gain"><strong>+{item["gap"]:.2f}</strong><span>Potential gain</span></div></div>')
+
+    missed_rows = [missed_row(item) for item in analysis["missed_opportunities"]]
+    if not missed_rows:
+        missed_rows = ["<div class='recap-lineup-empty'>No qualifying legal missed opportunities.</div>"]
+
+    def section(title, note, rows):
+        visible = "".join(rows[:3])
+        rest = "".join(rows[3:])
+        more = (f"<details class='recap-lineup-more'><summary><span class='show-all'>Show all ({len(rows)})</span>"
+                f"<span class='show-less'>Show less</span></summary>{rest}</details>"
+                if rest else "")
+        return (f"<section class='rlc-section'><div class='rlc-head'><h3>{html.escape(title)}</h3>"
+                f"<span>{html.escape(note)}</span></div><div class='rlc-rows'>{visible}{more}</div></section>")
+
+    viewer = ""
+    own = next((x for x in analysis["missed_opportunities"] if str(x["rid"]) == str(viewer_rid)), None)
+    team = next((x for x in analysis["teams"] if str(x["rid"]) == str(viewer_rid)), None)
+    if team:
+        actual = next((side.get("points") for matchup in (matchups_by_week.get(selected_week) or matchups_by_week.get(str(selected_week)) or [])
+                       for side in (matchup.get("left") or {}, matchup.get("right") or {})
+                       if str(side.get("roster_id") or "") == str(viewer_rid)), None)
+        actual_text = f"<strong>{float(actual):.2f}</strong> points" if isinstance(actual, (int, float)) and not isinstance(actual, bool) else "Score unavailable"
+        hindsight = (f" Best legal hindsight swap: {html.escape(str(own['bench_player'].get('name') or 'Bench player'))} "
+                     f"for {html.escape(str(own['starter'].get('name') or 'starter'))} (+{own['gap']:.2f})." if own else "")
+        viewer = f"<div class='recap-viewer-decision'><b>Your team · {html.escape(str(team['team']))}</b><span>{actual_text}.{hindsight}</span></div>"
+
+    return (viewer + "<div class='card recap-lineup-card'><div class='recap-lineup-cols'>"
+            + section(analysis["under_title"], analysis["under_note"], under_rows)
+            + section("Bench Gems", "Format-aware bench performances", gem_rows)
+            + section("Missed Opportunities", "Legal hindsight alternatives", missed_rows)
+            + "</div></div>")
 
 
 def _mock_lineup_analysis_html(team_names: list[str]) -> str:
@@ -16160,13 +16558,15 @@ def _mock_lineup_analysis_html(team_names: list[str]) -> str:
         name = html.escape(p['name']);
         pos = p['pos'];
         nfl = p['nfl']
+        team = html.escape(p['team'])
         return f"""
-<div class="rc-row">
+<div class="rc-row rc-player-row">
   <div class="rc-badge {tone}">{name[0]}</div>
   <div class="rc-main">
-    <div class="rc-name">{name}</div>
-    <div class="rc-meta">{pos} · {nfl} &nbsp;·&nbsp; {html.escape(p['team'])}</div>
+    <span class="rc-name">{name}</span>
+    <div class="rc-meta">{pos} · {nfl}</div>
   </div>
+  <div class="rc-team-name" title="{team}">{team}</div>
   <div class="rc-score"><div class="v {tone}">{p['pts']:.2f}</div><div class="t">{tag}</div></div>
 </div>"""
 
@@ -16175,40 +16575,39 @@ def _mock_lineup_analysis_html(team_names: list[str]) -> str:
 
     team0 = html.escape(team_names[0] if team_names else "Team A")
     mock_mistake = f"""
-<div class="rc-mistake">
-  <div class="rc-row">
-    <div class="rc-badge loss">C</div>
-    <div class="rc-main">
-      <div class="rc-name">Cooper Kupp</div>
-      <div class="rc-meta">WR · LAR &nbsp;·&nbsp; {team0}</div>
+<div class="rc-swap-row">
+  <div class="rc-swap-team">{team0}</div>
+  <div class="rc-swap-pair">
+    <div class="rc-swap-player rc-swap-player--loss">
+      <div class="rc-badge loss">C</div>
+      <div class="rc-swap-copy"><span class="rc-swap-label">Started</span><span class="rc-swap-name">Cooper Kupp</span><span class="rc-meta">WR · LAR</span></div>
+      <strong class="rc-swap-points">2.60</strong>
     </div>
-    <div class="rc-score"><div class="v loss">2.60</div><div class="t">STARTED</div></div>
-  </div>
-  <div class="rc-row">
-    <div class="rc-badge win">S</div>
-    <div class="rc-main">
-      <div class="rc-name">Stefon Diggs</div>
-      <div class="rc-meta">WR · BUF &nbsp;·&nbsp; <span class="rc-gap">-18.4 pts</span></div>
+    <i class="fa-solid fa-arrow-right rc-swap-arrow" aria-hidden="true"></i>
+    <div class="rc-swap-player rc-swap-player--win">
+      <div class="rc-badge win">S</div>
+      <div class="rc-swap-copy"><span class="rc-swap-label">Benched</span><span class="rc-swap-name">Stefon Diggs</span><span class="rc-meta">WR · BUF</span></div>
+      <strong class="rc-swap-points">21.00</strong>
     </div>
-    <div class="rc-score"><div class="v win">21.00</div><div class="t">BENCHED</div></div>
   </div>
+  <div class="rc-swap-gain"><strong>+18.40</strong><span>Potential gain</span></div>
 </div>"""
 
     return f"""
 <div class="card" style="overflow:hidden;margin-bottom:20px;">
   <div class="recap-lineup-cols">
-    <div class="rlc-col">
-      <div class="rlc-head"><h3>Busts</h3><span>Worst starters</span></div>
-      {bust_rows}
-    </div>
-    <div class="rlc-col">
+    <section class="rlc-section">
+      <div class="rlc-head"><h3>Lowest-scoring starters</h3><span>Sample historical lineup</span></div>
+      <div class="rlc-rows">{bust_rows}</div>
+    </section>
+    <section class="rlc-section">
       <div class="rlc-head"><h3>Bench Gems</h3><span>Best bench performers</span></div>
-      {sleeper_rows}
-    </div>
-    <div class="rlc-col">
-      <div class="rlc-head"><h3>Coaching Mistakes</h3><span>Bench vs starter (same pos)</span></div>
-      {mock_mistake}
-    </div>
+      <div class="rlc-rows">{sleeper_rows}</div>
+    </section>
+    <section class="rlc-section">
+      <div class="rlc-head"><h3>Missed Opportunities</h3><span>Legal hindsight alternatives</span></div>
+      <div class="rlc-rows">{mock_mistake}</div>
+    </section>
   </div>
 </div>"""
 
@@ -16551,6 +16950,10 @@ from dashboard_services.pages.commissioner_page import (  # noqa: E402
 @app.before_request
 def maybe_run_daily():
     global daily_completed
+    # Production cron is the sole owner. Web-request execution is an explicit
+    # escape hatch only; normal traffic must never start heavy duplicate jobs.
+    if os.getenv("RUN_WEB_DAILY_BUILD", "").lower() not in {"1", "true", "yes", "on"}:
+        return
     try:
         today_et: date = datetime.now(EASTERN).date()
 
@@ -16566,14 +16969,9 @@ def maybe_run_daily():
                     season = int(state.get("season") or datetime.now().year)
                     week = int(state.get("week") or 0)
 
-                    daily_thread = threading.Thread(
-                        target=run_daily_data_async,
-                        args=(season, week),
-                        daemon=True
-                    )
-                    daily_thread.start()
-
-                    daily_completed = today_et
+                    # Exactly one thread layer. Completion is recorded by the
+                    # boundary only after build_daily_data returns successfully.
+                    run_daily_data_async(season, week, owner="web")
             finally:
                 daily_lock.release()
     except Exception as _daily_exc:
@@ -16643,13 +17041,7 @@ def index():
                 league_id=league_id,
             ))
 
-        ctx = build_league_context(
-            platform=platform,
-            league_id=league_id,
-            season=season,
-        )
-        _prune_dashboard_cache()
-        DASHBOARD_CACHE[key] = {"ctx": ctx, "ts": time.time(), "page_html": {}}
+        ctx = get_league_ctx_from_cache(platform, league_id, season)
 
         # Preload historical season contexts in the background so History/Awards/Graphs
         # pages are fast on first click.
@@ -16807,9 +17199,14 @@ def api_weekly_week():
         scoring=_scoring_format_from_settings(ctx.get("scoring_settings")),
     )
     from dashboard_services.ai.weekly_recap import get_cached_gotw_selection
-    from dashboard_services.matchups import matchup_matches_gotw
+    from dashboard_services.matchups import gotw_identity_for_context, matchup_gotw_flags
     _api_gotw = get_cached_gotw_selection(platform, resolved_league_id, season, week)
-    if _api_gotw and not any(matchup_matches_gotw(m, _api_gotw) for m in matchups):
+    _api_gotw_key = gotw_identity_for_context(
+        _api_gotw, loaded=True, platform=platform, league_id=resolved_league_id,
+        season=season, week=week,
+    )
+    _api_gotw_flags = matchup_gotw_flags(matchups, _api_gotw_key)
+    if not any(_api_gotw_flags):
         _api_gotw = None
 
     # Attach H2H records for this week's matchups
@@ -16849,9 +17246,10 @@ def api_weekly_week():
             fpts_against=_fpts_against_api,
             viewer_roster_id=_api_vid,
             scoring_settings=ctx.get("raw_scoring_settings") or ctx.get("scoring_settings"),
-            is_gotw=matchup_matches_gotw(m, _api_gotw),
+            is_gotw=is_gotw,
+            gotw_selection=_api_gotw,
         )
-        for m in matchups
+        for m, is_gotw in zip(matchups, _api_gotw_flags)
     ]
 
     slides_html = "".join(slides) if slides else "<div class='m-empty'>No matchups</div>"
@@ -18060,7 +18458,7 @@ def api_trade_eval_playoff_impact():
             simulate_swap_impact as _simulate_swap_impact,
             shape_playoff_impact_for_league as _shape_pi,
         )
-        ctx = build_league_context(platform, league_id, season)
+        ctx = get_league_ctx_from_cache(platform, league_id, season)
         sim_state = _build_sim_state(ctx, platform)
         if sim_state is None:
             return jsonify({"available": False, "reason": "season_complete"})
@@ -20736,12 +21134,22 @@ def api_player_details(player_id: str):
         except (TypeError, ValueError):
             _modal_ls = 10
 
-        # Sync league globals if league_id provided
-        if league_id:
-            # sync_league_globals is a no-op for Sleeper -- get_league() is what
-            # populates the request-scoped scoring globals (incl. bonus_rec_te,
-            # which TE-premium scaling reads). Without this the modal sees bare
-            # defaults and never applies the TE premium.
+        # Speculation may only consume a valid, already-built league snapshot.
+        # In particular it must not call provider synchronization or the normal
+        # context accessor, whose cache miss rebuilds the entire league.
+        _speculative = request.headers.get("X-BR-Speculative") == "player-details"
+        _spec_ctx = None
+        if league_id and _speculative:
+            _entry = DASHBOARD_CACHE.get(_cache_key(platform, season, league_id))
+            if not _league_ctx_cache_valid(_entry, platform, season, league_id):
+                return ("", 204)
+            _spec_ctx = (_entry or {}).get("ctx") or {}
+            scoring_settings = _spec_ctx.get("scoring_settings")
+            if not isinstance(scoring_settings, dict) or not scoring_settings:
+                return ("", 204)
+        elif league_id:
+            # Foreground requests retain exact provider synchronization, including
+            # Sleeper TE-premium scoring initialization.
             if platform == "sleeper":
                 from dashboard_services.api import get_league as _get_league
                 _get_league(league_id)
@@ -20929,16 +21337,22 @@ def api_player_details(player_id: str):
         # ── Fantasy team ownership (only when league context is provided) ──
         fantasy_team = None
         fantasy_team_owner = None
+        fantasy_roster_id = None
         if league_id:
             try:
                 from dashboard_services.service import fantasy_team_and_roster_for_player as _ft_lookup
-                _ctx = get_league_ctx_from_cache(platform, league_id, season)
+                _ctx = _spec_ctx if _speculative else get_league_ctx_from_cache(platform, league_id, season)
+                if not _ctx:
+                    return ("", 204) if _speculative else (jsonify({"error": "League unavailable"}), 503)
                 _rosters = _ctx.get("rosters") or []
                 _users = _ctx.get("users") or []
                 _rmap = _build_roster_map(_users, _rosters)
                 _team_name, _rid = _ft_lookup(str(player_id), _rosters, _rmap)
                 if _team_name and _team_name != "Free Agent":
                     fantasy_team = _team_name
+                    # Roster id lets the client separate "your player" from another
+                    # manager's when it compares against window._viewerRid.
+                    fantasy_roster_id = _rid
                     # Find the owner's username for the sub-label
                     _roster_obj = next((r for r in _rosters if str(r.get("roster_id")) == _rid), None)
                     if _roster_obj:
@@ -21393,6 +21807,7 @@ def api_player_details(player_id: str):
             "espnHeadshot": player_meta.get("espnHeadshot"),
             "fantasy_team": fantasy_team,
             "fantasy_team_owner": fantasy_team_owner,
+            "fantasy_roster_id": fantasy_roster_id,
             "injury": injury,
             "playoff_sos": playoff_sos,
             "stats": {
@@ -21575,7 +21990,10 @@ def _game_log_proj_from_week(upcoming, cur_season, cur_week, season_type) -> int
         return 99
     if upcoming > cur_season:
         return 1
-    if str(season_type or "").lower() in ("regular", "post"):
+    # season_type comes from get_nfl_state(), normalized to off/pre/reg/post --
+    # "reg", never "regular", so the old "regular"-only check never matched
+    # in-season. Accept both the normalized "reg" and the raw "regular".
+    if str(season_type or "").lower() in ("reg", "regular", "post"):
         return max(1, cur_week)
     return 1
 
@@ -22763,6 +23181,55 @@ def _build_team_trends_html(league_id, season, week, roster_id, owner,
     )
 
 
+def _team_achievements(ctx, roster_id, owner_uid, platform, season, league_id):
+    """Up to three persistent achievement chips for a team: weekly-high-score
+    count and a league-leading win streak (both from the season's finalized
+    rows), plus a reigning championship when the awards cache carries it.
+    Best-effort and defensive: returns whatever it can derive, or []."""
+    out = []
+    rid = str(roster_id)
+    try:
+        df = (ctx or {}).get("df_weekly")
+        if df is not None and not getattr(df, "empty", True) \
+                and {"week", "roster_id", "points"}.issubset(df.columns):
+            fin = df[df["finalized"] == True] if "finalized" in df.columns else df
+            high_weeks = 0
+            for _wk, grp in fin.groupby("week"):
+                if grp.empty:
+                    continue
+                top_rid = str(grp.loc[grp["points"].idxmax(), "roster_id"])
+                if top_rid == rid:
+                    high_weeks += 1
+            if high_weeks >= 1:
+                out.append({"label": f"{high_weeks}× Weekly High", "kind": "gold"})
+            if "points_against" in fin.columns:
+                streaks = {}
+                for _rid, grp in fin.sort_values("week").groupby("roster_id"):
+                    best = cur = 0
+                    for _, row in grp.iterrows():
+                        if float(row["points"]) > float(row.get("points_against", 0)):
+                            cur += 1
+                            best = max(best, cur)
+                        else:
+                            cur = 0
+                    streaks[str(_rid)] = best
+                my_streak = streaks.get(rid, 0)
+                if my_streak >= 3 and streaks and my_streak == max(streaks.values()):
+                    out.append({"label": f"Longest Win Streak ({my_streak})", "kind": "indigo"})
+    except Exception:
+        logger.debug("[achievements] weekly/streak calc failed", exc_info=True)
+    try:
+        agg = get_awards_agg_from_cache(platform, season, league_id)
+        if agg:
+            championships = agg[2] or {}
+            seasons = championships.get(str(owner_uid)) or championships.get(owner_uid) or []
+            for s in sorted((str(x) for x in seasons), reverse=True)[:1]:
+                out.append({"label": f"{s} Champion", "kind": "win"})
+    except Exception:
+        logger.debug("[achievements] championship lookup failed", exc_info=True)
+    return out[:3]
+
+
 @app.route("/api/team-details/<roster_id>")
 def api_team_details(roster_id: str):
     """Get comprehensive team details for modal display."""
@@ -22880,6 +23347,12 @@ def api_team_details(roster_id: str):
 
         # Build roster with values
         roster_players = []
+        # NFL bye week per team, for roster bye-conflict warnings. Empty when no
+        # schedule data is loaded, so nothing fabricated is shown.
+        try:
+            _bye_by_team = _team_bye_map(season) or {}
+        except Exception:
+            _bye_by_team = {}
         total_value = 0.0
 
         ages_found = 0
@@ -22959,11 +23432,30 @@ def api_team_details(roster_id: str):
                 "injury_status": inj_status,
                 "injury_body_part": inj_body,
                 "return_plan": _return_plan,
+                "bye": _bye_by_team.get(player_team) or _bye_by_team.get(canon_team(player_team)),
             })
 
         # Sort by position order (QB, RB, WR, TE, K, DEF), then by value within position
         pos_order = {"QB": 0, "RB": 1, "WR": 2, "TE": 3, "K": 4, "DEF": 5}
         roster_players.sort(key=lambda p: (pos_order.get(p["position"], 99), -(p["value"] or 0)))
+
+        # Bye-conflict warnings: upcoming weeks where two or more players at the
+        # same position share a bye, so the roster has a hole to plan around.
+        bye_conflicts = []
+        try:
+            from collections import defaultdict as _dd
+            _by_pos_week = _dd(lambda: _dd(list))
+            for _p in roster_players:
+                _bw = _p.get("bye")
+                _pos = _p.get("position")
+                if _bw and _pos in ("QB", "RB", "WR", "TE"):
+                    _by_pos_week[_pos][int(_bw)].append(_p["name"])
+            for _pos in ("QB", "RB", "WR", "TE"):
+                for _wk, _names in sorted(_by_pos_week[_pos].items()):
+                    if len(_names) >= 2:
+                        bye_conflicts.append({"position": _pos, "week": _wk, "players": _names})
+        except Exception:
+            logger.debug("[api_team_details] bye conflicts skipped", exc_info=True)
 
         # Get draft picks. ESPN/Yahoo have no pick feed; redraft leagues have
         # no future capital. Inventing default own-picks would fake a dynasty
@@ -23433,6 +23925,33 @@ def api_team_details(roster_id: str):
         except Exception:
             logger.debug("[api_team_details] last_finalized_week skipped", exc_info=True)
             last_finalized_week = 0
+            _view_ctx = None
+
+        # Season lineup efficiency (actual / optimal) + weekly series for the
+        # Efficiency header tile and the Graphs tab actual-vs-optimal chart.
+        lineup_efficiency = None
+        efficiency_weeks = []
+        try:
+            _eff_ctx = _view_ctx if _view_ctx is not None else get_league_ctx_from_cache(platform, league_id, season)
+            if _eff_ctx:
+                from dashboard_services.season_efficiency import compute_league_season_efficiency
+                _team_eff = (compute_league_season_efficiency(_eff_ctx).get("by_rid") or {}).get(str(roster_id))
+                if _team_eff:
+                    if _team_eff.get("eff") is not None:
+                        lineup_efficiency = round(float(_team_eff["eff"]))
+                    efficiency_weeks = _team_eff.get("weeks") or []
+        except Exception:
+            logger.debug("[api_team_details] lineup efficiency skipped", exc_info=True)
+
+        # Persistent achievements (weekly-high count, league-leading win streak,
+        # and reigning championship when the awards cache has it). At most three.
+        achievements = []
+        try:
+            achievements = _team_achievements(
+                _eff_ctx, roster_id, owner_id, platform, season, league_id,
+            )
+        except Exception:
+            logger.debug("[api_team_details] achievements skipped", exc_info=True)
 
         response = {
             "roster_id": roster_id,
@@ -23449,6 +23968,10 @@ def api_team_details(roster_id: str):
             "points_against": points_against,
             "last_finalized_week": last_finalized_week,
             "playoff_odds": playoff_odds,
+            "lineup_efficiency": lineup_efficiency,
+            "efficiency_weeks": efficiency_weeks,
+            "achievements": achievements,
+            "bye_conflicts": bye_conflicts,
             "total_value": round(total_value, 1),
             "roster": roster_players,
             "picks": all_picks,
@@ -23513,6 +24036,30 @@ def api_player_league_trades(player_id: str):
         return _api_err("Request failed", e)
 
 
+@app.route("/api/player-acquisition/<player_id>")
+def api_player_acquisition(player_id: str):
+    """Non-trade acquisition events (draft pick, waiver/FAAB adds) for a player
+    in the connected league chain, for the "In this league" timeline."""
+    try:
+        from dashboard_services.player_league_trades import get_player_acquisition_events
+
+        league_id = (request.args.get("league_id") or "").strip()
+        platform = (request.args.get("platform") or "sleeper").strip().lower()
+        try:
+            season = int(request.args.get("season") or datetime.now().year)
+        except (TypeError, ValueError):
+            season = datetime.now().year
+        if not league_id:
+            return jsonify({"error": "league_id required"}), 400
+        payload = get_player_acquisition_events(
+            player_id, platform=platform, league_id=league_id, season=season,
+        )
+        return jsonify(payload)
+    except Exception as e:
+        logger.exception("[api_player_acquisition] error")
+        return _api_err("Request failed", e)
+
+
 @app.route("/api/team-trades/<roster_id>")
 def api_team_trades(roster_id: str):
     """Return all trades for a specific team in the current league season."""
@@ -23557,10 +24104,12 @@ def api_team_trades(roster_id: str):
 
                 ts_raw = t.get("status_updated") or t.get("created")
                 date_str = ""
+                date_iso = ""
                 if ts_raw:
                     from datetime import timezone as _tz
                     _dt = datetime.fromtimestamp(ts_raw / 1000.0, tz=_tz.utc)
                     date_str = f"{_dt.month}/{_dt.day}/{_dt.strftime('%y')}"
+                    date_iso = _dt.strftime("%Y-%m-%d")
 
                 my_gets = [_pinfo(pid) for pid, to_rid in adds.items() if str(to_rid) == str(roster_id)]
                 my_sends = [_pinfo(pid) for pid, from_rid in drops.items() if str(from_rid) == str(roster_id)]
@@ -23570,6 +24119,7 @@ def api_team_trades(roster_id: str):
                 trades.append({
                     "week": week,
                     "date": date_str,
+                    "date_iso": date_iso,
                     "my_gets": my_gets,
                     "my_sends": my_sends,
                     "my_pick_gets": my_pick_gets,
@@ -28705,7 +29255,11 @@ def build_portfolio_body(
         # Show the card (and its loading line) up front so a PRO user always sees
         # the section, even before the digest resolves or when it comes back empty.
         "card.hidden=false;"
-        "fetch('/api/portfolio-actions',{cache:'no-store'}).then(function(r){return r.json().then(function(d){return {status:r.status,d:d||{}};});})"
+        # Lazy-load the cross-league digest only after the page has finished
+        # loading (and the browser is idle) so this best-effort, sometimes slow
+        # request never competes with the initial dashboard render.
+        "function __pfMovesGo(){"
+        "window.brFetchWithTimeout('/api/portfolio-actions',{cache:'no-store',credentials:'same-origin'},15000).then(function(r){return r.json().then(function(d){return {status:r.status,d:d||{}};});})"
         ".then(function(res){"
         "if(res.status===403&&res.d.paywall){"
         "card.hidden=false;"
@@ -28731,7 +29285,40 @@ def build_portfolio_body(
         "+'<span class=\"pf-move-chevron\" aria-hidden=\"true\">›</span>'"
         "+'</a>';"
         "}).join('')+'</div>';"
-        "}).catch(function(){var c=document.getElementById('pfMovesCard'); if(c) c.hidden=true;});"
+        "}).catch(function(){body.innerHTML='<div class=\"pf-moves-empty\">Actions temporarily unavailable.</div>';});}"
+        "var __pfIdle=window.requestIdleCallback||function(f){return setTimeout(f,200);};"
+        "var __pfMovesStarted=false;function __pfMovesStart(){if(__pfMovesStarted)return;__pfMovesStarted=true;__pfIdle(__pfMovesGo);}"
+        "window.addEventListener('br:portfolio-primary-settled',__pfMovesStart,{once:true});"
+        "if(document.readyState==='complete')setTimeout(__pfMovesStart,8000);"
+        "else window.addEventListener('load',function(){setTimeout(__pfMovesStart,8000);},{once:true});"
+        "})();</script>"
+    )
+
+    # Page-level Refresh handler consumed by app.js's doRefresh(). Warm cards
+    # expose data-summary-card hooks; cold/warm-only portfolios don't, so an
+    # empty key set rebuilds the request from the live league slots instead
+    # of silently no-op'ing. Always returns handled:false so app.js still
+    # performs its own full-page reload after the summaries are refreshed.
+    refresh_handler_script = (
+        "<script>(function(){"
+        "window.brRefreshCurrentPage=async function(accountId){"
+        "const keys=[...document.querySelectorAll('[data-summary-' + 'card]')]"
+        ".filter(function(el){return el.style.display!=='none';})"
+        ".map(function(el){return el.dataset.summaryCard;}).filter(Boolean);"
+        "if(!keys.length){"
+        "const liveLeagues=[...document.querySelectorAll('.pf-lg-card [data-lg-live]')]"
+        ".map(function(el){return {league_id:el.dataset.leagueId,platform:el.dataset.platform,season:el.dataset.season};})"
+        ".filter(function(lg){return lg.league_id;});"
+        "if(!liveLeagues.length){return {handled:false};}"
+        "await fetch('/api/portfolio/refresh',{method:'POST',headers:{'Content-Type':'application/json'},"
+        "body:JSON.stringify({account_id:accountId,leagues:liveLeagues})});"
+        "return {handled:false};"
+        "}"
+        "const response=await fetch('/api/portfolio/refresh',{method:'POST',headers:{'Content-Type':'application/json'},"
+        "body:JSON.stringify({account_id:accountId,keys:keys})});"
+        "if(!response.ok){throw new Error('Portfolio refresh failed: '+response.status);}"
+        "return await response.json();"
+        "};"
         "})();</script>"
     )
 
@@ -28933,7 +29520,7 @@ def build_portfolio_body(
 
         if lg.get("error") or lg.get("not_in_league"):
             league_rows += (
-                f"<div class='pf-lg-card' data-lg-key='{plat}:{lid}' data-favorite='{'true' if lg.get('is_favorite') else 'false'}'>"
+                f"<div class='pf-lg-card' data-lg-key='{plat}:{lid}' data-favorite='{'true' if lg.get('is_favorite') else 'false'}' data-platform='{html.escape(str(plat), quote=True)}' data-league-id='{html.escape(str(lid), quote=True)}' data-season='{card_season}'>"
                 f"<div class='pf-lg-top'>"
                 f"<span class='pf-lg-crest' style='background:var(--border);color:var(--text-muted);'>{_ini}</span>"
                 f"{_lg_id(name_muted, plat)}"
@@ -29057,14 +29644,14 @@ def build_portfolio_body(
         )
 
         league_rows += (
-            f"<div class='pf-lg-card' data-lg-key='{plat}:{lid}' data-favorite='{'true' if lg.get('is_favorite') else 'false'}'>"
+            f"<div class='pf-lg-card' data-summary-card data-lg-key='{plat}:{lid}' data-favorite='{'true' if lg.get('is_favorite') else 'false'}' data-platform='{html.escape(str(plat), quote=True)}' data-league-id='{html.escape(str(lid), quote=True)}' data-season='{card_season}'>"
             f"<div class='pf-lg-top'>"
             f"<span class='pf-lg-crest' style='background:{_crest_hue};'>{_ini}</span>"
             f"{_lg_id(name_link, plat, off_note, '', lg.get('team_name') or '')}"
             f"{_lg_tools(bool(lg.get('is_favorite')), _unlink_btn(plat, lid, card_season))}"
             f"</div>"
             f"{live_slot}"
-            f"<div class='pf-lg-stats'>"
+            f"<div class='pf-lg-stats' data-summary-stats>"
             f"<span class='pf-lg-stat'><span class='pf-lg-v {rec_cls2}'>{rec}</span>"
             f"<span class='pf-lg-l'>Record</span></span>"
             f"<span class='pf-lg-stat' title='Regular-season standings: wins, then points for'>"
@@ -29073,7 +29660,8 @@ def build_portfolio_body(
             f"<span class='pf-lg-l'>Streak</span></span>"
             f"</div>"
             f"{strength_html}"
-            f"<div class='pf-lg-foot'>{arch_badge}<a href='{href}' class='pf-lg-open'>Open &rarr;</a></div>"
+            f"<div class='pf-lg-foot'>{arch_badge}<span class='pf-lg-l' data-summary-updated></span>"
+            f"<button type='button' data-summary-retry hidden>Retry</button><a href='{href}' class='pf-lg-open'>Open &rarr;</a></div>"
             f"</div>"
         )
 
@@ -29280,115 +29868,14 @@ def build_portfolio_body(
         "c.setAttribute('data-favorite',on?'true':'false');if(!ACCOUNT)saveFavs(f);page=0;render();"
         "if(ACCOUNT){var parts=k.split(':');fetch('/api/my-leagues/favorite',{method:'POST',headers:{'Content-Type':'application/json'},"
         "body:JSON.stringify({platform:parts.shift(),league_id:parts.join(':'),favorite:on})})"
-        ".then(function(r){if(!r.ok)throw new Error('favorite save failed');return r.json();})"
+        ".then(function(r){if(!r.ok)throw new Error('favorite save failed');return r.json();}).then(function(d){if(window.brGetMyLeagues)window.brGetMyLeagues({force:true});return d;})"
         ".catch(function(){c.setAttribute('data-favorite',on?'false':'true');render();});}});"
         "if(prev)prev.addEventListener('click',function(){if(page>0){page--;render();}});"
         "if(next)next.addEventListener('click',function(){page++;render();});"
         "render();})();</script>"
-        # Summary hydration is separate from matchup hydration: a perfectly
-        # normal live:false response must not leave record/standing placeholders.
-        # A generation controller makes soft navigation/back-forward harmless.
-        "<script>(function(){"
-        "if(window.__pfSummaryInit)return;"
-        "window.__pfSummaryInit=true;"
-        "if(window.__pfSummaryAbort){try{window.__pfSummaryAbort.abort();}catch(e){}}"
-        "var ctl=typeof AbortController!=='undefined'?new AbortController():null;window.__pfSummaryAbort=ctl;"
-        "var cards=[].slice.call(document.querySelectorAll('[data-summary-card]')),active=0,MAX=4,q=[];"
-        "function esc(s){var d=document.createElement('div');d.textContent=s==null?'':s;return d.innerHTML;}"
-        "function when(s){try{return new Date(s).toLocaleString();}catch(e){return s||'';}}"
-        "function render(c,d){var stats=c.querySelector('[data-summary-stats]'),up=c.querySelector('[data-summary-updated]'),retry=c.querySelector('[data-summary-retry]');"
-        "if(!stats)return;if(d&&(d.state==='ready'||d.state==='partial')){stats.innerHTML='<span class=\"pf-lg-stat\"><span class=\"pf-lg-v\">'+esc(d.record)+'</span><span class=\"pf-lg-l\">Record</span></span>'"
-        "+'<span class=\"pf-lg-stat\"><span class=\"pf-lg-v\">'+esc(d.rank)+' <small>/ '+esc(d.total_teams)+'</small></span><span class=\"pf-lg-l\">Standing</span></span>'"
-        "+'<span class=\"pf-lg-stat\"><span class=\"pf-lg-v\" data-summary-streak>...</span><span class=\"pf-lg-l\">Streak</span></span>';"
-        "var streak=c.querySelector('[data-summary-streak]'),positions=c.querySelector('[data-summary-positions]'),sec=d.sections||{};if(streak)streak.textContent=(d.streak||[]).join(' ')||(sec.streak&&sec.streak.status==='unavailable'?'-':'...');if(positions){var pr=d.pos_user_rank||{};positions.textContent=['QB','RB','WR','TE'].map(function(p){return p+' '+(pr[p]?'#'+pr[p]:(sec.position_rankings&&sec.position_rankings.status==='unavailable'?'-':'...'));}).join(' | ');}"
-        "if(d.team_name){var id=c.querySelector('.pf-lg-id'),meta=id&&id.querySelector('.pf-lg-meta');if(id&&!meta){meta=document.createElement('div');meta.className='pf-lg-meta';id.appendChild(meta);}if(meta)meta.innerHTML='<span class=\"pf-lg-team\">'+esc(d.team_name)+'</span>';}"
-        "if(up)up.textContent=(d.stale?'Last good data, refreshing: ':'Updated ')+when(d.refreshed_at);if(retry)retry.hidden=true;return;}"
-        "var msg=(d&&d.message)||'Summary unavailable. Retry.';stats.innerHTML='<span class=\"pf-lg-l\">'+esc(msg)+'</span>';"
-        "if(up)up.textContent=d&&d.state==='reconnect_required'?'Reconnect required':'Update failed';if(retry)retry.hidden=false;}"
-        "function load(c){if(c._summaryLoading)return;c._summaryLoading=true;c._summaryAttempt=c._summaryAttempt||0;active++;var p=c.dataset.platform,l=c.dataset.leagueId,s=c.dataset.season;"
-        "var u='/api/portfolio/summary?platform='+encodeURIComponent(p)+'&league_id='+encodeURIComponent(l)+'&season='+encodeURIComponent(s),timer;"
-        "var local=typeof AbortController!=='undefined'?new AbortController():null;if(local)timer=setTimeout(function(){local.abort();},12000);"
-        "fetch(u,{cache:'no-store',signal:local?local.signal:(ctl?ctl.signal:undefined)}).then(function(r){return r.json().then(function(d){if(!r.ok)throw d;return d;});})"
-        ".then(function(d){c._summaryAttempt=0;if(!ctl||!ctl.signal.aborted)render(c,d);}).catch(function(e){c._summaryAttempt++;var again=e&&e.retryable!==false&&c._summaryAttempt<4;if(again){var wait=[0,1000,3000,7000][c._summaryAttempt]+Math.random()*350;var up=c.querySelector('[data-summary-updated]');if(up)up.textContent='Retrying...';setTimeout(function(){q.unshift(c);pump();},wait);}else if(!ctl||!ctl.signal.aborted)render(c,e&&e.message?e:{message:'Summary timed out. Retry.'});})"
-        ".then(function(){if(timer)clearTimeout(timer);c._summaryLoading=false;active--;pump();});}"
-        "function pump(){while(active<MAX&&q.length)load(q.shift());}"
-        "cards.sort(function(a,b){var af=a.dataset.favorite==='true',bf=b.dataset.favorite==='true';return (bf-af)||((a.getBoundingClientRect().top<innerHeight)?-1:1);});q=cards.slice();pump();"
-        "document.addEventListener('click',function(e){var b=e.target.closest&&e.target.closest('[data-summary-retry]');if(!b)return;var c=b.closest('[data-summary-card]');if(c){b.hidden=true;c._summaryAttempt=0;q.unshift(c);pump();}},{signal:ctl?ctl.signal:undefined});"
-        "})();</script>"
-        # Live-tick draft countdowns on undrafted league cards.
-        "<script>(function(){"
-        "function pad(n){return (n<10?'0':'')+n;}"
-        "function fmt(ms){"
-        "if(ms<=0)return 'Soon';"
-        "var t=Math.floor(ms/1000),d=Math.floor(t/86400),h=Math.floor((t%86400)/3600),"
-        "m=Math.floor((t%3600)/60),s=t%60;"
-        "var clock=pad(h)+':'+pad(m)+':'+pad(s);"
-        "return d>0?(d+'d '+clock):clock;}"
-        "function tick(){"
-        "document.querySelectorAll('.pf-draft-cd[data-draft-ts]').forEach(function(el){"
-        "if(el.getAttribute('data-draft-phase')==='drafting')return;"
-        "var ts=parseInt(el.getAttribute('data-draft-ts')||'0',10);"
-        "if(!ts)return;"
-        "el.textContent=fmt(ts-Date.now());"
-        "var when=el.parentNode&&el.parentNode.querySelector('.pf-draft-when');"
-        "if(when)when.textContent=new Date(ts).toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});"
-        "});}"
-        "tick();setInterval(tick,1000);})();</script>"
-        # Live matchup scores: hydrate each league card client-side and lazily so
-        # one slow provider never blocks the page. Only in-progress matchups
-        # refresh, and only while the tab is visible.
-        "<script>(function(){"
-        "if(window.__pfLiveTimer)clearInterval(window.__pfLiveTimer);"
-        "var slots=[].slice.call(document.querySelectorAll('[data-lg-live]'));if(!slots.length)return;"
-        "function esc(s){var d=document.createElement('div');d.textContent=(s==null?'':s);return d.innerHTML;}"
-        "function fmt(n,digits){digits=digits==null?1:digits;var scale=Math.pow(10,digits);return (Math.round((n||0)*scale)/scale).toFixed(digits);}"
-        "function side(t,lbl,isOpp,win,showProj){"
-        "var cls='pf-live-side'+(isOpp?' opp':'')+(win?' win':'');"
-        "if(!t)return '<div class=\"'+cls+'\"><div class=\"pf-live-lbl\">'+esc(lbl)+'</div>'"
-        "+'<div class=\"pf-live-score\">-</div></div>';"
-        "return '<div class=\"'+cls+'\"><div class=\"pf-live-lbl\">'+esc(lbl)+'</div>'"
-        "+'<div class=\"pf-live-score\">'+fmt(t.score,showProj===false?2:1)+'</div>'"
-        "+(showProj!==false?'<div class=\"pf-live-proj\">proj '+fmt(t.proj)+'</div>':'')+'</div>';}"
-        "function wpBar(d){"
-        # No bar without an opponent, or once the result is settled (the scores
-        # say it). Otherwise your chance fills from the left, opponent's remains.
-        "if(!d.opp||d.status==='final'||d.win_prob==null)return '';"
-        "var y=Math.max(0,Math.min(100,Math.round(d.win_prob))),o=100-y;"
-        "return '<div class=\"pf-live-wp\" title=\"Win probability\">'"
-        "+'<div class=\"pf-live-wp-track\"><div class=\"pf-live-wp-fill\" style=\"width:'+y+'%\"></div></div>'"
-        "+'<div class=\"pf-live-wp-lbls\"><span class=\"pf-live-wp-you\">'+y+'% to win</span>'"
-        "+'<span class=\"pf-live-wp-opp\">'+o+'%</span></div></div>';}"
-        "function render(slot,d){"
-        "if(!d||!d.live||!d.you){slot.hidden=true;slot.innerHTML='';slot.removeAttribute('aria-busy');return;}"
-        "var st=d.status||'pre';"
-        "var txt=st==='in'?'Live \\u00b7 Wk '+d.week:(st==='final'?(d.result!=null?'FINAL':'Final \\u00b7 Wk '+d.week):('Wk '+d.week));"
-        "var you=d.you,opp=d.opp;"
-        "var yWin=opp?(you.score>opp.score):false,oWin=opp?(opp.score>you.score):false;"
-        "var isFinal=st==='final';"
-        "var html='<div class=\"pf-live-status'+(st==='in'?' is-live':'')+'\">'"
-        "+'<span class=\"pf-live-dot\"></span>'+esc(txt)+'</div>'"
-        "+'<div class=\"pf-live-grid\">'+side(you,'You',false,yWin,!isFinal)"
-        "+side(opp,opp?(opp.name||'Opp'):'Bye',true,oWin,!isFinal)+'</div>';"
-        "if(isFinal&&opp){var res=d.result||'T';var margin=fmt(d.margin||0,2);var resTxt=res==='W'?'WON BY '+margin:(res==='L'?'LOST BY '+margin:'TIED');"
-        "html+='<div class=\"pf-live-result\">'+esc(resTxt)+'</div>';}"
-        "else if(!isFinal){html+=wpBar(d);}"
-        "slot.innerHTML=html;slot.removeAttribute('aria-busy');slot.hidden=false;}"
-        "function load(slot){if(slot._loading)return slot._loading;var generation=(slot._generation||0)+1;slot._generation=generation;"
-        "var p=slot.getAttribute('data-platform'),l=slot.getAttribute('data-league-id'),s=slot.getAttribute('data-season');"
-        "var u='/api/portfolio/matchup?platform='+encodeURIComponent(p)+'&league_id='+encodeURIComponent(l)+'&season='+encodeURIComponent(s);"
-        "var controller=typeof AbortController!=='undefined'?new AbortController():null;"
-        "var timer=controller?setTimeout(function(){controller.abort();},12000):null;"
-        "slot._loading=fetch(u,{headers:{'X-Requested-With':'fetch'},signal:controller?controller.signal:undefined}).then(function(r){return r.ok?r.json():null;})"
-        ".then(function(d){if(slot._generation===generation)render(slot,d);return d;}).catch(function(){if(slot._generation===generation)render(slot,null);return null;})"
-        ".then(function(d){if(timer)clearTimeout(timer);slot._loading=null;return d;});return slot._loading;}"
-        "var i=0,LIVE=[];slots.sort(function(a,b){var ac=a.closest('.pf-lg-card'),bc=b.closest('.pf-lg-card');"
-        "var af=ac&&ac.getAttribute('data-favorite')==='true',bf=bc&&bc.getAttribute('data-favorite')==='true';"
-        "var av=a.getBoundingClientRect().top<innerHeight,bv=b.getBoundingClientRect().top<innerHeight;return (bf-af)||(bv-av);});"
-        "function pump(){if(i>=slots.length)return;var slot=slots[i++];"
-        "load(slot).then(function(d){if(d&&d.live&&d.status==='in')LIVE.push(slot);pump();});}"
-        "for(var k=0;k<3;k++)pump();"
-        "window.__pfLiveTimer=setInterval(function(){if(document.hidden||!LIVE.length)return;LIVE.forEach(load);},45000);"
-        "})();</script>"
+        # One page-scoped owner manages hydration, refresh, polling and cleanup.
+        "<script>/* Portfolio cards are started by initPageRoot after deferred helpers load. */</script>"
+        # Matchup hydration is part of the consolidated card lifecycle above.
     )
 
     # ── Positional strength ───────────────────────────────────────────────
@@ -29586,7 +30073,8 @@ def build_portfolio_body(
         insights = ("<section data-portfolio-cross-league>" + insights_label
                     + insight_top + bottom_row + "</section>")
     return (css + '<div style="max-width:1040px;margin:0 auto;">'
-            + top_strip + moves_card + league_card + insights + '</div>')
+            + top_strip + moves_card + league_card + insights + '</div>'
+            + refresh_handler_script)
 
 
 # build_scout_body / _week_proj_points live in dashboard_services/pages/scout_page.py
@@ -30311,7 +30799,10 @@ def shared_trade_page(share_id: str):
           <a href="/trade" style="display:inline-block;padding:10px 24px;background:var(--accent,#3b82f6);color:#fff;border-radius:8px;text-decoration:none;font-weight:600;">Open Trade Calculator</a>
         </div>"""
         from app import render_page
-        return render_page("Trade Not Found | BR Fantasy", None, "trade", body), 404
+        return render_page(
+            "Trade Not Found | BR Fantasy", None, "trade", body,
+            noindex=True, ad_eligible=False,
+        ), 404
     try:
         p = _json.loads(row["params"] if hasattr(row, "__getitem__") else row[0])
     except Exception:

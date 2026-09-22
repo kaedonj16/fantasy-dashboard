@@ -16,12 +16,21 @@ def test_live_matchup_endpoint_wired_and_gated():
     assert '"live": False' in endpoint
     # Only in-season / playoffs, and never offseason or an unlinked team.
     assert 'season_type' in endpoint
-    assert '("regular", "post")' in endpoint
+    # Gate must accept the NORMALIZED phase "reg" (get_nfl_state maps Sleeper's
+    # "regular" onto off/pre/reg/post) -- a "regular"-only check never matched
+    # in-season and hid every card.
+    assert '"reg"' in endpoint
+    assert '"post"' in endpoint
     assert 'offseason_mode' in endpoint
     assert 'viewer_roster_id' in endpoint
-    # Not up all week: gated on the week's schedule.
-    assert "_week_scores_visible" in endpoint
-    assert "get_nfl_games_for_week" in endpoint
+    # A Google-account viewer's team is linked via the account, not a Sleeper
+    # session identity, so the roster must be resolved through the account (with a
+    # session fallback) -- otherwise every card reads live:false for account users.
+    assert 'resolve_account_viewer_for_league' in endpoint
+    # The preview is shown all week (pre / live / final), matching the single-
+    # league dashboard -- it is NOT suppressed until ~90 min before kickoff.
+    assert "_week_scores_visible" not in endpoint
+    assert "get_nfl_games_for_week" not in endpoint
     # Totals come from the shared live-total helper, oriented you/opp.
     assert "team_live_totals" in endpoint
     # Win probability from the shared model, only when there's an opponent.
@@ -75,28 +84,6 @@ def test_matchup_status_label():
     assert _matchup_status_label({"7": STATUS_FINAL}, [7]) == "final"
 
 
-def test_week_scores_visible_gate():
-    pytest.importorskip("flask")
-    from datetime import datetime, timezone
-    from routes.user_pages_bp import _week_scores_visible
-
-    now = datetime(2026, 9, 13, 17, 0, 0, tzinfo=timezone.utc)
-    now_ts = now.timestamp()
-
-    def g(epoch):
-        return {"gameTime_epoch": str(epoch)}
-
-    # Live now (20 min ago) and starting soon (in 30 min) show.
-    assert _week_scores_visible([g(now_ts - 1200)], now) is True
-    assert _week_scores_visible([g(now_ts + 1800)], now) is True
-    # Finished earlier this week stays up (the "scores too" case).
-    assert _week_scores_visible([g(now_ts - 5 * 3600)], now) is True
-    # Still >lead before the first kickoff (2h out) and days away are hidden.
-    assert _week_scores_visible([g(now_ts + 2 * 3600)], now) is False
-    assert _week_scores_visible([g(now_ts + 3 * 86400)], now) is False
-    assert _week_scores_visible([], now) is False
-
-
 def test_portfolio_card_has_live_slot_and_hydration():
     source = (ROOT / "app.py").read_text()
     fn = source.split("def build_portfolio_body")[1].split("\ndef ")[0]
@@ -114,12 +101,12 @@ def test_portfolio_card_has_live_slot_and_hydration():
     assert ".pf-lg-live[hidden]{display:none;}" in fn
     # Win-probability bar is rendered (hidden at final / bye inside wpBar).
     assert "pf-live-wp" in fn
-    assert "wpBar" in fn
-    assert "win_prob" in fn
+    client = (ROOT / "static" / "app.js").read_text()
+    assert "data.win_prob" in client
     # Client hydration hits the endpoint, caps concurrency, refreshes live games.
-    assert "/api/portfolio/matchup" in fn
-    assert "document.hidden" in fn
-    assert "removeAttribute('aria-busy')" in fn
+    assert "/api/portfolio/card" in client
+    assert "document.hidden" in client
+    assert "removeAttribute('aria-busy')" in client
     # Offseason cards do not get a live slot (odds/scores are meaningless there).
     live_block = fn.split("_lg_season_live")[1].split("league_rows +=")[0]
     assert 'lg.get("offseason")' in live_block
@@ -138,19 +125,18 @@ def test_live_slot_not_on_pending_or_error_cards():
 def test_final_matchup_card_tuesday_shows_won_by_margin():
     source = (ROOT / "app.py").read_text()
     fn = source.split("def build_portfolio_body")[1].split("\ndef ")[0]
-    live_fn = fn.split("function side(t,lbl,isOpp,win")[1].split("function load(slot)")[0]
+    live_fn = (ROOT / "static" / "app.js").read_text().split("function matchupHtml(data)")[1].split("function renderMatchup")[0]
     # Final scores do not show projections and show W/L/margin.
     assert "WON BY" in live_fn
     assert "LOST BY" in live_fn
     assert "TIED" in live_fn
-    assert "d.result" in live_fn
-    assert "d.margin" in live_fn
-    assert "fmt(t.score,showProj===false?2:1)" in live_fn
+    assert "data.result" in live_fn
+    assert "data.margin" in live_fn
+    assert "number(team.score, status === 'final' ? 2 : 1)" in live_fn
     assert '.pf-live-result{' in fn
     assert 'class=\\"pf-live-result\\" style=' not in live_fn
     # The status header uses a plain "FINAL" label only when a result is present.
-    assert "'FINAL'" in live_fn
-    assert r"'Final \\u00b7 Wk '" in live_fn or "'Final'" in live_fn
+    assert "'Final · Wk '" in live_fn
 
 
 def test_matchup_endpoint_fantasy_final_exposes_result_and_margin():

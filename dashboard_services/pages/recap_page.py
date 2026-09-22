@@ -19,21 +19,11 @@ def _rank_movement(current: list[dict], prior: list[dict]) -> dict[str, int]:
 
 
 def _matchup_badges(matchups: list[dict]) -> dict[int, list[str]]:
-    """Select genuinely notable games; never manufacture projection upsets."""
+    """Only the non-duplicative scoreboard distinction belongs on a row."""
     if not matchups:
         return {}
-    biggest = max(range(len(matchups)), key=lambda i: matchups[i]["margin"])
-    closest = min(range(len(matchups)), key=lambda i: matchups[i]["margin"])
     highest = max(range(len(matchups)), key=lambda i: matchups[i]["w_pts"] + matchups[i]["l_pts"])
-    labels: dict[int, list[str]] = {}
-    for index, label in ((closest, "Closest Game"), (biggest, "Biggest Win"),
-                         (highest, "Highest-Scoring Matchup")):
-        if label not in labels.setdefault(index, []) and len(labels[index]) < 2:
-            labels[index].append(label)
-    # A label on every game is noise, especially in two- and three-game leagues.
-    if len(labels) == len(matchups) and len(matchups) > 1:
-        labels.pop(highest, None)
-    return labels
+    return {highest: ["Highest-Scoring Matchup"]}
 
 
 def _top_performers_by_roster(matchups: list[dict]) -> dict[str, list[dict]]:
@@ -95,6 +85,13 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
     _league_id = ctx.get("league_id") or ""
     history_url = f"/{_platform}/{_season}/{_league_id}/history" if _league_id else ""
 
+    if df_weekly is None:
+        history_link = f'<a class="recap-history-link" href="{history_url}">History</a>' if history_url else ""
+        return (f'<main class="weekly-recap"><div class="recap-page-header"><h2>Weekly Recap</h2>'
+                f'{history_link}</div><div class="card recap-data-unavailable" role="status">'
+                'Weekly results could not be loaded. Try again shortly; sample results are not shown '
+                'when league data is unavailable.</div></main>')
+
     # ── Preview mode: no finalized weeks yet → use mock data ───────────────
     preview_mode = False
     has_real_finalized = (
@@ -146,13 +143,12 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
 
     available_weeks = sorted(fin_df["week"].unique().tolist())
     reg_weeks = [w for w in available_weeks if w < playoff_start]
-    if not reg_weeks:
-        reg_weeks = available_weeks
 
     if selected_week is None or selected_week not in available_weeks:
-        selected_week = reg_weeks[-1]
+        selected_week = available_weeks[-1]
 
     week_df = fin_df[fin_df["week"] == selected_week].copy()
+    scored_week_df = week_df[week_df["points"].notna()].copy()
 
     normalized_weeks = ctx.get("matchups_by_week") or {}
     normalized_matchups = (
@@ -164,7 +160,7 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
 
     # ── Matchup pairs ──────────────────────────────────────────────────────
     matchups: list[dict] = []
-    for _, grp in week_df.groupby("matchup_id"):
+    for _, grp in scored_week_df.groupby("matchup_id"):
         if len(grp) != 2:
             continue
         grp = grp.sort_values("points", ascending=False)
@@ -178,21 +174,28 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
             "w_pts": float(w_row["points"]),
             "l_pts": float(l_row["points"]),
             "margin": margin,
+            "tied": margin == 0,
         })
     matchups.sort(key=lambda x: -x["margin"])
 
     # ── Highlights ─────────────────────────────────────────────────────────
-    high_row = week_df.loc[week_df["points"].idxmax()]
-    low_row = week_df.loc[week_df["points"].idxmin()]
-    blowout = matchups[0] if matchups else None
+    if scored_week_df.empty:
+        return (f'<main class="weekly-recap"><h2>Week {selected_week} Recap</h2>'
+                '<div class="card recap-data-unavailable" role="status">Final scores are unavailable for this week.</div></main>')
+    high_row = scored_week_df.loc[scored_week_df["points"].idxmax()]
+    low_row = scored_week_df.loc[scored_week_df["points"].idxmin()]
+    decisive_matchups = [m for m in matchups if not m.get("tied")]
+    blowout = decisive_matchups[0] if decisive_matchups else None
     closest = matchups[-1] if matchups else None
 
-    league_avg = float(week_df["points"].mean()) if not week_df.empty else 0
-    league_total = float(week_df["points"].sum()) if not week_df.empty else 0
+    league_avg = float(scored_week_df["points"].mean())
+    league_total = float(scored_week_df["points"].sum())
 
     # Season high/low context
-    fin_max = float(fin_df["points"].max())
-    season_high = float(high_row["points"]) >= fin_max
+    from dashboard_services.recap_calculations import season_high_through
+    season_high = season_high_through(
+        fin_df[["week", "points"]].to_dict("records"), selected_week, float(high_row["points"]),
+    )
 
     def ava_img(owner_name, rid="", size=32):
         ava = avatar_by_rid.get(str(rid)) or owner_avatar.get(owner_name, "")
@@ -203,25 +206,27 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
     def team_name(owner, rid=""):
         return html.escape(team_by_rid.get(rid) or owner or "–")
 
+    def team_link(owner, rid="", inner=None, extra_class=""):
+        """Wrap content so a click opens the fantasy team modal (delegated
+        .team-clickable handler in app.js). Falls back to plain content when no
+        roster id is known."""
+        rid_s = str(rid or "")
+        body = inner if inner is not None else team_name(owner, rid)
+        if not rid_s:
+            return body
+        tn = html.escape(team_by_rid.get(rid) or owner or "", quote=True)
+        cls = ("team-clickable " + extra_class).strip()
+        return (f'<span class="{cls}" role="button" tabindex="0" '
+                f'data-roster-id="{html.escape(rid_s, quote=True)}" '
+                f'data-team-name="{tn}" style="cursor:pointer;">{body}</span>')
+
     # ── Week selector ──────────────────────────────────────────────────────
     week_opts = "".join(
-        f"<option value='{w}' {'selected' if w == selected_week else ''}>Week {w}</option>"
-        for w in reversed(reg_weeks)
+        f"<option value='{w}' {'selected' if w == selected_week else ''}>"
+        f"{'Playoffs · ' if w >= playoff_start else ''}Week {w}</option>"
+        for w in reversed(available_weeks)
     )
     history_banner = ""
-    if history_url:
-        history_banner = f"""
-<div id="historyRecapBanner" style="display:flex;align-items:center;gap:10px;padding:11px 16px;
-     margin-bottom:16px;border-radius:8px;background:var(--surface2);border:1px solid var(--border);">
-  <i class="fa-solid fa-trophy" style="font-size:13px;color:var(--accent);flex-shrink:0;"></i>
-  <span style="font-size:13px;color:var(--text);flex:1;">
-    Want the full season breakdown? View it on the
-    <a href="{history_url}" style="color:var(--accent);font-weight:600;text-decoration:none;">History page</a>.
-  </span>
-  <button onclick="this.parentElement.style.display='none'"
-          style="background:none;border:none;color:var(--muted);cursor:pointer;padding:0 2px;
-                 font-size:16px;line-height:1;flex-shrink:0;" aria-label="Dismiss">&#x2715;</button>
-</div>"""
 
     # Data for the client-drawn shareable recap card (static/app.js paints it
     # onto a canvas and hands it to the native share sheet).
@@ -251,6 +256,7 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
                  background:var(--card);color:var(--text);font-size:13px;cursor:pointer;">
     {week_opts}
   </select>
+  {f'<a class="recap-history-link" href="{history_url}">History</a>' if history_url else ''}
   <button type="button" id="recapShareBtn"
           style="display:flex;align-items:center;gap:5px;padding:5px 12px;border-radius:6px;
                  border:1px solid var(--border);background:var(--card);color:var(--text);
@@ -288,13 +294,13 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
   </div>"""
         if opp:
             diff = abs(pts - opp["pts"])
-            result = f"{'Won' if pts > opp['pts'] else 'Lost'} by {diff:.1f}"
+            result = "Tied" if pts == opp["pts"] else f"{'Won' if pts > opp['pts'] else 'Lost'} by {diff:.2f}"
             body = f"""
   <div style="display:flex;flex-direction:column;gap:8px;">
     <div style="display:flex;align-items:center;gap:10px;">
       {ava_img(name, rid, 34)}
       <div style="flex:1;min-width:0;">
-        <div style="font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{team_name(name, rid)}</div>
+        <div style="font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{team_link(name, rid)}</div>
       </div>
       <div style="font-size:23px;font-weight:800;color:{accent};flex-shrink:0;letter-spacing:-.5px;font-variant-numeric:tabular-nums;">{pts:.2f}</div>
     </div>
@@ -304,7 +310,7 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
       <div style="flex:1;min-width:0;">
         <div style="font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{team_name(opp["owner"], opp["rid"])}</div>
       </div>
-      <div style="font-size:23px;font-weight:800;flex-shrink:0;letter-spacing:-.5px;font-variant-numeric:tabular-nums;">{opp["pts"]:.1f}</div>
+      <div style="font-size:23px;font-weight:800;flex-shrink:0;letter-spacing:-.5px;font-variant-numeric:tabular-nums;">{opp["pts"]:.2f}</div>
     </div>
   </div>
   <div class="rc-award-foot"><span style="color:{accent};">{html.escape(sub)}</span> &middot; {result}</div>"""
@@ -314,7 +320,7 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
     <div style="display:flex;align-items:center;gap:10px;min-width:0;">
       {ava_img(name, rid, 42)}
       <div style="min-width:0;">
-        <div style="font-weight:700;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{team_name(name, rid)}</div>
+        <div style="font-weight:700;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{team_link(name, rid)}</div>
         <div style="font-size:12px;color:var(--muted);">@{html.escape(name)}</div>
       </div>
     </div>
@@ -353,11 +359,49 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
       <div style="font-size:23px;font-weight:800;flex-shrink:0;letter-spacing:-.5px;">{m['l_pts']:.1f}</div>
     </div>
   </div>
-  <div class="rc-award-foot">margin {m['margin']:.1f}</div>
+  <div class="rc-award-foot">margin {m['margin']:.1f} &middot; <a class="recap-view-matchup" href="/{_platform}/{_season}/{_league_id}/weekly?week={selected_week}">View matchup <span aria-hidden="true">&rsaquo;</span></a></div>
 </div>"""
 
     high_sub = "Season high" if season_high else f"+{float(high_row['points']) - league_avg:.1f} vs avg"
     low_sub = f"{float(low_row['points']) - league_avg:.1f} vs avg"
+
+    # ── Lineup efficiency awards for this week (Best Lineup Manager / Most
+    # Points Benched). Uses the shared, cached actual-vs-optimal aggregation. ──
+    def _eff_award_card(label, icon, rid, big, sub, accent):
+        return (f'<div class="card rc-award" style="--rc-accent:{accent};">'
+                f'<div class="rc-award-h"><span class="rc-award-chip"><i class="{icon}" aria-hidden="true"></i></span>'
+                f'<span class="rc-award-lbl">{label}</span></div>'
+                f'<div style="display:flex;align-items:center;gap:10px;">{ava_img("", rid, 36)}'
+                f'<div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:700;'
+                f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{team_link("", rid)}</div></div>'
+                f'<div style="font-size:22px;font-weight:800;color:{accent};flex-shrink:0;'
+                f'letter-spacing:-.5px;font-variant-numeric:tabular-nums;">{big}</div></div>'
+                f'<div class="rc-award-foot">{sub}</div></div>')
+
+    best_lineup_card = most_benched_card = ""
+    try:
+        from dashboard_services.season_efficiency import compute_league_season_efficiency
+        _eff_by_rid = compute_league_season_efficiency(ctx).get("by_rid") or {}
+        _wk_rows = []
+        for _rid, _v in _eff_by_rid.items():
+            for _wk in (_v.get("weeks") or []):
+                if _wk.get("week") == selected_week and _wk.get("optimal"):
+                    _wk_rows.append({"rid": _rid, "eff": _wk.get("eff"),
+                                     "missed": _wk.get("missed") or 0.0})
+                    break
+        if _wk_rows:
+            _best = max(_wk_rows, key=lambda r: (r["eff"] if r["eff"] is not None else -1.0))
+            _bench = max(_wk_rows, key=lambda r: r["missed"])
+            _best_eff = f'{_best["eff"]:.0f}%' if _best["eff"] is not None else "—"
+            _best_sub = ("Perfect lineup" if _best["missed"] < 0.1
+                         else f'{_best["missed"]:.1f} pts left on bench')
+            best_lineup_card = _eff_award_card(
+                "fa-solid fa-bullseye", "BEST LINEUP", _best["rid"], _best_eff, _best_sub, "var(--win)")
+            most_benched_card = _eff_award_card(
+                "fa-solid fa-arrow-down", "MOST BENCHED", _bench["rid"],
+                f'{_bench["missed"]:.1f}', "points left on bench", "var(--loss)")
+    except Exception:
+        best_lineup_card = most_benched_card = ""
 
     cards_html = f"""
 <style>
@@ -373,18 +417,27 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
                     background:color-mix(in srgb, var(--rc-accent) 16%, transparent); }}
   .rc-award-lbl {{ font-size:10px; font-weight:800; letter-spacing:.07em; text-transform:uppercase; color:var(--muted); }}
   .rc-award-foot {{ font-size:11px; font-weight:600; color:var(--muted); }}
+  .recap-view-matchup {{ display:inline-flex; align-items:center; gap:3px; font-size:12px;
+                         font-weight:700; color:var(--accent); text-decoration:none; white-space:nowrap; }}
+  .recap-view-matchup:hover {{ text-decoration:underline; }}
+  .recap-matchup-score .recap-view-matchup {{ margin-top:6px; }}
+  .recap-team .team-clickable {{ border-radius:6px; }}
+  .recap-team-name .team-clickable:hover {{ text-decoration:underline; }}
+  .st-name .team-clickable:hover {{ text-decoration:underline; }}
 </style>
-<div class="recap-section-heading"><span>Week at a Glance</span></div>
+<section class="recap-section"><div class="recap-section-heading"><h2>Week at a Glance</h2></div>
 <div class="rc-awards">
   {scorer_card("fa-solid fa-fire", "HIGH SCORER", high_row["owner"],
                float(high_row["points"]), str(high_row.get("roster_id", "")),
-               high_sub, "var(--win)", _scorer_opp(high_row), medal_rank=1)}
+               high_sub, "var(--win)", medal_rank=1)}
   {scorer_card("fa-solid fa-arrow-trend-down", "LOW SCORER", low_row["owner"],
                float(low_row["points"]), str(low_row.get("roster_id", "")),
-               low_sub, "var(--loss)", _scorer_opp(low_row))}
-  {matchup_card("fa-solid fa-trophy", "BIGGEST WIN", blowout, "var(--accent)") if blowout else ""}
+               low_sub, "var(--loss)" )}
+  {matchup_card("fa-solid fa-trophy", "BIGGEST WIN", blowout, "var(--accent)") if blowout else '<div class="card rc-award"><div class="rc-award-h"><span class="rc-award-lbl">BIGGEST WIN</span></div><div class="rc-award-foot">No decisive result</div></div>'}
   {matchup_card("fa-solid fa-bolt", "CLOSEST GAME", closest, "var(--warning)") if closest else ""}
-</div>"""
+  {best_lineup_card}
+  {most_benched_card}
+</div></section>"""
 
     # ── Scoreboard ─────────────────────────────────────────────────────────
     def top_performer_html(rid: str) -> str:
@@ -404,6 +457,7 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
                 links.append(
                     f'<span class="player-clickable recap-top-performer-name" tabindex="0" role="button" '
                     f'data-player-id="{safe_pid}" data-player-name="{safe_name_attr}" '
+                    f'data-wl-star-pid="{safe_pid}" '
                     f'data-league-id="{html.escape(str(_league_id), quote=True)}" '
                     f'data-platform="{html.escape(str(_platform), quote=True)}" '
                     f'data-season="{html.escape(str(_season), quote=True)}" '
@@ -425,56 +479,42 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
     def matchup_result_row(m, matchup_index):
         w_team = team_name(m["winner"], m["w_rid"])
         l_team = team_name(m["loser"], m["l_rid"])
-        margin_color = "var(--loss)" if m["margin"] > 50 else ("var(--warning)" if m["margin"] > 20 else "var(--win)")
+        result = "Tied" if m.get("tied") else f"Won by {m['margin']:.2f}"
+        def team_block(owner, rid, name, points, winner=False):
+            ava = team_link(owner, rid, ava_img(owner, rid, 36))
+            nm = team_link(owner, rid, name, extra_class="recap-team-name-link")
+            return f"""<div class="recap-team{' recap-team--winner' if winner else ''}">
+              <div class="recap-team-identity">{ava}
+                <div class="recap-team-copy"><div class="recap-team-name">{nm}</div>
+                <div class="recap-team-manager">@{html.escape(owner)}</div></div>
+                <strong class="recap-team-score">{points:.2f}</strong></div>
+              {top_performer_html(rid)}
+            </div>"""
+        view_mu = (f'<a class="recap-view-matchup" '
+                   f'href="/{_platform}/{_season}/{_league_id}/weekly?week={selected_week}">'
+                   f'View matchup <span aria-hidden="true">&rsaquo;</span></a>')
         return f"""
 <div class="recap-matchup-row">
   <div class="recap-matchup-badges">{''.join(f'<span>{label}</span>' for label in badge_map.get(matchup_index, []))}</div>
   <div class="recap-matchup-main">
-    <div class="recap-team recap-team--left">
-      <div class="recap-team-identity">
-        {ava_img(m["winner"], m["w_rid"], 30)}
-        <div class="recap-team-copy">
-          <div class="recap-team-name">{w_team}</div>
-          <div class="recap-team-manager">@{html.escape(m["winner"])}</div>
-        </div>
-        <strong class="recap-team-mobile-score">{m['w_pts']:.2f}</strong>
-      </div>
-    </div>
-    <div class="recap-matchup-score">
-      <div class="recap-matchup-scoreline">{m['w_pts']:.2f} <span>–</span> {m['l_pts']:.2f}</div>
-      <div class="recap-matchup-margin" style="color:{margin_color};">Margin +{m['margin']:.2f}</div>
-    </div>
-    <div class="recap-team recap-team--right">
-      <div class="recap-team-identity">
-        <strong class="recap-team-mobile-score">{m['l_pts']:.2f}</strong>
-        <div class="recap-team-copy">
-          <div class="recap-team-name">{l_team}</div>
-          <div class="recap-team-manager">@{html.escape(m["loser"])}</div>
-        </div>
-        {ava_img(m["loser"], m["l_rid"], 30)}
-      </div>
-    </div>
-  </div>
-  <div class="recap-matchup-performers">
-    {top_performer_html(m["w_rid"])}
-    {top_performer_html(m["l_rid"])}
+    {team_block(m['winner'], m['w_rid'], w_team, m['w_pts'], not m.get('tied'))}
+    <div class="recap-matchup-score"><div class="recap-matchup-scoreline">{m['w_pts']:.2f} <span>–</span> {m['l_pts']:.2f}</div>
+      <div class="recap-matchup-margin">{result}</div>{view_mu}</div>
+    {team_block(m['loser'], m['l_rid'], l_team, m['l_pts'])}
   </div>
 </div>"""
+
 
     scoreboard_rows = "".join(matchup_result_row(m, i) for i, m in enumerate(matchups))
     scoreboard_html = f"""
 <section class="recap-section recap-scoreboard-section">
-<div class="recap-section-heading"><span>How the Week Finished</span></div>
-<div class="card" style="overflow:hidden;">
-  <div class="card-header recap-scoreboard-header">
-    <h3>Every final score</h3>
+<div class="recap-section-heading recap-scoreboard-header"><h2>Scoreboard</h2>
     <span class="recap-scoreboard-summary">
       <span class="recap-summary-desktop">Avg: {league_avg:.1f} &nbsp;·&nbsp; Total: {league_total:.1f}</span>
       <span class="recap-summary-mobile">Avg {league_avg:.1f} &nbsp;·&nbsp; Total {league_total:,.1f}</span>
     </span>
   </div>
-  {scoreboard_rows}
-</div></section>"""
+<div class="card recap-scoreboard-card">{scoreboard_rows}</div></section>"""
 
     # ── Shared historical standings + power snapshot ───────────────────────
     # Preview mode replaces the empty provider frame with deterministic sample
@@ -491,11 +531,14 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
     def _standings_rows(capped_ctx):
         frame = capped_ctx["df_weekly"].copy()
         frame["win"] = frame["points"] > frame["points_against"]
+        frame["tie"] = frame["points"] == frame["points_against"]
         rows = []
         for rid, grp in frame.groupby("roster_id"):
             rows.append({
                 "rid": str(rid), "owner": grp["owner"].iloc[0],
-                "wins": int(grp["win"].sum()), "losses": len(grp) - int(grp["win"].sum()),
+                "wins": int(grp["win"].sum()),
+                "ties": int(grp["tie"].sum()),
+                "losses": len(grp) - int(grp["win"].sum()) - int(grp["tie"].sum()),
                 "pf": float(grp["points"].sum()),
                 "division": division_by_rid.get(int(rid)) if str(rid).isdigit() else None,
             })
@@ -509,7 +552,8 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
         prior_ctx = build_standings_as_of_week(recap_ctx, selected_week - 1)
         prior_standings = _standings_rows(prior_ctx)
         prior_power_teams = (build_power_rankings_context(prior_ctx) or {}).get("teams") or []
-    standings_movement = _rank_movement(standings_rows_data, prior_standings)
+    from dashboard_services.recap_calculations import scoped_rank_movement
+    standings_movement = scoped_rank_movement(standings_rows_data, prior_standings)
 
     def standing_row(rank, s):
         bar_pct = s["pf"] / max(r["pf"] for r in standings_rows_data) * 100 if standings_rows_data else 0
@@ -519,15 +563,15 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
                     f'<span class="st-movement down">↓{abs(move)}</span>' if move and move < 0 else
                     '<span class="st-movement flat">—</span>' if prior_standings else '')
         return f"""
-<div class="st-row">
+<div class="st-row{' recap-viewer-team' if str(session.get('viewer_roster_id') or '') == s['rid'] else ''}">
   <div class="st-rank{lead}">{rank}</div>
   {ava_img(s["owner"], s["rid"], 28)}
   <div class="st-main">
-    <div class="st-name">{team_name(s['owner'], s['rid'])}</div>
+    <div class="st-name">{team_link(s['owner'], s['rid'])}</div>
     <div class="st-bar"><div class="st-fill" style="width:{bar_pct:.0f}%;"></div></div>
   </div>
   <div class="st-rec">
-    <div class="wl">{s['wins']}-{s['losses']}</div>
+    <div class="wl">{s['wins']}-{s['losses']}{f"-{s['ties']}" if s['ties'] else ''}</div>
     <div class="pf">{s['pf']:.1f} PF</div>
   </div>
   {movement}
@@ -548,8 +592,8 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
     standings_html = f"""
 <div class="card" style="overflow:hidden;">
   <div class="card-header">
-    <h3>Standings movement</h3>
-    <a href="/{_platform}/{_season}/{_league_id}/standings" style="font-size:12px;color:var(--accent);">View full standings</a>
+    <h3>Standings</h3>
+    <a href="/{_platform}/{_season}/{_league_id}/standings?week={selected_week}" style="font-size:12px;color:var(--accent);">View full standings</a>
   </div>
   {standing_rows_html}
 </div>"""
@@ -561,10 +605,6 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
         for i, p in enumerate(power_teams, 1)
         if str(p.get("roster_id")) in prior_power_rank
     }
-    featured_power_ranks = set(range(1, min(3, len(power_teams)) + 1))
-    if power_deltas:
-        featured_power_ranks.add(max(power_deltas, key=power_deltas.get))
-        featured_power_ranks.add(min(power_deltas, key=power_deltas.get))
     power_rows = []
     for i, p in enumerate(power_teams, 1):
         rid = str(p.get("roster_id") or "")
@@ -572,16 +612,14 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
         score = p.get("power_score")
         score_text = f"{float(score):.1f}" if score is not None else ""
         delta = power_deltas.get(i)
-        move = f" · {'↑' if delta > 0 else '↓'}{abs(delta)}" if delta else ""
-        # This recap is an editorial snapshot, not a second full rankings page.
-        if i not in featured_power_ranks:
-            continue
-        power_rows.append(f'<div class="st-row"><div class="st-rank{(" lead" if i == 1 else "")}">{i}</div>'
+        move = (f"<span class='st-movement {'up' if delta > 0 else 'down'}'>{'↑' if delta > 0 else '↓'}{abs(delta)}</span>"
+                if delta else ("<span class='st-movement flat'>—</span>" if prior_power_teams else ""))
+        power_rows.append(f'<div class="st-row{" recap-viewer-team" if str(session.get("viewer_roster_id") or "") == rid else ""}"><div class="st-rank{(" lead" if i == 1 else "")}">{i}</div>'
                           f'{ava_img(team_by_rid.get(rid, ""), rid, 28)}<div class="st-main"><div class="st-name">'
-                          f'{team_name(team_by_rid.get(rid, ""), rid)}</div></div><div class="st-rec"><div class="wl">{score_text}{move}</div></div></div>')
+                          f'{team_link(team_by_rid.get(rid, ""), rid)}</div></div><div class="st-rec"><div class="wl">{score_text}</div></div>{move}</div>')
     power_html = f'<div class="card" style="overflow:hidden"><div class="card-header"><h3>Power Rankings</h3>' \
-                 f'<span style="font-size:12px;color:var(--muted)">Through week {selected_week}</span></div>{"".join(power_rows)}</div>'
-    standings_html = f'<section class="recap-section recap-changes"><div class="recap-section-heading"><span>What Changed</span><small>Through Week {selected_week}</small></div><div class="recap-rank-grid">{standings_html}{power_html}</div></section>'
+                 f'<a href="/{_platform}/{_season}/{_league_id}/teams" style="font-size:12px;color:var(--accent)">View power rankings</a></div>{"".join(power_rows)}</div>'
+    standings_html = f'<section class="recap-section recap-changes"><div class="recap-section-heading"><h2>Standings &amp; Power Rankings</h2><small>Through Week {selected_week}</small></div><div class="recap-rank-grid">{standings_html}{power_html}</div></section>'
 
     power_by_rid = {str(p.get("roster_id")): p for p in power_teams}
     recap_team_context = {}
@@ -603,7 +641,8 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
         # its availability is current), and that next week isn't already played.
         next_week = selected_week + 1
         next_week_ctx = None
-        if selected_week == available_weeks[-1] and next_week not in available_weeks:
+        from dashboard_services.recap_calculations import upcoming_week_applicable
+        if upcoming_week_applicable(selected_week, available_weeks):
             next_week_ctx = _build_next_week_ctx(
                 ctx, next_week, playoff_start, _league_id, _season, _platform, team_by_rid,
             )
@@ -638,83 +677,14 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
             selected_week,
             team_by_rid,
             owner_avatar,
+            ctx.get("roster_positions") or [],
+            str(session.get("viewer_roster_id") or ""),
         )
 
     if lineup_html:
-        viewer_summary = ""
-        viewer_rid = str(session.get("viewer_roster_id") or "")
-        viewer_team = None
-        if viewer_rid:
-            for normalized in normalized_matchups:
-                for side in (normalized.get("left") or {}, normalized.get("right") or {}):
-                    if str(side.get("roster_id") or "") == viewer_rid:
-                        viewer_team = side
-                        break
-                if viewer_team:
-                    break
-        if viewer_team:
-            actual = viewer_team.get("points")
-            actual_html = (f'<div><span>Actual</span><strong>{float(actual):.1f}</strong></div>'
-                           if isinstance(actual, (int, float)) and not isinstance(actual, bool) else "")
-            best_swap = None
-            for starter in viewer_team.get("starters") or []:
-                same_position = [p for p in (viewer_team.get("bench") or [])
-                                 if p.get("pos") == starter.get("pos")
-                                 and isinstance(p.get("pts"), (int, float))]
-                if not same_position or not isinstance(starter.get("pts"), (int, float)):
-                    continue
-                bench_player = max(same_position, key=lambda p: p["pts"])
-                gap = float(bench_player["pts"]) - float(starter["pts"])
-                if gap > 0 and (best_swap is None or gap > best_swap[0]):
-                    best_swap = (gap, bench_player, starter)
-            decision_html = ""
-            if best_swap:
-                decision_html = (f'<p><strong>Costliest same-position decision:</strong> '
-                                 f'{html.escape(str(best_swap[1].get("name") or "Bench player"))} '
-                                 f'outscored {html.escape(str(best_swap[2].get("name") or "starter"))} '
-                                 f'by {best_swap[0]:.1f}.</p>')
-            if actual_html or decision_html:
-                viewer_summary = (f'<div class="recap-viewer-decision"><div class="recap-viewer-title">'
-                                  f'Your team · {team_name(viewer_team.get("username", ""), viewer_rid)}</div>'
-                                  f'<div class="recap-viewer-metrics">{actual_html}</div>{decision_html}</div>')
         lineup_html = (f'<section class="recap-section recap-decisions">'
-                       f'<div class="recap-section-heading"><span>Decisions That Mattered</span></div>'
-                       f'{viewer_summary}{lineup_html}</section>')
-
-    # Deterministic texture from data already loaded for this page. These facts
-    # intentionally complement (rather than repeat) the four headline awards.
-    league_notes = []
-    losing_scores = [m for m in matchups]
-    if losing_scores:
-        tough = max(losing_scores, key=lambda m: m["l_pts"])
-        scores = sorted(float(v) for v in week_df["points"].tolist())
-        if tough["l_pts"] > league_avg:
-            above = sum(1 for score in scores if score < tough["l_pts"])
-            league_notes.append(
-                f'<strong>{team_name(tough["loser"], tough["l_rid"])}</strong> lost despite '
-                f'scoring {tough["l_pts"]:.1f}, better than {above} league teams.'
-            )
-    bench_note = None
-    for normalized in normalized_matchups:
-        for side in (normalized.get("left") or {}, normalized.get("right") or {}):
-            valid = [p for p in (side.get("bench") or [])
-                     if isinstance(p.get("pts"), (int, float)) and not isinstance(p.get("pts"), bool)]
-            if valid:
-                player = max(valid, key=lambda p: p["pts"])
-                if bench_note is None or player["pts"] > bench_note[0]:
-                    rid = str(side.get("roster_id") or "")
-                    bench_note = (float(player["pts"]), str(player.get("name") or "Unknown player"), rid)
-    if bench_note and bench_note[0] > 0:
-        league_notes.append(
-            f'<strong>{html.escape(bench_note[1])}</strong> supplied the week’s biggest bench score '
-            f'({bench_note[0]:.1f}) for {team_name(team_by_rid.get(bench_note[2], ""), bench_note[2])}.'
-        )
-    around_html = ""
-    if league_notes:
-        notes = "".join(f'<li><i class="fa-solid fa-arrow-right" aria-hidden="true"></i><span>{note}</span></li>'
-                        for note in league_notes[:4])
-        around_html = (f'<section class="recap-section recap-around"><div class="recap-section-heading">'
-                       f'<span>Around the League</span></div><ul>{notes}</ul></section>')
+                       f'<div class="recap-section-heading"><h2>Lineup Review</h2></div>'
+                       f'{lineup_html}</section>')
 
     preview_banner = ""
     if preview_mode:
@@ -736,11 +706,23 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
 </div>"""
 
     story_html = (f'<section class="recap-section recap-story"><div class="recap-section-heading">'
-                  f'<span>The Story of Week {selected_week}</span></div>{ai_column_html}</section>')
+                  f'<h2>Weekly Story</h2></div>{ai_column_html}</section>') if ai_column_html else ""
     up_next_html = ""
+    weekly_url = f"/{_platform}/{_season}/{_league_id}/weekly?week={selected_week + 1}"
     if next_week_html:
         up_next_html = (f'<section class="recap-section recap-up-next"><div class="recap-section-heading">'
-                        f'<span>Up Next — Week {selected_week + 1}</span></div>{next_week_html}</section>')
+                        f'<h2>Up Next — Week {selected_week + 1}</h2></div>{next_week_html}'
+                        f'<a class="recap-next-link" href="{weekly_url}">View matchup</a></section>')
+    elif not preview_mode and selected_week < available_weeks[-1]:
+        up_next_html = (f'<section class="recap-section recap-up-next"><div class="recap-section-heading">'
+                        f'<h2>Up Next — Week {selected_week + 1}</h2></div><div class="card recap-next-history">'
+                        f'This is a historical recap. <a href="{weekly_url}">View Week {selected_week + 1} matchups</a>.'
+                        f'</div></section>')
+    elif not preview_mode and selected_week >= playoff_start + 2 and history_url:
+        up_next_html = (f'<section class="recap-section recap-up-next"><div class="recap-section-heading">'
+                        f'<h2>Season Complete</h2></div><div class="card recap-next-history">'
+                        f'<a href="{history_url}">Open season history and recap</a>.</div></section>')
 
-    return (preview_banner + history_banner + week_selector + cards_html + story_html
-            + scoreboard_html + lineup_html + standings_html + around_html + up_next_html)
+    return ('<main class="weekly-recap">' + week_selector + preview_banner + history_banner
+            + cards_html + story_html + scoreboard_html + lineup_html + standings_html
+            + up_next_html + '</main>')

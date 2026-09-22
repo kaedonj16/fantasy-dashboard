@@ -40,6 +40,12 @@ def _breakout_blend(candidate: dict) -> float:
 # Create Blueprint for breakout routes
 breakout_bp = Blueprint('breakout', __name__, url_prefix='/api/breakout')
 
+# The Breakout Engine board is a product surface, not every player for whom the
+# engine has produced a score.  Keep its selection defaults here so every
+# consumer (the page, modal eligibility, badges, etc.) asks the same question.
+BREAKOUT_BOARD_MIN_SCORE = 0.0
+BREAKOUT_BOARD_LIMIT = 15
+
 
 # =============================================================================
 # BREAKOUT TYPE CLASSIFICATION
@@ -627,10 +633,8 @@ def _unavailable_breakout_payload(season: Optional[int]) -> Dict:
 # =============================================================================
 # During the season the board is served from the weekly usage engine
 # (weekly_breakout / weekly_store), not the offseason opportunity table. The
-# payloads keep the legacy field names the UI already reads
-# (breakout_opportunity_score, confidence_score, key_reasons, breakout_blend) and
-# add weekly-specific fields (classification, usage_comparison, freshness,
-# provisional, risks) under a ``weekly`` flag so the modal can branch.
+# Weekly payloads intentionally use their own contract. They do not manufacture
+# offseason projections/components; every consumer must branch on mode/weekly.
 
 _WEEKLY_SIGNAL_UNITS = {
     "snap_share": "%", "target_share": "%",
@@ -643,7 +647,9 @@ _WEEKLY_SIGNAL_LABELS = {
 }
 _WEEKLY_CLASS_LABELS = {
     "emerging_breakout": "Emerging Breakout",
+    "provisional_emerging": "Provisional Emerging",
     "temporary_opportunity": "Temporary Opportunity",
+    "early_watch": "Early Watch",
     "watchlist": "Watchlist",
 }
 
@@ -655,6 +661,15 @@ def _weekly_breakout_available(season: int) -> bool:
         return latest_scored_week(season) is not None
     except Exception:
         logger.debug("weekly breakout availability check failed", exc_info=True)
+        return False
+
+
+def _weekly_history_exists(season: int) -> bool:
+    try:
+        from data_building.breakout_engine.weekly_store import has_any_weekly_snapshot
+        return has_any_weekly_snapshot(season)
+    except Exception:
+        logger.debug("weekly breakout history check failed", exc_info=True)
         return False
 
 
@@ -691,20 +706,27 @@ def _weekly_row_to_candidate(row: Dict) -> Dict:
     score = float(row.get("breakout_score") or 0)
     conf = float(row.get("confidence") or 0)
     classification = row.get("classification") or "watchlist"
-    reasons_text = row.get("reasons") or "\n".join(evidence.get("reasons") or [])
-    risks_list = (row.get("risks") or "").split("\n") if row.get("risks") else (evidence.get("risks") or [])
+    raw_reasons = row.get("reasons") or evidence.get("reasons") or []
+    reasons_text = ("\n".join(raw_reasons) if isinstance(raw_reasons, list)
+                    else str(raw_reasons))
+    raw_risks = row.get("risks") or evidence.get("risks") or []
+    risks_list = raw_risks if isinstance(raw_risks, list) else str(raw_risks).split("\n")
     risks_list = [r for r in risks_list if r]
+    subscores = evidence.get("subscores") or {}
+    diagnostics = evidence.get("signal_diagnostics") or {}
+    opportunity = evidence.get("opportunity") or {}
+    lifecycle = evidence.get("lifecycle") or {}
     return {
         "player_id": str(row.get("player_id") or ""),
         "player_name": row.get("player_name"),
         "team": row.get("team"),
         "position": row.get("position"),
-        # legacy field names the existing UI/consumers read
+        "key_reasons": reasons_text,
+        # Existing generic breakout consumers use these score aliases. They map
+        # to real weekly values (not fabricated offseason components/projections).
         "breakout_opportunity_score": round(score, 1),
         "confidence_score": round(conf, 1),
-        "key_reasons": reasons_text,
         "breakout_blend": round(score / 100.0, 4),
-        "hit_probability": None,
         "breakout_type": {
             "type": classification,
             "label": _WEEKLY_CLASS_LABELS.get(classification, classification.title()),
@@ -712,12 +734,41 @@ def _weekly_row_to_candidate(row: Dict) -> Dict:
         # weekly-specific
         "weekly": True,
         "mode": "weekly",
+        "scoring_version": row.get("scoring_version") or evidence.get("scoring_version"),
         "classification": classification,
         "classification_label": _WEEKLY_CLASS_LABELS.get(classification, classification.title()),
         "breakout_score": round(score, 1),
+        "final_breakout_score": round(score, 1),
+        "ranking_score": subscores.get("ranking_score", evidence.get("ranking_score")),
         "confidence": round(conf, 1),
         "provisional": bool(row.get("provisional")),
         "baseline_source": row.get("baseline_source"),
+        "score_basis": evidence.get("score_basis"),
+        "previous_breakout_status": evidence.get("previous_breakout_status"),
+        "established_role_penalty": evidence.get("established_role_penalty"),
+        "established_player": bool(evidence.get("established_player")),
+        "established_role_score": evidence.get("established_role_score"),
+        "role_novelty_score": evidence.get("role_novelty_score"),
+        "role_novelty_reason": evidence.get("role_novelty_reason"),
+        "early_watch": bool(evidence.get("early_watch")),
+        "main_board_eligible": bool(evidence.get("main_board_eligible")),
+        "main_board_rejection_reasons": evidence.get("main_board_rejection_reasons") or [],
+        "baseline_method": evidence.get("baseline_method"),
+        "baseline_games_used": evidence.get("baseline_games_used"),
+        "partial_games_excluded": evidence.get("partial_games_excluded"),
+        "baseline_quality": evidence.get("baseline_quality"),
+        "role_change_score": subscores.get("role_change_score", evidence.get("role_change_score")),
+        "current_role_score": subscores.get("current_role_score", evidence.get("current_role_score")),
+        "sustainability_score": subscores.get("sustainability_score", evidence.get("sustainability_score")),
+        "breakout_novelty_score": subscores.get("breakout_novelty_score", evidence.get("breakout_novelty_score")),
+        "expectation_delta_score": subscores.get("expectation_delta_score", evidence.get("expectation_delta_score")),
+        "supporting_signal_count": diagnostics.get("supporting_signal_count", evidence.get("supporting_signal_count")),
+        "supporting_signals": diagnostics.get("supporting_signals", evidence.get("supporting_signals")) or [],
+        "conflicting_signals": diagnostics.get("conflicting_signals", evidence.get("conflicting_signals")) or [],
+        "signal_agreement_score": diagnostics.get("signal_agreement_score", evidence.get("signal_agreement_score")),
+        "opportunity_source": opportunity.get("opportunity_source", evidence.get("opportunity_source")),
+        "opportunity_source_confidence": opportunity.get("opportunity_source_confidence", evidence.get("opportunity_source_confidence")),
+        "opportunity_source_reason": opportunity.get("opportunity_source_reason", evidence.get("opportunity_source_reason")),
         "as_of_week": row.get("as_of_week"),
         "evaluated_weeks": list(row.get("evaluated_weeks") or []),
         "recent_weeks": list(row.get("recent_weeks") or []),
@@ -726,6 +777,12 @@ def _weekly_row_to_candidate(row: Dict) -> Dict:
         "risks": risks_list,
         "usage_comparison": _weekly_usage_comparison(evidence),
         "sample": evidence.get("sample"),
+        "lifecycle": lifecycle,
+        "previous_score": lifecycle.get("previous_score"),
+        "score_change": lifecycle.get("score_change"),
+        "first_detected_week": lifecycle.get("first_detected_week"),
+        "consecutive_flagged_weeks": lifecycle.get("consecutive_flagged_weeks"),
+        "lifecycle_state": lifecycle.get("lifecycle_state"),
         "fantasy": evidence.get("fantasy"),
         "coverage_fraction": (float(row["coverage_fraction"])
                               if row.get("coverage_fraction") is not None else None),
@@ -736,17 +793,47 @@ def get_weekly_breakout_candidates(season: int, min_score: float = 0.0,
                                    limit: Optional[int] = None) -> Dict:
     """In-season board served from the weekly engine."""
     from data_building.breakout_engine.weekly_store import load_weekly_candidates
-    from data_building.breakout_engine.weekly_breakout import WATCHLIST_MIN_SCORE
+    from data_building.breakout_engine.weekly_breakout import (
+        WATCHLIST_MIN_SCORE, INITIAL_ROLE_DISCOVERY_MIN,
+    )
 
     payload = load_weekly_candidates(
         season, min_score=max(min_score, WATCHLIST_MIN_SCORE), limit=None
     )
     rows = payload.get("candidates", [])
     candidates = [_weekly_row_to_candidate(r) for r in rows]
-    candidates.sort(key=lambda c: (c.get("breakout_score") or 0, c.get("confidence") or 0),
+    candidates = [candidate for candidate in candidates
+                  if candidate.get("score_basis") != "initial_role"
+                  or float(candidate.get("current_role_score") or 0) >= INITIAL_ROLE_DISCOVERY_MIN]
+    candidates.sort(key=lambda c: (c.get("ranking_score") if c.get("ranking_score") is not None
+                                   else c.get("breakout_score") or 0,
+                                   c.get("breakout_score") or 0),
                     reverse=True)
+    groups = {
+        "breakouts": [c for c in candidates if c.get("main_board_eligible")],
+        "early_watch": [c for c in candidates if c.get("classification") == "early_watch"],
+        "temporary_opportunities": [c for c in candidates if c.get("classification") == "temporary_opportunity"],
+        "cooling": [c for c in candidates if c.get("lifecycle_state") == "cooling"],
+    }
+    # Week-one discovery is necessarily provisional.  Strong early-watch rows
+    # belong on the served board with an explicit label; hiding this cohort made
+    # a single misclassified veteran appear to be the entire candidate set.
+    candidates = groups["breakouts"] + groups["early_watch"]
+    candidates.sort(key=lambda c: (c.get("ranking_score") if c.get("ranking_score") is not None
+                                   else c.get("breakout_score") or 0,
+                                   c.get("breakout_score") or 0), reverse=True)
     if limit and limit > 0:
         candidates = candidates[:limit]
+
+    pipeline_telemetry = dict(payload.get("pipeline_telemetry") or {})
+    player_trace = dict(pipeline_telemetry.get("player_trace") or {})
+    served_ids = {str(candidate.get("player_id")) for candidate in candidates}
+    for trace in player_trace.values():
+        trace["served"] = str(trace.get("player_id")) in served_ids
+        if not trace["served"] and not trace.get("first_nonqualifying_stage"):
+            trace["first_nonqualifying_stage"] = "api_board_filter_or_top_15"
+    pipeline_telemetry["player_trace"] = player_trace
+    pipeline_telemetry["served_rows"] = len(candidates)
 
     # Enrich name / headshot / precise age from players_index (same as offseason).
     try:
@@ -767,6 +854,7 @@ def get_weekly_breakout_candidates(season: int, min_score: float = 0.0,
     return {
         "season": season,
         "candidates": candidates,
+        **groups,
         "count": len(candidates),
         "as_of_date": payload.get("as_of_date"),
         "as_of_week": payload.get("as_of_week"),
@@ -775,6 +863,7 @@ def get_weekly_breakout_candidates(season: int, min_score: float = 0.0,
         "mode": "weekly",
         "data_available": True,
         "data_status": payload.get("data_status", "ok"),
+        "pipeline_telemetry": pipeline_telemetry,
     }
 
 
@@ -838,6 +927,16 @@ def get_breakout_candidates(season: Optional[int] = None, min_score: float = 0.0
     # In-season: serve the weekly usage engine's board when it has a snapshot.
     if _weekly_breakout_available(season):
         return get_weekly_breakout_candidates(season, min_score=min_score, limit=limit)
+
+    # Weekly history exists but no row is compatible with the current scorer.
+    # Never disguise that deployment state as an offseason board.
+    if _weekly_history_exists(season):
+        from data_building.breakout_engine.weekly_breakout import SCORING_VERSION
+        return {"season": season, "candidates": [], "count": 0,
+                "mode": "weekly", "weekly": True, "data_available": False,
+                "data_status": "incompatible_snapshot",
+                "required_scoring_version": SCORING_VERSION,
+                "reason": "Weekly snapshot requires recalculation."}
 
     if not opportunity_data_ready(season):
         return _unavailable_breakout_payload(season)
@@ -958,6 +1057,59 @@ def get_breakout_candidates(season: Optional[int] = None, min_score: float = 0.0
         'data_available': True,
         'data_status': 'ok',
     }
+
+
+def get_breakout_board_candidates(
+    requested_season: Optional[int] = None,
+    min_score: float = BREAKOUT_BOARD_MIN_SCORE,
+    limit: Optional[int] = BREAKOUT_BOARD_LIMIT,
+) -> Dict:
+    """Return the authoritative candidate set rendered by the main board.
+
+    Position is intentionally not accepted: it is a client-side view filter and
+    does not change board membership.  Season resolution, weekly/offseason
+    selection, classifications, exclusions, ranking, and the top-N cap all flow
+    through the same candidate pipeline used by the page endpoint.
+    """
+    season = _resolve_bo_season(requested_season)
+    return get_breakout_candidates(season, min_score=min_score, limit=limit)
+
+
+def breakout_board_membership(
+    player_id: object,
+    requested_season: Optional[int] = None,
+    min_score: float = BREAKOUT_BOARD_MIN_SCORE,
+    limit: Optional[int] = BREAKOUT_BOARD_LIMIT,
+) -> tuple[bool, Dict]:
+    """Return normalized player membership and the authoritative board payload.
+
+    Membership is a non-critical enhancement to the player modal, so a failure to
+    build the board must never surface as an error to the client. Any exception in
+    the candidate pipeline (e.g. a transient DB error or an incompatible weekly
+    snapshot mid-deploy) degrades to a graceful "unavailable" payload -- the modal
+    then hides the Breakout tab instead of showing a scary retry chip on every
+    player. Mirrors the resilience of ``aligned_breakout_scores``.
+    """
+    try:
+        board = get_breakout_board_candidates(requested_season, min_score, limit)
+    except Exception:
+        logger.warning(
+            "breakout_api: board membership lookup failed for %s (season=%s)",
+            player_id, requested_season, exc_info=True,
+        )
+        return False, {
+            "season": requested_season,
+            "candidates": [],
+            "count": 0,
+            "data_available": False,
+            "data_status": "unavailable",
+        }
+    normalized_id = str(player_id).strip()
+    eligible = any(
+        str(candidate.get("player_id", "")).strip() == normalized_id
+        for candidate in (board.get("candidates") or [])
+    )
+    return eligible, board
 
 
 def get_breakout_candidates_by_position(
@@ -1449,12 +1601,6 @@ def _resolve_bo_season(requested: Optional[int]) -> Optional[int]:
     return requested
 
 
-# Mirror the /candidates route defaults so the waiver 'Breakout' tag reflects
-# exactly the set the Breakout Engine page displays. Keep in sync with the route.
-_BO_PAGE_MIN_SCORE = 0.0
-_BO_PAGE_LIMIT = 15
-
-
 def aligned_breakout_scores(player_ids, requested_season: Optional[int] = None) -> Dict[str, float]:
     """Breakout scores for the given players that MATCH the Breakout Engine page.
 
@@ -1471,56 +1617,13 @@ def aligned_breakout_scores(player_ids, requested_season: Optional[int] = None) 
     if not pids:
         return out
     try:
-        season = _resolve_bo_season(requested_season)
-        if not season:
-            return out
-        # In-season: reproduce the weekly board's displayed set (top-N by score)
-        # so the waiver 'Breakout' tag matches the Breakout page. Breakout
-        # detection stays independent of league availability - this only maps
-        # scores for whichever players the caller asked about.
-        if _weekly_breakout_available(season):
-            board = get_weekly_breakout_candidates(season, min_score=0.0,
-                                                   limit=_BO_PAGE_LIMIT)
-            for c in board.get("candidates", []):
-                pid = str(c.get("player_id"))
-                if pid in pids:
-                    out[pid] = float(c.get("breakout_score") or 0)
-            return out
-        if not opportunity_data_ready(season):
-            return out
-        # Same selection as get_breakout_candidates: latest snapshot + floor.
-        query = """
-            SELECT DISTINCT ON (player_id)
-                player_id,
-                breakout_opportunity_score,
-                position,
-                (component_details->'player_readiness'->>'age')::numeric AS age,
-                (component_details->'player_readiness'->>'usage_baseline_score')::numeric AS readiness_usage_baseline
-            FROM breakout_opportunity_scores
-            WHERE season = %s
-              AND as_of_date = (
-                  SELECT MAX(as_of_date) FROM breakout_opportunity_scores WHERE season = %s
-              )
-              AND breakout_opportunity_score >= %s
-            ORDER BY player_id, as_of_date DESC, calculated_at DESC
-        """
-        with get_conn() as conn:
-            with conn.cursor() as cursor:
-                cursor.execute(query, [season, season, _BO_PAGE_MIN_SCORE])
-                rows = [dict(r) for r in cursor.fetchall()]
-        # Same exclusion + top-N ranking the page applies before display.
-        eligible = []
-        for r in rows:
-            score = r.get("breakout_opportunity_score")
-            if score is None:
-                continue
-            if engine_breakout_excluded(r.get("position"), r.get("age"), r.get("readiness_usage_baseline")):
-                continue
-            eligible.append((str(r["player_id"]), float(score)))
-        eligible.sort(key=lambda t: t[1], reverse=True)
-        for pid, score in eligible[:_BO_PAGE_LIMIT]:
+        board = get_breakout_board_candidates(requested_season)
+        for candidate in board.get("candidates", []):
+            pid = str(candidate.get("player_id"))
             if pid in pids:
-                out[pid] = score
+                score = (candidate.get("breakout_score") if candidate.get("weekly")
+                         else candidate.get("breakout_opportunity_score"))
+                out[pid] = float(score or 0)
     except Exception:
         logger.debug("aligned_breakout_scores failed", exc_info=True)
     return out
@@ -1531,23 +1634,23 @@ def candidates():
     """Get breakout candidates. Non-premium users receive a 3-candidate preview."""
     from flask import session
     from dashboard_services.subscriptions import has_premium_for_viewer
-    season = _resolve_bo_season(request.args.get('season', type=int))
-    min_score = request.args.get('min_score', default=0.0, type=float)
-    limit = request.args.get('limit', default=15, type=int)
+    requested_season = request.args.get('season', type=int)
+    min_score = request.args.get('min_score', default=BREAKOUT_BOARD_MIN_SCORE, type=float)
+    limit = request.args.get('limit', default=BREAKOUT_BOARD_LIMIT, type=int)
     league_id = request.args.get('league_id')
     platform = request.args.get('platform', 'sleeper')
     has_premium = has_premium_for_viewer(
         session.get('viewer_username'), session.get('viewer_user_id'),
-        league_id, platform, None,
+        league_id, platform, requested_season,
     )
     if not has_premium:
-        all_result = get_breakout_candidates(season, min_score, limit=None)
+        all_result = get_breakout_board_candidates(requested_season, min_score, limit)
         all_cands = all_result.get('candidates', [])
         preview = dict(all_result)
         preview['candidates'] = all_cands[:3]
         preview['locked_count'] = max(0, len(all_cands) - 3)
         return jsonify(preview)
-    return jsonify(get_breakout_candidates(season, min_score, limit=limit or None))
+    return jsonify(get_breakout_board_candidates(requested_season, min_score, limit or None))
 
 
 @breakout_bp.route('/candidates/<position>')
@@ -1561,11 +1664,44 @@ def candidates_by_position(position):
 
 
 @breakout_bp.route('/player/<player_id>')
-@premium_required
 def player_detail(player_id):
-    """Get detailed breakout info for a player."""
-    season = _resolve_bo_season(request.args.get('season', type=int))
-    return jsonify(get_breakout_candidate_detail(player_id, season))
+    """Get player detail plus authoritative main-board membership.
+
+    Membership is safe to expose to every signed-in page so the modal can gate
+    its tab without waiting for the global indicator list.  The premium detail
+    remains protected and is omitted for viewers without access.
+    """
+    from flask import session
+    from dashboard_services.subscriptions import has_premium_for_viewer
+    requested_season = request.args.get('season', type=int)
+    league_id = request.args.get('league_id')
+    platform = request.args.get('platform', 'sleeper')
+    eligible, board = breakout_board_membership(player_id, requested_season)
+    membership = {
+        'player_id': str(player_id),
+        'season': board.get('season'),
+        'board_eligible': eligible,
+        'data_available': board.get('data_available', True),
+    }
+    try:
+        is_premium = has_premium_for_viewer(
+            session.get('viewer_username'), session.get('viewer_user_id'),
+            league_id, platform, requested_season,
+        )
+    except Exception:
+        logger.warning("breakout_api: premium check failed for %s", player_id, exc_info=True)
+        is_premium = False
+    if not is_premium:
+        return jsonify(membership)
+    # Premium detail is best-effort: if it fails, still return the authoritative
+    # membership so the modal gates its tab correctly rather than erroring out.
+    try:
+        detail = get_breakout_candidate_detail(player_id, board.get('season'))
+        detail.update(membership)
+        return jsonify(detail)
+    except Exception:
+        logger.warning("breakout_api: candidate detail failed for %s", player_id, exc_info=True)
+        return jsonify(membership)
 
 
 @breakout_bp.route('/statistics')

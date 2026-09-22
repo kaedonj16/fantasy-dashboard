@@ -384,6 +384,120 @@ def get_player_league_trades(
     return {"trades": trimmed, "total": total, "source": "league"}
 
 
+def get_player_acquisition_events(
+    player_id: str,
+    *,
+    platform: str = "sleeper",
+    league_id: str = "",
+    season: int = 0,
+    limit: int = 20,
+) -> dict:
+    """Non-trade acquisition events for a player across the league history chain:
+    the draft pick that selected them and any waiver / free-agent adds (with FAAB
+    when present). Best-effort and defensive: returns whatever it can derive.
+
+    Shape: {"events": [{"kind": "draft"|"add", "season", ...}]}, newest last so
+    the caller can render a chronological timeline.
+    """
+    plat = (platform or "sleeper").strip().lower()
+    lid = str(league_id or "")
+    pid = str(player_id or "")
+    if not lid or not pid:
+        return {"events": []}
+
+    from dashboard_services.api import build_league_history_map
+    from dashboard_services.service import get_transactions_by_week
+
+    try:
+        season_map = build_league_history_map(plat, lid, int(season)) or {int(season): lid}
+    except Exception:
+        season_map = {int(season): lid}
+
+    events: list[dict] = []
+
+    # ── Draft pick that selected this player (completed drafts only) ──────────
+    try:
+        from dashboard_services.api import get_drafts, get_draft_picks
+        for hist_lid in {str(v) for v in season_map.values()}:
+            drafts = get_drafts(hist_lid) or []
+            for d in drafts:
+                if str(d.get("status") or "") != "complete":
+                    continue
+                draft_id = d.get("draft_id")
+                if not draft_id:
+                    continue
+                try:
+                    d_season = int(d.get("season"))
+                except (TypeError, ValueError):
+                    d_season = None
+                picks = get_draft_picks(str(draft_id)) or []
+                names = _roster_names(plat, hist_lid, int(d_season)) if d_season else {}
+                for p in picks:
+                    if str(p.get("player_id") or "") != pid:
+                        continue
+                    rid = str(p.get("roster_id") or p.get("picked_by") or "")
+                    try:
+                        rnd = int(p.get("round") or 0)
+                    except (TypeError, ValueError):
+                        rnd = 0
+                    try:
+                        slot = int(p.get("draft_slot") or 0)
+                    except (TypeError, ValueError):
+                        slot = 0
+                    events.append({
+                        "kind": "draft",
+                        "season": d_season,
+                        "round": rnd or None,
+                        "slot": slot or None,
+                        "pick_no": p.get("pick_no"),
+                        "team": names.get(rid) or (f"Team {rid}" if rid else None),
+                    })
+    except Exception:
+        logger.debug("[player-acquisition] draft scan failed", exc_info=True)
+
+    # ── Waiver / free-agent adds (with FAAB when the league uses it) ──────────
+    try:
+        for hist_season in sorted(season_map.keys(), reverse=True):
+            hist_lid = str(season_map[hist_season])
+            names = _roster_names(plat, hist_lid, int(hist_season))
+            try:
+                tx_by_week = get_transactions_by_week(
+                    hist_lid, _TX_WEEKS, platform=plat, season=int(hist_season)
+                ) or {}
+            except Exception:
+                continue
+            for week in sorted(tx_by_week.keys()):
+                for txn in (tx_by_week[week] or []):
+                    if (txn.get("type") or "") not in ("waiver", "free_agent", "waiver_add"):
+                        continue
+                    if (txn.get("status") or "complete").lower() in ("failed", "cancelled", "canceled", "rejected"):
+                        continue
+                    adds = txn.get("adds") or {}
+                    if pid not in {str(k) for k in adds.keys()}:
+                        continue
+                    rid = str(adds.get(pid) or adds.get(int(pid) if pid.isdigit() else pid) or "")
+                    faab = None
+                    try:
+                        faab = (txn.get("settings") or {}).get("waiver_bid")
+                    except Exception:
+                        faab = None
+                    events.append({
+                        "kind": "add",
+                        "season": int(hist_season),
+                        "week": int(week) if week is not None else None,
+                        "faab": faab,
+                        "team": names.get(rid) or (f"Team {rid}" if rid else None),
+                    })
+    except Exception:
+        logger.debug("[player-acquisition] add scan failed", exc_info=True)
+
+    # Chronological: draft first, then adds by season/week.
+    def _sort_key(e):
+        return (int(e.get("season") or 0), 0 if e.get("kind") == "draft" else int(e.get("week") or 0))
+    events.sort(key=_sort_key)
+    return {"events": events[:limit]}
+
+
 def attach_drafted_players_to_trade_db_assets(
     trades: list[dict],
     *,

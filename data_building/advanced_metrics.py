@@ -14,7 +14,7 @@ from __future__ import annotations
 import logging
 import json as _json
 import os
-from typing import Dict, Any, List, Optional, Tuple, TYPE_CHECKING
+from typing import Dict, Any, Iterable, List, Optional, Tuple, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -304,6 +304,23 @@ def _add_rookie_eval_columns(conn) -> None:
             ADD COLUMN IF NOT EXISTS total_rec_tds   NUMERIC,
             ADD COLUMN IF NOT EXISTS total_pass_tds  NUMERIC,
             ADD COLUMN IF NOT EXISTS total_tds       NUMERIC;
+    """)
+
+    # Expected Fantasy Points (xFP): season-total expected points + points over
+    # expected, for each reception format. Derived from open play-by-play in
+    # data_building/external_data/expected_points.py and upserted by
+    # scripts/sync_nflverse_metrics.py. These are season totals (the sum of the
+    # per-week totals in player_weekly_advanced_metrics), mirroring receiving_epa.
+    # A negative *_over_expected is fantasy points left on the board (elite
+    # opportunity that has not converted).
+    conn.execute("""
+        ALTER TABLE player_advanced_metrics
+            ADD COLUMN IF NOT EXISTS expected_ppr            NUMERIC,
+            ADD COLUMN IF NOT EXISTS expected_half_ppr       NUMERIC,
+            ADD COLUMN IF NOT EXISTS expected_standard       NUMERIC,
+            ADD COLUMN IF NOT EXISTS ppr_over_expected       NUMERIC,
+            ADD COLUMN IF NOT EXISTS half_ppr_over_expected  NUMERIC,
+            ADD COLUMN IF NOT EXISTS standard_over_expected  NUMERIC;
     """)
 
     # Team and schedule ease.
@@ -938,6 +955,23 @@ def calculate_player_metrics(
     }
 
 
+def _usage_builder_accepts_force(usage_builder) -> bool:
+    """True when ``usage_builder`` accepts a ``force_weeks`` keyword.
+
+    The production builder (build_usage_map_for_season) does; the minimal
+    2-arg builders injected by tests do not, and must not be handed the kwarg.
+    """
+    try:
+        import inspect
+        sig = inspect.signature(usage_builder)
+    except (TypeError, ValueError):
+        return False
+    params = sig.parameters
+    if "force_weeks" in params:
+        return True
+    return any(p.kind == p.VAR_KEYWORD for p in params.values())
+
+
 def build_advanced_metrics_snapshot(
         season: int,
         completed_week: int,
@@ -945,6 +979,7 @@ def build_advanced_metrics_snapshot(
         as_of_date: Optional[str] = None,
         players_index: Optional[Dict[str, Dict[str, Any]]] = None,
         usage_builder=None,
+        force_weeks: Optional[Iterable[int]] = None,
 ) -> Dict[str, Any]:
     """Build the current season snapshot directly from completed game weeks.
 
@@ -954,6 +989,13 @@ def build_advanced_metrics_snapshot(
     minimum viable source; PFR snaps/target-share enrichment is best-effort inside
     ``build_usage_map_for_season`` and missing premium providers never gate writes.
     One completed game is a valid sample.
+
+    ``force_weeks`` names weeks whose Sleeper cache must be refetched even when it
+    is already populated. The live refresh passes the in-progress week here so a
+    game that just finished is reflected immediately; without it the current
+    week's box-score cache freezes on its first partial fetch. When a custom
+    ``usage_builder`` is injected that does not accept ``force_weeks`` (e.g. the
+    tiny builders used in tests), the argument is silently ignored.
     """
     from collections import Counter
     from datetime import date as _date
@@ -979,7 +1021,13 @@ def build_advanced_metrics_snapshot(
         return summary
 
     index = players_index if players_index is not None else (load_players_index() or {})
-    usage_map = usage_builder(season, range(1, completed_week + 1)) or {}
+    # Pass force_weeks through only when the builder accepts it, so injected
+    # 2-arg test builders keep working.
+    if force_weeks and _usage_builder_accepts_force(usage_builder):
+        usage_map = usage_builder(season, range(1, completed_week + 1),
+                                  force_weeks=force_weeks) or {}
+    else:
+        usage_map = usage_builder(season, range(1, completed_week + 1)) or {}
     summary["player_stats_rows"] = len(usage_map)
     skips: Counter = Counter()
     metrics_list: List[Dict[str, Any]] = []
@@ -1593,6 +1641,23 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     "red_zone_usage":       {"label": "Red Zone Usage",      "category": "General", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Targets and carries inside the opponent's 20-yard line per game; a proxy for scoring opportunity."},
     "grades_offense":       {"label": "PFF Off Grade",       "category": "General", "positions": ["QB", "RB", "WR", "TE"], "efficiency": True, "min_vol": _V_GAMES, "desc": "PFF's overall offensive grade (0-100) from play-by-play charting."},
     "schedule_ease":        {"label": "Schedule Ease",       "category": "General", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "hidden": True, "desc": "How easy the player's remaining schedule is vs. their position (0-100, 100 = easiest). Based on opponent defensive ratings from matchup_ratings."},
+    # ── Expected Points (xFP): opportunity-based value from play-by-play ──────
+    # Every target/carry/dropback is assigned an expected fantasy value from its
+    # context (air yards, completion prob, expected YAC, field position), so xFP
+    # is what a league-average player would have scored on that exact workload.
+    # actual − xFP = points over expected; a NEGATIVE value is fantasy points
+    # "left on the board" (elite usage not yet converted). Stored per reception
+    # format; season mode shows the season total, a week range shows the range
+    # total. See data_building/external_data/expected_points.py.
+    "expected_ppr":         {"label": "Expected FP (PPR)",   "category": "Expected Pts", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Expected fantasy points (full PPR): the points a league-average player would score on this exact target/carry/dropback workload, from play-by-play (air yards, completion probability, expected YAC, field-position TD equity). A pure opportunity/volume measure — outcome-independent."},
+    "ppr_over_expected":    {"label": "FP Over Exp (PPR)",   "category": "Expected Pts", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Actual full-PPR points minus expected (xFP). Positive = converted opportunity into more than expected (often TD-driven, prone to regression); NEGATIVE = fantasy points left on the board (elite usage not yet cashed in), historically a positive-regression signal."},
+    "expected_ppr_per_game": {"label": "Expected FPTS/G", "category": "Expected Pts", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Opportunity-based expected full-PPR fantasy points per covered game. This is an expectation, not guaranteed future scoring or an unrealized-points balance.", "computed_sql": "m.expected_ppr::float / NULLIF(m.games, 0)", "computed_null": "m.expected_ppr IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
+    "actual_ppr_per_game": {"label": "Actual FPTS/G", "category": "Expected Pts", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Actual full-PPR points reconstructed from the same covered play-by-play opportunities and games as expected points.", "computed_sql": "(m.expected_ppr + m.ppr_over_expected)::float / NULLIF(m.games, 0)", "computed_null": "m.expected_ppr IS NOT NULL AND m.ppr_over_expected IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
+    "ppr_over_expected_per_game": {"label": "FPOE/G", "category": "Expected Pts", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Actual minus opportunity-based expected full-PPR points per matched covered game. It is not guaranteed future scoring or an unrealized-points balance.", "computed_sql": "m.ppr_over_expected::float / NULLIF(m.games, 0)", "computed_null": "m.ppr_over_expected IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
+    "expected_half_ppr":    {"label": "Expected FP (Half)",  "category": "Expected Pts", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Expected fantasy points in half-PPR scoring (0.5 per reception). Opportunity-based; see Expected FP (PPR)."},
+    "half_ppr_over_expected": {"label": "FP Over Exp (Half)", "category": "Expected Pts", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Actual half-PPR points minus expected. Negative = points left on the board."},
+    "expected_standard":    {"label": "Expected FP (Std)",   "category": "Expected Pts", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Expected fantasy points in standard (non-PPR) scoring. Opportunity-based; see Expected FP (PPR)."},
+    "standard_over_expected": {"label": "FP Over Exp (Std)",  "category": "Expected Pts", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Actual standard (non-PPR) points minus expected. Negative = points left on the board."},
     # ── Passing (volume → efficiency → touchdowns → grade) ───────────────────
     # Passing yards is derived (yards/attempt x attempts) so it needs no new column.
     "total_pass_yards":     {"label": "Pass Yards",          "category": "Passing", "positions": ["QB"], "integer": True, "desc": "Total passing yards in the season.", "computed_sql": "ROUND(m.yards_per_attempt * m.total_pass_att)", "computed_null": "m.yards_per_attempt IS NOT NULL AND m.total_pass_att IS NOT NULL"},
@@ -1601,7 +1666,7 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     "adjusted_completion_rate": {"label": "Adj Completion %", "category": "Passing", "positions": ["QB"], "efficiency": True, "pct": True, "min_vol": _V_PASS_ATT, "desc": "Completion percent adjusted for drops, throwaways, spikes, and batted passes."},
     "cpoe":                 {"label": "CPOE",                "category": "Passing", "positions": ["QB"], "efficiency": True, "pct": True, "min_vol": _V_PASS_ATT, "desc": "Completion Percentage Over Expected — accuracy adjusted for throw difficulty (nflverse)."},
     "nfl_passer_rating":    {"label": "Passer Rating",       "category": "Passing", "positions": ["QB"], "efficiency": True, "min_vol": _V_PASS_ATT, "desc": "Standard NFL passer rating (0-158.3)."},
-    "epa_per_play":         {"label": "EPA / Play",          "category": "Passing", "positions": ["QB"], "efficiency": True, "min_vol": _V_PASS_ATT, "desc": "Expected Points Added per play (from nflverse play-by-play). The single best efficiency summary for a passer."},
+    "epa_per_play":         {"label": "Passing EPA / Dropback", "category": "Passing", "positions": ["QB"], "efficiency": True, "min_vol": _V_PASS_ATT, "desc": "Passing Expected Points Added per qualifying quarterback dropback (nflverse play-by-play). Week ranges are weighted by covered dropbacks, never by an unweighted mean of weekly rates."},
     "passing_epa":          {"label": "Passing EPA",         "category": "Passing", "positions": ["QB"], "min_vol": _V_PASS_ATT, "desc": "Total Expected Points Added on pass attempts over the season (nflverse)."},
     "success_rate":         {"label": "Success Rate",        "category": "Passing", "positions": ["QB"], "efficiency": True, "pct": True, "min_vol": _V_PASS_ATT, "desc": "Percent of plays with positive EPA (nflverse)."},
     "ngs_avg_time_to_throw": {"label": "Time to Throw",      "category": "Passing", "positions": ["QB"], "efficiency": True, "min_vol": _V_PASS_ATT, "desc": "Average seconds from snap to throw (NFL Next Gen Stats). Lower often means a quicker processor; higher can mean holding to push the ball downfield."},
@@ -1878,6 +1943,11 @@ WEEKLY_ADV_METRIC_COLS: List[str] = [
     "rushing_success_rate", "receiving_success_rate",
     "rushing_epa_per_att", "receiving_epa_per_target",
     "qb_hit_rate", "explosive_pass_rate", "pacr", "racr",
+    # Expected Fantasy Points (xFP): that week's expected total + over-expected
+    # total, per reception format. Totals (like passing_epa) so a week range
+    # sums them. See data_building/external_data/expected_points.py.
+    "expected_ppr", "expected_half_ppr", "expected_standard",
+    "ppr_over_expected", "half_ppr_over_expected", "standard_over_expected",
 ]
 # Volume weight columns used to weight rate metrics across a week range.
 WEEKLY_ADV_WEIGHT_COLS: List[str] = [
@@ -2154,6 +2224,10 @@ def get_available_metric_weeks(player_id: str, season: int) -> List[int]:
 _ADV_WEEKLY_TOTAL_METRICS = {
     "passing_epa", "rushing_epa", "receiving_epa", "yards_after_catch",
     "explosive_runs_10_plus", "ngs_rush_yards_over_expected",
+    # Expected Fantasy Points: per-week totals that sum over a range (and to the
+    # season snapshot). Season mode with no week bounds sums the whole season.
+    "expected_ppr", "expected_half_ppr", "expected_standard",
+    "ppr_over_expected", "half_ppr_over_expected", "standard_over_expected",
 }
 _ADV_WEEKLY_WEIGHTED_METRICS = {
     "epa_per_play": "w_dropbacks", "cpoe": "w_dropbacks", "success_rate": "w_dropbacks",
@@ -2185,10 +2259,28 @@ _ADV_WEEKLY_WEIGHTED_METRICS = {
     "ngs_avg_expected_yac": "w_receptions", "ngs_avg_yac_above_expectation": "w_receptions",
 }
 
+# Per-game Expected-vs-Actual views are derived from the same weekly PBP rows.
+# Actual is reconstructed as expected + over-expected, guaranteeing (within
+# rounding) actual/G - expected/G == FPOE/G on an identical covered sample.
+_ADV_WEEKLY_DERIVED_METRICS = {
+    "expected_ppr_per_game": (
+        "(SUM(expected_ppr) FILTER (WHERE expected_ppr IS NOT NULL AND ppr_over_expected IS NOT NULL))::float / NULLIF(COUNT(*) FILTER (WHERE expected_ppr IS NOT NULL AND ppr_over_expected IS NOT NULL), 0)",
+        "expected_ppr IS NOT NULL AND ppr_over_expected IS NOT NULL",
+    ),
+    "actual_ppr_per_game": (
+        "SUM(expected_ppr + ppr_over_expected)::float / NULLIF(COUNT(*) FILTER (WHERE expected_ppr IS NOT NULL AND ppr_over_expected IS NOT NULL), 0)",
+        "expected_ppr IS NOT NULL AND ppr_over_expected IS NOT NULL",
+    ),
+    "ppr_over_expected_per_game": (
+        "(SUM(ppr_over_expected) FILTER (WHERE expected_ppr IS NOT NULL AND ppr_over_expected IS NOT NULL))::float / NULLIF(COUNT(*) FILTER (WHERE expected_ppr IS NOT NULL AND ppr_over_expected IS NOT NULL), 0)",
+        "expected_ppr IS NOT NULL AND ppr_over_expected IS NOT NULL",
+    ),
+}
+
 
 # All metrics that support week-range filtering via the weekly advanced table.
 ADV_WEEKLY_METRIC_KEYS = frozenset(_ADV_WEEKLY_TOTAL_METRICS) | frozenset(
-    _ADV_WEEKLY_WEIGHTED_METRICS.keys())
+    _ADV_WEEKLY_WEIGHTED_METRICS.keys()) | frozenset(_ADV_WEEKLY_DERIVED_METRICS)
 
 # Volume-filter spec shown when week-range mode is active for an adv-weekly metric.
 # Keyed by the weight column the metric aggregates on.
@@ -2213,6 +2305,8 @@ def _adv_weekly_agg_sql(metric: str):
     """Return (value_sql, min_col_sql) for aggregating a weekly metric, or None."""
     if metric in _ADV_WEEKLY_TOTAL_METRICS:
         return f"SUM({metric})", None
+    if metric in _ADV_WEEKLY_DERIVED_METRICS:
+        return _ADV_WEEKLY_DERIVED_METRICS[metric][0], None
     w = _ADV_WEEKLY_WEIGHTED_METRICS.get(metric)
     if not w:
         return None
@@ -2224,7 +2318,8 @@ def _adv_weekly_agg_sql(metric: str):
 
 
 def adv_weekly_metric_supported(metric: str) -> bool:
-    return metric in _ADV_WEEKLY_TOTAL_METRICS or metric in _ADV_WEEKLY_WEIGHTED_METRICS
+    return (metric in _ADV_WEEKLY_TOTAL_METRICS or metric in _ADV_WEEKLY_WEIGHTED_METRICS
+            or metric in _ADV_WEEKLY_DERIVED_METRICS)
 
 
 def get_adv_weekly_range_leaderboard(
@@ -2263,10 +2358,20 @@ def get_adv_weekly_range_leaderboard(
 
     has_min = bool(min_col)
     use_vol_filter = has_min and bool(min_vol and int(min_vol) > 0)
+    # Coverage counts use only rows where the selected metric exists. This keeps
+    # the displayed sample identical to the denominator used by weighted rates.
+    coverage_pred = _ADV_WEEKLY_DERIVED_METRICS.get(metric, (None, f"{metric} IS NOT NULL"))[1]
+    coverage_sql = (
+        f", SUM(CASE WHEN {coverage_pred} THEN w_dropbacks END) AS ctx_dropbacks"
+        f", SUM(CASE WHEN {coverage_pred} THEN w_pass_att END) AS ctx_attempts"
+        f", SUM(CASE WHEN {coverage_pred} THEN w_carries END) AS ctx_carries"
+        f", SUM(CASE WHEN {coverage_pred} THEN w_targets END) AS ctx_targets"
+        f", SUM(CASE WHEN {coverage_pred} THEN w_receptions END) AS ctx_receptions"
+    )
     inner_select = (
-        f"player_id, position, COUNT(*) AS weeks_played, {value_sql} AS value, {min_col} AS _wvol"
+        f"player_id, position, COUNT(*) FILTER (WHERE {coverage_pred}) AS weeks_played, {value_sql} AS value, {min_col} AS _wvol{coverage_sql}"
         if has_min else
-        f"player_id, position, COUNT(*) AS weeks_played, {value_sql} AS value"
+        f"player_id, position, COUNT(*) FILTER (WHERE {coverage_pred}) AS weeks_played, {value_sql} AS value{coverage_sql}"
     )
     outer_where = "t.value IS NOT NULL"
     if use_vol_filter:
@@ -2279,7 +2384,9 @@ def get_adv_weekly_range_leaderboard(
     with get_conn() as conn:
         rows = conn.execute(
             f"""
-            SELECT t.player_id, t.position, t.weeks_played, t.value{', t._wvol' if has_min else ''}
+            SELECT t.player_id, t.position, t.weeks_played, t.value,
+                   t.ctx_dropbacks, t.ctx_attempts, t.ctx_carries, t.ctx_targets,
+                   t.ctx_receptions{', t._wvol' if has_min else ''}
             FROM (
                 SELECT {inner_select}
                 FROM player_weekly_advanced_metrics
@@ -2321,10 +2428,12 @@ def get_adv_weekly_range_leaderboard(
             "games": weeks,
             "vol": vol_val if vol_val is not None else weeks,
             "weeks": weeks,
-            # Context volume (receiving/rushing; passing has no weekly data).
+            # Provider-covered denominator counts for this exact metric/range.
             "rec": _ci("ctx_receptions"),
             "tgt": _ci("ctx_targets"),
             "car": _ci("ctx_carries"),
+            "att": _ci("ctx_attempts"),
+            "db": _ci("ctx_dropbacks"),
         })
     return out
 
@@ -2420,6 +2529,9 @@ def _stamp_season(rows: List[Dict[str, Any]], season: Optional[int]) -> List[Dic
 _MULTI_SEASON_SUM = frozenset({
     "vorp", "war", "ppr_pts", "rushing_epa", "receiving_epa", "passing_epa",
     "avoided_tackles",
+    # xFP totals sum across seasons like the EPA totals.
+    "expected_ppr", "expected_half_ppr", "expected_standard",
+    "ppr_over_expected", "half_ppr_over_expected", "standard_over_expected",
 })
 
 
@@ -2883,6 +2995,13 @@ def get_metric_leaderboard(
             get_value_leaderboard(metric, position=position, limit=limit, season=season),
             season,
         )
+    if metric in _ADV_WEEKLY_DERIVED_METRICS:
+        return _stamp_season(
+            get_adv_weekly_range_leaderboard(
+                metric, position=position, season=season, min_vol=min_vol, limit=limit,
+            ),
+            season,
+        )
     # ppr_pts / ppr_pts_per_game have no column in player_advanced_metrics — the
     # fantasy points live in player_weekly_metrics. In season mode (no week range)
     # aggregate the full season from the weekly table instead of querying a
@@ -3035,12 +3154,23 @@ def get_metric_leaderboard(
             "ctx_carries": "total_carries",
             "ctx_attempts": "total_pass_att",
         }
-        _ctx_parts = [f"m.{col} AS {alias}" for alias, col in _ctx_map.items()
-                      if col in existing_cols]
+        # Advanced-provider values and basic volume totals may be written on
+        # different snapshot dates. Resolve context counts across every snapshot
+        # for this player-season; otherwise an EPA row can carry NULL here even
+        # though its metric-specific volume join found the real total.
+        _ctx_parts = [
+            f"COALESCE(m.{col}, (SELECT MAX(cx.{col}) FROM player_advanced_metrics cx "
+            f"WHERE cx.player_id=m.player_id AND cx.season=m.season)) AS {alias}"
+            for alias, col in _ctx_map.items() if col in existing_cols
+        ]
         if "total_pass_att" in existing_cols and "completion_pct" in existing_cols:
             _ctx_parts.append(
-                "CASE WHEN m.total_pass_att IS NOT NULL AND m.completion_pct IS NOT NULL "
-                "THEN ROUND(m.total_pass_att * m.completion_pct / 100.0) END AS ctx_completions")
+                "CASE WHEN COALESCE(m.total_pass_att, (SELECT MAX(cx.total_pass_att) FROM "
+                "player_advanced_metrics cx WHERE cx.player_id=m.player_id AND cx.season=m.season)) IS NOT NULL "
+                "AND m.completion_pct IS NOT NULL THEN ROUND(COALESCE(m.total_pass_att, "
+                "(SELECT MAX(cx.total_pass_att) FROM player_advanced_metrics cx WHERE "
+                "cx.player_id=m.player_id AND cx.season=m.season)) * m.completion_pct / 100.0) "
+                "END AS ctx_completions")
         ctx_cols = (", ".join(_ctx_parts) + ", ") if _ctx_parts else ""
 
         # Computed metrics (per-game rates) use SQL expressions instead of columns.

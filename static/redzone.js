@@ -868,19 +868,18 @@
         if (String(o.matchup_id) === mid && !_isMyRid(o.roster_id)) oppRosters.add(String(o.roster_id));
       });
     });
-    
-    // When a hero matchup is active, also include all rosters in that matchup
-    // so filtered matchups display correct mine/opp flags even when viewer isn't in them
-    if (_heroMid && _scope === 'league') {
-      (data.matchups || []).forEach(function(m) {
-        if (String(m.matchup_id) === _heroMid) {
-          var rid = String(m.roster_id);
-          if (_isMyRid(rid)) myRosters.add(rid);
-          else oppRosters.add(rid);
-        }
-      });
-    }
-    
+
+    // `my`/`opp` mean exactly the viewer's own rosters and the rosters they are
+    // actually playing this week. Both flags drive the feed "OPP" chip AND the
+    // OPPONENT_TD alert path (_scoringAlertCandidates), so a roster must never
+    // land in `opp` unless it is a real matchup opponent. In particular, focusing
+    // a hero matchup the viewer is NOT in must not tag its teams as opponents:
+    // doing so fired opponent alerts and stamped "OPP" on players from a matchup
+    // the viewer merely opened to watch. The hero card lays those teams out on
+    // its own via _focusedPair/_isMyRid, and the feed filter (_eventMatches)
+    // already restricts the view to the focused matchup, so no roster tag is
+    // needed here for a matchup the viewer does not belong to.
+
     var pidToRoster = {};
     (data.matchups || []).forEach(function(m) {
       (m.players || m.starters || []).forEach(function(pid) {

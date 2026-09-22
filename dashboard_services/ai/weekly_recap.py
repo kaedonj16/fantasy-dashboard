@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import html
 import json
 import logging
@@ -40,19 +41,20 @@ def _load_recap_no_ttl(cache_key: str) -> str | None:
         return None
 
 
-def _recap_cache_key(league_id: str, season, source_week: int) -> str:
-    return f"weekly_recap_{league_id}_{season}_w{source_week}_v12_top_performers"
+def _recap_cache_key(league_id: str, season, source_week: int,
+                     platform: str = "sleeper", score_revision: str = "") -> str:
+    """Platform/version/revision-aware identity for the stable historical story."""
+    suffix = f"_{score_revision}" if score_revision else ""
+    return f"weekly_recap_{str(platform).lower()}_{league_id}_{season}_w{source_week}_v13_story{suffix}"
+
+
+def _gotw_cache_key(platform: str, league_id: str, season, target_week: int) -> str:
+    return f"weekly_gotw_{str(platform).lower()}_{league_id}_{season}_w{target_week}_v2"
 
 
 def get_cached_gotw_selection(platform: str, league_id: str, season, target_week: int) -> dict | None:
-    """Return only a recap-persisted GOTW selection; never generate one here."""
-    try:
-        source_week = int(target_week) - 1
-    except (TypeError, ValueError):
-        return None
-    if source_week < 1:
-        return None
-    path = AI_CACHE_DIR / f"{_recap_cache_key(league_id, season, source_week)}.json"
+    """Return the deterministic selection shared with the Matchups badge."""
+    path = AI_CACHE_DIR / f"{_gotw_cache_key(platform, league_id, season, target_week)}.json"
     try:
         obj = json.loads(path.read_text(encoding="utf-8"))
         selection = (obj.get("metadata") or {}).get("gotw_selection")
@@ -60,18 +62,12 @@ def get_cached_gotw_selection(platform: str, league_id: str, season, target_week
         return None
     if not isinstance(selection, dict):
         return None
-    expected = {
-        "platform": str(platform or "").lower(),
-        "league_id": str(league_id),
-        "season": str(season),
-        "target_week": int(target_week),
-    }
+    expected = {"platform": str(platform or "").lower(), "league_id": str(league_id),
+                "season": str(season), "target_week": int(target_week)}
     if any(str(selection.get(k, "")).lower() != str(v).lower() for k, v in expected.items()):
         return None
     ids = selection.get("roster_ids")
-    if not isinstance(ids, list) or len(ids) != 2 or not all(str(x) for x in ids):
-        return None
-    return selection
+    return selection if isinstance(ids, list) and len(ids) == 2 and all(str(x) for x in ids) else None
 
 
 def _streak_for(results: list[str]) -> str:
@@ -104,7 +100,9 @@ def _build_team_storylines(
     teams: dict[str, dict] = {}
     for rid, grp in fin_df.groupby("roster_id"):
         grp = grp.sort_values("week")
-        results = ["W" if w else "L" for w in grp["win"].tolist()]
+        results = ["W" if float(row["points"]) > float(row["points_against"]) else
+                   "L" if float(row["points"]) < float(row["points_against"]) else "T"
+                   for _, row in grp.iterrows()]
         # Snapshot through selected_week
         owner = str(grp["owner"].iloc[0])
         _av = ""
@@ -129,17 +127,19 @@ def _build_team_storylines(
         before_idx = [i for i, w in enumerate(t["weeks"]) if w < selected_week]
         wins_b = sum(1 for i in before_idx if t["results"][i] == "W")
         losses_b = sum(1 for i in before_idx if t["results"][i] == "L")
+        ties_b = sum(1 for i in before_idx if t["results"][i] == "T")
         pf_b = sum(t["pts_by_week"][i] for i in before_idx)
         snap_before[rid] = {
-            "wins": wins_b, "losses": losses_b, "pf": pf_b,
+            "wins": wins_b, "losses": losses_b, "ties": ties_b, "pf": pf_b,
             "streak": _streak_for([t["results"][i] for i in before_idx]),
         }
         # After (through this week, inclusive)
         wins_a = sum(1 for r in t["results"] if r == "W")
         losses_a = sum(1 for r in t["results"] if r == "L")
+        ties_a = sum(1 for r in t["results"] if r == "T")
         pf_a = sum(t["pts_by_week"])
         snap_after[rid] = {
-            "wins": wins_a, "losses": losses_a, "pf": pf_a,
+            "wins": wins_a, "losses": losses_a, "ties": ties_a, "pf": pf_a,
             "streak": _streak_for(t["results"]),
         }
 
@@ -158,9 +158,10 @@ def _build_team_storylines(
     for _, row in week_df.iterrows():
         rid = str(row.get("roster_id"))
         week_result_by_rid[rid] = {
-            "pts": float(row.get("points") or 0),
-            "opp_pts": float(row.get("points_against") or 0),
-            "won": bool(row.get("points", 0) > row.get("points_against", 0)),
+            "pts": float(row["points"]) if pd.notna(row.get("points")) else None,
+            "opp_pts": float(row["points_against"]) if pd.notna(row.get("points_against")) else None,
+            "won": (bool(row["points"] > row["points_against"])
+                    if pd.notna(row.get("points")) and pd.notna(row.get("points_against")) else None),
         }
 
     storylines = []
@@ -186,8 +187,8 @@ def _build_team_storylines(
             "this_week_pts": wr.get("pts"),
             "opp_pts": wr.get("opp_pts"),
             "won_this_week": wr.get("won"),
-            "record_before": f"{before['wins']}-{before['losses']}",
-            "record_after": f"{after['wins']}-{after['losses']}",
+            "record_before": f"{before['wins']}-{before['losses']}" + (f"-{before['ties']}" if before['ties'] else ""),
+            "record_after": f"{after['wins']}-{after['losses']}" + (f"-{after['ties']}" if after['ties'] else ""),
             "rank_before": rank_before.get(rid),
             "rank_after": rank_after.get(rid),
             "rank_change": (rank_before.get(rid) or 0) - (rank_after.get(rid) or 0),  # +ve = moved up
@@ -207,7 +208,7 @@ def _build_matchup_context(
         team_by_rid: dict,
 ) -> list[dict]:
     """For each matchup this week, compute h2h record and prior meetings this season."""
-    fin_df = df_weekly[df_weekly["finalized"] == True].copy()
+    fin_df = df_weekly[(df_weekly["finalized"] == True) & (df_weekly["week"] <= selected_week)].copy()
     if fin_df.empty:
         return []
 
@@ -237,7 +238,7 @@ def _build_matchup_context(
                     "week": w,
                     "a_pts": round(a_side[1], 1),
                     "b_pts": round(b_side[1], 1),
-                    "winner": team_a if a_side[1] > b_side[1] else team_b,
+                    "winner": (team_a if a_side[1] > b_side[1] else team_b if b_side[1] > a_side[1] else None),
                 })
 
         prior.sort(key=lambda x: x["week"])
@@ -249,7 +250,7 @@ def _build_matchup_context(
             "team_b": team_b,
             "team_a_pts": round(pts_a, 1),
             "team_b_pts": round(pts_b, 1),
-            "winner": team_a if pts_a > pts_b else team_b,
+            "winner": (team_a if pts_a > pts_b else team_b if pts_b > pts_a else None),
         }
         if prior:
             entry["h2h"] = {
@@ -645,7 +646,7 @@ def build_weekly_recap_payload(
     weeks_until_playoffs = max(0, playoff_start - 1 - selected_week)
 
     # Identify upsets (lower-ranked-before beats higher-ranked-before)
-    week_matchups_raw = matchups_by_week.get(selected_week) or []
+    week_matchups_raw = matchups_by_week.get(selected_week) or matchups_by_week.get(str(selected_week)) or []
     upsets = []
     biggest_blowout = None
     for m in week_matchups_raw:
@@ -815,7 +816,7 @@ Cold streaks (2+ losses in a row): {json.dumps(payload['cold_streaks'])}
 Big movers (rank moved 2+ spots): {json.dumps(payload['big_movers'])}
 Playoff race: {json.dumps(payload['playoff_race'])}
 
-Use the h2h and season_weeks data where it adds something real to the story - rematches, revenge games, scoring trends, a team peaking or fading. Lead with the most compelling storyline.
+Use the h2h and season_weeks data where it adds something real to the story - rematches, revenge games, scoring trends, a team peaking or fading. Lead with the most compelling storyline. Explain two or three meaningful developments only: unlucky losses, scoring trends, rivalry results, or a real standings-versus-power discrepancy. Do not recap the award cards, list every score, or repeat the scoreboard.
 
 Standings describe what has happened and playoff or division stakes. Power rank describes how strong a team looks. Never equate W-L standing with quality, walk down the standings table, or dump power scores. Look for useful standing_rank versus power_rank disagreement, using rank_gap only when it adds a real storyline. Division name and division rank are preferable to meaningless overall-rank chatter. In Weeks 1-2 prioritize power rank, weekly output, all-play strength, projections, then record, with standing rank last. In Weeks 3-5 blend standings and power. From Week 6 onward, divisions, records, and playoff stakes may carry more weight. Never declare a contender or playoff team from one game. Avoid cliches including statement win, sent a message, put the league on notice, marquee matchup, and heavyweight clash.
 
@@ -870,7 +871,8 @@ def _render_recap_html(result: dict) -> str:
 """
 
 
-def _render_next_week_html(preview: dict, looking_ahead: str) -> str:
+def _render_next_week_html(preview: dict, looking_ahead: str,
+                           platform: str = None, season=None, league_id: str = None) -> str:
     """Render the 'Game of the Week' look-ahead card: a banner header, the
     matchup (with a projected win-prob bar when projections are available), the
     AI blurb (which carries the reason it was picked), availability chips (out /
@@ -940,6 +942,20 @@ def _render_next_week_html(preview: dict, looking_ahead: str) -> str:
             "</div>"
         )
 
+    # Why this is the game of the week: the primary reason plus up to two
+    # supporting reasons, placed under the matchup and above the narrative.
+    why_html = ""
+    _why = str(g.get("why") or "").strip()
+    _reasons = [str(r).strip() for r in (g.get("reasons") or []) if str(r).strip()]
+    if _why:
+        _rl = "".join(f"<li>{html.escape(r)}</li>" for r in _reasons[:2])
+        why_html = (
+            "<div class='br-gotw-why'>"
+            f"<div class='br-gotw-why-lead'>{html.escape(_why)}</div>"
+            + (f"<ul class='br-gotw-why-reasons'>{_rl}</ul>" if _rl else "")
+            + "</div>"
+        )
+
     blurb_html = ""
     if looking_ahead and str(looking_ahead).strip():
         blurb_html = (
@@ -996,90 +1012,83 @@ def _render_next_week_html(preview: dict, looking_ahead: str) -> str:
             f"rgba(148,163,184,0.2));padding-top:10px;'>{label}: {items}</div>"
         )
 
+    # Deep link to the exact Matchups week so the whole card is actionable.
+    link_html = ""
+    if platform and season and league_id and wk:
+        link_html = (
+            f"<a class='br-gotw-link' href='/{platform}/{season}/{league_id}/weekly?week={wk}'>"
+            f"View this matchup <span aria-hidden='true'>&rsaquo;</span></a>"
+        )
+
     return f"""
 <div class="card br-gotw" data-br-moment="gotw" style="padding:18px 20px;margin-bottom:20px;">
   <div class="br-gotw-flash" aria-hidden="true"></div>
   {header_html}
   {matchup_row}
   {winbar_html}
+  {why_html}
   {blurb_html}
   {avail_html}
   {also_html}
+  {link_html}
 </div>
 """
 
 
 def get_weekly_ai_recap(
-        df_weekly: pd.DataFrame,
-        matchups_by_week: dict,
-        selected_week: int,
-        team_by_rid: dict,
-        league: dict,
-        league_id: str,
-        season,
-        next_week_ctx: dict | None = None,
-        team_context: dict | None = None,
+        df_weekly: pd.DataFrame, matchups_by_week: dict, selected_week: int,
+        team_by_rid: dict, league: dict, league_id: str, season,
+        next_week_ctx: dict | None = None, team_context: dict | None = None,
         platform: str = "sleeper",
 ) -> tuple[str, str]:
-    """Return (recap_column_html, next_week_card_html). Either may be ''.
+    """Return a stable historical story plus a freshly rendered upcoming card.
 
-    Both are produced by one AI call and cached together under one key (split on a
-    sentinel) so the group-chat recap and the game-of-the-week look-ahead stay in
-    sync and never cost two round-trips."""
-    empty = ("", "")
+    Score revisions change the narrative key. Upcoming projections and
+    availability are rebuilt on each request from the existing hydrated cache,
+    without another AI call.
+    """
     if df_weekly is None or df_weekly.empty:
-        return empty
-
-    cache_key = _recap_cache_key(league_id, season, selected_week)
-    cached = _load_recap_no_ttl(cache_key)
-    if cached is not None:
-        recap_html, _, next_html = cached.partition(_NEXT_WEEK_SPLIT)
-        return recap_html, next_html
-
+        return "", ""
     try:
         payload = build_weekly_recap_payload(
             df_weekly, matchups_by_week, selected_week, team_by_rid, league,
-            next_week_ctx=next_week_ctx,
-            team_context=team_context,
-        )
+            next_week_ctx=next_week_ctx, team_context=team_context)
     except Exception as exc:
         logger.warning("[weekly-recap] payload build failed: %s", exc)
-        return empty
+        return "", ""
 
-    if not ai_available():
-        return empty  # silently skip when AI is off
+    scored = df_weekly[(df_weekly["finalized"] == True) & (df_weekly["week"] <= selected_week)]
+    revision_raw = scored[["week", "roster_id", "points"]].sort_values(["week", "roster_id"]).to_json()
+    revision = hashlib.sha256(revision_raw.encode()).hexdigest()[:12]
+    cache_key = _recap_cache_key(league_id, season, selected_week, platform, revision)
+    recap_html = _load_recap_no_ttl(cache_key) or ""
+    looking_ahead = ""
+    if not recap_html and ai_available():
+        try:
+            result = _generate_ai_storyline(payload)
+            recap_html = _render_recap_html(result)
+            looking_ahead = result.get("looking_ahead") or ""
+            save_cached_ai_text(cache_key, recap_html)
+        except (AIRateLimitError, AIUnavailableError) as exc:
+            logger.warning("[weekly-recap] AI unavailable: %s", exc)
+        except Exception as exc:
+            logger.warning("[weekly-recap] AI error: %s", exc)
 
-    try:
-        result = _generate_ai_storyline(payload)
-        recap_html = _render_recap_html(result)
-        next_html = _render_next_week_html(
-            payload.get("next_week_preview"), result.get("looking_ahead") or "",
-        )
-        preview = payload.get("next_week_preview") or {}
-        game = preview.get("game_of_the_week") or {}
-        gotw_selection = None
+    preview = payload.get("next_week_preview")
+    game = (preview or {}).get("game_of_the_week") or {}
+    if preview and game:
+        if not looking_ahead:
+            looking_ahead = str(game.get("why") or "A matchup worth watching next week.")
         roster_ids = [str(game.get("roster_id_a") or ""), str(game.get("roster_id_b") or "")]
-        if all(roster_ids) and preview.get("next_week"):
-            gotw_selection = {
-                "platform": str(platform or "").lower(),
-                "league_id": str(league_id),
-                "season": str(season),
-                "source_week": int(selected_week),
-                "target_week": int(preview["next_week"]),
-                "matchup_id": game.get("matchup_id"),
-                "roster_ids": roster_ids,
-            }
-        save_cached_ai_text(
-            cache_key, recap_html + _NEXT_WEEK_SPLIT + next_html,
-            metadata={"gotw_selection": gotw_selection},
-        )
-        return recap_html, next_html
-    except (AIRateLimitError, AIUnavailableError) as exc:
-        logger.warning("[weekly-recap] AI unavailable: %s", exc)
-        return empty
-    except Exception as exc:
-        logger.warning("[weekly-recap] AI error: %s", exc)
-        return empty
+        if all(roster_ids):
+            selection = {"platform": str(platform or "").lower(), "league_id": str(league_id),
+                         "season": str(season), "source_week": int(selected_week),
+                         "target_week": int(preview["next_week"]),
+                         "matchup_id": game.get("matchup_id"), "roster_ids": roster_ids}
+            save_cached_ai_text(_gotw_cache_key(platform, league_id, season, preview["next_week"]),
+                                "", metadata={"gotw_selection": selection})
+    return recap_html, _render_next_week_html(
+        preview, looking_ahead, platform=platform, season=season, league_id=league_id)
 
 
 def get_weekly_ai_recap_teaser() -> tuple[str, str]:

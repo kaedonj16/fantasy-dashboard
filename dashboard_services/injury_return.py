@@ -274,7 +274,10 @@ def injury_roster_verdict(
         }
     mapped = {
         "IR": ("ir", "Move to IR"),
+        "Move to IR": ("ir", "Move to IR"),
         "Stash": ("stash", "Stash"),
+        "Hold": ("hold", "Hold"),
+        "Already on IR": ("hold", "Already on IR"),
         "Drop candidate": ("drop", "Consider drop"),
         "Monitor": ("hold", "Hold"),
     }.get(plan.get("verdict"), ("hold", "Hold"))

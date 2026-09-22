@@ -100,6 +100,7 @@ def test_actual_points_do_not_multiply_rounded_ppg_and_zero_is_real():
 
 def test_non_league_modal_keeps_selected_season():
     source = open("static/player_modal.js", encoding="utf-8").read()
-    assert ": `/api/player-details/${playerId}?season=${season}&${leagueParams}`" in source
+    assert "new URLSearchParams({ season: ctx.season, league_type: ctx.leagueType, league_size: ctx.leagueSize })" in source
+    assert "if (ctx.leagueId)" in source
     assert "ppgVal != null ? Number(ppgVal).toFixed(1) : 'N/A'" in source
     assert "totalPts != null ? fmtPts(totalPts) : 'N/A'" in source

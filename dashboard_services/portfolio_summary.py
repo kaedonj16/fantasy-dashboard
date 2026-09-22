@@ -10,6 +10,10 @@ logger = logging.getLogger(__name__)
 POSITIONS = ("QB", "RB", "WR", "TE")
 
 
+class ContextPending(RuntimeError):
+    """The passive portfolio reader scheduled a warm but has no context yet."""
+
+
 def cache_key(account_id, platform, league_id, season):
     return (int(account_id), str(platform).lower(), str(league_id), int(season))
 
@@ -116,6 +120,8 @@ def build_league_summary(account_id, membership, context_loader):
         return {**base, "state": "reconnect_required", "failure_category": "auth_required", "sections": sections,
                 "message": "Reconnect provider"}
     ctx = context_loader(platform, league_id, season)
+    if not ctx:
+        raise ContextPending("league context is warming")
     rosters, league = ctx.get("rosters") or [], ctx.get("league") or {}
     from dashboard_services.accounts import resolve_account_viewer_for_league
     viewer = resolve_account_viewer_for_league(int(account_id), platform, league_id, season, ctx.get("users") or [], rosters)
@@ -198,7 +204,18 @@ def build_league_summary(account_id, membership, context_loader):
 
     result["state"] = "ready" if all(s["status"] == "ready" for s in sections.values()) else "partial"
     now = datetime.now(timezone.utc).isoformat()
-    result.update(generated_at=now, last_successful_sync_at=now, refreshed_at=now)
+    # ``generated_at`` describes this inexpensive derived summary. Freshness in
+    # the UI must instead describe the authoritative league-context fetch; a
+    # cache read or partial derivation is not a provider sync.
+    synced_at = ctx.get("_cache_synced_at") or ctx.get("last_successful_sync_at")
+    result.update(
+        generated_at=now,
+        last_successful_sync_at=synced_at,
+        refreshed_at=synced_at,  # compatibility alias for existing clients
+        stale=bool(ctx.get("_cache_stale")),
+        _cache_stale=bool(ctx.get("_cache_stale")),
+        partial=result["state"] == "partial",
+    )
     _store_persistent(cache_key(account_id, platform, league_id, season), result)
     logger.info("[portfolio] league=%s provider=%s core=%s record=%s streak=%s position_rank=%s total_ms=%d",
                 league_id, platform, sections["core"]["status"], sections["record"]["status"],

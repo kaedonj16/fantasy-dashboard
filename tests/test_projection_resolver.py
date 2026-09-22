@@ -173,4 +173,5 @@ console.log(JSON.stringify({
 
 def test_player_modal_cache_is_data_contract_versioned():
     source = open("static/player_modal.js", encoding="utf-8").read()
-    assert "'pm_cache_v3_' + apiUrl" in source
+    assert "'pm_cache_v3_'+d.url" in source
+    assert "MAX_ENTRIES = 24, MAX_BYTES = 2 * 1024 * 1024, TTL = 5 * 60 * 1000" in source

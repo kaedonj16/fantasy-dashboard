@@ -844,6 +844,9 @@ function prRender() {
     // row isn't clickable for them.
     const isPick = p.position === 'PICK';
     if (!isPick) {
+      const _draftedWarm = p.is_rookie && p.team && p.team !== 'FA';
+      if (!p.is_rookie || _draftedWarm) row.dataset.pmWarmId = String(p.id);
+      else row.dataset.pmProspectOnly = '1';
       row.style.cursor = 'pointer';
       row.onclick = function(e) {
         e.stopPropagation();
@@ -866,6 +869,9 @@ function prRender() {
     const age = p.age != null ? Number(p.age).toFixed(1) : '–';
     const val = prGetValue(p);
 
+    // Watchlist star, immediately after the player name (before badges).
+    const wlStar = (!isPick && typeof _isWatched === 'function' && _isWatched(p.id))
+      ? '<span class="pr-wl-star" title="On your watchlist" aria-hidden="true">&#9733;</span>' : '';
     let badges = '';
     if (prIsRookie(p.id) || p.is_rookie) badges += '<span class="player-badge player-badge-rookie player-badge-collapsible" title="Rookie"><i class="fa-solid fa-registered-solid" aria-hidden="true"></i> <span class="player-badge-label">ROOKIE</span></span>';
     else if (prIsProspect(p.id)) badges += '<span class="player-badge player-badge-prospect player-badge-collapsible" title="Prospect"><i class="fa-solid fa-seedling" aria-hidden="true"></i> <span class="player-badge-label">PROSPECT</span></span>';
@@ -937,7 +943,7 @@ function prRender() {
       const _activeAdp = prAdpSourceVal(p, adpActive);
       row.innerHTML =
         '<span class="pr-rank pr-adp-pin pr-adp-pin-rank">'  + (displayRank ? '#' + displayRank : '–') + '</span>' +
-        '<span class="pr-name pr-adp-pin pr-adp-pin-player' + (isPick ? '' : ' player-clickable') + '">'  + (p.name || 'Unknown') + badges + '</span>' +
+        '<span class="pr-name pr-adp-pin pr-adp-pin-player' + (isPick ? '' : ' player-clickable') + '">'  + (p.name || 'Unknown') + wlStar + badges + '</span>' +
         metaCells +
         adpCols.map(function (c) {
           const v = prAdpSourceVal(p, c.value);
@@ -962,7 +968,7 @@ function prRender() {
       row.innerHTML =
         '<span class="pr-rank">'  + (displayRank ? '#' + displayRank : '–') + rankDeltaHTML + '</span>' +
         '<span class="pr-arrows">' + arrowCell + '</span>' +
-        '<span class="pr-name' + (isPick ? '' : ' player-clickable') + '">'  + (p.name || 'Unknown') + badges + '</span>' +
+        '<span class="pr-name' + (isPick ? '' : ' player-clickable') + '">'  + (p.name || 'Unknown') + wlStar + badges + '</span>' +
         '<span class="pr-pos-cell">' + posRank + '</span>' +
         '<span class="pr-age">'   + (p.position === 'PICK' ? '–' : age) + '</span>' +
         '<span class="pr-team">'  + (p.team || '–') + '</span>' +

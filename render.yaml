@@ -48,8 +48,6 @@ services:
         sync: false
       - key: SITE_BASE_URL
         value: https://brfantasyfootball.com
-      - key: TANK01_API_KEY
-        sync: false
       - key: FLASK_SECRET_KEY
         sync: false
       # Encrypts user-supplied private provider cookies at rest. Render creates
@@ -163,8 +161,6 @@ services:
         value: smtp.gmail.com
       - key: SMTP_PORT
         value: 587
-      - key: TANK01_API_KEY
-        sync: false
       - key: PYTHON_ENV
         value: production
       # Cache-flush after each cron run — most critical missing vars
@@ -195,6 +191,39 @@ services:
         sync: false
 
   - type: cron
+    name: live-advanced-metrics
+    runtime: python
+    # Every 15 minutes so a finished game reaches the Advanced Metrics view within
+    # ~15 min instead of at the next 8am daily-job. The script is cheap on no-ops:
+    # outside the reg/post season, or when no new game has finished since the last
+    # run, it does almost nothing (state file + schedule read), so running it all
+    # week is fine. It writes today's snapshot row via the same UPSERT path as the
+    # daily job (they share resolve_adv_metrics_completed_week, so neither
+    # regresses the other) and busts the app cache so the new values serve at once.
+    # No Playwright / model rebuild here — Sleeper box scores + a throttled
+    # nflverse pull only, which fits the starter 512Mi cap.
+    schedule: "*/15 * * * *"
+    plan: starter
+    buildCommand: pip install --no-cache-dir -r requirements.txt
+    startCommand: python -m scripts.refresh_live_advanced_metrics
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: DATABASE_URL
+        fromDatabase:
+          name: brfantasy-db
+          property: connectionString
+      - key: TZ
+        value: America/New_York
+      - key: PYTHON_ENV
+        value: production
+      # Cache-flush after a rebuild so freshly written metrics serve immediately.
+      - key: APP_URL
+        sync: false
+      - key: CRON_SECRET
+        sync: false
+
+  - type: cron
     name: hourly-notifications
     runtime: python
     # Hits the web service so VAPID keys stay on the app. No pip install —
@@ -203,7 +232,7 @@ services:
     # (disabled when PYTHON_ENV=production).
     schedule: 5 * * * *
     plan: starter
-    buildCommand: python -c "print('hourly-notifications: no Python deps')"
+    buildCommand: python -c "print('hourly-notifications - no Python deps')"
     startCommand: python scripts/trigger_notifications.py hourly
     envVars:
       - key: PYTHON_VERSION
@@ -227,7 +256,7 @@ services:
     # per account per ISO week, so a retry the same week is a no-op.
     schedule: "0 13 * * 2"
     plan: starter
-    buildCommand: python -c "print('weekly-email: no Python deps')"
+    buildCommand: python -c "print('weekly-email - no Python deps')"
     startCommand: python scripts/trigger_notifications.py weekly
     envVars:
       - key: PYTHON_VERSION
@@ -284,8 +313,6 @@ services:
         fromDatabase:
           name: brfantasy-db
           property: connectionString
-      - key: TANK01_API_KEY
-        sync: false
       - key: PYTHON_ENV
         value: production
 

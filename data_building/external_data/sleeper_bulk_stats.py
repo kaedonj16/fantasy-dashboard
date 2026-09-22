@@ -32,7 +32,7 @@ def _is_cache_fresh(path: str) -> bool:
     return (time.time() - mtime) <= WEEK_CACHE_TTL
 
 
-def fetch_week_stats(season: int, week: int) -> Dict[str, Any]:
+def fetch_week_stats(season: int, week: int, force: bool = False) -> Dict[str, Any]:
     """
     Load stats for a single NFL week from the existing cache file.
     If the file does not exist (or is unreadable / wrong shape), fetch from Sleeper and write it.
@@ -45,6 +45,14 @@ def fetch_week_stats(season: int, week: int) -> Dict[str, Any]:
     would keep showing projections for games that were actually played. Refetch
     is gated by the TTL so genuinely future / bye weeks (which Sleeper keeps
     returning ``{}`` for) are not re-hit on every call.
+
+    ``force=True`` bypasses the cache read entirely and always refetches from
+    Sleeper, writing the result. This is required for the *in-progress* week:
+    a populated cache normally wins forever, so once that week's file has any
+    (partial) data, later-finishing games would never be picked up. The live
+    advanced-metrics refresh forces the current week so a game that just went
+    final lands in the box scores within minutes rather than at the next daily
+    cron. Completed / past weeks never need it (their caches are immutable).
     """
     cache_path = Path(_week_cache_path(season, week))
     cache_path.parent.mkdir(parents=True, exist_ok=True)
@@ -52,7 +60,8 @@ def fetch_week_stats(season: int, week: int) -> Dict[str, Any]:
     # 1) Load: a non-empty cache wins; an empty-but-fresh cache is kept to avoid
     #    hammering Sleeper for weeks with no games yet. Empty + stale falls
     #    through to a refetch so real stats land once the games are played.
-    if cache_path.exists():
+    #    force=True skips the read so the in-progress week always refetches.
+    if not force and cache_path.exists():
         try:
             data = read_json(str(cache_path))
             if isinstance(data, dict):

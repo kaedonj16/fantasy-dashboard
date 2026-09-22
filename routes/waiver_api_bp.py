@@ -46,6 +46,15 @@ logger = logging.getLogger(__name__)
 
 waiver_api_bp = Blueprint("waiver_api", __name__)
 
+# Only the strongest candidates by value can realistically reach the shown
+# top-30, so the expensive per-candidate enrichment (depth-chart analysis and
+# forward weekly-projection scoring) is bounded to this many top-by-value names
+# PLUS every discovery/signal candidate. Deep-value also-rans keep their cheap
+# no-signal defaults and are still ranked, they just don't each trigger ~12
+# custom-scoring projection lookups. Same bounded-pool rationale the breakout
+# enrichment already uses (top-150 by value ∪ signals).
+_WAIVER_ENRICH_POOL = 150
+
 
 # ── Lazy shims to app.py internals (resolved at request time) ─────────────────
 
@@ -344,11 +353,30 @@ def api_waiver_candidates():
     # players need a healthy-role season PPG. Precompute once; resolving season
     # PPG for the entire NFL player feed (thousands of ids) with custom ESPN
     # scoring routinely timed the waiver request out while Start/Sit still worked.
+    # Bounded enrichment pool: the top candidates by value plus every
+    # discovery/signal candidate. The heavy depth-analysis + forward-projection
+    # work below runs only for these; everyone else keeps no-signal defaults and
+    # is ranked on value (with a cheap backward ROS ppg). This is the single most
+    # important guard against the request timing out on leagues with a large
+    # unrostered pool -- previously every candidate paid the full projection cost
+    # even though only the top 30 are ever shown.
+    _enrich_ids: set[str] = set()
+    try:
+        _by_value_enrich = sorted(
+            candidates, key=lambda c: c.get("value") or 0.0, reverse=True)
+        _enrich_ids = {c["player_id"] for c in _by_value_enrich[:_WAIVER_ENRICH_POOL]}
+        _enrich_ids |= {c["player_id"] for c in candidates
+                        if c.get("discovery") or str(c["player_id"]) in _signal_ids}
+    except Exception:
+        # Fail open: if the pool can't be built, enrich everyone (correct, slow)
+        # rather than starving the ranking of signals.
+        _enrich_ids = {str(c.get("player_id") or "") for c in candidates}
+
     _da_cache_wv: dict = {}
     _injured_for_ppg: set[str] = set()
     for _c_pre in candidates:
         _pid_pre = str(_c_pre.get("player_id") or "")
-        if not _pid_pre:
+        if not _pid_pre or _pid_pre not in _enrich_ids:
             continue
         try:
             _da_pre = _depth_analysis_for_player(
@@ -581,8 +609,12 @@ def api_waiver_candidates():
             c["self_status"] = _self.get("injury_status") or _self.get("status") or ""
 
             # Forward projected ppg for this candidate (#1) -- used for production
-            # and, via the transfer guard (#2), to fade injury upside taken.
-            _fwd_ppg = _forward_ppg_wv(c["player_id"])
+            # and, via the transfer guard (#2), to fade injury upside taken. Only
+            # computed for the bounded enrichment pool; deep-value also-rans fall
+            # back to the cheap backward ppg lookup so they're still ranked on
+            # production without each paying the ~6-week projection scoring cost.
+            _fwd_ppg = (_forward_ppg_wv(c["player_id"])
+                        if c["player_id"] in _enrich_ids else None)
             c["own_proj_ppg"] = _fwd_ppg
             c["ros_ppg"] = _fwd_ppg if _fwd_ppg is not None else _ppg_by_pid_wv.get(c["player_id"])
 
@@ -1023,12 +1055,35 @@ def api_waiver_big_games():
 
     try:
         ctx = get_league_ctx_from_cache(platform, league_id, season)
-    except Exception:
-        ctx = {}
+    except Exception as exc:
+        logger.warning("[waiver-big-games] ownership lookup failed for %s:%s", platform, league_id, exc_info=True)
+        return jsonify({
+            "discoveries": [], "week": _week, "season": _dseason,
+            "availability": "unavailable", "retryable": True,
+            "message": "Player availability could not be verified. Retry to check league rosters.",
+        }), 503
+    rosters = ctx.get("rosters")
+    # An absent/empty/non-roster payload is not proof that every player is a
+    # free agent. Provider adapters normalize player IDs before they reach this
+    # context, so ownership comparisons below remain canonical per platform.
+    if not isinstance(rosters, list) or not rosters or any(
+        not isinstance(r, dict) or "players" not in r for r in rosters
+    ):
+        return jsonify({
+            "discoveries": [], "week": _week, "season": _dseason,
+            "availability": "unavailable", "retryable": True,
+            "message": "League rosters are incomplete, so pickup availability cannot be confirmed.",
+        }), 503
+    if ctx.get("_cache_stale"):
+        return jsonify({
+            "discoveries": [], "week": _week, "season": _dseason,
+            "availability": "stale", "stale": True, "retryable": True,
+            "message": "Last-known rosters are stale; refresh before treating players as available.",
+        }), 503
     # Owned = active + reserve + taxi, so a stashed player never shows as
     # "available" (provider identity: ids are the league's own player ids).
     rostered_ids = set()
-    for r in (ctx.get("rosters") or []):
+    for r in rosters:
         for key in ("players", "reserve", "taxi"):
             for pid in (r.get(key) or []):
                 if pid is not None:
@@ -1078,7 +1133,8 @@ def api_waiver_big_games():
         out.append(d)
 
     out = curate_big_game_discoveries(out, superflex=superflex, qb_need=qb_need)
-    return jsonify({"discoveries": out, "week": _week, "season": _dseason})
+    return jsonify({"discoveries": out, "week": _week, "season": _dseason,
+                    "availability": "verified", "stale": bool(ctx.get("_cache_stale"))})
 
 
 _TRENDING_ADDS_CACHE: dict = {}

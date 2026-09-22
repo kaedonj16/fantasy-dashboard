@@ -114,15 +114,23 @@ def _f(v: Any) -> float:
         return 0.0
 
 
-def build_weekly_metrics(season: int, weeks: Optional[List[int]] = None) -> int:
+def build_weekly_metrics(season: int, weeks: Optional[List[int]] = None,
+                         force_weeks: Optional[List[int]] = None) -> int:
     """Compute and upsert weekly usage rows for the given weeks.
 
     When `weeks` is None, builds weeks 1-18, skipping weeks already in the DB
     except the two most recent stored weeks (which are rebuilt to pick up
     stat corrections), plus any weeks with missing red-zone columns).
+
+    `force_weeks` names weeks whose Sleeper box-score cache must be refetched even
+    when it is already populated. The in-progress week's cache otherwise freezes
+    on its first (pre-game / partial) fetch, so the weekly-filter usage rows would
+    never reflect a game that finished later the same week. The live refresh
+    passes the current week here so a just-final slate lands in the week view now.
     """
     init_weekly_metrics_db()
     idx = load_players_index() or {}
+    force_set = {int(w) for w in (force_weeks or [])}
 
     if weeks is None:
         with get_conn() as conn:
@@ -139,7 +147,12 @@ def build_weekly_metrics(season: int, weeks: Optional[List[int]] = None) -> int:
     total = 0
     for week in weeks:
         try:
-            stats = fetch_week_stats(int(season), int(week)) or {}
+            # Only pass force when actually forcing, so callers/tests that stub
+            # fetch_week_stats with the original 2-arg signature keep working.
+            if int(week) in force_set:
+                stats = fetch_week_stats(int(season), int(week), force=True) or {}
+            else:
+                stats = fetch_week_stats(int(season), int(week)) or {}
         except Exception as exc:
             print(f"[weekly_metrics] fetch failed s{season} w{week}: {exc}")
             continue
@@ -247,6 +260,35 @@ def get_player_weekly_series(player_id: str, season: int) -> List[Dict[str, Any]
             (str(player_id), int(season)),
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+def get_weekly_series_by_player(season: int, through_week: int) -> Dict[str, List[Dict[str, Any]]]:
+    """Load the raw scoring universe in one query, including unmatched IDs.
+
+    Iterating the player index first made identity misses invisible and issued a
+    query per player.  This raw-first shape is both faster and makes the first
+    two pipeline stages auditable.
+    """
+    init_weekly_metrics_db()
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT player_id, week, position, snap_pct, snaps, team_snaps,
+                   targets, receptions, carries, touches, target_share, ppr_pts,
+                   rec_yards, rush_yards, pass_att, rec_tds, rush_tds, pass_tds,
+                   rz_targets, rz_carries
+            FROM player_weekly_metrics
+            WHERE season=%s AND week <= %s
+            ORDER BY player_id, week
+            """,
+            (int(season), int(through_week)),
+        ).fetchall()
+    out: Dict[str, List[Dict[str, Any]]] = {}
+    for raw in rows:
+        row = dict(raw)
+        player_id = str(row.pop("player_id"))
+        out.setdefault(player_id, []).append(row)
+    return out
 
 
 def get_usage_trends(season: int) -> Dict[str, Dict[str, Any]]:

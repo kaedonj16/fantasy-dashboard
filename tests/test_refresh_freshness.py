@@ -106,7 +106,8 @@ def test_refresh_requires_new_authoritative_document_timestamp():
     assert "function extractFreshDocument(html, beforeTs)" in src
     assert "nextTs <= beforeTs" in src
     assert "stale refreshed document" in src
-    assert "attempts = 3" in src
+    assert "attempts = 3" not in src
+    assert "function fetchFreshDocument(beforeTs, signal)" in src
     assert "cache: 'reload'" in src
     assert "cacheTs() !== acceptedTs" in src
 
@@ -187,7 +188,11 @@ def test_freshness_labels_handle_unknown_seconds_future_and_days():
     src = _freshness_iife()
     assert "value < 100000000000" in src
     assert "value > Date.now() + 5 * 60000" in src
-    assert "Update time unknown" in src
+    # Two label sites (updateSheetTime + updateChip) plus the auto-revalidate
+    # freshness gate, which reuses the same seconds/future-tolerant normalization.
+    assert src.count("normalizeTimestamp(cacheTs())") == 3
+    assert "t.textContent = ts ? 'Updated ' + fmtAge(ts) : ''" in src
+    assert "el.textContent = t ? fmtAge(t) : 'Unknown'" in src
     assert "'d ago'" in src
 
 
@@ -311,11 +316,11 @@ function wait(ms){ return new Promise(function(resolve){ realSetTimeout(resolve,
 
   mode = 'stale'; root.dataset.cacheTs = '1000'; postCount = 0; getCount = 0;
   await window.brRefreshLeague();
-  if (postCount !== 1 || getCount !== 3 || root.dataset.cacheTs !== '1000' || window.brRefreshLeague._busy || sheetTime.textContent.indexOf('Failed') !== 0) process.exit(3);
+  if (postCount !== 1 || getCount !== 1 || root.dataset.cacheTs !== '1000' || window.brRefreshLeague._busy || sheetTime.textContent.indexOf('Failed') !== 0) process.exit(3);
 
   mode = 'failure'; postCount = 0; getCount = 0;
   await window.brRefreshLeague();
-  if (postCount !== 1 || getCount !== 3 || root.dataset.cacheTs !== '1000' || window.brRefreshLeague._busy || button.disabled) process.exit(4);
+  if (postCount !== 1 || getCount !== 1 || root.dataset.cacheTs !== '1000' || window.brRefreshLeague._busy || button.disabled) process.exit(4);
   process.exit(0);
 })().catch(function(e){ console.error(e); process.exit(5); });
 """

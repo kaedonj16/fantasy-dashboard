@@ -80,6 +80,29 @@ window.brProPreview = function brProPreview(container, opts) {
   }
 };
 
+
+const BR_PRO_PLANS = [
+  { key: 'user', name: 'Personal', price: '$10/year', coverage: 'PRO for you across all your leagues', cta: 'Choose Personal', recommended: true },
+  { key: 'single_league', name: 'Individual — One League', price: '$5/year', coverage: 'PRO for you in one selected league. Your league mates are not upgraded.', cta: 'Choose one league' },
+  { key: 'league', name: 'Entire League', price: '$15/year', coverage: 'PRO for every manager in one selected league', cta: 'Upgrade a league' },
+  { key: 'combo', name: 'League + Personal', price: '$20/year', coverage: 'PRO for every manager in one selected league, plus you across all your leagues. Other managers’ additional leagues are not upgraded.', cta: 'Choose League + Personal' }
+];
+
+function proPlanCards(options) {
+  options = options || {};
+  return BR_PRO_PLANS.map(function (plan) {
+    const action = options.dataPlan
+      ? `data-plan="${plan.key}"`
+      : `onclick="initiatePurchase('${plan.key}', this)"`;
+    return `<article class="pricing-option${plan.recommended ? ' featured' : ''}" data-plan-card="${plan.key}">
+      <div class="pricing-header"><h4>${plan.name}</h4>${plan.recommended ? '<div class="pricing-badge">Recommended</div>' : ''}</div>
+      <div class="pricing-price">${plan.price.replace('/year', '<span>/year</span>')}</div>
+      <p class="pricing-desc">${plan.coverage}</p>
+      <button type="button" class="btn ${plan.recommended ? 'btn-primary' : 'btn-secondary'} paywall-cta" ${action}>${plan.cta}</button>
+    </article>`;
+  }).join('');
+}
+
 /**
  * Show paywall modal for a specific feature
  *
@@ -104,6 +127,20 @@ window.showPaywall = function showPaywall(feature, opts) {
   };
 
   const featureName = featureNames[feature] || 'Premium Feature';
+  const featureBenefits = {
+    'breakout-candidates': 'Find emerging players by opportunity, peer history, and confidence.',
+    'breakout-analysis': 'See the opportunity signals and confidence behind a breakout case.',
+    'trade-history': 'Use real market activity to understand how players are being moved.',
+    'trade-suggestions': 'Find roster-fit targets and packages built around your needs and surplus.',
+    'trade-ai': 'Get a roster-aware trade read and practical counter ideas.',
+    'playoff-impact': 'See how a proposed trade could shift your playoff outlook.',
+    'gm-memo': 'Turn your roster, standings, and needs into a focused action plan.',
+    'weekly-recap': 'Unlock the premium AI storyline; scores and other recap sections remain free.',
+    'draft-cheat-sheet': 'Save a custom draft board that follows you into the Draft Room.',
+    'draft-trends-scout': 'Spot historical ranking and ADP movement before your draft.',
+    'draft-analyzer': 'Review draft decisions against the players who were still available.'
+  };
+  const featureBenefit = featureBenefits[feature] || 'Unlock more decision support for your fantasy teams.';
   const previewLine = opts.count != null
     ? `<p class="paywall-preview-line"><strong>${opts.count}</strong> ${opts.message || 'available with PRO'}</p>`
     : (opts.message ? `<p class="paywall-preview-line">${opts.message}</p>` : '');
@@ -134,60 +171,13 @@ window.showPaywall = function showPaywall(feature, opts) {
         <div class="paywall-icon"><i class="fa-solid fa-star" aria-hidden="true"></i></div>
         <h3>${featureName}</h3>
         ${previewLine}
-        <p>This is a premium feature. A Google account is required to subscribe.</p>
-        <ul class="paywall-features">
-          <li>✓ Roster-Based Trade Suggestions</li>
-          <li>✓ Full Trade Intelligence feed &amp; history</li>
-          <li>✓ Breakout Engine candidate predictions</li>
-          <li>✓ Playoff Impact simulations</li>
-          <li>✓ Front Office Report</li>
-          <li>✓ Weekly Recap</li>
-          <li>✓ Custom Draft Board</li>
-          <li>✓ Draft Deep Dive Analyzer</li>
-        </ul>
-        <div class="paywall-pricing">
-          <div class="pricing-option">
-            <div class="pricing-header">
-              <h4>One League</h4>
-            </div>
-            <div class="pricing-price">$5<span>/year</span></div>
-            <p class="pricing-desc">PRO for you in one league you choose</p>
-            <button class="btn btn-secondary paywall-cta" onclick="initiatePurchase('single_league', this)">
-              Choose a League
-            </button>
-          </div>
-          <div class="pricing-option">
-            <div class="pricing-header">
-              <h4>League Plan</h4>
-            </div>
-            <div class="pricing-price">$15<span>/year</span></div>
-            <p class="pricing-desc">Premium for all managers in your league</p>
-            <button class="btn btn-secondary paywall-cta" onclick="initiatePurchase('league', this)">
-              Subscribe for League
-            </button>
-          </div>
-          <div class="pricing-option featured">
-            <div class="pricing-header">
-              <h4>League + Personal</h4>
-              <div class="pricing-badge">Best value</div>
-            </div>
-            <div class="pricing-price">$20<span>/year</span></div>
-            <p class="pricing-desc">League premium + all your personal leagues</p>
-            <button class="btn btn-primary paywall-cta" onclick="initiatePurchase('combo', this)">
-              Subscribe Both
-            </button>
-          </div>
-          <div class="pricing-option">
-            <div class="pricing-header">
-              <h4>Personal Plan</h4>
-            </div>
-            <div class="pricing-price">$10<span>/year</span></div>
-            <p class="pricing-desc">Premium for all your leagues</p>
-            <button class="btn btn-secondary paywall-cta" onclick="initiatePurchase('user', this)">
-              Subscribe Personally
-            </button>
-          </div>
-        </div>
+        <p class="paywall-benefit">${featureBenefit}</p>
+        <div class="paywall-pricing">${proPlanCards()}</div>
+        <p class="paywall-auth-note"><i class="fa-brands fa-google" aria-hidden="true"></i> Google sign-in is required at checkout.</p>
+        <details class="paywall-more"><summary>See other PRO tools</summary>
+          <p>Trade Intel, Breakout Engine, Front Office Report, premium weekly recap storyline, playoff-impact simulations, Custom Draft Board, Trend Scout, and Draft Deep Dive.</p>
+        </details>
+        <a class="paywall-full-pricing" href="/pricing">Compare plans and see sample previews</a>        </div>
       </div>
     </div>
   `;
@@ -710,8 +700,7 @@ function _showLeaguePickerModal(planType, triggerBtn) {
     _openCheckoutLeaguePicker(planType, triggerBtn);
   });
 
-  fetch('/api/my-leagues', { cache: 'no-store' })
-    .then(r => r.json())
+  window.brGetMyLeagues({ force: false })
     .then(data => {
       const leagues = (data && data.leagues) || [];
       if (!leagues.length) {
@@ -1080,12 +1069,10 @@ window._initiatePurchaseWithLeague = _initiatePurchaseWithLeague;
 })();
 
 function openHomeProModal() {
-  const PLAN_LABELS = {
-    single_league: 'One League · $5/year',
-    league: 'League · $15/year',
-    combo: 'League + Personal · $20/year',
-    user: 'Personal · $10/year',
-  };
+  const PLAN_LABELS = BR_PRO_PLANS.reduce(function (labels, plan) {
+    labels[plan.key] = plan.name + ' · ' + plan.price;
+    return labels;
+  }, {});
   const NEEDS_SEASON = { mfl: true, fleaflicker: true };
   const year = (window.__brctx && window.__brctx.season) || new Date().getFullYear();
 
@@ -1120,35 +1107,9 @@ function openHomeProModal() {
         <div id="homeProStepPlan" class="home-pro-step">
           <h3>Choose a plan</h3>
           <p>Then enter your league. A Google account is required to subscribe.</p>
-          <div class="paywall-pricing">
-            <div class="pricing-option">
-              <div class="pricing-header"><h4>One League</h4></div>
-              <div class="pricing-price">$5<span>/year</span></div>
-              <p class="pricing-desc">PRO for you in one league you choose</p>
-              <button type="button" class="btn btn-secondary paywall-cta" data-plan="single_league">Choose this plan</button>
-            </div>
-            <div class="pricing-option">
-              <div class="pricing-header"><h4>League Plan</h4></div>
-              <div class="pricing-price">$15<span>/year</span></div>
-              <p class="pricing-desc">Premium for every manager in your league</p>
-              <button type="button" class="btn btn-secondary paywall-cta" data-plan="league">Choose this plan</button>
-            </div>
-            <div class="pricing-option featured">
-              <div class="pricing-header">
-                <h4>League + Personal</h4>
-                <div class="pricing-badge">Best value</div>
-              </div>
-              <div class="pricing-price">$20<span>/year</span></div>
-              <p class="pricing-desc">Your league plus all your personal leagues</p>
-              <button type="button" class="btn btn-primary paywall-cta" data-plan="combo">Choose this plan</button>
-            </div>
-            <div class="pricing-option">
-              <div class="pricing-header"><h4>Personal Plan</h4></div>
-              <div class="pricing-price">$10<span>/year</span></div>
-              <p class="pricing-desc">Premium for all your leagues</p>
-              <button type="button" class="btn btn-secondary paywall-cta" data-plan="user">Choose this plan</button>
-            </div>
-          </div>
+          <div class="paywall-pricing">${proPlanCards({ dataPlan: true })}</div>
+          <p class="paywall-auth-note"><i class="fa-brands fa-google" aria-hidden="true"></i> Google sign-in is required at checkout.</p>
+          <a class="paywall-full-pricing" href="/pricing">Compare features and see sample previews</a>
         </div>
         <div id="homeProStepLeague" class="home-pro-step" hidden>
           <button type="button" id="homeProBack" class="home-pro-back">Change plan</button>
@@ -1318,8 +1279,7 @@ function openHomeProModal() {
   }
   function loadSavedLeagues() {
     if (!window._hasAccount || !savedWrap || !savedSelect) return;
-    fetch('/api/my-leagues', { cache: 'no-store' })
-      .then(function (r) { return r.json(); })
+    window.brGetMyLeagues({ force: false })
       .then(function (data) {
         const leagues = (data && data.leagues) || [];
         if (!leagues.length) return;

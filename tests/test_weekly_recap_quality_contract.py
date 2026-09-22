@@ -11,16 +11,16 @@ def test_recap_prompt_has_natural_record_and_power_rules():
     assert "Standings describe what has happened" in source
     assert "Power rank describes how strong a team looks" in source
     assert "rank_gap" in source
-    assert "v12_top_performers" in source
-    assert 'em dash character "—"' in source
-    assert "does NOT apply to regular hyphens in compound words" in source
-    assert 'Format records naturally as 2-0, never as tuples or "2, 0"' in source
+    assert "v13_story" in source
+    assert "Do not recap the award cards" in source
 
 
-def test_lineup_selectors_supply_six_real_candidates():
-    source = (ROOT / "app.py").read_text()
-    assert "busts = bust_pool[:6]" in source
-    assert "sleepers = all_bench[:6]" in source
+def test_lineup_selectors_share_one_historical_calculation():
+    source = (ROOT / "dashboard_services/recap_calculations.py").read_text()
+    app = (ROOT / "app.py").read_text()
+    assert '"underperformers": underperformers' in source
+    assert '"bench_gems": gems' in source
+    assert "build_lineup_analysis(" in app
 
 
 def test_recap_uses_shared_historical_and_picture_resolvers():
@@ -35,9 +35,9 @@ def test_recap_uses_shared_historical_and_picture_resolvers():
 def test_recap_sections_follow_editorial_order_and_end_with_up_next():
     """The recap moves from the completed week to its forward-looking ending."""
     source = (ROOT / "dashboard_services/pages/recap_page.py").read_text()
-    returned = source.split("    return (preview_banner + history_banner + week_selector", 1)[1]
-    expected = ["cards_html", "story_html", "scoreboard_html", "lineup_html",
-                "standings_html", "around_html", "up_next_html"]
+    returned = source.split("    return ('<main class=\"weekly-recap\">'", 1)[1]
+    expected = ["week_selector", "cards_html", "story_html", "scoreboard_html",
+                "lineup_html", "standings_html", "up_next_html"]
     positions = [returned.index(item) for item in expected]
     assert positions == sorted(positions)
     assert returned.index("up_next_html") < returned.index(")\n", returned.index("up_next_html"))
@@ -54,9 +54,9 @@ def test_historical_movement_is_week_capped_and_week_one_safe():
 def test_recap_keeps_preview_entitlements_divisions_and_new_section_names():
     source = (ROOT / "dashboard_services/pages/recap_page.py").read_text()
     for text in ("get_weekly_ai_recap_preview", "get_weekly_ai_recap_teaser",
-                 "resolve_divisions", "Week at a Glance", "The Story of Week",
-                 "How the Week Finished", "Decisions That Mattered", "What Changed",
-                 "Around the League", "Up Next — Week"):
+                 "resolve_divisions", "Week at a Glance", "Weekly Story",
+                 "Scoreboard", "Lineup Review", "Standings &amp; Power Rankings",
+                 "Up Next — Week"):
         assert text in source
 
 
@@ -79,4 +79,47 @@ def test_mobile_recap_no_longer_depends_on_sidebar_grid():
     css = (ROOT / "static/dashboard.css").read_text()
     assert "recap-scoreboard-grid" not in page
     assert "grid-template-columns: repeat(2, minmax(0, 1fr))" in css
-    assert "grid-template-columns: minmax(0, 1fr) minmax(88px, 30vw) minmax(0, 1fr)" in css
+    assert ".weekly-recap" in css
+    assert "max-width: 1240px" in css
+    assert "grid-template-columns:1fr" in css
+
+
+def test_all_power_ranked_teams_are_rendered():
+    source = (ROOT / "dashboard_services/pages/recap_page.py").read_text()
+    loop = source.split("for i, p in enumerate(power_teams, 1):", 1)[1].split("power_html =", 1)[0]
+    assert "power_rows.append" in loop
+    assert "if i not in" not in loop
+
+
+def test_weekly_story_and_lineup_review_layout_contract():
+    """Recap-specific styles keep the story wide and lineup groups content-sized."""
+    app = (ROOT / "app.py").read_text()
+    css = (ROOT / "static/dashboard.css").read_text()
+
+    assert ".weekly-recap .recap-story > .card { width:100%; max-width:none;" in css
+    assert ".weekly-recap .recap-story [data-br-reveal-text] > *" in css
+    assert ".weekly-recap .recap-lineup-cols { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); align-items:start; }" in css
+    assert ".weekly-recap .rlc-section:nth-child(3) { grid-column:1 / -1; }" in css
+    assert "@media (max-width:900px)" in css
+    assert ".weekly-recap .recap-lineup-cols { display:block; }" in css
+    assert ".rlc-section + .rlc-section { border-top:1px solid var(--border); }" in css
+    assert "grid-template-columns:repeat(3,minmax(0,1fr))" not in css
+
+    # Each missed opportunity is emitted as one expandable unit with both
+    # players and its own gain, rather than as independently counted rows.
+    missed = app.split("    def missed_row(item):", 1)[1].split("    missed_rows =", 1)[0]
+    assert "rc-swap-row" in missed
+    assert 'swap_player(started, "Started", "loss")' in missed
+    assert 'swap_player(reserve, "Benched", "win")' in missed
+    assert "Potential gain" in missed
+    assert "player_row(" not in missed
+
+
+def test_lineup_sections_have_independent_accessible_expansion_controls():
+    app = (ROOT / "app.py").read_text()
+    section = app.split("    def section(title, note, rows):", 1)[1].split("    viewer =", 1)[0]
+
+    assert "rows[:3]" in section and "rows[3:]" in section
+    assert "<details class='recap-lineup-more'>" in section
+    assert "Show all" in section and "Show less" in section
+    assert "<section class='rlc-section'>" in section

@@ -26,9 +26,88 @@ def test_recent_streak_supports_legacy_aliases_and_real_zeroes():
 def test_progressive_hydration_keeps_streak_slot_and_resets_manual_retry():
     from pathlib import Path
 
-    source = (Path(__file__).resolve().parents[1] / "app.py").read_text()
+    source = (Path(__file__).resolve().parents[1] / "static" / "app.js").read_text()
     # render() replaces the stats container, so its replacement must recreate
     # the streak target before the section patch runs.
-    render = source[source.index("function render(c,d)"):source.index("function load(c)")]
-    assert "data-summary-streak" in render
-    assert "c._summaryAttempt=0;q.unshift(c)" in source
+    render = source[source.index("function renderSummary(card, data)"):source.index("function matchupHtml(data)")]
+    assert "data.streak" in render
+    assert "schedule(owner, button.closest('.pf-lg-card'), 0, true)" in source
+
+
+def test_render_summary_reapplies_server_side_styling_after_async_refresh():
+    """renderSummary() rewrites data-summary-stats after the async summary
+    fetch resolves. It must reproduce the exact classes/markup the server
+    renders on first paint (record color, weak-standing flag, streak pills,
+    the pf-lg-stat--streak alignment modifier), or those cues visibly
+    disappear the moment the card hydrates."""
+    from pathlib import Path
+
+    source = (Path(__file__).resolve().parents[1] / "static" / "app.js").read_text()
+    render = source[source.index("function renderSummary(card, data)"):source.index("function matchupHtml(data)")]
+    assert "color-win" in render and "color-loss" in render
+    assert "pf-lg-v--weak" in render
+    assert "pf-lg-stat--streak" in render
+    assert "pf-s-pill" in render and "pf-s-w" in render and "pf-s-l" in render
+    assert "pf-streak-empty" in render
+    assert 'title="Regular-season standings: wins, then points for"' in render
+
+
+def test_render_summary_rebuilds_position_strength_strip():
+    """The position-strength strip (.pf-lg-strength / .pf-strbar / .pf-pos-chip)
+    is only present in the server's initial markup for cards that already had
+    data. Cards that start in the 'loading' skeleton state never get it added
+    once the async summary resolves unless renderSummary rebuilds it too."""
+    from pathlib import Path
+
+    source = (Path(__file__).resolve().parents[1] / "static" / "app.js").read_text()
+    assert "function renderStrength(card, data, totalN)" in source
+    strength = source[source.index("function renderStrength(card, data, totalN)"):source.index("function renderSummary(card, data)")]
+    assert "pos_user_rank" in strength
+    assert "pf-lg-strength" in strength
+    assert "pf-strbar" in strength
+    assert "pf-pos-chip q-" in strength
+    render = source[source.index("function renderSummary(card, data)"):source.index("function matchupHtml(data)")]
+    assert "renderStrength(card, data, totalN)" in render
+
+
+def test_cached_stale_summary_preserves_underlying_sync_timestamp(monkeypatch):
+    import dashboard_services.accounts as accounts
+    import dashboard_services.portfolio_summary as summaries
+
+    synced = "2026-09-19T10:00:00+00:00"
+    monkeypatch.setattr(accounts, "resolve_account_viewer_for_league",
+                        lambda *a, **k: {"viewer_roster_id": "1"})
+    monkeypatch.setattr(summaries, "_store_persistent", lambda *a: None)
+    ctx = {
+        "_cache_synced_at": synced,
+        "_cache_stale": True,
+        "rosters": [{"roster_id": 1, "owner_id": "u", "players": [], "settings": {}}],
+        "users": [{"user_id": "u", "display_name": "Team"}],
+        "league": {"name": "League"},
+        "players_index": {},
+    }
+    result = summaries.build_league_summary(
+        7, {"platform": "sleeper", "league_id": "L", "season": 2026},
+        lambda *a: ctx,
+    )
+    assert result["generated_at"] != synced
+    assert result["last_successful_sync_at"] == synced
+    assert result["refreshed_at"] == synced
+    assert result["stale"] is True and result["_cache_stale"] is True
+    assert result["partial"] is True
+
+
+def test_missing_context_freshness_stays_unknown(monkeypatch):
+    import dashboard_services.accounts as accounts
+    import dashboard_services.portfolio_summary as summaries
+
+    monkeypatch.setattr(accounts, "resolve_account_viewer_for_league",
+                        lambda *a, **k: {"viewer_roster_id": "1"})
+    monkeypatch.setattr(summaries, "_store_persistent", lambda *a: None)
+    result = summaries.build_league_summary(
+        7, {"platform": "sleeper", "league_id": "L", "season": 2026},
+        lambda *a: {"rosters": [{"roster_id": 1, "players": [], "settings": {}}],
+                    "users": [], "league": {}, "players_index": {}},
+    )
+    assert result["last_successful_sync_at"] is None
+    assert result["refreshed_at"] is None

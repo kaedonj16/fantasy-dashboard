@@ -53,9 +53,10 @@ def from_players_map(pid: str, players_map: Optional[Dict[str, Any]] = None) -> 
         )
         return {"name": name, "nfl": nfl, "pos": pos}
 
-    # DEF fallback for team abbrevs
-    if pid.isalpha() and 2 <= len(pid) <= 3:
-        team = canon_team(pid) or pid
+    # DEF fallback is deliberately limited to canonical NFL franchises. An
+    # arbitrary unknown alphabetic player/provider ID must remain unknown.
+    team = canon_team(pid) if pid else None
+    if team in NFL_TEAMS:
         return {"name": f"{team} D/ST", "nfl": team, "pos": "DEF"}
 
     return {"name": pid, "nfl": "FA", "pos": ""}
@@ -215,12 +216,12 @@ for _abbr, _names in _NFL_FRANCHISES.items():
     for _name in _names:
         TEAM_ALIASES.setdefault(_name.lower(), _abbr)
 
-TANK01_HOST = "tank01-nfl-live-in-game-real-time-statistics-nfl.p.rapidapi.com"
+TANK01_HOST = "disabled.invalid"
 BASE = f"https://{TANK01_HOST}"
 SCHEDULE_CACHE: dict[tuple[int, int], dict] = {}
 SCHEDULE_TTL = 60 * 10  # seconds
 
-TANK01_API_HOST = "tank01-nfl-live-in-game-real-time-statistics-nfl.p.rapidapi.com"
+TANK01_API_HOST = "disabled.invalid"
 TANK01_API_KEY = os.environ.get("TANK01_API_KEY", "")  # RapidAPI key — set via env
 
 NFL_TEAMS = [
@@ -758,52 +759,17 @@ def get_week_schedule_cached(
     return data
 
 
-def get_players_index_cached(rapidapi_key: str) -> Dict[str, Dict[str, Any]]:
-    """
-    Fetches the Tank01 player list (or loads from cache if already saved locally).
-    Returns a mapping: { sleeper_id: { 'name': str, 'team': str, 'tank01_id': str } }
-    """
-    cache_dir = CACHE_DIR
-    cache_dir.mkdir(exist_ok=True)
-    cache_path = cache_dir / "tank01-players_index.json"
+def get_players_index_cached(rapidapi_key: str = "") -> Dict[str, Dict[str, Any]]:
+    """Load the preserved legacy identity crosswalk without network I/O.
 
-    # If cache exists locally, just load it
+    Sleeper/ESPN metadata owns future refreshes.  The unused argument remains
+    for source compatibility with maintenance callers.
+    """
+    cache_path = CACHE_DIR / "tank01-players_index.json"
     if cache_path.exists():
         with cache_path.open("r", encoding="utf-8") as f:
             return json.load(f)
-
-    # Otherwise, call Tank01 API
-    url = f"https://{TANK01_API_HOST}/getNFLPlayerList"
-    headers = {
-        "x-rapidapi-host": TANK01_API_HOST,
-        "x-rapidapi-key": rapidapi_key,
-    }
-
-    print("📡 Fetching Tank01 player list...")
-    resp = requests.get(url, headers=headers, timeout=30)
-    if resp.status_code != 200:
-        raise RuntimeError(f"TANK01 API error {resp.status_code}: {resp.text[:200]}")
-
-    data = resp.json().get("body", [])
-    index = {}
-
-    for p in data:
-        sid = str(p.get("sleeperId") or p.get("sleeperbotid") or "")
-        if not sid:
-            continue
-        index[sid] = {
-            "name": p.get("longName") or p.get("name") or "",
-            "team": p.get("team") or "",
-            "tank01_id": p.get("playerID") or p.get("id") or "",
-        }
-
-    # Save to disk
-    with cache_path.open("w", encoding="utf-8") as f:
-        json.dump(index, f, indent=2)
-
-    print(f"✅ Cached {len(index)} players to {cache_path}")
-    return index
-
+    return {}
 
 def canon_team(t: Optional[str]) -> Optional[str]:
     if not t:
@@ -861,51 +827,12 @@ def streak_class(row) -> str:
 
 
 def fetch_week_from_tank01(season: int, week: int, raw_scoring_settings: dict = None) -> dict:
+    """Compatibility shim: paid weekly projections are unavailable.
+
+    Callers continue through their existing non-paid projection hierarchy; no
+    season totals or play-by-play estimates are substituted.
     """
-    Fetches Tank01 projections for all players for a given week/season.
-    Returns { sleeper_id: {"ppr": X, "half_ppr": Y, "std": Z, "tep": A,
-                           "6pt_ppr": B, "6pt_half": C, "6pt_tep": D} }
-    All common scoring variants are pre-computed so one file serves every league type.
-    """
-    # Fetch with standard PPR params — we read PPR/halfPPR/std directly from
-    # Tank01's fantasyPointsDefault and derive other variants from raw stats.
-    base_params = {
-        "passYards": 0.04, "passTD": 4, "passInterceptions": -2,
-        "pointsPerReception": 1, "receivingYards": 0.1, "receivingTD": 6,
-        "rushYards": 0.1, "rushTD": 6, "fumbles": -2, "twoPointConversions": 2,
-    }
-    url = f"https://{TANK01_API_HOST}/getNFLProjections"
-    try:
-        from dashboard_services.api import get_nfl_state
-        current_season = int((get_nfl_state() or {}).get("season") or 0)
-    except Exception:
-        current_season = 0
-    params = {"week": week, "itemFormat": "list", **base_params}
-    if season != current_season and season > 0:
-        params["archiveSeason"] = season
-
-    headers = {"x-rapidapi-host": TANK01_API_HOST, "x-rapidapi-key": TANK01_API_KEY}
-
-    print(f"📡 Fetching Tank01 projections for Week {week}...")
-    resp = requests.get(url, headers=headers, params=params, timeout=20)
-    if resp.status_code != 200:
-        print(f"⚠️ Tank01 API error {resp.status_code}: {resp.text[:200]}")
-        return {}
-
-    data = resp.json()
-    body = data.get("body") or data.get("list") or []
-    if isinstance(body, dict):
-        body = list(body.values())
-
-    players_idx = load_players_index()
-    if not players_idx:
-        print("⚠️ No cached players index found. Run get_players_index_cached() first.")
-        return {}
-
-    proj_map = map_weekly_projections_to_sleeper(body, players_idx)
-    print(f"✅ Retrieved {len(proj_map)} player projections for Week {week}")
-    return proj_map
-
+    return {}
 
 def _sleeper_stats_to_variants(st: dict, pos: str, raw_scoring_settings: dict = None) -> Optional[dict]:
     """
@@ -1331,6 +1258,50 @@ def game_has_started(game: Optional[dict], now: datetime | None = None) -> bool:
                 return True
         return False
     return normalize_game_status_from_tank01(game, now=now) in ("in", "post")
+
+
+def finished_game_ids_for_week(season: int, week: int) -> list[str]:
+    """IDs of the week's games that are final (Tank01/schedule status ``post``).
+
+    Used by the live advanced-metrics refresh to tell "a new game just finished"
+    from "nothing changed", so a rebuild happens the moment a slate goes final
+    rather than at the next daily cron. Any load/parse failure yields ``[]``.
+    """
+    try:
+        sched = load_week_schedule(int(season), int(week)) or []
+    except Exception:
+        return []
+    out: list[str] = []
+    for g in sched:
+        if not isinstance(g, dict):
+            continue
+        if normalize_game_status_from_tank01(g) == "post":
+            gid = g.get("gameID") or g.get("gameId") or g.get("id")
+            if gid:
+                out.append(str(gid))
+    return sorted(set(out))
+
+
+def week_has_final_game(season: int, week: int) -> bool:
+    """True when at least one of the week's games has gone final."""
+    if not week or int(week) < 1:
+        return False
+    return bool(finished_game_ids_for_week(season, week))
+
+
+def resolve_adv_metrics_completed_week(season: int, current_week: int) -> int:
+    """Highest week whose finished games should feed the metrics snapshot.
+
+    Returns ``current_week`` once that in-progress week has at least one final
+    game (so a just-completed slate is included immediately), otherwise
+    ``current_week - 1`` (the last fully-finished week). Never below 0. Both the
+    live refresh and the daily cron call this so they agree on which week the
+    day's snapshot row covers and neither regresses the other's write.
+    """
+    cw = max(0, int(current_week or 0))
+    if cw >= 1 and week_has_final_game(season, cw):
+        return cw
+    return max(0, cw - 1)
 
 
 def build_games_by_team(games: list[dict]) -> dict[str, dict]:
@@ -2499,6 +2470,10 @@ def normalize_name(name: str) -> str:
 
     # remove periods from initials (K.C. -> KC, K. C. -> K C)
     s = re.sub(r'\.', '', s)
+    # Provider feeds disagree on apostrophes and hyphens (Ka'imi/Kaimi,
+    # Amon-Ra/Amon Ra). Normalize punctuation before identity comparison.
+    s = re.sub(r"['’`]", "", s)
+    s = re.sub(r"[-‐‑‒–—]", " ", s)
     
     # collapse whitespace
     s = re.sub(r"\s+", " ", s).strip()

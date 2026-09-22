@@ -333,8 +333,10 @@ def privacy_page(platform: Optional[str] = None, season: Optional[int] = None,
                 <a href="https://adssettings.google.com/" target="_blank" rel="noopener noreferrer">adssettings.google.com</a>,
                 and learn how Google uses data on partner sites in
                 <a href="https://policies.google.com/technologies/partner-sites" target="_blank" rel="noopener noreferrer">Google's partner-sites policy</a>.
-                Visitors in the EEA, UK, or Switzerland are shown a Google-certified consent
-                message (Funding Choices) before non-essential advertising cookies are used.
+                In regions where consent is required, advertising is configured to rely on a
+                Google-certified consent management platform. The consent message itself is
+                configured and published in AdSense Privacy &amp; messaging; it is not supplied
+                by this website's application code.
               </p>
             </div>
 
@@ -342,10 +344,11 @@ def privacy_page(platform: Optional[str] = None, season: Optional[int] = None,
               <div class="static-section-title">Cookies</div>
               <p>
                 Essential cookies maintain your login session, subscription access, preferences,
-                and security. Where required, our consent banner lets you accept, reject, or manage
-                non-essential advertising cookies before they are used. You can also change your
-                choice through the privacy controls provided on the site or clear cookies in your
-                browser. Disabling essential cookies may prevent account features from working.
+                and security. Where required, the consent message configured in Google's
+                Privacy &amp; messaging controls lets you accept, reject, or manage non-essential
+                advertising cookies. Availability of that control depends on the message being
+                published in the site's AdSense account. You can also clear cookies in your browser.
+                Disabling essential cookies may prevent account features from working.
               </p>
             </div>
 
@@ -795,10 +798,11 @@ def about_page(platform: Optional[str] = None, season: Optional[int] = None,
             <div class="static-section">
               <div class="static-section-title">Data Sources</div>
               <p>
-                All fantasy data is sourced from public Sleeper and ESPN APIs.
-                Player projections and rankings are sourced from publicly available
-                fantasy football data providers. No private or proprietary data
-                is used without permission.
+                League data comes from the platform a manager connects, including Sleeper,
+                ESPN, Yahoo, MFL, and Fleaflicker. Player pages and tools also use cached NFL
+                statistics, projection feeds, and market-value datasets available to BR Fantasy.
+                A displayed projection, market value, and completed-game statistic are different
+                measures; labels identify the season and basis where those distinctions matter.
               </p>
             </div>
 
@@ -808,8 +812,9 @@ def about_page(platform: Optional[str] = None, season: Optional[int] = None,
                 Guides, explanations, rankings, and model commentary are created for BR Fantasy,
                 not copied or automatically republished from other sites. Analysis distinguishes
                 measured league data from projections and opinion, and methodology is explained
-                wherever a model-generated value is presented. Automated outputs are reviewed and
-                updated as source data changes; no ranking or projection is a guarantee.
+                wherever a model-generated value is presented. Rankings and automated outputs may
+                change when their underlying feeds and calculations are refreshed; no ranking or
+                projection is a guarantee.
               </p>
               <p style="margin-top:8px;">
                 If you spot an inaccurate statistic, broken source, or unclear recommendation,

@@ -38,30 +38,57 @@ def test_home_platform_chips_label_yahoo_and_mfl():
     assert "Yahoo coming soon" not in APP_PY
 
 
-def test_paywall_and_pricing_list_the_same_pro_set():
+def test_paywall_and_pricing_explain_pro_and_plan_coverage():
     billing = (ROOT / "routes" / "billing_bp.py").read_text(encoding="utf-8")
     locked = [
-        "Roster-Based Trade Suggestions",
-        "Full Trade Intelligence feed &amp; history",
-        "Breakout Engine candidate predictions",
-        "Playoff Impact simulations",
+        "Roster-based trade suggestions",
+        "Trade Intel feed &amp; history",
+        "AI trade analysis &amp; counters",
+        "Breakout Engine",
+        "Playoff-impact simulations",
         "Front Office Report",
-        "Weekly Recap",
+        "Premium AI weekly recap storyline",
         "Custom Draft Board",
-        "Draft Deep Dive Analyzer",
+        "Trend Scout",
+        "Draft Deep Dive",
     ]
     for name in locked:
-        assert name in PAYWALL_JS
         assert name in billing
+    for source in (billing, PAYWALL_JS):
+        assert source.index("Personal") < source.index("Individual — One League")
+        assert source.index("Individual — One League") < source.index("Entire League")
+        assert "Recommended" in source
+        assert "Most popular" not in source
+        assert "Your league mates are not upgraded" in source
+        assert "Other managers’ additional leagues are not upgraded" in source
     assert "What PRO includes" in billing
-    assert "Free includes" in billing
+    assert "What remains free" in billing
+    assert "Sample preview" in billing
+    assert "premium AI weekly recap storyline" in billing
+    assert "non-storyline sections of Weekly Recap also remain free" in billing
     assert "pricing-features-grid" in billing
     assert "pricing-feature-item" in billing
-    dash_css = (ROOT / "static" / "dashboard.css").read_text(encoding="utf-8")
-    assert ".pricing-features-grid" in dash_css
+    paywall_css = (ROOT / "static" / "paywall.css").read_text(encoding="utf-8")
+    assert ".pricing-plan-grid" in paywall_css
     assert "Advanced Metrics" in billing
     assert "Auction Values" in billing
     assert "All future premium features" not in billing
+
+
+def test_plan_cards_keep_original_keys_and_annual_prices():
+    billing = (ROOT / "routes" / "billing_bp.py").read_text(encoding="utf-8")
+    expected = {
+        "user": "$10/year",
+        "single_league": "$5/year",
+        "league": "$15/year",
+        "combo": "$20/year",
+    }
+    for key, price in expected.items():
+        assert f'("{key}",' in billing
+        assert f"initiatePurchase('{{key}}', this)" in billing
+        assert f"key: '{key}'" in PAYWALL_JS
+        assert price in billing
+        assert price in PAYWALL_JS
 
 
 def test_nav_shows_trade_intel_and_redzone_on_every_platform():
@@ -84,7 +111,7 @@ def test_paywall_lists_shipped_pro_features_only():
     assert "'draft-trends-scout': 'Trend Scout'" in PAYWALL_JS
     assert "'playoff-impact': 'Playoff Impact'" in PAYWALL_JS
     assert "'gm-memo': 'Front Office Report'" in PAYWALL_JS
-    assert "Playoff Impact simulations" in PAYWALL_JS
+    assert "playoff-impact simulations" in PAYWALL_JS
     assert "'weekly-recap': 'Weekly Recap'" in PAYWALL_JS
     am = (ROOT / "dashboard_services" / "pages" / "advanced_metrics_page.py").read_text(encoding="utf-8")
     assert "amPaywall" not in am

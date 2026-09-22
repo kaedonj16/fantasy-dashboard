@@ -83,18 +83,18 @@ def test_scoreboard_contract_includes_modal_context_and_protected_mobile_score_l
     assert 'data-league-id=' in page and 'data-platform=' in page and 'data-season=' in page
     assert "recap-top-performer-players" in page
     assert "white-space: normal" in css
-    assert "recap-matchup-main" in page and "recap-matchup-performers" in page
-    # Keep a protected score lane without forcing 150px into very narrow phones.
-    assert "grid-template-columns: minmax(0, 1fr) minmax(88px, 30vw) minmax(0, 1fr)" in css
-    assert "font-size: clamp(16px, 5vw, 24px)" in css
-    assert "word-break: normal" in css
-    assert "-webkit-line-clamp: 2" in css
-    assert ".recap-top-label-long" in css
+    assert "recap-matchup-main" in page
+    # The performer is physically inside its team block on every breakpoint.
+    assert "{top_performer_html(rid)}" in page
+    assert "grid-template-columns:1fr" in css
+    assert ".recap-team-score" in css
+    assert "overflow-wrap:anywhere" in css
 
 
 def test_completed_recap_cache_version_is_refreshed():
     source = (ROOT / "dashboard_services/ai/weekly_recap.py").read_text()
-    assert "v12_top_performers" in source
+    assert "v13_story" in source
+    assert "score_revision" in source
 
 
 def test_recap_route_hydrates_matchups_before_rendering():

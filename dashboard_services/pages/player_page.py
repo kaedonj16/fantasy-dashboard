@@ -136,15 +136,13 @@ def build_player_page_body(
     )
 
     # Hero value cards (same classes as the modal overview)
-    ppg_card = ""
-    if ppg:
-        ppg_card = f"""
+    ppg_card = f"""
           <div class="pm-hero-stat">
-            <div class="pm-hero-label">PPG</div>
-            <div class="pm-hero-val">{_fmt(ppg)}</div>
-            <div class="pm-hero-sub">{season} season</div>
+            <div class="pm-hero-label">Full-PPR PPG</div>
+            <div class="pm-hero-val">{_fmt(ppg, 'N/A')}</div>
+            <div class="pm-hero-sub">{season} completed appearances</div>
           </div>"""
-    hero_count = 2 + (1 if ppg_card else 0)
+    hero_count = 3
     val1qb_sub = (
         f"POS : {html.escape(str(pos_rank_label))} &middot; OVR : {_fmt(ovr_rank, '-')}"
         if pos_rank_label else "-"

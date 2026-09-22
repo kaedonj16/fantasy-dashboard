@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 from typing import Dict, List, Optional
 
 from .api import avatar_from_users, team_avatar
@@ -11,15 +12,46 @@ def _first(seq, default=None):
     return seq[0] if isinstance(seq, (list, tuple)) and len(seq) else default
 
 
+# ``get_players_map`` turns the full NFL player universe (~11k entries) into a
+# fresh {pid: {name, team, pos}} dict. ``build_league_context`` calls it once
+# per league, so a member of many leagues would otherwise rebuild and retain
+# one full-universe copy per cached context (a per-league memory cost that
+# scaled with league count and drove OOM on the portfolio). The source is a
+# process-shared global that changes rarely and every caller treats the result
+# as read-only, so memoize a single instance keyed on the source's identity and
+# share it across all contexts. A strong reference to the source is retained so
+# its ``id`` cannot be reused by a later object while the cached map is live.
+_PLAYERS_MAP_CACHE: dict[str, object] = {"src_id": None, "src": None, "map": None}
+_PLAYERS_MAP_LOCK = threading.Lock()
+
+
 def get_players_map(data: dict | None = None) -> dict[str, dict[str, str]]:
     """
     Build a simple player map:
       { player_id: {name, team, pos} }
-    """
-    mp: dict[str, dict[str, str]] = {}
-    if not data:
-        return mp
 
+    The returned dict is shared across callers and must be treated as
+    read-only; mutating it would corrupt every league context that reused it.
+    """
+    if not data:
+        return {}
+
+    src_id = id(data)
+    cache = _PLAYERS_MAP_CACHE
+    if cache["src"] is data and cache["src_id"] == src_id and cache["map"] is not None:
+        return cache["map"]  # type: ignore[return-value]
+
+    mp = _build_players_map(data)
+
+    with _PLAYERS_MAP_LOCK:
+        cache["src_id"] = src_id
+        cache["src"] = data
+        cache["map"] = mp
+    return mp
+
+
+def _build_players_map(data: dict) -> dict[str, dict[str, str]]:
+    mp: dict[str, dict[str, str]] = {}
     for pid, p in data.items():
         get = p.get  # local binding for speed
         full_name = get("full_name")

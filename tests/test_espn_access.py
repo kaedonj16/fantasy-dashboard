@@ -111,6 +111,72 @@ def test_private_league_skips_anonymous_retry_and_reuses_auth_cache(monkeypatch,
     assert caplog.text.count("anonymous None-cookies AttributeError as access denied") == 1
 
 
+def test_authenticated_denial_is_memoized_across_parallel_tasks(monkeypatch):
+    """A rejected private league must not re-pay the failed authenticated load.
+
+    A single dashboard GET fans out league/users/rosters/drafts, each calling
+    _league(). Without an authenticated-denied memo, every task (and every later
+    request in the window) re-issued the doomed credentialed League() AND an
+    extra heavy-view diagnostic probe -- eight ESPN round-trips for one page.
+    """
+    league_calls = []
+    probe_calls = []
+
+    def fake_league(**kwargs):
+        league_calls.append(kwargs)
+        raise ESPNAccessDenied()
+
+    def fake_get(url, **kwargs):
+        probe_calls.append((url, kwargs))
+        return SimpleNamespace(status_code=401, ok=False)
+
+    monkeypatch.setattr(espn_api, "League", fake_league)
+    monkeypatch.setattr(espn_api.requests, "get", fake_get)
+    monkeypatch.setattr(espn_api, "_espn_creds", lambda: ("secret", "{owner}"))
+
+    for _ in range(4):
+        with pytest.raises(espn_api.ESPNAccessDenied):
+            espn_api._league_cached(2026, "1848268449")
+
+    # One anonymous attempt + exactly one authenticated attempt; later calls
+    # short-circuit on the memo instead of hitting ESPN again.
+    anon = [c for c in league_calls if "espn_s2" not in c]
+    auth = [c for c in league_calls if "espn_s2" in c]
+    assert len(anon) == 1, league_calls
+    assert len(auth) == 1, league_calls
+    # The heavy-view diagnostic probe runs only for that single real denial.
+    assert len(probe_calls) == 1, probe_calls
+
+
+def test_authenticated_denial_memo_is_bypassed_by_fresh_credentials(monkeypatch):
+    """Reconnecting with new cookies retries immediately, not after the window."""
+    league_calls = []
+
+    def fake_league(**kwargs):
+        league_calls.append(kwargs)
+        if kwargs.get("espn_s2") == "good-secret":
+            return SimpleNamespace(name="Private league")
+        raise ESPNAccessDenied()
+
+    monkeypatch.setattr(espn_api, "League", fake_league)
+    monkeypatch.setattr(
+        espn_api.requests, "get",
+        lambda *a, **k: SimpleNamespace(status_code=401, ok=False),
+    )
+
+    monkeypatch.setattr(espn_api, "_espn_creds", lambda: ("stale-secret", "{owner}"))
+    with pytest.raises(espn_api.ESPNAccessDenied):
+        espn_api._league_cached(2026, "1848268449")
+
+    # Same league, different (freshly reconnected) cookies -> new fingerprint,
+    # so the memo does not block the retry and the load now succeeds.
+    monkeypatch.setattr(espn_api, "_espn_creds", lambda: ("good-secret", "{owner}"))
+    league = espn_api._league_cached(2026, "1848268449")
+    assert league.name == "Private league"
+    assert {"league_id": 1848268449, "year": 2026,
+            "espn_s2": "good-secret", "swid": "{owner}"} in league_calls
+
+
 def test_auth_league_cache_is_scoped_to_credential_fingerprint(monkeypatch):
     calls = []
 

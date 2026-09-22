@@ -37,7 +37,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 # Bump when the scoring math changes so persisted rows are self-identifying and a
 # stale row can be told apart from a current-version one.
-SCORING_VERSION = "weekly-v2"
+SCORING_VERSION = "weekly-v5"
 
 _POSITIONS = ("QB", "RB", "WR", "TE")
 
@@ -59,6 +59,28 @@ _FULL_RUSH_PG = {"QB": 6.0, "RB": 15.0}
 WATCHLIST_MIN_SCORE = 18.0     # below this a player is not a breakout candidate
 EMERGING_MIN_SCORE = 42.0      # sustained role change large enough to headline
 EMERGING_MIN_BASELINE_GAMES = 2
+
+# Initial-role and quality gates. These are product semantics, not hidden magic
+# numbers: one game can only be a watchlist; two held games can be provisional.
+INITIAL_ONE_GAME_CAP = 35.0
+INITIAL_PERSISTENT_CAP = 45.0
+INITIAL_ROLE_DISCOVERY_MIN = 35.0
+MIN_SUPPORTING_SIGNALS = 2
+ROLE_QUALITY_FLOORS = {
+    "WR": {"route_participation": 60.0, "target_share": 15.0, "targets_pg": 5.0},
+    "TE": {"route_participation": 60.0, "target_share": 15.0, "targets_pg": 5.0},
+    "RB": {"carry_opportunity_pg": 10.0, "targets_pg": 3.0},
+    "QB": {"dropback_share": 75.0, "pass_att_pg": 24.0, "rush_pg": 4.0},
+}
+
+# Absolute-role anchors. The weighted averages are naturally bounded 0..100;
+# unavailable inputs are omitted and reduce confidence rather than becoming 0.
+CURRENT_ROLE_WEIGHTS = {
+    "WR": {"route_participation": .40, "target_share": .35, "targets_pg": .25},
+    "TE": {"route_participation": .45, "target_share": .35, "targets_pg": .20},
+    "RB": {"carry_opportunity_pg": .60, "targets_pg": .25, "routes_pg": .15},
+    "QB": {"dropback_share": .45, "pass_att_pg": .40, "rush_pg": .15},
+}
 
 # A single game's fantasy output this many times the baseline, with no matching
 # usage growth, is flagged as efficiency/TD-driven rather than a role change.
@@ -181,7 +203,7 @@ def split_windows(
 # per-signal growth scoring
 # =============================================================================
 
-def _share_growth(baseline: Optional[float], recent: Optional[float]) -> Dict[str, Any]:
+def _share_growth(baseline: Optional[float], recent: Optional[float], *, allow_initial: bool = True) -> Dict[str, Any]:
     """Score growth in a 0-100 team-share metric (snap share, target share).
 
     Rewards BOTH the change and the resulting workload level, so a 45%->65% move
@@ -195,8 +217,16 @@ def _share_growth(baseline: Optional[float], recent: Optional[float]) -> Dict[st
     }
     if recent is None:
         return out
-    base = baseline if baseline is not None else 0.0
-    delta = recent - base
+    if baseline is None:
+        # This is an initial-role observation, not growth from zero.  Give a
+        # useful but deliberately conservative workload-level signal; the final
+        # provisional score is capped too.  Most importantly, baseline/delta
+        # remain null in stored evidence and in the UI.
+        out["points"] = (round(_clamp(recent / 75.0 * 45.0, 0.0, 45.0), 1)
+                         if allow_initial else 0.0)
+        out["initial_role"] = True
+        return out
+    delta = recent - baseline
     out["delta"] = _round(delta)
     if delta <= 0:
         return out
@@ -210,7 +240,8 @@ def _share_growth(baseline: Optional[float], recent: Optional[float]) -> Dict[st
     return out
 
 
-def _count_growth(baseline: Optional[float], recent: Optional[float], full: float) -> Dict[str, Any]:
+def _count_growth(baseline: Optional[float], recent: Optional[float], full: float,
+                  *, allow_initial: bool = True) -> Dict[str, Any]:
     """Score growth in a per-game *count* metric (targets, carry+target
     opportunity, pass attempts) against a position "full workload" anchor.
 
@@ -224,8 +255,12 @@ def _count_growth(baseline: Optional[float], recent: Optional[float], full: floa
     }
     if recent is None:
         return out
-    base = baseline if baseline is not None else 0.0
-    delta = recent - base
+    if baseline is None:
+        out["points"] = (round(_clamp(recent / full * 35.0, 0.0, 35.0), 1)
+                         if allow_initial else 0.0)
+        out["initial_role"] = True
+        return out
+    delta = recent - baseline
     out["delta"] = _round(delta)
     if delta <= 0:
         return out
@@ -238,13 +273,82 @@ def _count_growth(baseline: Optional[float], recent: Optional[float], full: floa
     return out
 
 
-def _combine_correlated(a: float, b: float) -> float:
-    """Combine two correlated signals (e.g. snaps and targets both rose for the
-    same reason) without double-counting: full credit for the stronger, a third
-    of the weaker. Prevents four aligned signals from each awarding full points
-    for one underlying change."""
-    hi, lo = (a, b) if a >= b else (b, a)
-    return hi + 0.35 * lo
+def _weighted_score(signals: Dict[str, Dict[str, Any]], weights: Dict[str, float]) -> float:
+    """Fixed, explicit 0-100 contribution budget.
+
+    Weights sum to one for each position. Missing optional evidence contributes
+    nothing rather than re-scaling the remaining signals to a larger maximum.
+    Thus routes/red-zone detail can support a result but can never create a 100.
+    """
+    return sum(weights[key] * float((signals.get(key) or {}).get("points") or 0.0)
+               for key in weights)
+
+
+def _absolute_role_score(position: str, signals: Dict[str, Dict[str, Any]]) -> float:
+    """Fantasy relevance of the resulting role, independent of role change."""
+    floors = ROLE_QUALITY_FLOORS.get(position, {})
+    weights = CURRENT_ROLE_WEIGHTS.get(position, {})
+    parts = []
+    for key, weight in weights.items():
+        recent = (signals.get(key) or {}).get("recent")
+        floor = floors.get(key)
+        if recent is None or not floor:
+            continue
+        # Twice the emerging floor represents a full 100-level role.
+        parts.append((weight, _clamp(float(recent) / (2.0 * floor) * 100.0, 0.0, 100.0)))
+    if not parts:
+        return 0.0
+    # Fixed weights: missing optional inputs cannot inflate the inputs that remain.
+    return round(sum(weight * value for weight, value in parts), 1)
+
+
+def _signal_diagnostics(position: str, signals: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+    """Independent support/conflict accounting, not a count of every raw field."""
+    groups = {
+        "WR": (("route_participation",), ("target_share",), ("targets_pg",)),
+        "TE": (("route_participation",), ("target_share",), ("targets_pg",)),
+        "RB": (("carry_opportunity_pg",), ("targets_pg",), ("high_value_opportunities_pg",)),
+        "QB": (("dropback_share",), ("pass_att_pg",), ("rush_pg",)),
+    }.get(position, ())
+    supporting = []
+    conflicts = []
+    for group in groups:
+        positive = [key for key in group
+                    if (((signals.get(key) or {}).get("delta") is not None and
+                         float(signals[key]["delta"]) > 0) or
+                        (signals.get(key) or {}).get("initial_role"))
+                    and float(signals[key].get("points") or 0) >= 10.0]
+        if positive:
+            supporting.append(positive[0])
+    snap_delta = (signals.get("snap_share") or {}).get("delta")
+    route_delta = (signals.get("routes_pg") or {}).get("delta")
+    target_delta = (signals.get("targets_pg") or {}).get("delta")
+    if snap_delta is not None and snap_delta > 0 and route_delta is not None and route_delta < 0:
+        conflicts.append("snaps_up_routes_down")
+    if target_delta is not None and target_delta > 0 and route_delta is not None and route_delta <= 0:
+        conflicts.append("targets_up_without_route_growth")
+    available_groups = sum(1 for group in groups if any((signals.get(k) or {}).get("available") for k in group))
+    agreement = 100.0 * len(supporting) / max(1, available_groups)
+    agreement -= 20.0 * len(conflicts)
+    return {"supporting_signal_count": len(supporting), "supporting_signals": supporting,
+            "conflicting_signals": conflicts,
+            "signal_agreement_score": round(_clamp(agreement, 0.0, 100.0), 1)}
+
+
+def _trend_profile(recent: List[Dict], position: str) -> Dict[str, Any]:
+    key = "target_share" if position in ("WR", "TE") else "snap_pct"
+    vals = [v for v in (_num(row.get(key)) for row in recent) if v is not None]
+    if len(vals) < 2:
+        return {"state": "one_game", "persistent": False, "score": 35.0}
+    delta = vals[-1] - vals[-2]
+    spread = max(vals) - min(vals)
+    if delta < -max(5.0, vals[-2] * .20):
+        return {"state": "reversal", "persistent": False, "score": 20.0}
+    if spread <= max(8.0, sum(vals) / len(vals) * .20):
+        return {"state": "elevated_and_held", "persistent": True, "score": 80.0}
+    if delta > 0:
+        return {"state": "consecutive_growth", "persistent": True, "score": 70.0}
+    return {"state": "volatile", "persistent": False, "score": 40.0}
 
 
 # =============================================================================
@@ -261,6 +365,8 @@ def _position_signals(
     position: str,
     recent: List[Dict],
     baseline: List[Dict],
+    *,
+    initial_role: bool = False,
 ) -> Tuple[Dict[str, Dict[str, Any]], float]:
     """Compute per-signal growth detail and the combined role-change score for a
     position. Returns (signals, role_score) where role_score is 0-100.
@@ -287,57 +393,72 @@ def _position_signals(
     pass_b = _count_pg(baseline, "pass_att")
     route_r = _count_pg(recent, "routes")
     route_b = _count_pg(baseline, "routes")
+    dropbacks_r = _count_pg(recent, "team_dropbacks")
+    dropbacks_b = _count_pg(baseline, "team_dropbacks")
+    route_part_r = (route_r / dropbacks_r * 100.0
+                    if route_r is not None and dropbacks_r else None)
+    route_part_b = (route_b / dropbacks_b * 100.0
+                    if route_b is not None and dropbacks_b else None)
+    player_dropbacks_r = _count_pg(recent, "dropbacks")
+    player_dropbacks_b = _count_pg(baseline, "dropbacks")
+    dropback_share_r = (player_dropbacks_r / dropbacks_r * 100.0
+                        if player_dropbacks_r is not None and dropbacks_r else None)
+    dropback_share_b = (player_dropbacks_b / dropbacks_b * 100.0
+                        if player_dropbacks_b is not None and dropbacks_b else None)
     rz_r = _count_pg(recent, "red_zone_opportunities")
     rz_b = _count_pg(baseline, "red_zone_opportunities")
 
     signals: Dict[str, Dict[str, Any]] = {}
-    snap = _share_growth(snap_b, snap_r)
+    snap = _share_growth(snap_b, snap_r, allow_initial=initial_role)
     signals["snap_share"] = snap
 
     if position in ("WR", "TE"):
-        tshare = _share_growth(tgtshare_b, tgtshare_r)
-        tcount = _count_growth(tgt_b, tgt_r, _FULL_TARGETS_PG.get(position, 8.0))
+        tshare = _share_growth(tgtshare_b, tgtshare_r, allow_initial=initial_role)
+        tcount = _count_growth(tgt_b, tgt_r, _FULL_TARGETS_PG.get(position, 8.0),
+                               allow_initial=initial_role)
         signals["target_share"] = tshare
         signals["targets_pg"] = tcount
-        routes = _count_growth(route_b, route_r, 30.0)
+        routes = _count_growth(route_b, route_r, 30.0, allow_initial=initial_role)
         signals["routes_pg"] = routes
-        high_value = _count_growth(rz_b, rz_r, 3.0)
+        signals["route_participation"] = _share_growth(
+            route_part_b, route_part_r, allow_initial=initial_role)
+        high_value = _count_growth(rz_b, rz_r, 3.0, allow_initial=initial_role)
         signals["high_value_opportunities_pg"] = high_value
-        # target_share is the team-normalized role read; snaps and raw targets are
-        # correlated support. Route through the receiving role, add snaps as the
-        # correlated partner, and let raw target volume top it up modestly.
-        role = _combine_correlated(tshare["points"], snap["points"])
-        role += 0.20 * tcount["points"] + 0.20 * routes["points"]
-        role_score = _clamp(role, 0.0, 100.0)
+        role_score = _weighted_score(signals, {
+            "route_participation": .35, "target_share": .35, "targets_pg": .22,
+            "high_value_opportunities_pg": .08,
+        })
 
     elif position == "RB":
         # Opportunity = carries + targets per game (NOT touches: receptions depend
         # on completion outcomes, so touches understates a back's earned work).
-        opp_r = None if (car_r is None and tgt_r is None) else (car_r or 0.0) + (tgt_r or 0.0)
-        opp_b = None if (car_b is None and tgt_b is None) else (car_b or 0.0) + (tgt_b or 0.0)
-        opp = _count_growth(opp_b, opp_r, _FULL_OPPORTUNITY_PG["RB"])
-        tcount = _count_growth(tgt_b, tgt_r, 4.0)
+        # Composite opportunity is only comparable when both constituents were
+        # observed; a missing receiving/carry feed is not an observed zero.
+        opp_r = None if (car_r is None or tgt_r is None) else car_r + tgt_r
+        opp_b = None if (car_b is None or tgt_b is None) else car_b + tgt_b
+        opp = _count_growth(opp_b, opp_r, _FULL_OPPORTUNITY_PG["RB"], allow_initial=initial_role)
+        tcount = _count_growth(tgt_b, tgt_r, 4.0, allow_initial=initial_role)
         signals["carry_opportunity_pg"] = opp
         signals["targets_pg"] = tcount
-        high_value = _count_growth(rz_b, rz_r, 3.0)
+        routes = _count_growth(route_b, route_r, 22.0, allow_initial=initial_role)
+        signals["routes_pg"] = routes
+        high_value = _count_growth(rz_b, rz_r, 3.0, allow_initial=initial_role)
         signals["high_value_opportunities_pg"] = high_value
-        # Snap share and opportunity move together for a back taking over a
-        # backfield; combine without double counting, then add receiving as a
-        # separate skill dimension (a pass-catching role is extra, real value).
-        role = _combine_correlated(snap["points"], opp["points"])
-        role += 0.15 * tcount["points"] + 0.15 * high_value["points"]
-        role_score = _clamp(role, 0.0, 100.0)
+        role_score = _weighted_score(signals, {
+            "carry_opportunity_pg": .60, "targets_pg": .22,
+            "routes_pg": .08, "high_value_opportunities_pg": .10,
+        })
 
     elif position == "QB":
-        pass_g = _count_growth(pass_b, pass_r, _FULL_PASS_ATT_PG["QB"])
-        rush_g = _count_growth(car_b, car_r, _FULL_RUSH_PG["QB"])
+        signals["dropback_share"] = _share_growth(
+            dropback_share_b, dropback_share_r, allow_initial=initial_role)
+        pass_g = _count_growth(pass_b, pass_r, _FULL_PASS_ATT_PG["QB"], allow_initial=initial_role)
+        rush_g = _count_growth(car_b, car_r, _FULL_RUSH_PG["QB"], allow_initial=initial_role)
         signals["pass_att_pg"] = pass_g
         signals["rush_pg"] = rush_g
-        # Starting role is the snap-share step; passing volume is the primary
-        # opportunity; rushing is a bonus dimension.
-        role = _combine_correlated(snap["points"], pass_g["points"])
-        role += 0.20 * rush_g["points"]
-        role_score = _clamp(role, 0.0, 100.0)
+        role_score = _weighted_score(signals, {
+            "dropback_share": .35, "pass_att_pg": .45, "rush_pg": .20,
+        })
 
     else:
         role_score = _clamp(snap["points"], 0.0, 100.0)
@@ -439,6 +560,8 @@ _SIGNAL_LABELS = {
     "pass_att_pg": ("Pass attempts/game", ""),
     "rush_pg": ("Rush attempts/game", ""),
     "routes_pg": ("Routes/game", ""),
+    "route_participation": ("Route participation", "%"),
+    "dropback_share": ("Dropback share", "%"),
     "high_value_opportunities_pg": ("Red-zone opportunities/game", ""),
 }
 
@@ -464,7 +587,8 @@ def _build_reasons(
     )
     # Rank scored signals by contribution.
     ranked = sorted(
-        ((k, v) for k, v in signals.items() if v.get("available") and (v.get("points") or 0) > 0),
+        ((k, v) for k, v in signals.items() if k != "snap_share" and
+         v.get("available") and (v.get("points") or 0) > 0),
         key=lambda kv: kv[1].get("points") or 0,
         reverse=True,
     )
@@ -543,12 +667,22 @@ def score_player(
 
     # Too little current-season baseline: fall back to a prior-season baseline row
     # if one was supplied. Rookies (no prior) run provisionally on current data.
+    prior_usable = bool(prior_baseline and any(
+        prior_baseline.get(key) is not None for key in
+        ("snap_pct", "target_share", "targets_pg", "carries_pg", "pass_att_pg")
+    ))
     if len(baseline) == 0:
         provisional = True
-        if prior_baseline:
+        if prior_usable:
             baseline_source = "prior_season"
         else:
             baseline_source = "none"
+    if not prior_usable and len(active) <= 2:
+        # Two initial games can prove persistence, but are not yet a normal
+        # baseline-to-recent comparison. Week 3 creates the first real window.
+        provisional = True
+        baseline_source = "none"
+        recent, baseline = list(active), []
 
     # Build the baseline window. When falling back to prior season, synthesize a
     # single pseudo-game row from the per-game prior values so the same signal
@@ -564,7 +698,75 @@ def score_player(
             "pass_att": prior_baseline.get("pass_att_pg"),
         }]
 
-    signals, role_score = _position_signals(position, recent, baseline_rows)
+    score_basis = "initial_role" if baseline_source == "none" else "role_change"
+    signals, raw_role_change = _position_signals(
+        position, recent, baseline_rows, initial_role=(score_basis == "initial_role"))
+    role_change_score = None if score_basis == "initial_role" else raw_role_change
+    current_role_score = _absolute_role_score(position, signals)
+    diagnostics = _signal_diagnostics(position, signals)
+    trend = _trend_profile(active[-3:], position)
+
+    # A cache miss alone never means rookie.
+    years_exp = _num(player.get("years_exp"))
+    rookie_year = _num(player.get("rookie_year"))
+    draft_year = _num(player.get("draft_year") or player.get("draft_yr"))
+    season = _num(player.get("season"))
+    is_rookie = bool(years_exp == 0 or (season is not None and
+                     (rookie_year == season or draft_year == season)))
+
+    draft_round = _num(player.get("draft_round"))
+    depth_order = _num(player.get("depth_chart_order"))
+    expected_role = None
+    expectation_inputs = []
+    if depth_order is not None:
+        expected_role = _clamp(85.0 - 20.0 * (depth_order - 1.0), 15.0, 85.0)
+        expectation_inputs.append("preseason_depth_chart")
+    if is_rookie and draft_round is not None:
+        draft_expectation = _clamp(85.0 - 10.0 * (draft_round - 1.0), 20.0, 85.0)
+        expected_role = (draft_expectation if expected_role is None else
+                         (expected_role + draft_expectation) / 2.0)
+        expectation_inputs.append("draft_capital")
+    expectation_delta_score = (50.0 if expected_role is None else
+                               _clamp(50.0 + current_role_score - expected_role, 0.0, 100.0))
+
+    prior_level = None
+    if prior_usable:
+        prior_values = [prior_baseline.get(k) for k in ("snap_pct", "target_share")
+                        if prior_baseline.get(k) is not None]
+        prior_level = max(prior_values, default=None)
+    established_evidence = False
+    if prior_usable:
+        if position in ("WR", "TE"):
+            established_evidence = any((prior_baseline.get(key) or 0) >= floor for key, floor in
+                                       (("snap_pct", 60), ("target_share", 15), ("targets_pg", 5)))
+        elif position == "RB":
+            established_evidence = ((prior_baseline.get("snap_pct") or 0) >= 55 or
+                                    (prior_baseline.get("carries_pg") or 0) +
+                                    (prior_baseline.get("targets_pg") or 0) >= 12)
+        elif position == "QB":
+            established_evidence = ((prior_baseline.get("snap_pct") or 0) >= 75 or
+                                    (prior_baseline.get("pass_att_pg") or 0) >= 24)
+    # A missing prior-season cache must not turn a known veteran into a career
+    # breakout.  Use independent career/age evidence as well as usage history.
+    career_games = _num(player.get("career_games")) or 0
+    career_starts = _num(player.get("career_starts")) or 0
+    career_seasons = _num(player.get("career_seasons")) or 0
+    age = _num(player.get("age"))
+    veteran_by_career = bool(
+        (years_exp is not None and years_exp >= 4) or career_seasons >= 4 or
+        career_games >= 48 or career_starts >= 32 or
+        (age is not None and age >= (29 if position == "QB" else 27)) or
+        (_num(player.get("prior_fantasy_ppg")) or 0) >= 10
+    )
+    established_evidence = established_evidence or veteran_by_career
+    established_role_penalty = 35.0 if established_evidence else (
+        min(35.0, (prior_level - 55.0) * 1.4)
+        if prior_level is not None and prior_level >= 60.0 else 0.0)
+    novelty = _clamp((role_change_score if role_change_score is not None
+                      else expectation_delta_score) - established_role_penalty, 0.0, 100.0)
+    established_role_score = _clamp(
+        (70.0 if established_evidence else 0.0) + min(30.0, float(prior_baseline.get("games") or 0) * 2.0)
+        if prior_baseline else 0.0, 0.0, 100.0)
 
     # ── fantasy context: opportunity BEFORE production ────────────────────────
     # ppr is never part of the score. We only use it to (a) report and (b) flag a
@@ -575,7 +777,7 @@ def score_player(
     spike_without_role = False
     if (recent_ppg is not None and baseline_ppg not in (None, 0)
             and recent_ppg >= baseline_ppg * FANTASY_SPIKE_RATIO
-            and role_score < WATCHLIST_MIN_SCORE):
+            and (role_change_score or 0) < WATCHLIST_MIN_SCORE):
         spike_without_role = True
 
     weeks_stale = 0
@@ -585,8 +787,8 @@ def score_player(
     confidence, conf_detail = _compute_confidence(
         signals, recent, baseline_rows, position, weeks_stale, provisional
     )
-
-    breakout_score = role_score
+    confidence = round(_clamp(
+        confidence - 7.5 * len(diagnostics["conflicting_signals"]), 0.0, 100.0), 1)
 
     # Explainable component view. These are evidence summaries, not calibrated
     # probabilities. Missing optional route/RZ data remains unavailable rather
@@ -604,22 +806,130 @@ def score_player(
     # ── classification: separate from score & confidence ─────────────────────
     injury_vacated = bool(injury_context and injury_context.get("vacated"))
     starter_returning = bool(injury_context and injury_context.get("starter_returning"))
-    garbage_time = bool(recent and all(bool(r.get("garbage_time")) for r in recent))
-    sustainability = 100.0 * conf_detail["persistence"]
+    garbage_time = bool(recent and any(bool(r.get("garbage_time")) for r in recent))
+    sustainability = .55 * trend["score"] + .45 * (100.0 * conf_detail["persistence"])
     if injury_vacated:
         sustainability += 15.0 if (injury_context or {}).get("multi_week") else -10.0
+    if (injury_context or {}).get("starter_returned") and trend["persistent"]:
+        sustainability += 15.0
     if starter_returning:
         sustainability -= 30.0
     if garbage_time:
         sustainability -= 35.0
     sustainability = round(_clamp(sustainability, 0.0, 100.0), 1)
-    classification = _classify(
-        breakout_score=breakout_score,
-        baseline_games=len(baseline),
-        persistence=conf_detail["persistence"],
-        provisional=provisional,
+
+    if score_basis == "initial_role":
+        # Initial-role formula: current relevance dominates; novelty can reward
+        # an unexpected late-round/depth-chart rise, but cannot fabricate change.
+        final_score = (.55 * current_role_score + .20 * sustainability +
+                       .15 * expectation_delta_score +
+                       .10 * diagnostics["signal_agreement_score"])
+        cap = INITIAL_ONE_GAME_CAP if len(active) <= 1 else INITIAL_PERSISTENT_CAP
+        if not is_rookie and not expectation_inputs:
+            # A missing cache match is not rookie evidence. Unknown-history
+            # veterans remain visible at the low watchlist edge without being
+            # rewarded as surprising debuts.
+            cap = min(cap, WATCHLIST_MIN_SCORE - 0.1)
+        final_score = min(final_score, cap)
+    else:
+        final_score = (.50 * float(role_change_score or 0) + .20 * current_role_score +
+                       .10 * sustainability + .10 * novelty +
+                       .10 * expectation_delta_score)
+        final_score = max(0.0, final_score - 5.0 * len(diagnostics["conflicting_signals"]))
+        # Supporting context can rank a real change; it cannot manufacture one.
+        final_score *= min(1.0, float(role_change_score or 0) / WATCHLIST_MIN_SCORE)
+    final_score = round(final_score, 1)
+    pre_provisional_adjustment_score = final_score
+    if len(active) == 1:
+        # Continuous shrinkage preserves ranking separation; the ceiling is a
+        # last-resort guard rather than the normal destination for every debut.
+        final_score *= .68
+        final_score = min(final_score, 39.5 if not established_evidence else 17.9)
+    if garbage_time:
+        final_score = round(final_score * .25, 1)
+    ranking_score = round(final_score * (.75 + .25 * confidence / 100.0), 1)
+
+    floors = ROLE_QUALITY_FLOORS.get(position, {})
+    quality_hits = [key for key, floor in floors.items()
+                    if (signals.get(key) or {}).get("recent") is not None
+                    and float(signals[key]["recent"]) >= floor]
+    route_available = bool((signals.get("route_participation") or {}).get("available"))
+    targets = float((signals.get("targets_pg") or {}).get("recent") or 0)
+    target_share = float((signals.get("target_share") or {}).get("recent") or 0)
+    if position in ("WR", "TE"):
+        # Routes are required when collected.  Missing routes invoke a deliberately
+        # conservative target fallback; snaps are never substituted for routes.
+        receiving_floor = (("route_participation" in quality_hits and
+                            ("target_share" in quality_hits or "targets_pg" in quality_hits))
+                           if route_available else (targets >= 5 and target_share >= 15))
+        meaningful_role = receiving_floor
+    elif position == "QB":
+        meaningful_role = ("dropback_share" in quality_hits and
+                           ("pass_att_pg" in quality_hits or "rush_pg" in quality_hits))
+    else:
+        meaningful_role = "carry_opportunity_pg" in quality_hits and len(quality_hits) >= 2
+
+    non_snap_support = diagnostics["supporting_signal_count"]
+    adequate_coverage = ((signals.get("target_share") or {}).get("available") and
+                         (route_available or (signals.get("targets_pg") or {}).get("available"))) \
+        if position in ("WR", "TE") else conf_detail["coverage"] >= .5
+    exceptional_one_game = bool(
+        len(active) == 1 and meaningful_role and non_snap_support >= 2 and
+        novelty >= 25 and expectation_delta_score >= 60 and not established_evidence and
+        not garbage_time and adequate_coverage)
+    rejection_reasons = []
+    if not meaningful_role:
+        rejection_reasons.append("position_specific_role_floor_not_met")
+    if non_snap_support < MIN_SUPPORTING_SIGNALS:
+        rejection_reasons.append("fewer_than_two_independent_non_snap_signals")
+    if established_evidence:
+        rejection_reasons.append("established_player_without_material_role_transformation")
+    if garbage_time:
+        rejection_reasons.append("garbage_time_usage")
+    if not adequate_coverage:
+        rejection_reasons.append("insufficient_opportunity_data_coverage")
+    if len(active) == 1 and not exceptional_one_game:
+        rejection_reasons.append("one_game_evidence_not_exceptional")
+    main_board_eligible = not rejection_reasons and (
+        len(active) >= 2 and trend["persistent"] and final_score >= EMERGING_MIN_SCORE)
+    classification = _classify_final_evidence(
+        final_score=final_score,
+        recent_games=len(active),
+        persistent=bool(trend["persistent"]),
+        meaningful_role=meaningful_role,
+        supporting_signals=diagnostics["supporting_signal_count"],
+        established=established_evidence,
         injury_vacated=injury_vacated,
+        garbage_time=garbage_time,
+        provisional=provisional,
     )
+
+    if garbage_time:
+        opportunity_source = "garbage_time"
+        source_confidence = 90.0
+        source_reason = "Usage was concentrated in garbage-time appearances."
+    elif injury_vacated:
+        source_text = str((injury_context or {}).get("source") or "").lower()
+        opportunity_source = ("multi_week_injury_opening" if
+                              (injury_context or {}).get("multi_week") else "injury_replacement")
+        source_confidence = 90.0
+        source_reason = f"Opening linked to {(injury_context or {}).get('source') or 'a teammate absence'}."
+    elif depth_order is not None and depth_order > 1 and trend["persistent"]:
+        opportunity_source = "depth_chart_promotion"
+        source_confidence = 65.0
+        source_reason = "Usage held above the preseason depth-chart expectation."
+    elif trend["state"] == "volatile":
+        opportunity_source = "committee_rotation"
+        source_confidence = 55.0
+        source_reason = "Recent usage is volatile and consistent with a rotating role."
+    elif recent and any(bool(row.get("game_script")) for row in recent):
+        opportunity_source = "game_script"
+        source_confidence = 60.0
+        source_reason = "Usage was tagged as game-script dependent."
+    else:
+        opportunity_source = "unknown"
+        source_confidence = 25.0
+        source_reason = "No verified structural opportunity event is available."
 
     reasons = _build_reasons(signals, len(recent), len(baseline_rows))
     risks = _build_risks(
@@ -642,16 +952,55 @@ def score_player(
         "position": position,
         "scoring_version": SCORING_VERSION,
         "classification": classification,
-        "breakout_score": round(breakout_score, 1),
+        "breakout_score": final_score,
+        "final_breakout_score": final_score,
+        "pre_provisional_adjustment_score": pre_provisional_adjustment_score,
+        "provisional_adjustment_applied": final_score < pre_provisional_adjustment_score,
+        "ranking_score": ranking_score,
         "confidence": confidence,
         "provisional": provisional,
         "baseline_source": baseline_source,
+        "score_basis": score_basis,
+        "role_change_score": _round(role_change_score),
+        "current_role_score": current_role_score,
+        "sustainability_score": sustainability,
+        "breakout_novelty_score": round(novelty, 1),
+        "expectation_delta_score": round(expectation_delta_score, 1),
+        "established_role_penalty": round(established_role_penalty, 1),
+        "established_player": established_evidence,
+        "established_role_score": round(established_role_score, 1),
+        "role_novelty_score": round(novelty, 1),
+        "previous_breakout_status": None,
+        "role_novelty_reason": ("No prior NFL usage baseline; novelty uses available expectations."
+                                if score_basis == "initial_role" else
+                                "Measured against observed prior/current usage."),
+        "is_rookie": is_rookie,
+        "expected_role": _round(expected_role),
+        "expectation_inputs": expectation_inputs,
+        "opportunity_source": opportunity_source,
+        "opportunity_source_confidence": source_confidence,
+        "opportunity_source_reason": source_reason,
+        "early_watch": classification == "early_watch",
+        "main_board_eligible": main_board_eligible,
+        "main_board_rejection_reasons": rejection_reasons,
+        "baseline_method": ("healthy_prior_role" if baseline_source == "prior_season" else
+                            "current_season_non_overlapping_windows" if baseline_source == "current_season"
+                            else "initial_role_no_baseline"),
+        "baseline_games_used": len(baseline_rows),
+        "partial_games_excluded": int((prior_baseline or {}).get("partial_games_excluded") or 0),
+        "baseline_quality": ("good" if len(baseline_rows) >= 2 else
+                             "limited" if baseline_rows else "unavailable"),
+        **diagnostics,
+        "trend": trend,
         "evaluated_weeks": evaluated_weeks,
         "recent_weeks": [int(r["week"]) for r in recent],
         "baseline_weeks": [int(r["week"]) for r in baseline],
         "signals": signals,
         "components": {
-            "role_change": round(role_score, 1),
+            "role_change": _round(role_change_score),
+            "current_role": current_role_score,
+            "novelty": round(novelty, 1),
+            "expectation_delta": round(expectation_delta_score, 1),
             "opportunity_jump": round(opportunity_jump, 1),
             "unexpected_usage": round(unexpected_usage, 1),
             "high_value_touches": _round(high_value_score),
@@ -662,6 +1011,7 @@ def score_player(
             "recent_games": len(recent),
             "baseline_games": len(baseline),
             "total_games": len(active),
+            "quality_signals": quality_hits,
         },
         "coverage": {
             "available": [k for k, v in signals.items() if v.get("available")],
@@ -702,6 +1052,31 @@ def _classify(
             and persistence >= 0.6):
         return "emerging_breakout"
     return "watchlist"
+
+
+def _classify_final_evidence(
+    *, final_score: float, recent_games: int, persistent: bool,
+    meaningful_role: bool, supporting_signals: int, established: bool,
+    injury_vacated: bool, garbage_time: bool, provisional: bool,
+) -> str:
+    """Single classification gate over the final, capped served score.
+
+    Keeping this after every penalty/cap prevents an intermediate 60 from
+    retaining an emerging label after becoming a final 36.
+    """
+    if garbage_time:
+        return "watchlist"
+    if established:
+        return "temporary_opportunity" if injury_vacated and meaningful_role else "watchlist"
+    if injury_vacated:
+        return "temporary_opportunity" if meaningful_role else "watchlist"
+    if final_score < WATCHLIST_MIN_SCORE:
+        return "watchlist"
+    if (final_score >= EMERGING_MIN_SCORE and recent_games >= 2 and persistent
+            and meaningful_role and supporting_signals >= MIN_SUPPORTING_SIGNALS
+            and (not provisional or recent_games >= 2)):
+        return "emerging_breakout"
+    return "early_watch" if meaningful_role and supporting_signals >= 1 else "watchlist"
 
 
 def _build_risks(

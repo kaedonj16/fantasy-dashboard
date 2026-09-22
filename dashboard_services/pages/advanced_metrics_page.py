@@ -12,6 +12,25 @@ from html import escape as _esc
 from typing import Optional
 
 
+# Presets are data, rather than UI behaviour.  Keeping this metadata in Python
+# makes it possible to validate every key against LEADERBOARD_METRICS and gives
+# the client one authoritative definition for ordering, position and sorting.
+# ``samples`` uses canonical identities (not labels), which is also what the
+# table/export column builder uses for de-duplication.
+ADVANCED_METRIC_PRESETS = {
+    "rushing": {"label": "Rushing", "description": "Rushing workload and per-attempt efficiency.", "position": None, "primary": "rushing_epa_per_att", "metrics": ["rushing_epa_per_att", "carries_per_game", "yards_per_carry", "ngs_rush_yards_over_expected_per_att", "rushing_success_rate", "breakaway_percentage", "red_zone_usage"], "sort": "desc", "samples": ["games", "carries"]},
+    "receiving": {"label": "Receiving", "description": "Receiving opportunity and target efficiency.", "position": None, "primary": "target_share", "metrics": ["target_share", "receptions_per_game", "yards_per_target", "receiving_epa_per_target", "avg_depth_of_target", "ngs_avg_yac_above_expectation", "rz_targets_pg"], "sort": "desc", "samples": ["games", "targets", "receptions"]},
+    "passing": {"label": "Passing", "description": "Passing efficiency per dropback and attempt.", "position": "QB", "primary": "epa_per_play", "metrics": ["epa_per_play", "cpoe", "success_rate", "explosive_pass_rate", "sack_rate", "td_rate", "int_rate"], "sort": "desc", "samples": ["games", "attempts", "dropbacks"]},
+    "rb": {"label": "RB", "description": "Running back opportunity and production.", "position": "RB", "primary": "opportunity_share", "metrics": ["opportunity_share", "carries_per_game", "target_share", "red_zone_usage", "ngs_rush_yards_over_expected_per_att", "yards_per_touch", "total_tds_per_game"], "sort": "desc", "samples": ["games", "carries", "targets", "receptions"]},
+    "wr": {"label": "WR", "description": "Wide receiver opportunity and target efficiency.", "position": "WR", "primary": "target_share", "metrics": ["target_share", "air_yards_share", "avg_depth_of_target", "yards_per_target", "receiving_epa_per_target", "rz_targets_pg", "fpts_per_target"], "sort": "desc", "samples": ["games", "targets", "receptions"]},
+    "te": {"label": "TE", "description": "Tight end opportunity and target efficiency.", "position": "TE", "primary": "target_share", "metrics": ["target_share", "receptions_per_game", "rz_targets_pg", "yards_per_target", "receiving_epa_per_target", "ngs_avg_yac_above_expectation", "fpts_per_target"], "sort": "desc", "samples": ["games", "targets", "receptions"]},
+    "qb": {"label": "QB", "description": "Quarterback passing efficiency and dual-threat production.", "position": "QB", "primary": "epa_per_play", "metrics": ["epa_per_play", "cpoe", "pass_tds_per_game", "rush_yards_per_game", "scramble_rate", "sack_rate", "int_rate"], "sort": "desc", "samples": ["games", "attempts", "dropbacks", "carries"]},
+    "general": {"label": "General / Opportunity", "description": "Cross-position opportunity and red-zone workload.", "position": None, "primary": "opportunity_share", "metrics": ["opportunity_share", "snap_share", "carries_per_game", "target_share", "air_yards_share", "red_zone_usage", "rz_targets_pg"], "sort": "desc", "samples": ["games", "carries", "targets"]},
+    "expected": {"label": "Expected vs. Actual", "description": "Opportunity-based expected PPR production compared with matched actual production; FPOE is not a promise of future points.", "position": None, "primary": "expected_ppr_per_game", "metrics": ["expected_ppr_per_game", "actual_ppr_per_game", "ppr_over_expected_per_game", "opportunity_share", "target_share", "red_zone_usage", "total_tds_per_game"], "sort": "desc", "samples": ["games"]},
+    "receiving_profile": {"label": "Receiving Profile", "description": "Target shape, alignment context, and after-catch performance.", "position": None, "primary": "target_share", "metrics": ["target_share", "avg_depth_of_target", "air_yards_share", "ngs_avg_cushion", "ngs_avg_separation", "yards_after_catch_per_reception", "ngs_avg_yac_above_expectation"], "sort": "desc", "samples": ["games", "targets", "receptions"]},
+}
+
+
 def build_advanced_metrics_body(
         has_premium: bool,
         metrics_spec: dict,
@@ -60,16 +79,14 @@ def build_advanced_metrics_body(
         except ValueError:
             return len(_CAT_ORDER)
 
-    _PRESET_CATS = [c for c in ["Rushing", "Receiving", "Passing", "General"] if c in groups]
-    # Position sets stay in Quick Sets; category sets move into their own optgroup
     preset_optgroup = '<optgroup label="Quick Sets">' + "".join(
-        f'<option value="__preset__{p}">{p} Set</option>'
-        for p in ["QB", "RB", "WR", "TE"]
+        f'<option value="__preset__{key}">{_esc(p["label"])} Set</option>'
+        for key, p in ADVANCED_METRIC_PRESETS.items()
     ) + '</optgroup>'
     metric_options = preset_optgroup + "\n" + "\n".join(
         '<optgroup label="{label}">{cat_preset}{opts}</optgroup>'.format(
             label=cat,
-            cat_preset=f'<option value="__preset__{cat}">{cat} Set</option>' if cat in _PRESET_CATS else '',
+            cat_preset='',
             opts="".join(
                 f'<option value="{k}"{" selected" if k == "opportunity_share" else ""}>{lbl}</option>'
                 for k, lbl in groups[cat]
@@ -115,6 +132,7 @@ def build_advanced_metrics_body(
         "platform": platform or "sleeper",
         "seasons": available_seasons,
         "availableWeeksBySeason": _weeks_by_season,
+        "presets": ADVANCED_METRIC_PRESETS,
         "weeklyMetrics": weekly_metric_keys,
         "metrics": {
             key: {
@@ -130,6 +148,14 @@ def build_advanced_metrics_body(
                 "weeklyCapable": key in weekly_metric_keys,
                 "weeklyVol": _weekly_vol_map.get(key) or None,
                 "subcategory": spec.get("subcategory", ""),
+                "sample": (
+                    "dropbacks" if key in {"epa_per_play", "cpoe", "success_rate", "sack_rate", "scramble_rate", "qb_hit_rate"}
+                    else "attempts" if spec.get("category") == "Passing"
+                    else "carries" if spec.get("category") == "Rushing" and key != "total_carries"
+                    else "receptions" if key in {"yards_after_catch_per_reception", "ngs_avg_yac", "ngs_avg_expected_yac", "ngs_avg_yac_above_expectation"}
+                    else "targets" if spec.get("category") == "Receiving" and key != "total_targets"
+                    else "games"
+                ),
             }
             for key, spec in metrics_spec.items()
             if not spec.get("hidden")
@@ -244,6 +270,10 @@ def build_advanced_metrics_body(
             <div id="amStatPicker" class="am-stat-picker" style="display:none;"></div>
           </div>
           <button id="amAddFilterBtn" type="button" class="am-add-stat-btn">&#43; Filter</button>
+          <select id="amSavedSet" class="am-select" title="Saved metric sets" style="max-width:150px"><option value="">Custom sets…</option></select>
+          <span id="amActiveSet" class="am-ctrl-label" title="Active metric set">Custom</span>
+          <button id="amSaveSetBtn" type="button" class="am-add-stat-btn" title="Save or update a named custom set">Save set</button>
+          <button id="amDeleteSetBtn" type="button" class="am-add-stat-btn am-clear-btn" title="Delete the selected custom set">Delete</button>
           <button id="amFiltersBtn" type="button" class="am-sort-btn am-filters-btn">Filters &#9662;</button>
           <label class="am-roster-toggle" id="amTrendToggleWrap" title="Show each player's recent usage trend (last 6 weeks) next to the metric">
             <input type="checkbox" id="amTrendToggle">
@@ -1135,12 +1165,21 @@ _AM_JS = r"""
   if (seasonCtrl && (!cfg.seasons || cfg.seasons.length <= 1)) seasonCtrl.style.display = 'none';
 
   const PAGE_SIZE = 25;
-  const VOL_LABELS = {
-    games: 'G', total_pass_att: 'Att', total_carries: 'Car',
-    total_touches: 'Tch', total_targets: 'Tgt', total_receptions: 'Rec',
-  };
   function _loadPins() { try { return new Set(JSON.parse(localStorage.getItem('am_pins') || '[]')); } catch { return new Set(); } }
   function _savePins() { try { localStorage.setItem('am_pins', JSON.stringify([...state.pinnedIds])); } catch {} }
+  const _CUSTOM_SET_KEY = 'advanced_metrics_custom_sets_v1';
+  function _loadCustomSets() {
+    try { const v = JSON.parse(localStorage.getItem(_CUSTOM_SET_KEY) || '{}'); return v && typeof v === 'object' ? v : {}; }
+    catch (_) { return {}; }
+  }
+  function _validCustomSet(raw) {
+    if (!raw || !cfg.metrics[raw.primary]) return null;
+    const seen = new Set([raw.primary]);
+    const extras = (Array.isArray(raw.metrics) ? raw.metrics : []).filter(function(k) {
+      if (!cfg.metrics[k] || seen.has(k)) return false; seen.add(k); return true;
+    }).slice(0, MAX_COMPARE);
+    return {primary:raw.primary, metrics:extras, position:['ALL','QB','RB','WR','TE'].includes(raw.position) ? raw.position : 'ALL', sort:raw.sort === 'asc' ? 'asc' : 'desc', minVol:raw.minVol == null ? '' : String(raw.minVol)};
+  }
 
   const _initParams = new URLSearchParams(window.location.search);
   function syncURL() {
@@ -1184,8 +1223,10 @@ _AM_JS = r"""
                   cmpSeasons: {},       // player_id -> season override in the Compare modal
                   cmpRanges: {},        // player_id -> week-range key ('' | 'first' | 'second' | 'last4' | 'custom')
                   cmpWk: {},            // player_id -> { start, end } for custom ranges
+                  requestToken: 0,       // invalidates responses from an older schema/selection
                   pinnedIds: _loadPins() };
-  const MAX_COMPARE = 6;
+  // Seven displayed metrics means six comparisons plus the primary.
+  const MAX_COMPARE = Math.max(6, ...Object.values(cfg.presets || {}).map(p => (p.metrics || []).length - 1));
   const _amCmpWeekly = {};  // `${pid}_${season}` -> weekly series (Compare modal week ranges)
   const _amCmpSeason = {};   // `${pid}_${season}` -> season-level metrics (non-page seasons)
   let _amCmpToken = 0;       // guards against overlapping/stale re-renders while dragging
@@ -1261,7 +1302,9 @@ _AM_JS = r"""
     // NGS/FTN/EPA metrics: totals summed, rates volume-weighted -- parity with
     // the server's get_adv_weekly_range_leaderboard so ranges match the board.
     const ADV_TOTALS = ['passing_epa', 'rushing_epa', 'receiving_epa',
-      'yards_after_catch', 'explosive_runs_10_plus', 'ngs_rush_yards_over_expected'];
+      'yards_after_catch', 'explosive_runs_10_plus', 'ngs_rush_yards_over_expected',
+      'expected_ppr', 'expected_half_ppr', 'expected_standard',
+      'ppr_over_expected', 'half_ppr_over_expected', 'standard_over_expected'];
     const ADV_WEIGHTED = {
       epa_per_play: 'w_dropbacks', cpoe: 'w_dropbacks', success_rate: 'w_dropbacks',
       sack_rate: 'w_dropbacks', scramble_rate: 'w_dropbacks', nfl_passer_rating: 'w_dropbacks',
@@ -1312,36 +1355,34 @@ _AM_JS = r"""
 
   // Preset sets: clicking "Load X Set" clears current extras and loads these metrics.
   // All free/redistributable (NGS + EPA + computed); no gated PFF metrics.
-  const _PRESETS = {
-    'QB':        ['epa_per_play', 'cpoe', 'ngs_avg_time_to_throw', 'success_rate', 'td_rate', 'int_rate', 'pass_tds_per_game'],
-    'RB':        ['opportunity_share', 'yards_per_carry', 'rushing_epa', 'rushing_success_rate', 'breakaway_percentage', 'red_zone_usage', 'total_tds_per_game'],
-    'WR':        ['target_share', 'yards_per_target', 'receiving_epa', 'ngs_created_separation', 'air_yards_share', 'rec_tds_per_game', 'fpts_per_target'],
-    'TE':        ['target_share', 'yards_per_target', 'receiving_epa', 'ngs_avg_yac_above_expectation', 'rz_targets_pg', 'rec_tds_per_game'],
-    'General':   ['snap_share', 'opportunity_share', 'red_zone_usage', 'yards_per_touch', 'total_tds_per_game'],
-    'Rushing':   ['yards_per_carry', 'rushing_epa', 'breakaway_percentage', 'explosive_runs_10_plus', 'opportunity_share', 'carries_per_game', 'red_zone_usage'],
-    'Receiving': ['yards_per_target', 'receiving_epa', 'target_share', 'ngs_avg_separation', 'contested_catch_rate', 'rz_targets_pg', 'receptions_per_game'],
-    'Passing':   ['epa_per_play', 'passing_epa', 'cpoe', 'ngs_avg_time_to_throw', 'success_rate', 'sack_rate', 'int_rate'],
-  };
-  const _PRESET_POS = { 'QB': 'QB', 'RB': 'RB', 'WR': 'WR', 'TE': 'TE' };
+  const _PRESETS = cfg.presets || {};
+  let _activeSet = 'Custom';
+  let _activePresetId = null;
+  function _showActiveSet(name) { _activeSet = name || 'Custom'; const el = document.getElementById('amActiveSet'); if (el) el.textContent = _activeSet; }
   window.amLoadPreset = function(cat) {
-    const keys = _PRESETS[cat];
+    const preset = _PRESETS[cat] || _PRESETS[String(cat).toLowerCase()];
+    const keys = preset && preset.metrics;
     if (!keys || !keys.length) return;
     const primary = keys[0];
-    const extras = keys.slice(1).slice(0, MAX_COMPARE);
+    const extras = keys.slice(1);
+    if (extras.length > MAX_COMPARE) throw new Error('Preset exceeds comparison-column limit');
     state.metric = primary;
     if (metricSel) metricSel.value = primary;
     state.page = 0;
     state.extraMetrics = extras.slice();
-    state.comboFilters = state.comboFilters.filter(f => f.key === 'primary' || f.key === 'age');
+    // A threshold on the old primary has different units and must not leak.
+    state.comboFilters = state.comboFilters.filter(f => f.key === 'age' || f.key === 'exp');
     state.filterColKeys = new Set();
     state.prevData = {};
     const rel = new Set(relevantPositions(state.metric));
     if (state.position !== 'ALL' && !rel.has(state.position)) state.position = 'ALL';
-    state.sortDir = (cfg.metrics[state.metric] && cfg.metrics[state.metric].lowerBetter) ? 'asc' : 'desc';
+    state.sortDir = preset.sort || 'desc';
     state.sortBy = state.metric;
     state.minVol = defaultVol(state.metric);
     // Position presets auto-filter to their position
-    if (_PRESET_POS[cat]) state.position = _PRESET_POS[cat];
+    if (preset.position) state.position = preset.position;
+    _activePresetId = Object.keys(_PRESETS).find(k => _PRESETS[k] === preset) || String(cat).toLowerCase();
+    _showActiveSet(preset.label);
     const picker = document.getElementById('amStatPicker');
     if (picker) picker.style.display = 'none';
     updateSortBtn(); updatePosButtons(); updateMetricTip(); updateVolCtrl(); updateVolHeader();
@@ -1466,9 +1507,10 @@ _AM_JS = r"""
       }
     }
 
-    const _preset = _PRESETS[primaryCat];
+    const _presetKey = String(primaryCat).toLowerCase();
+    const _preset = _PRESETS[_presetKey];
     let html = '<div class="am-sp-search-wrap"><input type="text" id="amSpSearch" class="am-sp-search" placeholder="Search metrics…" oninput="amSpFilter(this.value)" autocomplete="off"></div>'
-      + (_preset ? '<div class="am-sp-preset-wrap"><button type="button" class="am-sp-preset-btn" onclick="amLoadPreset(\'' + primaryCat + '\')">&#9889; Load ' + primaryCat + ' Set</button></div>' : '');
+      + (_preset ? '<div class="am-sp-preset-wrap"><button type="button" class="am-sp-preset-btn" onclick="amLoadPreset(\'' + _presetKey + '\')">&#9889; Load ' + _preset.label + ' Set</button></div>' : '');
 
     for (const grp of catOrder) {
       const grpItems = groups[grp] || [];
@@ -1498,6 +1540,8 @@ _AM_JS = r"""
   }
 
   window.amPickerClick = function(key) {
+    _showActiveSet('Custom');
+    _activePresetId = null;
     if (key === state.metric) return;
     if (state.extraMetrics.includes(key)) {
       amRemoveExtra(key);
@@ -1520,6 +1564,8 @@ _AM_JS = r"""
   };
 
   window.amRemoveExtra = function(key) {
+    _showActiveSet('Custom');
+    _activePresetId = null;
     state.extraMetrics = state.extraMetrics.filter(k => k !== key);
     delete state.extraData[key];
     delete state.extraPrevData[key];
@@ -1537,6 +1583,8 @@ _AM_JS = r"""
   };
 
   window.amClearExtras = function() {
+    _showActiveSet('Custom');
+    _activePresetId = null;
     state.extraMetrics.forEach(key => {
       delete state.extraData[key];
       delete state.extraPrevData[key];
@@ -1573,6 +1621,7 @@ _AM_JS = r"""
 
   function fetchExtraData(key, _attempt) {
     _attempt = _attempt || 0;
+    const requestToken = state.requestToken;
     function _buildExtraParams(s) {
       const p = new URLSearchParams({ metric: key, platform: cfg.platform });
       if (cfg.leagueId) p.set('league_id', cfg.leagueId);
@@ -1596,6 +1645,7 @@ _AM_JS = r"""
     // Primary (current-season) column, with a hard timeout so a hung request
     // can't leave the column's skeleton spinning forever.
     return _amCmpFetch(curUrl, 12000).then(function(curr) {
+      if (requestToken !== state.requestToken || !state.extraMetrics.includes(key) && !(state.filterColKeys && state.filterColKeys.has(key))) return;
       if (!curr) {
         // Transient failure/timeout (often server contention from a preset's
         // burst of requests): retry once, then give up and clear the skeleton.
@@ -1615,7 +1665,11 @@ _AM_JS = r"""
           state.playerPos[String(r.player_id)] = String(r.position).toUpperCase();
         }
       });
-      state.extraData[key] = { byId: Object.fromEntries(rows.map(r => [amRowKey(r), Number(r.value)])), maxAbs };
+      state.extraData[key] = {
+        byId: Object.fromEntries(rows.map(r => [amRowKey(r), Number(r.value)])),
+        context: Object.fromEntries(rows.map(r => [amRowKey(r), {tgt:r.tgt, car:r.car, rec:r.rec, att:r.att, db:r.db, games:r.games}])),
+        maxAbs: maxAbs
+      };
       render();
       // Previous-season values (YoY trend arrows) are non-essential -- fetch them
       // off the critical path so the column shows immediately and the initial
@@ -1673,11 +1727,11 @@ _AM_JS = r"""
   function trendCellHtml(playerId, color) {
     const tm = state.trendsBySeason[trendSeasonKey()];
     if (!tm) {
-      return '<td class="am-trendcell"><div class="am-skel-bar" style="width:60px;height:10px;border-radius:4px;"></div></td>';
+      return '<td class="am-trendcell" data-column-id="trend"><div class="am-skel-bar" style="width:60px;height:10px;border-radius:4px;"></div></td>';
     }
     const t = tm[String(playerId)];
     if (!t || !t.series || t.series.length < 2) {
-      return '<td class="am-trendcell"><span style="opacity:.35">–</span></td>';
+      return '<td class="am-trendcell" data-column-id="trend"><span style="opacity:.35">–</span></td>';
     }
     const statLbl = { snap_pct: 'snap%', touches: 'touches', targets: 'targets' }[t.stat] || t.stat;
     const d = t.delta;
@@ -1685,7 +1739,7 @@ _AM_JS = r"""
     if (d >= 0.5) deltaHtml = '<span class="am-trend-delta am-trend-delta-up">&#9650; +' + d.toFixed(1) + '</span>';
     else if (d <= -0.5) deltaHtml = '<span class="am-trend-delta am-trend-delta-down">&#9660; ' + d.toFixed(1) + '</span>';
     const recentN = Math.min(3, t.weeks_played || 3);
-    return '<td class="am-trendcell" title="Last-' + recentN + '-week avg ' + statLbl + ' (' + t.recent_avg
+    return '<td class="am-trendcell" data-column-id="trend" title="Last-' + recentN + '-week avg ' + statLbl + ' (' + t.recent_avg
       + ') vs season avg (' + t.season_avg + ')">'
       + '<div class="am-trend-inner">' + sparkline(t.series, color) + deltaHtml + '</div></td>';
   }
@@ -1701,19 +1755,13 @@ _AM_JS = r"""
     return n;
   }
   function syncTrendHeader() {
-    const thead = document.querySelector('#amTable thead tr');
-    if (!thead) return;
-    const existing = document.getElementById('amTrendHeader');
-    if (existing) existing.remove();
-    if (state.showTrends) {
-      const th = document.createElement('th');
-      th.id = 'amTrendHeader';
-      th.className = 'am-trendcell';
-      const n = trendWindowWeeks();
-      th.textContent = n > 0 ? ('Usage L' + n + 'W') : 'Usage Trend';
-      th.title = 'Recent usage: ' + (n > 0 ? 'last-' + n + '-week' : 'recent') + ' trend of the key volume stat for the position (QB snap %, RB touches, WR/TE targets)';
-      thead.appendChild(th);
-    }
+    syncTableHeader();
+    const th = document.querySelector('#amTable thead th[data-column-id="trend"]');
+    if (!th) return;
+    th.id = 'amTrendHeader'; th.className = 'am-trendcell';
+    const n = trendWindowWeeks();
+    th.textContent = n > 0 ? ('Usage L' + n + 'W') : 'Usage Trend';
+    th.title = 'Recent usage: ' + (n > 0 ? 'last-' + n + '-week' : 'recent') + ' trend of the key volume stat for the position (QB snap %, RB touches, WR/TE targets)';
   }
 
   // ── Pinned-player comparison ──────────────────────────────────────────────
@@ -2164,57 +2212,123 @@ _AM_JS = r"""
   // when a metric key is used as a combo filter condition. Share extraData with
   // extra metrics but render differently (number only, no bar, after Games column).
   function syncFilterCols() {
-    const thead = document.querySelector('#amTable thead tr');
-    if (!thead) return;
-    thead.querySelectorAll('.am-filter-col-hdr').forEach(function(el) { el.remove(); });
-    const metricHdr = document.getElementById('amMetricHeader');
-    if (!state.filterColKeys || !state.filterColKeys.size) return;
-    [...state.filterColKeys].forEach(function(key) {
-      const th = document.createElement('th');
-      th.id = 'amFilterColHdr_' + key;
-      th.className = 'am-games am-sortable am-filter-col-hdr';
-      th.textContent = (cfg.metrics[key] && cfg.metrics[key].label) || key;
-      th.addEventListener('click', function() { sortByCol(key); });
-      _bindColTip(th, key);
-      if (metricHdr) thead.insertBefore(th, metricHdr);
-      else thead.appendChild(th);
-    });
+    syncTableHeader();
   }
-  // Context volume columns: always-visible plain-number columns (like Games, no
-  // bar) keyed to the primary metric's category -- receptions/targets for
-  // receiving, attempts/completions for passing, carries for rushing.
+  // Shared semantic sample-column builder for table rows, presets, manual
+  // comparisons and CSV. Counts are grouped beside Games and de-duplicated by
+  // identity, not by their display text.
   function contextColsFor() {
-    const cat = (cfg.metrics[state.metric] && cfg.metrics[state.metric].category) || '';
-    let cols = [];
-    if (cat === 'Receiving') cols = [{ key: 'rec', label: 'Rec', title: 'Receptions' },
-      { key: 'tgt', label: 'Tgt', title: 'Targets' }];
-    else if (cat === 'Passing') cols = [{ key: 'att', label: 'Att', title: 'Pass attempts' },
-      { key: 'cmp', label: 'Cmp', title: 'Completions' }];
-    else if (cat === 'Rushing') cols = [{ key: 'car', label: 'Car', title: 'Carries' }];
-    // Only show a context column when the loaded rows actually carry that value.
-    // Auto-hides passing attempts/completions in week-range view and any metric
-    // whose source (e.g. NGS/EPA weekly store) lacks these volume totals -- no
-    // columns of dashes.
+    const defs = {
+      targets:{key:'tgt',label:'Tgt',title:'Targets in the selected season/week range'},
+      carries:{key:'car',label:'Car',title:'Carries in the selected season/week range'},
+      attempts:{key:'att',label:'Att',title:'Pass attempts in the selected season/week range'},
+      dropbacks:{key:'db',label:'DB',title:'Qualifying dropbacks covered by the metric'},
+      receptions:{key:'rec',label:'Rec',title:'Receptions in the selected season/week range'}
+    };
+    const selected = [state.metric, ...state.extraMetrics];
+    const explicit = new Set();
+    if (selected.includes('total_targets')) explicit.add('targets');
+    if (selected.includes('total_carries')) explicit.add('carries');
+    if (selected.includes('total_receptions')) explicit.add('receptions');
+    if (selected.includes('total_pass_att')) explicit.add('attempts');
+    const wanted = [];
+    // Presets declare their complete context (for example Receiving needs both
+    // targets and receptions even though Target Share itself only uses targets).
+    const preset = _activePresetId && _PRESETS[_activePresetId];
+    (preset && preset.samples || []).forEach(function(identity) {
+      if (identity !== 'games' && !explicit.has(identity) && !wanted.includes(identity)) wanted.push(identity);
+    });
+    selected.forEach(function(k) {
+      const identity = cfg.metrics[k] && cfg.metrics[k].sample;
+      if (identity && identity !== 'games' && !explicit.has(identity) && !wanted.includes(identity)) wanted.push(identity);
+    });
+    const cols = wanted.map(k => Object.assign({id:'sample:' + k, semantic:k, kind:'sample'}, defs[k])).filter(Boolean);
     const rows = state.rows || [];
     return cols.filter(function(c) {
-      return rows.some(function(r) { return r[c.key] != null; });
+      if (rows.some(function(r) { return r[c.key] != null; })) return true;
+      return state.extraMetrics.some(function(k) {
+        const ed = state.extraData[k];
+        return ed && ed.context && Object.values(ed.context).some(v => v && v[c.key] != null);
+      });
+    });
+  }
+  function contextValue(row, key) {
+    if (row[key] != null) return row[key];
+    const rk = amRowKey(row);
+    for (const metric of state.extraMetrics) {
+      const ed = state.extraData[metric];
+      if (ed && ed.context && ed.context[rk] && ed.context[rk][key] != null) return ed.context[rk][key];
+    }
+    return null;
+  }
+  function schemaValue(column, row) {
+    if (column.kind === 'games') return row.games;
+    if (column.kind === 'weeks') return row.weeks;
+    if (column.kind === 'sample') return contextValue(row, column.key);
+    if (column.kind === 'metric') {
+      if (column.metricKey === state.metric) return row.value;
+      const ed = state.extraData[column.metricKey];
+      return ed && ed.byId[amRowKey(row)] !== undefined ? ed.byId[amRowKey(row)] : null;
+    }
+    return null;
+  }
+  // The single ordered schema is the contract between headers, rows and CSV.
+  // No renderer is allowed to infer an additional volume column from vol_col.
+  function tableColumnSchema() {
+    const cols = [
+      {id:'rank', kind:'rank', label:'#'},
+      {id:'player', kind:'player', label:'Player', sortKey:'name'},
+      {id:'season', kind:'season', label:'Year'},
+      {id:'games', kind:'games', label:'G', title:'Games played in the selected period', sortKey:'games'},
+      {id:'weeks', kind:'weeks', label:'Wks', title:'Weeks in range'}
+    ];
+    contextColsFor().forEach(c => cols.push(c));
+    if (state.filterColKeys) [...state.filterColKeys].forEach(function(key) {
+      if (key !== state.metric && !state.extraMetrics.includes(key)) cols.push({id:'filter:' + key,kind:'filter',metricKey:key,label:(cfg.metrics[key]&&cfg.metrics[key].label)||key,sortKey:key});
+    });
+    cols.push({id:'metric:' + state.metric,kind:'metric',metricKey:state.metric,label:(cfg.metrics[state.metric]&&cfg.metrics[state.metric].label)||state.metric,sortKey:state.metric,primary:true});
+    state.extraMetrics.forEach(function(key) { cols.push({id:'metric:' + key,kind:'metric',metricKey:key,label:(cfg.metrics[key]&&cfg.metrics[key].label)||key,sortKey:key}); });
+    if (state.showTrends) cols.push({id:'trend',kind:'trend',label:'Recent'});
+    return cols;
+  }
+  function syncTableHeader() {
+    const tr = document.querySelector('#amTable thead tr');
+    if (!tr) return;
+    tr.innerHTML = '';
+    tableColumnSchema().forEach(function(c) {
+      const th = document.createElement('th'); th.dataset.columnId = c.id;
+      th.textContent = c.label; if (c.title) th.title = c.title;
+      if (c.kind === 'rank') th.className = 'am-rank';
+      else if (c.kind === 'player') th.className = 'am-player';
+      else if (c.kind === 'season') { th.className = 'am-season-col'; th.id = 'amSeasonColHdr'; th.style.display = amIsEachYear() ? '' : 'none'; }
+      else if (c.kind === 'weeks') { th.className = 'am-weeks'; th.style.display = state.responseWeekFiltered ? '' : 'none'; }
+      else if (c.kind === 'metric') { th.className = 'am-barcell' + (c.primary ? '' : ' am-extra-header'); th.id = c.primary ? 'amMetricHeader' : 'amExtraHeader_' + c.metricKey; _bindColTip(th,c.metricKey); }
+      else { th.className = 'am-games' + (c.kind === 'sample' ? ' am-context-col-hdr' : ' am-filter-col-hdr'); if (c.kind === 'filter') { th.id='amFilterColHdr_'+c.metricKey; _bindColTip(th,c.metricKey); } }
+      if (c.sortKey) { th.classList.add('am-sortable'); th.addEventListener('click',function(){sortByCol(c.sortKey);}); }
+      tr.appendChild(th);
+    });
+    updateSortHeaders();
+  }
+  function schemaSkeletonRows() {
+    const ids = tableColumnSchema().map(c => c.id);
+    return [0,1,2].map(function() {
+      return '<tr class="am-row am-schema-skeleton">' + ids.map(function(id) {
+        return '<td data-column-id="' + id + '"><span class="skeleton" style="display:block;height:12px;min-width:28px"></span></td>';
+      }).join('') + '</tr>';
+    }).join('');
+  }
+  function schemaMessageRow(message) {
+    return '<tr><td colspan="' + tableColumnSchema().length + '" class="am-schema-message">' + message + '</td></tr>';
+  }
+  function verifyRenderedSchema() {
+    const expected = tableColumnSchema().map(c => c.id).join('|');
+    document.querySelectorAll('#amTable tbody tr.am-row:not(.am-pin-divider)').forEach(function(tr) {
+      const actual = [...tr.children].map(td => td.dataset.columnId || '').join('|');
+      if (actual !== expected) console.error('Advanced Metrics column schema mismatch', {expected:expected, actual:actual});
     });
   }
   function syncContextCols() {
-    const thead = document.querySelector('#amTable thead tr');
-    if (!thead) return;
-    thead.querySelectorAll('.am-context-col-hdr').forEach(function(el) { el.remove(); });
-    const weeksHdr = thead.querySelector('th.am-weeks');
-    if (!weeksHdr) return;
-    let anchor = weeksHdr;
-    contextColsFor().forEach(function(c) {
-      const th = document.createElement('th');
-      th.className = 'am-games am-context-col-hdr';
-      th.textContent = c.label;
-      th.title = c.title || c.label;
-      anchor.insertAdjacentElement('afterend', th);
-      anchor = th;
-    });
+    syncTableHeader();
   }
 
   // Attach the shared metric-definition tooltip to a column header <th>.
@@ -2238,22 +2352,8 @@ _AM_JS = r"""
   }
 
   function syncExtraCols() {
-    const thead = document.querySelector('#amTable thead tr');
-    if (!thead) return;
-    thead.querySelectorAll('.am-extra-header').forEach(function(el) { el.remove(); });
-    state.extraMetrics.forEach(function(key) {
-      const th = document.createElement('th');
-      th.id = 'amExtraHeader_' + key;
-      th.className = 'am-barcell am-extra-header';
-      th.textContent = (cfg.metrics[key] && cfg.metrics[key].label) || key;
-      th.addEventListener('click', function() { sortByCol(key); });
-      _bindColTip(th, key);
-      thead.appendChild(th);
-    });
-    syncFilterCols();
-    syncContextCols();
+    syncTableHeader();
     syncTrendHeader();
-    updateSortHeaders();
   }
   function updateMetricTip() {
     const info = document.getElementById('amMetricInfo');
@@ -2554,7 +2654,7 @@ _AM_JS = r"""
 
     loading.style.display = 'none';
     if (!displayRows.length) {
-      empty.style.display = ''; tbody.innerHTML = '';
+      empty.style.display = ''; tbody.innerHTML = schemaMessageRow('No matching players');
       if (avgNote) avgNote.style.display = 'none';
       if (paginationEl) paginationEl.style.display = 'none';
       window.brEmptyState(empty, state.rosterOnly
@@ -2623,21 +2723,20 @@ _AM_JS = r"""
       const owned = ownedIds.has(String(r.player_id));
       const pinned = state.pinnedIds.has(String(r.player_id));
       const rank = filteredRankMap.get(amRowKey(r)) || '';
-      const volNum = r.vol != null ? r.vol : (r.games != null ? r.games : '–');
-      const gamesCell = '<td class="am-games">' + volNum + '</td>';
-      const weeksCell = '<td class="am-weeks" style="display:' + (!!(state.weekRange && state.weekRange !== '') ? '' : 'none') + '">' + (r.weeks != null ? r.weeks : '–') + '</td>';
+      const gamesCell = '<td class="am-games" data-column-id="games">' + (r.games != null ? r.games : '–') + '</td>';
+      const weeksCell = '<td class="am-weeks" data-column-id="weeks" style="display:' + (!!(state.weekRange && state.weekRange !== '') ? '' : 'none') + '">' + (r.weeks != null ? r.weeks : '–') + '</td>';
       // Context volume cells (plain numbers, like Games) for the metric's category.
       let contextCells = '';
       contextColsFor().forEach(function(c) {
-        const cv = r[c.key];
-        contextCells += '<td class="am-games">' + (cv != null ? cv : '–') + '</td>';
+        const cv = schemaValue(c, r);
+        contextCells += '<td class="am-games" data-column-id="' + c.id + '">' + (cv != null ? cv : '–') + '</td>';
       });
       const ownedBadge = owned ? '<span class="am-owned-badge">YOURS</span>' : '';
       const pinBtn = '<button class="am-pin-btn' + (pinned ? ' am-pin-active' : '') + '" '
         + 'onclick="event.stopPropagation();amTogglePin(\'' + r.player_id + '\')" '
         + 'title="' + (pinned ? 'Unpin' : (state.pinnedIds.size >= _AM_MAX_PINS ? 'Unpin another player first (max 5)' : 'Pin to compare')) + '">' + _PIN_SVG + '</button>';
-      const rankCell = '<td class="am-rank"><div class="am-rank-cell">' + pinBtn + '<span>' + rank + '</span></div></td>';
-      const playerCell = '<td class="am-player"><div class="am-player-inner">'
+      const rankCell = '<td class="am-rank" data-column-id="rank"><div class="am-rank-cell">' + pinBtn + '<span>' + rank + '</span></div></td>';
+      const playerCell = '<td class="am-player" data-column-id="player"><div class="am-player-inner">'
         + '<span class="am-name">' + (r.name || '') + '</span>'
         + ownedBadge
         + '<span class="am-player-right">'
@@ -2645,57 +2744,59 @@ _AM_JS = r"""
         + '<span class="am-meta" style="color:' + col + ';font-weight:600">' + r.position + '</span>'
         + '</span></div></td>';
       const showYear = amIsEachYear();
-      const seasonCell = '<td class="am-season-col"' + (showYear ? '' : ' style="display:none"') + '>'
+      const seasonCell = '<td class="am-season-col" data-column-id="season"' + (showYear ? '' : ' style="display:none"') + '>'
         + (showYear && r.season != null ? r.season : '') + '</td>';
 
       // Compact filter-column cells (appear right before the primary metric cell).
       let filterColCells = '';
       if (state.filterColKeys && state.filterColKeys.size) {
         [...state.filterColKeys].forEach(function(fkey) {
+          if (fkey === state.metric || state.extraMetrics.includes(fkey)) return;
           const fed = state.extraData[fkey];
           if (!fed) {
-            filterColCells += '<td class="am-games" style="opacity:.35">–</td>';
+            filterColCells += '<td class="am-games" data-column-id="filter:' + fkey + '" style="opacity:.35">–</td>';
             return;
           }
           const fval = fed.byId[amRowKey(r)];
-          filterColCells += '<td class="am-games">' + (fval != null ? fmtVal(fval, fkey) : '–') + '</td>';
+          filterColCells += '<td class="am-games" data-column-id="filter:' + fkey + '">' + (fval != null ? fmtVal(fval, fkey) : '–') + '</td>';
         });
       }
 
       const badge = percentileBadge(qualityRankMap.get(amRowKey(r)) || rank, totalRanked);
+      const primaryValue = schemaValue({kind:'metric', metricKey:state.metric}, r);
       const prevVal = amIsMultiSeason() ? null : state.prevData[String(r.player_id)];
       const trend = trendArrow(r.value, prevVal);
       let metricCell;
       if (!multiMode) {
-        const pct = _barPct(Number(r.value), _primBar);
+        const pct = _barPct(Number(primaryValue), _primBar);
         const avgLbl = (avgPct != null && i === 0) ? '<span class="am-bar-avg-lbl">AVG</span>' : '';
         const avgMark = (avgPct != null)
           ? '<div class="am-bar-avg" style="left:' + avgPct + '%" title="' + (state.position !== 'ALL' ? state.position : 'Field') + ' average">' + avgLbl + '</div>'
           : '';
-        metricCell = '<td class="am-barcell"><div class="am-metric-cell">'
+        metricCell = '<td class="am-barcell" data-column-id="metric:' + state.metric + '"><div class="am-metric-cell">'
           + '<div class="am-metric-bar"><div class="am-bar-track"><div class="am-bar-fill" style="width:' + pct + '%;background:' + col + '"></div>' + avgMark + '</div></div>'
-          + '<div class="am-val-wrap"><div class="am-val-row">' + trend + '<span class="am-val">' + fmtVal(r.value, state.metric) + '</span></div>' + badge + '</div>'
+          + '<div class="am-val-wrap"><div class="am-val-row">' + trend + '<span class="am-val">' + fmtVal(primaryValue, state.metric) + '</span></div>' + badge + '</div>'
           + '</div></td>';
       } else {
-        const pct = _barPct(Number(r.value), _primBar);
+        const pct = _barPct(Number(primaryValue), _primBar);
         const avgLbl2 = (avgPct != null && i === 0) ? '<span class="am-bar-avg-lbl">AVG</span>' : '';
         const avgMark2 = (avgPct != null)
           ? '<div class="am-bar-avg" style="left:' + avgPct + '%" title="' + (state.position !== 'ALL' ? state.position : 'Field') + ' average">' + avgLbl2 + '</div>'
           : '';
-        metricCell = '<td class="am-barcell"><div class="am-metric-cell">'
+        metricCell = '<td class="am-barcell" data-column-id="metric:' + state.metric + '"><div class="am-metric-cell">'
           + '<div class="am-metric-bar"><div class="am-bar-track"><div class="am-bar-fill" style="width:' + pct + '%;background:' + col + '"></div>' + avgMark2 + '</div></div>'
-          + '<div class="am-val-wrap"><div class="am-val-row">' + trend + '<span class="am-val">' + fmtVal(r.value, state.metric) + '</span></div>' + badge + '</div>'
+          + '<div class="am-val-wrap"><div class="am-val-row">' + trend + '<span class="am-val">' + fmtVal(primaryValue, state.metric) + '</span></div>' + badge + '</div>'
           + '</div></td>';
         state.extraMetrics.forEach(function(key) {
           const ed = state.extraData[key];
           if (!ed) {
-            metricCell += '<td class="am-barcell"><div class="am-metric-cell">'
+            metricCell += '<td class="am-barcell" data-column-id="metric:' + key + '"><div class="am-metric-cell">'
               + '<div class="am-metric-bar"><div class="am-skel-bar"></div></div>'
               + '<div class="am-val-wrap"><span class="am-val" style="opacity:.25">–</span></div>'
               + '</div></td>';
             return;
           }
-          const val = ed.byId[amRowKey(r)] !== undefined ? ed.byId[amRowKey(r)] : null;
+          const val = schemaValue({kind:'metric', metricKey:key}, r);
           const _eBar = extraBarMap[key] || { signed: false, lower: false, fieldMin: 0, fieldMax: 1, capMax: extraMaxMap[key] };
           const pctBar = val != null ? _barPct(Number(val), _eBar) : 2;
           const disp = val != null ? fmtVal(val, key) : '–';
@@ -2708,7 +2809,7 @@ _AM_JS = r"""
           const badgeE = (rkE && extraRankTotal[key]) ? percentileBadge(rkE, extraRankTotal[key]) : '';
           const prevE = (!amIsMultiSeason() && state.extraPrevData[key]) ? state.extraPrevData[key][String(r.player_id)] : undefined;
           const trendE = (val != null && prevE !== undefined) ? trendArrow(val, prevE, key) : '';
-          metricCell += '<td class="am-barcell"><div class="am-metric-cell">'
+          metricCell += '<td class="am-barcell" data-column-id="metric:' + key + '"><div class="am-metric-cell">'
             + '<div class="am-metric-bar"><div class="am-bar-track"><div class="am-bar-fill" style="width:' + pctBar + '%;background:' + col + '"></div>' + avgMarkE + '</div></div>'
             + '<div class="am-val-wrap"><div class="am-val-row">' + trendE + '<span class="am-val">' + disp + '</span></div>' + badgeE + '</div>'
             + '</div></td>';
@@ -2735,6 +2836,7 @@ _AM_JS = r"""
         + (state.showTrends ? trendCellHtml(r.player_id, col) : '')
         + '</tr>' + divider;
     }).join('');
+    verifyRenderedSchema();
 
     updateComparePinnedBtn();
 
@@ -2754,24 +2856,10 @@ _AM_JS = r"""
     }
   }
   function updateVolHeader() {
-    const th = document.querySelector('#amTable thead th.am-games');
-    if (th) {
-      const lbl = VOL_LABELS[state.volCol] || 'G';
-      const title = { games: 'Games played', total_pass_att: 'Pass attempts', total_carries: 'Carries',
-                total_touches: 'Touches', total_targets: 'Targets', total_receptions: 'Receptions' }[state.volCol] || lbl;
-      th.textContent = lbl;
-      th.title = title;
-    }
-    // Show the Wks column only when a week range is active.
-    const isWeekly = !!state.responseWeekFiltered;
-    const thWks = document.querySelector('#amTable thead th.am-weeks');
-    if (thWks) thWks.style.display = isWeekly ? '' : 'none';
-    const mh = document.getElementById('amMetricHeader');
-    if (mh) {
-      mh.textContent = (cfg.metrics[state.metric] && cfg.metrics[state.metric].label) || '–';
-      _bindColTip(mh, state.metric);
-    }
-    syncExtraCols();
+    // Legacy code relabelled the Games header from metric-specific vol_col while
+    // the body still rendered games. That produced duplicate CAR headers and
+    // shifted-looking Passing values. Rebuild both from the canonical schema.
+    syncTableHeader();
   }
   // Resolve ranges against the selected season's actual populated weeks.
   function availableWeeks() {
@@ -3672,7 +3760,8 @@ _AM_JS = r"""
   function fetchData() {
     // paywall removed -- advanced metrics is available to all users
     state.fetching = true;
-    loading.style.display = ''; empty.style.display = 'none'; tbody.innerHTML = '';
+    const requestToken = ++state.requestToken;
+    loading.style.display = ''; empty.style.display = 'none'; syncTableHeader(); tbody.innerHTML = schemaSkeletonRows();
     if (avgNote) avgNote.style.display = 'none';
     const params = new URLSearchParams({ metric: state.metric, platform: cfg.platform });
     if (cfg.leagueId) params.set('league_id', cfg.leagueId);
@@ -3709,7 +3798,8 @@ _AM_JS = r"""
 
     Promise.all([mainFetch, prevFetch])
       .then(([d, pd]) => {
-        if (!d) { state.fetching = false; empty.style.display = ''; loading.style.display = 'none'; return; }
+        if (requestToken !== state.requestToken) return;
+        if (!d) { state.fetching = false; empty.style.display = ''; loading.style.display = 'none'; tbody.innerHTML = schemaMessageRow('Data unavailable'); return; }
         state.fetching = false;
         state.rows = d.players || [];
         state.volCol = d.vol_col || 'games';
@@ -3737,10 +3827,11 @@ _AM_JS = r"""
         render();
       })
       .catch(() => {
+        if (requestToken !== state.requestToken) return;
         state.fetching = false; loading.style.display = 'none';
         // Network error (e.g. ERR_NETWORK_CHANGED): show a recoverable retry
         // rather than the misleading "No data for this metric yet." message.
-        empty.style.display = '';
+        empty.style.display = ''; tbody.innerHTML = schemaMessageRow('Couldn’t load this metric.');
         empty.innerHTML = 'Couldn’t load this metric, network hiccup. '
           + '<button type="button" id="amRetryBtn" style="margin-left:6px;padding:5px 12px;'
           + 'border:1px solid var(--border);border-radius:8px;background:var(--card);'
@@ -3883,6 +3974,8 @@ _AM_JS = r"""
   metricSel.addEventListener('change', () => {
     const _v = metricSel.value;
     if (_v && _v.startsWith('__preset__')) { amLoadPreset(_v.replace('__preset__', '')); return; }
+    _showActiveSet('Custom');
+    _activePresetId = null;
     state.metric = metricSel.value; state.page = 0;
     state.extraMetrics = []; state.extraData = {}; state.extraPrevData = {}; state.prevData = {};
     state.comboFilters = []; state.filterColKeys = new Set();
@@ -4085,7 +4178,10 @@ _AM_JS = r"""
       if (!rows.length) return;
       const metricLbl = (cfg.metrics[state.metric] && cfg.metrics[state.metric].label) || state.metric;
       const extraKeys = state.extraMetrics.filter(k => state.extraData[k]);
-      const head = ['Player', 'Team', 'Pos', 'Age', 'Exp', metricLbl, 'Games']
+      const sampleCols = contextColsFor();
+      const head = ['Player', 'Team', 'Pos', 'Age', 'Exp', 'Games']
+        .concat(sampleCols.map(c => c.title))
+        .concat([metricLbl])
         .concat(extraKeys.map(k => (cfg.metrics[k] && cfg.metrics[k].label) || k));
       if (amIsEachYear()) head.splice(1, 0, 'Year');
       const esc = function(v) {
@@ -4098,9 +4194,10 @@ _AM_JS = r"""
         const line = [
           r.name || '', r.team || '', r.position || '',
           r.age != null ? r.age : '', r.years_exp != null ? r.years_exp : '',
-          r.value != null ? r.value : '',
-          r.vol != null ? r.vol : (r.games != null ? r.games : ''),
-        ].concat(extraKeys.map(function(k) {
+          r.games != null ? r.games : '',
+        ].concat(sampleCols.map(c => schemaValue(c, r) ?? '')).concat([
+          r.value != null ? r.value : ''
+        ]).concat(extraKeys.map(function(k) {
           const v = state.extraData[k].byId[amRowKey(r)];
           return v != null ? v : '';
         }));
@@ -4221,6 +4318,46 @@ _AM_JS = r"""
   if (_thPlayer) _thPlayer.addEventListener('click', () => sortByCol('name'));
   if (_thGames)  _thGames.addEventListener('click', () => sortByCol('games'));
   if (_thMetric) _thMetric.addEventListener('click', () => sortByCol(state.metric));
+
+  // Named custom sets use the same local preference convention as pins. Removed
+  // metrics are discarded on load; a missing primary makes the saved set
+  // unavailable rather than silently substituting another statistic.
+  const savedSetEl = document.getElementById('amSavedSet');
+  function refreshSavedSets(selected) {
+    if (!savedSetEl) return;
+    const sets = _loadCustomSets();
+    savedSetEl.innerHTML = '<option value="">Custom sets…</option>';
+    Object.keys(sets).sort().forEach(function(n) { const o = document.createElement('option'); o.value = n; o.textContent = n; savedSetEl.appendChild(o); });
+    if (selected && sets[selected]) savedSetEl.value = selected;
+  }
+  if (savedSetEl) savedSetEl.addEventListener('change', function() {
+    const name = this.value, saved = _validCustomSet(_loadCustomSets()[name]);
+    if (!saved) return;
+    state.metric = saved.primary; metricSel.value = saved.primary;
+    state.extraMetrics = saved.metrics; state.position = saved.position;
+    state.sortBy = saved.primary; state.sortDir = saved.sort; state.minVol = saved.minVol;
+    state.comboFilters = []; state.filterColKeys = new Set(); state.page = 0; _activePresetId = null; _showActiveSet(name);
+    updateSortBtn(); updatePosButtons(); updateMetricTip(); updateVolCtrl(); updateVolHeader();
+    updateCompareBar(); syncExtraCols(); updateFilterBar(); fetchData();
+  });
+  const saveSetBtn = document.getElementById('amSaveSetBtn');
+  if (saveSetBtn) saveSetBtn.addEventListener('click', function() {
+    const current = savedSetEl && savedSetEl.value;
+    const name = (window.prompt('Custom set name', current || (_activeSet === 'Custom' ? '' : _activeSet)) || '').trim();
+    if (!name) return;
+    const sets = _loadCustomSets();
+    sets[name] = {primary:state.metric, metrics:state.extraMetrics.slice(), position:state.position, sort:state.sortDir, minVol:state.minVol};
+    try { localStorage.setItem(_CUSTOM_SET_KEY, JSON.stringify(sets)); } catch (_) { return; }
+    _showActiveSet(name); refreshSavedSets(name);
+  });
+  const deleteSetBtn = document.getElementById('amDeleteSetBtn');
+  if (deleteSetBtn) deleteSetBtn.addEventListener('click', function() {
+    const name = savedSetEl && savedSetEl.value; if (!name) return;
+    const sets = _loadCustomSets(); delete sets[name];
+    try { localStorage.setItem(_CUSTOM_SET_KEY, JSON.stringify(sets)); } catch (_) { return; }
+    _showActiveSet('Custom'); refreshSavedSets();
+  });
+  refreshSavedSets();
 
   state.minVol = _initParams.get('minvol') || defaultVol(state.metric);
   const _searchInit = _initParams.get('search') || '';

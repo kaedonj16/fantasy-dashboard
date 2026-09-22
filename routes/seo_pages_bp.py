@@ -77,6 +77,23 @@ def age_from_bday(*args, **kwargs):
     return _fn(*args, **kwargs)
 
 
+def _public_player_ppg(player_id: str, season: int):
+    """Completed-game PPG using the app's canonical weekly scoring path.
+
+    Public pages use an explicitly labelled full-PPR baseline; personalized
+    league scoring remains private to league pages.  Missing appearances stay
+    ``None`` rather than becoming a fabricated zero.
+    """
+    from app import _load_season_weekly_points
+    from utils.fantasy_scoring import completed_points_summary
+
+    points = (_load_season_weekly_points(int(season), {"rec": 1.0}) or {}).get(
+        str(player_id), []
+    )
+    summary = completed_points_summary(points)
+    return (summary or {}).get("ppg")
+
+
 def page_breakouts(*args, **kwargs):
     from app import page_breakouts as _fn
     return _fn(*args, **kwargs)
@@ -348,6 +365,20 @@ def _rankings_page(position: str | None = None):
     except Exception:
         value_table = []
 
+    if not value_table:
+        label = f" {position}" if position else ""
+        body = (
+            "<div class='static-page'><div class='static-card-page'>"
+            f"<h1>Dynasty{label} rankings temporarily unavailable</h1>"
+            "<p>The current value table could not be loaded. Please try again shortly. "
+            "You can still read the <a href='/guides'>strategy guides</a>.</p>"
+            "</div></div>"
+        )
+        return render_page(
+            f"Dynasty{label} Rankings | BR Fantasy", None, "players", body,
+            noindex=True, ad_eligible=False, lite_js=True,
+        ), 503, {"Retry-After": "300"}
+
     from datetime import datetime as _dt
     as_of  = _dt.now().strftime("%B %Y")
     year   = _dt.now().year
@@ -400,10 +431,19 @@ def page_player_trade_value(slug: str):
     idx = get_player_slug_index()
     pid = idx.get(slug_norm)
     if not pid:
-        # Stale/unknown slug (player renamed, retired, or fell out of the value
-        # table): consolidate to the rankings hub rather than 404 - these were
-        # showing up as Not Found errors in Search Console after slug churn.
-        return redirect("/players", code=301)
+        # An unknown player is not the rankings page. Return an honest, useful
+        # 404 and keep both indexing and advertising off this failure response.
+        display_name = html.escape((slug or "Player").replace("-", " ").title())
+        body = (
+            "<div class='static-page'><div class='static-card-page'>"
+            f"<h1>Player not found</h1><p>We could not find {display_name} in the current "
+            "player index.</p><p><a href='/players'>Browse current player values</a> or "
+            "<a href='/trade'>open the trade calculator</a>.</p></div></div>"
+        )
+        return render_page(
+            "Player Not Found | BR Fantasy", None, "players", body,
+            noindex=True, ad_eligible=False, lite_js=True,
+        ), 404
 
     # Canonical-slug redirect: if the requested slug isn't the normalized one,
     # or it's the bare /player/<slug> form, send 301 to /player/<slug>/trade-value.
@@ -422,6 +462,8 @@ def page_player_trade_value(slug: str):
 
         table = get_model_value_table_cached() or []
         pv = next((p for p in table if str(p.get("id")) == str(pid)), {})
+        if not pv:
+            raise LookupError("player is absent from the current value table")
 
         # Single sorted ranking by 1QB value, reused for overall rank + neighbors.
         ranked_1qb = sorted(
@@ -466,13 +508,14 @@ def page_player_trade_value(slug: str):
         team = meta.get("team")
         age = age_from_bday(meta.get("bDay")) or pv.get("age") or meta.get("age")
 
+        ppg = _public_player_ppg(pid, season)
         body = build_player_page_body(
             player_id=pid, name=name, position=pos, team=team, age=age,
             headshot=meta.get("espnHeadshot"),
             value_1qb=pv.get("value"), sf_value=pv.get("sf_value"),
             pos_rank_label=pv.get("pos_rank_label"), ovr_rank=ovr_rank,
             sf_pos_rank_label=pv.get("sf_pos_rank_label"), sf_ovr_rank=sf_ovr_rank,
-            ppg=None, value_history=history, season=season,
+            ppg=ppg, value_history=history, season=season,
             similar_players=similar_players,
         )
 
@@ -499,8 +542,9 @@ def page_player_trade_value(slug: str):
                            lite_js=True)
     except Exception:
         logger.exception("[player-page] render failed for slug=%s pid=%s", slug, pid)
-        # Never 5xx a public page for Googlebot/users: return a valid minimal
-        # page (keeps the URL alive for when data returns) instead of a 500.
+        # This is an unavailable response, not indexable player content. A 503
+        # asks crawlers to retry without turning a transient provider failure
+        # into a misleading soft-200 page.
         _fb_name = html.escape((slug or 'Player').replace('-', ' ').title())
         return render_page(
             f"{_fb_name} Trade Value | BR Fantasy", None, "players",
@@ -509,8 +553,8 @@ def page_player_trade_value(slug: str):
             f"<a href='/players'>Browse all player values</a> or "
             f"<a href='/trade'>open the trade calculator</a>.</p></div></div>",
             description=f"{_fb_name} dynasty and redraft trade value.",
-            lite_js=True,
-        )
+            noindex=True, ad_eligible=False, lite_js=True,
+        ), 503, {"Retry-After": "300"}
 
 
 

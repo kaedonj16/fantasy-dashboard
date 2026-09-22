@@ -15,7 +15,8 @@ def build_weekly_hub_body(ctx: dict) -> str:
     import json
     import pandas as pd
     from dashboard_services.matchups import (
-        matchup_matches_gotw,
+        gotw_identity_for_context,
+        matchup_gotw_flags,
         render_matchup_carousel_weeks,
         render_matchup_slide,
     )
@@ -96,10 +97,62 @@ def build_weekly_hub_body(ctx: dict) -> str:
     _gotw_selection = get_cached_gotw_selection(
         platform, ctx.get("resolved_league_id") or league_id, season, default_week,
     )
-    if _gotw_selection and not any(
-        matchup_matches_gotw(m, _gotw_selection) for m in default_matchups
-    ):
+    _gotw_key = gotw_identity_for_context(
+        _gotw_selection, loaded=True, platform=platform,
+        league_id=ctx.get("resolved_league_id") or league_id,
+        season=season, week=default_week,
+    )
+    _gotw_flags = matchup_gotw_flags(default_matchups, _gotw_key)
+    if not any(_gotw_flags):
         _gotw_selection = None
+
+    # Fallback: if no Game-of-the-Week selection is cached for this week (e.g. no
+    # one has generated the prior week's recap, or the viewer is not premium),
+    # compute the SAME deterministic pick here and cache it so the badge appears.
+    # Reuses the recap payload builder -- no AI call, no second algorithm. Only
+    # for the upcoming week right after the last finalized week (GOTW is a
+    # next-week concept), and wrapped so any failure just leaves the badge absent.
+    _gotw_lid = ctx.get("resolved_league_id") or league_id
+    if (_gotw_selection is None and _show_matchup_preview and default_matchups
+            and last_final_week >= 1 and default_week == last_final_week + 1):
+        try:
+            from dashboard_services.ai.weekly_recap import (
+                build_weekly_recap_payload, _gotw_cache_key,
+                get_cached_gotw_selection, save_cached_ai_text,
+            )
+            from app import _build_next_week_ctx
+            _team_by_rid = {str(rid): name for rid, name in (roster_map or {}).items()}
+            _playoff_start = int((_league_for_preview.get("settings") or {}).get("playoff_week_start") or 14)
+            _nctx = _build_next_week_ctx(
+                ctx, default_week, _playoff_start, _gotw_lid, season, platform, _team_by_rid,
+            )
+            _payload = build_weekly_recap_payload(
+                df_weekly, matchups_by_week, last_final_week, _team_by_rid,
+                _league_for_preview, next_week_ctx=_nctx,
+            )
+            _game = (_payload.get("next_week_preview") or {}).get("game_of_the_week") or {}
+            _rids = [str(_game.get("roster_id_a") or ""), str(_game.get("roster_id_b") or "")]
+            if all(_rids):
+                _sel = {
+                    "platform": str(platform or "").lower(), "league_id": str(_gotw_lid),
+                    "season": str(season), "source_week": int(last_final_week),
+                    "target_week": int(default_week), "matchup_id": _game.get("matchup_id"),
+                    "roster_ids": _rids,
+                }
+                save_cached_ai_text(
+                    _gotw_cache_key(platform, _gotw_lid, season, default_week),
+                    "", metadata={"gotw_selection": _sel},
+                )
+                _gotw_selection = get_cached_gotw_selection(platform, _gotw_lid, season, default_week)
+                _gotw_key = gotw_identity_for_context(
+                    _gotw_selection, loaded=True, platform=platform,
+                    league_id=_gotw_lid, season=season, week=default_week,
+                )
+                _gotw_flags = matchup_gotw_flags(default_matchups, _gotw_key)
+                if not any(_gotw_flags):
+                    _gotw_selection = None
+        except Exception:
+            logger.debug("[weekly-hub] on-demand GOTW compute failed", exc_info=True)
 
     # Pre-compute head-to-head records for each current-week matchup
     def _h2h_record(rid_a: str, rid_b: str) -> tuple[int, int]:
@@ -147,9 +200,10 @@ def build_weekly_hub_body(ctx: dict) -> str:
             fpts_against=_fpts_against_weekly,
             viewer_roster_id=_hub_vid,
             scoring_settings=ctx.get("raw_scoring_settings") or ctx.get("scoring_settings"),
-            is_gotw=matchup_matches_gotw(m, _gotw_selection),
+            is_gotw=is_gotw,
+            gotw_selection=_gotw_selection,
         )
-        for m in default_matchups
+        for m, is_gotw in zip(default_matchups, _gotw_flags)
     ]
     slides_html = "".join(slides) if slides else "<div class='m-empty'>No matchups</div>"
     slides_by_week = {default_week: slides_html}
@@ -321,7 +375,7 @@ def build_weekly_hub_body(ctx: dict) -> str:
               {scout_panel_content}
             </div>
             <div class="tab-panel" data-tab="optimal">
-              {optimal_panel_content}
+              <div id="optimalLineupContent" aria-live="polite">{optimal_panel_content}</div>
             </div>
           </div>
         </div>
@@ -351,6 +405,13 @@ def build_weekly_hub_body(ctx: dict) -> str:
   var sideContainer = document.querySelector('.week-side-panels');
 
   function showLoading() {{
+    // Invalidate the old week's marker before the replacement request starts.
+    // The rest of the old card may remain visible beneath the loading overlay.
+    if (matchupsContainer) {{
+      matchupsContainer.querySelectorAll('.m-gotw-badge').forEach(function(badge) {{
+        badge.remove();
+      }});
+    }}
     if (loadingOverlay) loadingOverlay.classList.remove('hidden');
     sel.disabled = true;
   }}

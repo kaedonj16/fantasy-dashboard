@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import gc
 import json
+import os
+import tempfile
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional
 
@@ -22,6 +24,7 @@ def _usage_team(raw_team) -> Optional[str]:
 def build_usage_map_for_season(
         season: int,
         weeks: Iterable[int],
+        force_weeks: Optional[Iterable[int]] = None,
 ) -> Dict[str, Dict[str, float]]:
     """
     Aggregate Sleeper season stats for the given season + weeks and
@@ -76,10 +79,19 @@ def build_usage_map_for_season(
     team_week_opportunities: Dict[tuple, float] = {}
     team_week_targets: Dict[tuple, float] = {}
     weeks_list = list(weeks)
+    # Weeks whose cache must be refetched even when populated — the in-progress
+    # week, whose file otherwise freezes on its first (partial) fetch and would
+    # never pick up games that finish later the same week.
+    force_set = {int(w) for w in (force_weeks or [])}
 
     # Stream one week at a time so we never hold all 18 weeks in RAM simultaneously
     for w in weeks_list:
-        week_players = fetch_week_stats(season, w)
+        # Only pass force when actually forcing, so callers/tests that stub
+        # fetch_week_stats with the original 2-arg signature keep working.
+        if int(w) in force_set:
+            week_players = fetch_week_stats(season, w, force=True)
+        else:
+            week_players = fetch_week_stats(season, w)
         if not isinstance(week_players, dict):
             gc.collect()
             continue
@@ -333,6 +345,7 @@ def _validate_usage_table(players_out: List[dict], usage_by_pid: Dict[str, dict]
 def write_usage_table_snapshot(
         season: int,
         weeks: Iterable[int],
+        force_weeks: Optional[Iterable[int]] = None,
 ) -> Path:
     """
     Build a value_table_{YYYY-MM-DD}.json file containing:
@@ -357,7 +370,9 @@ def write_usage_table_snapshot(
 
     DATA_DIR = Path(__file__).resolve().parents[2] / "data"
     players_index: Dict[str, dict] = load_players_index()
-    usage_by_pid: Dict[str, dict] = build_usage_map_for_season(season, weeks)
+    usage_by_pid: Dict[str, dict] = build_usage_map_for_season(
+        season, weeks, force_weeks=force_weeks,
+    )
 
     out_path = DATA_DIR / "usage_table.json"
 
@@ -399,8 +414,22 @@ def write_usage_table_snapshot(
     _validate_usage_table(players_out, usage_by_pid, season)
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    with out_path.open("w", encoding="utf-8") as f:
-        json.dump(players_out, f, ensure_ascii=False, indent=2)
+    # Publish only a completely serialized, validated snapshot. A failed build
+    # leaves the last-known-good file untouched.
+    tmp_name = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=out_path.parent,
+            prefix=f".{out_path.name}.", suffix=".tmp", delete=False,
+        ) as f:
+            tmp_name = f.name
+            json.dump(players_out, f, ensure_ascii=False, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_name, out_path)
+    finally:
+        if tmp_name and os.path.exists(tmp_name):
+            os.unlink(tmp_name)
 
     return out_path
 
