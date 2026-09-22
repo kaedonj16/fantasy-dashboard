@@ -66,3 +66,21 @@ def test_my_leagues_loader_is_single_flight_and_force_invalidates():
     assert "if (force) { value = null; expiresAt = 0; }" in block
     assert ".finally(function () { inflight = null; })" in block
     assert "expiresAt = Date.now() + 5000" in block
+
+
+def test_hydration_liveness_guard_matches_rendered_grid():
+    """The queue must not self-disable before issuing its first card request."""
+    source = (ROOT / "app.py").read_text()
+    fn = source.split("def build_portfolio_body", 1)[1].split("\ndef ", 1)[0]
+    assert "<div class='pf-lg-grid'>" in fn
+    assert "document.querySelector('.pf-lg-grid')!==null" in fn
+    assert "pf-leagues-grid" not in fn
+
+
+def test_live_polling_reuses_card_queue_after_initial_hydration():
+    source = (ROOT / "app.py").read_text()
+    fn = source.split("def build_portfolio_body", 1)[1].split("\ndef ", 1)[0]
+    assert "slot._isLive=st==='in'" in fn
+    assert "LIVE=LIVE.filter" in fn
+    assert "setTimeout(pump,0)" in fn
+    assert "window.__pfQueueCard" in fn
