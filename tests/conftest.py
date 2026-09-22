@@ -15,6 +15,25 @@ from pathlib import Path
 
 import pytest
 
+
+@pytest.fixture(autouse=True)
+def forbid_paid_nfl_provider(monkeypatch):
+    """Fail fast if any code path attempts the retired paid hostname."""
+    try:
+        import requests
+    except ImportError:
+        yield
+        return
+    original = requests.sessions.Session.request
+
+    def guarded(session, method, url, *args, **kwargs):
+        if "tank01-nfl-live-in-game-real-time-statistics-nfl.p.rapidapi.com" in str(url).lower():
+            pytest.fail(f"retired Tank01 outbound request attempted: {url}")
+        return original(session, method, url, *args, **kwargs)
+
+    monkeypatch.setattr(requests.sessions.Session, "request", guarded)
+    yield
+
 # Files that import Flask/pandas/app belong in the full-stack CI job, not the
 # pure-Python lint job. Auto-marked below so `pytest -m integration` / `-m
 # "not integration"` can split the suite without annotating every module.

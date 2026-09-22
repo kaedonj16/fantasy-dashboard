@@ -215,12 +215,12 @@ for _abbr, _names in _NFL_FRANCHISES.items():
     for _name in _names:
         TEAM_ALIASES.setdefault(_name.lower(), _abbr)
 
-TANK01_HOST = "tank01-nfl-live-in-game-real-time-statistics-nfl.p.rapidapi.com"
+TANK01_HOST = "disabled.invalid"
 BASE = f"https://{TANK01_HOST}"
 SCHEDULE_CACHE: dict[tuple[int, int], dict] = {}
 SCHEDULE_TTL = 60 * 10  # seconds
 
-TANK01_API_HOST = "tank01-nfl-live-in-game-real-time-statistics-nfl.p.rapidapi.com"
+TANK01_API_HOST = "disabled.invalid"
 TANK01_API_KEY = os.environ.get("TANK01_API_KEY", "")  # RapidAPI key — set via env
 
 NFL_TEAMS = [
@@ -772,7 +772,14 @@ def get_players_index_cached(rapidapi_key: str) -> Dict[str, Dict[str, Any]]:
         with cache_path.open("r", encoding="utf-8") as f:
             return json.load(f)
 
-    # Otherwise, call Tank01 API
+    # The historical cache remains useful as an identity crosswalk, but it is
+    # never refreshed from the retired paid provider.  Sleeper metadata is the
+    # active player source; an absent legacy cache is an explicit empty result.
+    del rapidapi_key
+    return {}
+
+    # Historical implementation retained below for data-shape documentation;
+    # unreachable by design.
     url = f"https://{TANK01_API_HOST}/getNFLPlayerList"
     headers = {
         "x-rapidapi-host": TANK01_API_HOST,
@@ -867,6 +874,13 @@ def fetch_week_from_tank01(season: int, week: int, raw_scoring_settings: dict = 
                            "6pt_ppr": B, "6pt_half": C, "6pt_tep": D} }
     All common scoring variants are pre-computed so one file serves every league type.
     """
+    # Paid projections were intentionally not replaced with season totals or
+    # play-by-play estimates. The projection hierarchy treats {} as unavailable
+    # and continues to its existing free/provider-specific sources.
+    del season, week, raw_scoring_settings
+    return {}
+
+    # Historical transform retained below for old cache compatibility.
     # Fetch with standard PPR params — we read PPR/halfPPR/std directly from
     # Tank01's fantasyPointsDefault and derive other variants from raw stats.
     base_params = {

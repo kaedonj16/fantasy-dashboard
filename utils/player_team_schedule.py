@@ -725,9 +725,10 @@ def shape_boxscore_payload(
             "team": meta.get("team") or "",
             "pos": meta.get("pos") or meta.get("position") or "",
         }
-        tid = meta.get("tankId") or meta.get("tank_id")
-        if tid:
-            tank_idx[str(tid)] = entry
+        for provider_id in (meta.get("espnID"), meta.get("espn_id"),
+                            meta.get("tankId"), meta.get("tank_id")):
+            if provider_id:
+                tank_idx[str(provider_id)] = entry
         n = str(meta.get("name") or "").strip().lower()
         if n:
             name_to_meta[n] = entry

@@ -19,7 +19,7 @@ from utils.utils import (
 
 HTTP_SESSION = requests.Session()
 
-TANK01_API_HOST = "tank01-nfl-live-in-game-real-time-statistics-nfl.p.rapidapi.com"
+TANK01_API_HOST = "disabled.invalid"
 TANK01_BASE_URL = f"https://{TANK01_API_HOST}"
 TANK01_API_KEY = os.getenv("TANK01_API_KEY")
 # TEAMS_INDEX_PATH = "cache" / "teams_index.json"
@@ -103,7 +103,13 @@ def fetch_team_offense_per_game(
     """
     Call Tank01 getNFLTeams and return per-game offensive team stats.
     """
-    sess = session or HTTP_SESSION
+    # ESPN summary is event-oriented and does not provide a stable season-to-
+    # date team aggregation.  Do not fabricate these optional metrics and do
+    # not retain the former paid call.
+    del season, session
+    return {}
+
+    sess = HTTP_SESSION
 
     url = f"{TANK01_BASE_URL}/getNFLTeams"
     params = {

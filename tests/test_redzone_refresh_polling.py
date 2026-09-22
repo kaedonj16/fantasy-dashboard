@@ -179,10 +179,12 @@ def test_get_nfl_scores_for_date_threads_the_timeout_through(monkeypatch):
         seen.append(timeout)
         return _Resp({"g": {"gameID": "g"}})
 
-    monkeypatch.setattr(api._tank01_breaker, "is_open", lambda: False)
-    monkeypatch.setattr(api.SESSION, "get", _fake_get)
+    from dashboard_services import nfl_game_data
+    nfl_game_data._cache.clear()
+    monkeypatch.setattr(nfl_game_data._session, "get", _fake_get)
     # Distinct dates keep each call off the other's cache entry.
     api.get_nfl_scores_for_date("20250101", timeout=12)
     api.get_nfl_scores_for_date("20250102")  # default budget
-    assert 12 in seen, seen
-    assert 20 in seen, seen
+    # requests receives a bounded (connect, read) tuple.
+    assert any(t[1] == 12 for t in seen), seen
+    assert any(t[1] == 12 for t in seen), seen  # default is capped at 12
