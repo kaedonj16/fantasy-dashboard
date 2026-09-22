@@ -41,6 +41,14 @@ def trigger(kind: str, app_url: str | None = None, secret: str | None = None,
         headers={
             "Content-Type": "application/json",
             "X-Cron-Secret": secret,
+            # Cloudflare's WAF rejects the default "Python-urllib/x.y" agent with
+            # HTTP 403 "error code: 1010" (banned browser signature). Send a normal
+            # User-Agent so the cron POST reaches the app.
+            "User-Agent": os.environ.get(
+                "CRON_USER_AGENT",
+                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            ),
         },
         method="POST",
     )
