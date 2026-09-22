@@ -54,6 +54,7 @@ def injury_plan(
     espn_weeks: Optional[float] = None,
     player_value: Optional[float] = None,
     has_open_ir_slot: bool = False,
+    already_on_ir: bool = False,
 ) -> Optional[dict[str, Any]]:
     """Heuristic stash / drop / IR verdict for an injured player.
 
@@ -75,22 +76,25 @@ def injury_plan(
     except (TypeError, ValueError):
         val = None
 
-    if weeks is not None and weeks <= 1.0:
+    if already_on_ir:
+        verdict = "Already on IR"
+        reason = "Player is already in a reserve slot; no roster move is required."
+    elif weeks is not None and weeks <= 1.0:
         verdict = "Monitor"
         reason = "Listed return is soon (approx). Check inactive reports before lock."
     elif weeks is not None and weeks <= 3.0:
         if val is not None and val >= _VALUE_HOLD:
-            verdict = "Stash"
+            verdict = "Hold"
             reason = "Short absence (~%.0f wk approx) and enough roster value to hold." % weeks
         else:
             verdict = "Drop candidate"
             reason = "Short absence but limited stash value. Free the spot if you need it."
     elif weeks is not None and weeks <= 6.0:
         if has_open_ir_slot:
-            verdict = "IR"
+            verdict = "Move to IR"
             reason = "Multi-week absence (~%.0f wk approx). Use an IR slot if available." % weeks
         elif val is not None and val >= _VALUE_STASH:
-            verdict = "Stash"
+            verdict = "Hold"
             reason = "Longer absence (~%.0f wk approx) but high value. Stash if you can." % weeks
         else:
             verdict = "Drop candidate"
@@ -98,10 +102,10 @@ def injury_plan(
     else:
         # IR / PUP / unknown long
         if has_open_ir_slot or (st and st.upper() in ("IR", "PUP", "NFI")):
-            verdict = "IR"
+            verdict = "Move to IR"
             reason = "Extended absence (approx). IR if the league allows; otherwise stash only if elite."
         elif val is not None and val >= _VALUE_STASH:
-            verdict = "Stash"
+            verdict = "Hold"
             reason = "Extended absence (approx) but elite value. Hold through the window if possible."
         else:
             verdict = "Drop candidate"
@@ -128,16 +132,26 @@ def injury_plan(
 def ir_capacity(
     roster_positions: Optional[Sequence] = None,
     reserve_ids: Optional[Sequence] = None,
+    reserve_slots: Optional[int] = None,
 ) -> dict[str, Any]:
     """How many IR slots the league has and whether one is open."""
     from utils.lineup_slots import canonicalize_slots
 
     slots = canonicalize_slots(roster_positions or [])
-    ir_slots = sum(1 for s in slots if s == "IR")
-    used = len([x for x in (reserve_ids or []) if x])
+    fallback = sum(1 for s in slots if s == "IR")
+    try:
+        ir_slots = max(0, int(reserve_slots)) if reserve_slots is not None else fallback
+    except (TypeError, ValueError):
+        ir_slots = fallback
+    # Providers use IR, IR+, RES, RESERVE and injured_reserve interchangeably;
+    # adapters pass their contents here, so only nonblank canonical IDs count.
+    used = len({str(x).strip() for x in (reserve_ids or []) if str(x or "").strip()})
+    open_count = max(0, ir_slots - used)
     return {
         "has_ir_slot": ir_slots > 0,
-        "ir_open": ir_slots > 0 and used < ir_slots,
+        "has_open_ir_slot": open_count > 0,
+        "ir_open": open_count > 0,  # backwards-compatible key
+        "ir_open_count": open_count,
         "ir_slots": ir_slots,
         "ir_used": used,
     }

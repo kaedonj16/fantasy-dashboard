@@ -101,12 +101,12 @@ def test_missing_score_is_unknown_but_zero_is_complete():
     assert zero["actual"] == zero["optimal"] == 0.0
 
 
-def test_negative_starter_and_empty_slot_are_supported():
+def test_negative_starter_still_fills_required_slot():
     result = analyze_lineup({"bad": -3.0}, {"bad": "K"}, ["K"], ["bad"], ["bad"])
     assert result["complete"] is True
     assert result["actual"] == -3.0
-    assert result["optimal"] == 0.0
-    assert result["optimal_assignment"] == [None]
+    assert result["optimal"] == -3.0
+    assert result["optimal_assignment"] == ["bad"]
 
 
 def test_superflex_chain_reconciles_as_one_group():

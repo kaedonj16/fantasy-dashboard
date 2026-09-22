@@ -74,7 +74,10 @@ def build_daily_data(season: int, week: int, force: bool = False):
     print(f"[build_daily_data] Refreshing usage table for weeks {list(weeks_to_fetch)}")
 
     # Always refresh usage table daily (for up-to-date stats)
-    write_usage_table_snapshot(season, weeks=weeks_to_fetch)
+    # Completed weeks are immutable cache hits. Only the in-progress week is
+    # forcibly refreshed so a partial Thursday snapshot cannot remain frozen.
+    forced_weeks = {int(week)} if not offseason_mode and int(week or 0) >= 1 else set()
+    write_usage_table_snapshot(season, weeks=weeks_to_fetch, force_weeks=forced_weeks)
     enrich_all_team_info(season)
     enrich_teams_index_with_rushing(Path(path_teams_index()))
 
@@ -96,6 +99,8 @@ def build_daily_data(season: int, week: int, force: bool = False):
         )
     except Exception as exc:
         print(f"[build_daily_data] Rookie evaluation pipeline failed: {exc}")
+    return {"ok": True, "season": int(season), "week": int(week or 0),
+            "weeks_requested": list(weeks_to_fetch), "forced_weeks": sorted(forced_weeks)}
 
 
 def build_daily_model_values():

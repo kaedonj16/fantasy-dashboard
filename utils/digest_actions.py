@@ -543,6 +543,7 @@ def gather_digest_action_items(
 
     try:
         rows = list(model_rows) if model_rows is not None else []
+        ctx = {}
         if model_rows is None:
             import time as _time
             from app import DASHBOARD_CACHE, CACHE_TTL, _cache_key
@@ -577,9 +578,11 @@ def gather_digest_action_items(
 
     if in_season and owned:
         try:
-            from utils.injury_plan import injury_plan
+            from utils.injury_plan import injury_plan, ir_capacity
             from dashboard_services.injury_return import weeks_out_for_player
             reserve_set = {str(p) for p in (roster.get("reserve") or []) if p}
+            capacity = ir_capacity(positions, roster.get("reserve") or [],
+                                   reserve_slots=(ctx.get("league") or {}).get("reserve_slots"))
             for pid in list(owned)[:50]:
                 pl = players_feed.get(pid) or pidx.get(pid) or {}
                 st = str(pl.get("injury_status") or "").strip()
@@ -589,11 +592,13 @@ def gather_digest_action_items(
                     status=st,
                     espn_weeks=weeks_out_for_player(pid),
                     player_value=None,
+                    has_open_ir_slot=capacity["has_open_ir_slot"],
+                    already_on_ir=pid in reserve_set,
                 )
-                if not plan or plan.get("verdict") not in ("IR", "Drop candidate", "Stash"):
+                if not plan or plan.get("verdict") not in ("Move to IR", "Drop candidate"):
                     continue
                 # Already on IR: stash/move tips are not actionable (drop still is).
-                if pid in reserve_set and plan.get("verdict") in ("IR", "Stash"):
+                if pid in reserve_set and plan.get("verdict") == "Move to IR":
                     continue
                 name = pl.get("full_name") or pl.get("name") or ""
                 if not name:

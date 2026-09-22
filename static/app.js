@@ -144,19 +144,21 @@ window.brFetchWithTimeout = function (url, opts, ms) {
     var force = !!(options && options.force);
     if (force) { value = null; expiresAt = 0; }
     if (!force && value && Date.now() < expiresAt) return Promise.resolve(value);
+    if (!force && inflight) return inflight;
     if (inflight) return inflight;
     // Legacy callers used fetch("/api/my-leagues", { cache: "no-store" }) and
     // fetch('/api/my-leagues', { cache: 'no-store' }); keep all access here.
-    inflight = window.brFetchWithTimeout('/api/my-leagues', {
-      cache: 'no-store', credentials: 'same-origin'
-    }, 15000).then(function (response) {
-      if (!response.ok) throw new Error('Could not load saved leagues');
-      return response.json();
-    }).then(function (data) {
-      value = data;
-      expiresAt = Date.now() + 5000;
-      return data;
-    }).finally(function () { inflight = null; });
+    inflight = fetch('/api/my-leagues', {cache:'no-store', credentials:'same-origin'})
+      .then(function (response) {
+        if (!response.ok) throw new Error('Could not load saved leagues');
+        return response.json();
+      })
+      .then(function (data) {
+        value = data;
+        expiresAt = Date.now() + 5000;
+        return data;
+      })
+      .finally(function(){ inflight=null; });
     return inflight;
   };
 })();
@@ -1445,14 +1447,49 @@ window.brHaptic = function (pattern) {
   }
 
   function softNavTargetFromEvent(e) {
-    var lineupControl = e.target.closest && e.target.closest('.opt-nav a.opt-tab');
-    if (lineupControl) return lineupControl;
     // Mobile navigates from the dock + sheet; desktop from the top nav pills,
     // dropdown items and the logo.
     return mq.matches
       ? e.target.closest('a.br-tabbar-item, .br-sheet a.br-sheet-link')
       : e.target.closest('.top-nav a.nav-pill, .top-nav a.nav-pill-dropdown-item, .top-nav .nav-left > a');
   }
+
+  // Lineup sub-navigation owns only its live region. It intentionally does not
+  // use softNav(), which replaces #page-root and destroys the Weekly Hub state.
+  var optimalAbort = null, optimalGeneration = 0;
+  function optimalFragmentUrl(canonical) {
+    var u = new URL(canonical, location.href), parts = u.pathname.split('/').filter(Boolean);
+    var q = new URLSearchParams(u.search);
+    var api = new URL('/api/weekly/optimal', location.origin);
+    api.searchParams.set('platform', parts[0] || ''); api.searchParams.set('season', parts[1] || '');
+    api.searchParams.set('league_id', parts[2] || '');
+    ['view','period','week'].forEach(function(k){ if(q.get(k)) api.searchParams.set(k,q.get(k)); });
+    return api.href;
+  }
+  function loadOptimalFragment(href, isPop) {
+    var host = document.getElementById('optimalLineupContent');
+    if (!host) { if (!isPop) location.href = href; return; }
+    if (optimalAbort) optimalAbort.abort();
+    optimalAbort = new AbortController(); var generation = ++optimalGeneration;
+    host.classList.add('is-loading'); host.setAttribute('aria-busy','true');
+    window.brFetchWithTimeout(optimalFragmentUrl(href), {cache:'no-store', credentials:'same-origin', signal:optimalAbort.signal}, 25000)
+      .then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
+      .then(function(data){
+        if (generation !== optimalGeneration || !data.ok) return;
+        host.innerHTML = data.html; host.classList.remove('is-loading'); host.removeAttribute('aria-busy');
+        if (!isPop) history.pushState({optimal:true}, '', data.canonical_url || href);
+      }).catch(function(err){
+        if (err.name === 'AbortError' || generation !== optimalGeneration) return;
+        host.classList.remove('is-loading'); host.removeAttribute('aria-busy');
+        var note=document.createElement('div'); note.className='opt-fragment-error';
+        note.innerHTML='Lineup temporarily unavailable. <button type="button">Retry</button>';
+        note.querySelector('button').onclick=function(){note.remove();loadOptimalFragment(href,isPop);}; host.prepend(note);
+      });
+  }
+  document.addEventListener('click', function(e){
+    var a=e.target.closest&&e.target.closest('.opt-nav a.opt-tab'); if(!a||e.button||e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;
+    e.preventDefault(); e.stopImmediatePropagation(); loadOptimalFragment(a.href,false);
+  }, true);
   function softNavHrefFromAnchor(a) {
     if (!a) return '';
     var href = a.getAttribute('href');
@@ -1500,10 +1537,13 @@ window.brHaptic = function (pattern) {
     var select = e.target.closest && e.target.closest('.opt-week-select[data-base-url]');
     if (!select) return;
     var href = select.dataset.baseUrl + '&week=' + encodeURIComponent(select.value);
-    softNav(href, false);
+    e.stopImmediatePropagation(); loadOptimalFragment(href, false);
   }, true);
 
   window.addEventListener('popstate', function () {
+    if (document.getElementById('optimalLineupContent') && new URLSearchParams(location.search).get('tab') === 'optimal') {
+      loadOptimalFragment(location.href, true); return;
+    }
     var params = new URLSearchParams(location.search);
     var modalPid = params.get('player');
     var modal = document.getElementById('playerModal');

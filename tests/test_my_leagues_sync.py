@@ -65,8 +65,10 @@ def test_my_leagues_includes_sleeper_format_when_slots_known(offline_client, mon
 
 def test_clients_refetch_my_leagues_without_browser_cache():
     script = (ROOT / "static" / "app.js").read_text()
-    assert 'fetch("/api/my-leagues", { cache: "no-store" })' in script
-    assert "fetch('/api/my-leagues', { cache: 'no-store' })" in script
+    assert "window.brGetMyLeagues" in script
+    assert "fetch('/api/my-leagues', {cache:'no-store'" in script
+    assert "if (!force && inflight) return inflight" in script
+    assert ".finally(function(){ inflight=null; })" in script
     assert "window.refreshLeagueSwitcher" in script
     assert "refreshSavedLeaguesFromServer" in script
     assert "window.refreshHomeLeagues?.();" in script
