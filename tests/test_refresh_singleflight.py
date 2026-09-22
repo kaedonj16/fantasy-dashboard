@@ -112,3 +112,19 @@ def test_portfolio_refresh_falls_back_for_warm_only_portfolio():
     assert "if(!keys.length){" in handler
     assert ".pf-lg-card [data-lg-live]" in handler
     assert "return {handled:false};}" in handler
+
+
+def test_league_builds_are_concurrency_capped_process_wide():
+    """A portfolio refresh rebuilds every league; combined with per-card summary
+    hydration and background warms, unbounded concurrent context builds OOM a
+    memory-limited worker. A process-wide semaphore must bound how many
+    build_league_context calls run at once, whatever endpoint triggered them."""
+    from pathlib import Path
+    src = (Path(__file__).resolve().parents[1] / "app.py").read_text()
+    assert "_LEAGUE_BUILD_SEM" in src
+    assert "LEAGUE_BUILD_CONCURRENCY" in src
+    # The cap actually wraps the expensive build, not just declared.
+    helper = src.split("def get_league_ctx_from_cache(")[1].split("\ndef ")[0]
+    assert "with _LEAGUE_BUILD_SEM:" in helper
+    guarded = helper.split("with _LEAGUE_BUILD_SEM:")[1][:200]
+    assert "build_league_context(" in guarded

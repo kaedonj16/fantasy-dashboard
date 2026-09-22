@@ -10987,6 +10987,19 @@ try:
 except (TypeError, ValueError):
     _LEAGUE_WARM_SEM = threading.BoundedSemaphore(2)
 
+# Process-wide cap on how many league contexts build at once. Each build fans out
+# ~6 parallel provider fetches and holds a full roster/players payload in memory,
+# so several concurrent builds (a portfolio refresh rebuilding every league, plus
+# per-card summary hydration and background warms) can OOM a memory-limited
+# worker. Bounding it here -- regardless of which endpoint triggered the build --
+# keeps peak memory near the old single-page-render level (2 at a time).
+try:
+    _LEAGUE_BUILD_SEM = threading.BoundedSemaphore(
+        max(1, int(os.getenv("LEAGUE_BUILD_CONCURRENCY", "2")))
+    )
+except (TypeError, ValueError):
+    _LEAGUE_BUILD_SEM = threading.BoundedSemaphore(2)
+
 
 def _warm_league_ctx_async(platform: str, league_id: str, season: int) -> None:
     """Build a league context off the request path so a later best-effort poll
@@ -11147,7 +11160,11 @@ def get_league_ctx_from_cache(
             except Exception:
                 pass
             try:
-                ctx = build_league_context(platform, league_id, season)
+                # Bound concurrent builds process-wide so a burst of build
+                # requests (portfolio refresh + summary hydration + warms) cannot
+                # stack enough in-flight contexts to OOM the worker.
+                with _LEAGUE_BUILD_SEM:
+                    ctx = build_league_context(platform, league_id, season)
                 built_at = time.time()
                 ctx["_cache_synced_at"] = datetime.fromtimestamp(built_at, timezone.utc).isoformat()
                 ctx["_cache_stale"] = False
