@@ -16419,13 +16419,20 @@ def _build_lineup_analysis_html(
 
     def player_row(player, tag, tone, extra=""):
         name = html.escape(str(player.get("name") or "Unknown player"))
+        name_attr = html.escape(str(player.get("name") or "Unknown player"), quote=True)
+        pid = html.escape(str(player.get("pid") or player.get("player_id") or ""), quote=True)
         pos = html.escape(str(player.get("pos") or "–"))
         nfl = html.escape(str(player.get("nfl") or ""))
-        team = html.escape(str(player.get("team") or team_by_rid.get(str(player.get("rid") or "")) or "Team"))
+        team_text = str(player.get("team") or team_by_rid.get(str(player.get("rid") or "")) or "Team")
+        team = html.escape(team_text)
         pts = float(player["pts"])
-        return (f'<div class="rc-row">{_face_html(player, tone)}<div class="rc-main">'
-                f'<div class="rc-name">{name}</div><div class="rc-meta">{pos} · {nfl} · {team}{extra}</div>'
-                f'</div><div class="rc-score"><div class="v {tone}">{pts:.2f}</div><div class="t">{tag}</div></div></div>')
+        name_html = (f'<span class="rc-name player-clickable" tabindex="0" role="button" '
+                     f'data-player-id="{pid}" data-player-name="{name_attr}">{name}</span>' if pid
+                     else f'<span class="rc-name">{name}</span>')
+        return (f'<div class="rc-row rc-player-row">{_face_html(player, tone)}<div class="rc-main">'
+                f'{name_html}<div class="rc-meta">{pos} · {nfl}{extra}</div>'
+                f'</div><div class="rc-team-name" title="{html.escape(team_text, quote=True)}">{team}</div>'
+                f'<div class="rc-score"><div class="v {tone}">{pts:.2f}</div><div class="t">{tag}</div></div></div>')
 
     under_rows = []
     for player in analysis["underperformers"]:
@@ -16437,22 +16444,41 @@ def _build_lineup_analysis_html(
 
     def missed_row(item):
         started, reserve = item["starter"], item["bench_player"]
-        return ("<div class='rc-mistake'>"
-                + player_row(started, "STARTED", "loss")
-                + player_row({**reserve, "team": item["team"]}, "BENCHED", "win",
-                             f" · +{item['gap']:.2f} hindsight") + "</div>")
+
+        def swap_player(player, label, tone):
+            name = html.escape(str(player.get("name") or "Unknown player"))
+            name_attr = html.escape(str(player.get("name") or "Unknown player"), quote=True)
+            pid = html.escape(str(player.get("pid") or player.get("player_id") or ""), quote=True)
+            pos = html.escape(str(player.get("pos") or "–"))
+            nfl = html.escape(str(player.get("nfl") or ""))
+            points = float(player["pts"])
+            name_html = (f'<span class="rc-swap-name player-clickable" tabindex="0" role="button" '
+                         f'data-player-id="{pid}" data-player-name="{name_attr}">{name}</span>' if pid
+                         else f'<span class="rc-swap-name">{name}</span>')
+            return (f'<div class="rc-swap-player rc-swap-player--{tone}">{_face_html(player, tone)}'
+                    f'<div class="rc-swap-copy"><span class="rc-swap-label">{label}</span>{name_html}'
+                    f'<span class="rc-meta">{pos} · {nfl}</span></div>'
+                    f'<strong class="rc-swap-points" aria-label="{points:.2f} points">{points:.2f}</strong></div>')
+
+        team = html.escape(str(item.get("team") or team_by_rid.get(str(item.get("rid") or "")) or "Team"))
+        return (f'<div class="rc-swap-row"><div class="rc-swap-team">{team}</div>'
+                f'<div class="rc-swap-pair">{swap_player(started, "Started", "loss")}'
+                f'<i class="fa-solid fa-arrow-right rc-swap-arrow" aria-hidden="true"></i>'
+                f'{swap_player(reserve, "Benched", "win")}</div>'
+                f'<div class="rc-swap-gain"><strong>+{item["gap"]:.2f}</strong><span>Potential gain</span></div></div>')
 
     missed_rows = [missed_row(item) for item in analysis["missed_opportunities"]]
     if not missed_rows:
         missed_rows = ["<div class='recap-lineup-empty'>No qualifying legal missed opportunities.</div>"]
 
-    def column(title, note, rows):
+    def section(title, note, rows):
         visible = "".join(rows[:3])
         rest = "".join(rows[3:])
-        more = (f"<details class='recap-lineup-more'><summary>Show all ({len(rows)})</summary>{rest}</details>"
+        more = (f"<details class='recap-lineup-more'><summary><span class='show-all'>Show all ({len(rows)})</span>"
+                f"<span class='show-less'>Show less</span></summary>{rest}</details>"
                 if rest else "")
-        return (f"<div class='rlc-col'><div class='rlc-head'><h3>{html.escape(title)}</h3>"
-                f"<span>{html.escape(note)}</span></div>{visible}{more}</div>")
+        return (f"<section class='rlc-section'><div class='rlc-head'><h3>{html.escape(title)}</h3>"
+                f"<span>{html.escape(note)}</span></div><div class='rlc-rows'>{visible}{more}</div></section>")
 
     viewer = ""
     own = next((x for x in analysis["missed_opportunities"] if str(x["rid"]) == str(viewer_rid)), None)
@@ -16467,9 +16493,9 @@ def _build_lineup_analysis_html(
         viewer = f"<div class='recap-viewer-decision'><b>Your team · {html.escape(str(team['team']))}</b><span>{actual_text}.{hindsight}</span></div>"
 
     return (viewer + "<div class='card recap-lineup-card'><div class='recap-lineup-cols'>"
-            + column(analysis["under_title"], analysis["under_note"], under_rows)
-            + column("Bench Gems", "Format-aware bench performances", gem_rows)
-            + column("Missed Opportunities", "Legal hindsight alternatives", missed_rows)
+            + section(analysis["under_title"], analysis["under_note"], under_rows)
+            + section("Bench Gems", "Format-aware bench performances", gem_rows)
+            + section("Missed Opportunities", "Legal hindsight alternatives", missed_rows)
             + "</div></div>")
 
 
@@ -16496,13 +16522,15 @@ def _mock_lineup_analysis_html(team_names: list[str]) -> str:
         name = html.escape(p['name']);
         pos = p['pos'];
         nfl = p['nfl']
+        team = html.escape(p['team'])
         return f"""
-<div class="rc-row">
+<div class="rc-row rc-player-row">
   <div class="rc-badge {tone}">{name[0]}</div>
   <div class="rc-main">
-    <div class="rc-name">{name}</div>
-    <div class="rc-meta">{pos} · {nfl} &nbsp;·&nbsp; {html.escape(p['team'])}</div>
+    <span class="rc-name">{name}</span>
+    <div class="rc-meta">{pos} · {nfl}</div>
   </div>
+  <div class="rc-team-name" title="{team}">{team}</div>
   <div class="rc-score"><div class="v {tone}">{p['pts']:.2f}</div><div class="t">{tag}</div></div>
 </div>"""
 
@@ -16511,40 +16539,39 @@ def _mock_lineup_analysis_html(team_names: list[str]) -> str:
 
     team0 = html.escape(team_names[0] if team_names else "Team A")
     mock_mistake = f"""
-<div class="rc-mistake">
-  <div class="rc-row">
-    <div class="rc-badge loss">C</div>
-    <div class="rc-main">
-      <div class="rc-name">Cooper Kupp</div>
-      <div class="rc-meta">WR · LAR &nbsp;·&nbsp; {team0}</div>
+<div class="rc-swap-row">
+  <div class="rc-swap-team">{team0}</div>
+  <div class="rc-swap-pair">
+    <div class="rc-swap-player rc-swap-player--loss">
+      <div class="rc-badge loss">C</div>
+      <div class="rc-swap-copy"><span class="rc-swap-label">Started</span><span class="rc-swap-name">Cooper Kupp</span><span class="rc-meta">WR · LAR</span></div>
+      <strong class="rc-swap-points">2.60</strong>
     </div>
-    <div class="rc-score"><div class="v loss">2.60</div><div class="t">STARTED</div></div>
-  </div>
-  <div class="rc-row">
-    <div class="rc-badge win">S</div>
-    <div class="rc-main">
-      <div class="rc-name">Stefon Diggs</div>
-      <div class="rc-meta">WR · BUF &nbsp;·&nbsp; <span class="rc-gap">-18.4 pts</span></div>
+    <i class="fa-solid fa-arrow-right rc-swap-arrow" aria-hidden="true"></i>
+    <div class="rc-swap-player rc-swap-player--win">
+      <div class="rc-badge win">S</div>
+      <div class="rc-swap-copy"><span class="rc-swap-label">Benched</span><span class="rc-swap-name">Stefon Diggs</span><span class="rc-meta">WR · BUF</span></div>
+      <strong class="rc-swap-points">21.00</strong>
     </div>
-    <div class="rc-score"><div class="v win">21.00</div><div class="t">BENCHED</div></div>
   </div>
+  <div class="rc-swap-gain"><strong>+18.40</strong><span>Potential gain</span></div>
 </div>"""
 
     return f"""
 <div class="card" style="overflow:hidden;margin-bottom:20px;">
   <div class="recap-lineup-cols">
-    <div class="rlc-col">
+    <section class="rlc-section">
       <div class="rlc-head"><h3>Lowest-scoring starters</h3><span>Sample historical lineup</span></div>
-      {bust_rows}
-    </div>
-    <div class="rlc-col">
+      <div class="rlc-rows">{bust_rows}</div>
+    </section>
+    <section class="rlc-section">
       <div class="rlc-head"><h3>Bench Gems</h3><span>Best bench performers</span></div>
-      {sleeper_rows}
-    </div>
-    <div class="rlc-col">
+      <div class="rlc-rows">{sleeper_rows}</div>
+    </section>
+    <section class="rlc-section">
       <div class="rlc-head"><h3>Missed Opportunities</h3><span>Legal hindsight alternatives</span></div>
-      {mock_mistake}
-    </div>
+      <div class="rlc-rows">{mock_mistake}</div>
+    </section>
   </div>
 </div>"""
 

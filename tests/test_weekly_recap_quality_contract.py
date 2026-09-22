@@ -89,3 +89,37 @@ def test_all_power_ranked_teams_are_rendered():
     loop = source.split("for i, p in enumerate(power_teams, 1):", 1)[1].split("power_html =", 1)[0]
     assert "power_rows.append" in loop
     assert "if i not in" not in loop
+
+
+def test_weekly_story_and_lineup_review_layout_contract():
+    """Recap-specific styles keep the story wide and lineup groups content-sized."""
+    app = (ROOT / "app.py").read_text()
+    css = (ROOT / "static/dashboard.css").read_text()
+
+    assert ".weekly-recap .recap-story > .card { width:100%; max-width:none;" in css
+    assert ".weekly-recap .recap-story [data-br-reveal-text] > *" in css
+    assert ".weekly-recap .recap-lineup-cols { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); align-items:start; }" in css
+    assert ".weekly-recap .rlc-section:nth-child(3) { grid-column:1 / -1; }" in css
+    assert "@media (max-width:900px)" in css
+    assert ".weekly-recap .recap-lineup-cols { display:block; }" in css
+    assert ".rlc-section + .rlc-section { border-top:1px solid var(--border); }" in css
+    assert "grid-template-columns:repeat(3,minmax(0,1fr))" not in css
+
+    # Each missed opportunity is emitted as one expandable unit with both
+    # players and its own gain, rather than as independently counted rows.
+    missed = app.split("    def missed_row(item):", 1)[1].split("    missed_rows =", 1)[0]
+    assert "rc-swap-row" in missed
+    assert 'swap_player(started, "Started", "loss")' in missed
+    assert 'swap_player(reserve, "Benched", "win")' in missed
+    assert "Potential gain" in missed
+    assert "player_row(" not in missed
+
+
+def test_lineup_sections_have_independent_accessible_expansion_controls():
+    app = (ROOT / "app.py").read_text()
+    section = app.split("    def section(title, note, rows):", 1)[1].split("    viewer =", 1)[0]
+
+    assert "rows[:3]" in section and "rows[3:]" in section
+    assert "<details class='recap-lineup-more'>" in section
+    assert "Show all" in section and "Show less" in section
+    assert "<section class='rlc-section'>" in section
