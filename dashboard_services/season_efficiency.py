@@ -14,9 +14,10 @@ result is recomputed.
 from __future__ import annotations
 
 import logging
+import time
 from datetime import datetime
 
-from utils.optimal_lineup import analyze_lineup
+from utils.optimal_lineup import analyze_team_week
 
 logger = logging.getLogger(__name__)
 
@@ -25,21 +26,12 @@ _CACHE: dict = {}
 _CACHE_MAX = 64
 
 
-def _analyze_team_week(matchup_rows, rid, players, slots):
-    """Actual/optimal for one roster in one week, or None when incomplete."""
-    if matchup_rows is None:
-        return None
-    row = next((m for m in matchup_rows if str(m.get("roster_id")) == str(rid)), None)
-    if not row:
-        return None
-    pids = [str(p) for p in (row.get("players") or []) if p is not None and str(p) != "0"]
-    starters = [str(p) if p is not None else "0" for p in (row.get("starters") or [])]
-    raw_scores = {str(k): v for k, v in (row.get("players_points") or {}).items()}
-    positions = {p: (players.get(p) or {}).get("pos") for p in pids}
-    out = analyze_lineup(raw_scores, positions, slots, pids, starters, row.get("points"))
+def _analyze_team_week(matchup_rows, rid, players, slots, *, week=None):
+    """Actual/optimal for one roster using the Lineup tab's shared adapter."""
+    out = analyze_team_week(matchup_rows, rid, players, slots, week=week)
     if not out.get("complete"):
-        return None
-    return {"week": week_int(row.get("week")), "actual": float(out["actual"]),
+        return out
+    return {"week": week_int(out.get("week")), "actual": float(out["actual"]),
             "optimal": float(out["optimal"]), "missed": float(out["missed"]),
             "eff": (float(out["efficiency"]) if out.get("efficiency") is not None else None)}
 
@@ -88,17 +80,29 @@ def compute_league_season_efficiency(ctx: dict) -> dict:
     )
     empty = {"completed_weeks": [], "by_rid": {}}
     if not completed:
-        return empty
+        return {**empty, "state": "no_completed_week", "incomplete": {}}
+
+    requested = ctx.get("efficiency_weeks")
+    if requested:
+        wanted = {week_int(w) for w in requested}
+        completed = [w for w in completed if w in wanted]
+        if not completed:
+            return {**empty, "state": "no_completed_week", "incomplete": {}}
 
     cache_key = (platform, str(league_id), season, tuple(completed))
     cached = _CACHE.get(cache_key)
+    # Complete results get a modest correction window; incomplete/provider
+    # failures retry quickly instead of being frozen until another week ends.
     if cached is not None:
-        return cached
+        ttl = 300 if cached["value"].get("state") == "complete" else 0
+        if time.monotonic() - cached["at"] < ttl:
+            return cached["value"]
+    retry_incomplete = bool(cached and cached["value"].get("state") != "complete")
 
     players = get_players_index_global() or {}
-    matchup_cache = ctx.get("optimal_matchups_by_week") or {}
+    matchup_cache = ctx.setdefault("optimal_matchups_by_week", {})
     for week in completed:
-        if week not in matchup_cache:
+        if retry_incomplete or week not in matchup_cache or matchup_cache.get(week) is None:
             try:
                 matchup_cache[week] = get_matchups(platform, league_id, week, season) or []
             except (LookupError, ValueError, RuntimeError, OSError) as exc:
@@ -106,15 +110,17 @@ def compute_league_season_efficiency(ctx: dict) -> dict:
                                league_id, week, exc)
                 matchup_cache[week] = None
 
-    by_rid = {}
+    by_rid, incomplete = {}, {}
     for roster in rosters:
         rid = str(roster.get("roster_id") or "")
         if not rid:
             continue
         weeks = []
         for w in completed:
-            wk = _analyze_team_week(matchup_cache.get(w), rid, players, slots)
-            if wk is not None:
+            wk = _analyze_team_week(matchup_cache.get(w), rid, players, slots, week=w)
+            if wk.get("complete") is False:
+                incomplete.setdefault(rid, {})[w] = wk.get("reason") or "historical data incomplete"
+            else:
                 if wk["week"] is None:
                     wk["week"] = w
                 weeks.append(wk)
@@ -128,8 +134,11 @@ def compute_league_season_efficiency(ctx: dict) -> dict:
             "weeks": weeks,
         }
 
-    result = {"completed_weeks": completed, "by_rid": by_rid}
+    available = sum(bool(v["weeks"]) for v in by_rid.values())
+    state = "complete" if available == len(by_rid) and not incomplete else ("partial" if available else "incomplete")
+    result = {"completed_weeks": completed, "by_rid": by_rid, "state": state,
+              "incomplete": incomplete}
     if len(_CACHE) >= _CACHE_MAX:
         _CACHE.clear()
-    _CACHE[cache_key] = result
+    _CACHE[cache_key] = {"at": time.monotonic(), "value": result}
     return result

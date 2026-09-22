@@ -163,6 +163,42 @@ def analyze_lineup(pts_map, player_positions, roster_positions, all_pids, starte
             "optimal_assignment": optimal["assignment"], "slots": optimal["slots"], "groups": groups}
 
 
+def analyze_team_week(matchup_rows, roster_id, players_map, roster_positions, *, week=None) -> dict:
+    """Normalize and analyze one provider-neutral historical team-week.
+
+    This is the single adapter used by both the Lineup tab and recap services.
+    In particular it preserves ``None`` scores while accepting real zeroes, and
+    delegates position aliases and canonical D/ST IDs to ``from_players_map``.
+    """
+    if matchup_rows is None:
+        return {"week": week, "complete": False, "reason": "matchup temporarily unavailable"}
+    row = next((m for m in matchup_rows or []
+                if _pid(m.get("roster_id")) == _pid(roster_id)), None)
+    if row is None:
+        return {"week": week, "complete": False, "reason": "historical roster unavailable"}
+    pids = list(dict.fromkeys(_pid(p) for p in (row.get("players") or [])
+                             if _pid(p) not in {"", "0"}))
+    starters = [_pid(p) or "0" for p in (row.get("starters") or [])]
+    scores = {_pid(k): v for k, v in (row.get("players_points") or {}).items()}
+    # Local import avoids making the optimizer depend on the application's
+    # comparatively heavy provider module at import time.
+    from utils.utils import from_players_map
+    players = {pid: from_players_map(pid, players_map or {}) for pid in pids}
+    positions = {pid: players[pid].get("pos") for pid in pids}
+    out = analyze_lineup(scores, positions, roster_positions, pids, starters, row.get("points"))
+    out.update({"week": week, "pids": pids, "players": players,
+                "scores": {pid: (None if value is None else float(value))
+                           for pid, value in scores.items()}})
+    if not out.get("complete") and not out.get("reason"):
+        if out.get("missing_scores"):
+            out["reason"] = "one or more player scores are unavailable"
+        elif out.get("unknown_positions"):
+            out["reason"] = "one or more player positions are unavailable"
+        else:
+            out["reason"] = "historical lineup data is incomplete"
+    return out
+
+
 def compute_optimal_lineup(pts_map, player_positions, roster_positions, all_pids):
     """Backward-compatible ``(starter_set, total)`` API."""
     out = assign_optimal_lineup(pts_map, player_positions, roster_positions, all_pids)

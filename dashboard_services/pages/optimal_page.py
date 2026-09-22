@@ -6,7 +6,7 @@ import logging
 from datetime import datetime
 from flask import request
 
-from utils.optimal_lineup import analyze_lineup
+from utils.optimal_lineup import analyze_team_week
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +78,6 @@ def _metric(value, label, cls=""):
 def build_optimal_body(ctx):
     from app import get_players_index_global
     from dashboard_services.platform_api import get_matchups
-    from utils.utils import from_players_map
 
     platform = ctx.get("platform") or "sleeper"
     season = int(ctx.get("season") or datetime.now().year)
@@ -127,7 +126,7 @@ def build_optimal_body(ctx):
            + '</nav><p class="opt-method">Optimal lineup uses final results and your league’s roster rules.</p>')
 
     weeks_to_fetch = [selected] if period == "weekly" else completed
-    matchup_cache = ctx.get("optimal_matchups_by_week") or {}
+    matchup_cache = ctx.setdefault("optimal_matchups_by_week", {})
     for week in weeks_to_fetch:
         if week not in matchup_cache:
             try:
@@ -137,23 +136,8 @@ def build_optimal_body(ctx):
                 matchup_cache[week] = None
 
     def analyze(rid, week):
-        rows = matchup_cache.get(week)
-        if rows is None:
-            return {"week": week, "complete": False, "reason": "matchup unavailable"}
-        row = next((m for m in rows if str(m.get("roster_id")) == str(rid)), None)
-        if not row:
-            return {"week": week, "complete": False, "reason": "historical roster unavailable"}
-        pids = [str(p) for p in (row.get("players") or []) if p is not None and str(p) != "0"]
-        starters = [str(p) if p is not None else "0" for p in (row.get("starters") or [])]
-        raw_scores = {str(k): v for k, v in (row.get("players_points") or {}).items()}
-        # One canonical metadata path handles provider IDs and team defenses.
-        # It intentionally recognizes only the canonical NFL team set.
-        resolved = {p: from_players_map(p, raw_players) for p in pids}
-        players.update(resolved)
-        positions = {p: resolved[p].get("pos") for p in pids}
-        out = analyze_lineup(raw_scores, positions, slots, pids, starters, row.get("points"))
-        out.update({"week": week, "pids": pids,
-                    "scores": {p: (None if v is None else float(v)) for p, v in raw_scores.items()}})
+        out = analyze_team_week(matchup_cache.get(week), rid, raw_players, slots, week=week)
+        players.update(out.get("players") or {})
         return out
 
     def incomplete(d):
