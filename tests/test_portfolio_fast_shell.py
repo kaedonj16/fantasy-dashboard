@@ -177,11 +177,8 @@ def test_cold_league_renders_hydratable_shell_not_a_blocking_build(offline_clien
     assert b"Record loading" in response.data
 
 
-def test_summary_endpoint_handles_provider_outage_gracefully(offline_client, monkeypatch):
-    """A provider host outage (e.g. Fleaflicker 403/5xx -> ProviderUnavailableError)
-    must return a retryable "temporarily unavailable" state, not a 500 crash."""
-    from dashboard_services.providers.base import ProviderUnavailableError
-
+def test_summary_endpoint_returns_pending_without_running_provider_work(offline_client, monkeypatch):
+    """A passive cold-cache read schedules a warm and never invokes summary work."""
     monkeypatch.setattr(
         "dashboard_services.accounts.resolve_account_leagues",
         lambda account_id, current_season=None: [{
@@ -190,10 +187,11 @@ def test_summary_endpoint_handles_provider_outage_gracefully(offline_client, mon
         }],
     )
 
-    def boom(account_id, membership, loader):
-        raise ProviderUnavailableError("Fleaflicker is temporarily unavailable.")
-
-    monkeypatch.setattr("dashboard_services.portfolio_summary.build_league_summary", boom)
+    monkeypatch.setattr("routes.user_pages_bp.get_league_ctx_from_cache",
+                        lambda *a, **k: {})
+    monkeypatch.setattr("dashboard_services.portfolio_summary.build_league_summary",
+                        lambda *a, **k: (_ for _ in ()).throw(
+                            AssertionError("passive cold request performed summary work")))
     # A cold passive request returns pending before summary/provider work starts.
     monkeypatch.setattr("dashboard_services.portfolio_summary.get_cached_summary",
                         lambda *a, **k: None)

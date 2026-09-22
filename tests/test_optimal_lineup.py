@@ -101,7 +101,7 @@ def test_missing_score_is_unknown_but_zero_is_complete():
     assert zero["actual"] == zero["optimal"] == 0.0
 
 
-def test_negative_starter_and_empty_slot_are_supported():
+def test_negative_starter_still_fills_required_slot():
     result = analyze_lineup({"bad": -3.0}, {"bad": "K"}, ["K"], ["bad"], ["bad"])
     assert result["complete"] is True
     assert result["actual"] == -3.0

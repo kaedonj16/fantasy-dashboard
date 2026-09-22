@@ -22,8 +22,8 @@ def test_injury_plan_verdicts():
     assert mon["verdict"] == "Monitor"
     assert mon["approximate"] is True
 
-    stash = injury_plan(status="OUT", espn_weeks=2.0, player_value=100)
-    assert stash["verdict"] == "Hold"
+    hold = injury_plan(status="OUT", espn_weeks=2.0, player_value=100)
+    assert hold["verdict"] == "Hold"
 
     drop = injury_plan(status="OUT", espn_weeks=2.0, player_value=10)
     assert drop["verdict"] == "Drop candidate"
@@ -53,9 +53,9 @@ def test_injury_roster_verdict_maps_plan_labels():
     assert ir["verdict"] == "ir" and ir["label"] == "Move to IR"
     drop = injury_roster_verdict(status="OUT", weeks_out=2.0, player_value=10)
     assert drop["verdict"] == "drop"
-    stash = injury_roster_verdict(status="OUT", weeks_out=2.0, player_value=100)
-    assert stash["verdict"] == "hold"
-    assert "—" not in (ir["reason"] + drop["reason"] + stash["reason"])
+    high_value_hold = injury_roster_verdict(status="OUT", weeks_out=2.0, player_value=100)
+    assert high_value_hold["verdict"] == "hold"
+    assert "—" not in (ir["reason"] + drop["reason"] + high_value_hold["reason"])
 
 
 def test_player_modal_renders_return_plan_badge():
