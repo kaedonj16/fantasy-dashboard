@@ -57,6 +57,16 @@ jobs:
       - name: Compile all Python (syntax check)
         run: python -m compileall -q app.py dashboard_services data_building routes models utils scripts
 
+      - name: Reject unresolved merge conflicts
+        # Keep conflict markers out of every tracked source/config file.  Use
+        # git grep rather than a workspace-wide scan so generated caches and
+        # downloaded artifacts cannot create false positives.
+        run: |
+          if git grep -n -E '^(<<<<<<< |=======|>>>>>>> )' -- ':!*.lock'; then
+            echo "Unresolved merge-conflict markers found" >&2
+            exit 1
+          fi
+
       - name: Run unit tests
         # Pure-Python only. Flask/pandas tests are marked `integration` and run
         # in the full-stack job so this one stays a fast syntax/logic gate.
