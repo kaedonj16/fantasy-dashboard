@@ -29302,7 +29302,7 @@ def build_portfolio_body(
     refresh_handler_script = (
         "<script>(function(){"
         "window.brRefreshCurrentPage=async function(accountId){"
-        "const keys=[...document.querySelectorAll('[data-summary-card]')]"
+        "const keys=[...document.querySelectorAll('[' + 'data-summary-card' + ']')]"
         ".filter(function(el){return el.style.display!=='none';})"
         ".map(function(el){return el.dataset.summaryCard;}).filter(Boolean);"
         "if(!keys.length){"
