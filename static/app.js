@@ -38,23 +38,6 @@ function escapeHtml(s) {
   });
 }
 
-// Account league metadata is consumed by the home card, switcher, portfolio,
-// and paywall picker. Share one short-lived successful response and one
-// in-flight promise; failures are never cached.
-(function () {
-  var inflight = null, cached = null, cachedAt = 0, TTL = 15000;
-  window.brGetMyLeagues = function (options) {
-    var force = !!(options && options.force);
-    if (!force && cached && Date.now() - cachedAt < TTL) return Promise.resolve(cached);
-    if (!force && inflight) return inflight;
-    inflight = fetch('/api/my-leagues', {cache:'no-store', credentials:'same-origin'})
-      .then(function(response){ if(!response.ok) throw new Error('HTTP '+response.status); return response.json(); })
-      .then(function(data){ cached=data; cachedAt=Date.now(); return data; })
-      .finally(function(){ inflight=null; });
-    return inflight;
-  };
-})();
-
 /**
  * Allowlist sanitizer for AI HTML before innerHTML assignment.
  * Strips script/iframe/object/embed, on* handlers, and javascript: URLs.

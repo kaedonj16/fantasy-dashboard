@@ -1007,52 +1007,6 @@ def api_portfolio_summary():
                         "message": "Summary temporarily unavailable."}), 503
 
 
-@user_pages_bp.route("/api/portfolio/card")
-def api_portfolio_card():
-    """Cache-only, single authorization/lookup hydration for one card."""
-    started = time.monotonic()
-    account_id = session.get("account_id")
-    if not account_id:
-        return jsonify({"ok": False, "state": "unavailable"}), 401
-    platform = str(request.args.get("platform") or "").strip().lower()
-    league_id = str(request.args.get("league_id") or "").strip()
-    try:
-        season = int(request.args.get("season") or 0)
-    except (TypeError, ValueError):
-        return jsonify({"ok": False, "state": "unavailable"}), 400
-    from dashboard_services.accounts import resolve_account_leagues
-    membership = next((lg for lg in resolve_account_leagues(account_id, current_season=season)
-                       if str(lg.get("platform") or "").lower() == platform
-                       and str(lg.get("league_id") or "") == league_id
-                       and int(lg.get("season") or 0) == season), None)
-    auth_ms = (time.monotonic() - started) * 1000
-    if not membership:
-        return jsonify({"ok": False, "state": "unavailable"}), 403
-    from dashboard_services.portfolio_summary import build_league_summary, get_cached_summary
-    ctx = get_league_ctx_from_cache(platform, league_id, season, allow_build=False)
-    if not ctx:
-        stale = get_cached_summary(account_id, platform, league_id, season)
-        payload = {"ok": True, "state": "pending", "pending": True,
-                   "retry_after_ms": 3000, "summary": stale, "matchup": None}
-        logger.info("portfolio_card platform=%s league=%s authorization_ms=%.1f cache_state=cold total_ms=%.1f",
-                    platform, league_id, auth_ms, (time.monotonic()-started)*1000)
-        return jsonify(payload)
-    summary_started = time.monotonic()
-    summary = build_league_summary(account_id, membership, lambda *_a, **_k: ctx)
-    summary_ms = (time.monotonic() - summary_started) * 1000
-    # The compatibility matchup view performs a second cheap cache hit but no
-    # provider build. Keeping one implementation prevents provider drift.
-    matchup_started = time.monotonic()
-    matchup_response = api_portfolio_matchup()
-    response_obj = matchup_response[0] if isinstance(matchup_response, tuple) else matchup_response
-    matchup = response_obj.get_json(silent=True) or {"live": False}
-    logger.info("portfolio_card platform=%s league=%s authorization_ms=%.1f cache_state=%s summary_ms=%.1f matchup_ms=%.1f total_ms=%.1f",
-                platform, league_id, auth_ms, "stale" if ctx.get("_cache_stale") else "warm", summary_ms,
-                (time.monotonic()-matchup_started)*1000, (time.monotonic()-started)*1000)
-    return jsonify({"ok": True, "state": "ready", "pending": False,
-                    "retry_after_ms": 3000, "summary": summary, "matchup": matchup})
-
-
 @user_pages_bp.route("/api/weekly/optimal")
 def api_weekly_optimal():
     """Authenticated Lineup-only fragment; never renders the Weekly Hub shell."""
