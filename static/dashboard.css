@@ -20777,6 +20777,10 @@ img, svg, canvas {
     flex-direction: column;
     gap: 2px;
 }
+.tm-menu[hidden],
+.tm-sched-detail[hidden] {
+    display: none !important;
+}
 .tm-menu-item {
     display: block;
     width: 100%;

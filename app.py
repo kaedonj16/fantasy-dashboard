@@ -23347,12 +23347,6 @@ def api_team_details(roster_id: str):
 
         # Build roster with values
         roster_players = []
-        # NFL bye week per team, for roster bye-conflict warnings. Empty when no
-        # schedule data is loaded, so nothing fabricated is shown.
-        try:
-            _bye_by_team = _team_bye_map(season) or {}
-        except Exception:
-            _bye_by_team = {}
         total_value = 0.0
 
         ages_found = 0
@@ -23432,30 +23426,11 @@ def api_team_details(roster_id: str):
                 "injury_status": inj_status,
                 "injury_body_part": inj_body,
                 "return_plan": _return_plan,
-                "bye": _bye_by_team.get(player_team) or _bye_by_team.get(canon_team(player_team)),
             })
 
         # Sort by position order (QB, RB, WR, TE, K, DEF), then by value within position
         pos_order = {"QB": 0, "RB": 1, "WR": 2, "TE": 3, "K": 4, "DEF": 5}
         roster_players.sort(key=lambda p: (pos_order.get(p["position"], 99), -(p["value"] or 0)))
-
-        # Bye-conflict warnings: upcoming weeks where two or more players at the
-        # same position share a bye, so the roster has a hole to plan around.
-        bye_conflicts = []
-        try:
-            from collections import defaultdict as _dd
-            _by_pos_week = _dd(lambda: _dd(list))
-            for _p in roster_players:
-                _bw = _p.get("bye")
-                _pos = _p.get("position")
-                if _bw and _pos in ("QB", "RB", "WR", "TE"):
-                    _by_pos_week[_pos][int(_bw)].append(_p["name"])
-            for _pos in ("QB", "RB", "WR", "TE"):
-                for _wk, _names in sorted(_by_pos_week[_pos].items()):
-                    if len(_names) >= 2:
-                        bye_conflicts.append({"position": _pos, "week": _wk, "players": _names})
-        except Exception:
-            logger.debug("[api_team_details] bye conflicts skipped", exc_info=True)
 
         # Get draft picks. ESPN/Yahoo have no pick feed; redraft leagues have
         # no future capital. Inventing default own-picks would fake a dynasty
@@ -23875,45 +23850,6 @@ def api_team_details(roster_id: str):
             if str(s).strip().upper() not in _bench_slots
         ]
 
-        # Real opponents for the schedule tab: every OTHER team in the league,
-        # with its real roster_id, name, avatar, and player list (id/name/position).
-        # The schedule pairings and scores are still mocked, but using real teams
-        # and players makes both clickable -- a team opens its modal, a player
-        # opens the player modal. Avatars replace the letter-circle placeholders.
-        def _sched_player_list(r):
-            out = []
-            for pid in (r.get("players") or []):
-                meta = players_index.get(str(pid), {})
-                pos = meta.get("pos") or ""
-                if pos == "PK":
-                    pos = "K"
-                elif pos in ("DST", "D/ST"):
-                    pos = "DEF"
-                if not pos:
-                    continue
-                out.append({
-                    "player_id": str(pid),
-                    "name": meta.get("name") or "",
-                    "pos": pos,
-                })
-            return out
-
-        schedule_opponents = []
-        for r in rosters:
-            if str(r.get("roster_id")) == str(roster_id):
-                continue
-            u = next((x for x in users if x.get("user_id") == r.get("owner_id")), None)
-            un = username_from_user(u) or None
-            tn = team_label_from_user(u, r, fallback=un or "")
-            if tn is None:
-                tn = un
-            schedule_opponents.append({
-                "roster_id": r.get("roster_id"),
-                "team_name": tn or ("Team " + str(r.get("roster_id"))),
-                "avatar": team_avatar(platform, r, users) or "",
-                "players": _sched_player_list(r),
-            })
-
         # Played-week count for the schedule tab: always the *viewed* season,
         # never the prior-season graph fallback. Empty / unfinalized → 0 so
         # the tab doesn't invent a 0-5 record before kickoff.
@@ -23959,7 +23895,6 @@ def api_team_details(roster_id: str):
             "username": username,
             "avatar": avatar,
             "starter_slots": starter_slots,
-            "schedule_opponents": schedule_opponents,
             "record": record_str,
             "wins": wins,
             "losses": losses,
@@ -23971,7 +23906,6 @@ def api_team_details(roster_id: str):
             "lineup_efficiency": lineup_efficiency,
             "efficiency_weeks": efficiency_weeks,
             "achievements": achievements,
-            "bye_conflicts": bye_conflicts,
             "total_value": round(total_value, 1),
             "roster": roster_players,
             "picks": all_picks,
@@ -24058,6 +23992,64 @@ def api_player_acquisition(player_id: str):
     except Exception as e:
         logger.exception("[api_player_acquisition] error")
         return _api_err("Request failed", e)
+
+
+@app.route("/api/team-schedule/<roster_id>")
+def api_team_schedule(roster_id: str):
+    """Compact provider-authored schedule; weekly lineups are loaded separately."""
+    try:
+        from dashboard_services.team_schedule import build_team_schedule
+        from dashboard_services.platform_api import get_matchups as _get_matchups
+        from dashboard_services.api import get_nfl_state
+        platform = request.args.get("platform", "sleeper")
+        league_id = request.args.get("league_id")
+        season = int(request.args.get("season") or 0)
+        if not league_id or not season:
+            return jsonify({"error": "platform, league_id, and season are required"}), 400
+        league = get_league(platform, league_id, season) or {}
+        state = get_nfl_state() or {}
+        payload = build_team_schedule(
+            platform=platform, league_id=league_id, season=season, roster_id=roster_id,
+            league=league, rosters=get_rosters(platform, league_id, season) or [],
+            users=get_users(platform, league_id, season) or [],
+            current_season=int(state.get("season") or season), current_week=int(state.get("week") or 0),
+            get_week=lambda week: _get_matchups(platform, league_id, week, season),
+        )
+        return jsonify(clean_nan_for_json(payload))
+    except KeyError:
+        return jsonify({"error": "Roster not found"}), 404
+    except Exception:
+        logger.exception("team schedule unavailable")
+        return jsonify({"error": "Schedule unavailable", "state": "unavailable"}), 503
+
+
+@app.route("/api/team-schedule/<roster_id>/week/<int:week>")
+def api_team_schedule_week(roster_id: str, week: int):
+    """One historical provider boxscore, fetched only when a row is expanded."""
+    try:
+        from dashboard_services.team_schedule import build_team_schedule
+        from dashboard_services.platform_api import get_matchups as _get_matchups
+        from dashboard_services.api import get_nfl_state
+        platform = request.args.get("platform", "sleeper")
+        league_id = request.args.get("league_id")
+        season = int(request.args.get("season") or 0)
+        if not league_id or not season or week < 1 or week > 25:
+            return jsonify({"error": "valid platform, league_id, season, and week are required"}), 400
+        league = get_league(platform, league_id, season) or {}
+        state = get_nfl_state() or {}
+        payload = build_team_schedule(
+            platform=platform, league_id=league_id, season=season, roster_id=roster_id,
+            league=league, rosters=get_rosters(platform, league_id, season) or [],
+            users=get_users(platform, league_id, season) or [], current_season=int(state.get("season") or season),
+            current_week=int(state.get("week") or 0), get_week=lambda w: _get_matchups(platform, league_id, w, season),
+            details=True, only_week=week,
+        )
+        return jsonify(clean_nan_for_json(payload))
+    except KeyError:
+        return jsonify({"error": "Roster not found"}), 404
+    except Exception:
+        logger.exception("team schedule week unavailable")
+        return jsonify({"error": "Lineup unavailable", "state": "unavailable"}), 503
 
 
 @app.route("/api/team-trades/<roster_id>")
