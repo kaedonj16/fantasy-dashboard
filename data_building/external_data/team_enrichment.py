@@ -100,76 +100,13 @@ def fetch_team_offense_per_game(
         season: int = 2024,
         session: Optional[requests.Session] = None,
 ) -> Dict[str, Dict[str, float]]:
+    """Return no optional offense aggregate after the paid-source removal.
+
+    ESPN's event summary is not a reliable season aggregate.  Keeping this
+    explicit empty result lets the supported TeamRankings enrichment continue
+    without fabricating zero-valued metrics.
     """
-    Call Tank01 getNFLTeams and return per-game offensive team stats.
-    """
-    # ESPN summary is event-oriented and does not provide a stable season-to-
-    # date team aggregation.  Do not fabricate these optional metrics and do
-    # not retain the former paid call.
-    del season, session
     return {}
-
-    sess = HTTP_SESSION
-
-    url = f"{TANK01_BASE_URL}/getNFLTeams"
-    params = {
-        "sortBy": "standings",
-        "rosters": "false",
-        "schedules": "false",
-        "topPerformers": "true",
-        "teamStats": "true",
-        "teamStatsSeason": season,
-    }
-    headers = {
-        "x-rapidapi-host": TANK01_API_HOST,
-        "x-rapidapi-key": TANK01_API_KEY,
-    }
-
-    resp = sess.get(url, headers=headers, params=params, timeout=30)
-    resp.raise_for_status()
-    data = resp.json()
-
-    body = data.get("body") or []
-    out: Dict[str, Dict[str, float]] = {}
-
-    for team_obj in body:
-        team_abv = team_obj.get("teamAbv")
-        if not team_abv:
-            continue
-
-        # games played = wins + losses + ties
-        wins = _to_float(team_obj.get("wins"))
-        losses = _to_float(team_obj.get("loss"))
-        ties = _to_float(team_obj.get("tie"))
-        games = wins + losses + ties
-
-        if games <= 0:
-            continue
-
-        team_stats = team_obj.get("teamStats") or {}
-        pass_stats = team_stats.get("Passing") or {}
-        rush_stats = team_stats.get("Rushing") or {}
-
-        total_pass_yds = _to_float(pass_stats.get("passYds"))
-        total_pass_att = _to_float(pass_stats.get("passAttempts"))
-        total_pass_td = _to_float(pass_stats.get("passTD"))
-
-        total_rush_yds = _to_float(rush_stats.get("rushYds"))
-        total_rush_att = _to_float(rush_stats.get("carries"))
-        total_rush_td = _to_float(rush_stats.get("rushTD"))
-
-        out[team_abv] = {
-            "pass_yds_pg": total_pass_yds / games,
-            "pass_att_pg": total_pass_att / games,
-            "pass_td_pg": total_pass_td / games,
-            "rush_yds_pg": total_rush_yds / games,
-            "rush_att_pg": total_rush_att / games,
-            "rush_td_pg": total_rush_td / games,
-            "games": games,
-        }
-
-    return out
-
 
 def enrich_teams_index_with_team_offense(season: int = 2024) -> None:
     teams_index = load_teams_index() or {}
