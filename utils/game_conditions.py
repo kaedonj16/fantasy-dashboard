@@ -216,39 +216,13 @@ _WEATHER_TTL = 60 * 60 * 3   # forecasts change slowly; refresh every few hours
 
 
 def fetch_week_odds(season: int, week: int, game_dates: "list[str]") -> dict:
-    """Per-team Vegas totals for a week, keyed by team abbr. Never raises.
+    """Odds are unavailable after the paid-provider removal.
 
-    ``game_dates`` are the Tank01 ``gameDate`` strings (YYYYMMDD) for the week's
-    games; Tank01's odds endpoint is queried per date. Returns {} on any failure
-    or when no API key is configured.
+    Return an explicit empty optional enrichment; callers already distinguish
+    missing implied totals from numeric zero. No automatic paid fallback exists.
     """
-    key = (int(season), int(week))
-    hit = _ODDS_CACHE.get(key)
-    if hit and time.time() - hit[0] < _ODDS_TTL:
-        return hit[1]
-    result: dict = {}
-    try:
-        import requests
-        from utils.utils import TANK01_API_HOST, TANK01_API_KEY
-        if not TANK01_API_KEY:
-            return {}
-        headers = {"x-rapidapi-host": TANK01_API_HOST, "x-rapidapi-key": TANK01_API_KEY}
-        url = f"https://{TANK01_API_HOST}/getNFLBettingOdds"
-        for gd in sorted(set(game_dates or [])):
-            try:
-                resp = requests.get(url, headers=headers, params={"gameDate": gd}, timeout=15)
-                if resp.status_code != 200:
-                    continue
-                body = (resp.json() or {}).get("body")
-                result.update(parse_tank01_odds(body))
-            except Exception:
-                logger.debug("[game_conditions] odds fetch failed for %s", gd, exc_info=True)
-    except Exception:
-        logger.debug("[game_conditions] odds fetch unavailable", exc_info=True)
-        return {}
-    _ODDS_CACHE[key] = (time.time(), result)
-    return result
-
+    del season, week, game_dates
+    return {}
 
 def fetch_game_weather(lat: float, lon: float, game_date: str, today: "Optional[str]" = None) -> Optional[dict]:
     """Weather for a stadium on a game date via Open-Meteo. Never raises.

@@ -700,7 +700,7 @@ function _showLeaguePickerModal(planType, triggerBtn) {
     _openCheckoutLeaguePicker(planType, triggerBtn);
   });
 
-  window.brGetMyLeagues()
+  window.brGetMyLeagues({ force: false })
     .then(data => {
       const leagues = (data && data.leagues) || [];
       if (!leagues.length) {
@@ -1279,7 +1279,7 @@ function openHomeProModal() {
   }
   function loadSavedLeagues() {
     if (!window._hasAccount || !savedWrap || !savedSelect) return;
-    window.brGetMyLeagues()
+    window.brGetMyLeagues({ force: false })
       .then(function (data) {
         const leagues = (data && data.leagues) || [];
         if (!leagues.length) return;

@@ -11,9 +11,9 @@ from utils.utils import (
     write_json,
 )
 
-TANK01_URL = "https://tank01-nfl-live-in-game-real-time-statistics-nfl.p.rapidapi.com/getNFLPlayerList"
+TANK01_URL = "https://disabled.invalid/getNFLPlayerList"
 TANK01_HEADERS = {
-    "x-rapidapi-host": "tank01-nfl-live-in-game-real-time-statistics-nfl.p.rapidapi.com",
+    "x-rapidapi-host": "disabled.invalid",
     "x-rapidapi-key": os.environ.get("TANK01_API_KEY", ""),
 }
 
