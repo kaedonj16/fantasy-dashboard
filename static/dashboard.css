@@ -29261,6 +29261,7 @@ button:disabled {
     font-size: 13px;
     cursor: pointer;
 }
+.opt-nav > .csd-wrap { flex:0 0 auto; min-width:96px; }
 
 .opt-method { margin: -10px 0 16px; color: var(--text-muted, var(--muted)); font-size: 12px; }
 .opt-summary { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; margin-bottom:16px; }
@@ -29295,10 +29296,37 @@ button:disabled {
 .opt-week>summary { display:flex; justify-content:space-between; gap:16px; padding:13px 15px; }
 .opt-week>summary span { color:var(--text-muted, var(--muted)); font-variant-numeric:tabular-nums; }
 .opt-week[open] { padding:0 12px 12px; }.opt-week[open]>summary { margin:0 -12px 10px; }
+.opt-leaderboard { container-type:inline-size; min-width:0; }
 .opt-leaderboard-head { margin:10px 0; color:var(--text-muted, var(--muted)); font-size:12px; }
-.opt-team { margin-bottom:8px; }.opt-team.is-viewer { border-color:var(--accent); }
-.opt-team>summary { display:grid; grid-template-columns:38px minmax(140px,1fr) repeat(5,minmax(72px,auto)); gap:12px; align-items:center; padding:12px; font-variant-numeric:tabular-nums; }
-.opt-team>summary span { color:var(--text-muted, var(--muted)); }.opt-team[open] { padding:0 12px 12px; }.opt-team[open]>summary { margin:0 -12px 8px; }
+.opt-leaderboard-columns { display:none; }
+.opt-team { min-width:0; margin-bottom:8px; }.opt-team.is-viewer { border-color:var(--accent); }
+.opt-team>summary { display:grid; grid-template-columns:auto minmax(0,1fr) auto; gap:6px 10px; align-items:start; padding:10px 12px; font-variant-numeric:tabular-nums; }
+.opt-team>summary::marker { color:var(--text-muted, var(--muted)); }
+.opt-rank { grid-column:1; grid-row:1; white-space:nowrap; }
+.opt-team-name { grid-column:2; grid-row:1; min-width:0; overflow-wrap:anywhere; line-height:1.3; }
+.opt-team-stat { min-width:0; text-align:center; }
+.opt-team-eff { grid-column:3; grid-row:1; text-align:right; }
+.opt-team-actual { grid-column:1; grid-row:2; }
+.opt-team-optimal { grid-column:2; grid-row:2; }
+.opt-team-missed { grid-column:3; grid-row:2; }
+.opt-team-weeks { grid-column:1 / -1; grid-row:3; color:var(--text-muted, var(--muted)); font-size:10px; text-align:right; }
+.opt-team-label { display:block; margin-bottom:2px; color:var(--text-muted, var(--muted)); font-size:9px; font-weight:700; letter-spacing:.035em; line-height:1.2; text-transform:uppercase; }
+.opt-team-value { color:var(--text); font-weight:700; white-space:nowrap; }
+.opt-team>summary span { color:var(--text-muted, var(--muted)); }
+.opt-team>summary .opt-team-value { color:var(--text); }
+.opt-team[open] { padding:0 12px 12px; }.opt-team[open]>summary { margin:0 -12px 8px; }
+@container (min-width:650px) {
+  .opt-leaderboard-columns,.opt-team>summary { grid-template-columns:42px minmax(0,1fr) repeat(4,minmax(68px,82px)); column-gap:10px; }
+  .opt-leaderboard-columns { display:grid; padding:0 12px 7px; color:var(--text-muted, var(--muted)); font-size:10px; font-weight:700; letter-spacing:.035em; text-transform:uppercase; }
+  .opt-leaderboard-columns span:nth-child(n+3) { text-align:right; }
+  .opt-team>summary { align-items:center; padding-block:9px; }
+  .opt-rank,.opt-team-name,.opt-team-stat { grid-row:1; }
+  .opt-rank { grid-column:1; }.opt-team-name { grid-column:2; }
+  .opt-team-eff { grid-column:3; }.opt-team-actual { grid-column:4; }.opt-team-optimal { grid-column:5; }.opt-team-missed { grid-column:6; }
+  .opt-team-stat { text-align:right; }
+  .opt-team-label { display:none; }
+  .opt-team-weeks { grid-column:2 / -1; grid-row:2; margin-top:-2px; text-align:left; }
+}
 .opt-empty-state { padding:30px; text-align:center; color:var(--text-muted, var(--muted)); }
 @media (max-width:720px) {
   .opt-summary { grid-template-columns:repeat(2,minmax(0,1fr)); }
@@ -29307,8 +29335,7 @@ button:disabled {
   .opt-side { grid-column:2 / 4; }.opt-side-label { display:block; margin-bottom:3px; }
   .opt-arrow { display:none; }.opt-gain { grid-column:3; grid-row:1; }
   .opt-player { align-items:flex-start; }.opt-score { flex:none; }
-  .opt-week>summary { display:grid; gap:4px; }.opt-team>summary { grid-template-columns:32px 1fr auto; }
-  .opt-team>summary span:nth-of-type(n+3) { display:none; }
+  .opt-week>summary { display:grid; gap:4px; }
 }
 
 /* ── Schedule (matchup-difficulty grid) ───────────────────────────────────── */

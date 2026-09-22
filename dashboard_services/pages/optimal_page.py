@@ -113,7 +113,9 @@ def build_optimal_body(ctx):
     def tab(label, key, val, active):
         qview = val if key == "view" else view
         qperiod = val if key == "period" else period
-        wk = f'&week={selected}' if qperiod == "weekly" else ""
+        # Keep the last weekly selection in Season URLs so returning to Weekly
+        # (or switching team/league views) does not unexpectedly jump weeks.
+        wk = f'&week={selected}'
         return f'<a class="opt-tab{" active" if active else ""}" href="{base}&view={qview}&period={qperiod}{wk}">{label}</a>'
     options = "".join(f'<option value="{w}"{" selected" if w == selected else ""}>Week {w}</option>' for w in completed)
     nav = (f'<nav class="opt-nav" aria-label="Lineup analysis controls"><div class="opt-tab-group">'
@@ -220,8 +222,15 @@ def build_optimal_body(ctx):
     for rank, team in enumerate(teams, 1):
         eff = "—" if team["eff"] is None else f'{team["eff"]:.1f}%'
         cards += (f'<details class="card opt-team{" is-viewer" if team["rid"] == viewer_rid else ""}"><summary>'
-                  f'<span class="opt-rank">#{rank}</span><strong>{_esc(team["name"])}</strong><span>{eff}</span>'
-                  f'<span>{team["actual"]:.1f} actual</span><span>{team["optimal"]:.1f} optimal</span>'
-                  f'<span>{team["missed"]:.1f} missed</span><span>{len(team["good"])}/{len(team["data"])} weeks</span></summary>'
+                  f'<span class="opt-rank">#{rank}</span><strong class="opt-team-name">{_esc(team["name"])}</strong>'
+                  f'<span class="opt-team-stat opt-team-eff"><span class="opt-team-label">Efficiency</span><span class="opt-team-value">{eff}</span></span>'
+                  f'<span class="opt-team-stat opt-team-actual"><span class="opt-team-label">Actual</span><span class="opt-team-value">{team["actual"]:.1f}</span></span>'
+                  f'<span class="opt-team-stat opt-team-optimal"><span class="opt-team-label">Optimal</span><span class="opt-team-value">{team["optimal"]:.1f}</span></span>'
+                  f'<span class="opt-team-stat opt-team-missed"><span class="opt-team-label">Missed</span><span class="opt-team-value">{team["missed"]:.1f}</span></span>'
+                  f'<span class="opt-team-weeks"><span class="opt-team-label">Weeks counted</span> '
+                  f'<span class="opt-team-value">{len(team["good"])}/{len(team["data"])}</span></span></summary>'
                   + ''.join(weekly_panel(d, f'Week {d["week"]}') for d in reversed(team["data"])) + '</details>')
-    return nav + '<div class="opt-leaderboard-head">Efficiency leaderboard · sorted highest first</div>' + cards
+    heading = ('<div class="opt-leaderboard-head">Efficiency leaderboard · sorted highest first</div>'
+               '<div class="opt-leaderboard-columns" aria-hidden="true"><span>Rank</span><span>Team</span>'
+               '<span>Efficiency</span><span>Actual</span><span>Optimal</span><span>Missed</span></div>')
+    return nav + f'<div class="opt-leaderboard">{heading}{cards}</div>'
