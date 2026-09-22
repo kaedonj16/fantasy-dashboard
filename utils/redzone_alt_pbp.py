@@ -682,6 +682,16 @@ def fetch_espn_event_id(
 ) -> str:
     """Resolve ESPN event id from CDN scoreboard (by team abbrevs)."""
     away, home = away.upper(), home.upper()
+    # Shared discovery/cache used by every live surface.  Keep the older
+    # implementation below as a defensive fallback for malformed legacy IDs.
+    if yyyymmdd:
+        try:
+            from dashboard_services.nfl_game_data import find_event
+            event_id, _game = find_event(f"{yyyymmdd}_{away}@{home}")
+            if event_id:
+                return event_id
+        except Exception:
+            logger.debug("[espn-pbp] shared event lookup failed", exc_info=True)
     # ESPN uses WSH for Washington; Tank01/Sleeper often WAS.
     alias = {"WAS": "WSH", "WSH": "WAS"}
     key = _espn_matchup_key(away, home, yyyymmdd)
@@ -809,31 +819,8 @@ def fetch_espn_pbp_summary(event_id: str, *, ttl: float = 15.0) -> dict:
     (``drives`` at the root, the shape ``extract_espn_pbp_plays`` handles) or
     ``{}`` on failure, serving the last good value while an entry is only stale.
     """
-    eid = _s(event_id)
-    if not eid:
-        return {}
-    now = time.time()
-    hit = _ESPN_SUMMARY_CACHE.get(eid)
-    if hit and (now - hit[0]) < ttl:
-        return hit[1]
-    try:
-        import requests
-        resp = requests.get(
-            _ESPN_SUMMARY,
-            params={"event": eid},
-            headers={"User-Agent": _UA, "Accept": "application/json"},
-            timeout=12,
-        )
-        if resp.status_code != 200:
-            logger.debug("[espn-pbp] summary HTTP %s event=%s", resp.status_code, eid)
-            return hit[1] if hit else {}
-        data = resp.json()
-    except Exception:
-        logger.debug("[espn-pbp] summary fetch failed event=%s", eid, exc_info=True)
-        return hit[1] if hit else {}
-    if not isinstance(data, dict):
-        return hit[1] if hit else {}
-    _ESPN_SUMMARY_CACHE[eid] = (now, data)
+    from dashboard_services.nfl_game_data import fetch_summary
+    data, _stale = fetch_summary(_s(event_id), ttl=ttl)
     return data
 
 

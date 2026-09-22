@@ -1388,6 +1388,8 @@ window.brHaptic = function (pattern) {
       if (!scriptReRunnable(ext[i].getAttribute('src') || '')) throw new Error('unhandled external script');
     }
     if (window.brEvacuateMobileNav) window.brEvacuateMobileNav();
+    if (window.pmStopVisibilityWarmup) window.pmStopVisibilityWarmup();
+    if (window.pmPlayerDetails) window.pmPlayerDetails.invalidate();
     curRoot.innerHTML = newRoot.innerHTML;
     if (newRoot.dataset.premium != null) curRoot.dataset.premium = newRoot.dataset.premium;
     if (newRoot.dataset.adEligible != null) curRoot.dataset.adEligible = newRoot.dataset.adEligible;
@@ -10230,6 +10232,7 @@ window.initPageRoot = function initPageRoot(root = document) {
   // #page-root, so a soft-nav or refresh swap replaces it and it must re-init.
   if (typeof window.brInitMobileNav === 'function') window.brInitMobileNav();
   if (typeof window.brUpdateFreshness === 'function') window.brUpdateFreshness();
+  if (typeof window.pmInitVisibilityWarmup === 'function') window.pmInitVisibilityWarmup(root);
 };
 
 function showDashboardLoadingOverlay(text, subtext) {

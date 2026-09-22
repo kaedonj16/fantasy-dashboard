@@ -12210,7 +12210,7 @@ _RZ_SCOREBOARD_TIMEOUT = 12
 def _redzone_boxscore(
     game_id: str, *, play_by_play: bool = False, ttl: float | None = None
 ) -> dict:
-    """Fetch a Tank01 boxscore with a short shared TTL cache (bounds API calls).
+    """Fetch the shared ESPN boxscore with a short UI-level TTL cache.
 
     ``play_by_play=True`` asks Tank01 for ``allPlayByPlay`` and is cached under a
     separate key so plain boxscore consumers stay light. Pass ``ttl`` to reuse a
@@ -13635,7 +13635,7 @@ def api_redzone_data(platform: str, season: int, league_id: str):
 
 @app.route("/api/<platform>/<int:season>/<league_id>/redzone-player")
 def api_redzone_player(platform: str, season: int, league_id: str):
-    """Return Tank01 boxscore stats for a single player, tagged with fantasy pts."""
+    """Return ESPN NFL detail for a player; provider fantasy points stay authoritative."""
     from dashboard_services.api import (
         get_nfl_players, fetch_tank_boxscore, get_normalized_scoring_settings,
     )
@@ -13652,6 +13652,7 @@ def api_redzone_player(platform: str, season: int, league_id: str):
         pos = (player.get("position") or "").upper()
 
         stats = {}
+        box = {}
         if game_id:
             box = fetch_tank_boxscore(game_id) or {}
             player_stats = box.get("playerStats") or {}
@@ -13691,7 +13692,14 @@ def api_redzone_player(platform: str, season: int, league_id: str):
                 "rec_tds": float(receiving.get("recTD") or 0),
             }
 
-        return jsonify({"pos": pos, "scoring": scoring, "breakdown": breakdown})
+        available = set(box.get("field_availability") or []) if game_id else set()
+        return jsonify({
+            "pos": pos, "scoring": scoring, "breakdown": breakdown,
+            "breakdown_complete": bool(box.get("breakdown_complete", False)) if game_id else False,
+            "field_availability": sorted(available),
+            "source": box.get("source", "espn_nfl") if game_id else "unavailable",
+            "notice": "Fantasy-provider score remains authoritative; unavailable ESPN fields are omitted.",
+        })
     except Exception as _e:
         logger.warning("[redzone] player fetch %s: %s", pid, _e)
         return jsonify({}), 500
@@ -21064,12 +21072,22 @@ def api_player_details(player_id: str):
         except (TypeError, ValueError):
             _modal_ls = 10
 
-        # Sync league globals if league_id provided
-        if league_id:
-            # sync_league_globals is a no-op for Sleeper -- get_league() is what
-            # populates the request-scoped scoring globals (incl. bonus_rec_te,
-            # which TE-premium scaling reads). Without this the modal sees bare
-            # defaults and never applies the TE premium.
+        # Speculation may only consume a valid, already-built league snapshot.
+        # In particular it must not call provider synchronization or the normal
+        # context accessor, whose cache miss rebuilds the entire league.
+        _speculative = request.headers.get("X-BR-Speculative") == "player-details"
+        _spec_ctx = None
+        if league_id and _speculative:
+            _entry = DASHBOARD_CACHE.get(_cache_key(platform, season, league_id))
+            if not _league_ctx_cache_valid(_entry, platform, season, league_id):
+                return ("", 204)
+            _spec_ctx = (_entry or {}).get("ctx") or {}
+            scoring_settings = _spec_ctx.get("scoring_settings")
+            if not isinstance(scoring_settings, dict) or not scoring_settings:
+                return ("", 204)
+        elif league_id:
+            # Foreground requests retain exact provider synchronization, including
+            # Sleeper TE-premium scoring initialization.
             if platform == "sleeper":
                 from dashboard_services.api import get_league as _get_league
                 _get_league(league_id)
@@ -21261,7 +21279,9 @@ def api_player_details(player_id: str):
         if league_id:
             try:
                 from dashboard_services.service import fantasy_team_and_roster_for_player as _ft_lookup
-                _ctx = get_league_ctx_from_cache(platform, league_id, season)
+                _ctx = _spec_ctx if _speculative else get_league_ctx_from_cache(platform, league_id, season)
+                if not _ctx:
+                    return ("", 204) if _speculative else (jsonify({"error": "League unavailable"}), 503)
                 _rosters = _ctx.get("rosters") or []
                 _users = _ctx.get("users") or []
                 _rmap = _build_roster_map(_users, _rosters)
