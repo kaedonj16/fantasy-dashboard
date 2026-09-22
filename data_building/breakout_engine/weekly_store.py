@@ -388,13 +388,13 @@ def load_previous_week_scores(season: int, before_week: int) -> Dict[str, Dict[s
     init_weekly_breakout_db()
     with get_conn() as conn:
         rows = conn.execute(
-            f"SELECT DISTINCT ON (player_id) player_id, as_of_week, breakout_score, "
-            f"classification, evidence FROM {WEEKLY_SCORES_TABLE} s "
-            f"WHERE season=%s AND as_of_week < %s AND scoring_version=%s "
+            f"SELECT DISTINCT ON (s.player_id) s.player_id, s.as_of_week, s.breakout_score, "
+            f"s.classification, s.evidence FROM {WEEKLY_SCORES_TABLE} s "
+            f"WHERE s.season=%s AND s.as_of_week < %s AND s.scoring_version=%s "
             f"AND EXISTS (SELECT 1 FROM {WEEKLY_RUNS_TABLE} r WHERE r.id=s.run_id "
             f"AND r.status='completed' AND r.completed_at IS NOT NULL "
             f"AND r.expected_row_count=r.inserted_row_count) "
-            f"ORDER BY player_id, as_of_week DESC",
+            f"ORDER BY s.player_id, s.as_of_week DESC",
             (int(season), int(before_week), SCORING_VERSION),
         ).fetchall()
     return {str(row["player_id"]): dict(row) for row in rows}
@@ -451,7 +451,7 @@ def load_weekly_candidates(
     params: List[Any] = [int(season), int(week), SCORING_VERSION, float(min_score)]
     clause = ""
     if classifications:
-        clause = " AND classification = ANY(%s)"
+        clause = " AND s.classification = ANY(%s)"
         params.append(list(classifications))
     query = (
         f"SELECT s.* FROM {WEEKLY_SCORES_TABLE} s "
@@ -459,8 +459,8 @@ def load_weekly_candidates(
         f"WHERE s.season = %s AND s.as_of_week = %s AND s.scoring_version = %s "
         f"AND r.status='completed' AND r.completed_at IS NOT NULL "
         f"AND r.expected_row_count=r.inserted_row_count "
-        f"AND breakout_score >= %s{clause} "
-        f"ORDER BY breakout_score DESC, confidence DESC"
+        f"AND s.breakout_score >= %s{clause} "
+        f"ORDER BY s.breakout_score DESC, s.confidence DESC"
     )
     with get_conn() as conn:
         with conn.cursor() as cur:
@@ -516,7 +516,7 @@ def get_weekly_candidate(
         row = conn.execute(
             f"SELECT s.* FROM {WEEKLY_SCORES_TABLE} s "
             f"JOIN {WEEKLY_RUNS_TABLE} r ON r.id=s.run_id "
-            f"WHERE player_id = %s AND season = %s AND as_of_week = %s "
+            f"WHERE s.player_id = %s AND s.season = %s AND s.as_of_week = %s "
             f"AND s.scoring_version = %s AND r.status='completed' "
             f"AND r.completed_at IS NOT NULL AND r.expected_row_count=r.inserted_row_count",
             (str(player_id), int(season), int(week), SCORING_VERSION),

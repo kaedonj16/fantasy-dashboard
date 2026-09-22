@@ -124,7 +124,7 @@ def _extract_assets(txn: dict, slot_map: dict[tuple, int] | None = None) -> list
     drops: dict[str, Any] = txn.get("drops") or {}
     draft_picks: list[dict] = txn.get("draft_picks") or []
 
-    all_roster_ids = sorted(set([str(r) for r in list(adds.values()) + list(drops.keys() if drops else [])]))
+    all_roster_ids = sorted({str(r) for r in list(adds.values()) + list(drops.values()) if r is not None})
     if len(all_roster_ids) < 2:
         pick_rosters = sorted({str(p.get("owner_id", "")) for p in draft_picks if p.get("owner_id")})
         all_roster_ids = pick_rosters or all_roster_ids
@@ -264,13 +264,13 @@ def crawl_league(
                         INSERT INTO trade_intel_assets
                             (trade_id, side, asset_type, player_id,
                              pick_season, pick_round, pick_order,
-                             pick_roster_id, pick_slot)
-                        VALUES """ + ",".join(["(%s,%s,%s,%s,%s,%s,%s,%s,%s)"] * len(assets)),
+                            pick_roster_id, pick_slot, provider)
+                        VALUES """ + ",".join(["(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)"] * len(assets)),
                         [v for a in assets for v in (
                             trade_db_id, a["side"], a["asset_type"], a["player_id"],
                             a["pick_season"], a["pick_round"],
                             a["pick_order"], a.get("pick_roster_id"),
-                            a.get("pick_slot"),
+                            a.get("pick_slot"), "sleeper",
                         )]
                     )
                     pids = [

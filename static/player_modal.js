@@ -2146,6 +2146,7 @@ function _pmNormalizeTradeSides(t) {
     return {
       team_name: side.team_name || '',
       assets: side.assets || [],
+      direction: side.direction || '',
     };
   };
   return { a: norm(t.side_a), b: norm(t.side_b) };
@@ -2200,13 +2201,15 @@ function _pmRenderTradeCards(trades, playerId, { showTeams } = {}) {
         : '');
     const sides = _pmNormalizeTradeSides(t);
     const teamA = (showTeams && sides.a.team_name)
-      ? `<div class="pm-trade-team">${sides.a.team_name}</div>` : '';
+      ? `<div class="pm-trade-team">${sides.a.direction || 'Received'} · ${sides.a.team_name}</div>` : '';
     const teamB = (showTeams && sides.b.team_name)
-      ? `<div class="pm-trade-team">${sides.b.team_name}</div>` : '';
+      ? `<div class="pm-trade-team">${sides.b.direction || 'Sent'} · ${sides.b.team_name}</div>` : '';
+    const viaPick = t.via_draft_pick
+      ? '<span class="pm-trade-badge pm-trade-badge-pick">Via draft pick</span>' : '';
     return `<div class="pm-trade-card">
       <div class="pm-trade-head">
         <span class="pm-trade-date">${dateStr}${seasonBit ? ' · ' + seasonBit : ''}${vchgBadge}</span>
-        <div style="display:flex;gap:5px;">${sfBadge}</div>
+        <div style="display:flex;gap:5px;">${viaPick}${sfBadge}</div>
       </div>
       <div class="pm-trade-body">
         <div class="pm-trade-col">${teamA}${_pmRenderTradeAssets(sides.a.assets, playerId)}</div>
