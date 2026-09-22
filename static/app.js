@@ -2929,14 +2929,45 @@ window._brPromoEligible = function () {
         y += ph + 44;
       }
 
+      // Compact lineup-efficiency highlights use the same prepared recap data;
+      // this remains a dedicated canvas render rather than a DOM screenshot.
+      var lineupHs = [];
+      if (d.best_lineup) lineupHs.push({
+        k: 'BEST LINEUP', n: d.best_lineup.team,
+        v: Number(d.best_lineup.efficiency).toFixed(0) + '%'
+      });
+      if (d.most_left) lineupHs.push({
+        k: 'MOST LEFT ON THE TABLE', n: d.most_left.team,
+        v: Number(d.most_left.points_left).toFixed(1) + ' pts'
+      });
+      if (lineupHs.length && y < H - 260) {
+        var leRowH = 82, leTop = 48, leH = leTop + lineupHs.length * leRowH + 18;
+        roundRect(ctx, px, y, pw, leH, 34);
+        ctx.fillStyle = 'rgba(124,184,246,0.07)'; ctx.fill();
+        ctx.lineWidth = 1.5; ctx.strokeStyle = 'rgba(124,184,246,0.24)'; ctx.stroke();
+        ctx.fillStyle = BLUE; ctx.font = '800 24px ' + FONT;
+        lsCenter(ctx, 'LINEUP EFFICIENCY', W / 2, y + 34, 3);
+        var lex = px + 44, ler = px + pw - 44, ley = y + leTop;
+        lineupHs.forEach(function (row) {
+          ctx.fillStyle = 'rgba(255,255,255,0.58)'; ctx.font = '800 20px ' + FONT;
+          ctx.fillText(row.k, lex, ley + 24);
+          ctx.fillStyle = '#ffffff'; ctx.font = '800 32px ' + FONT;
+          var levw = ctx.measureText(row.v).width;
+          ctx.fillText(ellip(ctx, row.n, ler - lex - levw - 24), lex, ley + 62);
+          ctx.fillStyle = GREEN; ctx.fillText(row.v, ler - levw, ley + 62);
+          ley += leRowH;
+        });
+        y += leH + 32;
+      }
+
       // Highlight strip
       var hs = [];
       if (d.top) hs.push({ k: 'TOP SCORE', n: d.top.team, v: Number(d.top.pts).toFixed(1) });
       if (d.blowout) hs.push({ k: 'BLOWOUT', n: d.blowout.team, v: '+' + d.blowout.margin });
       if (d.closest) hs.push({ k: 'NAILBITER', n: d.closest.team, v: 'by ' + d.closest.margin });
-      if (hs.length && y < H - 260) {
-        var hRowH = 108, hTop = 34, hBot = 22;
-        var hH = hTop + hs.length * hRowH - 20 + hBot;
+      var hRowH = 108, hTop = 34, hBot = 22;
+      var hH = hTop + hs.length * hRowH - 20 + hBot;
+      if (hs.length && y + hH < H - 230) {
         roundRect(ctx, px, y, pw, hH, 34);
         ctx.fillStyle = 'rgba(52,211,153,0.07)'; ctx.fill();
         ctx.lineWidth = 1.5; ctx.strokeStyle = 'rgba(52,211,153,0.25)'; ctx.stroke();

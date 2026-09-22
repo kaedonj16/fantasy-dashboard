@@ -59,6 +59,35 @@ def _top_performers_by_roster(matchups: list[dict]) -> dict[str, list[dict]]:
     return out
 
 
+def _weekly_efficiency_rows(efficiency_data: dict, selected_week: int) -> list[dict]:
+    """Return complete weekly efficiency rows in deterministic rank order.
+
+    The inputs come exclusively from ``season_efficiency``, which delegates to
+    the shared legal-lineup optimizer. Missing/incomplete weeks are omitted
+    instead of being presented as zero-efficiency performances.
+    """
+    rows = []
+    for rid, season_row in (efficiency_data.get("by_rid") or {}).items():
+        week_row = next(
+            (row for row in (season_row.get("weeks") or [])
+             if row.get("week") == selected_week),
+            None,
+        )
+        if not week_row or week_row.get("eff") is None or week_row.get("optimal") is None:
+            continue
+        actual = float(week_row["actual"])
+        optimal = float(week_row["optimal"])
+        if optimal <= 0:
+            continue
+        # Clamp presentation inputs at their mathematical bounds so provider
+        # rounding cannot surface -0.0 points left or >100% efficiency.
+        points_left = max(0.0, optimal - actual)
+        efficiency = min(100.0, max(0.0, actual / optimal * 100.0))
+        rows.append({"rid": str(rid), "actual": actual, "optimal": optimal,
+                     "eff": efficiency, "missed": points_left})
+    return sorted(rows, key=lambda row: (-row["eff"], -row["actual"], row["rid"]))
+
+
 def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
     from app import (  # noqa: E402  (lazy: avoids a circular import at module load)
         _build_lineup_analysis_html,
@@ -220,6 +249,22 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
                 f'data-roster-id="{html.escape(rid_s, quote=True)}" '
                 f'data-team-name="{tn}" style="cursor:pointer;">{body}</span>')
 
+    # Fetch the cached, shared legal-lineup analysis once. The same selected
+    # week dataset drives this page section, its award cards, and the share card.
+    efficiency_rows = []
+    if not preview_mode:
+        try:
+            from dashboard_services.season_efficiency import compute_league_season_efficiency
+            efficiency_rows = _weekly_efficiency_rows(
+                compute_league_season_efficiency(ctx), int(selected_week),
+            )
+        except Exception:
+            efficiency_rows = []
+    best_efficiency = efficiency_rows[0] if efficiency_rows else None
+    most_left = (sorted(efficiency_rows,
+                        key=lambda row: (-row["missed"], -row["actual"], row["rid"]))[0]
+                 if efficiency_rows else None)
+
     # ── Week selector ──────────────────────────────────────────────────────
     week_opts = "".join(
         f"<option value='{w}' {'selected' if w == selected_week else ''}>"
@@ -243,6 +288,15 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
                     if blowout else None),
         "closest": ({"team": closest["winner"], "margin": round(closest["margin"], 1)}
                     if closest else None),
+        "best_lineup": ({"team": team_by_rid.get(best_efficiency["rid"], "Unknown team"),
+                         "efficiency": round(best_efficiency["eff"], 1),
+                         "actual": round(best_efficiency["actual"], 1),
+                         "optimal": round(best_efficiency["optimal"], 1)}
+                        if best_efficiency else None),
+        "most_left": ({"team": team_by_rid.get(most_left["rid"], "Unknown team"),
+                       "efficiency": round(most_left["eff"], 1),
+                       "points_left": round(most_left["missed"], 1)}
+                      if most_left else None),
     }
     _recap_share_json = json.dumps(_recap_share).replace("</", "<\\/")
 
@@ -379,29 +433,15 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
                 f'<div class="rc-award-foot">{sub}</div></div>')
 
     best_lineup_card = most_benched_card = ""
-    try:
-        from dashboard_services.season_efficiency import compute_league_season_efficiency
-        _eff_by_rid = compute_league_season_efficiency(ctx).get("by_rid") or {}
-        _wk_rows = []
-        for _rid, _v in _eff_by_rid.items():
-            for _wk in (_v.get("weeks") or []):
-                if _wk.get("week") == selected_week and _wk.get("optimal"):
-                    _wk_rows.append({"rid": _rid, "eff": _wk.get("eff"),
-                                     "missed": _wk.get("missed") or 0.0})
-                    break
-        if _wk_rows:
-            _best = max(_wk_rows, key=lambda r: (r["eff"] if r["eff"] is not None else -1.0))
-            _bench = max(_wk_rows, key=lambda r: r["missed"])
-            _best_eff = f'{_best["eff"]:.0f}%' if _best["eff"] is not None else "—"
-            _best_sub = ("Perfect lineup" if _best["missed"] < 0.1
-                         else f'{_best["missed"]:.1f} pts left on bench')
-            best_lineup_card = _eff_award_card(
-                "fa-solid fa-bullseye", "BEST LINEUP", _best["rid"], _best_eff, _best_sub, "var(--win)")
-            most_benched_card = _eff_award_card(
-                "fa-solid fa-arrow-down", "MOST BENCHED", _bench["rid"],
-                f'{_bench["missed"]:.1f}', "points left on bench", "var(--loss)")
-    except Exception:
-        best_lineup_card = most_benched_card = ""
+    if best_efficiency and most_left:
+        _best_sub = ("Perfect lineup" if best_efficiency["missed"] < 0.05
+                     else f'{best_efficiency["missed"]:.1f} pts left on bench')
+        best_lineup_card = _eff_award_card(
+            "fa-solid fa-bullseye", "BEST LINEUP", best_efficiency["rid"],
+            f'{best_efficiency["eff"]:.0f}%', _best_sub, "var(--win)")
+        most_benched_card = _eff_award_card(
+            "fa-solid fa-arrow-down", "MOST BENCHED", most_left["rid"],
+            f'{most_left["missed"]:.1f}', "points left on bench", "var(--loss)")
 
     cards_html = f"""
 <style>
@@ -519,6 +559,44 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
     </span>
   </div>
 <div class="card recap-scoreboard-card">{scoreboard_rows}</div></section>"""
+
+    # ── Lineup efficiency ─────────────────────────────────────────────────
+    def efficiency_team_row(row, rank=None):
+        rid = row["rid"]
+        rank_html = f'<span class="recap-eff-rank">{rank}</span>' if rank is not None else ""
+        return f"""<div class="recap-eff-row">
+          {rank_html}{ava_img("", rid, 34)}
+          <div class="recap-eff-team"><div class="recap-eff-name">{team_link("", rid)}</div>
+            <div class="recap-eff-detail">{row['actual']:.1f} / {row['optimal']:.1f} possible</div></div>
+          <strong class="recap-eff-percent">{row['eff']:.0f}%</strong>
+        </div>"""
+
+    efficiency_help = ("Lineup efficiency measures how many of your optimal possible points you actually "
+                       "started. Optimal points use the highest-scoring legal lineup from your roster that week.")
+    if efficiency_rows:
+        top_three_html = "".join(
+            efficiency_team_row(row, rank) for rank, row in enumerate(efficiency_rows[:3], 1)
+        )
+        toughest_html = efficiency_team_row(most_left)
+        toughest_insight = ("Perfect lineup" if most_left["missed"] < 0.05 else
+                            f'<strong>{most_left["missed"]:.1f} pts</strong><span>left on the table</span>')
+        efficiency_content = f"""
+<div class="recap-eff-grid">
+  <div class="card recap-eff-card recap-eff-card--top"><h3>Top 3 Managers</h3>{top_three_html}</div>
+  <div class="card recap-eff-card recap-eff-card--bench"><h3>Toughest Bench</h3>{toughest_html}
+    <div class="recap-eff-insight">{toughest_insight}</div></div>
+</div>"""
+    else:
+        efficiency_content = ('<div class="card recap-lineup-unavailable" role="status">'
+                              'Lineup efficiency is unavailable for this week.</div>')
+    efficiency_html = f"""
+<section class="recap-section recap-efficiency">
+  <div class="recap-eff-heading"><div><h2>Lineup Efficiency
+    <button type="button" class="recap-eff-info" data-tooltip="{html.escape(efficiency_help, quote=True)}"
+      aria-label="About lineup efficiency">i</button></h2>
+    <p>Actual points vs. optimal lineup points (higher is better).</p></div></div>
+  {efficiency_content}
+</section>"""
 
     # ── Shared historical standings + power snapshot ───────────────────────
     # Preview mode replaces the empty provider frame with deterministic sample
@@ -728,5 +806,5 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
                         f'<a href="{history_url}">Open season history and recap</a>.</div></section>')
 
     return ('<main class="weekly-recap">' + week_selector + preview_banner + history_banner
-            + cards_html + story_html + scoreboard_html + lineup_html + standings_html
+            + scoreboard_html + efficiency_html + cards_html + story_html + lineup_html + standings_html
             + up_next_html + '</main>')

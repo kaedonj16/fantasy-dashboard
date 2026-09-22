@@ -36,8 +36,8 @@ def test_recap_sections_follow_editorial_order_and_end_with_up_next():
     """The recap moves from the completed week to its forward-looking ending."""
     source = (ROOT / "dashboard_services/pages/recap_page.py").read_text()
     returned = source.split("    return ('<main class=\"weekly-recap\">'", 1)[1]
-    expected = ["week_selector", "cards_html", "story_html", "scoreboard_html",
-                "lineup_html", "standings_html", "up_next_html"]
+    expected = ["week_selector", "scoreboard_html", "efficiency_html", "cards_html",
+                "story_html", "lineup_html", "standings_html", "up_next_html"]
     positions = [returned.index(item) for item in expected]
     assert positions == sorted(positions)
     assert returned.index("up_next_html") < returned.index(")\n", returned.index("up_next_html"))
@@ -87,6 +87,49 @@ def test_mobile_scoreboard_groups_each_matchup_before_its_footer():
     assert "recap-matchup-footer" in css
     assert ".weekly-recap .recap-matchup-score { display:none; }" in css
     assert "border-bottom-width:2px" in css
+
+
+def test_weekly_efficiency_math_order_missing_data_and_ties():
+    from dashboard_services.pages.recap_page import _weekly_efficiency_rows
+
+    data = {"by_rid": {
+        "3": {"weeks": [{"week": 7, "actual": 90.0, "optimal": 100.0, "eff": 90.0}]},
+        "2": {"weeks": [{"week": 7, "actual": 95.0, "optimal": 100.0, "eff": 95.0}]},
+        "1": {"weeks": [{"week": 7, "actual": 95.0, "optimal": 100.0, "eff": 95.0}]},
+        "4": {"weeks": [{"week": 6, "actual": 10.0, "optimal": 20.0, "eff": 50.0}]},
+        "5": {"weeks": [{"week": 7, "actual": 0.0, "optimal": 0.0, "eff": None}]},
+    }}
+
+    rows = _weekly_efficiency_rows(data, 7)
+    assert [row["rid"] for row in rows] == ["1", "2", "3"]
+    assert rows[0]["eff"] == 95.0
+    assert rows[0]["missed"] == 5.0
+    assert all(row["rid"] not in {"4", "5"} for row in rows)
+
+
+def test_lineup_efficiency_section_and_share_contract():
+    page = (ROOT / "dashboard_services/pages/recap_page.py").read_text()
+    js = (ROOT / "static/app.js").read_text()
+    returned = page.split("    return ('<main class=\"weekly-recap\">'", 1)[1]
+
+    assert returned.index("scoreboard_html") < returned.index("efficiency_html")
+    assert returned.index("efficiency_html") < returned.index("cards_html")
+    assert '"best_lineup"' in page and '"most_left"' in page
+    assert "compute_league_season_efficiency(ctx)" in page
+    assert page.count("compute_league_season_efficiency(ctx)") == 1
+    assert "LINEUP EFFICIENCY" in js
+    assert "d.best_lineup" in js and "d.most_left" in js
+    assert "window.brShareCanvas(canvas" in js
+
+
+def test_toughest_bench_uses_legal_points_left_not_raw_bench_points():
+    page = (ROOT / "dashboard_services/pages/recap_page.py").read_text()
+    season = (ROOT / "dashboard_services/season_efficiency.py").read_text()
+
+    assert 'key=lambda row: (-row["missed"], -row["actual"], row["rid"])' in page
+    assert "raw bench" not in page.lower()
+    assert "from utils.optimal_lineup import analyze_lineup" in season
+    assert "analyze_lineup(raw_scores, positions, slots, pids, starters" in season
 
 
 def test_mobile_recap_no_longer_depends_on_sidebar_grid():
