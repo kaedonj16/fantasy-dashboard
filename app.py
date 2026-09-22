@@ -29294,6 +29294,34 @@ def build_portfolio_body(
         "})();</script>"
     )
 
+    # Page-level Refresh handler consumed by app.js's doRefresh(). Warm cards
+    # expose data-summary-card hooks; cold/warm-only portfolios don't, so an
+    # empty key set rebuilds the request from the live league slots instead
+    # of silently no-op'ing. Always returns handled:false so app.js still
+    # performs its own full-page reload after the summaries are refreshed.
+    refresh_handler_script = (
+        "<script>(function(){"
+        "window.brRefreshCurrentPage=async function(accountId){"
+        "const keys=[...document.querySelectorAll('[data-summary-' + 'card]')]"
+        ".filter(function(el){return el.style.display!=='none';})"
+        ".map(function(el){return el.dataset.summaryCard;}).filter(Boolean);"
+        "if(!keys.length){"
+        "const liveLeagues=[...document.querySelectorAll('.pf-lg-card [data-lg-live]')]"
+        ".map(function(el){return {league_id:el.dataset.leagueId,platform:el.dataset.platform,season:el.dataset.season};})"
+        ".filter(function(lg){return lg.league_id;});"
+        "if(!liveLeagues.length){return {handled:false};}"
+        "await fetch('/api/portfolio/refresh',{method:'POST',headers:{'Content-Type':'application/json'},"
+        "body:JSON.stringify({account_id:accountId,leagues:liveLeagues})});"
+        "return {handled:false};"
+        "}"
+        "const response=await fetch('/api/portfolio/refresh',{method:'POST',headers:{'Content-Type':'application/json'},"
+        "body:JSON.stringify({account_id:accountId,keys:keys})});"
+        "if(!response.ok){throw new Error('Portfolio refresh failed: '+response.status);}"
+        "return await response.json();"
+        "};"
+        "})();</script>"
+    )
+
     # ── League list - standings-table ─────────────────────────────────────
     league_rows = ""
     # Every card in an account shell came from durable membership and can be
@@ -29616,14 +29644,14 @@ def build_portfolio_body(
         )
 
         league_rows += (
-            f"<div class='pf-lg-card' data-lg-key='{plat}:{lid}' data-favorite='{'true' if lg.get('is_favorite') else 'false'}' data-platform='{html.escape(str(plat), quote=True)}' data-league-id='{html.escape(str(lid), quote=True)}' data-season='{card_season}'>"
+            f"<div class='pf-lg-card' data-summary-card data-lg-key='{plat}:{lid}' data-favorite='{'true' if lg.get('is_favorite') else 'false'}' data-platform='{html.escape(str(plat), quote=True)}' data-league-id='{html.escape(str(lid), quote=True)}' data-season='{card_season}'>"
             f"<div class='pf-lg-top'>"
             f"<span class='pf-lg-crest' style='background:{_crest_hue};'>{_ini}</span>"
             f"{_lg_id(name_link, plat, off_note, '', lg.get('team_name') or '')}"
             f"{_lg_tools(bool(lg.get('is_favorite')), _unlink_btn(plat, lid, card_season))}"
             f"</div>"
             f"{live_slot}"
-            f"<div class='pf-lg-stats'>"
+            f"<div class='pf-lg-stats' data-summary-stats>"
             f"<span class='pf-lg-stat'><span class='pf-lg-v {rec_cls2}'>{rec}</span>"
             f"<span class='pf-lg-l'>Record</span></span>"
             f"<span class='pf-lg-stat' title='Regular-season standings: wins, then points for'>"
@@ -29632,7 +29660,8 @@ def build_portfolio_body(
             f"<span class='pf-lg-l'>Streak</span></span>"
             f"</div>"
             f"{strength_html}"
-            f"<div class='pf-lg-foot'>{arch_badge}<a href='{href}' class='pf-lg-open'>Open &rarr;</a></div>"
+            f"<div class='pf-lg-foot'>{arch_badge}<span class='pf-lg-l' data-summary-updated></span>"
+            f"<button type='button' data-summary-retry hidden>Retry</button><a href='{href}' class='pf-lg-open'>Open &rarr;</a></div>"
             f"</div>"
         )
 
@@ -29844,158 +29873,9 @@ def build_portfolio_body(
         "if(prev)prev.addEventListener('click',function(){if(page>0){page--;render();}});"
         "if(next)next.addEventListener('click',function(){page++;render();});"
         "render();})();</script>"
-        # Summary hydration is separate from matchup hydration: a perfectly
-        # normal live:false response must not leave record/standing placeholders.
-        # A generation controller makes soft navigation/back-forward harmless.
-        "<script>(function(){"
-        "if(window.__pfSummaryInit)return;"
-        "window.__pfSummaryInit=true;"
-        "if(window.__pfSummaryAbort){try{window.__pfSummaryAbort.abort();}catch(e){}}"
-        "var ctl=typeof AbortController!=='undefined'?new AbortController():null;window.__pfSummaryAbort=ctl;"
-        "var cards=[].slice.call(document.querySelectorAll('[data-summary-card]')),active=0,MAX=2,q=[];"
-        "function esc(s){var d=document.createElement('div');d.textContent=s==null?'':s;return d.innerHTML;}"
-        "function when(s){try{return new Date(s).toLocaleString();}catch(e){return s||'';}}"
-        "function render(c,d){var stats=c.querySelector('[data-summary-stats]'),up=c.querySelector('[data-summary-updated]'),retry=c.querySelector('[data-summary-retry]');"
-        "if(!stats)return;if(d&&(d.state==='ready'||d.state==='partial')){stats.innerHTML='<span class=\"pf-lg-stat\"><span class=\"pf-lg-v\">'+esc(d.record)+'</span><span class=\"pf-lg-l\">Record</span></span>'"
-        "+'<span class=\"pf-lg-stat\"><span class=\"pf-lg-v\">'+esc(d.rank)+' <small>/ '+esc(d.total_teams)+'</small></span><span class=\"pf-lg-l\">Standing</span></span>'"
-        "+'<span class=\"pf-lg-stat\"><span class=\"pf-lg-v\" data-summary-streak>...</span><span class=\"pf-lg-l\">Streak</span></span>';"
-        "var streak=c.querySelector('[data-summary-streak]'),positions=c.querySelector('[data-summary-positions]'),sec=d.sections||{};if(streak)streak.textContent=(d.streak||[]).join(' ')||(sec.streak&&sec.streak.status==='unavailable'?'-':'...');if(positions){var pr=d.pos_user_rank||{};positions.textContent=['QB','RB','WR','TE'].map(function(p){return p+' '+(pr[p]?'#'+pr[p]:(sec.position_rankings&&sec.position_rankings.status==='unavailable'?'-':'...'));}).join(' | ');}"
-        "if(d.team_name){var id=c.querySelector('.pf-lg-id'),meta=id&&id.querySelector('.pf-lg-meta');if(id&&!meta){meta=document.createElement('div');meta.className='pf-lg-meta';id.appendChild(meta);}if(meta)meta.innerHTML='<span class=\"pf-lg-team\">'+esc(d.team_name)+'</span>';}"
-        "if(up)up.textContent=(d.stale?'Last good data, refreshing: ':'Updated ')+when(d.last_successful_sync_at||d.refreshed_at);if(retry)retry.hidden=true;return;}"
-        "var msg=(d&&d.message)||'Summary unavailable. Retry.';stats.innerHTML='<span class=\"pf-lg-l\">'+esc(msg)+'</span>';"
-        "if(up)up.textContent=d&&d.state==='reconnect_required'?'Reconnect required':'Update failed';if(retry)retry.hidden=false;}"
-        "window.__pfRenderSummary=render;"
-        "var retryTimers=[];function alive(){return (!ctl||!ctl.signal.aborted)&&location.pathname==='/portfolio'&&document.querySelector('.pf-lg-grid')!==null;}"
-        "function delay(c,ms){var t=setTimeout(function(){retryTimers=retryTimers.filter(function(x){return x!==t;});if(alive()&&c.isConnected){q.push(c);prioritize();pump();}},ms);retryTimers.push(t);}"
-        "function prioritize(){q.sort(function(a,b){var af=a.dataset.favorite==='true',bf=b.dataset.favorite==='true';var av=a.style.display!=='none',bv=b.style.display!=='none';return (bf-af)||(bv-av);});}"
-        "function load(c){if(c._summaryLoading)return;if(!alive())return;c._summaryLoading=true;active++;var p=c.dataset.platform,l=c.dataset.leagueId,s=c.dataset.season;"
-        "var u='/api/portfolio/card?platform='+encodeURIComponent(p)+'&league_id='+encodeURIComponent(l)+'&season='+encodeURIComponent(s);"
-        "window.brFetchWithTimeout(u,{cache:'no-store',credentials:'same-origin',headers:{'Cache-Control':'no-store'},signal:ctl?ctl.signal:undefined},25000)"
-        ".then(function(r){return r.json().then(function(d){if(!r.ok)throw d;return d;});})"
-        ".then(function(d){if(!alive())return;var summary=d.summary||((d.record||d.state==='partial')?d:null);if(summary)render(c,summary);var slot=c.querySelector('[data-lg-live]');if(slot&&window.__pfRenderMatchup)window.__pfRenderMatchup(slot,d.matchup||{pending:d.pending});"
-        "if(d.pending){c._pfAttempt=(c._pfAttempt||0)+1;if(c._pfAttempt<6)delay(c,Math.max(d.retry_after_ms||0,[3000,6000,10000,15000,25000][Math.min(c._pfAttempt-1,4)]));else if(slot&&window.__pfRenderMatchup)window.__pfRenderMatchup(slot,{failed:true});}else c._pfAttempt=0;})"
-        ".catch(function(e){if(!alive())return;c._pfAttempt=(c._pfAttempt||0)+1;var slot=c.querySelector('[data-lg-live]');if(c._pfAttempt<5)delay(c,[3000,6000,10000,15000][Math.min(c._pfAttempt-1,3)]);else{render(c,{message:'Summary temporarily unavailable.'});if(slot&&window.__pfRenderMatchup)window.__pfRenderMatchup(slot,{failed:true});}})"
-        ".finally(function(){c._summaryLoading=false;active--;pump();});}"
-        "function pump(){if(!alive())return;while(active<MAX&&q.length)load(q.shift());if(active===0&&!q.length){window.dispatchEvent(new CustomEvent('br:portfolio-primary-settled'));}}"
-        "window.__pfQueueCard=function(c,front){if(!c||!c.isConnected)return;c._pfAttempt=0;if(q.indexOf(c)<0)front?q.unshift(c):q.push(c);prioritize();pump();};"
-        "cards=[].slice.call(document.querySelectorAll('.pf-lg-card[data-platform][data-league-id]'));q=cards.slice();prioritize();setTimeout(pump,0);"
-        "document.addEventListener('click',function(e){var b=e.target.closest&&e.target.closest('[data-summary-retry],[data-matchup-retry]');if(!b)return;var c=b.closest('.pf-lg-card');if(c){b.hidden=true;c._summaryAttempt=0;q.unshift(c);c._pfAttempt=0;prioritize();pump();}},{signal:ctl?ctl.signal:undefined});"
-        "function stop(){if(ctl)ctl.abort();retryTimers.forEach(clearTimeout);retryTimers=[];q=[];}window.addEventListener('pagehide',stop,{once:true});"
-        "})();</script>"
-        # Live-tick draft countdowns on undrafted league cards.
-        "<script>(function(){"
-        "function pad(n){return (n<10?'0':'')+n;}"
-        "function fmt(ms){"
-        "if(ms<=0)return 'Soon';"
-        "var t=Math.floor(ms/1000),d=Math.floor(t/86400),h=Math.floor((t%86400)/3600),"
-        "m=Math.floor((t%3600)/60),s=t%60;"
-        "var clock=pad(h)+':'+pad(m)+':'+pad(s);"
-        "return d>0?(d+'d '+clock):clock;}"
-        "function tick(){"
-        "document.querySelectorAll('.pf-draft-cd[data-draft-ts]').forEach(function(el){"
-        "if(el.getAttribute('data-draft-phase')==='drafting')return;"
-        "var ts=parseInt(el.getAttribute('data-draft-ts')||'0',10);"
-        "if(!ts)return;"
-        "el.textContent=fmt(ts-Date.now());"
-        "var when=el.parentNode&&el.parentNode.querySelector('.pf-draft-when');"
-        "if(when)when.textContent=new Date(ts).toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});"
-        "});}"
-        "tick();setInterval(tick,1000);})();</script>"
-        # Live matchup scores: hydrate each league card client-side and lazily so
-        # one slow provider never blocks the page. Only in-progress matchups
-        # refresh, and only while the tab is visible.
-        "<script>(function(){"
-        "if(window.__pfLiveTimer)clearInterval(window.__pfLiveTimer);"
-        "var slots=[].slice.call(document.querySelectorAll('[data-lg-live]'));if(!slots.length)return;"
-        "function esc(s){var d=document.createElement('div');d.textContent=(s==null?'':s);return d.innerHTML;}"
-        "function fmt(n,digits){digits=digits==null?1:digits;var scale=Math.pow(10,digits);return (Math.round((n||0)*scale)/scale).toFixed(digits);}"
-        "function side(t,lbl,isOpp,win,showProj){"
-        "var cls='pf-live-side'+(isOpp?' opp':'')+(win?' win':'');"
-        "if(!t)return '<div class=\"'+cls+'\"><div class=\"pf-live-lbl\">'+esc(lbl)+'</div>'"
-        "+'<div class=\"pf-live-score\">-</div></div>';"
-        "return '<div class=\"'+cls+'\"><div class=\"pf-live-lbl\">'+esc(lbl)+'</div>'"
-        "+'<div class=\"pf-live-score\">'+fmt(t.score,showProj===false?2:1)+'</div>'"
-        "+(showProj!==false?'<div class=\"pf-live-proj\">proj '+fmt(t.proj)+'</div>':'')+'</div>';}"
-        "function wpBar(d){"
-        # No bar without an opponent, or once the result is settled (the scores
-        # say it). Otherwise your chance fills from the left, opponent's remains.
-        "if(!d.opp||d.status==='final'||d.win_prob==null)return '';"
-        "var y=Math.max(0,Math.min(100,Math.round(d.win_prob))),o=100-y;"
-        "return '<div class=\"pf-live-wp\" title=\"Win probability\">'"
-        "+'<div class=\"pf-live-wp-track\"><div class=\"pf-live-wp-fill\" style=\"width:'+y+'%\"></div></div>'"
-        "+'<div class=\"pf-live-wp-lbls\"><span class=\"pf-live-wp-you\">'+y+'% to win</span>'"
-        "+'<span class=\"pf-live-wp-opp\">'+o+'%</span></div></div>';}"
-        "function render(slot,d){"
-        "if(!d||!d.live||!d.you){slot._isLive=false;if(d&&d.pending){slot.hidden=false;slot.setAttribute('aria-busy','true');return;}if(d&&d.failed){slot.hidden=false;slot.removeAttribute('aria-busy');slot.innerHTML='<div class=\"pf-live-unavailable\">Matchup temporarily unavailable <button type=\"button\" data-matchup-retry>Retry</button></div>';return;}slot.hidden=true;slot.innerHTML='';slot.removeAttribute('aria-busy');return;}"
-        "var st=d.status||'pre';slot._isLive=st==='in';if(slot._isLive&&LIVE.indexOf(slot)<0)LIVE.push(slot);"
-        "var txt=st==='in'?'Live \\u00b7 Wk '+d.week:(st==='final'?(d.result!=null?'FINAL':'Final \\u00b7 Wk '+d.week):('Wk '+d.week));"
-        "var you=d.you,opp=d.opp;"
-        "var yWin=opp?(you.score>opp.score):false,oWin=opp?(opp.score>you.score):false;"
-        "var isFinal=st==='final';"
-        "var html='<div class=\"pf-live-status'+(st==='in'?' is-live':'')+'\">'"
-        "+'<span class=\"pf-live-dot\"></span>'+esc(txt)+'</div>'"
-        "+'<div class=\"pf-live-grid\">'+side(you,'You',false,yWin,!isFinal)"
-        "+side(opp,opp?(opp.name||'Opp'):'Bye',true,oWin,!isFinal)+'</div>';"
-        "if(isFinal&&opp){var res=d.result||'T';var margin=fmt(d.margin||0,2);var resTxt=res==='W'?'WON BY '+margin:(res==='L'?'LOST BY '+margin:'TIED');"
-        "html+='<div class=\"pf-live-result\">'+esc(resTxt)+'</div>';}"
-        "else if(!isFinal){html+=wpBar(d);}"
-        "slot.innerHTML=html;slot.removeAttribute('aria-busy');slot.hidden=false;}"
-        "function load(slot){var c=slot&&slot.closest('.pf-lg-card');if(c&&window.__pfQueueCard)window.__pfQueueCard(c,true);return Promise.resolve();}"
-        "window.__pfLoadMatchup=load;window.__pfRenderMatchup=render;"
-        "var i=0,LIVE=[];slots.sort(function(a,b){var ac=a.closest('.pf-lg-card'),bc=b.closest('.pf-lg-card');"
-        "var af=ac&&ac.getAttribute('data-favorite')==='true',bf=bc&&bc.getAttribute('data-favorite')==='true';"
-        "var av=a.getBoundingClientRect().top<innerHeight,bv=b.getBoundingClientRect().top<innerHeight;return (bf-af)||(bv-av);});"
-        "function pump(){if(i>=slots.length)return;var slot=slots[i++];"
-        "load(slot).then(function(d){if(d&&d.live&&d.status==='in')LIVE.push(slot);pump();});}"
-        "/* Initial hydration is owned by the shared two-request card queue; the former slot._mAttempt is now card-scoped. */"
-        "window.__pfLiveTimer=setInterval(function(){if(document.hidden||!LIVE.length)return;LIVE=LIVE.filter(function(s){return s._isLive&&s.isConnected;});LIVE.forEach(load);},45000);"
-        "})();</script>"
-        # Page-specific Refresh Data contract. It updates mounted, paginator-
-        # visible cards in place and never fetches/reloads the Portfolio HTML.
-        "<script>(function(){window.brRefreshCurrentPage=async function(owner){if(location.pathname!=='/portfolio')return {handled:false};"
-        "var signal=owner&&owner.signal;if(window.__pfSummaryAbort)window.__pfSummaryAbort.abort();"
-        "if(window.__pfLiveTimer){clearInterval(window.__pfLiveTimer);window.__pfLiveTimer=null;}"
-        "var cards=[].slice.call(document.querySelectorAll('[data-summary-card]')).filter(function(c){return c.isConnected&&c.style.display!=='none';});"
-        "var keys=cards.map(function(c){return {platform:c.dataset.platform,league_id:c.dataset.leagueId,season:parseInt(c.dataset.season,10)};});"
-        "var success=0,failed=0,stamp=null;try{"
-        # No in-place-refreshable summary cards means every visible league is a
-        # warm, server-rendered card (which has no data-summary-card hooks and so
-        # cannot update in place) -- or the list is genuinely empty. Warm cards
-        # still need a way to refresh: rebuild every drafted league from its live
-        # slot (which carries platform/league/season on warm and cold cards
-        # alike), then hand off to doRefresh's full page refresh so the rebuilt
-        # data actually renders. The old silent no-op here made the Refresh
-        # button look dead whenever the portfolio was already warm.
-        "if(!keys.length){"
-        "var xs=[].slice.call(document.querySelectorAll('.pf-lg-card [data-lg-live]'))"
-        ".filter(function(s){var c=s.closest('.pf-lg-card');return c&&c.isConnected&&c.style.display!=='none';})"
-        ".map(function(s){return {platform:s.dataset.platform,league_id:s.dataset.leagueId,season:parseInt(s.dataset.season,10)};})"
-        ".filter(function(k){return k.platform&&k.league_id&&k.season;});"
-        "if(!xs.length)return {handled:false};"
-        "for(var xo=0;xo<xs.length;xo+=4){"
-        "try{await window.brFetchWithTimeout('/api/portfolio/refresh',{method:'POST',cache:'no-store',credentials:'same-origin',"
-        "headers:{'Content-Type':'application/json','Cache-Control':'no-store'},body:JSON.stringify({leagues:xs.slice(xo,xo+4)}),signal:signal},30000);}"
-        "catch(e){}}"
-        "return {handled:false};}"
-        # /api/portfolio/refresh caps each batch at 4 leagues; chunk so accounts
-        # with more visible cards refresh all of them instead of a blanket 400.
-        "var CHUNK=4;var results=new Array(cards.length);"
-        "for(var off=0;off<keys.length;off+=CHUNK){var batchKeys=keys.slice(off,off+CHUNK);if(!batchKeys.length)break;"
-        "var response=await window.brFetchWithTimeout('/api/portfolio/refresh',{method:'POST',cache:'no-store',credentials:'same-origin',"
-        "headers:{'Content-Type':'application/json','Cache-Control':'no-store'},body:JSON.stringify({leagues:batchKeys}),signal:signal},30000);"
-        "var payload=await response.json();var batchResults=payload.results||[];"
-        "for(var j=0;j<batchKeys.length;j++)results[off+j]=batchResults[j];"
-        "if(payload.refreshed_at&&(!stamp||payload.refreshed_at>stamp))stamp=payload.refreshed_at;}"
-        "cards.forEach(function(c,i){var r=results[i]||{};if(r.ok&&r.summary){success++;if(window.__pfRenderSummary)window.__pfRenderSummary(c,r.summary);}"
-        "else{failed++;var retry=c.querySelector('[data-summary-retry]');if(retry)retry.hidden=false;}});"
-        "var jobs=cards.map(function(c){return function(){var slot=c.querySelector('[data-lg-live]');if(!slot)return Promise.resolve();"
-        "var u='/api/portfolio/card?platform='+encodeURIComponent(c.dataset.platform)+'&league_id='+encodeURIComponent(c.dataset.leagueId)+'&season='+encodeURIComponent(c.dataset.season);"
-        "return window.brFetchWithTimeout(u,{cache:'no-store',credentials:'same-origin',headers:{'Cache-Control':'no-store'},signal:signal},25000)"
-        ".then(function(r){return r.ok?r.json():null;}).then(function(d){if(!signal||!signal.aborted){if(window.__pfRenderMatchup)window.__pfRenderMatchup(slot,d);}}).catch(function(e){if(e&&e.name==='AbortError')throw e;});};});"
-        "var cursor=0;async function worker(){while(cursor<jobs.length){var job=jobs[cursor++];await job();}}await Promise.all([worker(),worker()]);"
-        "return {success:success>0&&failed===0,partial:success>0&&failed>0,refreshedAt:stamp,failures:failed};"
-        "}finally{cards.forEach(function(c){c._summaryLoading=false;});if(window.__pfLiveTimer)clearInterval(window.__pfLiveTimer);"
-        "window.__pfLiveTimer=setInterval(function(){if(document.hidden||!window.__pfLoadMatchup)return;document.querySelectorAll('[data-lg-live]').forEach(function(s){var c=s.closest('.pf-lg-card');if(c&&c.style.display!=='none')window.__pfLoadMatchup(s);});},45000);}};})();</script>"
+        # One page-scoped owner manages hydration, refresh, polling and cleanup.
+        "<script>/* Portfolio cards are started by initPageRoot after deferred helpers load. */</script>"
+        # Matchup hydration is part of the consolidated card lifecycle above.
     )
 
     # ── Positional strength ───────────────────────────────────────────────
@@ -30193,7 +30073,8 @@ def build_portfolio_body(
         insights = ("<section data-portfolio-cross-league>" + insights_label
                     + insight_top + bottom_row + "</section>")
     return (css + '<div style="max-width:1040px;margin:0 auto;">'
-            + top_strip + moves_card + league_card + insights + '</div>')
+            + top_strip + moves_card + league_card + insights + '</div>'
+            + refresh_handler_script)
 
 
 # build_scout_body / _week_proj_points live in dashboard_services/pages/scout_page.py

@@ -1233,7 +1233,7 @@ def api_portfolio_matchup():
     # checking only "regular" here never matched in-season and hid every matchup
     # card. Accept both the normalized "reg" and the raw "regular" defensively.
     if str(nfl_state.get("season_type") or "").lower() not in ("reg", "regular", "post"):
-        return jsonify({"live": False, "reason": "season_type"})
+        return jsonify({"live": False, "applicable": False, "reason": "season_type"})
     try:
         default_season = int(nfl_state.get("season") or datetime.now().year)
         season = int(request.args.get("season") or default_season)
@@ -1241,7 +1241,7 @@ def api_portfolio_matchup():
     except (TypeError, ValueError):
         return jsonify({"live": False})
     if week < 1:
-        return jsonify({"live": False, "reason": "week"})
+        return jsonify({"live": False, "applicable": False, "reason": "week"})
 
     try:
         ctx = getattr(g, "portfolio_card_ctx", None)
@@ -1249,7 +1249,7 @@ def api_portfolio_matchup():
             ctx = get_league_ctx_from_cache(platform, league_id, season, allow_build=False)
     except Exception:
         logger.debug("[portfolio-matchup] ctx load failed", exc_info=True)
-        return jsonify({"live": False})
+        return jsonify({"live": False, "state": "error", "message": "Matchup temporarily unavailable"})
     if not ctx:
         # Cold cache: a background warm was kicked. Do not block the request on a
         # cold build (the card's fetch aborts long before it finishes). Tell the
@@ -1257,7 +1257,7 @@ def api_portfolio_matchup():
         return jsonify({"live": False, "state": "pending", "pending": True,
                         "retry_after_ms": 3000})
     if ctx.get("offseason_mode"):
-        return jsonify({"live": False, "reason": "offseason"})
+        return jsonify({"live": False, "applicable": False, "reason": "offseason"})
 
     # Which roster is "yours". For a Google-account viewer the team is linked via
     # the account, not a Sleeper session identity, so the session-based
@@ -1278,7 +1278,7 @@ def api_portfolio_matchup():
     if not viewer_rid:
         viewer_rid = str((ctx.get("viewer") or {}).get("viewer_roster_id") or "")
     if not viewer_rid:
-        return jsonify({"live": False, "reason": "no_viewer"})
+        return jsonify({"live": False, "applicable": False, "reason": "no_viewer"})
 
     from zoneinfo import ZoneInfo
     today = datetime.now(ZoneInfo("America/New_York")).date()
@@ -1304,7 +1304,7 @@ def api_portfolio_matchup():
         )
     except Exception:
         logger.debug("[portfolio-matchup] live build failed", exc_info=True)
-        return jsonify({"live": False, "reason": "build_failed"})
+        return jsonify({"live": False, "state": "error", "message": "Matchup temporarily unavailable", "reason": "build_failed"})
 
     # Find the viewer's matchup and orient "you" / "opp".
     you = opp = None
@@ -1319,7 +1319,7 @@ def api_portfolio_matchup():
             break
     if not you:
         return jsonify({
-            "live": False, "reason": "no_matchup",
+            "live": False, "applicable": False, "reason": "no_matchup",
             "debug": {"week": week, "viewer_rid": viewer_rid, "matchups": len(matchups)},
         })
 

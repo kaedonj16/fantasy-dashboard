@@ -67,13 +67,14 @@ def test_positional_strength_card_renders_percentiles_not_signed_deltas():
 
 def test_undrafted_league_cards_show_draft_countdown():
     fn = _portfolio_fn()
+    client = (ROOT / "static" / "app.js").read_text()
     assert "pf-draft-cd" in fn
     assert "data-draft-ts" in fn
     assert "draft_countdown_copy" in fn
     assert "Join Draft Room →" in fn
     assert "Mock draft →" in fn or "Mock draft &rarr;" in fn
     assert "draft_countdown_copy" in fn
-    assert "setInterval(tick,1000)" in fn
+    assert "owner.countdownTimer = setInterval(tick, 1000)" in client
     # Positional rank chips must not be the predraft card body.
     pending = fn.split("if lg.get(\"pending\")")[1].split("if lg.get(\"error\")")[0]
     assert "rank_chips" not in pending
@@ -183,7 +184,8 @@ def test_my_leagues_does_not_poll_and_reload_the_whole_page():
     assert "},5000);" not in fn
     # Existing summary cards stay mounted while their local payload hydrates.
     assert "data-summary-card" in fn
-    assert "if(c._summaryLoading)return" in fn
+    client = (ROOT / "static" / "app.js").read_text()
+    assert "owner.queued.has(key) || owner.inflight.has(key)" in client
     # Live score polling remains isolated to live slots and is non-destructive.
-    assert "window.__pfLiveTimer=setInterval" in fn
-    assert "if(document.hidden||!LIVE.length)return" in fn
+    assert "owner.pollTimer = setInterval" in client
+    assert "if (!owner.alive() || document.hidden) return" in client

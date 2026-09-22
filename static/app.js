@@ -10236,6 +10236,11 @@ window.initPageRoot = function initPageRoot(root = document) {
   initTeamTabs(root);
   initStandingsSort(root);
   normalizeClickableAccessibility(root);
+  // The Portfolio markup is parsed before this deferred bundle on a full load;
+  // starting here also gives soft navigation/back-forward exactly one owner.
+  if (typeof window.brInitPortfolioCards === 'function' && root.querySelector('.pf-lg-grid')) {
+    window.brInitPortfolioCards();
+  }
 
   // Enhance native <select>s (e.g. the player-rankings "Sort by" / "ADP source")
   // into the custom dropdown. initCustomSelects only auto-ran on DOMContentLoaded,
@@ -21784,3 +21789,262 @@ window._rzStubPbpEvents = function(pid, state) {
     if (window.brRefreshVisibleMatchupLive) window.brRefreshVisibleMatchupLive(document);
   }, 20000);
 }());
+
+/* Portfolio cards: one generation owns requests, retries, polling and listeners. */
+(function () {
+  'use strict';
+  var current = null;
+  var generation = 0;
+  var MAX_REQUESTS = 2;
+  var RETRY_DELAYS = [3000, 6000, 10000, 15000, 25000];
+
+  function escapeHtml(value) {
+    var node = document.createElement('div');
+    node.textContent = value == null ? '' : String(value);
+    return node.innerHTML;
+  }
+  function identity(card) {
+    return [card.dataset.platform || '', card.dataset.leagueId || '', card.dataset.season || ''].join(':');
+  }
+  function displayed(card) { return card.isConnected && card.style.display !== 'none'; }
+  function number(value, digits) {
+    var n = Number(value);
+    if (!Number.isFinite(n)) return '-';
+    return n.toFixed(digits == null ? 1 : digits);
+  }
+  function stateNote(slot, text, kind) {
+    var note = slot.querySelector('[data-matchup-state]');
+    if (!note) { note = document.createElement('div'); note.setAttribute('data-matchup-state', ''); slot.appendChild(note); }
+    note.className = 'pf-live-unavailable pf-live-state-' + kind;
+    note.textContent = text;
+  }
+  function renderSummary(card, data) {
+    if (!data) return false;
+    var stats = card.querySelector('[data-summary-stats]');
+    if (!stats) return false;
+    var retry = card.querySelector('[data-summary-retry]');
+    var updated = card.querySelector('[data-summary-updated]');
+    if (data.state === 'ready' || data.state === 'partial' || data.record != null) {
+      var rank = data.rank == null ? '-' : data.rank;
+      var teams = data.total_teams == null ? '-' : data.total_teams;
+      stats.innerHTML = '<span class="pf-lg-stat"><span class="pf-lg-v">' + escapeHtml(data.record == null ? '-' : data.record) + '</span><span class="pf-lg-l">Record</span></span>' +
+        '<span class="pf-lg-stat"><span class="pf-lg-v">' + escapeHtml(rank) + ' <small>/ ' + escapeHtml(teams) + '</small></span><span class="pf-lg-l">Standing</span></span>' +
+        '<span class="pf-lg-stat"><span class="pf-lg-v">' + escapeHtml((data.streak || []).join(' ') || '-') + '</span><span class="pf-lg-l">Streak</span></span>';
+      var stamp = data.last_successful_sync_at || data.refreshed_at;
+      if (updated && stamp) updated.textContent = (data.stale ? 'Last good data · ' : 'Updated ') + new Date(stamp).toLocaleString();
+      if (retry) retry.hidden = true;
+      card.dataset.summaryGood = 'true';
+      return true;
+    }
+    if (card.dataset.summaryGood !== 'true') stats.innerHTML = '<span class="pf-lg-l">' + escapeHtml(data.message || 'Summary unavailable. Retry.') + '</span>';
+    if (retry) retry.hidden = false;
+    return false;
+  }
+  function matchupHtml(data) {
+    var you = data.you, opp = data.opp, status = data.status || 'pre';
+    var label = status === 'in' ? 'Live · Wk ' + escapeHtml(data.week) : (status === 'final' ? 'Final · Wk ' + escapeHtml(data.week) : 'Wk ' + escapeHtml(data.week));
+    function side(team, name, opposite) {
+      return '<div class="pf-live-side' + (opposite ? ' opp' : '') + '"><div class="pf-live-lbl">' + escapeHtml(name) + '</div><div class="pf-live-score">' + (team ? number(team.score, status === 'final' ? 2 : 1) : '-') + '</div>' + (team && status !== 'final' ? '<div class="pf-live-proj">proj ' + number(team.proj, 1) + '</div>' : '') + '</div>';
+    }
+    var extra = '';
+    if (status === 'final' && opp) {
+      var result = data.result || 'T', margin = number(data.margin, 2);
+      extra = '<div class="pf-live-result">' + escapeHtml(result === 'W' ? 'WON BY ' + margin : (result === 'L' ? 'LOST BY ' + margin : 'TIED')) + '</div>';
+    } else if (opp && data.win_prob != null) {
+      var chance = Math.max(0, Math.min(100, Math.round(Number(data.win_prob))));
+      extra = '<div class="pf-live-wp" title="Win probability"><div class="pf-live-wp-track"><div class="pf-live-wp-fill" style="width:' + chance + '%"></div></div><div class="pf-live-wp-lbls"><span>' + chance + '% to win</span><span>' + (100 - chance) + '%</span></div></div>';
+    }
+    return '<div class="pf-live-status' + (status === 'in' ? ' is-live' : '') + '"><span class="pf-live-dot"></span>' + label + '</div><div class="pf-live-grid">' + side(you, 'You', false) + side(opp, opp ? (opp.name || 'Opp') : 'Bye', true) + '</div>' + extra;
+  }
+  function renderMatchup(slot, data) {
+    if (!slot || !data) return false;
+    if (data.pending) {
+      slot.hidden = false; slot.setAttribute('aria-busy', 'true');
+      if (slot.dataset.matchupGood === 'true') stateNote(slot, 'Updating matchup…', 'stale');
+      return false;
+    }
+    if (data.failed || data.state === 'error' || data.state === 'unavailable' && data.applicable !== false) {
+      slot.hidden = false; slot.removeAttribute('aria-busy');
+      if (slot.dataset.matchupGood === 'true') stateNote(slot, data.message || 'Matchup update failed · showing last score', 'stale');
+      else slot.innerHTML = '<div class="pf-live-unavailable">' + escapeHtml(data.message || 'Matchup temporarily unavailable') + ' <button type="button" data-matchup-retry>Retry</button></div>';
+      return false;
+    }
+    if (data.applicable === false) {
+      slot.hidden = true; slot.removeAttribute('aria-busy'); slot.dataset.matchupGood = 'false';
+      return true;
+    }
+    if (!data.live || !data.you) {
+      slot.hidden = false; slot.removeAttribute('aria-busy');
+      if (slot.dataset.matchupGood === 'true') stateNote(slot, 'Matchup response incomplete · showing last score', 'stale');
+      return false;
+    }
+    slot.innerHTML = matchupHtml(data); slot.hidden = false; slot.removeAttribute('aria-busy');
+    slot.dataset.matchupGood = 'true'; slot._isLive = data.status === 'in';
+    return true;
+  }
+
+  function destroy(owner) {
+    if (!owner || owner.dead) return;
+    owner.dead = true;
+    if (owner.controller) owner.controller.abort();
+    owner.timers.forEach(clearTimeout); owner.timers.clear();
+    if (owner.pollTimer) clearInterval(owner.pollTimer);
+    if (owner.countdownTimer) clearInterval(owner.countdownTimer);
+    owner.queue.length = 0; owner.queued.clear();
+    if (window.brRefreshCurrentPage === owner.refresh) delete window.brRefreshCurrentPage;
+  }
+  function createOwner(root) {
+    var owner = { id: ++generation, root: root, dead: false, controller: typeof AbortController === 'undefined' ? null : new AbortController(), timers: new Set(), queue: [], queued: new Set(), inflight: new Set(), active: 0, pollTimer: null, countdownTimer: null };
+    owner.alive = function () { return !owner.dead && current === owner && location.pathname === '/portfolio' && owner.root.isConnected; };
+    owner.cards = function (visibleOnly) { return Array.prototype.slice.call(owner.root.querySelectorAll('.pf-lg-card[data-summary-card][data-platform][data-league-id][data-season]')).filter(function (c) { return !visibleOnly || displayed(c); }); };
+    return owner;
+  }
+  function schedule(owner, card, delay, reset, tracker) {
+    if (!owner.alive() || !card || !card.isConnected) return;
+    var key = identity(card);
+    if (reset) card._pfAttempts = 0;
+    function add() {
+      if (!owner.alive() || !card.isConnected || owner.queued.has(key) || owner.inflight.has(key)) return;
+      owner.queued.add(key); owner.queue.push({ card: card, tracker: tracker });
+      owner.queue.sort(function (a, b) { return Number(displayed(b.card)) - Number(displayed(a.card)) || Number(b.card.dataset.favorite === 'true') - Number(a.card.dataset.favorite === 'true'); });
+      pump(owner);
+    }
+    if (!delay) return add();
+    var timer = setTimeout(function () { owner.timers.delete(timer); add(); }, delay);
+    owner.timers.add(timer);
+  }
+  function applyCard(owner, card, payload) {
+    if (!owner.alive() || !card.isConnected) return { summary: false, matchup: false, pending: false };
+    var summaryOK = payload.summary ? renderSummary(card, payload.summary) : false;
+    var slot = card.querySelector('[data-lg-live]');
+    var matchupOK = slot ? renderMatchup(slot, payload.matchup || (payload.pending ? { pending: true } : { failed: true })) : true;
+    return { summary: summaryOK, matchup: matchupOK, pending: !!(payload.pending || payload.matchup && payload.matchup.pending) };
+  }
+  function requestCard(owner, item) {
+    var card = item.card, key = identity(card), signal = owner.controller && owner.controller.signal;
+    owner.queued.delete(key); owner.inflight.add(key); owner.active++;
+    var url = '/api/portfolio/card?platform=' + encodeURIComponent(card.dataset.platform) + '&league_id=' + encodeURIComponent(card.dataset.leagueId) + '&season=' + encodeURIComponent(card.dataset.season);
+    var fetcher = window.brFetchWithTimeout || window.fetch;
+    return fetcher(url, { cache: 'no-store', credentials: 'same-origin', headers: { 'Cache-Control': 'no-store' }, signal: signal }, 25000).then(function (response) {
+      return response.json().catch(function () { return {}; }).then(function (body) { if (!response.ok) { var err = new Error(body.message || 'Card request failed (' + response.status + ')'); err.payload = body; throw err; } return body; });
+    }).then(function (body) {
+      if (!owner.alive()) return;
+      var result = applyCard(owner, card, body);
+      if (item.tracker) item.tracker(result);
+      if (result.pending) {
+        card._pfAttempts = (card._pfAttempts || 0) + 1;
+        if (card._pfAttempts <= RETRY_DELAYS.length) schedule(owner, card, Math.max(body.retry_after_ms || 0, RETRY_DELAYS[card._pfAttempts - 1]));
+      } else card._pfAttempts = 0;
+    }).catch(function (error) {
+      if (!owner.alive() || error && error.name === 'AbortError') return;
+      var payload = error.payload || { state: 'error', message: error.message };
+      if (payload.state === 'unavailable' && /sign in/i.test(payload.message || '')) payload.message = 'Session expired. Sign in again.';
+      applyCard(owner, card, { summary: payload, matchup: { failed: true, message: payload.message } });
+      if (item.tracker) item.tracker({ summary: false, matchup: false, pending: false });
+      card._pfAttempts = (card._pfAttempts || 0) + 1;
+      if (card._pfAttempts <= RETRY_DELAYS.length) schedule(owner, card, RETRY_DELAYS[card._pfAttempts - 1]);
+    }).finally(function () {
+      /* A superseded request belongs only to its original owner. */
+      owner.inflight.delete(key); owner.active--;
+      if (owner.alive()) pump(owner);
+    });
+  }
+  function pump(owner) {
+    if (!owner.alive() || document.hidden) return;
+    while (owner.active < MAX_REQUESTS && owner.queue.length) requestCard(owner, owner.queue.shift());
+    if (!owner.active && !owner.queue.length) window.dispatchEvent(new CustomEvent('br:portfolio-primary-settled'));
+  }
+  function startCountdown(owner) {
+    function tick() {
+      owner.root.querySelectorAll('.pf-draft-cd[data-draft-ts]').forEach(function (node) {
+        if (node.dataset.draftPhase === 'drafting') return;
+        var left = Number(node.dataset.draftTs || 0) - Date.now();
+        if (!Number(node.dataset.draftTs || 0)) return;
+        if (left <= 0) { node.textContent = 'Soon'; return; }
+        var total = Math.floor(left / 1000), days = Math.floor(total / 86400), hours = Math.floor(total % 86400 / 3600), minutes = Math.floor(total % 3600 / 60), seconds = total % 60;
+        var pad = function (n) { return n < 10 ? '0' + n : String(n); };
+        node.textContent = (days ? days + 'd ' : '') + pad(hours) + ':' + pad(minutes) + ':' + pad(seconds);
+      });
+    }
+    tick(); owner.countdownTimer = setInterval(tick, 1000);
+  }
+  function startPolling(owner) {
+    if (owner.pollTimer) clearInterval(owner.pollTimer);
+    owner.pollTimer = setInterval(function () {
+      if (!owner.alive() || document.hidden) return;
+      owner.cards(true).forEach(function (card) { var slot = card.querySelector('[data-lg-live]'); if (slot && slot._isLive) schedule(owner, card); });
+    }, 45000);
+  }
+  function replaceGeneration(oldOwner) {
+    var root = oldOwner.root; destroy(oldOwner);
+    var next = createOwner(root); current = next; bind(next); startPolling(next); startCountdown(next); return next;
+  }
+  function postBatch(owner, keys, signal) {
+    var fetcher = window.brFetchWithTimeout || window.fetch;
+    return fetcher('/api/portfolio/refresh', { method: 'POST', cache: 'no-store', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }, body: JSON.stringify({ leagues: keys }), signal: signal }, 30000).then(function (response) {
+      return response.json().catch(function () { return {}; }).then(function (body) { return { ok: response.ok, body: body }; });
+    });
+  }
+  function refresh(ownerArg) {
+    var owner = current;
+    if (!owner || !owner.alive()) return Promise.resolve({ handled: false });
+    owner = replaceGeneration(owner);
+    var externalSignal = ownerArg && ownerArg.signal;
+    if (externalSignal) externalSignal.addEventListener('abort', function () { destroy(owner); }, { once: true });
+    var cards = owner.cards(true), successes = 0, failures = 0, pending = 0, stamp = null;
+    if (!cards.length) return Promise.resolve({ success: false, partial: false, failures: 0 });
+    var keys = cards.map(function (c) { return { platform: c.dataset.platform, league_id: c.dataset.leagueId, season: Number(c.dataset.season) }; });
+    var chain = Promise.resolve();
+    for (var offset = 0; offset < keys.length; offset += 4) (function (at) {
+      chain = chain.then(function () { return postBatch(owner, keys.slice(at, at + 4), owner.controller && owner.controller.signal).then(function (res) {
+        if (!owner.alive()) return;
+        var results = res.body.results || [];
+        cards.slice(at, at + 4).forEach(function (card, index) {
+          var result = results[index] || {};
+          if (result.summary) { renderSummary(card, result.summary); var ts = result.summary.last_successful_sync_at; if (ts && (!stamp || ts > stamp)) stamp = ts; }
+          else if (result.last_good) renderSummary(card, Object.assign({}, result.last_good, { stale: true }));
+          if (!result.ok) failures++;
+        });
+        if (!res.ok && !results.length) failures += Math.min(4, cards.length - at);
+      }); });
+    })(offset);
+    return chain.then(function () {
+      if (!owner.alive()) throw new DOMException('Refresh superseded', 'AbortError');
+      return new Promise(function (resolve) {
+        var remaining = cards.length;
+        cards.forEach(function (card) { schedule(owner, card, 0, true, function (result) {
+          if (result.summary && result.matchup && !result.pending) successes++; else { if (result.pending) pending++; failures++; }
+          if (!--remaining) resolve();
+        }); });
+      });
+    }).then(function () {
+      startPolling(owner);
+      return { success: successes === cards.length && failures === 0, partial: successes > 0 && (failures > 0 || pending > 0), refreshedAt: stamp, failures: failures, pending: pending };
+    }).catch(function (error) {
+      if (error && error.name === 'AbortError') throw error;
+      return { success: false, partial: successes > 0, refreshedAt: stamp, failures: Math.max(1, failures) };
+    });
+  }
+  function bind(owner) {
+    owner.refresh = refresh;
+    window.brRefreshCurrentPage = refresh;
+    window.__pfRenderSummary = renderSummary;
+    window.__pfRenderMatchup = renderMatchup;
+    window.__pfQueueCard = function (card) { schedule(owner, card, 0, true); };
+    document.addEventListener('click', function (event) {
+      var button = event.target.closest && event.target.closest('[data-summary-retry],[data-matchup-retry]');
+      if (!button || !owner.alive() || !owner.root.contains(button)) return;
+      button.hidden = true; schedule(owner, button.closest('.pf-lg-card'), 0, true);
+    }, owner.controller ? { signal: owner.controller.signal } : false);
+    document.addEventListener('visibilitychange', function () { if (!document.hidden) pump(owner); }, owner.controller ? { signal: owner.controller.signal } : false);
+    window.addEventListener('pagehide', function () { destroy(owner); }, owner.controller ? { once: true, signal: owner.controller.signal } : { once: true });
+  }
+  window.brInitPortfolioCards = function () {
+    var root = document.getElementById('page-root');
+    if (!root || location.pathname !== '/portfolio') return;
+    if (current) destroy(current);
+    var owner = createOwner(root); current = owner; bind(owner); startPolling(owner); startCountdown(owner);
+    owner.cards(false).forEach(function (card) { schedule(owner, card); });
+  };
+  window.__brPortfolioCardsTest = { renderSummary: renderSummary, renderMatchup: renderMatchup, identity: identity };
+})();

@@ -47,16 +47,12 @@ def test_card_rejects_unlinked_league(offline_client, monkeypatch):
 
 
 def test_client_has_one_bounded_queue_and_stable_matchup_failure():
-    source = (ROOT / "app.py").read_text()
-    fn = source.split("def build_portfolio_body", 1)[1].split("\ndef ", 1)[0]
-    assert "active=0,MAX=2,q=[]" in fn
-    assert "/api/portfolio/card?" in fn
-    assert "25000" in fn
-    assert "Matchup temporarily unavailable" in fn
-    assert "data-matchup-retry" in fn
-    assert "cards=[].slice.call(document.querySelectorAll('.pf-lg-card" in fn
-    assert "for(var k=0;k<3;k++)pump();" not in fn
-    assert "[3000,6000,10000,15000,25000]" in fn
+    source = (ROOT / "static" / "app.js").read_text()
+    assert "var MAX_REQUESTS = 2" in source
+    assert "/api/portfolio/card?" in source
+    assert "Matchup temporarily unavailable" in source
+    assert "RETRY_DELAYS = [3000, 6000, 10000, 15000, 25000]" in source
+    assert "owner.active < MAX_REQUESTS" in source
 
 
 def test_my_leagues_loader_is_single_flight_and_force_invalidates():
@@ -73,14 +69,30 @@ def test_hydration_liveness_guard_matches_rendered_grid():
     source = (ROOT / "app.py").read_text()
     fn = source.split("def build_portfolio_body", 1)[1].split("\ndef ", 1)[0]
     assert "<div class='pf-lg-grid'>" in fn
-    assert "document.querySelector('.pf-lg-grid')!==null" in fn
+    assert "Portfolio cards are started by initPageRoot" in fn
     assert "pf-leagues-grid" not in fn
 
 
 def test_live_polling_reuses_card_queue_after_initial_hydration():
-    source = (ROOT / "app.py").read_text()
-    fn = source.split("def build_portfolio_body", 1)[1].split("\ndef ", 1)[0]
-    assert "slot._isLive=st==='in'" in fn
-    assert "LIVE=LIVE.filter" in fn
-    assert "setTimeout(pump,0)" in fn
-    assert "window.__pfQueueCard" in fn
+    source = (ROOT / "static" / "app.js").read_text()
+    assert "slot._isLive = data.status === 'in'" in source
+    assert "if (slot && slot._isLive) schedule(owner, card)" in source
+    assert "if (!document.hidden) pump(owner)" in source
+    assert "window.__pfQueueCard" in source
+
+
+def test_warm_and_loading_cards_have_the_same_refresh_hooks():
+    """Rendered HTML, rather than source text, proves mixed cards are eligible."""
+    import app
+    warm = {"league_id": "W", "platform": "sleeper", "season": 2026,
+            "name": "Warm", "wins": 2, "losses": 1, "record": "2-1",
+            "rank": 2, "total_teams": 10, "streak": ["W"],
+            "pos_user_vals": {}, "pos_league_avgs": {}, "pos_user_rank": {}}
+    cold = {"league_id": "C", "platform": "espn", "season": 2026,
+            "name": "Cold", "loading": True}
+    with app.app.test_request_context("/portfolio"):
+        rendered = app.build_portfolio_body("viewer", [warm], [warm, cold], 2026)
+    assert rendered.count("data-summary-card") == 2
+    assert rendered.count("data-summary-stats") == 2
+    assert "data-platform='sleeper' data-league-id='W' data-season='2026'" in rendered
+    assert "data-platform='espn' data-league-id='C' data-season='2026'" in rendered
