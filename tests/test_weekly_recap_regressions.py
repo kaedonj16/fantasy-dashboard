@@ -1,0 +1,133 @@
+"""Focused regressions for Weekly Recap scoreboard, efficiency, and GOTW prose."""
+from pathlib import Path
+
+import pytest
+
+pd = pytest.importorskip("pandas")
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def _lineup_rows(missing=False):
+    return [{
+        "week": 7, "roster_id": 1,
+        "players": ["qb", "k", "DAL", "rb"],
+        "starters": ["qb", "k", "DAL"],
+        "players_points": {"qb": 10, "k": 0, "DAL": 6, **({} if missing else {"rb": 15})},
+        "points": 16,
+    }]
+
+
+def test_scoreboard_uses_explicit_side_classes_not_dom_position():
+    page = (ROOT / "dashboard_services/pages/recap_page.py").read_text()
+    css = (ROOT / "static/dashboard.css").read_text()
+    assert "recap-team recap-team--{side}" in page
+    assert ".recap-team--right .recap-team-identity" in css
+    assert ".recap-team--right .recap-top-performer" in css
+    assert ".recap-team:last-child" not in css
+    assert page.index("'right')") < page.index("recap-matchup-footer")
+
+
+def test_shared_analysis_resolves_raw_processed_kicker_and_defense_and_zero():
+    from utils.optimal_lineup import analyze_team_week
+
+    players = {
+        "qb": {"position": "QB", "full_name": "Quarter Back"},
+        "k": {"fantasy_positions": ["K"], "full_name": "Real Kicker"},
+        "rb": {"pos": "RB", "name": "Runner"},
+    }
+    out = analyze_team_week(_lineup_rows(), "1", players, ["QB", "K", "DEF"], week=7)
+    assert out["complete"] is True
+    assert out["players"]["k"]["pos"] == "K"
+    assert out["players"]["DAL"]["pos"] == "DEF"
+    assert out["scores"]["k"] == 0.0
+
+    incomplete = analyze_team_week(_lineup_rows(missing=True), 1, players, ["QB", "K", "DEF"], week=7)
+    assert incomplete["complete"] is False
+    assert "rb" in incomplete["missing_scores"]
+
+
+def test_season_service_matches_shared_lineup_analysis_and_recovers(monkeypatch):
+    import dashboard_services.season_efficiency as service
+    from utils.optimal_lineup import analyze_team_week
+    import app
+    import dashboard_services.platform_api as api
+
+    players = {"qb": {"position": "QB"}, "k": {"pos": "K"}, "rb": {"pos": "RB"}}
+    monkeypatch.setattr(app, "get_players_index_global", lambda: players)
+    calls = iter([None, _lineup_rows()])
+    monkeypatch.setattr(api, "get_matchups", lambda *args: next(calls))
+    service._CACHE.clear()
+    df = pd.DataFrame([{"week": 7, "finalized": True}])
+    ctx = {"platform": "sleeper", "season": 2025, "league_id": "L", "df_weekly": df,
+           "roster_positions": ["QB", "K", "DEF"], "rosters": [{"roster_id": 1}],
+           "optimal_matchups_by_week": {}, "efficiency_weeks": [7]}
+    first = service.compute_league_season_efficiency(ctx)
+    assert first["state"] == "incomplete"
+    second = service.compute_league_season_efficiency(ctx)
+    direct = analyze_team_week(_lineup_rows(), 1, players, ctx["roster_positions"], week=7)
+    assert second["state"] == "complete"
+    assert second["by_rid"]["1"]["weeks"][0]["optimal"] == direct["optimal"]
+    assert second["completed_weeks"] == [7]
+
+
+def _preview(team_b="Bravo", wp=75):
+    return {"next_week": 8, "game_of_the_week": {
+        "matchup_id": 3, "roster_id_a": "1", "roster_id_b": "2",
+        "team_a": "Alpha", "team_b": team_b, "record_a": "4-3", "record_b": "3-4",
+        "rank_a": 2, "rank_b": 5, "streak_a": "W2", "streak_b": "L1",
+        "win_prob_a": wp, "proj_a": 120.0, "proj_b": 105.0, "why": "Projections add an interesting angle",
+        "reasons": [], "out_a": [], "out_b": [], "maybe_a": [], "maybe_b": [], "bye_a": [], "bye_b": [],
+    }, "also_watch": []}
+
+
+def test_closeness_language_is_thresholded_and_probabilities_only_render_once():
+    from dashboard_services.ai.weekly_recap import _reason_bits, _render_next_week_html
+    kw = dict(sa={}, sb={}, rank_a=3, rank_b=4, num_teams=10, meetings=0,
+              stakes_label=None, is_playoff=False, round_label="", top_star=None)
+    assert "Dead heat" not in _reason_bits("closeness", win_prob=.25, **kw)
+    assert "Dead heat" not in _reason_bits("closeness", win_prob=.34, **kw)
+    assert "Dead heat" in _reason_bits("closeness", win_prob=.50, **kw)
+    html = _render_next_week_html(_preview(wp=75), "Alpha's recent scoring gives this matchup its edge.")
+    assert ">75%</span>" in html and ">25%</span>" in html
+    assert "75%" not in "Alpha's recent scoring gives this matchup its edge."
+    assert "br-gotw-why" not in html
+    assert "Alpha&#x27;s recent scoring" in html
+
+
+def test_gotw_narrative_cache_legacy_recovery_and_material_identity(monkeypatch, tmp_path):
+    import dashboard_services.ai.weekly_recap as recap
+    import dashboard_services.ai.cache as cache
+
+    monkeypatch.setattr(recap, "AI_CACHE_DIR", tmp_path)
+    monkeypatch.setattr(cache, "AI_CACHE_DIR", tmp_path)
+    monkeypatch.setattr(recap, "ai_available", lambda: True)
+    payload = {"next_week_preview": _preview(), "league_name": "League", "week": 7}
+    monkeypatch.setattr(recap, "build_weekly_recap_payload", lambda *a, **k: payload)
+    calls = []
+    def generate(_payload):
+        calls.append(1)
+        game = _payload["next_week_preview"]["game_of_the_week"]
+        return {"headline": "Week seven", "paragraphs": ["A factual recap."],
+                "looking_ahead": f"{game['team_a']} meets {game['team_b']}. Recent form makes this worth watching. Set the lineup."}
+    monkeypatch.setattr(recap, "_generate_ai_storyline", generate)
+    df = pd.DataFrame([{"week": 7, "roster_id": "1", "points": 100, "finalized": True}])
+    args = (df, {}, 7, {}, {}, "L", 2025)
+    first = recap.get_weekly_ai_recap(*args)
+    second = recap.get_weekly_ai_recap(*args)
+    assert len(calls) == 1
+    assert "Alpha meets Bravo" in first[1] and "Alpha meets Bravo" in second[1]
+
+    payload["next_week_preview"] = _preview(team_b="Charlie")
+    third = recap.get_weekly_ai_recap(*args)
+    assert len(calls) == 2
+    assert "Alpha meets Charlie" in third[1]
+
+
+def test_ai_unavailable_fallback_is_factual_not_headline(monkeypatch):
+    import dashboard_services.ai.weekly_recap as recap
+    game = _preview(wp=None)["game_of_the_week"]
+    text = recap._fallback_preview(game)
+    assert "Alpha" in text and "Bravo" in text
+    assert text != game["why"]
+    assert "coin flip" not in text.lower() and "50-50" not in text

@@ -5,7 +5,10 @@ live in app.py are lazy-imported inside the builder (request time).
 """
 from __future__ import annotations
 
+import logging
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 
 def _rank_movement(current: list[dict], prior: list[dict]) -> dict[str, int]:
@@ -252,13 +255,17 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
     # Fetch the cached, shared legal-lineup analysis once. The same selected
     # week dataset drives this page section, its award cards, and the share card.
     efficiency_rows = []
+    efficiency_data = {"state": "preview"}
     if not preview_mode:
         try:
             from dashboard_services.season_efficiency import compute_league_season_efficiency
-            efficiency_rows = _weekly_efficiency_rows(
-                compute_league_season_efficiency(ctx), int(selected_week),
-            )
-        except Exception:
+            efficiency_data = compute_league_season_efficiency(
+                {**ctx, "efficiency_weeks": [int(selected_week)]})
+            efficiency_rows = _weekly_efficiency_rows(efficiency_data, int(selected_week))
+        except Exception as exc:
+            logger.warning("weekly recap efficiency failed league=%s season=%s week=%s: %s",
+                           ctx.get("league_id"), ctx.get("season"), selected_week, exc)
+            efficiency_data = {"state": "loading_failure"}
             efficiency_rows = []
     best_efficiency = efficiency_rows[0] if efficiency_rows else None
     most_left = (sorted(efficiency_rows,
@@ -520,10 +527,10 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
         w_team = team_name(m["winner"], m["w_rid"])
         l_team = team_name(m["loser"], m["l_rid"])
         result = "Tied" if m.get("tied") else f"Won by {m['margin']:.2f}"
-        def team_block(owner, rid, name, points, winner=False):
+        def team_block(owner, rid, name, points, side, winner=False):
             ava = team_link(owner, rid, ava_img(owner, rid, 36))
             nm = team_link(owner, rid, name, extra_class="recap-team-name-link")
-            return f"""<div class="recap-team{' recap-team--winner' if winner else ''}">
+            return f"""<div class="recap-team recap-team--{side}{' recap-team--winner' if winner else ''}">
               <div class="recap-team-identity">{ava}
                 <div class="recap-team-copy"><div class="recap-team-name">{nm}</div>
                 <div class="recap-team-manager">@{html.escape(owner)}</div></div>
@@ -537,11 +544,11 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
 <article class="recap-matchup-row">
   <div class="recap-matchup-badges">{''.join(f'<span>{label}</span>' for label in badge_map.get(matchup_index, []))}</div>
   <div class="recap-matchup-main">
-    {team_block(m['winner'], m['w_rid'], w_team, m['w_pts'], not m.get('tied'))}
+    {team_block(m['winner'], m['w_rid'], w_team, m['w_pts'], 'left', not m.get('tied'))}
     <div class="recap-matchup-score"><div class="recap-matchup-scoreline">{m['w_pts']:.2f} <span>–</span> {m['l_pts']:.2f}</div>
       <div class="recap-matchup-margin">{result}</div>{view_mu}</div>
     <div class="recap-matchup-vs" aria-hidden="true"><span>VS</span></div>
-    {team_block(m['loser'], m['l_rid'], l_team, m['l_pts'])}
+    {team_block(m['loser'], m['l_rid'], l_team, m['l_pts'], 'right')}
     <div class="recap-matchup-footer">
       <span class="recap-matchup-margin">{result}</span>{view_mu}
     </div>
@@ -580,15 +587,22 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
         toughest_html = efficiency_team_row(most_left)
         toughest_insight = ("Perfect lineup" if most_left["missed"] < 0.05 else
                             f'<strong>{most_left["missed"]:.1f} pts</strong><span>left on the table</span>')
+        partial_note = ('<div class="recap-eff-partial" role="status">Showing teams with complete historical data; '
+                        'this is not a full-league ranking.</div>'
+                        if efficiency_data.get("state") == "partial" else "")
         efficiency_content = f"""
 <div class="recap-eff-grid">
   <div class="card recap-eff-card recap-eff-card--top"><h3>Top 3 Managers</h3>{top_three_html}</div>
   <div class="card recap-eff-card recap-eff-card--bench"><h3>Toughest Bench</h3>{toughest_html}
     <div class="recap-eff-insight">{toughest_insight}</div></div>
-</div>"""
+</div>{partial_note}"""
     else:
+        state = efficiency_data.get("state")
+        unavailable = ("No completed week is available yet." if state == "no_completed_week" else
+                       "Lineup data is temporarily loading. Please try again shortly." if state == "loading_failure" else
+                       "Historical roster, score, or position data is incomplete for this week.")
         efficiency_content = ('<div class="card recap-lineup-unavailable" role="status">'
-                              'Lineup efficiency is unavailable for this week.</div>')
+                              f'{unavailable}</div>')
     efficiency_html = f"""
 <section class="recap-section recap-efficiency">
   <div class="recap-eff-heading"><div><h2>Lineup Efficiency

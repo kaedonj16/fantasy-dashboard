@@ -115,8 +115,8 @@ def test_lineup_efficiency_section_and_share_contract():
     assert returned.index("scoreboard_html") < returned.index("efficiency_html")
     assert returned.index("efficiency_html") < returned.index("cards_html")
     assert '"best_lineup"' in page and '"most_left"' in page
-    assert "compute_league_season_efficiency(ctx)" in page
-    assert page.count("compute_league_season_efficiency(ctx)") == 1
+    assert "compute_league_season_efficiency(" in page
+    assert page.count("compute_league_season_efficiency(") == 1
     assert "LINEUP EFFICIENCY" in js
     assert "d.best_lineup" in js and "d.most_left" in js
     assert "window.brShareCanvas(canvas" in js
@@ -128,8 +128,8 @@ def test_toughest_bench_uses_legal_points_left_not_raw_bench_points():
 
     assert 'key=lambda row: (-row["missed"], -row["actual"], row["rid"])' in page
     assert "raw bench" not in page.lower()
-    assert "from utils.optimal_lineup import analyze_lineup" in season
-    assert "analyze_lineup(raw_scores, positions, slots, pids, starters" in season
+    assert "from utils.optimal_lineup import analyze_team_week" in season
+    assert "analyze_team_week(matchup_rows, rid, players, slots" in season
 
 
 def test_mobile_recap_no_longer_depends_on_sidebar_grid():
