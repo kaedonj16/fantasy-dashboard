@@ -12,6 +12,9 @@ def test_recap_prompt_has_natural_record_and_power_rules():
     assert "Power rank describes how strong a team looks" in source
     assert "rank_gap" in source
     assert "v12_top_performers" in source
+    assert 'em dash character "—"' in source
+    assert "does NOT apply to regular hyphens in compound words" in source
+    assert 'Format records naturally as 2-0, never as tuples or "2, 0"' in source
 
 
 def test_lineup_selectors_supply_six_real_candidates():

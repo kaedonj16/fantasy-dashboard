@@ -788,10 +788,11 @@ Voice:
 Hard rules:
 - 2-4 paragraphs, 2-4 sentences each.
 - DO NOT invent facts, scores, or players not in the data.
-- Do not use an em dash character. Use a comma, period, colon, semicolon, or rewrite it.
+- Do not use the em dash character "—". Use a comma, period, colon, semicolon, or rewrite it. This does NOT apply to regular hyphens in compound words (follow-up, all-play, top-tier) or in records (2-0); keep those hyphenated as normal.
 - No markdown, bullets, or headers.
 - Don't open with filler ("What a week", "Here's your recap"). Start with the actual news.
 - Grounded tone - not mean, not hype, just real.
+- Format records naturally as 2-0, never as tuples or "2, 0". Use a normal hyphen (-) for records.
 """.strip()
 
     user_prompt = f"""
