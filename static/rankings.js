@@ -844,6 +844,9 @@ function prRender() {
     // row isn't clickable for them.
     const isPick = p.position === 'PICK';
     if (!isPick) {
+      const _draftedWarm = p.is_rookie && p.team && p.team !== 'FA';
+      if (!p.is_rookie || _draftedWarm) row.dataset.pmWarmId = String(p.id);
+      else row.dataset.pmProspectOnly = '1';
       row.style.cursor = 'pointer';
       row.onclick = function(e) {
         e.stopPropagation();

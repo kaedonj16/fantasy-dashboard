@@ -20916,12 +20916,22 @@ def api_player_details(player_id: str):
         except (TypeError, ValueError):
             _modal_ls = 10
 
-        # Sync league globals if league_id provided
-        if league_id:
-            # sync_league_globals is a no-op for Sleeper -- get_league() is what
-            # populates the request-scoped scoring globals (incl. bonus_rec_te,
-            # which TE-premium scaling reads). Without this the modal sees bare
-            # defaults and never applies the TE premium.
+        # Speculation may only consume a valid, already-built league snapshot.
+        # In particular it must not call provider synchronization or the normal
+        # context accessor, whose cache miss rebuilds the entire league.
+        _speculative = request.headers.get("X-BR-Speculative") == "player-details"
+        _spec_ctx = None
+        if league_id and _speculative:
+            _entry = DASHBOARD_CACHE.get(_cache_key(platform, season, league_id))
+            if not _league_ctx_cache_valid(_entry, platform, season, league_id):
+                return ("", 204)
+            _spec_ctx = (_entry or {}).get("ctx") or {}
+            scoring_settings = _spec_ctx.get("scoring_settings")
+            if not isinstance(scoring_settings, dict) or not scoring_settings:
+                return ("", 204)
+        elif league_id:
+            # Foreground requests retain exact provider synchronization, including
+            # Sleeper TE-premium scoring initialization.
             if platform == "sleeper":
                 from dashboard_services.api import get_league as _get_league
                 _get_league(league_id)
@@ -21112,7 +21122,9 @@ def api_player_details(player_id: str):
         if league_id:
             try:
                 from dashboard_services.service import fantasy_team_and_roster_for_player as _ft_lookup
-                _ctx = get_league_ctx_from_cache(platform, league_id, season)
+                _ctx = _spec_ctx if _speculative else get_league_ctx_from_cache(platform, league_id, season)
+                if not _ctx:
+                    return ("", 204) if _speculative else (jsonify({"error": "League unavailable"}), 503)
                 _rosters = _ctx.get("rosters") or []
                 _users = _ctx.get("users") or []
                 _rmap = _build_roster_map(_users, _rosters)
