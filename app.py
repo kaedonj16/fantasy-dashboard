@@ -29294,6 +29294,34 @@ def build_portfolio_body(
         "})();</script>"
     )
 
+    # Page-level Refresh handler consumed by app.js's doRefresh(). Warm cards
+    # expose data-summary-card hooks; cold/warm-only portfolios don't, so an
+    # empty key set rebuilds the request from the live league slots instead
+    # of silently no-op'ing. Always returns handled:false so app.js still
+    # performs its own full-page reload after the summaries are refreshed.
+    refresh_handler_script = (
+        "<script>(function(){"
+        "window.brRefreshCurrentPage=async function(accountId){"
+        "const keys=[...document.querySelectorAll('[data-summary-card]')]"
+        ".filter(function(el){return el.style.display!=='none';})"
+        ".map(function(el){return el.dataset.summaryCard;}).filter(Boolean);"
+        "if(!keys.length){"
+        "const liveLeagues=[...document.querySelectorAll('.pf-lg-card [data-lg-live]')]"
+        ".map(function(el){return {league_id:el.dataset.leagueId,platform:el.dataset.platform,season:el.dataset.season};})"
+        ".filter(function(lg){return lg.league_id;});"
+        "if(!liveLeagues.length){return {handled:false};}"
+        "await fetch('/api/portfolio/refresh',{method:'POST',headers:{'Content-Type':'application/json'},"
+        "body:JSON.stringify({account_id:accountId,leagues:liveLeagues})});"
+        "return {handled:false};"
+        "}"
+        "const response=await fetch('/api/portfolio/refresh',{method:'POST',headers:{'Content-Type':'application/json'},"
+        "body:JSON.stringify({account_id:accountId,keys:keys})});"
+        "if(!response.ok){throw new Error('Portfolio refresh failed: '+response.status);}"
+        "return await response.json();"
+        "};"
+        "})();</script>"
+    )
+
     # ── League list - standings-table ─────────────────────────────────────
     league_rows = ""
     # Every card in an account shell came from durable membership and can be
@@ -30045,7 +30073,8 @@ def build_portfolio_body(
         insights = ("<section data-portfolio-cross-league>" + insights_label
                     + insight_top + bottom_row + "</section>")
     return (css + '<div style="max-width:1040px;margin:0 auto;">'
-            + top_strip + moves_card + league_card + insights + '</div>')
+            + top_strip + moves_card + league_card + insights + '</div>'
+            + refresh_handler_script)
 
 
 # build_scout_body / _week_proj_points live in dashboard_services/pages/scout_page.py
