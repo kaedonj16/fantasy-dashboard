@@ -28671,9 +28671,11 @@ button:disabled {
 .weekly-recap .st-movement { min-width:25px; font-size:11px; font-weight:800; text-align:right; }
 .weekly-recap .st-movement.up { color:var(--win); } .weekly-recap .st-movement.down { color:var(--loss); } .weekly-recap .st-movement.flat { color:var(--muted); }
 .weekly-recap .recap-lineup-card { overflow:hidden; }
-.weekly-recap .recap-lineup-cols { display:block; }
+.weekly-recap .recap-lineup-cols { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); align-items:start; }
 .weekly-recap .rlc-section { min-width:0; }
 .weekly-recap .rlc-section + .rlc-section { border-top:1px solid var(--border); }
+.weekly-recap .rlc-section:nth-child(2) { border-top:0; }
+.weekly-recap .rlc-section:nth-child(3) { grid-column:1 / -1; }
 .weekly-recap .rlc-head { display:block; padding:13px 16px; border-bottom:1px solid var(--border); }
 .weekly-recap .rlc-head h3 { margin:0; font-size:15px; } .weekly-recap .rlc-head span { display:block; margin-top:3px; color:var(--muted); font-size:11px; white-space:normal; }
 .weekly-recap .recap-lineup-more summary { padding:10px 16px; color:var(--accent); font-size:12px; font-weight:700; cursor:pointer; }
@@ -28707,7 +28709,11 @@ button:disabled {
 .weekly-recap .recap-viewer-decision { display:flex; justify-content:space-between; gap:12px; margin-bottom:10px; padding:12px 15px; border-left:3px solid var(--accent); border-radius:8px; background:var(--surface2); font-size:12px; }
 .weekly-recap .recap-up-next { margin-bottom:0; }
 
-@media (max-width:900px) { .weekly-recap .recap-rank-grid { grid-template-columns:1fr; } }
+@media (max-width:900px) {
+    .weekly-recap .recap-rank-grid { grid-template-columns:1fr; }
+    .weekly-recap .recap-lineup-cols { display:block; }
+    .weekly-recap .rlc-section:nth-child(2) { border-top:1px solid var(--border); }
+}
 @media (max-width:720px) {
     .weekly-recap { padding-inline:12px; }
     .weekly-recap .rc-awards { grid-template-columns:1fr; }
