@@ -23,18 +23,20 @@ def test_matchup_endpoint_gates_on_reg_not_regular():
     from pathlib import Path
     src = (Path(__file__).resolve().parents[1] / "routes" / "user_pages_bp.py").read_text()
     endpoint = src.split("def api_portfolio_matchup")[1].split("\n@user_pages_bp.route")[0]
-    assert '("reg", "post")' in endpoint
-    assert '("regular", "post")' not in endpoint
+    # Must accept the normalized "reg" (a "regular"-only gate hid every card).
+    assert '"reg"' in endpoint
+    assert '"post"' in endpoint
 
 
 def test_game_log_projection_cutoff_uses_current_week_in_reg():
     pytest.importorskip("flask")
     pytest.importorskip("pandas")
     import app
-    # Regular season / playoffs -> project from the current week onward.
+    # Regular season / playoffs -> project from the current week onward. Both the
+    # normalized "reg" (the real runtime value) and the raw "regular" are accepted.
     assert app._game_log_proj_from_week(2026, 2026, 3, "reg") == 3
+    assert app._game_log_proj_from_week(2026, 2026, 3, "regular") == 3
     assert app._game_log_proj_from_week(2026, 2026, 5, "post") == 5
     # Pre-season / offseason / unknown -> project all weeks (1).
     assert app._game_log_proj_from_week(2026, 2026, 3, "pre") == 1
     assert app._game_log_proj_from_week(2026, 2026, 3, "off") == 1
-    assert app._game_log_proj_from_week(2026, 2026, 3, "regular") == 1

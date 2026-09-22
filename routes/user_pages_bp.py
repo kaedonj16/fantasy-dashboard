@@ -1089,11 +1089,11 @@ def api_portfolio_matchup():
             return jsonify({"live": False}), 403
 
     nfl_state = get_nfl_state() or {}
-    # Live scoring only makes sense in the regular season or playoffs. The
-    # normalized phase is "reg"/"post" (normalize_nfl_state maps Sleeper's
-    # "regular" onto VALID_PHASES = off/pre/reg/post) -- checking "regular" here
-    # never matched during the regular season and hid every matchup card.
-    if str(nfl_state.get("season_type") or "").lower() not in ("reg", "post"):
+    # Live scoring only makes sense in the regular season or playoffs. get_nfl_state
+    # normalizes the phase to "reg"/"post" (VALID_PHASES = off/pre/reg/post), so
+    # checking only "regular" here never matched in-season and hid every matchup
+    # card. Accept both the normalized "reg" and the raw "regular" defensively.
+    if str(nfl_state.get("season_type") or "").lower() not in ("reg", "regular", "post"):
         return jsonify({"live": False, "reason": "season_type"})
     try:
         default_season = int(nfl_state.get("season") or datetime.now().year)
