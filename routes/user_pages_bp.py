@@ -971,17 +971,28 @@ def api_portfolio_summary():
     if not membership:
         return jsonify({"ok": False, "state": "unavailable", "message": "League is no longer linked"}), 403
     auth_ms = (time.monotonic() - auth_started) * 1000
-    from dashboard_services.portfolio_summary import build_league_summary, classify_failure, get_cached_summary
+    from dashboard_services.portfolio_summary import (
+        build_league_summary, classify_failure, get_cached_summary, ContextPending,
+    )
     stale = get_cached_summary(account_id, platform, league_id, season)
     try:
         # Portfolio hydration is a passive reader.  A cold provider context is
         # warmed by get_league_ctx_from_cache, never built on this web worker.
         def cache_only_loader(p, lid, yr):
             return get_league_ctx_from_cache(p, lid, yr, allow_build=False)
-        result = build_league_summary(account_id, membership, cache_only_loader)
+        # Do not perform summary/provider work on a cold cache.
+        ctx = cache_only_loader(platform, league_id, season)
+        if not ctx:
+            body = {"ok": True, "state": "pending", "pending": True,
+                    "retry_after_ms": 3000}
+            if stale:
+                body.update(summary=stale, **stale, stale=True, _cache_stale=True)
+            return jsonify(body)
+        # Reuse the cache result and prevent a second context lookup.
+        result = build_league_summary(
+            account_id, membership, lambda *_args, **_kwargs: ctx)
         return jsonify({"ok": True, **result})
     except Exception as exc:
-        from dashboard_services.portfolio_summary import ContextPending
         if isinstance(exc, ContextPending):
             body = {"ok": True, "state": "pending", "pending": True,
                     "retry_after_ms": 3000}

@@ -144,19 +144,21 @@ window.brFetchWithTimeout = function (url, opts, ms) {
     var force = !!(options && options.force);
     if (force) { value = null; expiresAt = 0; }
     if (!force && value && Date.now() < expiresAt) return Promise.resolve(value);
+    if (!force && inflight) return inflight;
     if (inflight) return inflight;
     // Legacy callers used fetch("/api/my-leagues", { cache: "no-store" }) and
     // fetch('/api/my-leagues', { cache: 'no-store' }); keep all access here.
-    inflight = window.brFetchWithTimeout('/api/my-leagues', {
-      cache: 'no-store', credentials: 'same-origin'
-    }, 15000).then(function (response) {
-      if (!response.ok) throw new Error('Could not load saved leagues');
-      return response.json();
-    }).then(function (data) {
-      value = data;
-      expiresAt = Date.now() + 5000;
-      return data;
-    }).finally(function () { inflight = null; });
+    inflight = fetch('/api/my-leagues', {cache:'no-store', credentials:'same-origin'})
+      .then(function (response) {
+        if (!response.ok) throw new Error('Could not load saved leagues');
+        return response.json();
+      })
+      .then(function (data) {
+        value = data;
+        expiresAt = Date.now() + 5000;
+        return data;
+      })
+      .finally(function(){ inflight=null; });
     return inflight;
   };
 })();
