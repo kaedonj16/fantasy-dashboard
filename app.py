@@ -163,6 +163,7 @@ from utils.lineup_slots import (
 
 daily_lock = threading.Lock()
 daily_completed = None
+daily_status = {"status": "skipped", "error": None}
 EASTERN = ZoneInfo("America/New_York")
 
 # ── Logging ───────────────────────────────────────────────────────────────────
@@ -2573,20 +2574,55 @@ def start_score_pos_anchors(season, week, scoring_settings=None) -> dict:
     return anchors
 
 
-def run_daily_data_async(season: int, week: int) -> None:
+def run_daily_data_async(season: int, week: int, owner: str = "web") -> bool:
     """Start daily data build in a background thread."""
     # Never kick off the real daily build under tests: build_daily_data scrapes
     # vendor CSVs and hits external value APIs (FantasyCalc, etc.), which would
     # make the suite non-hermetic and reach out to the network in CI. Both the
     # offline_client fixture and test_season_readiness run with TESTING set.
     if app.testing:
-        return
+        return False
+    global daily_status
+    def _boundary():
+        global daily_completed, daily_status
+        import fcntl
+        build_id = f"{season}-{week}-{int(time.time())}"
+        started = time.monotonic()
+        lock_file = None
+        try:
+            lock_path = os.getenv("DAILY_BUILD_LOCK_FILE", "/tmp/fantasy-dashboard-daily.lock")
+            lock_file = open(lock_path, "a+", encoding="utf-8")
+            try:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                daily_status = {"status": "skipped", "error": None, "build_id": build_id}
+                logger.info("daily_build build_id=%s owner=%s season=%s week=%s status=skipped reason=locked",
+                            build_id, owner, season, week)
+                return
+            result = build_daily_data(season, week)
+            if result is False or (isinstance(result, dict) and result.get("ok") is False):
+                raise RuntimeError("daily build reported failure")
+            daily_completed = datetime.now(EASTERN).date()
+            daily_status = {"status": "succeeded", "error": None, "build_id": build_id}
+            logger.info("daily_build build_id=%s owner=%s season=%s week=%s elapsed_ms=%.1f status=succeeded",
+                        build_id, owner, season, week, (time.monotonic()-started)*1000)
+        except Exception as exc:
+            daily_status = {"status": "failed", "error": str(exc), "build_id": build_id}
+            logger.exception("daily_build build_id=%s owner=%s season=%s week=%s elapsed_ms=%.1f status=failed",
+                             build_id, owner, season, week, (time.monotonic()-started)*1000)
+        finally:
+            if lock_file is not None:
+                try:
+                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+                finally:
+                    lock_file.close()
     thread = threading.Thread(
-        target=build_daily_data,
-        args=(season, week),
+        target=_boundary,
+        name=f"daily-{owner}-{season}-{week}",
         daemon=True,
     )
     thread.start()
+    return True
 
 
 def _weeks_hash(weeks):
@@ -16879,6 +16915,10 @@ from dashboard_services.pages.commissioner_page import (  # noqa: E402
 @app.before_request
 def maybe_run_daily():
     global daily_completed
+    # Production cron is the sole owner. Web-request execution is an explicit
+    # escape hatch only; normal traffic must never start heavy duplicate jobs.
+    if os.getenv("RUN_WEB_DAILY_BUILD", "").lower() not in {"1", "true", "yes", "on"}:
+        return
     try:
         today_et: date = datetime.now(EASTERN).date()
 
@@ -16894,14 +16934,9 @@ def maybe_run_daily():
                     season = int(state.get("season") or datetime.now().year)
                     week = int(state.get("week") or 0)
 
-                    daily_thread = threading.Thread(
-                        target=run_daily_data_async,
-                        args=(season, week),
-                        daemon=True
-                    )
-                    daily_thread.start()
-
-                    daily_completed = today_et
+                    # Exactly one thread layer. Completion is recorded by the
+                    # boundary only after build_daily_data returns successfully.
+                    run_daily_data_async(season, week, owner="web")
             finally:
                 daily_lock.release()
     except Exception as _daily_exc:
@@ -29783,12 +29818,12 @@ def build_portfolio_body(
         "window.__pfRenderSummary=render;"
         "function load(c){if(c._summaryLoading)return;c._summaryLoading=true;c._summaryAttempt=c._summaryAttempt||0;active++;var p=c.dataset.platform,l=c.dataset.leagueId,s=c.dataset.season;"
         "var u='/api/portfolio/summary?platform='+encodeURIComponent(p)+'&league_id='+encodeURIComponent(l)+'&season='+encodeURIComponent(s),timer;"
-        "var local=typeof AbortController!=='undefined'?new AbortController():null;if(local&&ctl)ctl.signal.addEventListener('abort',function(){local.abort();},{once:true});if(local)timer=setTimeout(function(){local.abort();},12000);"
+        "var local=typeof AbortController!=='undefined'?new AbortController():null;if(local&&ctl)ctl.signal.addEventListener('abort',function(){local.abort();},{once:true});if(local)timer=setTimeout(function(){local.abort();},25000);"
         "fetch(u,{cache:'no-store',signal:local?local.signal:(ctl?ctl.signal:undefined)}).then(function(r){return r.json().then(function(d){if(!r.ok)throw d;return d;});})"
         ".then(function(d){c._summaryAttempt=0;if(!ctl||!ctl.signal.aborted)render(c,d);}).catch(function(e){c._summaryAttempt++;var again=e&&e.retryable!==false&&c._summaryAttempt<4;if(again){var wait=[0,1000,3000,7000][c._summaryAttempt]+Math.random()*350;var up=c.querySelector('[data-summary-updated]');if(up)up.textContent='Retrying...';setTimeout(function(){q.unshift(c);pump();},wait);}else if(!ctl||!ctl.signal.aborted)render(c,e&&e.message?e:{message:'Summary timed out. Retry.'});})"
         ".then(function(){if(timer)clearTimeout(timer);c._summaryLoading=false;active--;pump();});}"
         "function pump(){while(active<MAX&&q.length)load(q.shift());}"
-        "cards.sort(function(a,b){var af=a.dataset.favorite==='true',bf=b.dataset.favorite==='true';return (bf-af)||((a.getBoundingClientRect().top<innerHeight)?-1:1);});q=cards.slice();pump();"
+        "cards.sort(function(a,b){var af=a.dataset.favorite==='true',bf=b.dataset.favorite==='true';return (bf-af)||((a.getBoundingClientRect().top<innerHeight)?-1:1);});q=[];"
         "document.addEventListener('click',function(e){var b=e.target.closest&&e.target.closest('[data-summary-retry]');if(!b)return;var c=b.closest('[data-summary-card]');if(c){b.hidden=true;c._summaryAttempt=0;q.unshift(c);pump();}},{signal:ctl?ctl.signal:undefined});"
         "})();</script>"
         # Live-tick draft countdowns on undrafted league cards.
@@ -29851,14 +29886,14 @@ def build_portfolio_body(
         "slot.innerHTML=html;slot.removeAttribute('aria-busy');slot.hidden=false;}"
         "function load(slot){if(slot._loading)return slot._loading;var generation=(slot._generation||0)+1;slot._generation=generation;"
         "var p=slot.getAttribute('data-platform'),l=slot.getAttribute('data-league-id'),s=slot.getAttribute('data-season');"
-        "var u='/api/portfolio/matchup?platform='+encodeURIComponent(p)+'&league_id='+encodeURIComponent(l)+'&season='+encodeURIComponent(s);"
+        "var u='/api/portfolio/card?platform='+encodeURIComponent(p)+'&league_id='+encodeURIComponent(l)+'&season='+encodeURIComponent(s);"
         "var controller=typeof AbortController!=='undefined'?new AbortController():null;"
-        "var timer=controller?setTimeout(function(){controller.abort();},12000):null;"
-        "slot._loading=fetch(u,{headers:{'X-Requested-With':'fetch'},signal:controller?controller.signal:undefined}).then(function(r){return r.ok?r.json():null;})"
-        ".then(function(d){if(slot._generation!==generation)return d;render(slot,d);"
+        "var timer=null;"
+        "slot._loading=window.brFetchWithTimeout(u,{headers:{'X-Requested-With':'fetch'},signal:controller?controller.signal:undefined},25000).then(function(r){return r.ok?r.json():null;})"
+        ".then(function(d){if(slot._generation!==generation)return d;var card=slot.closest('[data-summary-card]');if(card&&d&&d.summary&&window.__pfRenderSummary)window.__pfRenderSummary(card,d.summary);var md=d&&d.matchup?d.matchup:d;render(slot,md);"
         # A cold-cache league answers {live:false,pending:true} while a background
         # warm builds it; re-poll with backoff so the card fills once ready.
-        "if(d&&d.pending){var n=(slot._mAttempt=(slot._mAttempt||0)+1);"
+        "if((d&&d.pending)||(md&&md.pending)){var n=(slot._mAttempt=(slot._mAttempt||0)+1);"
         "if(n<=8){var W=[0,3000,6000,10000,15000,20000,30000,30000];"
         "setTimeout(function(){if(slot._generation===generation){slot._loading=null;load(slot);}},W[Math.min(n,7)]);}"
         "else{render(slot,{live:false});}}"
@@ -29871,7 +29906,7 @@ def build_portfolio_body(
         "var av=a.getBoundingClientRect().top<innerHeight,bv=b.getBoundingClientRect().top<innerHeight;return (bf-af)||(bv-av);});"
         "function pump(){if(i>=slots.length)return;var slot=slots[i++];"
         "load(slot).then(function(d){if(d&&d.live&&d.status==='in')LIVE.push(slot);pump();});}"
-        "for(var k=0;k<3;k++)pump();"
+        "for(var k=0;k<2;k++)pump();"
         "window.__pfLiveTimer=setInterval(function(){if(document.hidden||!LIVE.length)return;LIVE.forEach(load);},45000);"
         "})();</script>"
         # Page-specific Refresh Data contract. It updates mounted, paginator-
@@ -29913,8 +29948,8 @@ def build_portfolio_body(
         "cards.forEach(function(c,i){var r=results[i]||{};if(r.ok&&r.summary){success++;if(window.__pfRenderSummary)window.__pfRenderSummary(c,r.summary);}"
         "else{failed++;var retry=c.querySelector('[data-summary-retry]');if(retry)retry.hidden=false;}});"
         "var jobs=cards.map(function(c){return function(){var slot=c.querySelector('[data-lg-live]');if(!slot)return Promise.resolve();"
-        "var u='/api/portfolio/matchup?platform='+encodeURIComponent(c.dataset.platform)+'&league_id='+encodeURIComponent(c.dataset.leagueId)+'&season='+encodeURIComponent(c.dataset.season);"
-        "return window.brFetchWithTimeout(u,{cache:'no-store',credentials:'same-origin',headers:{'Cache-Control':'no-store'},signal:signal},12000)"
+        "var u='/api/portfolio/card?platform='+encodeURIComponent(c.dataset.platform)+'&league_id='+encodeURIComponent(c.dataset.leagueId)+'&season='+encodeURIComponent(c.dataset.season);"
+        "return window.brFetchWithTimeout(u,{cache:'no-store',credentials:'same-origin',headers:{'Cache-Control':'no-store'},signal:signal},25000)"
         ".then(function(r){return r.ok?r.json():null;}).then(function(d){if(!signal||!signal.aborted){if(window.__pfRenderMatchup)window.__pfRenderMatchup(slot,d);}}).catch(function(e){if(e&&e.name==='AbortError')throw e;});};});"
         "var cursor=0;async function worker(){while(cursor<jobs.length){var job=jobs[cursor++];await job();}}await Promise.all([worker(),worker()]);"
         "return {success:success>0&&failed===0,partial:success>0&&failed>0,refreshedAt:stamp,failures:failed};"

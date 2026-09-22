@@ -53,9 +53,10 @@ def from_players_map(pid: str, players_map: Optional[Dict[str, Any]] = None) -> 
         )
         return {"name": name, "nfl": nfl, "pos": pos}
 
-    # DEF fallback for team abbrevs
-    if pid.isalpha() and 2 <= len(pid) <= 3:
-        team = canon_team(pid) or pid
+    # DEF fallback is deliberately limited to canonical NFL franchises. An
+    # arbitrary unknown alphabetic player/provider ID must remain unknown.
+    team = canon_team(pid) if pid else None
+    if team in NFL_TEAMS:
         return {"name": f"{team} D/ST", "nfl": team, "pos": "DEF"}
 
     return {"name": pid, "nfl": "FA", "pos": ""}

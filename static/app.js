@@ -38,6 +38,23 @@ function escapeHtml(s) {
   });
 }
 
+// Account league metadata is consumed by the home card, switcher, portfolio,
+// and paywall picker. Share one short-lived successful response and one
+// in-flight promise; failures are never cached.
+(function () {
+  var inflight = null, cached = null, cachedAt = 0, TTL = 15000;
+  window.brGetMyLeagues = function (options) {
+    var force = !!(options && options.force);
+    if (!force && cached && Date.now() - cachedAt < TTL) return Promise.resolve(cached);
+    if (!force && inflight) return inflight;
+    inflight = fetch('/api/my-leagues', {cache:'no-store', credentials:'same-origin'})
+      .then(function(response){ if(!response.ok) throw new Error('HTTP '+response.status); return response.json(); })
+      .then(function(data){ cached=data; cachedAt=Date.now(); return data; })
+      .finally(function(){ inflight=null; });
+    return inflight;
+  };
+})();
+
 /**
  * Allowlist sanitizer for AI HTML before innerHTML assignment.
  * Strips script/iframe/object/embed, on* handlers, and javascript: URLs.
@@ -1415,14 +1432,49 @@ window.brHaptic = function (pattern) {
   }
 
   function softNavTargetFromEvent(e) {
-    var lineupControl = e.target.closest && e.target.closest('.opt-nav a.opt-tab');
-    if (lineupControl) return lineupControl;
     // Mobile navigates from the dock + sheet; desktop from the top nav pills,
     // dropdown items and the logo.
     return mq.matches
       ? e.target.closest('a.br-tabbar-item, .br-sheet a.br-sheet-link')
       : e.target.closest('.top-nav a.nav-pill, .top-nav a.nav-pill-dropdown-item, .top-nav .nav-left > a');
   }
+
+  // Lineup sub-navigation owns only its live region. It intentionally does not
+  // use softNav(), which replaces #page-root and destroys the Weekly Hub state.
+  var optimalAbort = null, optimalGeneration = 0;
+  function optimalFragmentUrl(canonical) {
+    var u = new URL(canonical, location.href), parts = u.pathname.split('/').filter(Boolean);
+    var q = new URLSearchParams(u.search);
+    var api = new URL('/api/weekly/optimal', location.origin);
+    api.searchParams.set('platform', parts[0] || ''); api.searchParams.set('season', parts[1] || '');
+    api.searchParams.set('league_id', parts[2] || '');
+    ['view','period','week'].forEach(function(k){ if(q.get(k)) api.searchParams.set(k,q.get(k)); });
+    return api.href;
+  }
+  function loadOptimalFragment(href, isPop) {
+    var host = document.getElementById('optimalLineupContent');
+    if (!host) { if (!isPop) location.href = href; return; }
+    if (optimalAbort) optimalAbort.abort();
+    optimalAbort = new AbortController(); var generation = ++optimalGeneration;
+    host.classList.add('is-loading'); host.setAttribute('aria-busy','true');
+    window.brFetchWithTimeout(optimalFragmentUrl(href), {cache:'no-store', credentials:'same-origin', signal:optimalAbort.signal}, 25000)
+      .then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
+      .then(function(data){
+        if (generation !== optimalGeneration || !data.ok) return;
+        host.innerHTML = data.html; host.classList.remove('is-loading'); host.removeAttribute('aria-busy');
+        if (!isPop) history.pushState({optimal:true}, '', data.canonical_url || href);
+      }).catch(function(err){
+        if (err.name === 'AbortError' || generation !== optimalGeneration) return;
+        host.classList.remove('is-loading'); host.removeAttribute('aria-busy');
+        var note=document.createElement('div'); note.className='opt-fragment-error';
+        note.innerHTML='Lineup temporarily unavailable. <button type="button">Retry</button>';
+        note.querySelector('button').onclick=function(){note.remove();loadOptimalFragment(href,isPop);}; host.prepend(note);
+      });
+  }
+  document.addEventListener('click', function(e){
+    var a=e.target.closest&&e.target.closest('.opt-nav a.opt-tab'); if(!a||e.button||e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;
+    e.preventDefault(); e.stopImmediatePropagation(); loadOptimalFragment(a.href,false);
+  }, true);
   function softNavHrefFromAnchor(a) {
     if (!a) return '';
     var href = a.getAttribute('href');
@@ -1470,10 +1522,13 @@ window.brHaptic = function (pattern) {
     var select = e.target.closest && e.target.closest('.opt-week-select[data-base-url]');
     if (!select) return;
     var href = select.dataset.baseUrl + '&week=' + encodeURIComponent(select.value);
-    softNav(href, false);
+    e.stopImmediatePropagation(); loadOptimalFragment(href, false);
   }, true);
 
   window.addEventListener('popstate', function () {
+    if (document.getElementById('optimalLineupContent') && new URLSearchParams(location.search).get('tab') === 'optimal') {
+      loadOptimalFragment(location.href, true); return;
+    }
     var params = new URLSearchParams(location.search);
     var modalPid = params.get('player');
     var modal = document.getElementById('playerModal');
@@ -10785,7 +10840,7 @@ if (!platformBtns.length) return;
   window.setHomeCardState = setHomeCardState;
 
   if (signedInHome && signedInLeagueList) {
-    const loadSignedInLeagues = () => fetch("/api/my-leagues", { cache: "no-store" }).then((response) => response.json()).then((data) => {
+    const loadSignedInLeagues = () => window.brGetMyLeagues().then((data) => data).then((data) => {
       const leagues = data.leagues || [];
       if (!leagues.length) {
         signedInLeagueList.textContent = "Connect your first fantasy league below.";
@@ -12608,8 +12663,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     window.refreshLeagueSwitcher = function () {
-      return fetch('/api/my-leagues', { cache: 'no-store' })
-        .then(res => res.json())
+      return window.brGetMyLeagues()
         .then(applyLeagueSwitcherData)
         .catch(err => {
           console.error('Failed to load leagues:', err);

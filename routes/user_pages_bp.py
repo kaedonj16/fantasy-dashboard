@@ -18,6 +18,7 @@ from __future__ import annotations
 import html
 import logging
 import os
+import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
@@ -675,7 +676,7 @@ def api_portfolio_actions():
         # One injury stash/drop hint per league (active-roster candidates only;
         # players already in reserve/IR do not need a stash/move-to-IR tip).
         try:
-            from utils.injury_plan import injury_plan
+            from utils.injury_plan import injury_plan, ir_capacity
             from dashboard_services.injury_return import weeks_out_for_player
             values_by_id = {
                 str(r.get("id") or ""): r
@@ -683,6 +684,10 @@ def api_portfolio_actions():
                 if r.get("id")
             }
             reserve_set = {str(p) for p in (viewer_roster.get("reserve") or []) if p}
+            capacity = ir_capacity(
+                lctx.get("roster_positions") or [], viewer_roster.get("reserve") or [],
+                reserve_slots=(lctx.get("league") or {}).get("reserve_slots"),
+            )
             for pid in [str(p) for p in (viewer_roster.get("players") or [])][:40]:
                 pl = nfl_players.get(pid) or {}
                 st = str(pl.get("injury_status") or "").strip()
@@ -692,10 +697,10 @@ def api_portfolio_actions():
                     status=st,
                     espn_weeks=weeks_out_for_player(pid),
                     player_value=float((values_by_id.get(pid) or {}).get("value") or 0) or None,
+                    has_open_ir_slot=capacity["has_open_ir_slot"],
+                    already_on_ir=pid in reserve_set,
                 )
-                if not plan or plan.get("verdict") not in ("IR", "Drop candidate", "Stash"):
-                    continue
-                if plan.get("verdict") == "Stash" and (plan.get("weeks_out") or 0) < 3:
+                if not plan or plan.get("verdict") not in ("Move to IR", "Drop candidate"):
                     continue
                 act = injury_stash_action(
                     platform=plat, season=lg_season, league_id=lid,
@@ -704,6 +709,7 @@ def api_portfolio_actions():
                     verdict=plan["verdict"],
                     weeks_label=plan.get("weeks_label") or "",
                     already_on_ir=pid in reserve_set,
+                    ir_used=capacity["ir_used"], ir_slots=capacity["ir_slots"],
                 )
                 if act:
                     actions.append(act)
@@ -955,6 +961,7 @@ def api_portfolio_summary():
         season = int(request.args.get("season") or 0)
     except (TypeError, ValueError):
         season = 0
+    auth_started = time.monotonic()
     from dashboard_services.accounts import resolve_account_leagues
     allowed = resolve_account_leagues(account_id, current_season=season)
     membership = next((lg for lg in allowed
@@ -963,10 +970,26 @@ def api_portfolio_summary():
                        and int(lg.get("season") or 0) == season), None)
     if not membership:
         return jsonify({"ok": False, "state": "unavailable", "message": "League is no longer linked"}), 403
+    auth_ms = (time.monotonic() - auth_started) * 1000
     from dashboard_services.portfolio_summary import build_league_summary, classify_failure, get_cached_summary
     stale = get_cached_summary(account_id, platform, league_id, season)
     try:
-        result = build_league_summary(account_id, membership, get_league_ctx_from_cache)
+        cache_started = time.monotonic()
+        ctx = get_league_ctx_from_cache(platform, league_id, season, allow_build=False)
+        cache_ms = (time.monotonic() - cache_started) * 1000
+        if not ctx:
+            pending = {"ok": True, "state": "pending", "pending": True, "retry_after_ms": 3000}
+            if stale:
+                pending["summary"] = stale
+                pending["stale"] = True
+            logger.info("portfolio_hydration platform=%s league=%s authorization_ms=%.1f cache_ms=%.1f cache_state=cold total_ms=%.1f",
+                        platform, league_id, auth_ms, cache_ms, (time.monotonic()-auth_started)*1000)
+            return jsonify(pending)
+        compute_started = time.monotonic()
+        result = build_league_summary(account_id, membership, lambda *_args, **_kwargs: ctx)
+        logger.info("portfolio_hydration platform=%s league=%s authorization_ms=%.1f cache_ms=%.1f cache_state=%s summary_ms=%.1f total_ms=%.1f",
+                    platform, league_id, auth_ms, cache_ms, "stale" if ctx.get("_cache_stale") else "warm",
+                    (time.monotonic()-compute_started)*1000, (time.monotonic()-auth_started)*1000)
         return jsonify({"ok": True, **result})
     except Exception as exc:
         from dashboard_services.providers.base import ProviderUnavailableError
@@ -986,6 +1009,83 @@ def api_portfolio_summary():
                         "failure_category": category,
                         "retryable": category in {"transient_timeout", "rate_limited", "provider_5xx", "unknown"},
                         "message": "Summary temporarily unavailable."}), 503
+
+
+@user_pages_bp.route("/api/portfolio/card")
+def api_portfolio_card():
+    """Cache-only, single authorization/lookup hydration for one card."""
+    started = time.monotonic()
+    account_id = session.get("account_id")
+    if not account_id:
+        return jsonify({"ok": False, "state": "unavailable"}), 401
+    platform = str(request.args.get("platform") or "").strip().lower()
+    league_id = str(request.args.get("league_id") or "").strip()
+    try:
+        season = int(request.args.get("season") or 0)
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "state": "unavailable"}), 400
+    from dashboard_services.accounts import resolve_account_leagues
+    membership = next((lg for lg in resolve_account_leagues(account_id, current_season=season)
+                       if str(lg.get("platform") or "").lower() == platform
+                       and str(lg.get("league_id") or "") == league_id
+                       and int(lg.get("season") or 0) == season), None)
+    auth_ms = (time.monotonic() - started) * 1000
+    if not membership:
+        return jsonify({"ok": False, "state": "unavailable"}), 403
+    from dashboard_services.portfolio_summary import build_league_summary, get_cached_summary
+    ctx = get_league_ctx_from_cache(platform, league_id, season, allow_build=False)
+    if not ctx:
+        stale = get_cached_summary(account_id, platform, league_id, season)
+        payload = {"ok": True, "state": "pending", "pending": True,
+                   "retry_after_ms": 3000, "summary": stale, "matchup": None}
+        logger.info("portfolio_card platform=%s league=%s authorization_ms=%.1f cache_state=cold total_ms=%.1f",
+                    platform, league_id, auth_ms, (time.monotonic()-started)*1000)
+        return jsonify(payload)
+    summary_started = time.monotonic()
+    summary = build_league_summary(account_id, membership, lambda *_a, **_k: ctx)
+    summary_ms = (time.monotonic() - summary_started) * 1000
+    # The compatibility matchup view performs a second cheap cache hit but no
+    # provider build. Keeping one implementation prevents provider drift.
+    matchup_started = time.monotonic()
+    matchup_response = api_portfolio_matchup()
+    response_obj = matchup_response[0] if isinstance(matchup_response, tuple) else matchup_response
+    matchup = response_obj.get_json(silent=True) or {"live": False}
+    logger.info("portfolio_card platform=%s league=%s authorization_ms=%.1f cache_state=%s summary_ms=%.1f matchup_ms=%.1f total_ms=%.1f",
+                platform, league_id, auth_ms, "stale" if ctx.get("_cache_stale") else "warm", summary_ms,
+                (time.monotonic()-matchup_started)*1000, (time.monotonic()-started)*1000)
+    return jsonify({"ok": True, "state": "ready", "pending": False,
+                    "retry_after_ms": 3000, "summary": summary, "matchup": matchup})
+
+
+@user_pages_bp.route("/api/weekly/optimal")
+def api_weekly_optimal():
+    """Authenticated Lineup-only fragment; never renders the Weekly Hub shell."""
+    account_id = session.get("account_id")
+    if not account_id:
+        return jsonify({"ok": False, "message": "Sign in again"}), 401
+    platform = str(request.args.get("platform") or "").lower().strip()
+    league_id = str(request.args.get("league_id") or "").strip()
+    view, period = request.args.get("view", "user"), request.args.get("period", "weekly")
+    try:
+        season = int(request.args.get("season") or 0)
+        week = int(request.args.get("week") or 0)
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "message": "Invalid parameters"}), 400
+    if view not in {"user", "league"} or period not in {"weekly", "season"}:
+        return jsonify({"ok": False, "message": "Invalid parameters"}), 400
+    from dashboard_services.accounts import resolve_account_leagues
+    allowed = resolve_account_leagues(account_id, current_season=season)
+    if not any(str(x.get("platform") or "").lower() == platform
+               and str(x.get("league_id") or "") == league_id for x in allowed):
+        return jsonify({"ok": False, "message": "League is no longer linked"}), 403
+    ctx = get_league_ctx_from_cache(platform, league_id, season)
+    from dashboard_services.pages.optimal_page import build_optimal_body
+    html_fragment = build_optimal_body(ctx)
+    query = f"tab=optimal&view={view}&period={period}"
+    if period == "weekly" and week > 0:
+        query += f"&week={week}"
+    return jsonify({"ok": True, "html": html_fragment,
+                    "canonical_url": f"/{platform}/{season}/{league_id}/weekly?{query}"})
 
 
 @user_pages_bp.route("/api/portfolio/refresh", methods=["POST"])
@@ -1075,10 +1175,9 @@ def api_portfolio_matchup():
     # must be rechecked on every request (including cache hits).
     account_id = session.get("account_id")
     if account_id:
-        from dashboard_services.accounts import resolve_my_leagues
-        allowed, _ = resolve_my_leagues(
-            viewer_user_id, account_id, (get_nfl_state() or {}).get("season") or datetime.now().year,
-            enrich_live=False,
+        from dashboard_services.accounts import resolve_account_leagues
+        allowed = resolve_account_leagues(
+            account_id, current_season=(get_nfl_state() or {}).get("season") or datetime.now().year,
         )
         if not any(
             str(lg.get("league_id") or "") == league_id
@@ -1113,7 +1212,8 @@ def api_portfolio_matchup():
         # Cold cache: a background warm was kicked. Do not block the request on a
         # cold build (the card's fetch aborts long before it finishes). Tell the
         # client to poll again shortly, once the warm has populated the cache.
-        return jsonify({"live": False, "pending": True})
+        return jsonify({"ok": True, "state": "pending", "live": False,
+                        "pending": True, "retry_after_ms": 3000})
     if ctx.get("offseason_mode"):
         return jsonify({"live": False, "reason": "offseason"})
 
