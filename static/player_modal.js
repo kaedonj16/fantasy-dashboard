@@ -8,6 +8,135 @@
 // _ensure_features_js concatenates this file into app-features.js instead.
 // ============================================================
 
+// Shared, bounded player-details request layer. Modal rendering and speculative
+// viewport warming intentionally meet here so cache identity and request ownership
+// cannot drift. This file is also concatenated into app-features.js.
+(function () {
+  'use strict';
+  const MAX_ENTRIES = 24, MAX_BYTES = 2 * 1024 * 1024, TTL = 5 * 60 * 1000;
+  const REQUEST_TIMEOUT = 12000;
+  const cache = new Map(), inflight = new Map();
+  let bytes = 0, generation = 0;
+  const counters = window.__pmWarmMetrics = window.__pmWarmMetrics || {
+    cacheHits: 0, inflightReuse: 0, speculativeStarts: 0, speculativeSkips: 0,
+    foregroundStarts: 0, detailsRendered: 0, clickToRenderMs: []
+  };
+
+  function context(opts) {
+    opts = opts || {};
+    const parts = location.pathname.split('/').filter(Boolean);
+    const query = new URLSearchParams(location.search);
+    const leaguePath = parts.length >= 3 && !isNaN(parseInt(parts[1], 10));
+    return {
+      platform: String(opts.platform || (leaguePath ? parts[0] : (query.get('platform') || 'sleeper'))),
+      season: String(opts.season || (leaguePath ? parts[1] : (query.get('season') || new Date().getFullYear()))),
+      leagueId: String(opts.leagueId || (leaguePath ? parts[2] : (query.get('from_league') || ''))),
+      leagueType: String(opts.leagueType || (typeof brLeagueType === 'function' ? brLeagueType() : '1qb')).toLowerCase(),
+      leagueSize: String(opts.leagueSize || (typeof brLeagueSize === 'function' ? brLeagueSize() : 10)),
+      account: String(opts.account || window._viewerUid || window._accountId || '')
+    };
+  }
+  function descriptor(playerId, opts) {
+    const id = String(playerId == null ? '' : playerId).trim();
+    const ctx = context(opts);
+    const q = new URLSearchParams({ season: ctx.season, league_type: ctx.leagueType, league_size: ctx.leagueSize });
+    if (ctx.leagueId) { q.set('league_id', ctx.leagueId); q.set('platform', ctx.platform); }
+    return { id, ctx, key: [id,ctx.platform,ctx.leagueId,ctx.season,ctx.leagueType,ctx.leagueSize,ctx.account].join('|'),
+      url: '/api/player-details/' + encodeURIComponent(id) + '?' + q.toString() };
+  }
+  function eligible(id) {
+    // DEF identifiers are deliberately allowed; picks and prospect-only ids are not.
+    return !!id && !/^(pick[:_-]?|draft[:_-]?|rookie[:_-]?|prospect[:_-]?)/i.test(id);
+  }
+  function clone(value) {
+    if (typeof structuredClone === 'function') return structuredClone(value);
+    return JSON.parse(JSON.stringify(value));
+  }
+  function remove(key) { const old=cache.get(key); if(old){ bytes-=old.bytes; cache.delete(key); } }
+  function storageKey(d) {
+    // Account is deliberately storage-only: it affects ownership in the response
+    // but must never be sent as an authority-bearing query parameter.
+    return 'pm_cache_v3_' + d.url + '&_pm_account=' + encodeURIComponent(d.ctx.account || '');
+  }
+  function pruneStorage() {
+    try {
+      const entries=[];
+      for(let i=0;i<localStorage.length;i++){
+        const key=localStorage.key(i);
+        if(!key||key.indexOf('pm_cache_v3_')!==0)continue;
+        const raw=localStorage.getItem(key)||'';
+        try {
+          const value=JSON.parse(raw);
+          if(!value||!value.data||!value.data.name||Date.now()-Number(value.ts||0)>=TTL){localStorage.removeItem(key);i--;continue;}
+          entries.push({key:key,ts:Number(value.ts||0),bytes:raw.length*2});
+        } catch(_){localStorage.removeItem(key);i--;}
+      }
+      entries.sort((a,b)=>b.ts-a.ts);
+      let keptBytes=0;
+      entries.forEach((entry,index)=>{
+        keptBytes+=entry.bytes;
+        if(index>=MAX_ENTRIES||keptBytes>MAX_BYTES)localStorage.removeItem(entry.key);
+      });
+    } catch(_) {}
+  }
+  function put(key, data, persistent, d) {
+    let raw; try { raw=JSON.stringify(data); } catch (_) { return; }
+    const size=raw.length * 2;
+    if (!data || typeof data !== 'object' || !data.name || data.error || size > MAX_BYTES) return;
+    remove(key); cache.set(key,{data:clone(data),ts:Date.now(),bytes:size}); bytes+=size;
+    while(cache.size>MAX_ENTRIES || bytes>MAX_BYTES) remove(cache.keys().next().value);
+    if (persistent) {
+      try { localStorage.setItem(storageKey(d), JSON.stringify({ts:Date.now(),data:data})); } catch (_) {}
+      pruneStorage();
+    }
+  }
+  function legacy(d) {
+    try {
+      let raw=localStorage.getItem(storageKey(d));
+      // Pre-account cache entries are safe only when there is no signed-in
+      // account identity to isolate. New writes always use the isolated key.
+      if(!raw&&!d.ctx.account)raw=localStorage.getItem('pm_cache_v3_'+d.url);
+      const e=JSON.parse(raw||'null');
+      return e&&Date.now()-e.ts<TTL&&e.data&&e.data.name&&!e.data.error?e.data:null;
+    } catch(_){return null;}
+  }
+  function request(playerId, opts) {
+    opts=opts||{}; const d=descriptor(playerId,opts);
+    if(!eligible(d.id)) return Promise.reject(Object.assign(new Error('ineligible player'),{pmSkipped:true}));
+    const hit=cache.get(d.key);
+    if(hit && Date.now()-hit.ts<TTL){ cache.delete(d.key);cache.set(d.key,hit);counters.cacheHits++;return Promise.resolve(clone(hit.data)); }
+    if(hit) remove(d.key);
+    const old=inflight.get(d.key);
+    if(old){ counters.inflightReuse++; old.foreground=old.foreground||!opts.speculative; return old.promise.then(clone); }
+    if(!opts.speculative){const saved=legacy(d);if(saved){put(d.key,saved,false,d);counters.cacheHits++;return Promise.resolve(clone(saved));}}
+    const startedGeneration=generation, controller=typeof AbortController!=='undefined'?new AbortController():null;
+    const init={headers:opts.speculative?{'X-BR-Speculative':'player-details'}:{}};
+    if(controller)init.signal=controller.signal;
+    const entry={foreground:!opts.speculative,controller:controller,promise:null};
+    counters[opts.speculative?'speculativeStarts':'foregroundStarts']++;
+    let timeoutId=null;
+    const fetcher=typeof window.brFetchWithTimeout==='function'
+      ? window.brFetchWithTimeout(d.url,init,REQUEST_TIMEOUT)
+      : Promise.race([fetch(d.url,init),new Promise((_,reject)=>{timeoutId=setTimeout(()=>{if(controller)controller.abort();reject(new Error('Player details timeout'));},REQUEST_TIMEOUT);})]);
+    entry.promise=Promise.resolve(fetcher).then(res=>{
+      if(res.status===204){counters.speculativeSkips++;const e=Object.assign(new Error('speculative skip'),{pmSkipped:true});throw e;}
+      if(!res.ok)throw new Error('HTTP '+res.status);return res.json();
+    }).then(data=>{
+      if(!data||typeof data!=='object'||!data.name||data.error)throw new Error('Malformed player details');
+      if(startedGeneration===generation)put(d.key,data,entry.foreground,d);
+      return clone(data);
+    }).finally(()=>{if(timeoutId)clearTimeout(timeoutId);if(inflight.get(d.key)===entry)inflight.delete(d.key);});
+    // A click adopting a speculative request gets an immediate ordinary retry on a safe 204.
+    entry.promise=entry.promise.catch(err=>{if(err&&err.pmSkipped&&entry.foreground){if(inflight.get(d.key)===entry)inflight.delete(d.key);return request(playerId,Object.assign({},opts,{speculative:false}));}throw err;});
+    inflight.set(d.key,entry); return entry.promise.then(clone);
+  }
+  window.pmPlayerDetails = {
+    context, descriptor, load: request,
+    invalidate: function(){generation++;cache.clear();bytes=0;},
+    stats: function(){return {entries:cache.size,bytes:bytes,inflight:inflight.size,generation:generation,counters:counters};}
+  };
+})();
+
 function openPlayerModal(playerId, playerName, opts) {
   opts = opts || {};
   if (!opts.teamNavigation) {
@@ -33,26 +162,12 @@ function openPlayerModal(playerId, playerName, opts) {
 
   const _ppSlug = pmSlugify(playerName);
 
-  // Extract league context from URL path: /<platform>/<season>/<league_id>/<page>
-  // For non-league pages (portfolio, home, etc.) fall back to query params.
-  const pathParts = window.location.pathname.split('/').filter(p => p);
-  const urlParams = new URLSearchParams(window.location.search);
-  const _isLeaguePath = pathParts.length >= 3 && !isNaN(parseInt(pathParts[1]));
-  // Explicit opts win (used by the player page's "view in your league" flow),
-  // then a league URL path, then query params.
-  const platform = opts.platform || (_isLeaguePath ? pathParts[0] : (urlParams.get('platform') || 'sleeper'));
-  const season = opts.season || (_isLeaguePath ? pathParts[1] : (urlParams.get('season') || new Date().getFullYear()));
-  const leagueId = opts.leagueId || (_isLeaguePath ? pathParts[2] : (urlParams.get('from_league') || null));
-
-  // Use page-level league settings when available (set for logged-in users)
-  const modalLt = brLeagueType();
-  const modalLs = brLeagueSize();
-  const leagueParams = `league_type=${encodeURIComponent(modalLt)}&league_size=${encodeURIComponent(modalLs)}`;
-
-  // Build API URL with league context if available
-  const apiUrl = leagueId
-    ? `/api/player-details/${playerId}?league_id=${leagueId}&platform=${platform}&season=${season}&${leagueParams}`
-    : `/api/player-details/${playerId}?season=${season}&${leagueParams}`;
+  // Resolve every response-affecting field through the shared loader.
+  const _detailsDescriptor = window.pmPlayerDetails.descriptor(playerId, opts);
+  const platform = _detailsDescriptor.ctx.platform;
+  const season = _detailsDescriptor.ctx.season;
+  const leagueId = _detailsDescriptor.ctx.leagueId || null;
+  const apiUrl = _detailsDescriptor.url;
   // The player-specific breakout endpoint owns board membership.  Fetch it
   // alongside player details so tab visibility never depends on the global
   // indicator request's timing or cache.
@@ -196,33 +311,20 @@ function openPlayerModal(playerId, playerName, opts) {
     }
   } catch (_) {}
 
-  // Fetch player data (with 5-min localStorage cache to speed up re-opens)
-  // Contract version prevents pre-canonical projection/scoring payloads from
-  // surviving a deploy. apiUrl already carries platform/league/season context.
-  const _cacheKey = 'pm_cache_v3_' + apiUrl;
-  const _cacheTTL = 5 * 60 * 1000;
-  let _cachedRaw = null;
-  try {
-    const _entry = JSON.parse(localStorage.getItem(_cacheKey) || 'null');
-    if (_entry && Date.now() - _entry.ts < _cacheTTL) _cachedRaw = _entry.data;
-  } catch (_) {}
-
+  // Shared loader deduplicates a click with queued/in-flight warm-up. The modal
+  // owns only rendering; closing it never aborts adopted shared work.
+  const _clickStarted = (window.performance && performance.now) ? performance.now() : Date.now();
+  // Secondary modal-only work keeps DOM ownership and is aborted on close;
+  // the shared details request deliberately does not use this controller.
   const _modalController = (typeof AbortController !== 'undefined') ? new AbortController() : null;
   overlay._pmRequestController = _modalController;
   const _modalFetch = (url, init, timeout) => {
-    const options = Object.assign({}, init || {}, _modalController ? { signal: _modalController.signal } : {});
+    const requestInit = Object.assign({}, init || {}, _modalController ? { signal: _modalController.signal } : {});
     return (typeof window.brFetchWithTimeout === 'function')
-      ? window.brFetchWithTimeout(url, options, timeout || 12000)
-      : fetch(url, options);
+      ? window.brFetchWithTimeout(url, requestInit, timeout || 12000) : fetch(url, requestInit);
   };
-  const _fetchPromise = _cachedRaw
-    ? Promise.resolve(_cachedRaw)
-    : _modalFetch(apiUrl, {}, 12000)
-        .then(res => { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); })
-        .then(data => {
-          try { localStorage.setItem(_cacheKey, JSON.stringify({ ts: Date.now(), data })); } catch (_) {}
-          return data;
-        });
+  if (typeof window.pmPromotePlayerWarmup === 'function') window.pmPromotePlayerWarmup(playerId, opts);
+  const _fetchPromise = window.pmPlayerDetails.load(playerId, opts);
 
   const contextBreakoutCandidate = opts.isBreakoutCandidate === true && opts.breakoutCandidate
     ? opts.breakoutCandidate
@@ -250,6 +352,9 @@ function openPlayerModal(playerId, playerName, opts) {
       if (!modalBody || !overlay.isConnected || overlay.dataset.closed === '1'
           || document.querySelector('.player-modal-overlay') !== overlay
           || overlay.dataset.playerId !== String(playerId)) return; // stale/closed request
+      window.__pmWarmMetrics.detailsRendered++;
+      window.__pmWarmMetrics.clickToRenderMs.push(((window.performance && performance.now) ? performance.now() : Date.now()) - _clickStarted);
+      if (window.__pmWarmMetrics.clickToRenderMs.length > 50) window.__pmWarmMetrics.clickToRenderMs.shift();
 
       if (data.error) {
         if (window.brErrorState) {
@@ -3078,28 +3183,8 @@ function _pmWireTeamPanel(panel, playerId) {
   if(wrap && _pmTeamNavHistory.length){ const prev=_pmTeamNavHistory[_pmTeamNavHistory.length-1]; wrap.insertAdjacentHTML('afterbegin', `<button type="button" class="pm-team-back" aria-label="Back to ${_pmEsc(prev.playerName)}">&#8592; Back to ${_pmEsc(prev.playerName)}</button>`); }
 }
 function pmPrefetchTabs() {
-  const bar = document.getElementById('pmTabBar');
-  if (!bar || bar.dataset.pmPrefetched) return;
-  bar.dataset.pmPrefetched = '1';
-  const run = function () {
-    if (!document.getElementById('pmTabBar')) return; // modal closed meanwhile
-    const activeBtn = document.querySelector('.pm-tab.active');
-    const activeTab = (activeBtn && activeBtn.dataset.tab) || 'overview';
-    const tabs = ['stats', 'trades'];
-    if (bar.dataset.pmHasTeam) tabs.push('team');
-    if (bar.dataset.pmHasMetrics) tabs.push('metrics');
-    tabs.forEach(function (t) {
-      const panel = document.getElementById('pm-panel-' + t);
-      const btn = document.querySelector('.pm-tab[data-tab="' + t + '"]');
-      // Only warm tabs that exist, are visible, and haven't loaded yet.
-      if (panel && !panel.dataset.loaded && btn && btn.style.display !== 'none') {
-        pmSwitchTab(t);
-      }
-    });
-    pmSwitchTab(activeTab); // restore -- net-zero visual change
-  };
-  if (window.requestIdleCallback) window.requestIdleCallback(run, { timeout: 1500 });
-  else setTimeout(run, 400);
+  // Secondary endpoints are loaded on demand by pmSwitchTab. Deliberately do
+  // not switch visible tabs in the background.
 }
 
 // ── Weekly (in-season) breakout tab builder ──────────────────────────────────
@@ -5406,6 +5491,7 @@ function closePlayerModal() {
     }
   }
   window.__brPlayerModal = null;
+  if (typeof window.pmResumeVisibilityWarmup === 'function') setTimeout(window.pmResumeVisibilityWarmup, 0);
 }
 
 window.openPlayerModal = openPlayerModal;
@@ -5413,3 +5499,78 @@ window.closePlayerModal = closePlayerModal;
 if (window.openPlayerModal) {
   try { delete window.openPlayerModal.__stub; } catch (_) { window.openPlayerModal.__stub = false; }
 }
+
+// Visibility warm-up scheduler. One instance follows #page-root and is replaced
+// on soft navigation; its observer/timers never retain detached page trees.
+(function () {
+  'use strict';
+  const DWELL_MS=500, MAX_ATTEMPTS=6, MAX_QUEUE=12, HOVER_MS=120;
+  let state=null;
+  function enabled(){
+    if(window.__PLAYER_DETAILS_WARMUP_DISABLED===true||!window._isSignedIn||!window.pmPlayerDetails)return false;
+    const c=navigator.connection||navigator.mozConnection||navigator.webkitConnection;
+    return !(c&&(c.saveData||/^(slow-2g|2g)$/.test(c.effectiveType||'')));
+  }
+  function hidden(el){return !el.isConnected||!!el.closest('.player-modal-overlay,[hidden],.collapsed,[aria-hidden="true"]')||el.getClientRects().length===0;}
+  function info(el){
+    const id=String(el.dataset.pmWarmId||el.dataset.playerId||el.dataset.pid||'').trim();
+    if(!id||id==='0'||el.dataset.pmProspectOnly==='1'||el.dataset.position==='PICK'||/^(pick|draft|prospect)[:_-]/i.test(id))return null;
+    const opts={speculative:true};
+    if(el.dataset.pmWarmTab==='live')opts.tab='live';
+    return {id:id,opts:opts,key:window.pmPlayerDetails.descriptor(id,opts).key};
+  }
+  function paused(){return !enabled()||document.hidden||navigator.onLine===false||document.getElementById('dashboardLoadingOverlay')?.style.display==='flex'||document.querySelector('.player-modal-overlay');}
+  function pump(s){
+    if(s!==state||s.running||s.attempts>=MAX_ATTEMPTS||paused())return;
+    while(s.queue.length){
+      const x=s.queue.shift();s.queued.delete(x.key);
+      if(x.el&&!hidden(x.el)){s.running=true;s.attempts++;window.pmPlayerDetails.load(x.id,x.opts).catch(()=>{}).finally(()=>{s.running=false;setTimeout(()=>pump(s),0);});return;
+      }
+    }
+  }
+  function enqueue(s,el){
+    const x=info(el);if(!x||s.seen.has(x.key)||s.queued.has(x.key)||s.attempts>=MAX_ATTEMPTS||s.queue.length>=MAX_QUEUE)return;
+    x.el=el;s.seen.add(x.key);s.queued.add(x.key);s.queue.push(x);pump(s);
+  }
+  function candidates(root){return root.querySelectorAll('[data-player-id], [data-pm-warm-id], .watchlist-nav-item[data-pid], .wl-alert-item[data-pid], .wl-page-row[data-pid], .rz-player-row[data-pid], .rz-mt-row[data-pid], .rz-pl-tile[data-pid], .rz-top-row[data-pid], .rz-event[data-pid]');}
+  function teardown(){
+    if(!state)return;
+    state.io?.disconnect();state.mo?.disconnect();state.abort?.abort();
+    state.timers.forEach(clearTimeout);state.hoverTimers.forEach(clearTimeout);
+    state.queue.length=0;state.queued.clear();state.seen.clear();state=null;
+  }
+  function init(root){
+    root=root&&root.querySelectorAll?root:document;teardown();
+    if(!enabled()||typeof IntersectionObserver==='undefined')return;
+    const s=state={root:root,queue:[],queued:new Set(),seen:new Set(),timers:new Map(),hoverTimers:new Map(),attempts:0,running:false,abort:typeof AbortController!=='undefined'?new AbortController():null};
+    s.io=new IntersectionObserver(entries=>entries.forEach(e=>{
+      const old=s.timers.get(e.target);if(old){clearTimeout(old);s.timers.delete(e.target);}
+      if(e.isIntersecting&&e.intersectionRatio>=.25&&!hidden(e.target))s.timers.set(e.target,setTimeout(()=>{s.timers.delete(e.target);if(state===s&&!hidden(e.target))enqueue(s,e.target);},DWELL_MS));
+      else {const x=info(e.target);if(x&&s.queued.has(x.key)){s.queue=s.queue.filter(q=>q.key!==x.key);s.queued.delete(x.key);}}
+    }),{threshold:[.25],rootMargin:'0px'});
+    function observe(n){if(n.nodeType!==1)return;if(n.matches&&info(n))s.io.observe(n);if(n.querySelectorAll)candidates(n).forEach(el=>{if(info(el))s.io.observe(el);});}
+    function forgetOne(el){
+      s.io.unobserve(el);const timer=s.timers.get(el),hover=s.hoverTimers.get(el);
+      if(timer)clearTimeout(timer);if(hover)clearTimeout(hover);
+      s.timers.delete(el);s.hoverTimers.delete(el);
+      const x=info(el);if(x&&s.queued.has(x.key)){s.queue=s.queue.filter(q=>q.key!==x.key);s.queued.delete(x.key);}
+    }
+    function forget(n){if(n.nodeType!==1)return;if(n.matches&&info(n))forgetOne(n);if(n.querySelectorAll)candidates(n).forEach(forgetOne);}
+    candidates(root).forEach(el=>{if(info(el))s.io.observe(el);});
+    s.mo=new MutationObserver(ms=>ms.forEach(m=>{m.addedNodes.forEach(observe);m.removedNodes.forEach(forget);}));s.mo.observe(root,{childList:true,subtree:true});
+    const targetSelector='[data-player-id],[data-pm-warm-id],.watchlist-nav-item[data-pid],.wl-alert-item[data-pid],.wl-page-row[data-pid],.rz-player-row[data-pid],.rz-event[data-pid]';
+    const listenerOpts=s.abort?{signal:s.abort.signal}:false;
+    root.addEventListener('pointerover',e=>{const el=e.target.closest?.(targetSelector);if(!el||!root.contains(el))return;const prior=s.hoverTimers.get(el);if(prior)clearTimeout(prior);const t=setTimeout(()=>{s.hoverTimers.delete(el);enqueue(s,el);},HOVER_MS);s.hoverTimers.set(el,t);},listenerOpts);
+    root.addEventListener('pointerout',e=>{const el=e.target.closest?.(targetSelector);if(!el||el.contains(e.relatedTarget))return;const t=s.hoverTimers.get(el);if(t)clearTimeout(t);s.hoverTimers.delete(el);},listenerOpts);
+    root.addEventListener('focusin',e=>{const el=e.target.closest?.('[data-player-id],[data-pm-warm-id]');if(el)enqueue(s,el);},listenerOpts);
+    document.addEventListener('visibilitychange',()=>pump(s),listenerOpts);window.addEventListener('online',()=>pump(s),listenerOpts);
+  }
+  window.pmPromotePlayerWarmup=function(id,opts){
+    if(!state)return;const key=window.pmPlayerDetails.descriptor(id,opts||{}).key;
+    state.queue=state.queue.filter(x=>x.key!==key);state.queued.delete(key);
+  };
+  window.pmInitVisibilityWarmup=init;window.pmStopVisibilityWarmup=teardown;window.pmResumeVisibilityWarmup=function(){if(state)pump(state);};
+  // The feature bundle usually arrives after initPageRoot's first pass.
+  const start=()=>{const root=document.getElementById('page-root')||document;const run=()=>{if(root.isConnected)init(root);};if(window.requestIdleCallback)requestIdleCallback(run,{timeout:1500});else setTimeout(run,250);};
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start,{once:true});else start();
+})();
