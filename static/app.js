@@ -1477,6 +1477,10 @@ window.brHaptic = function (pattern) {
       .then(function(data){
         if (generation !== optimalGeneration || !data.ok) return;
         host.innerHTML = data.html; host.classList.remove('is-loading'); host.removeAttribute('aria-busy');
+        // Fragment replacement creates a fresh native select. Re-run the shared
+        // idempotent enhancer so Lineup keeps the same accessible dropdown used
+        // throughout the site without accumulating wrappers or listeners.
+        if (window.initCustomSelects) window.initCustomSelects(host);
         if (!isPop) history.pushState({optimal:true}, '', data.canonical_url || href);
       }).catch(function(err){
         if (err.name === 'AbortError' || generation !== optimalGeneration) return;
