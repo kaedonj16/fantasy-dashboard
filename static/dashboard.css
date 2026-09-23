@@ -40616,4 +40616,14 @@ a, button, [role="button"], [role="tab"], summary, label,
     .mb-team {
         letter-spacing: .04em;
     }
+    /* Pin the stacked TEAM • POS sub-line to the same edge as the name
+       (left column: left edge, right column: right edge) and drop the
+       desktop inline gap so it sits exactly under the name. */
+    .mb-nameline .mb-team {
+        align-self: flex-start;
+        margin-left: 0;
+    }
+    .mb-cell-r .mb-nameline .mb-team {
+        align-self: flex-end;
+    }
 }
