@@ -18510,9 +18510,13 @@ def api_trade_outcome():
         net_delta_now = round(total_received_now - total_sent_now, 1)
         net_delta_then = round(total_received_then - total_sent_then, 1)
 
-        if net_delta_now > 150:
+        # Verdict uses the shared fair-value band (same definition as the trade
+        # calculator) so the outcome analyzer can't contradict it.
+        from utils.trade_value import fair_value_band as _fair_value_band
+        _outcome_band = _fair_value_band(max(total_received_now, total_sent_now, 1.0))
+        if net_delta_now > _outcome_band:
             verdict = "WIN"
-        elif net_delta_now < -150:
+        elif net_delta_now < -_outcome_band:
             verdict = "LOSS"
         else:
             verdict = "EVEN"
@@ -18732,16 +18736,14 @@ def api_trade_eval():
     diff = a_eff - b_eff
     abs_diff = abs(diff)
 
-    # Fair band: tighter % for bigger trades (large trades need less slack),
-    # floored at 25 value points so tiny trades aren't hair-trigger.
+    # Fair band: shared continuous definition (utils.trade_value.fair_value_band)
+    # so the calculator, share cards, and outcome analyzer apply the same
+    # "fair" and can't give contradictory verdicts. Previously tiered
+    # 5%/7%/10% with a discontinuity at the 600 threshold.
+    from utils.trade_value import fair_value_band as _fair_value_band
     baseline = max(a_eff, b_eff, 1.0)
-    if baseline >= 600:
-        FAIR_PCT = 0.05
-    elif baseline >= 300:
-        FAIR_PCT = 0.07
-    else:
-        FAIR_PCT = 0.10
-    fair_band = max(baseline * FAIR_PCT, 25.0)
+    fair_band = _fair_value_band(baseline)
+    FAIR_PCT = round(fair_band / baseline, 4)
 
     # With the roster filter on, the client sends the actual team names (Side A is
     # the viewer's team, Side B the chosen opponent) so the verdict can name them
@@ -31491,13 +31493,10 @@ def page_trade_card(share_id: str):
     eff_diff = eff_a - eff_b
 
     baseline = max(eff_a, eff_b, 1.0)
-    if baseline >= 600:
-        _fair_pct = 0.05
-    elif baseline >= 300:
-        _fair_pct = 0.07
-    else:
-        _fair_pct = 0.10
-    fair_band = max(baseline * _fair_pct, 25.0)
+    # Shared continuous fair band — same definition as the trade calculator
+    # (utils.trade_value.fair_value_band).
+    from utils.trade_value import fair_value_band as _fair_value_band
+    fair_band = _fair_value_band(baseline)
 
     if abs(eff_diff) <= fair_band:
         verdict = "Fair Trade"

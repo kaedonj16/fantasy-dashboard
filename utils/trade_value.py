@@ -81,14 +81,43 @@ def player_trade_value(
     return math.floor(val * mult * 10 + 0.5) / 10
 
 
-def fairness_label(net_delta: float) -> str:
-    """Same ±150 bands Trade Outcome uses for now-vs-then net delta."""
+def fair_value_band(baseline: float, floor: float = 25.0) -> float:
+    """Shared "fair trade" band: the max value delta still called fair.
+
+    Continuous in the baseline (the larger side's total value): a flat 7%
+    with a ``floor`` minimum. This replaced the old tiered 5%/7%/10% bands,
+    which had a discontinuity at the 600 threshold (band 41.9 at baseline
+    599, dropping to 30.0 at 600) so near-identical trades flipped verdicts.
+
+    Used by the trade calculator (api_trade_eval) and the trade outcome
+    analyzer (api_trade_outcome) so both surfaces apply the same definition
+    of fair and can't give contradictory verdicts.
+    """
+    try:
+        b = max(float(baseline or 0.0), 1.0)
+    except (TypeError, ValueError):
+        b = 1.0
+    try:
+        f = max(float(floor or 0.0), 0.0)
+    except (TypeError, ValueError):
+        f = 25.0
+    return max(b * 0.07, f)
+
+
+def fairness_label(net_delta: float, baseline: Optional[float] = None) -> str:
+    """Classify a trade's net value delta using the shared fair band.
+
+    ``baseline`` is the larger side's total value; when omitted the band
+    falls back to the 25.0 floor so the label still works for delta-only
+    callers.
+    """
     try:
         delta = float(net_delta or 0)
     except (TypeError, ValueError):
         delta = 0.0
-    if delta > 150:
+    band = fair_value_band(baseline if baseline is not None else 0.0)
+    if delta > band:
         return "strong_win"
-    if delta < -150:
+    if delta < -band:
         return "strong_loss"
     return "fair"

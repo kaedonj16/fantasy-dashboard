@@ -744,9 +744,18 @@ def render_roster_grade_badge(grade_data: dict, scoring_type: str = "") -> str:
     if scoring != "redraft":
         extras += f" &bull; Age: {avg_age:.1f}"
     extras += f" &bull; Elite: {elite_count}"
+    # Disclose when the grade came from a fallback blend (no league context)
+    # rather than the documented 40/25/15/12/8 formula.
+    formula_id = str(grade_data.get("formula_id") or "")
+    _formula_tip = ""
+    if formula_id and formula_id != "dynasty_ctx":
+        _formula_tip = (
+            f' title="Grade blend: {html.escape(formula_id)} '
+            f'(estimated without full league context)"'
+        )
 
     return f"""
-    <div class="roster-grade-wrap">
+    <div class="roster-grade-wrap"{_formula_tip}>
       <div class="roster-grade-badge {grade_class}">{grade}</div>
       <div class="roster-grade-meta">
         <div class="roster-grade-window">{win_window}</div>
