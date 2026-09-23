@@ -503,7 +503,7 @@ def build_weekly_hub_body(ctx: dict) -> str:
         // Weekly Wrapped follows the week selector: re-point the launcher at
         // the new week's lazy URL (dropping any already-fetched overlay) and
         // hide it when the week has no completed games yet.
-        var wbtn = document.getElementById('weeklyWrappedLaunch');
+        var wbtn = document.getElementById('weekly-wrappedLaunch');
         if (wbtn) {{
           wbtn.setAttribute('data-wrapped-url', data.wrapped_url || '');
           if (wbtn.__wrappedReset) wbtn.__wrappedReset();
