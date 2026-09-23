@@ -28,12 +28,12 @@ def render_awards_section(awards: dict) -> str:
         rows.append(acard("Lowest Single Week", f"{t} - Week {w}: <strong>{p:.1f} points</strong>"))
 
     if awards.get("longest_win_streak"):
-        t, L = awards["longest_win_streak"]
-        rows.append(acard("Longest Win Streak", f"{t} - <strong>{L} games</strong>"))
+        teams, L = awards["longest_win_streak"]
+        rows.append(acard("Longest Win Streak", f"{', '.join(teams)} - <strong>{L} games</strong>"))
 
     if awards.get("longest_loss_streak"):
-        t, L = awards["longest_loss_streak"]
-        rows.append(acard("Longest Losing Streak", f"{t} - <strong>{L} games</strong>"))
+        teams, L = awards["longest_loss_streak"]
+        rows.append(acard("Longest Losing Streak", f"{', '.join(teams)} - <strong>{L} games</strong>"))
 
     if awards.get("most_consistent"):
         t, sd, n = awards["most_consistent"]
@@ -109,8 +109,8 @@ def compute_awards_season(df_weekly: pd.DataFrame, players_map: dict, league_id:
     Returns a dict with keys mapping to tuples of display-friendly values.
       highest_single_week: (team, week, points)
       lowest_single_week:  (team, week, points)
-      longest_win_streak:  (team, length)
-      longest_loss_streak: (team, length)
+      longest_win_streak:  ([teams], length) — every team tied at the max, None if no positive streak
+      longest_loss_streak: ([teams], length) — every team tied at the max, None if no positive streak
       most_consistent:     (team, std_dev, games_played)
       highest_ceiling:     (team, max_points)
     Requires columns: Week, Team, Opponent, Points, OppPoints
@@ -162,11 +162,20 @@ def compute_awards_season(df_weekly: pd.DataFrame, players_map: dict, league_id:
                 seq.append("=")  # tie
         wl_map[t] = seq
 
-    # Longest streaks
+    # Longest streaks — keep every team tied at the top, drop zero-length streaks,
+    # and skip blank team names so the card never renders empty.
+    def _top_streaks(streaks):
+        named = [(t, L) for t, L in streaks if t and str(t).strip()]
+        top = max((L for _, L in named), default=0)
+        if top <= 0:
+            return None
+        tied = sorted(str(t) for t, L in named if L == top)
+        return (tied, top)
+
     win_streaks = [(t, longest_streak(seq, "+")) for t, seq in wl_map.items()]
     loss_streaks = [(t, longest_streak(seq, "-")) for t, seq in wl_map.items()]
-    d["longest_win_streak"] = max(win_streaks, key=lambda x: x[1]) if win_streaks else None
-    d["longest_loss_streak"] = max(loss_streaks, key=lambda x: x[1]) if loss_streaks else None
+    d["longest_win_streak"] = _top_streaks(win_streaks)
+    d["longest_loss_streak"] = _top_streaks(loss_streaks)
 
     # Consistency (std dev of points) - require at least 4 games to be fair
     cons = []
