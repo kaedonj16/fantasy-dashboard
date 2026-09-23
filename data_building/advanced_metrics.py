@@ -53,14 +53,16 @@ def premium_metrics_exposed() -> bool:
 # Derived intelligence metrics gated behind a per-user PRO subscription.
 # Raw volume/share/efficiency metrics stay free for everyone, as does
 # expected_ppr_per_game (it anchors the free Key Metrics / Start-Sit views).
-# The proprietary answers built on top (over-expected, trends, consistency,
-# matchup intel) are PRO. Enforced server-side in
+# boom_rate/bust_rate stay free too: the Start / Sit compare table already
+# shows them to everyone, so gating them here would be incoherent.
+# The proprietary answers built on top (over-expected, trends, matchup
+# intel) are PRO. Enforced server-side in
 # routes/advanced_metrics_bp.py (leaderboard + movers 403) and reflected in
 # the page picker/pills.
 PRO_METRICS = frozenset({
     "ppr_over_expected_per_game",
     "wopr", "opportunity_trend", "xfp_trend",
-    "boom_rate", "bust_rate", "schedule_ease",
+    "schedule_ease",
 })
 
 

@@ -205,30 +205,39 @@ def test_pro_metrics_are_valid_leaderboard_keys():
     assert all(key in LEADERBOARD_METRICS for key in PRO_METRICS)
 
 
-def test_pro_presets_are_exactly_the_advanced_four():
-    # Product scope: "the data is free, the answers are PRO." Key Metrics
-    # and Start / Sit stay free (their primary, expected_ppr_per_game, is
-    # free); the four advanced decision presets are PRO-locked.
+def test_pro_presets_are_the_advanced_three():
+    # Product scope: "the data is free, the answers are PRO." Key Metrics,
+    # Start / Sit, and Ceiling / DFS stay free (their primaries —
+    # expected_ppr_per_game and boom_rate — are free; boom/bust are already
+    # visible to everyone on the Start / Sit compare table). The three
+    # remaining advanced decision presets are PRO-locked.
     from data_building.advanced_metrics import PRO_METRICS
     decision = {k: p for k, p in ADVANCED_METRIC_PRESETS.items() if p.get("kind") == "decision"}
     assert len(decision) == 6
     locked = {pid for pid, p in decision.items() if p["primary"] in PRO_METRICS}
-    assert locked == {"buy_low_sell_high", "waiver_wire", "breakout_check", "ceiling_dfs"}
+    assert locked == {"buy_low_sell_high", "waiver_wire", "breakout_check"}
     assert "expected_ppr_per_game" not in PRO_METRICS
+    assert "boom_rate" not in PRO_METRICS
+    assert "bust_rate" not in PRO_METRICS
 
 
 def test_free_page_locks_pro_presets_and_strips_pro_metrics():
     from dashboard_services.pages.advanced_metrics_page import build_advanced_metrics_body
     html = build_advanced_metrics_body(False, LEADERBOARD_METRICS)
-    # The four advanced presets are locked; Key Metrics and Start / Sit are not.
-    for pid in ("buy_low_sell_high", "waiver_wire", "breakout_check", "ceiling_dfs"):
+    # The three advanced presets are locked; Key Metrics, Start / Sit, and
+    # Ceiling / DFS are not (boom_rate is free — it's already on Start / Sit).
+    for pid in ("buy_low_sell_high", "waiver_wire", "breakout_check"):
         assert 'data-preset="%s" data-locked="1"' % pid in html, pid
     assert 'data-preset="key_metrics" data-locked="0"' in html
     assert 'data-preset="start_sit" data-locked="0"' in html
+    assert 'data-preset="ceiling_dfs" data-locked="0"' in html
     assert "🔒" in html
     # PRO metrics are not offered in the free picker; expected_ppr_per_game
-    # (the free default view's anchor) is.
+    # (the free default view's anchor) and boom/bust rates (already visible
+    # on the Start / Sit compare table) are.
     assert 'value="expected_ppr_per_game"' in html
+    assert 'value="boom_rate"' in html
+    assert 'value="bust_rate"' in html
     assert 'value="ppr_over_expected_per_game"' not in html
     assert 'value="opportunity_trend"' not in html
     # Raw metrics stay free.
@@ -259,7 +268,11 @@ def test_config_marks_pro_metrics(offline_client):
     assert resp.status_code == 200
     metrics = resp.get_json()["metrics"]
     # expected_ppr_per_game anchors the free Key Metrics / Start-Sit views.
+    # boom_rate/bust_rate are free: the Start / Sit compare table already
+    # shows them to everyone.
     assert metrics["expected_ppr_per_game"]["pro"] is False
+    assert metrics["boom_rate"]["pro"] is False
+    assert metrics["bust_rate"]["pro"] is False
     assert metrics["ppr_over_expected_per_game"]["pro"] is True
     assert metrics["opportunity_trend"]["pro"] is True
     assert metrics["opportunity_share"]["pro"] is False
