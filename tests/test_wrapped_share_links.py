@@ -160,25 +160,30 @@ def test_copy_link_button_in_both_namespaces(offline_client):
 
 
 def test_share_rate_limit_declared(offline_client, fake_store):
-    """The create endpoint must carry a rate limit (enforced in prod where
-    flask_limiter is installed; here we verify the declaration)."""
-    import app
-    from routes import wrapped_share_bp as WSB
+    """POST /api/wrapped/share is rate-limited to 20/hour (behavioral check).
 
+    Uses a dedicated REMOTE_ADDR so this test's budget is independent of other
+    tests hitting the same endpoint in-process. When flask_limiter isn't
+    installed the NoopLimiter applies no throttling.
+    """
     try:
         import flask_limiter  # noqa
         have_limiter = True
     except ImportError:
         have_limiter = False
 
-    view = app.app.view_functions["wrapped_share.api_wrapped_share_create"]
-    # flask-limiter tags the view with its limits when installed.
-    limits = getattr(view, "_rate_limiting", None) or getattr(view, "rate_limits", None)
+    import app
+    client = app.app.test_client()
+    payload = {
+        "kind": "season", "ns": "wrapped", "overlay_html": "<div class='wrapped-slide'>x</div>",
+        "share_data": {"league": "Blackedraw", "season": "2026"},
+    }
+    env = {"REMOTE_ADDR": "10.9.9.9"}
+    codes = [client.post("/api/wrapped/share", json=payload,
+                         environ_overrides=env).status_code
+             for _ in range(21)]
     if have_limiter:
-        assert limits, "expected rate limits on POST /api/wrapped/share"
+        assert codes[:20] == [200] * 20, codes
+        assert codes[20] == 429, codes
     else:
-        # NoopLimiter in this env: at least confirm the decorator was applied
-        # (source still carries the limit string).
-        import inspect
-        src = inspect.getsource(WSB)
-        assert '@limiter.limit("20 per hour")' in src
+        assert codes == [200] * 21, codes

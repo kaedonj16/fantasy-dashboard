@@ -1660,7 +1660,10 @@ def _build_weekly_wrapped_slides(ctx: dict, league_name: str, season, week,
     # Pair the week's head-to-head results via matchup_id.
     matchup_rows = []
     if "matchup_id" in wdf.columns:
-        for (_mid,), grp in wdf.groupby(["matchup_id"]):
+        # Scalar (not list) grouper: yields plain scalar keys on every pandas
+        # version. A one-element list grouper unpacks differently across
+        # versions (tuple key on new pandas, scalar key on old).
+        for _, grp in wdf.groupby("matchup_id"):
             if len(grp) != 2:
                 continue
             ordered = grp.sort_values("points", ascending=False).reset_index(drop=True)
