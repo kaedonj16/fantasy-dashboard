@@ -28,6 +28,15 @@ ADVANCED_METRIC_PRESETS = {
     "general": {"label": "General / Opportunity", "description": "Cross-position opportunity and red-zone workload.", "position": None, "primary": "opportunity_share", "metrics": ["opportunity_share", "snap_share", "carries_per_game", "target_share", "air_yards_share", "red_zone_usage", "rz_targets_pg"], "sort": "desc", "samples": ["games", "carries", "targets"]},
     "expected": {"label": "Expected vs. Actual", "description": "Opportunity-based expected PPR production compared with matched actual production; FPOE is not a promise of future points.", "position": None, "primary": "expected_ppr_per_game", "metrics": ["expected_ppr_per_game", "actual_ppr_per_game", "ppr_over_expected_per_game", "opportunity_share", "target_share", "red_zone_usage", "total_tds_per_game"], "sort": "desc", "samples": ["games"]},
     "receiving_profile": {"label": "Receiving Profile", "description": "Target shape, alignment context, and after-catch performance.", "position": None, "primary": "target_share", "metrics": ["target_share", "avg_depth_of_target", "air_yards_share", "ngs_avg_cushion", "ngs_avg_separation", "yards_after_catch_per_reception", "ngs_avg_yac_above_expectation"], "sort": "desc", "samples": ["games", "targets", "receptions"]},
+    # --- Decision presets: organized by the question being answered, not the
+    # metric taxonomy. "kind": "decision" puts them in their own picker group
+    # and drives the preset-pill row above the table. ---
+    "key_metrics": {"label": "Key Metrics", "kind": "decision", "tagline": "The metrics that actually predict fantasy points.", "description": "The predictive core: expected points, efficiency vs. expectation, and the opportunity signals that stick week to week. This is the default landing view.", "position": None, "primary": "expected_ppr_per_game", "metrics": ["expected_ppr_per_game", "ppr_over_expected_per_game", "opportunity_share", "target_share", "air_yards_share", "snap_share", "red_zone_usage", "opportunity_trend", "xfp_trend"], "sort": "desc", "samples": ["games"]},
+    "start_sit": {"label": "Start / Sit", "kind": "decision", "tagline": "Set your lineup with confidence.", "description": "Role first (expected PPR), then TD equity (red-zone usage), then week-to-week reliability (bust rate, consistency) and matchup ease.", "position": None, "primary": "expected_ppr_per_game", "metrics": ["expected_ppr_per_game", "ppr_over_expected_per_game", "opportunity_share", "snap_share", "red_zone_usage", "rz_targets_pg", "schedule_ease", "bust_rate", "fp_cv"], "sort": "desc", "samples": ["games"]},
+    "buy_low_sell_high": {"label": "Buy Low / Sell High", "kind": "decision", "tagline": "Find mispriced players before your league does.", "description": "Sorts by PPR over expected, ascending: the most negative names are the buy-low list (role is real, production hasn't caught up); flip the sort for the sell-high list.", "position": None, "primary": "ppr_over_expected_per_game", "metrics": ["ppr_over_expected_per_game", "expected_ppr_per_game", "target_share", "air_yards_share", "opportunity_trend", "xfp_trend"], "sort": "asc", "samples": ["games"]},
+    "waiver_wire": {"label": "Waiver Wire", "kind": "decision", "tagline": "Who's earning a role worth adding?", "description": "Sorted by usage trend: players whose opportunity is growing fastest, with the snap/target/carry volume to back it up.", "position": None, "primary": "opportunity_trend", "metrics": ["opportunity_trend", "snap_share", "target_share", "carries_per_game", "expected_ppr_per_game", "red_zone_usage"], "sort": "desc", "samples": ["games"]},
+    "breakout_check": {"label": "Is This Breakout Real?", "kind": "decision", "tagline": "Separate role growth from hot streaks.", "description": "Role growing + efficient = real. Role flat + way over expected = regression candidate. Compares xFP/usage trend against efficiency over expectation.", "position": None, "primary": "xfp_trend", "metrics": ["xfp_trend", "opportunity_trend", "snap_share", "ppr_over_expected_per_game", "target_share", "air_yards_share"], "sort": "desc", "samples": ["games"]},
+    "ceiling_dfs": {"label": "Ceiling / DFS", "kind": "decision", "tagline": "Who can win you a week?", "description": "Sorted by boom rate: players with the per-target, per-touch, and breakaway efficiency to post a slate-breaking score.", "position": None, "primary": "boom_rate", "metrics": ["boom_rate", "expected_ppr_per_game", "fp_cv", "fpts_per_target", "yards_per_touch", "breakaway_percentage"], "sort": "desc", "samples": ["games"]},
 }
 
 
@@ -79,9 +88,12 @@ def build_advanced_metrics_body(
         except ValueError:
             return len(_CAT_ORDER)
 
-    preset_optgroup = '<optgroup label="Quick Sets">' + "".join(
+    preset_optgroup = '<optgroup label="Decisions">' + "".join(
+        f'<option value="__preset__{key}">{_esc(p["label"])}</option>'
+        for key, p in ADVANCED_METRIC_PRESETS.items() if p.get("kind") == "decision"
+    ) + '</optgroup><optgroup label="Metric Sets">' + "".join(
         f'<option value="__preset__{key}">{_esc(p["label"])} Set</option>'
-        for key, p in ADVANCED_METRIC_PRESETS.items()
+        for key, p in ADVANCED_METRIC_PRESETS.items() if p.get("kind") != "decision"
     ) + '</optgroup>'
     metric_options = preset_optgroup + "\n" + "\n".join(
         '<optgroup label="{label}">{cat_preset}{opts}</optgroup>'.format(
@@ -173,6 +185,16 @@ def build_advanced_metrics_body(
         f'<option value="{s}"{"selected" if s == _default_season else ""}>{s}</option>'
         for s in available_seasons
     ) or '<option value="">No data</option>'
+
+    # Decision pills: one per decision preset, in dict order (Key Metrics first).
+    decision_pills = "".join(
+        '<button type="button" class="am-pill" role="tab" data-preset="{key}" title="{tag}">{label}</button>'.format(
+            key=key, tag=_esc(p.get("tagline") or p.get("description") or p["label"]), label=_esc(p["label"]),
+        )
+        for key, p in ADVANCED_METRIC_PRESETS.items() if p.get("kind") == "decision"
+    )
+    # "All metrics" restores the classic browse-everything view.
+    decision_pills += '<button type="button" class="am-pill am-pill-all" data-preset="" title="Browse all metrics by category">All metrics</button>'
 
     html = """
     <div class="card central">
@@ -283,6 +305,23 @@ def build_advanced_metrics_body(
             <input type="checkbox" id="amRosterToggle">
             <span>My roster only</span>
           </label>
+        </div>
+
+        <!-- Decision presets: one-tap views organized by the question being answered.
+             Pills are server-rendered; JS wires clicks and the active state. -->
+        <div class="am-decisions" id="amDecisionPills" role="tablist" aria-label="Decision views">
+          <span class="am-decisions-label">Decide:</span>
+          __DECISION_PILLS__
+        </div>
+        <div class="am-preset-tagline" id="amPresetTagline" aria-live="polite"></div>
+
+        <!-- What changed: usage/xFP movers and efficiency outliers, filled by JS. -->
+        <div class="am-movers" id="amMovers" style="display:none;">
+          <div class="am-movers-head">
+            <span class="am-ctrl-label">What changed</span>
+            <span class="am-movers-sub" id="amMoversSub"></span>
+          </div>
+          <div class="am-movers-groups" id="amMoversGroups"></div>
         </div>
 
         <div class="am-ctrl am-mobile-filter am-ctrl-weekbar" id="amWeekCtrl">
@@ -452,7 +491,7 @@ def build_advanced_metrics_body(
       </div>
     </div>
     """.replace("__METRIC_OPTIONS__", metric_options).replace("__SEASON_OPTIONS__", season_options).replace(
-        "__LEGEND__", legend_html).replace("{count}", str(sum(1 for s in metrics_spec.values() if not s.get("hidden"))))
+        "__LEGEND__", legend_html).replace("__DECISION_PILLS__", decision_pills).replace("{count}", str(sum(1 for s in metrics_spec.values() if not s.get("hidden"))))
 
     style = """
     <style>
@@ -499,6 +538,45 @@ def build_advanced_metrics_body(
         .am-legend-btn { padding:6px 10px; font-size:11px; }
       }
       .am-toolbar { margin:12px 0 4px; }
+      /* Decision preset pills */
+      .am-decisions { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin:10px 0 2px; }
+      .am-decisions-label { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--text-muted); }
+      .am-pill {
+        padding:7px 14px; border:1px solid var(--border); border-radius:999px;
+        background:var(--card); color:var(--text); font-size:13px; font-weight:600;
+        cursor:pointer; white-space:nowrap; transition:background .14s, border-color .14s;
+      }
+      .am-pill:hover { background:var(--row); }
+      .am-pill.active { background:var(--accent); border-color:var(--accent); color:#fff; }
+      .am-pill-all { border-style:dashed; color:var(--text-muted); }
+      .am-preset-tagline { font-size:12.5px; color:var(--text-muted); font-style:italic; margin:2px 0 6px; min-height:0; }
+      .am-preset-tagline:empty { display:none; }
+      /* What-changed movers strip */
+      .am-movers { margin:8px 0 4px; padding:10px 12px; border:1px solid var(--border); border-radius:12px; background:var(--card); }
+      .am-movers-head { display:flex; align-items:baseline; gap:8px; margin-bottom:8px; }
+      .am-movers-sub { font-size:11.5px; color:var(--text-muted); }
+      .am-movers-groups { display:flex; gap:14px; overflow-x:auto; padding-bottom:2px; }
+      .am-movers-group { min-width:200px; flex:1; }
+      .am-movers-ghead { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; margin-bottom:6px; }
+      .am-movers-ghead.up { color:#2e9e5b; }
+      .am-movers-ghead.down { color:#d64545; }
+      .am-movers-ghead.out { color:var(--accent); }
+      .am-mover-chip {
+        display:flex; align-items:center; gap:8px; width:100%; text-align:left;
+        padding:5px 8px; border:none; border-radius:8px; background:none;
+        cursor:pointer; font-size:12.5px; color:var(--text);
+      }
+      .am-mover-chip:hover { background:var(--row); }
+      .am-mover-name { font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+      .am-mover-meta { color:var(--text-muted); font-size:11px; white-space:nowrap; }
+      .am-mover-val { margin-left:auto; font-weight:700; font-variant-numeric:tabular-nums; white-space:nowrap; }
+      .am-mover-val.up { color:#2e9e5b; }
+      .am-mover-val.down { color:#d64545; }
+      @media (max-width:600px) {
+        .am-movers-groups { gap:10px; }
+        .am-movers-group { min-width:170px; }
+        .am-pill { padding:6px 11px; font-size:12px; }
+      }
       .am-controls { display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; margin:0 0 8px; }
       .am-ctrl { display:flex; flex-direction:column; gap:4px; }
       .am-ctrl-search { flex:1; min-width:160px; }
@@ -1178,6 +1256,7 @@ _AM_JS = r"""
   function syncURL() {
     const p = new URLSearchParams();
     if (state.metric) p.set('metric', state.metric);
+    if (_activePresetId) p.set('preset', _activePresetId);
     if (state.position && state.position !== 'ALL') p.set('pos', state.position);
     if (state.season) p.set('season', state.season);
     if (state.combine && amIsMultiSeason()) p.set('combine', '1');
@@ -1376,6 +1455,8 @@ _AM_JS = r"""
     if (preset.position) state.position = preset.position;
     _activePresetId = Object.keys(_PRESETS).find(k => _PRESETS[k] === preset) || String(cat).toLowerCase();
     _showActiveSet(preset.label);
+    try { localStorage.setItem('amLastPreset', _activePresetId); } catch (e) {}
+    _updateDecisionUI(preset);
     const picker = document.getElementById('amStatPicker');
     if (picker) picker.style.display = 'none';
     updateSortBtn(); updatePosButtons(); updateMetricTip(); updateVolCtrl(); updateVolHeader();
@@ -1383,6 +1464,95 @@ _AM_JS = r"""
     updateSortHeaders(); updateCompareBar(); syncExtraCols(); updateFilterBar();
     fetchData();
   };
+
+  // Decision pills + tagline stay in sync with the active preset.
+  function _updateDecisionUI(preset) {
+    const tag = document.getElementById('amPresetTagline');
+    if (tag) tag.textContent = (preset && preset.tagline) || '';
+    const pills = document.getElementById('amDecisionPills');
+    if (pills) pills.querySelectorAll('.am-pill').forEach(function(b) {
+      const on = !!preset && b.dataset.preset === _activePresetId;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+  }
+  // "All metrics": leave preset mode and return to the classic single-metric browse.
+  window.amClearDecision = function() {
+    _activePresetId = null;
+    _showActiveSet('Custom');
+    try { localStorage.removeItem('amLastPreset'); } catch (e) {}
+    _updateDecisionUI(null);
+    state.extraMetrics = []; state.extraData = {}; state.extraPrevData = {};
+    state.page = 0;
+    updateCompareBar(); syncExtraCols(); updateFilterBar(); syncURL(); fetchData();
+  };
+  (function _wireDecisionPills() {
+    const pills = document.getElementById('amDecisionPills');
+    if (!pills || pills.dataset.wired) return;
+    pills.dataset.wired = '1';
+    pills.addEventListener('click', function(e) {
+      const b = e.target.closest('[data-preset]');
+      if (!b) return;
+      if (b.dataset.preset) window.amLoadPreset(b.dataset.preset);
+      else window.amClearDecision();
+    });
+  })();
+
+  // What-changed strip: heating up / cooling off / efficiency outliers.
+  function _moverSeason() {
+    const sel = (typeof amSelectedSeasons === 'function') ? amSelectedSeasons() : null;
+    if (sel && sel.length === 1) return sel[0];
+    return (cfg.seasons && cfg.seasons[0]) || '';
+  }
+  function _moverChip(m, cls) {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'am-mover-chip'; b.title = 'Filter table to ' + m.name;
+    const nm = document.createElement('span'); nm.className = 'am-mover-name'; nm.textContent = m.name;
+    const meta = document.createElement('span'); meta.className = 'am-mover-meta';
+    meta.textContent = [m.team, m.position].filter(Boolean).join(' · ');
+    const val = document.createElement('span'); val.className = 'am-mover-val ' + cls;
+    const v = Number(m.value);
+    val.textContent = (isFinite(v) ? ((v >= 0 ? '+' : '') + v.toFixed(1)) : '—');
+    b.appendChild(nm); b.appendChild(meta); b.appendChild(val);
+    b.addEventListener('click', function() {
+      if (!searchEl) return;
+      searchEl.value = m.name; state.search = m.name; state.page = 0; render();
+      const t = document.getElementById('amTable');
+      if (t && t.scrollIntoView) t.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+    return b;
+  }
+  function _moverGroup(title, cls, items, valCls) {
+    const g = document.createElement('div'); g.className = 'am-movers-group';
+    const h = document.createElement('div'); h.className = 'am-movers-ghead ' + cls; h.textContent = title;
+    g.appendChild(h);
+    items.forEach(function(m) { g.appendChild(_moverChip(m, valCls)); });
+    return g;
+  }
+  function _loadMovers() {
+    const host = document.getElementById('amMovers');
+    const groups = document.getElementById('amMoversGroups');
+    if (!host || !groups) return;
+    const params = new URLSearchParams({ platform: cfg.platform });
+    const season = _moverSeason();
+    if (season) params.set('season', String(season));
+    if (cfg.leagueId) params.set('league_id', cfg.leagueId);
+    fetch('/api/advanced-metrics/movers?' + params.toString())
+      .then(function(r) { return r.ok ? r.json() : null; })
+      .then(function(d) {
+        groups.innerHTML = '';
+        if (!d || (!d.heating.length && !d.cooling.length && !d.outliers.length)) {
+          host.style.display = 'none'; return;
+        }
+        if (d.heating.length) groups.appendChild(_moverGroup('🔥 Heating up', 'up', d.heating, 'up'));
+        if (d.cooling.length) groups.appendChild(_moverGroup('❄️ Cooling off', 'down', d.cooling, 'down'));
+        if (d.outliers.length) groups.appendChild(_moverGroup('⚡ Efficiency outliers', 'out', d.outliers, ''));
+        const sub = document.getElementById('amMoversSub');
+        if (sub) sub.textContent = d.note || '';
+        host.style.display = '';
+      })
+      .catch(function() { host.style.display = 'none'; });
+  }
 
   window.amSpFilter = function(q) {
     const picker = document.getElementById('amStatPicker');
@@ -3970,6 +4140,7 @@ _AM_JS = r"""
     if (_v && _v.startsWith('__preset__')) { amLoadPreset(_v.replace('__preset__', '')); return; }
     _showActiveSet('Custom');
     _activePresetId = null;
+    _updateDecisionUI(null);
     state.metric = metricSel.value; state.page = 0;
     state.extraMetrics = []; state.extraData = {}; state.extraPrevData = {}; state.prevData = {};
     state.comboFilters = []; state.filterColKeys = new Set();
@@ -4036,6 +4207,7 @@ _AM_JS = r"""
     state.page = 0;
     syncURL();
     fetchData();
+    _loadMovers();
   }
   function fillSeasonMenu() {
     const menu = document.getElementById('amSeasonMenu');
@@ -4331,6 +4503,7 @@ _AM_JS = r"""
     state.extraMetrics = saved.metrics; state.position = saved.position;
     state.sortBy = saved.primary; state.sortDir = saved.sort; state.minVol = saved.minVol;
     state.comboFilters = []; state.filterColKeys = new Set(); state.page = 0; _activePresetId = null; _showActiveSet(name);
+    _updateDecisionUI(null);
     updateSortBtn(); updatePosButtons(); updateMetricTip(); updateVolCtrl(); updateVolHeader();
     updateCompareBar(); syncExtraCols(); updateFilterBar(); fetchData();
   });
@@ -4357,9 +4530,19 @@ _AM_JS = r"""
   const _searchInit = _initParams.get('search') || '';
   if (_searchInit && searchEl) { searchEl.value = _searchInit; state.search = _searchInit; }
   const _presetInit = _initParams.get('preset') || '';
-  if (_presetInit && _PRESETS[_presetInit]) amLoadPreset(_presetInit);
+  let _presetLoaded = false;
+  if (_presetInit && _PRESETS[_presetInit]) { amLoadPreset(_presetInit); _presetLoaded = true; }
+  else {
+    // Default landing: the last-used decision view, else Key Metrics.
+    let _lastPreset = null;
+    try { _lastPreset = localStorage.getItem('amLastPreset'); } catch (e) {}
+    const _landing = (_lastPreset && _PRESETS[_lastPreset]) ? _lastPreset : 'key_metrics';
+    if (_PRESETS[_landing]) { amLoadPreset(_landing); _presetLoaded = true; }
+  }
   updateSortBtn(); updatePosButtons(); updateMetricTip(); updateVolCtrl(); updateVolHeader();
-  updateSortHeaders(); updateCompareBar(); updateFilterBar(); syncURL(); fetchData(); loadOwnedRoster();
+  updateSortHeaders(); updateCompareBar(); updateFilterBar(); syncURL();
+  if (!_presetLoaded) fetchData();
+  loadOwnedRoster(); _loadMovers();
   // Auto-open graph modal when ?graph=1 is in the URL (from a copied graph
   // link), or when ?og=1 (the headless social-preview render mode).
   const _isOgRender = _initParams.get('og') === '1';

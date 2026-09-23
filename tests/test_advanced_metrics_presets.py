@@ -20,17 +20,47 @@ EXPECTED = {
     "receiving_profile": ("target_share", None),
 }
 
+# Decision presets: (primary metric, position filter, sort direction).
+DECISION_EXPECTED = {
+    "key_metrics": ("expected_ppr_per_game", None, "desc"),
+    "start_sit": ("expected_ppr_per_game", None, "desc"),
+    "buy_low_sell_high": ("ppr_over_expected_per_game", None, "asc"),
+    "waiver_wire": ("opportunity_trend", None, "desc"),
+    "breakout_check": ("xfp_trend", None, "desc"),
+    "ceiling_dfs": ("boom_rate", None, "desc"),
+}
+
 
 def test_presets_have_valid_ordered_metrics_primary_position_and_sort():
-    assert set(ADVANCED_METRIC_PRESETS) == set(EXPECTED)
+    assert set(ADVANCED_METRIC_PRESETS) == set(EXPECTED) | set(DECISION_EXPECTED)
     for preset_id, (primary, position) in EXPECTED.items():
         preset = ADVANCED_METRIC_PRESETS[preset_id]
         assert preset["primary"] == preset["metrics"][0] == primary
         assert preset["position"] == position
         assert preset["sort"] == "desc"
+        assert preset.get("kind") != "decision"
         assert len(preset["metrics"]) == 7
         assert len(set(preset["metrics"])) == 7
         assert all(key in LEADERBOARD_METRICS for key in preset["metrics"])
+
+
+def test_decision_presets_have_valid_metrics_taglines_and_sort():
+    decision_ids = {k for k, p in ADVANCED_METRIC_PRESETS.items() if p.get("kind") == "decision"}
+    assert decision_ids == set(DECISION_EXPECTED)
+    for preset_id, (primary, position, sort) in DECISION_EXPECTED.items():
+        preset = ADVANCED_METRIC_PRESETS[preset_id]
+        assert preset["primary"] == preset["metrics"][0] == primary
+        assert preset["position"] == position
+        assert preset["sort"] == sort
+        assert preset.get("tagline"), preset_id
+        assert 5 <= len(preset["metrics"]) == len(set(preset["metrics"])) <= 10
+        assert all(key in LEADERBOARD_METRICS for key in preset["metrics"])
+
+
+def test_buy_low_preset_sorts_ascending_for_most_negative_first():
+    # The whole point of the preset: most negative FPOE (buy low) on top.
+    assert ADVANCED_METRIC_PRESETS["buy_low_sell_high"]["sort"] == "asc"
+    assert ADVANCED_METRIC_PRESETS["buy_low_sell_high"]["primary"] == "ppr_over_expected_per_game"
 
 
 def test_wr_and_receiving_rank_target_share_not_yards_per_target():
@@ -122,3 +152,46 @@ def test_season_context_counts_resolve_across_provider_snapshot_dates():
     source = inspect.getsource(get_metric_leaderboard)
     assert "SELECT MAX(cx.{col})" in source
     assert "cx.player_id=m.player_id AND cx.season=m.season" in source
+
+
+def test_decision_pills_tagline_and_movers_are_wired_in_js():
+    # Pills render from cfg.presets and drive amLoadPreset / amClearDecision.
+    assert "amDecisionPills" in _AM_JS
+    assert "_updateDecisionUI" in _AM_JS
+    assert "amClearDecision" in _AM_JS
+    assert "amPresetTagline" in _AM_JS
+    # Last-used decision view is remembered across visits.
+    assert "localStorage.getItem('amLastPreset')" in _AM_JS
+    assert "localStorage.setItem('amLastPreset'" in _AM_JS
+    # Movers strip fetches the dedicated endpoint and renders three groups.
+    assert "_loadMovers" in _AM_JS
+    assert "/api/advanced-metrics/movers" in _AM_JS
+    assert "Heating up" in _AM_JS and "Cooling off" in _AM_JS and "Efficiency outliers" in _AM_JS
+
+
+def test_key_metrics_is_the_default_landing_view():
+    # Fresh loads (no ?preset=) land on the last-used decision view, else Key Metrics.
+    assert "'key_metrics'" in _AM_JS
+    assert "amLastPreset" in _AM_JS
+    assert "_PRESETS[_landing]" in _AM_JS
+
+
+def test_preset_choice_is_shareable_via_url():
+    assert "p.set('preset', _activePresetId)" in _AM_JS
+    assert "_initParams.get('preset')" in _AM_JS
+
+
+def test_schedule_ease_is_displayable_for_start_sit():
+    # The Start/Sit matchup column needs Schedule Ease visible to the table.
+    from data_building.advanced_metrics import LEADERBOARD_METRICS
+    assert not LEADERBOARD_METRICS["schedule_ease"].get("hidden")
+    assert "schedule_ease" in ADVANCED_METRIC_PRESETS["start_sit"]["metrics"]
+
+
+def test_movers_endpoint_shape():
+    import inspect
+    from routes.advanced_metrics_bp import api_advanced_metrics_movers
+    source = inspect.getsource(api_advanced_metrics_movers)
+    assert '"heating"' in source and '"cooling"' in source and '"outliers"' in source
+    assert "opportunity_trend" in source
+    assert "ppr_over_expected_per_game" in source
