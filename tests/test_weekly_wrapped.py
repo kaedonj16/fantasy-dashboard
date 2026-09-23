@@ -7,6 +7,7 @@ launcher/overlay ids, and the WEEK N footer branding.
 Skipped when Flask/pandas aren't installed; runs in CI with the full stack.
 """
 import pytest
+from pathlib import Path
 
 pytest.importorskip("flask")
 pytest.importorskip("pandas")
@@ -188,3 +189,20 @@ def test_weekly_bootstrap_js_uses_namespaced_ids():
     season_html = H._wrapped_launcher_html("/api/history/x/wrapped")
     assert "id='wrappedLaunch'" in season_html
     assert "Season Wrapped" in season_html
+
+
+def test_hub_week_change_js_targets_the_real_launcher_id():
+    """The launcher id is generated from its namespace; the hub's week-change
+    JS must look up that exact id or the button can never re-appear after a
+    week with no completed games (it silently stayed hidden)."""
+    import re
+
+    root = Path(__file__).resolve().parents[1]
+    hist = (root / "dashboard_services/pages/history_page.py").read_text()
+    hub = (root / "dashboard_services/pages/weekly_hub_page.py").read_text()
+    m = re.search(r'_wrapped_launcher_html\(url,\s*ns="([^"]+)"', hist)
+    assert m, "weekly wrapped launcher construction site not found"
+    # The button id is built as f"id='{ns}Launch'" inside _wrapped_launcher_html.
+    assert "id='{ns}Launch'" in hist
+    launcher_id = f"{m.group(1)}Launch"
+    assert f"getElementById('{launcher_id}')" in hub

@@ -161,3 +161,31 @@ def test_recap_efficiency_grid_pins_columns():
     assert ".weekly-recap .recap-eff-row > .recap-eff-team { grid-column:3; }" in css
     assert ".weekly-recap .recap-eff-row > .recap-eff-percent { grid-column:4; }" in css
     assert ".weekly-recap .recap-eff-card--bench .recap-eff-row > .recap-eff-team { grid-column:2; }" in css
+
+
+def test_recap_manager_line_uses_username_not_team_name():
+    """The scoreboard's @ line must show the manager's username, not the team
+    name (df_weekly 'owner' is the roster_map team name, e.g. 'Nunky Figgas',
+    while the handle is e.g. 'nunkyfiggas')."""
+    from dashboard_services.pages.recap_page import _usernames_by_roster_id
+
+    users = [
+        {"user_id": "u1", "username": "nunkyfiggas", "roster_id": 1},
+        {"user_id": "u2", "username": "", "roster_id": 2},  # empty handle: skipped
+    ]
+    rosters = [
+        {"roster_id": 1, "owner_id": "u1"},   # owner_id -> user_id match
+        {"roster_id": 3, "owner_id": "u9"},   # unknown manager: absent -> team name fallback
+    ]
+    assert _usernames_by_roster_id(users, rosters) == {"1": "nunkyfiggas"}
+
+    # roster_id fallback when owner_id matches no user.
+    users2 = [{"user_id": "uX", "username": "secondmanager", "roster_id": 5}]
+    assert _usernames_by_roster_id(users2, [{"roster_id": 5, "owner_id": "uY"}]) == \
+        {"5": "secondmanager"}
+
+    # The scoreboard renders the resolved handle, falling back to the team
+    # name only when no username resolved.
+    source = (ROOT / "dashboard_services/pages/recap_page.py").read_text()
+    assert "handle = username_by_rid.get(str(rid)) or owner" in source
+    assert 'recap-team-manager">@{html.escape(handle)}' in source

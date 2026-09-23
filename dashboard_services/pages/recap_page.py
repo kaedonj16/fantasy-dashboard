@@ -29,6 +29,29 @@ def _matchup_badges(matchups: list[dict]) -> dict[int, list[str]]:
     return {highest: ["Highest-Scoring Matchup"]}
 
 
+def _usernames_by_roster_id(users: list[dict], rosters: list[dict]) -> dict[str, str]:
+    """Map roster_id -> Sleeper username for the recap's @manager line.
+
+    df_weekly's "owner" column holds the team name (roster_map), not the
+    username, so resolve per roster: first by the roster's owner_id against
+    users[].user_id, then by matching users[].roster_id. Rosters with no
+    resolvable username are left out so callers can fall back to the team name.
+    """
+    users = users or []
+    user_by_id = {u.get("user_id"): u for u in users}
+    out: dict[str, str] = {}
+    for roster in rosters or []:
+        roster = roster or {}
+        rid = str(roster.get("roster_id"))
+        u = user_by_id.get(roster.get("owner_id"))
+        if u is None:
+            u = next((x for x in users if str(x.get("roster_id")) == rid), None)
+        uname = (u or {}).get("username") or ""
+        if uname:
+            out[rid] = uname
+    return out
+
+
 def _top_performers_by_roster(matchups: list[dict]) -> dict[str, list[dict]]:
     """Return each roster's highest-scoring actual weekly starter(s).
 
@@ -154,6 +177,9 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
     # else. It handles provider team art, owner art, then a generated crest.
     from dashboard_services.api import team_avatar
     roster_by_rid = {str(r.get("roster_id")): r for r in (ctx.get("rosters") or [])}
+    # username by roster_id for the @manager line (df_weekly "owner" is the
+    # team name, not the username).
+    username_by_rid = _usernames_by_roster_id(users, ctx.get("rosters") or [])
     avatar_by_rid = {
         rid: team_avatar(_platform, roster, users) or ""
         for rid, roster in roster_by_rid.items()
@@ -510,10 +536,11 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
         def team_block(owner, rid, name, points, side, winner=False):
             ava = team_link(owner, rid, ava_img(owner, rid, 36))
             nm = team_link(owner, rid, name, extra_class="recap-team-name-link")
+            handle = username_by_rid.get(str(rid)) or owner
             return f"""<div class="recap-team recap-team--{side}{' recap-team--winner' if winner else ''}">
               <div class="recap-team-identity">{ava}
                 <div class="recap-team-copy"><div class="recap-team-name">{nm}</div>
-                <div class="recap-team-manager">@{html.escape(owner)}</div></div>
+                <div class="recap-team-manager">@{html.escape(handle)}</div></div>
                 <strong class="recap-team-score">{points:.2f}</strong></div>
               {top_performer_html(rid)}
             </div>"""
