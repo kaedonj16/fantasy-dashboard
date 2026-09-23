@@ -53,11 +53,10 @@ def build_advanced_metrics_body(
         PREMIUM_METRICS, premium_metrics_exposed, PRO_METRICS,
     )
     _hide_premium = not premium_metrics_exposed()
-    # Decision presets whose primary metric is PRO-gated (the three advanced
+    # Decision presets whose primary metric is PRO-gated (the four advanced
     # decision presets). Non-PRO users see them locked; tapping opens the
-    # paywall instead of loading the view. Key Metrics, Start / Sit, and
-    # Ceiling / DFS stay free: their primaries (expected_ppr_per_game and
-    # boom_rate) are free.
+    # paywall instead of loading the view. Key Metrics and Start / Sit stay
+    # free: their primary (expected_ppr_per_game) is free.
     _pro_presets = [
         key for key, p in ADVANCED_METRIC_PRESETS.items()
         if p.get("kind") == "decision" and p.get("primary") in PRO_METRICS
@@ -342,9 +341,10 @@ def build_advanced_metrics_body(
 
         <!-- What changed: usage/xFP movers and efficiency outliers, filled by JS. -->
         <div class="am-movers" id="amMovers" style="display:none;">
-          <div class="am-movers-head">
+          <div class="am-movers-head" id="amMoversHead" role="button" tabindex="0" aria-expanded="true" title="Collapse">
             <span class="am-ctrl-label">What changed</span>
             <span class="am-movers-sub" id="amMoversSub"></span>
+            <span class="am-movers-chev" id="amMoversChev"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
           </div>
           <div class="am-movers-groups" id="amMoversGroups"></div>
         </div>
@@ -579,14 +579,24 @@ def build_advanced_metrics_body(
       .am-preset-tagline:empty { display:none; }
       /* What-changed movers strip */
       .am-movers { margin:8px 0 4px; padding:10px 12px; border:1px solid var(--border); border-radius:12px; background:var(--card); }
-      .am-movers-head { display:flex; align-items:baseline; gap:8px; margin-bottom:8px; }
+      .am-movers-head { display:flex; align-items:center; gap:8px; margin-bottom:8px; cursor:pointer; user-select:none; }
+      .am-movers-head .am-ctrl-label { flex-shrink:0; }
+      .am-movers-chev { margin-left:auto; display:flex; align-items:center; color:var(--text-muted); transition:transform .15s ease; }
+      .am-movers.collapsed .am-movers-chev { transform:rotate(-90deg); }
+      .am-movers.collapsed .am-movers-groups { display:none; }
+      .am-movers.collapsed .am-movers-head { margin-bottom:0; }
       .am-movers-sub { font-size:11.5px; color:var(--text-muted); }
       .am-movers-groups { display:flex; gap:14px; overflow-x:auto; padding-bottom:2px; }
       .am-movers-group { min-width:200px; flex:1; }
-      .am-movers-ghead { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; margin-bottom:6px; }
+      .am-movers-ghead { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; margin-bottom:6px; display:flex; align-items:center; gap:6px; }
       .am-movers-ghead.up { color:#2e9e5b; }
       .am-movers-ghead.down { color:#d64545; }
       .am-movers-ghead.out { color:var(--accent); }
+      /* When only one group has data, show chips in a wrapped grid so it doesn't look sparse. */
+      .am-movers-groups.single { display:block; }
+      .am-movers-groups.single .am-movers-group { min-width:0; display:flex; flex-wrap:wrap; gap:8px; }
+      .am-movers-groups.single .am-movers-ghead { width:100%; margin-bottom:2px; }
+      .am-movers-groups.single .am-mover-chip { width:auto; flex:1 1 220px; max-width:320px; }
       .am-mover-chip {
         display:flex; align-items:center; gap:8px; width:100%; text-align:left;
         padding:5px 8px; border:none; border-radius:8px; background:none;
@@ -1580,14 +1590,35 @@ _AM_JS = r"""
     });
     return b;
   }
-  function _moverGroup(title, cls, items, valCls) {
+  function _moverGroup(titleHtml, cls, items, valCls) {
     const g = document.createElement('div'); g.className = 'am-movers-group';
-    const h = document.createElement('div'); h.className = 'am-movers-ghead ' + cls; h.textContent = title;
+    const h = document.createElement('div'); h.className = 'am-movers-ghead ' + cls; h.innerHTML = titleHtml;
     g.appendChild(h);
     items.forEach(function(m) { g.appendChild(_moverChip(m, valCls)); });
     return g;
   }
+  // Collapsible "What changed" card. Persists collapsed state in localStorage.
+  function _initMoversCollapse() {
+    const host = document.getElementById('amMovers');
+    const head = document.getElementById('amMoversHead');
+    if (!host || !head || head.dataset.collapseInit) return;
+    head.dataset.collapseInit = '1';
+    function _apply(collapsed) {
+      host.classList.toggle('collapsed', collapsed);
+      head.setAttribute('aria-expanded', String(!collapsed));
+      head.title = collapsed ? 'Expand' : 'Collapse';
+      try { localStorage.setItem('amMoversCollapsed', collapsed ? '1' : '0'); } catch (e) {}
+    }
+    head.addEventListener('click', function() { _apply(!host.classList.contains('collapsed')); });
+    head.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); _apply(!host.classList.contains('collapsed')); }
+    });
+    try {
+      if (localStorage.getItem('amMoversCollapsed') === '1') _apply(true);
+    } catch (e) {}
+  }
   function _loadMovers() {
+    _initMoversCollapse();
     const host = document.getElementById('amMovers');
     const groups = document.getElementById('amMoversGroups');
     if (!host || !groups) return;
@@ -1601,12 +1632,30 @@ _AM_JS = r"""
       .then(function(r) { return r.ok ? r.json() : null; })
       .then(function(d) {
         groups.innerHTML = '';
-        if (!d || (!d.heating.length && !d.cooling.length && !d.outliers.length)) {
+        if (!d) { host.style.display = 'none'; return; }
+        // Filter out zero-value items — they mean "not enough data", not "no change".
+        // This keeps the section from showing a wall of +0.0s early in the season.
+        function _nonzero(items) {
+          return (items || []).filter(function(m) {
+            const v = Number(m.value);
+            return isFinite(v) && v !== 0;
+          });
+        }
+        const heating = _nonzero(d.heating);
+        const cooling = _nonzero(d.cooling);
+        const outliers = _nonzero(d.outliers);
+        if (!heating.length && !cooling.length && !outliers.length) {
           host.style.display = 'none'; return;
         }
-        if (d.heating.length) groups.appendChild(_moverGroup('🔥 Heating up', 'up', d.heating, 'up'));
-        if (d.cooling.length) groups.appendChild(_moverGroup('❄️ Cooling off', 'down', d.cooling, 'down'));
-        if (d.outliers.length) groups.appendChild(_moverGroup('⚡ Efficiency outliers', 'out', d.outliers, ''));
+        const _UP_SVG = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" style="flex-shrink:0"><path d="M2 13l4-4 3 3 5-6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M11 6h3v3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+        const _DOWN_SVG = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" style="flex-shrink:0"><path d="M2 3l4 4 3-3 5 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M11 10h3V7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+        const _BOLT_SVG = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" style="flex-shrink:0"><path d="M9 1L3 9h4l-1 6 6-8H8l1-6z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>';
+        const _groupCount = (heating.length ? 1 : 0) + (cooling.length ? 1 : 0) + (outliers.length ? 1 : 0);
+        // Single group gets a wrapped grid layout so it doesn't look sparse in the wide container.
+        groups.classList.toggle('single', _groupCount === 1);
+        if (heating.length) groups.appendChild(_moverGroup(_UP_SVG + '<span>Heating up</span>', 'up', heating, 'up'));
+        if (cooling.length) groups.appendChild(_moverGroup(_DOWN_SVG + '<span>Cooling off</span>', 'down', cooling, 'down'));
+        if (outliers.length) groups.appendChild(_moverGroup(_BOLT_SVG + '<span>Efficiency outliers</span>', 'out', outliers, ''));
         const sub = document.getElementById('amMoversSub');
         if (sub) sub.textContent = d.note || '';
         host.style.display = '';
