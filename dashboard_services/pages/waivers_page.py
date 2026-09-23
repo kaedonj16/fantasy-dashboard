@@ -502,6 +502,7 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
       <div id="wvTrendingWrap" hidden>
         <div class="wv-section-title wv-trending-title">
           <i class="fa-solid fa-fire" aria-hidden="true"></i> Trending across leagues
+          <span class="wv-trending-window" style="font-weight:400;font-size:12px;color:var(--muted);">last 48h</span>
         </div>
         <div id="wvTrendingStrip" class="wv-trending-strip"></div>
       </div>
@@ -856,9 +857,18 @@ function wvLoadBigGames() {{
 
 function wvLoadStartSit() {{
   window.brLoadingState('wvStartSit', {{ rows: 3, compact: true, message: 'Loading lineup' }});
-  fetch(`/api/start-sit-options?platform=${{WV_PLATFORM}}&league_id=${{WV_LEAGUE_ID}}&season=${{WV_SEASON}}`)
+  // Abort if the backend hangs (e.g. slow league-context fetch) so the panel
+  // falls through to the error state with a retry instead of skeletons forever.
+  var ssController = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+  var ssTimer = null;
+  if (ssController) {{
+    ssTimer = setTimeout(function() {{ try {{ ssController.abort(); }} catch (_) {{}} }}, 20000);
+  }}
+  fetch(`/api/start-sit-options?platform=${{WV_PLATFORM}}&league_id=${{WV_LEAGUE_ID}}&season=${{WV_SEASON}}`,
+        ssController ? {{ signal: ssController.signal }} : undefined)
     .then(r => r.json().then(d => ({{ ok: r.ok, d }})))
     .then(({{ok, d}}) => {{
+      if (ssTimer) clearTimeout(ssTimer);
       const state = d.state || (ok ? 'loaded' : 'temporarily_unavailable');
       if (state === 'sign_in_required') {{
         showLoginGate('wvStartSit', {{
@@ -886,6 +896,7 @@ function wvLoadStartSit() {{
       wvRenderStartSit();
     }})
     .catch(() => {{
+      if (ssTimer) clearTimeout(ssTimer);
       window.brErrorState('wvStartSit', 'Unable to load lineup data.', wvLoadStartSit);
     }});
 }}
@@ -1080,7 +1091,7 @@ function wvRenderTrending(items) {{
     const sub = [pos, p.team].filter(Boolean).join(' · ');
     const nm = (p.name || '').replace(/'/g, "\\\\'");
     const tipName = (p.name || '').replace(/"/g, '&quot;');
-    const tipAdds = wvFmtAdds(p.adds) + ' adds across Sleeper leagues';
+    const tipAdds = wvFmtAdds(p.adds) + ' adds across Sleeper leagues in the last 48h';
     return `
       <button type="button" class="wv-trend-chip" onclick="openPlayerModal('${{p.player_id}}', '${{nm}}')"
               title="${{tipName}} · ${{tipAdds}}">
