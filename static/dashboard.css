@@ -40630,4 +40630,12 @@ a, button, [role="button"], [role="tab"], summary, label,
     .mb-cell-r .mb-nameline .mb-team {
         align-self: flex-end;
     }
+    /* The game line ("Sun 1:00 pm @ IND") and stat line ("(#3 / 18.0)") are
+       siblings of the name block, not inside it, so the sub-line fix above
+       never reached them. Pin their text to the same edge as the name. */
+    .mb-cell-r .mb-info .mb-game,
+    .mb-cell-r .mb-info .mb-stat {
+        text-align: right;
+        align-self: flex-end;
+    }
 }
