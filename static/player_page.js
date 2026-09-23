@@ -11,10 +11,46 @@
     return months[parseInt(m[2], 10) - 1] + " " + parseInt(m[3], 10);
   }
 
+  function showChartMessage(msg) {
+    var div = document.getElementById("ppValueChart");
+    if (div) {
+      div.innerHTML = '<div style="padding:24px 12px;text-align:center;color:var(--text-muted,#6b7280);font-size:13px;">'
+        + escapeHtml(msg) + "</div>";
+    }
+  }
+
+  // Standalone player pages don't bundle Plotly; prefer the site's on-demand
+  // loader when present, otherwise fetch it directly from jsDelivr.
+  function loadPlotlyFallback() {
+    return new Promise(function (res, rej) {
+      if (window.Plotly) { res(window.Plotly); return; }
+      var s = document.createElement("script");
+      s.src = "https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.35.2/plotly.min.js";
+      s.onload = function () { res(window.Plotly); };
+      s.onerror = function () { rej(new Error("plotly load failed")); };
+      document.head.appendChild(s);
+    });
+  }
+
   function renderChart() {
     var hist = window.__ppHistory || [];
     var div = document.getElementById("ppValueChart");
-    if (!div || typeof Plotly === "undefined" || hist.length < 2) return;
+    if (!div) return;
+    if (hist.length < 2) {
+      showChartMessage("Not enough value history yet for a chart");
+      return;
+    }
+    var ensure = window.ensurePlotly ? window.ensurePlotly() : loadPlotlyFallback();
+    ensure.then(function () { drawChart(div, hist); }).catch(function () {
+      showChartMessage("Could not load the chart library");
+    });
+  }
+
+  function drawChart(div, hist) {
+    if (typeof Plotly === "undefined") {
+      showChartMessage("Could not load the chart library");
+      return;
+    }
 
     var xData = hist.map(function (d) { return formatDateLabel(d.as_of_date); });
     var n = xData.length;

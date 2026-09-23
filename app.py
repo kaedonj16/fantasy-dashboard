@@ -1307,7 +1307,7 @@ def _espn_otp_ui_enabled() -> bool:
 
 
 HOME_TICKER_HTML = """
-<div class="home-ticker-band" id="homeTicker" hidden aria-hidden="true">
+<div class="home-ticker-band" id="homeTicker" aria-hidden="true">
   <span class="home-ticker-tag"><span class="home-ticker-dot"></span>LIVE VALUES</span>
   <div class="home-ticker-wrap"><div class="home-ticker-track" id="homeTickerTrack"></div></div>
 </div>
@@ -7419,7 +7419,7 @@ def render_standings_compact(team_stats, length=None, movement=None, owner_to_ri
         rows.append(f"""
             <tr{_tr}>
               <td class="num">{int(row['Rank'])}{mv_html}</td>
-              <td class="team">{img} {_clickable_team_name(row['owner'], owner_to_rid)}{_lead}</td>
+              <td class="team" title="{html.escape(str(row['owner']), quote=True)}">{img} {_clickable_team_name(row['owner'], owner_to_rid)}{_lead}</td>
               <td>{record}</td>
               <td>{row['PF']:.0f}</td>
             </tr>""")
@@ -17843,6 +17843,23 @@ def get_model_value_table_cached():
         from utils.value_helpers import apply_redraft_display_fields as _ardf
         _ardf(tbl)
 
+    # Overlay birthday-derived decimal ages from the player index onto the
+    # canonical value table, so every consumer (rankings, player modal, trade
+    # calculator, waivers, breakouts, rookies) sees the same one-decimal age
+    # instead of a mix of precisions and missing values.
+    if tbl:
+        try:
+            from dashboard_services.service import age_from_bday as _afb
+            from utils.utils import load_players_index as _mvc_lpi3
+            _bday_idx = _mvc_lpi3() or {}
+            for _p in tbl:
+                _bday = (_bday_idx.get(str(_p.get("id") or "")) or {}).get("bDay")
+                _age = _afb(_bday) if _bday else None
+                if _age is not None:
+                    _p["age"] = _age
+        except Exception as _e:
+            logger.info(f"[model-value-cache] age overlay skipped: {_e}")
+
     _MODEL_VALUE_CACHE = tbl
     _MODEL_VALUE_CACHE_TS = now
     return tbl
@@ -25791,52 +25808,54 @@ def api_trade_database():
         lf_clause = "AND l.league_type = %s " if lf_param is not None else ""
 
         # Build player filter clauses.
-        # Always require both sides present so COUNT and rendered cards agree.
-        filter_clauses: list = [
-            "EXISTS (SELECT 1 FROM trade_intel_assets _sa WHERE _sa.trade_id = t.id AND _sa.side = 'a')",
-            "EXISTS (SELECT 1 FROM trade_intel_assets _sb WHERE _sb.trade_id = t.id AND _sb.side = 'b')",
-        ]
+        # Use uncorrelated IN-subqueries and joins instead of correlated
+        # EXISTS probes per trade row: with ~250k trades (2026 season) the
+        # per-row probes time out, while these plan as hash semi-joins.
+        # The old unconditional side-presence filters were dropped for the same
+        # reason; the Python renderer below still skips malformed trades
+        # lacking either side, so COUNT may slightly exceed rendered cards if
+        # such rows exist.
+        filter_clauses: list = []
         filter_params: list = []
+        join_clauses: list = []
 
         if player_a_ids and player_b_ids:
-            # Both sides specified: enforce that A and B land on opposite sides of
-            # the trade. DB side assignment is arbitrary, so accept either arrangement.
-            filter_clauses.append(
-                "("
-                "(EXISTS (SELECT 1 FROM trade_intel_assets _fa1 WHERE _fa1.trade_id = t.id"
-                "  AND _fa1.side = 'a' AND _fa1.asset_type = 'player' AND _fa1.player_id = ANY(%s))"
-                " AND EXISTS (SELECT 1 FROM trade_intel_assets _fb1 WHERE _fb1.trade_id = t.id"
-                "  AND _fb1.side = 'b' AND _fb1.asset_type = 'player' AND _fb1.player_id = ANY(%s)))"
-                " OR "
-                "(EXISTS (SELECT 1 FROM trade_intel_assets _fa2 WHERE _fa2.trade_id = t.id"
-                "  AND _fa2.side = 'b' AND _fa2.asset_type = 'player' AND _fa2.player_id = ANY(%s))"
-                " AND EXISTS (SELECT 1 FROM trade_intel_assets _fb2 WHERE _fb2.trade_id = t.id"
-                "  AND _fb2.side = 'a' AND _fb2.asset_type = 'player' AND _fb2.player_id = ANY(%s)))"
-                ")"
+            # Both sides specified: enforce that A and B land on opposite sides
+            # of the trade. DB side assignment is arbitrary, so accept either
+            # arrangement via the side inequality.
+            join_clauses.append(
+                "JOIN trade_intel_assets _ja ON _ja.trade_id = t.id"
+                " AND _ja.asset_type = 'player' AND _ja.player_id = ANY(%s)"
             )
-            filter_params.extend([player_a_ids, player_b_ids, player_a_ids, player_b_ids])
+            join_clauses.append(
+                "JOIN trade_intel_assets _jb ON _jb.trade_id = t.id"
+                " AND _jb.asset_type = 'player' AND _jb.player_id = ANY(%s)"
+                " AND _jb.side <> _ja.side"
+            )
+            filter_params.extend([player_a_ids, player_b_ids])
         elif player_a_ids:
             # Only one side specified: match on either DB side
             filter_clauses.append(
-                "EXISTS (SELECT 1 FROM trade_intel_assets _fa WHERE _fa.trade_id = t.id"
-                " AND _fa.asset_type = 'player' AND _fa.player_id = ANY(%s))"
+                "t.id IN (SELECT _fa.trade_id FROM trade_intel_assets _fa"
+                " WHERE _fa.asset_type = 'player' AND _fa.player_id = ANY(%s))"
             )
             filter_params.append(player_a_ids)
         elif player_b_ids:
             filter_clauses.append(
-                "EXISTS (SELECT 1 FROM trade_intel_assets _fb WHERE _fb.trade_id = t.id"
-                " AND _fb.asset_type = 'player' AND _fb.player_id = ANY(%s))"
+                "t.id IN (SELECT _fb.trade_id FROM trade_intel_assets _fb"
+                " WHERE _fb.asset_type = 'player' AND _fb.player_id = ANY(%s))"
             )
             filter_params.append(player_b_ids)
 
         if match_ids and not (player_a_ids or player_b_ids):
             # Legacy name-search: any-side match
             filter_clauses.append(
-                "EXISTS (SELECT 1 FROM trade_intel_assets _fm WHERE _fm.trade_id = t.id"
-                " AND _fm.asset_type = 'player' AND _fm.player_id = ANY(%s))"
+                "t.id IN (SELECT _fm.trade_id FROM trade_intel_assets _fm"
+                " WHERE _fm.asset_type = 'player' AND _fm.player_id = ANY(%s))"
             )
             filter_params.append(match_ids)
 
+        join_sql = (" " + " ".join(join_clauses)) if join_clauses else ""
         filter_sql = (" AND " + " AND ".join(filter_clauses)) if filter_clauses else ""
         sf_p = [sf_param] if sf_param is not None else []
         lf_p = [lf_param] if lf_param is not None else []
@@ -25847,7 +25866,7 @@ def api_trade_database():
                 f"""
                 SELECT COUNT(DISTINCT t.id) AS n
                 FROM trade_intel_trades t
-                LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id
+                LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id{join_sql}
                 WHERE t.season = %s {sf_clause}{lf_clause}{filter_sql}
                 """,
                 count_params,
@@ -25860,7 +25879,7 @@ def api_trade_database():
                 SELECT DISTINCT t.id, t.transaction_id, t.season, t.week, t.created_at,
                        l.scoring_type, l.is_superflex, l.num_teams
                 FROM trade_intel_trades t
-                LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id
+                LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id{join_sql}
                 WHERE t.season = %s {sf_clause}{lf_clause}{filter_sql}
                 ORDER BY t.created_at DESC NULLS LAST
                 LIMIT %s OFFSET %s
