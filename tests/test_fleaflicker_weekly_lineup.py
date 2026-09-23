@@ -99,3 +99,39 @@ def test_failed_boxscore_does_not_skip_next_game(monkeypatch):
     assert next(r for r in rows if r["roster_id"] == 3)["starters"] == ["ok"]
     assert next(r for r in rows if r["roster_id"] == 1)["metadata"]["lineup_state"] == "unavailable"
 
+
+
+def test_unresolved_boxscore_slots_are_not_historical():
+    """Fleaflicker '0' placeholders must not count as a historical lineup.
+
+    When the boxscore can't resolve players, starters is all "0"s. That must
+    not set lineup_is_historical, or Bench Gems / Missed Opportunities render
+    empty sections instead of the unavailable message.
+    """
+    from dashboard_services.recap_calculations import build_lineup_analysis
+
+    # Side with all-"0" starters (unresolved boxscore) but historical flag set
+    # (simulating the old buggy behavior where "0"s passed the gate).
+    matchups_by_week = {
+        1: [{
+            "left": {
+                "roster_id": "1", "name": "Team A",
+                "lineup_is_historical": True,
+                "starters": [
+                    {"pid": "0", "name": "Unknown", "pos": "WR", "pts": None},
+                ],
+                "bench": [],
+            },
+            "right": {
+                "roster_id": "2", "name": "Team B",
+                "lineup_is_historical": True,
+                "starters": [
+                    {"pid": "0", "name": "Unknown", "pos": "RB", "pts": None},
+                ],
+                "bench": [],
+            },
+        }]
+    }
+    result = build_lineup_analysis(matchups_by_week, 1, roster_positions=[])
+    assert result["available"] is False
+    assert "unavailable" in result["reason"].lower()

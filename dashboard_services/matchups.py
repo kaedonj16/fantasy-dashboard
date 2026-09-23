@@ -450,11 +450,15 @@ def build_matchup_preview(
     def _team_block_from_match_row(row: dict) -> dict:
         rid = str(row.get("roster_id"))
         starters_raw = [s for s in (row.get("starters") or []) if s]
+        # Fleaflicker uses "0" for empty/unresolved boxscore slots. Those are
+        # placeholders, not real lineup data; exclude them from the historical
+        # check so unresolved boxscores don't masquerade as valid lineups.
+        real_starters = [s for s in starters_raw if str(s) != "0"]
         # Keep whether the provider supplied a real weekly lineup before the
         # display-only current-roster fallback below. Historical consumers must
         # never mistake today's roster for the lineup started in an earlier week.
-        lineup_is_historical = bool(starters_raw) and not _starters_look_like_full_roster(
-            starters_raw, row.get("players") or []
+        lineup_is_historical = bool(real_starters) and not _starters_look_like_full_roster(
+            real_starters, row.get("players") or []
         )
         starter_set = {str(s) for s in starters_raw}
         all_players = [str(p) for p in (row.get("players") or []) if p]
