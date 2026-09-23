@@ -6,6 +6,12 @@ def test_empty():
     assert all_play_analysis({}, {}) == {}
 
 
+def test_missing_actual_result_is_unavailable_not_a_fabricated_loss():
+    res = all_play_analysis({1: {"A": 10, "B": 0}}, {"A": 1})
+    assert res["B"]["actual_wins"] is None
+    assert res["B"]["luck_delta"] is None
+
+
 def test_all_play_record_basic():
     # 3 teams, 2 weeks. A always highest, C always lowest.
     scores = {

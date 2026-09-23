@@ -7447,25 +7447,81 @@ def _ord_str(n) -> str:
     return ordinal(n)
 
 
-def _all_play_from_df_weekly(df_weekly) -> dict:
-    """All-play / luck analysis keyed by owner name, from finalized weeks."""
+def _all_play_from_df_weekly(df_weekly, *, max_week=None,
+                             regular_season_weeks=None) -> dict:
+    """All-play/luck keyed by owner, from valid completed regular-season games.
+
+    Weekly rows intentionally do not need a precomputed ``win`` column.  An
+    actual result is derived only when both points values are finite; invalid
+    rows are excluded from both the actual and all-play sides of the metric.
+    """
     try:
-        if df_weekly is None or df_weekly.empty or "finalized" not in df_weekly.columns:
+        required = {"week", "owner", "points", "points_against", "finalized"}
+        if df_weekly is None or df_weekly.empty:
             return {}
-        fin = df_weekly[df_weekly["finalized"] == True]
+        missing = required.difference(df_weekly.columns)
+        if missing:
+            logger.warning("[standings] all-play unavailable; missing weekly columns: %s",
+                           ", ".join(sorted(missing)))
+            return {}
+
+        fin = df_weekly[df_weekly["finalized"] == True].copy()
+        fin["_week"] = pd.to_numeric(fin["week"], errors="coerce")
+        fin = fin[fin["_week"].notna() & (fin["_week"] >= 1)]
+        if max_week is not None:
+            fin = fin[fin["_week"] <= int(max_week)]
+        if regular_season_weeks is not None:
+            fin = fin[fin["_week"] <= int(regular_season_weeks)]
         if fin.empty:
             return {}
         weekly_scores: dict = {}
-        actual_wins: dict = {}
+        weekly_results: dict = {}
+        invalid_rows = 0
+
+        def _finite_score(value):
+            try:
+                number = float(value)
+            except (TypeError, ValueError, OverflowError):
+                return None
+            return number if math.isfinite(number) else None
+
         for _, r in fin.iterrows():
-            wk = int(r["week"])
-            owner = str(r["owner"])
-            weekly_scores.setdefault(wk, {})[owner] = float(r["points"] or 0)
-            actual_wins[owner] = actual_wins.get(owner, 0.0) + float(r["win"] or 0)
+            owner_value = r["owner"]
+            owner = "" if pd.isna(owner_value) else str(owner_value).strip()
+            points = _finite_score(r["points"])
+            against = _finite_score(r["points_against"])
+            if not owner or points is None or against is None:
+                invalid_rows += 1
+                continue
+            wk = int(r["_week"])
+            if owner in weekly_scores.setdefault(wk, {}):
+                invalid_rows += 1
+                continue
+            score = points
+            opponent_score = against
+            weekly_scores[wk][owner] = score
+            result = 1.0 if score > opponent_score else (0.0 if score < opponent_score else 0.5)
+            weekly_results.setdefault(wk, {})[owner] = result
+
+        # A singleton cannot produce an all-play comparison. Remove it from
+        # actual wins too so the two sides always cover the same eligible weeks.
+        for wk in [wk for wk, scores in weekly_scores.items() if len(scores) < 2]:
+            weekly_scores.pop(wk, None)
+            weekly_results.pop(wk, None)
+        actual_wins: dict = {}
+        for results in weekly_results.values():
+            for owner, result in results.items():
+                actual_wins[owner] = actual_wins.get(owner, 0.0) + result
+        if invalid_rows:
+            logger.warning("[standings] all-play skipped %d invalid or duplicate weekly row(s)",
+                           invalid_rows)
         from utils.all_play import all_play_analysis
         return all_play_analysis(weekly_scores, actual_wins)
-    except Exception:
-        logger.debug("all-play analysis failed", exc_info=True)
+    except (TypeError, ValueError, KeyError) as exc:
+        logger.warning("[standings] all-play unavailable: %s", exc)
+        return {}
+    except Exception as exc:
+        logger.warning("[standings] unexpected all-play failure: %s", exc)
         return {}
 
 
@@ -9642,7 +9698,11 @@ def _standings_panels(ctx: dict, power_rankings=None) -> dict:
     rosters = ctx["rosters"]
     num_teams = len({str(r.get("roster_id")) for r in rosters})
 
-    _all_play = _all_play_from_df_weekly(df_weekly)
+    from dashboard_services.service import regular_season_length
+    _settings = ctx.get("league_settings") or (ctx.get("league") or {}).get("settings") or {}
+    _all_play = _all_play_from_df_weekly(
+        df_weekly, regular_season_weeks=regular_season_length(_settings)
+    )
     _pp_spots, _pp_weeks = _standings_playoff_params(ctx, team_stats)
     _o2r = _owner_to_rid_map(roster_map=roster_map, df_weekly=df_weekly)
     _weekly_pts = _standings_weekly_points(df_weekly)
