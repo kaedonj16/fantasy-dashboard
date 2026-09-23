@@ -1178,7 +1178,7 @@ def guide_page(slug: str, platform: Optional[str] = None, season: Optional[int] 
         "publisher": {
             "@type": "Organization",
             "name": "BR Fantasy",
-            "logo": {"@type": "ImageObject", "url": f"{origin}/static/BR_Logo.png?v=f4228e0e"},
+            "logo": {"@type": "ImageObject", "url": f"{origin}/static/BR_Logo.png?v=6c0c4828"},
         },
         "mainEntityOfPage": article_url,
     }
