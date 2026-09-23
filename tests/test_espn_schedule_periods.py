@@ -2,7 +2,17 @@
 import json
 from types import SimpleNamespace
 
+import pytest
+
+# The lightweight unit CI shard intentionally installs only Flask and test
+# tooling; the production ESPN client is installed by the full-stack shard.
+# Skip this provider-specific module before importing the adapter so unit-test
+# collection remains dependency-safe, matching the other optional providers.
+pytest.importorskip("espn_api")
+
 from dashboard_services.providers import espn_api
+
+pytestmark = pytest.mark.integration
 
 
 class FakeRequest:
