@@ -1325,22 +1325,35 @@ def _build_wrapped_slides(history_ctx: dict, summary: dict, league_name: str, se
 
 
 def _wrapped_overlay_markup(slides: list, share_data: dict | None = None,
-                            season=None) -> str:
+                            season=None, ns: str = "wrapped",
+                            footer_label: str | None = None) -> str:
     """Return the Season Wrapped overlay markup (no launch button, no script) so
     it can be fetched and injected lazily. '' when there isn't enough to tell a
     story. Editorial layout: left-aligned content on a strict margin, a kicker
     rule above each headline, a giant outlined background word, and a broadcast
-    footer bug on every slide."""
+    footer bug on every slide.
+
+    ns namespaces every element id (``wrapped`` -> ``{ns}``) so a Weekly
+    Wrapped overlay can share a page with the Season Wrapped one; the bootstrap
+    JS is namespaced the same way. footer_label overrides the footer bug text
+    (Weekly Wrapped passes ``WEEK N``); intro slides may carry ``intro_word``
+    HTML to replace the default ``SEASON<br>WRAPPED`` wordmark."""
     if len(slides) < 3:
         return ""
 
     bars = "".join("<span class='wrapped-bar'><i></i></span>" for _ in slides)
     season_txt = _esc(str(season)) if season not in (None, "") else ""
+    if footer_label is not None:
+        foot_txt = footer_label
+    elif season_txt:
+        foot_txt = f"{season_txt} SEASON"
+    else:
+        foot_txt = ""
     foot = (
         "<div class='wrapped-foot'>"
         "<img src='/static/BR_Logo_dark.png?v=6c0c4828' alt=''>"
         "<span class='wrapped-foot-line'></span>"
-        f"<span class='wrapped-foot-season'>{season_txt} SEASON</span>"
+        f"<span class='wrapped-foot-season'>{_esc(foot_txt)}</span>"
         "</div>"
     )
 
@@ -1355,10 +1368,11 @@ def _wrapped_overlay_markup(slides: list, share_data: dict | None = None,
                f"<div class='wrapped-sub'>{_esc(str(s['sub']))}</div>")
 
         if kind == "intro":
+            _intro_word = s.get("intro_word") or "SEASON<br>WRAPPED"
             body = (
                 "<img src='/static/BR_Logo_dark.png?v=6c0c4828' alt='BR Fantasy' class='wrapped-intro-logo'>"
                 f"<div class='wrapped-league'>{_esc(str(s['big']))}</div>"
-                "<div class='wrapped-word'>SEASON<br>WRAPPED</div>"
+                f"<div class='wrapped-word'>{_intro_word}</div>"
                 + sub
             )
         elif kind == "champion":
@@ -1446,17 +1460,17 @@ def _wrapped_overlay_markup(slides: list, share_data: dict | None = None,
 
     share_json = json.dumps(share_data or {}).replace("</", "<\\/")
     return f"""
-    <div class="wrapped-overlay" id="wrappedOverlay" hidden aria-hidden="true">
+    <div class="wrapped-overlay" id="{ns}Overlay" hidden aria-hidden="true">
       <div class="wrapped-progress">{bars}</div>
-      <button type="button" class="wrapped-share" id="wrappedShare" aria-label="Share">
+      <button type="button" class="wrapped-share" id="{ns}Share" aria-label="Share">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg><span>Share</span>
       </button>
-      <button type="button" class="wrapped-close" id="wrappedClose" aria-label="Close">&times;</button>
-      <div class="wrapped-stage" id="wrappedStage">{''.join(slide_html)}</div>
-      <button type="button" class="wrapped-tap wrapped-tap-prev" id="wrappedPrev" aria-label="Previous"></button>
-      <button type="button" class="wrapped-tap wrapped-tap-next" id="wrappedNext" aria-label="Next"></button>
+      <button type="button" class="wrapped-close" id="{ns}Close" aria-label="Close">&times;</button>
+      <div class="wrapped-stage" id="{ns}Stage">{''.join(slide_html)}</div>
+      <button type="button" class="wrapped-tap wrapped-tap-prev" id="{ns}Prev" aria-label="Previous"></button>
+      <button type="button" class="wrapped-tap wrapped-tap-next" id="{ns}Next" aria-label="Next"></button>
       <div class="wrapped-hint">Tap to advance · Esc to close</div>
-      <script type="application/json" id="wrappedShareData">{share_json}</script>
+      <script type="application/json" id="{ns}ShareData">{share_json}</script>
     </div>
     """
 
@@ -1521,17 +1535,305 @@ def render_history_wrapped_overlay(history_ctx: dict, selected_history_season) -
     return _wrapped_overlay_markup(slides, share_data, season=selected_history_season)
 
 
-def _wrapped_launcher_html(wrapped_url: str) -> str:
+# ── Weekly Wrapped ────────────────────────────────────────────────────────────
+# One-week story decks for the weekly hub: intro, highest team score, biggest
+# blowout, closest game, the week's top fantasy player + position leaders + dud
+# (boxscore-backed, lazy like the season MVP slide), and a shareable recap
+# finale. The overlay renderer, launcher, and bootstrap are shared with Season
+# Wrapped via the ns="weekly-wrapped" namespace.
+
+
+def _mfield(m, key):
+    """Read a matchup field whether the provider returned a dict or a
+    MatchupRow dataclass."""
+    try:
+        return m.get(key)
+    except AttributeError:
+        return getattr(m, key, None)
+
+
+def _wrapped_weekly_player_leaders(ctx: dict, week) -> dict:
+    """Per-player fantasy production for a single week from that week's
+    boxscores. Returns {'top': entry, 'by_pos': {QB/RB/WR/TE: entry},
+    'dud': entry} where entry is {name, pos, nfl, pts}. 'dud' is the
+    lowest-scoring starter (needs the provider's starters list; skipped when
+    unavailable). One week, one fetch, per request -- no cache. {} when
+    unavailable."""
+    platform = str(ctx.get("platform") or "sleeper")
+    league_id = str(ctx.get("resolved_league_id") or ctx.get("league_id") or "")
+    season = ctx.get("season")
+    players_map = ctx.get("players_map") or {}
+    if not league_id or not players_map:
+        return {}
+    try:
+        from dashboard_services.platform_api import get_matchups
+        mus = get_matchups(platform, league_id, int(week), season) or []
+    except Exception:
+        return {}
+
+    _POS = ("QB", "RB", "WR", "TE")
+    top = None
+    by_pos: dict = {}
+    dud = None
+    for m in mus:
+        pp = _mfield(m, "players_points") or {}
+        starters = {str(s) for s in (_mfield(m, "starters") or [])}
+        for pid, pts in pp.items():
+            pid = str(pid)
+            if pid in ("", "0"):
+                continue
+            try:
+                pv = float(pts or 0)
+            except (TypeError, ValueError):
+                continue
+            p = players_map.get(pid) or {}
+            name = p.get("name") or p.get("full_name")
+            if not name:
+                continue
+            pos = str(p.get("pos") or p.get("position") or "").upper()
+            nfl = str(p.get("team") or p.get("nfl") or "")
+            entry = {"name": str(name), "pos": pos, "nfl": nfl, "pts": round(pv, 1)}
+            if top is None or pv > top["pts"]:
+                top = entry
+            if pos in _POS and (pos not in by_pos or pv > by_pos[pos]["pts"]):
+                by_pos[pos] = entry
+            if pid in starters and pv > 0 and (dud is None or pv < dud["pts"]):
+                dud = entry
+    return {"top": top, "by_pos": by_pos, "dud": dud}
+
+
+def _build_weekly_wrapped_slides(ctx: dict, league_name: str, season, week,
+                                 include_players: bool = True) -> list:
+    """Ordered 'Weekly Wrapped' story slides for one completed week. Each slide:
+    {kind, eyebrow, big, num, dp, suffix, label, sub} (plus optional 'rows').
+
+    Slides with no data are skipped; the overlay needs >= 3 to render.
+    include_players=False skips the boxscore-backed slides (top player /
+    position leaders / dud), so the hub can cheaply decide whether to show the
+    launcher; the lazy /wrapped endpoint builds the full deck."""
+    try:
+        week = int(week)
+    except (TypeError, ValueError):
+        return []
+
+    wdf = ctx.get("df_weekly")
+    if wdf is None or getattr(wdf, "empty", True) or "week" not in wdf.columns:
+        return []
+    wdf = wdf.copy()
+    wdf = wdf[pd.to_numeric(wdf["week"], errors="coerce") == week]
+    if wdf.empty:
+        return []
+    # Only completed games count -- never wrap projections.
+    if "finalized" in wdf.columns:
+        fin = wdf[wdf["finalized"] == True]
+        if not fin.empty:
+            wdf = fin
+    if "points" not in wdf.columns:
+        return []
+    wdf["points"] = pd.to_numeric(wdf["points"], errors="coerce").fillna(0.0)
+    if not (wdf["points"] > 0).any():
+        return []
+
+    def _txt(kind, eyebrow, big, label, sub):
+        return {"kind": kind, "eyebrow": eyebrow, "big": big, "num": False,
+                "dp": 0, "suffix": "", "label": label, "sub": sub}
+
+    def _num(kind, eyebrow, val, dp, suffix, label, sub):
+        return {"kind": kind, "eyebrow": eyebrow, "big": f"{val:.{dp}f}", "num": True,
+                "dp": dp, "suffix": suffix, "label": label, "sub": sub}
+
+    slides = [{**_txt("intro", f"WEEK {week}", str(league_name), "Wrapped",
+                      "The week that was, in stories"),
+               "bgword": f"W{week}", "intro_word": "WEEKLY<br>WRAPPED"}]
+
+    hi = wdf.loc[wdf["points"].idxmax()]
+    hi_pts = float(hi.get("points") or 0)
+    if hi_pts > 0:
+        slides.append({**_num("topscore", f"HIGHEST SCORE · WEEK {week}",
+                              hi_pts, 1, " PTS", str(hi.get("owner", "-")),
+                              "The week's biggest team total"),
+                       "bgword": str(int(hi_pts))})
+
+    # Pair the week's head-to-head results via matchup_id.
+    matchup_rows = []
+    if "matchup_id" in wdf.columns:
+        for (_mid,), grp in wdf.groupby(["matchup_id"]):
+            if len(grp) != 2:
+                continue
+            ordered = grp.sort_values("points", ascending=False).reset_index(drop=True)
+            winner, loser = ordered.iloc[0], ordered.iloc[1]
+            wp, lp = float(winner["points"] or 0), float(loser["points"] or 0)
+            if wp <= 0 and lp <= 0:
+                continue
+            matchup_rows.append({
+                "winner": str(winner.get("owner", "-")),
+                "loser": str(loser.get("owner", "-")),
+                "winner_pts": wp, "loser_pts": lp, "margin": abs(wp - lp),
+            })
+
+    if matchup_rows:
+        bo = max(matchup_rows, key=lambda x: x["margin"])
+        _b = _num("blowout", "BIGGEST BLOWOUT", bo["margin"], 1, " PTS",
+                  f"{bo['winner']} over {bo['loser']}",
+                  "The week's most lopsided result")
+        _b["bgword"] = str(int(bo["margin"]))
+        _b["scoreline"] = f"{bo['winner_pts']:.1f}-{bo['loser_pts']:.1f}"
+        slides.append(_b)
+
+    if len(matchup_rows) >= 2:
+        nb = min(matchup_rows, key=lambda x: x["margin"])
+        _c = _num("nailbiter", "CLOSEST GAME", nb["margin"], 1, " PTS",
+                  f"{nb['winner']} over {nb['loser']}",
+                  "Decided by the slimmest margin of the week")
+        _c["bgword"] = f"{nb['margin']:.1f}"
+        _c["scoreline"] = f"{nb['winner_pts']:.1f}-{nb['loser_pts']:.1f}"
+        slides.append(_c)
+
+    # ── Player awards: top scorer, best at each position, dud of the week ─────
+    # The only slides that need a boxscore fetch, so the cheap availability
+    # check skips them.
+    if include_players:
+        leaders = _wrapped_weekly_player_leaders(ctx, week)
+        top = (leaders or {}).get("top")
+        if top and top.get("pts"):
+            _meta = " · ".join(x for x in [top.get("pos"), top.get("nfl")] if x)
+            slides.append({**_num("topplayer", "TOP PLAYER OF THE WEEK",
+                                  float(top["pts"]), 1, " PTS", top["name"],
+                                  f"{_meta}, the week's top fantasy producer" if _meta
+                                  else "The week's top fantasy producer"),
+                           "bgword": str(int(float(top["pts"])))})
+
+        by_pos = (leaders or {}).get("by_pos") or {}
+        pos_rows = [(p, by_pos[p]["name"], f"{by_pos[p]['pts']:.1f}")
+                    for p in ("QB", "RB", "WR", "TE") if by_pos.get(p)]
+        if len(pos_rows) >= 3:
+            slides.append({"kind": "posleaders", "eyebrow": "TOP AT EACH POSITION",
+                           "num": False, "big": "", "dp": 0, "suffix": "", "label": "",
+                           "sub": "The week's points leader at every spot",
+                           "rows": pos_rows, "bgword": "TOP"})
+
+        dud = (leaders or {}).get("dud")
+        if dud and dud.get("pts"):
+            _dmeta = " · ".join(x for x in [dud.get("pos"), dud.get("nfl")] if x)
+            slides.append({**_num("dud", "DUD OF THE WEEK", float(dud["pts"]), 1,
+                                  " PTS", dud["name"],
+                                  f"{_dmeta}, the week's coldest starter" if _dmeta
+                                  else "The week's coldest starter"),
+                           "bgword": f"{float(dud['pts']):.1f}"})
+
+    return slides
+
+
+def _wrapped_weekly_share_data(slides: list, league_name: str, season, week) -> dict:
+    """Curated highlights for the shareable 'Weekly Wrapped' summary card,
+    drawn client-side to a canvas. Built from the same slides so the card agrees
+    with the deck. The painter keys off ``week`` for WEEK N branding."""
+    by_kind = {s.get("kind"): s for s in slides}
+
+    def _hi(k, n, v):
+        return {"k": str(k), "n": str(n), "v": str(v)}
+
+    highlights: list = []
+    tp = by_kind.get("topplayer")
+    if tp and tp.get("label"):
+        highlights.append(_hi("TOP PLAYER", tp["label"], tp["big"]))
+    ts = by_kind.get("topscore")
+    if ts and ts.get("label"):
+        highlights.append(_hi("HIGH SCORE", ts["label"], ts["big"]))
+    bo = by_kind.get("blowout")
+    if bo and bo.get("label"):
+        highlights.append(_hi("BIGGEST BLOWOUT", bo["label"], bo["big"]))
+    nb = by_kind.get("nailbiter")
+    if nb and nb.get("label"):
+        highlights.append(_hi("CLOSEST GAME", nb["label"], nb["big"]))
+
+    return {
+        "league": str(league_name),
+        "season": str(season),
+        "week": int(week),
+        "highlights": highlights[:5],
+    }
+
+
+def render_weekly_wrapped_overlay(ctx: dict, week) -> str:
+    """Build the full Weekly Wrapped overlay markup (including the boxscore-backed
+    top-player / position-leader / dud slides). Called by the lazy /wrapped
+    endpoint on first open."""
+    league = ctx.get("league") or {}
+    league_name = league.get("name") or "League"
+    season = ctx.get("season")
+    week = int(week)
+    slides = _build_weekly_wrapped_slides(ctx, league_name, season, week)
+    share_data = _wrapped_weekly_share_data(slides, league_name, season, week)
+    # Finale: the shareable recap card as a slide in the deck itself, so the deck
+    # ends on the same one-card summary you get from the Share button.
+    if share_data.get("highlights"):
+        slides.append({
+            "kind": "recap", "num": False, "big": "", "dp": 0, "suffix": "", "label": "",
+            "eyebrow": f"WEEK {week} RECAP",
+            "sub": "Tap Share to send it to the group chat",
+            "bgword": "RECAP", "recap": share_data,
+        })
+    return _wrapped_overlay_markup(slides, share_data, ns="weekly-wrapped",
+                                   footer_label=f"WEEK {week}")
+
+
+def weekly_wrapped_url(ctx: dict, platform: str, season, league_id: str, week) -> str:
+    """Cheap (no boxscore) availability check for the Weekly Wrapped launcher:
+    the lazy endpoint URL when the week has enough finalized data for a >= 3
+    slide deck, else ''. Used by the hub render and the week-change API so the
+    button only appears for weeks with completed games."""
+    try:
+        league = ctx.get("league") or {}
+        league_name = league.get("name") or "League"
+        slides = _build_weekly_wrapped_slides(ctx, league_name, season, int(week),
+                                              include_players=False)
+        if len(slides) >= 3:
+            return f"/api/weekly/{platform}/{season}/{league_id}/{int(week)}/wrapped"
+    except Exception:
+        pass
+    return ""
+
+
+def weekly_wrapped_launcher_html(ctx: dict, platform: str, season, league_id: str,
+                                 week, league_name: str | None = None) -> str:
+    """The Weekly Wrapped launch button + mount + namespaced bootstrap for the
+    weekly hub. Hidden (display:none) when the week has no completed games; the
+    hub's week-change JS re-points and re-shows it for scored weeks."""
+    url = weekly_wrapped_url(ctx, platform, season, league_id, week)
+    return _wrapped_launcher_html(url, ns="weekly-wrapped", label="Weekly Wrapped",
+                                  hidden=not url)
+
+
+def _wrapped_launcher_html(wrapped_url: str, ns: str = "wrapped",
+                           label: str = "Season Wrapped",
+                           hidden: bool = False) -> str:
     """The launch button + empty mount + bootstrap. The overlay itself is fetched
     from wrapped_url the first time the button is clicked, so the heavy boxscore
-    aggregation never blocks the page render."""
+    aggregation never blocks the page render.
+
+    ns namespaces the button/mount/overlay ids (and the bootstrap's lookups) so
+    a Weekly Wrapped launcher can share a page with the Season Wrapped one.
+    hidden renders the button with display:none for weeks with no completed
+    games yet -- the week-change JS re-shows it when a scored week is picked."""
+    _style = " style='display:none'" if hidden else ""
     return (
-        "<button type='button' class='wrapped-launch' id='wrappedLaunch' "
+        f"<button type='button' class='wrapped-launch' id='{ns}Launch'{_style} "
         f"data-wrapped-url=\"{_esc(str(wrapped_url), quote=True)}\">"
-        "<i class='fa-solid fa-star'></i> Season Wrapped</button>"
-        "<div id='wrappedMount'></div>"
-        f"<script>{_WRAPPED_BOOTSTRAP_JS}</script>"
+        f"<i class='fa-solid fa-star'></i> {_esc(label)}</button>"
+        f"<div id='{ns}Mount'></div>"
+        f"<script>{_wrapped_bootstrap_js(ns)}</script>"
     )
+
+
+def _wrapped_bootstrap_js(ns: str = "wrapped") -> str:
+    """Bootstrap JS with every element id namespaced to ``ns`` (``wrapped`` by
+    default), matching the ids ``_wrapped_overlay_markup(..., ns=ns)`` emits."""
+    js = _WRAPPED_BOOTSTRAP_JS
+    for _id in ("Launch", "Mount", "Overlay", "Stage", "Share", "Close",
+                "Next", "Prev", "ShareData", "Link", "Toast"):
+        js = js.replace(f"'wrapped{_id}'", f"'{ns}{_id}'")
+    return js
 
 
 _WRAPPED_BOOTSTRAP_JS = r"""
@@ -1541,6 +1843,10 @@ _WRAPPED_BOOTSTRAP_JS = r"""
   if (!launch || !mount || launch.__wrapBound) return;
   launch.__wrapBound = true;
   var loaded = false, loading = false;
+  // Lets the host page (e.g. the weekly hub's week switcher) point the button
+  // at a different lazy URL and drop the already-fetched overlay, so the next
+  // click re-fetches for the new target.
+  launch.__wrappedReset = function () { loaded = false; mount.innerHTML = ''; };
 
   var FONT = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
 
@@ -1629,8 +1935,10 @@ _WRAPPED_BOOTSTRAP_JS = r"""
     ctx.fillStyle = rg; ctx.fillRect(0, 0, W, H);
     ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
 
-    // Outlined season mark bleeding off the top-right.
-    var yr = "'" + String(data.season || '').slice(-2);
+    // Outlined season mark bleeding off the top-right. Weekly decks pass
+    // data.week, which swaps the mark/kicker/footer to "WEEK N" branding.
+    var _wkTag = data.week ? ('WEEK ' + data.week) : null;
+    var yr = _wkTag ? ('W' + data.week) : ("'" + String(data.season || '').slice(-2));
     ctx.save();
     ctx.font = '900 330px ' + F_DISP;
     ctx.strokeStyle = PURPLE; ctx.lineWidth = 4; ctx.globalAlpha = 0.13;
@@ -1648,7 +1956,7 @@ _WRAPPED_BOOTSTRAP_JS = r"""
     ctx.fillStyle = PURPLE;
     ctx.fillRect(PAD, 432, 54, 8);
     ctx.font = '800 34px ' + F_BODY;
-    lsLeft(ctx, 'SEASON WRAPPED', PAD + 76, 444, 8);
+    lsLeft(ctx, _wkTag ? (_wkTag + ' WRAPPED') : 'SEASON WRAPPED', PAD + 76, 444, 8);
 
     // Champion block.
     var y = 560;
@@ -1711,7 +2019,7 @@ _WRAPPED_BOOTSTRAP_JS = r"""
       fx = PAD + flw + 28;
     }
     ctx.font = '700 28px ' + F_BODY;
-    var seasonTxt = (String(data.season || '') + ' SEASON').trim();
+    var seasonTxt = _wkTag ? _wkTag : ((String(data.season || '') + ' SEASON').trim());
     var stW = lsWidth(ctx, seasonTxt, 6);
     ctx.fillStyle = 'rgba(255,255,255,0.14)';
     ctx.fillRect(fx, fy, (W - PAD - stW - 30) - fx, 1);
@@ -1839,7 +2147,10 @@ _WRAPPED_BOOTSTRAP_JS = r"""
           var canvas;
           try { canvas = paintWrappedCard(data, logo); } catch (e) { done(); return; }
           if (window.brShareCanvas) {
-            window.brShareCanvas(canvas, 'season-wrapped.png', (data.league || 'League') + ' - Season Wrapped').then(done, done);
+            var _fname = data.week ? ('week-' + data.week + '-wrapped.png') : 'season-wrapped.png';
+            var _ttl = (data.league || 'League') + ' - '
+              + (data.week ? ('Week ' + data.week + ' Wrapped') : 'Season Wrapped');
+            window.brShareCanvas(canvas, _fname, _ttl).then(done, done);
           } else {
             try { window.open(canvas.toDataURL('image/png'), '_blank'); } catch (e) {}
             done();
@@ -1847,7 +2158,94 @@ _WRAPPED_BOOTSTRAP_JS = r"""
         });
       });
     }
+    // Copy-link: mint a public shareable URL for this deck. The pristine
+    // overlay HTML is snapshotted at inject time (before open() mutates it),
+    // so the shared page always starts clean on slide one.
+    var linkBtn = document.getElementById('wrappedLink');
+    if (linkBtn) {
+      // The button id is namespaced ("weekly-wrappedLink"); strip the suffix
+      // to recover the ns for the POST body.
+      var linkNs = linkBtn.id.replace(/Link$/, '');
+      linkBtn.addEventListener('click', function () {
+        // Public shared page: the address bar already IS the share link.
+        if (window.__wrappedSharePublic || !launch) {
+          copyText(window.location.href, function (ok) {
+            toast(ok ? 'Link copied' : 'Could not copy link');
+          });
+          return;
+        }
+        var pristine = launch.__wrappedPristine;
+        if (!pristine) {
+          toast('Open the story first');
+          return;
+        }
+        var data = {};
+        try { data = JSON.parse((document.getElementById('wrappedShareData') || {}).textContent || '{}'); } catch (e) {}
+        linkBtn.classList.add('wrapped-share-busy');
+        fetch('/api/wrapped/share', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            kind: data.week ? 'weekly' : 'season',
+            ns: linkNs,
+            overlay_html: pristine,
+            share_data: data
+          })
+        })
+          .then(function (r) { return r.json(); })
+          .then(function (d) {
+            linkBtn.classList.remove('wrapped-share-busy');
+            if (d && d.url) {
+              copyText(d.url, function (ok) {
+                toast(ok ? 'Link copied — anyone with the link can view'
+                         : 'Could not copy link');
+              });
+            } else { toast('Could not create link'); }
+          })
+          .catch(function () {
+            linkBtn.classList.remove('wrapped-share-busy');
+            toast('Could not create link');
+          });
+      });
+    }
     return overlay;
+  }
+
+  // Clipboard helper with a textarea fallback for older iOS WebViews.
+  function copyText(text, cb) {
+    function fin(ok) { try { cb(!!ok); } catch (e) {} }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () { fin(true); }, function () { fin(false); });
+      return;
+    }
+    try {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      var ok = false;
+      try { ok = document.execCommand('copy'); } catch (e) {}
+      document.body.removeChild(ta);
+      fin(ok);
+    } catch (e) { fin(false); }
+  }
+
+  // Small toast anchored to the overlay.
+  function toast(msg) {
+    var t = document.getElementById('wrappedToast');
+    if (!t) {
+      t = document.createElement('div');
+      t.id = 'wrappedToast';
+      t.className = 'wrapped-toast';
+      t.setAttribute('role', 'status');
+      document.body.appendChild(t);
+    }
+    t.textContent = msg;
+    t.classList.add('show');
+    if (t.__tm) clearTimeout(t.__tm);
+    t.__tm = setTimeout(function () { t.classList.remove('show'); }, 2600);
   }
 
   function openWrapped() {
@@ -1864,7 +2262,14 @@ _WRAPPED_BOOTSTRAP_JS = r"""
     fetch(url, { headers: { 'X-Requested-With': 'fetch' } })
       .then(function (r) { return r.json(); })
       .then(function (d) {
-        if (d && d.html) { mount.innerHTML = d.html; loaded = true; openWrapped(); }
+        if (d && d.html) {
+          mount.innerHTML = d.html;
+          // Snapshot the pristine overlay (before open() mutates it) for the
+          // copy-link share flow.
+          launch.__wrappedPristine = d.html;
+          loaded = true;
+          openWrapped();
+        }
       })
       .catch(function () {})
       .then(function () { loading = false; launch.classList.remove('wrapped-launch-loading'); });

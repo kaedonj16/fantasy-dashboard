@@ -1220,6 +1220,14 @@ except Exception as e:
     logger.warning("[history-bp] skipped: %s", e)
 
 try:
+    from routes.weekly_bp import weekly_bp
+
+    app.register_blueprint(weekly_bp)
+    logger.info("[weekly-bp] registered")
+except Exception as e:
+    logger.warning("[weekly-bp] skipped: %s", e)
+
+try:
     from routes.seo_pages_bp import seo_pages_bp
 
     app.register_blueprint(seo_pages_bp)
@@ -17576,11 +17584,23 @@ def api_weekly_week():
         gotw_selection=_api_gotw,
     )
 
+    # Weekly Wrapped launcher target for the freshly-picked week: '' when the
+    # week has no completed games, so the hub hides the button. Cheap check
+    # (no boxscore fetch) -- the lazy endpoint builds the full deck on click.
+    _api_wrapped_url = ""
+    try:
+        from dashboard_services.pages.history_page import weekly_wrapped_url
+        _api_wrapped_url = weekly_wrapped_url(ctx, platform, season, league_id, week)
+    except Exception:
+        logger.debug("[api_weekly_week] wrapped url check failed", exc_info=True)
+
     return jsonify({
         "ok": True,
         "top_html": top_html,
         "highlights_html": highlights_html,
         "matchups_html": matchups_html,
+        "week_has_scores": bool(_api_wrapped_url),
+        "wrapped_url": _api_wrapped_url,
     })
 
 
