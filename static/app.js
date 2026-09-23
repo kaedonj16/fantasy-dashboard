@@ -21720,11 +21720,44 @@ window._rzStubPbpEvents = function(pid, state) {
       if (updated && stamp) updated.textContent = (data.stale ? 'Last good data · ' : 'Updated ') + new Date(stamp).toLocaleString();
       if (retry) retry.hidden = true;
       card.dataset.summaryGood = 'true';
+      // Stamp per-league record for aggregate recomputation, then refresh the
+      // summary bar total (server value only covered warm leagues).
+      if (Number.isFinite(wins)) card.dataset.wins = String(wins);
+      if (Number.isFinite(losses)) card.dataset.losses = String(losses);
+      var ties = Number(data.ties);
+      if (Number.isFinite(ties)) card.dataset.ties = String(ties);
+      updateAggregateRecord();
       return true;
     }
     if (card.dataset.summaryGood !== 'true') stats.innerHTML = '<span class="pf-lg-l">' + escapeHtml(data.message || 'Summary unavailable. Retry.') + '</span>';
     if (retry) retry.hidden = false;
     return false;
+  }
+  // Recompute the aggregate W-L-T in the portfolio summary bar as cards hydrate.
+  // Server-rendered totals only cover warm leagues; cold leagues hydrate later
+  // via renderSummary, so the bar goes stale without this. Sums across cards
+  // with summaryGood=true (fresh data), falling back to server-rendered
+  // data-wins/data-losses/data-ties for not-yet-hydrated cards.
+  function updateAggregateRecord() {
+    var agg = document.querySelector('[data-portfolio-agg-record]');
+    if (!agg) return;
+    var wins = 0, losses = 0, ties = 0;
+    var cards = document.querySelectorAll('.pf-lg-card[data-summary-card]');
+    for (var i = 0; i < cards.length; i++) {
+      var c = cards[i];
+      var w = parseInt(c.dataset.wins || '0', 10) || 0;
+      var l = parseInt(c.dataset.losses || '0', 10) || 0;
+      var t = parseInt(c.dataset.ties || '0', 10) || 0;
+      wins += w; losses += l; ties += t;
+    }
+    var recStr = wins + '-' + losses + (ties ? '-' + ties : '');
+    agg.textContent = recStr;
+    agg.dataset.wins = String(wins);
+    agg.dataset.losses = String(losses);
+    agg.dataset.ties = String(ties);
+    agg.classList.remove('color-win', 'color-loss');
+    if (wins > losses) agg.classList.add('color-win');
+    else if (losses > wins) agg.classList.add('color-loss');
   }
   function matchupHtml(data) {
     var you = data.you, opp = data.opp, status = data.status || 'pre';

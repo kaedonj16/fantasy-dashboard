@@ -238,7 +238,7 @@ def page_portfolio():
         from utils.roster_strength import (
             rank_rosters_by_position, roster_pos_value_lists, strength_percentile,
         )
-        values_by_id = league_format_value_lookup(lctx)
+        values_by_id = league_format_value_lookup(lctx, _cache=_value_lookup_cache)
         wins, losses, ties, pf, rank = portfolio_record_and_rank(lctx, rid, viewer_roster)
         owner_id = str(viewer_roster.get("owner_id") or "")
         owner_user = next(
@@ -359,6 +359,13 @@ def page_portfolio():
     # provider), and nothing here uses request-local state -- account_id was
     # captured above and get_viewer_session_for_league no-ops without a request
     # context. Order does not matter: results are sorted by name just below.
+    #
+    # Per-request memoization for league_format_value_lookup: the value table
+    # walk depends only on league type settings, not the viewer, so leagues
+    # with identical settings share one computation instead of each re-walking
+    # thousands of rows. Dict get/set are atomic under the GIL; the worst case
+    # of a race is a duplicate computation, never incorrect data.
+    _value_lookup_cache: dict = {}
     leagues_data = []
     if league_inputs:
         try:
