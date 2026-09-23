@@ -409,14 +409,6 @@ def build_advanced_metrics_body(
           </div>
         </div>
 
-        <div id="amLoading" class="sk-list" style="margin-top:6px;">
-          <div class="sk-card-row"><div class="skeleton" style="width:20px;height:14px;border-radius:4px;flex:0 0 auto"></div><div class="skeleton sk-av"></div><div class="sk-lines"><div class="skeleton skeleton-line" style="width:44%"></div><div class="skeleton skeleton-line" style="width:26%;height:9px"></div></div><div class="skeleton" style="width:56px;height:20px;border-radius:6px;flex:0 0 auto"></div></div>
-          <div class="sk-card-row"><div class="skeleton" style="width:20px;height:14px;border-radius:4px;flex:0 0 auto"></div><div class="skeleton sk-av"></div><div class="sk-lines"><div class="skeleton skeleton-line" style="width:52%"></div><div class="skeleton skeleton-line" style="width:30%;height:9px"></div></div><div class="skeleton" style="width:56px;height:20px;border-radius:6px;flex:0 0 auto"></div></div>
-          <div class="sk-card-row"><div class="skeleton" style="width:20px;height:14px;border-radius:4px;flex:0 0 auto"></div><div class="skeleton sk-av"></div><div class="sk-lines"><div class="skeleton skeleton-line" style="width:38%"></div><div class="skeleton skeleton-line" style="width:24%;height:9px"></div></div><div class="skeleton" style="width:56px;height:20px;border-radius:6px;flex:0 0 auto"></div></div>
-          <div class="sk-card-row"><div class="skeleton" style="width:20px;height:14px;border-radius:4px;flex:0 0 auto"></div><div class="skeleton sk-av"></div><div class="sk-lines"><div class="skeleton skeleton-line" style="width:48%"></div><div class="skeleton skeleton-line" style="width:28%;height:9px"></div></div><div class="skeleton" style="width:56px;height:20px;border-radius:6px;flex:0 0 auto"></div></div>
-          <div class="sk-card-row"><div class="skeleton" style="width:20px;height:14px;border-radius:4px;flex:0 0 auto"></div><div class="skeleton sk-av"></div><div class="sk-lines"><div class="skeleton skeleton-line" style="width:42%"></div><div class="skeleton skeleton-line" style="width:26%;height:9px"></div></div><div class="skeleton" style="width:56px;height:20px;border-radius:6px;flex:0 0 auto"></div></div>
-        </div>
-
         <div id="amEmpty" style="display:none;">
           <div class="empty-state">
             <span class="empty-state-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V5"/><path d="M4 19h16"/><rect x="7" y="11" width="3" height="5" rx="1"/><rect x="12.5" y="8" width="3" height="8" rx="1"/><rect x="18" y="13" width="3" height="3" rx="1" opacity=".5"/></svg></span>
@@ -2652,7 +2644,7 @@ _AM_JS = r"""
       }
     }
 
-    loading.style.display = 'none';
+    if (loading) loading.style.display = 'none';
     if (!displayRows.length) {
       empty.style.display = ''; tbody.innerHTML = schemaMessageRow('No matching players');
       if (avgNote) avgNote.style.display = 'none';
@@ -3761,7 +3753,7 @@ _AM_JS = r"""
     // paywall removed -- advanced metrics is available to all users
     state.fetching = true;
     const requestToken = ++state.requestToken;
-    loading.style.display = ''; empty.style.display = 'none'; syncTableHeader(); tbody.innerHTML = schemaSkeletonRows();
+    if (loading) loading.style.display = ''; empty.style.display = 'none'; syncTableHeader(); tbody.innerHTML = schemaSkeletonRows();
     if (avgNote) avgNote.style.display = 'none';
     const params = new URLSearchParams({ metric: state.metric, platform: cfg.platform });
     if (cfg.leagueId) params.set('league_id', cfg.leagueId);
@@ -3799,7 +3791,7 @@ _AM_JS = r"""
     Promise.all([mainFetch, prevFetch])
       .then(([d, pd]) => {
         if (requestToken !== state.requestToken) return;
-        if (!d) { state.fetching = false; empty.style.display = ''; loading.style.display = 'none'; tbody.innerHTML = schemaMessageRow('Data unavailable'); return; }
+        if (!d) { state.fetching = false; empty.style.display = ''; if (loading) loading.style.display = 'none'; tbody.innerHTML = schemaMessageRow('Data unavailable'); return; }
         state.fetching = false;
         state.rows = d.players || [];
         state.volCol = d.vol_col || 'games';
@@ -3828,7 +3820,7 @@ _AM_JS = r"""
       })
       .catch(() => {
         if (requestToken !== state.requestToken) return;
-        state.fetching = false; loading.style.display = 'none';
+        state.fetching = false; if (loading) loading.style.display = 'none';
         // Network error (e.g. ERR_NETWORK_CHANGED): show a recoverable retry
         // rather than the misleading "No data for this metric yet." message.
         empty.style.display = ''; tbody.innerHTML = schemaMessageRow('Couldn’t load this metric.');
