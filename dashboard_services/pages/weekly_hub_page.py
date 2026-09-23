@@ -32,6 +32,7 @@ def build_weekly_hub_body(ctx: dict) -> str:
         render_weekly_top_scorers_for_week,
     )
     from utils.league_payload import show_matchup_preview as _show_matchup_preview_for
+    from dashboard_services.pages.history_page import weekly_wrapped_launcher_html
     league_id = ctx["league_id"]
     platform = ctx["platform"]
     season = ctx["season"]  # viewed season
@@ -240,6 +241,16 @@ def build_weekly_hub_body(ctx: dict) -> str:
             f'{_rz_dot}Redzone</a>'
         )
 
+    # Weekly Wrapped launcher: only for weeks with completed games (the helper
+    # hides the button otherwise). The week-change JS below re-points it when
+    # the selector moves, so one namespaced launcher covers every week.
+    _weekly_wrapped_html = ""
+    try:
+        _weekly_wrapped_html = weekly_wrapped_launcher_html(
+            ctx, platform, season, league_id, default_week)
+    except Exception:
+        logger.debug("weekly: wrapped launcher build failed", exc_info=True)
+
     top_scorers_html = render_weekly_top_scorers_for_week(
         league_id,
         df_weekly,
@@ -349,6 +360,7 @@ def build_weekly_hub_body(ctx: dict) -> str:
             </div>
             <div class="week-selector">
               {_rz_btn_html}
+              {_weekly_wrapped_html}
               <select id="hubWeek" class="search">
                 {week_select_html}
               </select>
@@ -486,6 +498,16 @@ def build_weekly_hub_body(ctx: dict) -> str:
             window.initPageRoot(matchupsContainer);
           }}
           if (window.brInitMoments) window.brInitMoments(matchupsContainer);
+        }}
+
+        // Weekly Wrapped follows the week selector: re-point the launcher at
+        // the new week's lazy URL (dropping any already-fetched overlay) and
+        // hide it when the week has no completed games yet.
+        var wbtn = document.getElementById('weeklyWrappedLaunch');
+        if (wbtn) {{
+          wbtn.setAttribute('data-wrapped-url', data.wrapped_url || '');
+          if (wbtn.__wrappedReset) wbtn.__wrappedReset();
+          wbtn.style.display = (data.week_has_scores && data.wrapped_url) ? '' : 'none';
         }}
       }})
       .catch(function(err) {{

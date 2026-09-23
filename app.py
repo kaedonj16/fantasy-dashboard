@@ -1220,6 +1220,22 @@ except Exception as e:
     logger.warning("[history-bp] skipped: %s", e)
 
 try:
+    from routes.weekly_bp import weekly_bp
+
+    app.register_blueprint(weekly_bp)
+    logger.info("[weekly-bp] registered")
+except Exception as e:
+    logger.warning("[weekly-bp] skipped: %s", e)
+
+try:
+    from routes.wrapped_share_bp import wrapped_share_bp
+
+    app.register_blueprint(wrapped_share_bp)
+    logger.info("[wrapped-share-bp] registered")
+except Exception as e:
+    logger.warning("[wrapped-share-bp] skipped: %s", e)
+
+try:
     from routes.seo_pages_bp import seo_pages_bp
 
     app.register_blueprint(seo_pages_bp)
@@ -17576,11 +17592,23 @@ def api_weekly_week():
         gotw_selection=_api_gotw,
     )
 
+    # Weekly Wrapped launcher target for the freshly-picked week: '' when the
+    # week has no completed games, so the hub hides the button. Cheap check
+    # (no boxscore fetch) -- the lazy endpoint builds the full deck on click.
+    _api_wrapped_url = ""
+    try:
+        from dashboard_services.pages.history_page import weekly_wrapped_url
+        _api_wrapped_url = weekly_wrapped_url(ctx, platform, season, league_id, week)
+    except Exception:
+        logger.debug("[api_weekly_week] wrapped url check failed", exc_info=True)
+
     return jsonify({
         "ok": True,
         "top_html": top_html,
         "highlights_html": highlights_html,
         "matchups_html": matchups_html,
+        "week_has_scores": bool(_api_wrapped_url),
+        "wrapped_url": _api_wrapped_url,
     })
 
 
@@ -29802,7 +29830,7 @@ def build_portfolio_body(
         f"</div>"
         f"<div class='pf-stat-bar'>"
         f"<div class='pf-stat'><div class='pf-stat-val' data-portfolio-league-count>{num_leagues}</div><div class='pf-stat-label'>Leagues</div></div>"
-        f"<div class='pf-stat'><div class='pf-stat-val {rec_cls}' data-portfolio-agg-record data-wins='{total_wins}' data-losses='{total_losses}' data-ties='{total_ties}'>{rec_str}</div><div class='pf-stat-label'>Record</div></div>"
+        f"<div class='pf-stat'><div class='pf-stat-val {rec_cls}'>{rec_str}</div><div class='pf-stat-label'>Record</div></div>"
         f"<div class='pf-stat'><div class='pf-stat-val'>{season}</div><div class='pf-stat-label'>Season</div></div>"
         f"</div>"
         f"</div>"
@@ -30138,7 +30166,6 @@ def build_portfolio_body(
 
         wins = lg.get("wins") or 0
         losses = lg.get("losses") or 0
-        ties = lg.get("ties") or 0
         rank = lg.get("rank") or "?"
         total = lg.get("total_teams") or "?"
         rec = lg.get("record") or f"{wins}-{losses}"
@@ -30250,7 +30277,7 @@ def build_portfolio_body(
         )
 
         league_rows += (
-            f"<div class='pf-lg-card' data-summary-card data-lg-key='{plat}:{lid}' data-favorite='{'true' if lg.get('is_favorite') else 'false'}' data-platform='{html.escape(str(plat), quote=True)}' data-league-id='{html.escape(str(lid), quote=True)}' data-season='{card_season}' data-wins='{wins}' data-losses='{losses}' data-ties='{ties}'>"
+            f"<div class='pf-lg-card' data-summary-card data-lg-key='{plat}:{lid}' data-favorite='{'true' if lg.get('is_favorite') else 'false'}' data-platform='{html.escape(str(plat), quote=True)}' data-league-id='{html.escape(str(lid), quote=True)}' data-season='{card_season}'>"
             f"<div class='pf-lg-top'>"
             f"<span class='pf-lg-crest' style='background:{_crest_hue};'>{_ini}</span>"
             f"{_lg_id(name_link, plat, off_note, '', lg.get('team_name') or '')}"
