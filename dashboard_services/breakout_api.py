@@ -636,14 +636,19 @@ def _unavailable_breakout_payload(season: Optional[int]) -> Dict:
 # Weekly payloads intentionally use their own contract. They do not manufacture
 # offseason projections/components; every consumer must branch on mode/weekly.
 
-_WEEKLY_SIGNAL_UNITS = {
-    "snap_share": "%", "target_share": "%",
-    "targets_pg": "", "carry_opportunity_pg": "", "pass_att_pg": "", "rush_pg": "",
-}
+# Signal labels/units for the usage_comparison payload. Derived from the
+# engine's canonical _SIGNAL_LABELS so the board can never drift from the
+# deterministic reason strings again — previously keys added to the engine
+# (high_value_opportunities_pg, routes_pg, route_participation,
+# dropback_share) fell back to raw keys, rendering e.g.
+# "Initial role: 3.0 high_value_opportunities_pg".
+from data_building.breakout_engine.weekly_breakout import _SIGNAL_LABELS as _ENGINE_SIGNAL_LABELS
+
 _WEEKLY_SIGNAL_LABELS = {
-    "snap_share": "Snap share", "target_share": "Target share",
-    "targets_pg": "Targets/game", "carry_opportunity_pg": "Carries+targets/game",
-    "pass_att_pg": "Pass att/game", "rush_pg": "Rush att/game",
+    key: label for key, (label, _unit) in _ENGINE_SIGNAL_LABELS.items()
+}
+_WEEKLY_SIGNAL_UNITS = {
+    key: unit for key, (_label, unit) in _ENGINE_SIGNAL_LABELS.items()
 }
 _WEEKLY_CLASS_LABELS = {
     "emerging_breakout": "Emerging Breakout",
