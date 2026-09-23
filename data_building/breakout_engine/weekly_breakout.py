@@ -821,7 +821,11 @@ def score_player(
         if prior_level is not None and prior_level >= 60.0 else 0.0)
     novelty_basis = (role_change_score if role_change_score is not None
                      else expectation_delta_score)
-    novelty = (None if novelty_basis is None else
+    # Novelty measures surprise against an established role. With no established
+    # baseline (penalty 0) it identically echoes the change score, so including
+    # it would double-count change in the final blend. Leave it unknown there;
+    # _blend already drops unknown components and renormalizes.
+    novelty = (None if novelty_basis is None or established_role_penalty <= 0 else
                _clamp(novelty_basis - established_role_penalty, 0.0, 100.0))
     established_role_score = _clamp(
         (70.0 if established_evidence else 0.0) + min(30.0, float(prior_baseline.get("games") or 0) * 2.0)
