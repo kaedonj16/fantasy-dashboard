@@ -53,14 +53,24 @@ def premium_metrics_exposed() -> bool:
 # Derived intelligence metrics gated behind a per-user PRO subscription.
 # Raw volume/share/efficiency metrics stay free for everyone, as does
 # expected_ppr_per_game (it anchors the free Key Metrics / Start-Sit views).
-# The proprietary answers built on top (over-expected, trends, consistency,
-# matchup intel) are PRO. Enforced server-side in
-# routes/advanced_metrics_bp.py (leaderboard + movers 403) and reflected in
-# the page picker/pills.
+# boom_rate/bust_rate stay free too: the Start / Sit compare table already
+# shows them to everyone. schedule_ease stays free: the Schedule Assistant
+# already ranks schedule ease for everyone. Gating any of these here would
+# be incoherent.
+# PRO is the proprietary "answers" layer: the full FPOE family (per-game and
+# cumulative), WOPR, usage/xFP trends, consistency/volatility answers
+# (fp_cv, xfp_stddev), proprietary composites (role_score,
+# target_quality_score), and proprietary value (vorp, war).
+# Enforced server-side in routes/advanced_metrics_bp.py (leaderboard +
+# movers 403) and routes/players_bp.py (player modal + compare strip), and
+# reflected in the page picker/pills.
 PRO_METRICS = frozenset({
-    "ppr_over_expected_per_game",
+    "ppr_over_expected_per_game", "ppr_over_expected",
+    "half_ppr_over_expected", "standard_over_expected",
     "wopr", "opportunity_trend", "xfp_trend",
-    "boom_rate", "bust_rate", "schedule_ease",
+    "fp_cv", "xfp_stddev",
+    "role_score", "target_quality_score",
+    "vorp", "war",
 })
 
 
@@ -72,6 +82,18 @@ def strip_premium_metrics(metrics: Optional[Dict[str, Any]]) -> Optional[Dict[st
     if not metrics or premium_metrics_exposed():
         return metrics
     return {k: v for k, v in metrics.items() if k not in PREMIUM_METRICS}
+
+
+def strip_pro_metrics(metrics: Optional[Dict[str, Any]], has_pro: bool = False) -> Optional[Dict[str, Any]]:
+    """Remove PRO-gated metrics from a metrics dict for non-PRO responses.
+
+    No-op when has_pro is True. Unlike strip_premium_metrics (which keys off
+    a global env flag), PRO is per-user, so the caller passes the result of
+    the subscription check.
+    """
+    if not metrics or has_pro:
+        return metrics
+    return {k: v for k, v in metrics.items() if k not in PRO_METRICS}
 
 
 # Map PFF/non-standard position codes to the canonical fantasy set

@@ -26,6 +26,20 @@ logger = logging.getLogger(__name__)
 
 players_bp = Blueprint("players", __name__)
 
+
+def _request_has_pro() -> bool:
+    """Per-user PRO check for player-metric API calls. Fail closed."""
+    from dashboard_services.subscriptions import has_premium_for_viewer
+    try:
+        return bool(has_premium_for_viewer(
+            session.get("viewer_username"), session.get("viewer_user_id"),
+            request.args.get("league_id"), request.args.get("platform", "sleeper"),
+            None,
+        ))
+    except Exception:
+        logger.debug("player-metrics PRO check failed", exc_info=True)
+        return False
+
 # Meta / non-numeric columns that ride along on a season snapshot. Blind
 # float() on these 500s /api/player-advanced-metrics and the modal Adv
 # Metrics tab shows "network hiccup".
@@ -345,6 +359,14 @@ def api_player_advanced_metrics(player_id: str):
         # when EXPOSE_PREMIUM_METRICS is set (private/local use).
         metrics_payload = strip_premium_metrics(metrics_payload)
 
+        # Strip PRO-gated metrics for non-PRO users. The leaderboard already
+        # 403s these; the modal must not leak them.
+        if not _request_has_pro():
+            from data_building.advanced_metrics import strip_pro_metrics
+            metrics_payload = strip_pro_metrics(metrics_payload)
+            # player_evaluation_score is 65% role_score (PRO); don't leak it.
+            metrics_payload.pop("player_evaluation_score", None)
+
         return jsonify({
             "player_id": str(player_id),
             "position": _normalize_position(metrics.get("position")),
@@ -402,13 +424,17 @@ def api_player_advanced_metrics_trend(player_id: str):
         # Merged metrics per season (raw stored columns, premium stripped).
         per_season: dict = {}
         position = None
+        _has_pro = _request_has_pro()
+        from data_building.advanced_metrics import strip_pro_metrics as _strip_pro
         for yr in seasons:
             row = get_player_metrics_by_season(str(player_id), yr)
             if not row:
                 continue
             if not position:
                 position = _normalize_position(row.get("position"))
-            per_season[yr] = strip_premium_metrics(dict(row)) or {}
+            _row = strip_premium_metrics(dict(row)) or {}
+            # PRO metrics don't leak through the trend endpoint either.
+            per_season[yr] = _strip_pro(_row, _has_pro) if not _has_pro else _row
 
         # Metrics trendable for THIS player: catalog entries that are stored as
         # real columns (exclude computed_sql leaderboard metrics so every point
@@ -420,6 +446,7 @@ def api_player_advanced_metrics_trend(player_id: str):
                     col_keys.add(k)
 
         expose_premium = premium_metrics_exposed()
+        from data_building.advanced_metrics import PRO_METRICS as _PRO_METRICS
         options = []
         for key, spec in LEADERBOARD_METRICS.items():
             if spec.get("hidden") or spec.get("computed_sql"):
@@ -427,6 +454,8 @@ def api_player_advanced_metrics_trend(player_id: str):
             if key not in col_keys:
                 continue
             if not expose_premium and key in PREMIUM_METRICS:
+                continue
+            if not _has_pro and key in _PRO_METRICS:
                 continue
             _pos = spec.get("positions") or []
             if position and _pos and position not in _pos:
@@ -554,6 +583,12 @@ def api_player_metric_ranks(player_id: str):
             result["counts"] = strip_premium_metrics(result["counts"])
         if isinstance(result, dict) and isinstance(result.get("bounds"), dict):
             result["bounds"] = strip_premium_metrics(result["bounds"])
+        # Don't leak ranks for PRO-gated metrics to non-PRO users either.
+        if not _request_has_pro() and isinstance(result, dict):
+            from data_building.advanced_metrics import strip_pro_metrics
+            for _k in ("ranks", "counts", "bounds"):
+                if isinstance(result.get(_k), dict):
+                    result[_k] = strip_pro_metrics(result[_k], False)
         resp = jsonify(result)
         # Ranks are computed at most daily; let the browser reuse for a few
         # minutes so reopening player/compare modals is instant.

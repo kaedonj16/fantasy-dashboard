@@ -53,10 +53,11 @@ def build_advanced_metrics_body(
         PREMIUM_METRICS, premium_metrics_exposed, PRO_METRICS,
     )
     _hide_premium = not premium_metrics_exposed()
-    # Decision presets whose primary metric is PRO-gated (the four advanced
+    # Decision presets whose primary metric is PRO-gated (the three advanced
     # decision presets). Non-PRO users see them locked; tapping opens the
-    # paywall instead of loading the view. Key Metrics and Start / Sit stay
-    # free: their primary (expected_ppr_per_game) is free.
+    # paywall instead of loading the view. Key Metrics, Start / Sit, and
+    # Ceiling / DFS stay free: their primaries (expected_ppr_per_game and
+    # boom_rate) are free.
     _pro_presets = [
         key for key, p in ADVANCED_METRIC_PRESETS.items()
         if p.get("kind") == "decision" and p.get("primary") in PRO_METRICS
