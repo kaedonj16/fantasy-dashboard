@@ -1657,21 +1657,55 @@ _AY_WEEKLY_COLS = [
 ]
 
 
+def _fetch_stats_player_week(season: int):
+    """Fetch weekly player stats from nflverse's current `stats_player` release.
+
+    Returns a DataFrame with legacy-compatible column names, or None on failure.
+    The old `player_stats` release (used by nfl_data_py) was retired 2025-08-01
+    and is frozen at 2024; current data lives under the `stats_player` tag.
+    """
+    import pandas as pd
+
+    url = (
+        "https://github.com/nflverse/nflverse-data/releases/download/"
+        f"stats_player/stats_player_week_{season}.parquet"
+    )
+    try:
+        df = pd.read_parquet(url)
+    except Exception:
+        return None
+    if df is None or getattr(df, "empty", True):
+        return None
+    # Rename new-release columns back to the legacy names the pipeline expects.
+    rename = {}
+    if "team" in df.columns and "recent_team" not in df.columns:
+        rename["team"] = "recent_team"
+    if rename:
+        df = df.rename(columns=rename)
+    cols = [c for c in _AY_WEEKLY_COLS if c in df.columns]
+    return df[cols] if cols else None
+
+
 def fetch_nflverse_air_yards(
     season: int, completed_week: Optional[int] = None
 ) -> Dict[str, Dict[str, Any]]:
     """{sleeper_id: {air_yards_per_game, air_yards_share, wopr}} from a fresh
-    nfl_data_py weekly pull, or {} when nfl_data_py is unavailable.
+    nflverse pull, or {} when unavailable.
 
-    Fresh pull every call: no dependency on a cache CSV that nothing on the
-    server produces (the legacy CSV path silently updated 0 rows).
+    Fetches directly from the current `stats_player` release (nflverse retired
+    the old `player_stats` release that nfl_data_py uses — it's frozen at 2024).
+    Falls back to nfl_data_py, then to the legacy stats CSV.
     """
-    try:
-        import nfl_data_py as nfl
-    except Exception:
+    df = _fetch_stats_player_week(season)
+    if df is None:
+        try:
+            import nfl_data_py as nfl
+            df = nfl.import_weekly_data([season], columns=_AY_WEEKLY_COLS)
+        except Exception:
+            df = None
+    if df is None or getattr(df, "empty", True):
         return {}
     try:
-        df = nfl.import_weekly_data([season], columns=_AY_WEEKLY_COLS)
         if df is None or getattr(df, "empty", True):
             return {}
         rows = []

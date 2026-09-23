@@ -16506,6 +16506,16 @@ def _matchup_rank_table(season: int, position: str, scoring_settings=None):
         _mult = row.get("adjusted_multiplier")
         valid_multiplier = (_mult if isinstance(_mult, (int, float))
                             and not isinstance(_mult, bool) else None)
+        # Fallback for the z/ease schema (no stored multiplier): synthesize an
+        # estimated multiplier from the z-score. The z-score is standardized
+        # (mean 0, std 1) from the opponent-adjusted multipliers, which center
+        # on 1.0. Assuming a typical 10% std gives a reasonable estimate for
+        # the "Adj Avg" column until the ratings file is rebuilt with the
+        # full schema.
+        if valid_multiplier is None:
+            _z = row.get("z")
+            if isinstance(_z, (int, float)) and not isinstance(_z, bool):
+                valid_multiplier = 1.0 + float(_z) * 0.10
         info_extra = {"rank_value": value, "multiplier": valid_multiplier,
                       "source": "opponent-adjusted", **rating_metadata,
                       "fpts": row.get("raw_allowed_per_game", row.get("fpts")),
