@@ -18555,19 +18555,24 @@ def api_trade_eval():
     # Use DB as primary source (same as api_league_players) so chip values and
     # team totals always draw from the same number.  Fall back to JSON if DB unavailable.
     try:
-        from dashboard_services.player_value_history import load_current_values_from_db as _lcvdb
-        value_table = _lcvdb() or get_model_value_table_cached()
+        from dashboard_services import player_value_history as _pvh
+        _db_table = _pvh.load_current_values_from_db()
+        if _db_table:
+            value_table = _db_table
+            _idmap_ts, _idmap_src = _pvh._CURRENT_VALUES_CACHE_TS, "db"
+        else:
+            value_table = get_model_value_table_cached()
+            _idmap_ts, _idmap_src = _MODEL_VALUE_CACHE_TS, "json"
+        # _lcvdb() returns fresh copies each call; key the id-map cache on the
+        # underlying memo timestamp so rebuilds happen only when data refreshes.
     except Exception:
         value_table = get_model_value_table_cached()
+        _idmap_ts, _idmap_src = _MODEL_VALUE_CACHE_TS, "json"
 
     if not isinstance(value_table, list):
         raise ValueError("model_value_table must be a list of player objects")
 
-    players_by_id = {
-        str(p["id"]): p
-        for p in value_table
-        if isinstance(p, dict) and "id" in p
-    }
+    players_by_id = _trade_eval_id_map(value_table, _idmap_src, _idmap_ts)
 
     pick_values = load_pick_value_table(is_sf=(league_type == "sf"))
 
@@ -18987,16 +18992,49 @@ def api_players():
         league_type = str(request.args.get("league_type", "1qb")).strip().lower()
         is_sf = league_type in ("sf", "superflex")
 
+        # Parse pagination + filter first so we only build response dicts for
+        # the rows actually returned (was: build 10k dicts, sort, then slice).
+        try:
+            limit = max(0, int(request.args.get("limit", 0)))
+            page = max(1, int(request.args.get("page", 1)))
+        except (TypeError, ValueError):
+            limit, page = 0, 1
+        q = request.args.get("q", "").strip().lower()
+
+        # Lightweight (pid, meta) candidates; filter by name before building.
+        if q:
+            candidates = [
+                (pid, meta) for pid, meta in players_index.items()
+                if meta.get("pos") not in ("K", "DEF")
+                and q in (meta.get("name") or "").lower()
+            ]
+        else:
+            candidates = [
+                (pid, meta) for pid, meta in players_index.items()
+                if meta.get("pos") not in ("K", "DEF")
+            ]
+
+        # Sort by the viewer's format so SF search surfaces QBs the way pos rank does.
+        sort_key = "sf_value" if is_sf else "value"
+        _vmap = value_map
+        _skey = sort_key
+        candidates.sort(
+            key=lambda t: (_vmap.get(str(t[0]), {}).get(_skey) or 0),
+            reverse=True,
+        )
+
+        total = len(candidates)
+        if limit > 0:
+            start = (page - 1) * limit
+            candidates = candidates[start: start + limit]
+
         results = []
-        for pid, meta in players_index.items():
-            pos = meta.get("pos", "")
-            if pos in ("K", "DEF"):
-                continue
+        for pid, meta in candidates:
             v = value_map.get(str(pid), {})
             results.append({
                 "player_id": pid,
                 "name": meta.get("name", ""),
-                "position": pos,
+                "position": meta.get("pos", ""),
                 "team": meta.get("team", ""),
                 "value": v.get("value", 0),
                 "sf_value": v.get("sf_value", 0),
@@ -19006,26 +19044,7 @@ def api_players():
                 "espnHeadshot": meta.get("espnHeadshot", ""),
             })
 
-        # Sort by the viewer's format so SF search surfaces QBs the way pos rank does.
-        sort_key = "sf_value" if is_sf else "value"
-        results.sort(key=lambda x: x[sort_key] or 0, reverse=True)
-
-        # Optional substring filter
-        q = request.args.get("q", "").strip().lower()
-        if q:
-            results = [r for r in results if q in r["name"].lower()]
-
-        # Pagination - limit=0 (default) returns the full list for backwards compat
-        total = len(results)
-        try:
-            limit = max(0, int(request.args.get("limit", 0)))
-            page = max(1, int(request.args.get("page", 1)))
-        except (TypeError, ValueError):
-            limit, page = 0, 1
-
         if limit > 0:
-            start = (page - 1) * limit
-            results = results[start: start + limit]
             return jsonify({
                 "players": results,
                 "total": total,
@@ -21209,20 +21228,76 @@ def api_since_last_visit():
     return jsonify(result)
 
 
+_PLAYER_INDICATORS_CACHE: dict = {}  # (table_ts, league_type, league_size, season) -> (ts, payload)
+
+_VALUE_HISTORY_CACHE: dict = {}  # (player_id, days, league_type, league_size) -> (ts, rows)
+_VALUE_HISTORY_MAX = 6  # ~45KB/player; keeps the hottest few modal opens cached
+
+
+_TRADE_EVAL_IDMAP_CACHE: dict = {}  # (source, source_ts) -> (ts, players_by_id)
+
+
+def _trade_eval_id_map(value_table: list, source: str, source_ts: float) -> dict:
+    """id->row map for trade eval, cached on the value source's refresh timestamp.
+
+    Replaces a ~7k-entry dict rebuild per trade-eval request. Rows are never
+    mutated by the caller (read-only .get lookups), so sharing is safe.
+    Never raises.
+    """
+    try:
+        key = (str(source), float(source_ts or 0))
+        now = time.time()
+        hit = _TRADE_EVAL_IDMAP_CACHE.get(key)
+        if hit and now - hit[0] < 900:
+            _TRADE_EVAL_IDMAP_CACHE[key] = _TRADE_EVAL_IDMAP_CACHE.pop(key)
+            return hit[1]
+        m = {str(p["id"]): p for p in value_table if isinstance(p, dict) and "id" in p}
+        _lru_cache_put(_TRADE_EVAL_IDMAP_CACHE, key, (now, m), 4)
+        return m
+    except Exception:
+        logger.debug("[trade eval] id-map build failed", exc_info=True)
+        return {}
+
+
+def _cached_value_history(player_id: str, *, days: int, league_type: str, league_size: int):
+    """get_player_value_history with a short LRU-bounded cache. Never raises.
+
+    Calls the module-global get_player_value_history (data_building) so tests
+    can monkeypatch app.get_player_value_history as before. The extra LRU
+    bound keeps the hottest few modal opens cached without letting the entry
+    count grow without limit.
+    """
+    try:
+        key = (str(player_id), int(days), str(league_type), int(league_size))
+        now = time.time()
+        hit = _VALUE_HISTORY_CACHE.get(key)
+        if hit and now - hit[0] < 600:
+            _VALUE_HISTORY_CACHE[key] = _VALUE_HISTORY_CACHE.pop(key)  # LRU refresh
+            return hit[1]
+        rows = get_player_value_history(
+            str(player_id), days=int(days),
+            league_type=str(league_type), league_size=int(league_size),
+        ) or []
+        _lru_cache_put(_VALUE_HISTORY_CACHE, key, (now, rows), _VALUE_HISTORY_MAX)
+        return rows
+    except Exception:
+        logger.debug("[value history] cache failed", exc_info=True)
+        return []
+
+
 @app.route("/api/player-indicators")
 def api_player_indicators():
-    """
-    Return rookie and breakout indicators for players.
-    Returns: {
-      "rookies": ["player_id1", "player_id2", ...],
-      "breakouts": ["player_id3", "player_id4", ...]
-    }
+    """Return rookie and breakout indicators for players.
+
+    The payload depends only on (league_type, league_size, season, value
+    table) -- not on the viewer's league -- so it is cached 15 min. The raw
+    computation scans the 10k-player index, runs the breakout DB query with
+    enrichment, and sorts per-position value pools on every call.
     """
     try:
         from datetime import datetime
 
         league_type = str(request.args.get("league_type", "1qb")).strip().lower()
-
         try:
             league_size = int(request.args.get("league_size", 10))
             if league_size not in [8, 10, 12, 14]:
@@ -21230,83 +21305,98 @@ def api_player_indicators():
         except (TypeError, ValueError):
             league_size = 10
 
-        # Get current NFL state
         nfl_state = get_nfl_state() or {}
-        current_season = int(nfl_state.get("season") or datetime.now().year)
-
-        # Load all players to check for rookies (years_exp 0 or 1 = first two seasons)
-        players_index = load_players_index() or {}
-        rookies = []
-
-        for player_id, player_data in players_index.items():
-            years_exp = player_data.get("years_exp")
-            rookie_year = player_data.get("rookie_year")
-
-            if years_exp in (0, 1, "0", "1"):
-                rookies.append(str(player_id))
-            elif rookie_year and int(rookie_year) == current_season:
-                rookies.append(str(player_id))
-
-        # Get breakouts from the same source as the Breakout Engine page,
-        # using the same season resolution so modal tabs match the page exactly.
-        breakouts = []
-        try:
-            from dashboard_services.breakout_api import (
-                get_breakout_candidates as _get_bo_indicators,
-                _resolve_bo_season as _resolve_bo,
-            )
-            _bo_season = _resolve_bo(current_season)
-            _bo_result = _get_bo_indicators(season=_bo_season, min_score=50, limit=15)
-            breakouts = [str(c["player_id"]) for c in (_bo_result.get("candidates") or [])]
-        except Exception as e:
-            logger.info(f"[player-indicators] Breakout candidates unavailable: {e}")
-
-        # Get elites based on positional rank cutoffs (12-man PPR dynasty)
-        elites = []
-
-        # Load model value table to get current player values
-        value_table = get_model_value_table_cached() or []
-        # Shared id->row index from the value-table sidecar (see api_players).
-        value_map = _model_value_sidecar().get("index") or {}
-
-        # Top-N positional rank cutoffs (shared with the consolidate/distribute
-        # engine so the ELITE chip and trade suggestions never disagree).
-        from utils.tier_thresholds import ELITE_RANK_CUTOFFS as elite_rank_cutoffs
-
-        from collections import defaultdict as _defaultdict
-        pos_players: dict = _defaultdict(list)
-        for player_id, player_data in value_map.items():
-            pos = str(player_data.get("position", "")).upper()
-            val = float(player_data.get("value", 0) or 0)
-            if val > 0 and pos in elite_rank_cutoffs:
-                pos_players[pos].append((val, str(player_id)))
-
-        for pos, cutoff in elite_rank_cutoffs.items():
-            for _, pid in sorted(pos_players[pos], reverse=True)[:cutoff]:
-                elites.append(pid)
-
-        # Prospects = only pre-draft class players (is_rookie=True in cached table)
-        prospects = []
-        try:
-            model_tbl = get_model_value_table_cached() or []
-            for entry in model_tbl:
-                if entry.get("is_rookie") is True:
-                    pid = str(entry.get("id") or "")
-                    if pid:
-                        prospects.append(pid)
-        except Exception as _pe:
-            logger.info(f"[player-indicators] prospects skipped: {_pe}")
-
-        return jsonify({
-            "rookies": rookies,
-            "breakouts": breakouts,
-            "elites": elites,
-            "prospects": prospects
-        })
-
+        season = int(nfl_state.get("season") or datetime.now().year)
+        get_model_value_table_cached()  # refresh _MODEL_VALUE_CACHE_TS if stale
+        key = (_MODEL_VALUE_CACHE_TS, league_type, league_size, season)
+        now = time.time()
+        hit = _PLAYER_INDICATORS_CACHE.get(key)
+        if hit and now - hit[0] < 900:
+            return jsonify(hit[1])
+        payload = _compute_player_indicators(league_type, league_size, season)
+        # Bound the cache: keys multiply by table version x type x size x season.
+        _lru_cache_put(_PLAYER_INDICATORS_CACHE, key, (now, payload), 12)
+        return jsonify(payload)
     except Exception as e:
         logger.info(f"[player-indicators] Error: {e}")
         return jsonify({"rookies": [], "breakouts": [], "elites": [], "prospects": []})
+
+
+def _compute_player_indicators(league_type: str, league_size: int, season: int) -> dict:
+    """Build the player-indicators payload (cached by the route above)."""
+    from datetime import datetime
+
+    current_season = int(season or datetime.now().year)
+
+    # Load all players to check for rookies (years_exp 0 or 1 = first two seasons)
+    players_index = load_players_index() or {}
+    rookies = []
+
+    for player_id, player_data in players_index.items():
+        years_exp = player_data.get("years_exp")
+        rookie_year = player_data.get("rookie_year")
+
+        if years_exp in (0, 1, "0", "1"):
+            rookies.append(str(player_id))
+        elif rookie_year and int(rookie_year) == current_season:
+            rookies.append(str(player_id))
+
+    # Get breakouts from the same source as the Breakout Engine page,
+    # using the same season resolution so modal tabs match the page exactly.
+    breakouts = []
+    try:
+        from dashboard_services.breakout_api import (
+            get_breakout_candidates as _get_bo_indicators,
+            _resolve_bo_season as _resolve_bo,
+        )
+        _bo_season = _resolve_bo(current_season)
+        _bo_result = _get_bo_indicators(season=_bo_season, min_score=50, limit=15)
+        breakouts = [str(c["player_id"]) for c in (_bo_result.get("candidates") or [])]
+    except Exception as e:
+        logger.info(f"[player-indicators] Breakout candidates unavailable: {e}")
+
+    # Get elites based on positional rank cutoffs (12-man PPR dynasty)
+    elites = []
+
+    # Load model value table to get current player values
+    value_table = get_model_value_table_cached() or []
+    # Shared id->row index from the value-table sidecar (see api_players).
+    value_map = _model_value_sidecar().get("index") or {}
+
+    # Top-N positional rank cutoffs (shared with the consolidate/distribute
+    # engine so the ELITE chip and trade suggestions never disagree).
+    from utils.tier_thresholds import ELITE_RANK_CUTOFFS as elite_rank_cutoffs
+
+    from collections import defaultdict as _defaultdict
+    pos_players: dict = _defaultdict(list)
+    for player_id, player_data in value_map.items():
+        pos = str(player_data.get("position", "")).upper()
+        val = float(player_data.get("value", 0) or 0)
+        if val > 0 and pos in elite_rank_cutoffs:
+            pos_players[pos].append((val, str(player_id)))
+
+    for pos, cutoff in elite_rank_cutoffs.items():
+        for _, pid in sorted(pos_players[pos], reverse=True)[:cutoff]:
+            elites.append(pid)
+
+    # Prospects = only pre-draft class players (is_rookie=True in cached table)
+    prospects = []
+    try:
+        model_tbl = get_model_value_table_cached() or []
+        for entry in model_tbl:
+            if entry.get("is_rookie") is True:
+                pid = str(entry.get("id") or "")
+                if pid:
+                    prospects.append(pid)
+    except Exception as _pe:
+        logger.info(f"[player-indicators] prospects skipped: {_pe}")
+
+    return {
+        "rookies": rookies,
+        "breakouts": breakouts,
+        "elites": elites,
+        "prospects": prospects,
+    }
 
 
 @app.route("/api/prospect/<player_id>")
@@ -21616,8 +21706,9 @@ def api_player_details(player_id: str):
                 _player_tidx = _i
                 break
 
-        # Get FULL value history from database (not just 90 days)
-        value_history = get_player_value_history(
+        # Get FULL value history from database (not just 90 days).
+        # Cached per player (10-min TTL): reopening a modal skips the DB round-trip.
+        value_history = _cached_value_history(
             player_id, days=365,
             league_type=_modal_lt, league_size=_modal_ls,
         )
