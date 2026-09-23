@@ -54,7 +54,9 @@ def premium_metrics_exposed() -> bool:
 # Raw volume/share/efficiency metrics stay free for everyone, as does
 # expected_ppr_per_game (it anchors the free Key Metrics / Start-Sit views).
 # boom_rate/bust_rate stay free too: the Start / Sit compare table already
-# shows them to everyone, so gating them here would be incoherent.
+# shows them to everyone. schedule_ease stays free: the Schedule Assistant
+# already ranks schedule ease for everyone. Gating any of these here would
+# be incoherent.
 # The proprietary answers built on top (over-expected, trends, matchup
 # intel) are PRO. Enforced server-side in
 # routes/advanced_metrics_bp.py (leaderboard + movers 403) and reflected in
@@ -62,7 +64,6 @@ def premium_metrics_exposed() -> bool:
 PRO_METRICS = frozenset({
     "ppr_over_expected_per_game",
     "wopr", "opportunity_trend", "xfp_trend",
-    "schedule_ease",
 })
 
 

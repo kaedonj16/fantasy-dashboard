@@ -201,7 +201,7 @@ def test_movers_endpoint_shape():
 
 def test_pro_metrics_are_valid_leaderboard_keys():
     from data_building.advanced_metrics import PRO_METRICS
-    assert isinstance(PRO_METRICS, frozenset) and len(PRO_METRICS) >= 5
+    assert isinstance(PRO_METRICS, frozenset) and len(PRO_METRICS) >= 4
     assert all(key in LEADERBOARD_METRICS for key in PRO_METRICS)
 
 
