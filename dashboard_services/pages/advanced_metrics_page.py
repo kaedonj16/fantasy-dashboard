@@ -50,9 +50,17 @@ def build_advanced_metrics_body(
     from data_building.advanced_metrics import (
         get_available_seasons, get_available_weeks_by_season, _WEEKLY_METRICS,
         ADV_WEEKLY_METRIC_KEYS, adv_weekly_vol_spec,
-        PREMIUM_METRICS, premium_metrics_exposed,
+        PREMIUM_METRICS, premium_metrics_exposed, PRO_METRICS,
     )
     _hide_premium = not premium_metrics_exposed()
+    # Decision presets whose primary metric is PRO-gated (the four advanced
+    # decision presets). Non-PRO users see them locked; tapping opens the
+    # paywall instead of loading the view. Key Metrics and Start / Sit stay
+    # free: their primary (expected_ppr_per_game) is free.
+    _pro_presets = [
+        key for key, p in ADVANCED_METRIC_PRESETS.items()
+        if p.get("kind") == "decision" and p.get("primary") in PRO_METRICS
+    ]
     # Public metrics also live in this table; season discovery must not depend
     # on PFF entitlement (otherwise a newly ingested season such as 2026 is
     # hidden from the selector for ordinary users).
@@ -79,6 +87,8 @@ def build_advanced_metrics_body(
             continue
         if _hide_premium and key in PREMIUM_METRICS:
             continue  # don't offer premium (PFF) metrics on the public site
+        if not has_premium and key in PRO_METRICS:
+            continue  # PRO intelligence metrics stay out of the free picker
         cat = spec.get("category", "Other")
         groups.setdefault(cat, []).append((key, spec["label"]))
 
@@ -145,6 +155,7 @@ def build_advanced_metrics_body(
         "seasons": available_seasons,
         "availableWeeksBySeason": _weeks_by_season,
         "presets": ADVANCED_METRIC_PRESETS,
+        "proPresets": _pro_presets,
         "weeklyMetrics": weekly_metric_keys,
         "metrics": {
             key: {
@@ -156,6 +167,7 @@ def build_advanced_metrics_body(
                 "pct": bool(spec.get("pct")),
                 "pctFrac": bool(spec.get("pct_frac")),
                 "desc": spec.get("desc", ""),
+                "pro": key in PRO_METRICS,
                 "minVol": _min_vol_cfg(spec),
                 "weeklyCapable": key in weekly_metric_keys,
                 "weeklyVol": _weekly_vol_map.get(key) or None,
@@ -172,6 +184,7 @@ def build_advanced_metrics_body(
             for key, spec in metrics_spec.items()
             if not spec.get("hidden")
                and not (_hide_premium and key in PREMIUM_METRICS)
+               and not (not has_premium and key in PRO_METRICS)
         },
     })
 
@@ -187,10 +200,21 @@ def build_advanced_metrics_body(
     ) or '<option value="">No data</option>'
 
     # Decision pills: one per decision preset, in dict order (Key Metrics first).
-    decision_pills = "".join(
-        '<button type="button" class="am-pill" role="tab" data-preset="{key}" title="{tag}">{label}</button>'.format(
-            key=key, tag=_esc(p.get("tagline") or p.get("description") or p["label"]), label=_esc(p["label"]),
+    # PRO presets render locked for non-PRO users; tapping opens the paywall.
+    def _pill_html(key, p):
+        locked = (not has_premium) and key in _pro_presets
+        cls = "am-pill am-pill-locked" if locked else "am-pill"
+        lock = " 🔒" if locked else ""
+        return (
+            '<button type="button" class="{cls}" role="tab" data-preset="{key}"'
+            ' data-locked="{locked}" title="{tag}">{label}{lock}</button>'
+        ).format(
+            cls=cls, key=key, locked="1" if locked else "0",
+            tag=_esc(p.get("tagline") or p.get("description") or p["label"]),
+            label=_esc(p["label"]), lock=lock,
         )
+    decision_pills = "".join(
+        _pill_html(key, p)
         for key, p in ADVANCED_METRIC_PRESETS.items() if p.get("kind") == "decision"
     )
     # "All metrics" restores the classic browse-everything view.
@@ -549,6 +573,7 @@ def build_advanced_metrics_body(
       .am-pill:hover { background:var(--row); }
       .am-pill.active { background:var(--accent); border-color:var(--accent); color:#fff; }
       .am-pill-all { border-style:dashed; color:var(--text-muted); }
+      .am-pill-locked { opacity:.65; border-style:dashed; }
       .am-preset-tagline { font-size:12.5px; color:var(--text-muted); font-style:italic; margin:2px 0 6px; min-height:0; }
       .am-preset-tagline:empty { display:none; }
       /* What-changed movers strip */
@@ -903,7 +928,10 @@ def build_advanced_metrics_body(
       .am-trend-delta-up   { color:var(--win); }
       .am-trend-delta-down { color:var(--loss); }
       .am-trend-delta-flat { color:var(--text-muted); opacity:.6; }
-      @media (max-width:600px) { .am-trendcell { min-width:80px; } .am-spark { display:none; } }
+      /* PRO-locked extra column cells: tappable, open the paywall */
+      .am-cell-locked { cursor:pointer; }
+      .am-cell-locked:hover { background:var(--row); }
+      @media (max-width:600px) { .am-trendcell { min-width:80px; } .am-spark { width:44px; height:14px; } }
       /* Pinned-player comparison modal -- width grows with player count */
       .am-cmp-card { max-width:min(95vw,1100px); }
       .am-legend-body { overflow-x:auto; }
@@ -1305,11 +1333,16 @@ _AM_JS = r"""
 
   // Fetch JSON with a hard timeout so a slow/overloaded endpoint can't leave the
   // Compare modal stuck on "Loading…" forever; on timeout/failure resolve null.
-  function _amCmpFetch(url, ms) {
+  function _amCmpFetch(url, ms, mode) {
     const ctl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
     const t = ctl ? setTimeout(function() { ctl.abort(); }, ms || 8000) : null;
     return fetch(url, ctl ? { signal: ctl.signal } : undefined)
-      .then(function(r) { return r.ok ? r.json() : null; })
+      .then(function(r) {
+        // In 'pro' mode a 403 means the metric is PRO-gated: surface a
+        // distinct signal so the column can render locked, not empty.
+        if (mode === 'pro' && r.status === 403) return { proLocked: true };
+        return r.ok ? r.json() : null;
+      })
       .catch(function() { return null; })
       .finally(function() { if (t) clearTimeout(t); });
   }
@@ -1435,6 +1468,11 @@ _AM_JS = r"""
     const preset = _PRESETS[cat] || _PRESETS[String(cat).toLowerCase()];
     const keys = preset && preset.metrics;
     if (!keys || !keys.length) return;
+    // PRO presets are locked for non-PRO users: open the paywall instead.
+    if (!cfg.hasPremium && (cfg.proPresets || []).indexOf(cat) !== -1) {
+      if (typeof window.showPaywall === 'function') window.showPaywall('advanced-metrics-' + cat);
+      return;
+    }
     const primary = keys[0];
     const extras = keys.slice(1);
     if (extras.length > MAX_COMPARE) throw new Error('Preset exceeds comparison-column limit');
@@ -1493,8 +1531,27 @@ _AM_JS = r"""
     pills.addEventListener('click', function(e) {
       const b = e.target.closest('[data-preset]');
       if (!b) return;
+      // Locked PRO pills open the paywall; the amLoadPreset guard covers
+      // any other path (e.g. ?preset= deep links).
+      if (b.dataset.locked === '1' && !cfg.hasPremium) {
+        if (typeof window.showPaywall === 'function') window.showPaywall('advanced-metrics-' + b.dataset.preset);
+        return;
+      }
       if (b.dataset.preset) window.amLoadPreset(b.dataset.preset);
       else window.amClearDecision();
+    });
+  })();
+
+  // PRO-locked extra-column cells: tap the lock to open the paywall.
+  // Delegated on the table body so re-renders stay wired.
+  (function _wireProCells() {
+    const host = document.getElementById('amTableBody');
+    if (!host || host.dataset.proWired) return;
+    host.dataset.proWired = '1';
+    host.addEventListener('click', function(e) {
+      const cell = e.target.closest('[data-pro-metric]');
+      if (!cell || cfg.hasPremium) return;
+      if (typeof window.showPaywall === 'function') window.showPaywall('advanced-metrics-metric-' + cell.dataset.proMetric);
     });
   })();
 
@@ -1533,6 +1590,8 @@ _AM_JS = r"""
     const host = document.getElementById('amMovers');
     const groups = document.getElementById('amMoversGroups');
     if (!host || !groups) return;
+    // The movers strip is PRO intelligence; free users never see it.
+    if (!cfg.hasPremium) { host.style.display = 'none'; return; }
     const params = new URLSearchParams({ platform: cfg.platform });
     const season = _moverSeason();
     if (season) params.set('season', String(season));
@@ -1575,8 +1634,11 @@ _AM_JS = r"""
 
   const _PIN_SVG = '<svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor"><path d="M9.828.722a.5.5 0 0 1 .354.146l4.95 4.95a.5.5 0 0 1 0 .707c-.48.48-1.072.588-1.503.588-.177 0-.335-.018-.46-.039l-3.134 3.134a5.927 5.927 0 0 1 .16 1.013c.046.702-.032 1.687-.72 2.375a.5.5 0 0 1-.707 0l-2.829-2.828-3.182 3.182c-.195.195-1.219.902-1.414.707-.195-.195.512-1.22.707-1.414l3.182-3.182-2.828-2.829a.5.5 0 0 1 0-.707c.688-.688 1.673-.767 2.375-.72a5.922 5.922 0 0 1 1.013.16l3.134-3.133a2.772 2.772 0 0 1-.04-.461c0-.43.108-1.022.589-1.503a.5.5 0 0 1 .353-.146z"/></svg>';
 
-  function percentileBadge(rank, total) {
-    if (!total || !rank) return '';
+  function percentileBadge(rank, total, tied) {
+    // Rank is meaningless when every displayed value ties (e.g. all-0.0
+    // trends): every row would get an arbitrary rank and the first few
+    // would wear a bogus "Top 5%". Skip the badge in that case.
+    if (!total || !rank || tied) return '';
     const pct = rank / total;
     let label, color;
     if      (pct <= 0.05) { label = 'Top 5%';  color = '#10b981'; }
@@ -1806,9 +1868,16 @@ _AM_JS = r"""
     const curUrl = '/api/advanced-metrics/leaderboard?' + _buildExtraParams(curSeason);
     const prevUrl = prevSeason ? '/api/advanced-metrics/leaderboard?' + _buildExtraParams(String(prevSeason)) : null;
     // Primary (current-season) column, with a hard timeout so a hung request
-    // can't leave the column's skeleton spinning forever.
-    return _amCmpFetch(curUrl, 12000).then(function(curr) {
+    // can't leave the column's skeleton spinning forever. A 403 means the
+    // metric is PRO-gated for this viewer: lock the column instead of
+    // retrying or clearing it, so the paywall has a real entry point.
+    return _amCmpFetch(curUrl, 12000, 'pro').then(function(curr) {
       if (requestToken !== state.requestToken || !state.extraMetrics.includes(key) && !(state.filterColKeys && state.filterColKeys.has(key))) return;
+      if (curr && curr.proLocked) {
+        state.extraData[key] = { byId: {}, maxAbs: 1, proLocked: true };
+        render();
+        return;
+      }
       if (!curr) {
         // Transient failure/timeout (often server contention from a preset's
         // burst of requests): retry once, then give up and clear the skeleton.
@@ -1898,12 +1967,18 @@ _AM_JS = r"""
     }
     const statLbl = { snap_pct: 'snap%', touches: 'touches', targets: 'targets' }[t.stat] || t.stat;
     const d = t.delta;
-    let deltaHtml = '<span class="am-trend-delta am-trend-delta-flat">&ndash;</span>';
-    if (d >= 0.5) deltaHtml = '<span class="am-trend-delta am-trend-delta-up">&#9650; +' + d.toFixed(1) + '</span>';
-    else if (d <= -0.5) deltaHtml = '<span class="am-trend-delta am-trend-delta-down">&#9660; ' + d.toFixed(1) + '</span>';
+    // A null delta means the recent window is degenerate (<=3 weeks: the
+    // "last-3" window IS the season sample, so any number would be a lie).
+    // The sparkline still shows the real weekly series.
+    let deltaHtml = '<span class="am-trend-delta am-trend-delta-flat" title="Not enough weeks yet for a trend signal">&ndash;</span>';
+    if (d != null && d >= 0.5) deltaHtml = '<span class="am-trend-delta am-trend-delta-up">&#9650; +' + d.toFixed(1) + '</span>';
+    else if (d != null && d <= -0.5) deltaHtml = '<span class="am-trend-delta am-trend-delta-down">&#9660; ' + d.toFixed(1) + '</span>';
     const recentN = Math.min(3, t.weeks_played || 3);
-    return '<td class="am-trendcell" data-column-id="trend" title="Last-' + recentN + '-week avg ' + statLbl + ' (' + t.recent_avg
-      + ') vs season avg (' + t.season_avg + ')">'
+    const tip = (d == null || t.recent_avg == null)
+      ? 'Recent usage: only ' + (t.weeks_played || 0) + ' week(s) so far — trend signal starts with more data'
+      : 'Last-' + recentN + '-week avg ' + statLbl + ' (' + t.recent_avg
+        + ') vs season avg (' + t.season_avg + ')';
+    return '<td class="am-trendcell" data-column-id="trend" title="' + tip + '">'
       + '<div class="am-trend-inner">' + sparkline(t.series, color) + deltaHtml + '</div></td>';
   }
   function trendWindowWeeks() {
@@ -2668,6 +2743,12 @@ _AM_JS = r"""
     // Rank map so roster/search filters preserve original rank numbers.
     const rankMap = new Map(posRows.map((r, i) => [amRowKey(r), i + 1]));
 
+    // All displayed primary values identical? Then quality ranks are
+    // arbitrary and the percentile badge would be a lie (see percentileBadge).
+    const _primNonMissing = posRows.map(r => r.value).filter(v => !_amMissing(v));
+    const _primAllTie = _primNonMissing.length > 1
+      && _primNonMissing.every(v => Number(v) === Number(_primNonMissing[0]));
+
     // Quality rank: standing on the PRIMARY metric in its "good" direction
     // (ascending for lower-is-better, descending otherwise), independent of the
     // current display sort. Drives the percentile badge so flipping the sort to
@@ -2714,6 +2795,7 @@ _AM_JS = r"""
     const extraAvgMap = {};
     const extraRankMap = {};
     const extraRankTotal = {};
+    const extraTieMap = {};  // key -> true when every displayed value ties
     const extraBarMap = {};  // key -> {signed, lower, fieldMin, fieldMax, capMax}
     state.extraMetrics.forEach(function(key) {
       const ed = state.extraData[key];
@@ -2745,6 +2827,9 @@ _AM_JS = r"""
       _ePairs.forEach(([id], i) => { _eRankMap[id] = i + 1; });
       extraRankMap[key] = _eRankMap;
       extraRankTotal[key] = _ePairs.length;
+      // All displayed values identical -> percentile badges would be arbitrary.
+      const _eDistinct = new Set(_ePairs.map(([, v]) => Number(v)));
+      extraTieMap[key] = _ePairs.length > 1 && _eDistinct.size <= 1;
     });
 
 
@@ -2926,7 +3011,7 @@ _AM_JS = r"""
         });
       }
 
-      const badge = percentileBadge(qualityRankMap.get(amRowKey(r)) || rank, totalRanked);
+      const badge = percentileBadge(qualityRankMap.get(amRowKey(r)) || rank, totalRanked, _primAllTie);
       const primaryValue = schemaValue({kind:'metric', metricKey:state.metric}, r);
       const prevVal = amIsMultiSeason() ? null : state.prevData[String(r.player_id)];
       const trend = trendArrow(r.value, prevVal);
@@ -2960,6 +3045,18 @@ _AM_JS = r"""
               + '</div></td>';
             return;
           }
+          // PRO-locked extra column: a lock cell that opens the paywall
+          // instead of blank "–" values. Only the rows above the fold show
+          // the lock; every row gets the same click target via delegation.
+          if (ed.proLocked) {
+            const _ml = (cfg.metrics && cfg.metrics[key] && cfg.metrics[key].label) || key;
+            metricCell += '<td class="am-barcell am-cell-locked" data-column-id="metric:' + key + '"'
+              + ' data-pro-metric="' + key + '" title="' + _esc(_ml) + ' is PRO only — tap to unlock">'
+              + '<div class="am-metric-cell"><div class="am-metric-bar"><div class="am-bar-track" style="opacity:.25"></div></div>'
+              + '<div class="am-val-wrap"><span class="am-val" style="opacity:.7">🔒</span></div>'
+              + '</div></td>';
+            return;
+          }
           const val = schemaValue({kind:'metric', metricKey:key}, r);
           const _eBar = extraBarMap[key] || { signed: false, lower: false, fieldMin: 0, fieldMax: 1, capMax: extraMaxMap[key] };
           const pctBar = val != null ? _barPct(Number(val), _eBar) : 2;
@@ -2970,7 +3067,7 @@ _AM_JS = r"""
               + 'title="Average: ' + fmtVal(avgVE, key) + '"></div>'
             : '';
           const rkE = extraRankMap[key] ? extraRankMap[key][amRowKey(r)] : null;
-          const badgeE = (rkE && extraRankTotal[key]) ? percentileBadge(rkE, extraRankTotal[key]) : '';
+          const badgeE = (rkE && extraRankTotal[key]) ? percentileBadge(rkE, extraRankTotal[key], extraTieMap[key]) : '';
           const prevE = (!amIsMultiSeason() && state.extraPrevData[key]) ? state.extraPrevData[key][String(r.player_id)] : undefined;
           const trendE = (val != null && prevE !== undefined) ? trendArrow(val, prevE, key) : '';
           metricCell += '<td class="am-barcell" data-column-id="metric:' + key + '"><div class="am-metric-cell">'
@@ -3955,7 +4052,13 @@ _AM_JS = r"""
     const _mainCtl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
     const _mainTo = _mainCtl ? setTimeout(function() { _mainCtl.abort(); }, 15000) : null;
     const mainFetch = fetch('/api/advanced-metrics/leaderboard?' + params, _mainCtl ? { signal: _mainCtl.signal } : undefined)
-      .then(r => { if (_mainTo) clearTimeout(_mainTo); if (r.status === 403) return null; return r.json(); });
+      .then(r => {
+        if (_mainTo) clearTimeout(_mainTo);
+        if (r.status === 403) return r.json().then(
+          j => ({ _proOnly: !j || j.error === 'pro_only' }),
+          () => ({ _proOnly: true }));
+        return r.json();
+      });
     const prevFetch = hasPrevInData
       ? _amCmpFetch('/api/advanced-metrics/leaderboard?' + prevParams, 15000)
       : Promise.resolve(null);
@@ -3963,6 +4066,16 @@ _AM_JS = r"""
     Promise.all([mainFetch, prevFetch])
       .then(([d, pd]) => {
         if (requestToken !== state.requestToken) return;
+        if (d && d._proOnly) {
+          // PRO metric requested without PRO: open the paywall and fall back
+          // to a free metric so the table is never stuck on an empty state.
+          state.fetching = false; if (loading) loading.style.display = 'none';
+          if (typeof window.showPaywall === 'function') window.showPaywall('advanced-metrics-' + state.metric);
+          state.metric = 'opportunity_share';
+          if (metricSel) metricSel.value = state.metric;
+          state.page = 0; syncURL(); fetchData();
+          return;
+        }
         if (!d) { state.fetching = false; empty.style.display = ''; if (loading) loading.style.display = 'none'; tbody.innerHTML = ''; if (tableWrap) tableWrap.style.display = 'none'; return; }
         state.fetching = false;
         state.rows = d.players || [];
@@ -4530,13 +4643,20 @@ _AM_JS = r"""
   const _searchInit = _initParams.get('search') || '';
   if (_searchInit && searchEl) { searchEl.value = _searchInit; state.search = _searchInit; }
   const _presetInit = _initParams.get('preset') || '';
+  const _isProPreset = function(id) { return (cfg.proPresets || []).indexOf(id) !== -1; };
   let _presetLoaded = false;
-  if (_presetInit && _PRESETS[_presetInit]) { amLoadPreset(_presetInit); _presetLoaded = true; }
+  // PRO presets never auto-load for non-PRO users (?preset= deep links included:
+  // amLoadPreset itself opens the paywall for those).
+  if (_presetInit && _PRESETS[_presetInit] && (cfg.hasPremium || !_isProPreset(_presetInit))) {
+    amLoadPreset(_presetInit); _presetLoaded = true;
+  }
   else {
-    // Default landing: the last-used decision view, else Key Metrics.
+    // Default landing: the last-used decision view, else Key Metrics
+    // (free). Free users with a stale PRO last-preset fall back to 'general'.
     let _lastPreset = null;
     try { _lastPreset = localStorage.getItem('amLastPreset'); } catch (e) {}
-    const _landing = (_lastPreset && _PRESETS[_lastPreset]) ? _lastPreset : 'key_metrics';
+    let _landing = (_lastPreset && _PRESETS[_lastPreset]) ? _lastPreset : 'key_metrics';
+    if (!cfg.hasPremium && _isProPreset(_landing)) _landing = 'general';
     if (_PRESETS[_landing]) { amLoadPreset(_landing); _presetLoaded = true; }
   }
   updateSortBtn(); updatePosButtons(); updateMetricTip(); updateVolCtrl(); updateVolHeader();

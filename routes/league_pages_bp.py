@@ -203,9 +203,14 @@ def page_advanced_metrics(platform: str = None, season: int = None, league_id: s
     """Premium Advanced Metrics leaderboard page."""
     from dashboard_services.pages.advanced_metrics_page import build_advanced_metrics_body
     from data_building.advanced_metrics import LEADERBOARD_METRICS
+    from dashboard_services.subscriptions import has_premium_for_viewer
     user_id = session.get("viewer_username")
+    has_premium = has_premium_for_viewer(
+        session.get("viewer_username"), session.get("viewer_user_id"),
+        league_id, platform or "sleeper", season,
+    )
     body = build_advanced_metrics_body(
-        True, LEADERBOARD_METRICS, league_id, season, platform
+        has_premium, LEADERBOARD_METRICS, league_id, season, platform
     )
     # When a shared graph link is opened (?graph=1&gx=&gy=...), give it a rich
     # social preview whose image is a server-rendered screenshot of that graph.
