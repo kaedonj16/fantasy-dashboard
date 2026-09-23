@@ -29802,7 +29802,7 @@ def build_portfolio_body(
         f"</div>"
         f"<div class='pf-stat-bar'>"
         f"<div class='pf-stat'><div class='pf-stat-val' data-portfolio-league-count>{num_leagues}</div><div class='pf-stat-label'>Leagues</div></div>"
-        f"<div class='pf-stat'><div class='pf-stat-val {rec_cls}'>{rec_str}</div><div class='pf-stat-label'>Record</div></div>"
+        f"<div class='pf-stat'><div class='pf-stat-val {rec_cls}' data-portfolio-agg-record data-wins='{total_wins}' data-losses='{total_losses}' data-ties='{total_ties}'>{rec_str}</div><div class='pf-stat-label'>Record</div></div>"
         f"<div class='pf-stat'><div class='pf-stat-val'>{season}</div><div class='pf-stat-label'>Season</div></div>"
         f"</div>"
         f"</div>"
@@ -30138,6 +30138,7 @@ def build_portfolio_body(
 
         wins = lg.get("wins") or 0
         losses = lg.get("losses") or 0
+        ties = lg.get("ties") or 0
         rank = lg.get("rank") or "?"
         total = lg.get("total_teams") or "?"
         rec = lg.get("record") or f"{wins}-{losses}"
@@ -30249,7 +30250,7 @@ def build_portfolio_body(
         )
 
         league_rows += (
-            f"<div class='pf-lg-card' data-summary-card data-lg-key='{plat}:{lid}' data-favorite='{'true' if lg.get('is_favorite') else 'false'}' data-platform='{html.escape(str(plat), quote=True)}' data-league-id='{html.escape(str(lid), quote=True)}' data-season='{card_season}'>"
+            f"<div class='pf-lg-card' data-summary-card data-lg-key='{plat}:{lid}' data-favorite='{'true' if lg.get('is_favorite') else 'false'}' data-platform='{html.escape(str(plat), quote=True)}' data-league-id='{html.escape(str(lid), quote=True)}' data-season='{card_season}' data-wins='{wins}' data-losses='{losses}' data-ties='{ties}'>"
             f"<div class='pf-lg-top'>"
             f"<span class='pf-lg-crest' style='background:{_crest_hue};'>{_ini}</span>"
             f"{_lg_id(name_link, plat, off_note, '', lg.get('team_name') or '')}"

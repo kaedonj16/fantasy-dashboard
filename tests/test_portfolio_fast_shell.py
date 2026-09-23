@@ -29,7 +29,7 @@ def test_account_portfolio_renders_complete_cross_league_data(offline_client, mo
     monkeypatch.setattr("dashboard_services.accounts.resolve_account_viewer_for_league",
                         lambda *a, **k: {"viewer_roster_id": "9"})
     monkeypatch.setattr("dashboard_services.ai.context_builders.league_format_value_lookup",
-                        lambda ctx: {"p1": {"name": "Player One", "position": "WR",
+                        lambda ctx, _cache=None: {"p1": {"name": "Player One", "position": "WR",
                                               "team": "BUF", "value": 321,
                                               "pos_rank_label": "WR12"}})
     monkeypatch.setattr("dashboard_services.ai.context_builders.portfolio_record_and_rank",

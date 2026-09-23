@@ -299,7 +299,7 @@ def build_model_value_lookup(
     return out
 
 
-def league_format_value_lookup(ctx: dict) -> dict[str, dict]:
+def league_format_value_lookup(ctx: dict, _cache: dict | None = None) -> dict[str, dict]:
     """pid → value row with ``value`` rewritten for this league's type.
 
     Numbers match the player-modal hero: Superflex vs 1QB, redraft vs dynasty,
@@ -307,6 +307,11 @@ def league_format_value_lookup(ctx: dict) -> dict[str, dict]:
     redraft twin) columns. Size overlays (``sf_value_12``, …) are a trade-calc
     board and are not what the modal shows. Shared by My Leagues and the Teams
     page so a WR5 on one surface cannot read as WR6 on the other.
+
+    Pass a per-request ``_cache`` dict to memoize by scoring signature: the
+    output depends only on league type settings, not the viewer, so N leagues
+    with the same settings share one computation instead of re-walking the
+    entire value table per league.
     """
     from utils.lineup_slots import is_superflex_lineup
     from utils.trade_value import player_trade_value
@@ -333,6 +338,16 @@ def league_format_value_lookup(ctx: dict) -> dict[str, dict]:
     tep = te_premium_from_settings(settings)
     rank_label_key = format_rank_label_key(is_redraft=is_redraft, is_sf=is_sf)
 
+    # Memoize by scoring signature when a per-request cache is provided.
+    # The output depends only on league type settings + the value table, not
+    # the viewer, so same-type leagues share one computation.
+    cache_key = None
+    if _cache is not None:
+        cache_key = (is_sf, scoring, scoring_format, tep, id(model_vals))
+        cached = _cache.get(cache_key)
+        if cached is not None:
+            return cached
+
     out: dict[str, dict] = {}
     for row in model_vals:
         if not isinstance(row, dict):
@@ -354,6 +369,8 @@ def league_format_value_lookup(ctx: dict) -> dict[str, dict]:
             "value": val,
             "pos_rank_label": row_format_rank_label(row, rank_label_key),
         }
+    if _cache is not None and cache_key is not None:
+        _cache[cache_key] = out
     return out
 
 
