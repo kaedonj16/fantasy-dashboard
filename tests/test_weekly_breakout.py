@@ -44,19 +44,19 @@ def test_split_windows_never_overlap():
 
 
 def test_three_games_produce_momentum_not_zero():
-    # The old recent-3-vs-season comparison reported zero momentum through three
-    # games (same games on both sides). Here recent and baseline are disjoint.
+    # Recent and baseline are disjoint; with 3 games the recent window is the
+    # last 2 and the baseline is the season to date before that.
     rows = [wk(1, 30), wk(2, 30), wk(3, 60)]
     recent, baseline = wb.split_windows(rows)
-    assert [r["week"] for r in recent] == [3]
-    assert [r["week"] for r in baseline] == [1, 2]
+    assert [r["week"] for r in recent] == [2, 3]
+    assert [r["week"] for r in baseline] == [1]
 
 
-def test_four_plus_games_uses_two_recent_up_to_four_baseline():
+def test_five_plus_games_uses_three_recent_season_baseline():
     rows = [wk(i) for i in range(1, 8)]  # 7 games
     recent, baseline = wb.split_windows(rows)
-    assert [r["week"] for r in recent] == [6, 7]
-    assert [r["week"] for r in baseline] == [2, 3, 4, 5]  # preceding 4, non-overlapping
+    assert [r["week"] for r in recent] == [5, 6, 7]
+    assert [r["week"] for r in baseline] == [1, 2, 3, 4]  # full season before recent
 
 
 # ---------------------------------------------------------------------------
@@ -103,11 +103,15 @@ def test_td_spike_without_role_growth_is_not_a_breakout():
 
 
 def test_routes_and_high_value_usage_are_explainable_when_available():
-    rows = [wk(1, 25, 8, 2), wk(2, 28, 9, 2), wk(3, 70, 24, 8)]
+    # 5 weeks: season baseline is low, past few weeks show the role jump.
+    rows = [wk(1, 25, 8, 2), wk(2, 28, 9, 2), wk(3, 70, 24, 8),
+            wk(4, 72, 25, 8), wk(5, 68, 23, 7)]
     rows[0].update(routes=10, red_zone_opportunities=0)
     rows[1].update(routes=11, red_zone_opportunities=0)
     rows[2].update(routes=31, red_zone_opportunities=3)
-    res = wb.score_player(WR, rows, cutoff_week=3)
+    rows[3].update(routes=33, red_zone_opportunities=3)
+    rows[4].update(routes=30, red_zone_opportunities=2)
+    res = wb.score_player(WR, rows, cutoff_week=5)
     assert res["signals"]["routes_pg"]["delta"] > 15
     assert res["components"]["high_value_touches"] > 0
     assert res["components"]["unexpected_usage"] > 0
@@ -167,11 +171,24 @@ def test_rookie_week1_is_provisional_without_prior_history():
     res = wb.score_player(RB, [wk(1, 70, None, 4, car=18, ppr=15)], cutoff_week=1)
     assert res["provisional"] is True
     assert res["baseline_source"] == "none"
-    assert res["confidence"] <= 35.0            # provisional cap
+    # Provisional confidence is a smooth 0.6x discount of the underlying
+    # evidence (not the old hard 35.0 cliff): still low for one game, but it
+    # varies player to player instead of pinning at exactly 35.
+    assert res["confidence"] < 60.0
     assert res["classification"] in ("watchlist", "temporary_opportunity")
     assert res["signals"]["snap_share"]["baseline"] is None
     assert res["signals"]["snap_share"]["delta"] is None
     assert res["breakout_score"] < 100
+
+
+def test_provisional_confidence_discount_is_proportional():
+    # Unit-level: the provisional discount scales the evidence-based
+    # confidence instead of clipping it at a fixed ceiling.
+    rows = [wk(1, 70, None, 4, car=18, ppr=15)]
+    signals, _ = wb._position_signals("RB", rows, [], initial_role=True)
+    conf_prov, _ = wb._compute_confidence(signals, rows, [], "RB", 0, True)
+    conf_full, _ = wb._compute_confidence(signals, rows, [], "RB", 0, False)
+    assert conf_prov == pytest.approx(conf_full * 0.6, abs=0.15)
 
 
 def test_prior_season_baseline_used_when_thin_current_data():
@@ -382,7 +399,25 @@ def test_two_persistent_rookie_games_can_be_provisional_emerging():
     assert res["classification"] == "emerging_breakout"
     assert res["main_board_eligible"] is True
     assert res["score_basis"] == "initial_role"
-    assert res["breakout_score"] <= wb.INITIAL_PERSISTENT_CAP
+    # The persistent cap is evidence-scaled now (45 + 5 per supporting signal,
+    # max 60): strong multi-signal rookies earn headroom above the old fixed 45
+    # instead of every rookie pinning at exactly the same number.
+    expected_cap = wb._initial_persistent_cap(res["supporting_signal_count"])
+    assert res["breakout_score"] <= expected_cap
+    assert res["breakout_score"] > wb.INITIAL_PERSISTENT_CAP  # differentiated
+
+
+def test_evidence_scaled_cap_rewards_stronger_rookie_evidence():
+    rookie = {**WR, "years_exp": 0, "season": 2026, "draft_year": 2026,
+              "draft_round": 5}
+    strong = wb.score_player(rookie, [wk(1, 72, 23, 8), wk(2, 75, 25, 9)],
+                             cutoff_week=2)
+    weak = wb.score_player(rookie, [wk(1, 55, 12, 4), wk(2, 58, 13, 4)],
+                           cutoff_week=2)
+    assert strong["breakout_score"] > weak["breakout_score"]
+    assert wb._initial_persistent_cap(0) == 45.0
+    assert wb._initial_persistent_cap(3) == 60.0
+    assert wb._initial_persistent_cap(10) == 60.0  # capped at the max
 
 
 def test_rookie_transitions_to_real_change_window_in_week_three():
@@ -391,7 +426,7 @@ def test_rookie_transitions_to_real_change_window_in_week_three():
     res = wb.score_player(rookie, rows, cutoff_week=3)
     assert res["score_basis"] == "role_change"
     assert res["role_change_score"] is not None
-    assert res["baseline_weeks"] == [1, 2]
+    assert res["baseline_weeks"] == [1]
 
 
 def test_missing_cache_veteran_is_not_assumed_rookie():
@@ -740,3 +775,46 @@ def test_backtest_reports_both_precisions():
     assert "precision_useful" in rep["methods"]["model"]
     assert "rest_of_season_role_retention" in rep["methods"]["model"]
     assert "median_lead_time_games" in rep["methods"]["model"]
+
+
+def _uc_signal(key, baseline=None, recent=3.0, points=12.0):
+    return {key: {"available": True, "baseline": baseline, "recent": recent,
+                  "delta": None, "points": points}}
+
+
+def test_weekly_signal_labels_cover_all_engine_signals():
+    # The API's usage_comparison labels must never fall back to raw metric keys.
+    from dashboard_services import breakout_api as ba
+    for key in wb._SIGNAL_LABELS:
+        label = ba._WEEKLY_SIGNAL_LABELS.get(key)
+        assert label and label != key, f"missing human label for {key}"
+        assert ba._WEEKLY_SIGNAL_UNITS.get(key) == wb._SIGNAL_LABELS[key][1]
+
+
+def test_high_value_opportunities_renders_human_label():
+    # Regression: the board rendered "Initial role: 3.0 high_value_opportunities_pg".
+    from dashboard_services.breakout_api import _weekly_usage_comparison
+    rows = _weekly_usage_comparison({"signals": _uc_signal("high_value_opportunities_pg")})
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["label"] == "Red-zone opportunities/game"
+    assert row["unit"] == ""
+    assert row["baseline"] is None and row["recent"] == 3.0
+
+
+def test_newer_engine_signals_have_human_labels():
+    # routes_pg, route_participation and dropback_share were also missing from
+    # the API label map and fell back to raw keys.
+    from dashboard_services.breakout_api import _weekly_usage_comparison
+    signals = {}
+    for key in ("routes_pg", "route_participation", "dropback_share"):
+        signals.update(_uc_signal(key, baseline=10.0, recent=20.0))
+    rows = _weekly_usage_comparison({"signals": signals})
+    by_key = {r["key"]: r for r in rows}
+    assert by_key["routes_pg"]["label"] == "Routes/game"
+    assert by_key["route_participation"]["label"] == "Route participation"
+    assert by_key["route_participation"]["unit"] == "%"
+    assert by_key["dropback_share"]["label"] == "Dropback share"
+    assert by_key["dropback_share"]["unit"] == "%"
+    for r in rows:
+        assert r["label"] != r["key"]

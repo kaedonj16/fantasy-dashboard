@@ -135,6 +135,12 @@ def build_lineup_analysis(matchups_by_week: dict, selected_week: int,
     if not historical_available:
         return {"available": False, "reason": "Historical lineup data is unavailable for this week."}
 
+    # Fleaflicker boxscores can mark historical lineups with unresolved ("0")
+    # placeholder slots. Those pass the lineup_is_historical gate but carry no
+    # points, leaving every section empty. Treat that as unavailable instead.
+    if not starters and not bench:
+        return {"available": False, "reason": "Historical lineup data is unavailable for this week."}
+
     skill = {"QB", "RB", "WR", "TE", "K", "DEF", "DST"}
     starter_pool = [p for p in starters if str(p.get("pos") or "").upper() in skill]
     if trustworthy_projection:

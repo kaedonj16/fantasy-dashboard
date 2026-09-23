@@ -2078,7 +2078,7 @@
             myTDs.forEach(function(ev) {
               var p = sw.showNotification('TD: ' + ev.name, {
                 body: ev.desc + (ev.pts > 0 ? '  +' + _fmtFantasyPrecise(ev.pts) + ' pts' : ''),
-                icon: '/static/BR_Mark.png?v=f4228e0e', tag: 'rz-td-' + (ev.playId || ev.pid)
+                icon: '/static/BR_Mark.png?v=6c0c4828', tag: 'rz-td-' + (ev.playId || ev.pid)
               });
               if (p && p.catch) p.catch(function() {});
             });

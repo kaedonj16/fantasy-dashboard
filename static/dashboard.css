@@ -1271,6 +1271,21 @@ ul {
     line-height: 14px;
 }
 
+.nav-new-badge {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 1px 5px;
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+    color: #fff;
+    background: #16a34a;
+    border-radius: 6px;
+    vertical-align: middle;
+    line-height: 14px;
+}
+
 .nav-pill-dropdown-item + .nav-pill-dropdown-item {
     border-top: 1px solid var(--border);
 }
@@ -14552,6 +14567,14 @@ html[data-theme="dark"] .podium .bar {
     background: #f59e0b;
 }
 
+.pos-badge.FLEX {
+    background: #14b8a6;
+}
+
+.pos-badge.SF {
+    background: #1d4ed8;
+}
+
 .pos-bar-inner {
     height: 100%;
     border-radius: 12px;
@@ -21816,7 +21839,26 @@ img.tm-sched-avatar {
 }
 
 @media (max-width: 480px) {
-    .tm-mu-hname { display: none; }
+    /* Keep player names visible in matchup details (they were display:none,
+       leaving only scores + position badges). Names wrap onto their own line
+       below the points instead of truncating with an ellipsis. */
+    .tm-mu-h { flex-wrap: wrap; gap: 2px 4px; }
+    .tm-mu-hname {
+        font-size: 11px;
+        flex-basis: 100%;
+        white-space: normal;
+        overflow: visible;
+        text-overflow: clip;
+    }
+    .tm-mu-h-left .tm-mu-hname { text-align: right; }
+    .tm-mu-h-right .tm-mu-hname { text-align: left; }
+    .tm-sched-row { gap: 6px; padding: 9px 8px; }
+    .tm-sched-vs { display: none; }
+    .tm-sched-avatar { width: 22px; height: 22px; }
+    .tm-sched-score { font-size: 11px; }
+    .tm-sched-result { min-width: 22px; padding: 0 4px; }
+    .tm-sched-detail .tm-lineup-side { display: block; width: 100%; }
+    .tm-sched-detail .tm-lineup-side + .tm-lineup-side { margin: 14px 0 0; }
 }
 
 .team-modal-empty {
@@ -28698,6 +28740,12 @@ button:disabled {
 .weekly-recap .recap-eff-detail { margin-top:2px; overflow:hidden; color:var(--muted); font-size:10px; font-variant-numeric:tabular-nums; text-overflow:ellipsis; white-space:nowrap; }
 .weekly-recap .recap-eff-percent { color:var(--win); font-size:20px; font-variant-numeric:tabular-nums; white-space:nowrap; }
 .weekly-recap .recap-eff-card--bench .recap-eff-row { grid-template-columns:34px minmax(0,1fr) auto; }
+/* Pin columns so a missing/hidden avatar can't shift the team name into the 34px slot. */
+.weekly-recap .recap-eff-row > .recap-eff-rank { grid-column:1; }
+.weekly-recap .recap-eff-row > .recap-eff-team { grid-column:3; }
+.weekly-recap .recap-eff-row > .recap-eff-percent { grid-column:4; }
+.weekly-recap .recap-eff-card--bench .recap-eff-row > .recap-eff-team { grid-column:2; }
+.weekly-recap .recap-eff-card--bench .recap-eff-row > .recap-eff-percent { grid-column:3; }
 .weekly-recap .recap-eff-insight { display:flex; flex-direction:column; margin-top:7px; padding-top:10px; border-top:1px solid var(--border); color:var(--muted); font-size:11px; }
 .weekly-recap .recap-eff-insight strong { color:var(--loss); font-size:22px; line-height:1.1; font-variant-numeric:tabular-nums; }
 .weekly-recap .recap-eff-partial { margin-top:8px; color:var(--muted); font-size:11px; }
@@ -34803,19 +34851,33 @@ a.rz-demo-link:hover {
     gap: 6px;
     font-size: 12px;
     font-weight: 700;
-    color: var(--rz-red, #dc2626);
+    color: var(--text-muted);
     text-decoration: none;
     padding: 6px 12px;
-    border: 1px solid rgba(220, 38, 38, .3);
+    border: 1px solid var(--border);
     border-radius: 10px;
-    background: rgba(220, 38, 38, .06);
+    background: var(--surface);
     white-space: nowrap;
-    transition: background .15s, border-color .15s;
+    transition: background .15s, border-color .15s, color .15s;
 }
 
 .weekly-rz-btn:hover {
+    background: var(--surface-hover);
+    border-color: var(--border-strong);
+    color: var(--text);
+}
+
+/* Live state: red glow only when games are actually live or imminent. */
+.weekly-rz-btn-live {
+    color: var(--rz-red, #dc2626);
+    border-color: rgba(220, 38, 38, .3);
+    background: rgba(220, 38, 38, .06);
+}
+
+.weekly-rz-btn-live:hover {
     background: rgba(220, 38, 38, .12);
     border-color: rgba(220, 38, 38, .45);
+    color: var(--rz-red, #dc2626);
 }
 
 .weekly-rz-btn-dot {
@@ -40454,7 +40516,9 @@ a, button, [role="button"], [role="tab"], summary, label,
 .mb-info--bye { opacity: .45; }
 
 .mb-nameline { display: flex; align-items: baseline; gap: 5px; min-width: 0; line-height: 1.2; }
-.mb-cell-r .mb-nameline { flex-direction: row-reverse; }
+/* Right side reads name-first ("Chris Olave NO • WR"), same order as the
+   left; the block itself is right-aligned by .mb-cell-r .mb-info. */
+.mb-cell-r .mb-nameline { flex-direction: row; justify-content: flex-end; }
 /* Full text, no ellipsis: names, game line and box score wrap rather than clip. */
 .mb-nameline { flex-wrap: wrap; }
 .mb-nameline .pname { font-size: 13px; font-weight: 700; color: var(--accent); white-space: normal; overflow-wrap: anywhere; min-width: 0; }
@@ -40529,4 +40593,47 @@ a, button, [role="button"], [role="tab"], summary, label,
     .mb-cell { padding: 7px 8px; }
     .mb-a { font-size: 15px; }
     .mb-pos .pos-badge { width: 30px; height: 19px; font-size: 9px; }
+
+    /* Cardless phone board: the tab container IS the visible "matchup card"
+       on the Weekly Hub (the carousel's own chrome is already stripped inside
+       the hub), so flatten it here and let the rows use the full width. The
+       tab pill bar keeps its own styling; only the container chrome goes. */
+    #weeklyLeftTabs {
+        background: transparent;
+        border: none;
+        border-radius: 0;
+        overflow: visible;
+        /* No negative bleed: the hub clips overflow-x, so a negative
+           margin-inline pushes the "Matchup Preview" heading outside the
+           clipping box and cuts off its first letter. The container is
+           transparent/borderless now, so the bleed was invisible anyway. */
+        margin-inline: 0;
+    }
+    #weeklyLeftTabs .tab-panel.active {
+        padding: 6px 2px 12px;
+    }
+    /* Two-line player header on phones: name on top, TEAM • POS beneath it.
+       (Desktop keeps the sub-line inline after the name.) */
+    .mb-nameline {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 1px;
+    }
+    .mb-cell-r .mb-nameline {
+        flex-direction: column;
+        align-items: flex-end;
+    }
+    .mb-team {
+        letter-spacing: .04em;
+    }
+    /* Pin the stacked TEAM • POS sub-line to the same edge as the name
+       (left column: left edge, right column: right edge) and drop the
+       desktop inline gap so it sits exactly under the name. */
+    .mb-nameline .mb-team {
+        align-self: flex-start;
+        margin-left: 0;
+    }
+    .mb-cell-r .mb-nameline .mb-team {
+        align-self: flex-end;
+    }
 }

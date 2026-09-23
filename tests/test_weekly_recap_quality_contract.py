@@ -119,7 +119,10 @@ def test_lineup_efficiency_section_and_share_contract():
     assert page.count("compute_league_season_efficiency(") == 1
     assert "LINEUP EFFICIENCY" in js
     assert "d.best_lineup" in js and "d.most_left" in js
-    assert "window.brShareCanvas(canvas" in js
+    # Share goes through a preview modal so navigator.share() fires on a fresh
+    # user gesture (iOS kills it after the async canvas paint/encode chain).
+    assert "openRecapShareModal" in js
+    assert "navigator.share({ files: [file]" in js
 
 
 def test_toughest_bench_uses_legal_points_left_not_raw_bench_points():

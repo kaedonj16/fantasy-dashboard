@@ -23,7 +23,7 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
   border: 1px solid var(--border); margin-bottom: 16px; background: var(--card);
 }
 .wv-tab-btn {
-  flex: 1; padding: 10px 0; font-size: 13px; font-weight: 700;
+  flex: 1; padding: 10px 0; min-height: 44px; font-size: 13px; font-weight: 700;
   border: none; background: none; color: var(--text-muted); cursor: pointer;
   transition: background .15s, color .15s;
 }
@@ -502,6 +502,7 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
       <div id="wvTrendingWrap" hidden>
         <div class="wv-section-title wv-trending-title">
           <i class="fa-solid fa-fire" aria-hidden="true"></i> Trending across leagues
+          <span class="wv-trending-window" style="font-weight:400;font-size:12px;color:var(--muted);">last 48h</span>
         </div>
         <div id="wvTrendingStrip" class="wv-trending-strip"></div>
       </div>
@@ -837,9 +838,36 @@ function wvLoad() {{
 }}
 
 function wvLoadBigGames() {{
-  fetch(`/api/waiver-big-games?platform=${{WV_PLATFORM}}&league_id=${{WV_LEAGUE_ID}}&season=${{WV_SEASON}}`)
+  // Abort if the backend hangs so the section falls through to the error
+  // state with a retry instead of skeletons forever (matches wvLoadStartSit).
+  var bgController = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+  var bgTimer = null;
+  var bgFailsafe = null;
+  var bgSettled = false;
+  function bgShowError() {{
+    if (bgSettled) return;
+    bgSettled = true;
+    if (bgTimer) clearTimeout(bgTimer);
+    if (bgFailsafe) clearTimeout(bgFailsafe);
+    const wrap = document.getElementById('wvBigGamesWrap'); if (wrap) wrap.hidden = false;
+    window.brErrorState('wvBigGamesList', 'Availability could not be verified.', wvLoadBigGames);
+  }}
+  if (bgController) {{
+    bgTimer = setTimeout(function() {{ try {{ bgController.abort(); }} catch (_) {{}} }}, 20000);
+  }}
+  // Failsafe: force the error state if skeletons persist past 25s.
+  bgFailsafe = setTimeout(function() {{
+    var list = document.getElementById('wvBigGamesList');
+    if (list && list.querySelector('.skeleton')) bgShowError();
+  }}, 25000);
+  fetch(`/api/waiver-big-games?platform=${{WV_PLATFORM}}&league_id=${{WV_LEAGUE_ID}}&season=${{WV_SEASON}}`,
+        bgController ? {{ signal: bgController.signal }} : undefined)
     .then(r => r.json().then(d => ({{ ok: r.ok, d }})))
     .then(({{ok, d}}) => {{
+      if (bgSettled) return;
+      bgSettled = true;
+      if (bgTimer) clearTimeout(bgTimer);
+      if (bgFailsafe) clearTimeout(bgFailsafe);
       if (!ok || d.availability === 'unavailable' || d.availability === 'stale') {{
         const wrap = document.getElementById('wvBigGamesWrap');
         if (wrap) wrap.hidden = false;
@@ -849,16 +877,42 @@ function wvLoadBigGames() {{
       wvBigGamesData = d.discoveries || []; wvRenderBigGames(wvBigGamesData);
     }})
     .catch(() => {{
-      const wrap = document.getElementById('wvBigGamesWrap'); if (wrap) wrap.hidden = false;
-      window.brErrorState('wvBigGamesList', 'Availability could not be verified.', wvLoadBigGames);
+      bgShowError();
     }});
 }}
 
 function wvLoadStartSit() {{
   window.brLoadingState('wvStartSit', {{ rows: 3, compact: true, message: 'Loading lineup' }});
-  fetch(`/api/start-sit-options?platform=${{WV_PLATFORM}}&league_id=${{WV_LEAGUE_ID}}&season=${{WV_SEASON}}`)
+  // Abort if the backend hangs (e.g. slow league-context fetch) so the panel
+  // falls through to the error state with a retry instead of skeletons forever.
+  var ssController = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+  var ssTimer = null;
+  var ssFailsafe = null;
+  var ssSettled = false;
+  function ssShowError() {{
+    if (ssSettled) return;
+    ssSettled = true;
+    if (ssTimer) clearTimeout(ssTimer);
+    if (ssFailsafe) clearTimeout(ssFailsafe);
+    window.brErrorState('wvStartSit', 'Unable to load lineup data.', wvLoadStartSit);
+  }}
+  if (ssController) {{
+    ssTimer = setTimeout(function() {{ try {{ ssController.abort(); }} catch (_) {{}} }}, 20000);
+  }}
+  // Failsafe: if skeletons are still showing after 25s (abort didn't reject the
+  // fetch, r.json() hung, etc.), force the error state with a retry.
+  ssFailsafe = setTimeout(function() {{
+    var el = document.getElementById('wvStartSit');
+    if (el && el.querySelector('.skeleton')) ssShowError();
+  }}, 25000);
+  fetch(`/api/start-sit-options?platform=${{WV_PLATFORM}}&league_id=${{WV_LEAGUE_ID}}&season=${{WV_SEASON}}`,
+        ssController ? {{ signal: ssController.signal }} : undefined)
     .then(r => r.json().then(d => ({{ ok: r.ok, d }})))
     .then(({{ok, d}}) => {{
+      if (ssSettled) return;
+      ssSettled = true;
+      if (ssTimer) clearTimeout(ssTimer);
+      if (ssFailsafe) clearTimeout(ssFailsafe);
       const state = d.state || (ok ? 'loaded' : 'temporarily_unavailable');
       if (state === 'sign_in_required') {{
         showLoginGate('wvStartSit', {{
@@ -886,7 +940,7 @@ function wvLoadStartSit() {{
       wvRenderStartSit();
     }})
     .catch(() => {{
-      window.brErrorState('wvStartSit', 'Unable to load lineup data.', wvLoadStartSit);
+      ssShowError();
     }});
 }}
 
@@ -1026,7 +1080,7 @@ function wvRenderWaivers() {{
       returnHint = `<div class="wv-drop-hint" title="${{srcTip}}">`
         + `<span class="wv-drop-lbl">${{srcLbl}}</span>${{wkLbl}}</div>`;
     }}
-    const sub = [p.position, p.team, p.pos_rank_label, p.age ? 'Age ' + parseFloat(p.age).toFixed(1) : '', p.rostered_pct != null ? Math.round(p.rostered_pct) + '% rostered' : '', p.adds_48h ? ('+' + p.adds_48h + ' adds') : ''].filter(Boolean).join(' · ');
+    const sub = [p.position, p.team, p.pos_rank_label, p.age ? 'Age ' + parseFloat(p.age).toFixed(1) : '', p.rostered_pct != null ? Math.round(p.rostered_pct) + '% rostered' : '', p.adds_48h ? ('+' + wvFmtAdds(p.adds_48h) + ' adds') : ''].filter(Boolean).join(' · ');
     return `
     <div class="wv-bm-row" onclick="openPlayerModal('${{p.player_id}}', '${{p.name.replace(/'/g,"\\'")}}')">
       <div class="wv-bm-main">
@@ -1080,7 +1134,7 @@ function wvRenderTrending(items) {{
     const sub = [pos, p.team].filter(Boolean).join(' · ');
     const nm = (p.name || '').replace(/'/g, "\\\\'");
     const tipName = (p.name || '').replace(/"/g, '&quot;');
-    const tipAdds = wvFmtAdds(p.adds) + ' adds across Sleeper leagues';
+    const tipAdds = wvFmtAdds(p.adds) + ' adds across Sleeper leagues in the last 48h';
     return `
       <button type="button" class="wv-trend-chip" onclick="openPlayerModal('${{p.player_id}}', '${{nm}}')"
               title="${{tipName}} · ${{tipAdds}}">
@@ -1113,7 +1167,7 @@ function wvStreamRow(p, implied, isDef) {{
       <span class="wv-stream-name">${{p.name || ''}}</span>
       <span class="wv-stream-matchup">${{p.matchup || ''}}</span>
       ${{impChip}}
-      ${{p.adds_48h ? '<span class="wv-stream-imp wv-stream-imp-mid" title="Sleeper adds last 48h">+' + p.adds_48h + ' adds</span>' : ''}}
+      ${{p.adds_48h ? '<span class="wv-stream-imp wv-stream-imp-mid" title="Sleeper adds last 48h">+' + wvFmtAdds(p.adds_48h) + ' adds</span>' : ''}}
     </div>`;
 }}
 function wvRenderStreaming(d) {{

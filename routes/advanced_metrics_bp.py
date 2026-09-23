@@ -24,6 +24,21 @@ _BREAKOUT_CACHE_TS = 0.0
 
 # ── Lazy shims to app.py internals (resolved at request time) ─────────────────
 
+
+def _request_has_premium(season=None) -> bool:
+    """Per-user PRO check for advanced-metrics API calls. Fail closed."""
+    from flask import session
+    from dashboard_services.subscriptions import has_premium_for_viewer
+    try:
+        return bool(has_premium_for_viewer(
+            session.get("viewer_username"), session.get("viewer_user_id"),
+            request.args.get("league_id"), request.args.get("platform", "sleeper"),
+            season,
+        ))
+    except Exception:
+        logger.debug("advanced-metrics premium check failed", exc_info=True)
+        return False
+
 def get_league_ctx_from_cache(*a, **k):
     from app import get_league_ctx_from_cache as _fn
     return _fn(*a, **k)
@@ -46,7 +61,7 @@ def api_advanced_metrics_leaderboard():
         get_adv_weekly_range_leaderboard, adv_weekly_metric_supported,
         get_value_leaderboard, VALUE_METRICS,
         LEADERBOARD_METRICS, _WEEKLY_METRICS,
-        PREMIUM_METRICS, premium_metrics_exposed,
+        PREMIUM_METRICS, premium_metrics_exposed, PRO_METRICS,
         parse_season_list,
     )
 
@@ -56,6 +71,9 @@ def api_advanced_metrics_leaderboard():
     # Premium (PFF) metrics are not displayable publicly.
     if metric in PREMIUM_METRICS and not premium_metrics_exposed():
         return jsonify({"error": "metric not available"}), 403
+    # PRO intelligence metrics require a per-user subscription.
+    if metric in PRO_METRICS and not _request_has_premium():
+        return jsonify({"error": "pro_only"}), 403
     position = (request.args.get("position") or "").strip().upper() or None
     season_str = (request.args.get("season") or "").strip()
     selected_seasons = parse_season_list(season_str)
@@ -244,6 +262,93 @@ def api_advanced_metrics_weekly_bulk():
         return jsonify({"byId": {}, "keys": []}), 200
 
 
+@advanced_metrics_bp.route("/api/advanced-metrics/movers")
+def api_advanced_metrics_movers():
+    """What-changed strip for the Advanced Metrics page, in one call.
+
+    Returns {heating, cooling, outliers, note}:
+    - heating: top usage-trend risers, with xFP-trend leaders folded in
+    - cooling: bottom usage-trend fallers
+    - outliers: biggest |PPR over expected| (sign kept; + = overperforming)
+    Each item: {player_id, name, team, position, value, metric}.
+    Volume minimums mirror the leaderboard route (scaled by season progress),
+    so early-season lists are honest about small samples; empty lists mean the
+    season is too young for trends and the client hides the strip.
+    """
+    from data_building.advanced_metrics import get_metric_leaderboard, LEADERBOARD_METRICS
+    from utils.season_qualification import qualification_policy
+
+    season_str = (request.args.get("season") or "").strip()
+    season = int(season_str) if season_str.isdigit() else None
+
+    # The movers strip is PRO intelligence (trend + efficiency outliers).
+    if not _request_has_premium(season):
+        return jsonify({"error": "pro_only", "heating": [], "cooling": [],
+                        "outliers": [], "note": ""}), 403
+
+    def _default_min_vol(metric):
+        spec = LEADERBOARD_METRICS.get(metric) or {}
+        mv = spec.get("min_vol") or {}
+        opts = mv.get("opts") or []
+        full_default = int(opts[0]) if opts else 1
+        if isinstance(season, int):
+            try:
+                return qualification_policy(season).minimum(mv.get("col") or "games", full_default)
+            except Exception:
+                pass
+        return full_default
+
+    def _slim(rows, metric, n):
+        out = []
+        for r in (rows or [])[:n]:
+            try:
+                v = r.get("value")
+                if v is None:
+                    continue
+                out.append({
+                    "player_id": r.get("player_id"),
+                    "name": r.get("name"),
+                    "team": r.get("team"),
+                    "position": r.get("position"),
+                    "value": float(v),
+                    "metric": metric,
+                })
+            except (TypeError, ValueError):
+                continue
+        return out
+
+    try:
+        usage = get_metric_leaderboard(
+            "opportunity_trend", season=season, limit=200,
+            min_vol=_default_min_vol("opportunity_trend")) or []
+        xfp = get_metric_leaderboard(
+            "xfp_trend", season=season, limit=60,
+            min_vol=_default_min_vol("xfp_trend")) or []
+        fpoe = get_metric_leaderboard(
+            "ppr_over_expected_per_game", season=season, limit=200,
+            min_vol=_default_min_vol("ppr_over_expected_per_game")) or []
+    except Exception:
+        logger.exception("[api/advanced-metrics/movers] leaderboard fetch failed")
+        return jsonify({"heating": [], "cooling": [], "outliers": [], "note": ""})
+
+    heating = _slim(usage, "opportunity_trend", 5)
+    seen = {m["player_id"] for m in heating}
+    for m in _slim(xfp, "xfp_trend", 5):
+        if m["player_id"] not in seen and len(heating) < 8:
+            heating.append(m)
+            seen.add(m["player_id"])
+    cooling = _slim(list(reversed(usage)), "opportunity_trend", 5)
+    outliers = sorted(
+        _slim(fpoe, "ppr_over_expected_per_game", 200),
+        key=lambda m: abs(m["value"]), reverse=True,
+    )[:6]
+    note = ""
+    if not heating and not cooling and not outliers:
+        note = "Trends need a few games of volume — check back soon."
+    return jsonify({"heating": heating, "cooling": cooling,
+                    "outliers": outliers, "note": note})
+
+
 @advanced_metrics_bp.route("/api/advanced-metrics/config")
 def api_advanced_metrics_config():
     """Return a lightweight version of LEADERBOARD_METRICS for frontend rendering.
@@ -255,6 +360,7 @@ def api_advanced_metrics_config():
     """
     from data_building.advanced_metrics import LEADERBOARD_METRICS, ADV_WEEKLY_METRIC_KEYS
     from data_building.advanced_metrics import _WEEKLY_METRICS  # noqa: F401 -- weekly_capable check
+    from data_building.advanced_metrics import PRO_METRICS
     weekly_keys = {*_WEEKLY_METRICS.keys(), *ADV_WEEKLY_METRIC_KEYS}
     out = {}
     for key, spec in LEADERBOARD_METRICS.items():
@@ -271,6 +377,7 @@ def api_advanced_metrics_config():
             "integer":     bool(spec.get("integer")),
             "weeklyCapable": key in weekly_keys,
             "desc":        spec.get("desc", ""),
+            "pro":         key in PRO_METRICS,
         }
     resp = jsonify({"metrics": out})
     resp.headers["Cache-Control"] = "public, max-age=3600"

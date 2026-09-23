@@ -112,7 +112,8 @@ def test_api_requires_complete_range_and_disables_nonweekly(monkeypatch):
     app.register_blueprint(route.advanced_metrics_bp)
     with app.test_client() as client:
         partial = client.get("/api/advanced-metrics/leaderboard?metric=snap_share&week_start=1").get_json()
-        nonweekly = client.get("/api/advanced-metrics/leaderboard?metric=role_score&week_start=1&week_end=2").get_json()
+        # Use a free nonweekly metric (role_score is PRO-gated since #1848).
+        nonweekly = client.get("/api/advanced-metrics/leaderboard?metric=air_yards_per_game&week_start=1&week_end=2").get_json()
     assert partial["is_week_filtered"] is False
     assert partial["week_start"] is None and partial["week_end"] is None
     assert nonweekly["is_week_filtered"] is False

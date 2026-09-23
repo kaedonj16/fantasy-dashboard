@@ -28,6 +28,15 @@ ADVANCED_METRIC_PRESETS = {
     "general": {"label": "General / Opportunity", "description": "Cross-position opportunity and red-zone workload.", "position": None, "primary": "opportunity_share", "metrics": ["opportunity_share", "snap_share", "carries_per_game", "target_share", "air_yards_share", "red_zone_usage", "rz_targets_pg"], "sort": "desc", "samples": ["games", "carries", "targets"]},
     "expected": {"label": "Expected vs. Actual", "description": "Opportunity-based expected PPR production compared with matched actual production; FPOE is not a promise of future points.", "position": None, "primary": "expected_ppr_per_game", "metrics": ["expected_ppr_per_game", "actual_ppr_per_game", "ppr_over_expected_per_game", "opportunity_share", "target_share", "red_zone_usage", "total_tds_per_game"], "sort": "desc", "samples": ["games"]},
     "receiving_profile": {"label": "Receiving Profile", "description": "Target shape, alignment context, and after-catch performance.", "position": None, "primary": "target_share", "metrics": ["target_share", "avg_depth_of_target", "air_yards_share", "ngs_avg_cushion", "ngs_avg_separation", "yards_after_catch_per_reception", "ngs_avg_yac_above_expectation"], "sort": "desc", "samples": ["games", "targets", "receptions"]},
+    # --- Decision presets: organized by the question being answered, not the
+    # metric taxonomy. "kind": "decision" puts them in their own picker group
+    # and drives the preset-pill row above the table. ---
+    "key_metrics": {"label": "Key Metrics", "kind": "decision", "tagline": "The metrics that actually predict fantasy points.", "description": "The predictive core: expected points, efficiency vs. expectation, and the opportunity signals that stick week to week. This is the default landing view.", "position": None, "primary": "expected_ppr_per_game", "metrics": ["expected_ppr_per_game", "ppr_over_expected_per_game", "opportunity_share", "target_share", "air_yards_share", "snap_share", "red_zone_usage", "opportunity_trend", "xfp_trend"], "sort": "desc", "samples": ["games"]},
+    "start_sit": {"label": "Start / Sit", "kind": "decision", "tagline": "Set your lineup with confidence.", "description": "Role first (expected PPR), then TD equity (red-zone usage), then week-to-week reliability (bust rate, consistency) and matchup ease.", "position": None, "primary": "expected_ppr_per_game", "metrics": ["expected_ppr_per_game", "ppr_over_expected_per_game", "opportunity_share", "snap_share", "red_zone_usage", "rz_targets_pg", "schedule_ease", "bust_rate", "fp_cv"], "sort": "desc", "samples": ["games"]},
+    "buy_low_sell_high": {"label": "Buy Low / Sell High", "kind": "decision", "tagline": "Find mispriced players before your league does.", "description": "Sorts by PPR over expected, ascending: the most negative names are the buy-low list (role is real, production hasn't caught up); flip the sort for the sell-high list.", "position": None, "primary": "ppr_over_expected_per_game", "metrics": ["ppr_over_expected_per_game", "expected_ppr_per_game", "target_share", "air_yards_share", "opportunity_trend", "xfp_trend"], "sort": "asc", "samples": ["games"]},
+    "waiver_wire": {"label": "Waiver Wire", "kind": "decision", "tagline": "Who's earning a role worth adding?", "description": "Sorted by usage trend: players whose opportunity is growing fastest, with the snap/target/carry volume to back it up.", "position": None, "primary": "opportunity_trend", "metrics": ["opportunity_trend", "snap_share", "target_share", "carries_per_game", "expected_ppr_per_game", "red_zone_usage"], "sort": "desc", "samples": ["games"]},
+    "breakout_check": {"label": "Is This Breakout Real?", "kind": "decision", "tagline": "Separate role growth from hot streaks.", "description": "Role growing + efficient = real. Role flat + way over expected = regression candidate. Compares xFP/usage trend against efficiency over expectation.", "position": None, "primary": "xfp_trend", "metrics": ["xfp_trend", "opportunity_trend", "snap_share", "ppr_over_expected_per_game", "target_share", "air_yards_share"], "sort": "desc", "samples": ["games"]},
+    "ceiling_dfs": {"label": "Ceiling / DFS", "kind": "decision", "tagline": "Who can win you a week?", "description": "Sorted by boom rate: players with the per-target, per-touch, and breakaway efficiency to post a slate-breaking score.", "position": None, "primary": "boom_rate", "metrics": ["boom_rate", "expected_ppr_per_game", "fp_cv", "fpts_per_target", "yards_per_touch", "breakaway_percentage"], "sort": "desc", "samples": ["games"]},
 }
 
 
@@ -41,9 +50,18 @@ def build_advanced_metrics_body(
     from data_building.advanced_metrics import (
         get_available_seasons, get_available_weeks_by_season, _WEEKLY_METRICS,
         ADV_WEEKLY_METRIC_KEYS, adv_weekly_vol_spec,
-        PREMIUM_METRICS, premium_metrics_exposed,
+        PREMIUM_METRICS, premium_metrics_exposed, PRO_METRICS,
     )
     _hide_premium = not premium_metrics_exposed()
+    # Decision presets whose primary metric is PRO-gated (the three advanced
+    # decision presets). Non-PRO users see them locked; tapping opens the
+    # paywall instead of loading the view. Key Metrics, Start / Sit, and
+    # Ceiling / DFS stay free: their primaries (expected_ppr_per_game and
+    # boom_rate) are free.
+    _pro_presets = [
+        key for key, p in ADVANCED_METRIC_PRESETS.items()
+        if p.get("kind") == "decision" and p.get("primary") in PRO_METRICS
+    ]
     # Public metrics also live in this table; season discovery must not depend
     # on PFF entitlement (otherwise a newly ingested season such as 2026 is
     # hidden from the selector for ordinary users).
@@ -70,6 +88,8 @@ def build_advanced_metrics_body(
             continue
         if _hide_premium and key in PREMIUM_METRICS:
             continue  # don't offer premium (PFF) metrics on the public site
+        if not has_premium and key in PRO_METRICS:
+            continue  # PRO intelligence metrics stay out of the free picker
         cat = spec.get("category", "Other")
         groups.setdefault(cat, []).append((key, spec["label"]))
 
@@ -79,9 +99,12 @@ def build_advanced_metrics_body(
         except ValueError:
             return len(_CAT_ORDER)
 
-    preset_optgroup = '<optgroup label="Quick Sets">' + "".join(
+    preset_optgroup = '<optgroup label="Decisions">' + "".join(
+        f'<option value="__preset__{key}">{_esc(p["label"])}</option>'
+        for key, p in ADVANCED_METRIC_PRESETS.items() if p.get("kind") == "decision"
+    ) + '</optgroup><optgroup label="Metric Sets">' + "".join(
         f'<option value="__preset__{key}">{_esc(p["label"])} Set</option>'
-        for key, p in ADVANCED_METRIC_PRESETS.items()
+        for key, p in ADVANCED_METRIC_PRESETS.items() if p.get("kind") != "decision"
     ) + '</optgroup>'
     metric_options = preset_optgroup + "\n" + "\n".join(
         '<optgroup label="{label}">{cat_preset}{opts}</optgroup>'.format(
@@ -133,6 +156,7 @@ def build_advanced_metrics_body(
         "seasons": available_seasons,
         "availableWeeksBySeason": _weeks_by_season,
         "presets": ADVANCED_METRIC_PRESETS,
+        "proPresets": _pro_presets,
         "weeklyMetrics": weekly_metric_keys,
         "metrics": {
             key: {
@@ -144,6 +168,7 @@ def build_advanced_metrics_body(
                 "pct": bool(spec.get("pct")),
                 "pctFrac": bool(spec.get("pct_frac")),
                 "desc": spec.get("desc", ""),
+                "pro": key in PRO_METRICS,
                 "minVol": _min_vol_cfg(spec),
                 "weeklyCapable": key in weekly_metric_keys,
                 "weeklyVol": _weekly_vol_map.get(key) or None,
@@ -160,6 +185,7 @@ def build_advanced_metrics_body(
             for key, spec in metrics_spec.items()
             if not spec.get("hidden")
                and not (_hide_premium and key in PREMIUM_METRICS)
+               and not (not has_premium and key in PRO_METRICS)
         },
     })
 
@@ -173,6 +199,27 @@ def build_advanced_metrics_body(
         f'<option value="{s}"{"selected" if s == _default_season else ""}>{s}</option>'
         for s in available_seasons
     ) or '<option value="">No data</option>'
+
+    # Decision pills: one per decision preset, in dict order (Key Metrics first).
+    # PRO presets render locked for non-PRO users; tapping opens the paywall.
+    def _pill_html(key, p):
+        locked = (not has_premium) and key in _pro_presets
+        cls = "am-pill am-pill-locked" if locked else "am-pill"
+        lock = " 🔒" if locked else ""
+        return (
+            '<button type="button" class="{cls}" role="tab" data-preset="{key}"'
+            ' data-locked="{locked}" title="{tag}">{label}{lock}</button>'
+        ).format(
+            cls=cls, key=key, locked="1" if locked else "0",
+            tag=_esc(p.get("tagline") or p.get("description") or p["label"]),
+            label=_esc(p["label"]), lock=lock,
+        )
+    decision_pills = "".join(
+        _pill_html(key, p)
+        for key, p in ADVANCED_METRIC_PRESETS.items() if p.get("kind") == "decision"
+    )
+    # "All metrics" restores the classic browse-everything view.
+    decision_pills += '<button type="button" class="am-pill am-pill-all" data-preset="" title="Browse all metrics by category">All metrics</button>'
 
     html = """
     <div class="card central">
@@ -283,6 +330,23 @@ def build_advanced_metrics_body(
             <input type="checkbox" id="amRosterToggle">
             <span>My roster only</span>
           </label>
+        </div>
+
+        <!-- Decision presets: one-tap views organized by the question being answered.
+             Pills are server-rendered; JS wires clicks and the active state. -->
+        <div class="am-decisions" id="amDecisionPills" role="tablist" aria-label="Decision views">
+          <span class="am-decisions-label">Decide:</span>
+          __DECISION_PILLS__
+        </div>
+        <div class="am-preset-tagline" id="amPresetTagline" aria-live="polite"></div>
+
+        <!-- What changed: usage/xFP movers and efficiency outliers, filled by JS. -->
+        <div class="am-movers" id="amMovers" style="display:none;">
+          <div class="am-movers-head">
+            <span class="am-ctrl-label">What changed</span>
+            <span class="am-movers-sub" id="amMoversSub"></span>
+          </div>
+          <div class="am-movers-groups" id="amMoversGroups"></div>
         </div>
 
         <div class="am-ctrl am-mobile-filter am-ctrl-weekbar" id="amWeekCtrl">
@@ -409,14 +473,6 @@ def build_advanced_metrics_body(
           </div>
         </div>
 
-        <div id="amLoading" class="sk-list" style="margin-top:6px;">
-          <div class="sk-card-row"><div class="skeleton" style="width:20px;height:14px;border-radius:4px;flex:0 0 auto"></div><div class="skeleton sk-av"></div><div class="sk-lines"><div class="skeleton skeleton-line" style="width:44%"></div><div class="skeleton skeleton-line" style="width:26%;height:9px"></div></div><div class="skeleton" style="width:56px;height:20px;border-radius:6px;flex:0 0 auto"></div></div>
-          <div class="sk-card-row"><div class="skeleton" style="width:20px;height:14px;border-radius:4px;flex:0 0 auto"></div><div class="skeleton sk-av"></div><div class="sk-lines"><div class="skeleton skeleton-line" style="width:52%"></div><div class="skeleton skeleton-line" style="width:30%;height:9px"></div></div><div class="skeleton" style="width:56px;height:20px;border-radius:6px;flex:0 0 auto"></div></div>
-          <div class="sk-card-row"><div class="skeleton" style="width:20px;height:14px;border-radius:4px;flex:0 0 auto"></div><div class="skeleton sk-av"></div><div class="sk-lines"><div class="skeleton skeleton-line" style="width:38%"></div><div class="skeleton skeleton-line" style="width:24%;height:9px"></div></div><div class="skeleton" style="width:56px;height:20px;border-radius:6px;flex:0 0 auto"></div></div>
-          <div class="sk-card-row"><div class="skeleton" style="width:20px;height:14px;border-radius:4px;flex:0 0 auto"></div><div class="skeleton sk-av"></div><div class="sk-lines"><div class="skeleton skeleton-line" style="width:48%"></div><div class="skeleton skeleton-line" style="width:28%;height:9px"></div></div><div class="skeleton" style="width:56px;height:20px;border-radius:6px;flex:0 0 auto"></div></div>
-          <div class="sk-card-row"><div class="skeleton" style="width:20px;height:14px;border-radius:4px;flex:0 0 auto"></div><div class="skeleton sk-av"></div><div class="sk-lines"><div class="skeleton skeleton-line" style="width:42%"></div><div class="skeleton skeleton-line" style="width:26%;height:9px"></div></div><div class="skeleton" style="width:56px;height:20px;border-radius:6px;flex:0 0 auto"></div></div>
-        </div>
-
         <div id="amEmpty" style="display:none;">
           <div class="empty-state">
             <span class="empty-state-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V5"/><path d="M4 19h16"/><rect x="7" y="11" width="3" height="5" rx="1"/><rect x="12.5" y="8" width="3" height="8" rx="1"/><rect x="18" y="13" width="3" height="3" rx="1" opacity=".5"/></svg></span>
@@ -460,7 +516,7 @@ def build_advanced_metrics_body(
       </div>
     </div>
     """.replace("__METRIC_OPTIONS__", metric_options).replace("__SEASON_OPTIONS__", season_options).replace(
-        "__LEGEND__", legend_html).replace("{count}", str(sum(1 for s in metrics_spec.values() if not s.get("hidden"))))
+        "__LEGEND__", legend_html).replace("__DECISION_PILLS__", decision_pills).replace("{count}", str(sum(1 for s in metrics_spec.values() if not s.get("hidden"))))
 
     style = """
     <style>
@@ -507,6 +563,46 @@ def build_advanced_metrics_body(
         .am-legend-btn { padding:6px 10px; font-size:11px; }
       }
       .am-toolbar { margin:12px 0 4px; }
+      /* Decision preset pills */
+      .am-decisions { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin:10px 0 2px; }
+      .am-decisions-label { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--text-muted); }
+      .am-pill {
+        padding:7px 14px; border:1px solid var(--border); border-radius:999px;
+        background:var(--card); color:var(--text); font-size:13px; font-weight:600;
+        cursor:pointer; white-space:nowrap; transition:background .14s, border-color .14s;
+      }
+      .am-pill:hover { background:var(--row); }
+      .am-pill.active { background:var(--accent); border-color:var(--accent); color:#fff; }
+      .am-pill-all { border-style:dashed; color:var(--text-muted); }
+      .am-pill-locked { opacity:.65; border-style:dashed; }
+      .am-preset-tagline { font-size:12.5px; color:var(--text-muted); font-style:italic; margin:2px 0 6px; min-height:0; }
+      .am-preset-tagline:empty { display:none; }
+      /* What-changed movers strip */
+      .am-movers { margin:8px 0 4px; padding:10px 12px; border:1px solid var(--border); border-radius:12px; background:var(--card); }
+      .am-movers-head { display:flex; align-items:baseline; gap:8px; margin-bottom:8px; }
+      .am-movers-sub { font-size:11.5px; color:var(--text-muted); }
+      .am-movers-groups { display:flex; gap:14px; overflow-x:auto; padding-bottom:2px; }
+      .am-movers-group { min-width:200px; flex:1; }
+      .am-movers-ghead { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; margin-bottom:6px; }
+      .am-movers-ghead.up { color:#2e9e5b; }
+      .am-movers-ghead.down { color:#d64545; }
+      .am-movers-ghead.out { color:var(--accent); }
+      .am-mover-chip {
+        display:flex; align-items:center; gap:8px; width:100%; text-align:left;
+        padding:5px 8px; border:none; border-radius:8px; background:none;
+        cursor:pointer; font-size:12.5px; color:var(--text);
+      }
+      .am-mover-chip:hover { background:var(--row); }
+      .am-mover-name { font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+      .am-mover-meta { color:var(--text-muted); font-size:11px; white-space:nowrap; }
+      .am-mover-val { margin-left:auto; font-weight:700; font-variant-numeric:tabular-nums; white-space:nowrap; }
+      .am-mover-val.up { color:#2e9e5b; }
+      .am-mover-val.down { color:#d64545; }
+      @media (max-width:600px) {
+        .am-movers-groups { gap:10px; }
+        .am-movers-group { min-width:170px; }
+        .am-pill { padding:6px 11px; font-size:12px; }
+      }
       .am-controls { display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; margin:0 0 8px; }
       .am-ctrl { display:flex; flex-direction:column; gap:4px; }
       .am-ctrl-search { flex:1; min-width:160px; }
@@ -833,7 +929,10 @@ def build_advanced_metrics_body(
       .am-trend-delta-up   { color:var(--win); }
       .am-trend-delta-down { color:var(--loss); }
       .am-trend-delta-flat { color:var(--text-muted); opacity:.6; }
-      @media (max-width:600px) { .am-trendcell { min-width:80px; } .am-spark { display:none; } }
+      /* PRO-locked extra column cells: tappable, open the paywall */
+      .am-cell-locked { cursor:pointer; }
+      .am-cell-locked:hover { background:var(--row); }
+      @media (max-width:600px) { .am-trendcell { min-width:80px; } .am-spark { width:44px; height:14px; } }
       /* Pinned-player comparison modal -- width grows with player count */
       .am-cmp-card { max-width:min(95vw,1100px); }
       .am-legend-body { overflow-x:auto; }
@@ -1124,6 +1223,7 @@ _AM_JS = r"""
   const tbody     = document.getElementById('amTableBody');
   const loading   = document.getElementById('amLoading');
   const empty     = document.getElementById('amEmpty');
+  const tableWrap = document.querySelector('.am-table-wrap');
   if (!metricSel || !tbody) return;
 
   function amParseSeasons(raw) {
@@ -1185,6 +1285,7 @@ _AM_JS = r"""
   function syncURL() {
     const p = new URLSearchParams();
     if (state.metric) p.set('metric', state.metric);
+    if (_activePresetId) p.set('preset', _activePresetId);
     if (state.position && state.position !== 'ALL') p.set('pos', state.position);
     if (state.season) p.set('season', state.season);
     if (state.combine && amIsMultiSeason()) p.set('combine', '1');
@@ -1233,11 +1334,16 @@ _AM_JS = r"""
 
   // Fetch JSON with a hard timeout so a slow/overloaded endpoint can't leave the
   // Compare modal stuck on "Loading…" forever; on timeout/failure resolve null.
-  function _amCmpFetch(url, ms) {
+  function _amCmpFetch(url, ms, mode) {
     const ctl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
     const t = ctl ? setTimeout(function() { ctl.abort(); }, ms || 8000) : null;
     return fetch(url, ctl ? { signal: ctl.signal } : undefined)
-      .then(function(r) { return r.ok ? r.json() : null; })
+      .then(function(r) {
+        // In 'pro' mode a 403 means the metric is PRO-gated: surface a
+        // distinct signal so the column can render locked, not empty.
+        if (mode === 'pro' && r.status === 403) return { proLocked: true };
+        return r.ok ? r.json() : null;
+      })
       .catch(function() { return null; })
       .finally(function() { if (t) clearTimeout(t); });
   }
@@ -1363,6 +1469,11 @@ _AM_JS = r"""
     const preset = _PRESETS[cat] || _PRESETS[String(cat).toLowerCase()];
     const keys = preset && preset.metrics;
     if (!keys || !keys.length) return;
+    // PRO presets are locked for non-PRO users: open the paywall instead.
+    if (!cfg.hasPremium && (cfg.proPresets || []).indexOf(cat) !== -1) {
+      if (typeof window.showPaywall === 'function') window.showPaywall('advanced-metrics-' + cat);
+      return;
+    }
     const primary = keys[0];
     const extras = keys.slice(1);
     if (extras.length > MAX_COMPARE) throw new Error('Preset exceeds comparison-column limit');
@@ -1383,6 +1494,8 @@ _AM_JS = r"""
     if (preset.position) state.position = preset.position;
     _activePresetId = Object.keys(_PRESETS).find(k => _PRESETS[k] === preset) || String(cat).toLowerCase();
     _showActiveSet(preset.label);
+    try { localStorage.setItem('amLastPreset', _activePresetId); } catch (e) {}
+    _updateDecisionUI(preset);
     const picker = document.getElementById('amStatPicker');
     if (picker) picker.style.display = 'none';
     updateSortBtn(); updatePosButtons(); updateMetricTip(); updateVolCtrl(); updateVolHeader();
@@ -1390,6 +1503,116 @@ _AM_JS = r"""
     updateSortHeaders(); updateCompareBar(); syncExtraCols(); updateFilterBar();
     fetchData();
   };
+
+  // Decision pills + tagline stay in sync with the active preset.
+  function _updateDecisionUI(preset) {
+    const tag = document.getElementById('amPresetTagline');
+    if (tag) tag.textContent = (preset && preset.tagline) || '';
+    const pills = document.getElementById('amDecisionPills');
+    if (pills) pills.querySelectorAll('.am-pill').forEach(function(b) {
+      const on = !!preset && b.dataset.preset === _activePresetId;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+  }
+  // "All metrics": leave preset mode and return to the classic single-metric browse.
+  window.amClearDecision = function() {
+    _activePresetId = null;
+    _showActiveSet('Custom');
+    try { localStorage.removeItem('amLastPreset'); } catch (e) {}
+    _updateDecisionUI(null);
+    state.extraMetrics = []; state.extraData = {}; state.extraPrevData = {};
+    state.page = 0;
+    updateCompareBar(); syncExtraCols(); updateFilterBar(); syncURL(); fetchData();
+  };
+  (function _wireDecisionPills() {
+    const pills = document.getElementById('amDecisionPills');
+    if (!pills || pills.dataset.wired) return;
+    pills.dataset.wired = '1';
+    pills.addEventListener('click', function(e) {
+      const b = e.target.closest('[data-preset]');
+      if (!b) return;
+      // Locked PRO pills open the paywall; the amLoadPreset guard covers
+      // any other path (e.g. ?preset= deep links).
+      if (b.dataset.locked === '1' && !cfg.hasPremium) {
+        if (typeof window.showPaywall === 'function') window.showPaywall('advanced-metrics-' + b.dataset.preset);
+        return;
+      }
+      if (b.dataset.preset) window.amLoadPreset(b.dataset.preset);
+      else window.amClearDecision();
+    });
+  })();
+
+  // PRO-locked extra-column cells: tap the lock to open the paywall.
+  // Delegated on the table body so re-renders stay wired.
+  (function _wireProCells() {
+    const host = document.getElementById('amTableBody');
+    if (!host || host.dataset.proWired) return;
+    host.dataset.proWired = '1';
+    host.addEventListener('click', function(e) {
+      const cell = e.target.closest('[data-pro-metric]');
+      if (!cell || cfg.hasPremium) return;
+      if (typeof window.showPaywall === 'function') window.showPaywall('advanced-metrics-metric-' + cell.dataset.proMetric);
+    });
+  })();
+
+  // What-changed strip: heating up / cooling off / efficiency outliers.
+  function _moverSeason() {
+    const sel = (typeof amSelectedSeasons === 'function') ? amSelectedSeasons() : null;
+    if (sel && sel.length === 1) return sel[0];
+    return (cfg.seasons && cfg.seasons[0]) || '';
+  }
+  function _moverChip(m, cls) {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'am-mover-chip'; b.title = 'Filter table to ' + m.name;
+    const nm = document.createElement('span'); nm.className = 'am-mover-name'; nm.textContent = m.name;
+    const meta = document.createElement('span'); meta.className = 'am-mover-meta';
+    meta.textContent = [m.team, m.position].filter(Boolean).join(' · ');
+    const val = document.createElement('span'); val.className = 'am-mover-val ' + cls;
+    const v = Number(m.value);
+    val.textContent = (isFinite(v) ? ((v >= 0 ? '+' : '') + v.toFixed(1)) : '—');
+    b.appendChild(nm); b.appendChild(meta); b.appendChild(val);
+    b.addEventListener('click', function() {
+      if (!searchEl) return;
+      searchEl.value = m.name; state.search = m.name; state.page = 0; render();
+      const t = document.getElementById('amTable');
+      if (t && t.scrollIntoView) t.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+    return b;
+  }
+  function _moverGroup(title, cls, items, valCls) {
+    const g = document.createElement('div'); g.className = 'am-movers-group';
+    const h = document.createElement('div'); h.className = 'am-movers-ghead ' + cls; h.textContent = title;
+    g.appendChild(h);
+    items.forEach(function(m) { g.appendChild(_moverChip(m, valCls)); });
+    return g;
+  }
+  function _loadMovers() {
+    const host = document.getElementById('amMovers');
+    const groups = document.getElementById('amMoversGroups');
+    if (!host || !groups) return;
+    // The movers strip is PRO intelligence; free users never see it.
+    if (!cfg.hasPremium) { host.style.display = 'none'; return; }
+    const params = new URLSearchParams({ platform: cfg.platform });
+    const season = _moverSeason();
+    if (season) params.set('season', String(season));
+    if (cfg.leagueId) params.set('league_id', cfg.leagueId);
+    fetch('/api/advanced-metrics/movers?' + params.toString())
+      .then(function(r) { return r.ok ? r.json() : null; })
+      .then(function(d) {
+        groups.innerHTML = '';
+        if (!d || (!d.heating.length && !d.cooling.length && !d.outliers.length)) {
+          host.style.display = 'none'; return;
+        }
+        if (d.heating.length) groups.appendChild(_moverGroup('🔥 Heating up', 'up', d.heating, 'up'));
+        if (d.cooling.length) groups.appendChild(_moverGroup('❄️ Cooling off', 'down', d.cooling, 'down'));
+        if (d.outliers.length) groups.appendChild(_moverGroup('⚡ Efficiency outliers', 'out', d.outliers, ''));
+        const sub = document.getElementById('amMoversSub');
+        if (sub) sub.textContent = d.note || '';
+        host.style.display = '';
+      })
+      .catch(function() { host.style.display = 'none'; });
+  }
 
   window.amSpFilter = function(q) {
     const picker = document.getElementById('amStatPicker');
@@ -1412,8 +1635,11 @@ _AM_JS = r"""
 
   const _PIN_SVG = '<svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor"><path d="M9.828.722a.5.5 0 0 1 .354.146l4.95 4.95a.5.5 0 0 1 0 .707c-.48.48-1.072.588-1.503.588-.177 0-.335-.018-.46-.039l-3.134 3.134a5.927 5.927 0 0 1 .16 1.013c.046.702-.032 1.687-.72 2.375a.5.5 0 0 1-.707 0l-2.829-2.828-3.182 3.182c-.195.195-1.219.902-1.414.707-.195-.195.512-1.22.707-1.414l3.182-3.182-2.828-2.829a.5.5 0 0 1 0-.707c.688-.688 1.673-.767 2.375-.72a5.922 5.922 0 0 1 1.013.16l3.134-3.133a2.772 2.772 0 0 1-.04-.461c0-.43.108-1.022.589-1.503a.5.5 0 0 1 .353-.146z"/></svg>';
 
-  function percentileBadge(rank, total) {
-    if (!total || !rank) return '';
+  function percentileBadge(rank, total, tied) {
+    // Rank is meaningless when every displayed value ties (e.g. all-0.0
+    // trends): every row would get an arbitrary rank and the first few
+    // would wear a bogus "Top 5%". Skip the badge in that case.
+    if (!total || !rank || tied) return '';
     const pct = rank / total;
     let label, color;
     if      (pct <= 0.05) { label = 'Top 5%';  color = '#10b981'; }
@@ -1643,9 +1869,16 @@ _AM_JS = r"""
     const curUrl = '/api/advanced-metrics/leaderboard?' + _buildExtraParams(curSeason);
     const prevUrl = prevSeason ? '/api/advanced-metrics/leaderboard?' + _buildExtraParams(String(prevSeason)) : null;
     // Primary (current-season) column, with a hard timeout so a hung request
-    // can't leave the column's skeleton spinning forever.
-    return _amCmpFetch(curUrl, 12000).then(function(curr) {
+    // can't leave the column's skeleton spinning forever. A 403 means the
+    // metric is PRO-gated for this viewer: lock the column instead of
+    // retrying or clearing it, so the paywall has a real entry point.
+    return _amCmpFetch(curUrl, 12000, 'pro').then(function(curr) {
       if (requestToken !== state.requestToken || !state.extraMetrics.includes(key) && !(state.filterColKeys && state.filterColKeys.has(key))) return;
+      if (curr && curr.proLocked) {
+        state.extraData[key] = { byId: {}, maxAbs: 1, proLocked: true };
+        render();
+        return;
+      }
       if (!curr) {
         // Transient failure/timeout (often server contention from a preset's
         // burst of requests): retry once, then give up and clear the skeleton.
@@ -1735,12 +1968,18 @@ _AM_JS = r"""
     }
     const statLbl = { snap_pct: 'snap%', touches: 'touches', targets: 'targets' }[t.stat] || t.stat;
     const d = t.delta;
-    let deltaHtml = '<span class="am-trend-delta am-trend-delta-flat">&ndash;</span>';
-    if (d >= 0.5) deltaHtml = '<span class="am-trend-delta am-trend-delta-up">&#9650; +' + d.toFixed(1) + '</span>';
-    else if (d <= -0.5) deltaHtml = '<span class="am-trend-delta am-trend-delta-down">&#9660; ' + d.toFixed(1) + '</span>';
+    // A null delta means the recent window is degenerate (<=3 weeks: the
+    // "last-3" window IS the season sample, so any number would be a lie).
+    // The sparkline still shows the real weekly series.
+    let deltaHtml = '<span class="am-trend-delta am-trend-delta-flat" title="Not enough weeks yet for a trend signal">&ndash;</span>';
+    if (d != null && d >= 0.5) deltaHtml = '<span class="am-trend-delta am-trend-delta-up">&#9650; +' + d.toFixed(1) + '</span>';
+    else if (d != null && d <= -0.5) deltaHtml = '<span class="am-trend-delta am-trend-delta-down">&#9660; ' + d.toFixed(1) + '</span>';
     const recentN = Math.min(3, t.weeks_played || 3);
-    return '<td class="am-trendcell" data-column-id="trend" title="Last-' + recentN + '-week avg ' + statLbl + ' (' + t.recent_avg
-      + ') vs season avg (' + t.season_avg + ')">'
+    const tip = (d == null || t.recent_avg == null)
+      ? 'Recent usage: only ' + (t.weeks_played || 0) + ' week(s) so far — trend signal starts with more data'
+      : 'Last-' + recentN + '-week avg ' + statLbl + ' (' + t.recent_avg
+        + ') vs season avg (' + t.season_avg + ')';
+    return '<td class="am-trendcell" data-column-id="trend" title="' + tip + '">'
       + '<div class="am-trend-inner">' + sparkline(t.series, color) + deltaHtml + '</div></td>';
   }
   function trendWindowWeeks() {
@@ -2317,9 +2556,6 @@ _AM_JS = r"""
       }).join('') + '</tr>';
     }).join('');
   }
-  function schemaMessageRow(message) {
-    return '<tr><td colspan="' + tableColumnSchema().length + '" class="am-schema-message">' + message + '</td></tr>';
-  }
   function verifyRenderedSchema() {
     const expected = tableColumnSchema().map(c => c.id).join('|');
     document.querySelectorAll('#amTable tbody tr.am-row:not(.am-pin-divider)').forEach(function(tr) {
@@ -2508,6 +2744,12 @@ _AM_JS = r"""
     // Rank map so roster/search filters preserve original rank numbers.
     const rankMap = new Map(posRows.map((r, i) => [amRowKey(r), i + 1]));
 
+    // All displayed primary values identical? Then quality ranks are
+    // arbitrary and the percentile badge would be a lie (see percentileBadge).
+    const _primNonMissing = posRows.map(r => r.value).filter(v => !_amMissing(v));
+    const _primAllTie = _primNonMissing.length > 1
+      && _primNonMissing.every(v => Number(v) === Number(_primNonMissing[0]));
+
     // Quality rank: standing on the PRIMARY metric in its "good" direction
     // (ascending for lower-is-better, descending otherwise), independent of the
     // current display sort. Drives the percentile badge so flipping the sort to
@@ -2554,6 +2796,7 @@ _AM_JS = r"""
     const extraAvgMap = {};
     const extraRankMap = {};
     const extraRankTotal = {};
+    const extraTieMap = {};  // key -> true when every displayed value ties
     const extraBarMap = {};  // key -> {signed, lower, fieldMin, fieldMax, capMax}
     state.extraMetrics.forEach(function(key) {
       const ed = state.extraData[key];
@@ -2585,6 +2828,9 @@ _AM_JS = r"""
       _ePairs.forEach(([id], i) => { _eRankMap[id] = i + 1; });
       extraRankMap[key] = _eRankMap;
       extraRankTotal[key] = _ePairs.length;
+      // All displayed values identical -> percentile badges would be arbitrary.
+      const _eDistinct = new Set(_ePairs.map(([, v]) => Number(v)));
+      extraTieMap[key] = _ePairs.length > 1 && _eDistinct.size <= 1;
     });
 
 
@@ -2652,9 +2898,12 @@ _AM_JS = r"""
       }
     }
 
-    loading.style.display = 'none';
+    if (loading) loading.style.display = 'none';
     if (!displayRows.length) {
-      empty.style.display = ''; tbody.innerHTML = schemaMessageRow('No matching players');
+      // No data: hide the table (headers included) and show the empty state
+      // in its place instead of stacking "No data yet" above the headers.
+      empty.style.display = ''; tbody.innerHTML = '';
+      if (tableWrap) tableWrap.style.display = 'none';
       if (avgNote) avgNote.style.display = 'none';
       if (paginationEl) paginationEl.style.display = 'none';
       window.brEmptyState(empty, state.rosterOnly
@@ -2663,6 +2912,7 @@ _AM_JS = r"""
       return;
     }
     empty.style.display = 'none';
+    if (tableWrap) tableWrap.style.display = '';
 
     // Average marker across all displayed rows (position-filtered but not roster/search filtered).
     let avgPct = null;
@@ -2762,7 +3012,7 @@ _AM_JS = r"""
         });
       }
 
-      const badge = percentileBadge(qualityRankMap.get(amRowKey(r)) || rank, totalRanked);
+      const badge = percentileBadge(qualityRankMap.get(amRowKey(r)) || rank, totalRanked, _primAllTie);
       const primaryValue = schemaValue({kind:'metric', metricKey:state.metric}, r);
       const prevVal = amIsMultiSeason() ? null : state.prevData[String(r.player_id)];
       const trend = trendArrow(r.value, prevVal);
@@ -2796,6 +3046,18 @@ _AM_JS = r"""
               + '</div></td>';
             return;
           }
+          // PRO-locked extra column: a lock cell that opens the paywall
+          // instead of blank "–" values. Only the rows above the fold show
+          // the lock; every row gets the same click target via delegation.
+          if (ed.proLocked) {
+            const _ml = (cfg.metrics && cfg.metrics[key] && cfg.metrics[key].label) || key;
+            metricCell += '<td class="am-barcell am-cell-locked" data-column-id="metric:' + key + '"'
+              + ' data-pro-metric="' + key + '" title="' + _esc(_ml) + ' is PRO only — tap to unlock">'
+              + '<div class="am-metric-cell"><div class="am-metric-bar"><div class="am-bar-track" style="opacity:.25"></div></div>'
+              + '<div class="am-val-wrap"><span class="am-val" style="opacity:.7">🔒</span></div>'
+              + '</div></td>';
+            return;
+          }
           const val = schemaValue({kind:'metric', metricKey:key}, r);
           const _eBar = extraBarMap[key] || { signed: false, lower: false, fieldMin: 0, fieldMax: 1, capMax: extraMaxMap[key] };
           const pctBar = val != null ? _barPct(Number(val), _eBar) : 2;
@@ -2806,7 +3068,7 @@ _AM_JS = r"""
               + 'title="Average: ' + fmtVal(avgVE, key) + '"></div>'
             : '';
           const rkE = extraRankMap[key] ? extraRankMap[key][amRowKey(r)] : null;
-          const badgeE = (rkE && extraRankTotal[key]) ? percentileBadge(rkE, extraRankTotal[key]) : '';
+          const badgeE = (rkE && extraRankTotal[key]) ? percentileBadge(rkE, extraRankTotal[key], extraTieMap[key]) : '';
           const prevE = (!amIsMultiSeason() && state.extraPrevData[key]) ? state.extraPrevData[key][String(r.player_id)] : undefined;
           const trendE = (val != null && prevE !== undefined) ? trendArrow(val, prevE, key) : '';
           metricCell += '<td class="am-barcell" data-column-id="metric:' + key + '"><div class="am-metric-cell">'
@@ -2927,7 +3189,7 @@ _AM_JS = r"""
   const _amLogoCache = {};
   function _amLoadLogo(theme) {
     if (_amLogoCache[theme] !== undefined) return Promise.resolve(_amLogoCache[theme]);
-    const url = (theme === 'dark') ? '/static/BR_Logo_dark.png?v=f4228e0e' : '/static/BR_Logo.png?v=f4228e0e';
+    const url = (theme === 'dark') ? '/static/BR_Logo_dark.png?v=6c0c4828' : '/static/BR_Logo.png?v=6c0c4828';
     return fetch(url).then(function(r) { return r.ok ? r.blob() : null; }).then(function(b) {
       if (!b) { _amLogoCache[theme] = ''; return ''; }
       return new Promise(function(res) {
@@ -3761,7 +4023,7 @@ _AM_JS = r"""
     // paywall removed -- advanced metrics is available to all users
     state.fetching = true;
     const requestToken = ++state.requestToken;
-    loading.style.display = ''; empty.style.display = 'none'; syncTableHeader(); tbody.innerHTML = schemaSkeletonRows();
+    if (loading) loading.style.display = ''; empty.style.display = 'none'; syncTableHeader(); tbody.innerHTML = schemaSkeletonRows();
     if (avgNote) avgNote.style.display = 'none';
     const params = new URLSearchParams({ metric: state.metric, platform: cfg.platform });
     if (cfg.leagueId) params.set('league_id', cfg.leagueId);
@@ -3791,7 +4053,13 @@ _AM_JS = r"""
     const _mainCtl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
     const _mainTo = _mainCtl ? setTimeout(function() { _mainCtl.abort(); }, 15000) : null;
     const mainFetch = fetch('/api/advanced-metrics/leaderboard?' + params, _mainCtl ? { signal: _mainCtl.signal } : undefined)
-      .then(r => { if (_mainTo) clearTimeout(_mainTo); if (r.status === 403) return null; return r.json(); });
+      .then(r => {
+        if (_mainTo) clearTimeout(_mainTo);
+        if (r.status === 403) return r.json().then(
+          j => ({ _proOnly: !j || j.error === 'pro_only' }),
+          () => ({ _proOnly: true }));
+        return r.json();
+      });
     const prevFetch = hasPrevInData
       ? _amCmpFetch('/api/advanced-metrics/leaderboard?' + prevParams, 15000)
       : Promise.resolve(null);
@@ -3799,7 +4067,17 @@ _AM_JS = r"""
     Promise.all([mainFetch, prevFetch])
       .then(([d, pd]) => {
         if (requestToken !== state.requestToken) return;
-        if (!d) { state.fetching = false; empty.style.display = ''; loading.style.display = 'none'; tbody.innerHTML = schemaMessageRow('Data unavailable'); return; }
+        if (d && d._proOnly) {
+          // PRO metric requested without PRO: open the paywall and fall back
+          // to a free metric so the table is never stuck on an empty state.
+          state.fetching = false; if (loading) loading.style.display = 'none';
+          if (typeof window.showPaywall === 'function') window.showPaywall('advanced-metrics-' + state.metric);
+          state.metric = 'opportunity_share';
+          if (metricSel) metricSel.value = state.metric;
+          state.page = 0; syncURL(); fetchData();
+          return;
+        }
+        if (!d) { state.fetching = false; empty.style.display = ''; if (loading) loading.style.display = 'none'; tbody.innerHTML = ''; if (tableWrap) tableWrap.style.display = 'none'; return; }
         state.fetching = false;
         state.rows = d.players || [];
         state.volCol = d.vol_col || 'games';
@@ -3828,10 +4106,10 @@ _AM_JS = r"""
       })
       .catch(() => {
         if (requestToken !== state.requestToken) return;
-        state.fetching = false; loading.style.display = 'none';
+        state.fetching = false; if (loading) loading.style.display = 'none';
         // Network error (e.g. ERR_NETWORK_CHANGED): show a recoverable retry
         // rather than the misleading "No data for this metric yet." message.
-        empty.style.display = ''; tbody.innerHTML = schemaMessageRow('Couldn’t load this metric.');
+        empty.style.display = ''; tbody.innerHTML = ''; if (tableWrap) tableWrap.style.display = 'none';
         empty.innerHTML = 'Couldn’t load this metric, network hiccup. '
           + '<button type="button" id="amRetryBtn" style="margin-left:6px;padding:5px 12px;'
           + 'border:1px solid var(--border);border-radius:8px;background:var(--card);'
@@ -3976,6 +4254,7 @@ _AM_JS = r"""
     if (_v && _v.startsWith('__preset__')) { amLoadPreset(_v.replace('__preset__', '')); return; }
     _showActiveSet('Custom');
     _activePresetId = null;
+    _updateDecisionUI(null);
     state.metric = metricSel.value; state.page = 0;
     state.extraMetrics = []; state.extraData = {}; state.extraPrevData = {}; state.prevData = {};
     state.comboFilters = []; state.filterColKeys = new Set();
@@ -4042,6 +4321,7 @@ _AM_JS = r"""
     state.page = 0;
     syncURL();
     fetchData();
+    _loadMovers();
   }
   function fillSeasonMenu() {
     const menu = document.getElementById('amSeasonMenu');
@@ -4337,6 +4617,7 @@ _AM_JS = r"""
     state.extraMetrics = saved.metrics; state.position = saved.position;
     state.sortBy = saved.primary; state.sortDir = saved.sort; state.minVol = saved.minVol;
     state.comboFilters = []; state.filterColKeys = new Set(); state.page = 0; _activePresetId = null; _showActiveSet(name);
+    _updateDecisionUI(null);
     updateSortBtn(); updatePosButtons(); updateMetricTip(); updateVolCtrl(); updateVolHeader();
     updateCompareBar(); syncExtraCols(); updateFilterBar(); fetchData();
   });
@@ -4363,9 +4644,26 @@ _AM_JS = r"""
   const _searchInit = _initParams.get('search') || '';
   if (_searchInit && searchEl) { searchEl.value = _searchInit; state.search = _searchInit; }
   const _presetInit = _initParams.get('preset') || '';
-  if (_presetInit && _PRESETS[_presetInit]) amLoadPreset(_presetInit);
+  const _isProPreset = function(id) { return (cfg.proPresets || []).indexOf(id) !== -1; };
+  let _presetLoaded = false;
+  // PRO presets never auto-load for non-PRO users (?preset= deep links included:
+  // amLoadPreset itself opens the paywall for those).
+  if (_presetInit && _PRESETS[_presetInit] && (cfg.hasPremium || !_isProPreset(_presetInit))) {
+    amLoadPreset(_presetInit); _presetLoaded = true;
+  }
+  else {
+    // Default landing: the last-used decision view, else Key Metrics
+    // (free). Free users with a stale PRO last-preset fall back to 'general'.
+    let _lastPreset = null;
+    try { _lastPreset = localStorage.getItem('amLastPreset'); } catch (e) {}
+    let _landing = (_lastPreset && _PRESETS[_lastPreset]) ? _lastPreset : 'key_metrics';
+    if (!cfg.hasPremium && _isProPreset(_landing)) _landing = 'general';
+    if (_PRESETS[_landing]) { amLoadPreset(_landing); _presetLoaded = true; }
+  }
   updateSortBtn(); updatePosButtons(); updateMetricTip(); updateVolCtrl(); updateVolHeader();
-  updateSortHeaders(); updateCompareBar(); updateFilterBar(); syncURL(); fetchData(); loadOwnedRoster();
+  updateSortHeaders(); updateCompareBar(); updateFilterBar(); syncURL();
+  if (!_presetLoaded) fetchData();
+  loadOwnedRoster(); _loadMovers();
   // Auto-open graph modal when ?graph=1 is in the URL (from a copied graph
   // link), or when ?og=1 (the headless social-preview render mode).
   const _isOgRender = _initParams.get('og') === '1';

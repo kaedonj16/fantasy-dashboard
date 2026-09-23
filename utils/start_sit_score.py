@@ -57,26 +57,38 @@ def _weather_mult(weather_kind: Optional[str], position: Optional[str]) -> float
     return float(table.get(pos) or table.get("WR") or 0.96)
 
 
+def _lerp_clamped(x: float, x0: float, x1: float, y0: float, y1: float) -> float:
+    """Linear interpolation of x in [x0, x1] → [y0, y1], clamped at the ends."""
+    if x <= x0:
+        return y0
+    if x >= x1:
+        return y1
+    return y0 + (y1 - y0) * (x - x0) / (x1 - x0)
+
+
 def _vegas_mult(implied_total: float, position: Optional[str]) -> float:
-    """Position-aware Vegas nudge from implied team total."""
+    """Position-aware Vegas nudge from implied team total.
+
+    Piecewise-linear: ramps from the low-total haircut up to neutral over
+    17→20 and from neutral up to the high-total boost over 24→27. The old
+    step function jumped ~8% between 17.0 and 17.1 implied total, so a
+    0.1-point Vegas line move could flip a start/sit call; now the nudge is
+    continuous in the total.
+    """
     pos = (position or "").upper().strip()
     pass_catcher = pos in ("QB", "WR", "TE")
-    if implied_total <= 17:
-        if pass_catcher:
-            return 0.92
-        if pos == "RB":
-            return 0.96
-        if pos == "K":
-            return 0.94
-        return 0.94
-    if implied_total >= 27:
-        if pass_catcher:
-            return 1.05
-        if pos == "RB":
-            return 1.02
-        if pos == "K":
-            return 1.03
-        return 1.04
+    if pass_catcher:
+        low, high = 0.92, 1.05
+    elif pos == "RB":
+        low, high = 0.96, 1.02
+    elif pos == "K":
+        low, high = 0.94, 1.03
+    else:
+        low, high = 0.94, 1.04
+    if implied_total < 20.0:
+        return _lerp_clamped(implied_total, 17.0, 20.0, low, 1.0)
+    if implied_total > 24.0:
+        return _lerp_clamped(implied_total, 24.0, 27.0, 1.0, high)
     return 1.0
 
 

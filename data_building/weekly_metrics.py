@@ -291,6 +291,21 @@ def get_weekly_series_by_player(season: int, through_week: int) -> Dict[str, Lis
     return out
 
 
+def _recent_vs_season_delta(vals: List[float], recent_n: int = 3) -> Optional[float]:
+    """Last-`recent_n` average minus season average, in the stat's own units.
+
+    Returns None when the recent window covers the whole sample
+    (len(vals) <= recent_n): the "recent" window IS the season sample, so the
+    delta is mathematically forced to exactly 0.0 for every player (e.g. weeks
+    1-3 of a season) — a false flat, worse than no signal at all.
+    """
+    if len(vals) <= recent_n:
+        return None
+    season_avg = sum(vals) / len(vals)
+    recent = vals[-recent_n:]
+    return round(sum(recent) / len(recent) - season_avg, 1)
+
+
 def get_usage_trends(season: int) -> Dict[str, Dict[str, Any]]:
     """Per-player usage trend map for the season.
 
@@ -325,8 +340,12 @@ def get_usage_trends(season: int) -> Dict[str, Dict[str, Any]]:
         snap_vals = [float(w.get("snap_pct") or 0) for w in weeks if w.get("snap_pct") is not None]
 
         season_avg = sum(vals) / len(vals)
-        recent = vals[-3:]
-        recent_avg = sum(recent) / len(recent)
+        # Degenerate window: with <=3 weeks the "last-3" window IS the season
+        # sample, so recent-vs-season is mathematically 0.0 for every player.
+        # Return None so callers render "no signal yet" instead of a false flat.
+        # The raw series is still returned (the sparkline is genuinely useful).
+        delta = _recent_vs_season_delta(vals)
+        recent_avg = round(sum(vals[-3:]) / 3, 1) if delta is not None else None
         snap_delta = None
         if len(snap_vals) >= 2:
             snap_season = sum(snap_vals) / len(snap_vals)
@@ -339,8 +358,8 @@ def get_usage_trends(season: int) -> Dict[str, Dict[str, Any]]:
             "series": [round(v, 1) for v in vals[-6:]],
             "series_weeks": [int(w["week"]) for w in weeks[-6:]],
             "season_avg": round(season_avg, 1),
-            "recent_avg": round(recent_avg, 1),
-            "delta": round(recent_avg - season_avg, 1),
+            "recent_avg": round(recent_avg, 1) if recent_avg is not None else None,
+            "delta": delta,
             "snap_delta": snap_delta,
             "weeks_played": len(weeks),
         }

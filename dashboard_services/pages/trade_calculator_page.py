@@ -96,7 +96,7 @@ def build_trade_calculator_body(
     side_b_owner_tag = '<div class="otc-team-owner-tag otc-team-owner-tag-muted" id="sideBOwnerTag">Other side</div>'
 
     analyze_btn_disabled = 'disabled' if is_guest else ''
-    analyze_btn_label = 'Sign In to Analyze' if is_guest else 'Analyze Trade'
+    analyze_btn_label = 'Connect League to Analyze' if is_guest else 'Analyze Trade'
 
     team_select_block = '' if is_guest else """
                 <div class="otc-summary-team-select">
@@ -1175,8 +1175,8 @@ def build_trade_calculator_body(
         <div class="trade-login-overlay"></div>
         <div class="trade-login-content">
           <button type="button" class="trade-login-close" id="closeLoginModal" aria-label="Close">&times;</button>
-          <h2 class="trade-login-title">Sign In to Analyze Trade</h2>
-          <p class="trade-login-subtitle">Connect your Sleeper league to get personalized trade analysis</p>
+          <h2 class="trade-login-title">Connect Your League</h2>
+          <p class="trade-login-subtitle">Connect your Sleeper league to get personalized trade analysis — no sign-in required</p>
 
           <div class="trade-login-form">
             <div class="trade-login-row">

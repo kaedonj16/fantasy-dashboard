@@ -1144,15 +1144,18 @@ _TRENDING_ADDS_TTL = 1800  # 30 min; a league-wide signal shared by all viewers
 def _sleeper_trending_adds(limit: int = 25, lookback_hours: int = 48) -> list:
     """Sleeper's league-wide most-added players (add count over a lookback
     window). Cached 30 min; this is a global signal, not per-league, so every
-    viewer shares one fetch. Best-effort: any failure returns []."""
-    key = (limit, lookback_hours)
+    viewer shares one fetch. The cache holds a single 50-player snapshot per
+    lookback window and callers slice it, so every surface sees numbers from
+    the same fetch instead of snapshots taken minutes apart. Best-effort: any
+    failure returns []."""
+    key = lookback_hours
     hit = _TRENDING_ADDS_CACHE.get(key)
     if hit and (time.time() - hit[0]) < _TRENDING_ADDS_TTL:
-        return hit[1]
+        return hit[1][:limit]
     try:
         from dashboard_services.api import fetch_json
         data = fetch_json(
-            f"/players/nfl/trending/add?lookback_hours={lookback_hours}&limit={limit}"
+            f"/players/nfl/trending/add?lookback_hours={lookback_hours}&limit=50"
         )
         result = data if isinstance(data, list) else []
     except Exception:
@@ -1160,7 +1163,7 @@ def _sleeper_trending_adds(limit: int = 25, lookback_hours: int = 48) -> list:
         result = []
     if result:
         _TRENDING_ADDS_CACHE[key] = (time.time(), result)
-    return result
+    return result[:limit]
 
 
 @waiver_api_bp.route("/api/trending-adds")

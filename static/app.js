@@ -1310,9 +1310,10 @@ window.brHaptic = function (pattern) {
       var nav = document.querySelector('.top-nav');
       if (nav) {
         nav.insertAdjacentElement('afterend', next.cloneNode(true));
-        // The clone is the server-rendered ticker: empty and hidden. Re-fill it
-        // (from cache after the first fetch) so the marquee actually shows and
-        // scrolls instead of sitting blank after a soft-nav into Home.
+        // The clone is the server-rendered ticker: an empty but visible
+        // reserved strip. Re-fill it (from cache after the first fetch) so the
+        // marquee actually shows and scrolls instead of sitting blank after a
+        // soft-nav into Home.
         if (typeof window.populateHomeTicker === 'function') window.populateHomeTicker();
       }
     }
@@ -2268,7 +2269,7 @@ window._brPromoEligible = function () {
     banner.id = 'pwa-install-banner';
     banner.innerHTML =
       '<div class="pwa-banner-left">' +
-        '<img src="/static/BR_Mark.png?v=f4228e0e" class="pwa-banner-icon" alt="BR Fantasy">' +
+        '<img src="/static/BR_Mark.png?v=6c0c4828" class="pwa-banner-icon" alt="BR Fantasy">' +
         '<div>' +
           '<div class="pwa-banner-title">Add to Home Screen</div>' +
           '<div class="pwa-banner-sub">Install BR Fantasy for quick access</div>' +
@@ -2314,7 +2315,7 @@ window._brPromoEligible = function () {
     banner.id = 'pwa-install-banner';
     banner.innerHTML =
       '<div class="pwa-banner-left">' +
-        '<img src="/static/BR_Mark.png?v=f4228e0e" class="pwa-banner-icon" alt="BR Fantasy">' +
+        '<img src="/static/BR_Mark.png?v=6c0c4828" class="pwa-banner-icon" alt="BR Fantasy">' +
         '<div>' +
           '<div class="pwa-banner-title">Add to Home Screen</div>' +
           '<div class="pwa-banner-sub">Tap <strong>Share</strong> then <strong>Add to Home Screen</strong></div>' +
@@ -2836,7 +2837,7 @@ window._brPromoEligible = function () {
       var im = new Image();
       im.onload = function () { _brandImg = im; res(im); };
       im.onerror = function () { res(null); };
-      im.src = '/static/BR_Logo_dark.png?v=f4228e0e';
+      im.src = '/static/BR_Logo_dark.png?v=6c0c4828';
     });
     return _brandImgP;
   };
@@ -3010,19 +3011,87 @@ window._brPromoEligible = function () {
         var d = {};
         try { d = JSON.parse(dataEl.textContent || '{}'); } catch (e) { return; }
         var orig = btn.innerHTML;
-        btn.disabled = true; btn.style.opacity = '.7';
+        btn.disabled = true; btn.innerHTML = 'Preparing…'; btn.style.opacity = '.7';
         var done = function () { btn.disabled = false; btn.style.opacity = ''; btn.innerHTML = orig; };
         var logoP = window.brBrandLogo ? window.brBrandLogo() : Promise.resolve(null);
         logoP.then(function (logo) {
           var canvas;
           try { canvas = paintRecapCard(d, logo); } catch (e) { done(); return; }
-          window.brShareCanvas(canvas, 'week-' + (d.week || '') + '-recap.png',
-            (d.league || 'League') + ' - Week ' + (d.week || '') + ' Recap').then(done, done);
+          // Render to a blob first, then show a preview modal. The modal's
+          // Share button gives navigator.share() a fresh user gesture, which
+          // iOS requires — calling it after the async paint/encode chain
+          // expires the activation and the share silently fails.
+          function showPreview(blob) {
+            done();
+            var url = blob ? URL.createObjectURL(blob) : canvas.toDataURL('image/png');
+            openRecapShareModal(url, blob, d);
+          }
+          try { canvas.toBlob(function (b) { showPreview(b); }, 'image/png'); }
+          catch (e) { showPreview(null); }
         });
       });
     }
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bind);
     else bind();
+
+    // Preview modal for the weekly recap share card. The Share button inside
+    // fires navigator.share() synchronously on tap so iOS shows the full
+    // share sheet (Messages, Mail, Save Image…) instead of failing silently
+    // or degrading to a Notes-only sheet.
+    function openRecapShareModal(imgUrl, blob, d) {
+      var existing = document.getElementById('recap-share-overlay');
+      if (existing) existing.remove();
+      var fname = 'week-' + (d.week || '') + '-recap.png';
+      var title = (d.league || 'League') + ' - Week ' + (d.week || '') + ' Recap';
+      var overlay = document.createElement('div');
+      overlay.id = 'recap-share-overlay';
+      overlay.className = 'scm-overlay';
+      overlay.innerHTML =
+        '<div class="scm-dialog" style="max-width:340px;">' +
+          '<div class="scm-toolbar">' +
+            '<span style="font-weight:700;font-size:14px;">Share Recap</span>' +
+            '<span class="scm-toolbar-spacer"></span>' +
+            '<button class="scm-btn scm-close-btn" id="rsmCloseBtn" aria-label="Close">&#x2715;</button>' +
+          '</div>' +
+          '<div style="padding:12px;">' +
+            '<img src="' + imgUrl + '" alt="' + title.replace(/"/g, '&quot;') + '"' +
+            ' style="width:100%;border-radius:10px;display:block;" />' +
+          '</div>' +
+          '<div style="display:flex;gap:8px;padding:0 12px 14px;">' +
+            '<button class="scm-btn" id="rsmDownloadBtn" style="flex:1;">Download</button>' +
+            '<button class="scm-btn scm-btn-primary" id="rsmShareBtn" style="flex:1;">Share</button>' +
+          '</div>' +
+        '</div>';
+      document.body.appendChild(overlay);
+      function close() {
+        overlay.remove();
+        if (blob) setTimeout(function () { URL.revokeObjectURL(imgUrl); }, 5000);
+      }
+      document.getElementById('rsmCloseBtn').onclick = close;
+      overlay.addEventListener('click', function (e) { if (e.target === overlay) close(); });
+      document.getElementById('rsmDownloadBtn').onclick = function () {
+        var a = document.createElement('a');
+        a.download = fname; a.href = imgUrl; a.rel = 'noopener';
+        document.body.appendChild(a); a.click();
+        setTimeout(function () { document.body.removeChild(a); }, 500);
+      };
+      var shareBtn = document.getElementById('rsmShareBtn');
+      var file = null;
+      if (blob) {
+        try { file = new File([blob], fname, { type: 'image/png' }); } catch (_) { file = null; }
+      }
+      var canNativeShare = !!(file && navigator.canShare && navigator.canShare({ files: [file] }));
+      if (!canNativeShare) {
+        // No native file sharing (desktop / old browsers): hide Share, keep Download.
+        shareBtn.style.display = 'none';
+      }
+      shareBtn.onclick = function () {
+        if (!file) return;
+        // Called directly on tap: user activation is fresh, so iOS shows the
+        // full share sheet.
+        navigator.share({ files: [file], title: title }).catch(function () {});
+      };
+    }
   })();
 
   window.openShareCardModal = function (cardUrl, shareUrl, calcUrl) {
@@ -9781,9 +9850,16 @@ window.initTradePage = function initTradePage(root = document) {
 
     if (!analyzeBtn) return;
 
+    // The guest flow uses a Sleeper username/league session instead of
+    // sign-in; preserve its server-rendered label rather than resetting it
+    // to "Analyze Trade".
+    const label = analyzeBtn.textContent.trim() === "Connect League to Analyze"
+      ? "Connect League to Analyze"
+      : "Analyze Trade";
+
     if (!hasLeague) {
       analyzeBtn.disabled = false;
-      analyzeBtn.textContent = "Analyze Trade";
+      analyzeBtn.textContent = label;
       analyzeBtn.classList.remove("otc-btn-disabled");
       analyzeBtn.removeAttribute("data-tooltip");
       return;
@@ -9791,7 +9867,7 @@ window.initTradePage = function initTradePage(root = document) {
 
     if (!selector) {
       analyzeBtn.disabled = true;
-      analyzeBtn.textContent = "Analyze Trade";
+      analyzeBtn.textContent = label;
       analyzeBtn.classList.add("otc-btn-disabled");
       analyzeBtn.setAttribute("data-tooltip", "Please select your team first to analyze trades");
       return;
@@ -9800,12 +9876,12 @@ window.initTradePage = function initTradePage(root = document) {
     const hasSelection = selector.value && selector.value !== "";
     if (hasSelection) {
       analyzeBtn.disabled = false;
-      analyzeBtn.textContent = "Analyze Trade";
+      analyzeBtn.textContent = label;
       analyzeBtn.classList.remove("otc-btn-disabled");
       analyzeBtn.removeAttribute("data-tooltip");
     } else {
       analyzeBtn.disabled = true;
-      analyzeBtn.textContent = "Analyze Trade";
+      analyzeBtn.textContent = label;
       analyzeBtn.classList.add("otc-btn-disabled");
       analyzeBtn.setAttribute("data-tooltip", "Please select your team first to analyze trades");
     }
@@ -10827,16 +10903,19 @@ document.addEventListener("DOMContentLoaded", () => {
 
 if (!platformBtns.length) return;
 
-  // Live-values ticker: fill from Top Movers (dynasty risers/fallers), then
-  // reveal. Any failure or an empty board just leaves it hidden. Exposed and
+  // Live-values ticker: the band renders from first paint as a reserved strip
+  // (see .home-ticker-band min-height) so filling it never shifts the league
+  // form below it. Fill from Top Movers (dynasty risers/fallers); an empty
+  // board or a failed fetch collapses the strip entirely. Exposed and
   // idempotent (not a one-shot IIFE) because the ticker is site chrome: a soft
-  // navigation into Home re-mounts an EMPTY server-rendered clone of it (see
-  // syncHomeTicker), so it must be re-populated there too or it sits frozen and
-  // blank. The built marquee HTML is cached so re-entry doesn't refetch.
+  // navigation into Home re-mounts a server-rendered clone of it (see
+  // syncHomeTicker), so it must be re-populated there too or it sits blank.
+  // The built marquee HTML is cached so re-entry doesn't refetch.
   window.populateHomeTicker = function populateHomeTicker() {
     const band = document.getElementById("homeTicker");
     const track = document.getElementById("homeTickerTrack");
     if (!band || !track) return;
+    const collapse = () => { band.hidden = true; band.setAttribute("aria-hidden", "true"); };
     // Already filled (e.g. this exact node was populated on a prior visit).
     if (track.childElementCount) { band.hidden = false; band.removeAttribute("aria-hidden"); return; }
     const reveal = (base) => {
@@ -10863,12 +10942,12 @@ if (!platformBtns.length) return;
     const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
     fetch("/api/top-movers").then((r) => r.json()).then((data) => {
       const items = (data && data.items) || [];
-      if (!items.length) return;
+      if (!items.length) { collapse(); return; }
       window.__homeTickerHtml = items.map((it) =>
         `<span class="mv">${esc(it.name)} <span class="${it.up ? "up" : "dn"}">${it.up ? "▲" : "▼"} ${it.pct}%</span></span>`
       ).join("");
       reveal(window.__homeTickerHtml);
-    }).catch(() => {});
+    }).catch(() => { collapse(); });
   };
   window.populateHomeTicker();
 
@@ -11240,6 +11319,9 @@ if (!platformBtns.length) return;
   if (!window._hasAccount && savedAccount) {
     // Account holder whose session lapsed / new device: one tap back into the
     // account via Google, which lands them on their leagues.
+    // Skip if the user explicitly logged out this session -- don't surface a
+    // stale identity to a signed-out visitor.
+    if (sessionStorage.getItem('_explicitLogout')) return;
     const who = savedAccount.email || "your account";
     mountReturnCta("Continue as <strong>" + who + "</strong>",
       function () {
@@ -11250,6 +11332,8 @@ if (!platformBtns.length) return;
         window.location.href = "/auth/google?next=" + encodeURIComponent(location.pathname);
       });
   } else if (saved?.league_id && saved?.username) {
+    // Skip for explicitly-logged-out visitors: never show another identity.
+    if (sessionStorage.getItem('_explicitLogout')) return;
     const platform = saved.platform || "sleeper";
     const season = saved.season || new Date().getFullYear();
     const dashboardUrl = `/${platform}/${season}/${saved.league_id}/dashboard`;
@@ -13444,7 +13528,7 @@ document.addEventListener('DOMContentLoaded', function() {
               };
 
               // Render chart (load Plotly on demand)
-              if (window.ensurePlotly) window.ensurePlotly().then(function () { Plotly.newPlot('historyChartPlotly', traces, layout, { displayModeBar: false }); }).catch(function () {});
+              if (window.ensurePlotly) window.ensurePlotly().then(function () { Plotly.newPlot('historyChartPlotly', traces, layout, { responsive: true, displayModeBar: false }); }).catch(function () {});
             } else {
               window.brEmptyState(chartContent, {
                 icon: 'chart',
@@ -18596,17 +18680,49 @@ function _tmLineupHtml(lineup) {
     `<strong>${_tmPoints(p.points)}</strong></div>`).join('');
 }
 
+function _tmMatchupDetailHtml(w) {
+  const left = Array.isArray(w.team_lineup) ? w.team_lineup : [];
+  const right = Array.isArray(w.opponent_lineup) ? w.opponent_lineup : [];
+  if (!left.length && !right.length) return '<div class="team-modal-empty">Historical lineup unavailable</div>';
+  const count = Math.max(left.length, right.length);
+  let rows = '';
+  for (let i = 0; i < count; i++) {
+    const a = left[i] || {}, b = right[i] || {};
+    const av = a.points == null ? null : Number(a.points), bv = b.points == null ? null : Number(b.points);
+    const leadA = av != null && bv != null && av > bv ? ' tm-mu-h-lead' : '';
+    const leadB = av != null && bv != null && bv > av ? ' tm-mu-h-lead' : '';
+    const player = (p, side, lead) => `<span class="tm-mu-h tm-mu-h-${side}${lead}"><strong class="tm-mu-hpts">${_tmPoints(p.points)}</strong><span class="tm-mu-hname${p.player_id ? ' player-clickable' : ''}"${p.player_id ? ` data-player-id="${_tmEsc(p.player_id)}" data-player-name="${_tmEsc(p.name)}"` : ''}>${_tmEsc(p.name || '—')}</span></span>`;
+    rows += `<div class="tm-mu-hrow">${player(a, 'left', leadA)}<span class="tm-mu-h-slot">${_tmEsc(a.slot || b.slot || a.position || b.position || '—')}</span>${player(b, 'right', leadB)}</div>`;
+  }
+  return `<div class="tm-mu"><div class="tm-mu-head"><span class="tm-mu-team"><span class="tm-mu-tname">${_tmEsc(w.team && w.team.team_name || 'Team')}</span><strong class="tm-mu-tscore">${_tmPoints(w.team_points)}</strong></span><span class="tm-mu-tag">${_tmStateLabel(w.state)}</span><span class="tm-mu-team tm-mu-team-r"><strong class="tm-mu-tscore">${_tmPoints(w.opponent_points)}</strong><span class="tm-mu-tname">${_tmEsc(w.opponent && w.opponent.team_name || 'Opponent')}</span></span></div><div class="tm-mu-grid">${rows}</div></div>`;
+}
+
+function _tmAvatar(team) {
+  const name = (team && team.team_name) || 'Opponent';
+  const initial = _tmEsc(name.trim().charAt(0).toUpperCase() || '?');
+  if (team && team.avatar) return `<img class="tm-sched-avatar" src="${_tmEsc(team.avatar)}" alt="" onerror="this.hidden=true;this.nextElementSibling.hidden=false"><span class="tm-sched-avatar" hidden>${initial}</span>`;
+  return `<span class="tm-sched-avatar">${initial}</span>`;
+}
+
+function _tmStateLabel(state) {
+  return ({final: 'Final', live: 'Live', scheduled: 'Upcoming', unavailable: 'Unavailable', unpublished: 'Opponent TBD'})[state] || 'Unavailable';
+}
+
 function _tmScheduleRow(w) {
-  if (!w.published) return `<div class="tm-sched-item"><div class="tm-sched-row"><span>Week ${w.week}</span><span class="tm-sched-status">Not published</span></div></div>`;
+  if (!w.published) return `<div class="tm-sched-item" data-week="${w.week}"><div class="tm-sched-row tm-sched-row-upcoming"><span class="tm-sched-week">W${w.week}</span><span class="tm-sched-opp">${_tmAvatar(null)}<span class="tm-sched-opp-name">Opponent TBD</span></span><span class="tm-sched-result tm-sched-upcoming">Upcoming</span><span class="tm-sched-chevron" aria-hidden="true">›</span></div></div>`;
   const opp = w.opponent;
-  const opponent = w.is_bye ? 'Bye' : (opp ? _tmEsc(opp.team_name) : 'Opponent unavailable');
-  const score = (w.team_points != null || w.opponent_points != null) ? `${_tmPoints(w.team_points)} – ${_tmPoints(w.opponent_points)}` : '—';
-  const result = w.result ? `<span class="tm-sched-result tm-sched-${w.result.toLowerCase()}">${w.result}</span>` : '';
+  const opponent = w.is_bye ? 'Bye' : (opp ? _tmEsc(opp.team_name) : 'Opponent TBD');
+  const started = w.state === 'live' || w.state === 'final';
+  const score = started ? `<span class="tm-sched-score">${_tmPoints(w.team_points)} <span class="tm-sched-dash">–</span> ${_tmPoints(w.opponent_points)}</span>`
+    : (w.team_projection != null && w.opponent_projection != null ? `<span class="tm-sched-score tm-sched-proj" title="Projection">Proj ${_tmPoints(w.team_projection)} – ${_tmPoints(w.opponent_projection)}</span>` : '');
+  const stateLabel = _tmStateLabel(w.state);
+  const badge = w.result ? `<span class="tm-sched-result tm-sched-${w.result.toLowerCase()}">${w.result}</span>`
+    : `<span class="tm-sched-result tm-sched-${w.state === 'live' ? 'live' : 'upcoming'}">${stateLabel}</span>`;
   const clickable = !w.is_bye && !!opp;
   return `<div class="tm-sched-item" data-week="${w.week}">` +
-    `<button type="button" class="tm-sched-row" aria-expanded="false" ${clickable ? `onclick="tmToggleMatchup(this, ${w.week})"` : 'disabled'}>` +
-    `<span>Week ${w.week}</span><span class="tm-sched-opp">${opponent}</span><span class="tm-sched-score">${score}</span>${result}` +
-    `<span class="tm-sched-status">${_tmEsc(w.state)}</span></button>` +
+    `<button type="button" class="tm-sched-row${w.state === 'scheduled' ? ' tm-sched-row-upcoming' : ''}" aria-expanded="false" ${clickable ? `onclick="tmToggleMatchup(this, ${w.week})"` : 'disabled'}>` +
+    `<span class="tm-sched-week">W${w.week}</span><span class="tm-sched-opp"><span class="tm-sched-vs">vs</span>${_tmAvatar(opp)}<span class="tm-sched-opp-name">${opponent}</span></span>${score}${badge}` +
+    `<span class="tm-sched-chevron" aria-hidden="true">›</span></button>` +
     `<div class="tm-sched-detail" hidden></div></div>`;
 }
 
@@ -18615,7 +18731,7 @@ function _tmBuildScheduleHtml(payload, data) {
   const tiles = `<div class="tm-ages-tiles"><div class="tm-stat-tile"><div class="tm-stat-tile-value">${_tmEsc(data.record || '—')}</div><div class="tm-stat-tile-label">Record</div></div>` +
     `<div class="tm-stat-tile"><div class="tm-stat-tile-value">${_tmPoints(data.points_for)}</div><div class="tm-stat-tile-label">Points For</div></div>` +
     `<div class="tm-stat-tile"><div class="tm-stat-tile-value">${_tmPoints(data.points_against)}</div><div class="tm-stat-tile-label">Points Against</div></div></div>`;
-  return tiles + `<div class="team-modal-section"><h3>Season Schedule</h3><div class="tm-sched-hint">Lineups load from the provider when a published matchup is expanded.</div><div class="tm-sched-list">${weeks.map(_tmScheduleRow).join('')}</div></div>`;
+  return tiles + `<div class="team-modal-section"><h3>Season Schedule</h3><div class="tm-sched-hint">Select a matchup to view lineups and scores.</div><div class="tm-sched-list">${weeks.map(_tmScheduleRow).join('')}</div></div>`;
 }
 
 async function tmLoadSchedule(force) {
@@ -18641,6 +18757,7 @@ async function tmToggleMatchup(btn, week) {
   const item = btn.closest('.tm-sched-item'); const detail = item && item.querySelector('.tm-sched-detail');
   if (!detail) return;
   const opening = detail.hidden; detail.hidden = !opening; btn.setAttribute('aria-expanded', String(opening));
+  btn.classList.toggle('tm-sched-row-open', opening);
   if (!opening || detail.dataset.loaded) return;
   const rid = window._tmRosterId; detail.innerHTML = '<div class="team-modal-loading"><div class="loading-spinner"></div></div>';
   try {
@@ -18650,11 +18767,22 @@ async function tmToggleMatchup(btn, week) {
     if (String(window._tmRosterId) !== String(rid) || !detail.isConnected) return;
     const w = (payload.weeks || [])[0] || {};
     detail.dataset.loaded = 'true';
-    detail.innerHTML = `<div class="tm-lineup-side"><h4>${_tmEsc(w.team && w.team.team_name || 'Team')}</h4>${_tmLineupHtml(w.team_lineup)}</div>` +
-      `<div class="tm-lineup-side"><h4>${_tmEsc(w.opponent && w.opponent.team_name || 'Opponent')}</h4>${_tmLineupHtml(w.opponent_lineup)}</div>` +
+    detail.innerHTML = _tmMatchupDetailHtml(w) +
       (w.team_adjustment != null ? `<div class="tm-score-adjustment">Provider adjustment: ${_tmPoints(w.team_adjustment)}</div>` : '');
     normalizeClickableAccessibility(detail);
-  } catch (e) { if (detail.isConnected) detail.innerHTML = '<div class="team-modal-error">Lineup unavailable</div>'; }
+  } catch (e) { if (detail.isConnected) detail.innerHTML = `<div class="team-modal-error">Lineup unavailable <button type="button" onclick="tmRetryMatchup(this, ${week})">Retry</button></div>`; }
+}
+
+function tmRetryMatchup(retry, week) {
+  const item = retry.closest('.tm-sched-item');
+  const detail = item && item.querySelector('.tm-sched-detail');
+  const row = item && item.querySelector('.tm-sched-row');
+  if (!detail || !row) return;
+  delete detail.dataset.loaded;
+  detail.hidden = true;
+  row.setAttribute('aria-expanded', 'false');
+  row.classList.remove('tm-sched-row-open');
+  tmToggleMatchup(row, week);
 }
 
 function renderTeamDetails(data) {

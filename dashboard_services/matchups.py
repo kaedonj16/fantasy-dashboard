@@ -396,6 +396,23 @@ def build_matchup_preview(
             r_settings.get("losses", 0),
         )
 
+    # Standings rank (1 = best) for the matchup header meta, e.g.
+    # "2-0 • @hoodiekj1 (#2)". Sorted by wins, then points-for; teams tied
+    # on both share the rank (competition ranking).
+    def _roster_sort_key(r: dict) -> tuple:
+        s = r.get("settings") or {}
+        fpts = float(s.get("fpts", 0) or 0) + float(s.get("fpts_decimal", 0) or 0) / 100.0
+        return (-int(s.get("wins", 0) or 0), -fpts)
+
+    rank_by_rid: Dict[str, int] = {}
+    _prev_key: Optional[tuple] = None
+    for _i, _r in enumerate(sorted(rosters, key=_roster_sort_key), start=1):
+        _key = _roster_sort_key(_r)
+        if _key != _prev_key:
+            _rank = _i
+            _prev_key = _key
+        rank_by_rid[str(_r.get("roster_id"))] = _rank
+
     username_by_owner: Dict[str, Optional[str]] = {
         u["user_id"]: u.get("display_name") for u in users if "user_id" in u
     }
@@ -433,11 +450,15 @@ def build_matchup_preview(
     def _team_block_from_match_row(row: dict) -> dict:
         rid = str(row.get("roster_id"))
         starters_raw = [s for s in (row.get("starters") or []) if s]
+        # Fleaflicker uses "0" for empty/unresolved boxscore slots. Those are
+        # placeholders, not real lineup data; exclude them from the historical
+        # check so unresolved boxscores don't masquerade as valid lineups.
+        real_starters = [s for s in starters_raw if str(s) != "0"]
         # Keep whether the provider supplied a real weekly lineup before the
         # display-only current-roster fallback below. Historical consumers must
         # never mistake today's roster for the lineup started in an earlier week.
-        lineup_is_historical = bool(starters_raw) and not _starters_look_like_full_roster(
-            starters_raw, row.get("players") or []
+        lineup_is_historical = bool(real_starters) and not _starters_look_like_full_roster(
+            real_starters, row.get("players") or []
         )
         starter_set = {str(s) for s in starters_raw}
         all_players = [str(p) for p in (row.get("players") or []) if p]
@@ -487,6 +508,7 @@ def build_matchup_preview(
             "proj_total": proj_total,
             "avatar": get_avatar_for_rid(rid),
             "record": f"{wins}-{losses}",
+            "rank": rank_by_rid.get(rid),
             "username": username,
         }
 
@@ -511,6 +533,7 @@ def build_matchup_preview(
             "pts_total": None,
             "avatar": get_avatar_for_rid(rid_str) if rid_str else None,
             "record": record,
+            "rank": rank_by_rid.get(rid_str) if rid_str else None,
             "username": (user or {}).get("display_name") if user else (
                 username_by_owner.get(owner_id) if owner_id else None
             ),
@@ -1457,9 +1480,15 @@ def render_matchup_slide(
         scoring_settings: Optional[dict] = None,
         is_gotw: bool = False,
         gotw_selection: Optional[dict] = None,
+        roster_positions: Optional[List[str]] = None,
 ) -> str:
     """One slide with rows like:
        [Left Name] [Left Pts/Proj] [Right Pts/Proj] [Right Name]
+
+    roster_positions: the league's lineup slots (e.g. QB/RB/WR/TE/FLEX/
+    SUPER_FLEX/K/DEF/BN). Provider starter lists follow the same order, so
+    row i pairs with the i-th non-bench slot and the centre chip names the
+    *slot* (FLEX/SF) instead of copying one player's position.
 
     viewer_roster_id: when the viewer's own team wins this (current, finalized)
     week, the slide plays the bigger "final whistle" takeover instead of the
@@ -1611,11 +1640,13 @@ def render_matchup_slide(
         ava = t.get("avatar") or ""
         img_html = f"<img class='avatar m-av' src='{ava}' alt='' loading='lazy' decoding='async' onerror=\"this.style.display='none'\">" if ava else ""
         name_el = f"<div class='m-team-name team-clickable' style='cursor:pointer;' data-roster-id='{rid}' data-team-name='{name}'>{name}</div>"
+        rank = t.get('rank')
+        rank_txt = f" (#{rank})" if rank else ""
         if side == 'left':
-            meta = f"<div class='m-team-meta'>{record} &bull; @{username}</div>"
+            meta = f"<div class='m-team-meta'>{record} &bull; @{username}{rank_txt}</div>"
             return f"<div class='m-team-col m-col-left'>{img_html}{name_el}{meta}</div>"
         else:
-            meta = f"<div class='m-team-meta'>@{username} &bull; {record}</div>"
+            meta = f"<div class='m-team-meta'>@{username}{rank_txt} &bull; {record}</div>"
             return f"<div class='m-team-col m-col-right'>{img_html}{name_el}{meta}</div>"
 
 
@@ -1912,7 +1943,17 @@ def render_matchup_slide(
                     season, w, pid, pos, name, str(nfl).upper(),
                 )
 
-        meta_content = html.escape(str(nfl or "").strip())
+        # Sub-line under the name: "NO • WR" (team + the player's *real*
+        # position). On mobile CSS stacks it beneath the name; on desktop it
+        # sits inline after the name. The centre rail chip names the lineup
+        # *slot* (FLEX/SF), so the real position stays visible here.
+        _pos_label_inline = "D/ST" if pos in ("DEF", "DST") else (pos or "")
+        _team_txt = str(nfl or "").strip()
+        if _team_txt and _pos_label_inline:
+            meta_content = f"{_team_txt} \u2022 {_pos_label_inline}"
+        else:
+            meta_content = _team_txt or _pos_label_inline
+        meta_content = html.escape(meta_content)
 
         # Add clickable attributes
         _safe_name = html.escape(name or "")
@@ -1931,11 +1972,12 @@ def render_matchup_slide(
             )
         team_span = f"<span class='meta p-team mb-team'>{meta_content}</span>" if meta_content else ""
 
-        # Compact board cell: name + team on top, then the game line, then the
-        # box score. The position badge is NOT inline here -- it moves to the
-        # shared centre rail (assembled in the row loop) so both players in a
-        # slot read against one coloured chip. Left/right mirroring is handled in
-        # CSS off the parent .mb-cell-r, so the markup is identical either side.
+        # Compact board cell: name on top with a TEAM • POS sub-line, then the
+        # game line, then the box score. The position badge is NOT inline here
+        # -- it moves to the shared centre rail (assembled in the row loop) so
+        # both players in a slot read against one coloured chip. Left/right
+        # mirroring is handled in CSS off the parent .mb-cell-r, so the markup
+        # is identical either side.
         bye_cls = " mb-info--bye" if is_bye else ""
         info_html = (
             f"<div class='mb-info{bye_cls}'>"
@@ -1987,15 +2029,41 @@ def render_matchup_slide(
         )
         return f"<div class='mb-score'><span class='{a_cls}'>{actual_val:.1f}</span>{proj_line}</div>"
 
-    def _pos_label(p: str) -> str:
-        return "D/ST" if p in ("DEF", "DST") else (p or "")
-
     _starter_pairs = () if compact else zip_longest(
             m["left"].get("starters", []),
             m["right"].get("starters", []),
             fillvalue=None,
     )
-    for L, R in _starter_pairs:
+    # Lineup slot order: provider starter lists follow roster_positions order,
+    # so row i pairs with the i-th non-bench slot. Short/missing slot data
+    # falls back to the old player-position chip for that row.
+    _slot_order = [
+        str(s).upper() for s in (roster_positions or []) if str(s).upper() != "BN"
+    ]
+
+    def _slot_chip(slot: str, left_p: str, right_p: str) -> tuple:
+        """(css_class, label) for the centre-rail chip: the *lineup slot*.
+
+        FLEX and SUPER_FLEX rows read FLEX / SF even though the two players
+        in them are different positions; ordinary slots read QB/RB/WR/TE/K/
+        D/ST. Unknown or missing slot data falls back to a player's real
+        position (the old behaviour).
+        """
+        s = (slot or "").upper()
+        if s == "FLEX":
+            return "FLEX", "FLEX"
+        if s == "SUPER_FLEX":
+            return "SF", "SF"
+        if s in ("QB", "RB", "WR", "TE", "K"):
+            return s, s
+        if s in ("DEF", "DST"):
+            return "DEF", "D/ST"
+        p = left_p or right_p or ""
+        if p in ("DEF", "DST"):
+            return "DEF", "D/ST"
+        return p, p
+
+    for _row_idx, (L, R) in enumerate(_starter_pairs):
         (left_info, left_pos, left_actual, left_proj, left_is_bye,
          left_not_started, _left_stats, left_nfl, left_pid) = player_bits(L, "left", True)
         (right_info, right_pos, right_actual, right_proj, right_is_bye,
@@ -2010,13 +2078,15 @@ def render_matchup_slide(
         left_sb = _score_box(left_actual, left_proj, left_is_bye, left_more, left_not_started)
         right_sb = _score_box(right_actual, right_proj, right_is_bye, right_more, right_not_started)
 
-        # Shared centre rail: one coloured position chip per slot (both starters
-        # in a slot are the same position, bar the FLEX edge case where the left
-        # side names it). Reuses the site-wide .pos-badge colours.
-        row_pos = left_pos or right_pos or ""
+        # Shared centre rail: one coloured chip per *lineup slot*. A FLEX row
+        # reads FLEX and a superflex row reads SF even though the two players
+        # in it are different positions; ordinary slots read QB/RB/WR/TE/K/
+        # D/ST. Reuses the site-wide .pos-badge colours (+ FLEX teal, SF blue).
+        _slot = _slot_order[_row_idx] if _row_idx < len(_slot_order) else ""
+        _chip_class, _chip_label = _slot_chip(_slot, left_pos, right_pos)
         pos_chip = (
-            f"<span class='pos-badge {html.escape(row_pos)}'>{html.escape(_pos_label(row_pos))}</span>"
-            if row_pos else ""
+            f"<span class='pos-badge {html.escape(_chip_class)}'>{html.escape(_chip_label)}</span>"
+            if _chip_class else ""
         )
 
         # Live drive-bar mounts -- one per player's cell, tagged with the NFL
