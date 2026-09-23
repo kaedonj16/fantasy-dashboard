@@ -3011,19 +3011,87 @@ window._brPromoEligible = function () {
         var d = {};
         try { d = JSON.parse(dataEl.textContent || '{}'); } catch (e) { return; }
         var orig = btn.innerHTML;
-        btn.disabled = true; btn.style.opacity = '.7';
+        btn.disabled = true; btn.innerHTML = 'Preparing…'; btn.style.opacity = '.7';
         var done = function () { btn.disabled = false; btn.style.opacity = ''; btn.innerHTML = orig; };
         var logoP = window.brBrandLogo ? window.brBrandLogo() : Promise.resolve(null);
         logoP.then(function (logo) {
           var canvas;
           try { canvas = paintRecapCard(d, logo); } catch (e) { done(); return; }
-          window.brShareCanvas(canvas, 'week-' + (d.week || '') + '-recap.png',
-            (d.league || 'League') + ' - Week ' + (d.week || '') + ' Recap').then(done, done);
+          // Render to a blob first, then show a preview modal. The modal's
+          // Share button gives navigator.share() a fresh user gesture, which
+          // iOS requires — calling it after the async paint/encode chain
+          // expires the activation and the share silently fails.
+          function showPreview(blob) {
+            done();
+            var url = blob ? URL.createObjectURL(blob) : canvas.toDataURL('image/png');
+            openRecapShareModal(url, blob, d);
+          }
+          try { canvas.toBlob(function (b) { showPreview(b); }, 'image/png'); }
+          catch (e) { showPreview(null); }
         });
       });
     }
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bind);
     else bind();
+
+    // Preview modal for the weekly recap share card. The Share button inside
+    // fires navigator.share() synchronously on tap so iOS shows the full
+    // share sheet (Messages, Mail, Save Image…) instead of failing silently
+    // or degrading to a Notes-only sheet.
+    function openRecapShareModal(imgUrl, blob, d) {
+      var existing = document.getElementById('recap-share-overlay');
+      if (existing) existing.remove();
+      var fname = 'week-' + (d.week || '') + '-recap.png';
+      var title = (d.league || 'League') + ' - Week ' + (d.week || '') + ' Recap';
+      var overlay = document.createElement('div');
+      overlay.id = 'recap-share-overlay';
+      overlay.className = 'scm-overlay';
+      overlay.innerHTML =
+        '<div class="scm-dialog" style="max-width:340px;">' +
+          '<div class="scm-toolbar">' +
+            '<span style="font-weight:700;font-size:14px;">Share Recap</span>' +
+            '<span class="scm-toolbar-spacer"></span>' +
+            '<button class="scm-btn scm-close-btn" id="rsmCloseBtn" aria-label="Close">&#x2715;</button>' +
+          '</div>' +
+          '<div style="padding:12px;">' +
+            '<img src="' + imgUrl + '" alt="' + title.replace(/"/g, '&quot;') + '"' +
+            ' style="width:100%;border-radius:10px;display:block;" />' +
+          '</div>' +
+          '<div style="display:flex;gap:8px;padding:0 12px 14px;">' +
+            '<button class="scm-btn" id="rsmDownloadBtn" style="flex:1;">Download</button>' +
+            '<button class="scm-btn scm-btn-primary" id="rsmShareBtn" style="flex:1;">Share</button>' +
+          '</div>' +
+        '</div>';
+      document.body.appendChild(overlay);
+      function close() {
+        overlay.remove();
+        if (blob) setTimeout(function () { URL.revokeObjectURL(imgUrl); }, 5000);
+      }
+      document.getElementById('rsmCloseBtn').onclick = close;
+      overlay.addEventListener('click', function (e) { if (e.target === overlay) close(); });
+      document.getElementById('rsmDownloadBtn').onclick = function () {
+        var a = document.createElement('a');
+        a.download = fname; a.href = imgUrl; a.rel = 'noopener';
+        document.body.appendChild(a); a.click();
+        setTimeout(function () { document.body.removeChild(a); }, 500);
+      };
+      var shareBtn = document.getElementById('rsmShareBtn');
+      var file = null;
+      if (blob) {
+        try { file = new File([blob], fname, { type: 'image/png' }); } catch (_) { file = null; }
+      }
+      var canNativeShare = !!(file && navigator.canShare && navigator.canShare({ files: [file] }));
+      if (!canNativeShare) {
+        // No native file sharing (desktop / old browsers): hide Share, keep Download.
+        shareBtn.style.display = 'none';
+      }
+      shareBtn.onclick = function () {
+        if (!file) return;
+        // Called directly on tap: user activation is fresh, so iOS shows the
+        // full share sheet.
+        navigator.share({ files: [file], title: title }).catch(function () {});
+      };
+    }
   })();
 
   window.openShareCardModal = function (cardUrl, shareUrl, calcUrl) {
