@@ -255,17 +255,18 @@ def test_weekly_tabs_container_does_not_bleed_outside_hub():
     ), "negative margin-inline would clip the matchup heading at the hub edge"
 
 
-def test_right_column_flips_team_pos_above_player_name():
-    """On phones the right column's header reads TEAM • POS above the player
-    name (flipped vs the left column's name-first order)."""
-    block = _media_640_block_with(".mb-nameline")
+def test_right_column_flips_team_pos_before_player_name():
+    """The right column's header reads TEAM • POS before the player name
+    ("HOU • QB C.J. Stroud") on both desktop and phones -- flipped vs the
+    left column's name-first order."""
+    css = _CSS.read_text(encoding="utf-8")
     assert re.search(
         r"\.mb-cell-r\s+\.mb-nameline\s+\.mb-team\s*\{[^}]*order:\s*-1",
-        block,
+        css,
     ), "right-column TEAM • POS should render before the player name"
-    # The left column keeps name-first: no negative order on its sub-line.
-    left_rules = re.findall(
-        r"(?<!\.mb-cell-r\s)\.mb-nameline\s+\.mb-team\s*\{[^}]*\}", block
-    )
-    assert left_rules and all("order:" not in rule for rule in left_rules), \
-        "left-column header should keep the name-first order"
+    # The left column keeps name-first: no order flip on its sub-line rule.
+    for m in re.finditer(r"([^{}]+)\.mb-team\s*\{([^}]*)\}", css):
+        selector, body = m.group(1), m.group(2)
+        if ".mb-cell-r" not in selector and ".mb-nameline" in selector:
+            assert "order:" not in body, \
+                "left-column header should keep the name-first order"
