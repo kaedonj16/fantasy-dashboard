@@ -40,7 +40,7 @@ def test_exact_profile_is_preferred_and_cache_is_profile_isolated(tmp_path, monk
     assert len(appmod._MATCHUP_RATINGS_CACHE) == 2
 
 
-def test_default_fallback_restores_legacy_ranks_sos_without_fake_percent(tmp_path, monkeypatch):
+def test_default_fallback_restores_legacy_ranks_sos_with_estimated_percent(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     _reset()
     ratings = {
@@ -53,8 +53,12 @@ def test_default_fallback_restores_legacy_ranks_sos_without_fake_percent(tmp_pat
     assert (ranks, total) == ({"BUF": 1, "MIA": 2}, 2)
     assert info["BUF"]["rating_source"] == "default-profile-fallback"
     assert info["BUF"]["rank_value"] == 90
-    assert info["BUF"]["multiplier"] is None
-    assert "adjusted_percent" not in info["BUF"]
+    # Z-score schema synthesizes an estimated multiplier (1.0 + z * 0.10) so the
+    # Schedule Assistant "Adj Avg" column shows values instead of N/A.
+    assert info["BUF"]["multiplier"] == pytest.approx(1.08)
+    assert info["BUF"]["adjusted_percent"] == pytest.approx(8.0)
+    assert info["MIA"]["multiplier"] == pytest.approx(0.95)
+    assert info["MIA"]["adjusted_percent"] == pytest.approx(-5.0)
     # SOS consumes the same rank value and omits the bye represented by None.
     from utils.defensive_matchup_ratings import rank_team_schedules
     assert rank_team_schedules({"NE": ["BUF", None], "NYJ": ["MIA", "BUF"]},
