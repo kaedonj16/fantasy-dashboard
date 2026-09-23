@@ -40576,7 +40576,8 @@ a, button, [role="button"], [role="tab"], summary, label,
 .mb-nameline { display: flex; align-items: baseline; gap: 5px; min-width: 0; line-height: 1.2; }
 /* Right side reads TEAM • POS first ("HOU • QB C.J. Stroud"), flipped vs the
    left's name-first order; the block itself is right-aligned by
-   .mb-cell-r .mb-info. */
+   .mb-cell-r .mb-info. (Phones reset this below to keep the name-first
+   two-line stack.) */
 .mb-cell-r .mb-nameline { flex-direction: row; justify-content: flex-end; }
 .mb-cell-r .mb-nameline .mb-team { order: -1; }
 /* Full text, no ellipsis: names, game line and box score wrap rather than clip. */
@@ -40695,6 +40696,8 @@ a, button, [role="button"], [role="tab"], summary, label,
     }
     .mb-cell-r .mb-nameline .mb-team {
         align-self: flex-end;
+        /* Phones keep the name-first stack: name on top, TEAM • POS beneath. */
+        order: 0;
     }
     /* The game line ("Sun 1:00 pm @ IND") and stat line ("(#3 / 18.0)") are
        siblings of the name block, not inside it, so the sub-line fix above
