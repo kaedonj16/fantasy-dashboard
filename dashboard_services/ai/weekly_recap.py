@@ -4,6 +4,7 @@ import hashlib
 import html
 import json
 import logging
+import re
 from math import erf, sqrt
 
 import pandas as pd
@@ -884,11 +885,19 @@ For "looking_ahead": if next_week_preview is null, return an empty string. Other
     return json.loads(raw)
 
 
+_RECORD_COMMA_RE = re.compile(r"\b(\d{1,2}),\s+(\d{1,2})\b")
+
+
+def _fix_record_commas(text: str) -> str:
+    """The AI occasionally writes records like "2, 0" instead of "2-0". Repair it."""
+    return _RECORD_COMMA_RE.sub(r"\1-\2", text)
+
+
 def _render_recap_html(result: dict) -> str:
-    headline = html.escape(str(result.get("headline") or "Week Recap").replace("—", ","))
+    headline = html.escape(_fix_record_commas(str(result.get("headline") or "Week Recap").replace("—", ",")))
     paragraphs = result.get("paragraphs") or []
     paragraphs_html = "\n".join(
-        f"<p style='margin:0 0 10px 0;'>{html.escape(str(p).replace('—', ','))}</p>"
+        f"<p style='margin:0 0 10px 0;'>{html.escape(_fix_record_commas(str(p).replace('—', ',')))}</p>"
         for p in paragraphs[:4] if str(p).strip()
     )
 

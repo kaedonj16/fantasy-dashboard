@@ -18583,6 +18583,12 @@ function _tmPoints(value) {
   return value == null ? '—' : Number(value).toFixed(1);
 }
 
+function _tmEsc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+    return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c];
+  });
+}
+
 function _tmLineupHtml(lineup) {
   if (!Array.isArray(lineup) || !lineup.length) return '<div class="team-modal-empty">Historical lineup unavailable</div>';
   return lineup.map(p => `<div class="tm-lineup-player${p.player_id ? ' player-clickable' : ''}"${p.player_id ? ` data-player-id="${_tmEsc(p.player_id)}" data-player-name="${_tmEsc(p.name)}"` : ''}>` +
