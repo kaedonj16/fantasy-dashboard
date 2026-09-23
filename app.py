@@ -1906,8 +1906,8 @@ FORM_BODY = """
 </div>
 
 <div class="fullscreen-loading-overlay" id="dashboardLoadingOverlay" style="display:none;">
-  <img src="/static/BR_Mark.png?v=f4228e0e"      alt="BR Fantasy" class="flo-logo flo-logo-light">
-  <img src="/static/BR_Mark_dark.png?v=f4228e0e" alt="BR Fantasy" class="flo-logo flo-logo-dark">
+  <img src="/static/BR_Mark.png?v=6c0c4828"      alt="BR Fantasy" class="flo-logo flo-logo-light">
+  <img src="/static/BR_Mark_dark.png?v=6c0c4828" alt="BR Fantasy" class="flo-logo flo-logo-dark">
   <div class="fullscreen-loading-text">Building your dashboard…</div>
   <div class="fullscreen-loading-subtext">This usually takes a few seconds</div>
   <div class="flo-progress-track"><div class="flo-progress-bar" id="floProgressBar"></div></div>
@@ -2020,8 +2020,8 @@ BASE_HTML = """
   <body>
     <!-- Branded loading splash: shown instantly, removed once the page is ready -->
     <div id="appSplash" role="status" aria-label="Loading BR Fantasy">
-      <img src="/static/BR_Logo.png?v=f4228e0e" alt="" class="splash-logo-light" aria-hidden="true">
-      <img src="/static/BR_Logo_dark.png?v=f4228e0e" alt="" class="splash-logo-dark" aria-hidden="true">
+      <img src="/static/BR_Logo.png?v=6c0c4828" alt="" class="splash-logo-light" aria-hidden="true">
+      <img src="/static/BR_Logo_dark.png?v=6c0c4828" alt="" class="splash-logo-dark" aria-hidden="true">
     </div>
     <script>
       (function(){{
@@ -4468,7 +4468,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             "<nav class='top-nav br-mnav' aria-label='Main navigation'>"
             "  <div class='nav-left'>"
             "    <a href='/' aria-label='BR Fantasy home'>"
-            "      <img src='/static/Website_Logo.png?v=f4228e0e' alt='BR Fantasy' class='site-logo'/>"
+            "      <img src='/static/Website_Logo.png?v=6c0c4828' alt='BR Fantasy' class='site-logo'/>"
             "    </a>"
             "  </div>"
             "  <div class='nav-center'>"
@@ -4877,7 +4877,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         f"<nav class='{_mnav_cls}' aria-label='Main navigation'>"
         "  <div class='nav-left'>"
         f"    <a href='{dashboard_url}' aria-label='BR Fantasy dashboard'>"
-        "      <img src='/static/Website_Logo.png?v=f4228e0e' alt='BR Fantasy' class='site-logo'/>"
+        "      <img src='/static/Website_Logo.png?v=6c0c4828' alt='BR Fantasy' class='site-logo'/>"
         "    </a>"
         f"    {_chrome_chip}"
         "  </div>"
@@ -5467,7 +5467,7 @@ def _site_json_ld() -> str:
             "@type": "Organization",
             "name": "BR Fantasy",
             "url": base or "/",
-            "logo": f"{base}/static/BR_Logo.png?v=f4228e0e",
+            "logo": f"{base}/static/BR_Logo.png?v=6c0c4828",
             "sameAs": [
                 "https://youtube.com/@hoodiekj",
                 "https://x.com/hoodiekj",
@@ -7191,6 +7191,12 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
         global _MODEL_VALUE_CACHE, _MODEL_VALUE_CACHE_TS
         _MODEL_VALUE_CACHE = ctx["model_value_table"]
         _MODEL_VALUE_CACHE_TS = time.time()
+        # Keep the modal's rank sidecar warm for the new table object so the
+        # next modal open doesn't pay the one-time build cost.
+        try:
+            _model_value_sidecar()
+        except Exception:
+            logger.debug("[refresh] sidecar build skipped", exc_info=True)
 
     # ---------- Offseason dashboard refresh ----------
     if (full or page == "dashboard") and offseason_mode:
@@ -11545,6 +11551,181 @@ def _load_season_weekly_points(season: int, scoring_settings: dict) -> dict:
     return out
 
 
+# Compact per-player weekly scoring cache: (pids, flat) where flat is an
+# array('d') holding 6 floats per player --
+#   [season_sum, season_n, last4_0, last4_1, last4_2, last4_3]
+# (last-4 slots are NaN where the player had no scoring line). Unlike
+# _load_season_weekly_points (score_stats over completed weeks only), this
+# covers EVERY stat file on disk in week order and scores with
+# week_stat_points -- the exact inputs the Start/Sit page's recent-form loop
+# and _startsit_compare_extras use. Lets those call sites skip re-reading and
+# re-parsing multi-MB JSON files on every request, while the flat layout
+# keeps the whole cache around half a megabyte instead of several.
+#
+# Both caches below are LRU-bounded: keys multiply by (season, scoring
+# settings, position-ish), so an unbounded dict could grow far past the
+# ~2MB added-memory budget this work targets. Caps keep worst-case retained
+# memory under budget even if several leagues are visited in one session.
+_WEEKSTAT_PTS_CACHE: dict = {}  # (season, scoring_sig, te_flag) -> (ts, newest_mtime, (pids, flat))
+_WEEKSTAT_NCOLS = 6
+_WEEKSTAT_PTS_MAX = 2
+_SEASON_RANK_MAX = 2
+
+
+def _lru_cache_put(cache: dict, key, value, cap: int):
+    """Insert into a small dict cache, evicting least-recently-used entries.
+
+    dicts preserve insertion order; a get refresh is done by re-inserting on
+    hit at the call sites' discretion. Never raises.
+    """
+    try:
+        if key in cache:
+            del cache[key]
+        cache[key] = value
+        while len(cache) > cap:
+            cache.pop(next(iter(cache)))
+    except Exception:
+        pass
+
+
+def _season_weekstat_points(season: int, scoring_settings: dict, pos: str = ""):
+    """(pids, flat) weekly scoring with week_stat_points, in week order.
+
+    ``flat`` packs per player: season point sum, season scored-week count,
+    then the last-4 files' points (NaN where the player had no scoring line).
+    Only stat lines scoring > 0 are counted, same filter as the call sites.
+    Cached by (season, scoring signature, TE flag); rebuilt when the files
+    change. ``pos`` only affects scoring via the TE premium, so the key
+    collapses every non-TE position to "" -- identical values, fewer entries.
+    Player ids are stored as array('I') when they are canonical numeric
+    strings (Sleeper ids), falling back to a str tuple otherwise; callers
+    must compare with str(). Never raises.
+    """
+    from array import array
+    try:
+        sig = hashlib.md5(
+            json.dumps(scoring_settings or {}, sort_keys=True, default=str).encode()
+        ).hexdigest()[:10]
+        te_flag = "TE" if str(pos or "").upper() == "TE" else ""
+        key = (int(season), sig, te_flag)
+        pattern = os.path.join(CACHE_DIR, "sleeper_stats", f"sleeper_stats_s{int(season)}_w*.json")
+        files = sorted(glob.glob(pattern), key=_sleeper_stats_week_num)
+        newest = max((os.path.getmtime(p) for p in files), default=0.0)
+        now = time.time()
+        hit = _WEEKSTAT_PTS_CACHE.get(key)
+        if hit and now - hit[0] < _WEEKLY_PTS_TTL and newest <= hit[1]:
+            _WEEKSTAT_PTS_CACHE[key] = _WEEKSTAT_PTS_CACHE.pop(key)  # LRU refresh
+            return hit[2]
+        from utils.fantasy_scoring import week_stat_points as _wsp
+        per_pid: dict = {}
+        for widx, wf in enumerate(files):
+            try:
+                with open(wf) as f:
+                    wdata = json.load(f)
+            except Exception:
+                continue
+            if not isinstance(wdata, dict):
+                continue
+            for pid, st in wdata.items():
+                if not isinstance(st, dict):
+                    continue
+                try:
+                    pts = float(_wsp(st, scoring_settings, te_flag) or 0)
+                except Exception:
+                    continue
+                if pts > 0:
+                    rec = per_pid.setdefault(str(pid), [0.0, 0, {}])
+                    rec[0] += pts
+                    rec[1] += 1
+                    rec[2][widx] = pts
+        last_idx = list(range(max(0, len(files) - 4), len(files)))
+        nan = float("nan")
+        pids = tuple(per_pid.keys())
+        try:
+            _ipids = array("I", (int(_p) for _p in pids))
+            if any(str(_v) != _p for _v, _p in zip(_ipids, pids)):
+                raise ValueError("non-canonical pid")
+            pids = _ipids
+        except (ValueError, OverflowError):
+            pass
+        flat = array("d")
+        for pid in per_pid.keys():
+            s, n, wmap = per_pid[pid]
+            flat.append(s)
+            flat.append(float(n))
+            for wi in last_idx:
+                flat.append(wmap.get(wi, nan))
+            for _ in range(4 - len(last_idx)):
+                flat.append(nan)
+        payload = (pids, flat)
+        _lru_cache_put(_WEEKSTAT_PTS_CACHE, key, (now, newest, payload), _WEEKSTAT_PTS_MAX)
+        return payload
+    except Exception:
+        logger.debug("[weekstat pts] build failed", exc_info=True)
+        return ((), array("d"))
+
+
+# Cache for the player modal's PPG/total-points rank inputs (15-min TTL).
+# The modal used to rebuild per-player season totals and run four O(N)
+# competition-rank scans over the whole player pool on every open; this
+# precomputes the sorted value arrays once so each rank is an O(log N) bisect.
+_SEASON_RANK_CACHE: dict = {}  # (season, scoring_sig, completed_weeks) -> (ts, payload)
+
+
+def _season_rank_rows(season: int, scoring_settings: dict):
+    """Rank inputs for the player modal's PPG / total-points ranks.
+
+    Returns ``{"pos_ppg", "pos_total", "all_ppg", "all_total"}`` of
+    ascending-sorted raw value arrays (array('d')) for O(log N) RANK
+    lookups. Mirrors the per-request computation it replaces: positions from
+    load_players_index, QB/RB/WR/TE only, RANK semantics
+    (1 + #{strictly greater}). The intermediate per-player dict is not kept,
+    so the payload stays around a hundred KB. Never raises.
+    """
+    from array import array
+    try:
+        sig = hashlib.md5(
+            json.dumps(scoring_settings or {}, sort_keys=True, default=str).encode()
+        ).hexdigest()[:10]
+        from utils.season_qualification import qualification_policy
+        completed = tuple(qualification_policy(int(season)).completed_weeks)
+        key = (int(season), sig, completed)
+        now = time.time()
+        hit = _SEASON_RANK_CACHE.get(key)
+        if hit and now - hit[0] < _WEEKLY_PTS_TTL:
+            _SEASON_RANK_CACHE[key] = _SEASON_RANK_CACHE.pop(key)  # LRU refresh
+            return hit[1]
+        weekly = _load_season_weekly_points(season, scoring_settings) or {}
+        meta_idx = load_players_index() or {}
+        pos_ppg: dict = {}
+        pos_total: dict = {}
+        all_ppg: list = []
+        all_total: list = []
+        for pid, pts in weekly.items():
+            if not pts:
+                continue
+            pos = str((meta_idx.get(str(pid)) or {}).get("pos") or "").upper()
+            if pos not in ("QB", "RB", "WR", "TE"):
+                continue
+            tot = float(sum(pts))
+            ppg = tot / len(pts)
+            pos_ppg.setdefault(pos, []).append(ppg)
+            pos_total.setdefault(pos, []).append(tot)
+            all_ppg.append(ppg)
+            all_total.append(tot)
+        payload = {
+            "pos_ppg": {p: array("d", sorted(v)) for p, v in pos_ppg.items()},
+            "pos_total": {p: array("d", sorted(v)) for p, v in pos_total.items()},
+            "all_ppg": array("d", sorted(all_ppg)),
+            "all_total": array("d", sorted(all_total)),
+        }
+        _lru_cache_put(_SEASON_RANK_CACHE, key, (now, payload), _SEASON_RANK_MAX)
+        return payload
+    except Exception:
+        logger.debug("[season rank rows] build failed", exc_info=True)
+        return None
+
+
 def _ss_game_env(home_team: "Optional[str]", week: int) -> "Optional[dict]":
     """Compact game-environment chip for a start/sit row, or None.
 
@@ -11599,24 +11780,18 @@ def _startsit_compare_extras(pid, pos, team, season, week, scoring_settings, *,
     }
 
     # Last-4-week PPG scored with this league's settings (not hardcoded PPR).
+    # Served from the shared per-(season, scoring, TE-flag) weekstat cache so
+    # the modal doesn't re-read and re-parse the weekly stat files on every
+    # open. Identical inputs to the inline version this replaces (same files,
+    # same week_stat_points scorer, same >0 filter, last-4 files only).
     try:
-        from utils.fantasy_scoring import week_stat_points as _ss_week_pts
-        _files = sorted(
-            glob.glob(os.path.join(
-                CACHE_DIR, "sleeper_stats", f"sleeper_stats_s{int(season)}_w*.json")),
-            key=_sleeper_stats_week_num,
-        )[-4:]
+        _ws_pids, _ws_flat = _season_weekstat_points(int(season), scoring_settings, pos) or ((), ())
         _vals = []
-        for _wf in _files:
-            try:
-                _ws = json.load(open(_wf))
-            except Exception:
-                continue
-            _st = _ws.get(str(pid)) if isinstance(_ws, dict) else None
-            if isinstance(_st, dict):
-                _p = float(_ss_week_pts(_st, scoring_settings, pos) or 0)
-                if _p > 0:
-                    _vals.append(_p)
+        for _i, _p in enumerate(_ws_pids):
+            if str(_p) == str(pid):
+                _base = _i * _WEEKSTAT_NCOLS
+                _vals = [_v for _v in _ws_flat[_base + 2:_base + 6] if _v == _v]
+                break
         if _vals:
             out["recent_ppg"] = round(sum(_vals) / len(_vals), 1)
     except Exception:
@@ -11926,34 +12101,23 @@ def api_start_sit_options():
             return 0.0
 
     # ── Season-long and recent-form PPG scored with this league's settings ──
+    # Served from the shared per-(season, scoring) cache so the page doesn't
+    # re-read and re-parse the weekly stat files on every load. Identical
+    # inputs to the inline loop this replaces (same files in the same order,
+    # same week_stat_points scorer, same >0 filter, last-4 files for recent).
     season_ppg: dict = {}
     recent_ppg_map: dict = {}  # last 4 weeks
     try:
-        from utils.fantasy_scoring import week_stat_points as _ss_week_pts
-        import glob as _glob
-        _stat_files = sorted(
-            _glob.glob(os.path.join(
-                CACHE_DIR, "sleeper_stats", f"sleeper_stats_s{season}_w*.json")),
-            key=_sleeper_stats_week_num,
-        )
-        _season_pts: dict = {}
-        _recent_files = _stat_files[-4:]
-        _recent_pts: dict = {}
-        for _sf in _stat_files:
-            try:
-                _sdata = json.load(open(_sf))
-                for pid, stats in _sdata.items():
-                    if not isinstance(stats, dict):
-                        continue
-                    pts = float(_ss_week_pts(stats, _ss_scoring) or 0)
-                    if pts > 0:
-                        _season_pts.setdefault(str(pid), []).append(pts)
-                        if _sf in _recent_files:
-                            _recent_pts.setdefault(str(pid), []).append(pts)
-            except Exception:
-                continue
-        season_ppg = {pid: round(sum(v) / len(v), 1) for pid, v in _season_pts.items() if v}
-        recent_ppg_map = {pid: round(sum(v) / len(v), 1) for pid, v in _recent_pts.items() if v}
+        _ws_pids, _ws_flat = _season_weekstat_points(season, _ss_scoring) or ((), ())
+        for _i, _pid in enumerate(_ws_pids):
+            _pid = str(_pid)
+            _base = _i * _WEEKSTAT_NCOLS
+            _n = _ws_flat[_base + 1]
+            if _n > 0:
+                season_ppg[_pid] = round(_ws_flat[_base] / _n, 1)
+            _rvals = [_v for _v in _ws_flat[_base + 2:_base + 6] if _v == _v]
+            if _rvals:
+                recent_ppg_map[_pid] = round(sum(_rvals) / len(_rvals), 1)
     except Exception:
         logger.debug("suppressed exception", exc_info=True)
 
@@ -14269,7 +14433,7 @@ def metrics_graph_og_image(platform: str, season: int, league_id: str):
         cache_key=cache_key,
     )
     if not png:
-        return redirect(f"{request.host_url.rstrip('/')}/static/BR_Logo.png?v=f4228e0e")
+        return redirect(f"{request.host_url.rstrip('/')}/static/BR_Logo.png?v=6c0c4828")
     return Response(png, mimetype="image/png",
                     headers={"Cache-Control": "public, max-age=3600"})
 
@@ -17862,7 +18026,162 @@ def get_model_value_table_cached():
 
     _MODEL_VALUE_CACHE = tbl
     _MODEL_VALUE_CACHE_TS = now
+    # Build the modal's rank sidecar eagerly here (not lazily on first open)
+    # so no single request pays the one-time build cost. Best-effort: the
+    # modal falls back to a lazy build if this ever fails.
+    try:
+        _model_value_sidecar()
+    except Exception:
+        logger.debug("[model-value-cache] sidecar build skipped", exc_info=True)
     return tbl
+
+
+# Sidecar for the cached model value table: a shared id->row index plus
+# compact precomputed overall / per-position / scoring-format rank arrays, so
+# per-request handlers don't re-sort the ~7k-row table or rebuild throwaway
+# ~7k-entry dicts on every call. Each rank entry is one array('H'/'I') of the
+# table length holding 1-based ordinal ranks (0 = not ranked) -- ~14KB per
+# pool, O(1) lookup, exact float64 sort order with the stable-sort tie-break.
+# Rebuilt lazily whenever the cached table object changes (and eagerly at
+# cache-rebuild time); never raises.
+_MODEL_VALUE_SIDECAR = None  # (table_object, sidecar_dict)
+
+
+def _safe_float(v):
+    try:
+        return float(v or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _fmt_score_static(row, key, mults):
+    """_fmt_score with no TE premium (the precomputable case)."""
+    v = _safe_float(row.get(key))
+    if v <= 0:
+        return 0.0
+    pos = str(row.get("position") or "").upper()
+    return v * mults.get(pos, 1.0)
+
+
+def _rank_entry(items, n):
+    """Compact ordinal-rank array for a [(float_value, table_idx)] pool.
+
+    Returns array('H'/'I') of length ``n`` (the full table size) where
+    ``arr[table_idx]`` is the 1-based ordinal rank, or 0 when the row isn't in
+    the pool. Ranks come from one stable descending sort, exactly like the
+    modal's per-request ``enumerate(sorted(...))`` lookups -- ties do NOT
+    share a rank. At ~14KB per 7k-row pool (vs ~500KB for a {pid: rank}
+    dict), the whole sidecar stays well under a megabyte, and lookup is O(1).
+    """
+    from array import array
+    order = sorted(range(len(items)), key=lambda k: items[k][0], reverse=True)
+    arr = array("H" if len(items) < 65535 else "I", [0]) * n
+    for rank, k in enumerate(order, 1):
+        arr[items[k][1]] = rank
+    return arr
+
+
+def _rank_lookup(arr, player_tidx):
+    """Ordinal rank (1-based) of the player's own entry, or None if absent."""
+    if player_tidx < 0 or player_tidx >= len(arr):
+        return None
+    rank = arr[player_tidx]
+    return rank if rank else None
+
+
+def _build_model_value_sidecar(tbl):
+    tbl = tbl or []
+    excluded = ("K", "DEF", "PICK")
+    keys = ("value", "sf_value", "redraft_value_1qb", "redraft_value_sf")
+    try:
+        from utils.trade_value import SCORING_MULTS as _SCM
+    except Exception:
+        _SCM = {}
+    fmt_mults = {fmt: (_SCM.get(fmt) or _SCM.get("ppr") or {}) for fmt in ("half", "std")}
+    positions = sorted({
+        str(p.get("position") or "").upper()
+        for p in tbl if isinstance(p, dict)
+    } - set(excluded) - {""})
+
+    def pool(base_key, scope, fmt):
+        # Dynasty overall ranks keep the raw (non-uppercased) position filter.
+        raw = (fmt is None and scope == "ovr" and base_key in ("value", "sf_value"))
+        mults = fmt_mults.get(fmt) if fmt else None
+        items = []
+        for i, p in enumerate(tbl):
+            if not isinstance(p, dict):
+                continue
+            pos = p.get("position") if raw else str(p.get("position") or "").upper()
+            if pos in excluded:
+                continue
+            if scope != "ovr" and pos != scope:
+                continue
+            if fmt:
+                v = _fmt_score_static(p, base_key, mults)
+            else:
+                v = _safe_float(p.get(base_key))
+            if v <= 0:
+                continue
+            items.append((v, i))
+        return items
+
+    ranks = {}
+    # Shared id -> row index so per-request handlers don't rebuild a ~7k-entry
+    # dict (and its transient ~0.5MB) on every call. Same "last wins" duplicate
+    # semantics as the inline comprehensions this replaces.
+    index = {}
+    for p in tbl:
+        if isinstance(p, dict):
+            index[str(p.get("id"))] = p
+    n = len(tbl)
+    for key in keys:
+        ranks[(key, "ovr", None)] = _rank_entry(pool(key, "ovr", None), n)
+    for key in ("redraft_value_1qb", "redraft_value_sf"):
+        for pos in positions:
+            ranks[(key, pos, None)] = _rank_entry(pool(key, pos, None), n)
+    # Scoring-format ranks (half/std) with no TE premium; TE-premium leagues
+    # keep the per-request path since the premium is league-specific.
+    for fmt in ("half", "std"):
+        for key in keys:
+            ranks[(key, "ovr", fmt)] = _rank_entry(pool(key, "ovr", fmt), n)
+            for pos in positions:
+                ranks[(key, pos, fmt)] = _rank_entry(pool(key, pos, fmt), n)
+    return {"ranks": ranks, "fmt_mults": fmt_mults, "index": index}
+
+
+def _sidecar_player_rank(sc, base_key, player_row, player_tidx, *, scope="ovr", fmt=None, raw_pos=False):
+    """Ordinal rank of player_row in the (base_key, scope, fmt) pool, or None.
+
+    Compact-sidecar equivalent of the modal's per-request sorts: ordinal
+    rank with the stable-sort tie-break, excluding K/DEF/PICK and
+    non-positive scores exactly like the original lookups.
+    """
+    if not isinstance(player_row, dict) or player_tidx < 0:
+        return None
+    pos = player_row.get("position") if raw_pos else str(player_row.get("position") or "").upper()
+    if pos in ("K", "DEF", "PICK"):
+        return None
+    if scope != "ovr" and pos != scope:
+        return None
+    entry = (sc.get("ranks") or {}).get((base_key, scope, fmt))
+    if entry is None:
+        return None
+    # The precomputed rank array holds the player's 1-based ordinal rank at
+    # their table index (0 = not in the pool). The pool already excluded
+    # K/DEF/PICK and non-positive scores, and the pos/scope gating above
+    # matches the pool's inclusion rules, so no score recomputation is needed.
+    return _rank_lookup(entry, player_tidx)
+
+
+def _model_value_sidecar():
+    """Sidecar for the current _MODEL_VALUE_CACHE, rebuilt if the table changed."""
+    global _MODEL_VALUE_SIDECAR
+    tbl = _MODEL_VALUE_CACHE
+    if _MODEL_VALUE_SIDECAR is not None and _MODEL_VALUE_SIDECAR[0] is tbl:
+        return _MODEL_VALUE_SIDECAR[1]
+    sc = _build_model_value_sidecar(tbl)
+    _MODEL_VALUE_SIDECAR = (tbl, sc)
+    return sc
 
 
 @app.route("/api/gm-memo", methods=["POST"])
@@ -18569,7 +18888,8 @@ def _trade_future_outlook(give_ids, get_ids, is_sf=False, current_pids=None):
     players_index = load_players_index() or {}
     value_table = get_model_value_table_cached() or []
     val_key = "sf_value" if is_sf else "value"
-    vmap = {str(p.get("id")): p for p in value_table}
+    # Shared id->row index from the value-table sidecar (see api_players).
+    vmap = _model_value_sidecar().get("index") or {}
 
     def _player_val_age(pid):
         mv = vmap.get(str(pid), {})
@@ -18661,7 +18981,9 @@ def api_players():
         from utils.utils import load_players_index
         players_index = load_players_index() or {}
         value_table = get_model_value_table_cached() or []
-        value_map = {str(p.get("id")): p for p in value_table}
+        # Shared id->row index from the value-table sidecar: avoids rebuilding
+        # a ~7k-entry dict (and its transient ~0.5MB) on every request.
+        value_map = _model_value_sidecar().get("index") or {}
         league_type = str(request.args.get("league_type", "1qb")).strip().lower()
         is_sf = league_type in ("sf", "superflex")
 
@@ -20944,7 +21266,8 @@ def api_player_indicators():
 
         # Load model value table to get current player values
         value_table = get_model_value_table_cached() or []
-        value_map = {str(p.get("id")): p for p in value_table}
+        # Shared id->row index from the value-table sidecar (see api_players).
+        value_map = _model_value_sidecar().get("index") or {}
 
         # Top-N positional rank cutoffs (shared with the consolidate/distribute
         # engine so the ELITE chip and trade suggestions never disagree).
@@ -21281,7 +21604,17 @@ def api_player_details(player_id: str):
 
         # Get value data (use cache so FC/DP corrections are applied)
         value_table = get_model_value_table_cached() or []
-        player_value = next((p for p in value_table if str(p.get("id")) == str(player_id)), {})
+        _mv_sc = _model_value_sidecar()
+        # Single linear scan for the player's row (also captures the table
+        # index the compact rank arrays need). A 7k-row scan is
+        # sub-millisecond; the per-request sorts it used to feed are gone.
+        player_value = {}
+        _player_tidx = -1
+        for _i, _p in enumerate(value_table):
+            if isinstance(_p, dict) and str(_p.get("id")) == str(player_id):
+                player_value = _p
+                _player_tidx = _i
+                break
 
         # Get FULL value history from database (not just 90 days)
         value_history = get_player_value_history(
@@ -21471,26 +21804,22 @@ def api_player_details(player_id: str):
                         _total_pts = round(_total_raw, 1)
 
                         _pos = str(player_meta.get("pos") or "").upper()
-                        _meta_idx = load_players_index() or {}
-                        _rank_rows = []
-                        for _pid, _pts in _weekly_points.items():
-                            if not _pts:
-                                continue
-                            _rpos = str((_meta_idx.get(str(_pid)) or {}).get("pos") or "").upper()
-                            if _rpos not in {"QB", "RB", "WR", "TE"}:
-                                continue
-                            _tot = sum(_pts)
-                            _rank_rows.append((_pid, _rpos, _tot / len(_pts), _tot))
-
-                        def _competition_rank(rows, value, idx):
-                            # RANK semantics: equal unrounded values share rank.
-                            return 1 + sum(1 for row in rows if row[idx] > value)
-
-                        _pos_rows = [r for r in _rank_rows if r[1] == _pos]
-                        _ppg_rank = _competition_rank(_pos_rows, _ppg_raw, 2)
-                        _total_pts_rank = _competition_rank(_pos_rows, _total_raw, 3)
-                        _ppg_ovr_rank = _competition_rank(_rank_rows, _ppg_raw, 2)
-                        _total_pts_ovr_rank = _competition_rank(_rank_rows, _total_raw, 3)
+                        # PPG / total-points ranks from the shared per-(season,
+                        # scoring) rank cache: ascending-sorted raw value
+                        # arrays, so each rank is an O(log N) bisect instead
+                        # of rebuilding the whole table and scanning it four
+                        # times. RANK semantics preserved: 1 + #{strictly
+                        # greater}, computed on the same unrounded values.
+                        from bisect import bisect_right as _bisect_right
+                        _rank_data = _season_rank_rows(season, scoring_settings) or {}
+                        _pos_ppg_vals = (_rank_data.get("pos_ppg") or {}).get(_pos) or []
+                        _pos_tot_vals = (_rank_data.get("pos_total") or {}).get(_pos) or []
+                        _all_ppg_vals = _rank_data.get("all_ppg") or []
+                        _all_tot_vals = _rank_data.get("all_total") or []
+                        _ppg_rank = 1 + (len(_pos_ppg_vals) - _bisect_right(_pos_ppg_vals, _ppg_raw))
+                        _total_pts_rank = 1 + (len(_pos_tot_vals) - _bisect_right(_pos_tot_vals, _total_raw))
+                        _ppg_ovr_rank = 1 + (len(_all_ppg_vals) - _bisect_right(_all_ppg_vals, _ppg_raw))
+                        _total_pts_ovr_rank = 1 + (len(_all_tot_vals) - _bisect_right(_all_tot_vals, _total_raw))
         except Exception:
             logger.debug("player scoring aggregation failed", exc_info=True)
 
@@ -21758,32 +22087,14 @@ def api_player_details(player_id: str):
         if _rd_sf is None and _rd_1qb is not None:
             _rd_sf = _rd_1qb
 
-        def _rd_rank(key, *, pos_only=False):
-            pool = []
-            for x in (value_table or []):
-                if not isinstance(x, dict):
-                    continue
-                if str(x.get("position") or "").upper() in ("K", "DEF", "PICK"):
-                    continue
-                if pos_only and str(x.get("position") or "").upper() != _modal_pos:
-                    continue
-                try:
-                    v = float(x.get(key) or 0)
-                except (TypeError, ValueError):
-                    v = 0.0
-                if v <= 0:
-                    continue
-                pool.append((str(x.get("id")), v))
-            pool.sort(key=lambda t: t[1], reverse=True)
-            for i, (pid, _) in enumerate(pool):
-                if pid == str(player_id):
-                    return i + 1
-            return None
-
-        _rd_1qb_ovr = _rd_rank("redraft_value_1qb") if _rd_1qb else None
-        _rd_sf_ovr = _rd_rank("redraft_value_sf") if _rd_sf else None
-        _rd_1qb_pos = _rd_rank("redraft_value_1qb", pos_only=True) if _rd_1qb and _modal_pos else None
-        _rd_sf_pos = _rd_rank("redraft_value_sf", pos_only=True) if _rd_sf and _modal_pos else None
+        # Redraft ranks from the value-table sidecar (precomputed once per
+        # cache rebuild) instead of re-sorting the table four times.
+        _rd_1qb_ovr = _sidecar_player_rank(_mv_sc, "redraft_value_1qb", player_value, _player_tidx) if _rd_1qb else None
+        _rd_sf_ovr = _sidecar_player_rank(_mv_sc, "redraft_value_sf", player_value, _player_tidx) if _rd_sf else None
+        _rd_1qb_pos = _sidecar_player_rank(_mv_sc, "redraft_value_1qb", player_value, _player_tidx, scope=_modal_pos) \
+            if _rd_1qb and _modal_pos else None
+        _rd_sf_pos = _sidecar_player_rank(_mv_sc, "redraft_value_sf", player_value, _player_tidx, scope=_modal_pos) \
+            if _rd_sf and _modal_pos else None
         _rd_1qb_pos_lbl = f"{_modal_pos}{_rd_1qb_pos}" if _rd_1qb_pos and _modal_pos else None
         _rd_sf_pos_lbl = f"{_modal_pos}{_rd_sf_pos}" if _rd_sf_pos and _modal_pos else None
 
@@ -21806,6 +22117,15 @@ def api_player_details(player_id: str):
             return v * mult
 
         def _fmt_rank(key, fmt, *, pos_only=False):
+            # Fast path: without a TE premium the format ranks don't depend on
+            # the league, so they come from the value-table sidecar instead of
+            # re-sorting the table. TE-premium leagues keep the per-request
+            # path since the premium multiplier is league-specific.
+            if not _modal_tep:
+                return _sidecar_player_rank(
+                    _mv_sc, key, player_value, _player_tidx,
+                    scope=_modal_pos if pos_only else "ovr", fmt=fmt,
+                )
             pool = []
             for x in (value_table or []):
                 if not isinstance(x, dict):
@@ -21896,16 +22216,8 @@ def api_player_details(player_id: str):
                 "pos_rank_label": player_value.get("pos_rank_label"),
                 "sf_pos_rank": player_value.get("sf_pos_rank"),
                 "sf_pos_rank_label": player_value.get("sf_pos_rank_label"),
-                "value_ovr_rank": next((i + 1 for i, p in enumerate(sorted(
-                    [x for x in (value_table or []) if
-                     x.get("position") not in ("K", "DEF", "PICK") and float(x.get("value") or 0) > 0],
-                    key=lambda x: float(x.get("value") or 0), reverse=True
-                )) if str(p.get("id")) == str(player_id)), None),
-                "sf_value_ovr_rank": next((i + 1 for i, p in enumerate(sorted(
-                    [x for x in (value_table or []) if
-                     x.get("position") not in ("K", "DEF", "PICK") and float(x.get("sf_value") or 0) > 0],
-                    key=lambda x: float(x.get("sf_value") or 0), reverse=True
-                )) if str(p.get("id")) == str(player_id)), None),
+                "value_ovr_rank": _sidecar_player_rank(_mv_sc, "value", player_value, _player_tidx, raw_pos=True),
+                "sf_value_ovr_rank": _sidecar_player_rank(_mv_sc, "sf_value", player_value, _player_tidx, raw_pos=True),
                 "redraft_value_1qb": _rd_1qb,
                 "redraft_value_sf": _rd_sf,
                 "redraft_pos_rank": _rd_1qb_pos,
@@ -30659,7 +30971,7 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
     </div>
     <div class="share-card">
       <div class="sc-header">
-        <div class="sc-brand"><img src="/static/BR_Mark_dark.png?v=f4228e0e" alt="BR Fantasy" style="height:20px;opacity:.9"> BR Fantasy</div>
+        <div class="sc-brand"><img src="/static/BR_Mark_dark.png?v=6c0c4828" alt="BR Fantasy" style="height:20px;opacity:.9"> BR Fantasy</div>
         <div class="sc-league">{league_name}</div>
       </div>
       <div class="sc-team-row">
@@ -30701,7 +31013,7 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
     function applyTheme(t) {{
       root.setAttribute('data-theme', t);
       var logo = document.querySelector('.sc-brand img');
-      if (logo) logo.src = t === 'dark' ? '/static/BR_Mark_dark.png?v=f4228e0e' : '/static/BR_Mark.png?v=f4228e0e';
+      if (logo) logo.src = t === 'dark' ? '/static/BR_Mark_dark.png?v=6c0c4828' : '/static/BR_Mark.png?v=6c0c4828';
       var btn = document.getElementById('scThemeToggle');
       if (btn) btn.innerHTML = t === 'dark' ? '&#9728;' : '&#9790;';
     }}
@@ -30762,7 +31074,7 @@ def share_card_og_image(platform: str, season: int, league_id: str, roster_id: s
         cache_key=f"team:{platform}:{season}:{league_id}:{roster_id}:v{int(_value_cache_bust_mtime() or 0)}",
     )
     if not png:
-        return redirect(f"{request.host_url.rstrip('/')}/static/BR_Logo.png?v=f4228e0e")
+        return redirect(f"{request.host_url.rstrip('/')}/static/BR_Logo.png?v=6c0c4828")
     return Response(png, mimetype="image/png",
                     headers={"Cache-Control": "public, max-age=3600"})
 
@@ -31185,7 +31497,7 @@ def page_trade_card(share_id: str):
   <meta name="twitter:title" content="{og_title}">
   <meta name="twitter:description" content="{verdict}">
   <meta name="twitter:image" content="{_og_image_url}">
-  <link rel="icon" href="/static/BR_Mark.png?v=f4228e0e" type="image/png">
+  <link rel="icon" href="/static/BR_Mark.png?v=6c0c4828" type="image/png">
   <script>
     (function(){{{"document.documentElement.setAttribute('data-theme','light');" if is_og else "var t=localStorage.getItem('sc-card-theme')||(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.setAttribute('data-theme',t);"}}})();
   </script>
@@ -31271,7 +31583,7 @@ def page_trade_card(share_id: str):
     <div class="card">
       <div class="card-header">
         <div class="brand">
-          <img src="/static/BR_Mark_dark.png?v=f4228e0e" id="tcLogo" alt="BR Fantasy" style="height:18px;opacity:.9">
+          <img src="/static/BR_Mark_dark.png?v=6c0c4828" id="tcLogo" alt="BR Fantasy" style="height:18px;opacity:.9">
           BR Fantasy
         </div>
         <div style="display:flex;align-items:center;gap:8px">
@@ -31326,7 +31638,7 @@ def page_trade_card(share_id: str):
     function applyTheme(t){{
       root.setAttribute('data-theme', t);
       var logo = document.getElementById('tcLogo');
-      if (logo) logo.src = t === 'dark' ? '/static/BR_Mark_dark.png?v=f4228e0e' : '/static/BR_Mark.png?v=f4228e0e';
+      if (logo) logo.src = t === 'dark' ? '/static/BR_Mark_dark.png?v=6c0c4828' : '/static/BR_Mark.png?v=6c0c4828';
       var btn = document.getElementById('tcToggle');
       if (btn) btn.innerHTML = t === 'dark' ? '&#9728;' : '&#9790;';
     }}
@@ -31386,7 +31698,7 @@ def trade_card_og_image(share_id: str):
         cache_key=f"trade:{share_id}",
     )
     if not png:
-        return redirect(f"{request.host_url.rstrip('/')}/static/BR_Logo.png?v=f4228e0e")
+        return redirect(f"{request.host_url.rstrip('/')}/static/BR_Logo.png?v=6c0c4828")
     return Response(png, mimetype="image/png",
                     headers={"Cache-Control": "public, max-age=3600"})
 

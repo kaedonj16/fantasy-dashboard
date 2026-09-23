@@ -24,11 +24,11 @@ const NAV_UNCACHED_GRACE_MS = 15000;
 // are served with ?v= hashes from HTML and cached via stale-while-revalidate
 // on /static/* -- precaching unversioned app.js/dashboard.css fought those URLs.
 const PRECACHE_URLS = [
-  '/static/BR_Logo.png?v=f4228e0e',
-  '/static/BR_Logo_dark.png?v=f4228e0e',
-  '/static/BR_Mark.png?v=f4228e0e',
-  '/static/BR_Mark_dark.png?v=f4228e0e',
-  '/static/Website_Logo.png?v=f4228e0e',
+  '/static/BR_Logo.png?v=6c0c4828',
+  '/static/BR_Logo_dark.png?v=6c0c4828',
+  '/static/BR_Mark.png?v=6c0c4828',
+  '/static/BR_Mark_dark.png?v=6c0c4828',
+  '/static/Website_Logo.png?v=6c0c4828',
   '/static/app-icon-180.png?v=b152bc26',
   '/static/app-icon-192.png?v=b152bc26',
   '/static/offline.html',
@@ -260,8 +260,8 @@ self.addEventListener('push', event => {
   }
   const options = {
     body: data.body || '',
-    icon: '/static/BR_Mark.png?v=f4228e0e',
-    badge: '/static/BR_Mark.png?v=f4228e0e',
+    icon: '/static/BR_Mark.png?v=6c0c4828',
+    badge: '/static/BR_Mark.png?v=6c0c4828',
     vibrate: [100, 50, 100],
     data: { url: data.url || '/' },
     tag: data.tag || 'br-fantasy',

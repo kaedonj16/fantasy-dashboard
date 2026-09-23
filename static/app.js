@@ -2269,7 +2269,7 @@ window._brPromoEligible = function () {
     banner.id = 'pwa-install-banner';
     banner.innerHTML =
       '<div class="pwa-banner-left">' +
-        '<img src="/static/BR_Mark.png?v=f4228e0e" class="pwa-banner-icon" alt="BR Fantasy">' +
+        '<img src="/static/BR_Mark.png?v=6c0c4828" class="pwa-banner-icon" alt="BR Fantasy">' +
         '<div>' +
           '<div class="pwa-banner-title">Add to Home Screen</div>' +
           '<div class="pwa-banner-sub">Install BR Fantasy for quick access</div>' +
@@ -2315,7 +2315,7 @@ window._brPromoEligible = function () {
     banner.id = 'pwa-install-banner';
     banner.innerHTML =
       '<div class="pwa-banner-left">' +
-        '<img src="/static/BR_Mark.png?v=f4228e0e" class="pwa-banner-icon" alt="BR Fantasy">' +
+        '<img src="/static/BR_Mark.png?v=6c0c4828" class="pwa-banner-icon" alt="BR Fantasy">' +
         '<div>' +
           '<div class="pwa-banner-title">Add to Home Screen</div>' +
           '<div class="pwa-banner-sub">Tap <strong>Share</strong> then <strong>Add to Home Screen</strong></div>' +
@@ -2837,7 +2837,7 @@ window._brPromoEligible = function () {
       var im = new Image();
       im.onload = function () { _brandImg = im; res(im); };
       im.onerror = function () { res(null); };
-      im.src = '/static/BR_Logo_dark.png?v=f4228e0e';
+      im.src = '/static/BR_Logo_dark.png?v=6c0c4828';
     });
     return _brandImgP;
   };
