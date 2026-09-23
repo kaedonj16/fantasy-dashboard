@@ -11251,6 +11251,9 @@ if (!platformBtns.length) return;
   if (!window._hasAccount && savedAccount) {
     // Account holder whose session lapsed / new device: one tap back into the
     // account via Google, which lands them on their leagues.
+    // Skip if the user explicitly logged out this session -- don't surface a
+    // stale identity to a signed-out visitor.
+    if (sessionStorage.getItem('_explicitLogout')) return;
     const who = savedAccount.email || "your account";
     mountReturnCta("Continue as <strong>" + who + "</strong>",
       function () {
@@ -11261,6 +11264,8 @@ if (!platformBtns.length) return;
         window.location.href = "/auth/google?next=" + encodeURIComponent(location.pathname);
       });
   } else if (saved?.league_id && saved?.username) {
+    // Skip for explicitly-logged-out visitors: never show another identity.
+    if (sessionStorage.getItem('_explicitLogout')) return;
     const platform = saved.platform || "sleeper";
     const season = saved.season || new Date().getFullYear();
     const dashboardUrl = `/${platform}/${season}/${saved.league_id}/dashboard`;
@@ -13455,7 +13460,7 @@ document.addEventListener('DOMContentLoaded', function() {
               };
 
               // Render chart (load Plotly on demand)
-              if (window.ensurePlotly) window.ensurePlotly().then(function () { Plotly.newPlot('historyChartPlotly', traces, layout, { displayModeBar: false }); }).catch(function () {});
+              if (window.ensurePlotly) window.ensurePlotly().then(function () { Plotly.newPlot('historyChartPlotly', traces, layout, { responsive: true, displayModeBar: false }); }).catch(function () {});
             } else {
               window.brEmptyState(chartContent, {
                 icon: 'chart',

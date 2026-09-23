@@ -971,6 +971,7 @@ def build_teams_body(ctx: dict) -> str:
           {_window_section}
           <div class="wl-section-label" style="margin-top:10px;">Roster Shapes</div>
           <div class="wl-grade-note" style="margin-top:0;">How a roster's value is built by position &mdash; descriptive, not part of the grade.</div>
+          <div class="wl-row"><span class="wl-shape">CAP</span><span class="wl-desc">Draft capital &mdash; the trade value of the team's draft picks</span></div>
           <div class="wl-row"><span class="wl-shape">WR Factory</span><span class="wl-desc">Value concentrated at WR &mdash; a deep, WR-dominant roster</span></div>
           <div class="wl-row"><span class="wl-shape">Robust RB</span><span class="wl-desc">RB-heavy build with a strong, deep backfield</span></div>
           <div class="wl-row"><span class="wl-shape">Hero RB</span><span class="wl-desc">One elite back anchoring a thin RB room, with a WR-forward rest</span></div>

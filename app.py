@@ -5225,7 +5225,11 @@ def _google_link_pro_banner() -> str:
     if hard:
         title = "Restore your PRO"
         body = "Personal PRO now requires Google sign-in. Link your account to unlock it again -- your Sleeper username alone is no longer enough."
-        dismiss = ""
+        dismiss = """
+    <button type="button" id="proGoogleBannerClose"
+            style="background:none;border:none;color:var(--muted);font-size:18px;line-height:1;
+                   cursor:pointer;padding:4px 8px;flex-shrink:0;min-width:44px;min-height:44px;"
+            aria-label="Dismiss">&times;</button>"""
         display = "flex"
     else:
         title = "Secure your PRO"
@@ -5277,15 +5281,24 @@ def _google_link_pro_banner() -> str:
   if (!el) return;
   var hard = {str(hard).lower()};
   var key = 'pro-google-link-dismissed';
+  var sessKey = 'pro-google-banner-dismissed-session';
+  try {{
+    // Hard banner: respect a dismissal for this tab session only (user still
+    // needs to link Google for PRO, so it returns on next visit).
+    if (hard && sessionStorage.getItem(sessKey) === '1') {{ el.style.display = 'none'; return; }}
+    if (!hard && localStorage.getItem(key) === '1') return;
+  }} catch (e) {{}}
   if (!hard) {{
-    try {{ if (localStorage.getItem(key) === '1') return; }} catch (e) {{}}
     el.style.display = 'flex';
-    var btn = document.getElementById('proGoogleBannerClose');
-    if (btn) btn.addEventListener('click', function() {{
-      el.style.display = 'none';
-      try {{ localStorage.setItem(key, '1'); }} catch (e) {{}}
-    }});
   }}
+  var btn = document.getElementById('proGoogleBannerClose');
+  if (btn) btn.addEventListener('click', function() {{
+    el.style.display = 'none';
+    try {{
+      if (hard) {{ sessionStorage.setItem(sessKey, '1'); }}
+      else {{ localStorage.setItem(key, '1'); }}
+    }} catch (e) {{}}
+  }});
 }})();
 </script>
 """
@@ -26162,6 +26175,13 @@ def api_trade_intel_player(player_id: str):
         return jsonify({"error": "Internal error"}), 500
 
 
+# Cache for the expensive COUNT(DISTINCT) in api_trade_database. Trade counts
+# only change when the cron ingests new trades, so a short TTL is safe and
+# avoids re-scanning ~500k rows on every page/filter change.
+_TRADE_DB_COUNT_CACHE: dict = {}
+_TRADE_DB_COUNT_TTL = 300  # seconds
+
+
 @app.route("/api/trade-database")
 def api_trade_database():
     """
@@ -26265,16 +26285,35 @@ def api_trade_database():
 
         with get_conn() as conn:
             count_params = [season] + sf_p + lf_p + filter_params
-            count_row = conn.execute(
-                f"""
-                SELECT COUNT(DISTINCT t.id) AS n
-                FROM trade_intel_trades t
-                LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id{join_sql}
-                WHERE t.season = %s {sf_clause}{lf_clause}{filter_sql}
-                """,
-                count_params,
-            ).fetchone()
-            total = int(count_row["n"]) if count_row else 0
+            # Cache the total: the COUNT(DISTINCT) scans all matching trades
+            # (~500k unfiltered) and dominates response time. Key on the filter
+            # fingerprint; bounded to avoid unbounded growth from ad-hoc searches.
+            import time as _tdb_time
+            _tdb_now = _tdb_time.time()
+            _tdb_key = (
+                season, sf_param, lf_param,
+                tuple(sorted(player_a_ids)), tuple(sorted(player_b_ids)),
+                tuple(sorted(match_ids)),
+            )
+            _tdb_hit = _TRADE_DB_COUNT_CACHE.get(_tdb_key)
+            if _tdb_hit and (_tdb_now - _tdb_hit[0]) < _TRADE_DB_COUNT_TTL:
+                total = _tdb_hit[1]
+            else:
+                count_row = conn.execute(
+                    f"""
+                    SELECT COUNT(DISTINCT t.id) AS n
+                    FROM trade_intel_trades t
+                    LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id{join_sql}
+                    WHERE t.season = %s {sf_clause}{lf_clause}{filter_sql}
+                    """,
+                    count_params,
+                ).fetchone()
+                total = int(count_row["n"]) if count_row else 0
+                _TRADE_DB_COUNT_CACHE[_tdb_key] = (_tdb_now, total)
+                # Bound the cache: drop oldest entries past 200 keys.
+                if len(_TRADE_DB_COUNT_CACHE) > 200:
+                    for _k in list(_TRADE_DB_COUNT_CACHE)[:50]:
+                        del _TRADE_DB_COUNT_CACHE[_k]
 
             row_params = [season] + sf_p + lf_p + filter_params + [limit + 1, page * limit]
             trade_rows = conn.execute(
