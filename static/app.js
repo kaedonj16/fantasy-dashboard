@@ -18596,17 +18596,49 @@ function _tmLineupHtml(lineup) {
     `<strong>${_tmPoints(p.points)}</strong></div>`).join('');
 }
 
+function _tmMatchupDetailHtml(w) {
+  const left = Array.isArray(w.team_lineup) ? w.team_lineup : [];
+  const right = Array.isArray(w.opponent_lineup) ? w.opponent_lineup : [];
+  if (!left.length && !right.length) return '<div class="team-modal-empty">Historical lineup unavailable</div>';
+  const count = Math.max(left.length, right.length);
+  let rows = '';
+  for (let i = 0; i < count; i++) {
+    const a = left[i] || {}, b = right[i] || {};
+    const av = a.points == null ? null : Number(a.points), bv = b.points == null ? null : Number(b.points);
+    const leadA = av != null && bv != null && av > bv ? ' tm-mu-h-lead' : '';
+    const leadB = av != null && bv != null && bv > av ? ' tm-mu-h-lead' : '';
+    const player = (p, side, lead) => `<span class="tm-mu-h tm-mu-h-${side}${lead}"><strong class="tm-mu-hpts">${_tmPoints(p.points)}</strong><span class="tm-mu-hname${p.player_id ? ' player-clickable' : ''}"${p.player_id ? ` data-player-id="${_tmEsc(p.player_id)}" data-player-name="${_tmEsc(p.name)}"` : ''}>${_tmEsc(p.name || '—')}</span></span>`;
+    rows += `<div class="tm-mu-hrow">${player(a, 'left', leadA)}<span class="tm-mu-h-slot">${_tmEsc(a.slot || b.slot || a.position || b.position || '—')}</span>${player(b, 'right', leadB)}</div>`;
+  }
+  return `<div class="tm-mu"><div class="tm-mu-head"><span class="tm-mu-team"><span class="tm-mu-tname">${_tmEsc(w.team && w.team.team_name || 'Team')}</span><strong class="tm-mu-tscore">${_tmPoints(w.team_points)}</strong></span><span class="tm-mu-tag">${_tmStateLabel(w.state)}</span><span class="tm-mu-team tm-mu-team-r"><strong class="tm-mu-tscore">${_tmPoints(w.opponent_points)}</strong><span class="tm-mu-tname">${_tmEsc(w.opponent && w.opponent.team_name || 'Opponent')}</span></span></div><div class="tm-mu-grid">${rows}</div></div>`;
+}
+
+function _tmAvatar(team) {
+  const name = (team && team.team_name) || 'Opponent';
+  const initial = _tmEsc(name.trim().charAt(0).toUpperCase() || '?');
+  if (team && team.avatar) return `<img class="tm-sched-avatar" src="${_tmEsc(team.avatar)}" alt="" onerror="this.hidden=true;this.nextElementSibling.hidden=false"><span class="tm-sched-avatar" hidden>${initial}</span>`;
+  return `<span class="tm-sched-avatar">${initial}</span>`;
+}
+
+function _tmStateLabel(state) {
+  return ({final: 'Final', live: 'Live', scheduled: 'Upcoming', unavailable: 'Unavailable', unpublished: 'Opponent TBD'})[state] || 'Unavailable';
+}
+
 function _tmScheduleRow(w) {
-  if (!w.published) return `<div class="tm-sched-item"><div class="tm-sched-row"><span>Week ${w.week}</span><span class="tm-sched-status">Not published</span></div></div>`;
+  if (!w.published) return `<div class="tm-sched-item" data-week="${w.week}"><div class="tm-sched-row tm-sched-row-upcoming"><span class="tm-sched-week">W${w.week}</span><span class="tm-sched-opp">${_tmAvatar(null)}<span class="tm-sched-opp-name">Opponent TBD</span></span><span class="tm-sched-result tm-sched-upcoming">Upcoming</span><span class="tm-sched-chevron" aria-hidden="true">›</span></div></div>`;
   const opp = w.opponent;
-  const opponent = w.is_bye ? 'Bye' : (opp ? _tmEsc(opp.team_name) : 'Opponent unavailable');
-  const score = (w.team_points != null || w.opponent_points != null) ? `${_tmPoints(w.team_points)} – ${_tmPoints(w.opponent_points)}` : '—';
-  const result = w.result ? `<span class="tm-sched-result tm-sched-${w.result.toLowerCase()}">${w.result}</span>` : '';
+  const opponent = w.is_bye ? 'Bye' : (opp ? _tmEsc(opp.team_name) : 'Opponent TBD');
+  const started = w.state === 'live' || w.state === 'final';
+  const score = started ? `<span class="tm-sched-score">${_tmPoints(w.team_points)} <span class="tm-sched-dash">–</span> ${_tmPoints(w.opponent_points)}</span>`
+    : (w.team_projection != null && w.opponent_projection != null ? `<span class="tm-sched-score tm-sched-proj" title="Projection">Proj ${_tmPoints(w.team_projection)} – ${_tmPoints(w.opponent_projection)}</span>` : '');
+  const stateLabel = _tmStateLabel(w.state);
+  const badge = w.result ? `<span class="tm-sched-result tm-sched-${w.result.toLowerCase()}">${w.result}</span>`
+    : `<span class="tm-sched-result tm-sched-${w.state === 'live' ? 'live' : 'upcoming'}">${stateLabel}</span>`;
   const clickable = !w.is_bye && !!opp;
   return `<div class="tm-sched-item" data-week="${w.week}">` +
-    `<button type="button" class="tm-sched-row" aria-expanded="false" ${clickable ? `onclick="tmToggleMatchup(this, ${w.week})"` : 'disabled'}>` +
-    `<span>Week ${w.week}</span><span class="tm-sched-opp">${opponent}</span><span class="tm-sched-score">${score}</span>${result}` +
-    `<span class="tm-sched-status">${_tmEsc(w.state)}</span></button>` +
+    `<button type="button" class="tm-sched-row${w.state === 'scheduled' ? ' tm-sched-row-upcoming' : ''}" aria-expanded="false" ${clickable ? `onclick="tmToggleMatchup(this, ${w.week})"` : 'disabled'}>` +
+    `<span class="tm-sched-week">W${w.week}</span><span class="tm-sched-opp"><span class="tm-sched-vs">vs</span>${_tmAvatar(opp)}<span class="tm-sched-opp-name">${opponent}</span></span>${score}${badge}` +
+    `<span class="tm-sched-chevron" aria-hidden="true">›</span></button>` +
     `<div class="tm-sched-detail" hidden></div></div>`;
 }
 
@@ -18615,7 +18647,7 @@ function _tmBuildScheduleHtml(payload, data) {
   const tiles = `<div class="tm-ages-tiles"><div class="tm-stat-tile"><div class="tm-stat-tile-value">${_tmEsc(data.record || '—')}</div><div class="tm-stat-tile-label">Record</div></div>` +
     `<div class="tm-stat-tile"><div class="tm-stat-tile-value">${_tmPoints(data.points_for)}</div><div class="tm-stat-tile-label">Points For</div></div>` +
     `<div class="tm-stat-tile"><div class="tm-stat-tile-value">${_tmPoints(data.points_against)}</div><div class="tm-stat-tile-label">Points Against</div></div></div>`;
-  return tiles + `<div class="team-modal-section"><h3>Season Schedule</h3><div class="tm-sched-hint">Lineups load from the provider when a published matchup is expanded.</div><div class="tm-sched-list">${weeks.map(_tmScheduleRow).join('')}</div></div>`;
+  return tiles + `<div class="team-modal-section"><h3>Season Schedule</h3><div class="tm-sched-hint">Select a matchup to view lineups and scores.</div><div class="tm-sched-list">${weeks.map(_tmScheduleRow).join('')}</div></div>`;
 }
 
 async function tmLoadSchedule(force) {
@@ -18641,6 +18673,7 @@ async function tmToggleMatchup(btn, week) {
   const item = btn.closest('.tm-sched-item'); const detail = item && item.querySelector('.tm-sched-detail');
   if (!detail) return;
   const opening = detail.hidden; detail.hidden = !opening; btn.setAttribute('aria-expanded', String(opening));
+  btn.classList.toggle('tm-sched-row-open', opening);
   if (!opening || detail.dataset.loaded) return;
   const rid = window._tmRosterId; detail.innerHTML = '<div class="team-modal-loading"><div class="loading-spinner"></div></div>';
   try {
@@ -18650,11 +18683,22 @@ async function tmToggleMatchup(btn, week) {
     if (String(window._tmRosterId) !== String(rid) || !detail.isConnected) return;
     const w = (payload.weeks || [])[0] || {};
     detail.dataset.loaded = 'true';
-    detail.innerHTML = `<div class="tm-lineup-side"><h4>${_tmEsc(w.team && w.team.team_name || 'Team')}</h4>${_tmLineupHtml(w.team_lineup)}</div>` +
-      `<div class="tm-lineup-side"><h4>${_tmEsc(w.opponent && w.opponent.team_name || 'Opponent')}</h4>${_tmLineupHtml(w.opponent_lineup)}</div>` +
+    detail.innerHTML = _tmMatchupDetailHtml(w) +
       (w.team_adjustment != null ? `<div class="tm-score-adjustment">Provider adjustment: ${_tmPoints(w.team_adjustment)}</div>` : '');
     normalizeClickableAccessibility(detail);
-  } catch (e) { if (detail.isConnected) detail.innerHTML = '<div class="team-modal-error">Lineup unavailable</div>'; }
+  } catch (e) { if (detail.isConnected) detail.innerHTML = `<div class="team-modal-error">Lineup unavailable <button type="button" onclick="tmRetryMatchup(this, ${week})">Retry</button></div>`; }
+}
+
+function tmRetryMatchup(retry, week) {
+  const item = retry.closest('.tm-sched-item');
+  const detail = item && item.querySelector('.tm-sched-detail');
+  const row = item && item.querySelector('.tm-sched-row');
+  if (!detail || !row) return;
+  delete detail.dataset.loaded;
+  detail.hidden = true;
+  row.setAttribute('aria-expanded', 'false');
+  row.classList.remove('tm-sched-row-open');
+  tmToggleMatchup(row, week);
 }
 
 function renderTeamDetails(data) {
