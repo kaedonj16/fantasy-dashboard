@@ -775,3 +775,46 @@ def test_backtest_reports_both_precisions():
     assert "precision_useful" in rep["methods"]["model"]
     assert "rest_of_season_role_retention" in rep["methods"]["model"]
     assert "median_lead_time_games" in rep["methods"]["model"]
+
+
+def _uc_signal(key, baseline=None, recent=3.0, points=12.0):
+    return {key: {"available": True, "baseline": baseline, "recent": recent,
+                  "delta": None, "points": points}}
+
+
+def test_weekly_signal_labels_cover_all_engine_signals():
+    # The API's usage_comparison labels must never fall back to raw metric keys.
+    from dashboard_services import breakout_api as ba
+    for key in wb._SIGNAL_LABELS:
+        label = ba._WEEKLY_SIGNAL_LABELS.get(key)
+        assert label and label != key, f"missing human label for {key}"
+        assert ba._WEEKLY_SIGNAL_UNITS.get(key) == wb._SIGNAL_LABELS[key][1]
+
+
+def test_high_value_opportunities_renders_human_label():
+    # Regression: the board rendered "Initial role: 3.0 high_value_opportunities_pg".
+    from dashboard_services.breakout_api import _weekly_usage_comparison
+    rows = _weekly_usage_comparison({"signals": _uc_signal("high_value_opportunities_pg")})
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["label"] == "Red-zone opportunities/game"
+    assert row["unit"] == ""
+    assert row["baseline"] is None and row["recent"] == 3.0
+
+
+def test_newer_engine_signals_have_human_labels():
+    # routes_pg, route_participation and dropback_share were also missing from
+    # the API label map and fell back to raw keys.
+    from dashboard_services.breakout_api import _weekly_usage_comparison
+    signals = {}
+    for key in ("routes_pg", "route_participation", "dropback_share"):
+        signals.update(_uc_signal(key, baseline=10.0, recent=20.0))
+    rows = _weekly_usage_comparison({"signals": signals})
+    by_key = {r["key"]: r for r in rows}
+    assert by_key["routes_pg"]["label"] == "Routes/game"
+    assert by_key["route_participation"]["label"] == "Route participation"
+    assert by_key["route_participation"]["unit"] == "%"
+    assert by_key["dropback_share"]["label"] == "Dropback share"
+    assert by_key["dropback_share"]["unit"] == "%"
+    for r in rows:
+        assert r["label"] != r["key"]
