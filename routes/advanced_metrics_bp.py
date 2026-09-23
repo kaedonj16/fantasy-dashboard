@@ -24,6 +24,21 @@ _BREAKOUT_CACHE_TS = 0.0
 
 # ── Lazy shims to app.py internals (resolved at request time) ─────────────────
 
+
+def _request_has_premium(season=None) -> bool:
+    """Per-user PRO check for advanced-metrics API calls. Fail closed."""
+    from flask import session
+    from dashboard_services.subscriptions import has_premium_for_viewer
+    try:
+        return bool(has_premium_for_viewer(
+            session.get("viewer_username"), session.get("viewer_user_id"),
+            request.args.get("league_id"), request.args.get("platform", "sleeper"),
+            season,
+        ))
+    except Exception:
+        logger.debug("advanced-metrics premium check failed", exc_info=True)
+        return False
+
 def get_league_ctx_from_cache(*a, **k):
     from app import get_league_ctx_from_cache as _fn
     return _fn(*a, **k)
@@ -46,7 +61,7 @@ def api_advanced_metrics_leaderboard():
         get_adv_weekly_range_leaderboard, adv_weekly_metric_supported,
         get_value_leaderboard, VALUE_METRICS,
         LEADERBOARD_METRICS, _WEEKLY_METRICS,
-        PREMIUM_METRICS, premium_metrics_exposed,
+        PREMIUM_METRICS, premium_metrics_exposed, PRO_METRICS,
         parse_season_list,
     )
 
@@ -56,6 +71,9 @@ def api_advanced_metrics_leaderboard():
     # Premium (PFF) metrics are not displayable publicly.
     if metric in PREMIUM_METRICS and not premium_metrics_exposed():
         return jsonify({"error": "metric not available"}), 403
+    # PRO intelligence metrics require a per-user subscription.
+    if metric in PRO_METRICS and not _request_has_premium():
+        return jsonify({"error": "pro_only"}), 403
     position = (request.args.get("position") or "").strip().upper() or None
     season_str = (request.args.get("season") or "").strip()
     selected_seasons = parse_season_list(season_str)
@@ -263,6 +281,11 @@ def api_advanced_metrics_movers():
     season_str = (request.args.get("season") or "").strip()
     season = int(season_str) if season_str.isdigit() else None
 
+    # The movers strip is PRO intelligence (trend + efficiency outliers).
+    if not _request_has_premium(season):
+        return jsonify({"error": "pro_only", "heating": [], "cooling": [],
+                        "outliers": [], "note": ""}), 403
+
     def _default_min_vol(metric):
         spec = LEADERBOARD_METRICS.get(metric) or {}
         mv = spec.get("min_vol") or {}
@@ -337,6 +360,7 @@ def api_advanced_metrics_config():
     """
     from data_building.advanced_metrics import LEADERBOARD_METRICS, ADV_WEEKLY_METRIC_KEYS
     from data_building.advanced_metrics import _WEEKLY_METRICS  # noqa: F401 -- weekly_capable check
+    from data_building.advanced_metrics import PRO_METRICS
     weekly_keys = {*_WEEKLY_METRICS.keys(), *ADV_WEEKLY_METRIC_KEYS}
     out = {}
     for key, spec in LEADERBOARD_METRICS.items():
@@ -353,6 +377,7 @@ def api_advanced_metrics_config():
             "integer":     bool(spec.get("integer")),
             "weeklyCapable": key in weekly_keys,
             "desc":        spec.get("desc", ""),
+            "pro":         key in PRO_METRICS,
         }
     resp = jsonify({"metrics": out})
     resp.headers["Cache-Control"] = "public, max-age=3600"

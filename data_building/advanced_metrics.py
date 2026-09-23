@@ -50,6 +50,20 @@ def premium_metrics_exposed() -> bool:
     return os.getenv("EXPOSE_PREMIUM_METRICS", "").strip().lower() in ("1", "true", "yes")
 
 
+# Derived intelligence metrics gated behind a per-user PRO subscription.
+# Raw volume/share/efficiency metrics stay free for everyone, as does
+# expected_ppr_per_game (it anchors the free Key Metrics / Start-Sit views).
+# The proprietary answers built on top (over-expected, trends, consistency,
+# matchup intel) are PRO. Enforced server-side in
+# routes/advanced_metrics_bp.py (leaderboard + movers 403) and reflected in
+# the page picker/pills.
+PRO_METRICS = frozenset({
+    "ppr_over_expected_per_game",
+    "wopr", "opportunity_trend", "xfp_trend",
+    "boom_rate", "bust_rate", "schedule_ease",
+})
+
+
 def strip_premium_metrics(metrics: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     """Remove premium (PFF) columns from a metrics dict for public responses.
 
@@ -936,13 +950,22 @@ def _recent_vs_season_ratio(vals: List[float], recent_n: int = 3) -> Optional[fl
 
     Positive = trending up. E.g. 0.15 means the recent stretch is 15% above
     the season average.
+
+    Returns None when the recent window covers the whole sample
+    (len(vals) <= recent_n): the ratio is then mathematically forced to
+    exactly 0.0 for every player (e.g. weeks 1-3 of a season), which is
+    worse than no data at all.
     """
     if not vals:
+        return None
+    if len(vals) <= recent_n:
+        # The "recent" window IS the season sample; recent_avg == season_avg
+        # would force a meaningless 0.0. Wait for a real sample instead.
         return None
     season_avg = sum(vals) / len(vals)
     if season_avg == 0:
         return None
-    recent = vals[-recent_n:] if len(vals) >= recent_n else vals
+    recent = vals[-recent_n:]
     recent_avg = sum(recent) / len(recent)
     return recent_avg / season_avg - 1.0
 

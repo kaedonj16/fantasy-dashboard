@@ -1,4 +1,6 @@
 """Focused contracts for Advanced Metrics preset and aggregation metadata."""
+import pytest
+
 from dashboard_services.pages.advanced_metrics_page import ADVANCED_METRIC_PRESETS
 from dashboard_services.pages.advanced_metrics_page import _AM_JS
 from data_building.advanced_metrics import (
@@ -195,3 +197,168 @@ def test_movers_endpoint_shape():
     assert '"heating"' in source and '"cooling"' in source and '"outliers"' in source
     assert "opportunity_trend" in source
     assert "ppr_over_expected_per_game" in source
+
+
+def test_pro_metrics_are_valid_leaderboard_keys():
+    from data_building.advanced_metrics import PRO_METRICS
+    assert isinstance(PRO_METRICS, frozenset) and len(PRO_METRICS) >= 5
+    assert all(key in LEADERBOARD_METRICS for key in PRO_METRICS)
+
+
+def test_pro_presets_are_exactly_the_advanced_four():
+    # Product scope: "the data is free, the answers are PRO." Key Metrics
+    # and Start / Sit stay free (their primary, expected_ppr_per_game, is
+    # free); the four advanced decision presets are PRO-locked.
+    from data_building.advanced_metrics import PRO_METRICS
+    decision = {k: p for k, p in ADVANCED_METRIC_PRESETS.items() if p.get("kind") == "decision"}
+    assert len(decision) == 6
+    locked = {pid for pid, p in decision.items() if p["primary"] in PRO_METRICS}
+    assert locked == {"buy_low_sell_high", "waiver_wire", "breakout_check", "ceiling_dfs"}
+    assert "expected_ppr_per_game" not in PRO_METRICS
+
+
+def test_free_page_locks_pro_presets_and_strips_pro_metrics():
+    from dashboard_services.pages.advanced_metrics_page import build_advanced_metrics_body
+    html = build_advanced_metrics_body(False, LEADERBOARD_METRICS)
+    # The four advanced presets are locked; Key Metrics and Start / Sit are not.
+    for pid in ("buy_low_sell_high", "waiver_wire", "breakout_check", "ceiling_dfs"):
+        assert 'data-preset="%s" data-locked="1"' % pid in html, pid
+    assert 'data-preset="key_metrics" data-locked="0"' in html
+    assert 'data-preset="start_sit" data-locked="0"' in html
+    assert "🔒" in html
+    # PRO metrics are not offered in the free picker; expected_ppr_per_game
+    # (the free default view's anchor) is.
+    assert 'value="expected_ppr_per_game"' in html
+    assert 'value="ppr_over_expected_per_game"' not in html
+    assert 'value="opportunity_trend"' not in html
+    # Raw metrics stay free.
+    assert 'value="opportunity_share"' in html
+    assert 'value="target_share"' in html
+
+
+def test_premium_page_has_no_locks_and_full_picker():
+    from dashboard_services.pages.advanced_metrics_page import build_advanced_metrics_body
+    html = build_advanced_metrics_body(True, LEADERBOARD_METRICS)
+    assert 'data-locked="1"' not in html
+    assert 'value="expected_ppr_per_game"' in html
+
+
+def test_pro_gating_is_wired_in_js():
+    assert "cfg.proPresets" in _AM_JS
+    assert "_isProPreset" in _AM_JS
+    assert "showPaywall('advanced-metrics-'" in _AM_JS
+    # Movers strip hidden for free users.
+    assert "host.style.display = 'none'; return;" in _AM_JS
+    # 403 pro_only opens the paywall and falls back to a free metric.
+    assert "_proOnly" in _AM_JS
+    assert "state.metric = 'opportunity_share'" in _AM_JS
+
+
+def test_config_marks_pro_metrics(offline_client):
+    resp = offline_client.get("/api/advanced-metrics/config")
+    assert resp.status_code == 200
+    metrics = resp.get_json()["metrics"]
+    # expected_ppr_per_game anchors the free Key Metrics / Start-Sit views.
+    assert metrics["expected_ppr_per_game"]["pro"] is False
+    assert metrics["ppr_over_expected_per_game"]["pro"] is True
+    assert metrics["opportunity_trend"]["pro"] is True
+    assert metrics["opportunity_share"]["pro"] is False
+
+
+def test_leaderboard_pro_metric_403_for_non_premium(offline_client, monkeypatch):
+    import routes.advanced_metrics_bp as bp
+    monkeypatch.setattr(bp, "_request_has_premium", lambda season=None: False)
+    resp = offline_client.get(
+        "/api/advanced-metrics/leaderboard?metric=ppr_over_expected_per_game&season=2026")
+    assert resp.status_code == 403
+    assert resp.get_json()["error"] == "pro_only"
+
+
+def test_leaderboard_expected_ppr_is_free_for_non_premium(offline_client, monkeypatch):
+    # The flagship metric stays free: it anchors Key Metrics / Start-Sit.
+    import routes.advanced_metrics_bp as bp
+    import data_building.advanced_metrics as am
+    monkeypatch.setattr(bp, "_request_has_premium", lambda season=None: False)
+    monkeypatch.setattr(am, "get_metric_leaderboard", lambda *a, **k: [])
+    monkeypatch.setattr(am, "get_value_leaderboard", lambda *a, **k: [])
+    resp = offline_client.get(
+        "/api/advanced-metrics/leaderboard?metric=expected_ppr_per_game&season=2026")
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+
+
+def test_leaderboard_free_metric_ok_for_non_premium(offline_client, monkeypatch):
+    import routes.advanced_metrics_bp as bp
+    import data_building.advanced_metrics as am
+    monkeypatch.setattr(bp, "_request_has_premium", lambda season=None: False)
+    monkeypatch.setattr(am, "get_metric_leaderboard", lambda *a, **k: [])
+    monkeypatch.setattr(am, "get_value_leaderboard", lambda *a, **k: [])
+    resp = offline_client.get(
+        "/api/advanced-metrics/leaderboard?metric=opportunity_share&season=2026")
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+
+
+def test_leaderboard_pro_metric_ok_for_premium(offline_client, monkeypatch):
+    import routes.advanced_metrics_bp as bp
+    import data_building.advanced_metrics as am
+    monkeypatch.setattr(bp, "_request_has_premium", lambda season=None: True)
+    monkeypatch.setattr(am, "get_metric_leaderboard", lambda *a, **k: [])
+    monkeypatch.setattr(am, "get_value_leaderboard", lambda *a, **k: [])
+    resp = offline_client.get(
+        "/api/advanced-metrics/leaderboard?metric=ppr_over_expected_per_game&season=2026")
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+
+
+def test_movers_endpoint_is_pro_only(offline_client, monkeypatch):
+    import routes.advanced_metrics_bp as bp
+    monkeypatch.setattr(bp, "_request_has_premium", lambda season=None: False)
+    resp = offline_client.get("/api/advanced-metrics/movers?season=2026")
+    assert resp.status_code == 403
+    assert resp.get_json()["error"] == "pro_only"
+
+
+# --- Degenerate trend windows: weeks 1-3 must not render a false 0.0 flat ---
+
+def test_recent_vs_season_delta_is_none_for_degenerate_windows():
+    from data_building.weekly_metrics import _recent_vs_season_delta
+    assert _recent_vs_season_delta([]) is None
+    assert _recent_vs_season_delta([4.0]) is None
+    assert _recent_vs_season_delta([4.0, 7.0]) is None
+    assert _recent_vs_season_delta([4.0, 7.0, 5.0]) is None
+
+
+def test_recent_vs_season_delta_computes_from_week_four():
+    from data_building.weekly_metrics import _recent_vs_season_delta
+    # vals [2,2,2,8]: season avg 3.5, last-3 avg 4.0 -> +0.5
+    assert _recent_vs_season_delta([2.0, 2.0, 2.0, 8.0]) == 0.5
+    # declining usage: season avg 6.5, last-3 avg 6.0 -> -0.5
+    assert _recent_vs_season_delta([8.0, 8.0, 8.0, 2.0]) == -0.5
+
+
+def test_recent_vs_season_ratio_is_none_for_degenerate_windows():
+    from data_building.advanced_metrics import _recent_vs_season_ratio
+    assert _recent_vs_season_ratio([]) is None
+    assert _recent_vs_season_ratio([1.0, 2.0]) is None
+    assert _recent_vs_season_ratio([1.0, 2.0, 3.0]) is None
+    # 4+ samples compute normally: last-3 avg 3.0 vs season avg 2.25 -> +1/3
+    assert _recent_vs_season_ratio([0.0, 2.0, 3.0, 4.0]) == pytest.approx(1 / 3)
+
+
+# --- PRO-locked extra columns render a lock, not blank cells ---
+
+def test_pro_locked_column_js_wiring():
+    # 403 on an extra-metric fetch marks the column proLocked; the column
+    # renders lock cells that open the paywall on tap.
+    assert "proLocked" in _AM_JS
+    assert "data-pro-metric" in _AM_JS
+    assert "showPaywall('advanced-metrics-metric-' +" in _AM_JS
+
+
+def test_page_metrics_config_marks_pro_flag():
+    from dashboard_services.pages.advanced_metrics_page import build_advanced_metrics_body
+    # The premium page includes every metric, each carrying its pro flag.
+    html = build_advanced_metrics_body(True, LEADERBOARD_METRICS)
+    assert '"pro": true' in html
+    assert '"pro": false' in html
+    # The free page strips PRO metrics from the picker config entirely.
+    free_html = build_advanced_metrics_body(False, LEADERBOARD_METRICS)
+    assert '"pro": true' not in free_html
