@@ -207,14 +207,11 @@ def build_activity_body(ctx: dict) -> str:
         return f"{bucket_label} • {owner_txt}" if bucket_label else owner_txt
 
     def verdict_from_net(net_total: float, baseline: float = 300.0) -> tuple[str, str]:
-        # Dynamic fair band that scales with trade size - matches /api/trade-eval logic.
-        if baseline >= 600:
-            fair_pct = 0.05
-        elif baseline >= 300:
-            fair_pct = 0.07
-        else:
-            fair_pct = 0.10
-        fair = max(baseline * fair_pct, 25.0)
+        # Shared fair band (utils.trade_value.fair_value_band) — same "fair"
+        # definition as /api/trade-eval so surfaces can't contradict it.
+        # Strong/slight gradation at 2x the band is layered on top.
+        from utils.trade_value import fair_value_band as _fair_value_band
+        fair = _fair_value_band(baseline)
         abs_net = abs(net_total)
         if abs_net <= fair:
             return "bract-verdict-even", "Fair"

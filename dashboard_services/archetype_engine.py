@@ -438,6 +438,37 @@ def _wp_delta(
     return _win_prob(new_val, league_avg) - _win_prob(viewer_val, league_avg)
 
 
+def _norm_ppf(p: float) -> float:
+    """Inverse standard-normal CDF (Acklam's rational approximation, ~1e-9)."""
+    p = min(max(p, 1e-12), 1.0 - 1e-12)
+    # Coefficients for the rational approximations.
+    a = (-3.969683028665376e+01, 2.209460984245205e+02, -2.759285104469687e+02,
+         1.383577518672690e+02, -3.066479806614716e+01, 2.506628277459239e+00)
+    b = (-5.447609879822406e+01, 1.615858368580409e+02, -1.556989798598866e+02,
+         6.680131188771972e+01, -1.328068155288572e+01)
+    c = (-7.784894002430293e-03, -3.223964580411365e-01, -2.400758277161838e+00,
+         -2.549732539343734e+00, 4.374664141464968e+00, 2.938163982698783e+00)
+    d = (7.784695709041462e-03, 3.224671290700398e-01, 2.445134137142996e+00,
+         3.754408661907416e+00)
+
+    def _poly(coefs, x):
+        acc = 0.0
+        for cf in coefs:
+            acc = acc * x + cf
+        return acc
+
+    plow, phigh = 0.02425, 1.0 - 0.02425
+    if p < plow:
+        q = math.sqrt(-2.0 * math.log(p))
+        return _poly(c, q) / (_poly(d, q) * q + 1.0)
+    if p > phigh:
+        q = math.sqrt(-2.0 * math.log(1.0 - p))
+        return -(_poly(c, q) / (_poly(d, q) * q + 1.0))
+    q = p - 0.5
+    r = q * q
+    return _poly(a, r) * q / (_poly(b, r) * r + 1.0)
+
+
 def _playoff_odds(
     weekly_wp: float,
     num_weeks: int = 14,
@@ -446,14 +477,34 @@ def _playoff_odds(
 ) -> float:
     """Approximate seasonal playoff probability from weekly win rate.
 
-    Uses a normal approximation of the binomial win-count distribution.
-    The cutoff is the win total that ranks a team at the playoff bubble
-    in a balanced league.
+    Normal approximation of the binomial win-count distribution. The bubble
+    is the expected playoff-spots-th-highest win total in a *uniform* league
+    (every team a true 0.500 team — the league mean is exactly 0.500 since
+    each game produces one win and one loss), via Blom's approximation of
+    normal order statistics. E.g. 10 teams / 4 spots / 14 weeks gives a
+    bubble of ~7.7 wins, so an exactly-average team gets ~35% (true uniform
+    answer: 40%); the old heuristic cutoff of 8.4 gave a pessimistic ~23%.
+
+    This is a rough fallback: it ignores team-strength spread, schedule
+    imbalance, and points-for tiebreakers. Callers prefer the real Monte
+    Carlo (``simulate_playoff_odds``) whenever sim state is available; this
+    is used only for trade-suggestion deltas, where the *difference* between
+    two calls matters more than the absolute level.
     """
-    exp_wins = weekly_wp * num_weeks
-    std_wins = math.sqrt(max(num_weeks * weekly_wp * (1.0 - weekly_wp), 0.01))
-    cutoff   = num_weeks * (num_teams - playoff_spots) / max(num_teams, 1)
-    z        = (exp_wins - cutoff) / std_wins
+    n = max(int(num_teams or 10), 2)
+    k = int(playoff_spots or 0)
+    if k >= n:
+        return 1.0
+    if k <= 0:
+        return 0.0
+    p = min(max(float(weekly_wp or 0.0), 0.0), 1.0)
+    w = max(int(num_weeks or 14), 1)
+    # Bubble = (n-k+1)-th smallest of n ~ N(0.5*w, w/4) win totals.
+    blom_p = ((n - k + 1) - 0.375) / (n + 0.25)
+    bubble = 0.5 * w + _norm_ppf(blom_p) * math.sqrt(w * 0.25)
+    exp_wins = p * w
+    std_wins = math.sqrt(max(w * p * (1.0 - p), 0.01))
+    z = (exp_wins - bubble) / std_wins
     return 0.5 * (1.0 + math.erf(z / math.sqrt(2)))
 
 

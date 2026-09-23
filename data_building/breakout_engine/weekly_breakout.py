@@ -43,8 +43,8 @@ _POSITIONS = ("QB", "RB", "WR", "TE")
 
 # Trend window shape. "recent" is the latest 1-2 completed games; "baseline" the
 # 3-4 immediately before it. The two never overlap.
-RECENT_MAX = 2
-BASELINE_MAX = 4
+RECENT_MAX = 3
+BASELINE_MAX = 17
 
 # Per-position "full workload" anchors used to turn raw per-game counts into a
 # 0-100 growth signal. These are typical every-down-starter per-game volumes, not
@@ -64,6 +64,8 @@ EMERGING_MIN_BASELINE_GAMES = 2
 # numbers: one game can only be a watchlist; two held games can be provisional.
 INITIAL_ONE_GAME_CAP = 35.0
 INITIAL_PERSISTENT_CAP = 45.0
+INITIAL_PERSISTENT_CAP_STEP = 5.0   # extra headroom per independent supporting signal
+INITIAL_PERSISTENT_CAP_MAX = 60.0   # evidence-scaled ceiling for multi-game initial roles
 INITIAL_ROLE_DISCOVERY_MIN = 35.0
 MIN_SUPPORTING_SIGNALS = 2
 ROLE_QUALITY_FLOORS = {
@@ -119,6 +121,17 @@ def _mean_present(rows: Sequence[Dict], key: str) -> Tuple[Optional[float], int]
 
 def _clamp(v: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, v))
+
+
+def _initial_persistent_cap(supporting_signals: int) -> float:
+    """Evidence-scaled ceiling for multi-game initial-role scores.
+
+    A fixed 45 pinned every rookie at exactly the same number; stronger
+    independent evidence now earns headroom instead of all provisional
+    breakouts tying at the cap."""
+    steps = max(0, int(supporting_signals or 0))
+    return min(INITIAL_PERSISTENT_CAP_MAX,
+               INITIAL_PERSISTENT_CAP + INITIAL_PERSISTENT_CAP_STEP * steps)
 
 
 def _round(v: Optional[float], n: int = 1) -> Optional[float]:
@@ -177,13 +190,13 @@ def split_windows(
     """Split a player's active weekly rows (oldest first) into non-overlapping
     recent and baseline windows.
 
-    Sizing keeps momentum meaningful with small samples - the old
-    recent-3-vs-season-average comparison put the same games on both sides and
-    reported zero momentum through three games:
+    The baseline is the full season to date (season-long culmination); the
+    recent window is the past few weeks so emerging role changes surface
+    quickly without single-game noise dominating:
 
         1 game  -> recent=1, baseline=0   (provisional; caller supplies a prior baseline)
-        2-3     -> recent=1, baseline=rest (1 vs 1, 1 vs 2)
-        4+      -> recent=2, baseline=up to 4 preceding
+        2-4     -> recent=2, baseline=rest (season to date before recent)
+        5+      -> recent=3, baseline=rest of season before recent
     """
     rows = list(active_rows)
     n = len(rows)
@@ -191,11 +204,11 @@ def split_windows(
         return [], []
     if n == 1:
         return rows[-1:], []
-    if n <= 3:
-        return rows[-1:], rows[:-1][-baseline_max:]
-    r = min(recent_max, 2)
+    if n <= 4:
+        return rows[-2:], rows[:-2]
+    r = min(recent_max, 3)
     recent = rows[n - r:]
-    baseline = rows[max(0, n - r - baseline_max): n - r]
+    baseline = rows[: n - r]
     return recent, baseline
 
 
@@ -284,6 +297,17 @@ def _weighted_score(signals: Dict[str, Dict[str, Any]], weights: Dict[str, float
                for key in weights)
 
 
+def _blend(parts: Sequence[Tuple[float, Optional[float]]]) -> float:
+    """Weighted blend that skips unknown (None) components and renormalizes the
+    remaining weights to 1.0, so missing evidence is simply absent rather than
+    a constant middle-drag on every score."""
+    known = [(w, v) for w, v in parts if v is not None]
+    total = sum(w for w, _ in known)
+    if not known or total <= 0:
+        return 0.0
+    return sum(w / total * float(v) for w, v in known)
+
+
 def _absolute_role_score(position: str, signals: Dict[str, Dict[str, Any]]) -> float:
     """Fantasy relevance of the resulting role, independent of role change."""
     floors = ROLE_QUALITY_FLOORS.get(position, {})
@@ -361,6 +385,30 @@ def _pg(total: Optional[float], games: int) -> Optional[float]:
     return total / games
 
 
+def _rz_opportunities_pg(rows: List[Dict]) -> Optional[float]:
+    """Red-zone opportunities per game.
+
+    The weekly-metrics tables carry ``rz_targets``/``rz_carries`` rather than a
+    precomputed ``red_zone_opportunities`` column, so sum the parts per game.
+    A row that already carries ``red_zone_opportunities`` (e.g. backtest rows)
+    keeps its own value. Missing in every row means unknown, not zero.
+    """
+    per_game = []
+    for r in rows:
+        direct = _num(r.get("red_zone_opportunities"))
+        if direct is not None:
+            per_game.append(direct)
+            continue
+        t = _num(r.get("rz_targets"))
+        c = _num(r.get("rz_carries"))
+        if t is None and c is None:
+            continue
+        per_game.append((t or 0.0) + (c or 0.0))
+    if not per_game:
+        return None
+    return sum(per_game) / len(per_game)
+
+
 def _position_signals(
     position: str,
     recent: List[Dict],
@@ -405,8 +453,8 @@ def _position_signals(
                         if player_dropbacks_r is not None and dropbacks_r else None)
     dropback_share_b = (player_dropbacks_b / dropbacks_b * 100.0
                         if player_dropbacks_b is not None and dropbacks_b else None)
-    rz_r = _count_pg(recent, "red_zone_opportunities")
-    rz_b = _count_pg(baseline, "red_zone_opportunities")
+    rz_r = _rz_opportunities_pg(recent)
+    rz_b = _rz_opportunities_pg(baseline)
 
     signals: Dict[str, Dict[str, Any]] = {}
     snap = _share_growth(snap_b, snap_r, allow_initial=initial_role)
@@ -471,10 +519,13 @@ def _position_signals(
 # =============================================================================
 
 def _sample_factor(recent_games: int, baseline_games: int) -> float:
-    """0-1 from total games observed. Provisional 1-game samples land low."""
+    """0-1 from total games observed. Provisional 1-game samples land low; the
+    table keeps gaining through a dozen games instead of saturating at 5 so
+    confidence differentiates veterans from thin samples."""
     total = recent_games + baseline_games
-    table = {0: 0.0, 1: 0.30, 2: 0.45, 3: 0.60, 4: 0.72, 5: 0.82}
-    return table.get(total, 0.90)
+    table = {0: 0.0, 1: 0.30, 2: 0.45, 3: 0.60, 4: 0.72, 5: 0.82,
+             6: 0.86, 7: 0.89, 8: 0.91, 9: 0.93, 10: 0.94, 11: 0.95}
+    return table.get(total, 0.96)
 
 
 def _persistence_factor(recent: List[Dict], baseline: List[Dict], key: str) -> Optional[float]:
@@ -533,7 +584,10 @@ def _compute_confidence(
         0.14 * agreement
     )
     if provisional:
-        conf = min(conf, 35.0)
+        # Smooth discount instead of a hard 35.0 cliff: provisional confidence
+        # still varies with the underlying evidence instead of pinning every
+        # thin-sample player at exactly the same number.
+        conf *= 0.6
     conf = round(_clamp(conf, 0.0, 100.0), 1)
     detail = {
         "sample": round(sample, 3),
@@ -726,7 +780,10 @@ def score_player(
         expected_role = (draft_expectation if expected_role is None else
                          (expected_role + draft_expectation) / 2.0)
         expectation_inputs.append("draft_capital")
-    expectation_delta_score = (50.0 if expected_role is None else
+    # No expectation data means unknown, not neutral: a missing depth chart or
+    # draft slot is not a 50. The final blends drop the unknown component and
+    # renormalize instead of injecting a constant middle-drag.
+    expectation_delta_score = (None if expected_role is None else
                                _clamp(50.0 + current_role_score - expected_role, 0.0, 100.0))
 
     prior_level = None
@@ -762,8 +819,10 @@ def score_player(
     established_role_penalty = 35.0 if established_evidence else (
         min(35.0, (prior_level - 55.0) * 1.4)
         if prior_level is not None and prior_level >= 60.0 else 0.0)
-    novelty = _clamp((role_change_score if role_change_score is not None
-                      else expectation_delta_score) - established_role_penalty, 0.0, 100.0)
+    novelty_basis = (role_change_score if role_change_score is not None
+                     else expectation_delta_score)
+    novelty = (None if novelty_basis is None else
+               _clamp(novelty_basis - established_role_penalty, 0.0, 100.0))
     established_role_score = _clamp(
         (70.0 if established_evidence else 0.0) + min(30.0, float(prior_baseline.get("games") or 0) * 2.0)
         if prior_baseline else 0.0, 0.0, 100.0)
@@ -821,10 +880,16 @@ def score_player(
     if score_basis == "initial_role":
         # Initial-role formula: current relevance dominates; novelty can reward
         # an unexpected late-round/depth-chart rise, but cannot fabricate change.
-        final_score = (.55 * current_role_score + .20 * sustainability +
-                       .15 * expectation_delta_score +
-                       .10 * diagnostics["signal_agreement_score"])
-        cap = INITIAL_ONE_GAME_CAP if len(active) <= 1 else INITIAL_PERSISTENT_CAP
+        # Unknown components (e.g. no expectation data) are dropped and the
+        # remaining weights renormalize rather than injecting a flat 50.
+        final_score = _blend([
+            (0.55, current_role_score),
+            (0.20, sustainability),
+            (0.15, expectation_delta_score),
+            (0.10, diagnostics["signal_agreement_score"]),
+        ])
+        cap = (INITIAL_ONE_GAME_CAP if len(active) <= 1
+               else _initial_persistent_cap(diagnostics["supporting_signal_count"]))
         if not is_rookie and not expectation_inputs:
             # A missing cache match is not rookie evidence. Unknown-history
             # veterans remain visible at the low watchlist edge without being
@@ -832,12 +897,23 @@ def score_player(
             cap = min(cap, WATCHLIST_MIN_SCORE - 0.1)
         final_score = min(final_score, cap)
     else:
-        final_score = (.50 * float(role_change_score or 0) + .20 * current_role_score +
-                       .10 * sustainability + .10 * novelty +
-                       .10 * expectation_delta_score)
+        change_score = float(role_change_score or 0)
+        # A lone unheld game (or volatile usage) is weaker breakout evidence
+        # than a held multi-week role change. Discount the change component
+        # modestly so one-game spikes rank below sustained breakouts without
+        # being disqualified outright.
+        if trend["state"] in ("one_game", "volatile") and len(recent) <= 2:
+            change_score *= 0.80
+        final_score = _blend([
+            (0.50, change_score),
+            (0.20, current_role_score),
+            (0.10, sustainability),
+            (0.10, novelty),
+            (0.10, expectation_delta_score),
+        ])
         final_score = max(0.0, final_score - 5.0 * len(diagnostics["conflicting_signals"]))
         # Supporting context can rank a real change; it cannot manufacture one.
-        final_score *= min(1.0, float(role_change_score or 0) / WATCHLIST_MIN_SCORE)
+        final_score *= min(1.0, change_score / WATCHLIST_MIN_SCORE)
     final_score = round(final_score, 1)
     pre_provisional_adjustment_score = final_score
     if len(active) == 1:
@@ -847,7 +923,11 @@ def score_player(
         final_score = min(final_score, 39.5 if not established_evidence else 17.9)
     if garbage_time:
         final_score = round(final_score * .25, 1)
-    ranking_score = round(final_score * (.75 + .25 * confidence / 100.0), 1)
+    # Provisionals are already penalized for thin samples twice over (capped or
+    # shrunk score, discounted confidence); soften the confidence multiplier so
+    # the ranking does not double-count the same uncertainty.
+    conf_weight = .15 if provisional else .25
+    ranking_score = round(final_score * ((1.0 - conf_weight) + conf_weight * confidence / 100.0), 1)
 
     floors = ROLE_QUALITY_FLOORS.get(position, {})
     quality_hits = [key for key, floor in floors.items()
@@ -875,8 +955,9 @@ def score_player(
         if position in ("WR", "TE") else conf_detail["coverage"] >= .5
     exceptional_one_game = bool(
         len(active) == 1 and meaningful_role and non_snap_support >= 2 and
-        novelty >= 25 and expectation_delta_score >= 60 and not established_evidence and
-        not garbage_time and adequate_coverage)
+        novelty is not None and novelty >= 25 and
+        expectation_delta_score is not None and expectation_delta_score >= 60 and
+        not established_evidence and not garbage_time and adequate_coverage)
     rejection_reasons = []
     if not meaningful_role:
         rejection_reasons.append("position_specific_role_floor_not_met")
@@ -964,12 +1045,12 @@ def score_player(
         "role_change_score": _round(role_change_score),
         "current_role_score": current_role_score,
         "sustainability_score": sustainability,
-        "breakout_novelty_score": round(novelty, 1),
-        "expectation_delta_score": round(expectation_delta_score, 1),
+        "breakout_novelty_score": _round(novelty),
+        "expectation_delta_score": _round(expectation_delta_score),
         "established_role_penalty": round(established_role_penalty, 1),
         "established_player": established_evidence,
         "established_role_score": round(established_role_score, 1),
-        "role_novelty_score": round(novelty, 1),
+        "role_novelty_score": _round(novelty),
         "previous_breakout_status": None,
         "role_novelty_reason": ("No prior NFL usage baseline; novelty uses available expectations."
                                 if score_basis == "initial_role" else
@@ -999,8 +1080,8 @@ def score_player(
         "components": {
             "role_change": _round(role_change_score),
             "current_role": current_role_score,
-            "novelty": round(novelty, 1),
-            "expectation_delta": round(expectation_delta_score, 1),
+            "novelty": _round(novelty),
+            "expectation_delta": _round(expectation_delta_score),
             "opportunity_jump": round(opportunity_jump, 1),
             "unexpected_usage": round(unexpected_usage, 1),
             "high_value_touches": _round(high_value_score),

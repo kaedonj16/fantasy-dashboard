@@ -864,6 +864,13 @@ def calculate_roster_grade(
     When called without league context (AI renderer, trade strategy), falls back
     to age/depth/capital/elite scoring with positional rank proxy (dynasty)
     or rank/elite/depth (redraft).
+
+    The returned dict includes ``formula_id`` (one of "dynasty_ctx",
+    "dynasty_ranks", "dynasty_base", "redraft_ctx_ranks", "redraft_ctx",
+    "redraft_ranks", "redraft_base") and ``formula_weights`` so callers can
+    disclose which blend produced the grade. Only "dynasty_ctx" matches the
+    documented 40/25/15/12/8 legend; the fallback variants weight the same
+    components differently because league percentiles aren't available.
     """
     is_redraft = str(scoring_type or "dynasty").strip().lower() == "redraft"
     top8 = players[:8]
@@ -935,61 +942,61 @@ def calculate_roster_grade(
     has_league_ctx = dynasty_pct_val >= 0.0
     dynasty_score = (dynasty_pct_val * 100) if has_league_ctx else 0.0
     redraft_score = (redraft_pct_val * 100) if has_league_ctx else 0.0
+    # Each branch records its formula_id + weights so surfaces can disclose
+    # WHICH formula produced a grade. "dynasty_ctx" is the documented
+    # 40/25/15/12/8 blend the Teams page legend describes; the fallback
+    # variants (used by the AI renderer / trade strategy without league
+    # context) weight the same components differently.
+    _scores = {
+        "dynasty_score": dynasty_score,
+        "redraft_score": redraft_score,
+        "age_score": age_score,
+        "elite_score": elite_score,
+        "capital_score": capital_score,
+        "rank_score": rank_score,
+        "depth_score": depth_score,
+    }
     if is_redraft:
         # This-season construction only. Age and capital do not move the letter.
         if has_league_ctx and position_ranks:
-            total = round(
-                redraft_score * 0.55
-                + rank_score * 0.25
-                + elite_score * 0.20,
-                1,
-            )
+            formula_id = "redraft_ctx_ranks"
+            formula_weights = {"redraft_score": 0.55, "rank_score": 0.25, "elite_score": 0.20}
         elif has_league_ctx:
-            total = round(
-                redraft_score * 0.65
-                + elite_score * 0.20
-                + depth_score * 0.15,
-                1,
-            )
+            formula_id = "redraft_ctx"
+            formula_weights = {"redraft_score": 0.65, "elite_score": 0.20, "depth_score": 0.15}
         elif position_ranks:
-            total = round(
-                rank_score * 0.55
-                + elite_score * 0.25
-                + depth_score * 0.20,
-                1,
-            )
+            formula_id = "redraft_ranks"
+            formula_weights = {"rank_score": 0.55, "elite_score": 0.25, "depth_score": 0.20}
         else:
-            total = round(
-                elite_score * 0.45
-                + depth_score * 0.55,
-                1,
-            )
+            formula_id = "redraft_base"
+            formula_weights = {"elite_score": 0.45, "depth_score": 0.55}
     elif has_league_ctx:
-        total = round(
-            dynasty_score * 0.40   # long-term roster quality
-            + redraft_score * 0.25  # projected scoring NOW
-            + age_score     * 0.15  # window length
-            + elite_score   * 0.12  # franchise-player quality
-            + capital_score * 0.08, # rebuild resources
-            1,
-        )
+        formula_id = "dynasty_ctx"  # the documented 40/25/15/12/8 formula
+        formula_weights = {
+            "dynasty_score": 0.40,   # long-term roster quality
+            "redraft_score": 0.25,   # projected scoring NOW
+            "age_score": 0.15,       # window length
+            "elite_score": 0.12,     # franchise-player quality
+            "capital_score": 0.08,   # rebuild resources
+        }
     elif position_ranks:
-        total = round(
-            age_score    * 0.18
-            + depth_score  * 0.13
-            + capital_score * 0.07
-            + elite_score  * 0.12
-            + rank_score   * 0.50,
-            1,
-        )
+        formula_id = "dynasty_ranks"
+        formula_weights = {
+            "age_score": 0.18,
+            "depth_score": 0.13,
+            "capital_score": 0.07,
+            "elite_score": 0.12,
+            "rank_score": 0.50,
+        }
     else:
-        total = round(
-            age_score    * 0.36
-            + depth_score  * 0.26
-            + capital_score * 0.14
-            + elite_score  * 0.24,
-            1,
-        )
+        formula_id = "dynasty_base"
+        formula_weights = {
+            "age_score": 0.36,
+            "depth_score": 0.26,
+            "capital_score": 0.14,
+            "elite_score": 0.24,
+        }
+    total = round(sum(_scores[k] * w for k, w in formula_weights.items()), 1)
 
     grade = "D"
     for threshold, letter in _GRADE_THRESHOLDS:
@@ -1032,6 +1039,8 @@ def calculate_roster_grade(
         "score": total,
         "grade": grade,
         "win_window": win_window,
+        "formula_id": formula_id,
+        "formula_weights": dict(formula_weights),
         "breakdown": {
             "age_score": age_score,
             "depth_score": depth_score,

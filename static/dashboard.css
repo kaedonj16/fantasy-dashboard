@@ -1271,6 +1271,21 @@ ul {
     line-height: 14px;
 }
 
+.nav-new-badge {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 1px 5px;
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+    color: #fff;
+    background: #16a34a;
+    border-radius: 6px;
+    vertical-align: middle;
+    line-height: 14px;
+}
+
 .nav-pill-dropdown-item + .nav-pill-dropdown-item {
     border-top: 1px solid var(--border);
 }
@@ -21816,7 +21831,26 @@ img.tm-sched-avatar {
 }
 
 @media (max-width: 480px) {
-    .tm-mu-hname { display: none; }
+    /* Keep player names visible in matchup details (they were display:none,
+       leaving only scores + position badges). Names wrap onto their own line
+       below the points instead of truncating with an ellipsis. */
+    .tm-mu-h { flex-wrap: wrap; gap: 2px 4px; }
+    .tm-mu-hname {
+        font-size: 11px;
+        flex-basis: 100%;
+        white-space: normal;
+        overflow: visible;
+        text-overflow: clip;
+    }
+    .tm-mu-h-left .tm-mu-hname { text-align: right; }
+    .tm-mu-h-right .tm-mu-hname { text-align: left; }
+    .tm-sched-row { gap: 6px; padding: 9px 8px; }
+    .tm-sched-vs { display: none; }
+    .tm-sched-avatar { width: 22px; height: 22px; }
+    .tm-sched-score { font-size: 11px; }
+    .tm-sched-result { min-width: 22px; padding: 0 4px; }
+    .tm-sched-detail .tm-lineup-side { display: block; width: 100%; }
+    .tm-sched-detail .tm-lineup-side + .tm-lineup-side { margin: 14px 0 0; }
 }
 
 .team-modal-empty {
@@ -34803,19 +34837,33 @@ a.rz-demo-link:hover {
     gap: 6px;
     font-size: 12px;
     font-weight: 700;
-    color: var(--rz-red, #dc2626);
+    color: var(--text-muted);
     text-decoration: none;
     padding: 6px 12px;
-    border: 1px solid rgba(220, 38, 38, .3);
+    border: 1px solid var(--border);
     border-radius: 10px;
-    background: rgba(220, 38, 38, .06);
+    background: var(--surface);
     white-space: nowrap;
-    transition: background .15s, border-color .15s;
+    transition: background .15s, border-color .15s, color .15s;
 }
 
 .weekly-rz-btn:hover {
+    background: var(--surface-hover);
+    border-color: var(--border-strong);
+    color: var(--text);
+}
+
+/* Live state: red glow only when games are actually live or imminent. */
+.weekly-rz-btn-live {
+    color: var(--rz-red, #dc2626);
+    border-color: rgba(220, 38, 38, .3);
+    background: rgba(220, 38, 38, .06);
+}
+
+.weekly-rz-btn-live:hover {
     background: rgba(220, 38, 38, .12);
     border-color: rgba(220, 38, 38, .45);
+    color: var(--rz-red, #dc2626);
 }
 
 .weekly-rz-btn-dot {

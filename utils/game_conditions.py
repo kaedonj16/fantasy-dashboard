@@ -216,13 +216,42 @@ _WEATHER_TTL = 60 * 60 * 3   # forecasts change slowly; refresh every few hours
 
 
 def fetch_week_odds(season: int, week: int, game_dates: "list[str]") -> dict:
-    """Odds are unavailable after the paid-provider removal.
+    """Vegas implied team totals via SportsGameOdds.
 
-    Return an explicit empty optional enrichment; callers already distinguish
-    missing implied totals from numeric zero. No automatic paid fallback exists.
+    Returns ``{TEAM: {"implied": float}}`` keyed by canonical team abbreviation,
+    or ``{}`` when the provider is unconfigured/unreachable. Never raises.
+    The SGO client caches API responses on disk for 1h, so repeated page loads
+    within the hour do not hit the provider again.
     """
-    del season, week, game_dates
-    return {}
+    try:
+        from dashboard_services.market_intelligence.client import SportsGameOddsClient
+        from dashboard_services.market_intelligence.team import build_team_environments
+    except Exception:
+        logger.debug("[game_conditions] market_intelligence import failed", exc_info=True)
+        return {}
+    try:
+        client = SportsGameOddsClient()
+        if not client.configured:
+            return {}
+        dates = sorted(d for d in (game_dates or []) if d)
+        if not dates:
+            return {}
+        from datetime import datetime, timedelta, timezone
+        start = datetime.strptime(dates[0], "%Y%m%d").replace(tzinfo=timezone.utc) - timedelta(days=1)
+        end = datetime.strptime(dates[-1], "%Y%m%d").replace(tzinfo=timezone.utc) + timedelta(days=2)
+        events = list(client.iter_nfl_events(
+            starts_after=start.isoformat(),
+            starts_before=end.isoformat(),
+        ))
+        envs = build_team_environments(events) or {}
+        return {
+            team: {"implied": float(data["implied_points"])}
+            for team, data in envs.items()
+            if data.get("implied_points") is not None
+        }
+    except Exception:
+        logger.debug("[game_conditions] SportsGameOdds odds fetch failed", exc_info=True)
+        return {}
 
 def fetch_game_weather(lat: float, lon: float, game_date: str, today: "Optional[str]" = None) -> Optional[dict]:
     """Weather for a stadium on a game date via Open-Meteo. Never raises.

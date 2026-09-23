@@ -1307,7 +1307,7 @@ def _espn_otp_ui_enabled() -> bool:
 
 
 HOME_TICKER_HTML = """
-<div class="home-ticker-band" id="homeTicker" hidden aria-hidden="true">
+<div class="home-ticker-band" id="homeTicker" aria-hidden="true">
   <span class="home-ticker-tag"><span class="home-ticker-dot"></span>LIVE VALUES</span>
   <div class="home-ticker-wrap"><div class="home-ticker-track" id="homeTickerTrack"></div></div>
 </div>
@@ -1906,8 +1906,8 @@ FORM_BODY = """
 </div>
 
 <div class="fullscreen-loading-overlay" id="dashboardLoadingOverlay" style="display:none;">
-  <img src="/static/BR_Mark.png?v=f4228e0e"      alt="BR Fantasy" class="flo-logo flo-logo-light">
-  <img src="/static/BR_Mark_dark.png?v=f4228e0e" alt="BR Fantasy" class="flo-logo flo-logo-dark">
+  <img src="/static/BR_Mark.png?v=6c0c4828"      alt="BR Fantasy" class="flo-logo flo-logo-light">
+  <img src="/static/BR_Mark_dark.png?v=6c0c4828" alt="BR Fantasy" class="flo-logo flo-logo-dark">
   <div class="fullscreen-loading-text">Building your dashboard…</div>
   <div class="fullscreen-loading-subtext">This usually takes a few seconds</div>
   <div class="flo-progress-track"><div class="flo-progress-bar" id="floProgressBar"></div></div>
@@ -2020,8 +2020,8 @@ BASE_HTML = """
   <body>
     <!-- Branded loading splash: shown instantly, removed once the page is ready -->
     <div id="appSplash" role="status" aria-label="Loading BR Fantasy">
-      <img src="/static/BR_Logo.png?v=f4228e0e" alt="" class="splash-logo-light" aria-hidden="true">
-      <img src="/static/BR_Logo_dark.png?v=f4228e0e" alt="" class="splash-logo-dark" aria-hidden="true">
+      <img src="/static/BR_Logo.png?v=6c0c4828" alt="" class="splash-logo-light" aria-hidden="true">
+      <img src="/static/BR_Logo_dark.png?v=6c0c4828" alt="" class="splash-logo-dark" aria-hidden="true">
     </div>
     <script>
       (function(){{
@@ -2675,6 +2675,47 @@ def _games_scheduled_today(season, week) -> bool:
     except Exception as _e:
         logger.info(f"[games-today] check failed (s{season} w{week}): {_e}")
         return False
+
+
+# Cache for the "new breakouts" Wednesday check (nav badge). Refreshed at
+# most once per hour so the nav doesn't hit the DB on every page load.
+_breakouts_new_cache = {"ts": 0.0, "is_new": False}
+
+
+def _breakouts_are_new() -> bool:
+    """True if a breakout calculation finished on/after the most recent Wednesday.
+
+    Breakout scores are recomputed every Wednesday; when the latest completed
+    run is from this week's Wednesday (or later), the nav shows a NEW badge.
+    """
+    import time
+    now = time.time()
+    if now - _breakouts_new_cache["ts"] < 3600:
+        return _breakouts_new_cache["is_new"]
+    is_new = False
+    try:
+        from datetime import datetime, timedelta
+        from dashboard_services.breakout_api import get_conn as _bo_conn
+        today = datetime.now().date()
+        # Most recent Wednesday (0=Mon … 2=Wed). If today is Wednesday,
+        # that's today.
+        days_since_wed = (today.weekday() - 2) % 7
+        wednesday = today - timedelta(days=days_since_wed)
+        with _bo_conn() as _bc:
+            with _bc.cursor() as _bcur:
+                _bcur.execute(
+                    "SELECT MAX(completed_at) AS m FROM weekly_breakout_runs "
+                    "WHERE status = 'complete'"
+                )
+                ts = (_bcur.fetchone() or {}).get("m")
+                if ts:
+                    ts_date = ts.date() if hasattr(ts, "date") else ts
+                    is_new = ts_date >= wednesday
+    except Exception:
+        is_new = False
+    _breakouts_new_cache["ts"] = now
+    _breakouts_new_cache["is_new"] = is_new
+    return is_new
 
 
 def _games_live_or_imminent(season, week, *, lead_minutes=60) -> bool:
@@ -4302,6 +4343,10 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
 
     nfl_state = get_nfl_state() or {}
     offseason_mode = _nfl_offseason_mode(nfl_state, season)
+    # NEW badge on Breakout Engine when this Wednesday's scores are in.
+    _bo_new_badge = (
+        " <span class='nav-new-badge'>NEW</span>" if _breakouts_are_new() else ""
+    )
     # Exposed for client code (e.g. the player-modal Redzone tab, which hides in
     # the offseason). Uses the same condition that gates the Redzone nav item.
     season_active_flag = f"<script>window.__seasonActive={'false' if offseason_mode else 'true'};</script>"
@@ -4407,7 +4452,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
                 ("Compare Players", "/compare", "compare"),
                 ("Top Movers", "/top-movers", "top-movers"),
                 ("Advanced Metrics", "/metrics", "advanced-metrics"),
-                ("Breakout Engine <span class='nav-pro-badge'>PRO</span>", "/breakouts", "breakouts"),
+                (f"Breakout Engine <span class='nav-pro-badge'>PRO</span>{_bo_new_badge}", "/breakouts", "breakouts"),
                 ("Prospects", "/prospects", "prospects"),
             ], ["players", "prospects", "breakouts", "top-movers", "compare"], "playersNavDropdown"),
             simple_dropdown("Draft", [
@@ -4468,7 +4513,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             "<nav class='top-nav br-mnav' aria-label='Main navigation'>"
             "  <div class='nav-left'>"
             "    <a href='/' aria-label='BR Fantasy home'>"
-            "      <img src='/static/Website_Logo.png?v=f4228e0e' alt='BR Fantasy' class='site-logo'/>"
+            "      <img src='/static/Website_Logo.png?v=6c0c4828' alt='BR Fantasy' class='site-logo'/>"
             "    </a>"
             "  </div>"
             "  <div class='nav-center'>"
@@ -4601,7 +4646,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         ("Compare Players", "seo_pages.page_compare", "compare", False),
         ("Top Movers", "seo_pages.top_movers_page", "top-movers", False),
         ("Advanced Metrics", "league_pages.page_advanced_metrics", "advanced-metrics", False),
-        ("Breakout Engine <span class='nav-pro-badge'>PRO</span>", "page_breakouts", "breakouts", False),
+        (f"Breakout Engine <span class='nav-pro-badge'>PRO</span>{_bo_new_badge}", "page_breakouts", "breakouts", False),
         ("Prospect Rankings", "page_prospects", "prospects", False),
     ], ["players", "prospects", "breakouts", "top-movers", "compare"], "playersNavDropdown"))
     # Keeper Assistant only applies to keeper leagues; hide it for dynasty and
@@ -4877,7 +4922,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         f"<nav class='{_mnav_cls}' aria-label='Main navigation'>"
         "  <div class='nav-left'>"
         f"    <a href='{dashboard_url}' aria-label='BR Fantasy dashboard'>"
-        "      <img src='/static/Website_Logo.png?v=f4228e0e' alt='BR Fantasy' class='site-logo'/>"
+        "      <img src='/static/Website_Logo.png?v=6c0c4828' alt='BR Fantasy' class='site-logo'/>"
         "    </a>"
         f"    {_chrome_chip}"
         "  </div>"
@@ -5225,7 +5270,11 @@ def _google_link_pro_banner() -> str:
     if hard:
         title = "Restore your PRO"
         body = "Personal PRO now requires Google sign-in. Link your account to unlock it again -- your Sleeper username alone is no longer enough."
-        dismiss = ""
+        dismiss = """
+    <button type="button" id="proGoogleBannerClose"
+            style="background:none;border:none;color:var(--muted);font-size:18px;line-height:1;
+                   cursor:pointer;padding:4px 8px;flex-shrink:0;min-width:44px;min-height:44px;"
+            aria-label="Dismiss">&times;</button>"""
         display = "flex"
     else:
         title = "Secure your PRO"
@@ -5277,15 +5326,24 @@ def _google_link_pro_banner() -> str:
   if (!el) return;
   var hard = {str(hard).lower()};
   var key = 'pro-google-link-dismissed';
+  var sessKey = 'pro-google-banner-dismissed-session';
+  try {{
+    // Hard banner: respect a dismissal for this tab session only (user still
+    // needs to link Google for PRO, so it returns on next visit).
+    if (hard && sessionStorage.getItem(sessKey) === '1') {{ el.style.display = 'none'; return; }}
+    if (!hard && localStorage.getItem(key) === '1') return;
+  }} catch (e) {{}}
   if (!hard) {{
-    try {{ if (localStorage.getItem(key) === '1') return; }} catch (e) {{}}
     el.style.display = 'flex';
-    var btn = document.getElementById('proGoogleBannerClose');
-    if (btn) btn.addEventListener('click', function() {{
-      el.style.display = 'none';
-      try {{ localStorage.setItem(key, '1'); }} catch (e) {{}}
-    }});
   }}
+  var btn = document.getElementById('proGoogleBannerClose');
+  if (btn) btn.addEventListener('click', function() {{
+    el.style.display = 'none';
+    try {{
+      if (hard) {{ sessionStorage.setItem(sessKey, '1'); }}
+      else {{ localStorage.setItem(key, '1'); }}
+    }} catch (e) {{}}
+  }});
 }})();
 </script>
 """
@@ -5467,7 +5525,7 @@ def _site_json_ld() -> str:
             "@type": "Organization",
             "name": "BR Fantasy",
             "url": base or "/",
-            "logo": f"{base}/static/BR_Logo.png?v=f4228e0e",
+            "logo": f"{base}/static/BR_Logo.png?v=6c0c4828",
             "sameAs": [
                 "https://youtube.com/@hoodiekj",
                 "https://x.com/hoodiekj",
@@ -7191,6 +7249,12 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
         global _MODEL_VALUE_CACHE, _MODEL_VALUE_CACHE_TS
         _MODEL_VALUE_CACHE = ctx["model_value_table"]
         _MODEL_VALUE_CACHE_TS = time.time()
+        # Keep the modal's rank sidecar warm for the new table object so the
+        # next modal open doesn't pay the one-time build cost.
+        try:
+            _model_value_sidecar()
+        except Exception:
+            logger.debug("[refresh] sidecar build skipped", exc_info=True)
 
     # ---------- Offseason dashboard refresh ----------
     if (full or page == "dashboard") and offseason_mode:
@@ -7419,7 +7483,7 @@ def render_standings_compact(team_stats, length=None, movement=None, owner_to_ri
         rows.append(f"""
             <tr{_tr}>
               <td class="num">{int(row['Rank'])}{mv_html}</td>
-              <td class="team">{img} {_clickable_team_name(row['owner'], owner_to_rid)}{_lead}</td>
+              <td class="team" title="{html.escape(str(row['owner']), quote=True)}">{img} {_clickable_team_name(row['owner'], owner_to_rid)}{_lead}</td>
               <td>{record}</td>
               <td>{row['PF']:.0f}</td>
             </tr>""")
@@ -11545,6 +11609,181 @@ def _load_season_weekly_points(season: int, scoring_settings: dict) -> dict:
     return out
 
 
+# Compact per-player weekly scoring cache: (pids, flat) where flat is an
+# array('d') holding 6 floats per player --
+#   [season_sum, season_n, last4_0, last4_1, last4_2, last4_3]
+# (last-4 slots are NaN where the player had no scoring line). Unlike
+# _load_season_weekly_points (score_stats over completed weeks only), this
+# covers EVERY stat file on disk in week order and scores with
+# week_stat_points -- the exact inputs the Start/Sit page's recent-form loop
+# and _startsit_compare_extras use. Lets those call sites skip re-reading and
+# re-parsing multi-MB JSON files on every request, while the flat layout
+# keeps the whole cache around half a megabyte instead of several.
+#
+# Both caches below are LRU-bounded: keys multiply by (season, scoring
+# settings, position-ish), so an unbounded dict could grow far past the
+# ~2MB added-memory budget this work targets. Caps keep worst-case retained
+# memory under budget even if several leagues are visited in one session.
+_WEEKSTAT_PTS_CACHE: dict = {}  # (season, scoring_sig, te_flag) -> (ts, newest_mtime, (pids, flat))
+_WEEKSTAT_NCOLS = 6
+_WEEKSTAT_PTS_MAX = 2
+_SEASON_RANK_MAX = 2
+
+
+def _lru_cache_put(cache: dict, key, value, cap: int):
+    """Insert into a small dict cache, evicting least-recently-used entries.
+
+    dicts preserve insertion order; a get refresh is done by re-inserting on
+    hit at the call sites' discretion. Never raises.
+    """
+    try:
+        if key in cache:
+            del cache[key]
+        cache[key] = value
+        while len(cache) > cap:
+            cache.pop(next(iter(cache)))
+    except Exception:
+        pass
+
+
+def _season_weekstat_points(season: int, scoring_settings: dict, pos: str = ""):
+    """(pids, flat) weekly scoring with week_stat_points, in week order.
+
+    ``flat`` packs per player: season point sum, season scored-week count,
+    then the last-4 files' points (NaN where the player had no scoring line).
+    Only stat lines scoring > 0 are counted, same filter as the call sites.
+    Cached by (season, scoring signature, TE flag); rebuilt when the files
+    change. ``pos`` only affects scoring via the TE premium, so the key
+    collapses every non-TE position to "" -- identical values, fewer entries.
+    Player ids are stored as array('I') when they are canonical numeric
+    strings (Sleeper ids), falling back to a str tuple otherwise; callers
+    must compare with str(). Never raises.
+    """
+    from array import array
+    try:
+        sig = hashlib.md5(
+            json.dumps(scoring_settings or {}, sort_keys=True, default=str).encode()
+        ).hexdigest()[:10]
+        te_flag = "TE" if str(pos or "").upper() == "TE" else ""
+        key = (int(season), sig, te_flag)
+        pattern = os.path.join(CACHE_DIR, "sleeper_stats", f"sleeper_stats_s{int(season)}_w*.json")
+        files = sorted(glob.glob(pattern), key=_sleeper_stats_week_num)
+        newest = max((os.path.getmtime(p) for p in files), default=0.0)
+        now = time.time()
+        hit = _WEEKSTAT_PTS_CACHE.get(key)
+        if hit and now - hit[0] < _WEEKLY_PTS_TTL and newest <= hit[1]:
+            _WEEKSTAT_PTS_CACHE[key] = _WEEKSTAT_PTS_CACHE.pop(key)  # LRU refresh
+            return hit[2]
+        from utils.fantasy_scoring import week_stat_points as _wsp
+        per_pid: dict = {}
+        for widx, wf in enumerate(files):
+            try:
+                with open(wf) as f:
+                    wdata = json.load(f)
+            except Exception:
+                continue
+            if not isinstance(wdata, dict):
+                continue
+            for pid, st in wdata.items():
+                if not isinstance(st, dict):
+                    continue
+                try:
+                    pts = float(_wsp(st, scoring_settings, te_flag) or 0)
+                except Exception:
+                    continue
+                if pts > 0:
+                    rec = per_pid.setdefault(str(pid), [0.0, 0, {}])
+                    rec[0] += pts
+                    rec[1] += 1
+                    rec[2][widx] = pts
+        last_idx = list(range(max(0, len(files) - 4), len(files)))
+        nan = float("nan")
+        pids = tuple(per_pid.keys())
+        try:
+            _ipids = array("I", (int(_p) for _p in pids))
+            if any(str(_v) != _p for _v, _p in zip(_ipids, pids)):
+                raise ValueError("non-canonical pid")
+            pids = _ipids
+        except (ValueError, OverflowError):
+            pass
+        flat = array("d")
+        for pid in per_pid.keys():
+            s, n, wmap = per_pid[pid]
+            flat.append(s)
+            flat.append(float(n))
+            for wi in last_idx:
+                flat.append(wmap.get(wi, nan))
+            for _ in range(4 - len(last_idx)):
+                flat.append(nan)
+        payload = (pids, flat)
+        _lru_cache_put(_WEEKSTAT_PTS_CACHE, key, (now, newest, payload), _WEEKSTAT_PTS_MAX)
+        return payload
+    except Exception:
+        logger.debug("[weekstat pts] build failed", exc_info=True)
+        return ((), array("d"))
+
+
+# Cache for the player modal's PPG/total-points rank inputs (15-min TTL).
+# The modal used to rebuild per-player season totals and run four O(N)
+# competition-rank scans over the whole player pool on every open; this
+# precomputes the sorted value arrays once so each rank is an O(log N) bisect.
+_SEASON_RANK_CACHE: dict = {}  # (season, scoring_sig, completed_weeks) -> (ts, payload)
+
+
+def _season_rank_rows(season: int, scoring_settings: dict):
+    """Rank inputs for the player modal's PPG / total-points ranks.
+
+    Returns ``{"pos_ppg", "pos_total", "all_ppg", "all_total"}`` of
+    ascending-sorted raw value arrays (array('d')) for O(log N) RANK
+    lookups. Mirrors the per-request computation it replaces: positions from
+    load_players_index, QB/RB/WR/TE only, RANK semantics
+    (1 + #{strictly greater}). The intermediate per-player dict is not kept,
+    so the payload stays around a hundred KB. Never raises.
+    """
+    from array import array
+    try:
+        sig = hashlib.md5(
+            json.dumps(scoring_settings or {}, sort_keys=True, default=str).encode()
+        ).hexdigest()[:10]
+        from utils.season_qualification import qualification_policy
+        completed = tuple(qualification_policy(int(season)).completed_weeks)
+        key = (int(season), sig, completed)
+        now = time.time()
+        hit = _SEASON_RANK_CACHE.get(key)
+        if hit and now - hit[0] < _WEEKLY_PTS_TTL:
+            _SEASON_RANK_CACHE[key] = _SEASON_RANK_CACHE.pop(key)  # LRU refresh
+            return hit[1]
+        weekly = _load_season_weekly_points(season, scoring_settings) or {}
+        meta_idx = load_players_index() or {}
+        pos_ppg: dict = {}
+        pos_total: dict = {}
+        all_ppg: list = []
+        all_total: list = []
+        for pid, pts in weekly.items():
+            if not pts:
+                continue
+            pos = str((meta_idx.get(str(pid)) or {}).get("pos") or "").upper()
+            if pos not in ("QB", "RB", "WR", "TE"):
+                continue
+            tot = float(sum(pts))
+            ppg = tot / len(pts)
+            pos_ppg.setdefault(pos, []).append(ppg)
+            pos_total.setdefault(pos, []).append(tot)
+            all_ppg.append(ppg)
+            all_total.append(tot)
+        payload = {
+            "pos_ppg": {p: array("d", sorted(v)) for p, v in pos_ppg.items()},
+            "pos_total": {p: array("d", sorted(v)) for p, v in pos_total.items()},
+            "all_ppg": array("d", sorted(all_ppg)),
+            "all_total": array("d", sorted(all_total)),
+        }
+        _lru_cache_put(_SEASON_RANK_CACHE, key, (now, payload), _SEASON_RANK_MAX)
+        return payload
+    except Exception:
+        logger.debug("[season rank rows] build failed", exc_info=True)
+        return None
+
+
 def _ss_game_env(home_team: "Optional[str]", week: int) -> "Optional[dict]":
     """Compact game-environment chip for a start/sit row, or None.
 
@@ -11599,24 +11838,18 @@ def _startsit_compare_extras(pid, pos, team, season, week, scoring_settings, *,
     }
 
     # Last-4-week PPG scored with this league's settings (not hardcoded PPR).
+    # Served from the shared per-(season, scoring, TE-flag) weekstat cache so
+    # the modal doesn't re-read and re-parse the weekly stat files on every
+    # open. Identical inputs to the inline version this replaces (same files,
+    # same week_stat_points scorer, same >0 filter, last-4 files only).
     try:
-        from utils.fantasy_scoring import week_stat_points as _ss_week_pts
-        _files = sorted(
-            glob.glob(os.path.join(
-                CACHE_DIR, "sleeper_stats", f"sleeper_stats_s{int(season)}_w*.json")),
-            key=_sleeper_stats_week_num,
-        )[-4:]
+        _ws_pids, _ws_flat = _season_weekstat_points(int(season), scoring_settings, pos) or ((), ())
         _vals = []
-        for _wf in _files:
-            try:
-                _ws = json.load(open(_wf))
-            except Exception:
-                continue
-            _st = _ws.get(str(pid)) if isinstance(_ws, dict) else None
-            if isinstance(_st, dict):
-                _p = float(_ss_week_pts(_st, scoring_settings, pos) or 0)
-                if _p > 0:
-                    _vals.append(_p)
+        for _i, _p in enumerate(_ws_pids):
+            if str(_p) == str(pid):
+                _base = _i * _WEEKSTAT_NCOLS
+                _vals = [_v for _v in _ws_flat[_base + 2:_base + 6] if _v == _v]
+                break
         if _vals:
             out["recent_ppg"] = round(sum(_vals) / len(_vals), 1)
     except Exception:
@@ -11926,34 +12159,23 @@ def api_start_sit_options():
             return 0.0
 
     # ── Season-long and recent-form PPG scored with this league's settings ──
+    # Served from the shared per-(season, scoring) cache so the page doesn't
+    # re-read and re-parse the weekly stat files on every load. Identical
+    # inputs to the inline loop this replaces (same files in the same order,
+    # same week_stat_points scorer, same >0 filter, last-4 files for recent).
     season_ppg: dict = {}
     recent_ppg_map: dict = {}  # last 4 weeks
     try:
-        from utils.fantasy_scoring import week_stat_points as _ss_week_pts
-        import glob as _glob
-        _stat_files = sorted(
-            _glob.glob(os.path.join(
-                CACHE_DIR, "sleeper_stats", f"sleeper_stats_s{season}_w*.json")),
-            key=_sleeper_stats_week_num,
-        )
-        _season_pts: dict = {}
-        _recent_files = _stat_files[-4:]
-        _recent_pts: dict = {}
-        for _sf in _stat_files:
-            try:
-                _sdata = json.load(open(_sf))
-                for pid, stats in _sdata.items():
-                    if not isinstance(stats, dict):
-                        continue
-                    pts = float(_ss_week_pts(stats, _ss_scoring) or 0)
-                    if pts > 0:
-                        _season_pts.setdefault(str(pid), []).append(pts)
-                        if _sf in _recent_files:
-                            _recent_pts.setdefault(str(pid), []).append(pts)
-            except Exception:
-                continue
-        season_ppg = {pid: round(sum(v) / len(v), 1) for pid, v in _season_pts.items() if v}
-        recent_ppg_map = {pid: round(sum(v) / len(v), 1) for pid, v in _recent_pts.items() if v}
+        _ws_pids, _ws_flat = _season_weekstat_points(season, _ss_scoring) or ((), ())
+        for _i, _pid in enumerate(_ws_pids):
+            _pid = str(_pid)
+            _base = _i * _WEEKSTAT_NCOLS
+            _n = _ws_flat[_base + 1]
+            if _n > 0:
+                season_ppg[_pid] = round(_ws_flat[_base] / _n, 1)
+            _rvals = [_v for _v in _ws_flat[_base + 2:_base + 6] if _v == _v]
+            if _rvals:
+                recent_ppg_map[_pid] = round(sum(_rvals) / len(_rvals), 1)
     except Exception:
         logger.debug("suppressed exception", exc_info=True)
 
@@ -14269,7 +14491,7 @@ def metrics_graph_og_image(platform: str, season: int, league_id: str):
         cache_key=cache_key,
     )
     if not png:
-        return redirect(f"{request.host_url.rstrip('/')}/static/BR_Logo.png?v=f4228e0e")
+        return redirect(f"{request.host_url.rstrip('/')}/static/BR_Logo.png?v=6c0c4828")
     return Response(png, mimetype="image/png",
                     headers={"Cache-Control": "public, max-age=3600"})
 
@@ -14296,6 +14518,27 @@ def page_breakouts(platform: str, season: int, league_id: str):
     except Exception:
         bo_season = max(season, datetime.now().year)
 
+    # Last-updated timestamp for the breakout page header. The weekly runs
+    # table records when each Wednesday calculation finished.
+    _bo_last_updated = ""
+    try:
+        from dashboard_services.breakout_api import get_conn as _bo_conn2
+        with _bo_conn2() as _bc2:
+            with _bc2.cursor() as _bcur2:
+                _bcur2.execute(
+                    "SELECT MAX(completed_at) AS m FROM weekly_breakout_runs "
+                    "WHERE status = 'complete'"
+                )
+                _bo_ts = (_bcur2.fetchone() or {}).get("m")
+                if _bo_ts:
+                    _bo_last_updated = (
+                        f'<div style="font-size: 12px; color: var(--text-muted); '
+                        f'margin-top: 4px;">Last Updated: '
+                        f'{_bo_ts.strftime("%b %d, %Y")}</div>'
+                    )
+    except Exception:
+        pass
+
     body_html = f"""
     <div class="card central">
       <div class="card-header">
@@ -14303,6 +14546,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
         <div style="font-size: 14px; color: var(--text-muted); margin-top: 4px;">
           Players positioned for breakouts based on opportunity, efficiency, and roster changes
         </div>
+        {_bo_last_updated}
       </div>
       <div class="card-body">
         <!-- Position Filter -->
@@ -17843,9 +18087,181 @@ def get_model_value_table_cached():
         from utils.value_helpers import apply_redraft_display_fields as _ardf
         _ardf(tbl)
 
+    # Overlay birthday-derived decimal ages from the player index onto the
+    # canonical value table, so every consumer (rankings, player modal, trade
+    # calculator, waivers, breakouts, rookies) sees the same one-decimal age
+    # instead of a mix of precisions and missing values.
+    if tbl:
+        try:
+            from dashboard_services.service import age_from_bday as _afb
+            from utils.utils import load_players_index as _mvc_lpi3
+            _bday_idx = _mvc_lpi3() or {}
+            for _p in tbl:
+                _bday = (_bday_idx.get(str(_p.get("id") or "")) or {}).get("bDay")
+                _age = _afb(_bday) if _bday else None
+                if _age is not None:
+                    _p["age"] = _age
+        except Exception as _e:
+            logger.info(f"[model-value-cache] age overlay skipped: {_e}")
+
     _MODEL_VALUE_CACHE = tbl
     _MODEL_VALUE_CACHE_TS = now
+    # Build the modal's rank sidecar eagerly here (not lazily on first open)
+    # so no single request pays the one-time build cost. Best-effort: the
+    # modal falls back to a lazy build if this ever fails.
+    try:
+        _model_value_sidecar()
+    except Exception:
+        logger.debug("[model-value-cache] sidecar build skipped", exc_info=True)
     return tbl
+
+
+# Sidecar for the cached model value table: a shared id->row index plus
+# compact precomputed overall / per-position / scoring-format rank arrays, so
+# per-request handlers don't re-sort the ~7k-row table or rebuild throwaway
+# ~7k-entry dicts on every call. Each rank entry is one array('H'/'I') of the
+# table length holding 1-based ordinal ranks (0 = not ranked) -- ~14KB per
+# pool, O(1) lookup, exact float64 sort order with the stable-sort tie-break.
+# Rebuilt lazily whenever the cached table object changes (and eagerly at
+# cache-rebuild time); never raises.
+_MODEL_VALUE_SIDECAR = None  # (table_object, sidecar_dict)
+
+
+def _safe_float(v):
+    try:
+        return float(v or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _fmt_score_static(row, key, mults):
+    """_fmt_score with no TE premium (the precomputable case)."""
+    v = _safe_float(row.get(key))
+    if v <= 0:
+        return 0.0
+    pos = str(row.get("position") or "").upper()
+    return v * mults.get(pos, 1.0)
+
+
+def _rank_entry(items, n):
+    """Compact ordinal-rank array for a [(float_value, table_idx)] pool.
+
+    Returns array('H'/'I') of length ``n`` (the full table size) where
+    ``arr[table_idx]`` is the 1-based ordinal rank, or 0 when the row isn't in
+    the pool. Ranks come from one stable descending sort, exactly like the
+    modal's per-request ``enumerate(sorted(...))`` lookups -- ties do NOT
+    share a rank. At ~14KB per 7k-row pool (vs ~500KB for a {pid: rank}
+    dict), the whole sidecar stays well under a megabyte, and lookup is O(1).
+    """
+    from array import array
+    order = sorted(range(len(items)), key=lambda k: items[k][0], reverse=True)
+    arr = array("H" if len(items) < 65535 else "I", [0]) * n
+    for rank, k in enumerate(order, 1):
+        arr[items[k][1]] = rank
+    return arr
+
+
+def _rank_lookup(arr, player_tidx):
+    """Ordinal rank (1-based) of the player's own entry, or None if absent."""
+    if player_tidx < 0 or player_tidx >= len(arr):
+        return None
+    rank = arr[player_tidx]
+    return rank if rank else None
+
+
+def _build_model_value_sidecar(tbl):
+    tbl = tbl or []
+    excluded = ("K", "DEF", "PICK")
+    keys = ("value", "sf_value", "redraft_value_1qb", "redraft_value_sf")
+    try:
+        from utils.trade_value import SCORING_MULTS as _SCM
+    except Exception:
+        _SCM = {}
+    fmt_mults = {fmt: (_SCM.get(fmt) or _SCM.get("ppr") or {}) for fmt in ("half", "std")}
+    positions = sorted({
+        str(p.get("position") or "").upper()
+        for p in tbl if isinstance(p, dict)
+    } - set(excluded) - {""})
+
+    def pool(base_key, scope, fmt):
+        # Dynasty overall ranks keep the raw (non-uppercased) position filter.
+        raw = (fmt is None and scope == "ovr" and base_key in ("value", "sf_value"))
+        mults = fmt_mults.get(fmt) if fmt else None
+        items = []
+        for i, p in enumerate(tbl):
+            if not isinstance(p, dict):
+                continue
+            pos = p.get("position") if raw else str(p.get("position") or "").upper()
+            if pos in excluded:
+                continue
+            if scope != "ovr" and pos != scope:
+                continue
+            if fmt:
+                v = _fmt_score_static(p, base_key, mults)
+            else:
+                v = _safe_float(p.get(base_key))
+            if v <= 0:
+                continue
+            items.append((v, i))
+        return items
+
+    ranks = {}
+    # Shared id -> row index so per-request handlers don't rebuild a ~7k-entry
+    # dict (and its transient ~0.5MB) on every call. Same "last wins" duplicate
+    # semantics as the inline comprehensions this replaces.
+    index = {}
+    for p in tbl:
+        if isinstance(p, dict):
+            index[str(p.get("id"))] = p
+    n = len(tbl)
+    for key in keys:
+        ranks[(key, "ovr", None)] = _rank_entry(pool(key, "ovr", None), n)
+    for key in ("redraft_value_1qb", "redraft_value_sf"):
+        for pos in positions:
+            ranks[(key, pos, None)] = _rank_entry(pool(key, pos, None), n)
+    # Scoring-format ranks (half/std) with no TE premium; TE-premium leagues
+    # keep the per-request path since the premium is league-specific.
+    for fmt in ("half", "std"):
+        for key in keys:
+            ranks[(key, "ovr", fmt)] = _rank_entry(pool(key, "ovr", fmt), n)
+            for pos in positions:
+                ranks[(key, pos, fmt)] = _rank_entry(pool(key, pos, fmt), n)
+    return {"ranks": ranks, "fmt_mults": fmt_mults, "index": index}
+
+
+def _sidecar_player_rank(sc, base_key, player_row, player_tidx, *, scope="ovr", fmt=None, raw_pos=False):
+    """Ordinal rank of player_row in the (base_key, scope, fmt) pool, or None.
+
+    Compact-sidecar equivalent of the modal's per-request sorts: ordinal
+    rank with the stable-sort tie-break, excluding K/DEF/PICK and
+    non-positive scores exactly like the original lookups.
+    """
+    if not isinstance(player_row, dict) or player_tidx < 0:
+        return None
+    pos = player_row.get("position") if raw_pos else str(player_row.get("position") or "").upper()
+    if pos in ("K", "DEF", "PICK"):
+        return None
+    if scope != "ovr" and pos != scope:
+        return None
+    entry = (sc.get("ranks") or {}).get((base_key, scope, fmt))
+    if entry is None:
+        return None
+    # The precomputed rank array holds the player's 1-based ordinal rank at
+    # their table index (0 = not in the pool). The pool already excluded
+    # K/DEF/PICK and non-positive scores, and the pos/scope gating above
+    # matches the pool's inclusion rules, so no score recomputation is needed.
+    return _rank_lookup(entry, player_tidx)
+
+
+def _model_value_sidecar():
+    """Sidecar for the current _MODEL_VALUE_CACHE, rebuilt if the table changed."""
+    global _MODEL_VALUE_SIDECAR
+    tbl = _MODEL_VALUE_CACHE
+    if _MODEL_VALUE_SIDECAR is not None and _MODEL_VALUE_SIDECAR[0] is tbl:
+        return _MODEL_VALUE_SIDECAR[1]
+    sc = _build_model_value_sidecar(tbl)
+    _MODEL_VALUE_SIDECAR = (tbl, sc)
+    return sc
 
 
 @app.route("/api/gm-memo", methods=["POST"])
@@ -18161,9 +18577,13 @@ def api_trade_outcome():
         net_delta_now = round(total_received_now - total_sent_now, 1)
         net_delta_then = round(total_received_then - total_sent_then, 1)
 
-        if net_delta_now > 150:
+        # Verdict uses the shared fair-value band (same definition as the trade
+        # calculator) so the outcome analyzer can't contradict it.
+        from utils.trade_value import fair_value_band as _fair_value_band
+        _outcome_band = _fair_value_band(max(total_received_now, total_sent_now, 1.0))
+        if net_delta_now > _outcome_band:
             verdict = "WIN"
-        elif net_delta_now < -150:
+        elif net_delta_now < -_outcome_band:
             verdict = "LOSS"
         else:
             verdict = "EVEN"
@@ -18219,19 +18639,24 @@ def api_trade_eval():
     # Use DB as primary source (same as api_league_players) so chip values and
     # team totals always draw from the same number.  Fall back to JSON if DB unavailable.
     try:
-        from dashboard_services.player_value_history import load_current_values_from_db as _lcvdb
-        value_table = _lcvdb() or get_model_value_table_cached()
+        from dashboard_services import player_value_history as _pvh
+        _db_table = _pvh.load_current_values_from_db()
+        if _db_table:
+            value_table = _db_table
+            _idmap_ts, _idmap_src = _pvh._CURRENT_VALUES_CACHE_TS, "db"
+        else:
+            value_table = get_model_value_table_cached()
+            _idmap_ts, _idmap_src = _MODEL_VALUE_CACHE_TS, "json"
+        # _lcvdb() returns fresh copies each call; key the id-map cache on the
+        # underlying memo timestamp so rebuilds happen only when data refreshes.
     except Exception:
         value_table = get_model_value_table_cached()
+        _idmap_ts, _idmap_src = _MODEL_VALUE_CACHE_TS, "json"
 
     if not isinstance(value_table, list):
         raise ValueError("model_value_table must be a list of player objects")
 
-    players_by_id = {
-        str(p["id"]): p
-        for p in value_table
-        if isinstance(p, dict) and "id" in p
-    }
+    players_by_id = _trade_eval_id_map(value_table, _idmap_src, _idmap_ts)
 
     pick_values = load_pick_value_table(is_sf=(league_type == "sf"))
 
@@ -18378,16 +18803,14 @@ def api_trade_eval():
     diff = a_eff - b_eff
     abs_diff = abs(diff)
 
-    # Fair band: tighter % for bigger trades (large trades need less slack),
-    # floored at 25 value points so tiny trades aren't hair-trigger.
+    # Fair band: shared continuous definition (utils.trade_value.fair_value_band)
+    # so the calculator, share cards, and outcome analyzer apply the same
+    # "fair" and can't give contradictory verdicts. Previously tiered
+    # 5%/7%/10% with a discontinuity at the 600 threshold.
+    from utils.trade_value import fair_value_band as _fair_value_band
     baseline = max(a_eff, b_eff, 1.0)
-    if baseline >= 600:
-        FAIR_PCT = 0.05
-    elif baseline >= 300:
-        FAIR_PCT = 0.07
-    else:
-        FAIR_PCT = 0.10
-    fair_band = max(baseline * FAIR_PCT, 25.0)
+    fair_band = _fair_value_band(baseline)
+    FAIR_PCT = round(fair_band / baseline, 4)
 
     # With the roster filter on, the client sends the actual team names (Side A is
     # the viewer's team, Side B the chosen opponent) so the verdict can name them
@@ -18552,7 +18975,8 @@ def _trade_future_outlook(give_ids, get_ids, is_sf=False, current_pids=None):
     players_index = load_players_index() or {}
     value_table = get_model_value_table_cached() or []
     val_key = "sf_value" if is_sf else "value"
-    vmap = {str(p.get("id")): p for p in value_table}
+    # Shared id->row index from the value-table sidecar (see api_players).
+    vmap = _model_value_sidecar().get("index") or {}
 
     def _player_val_age(pid):
         mv = vmap.get(str(pid), {})
@@ -18644,20 +19068,55 @@ def api_players():
         from utils.utils import load_players_index
         players_index = load_players_index() or {}
         value_table = get_model_value_table_cached() or []
-        value_map = {str(p.get("id")): p for p in value_table}
+        # Shared id->row index from the value-table sidecar: avoids rebuilding
+        # a ~7k-entry dict (and its transient ~0.5MB) on every request.
+        value_map = _model_value_sidecar().get("index") or {}
         league_type = str(request.args.get("league_type", "1qb")).strip().lower()
         is_sf = league_type in ("sf", "superflex")
 
+        # Parse pagination + filter first so we only build response dicts for
+        # the rows actually returned (was: build 10k dicts, sort, then slice).
+        try:
+            limit = max(0, int(request.args.get("limit", 0)))
+            page = max(1, int(request.args.get("page", 1)))
+        except (TypeError, ValueError):
+            limit, page = 0, 1
+        q = request.args.get("q", "").strip().lower()
+
+        # Lightweight (pid, meta) candidates; filter by name before building.
+        if q:
+            candidates = [
+                (pid, meta) for pid, meta in players_index.items()
+                if meta.get("pos") not in ("K", "DEF")
+                and q in (meta.get("name") or "").lower()
+            ]
+        else:
+            candidates = [
+                (pid, meta) for pid, meta in players_index.items()
+                if meta.get("pos") not in ("K", "DEF")
+            ]
+
+        # Sort by the viewer's format so SF search surfaces QBs the way pos rank does.
+        sort_key = "sf_value" if is_sf else "value"
+        _vmap = value_map
+        _skey = sort_key
+        candidates.sort(
+            key=lambda t: (_vmap.get(str(t[0]), {}).get(_skey) or 0),
+            reverse=True,
+        )
+
+        total = len(candidates)
+        if limit > 0:
+            start = (page - 1) * limit
+            candidates = candidates[start: start + limit]
+
         results = []
-        for pid, meta in players_index.items():
-            pos = meta.get("pos", "")
-            if pos in ("K", "DEF"):
-                continue
+        for pid, meta in candidates:
             v = value_map.get(str(pid), {})
             results.append({
                 "player_id": pid,
                 "name": meta.get("name", ""),
-                "position": pos,
+                "position": meta.get("pos", ""),
                 "team": meta.get("team", ""),
                 "value": v.get("value", 0),
                 "sf_value": v.get("sf_value", 0),
@@ -18667,26 +19126,7 @@ def api_players():
                 "espnHeadshot": meta.get("espnHeadshot", ""),
             })
 
-        # Sort by the viewer's format so SF search surfaces QBs the way pos rank does.
-        sort_key = "sf_value" if is_sf else "value"
-        results.sort(key=lambda x: x[sort_key] or 0, reverse=True)
-
-        # Optional substring filter
-        q = request.args.get("q", "").strip().lower()
-        if q:
-            results = [r for r in results if q in r["name"].lower()]
-
-        # Pagination - limit=0 (default) returns the full list for backwards compat
-        total = len(results)
-        try:
-            limit = max(0, int(request.args.get("limit", 0)))
-            page = max(1, int(request.args.get("page", 1)))
-        except (TypeError, ValueError):
-            limit, page = 0, 1
-
         if limit > 0:
-            start = (page - 1) * limit
-            results = results[start: start + limit]
             return jsonify({
                 "players": results,
                 "total": total,
@@ -20870,20 +21310,76 @@ def api_since_last_visit():
     return jsonify(result)
 
 
+_PLAYER_INDICATORS_CACHE: dict = {}  # (table_ts, league_type, league_size, season) -> (ts, payload)
+
+_VALUE_HISTORY_CACHE: dict = {}  # (player_id, days, league_type, league_size) -> (ts, rows)
+_VALUE_HISTORY_MAX = 6  # ~45KB/player; keeps the hottest few modal opens cached
+
+
+_TRADE_EVAL_IDMAP_CACHE: dict = {}  # (source, source_ts) -> (ts, players_by_id)
+
+
+def _trade_eval_id_map(value_table: list, source: str, source_ts: float) -> dict:
+    """id->row map for trade eval, cached on the value source's refresh timestamp.
+
+    Replaces a ~7k-entry dict rebuild per trade-eval request. Rows are never
+    mutated by the caller (read-only .get lookups), so sharing is safe.
+    Never raises.
+    """
+    try:
+        key = (str(source), float(source_ts or 0))
+        now = time.time()
+        hit = _TRADE_EVAL_IDMAP_CACHE.get(key)
+        if hit and now - hit[0] < 900:
+            _TRADE_EVAL_IDMAP_CACHE[key] = _TRADE_EVAL_IDMAP_CACHE.pop(key)
+            return hit[1]
+        m = {str(p["id"]): p for p in value_table if isinstance(p, dict) and "id" in p}
+        _lru_cache_put(_TRADE_EVAL_IDMAP_CACHE, key, (now, m), 4)
+        return m
+    except Exception:
+        logger.debug("[trade eval] id-map build failed", exc_info=True)
+        return {}
+
+
+def _cached_value_history(player_id: str, *, days: int, league_type: str, league_size: int):
+    """get_player_value_history with a short LRU-bounded cache. Never raises.
+
+    Calls the module-global get_player_value_history (data_building) so tests
+    can monkeypatch app.get_player_value_history as before. The extra LRU
+    bound keeps the hottest few modal opens cached without letting the entry
+    count grow without limit.
+    """
+    try:
+        key = (str(player_id), int(days), str(league_type), int(league_size))
+        now = time.time()
+        hit = _VALUE_HISTORY_CACHE.get(key)
+        if hit and now - hit[0] < 600:
+            _VALUE_HISTORY_CACHE[key] = _VALUE_HISTORY_CACHE.pop(key)  # LRU refresh
+            return hit[1]
+        rows = get_player_value_history(
+            str(player_id), days=int(days),
+            league_type=str(league_type), league_size=int(league_size),
+        ) or []
+        _lru_cache_put(_VALUE_HISTORY_CACHE, key, (now, rows), _VALUE_HISTORY_MAX)
+        return rows
+    except Exception:
+        logger.debug("[value history] cache failed", exc_info=True)
+        return []
+
+
 @app.route("/api/player-indicators")
 def api_player_indicators():
-    """
-    Return rookie and breakout indicators for players.
-    Returns: {
-      "rookies": ["player_id1", "player_id2", ...],
-      "breakouts": ["player_id3", "player_id4", ...]
-    }
+    """Return rookie and breakout indicators for players.
+
+    The payload depends only on (league_type, league_size, season, value
+    table) -- not on the viewer's league -- so it is cached 15 min. The raw
+    computation scans the 10k-player index, runs the breakout DB query with
+    enrichment, and sorts per-position value pools on every call.
     """
     try:
         from datetime import datetime
 
         league_type = str(request.args.get("league_type", "1qb")).strip().lower()
-
         try:
             league_size = int(request.args.get("league_size", 10))
             if league_size not in [8, 10, 12, 14]:
@@ -20891,82 +21387,98 @@ def api_player_indicators():
         except (TypeError, ValueError):
             league_size = 10
 
-        # Get current NFL state
         nfl_state = get_nfl_state() or {}
-        current_season = int(nfl_state.get("season") or datetime.now().year)
-
-        # Load all players to check for rookies (years_exp 0 or 1 = first two seasons)
-        players_index = load_players_index() or {}
-        rookies = []
-
-        for player_id, player_data in players_index.items():
-            years_exp = player_data.get("years_exp")
-            rookie_year = player_data.get("rookie_year")
-
-            if years_exp in (0, 1, "0", "1"):
-                rookies.append(str(player_id))
-            elif rookie_year and int(rookie_year) == current_season:
-                rookies.append(str(player_id))
-
-        # Get breakouts from the same source as the Breakout Engine page,
-        # using the same season resolution so modal tabs match the page exactly.
-        breakouts = []
-        try:
-            from dashboard_services.breakout_api import (
-                get_breakout_candidates as _get_bo_indicators,
-                _resolve_bo_season as _resolve_bo,
-            )
-            _bo_season = _resolve_bo(current_season)
-            _bo_result = _get_bo_indicators(season=_bo_season, min_score=50, limit=15)
-            breakouts = [str(c["player_id"]) for c in (_bo_result.get("candidates") or [])]
-        except Exception as e:
-            logger.info(f"[player-indicators] Breakout candidates unavailable: {e}")
-
-        # Get elites based on positional rank cutoffs (12-man PPR dynasty)
-        elites = []
-
-        # Load model value table to get current player values
-        value_table = get_model_value_table_cached() or []
-        value_map = {str(p.get("id")): p for p in value_table}
-
-        # Top-N positional rank cutoffs (shared with the consolidate/distribute
-        # engine so the ELITE chip and trade suggestions never disagree).
-        from utils.tier_thresholds import ELITE_RANK_CUTOFFS as elite_rank_cutoffs
-
-        from collections import defaultdict as _defaultdict
-        pos_players: dict = _defaultdict(list)
-        for player_id, player_data in value_map.items():
-            pos = str(player_data.get("position", "")).upper()
-            val = float(player_data.get("value", 0) or 0)
-            if val > 0 and pos in elite_rank_cutoffs:
-                pos_players[pos].append((val, str(player_id)))
-
-        for pos, cutoff in elite_rank_cutoffs.items():
-            for _, pid in sorted(pos_players[pos], reverse=True)[:cutoff]:
-                elites.append(pid)
-
-        # Prospects = only pre-draft class players (is_rookie=True in cached table)
-        prospects = []
-        try:
-            model_tbl = get_model_value_table_cached() or []
-            for entry in model_tbl:
-                if entry.get("is_rookie") is True:
-                    pid = str(entry.get("id") or "")
-                    if pid:
-                        prospects.append(pid)
-        except Exception as _pe:
-            logger.info(f"[player-indicators] prospects skipped: {_pe}")
-
-        return jsonify({
-            "rookies": rookies,
-            "breakouts": breakouts,
-            "elites": elites,
-            "prospects": prospects
-        })
-
+        season = int(nfl_state.get("season") or datetime.now().year)
+        get_model_value_table_cached()  # refresh _MODEL_VALUE_CACHE_TS if stale
+        key = (_MODEL_VALUE_CACHE_TS, league_type, league_size, season)
+        now = time.time()
+        hit = _PLAYER_INDICATORS_CACHE.get(key)
+        if hit and now - hit[0] < 900:
+            return jsonify(hit[1])
+        payload = _compute_player_indicators(league_type, league_size, season)
+        # Bound the cache: keys multiply by table version x type x size x season.
+        _lru_cache_put(_PLAYER_INDICATORS_CACHE, key, (now, payload), 12)
+        return jsonify(payload)
     except Exception as e:
         logger.info(f"[player-indicators] Error: {e}")
         return jsonify({"rookies": [], "breakouts": [], "elites": [], "prospects": []})
+
+
+def _compute_player_indicators(league_type: str, league_size: int, season: int) -> dict:
+    """Build the player-indicators payload (cached by the route above)."""
+    from datetime import datetime
+
+    current_season = int(season or datetime.now().year)
+
+    # Load all players to check for rookies (years_exp 0 or 1 = first two seasons)
+    players_index = load_players_index() or {}
+    rookies = []
+
+    for player_id, player_data in players_index.items():
+        years_exp = player_data.get("years_exp")
+        rookie_year = player_data.get("rookie_year")
+
+        if years_exp in (0, 1, "0", "1"):
+            rookies.append(str(player_id))
+        elif rookie_year and int(rookie_year) == current_season:
+            rookies.append(str(player_id))
+
+    # Get breakouts from the same source as the Breakout Engine page,
+    # using the same season resolution so modal tabs match the page exactly.
+    breakouts = []
+    try:
+        from dashboard_services.breakout_api import (
+            get_breakout_candidates as _get_bo_indicators,
+            _resolve_bo_season as _resolve_bo,
+        )
+        _bo_season = _resolve_bo(current_season)
+        _bo_result = _get_bo_indicators(season=_bo_season, min_score=50, limit=15)
+        breakouts = [str(c["player_id"]) for c in (_bo_result.get("candidates") or [])]
+    except Exception as e:
+        logger.info(f"[player-indicators] Breakout candidates unavailable: {e}")
+
+    # Get elites based on positional rank cutoffs (12-man PPR dynasty)
+    elites = []
+
+    # Load model value table to get current player values
+    value_table = get_model_value_table_cached() or []
+    # Shared id->row index from the value-table sidecar (see api_players).
+    value_map = _model_value_sidecar().get("index") or {}
+
+    # Top-N positional rank cutoffs (shared with the consolidate/distribute
+    # engine so the ELITE chip and trade suggestions never disagree).
+    from utils.tier_thresholds import ELITE_RANK_CUTOFFS as elite_rank_cutoffs
+
+    from collections import defaultdict as _defaultdict
+    pos_players: dict = _defaultdict(list)
+    for player_id, player_data in value_map.items():
+        pos = str(player_data.get("position", "")).upper()
+        val = float(player_data.get("value", 0) or 0)
+        if val > 0 and pos in elite_rank_cutoffs:
+            pos_players[pos].append((val, str(player_id)))
+
+    for pos, cutoff in elite_rank_cutoffs.items():
+        for _, pid in sorted(pos_players[pos], reverse=True)[:cutoff]:
+            elites.append(pid)
+
+    # Prospects = only pre-draft class players (is_rookie=True in cached table)
+    prospects = []
+    try:
+        model_tbl = get_model_value_table_cached() or []
+        for entry in model_tbl:
+            if entry.get("is_rookie") is True:
+                pid = str(entry.get("id") or "")
+                if pid:
+                    prospects.append(pid)
+    except Exception as _pe:
+        logger.info(f"[player-indicators] prospects skipped: {_pe}")
+
+    return {
+        "rookies": rookies,
+        "breakouts": breakouts,
+        "elites": elites,
+        "prospects": prospects,
+    }
 
 
 @app.route("/api/prospect/<player_id>")
@@ -21264,10 +21776,21 @@ def api_player_details(player_id: str):
 
         # Get value data (use cache so FC/DP corrections are applied)
         value_table = get_model_value_table_cached() or []
-        player_value = next((p for p in value_table if str(p.get("id")) == str(player_id)), {})
+        _mv_sc = _model_value_sidecar()
+        # Single linear scan for the player's row (also captures the table
+        # index the compact rank arrays need). A 7k-row scan is
+        # sub-millisecond; the per-request sorts it used to feed are gone.
+        player_value = {}
+        _player_tidx = -1
+        for _i, _p in enumerate(value_table):
+            if isinstance(_p, dict) and str(_p.get("id")) == str(player_id):
+                player_value = _p
+                _player_tidx = _i
+                break
 
-        # Get FULL value history from database (not just 90 days)
-        value_history = get_player_value_history(
+        # Get FULL value history from database (not just 90 days).
+        # Cached per player (10-min TTL): reopening a modal skips the DB round-trip.
+        value_history = _cached_value_history(
             player_id, days=365,
             league_type=_modal_lt, league_size=_modal_ls,
         )
@@ -21454,26 +21977,22 @@ def api_player_details(player_id: str):
                         _total_pts = round(_total_raw, 1)
 
                         _pos = str(player_meta.get("pos") or "").upper()
-                        _meta_idx = load_players_index() or {}
-                        _rank_rows = []
-                        for _pid, _pts in _weekly_points.items():
-                            if not _pts:
-                                continue
-                            _rpos = str((_meta_idx.get(str(_pid)) or {}).get("pos") or "").upper()
-                            if _rpos not in {"QB", "RB", "WR", "TE"}:
-                                continue
-                            _tot = sum(_pts)
-                            _rank_rows.append((_pid, _rpos, _tot / len(_pts), _tot))
-
-                        def _competition_rank(rows, value, idx):
-                            # RANK semantics: equal unrounded values share rank.
-                            return 1 + sum(1 for row in rows if row[idx] > value)
-
-                        _pos_rows = [r for r in _rank_rows if r[1] == _pos]
-                        _ppg_rank = _competition_rank(_pos_rows, _ppg_raw, 2)
-                        _total_pts_rank = _competition_rank(_pos_rows, _total_raw, 3)
-                        _ppg_ovr_rank = _competition_rank(_rank_rows, _ppg_raw, 2)
-                        _total_pts_ovr_rank = _competition_rank(_rank_rows, _total_raw, 3)
+                        # PPG / total-points ranks from the shared per-(season,
+                        # scoring) rank cache: ascending-sorted raw value
+                        # arrays, so each rank is an O(log N) bisect instead
+                        # of rebuilding the whole table and scanning it four
+                        # times. RANK semantics preserved: 1 + #{strictly
+                        # greater}, computed on the same unrounded values.
+                        from bisect import bisect_right as _bisect_right
+                        _rank_data = _season_rank_rows(season, scoring_settings) or {}
+                        _pos_ppg_vals = (_rank_data.get("pos_ppg") or {}).get(_pos) or []
+                        _pos_tot_vals = (_rank_data.get("pos_total") or {}).get(_pos) or []
+                        _all_ppg_vals = _rank_data.get("all_ppg") or []
+                        _all_tot_vals = _rank_data.get("all_total") or []
+                        _ppg_rank = 1 + (len(_pos_ppg_vals) - _bisect_right(_pos_ppg_vals, _ppg_raw))
+                        _total_pts_rank = 1 + (len(_pos_tot_vals) - _bisect_right(_pos_tot_vals, _total_raw))
+                        _ppg_ovr_rank = 1 + (len(_all_ppg_vals) - _bisect_right(_all_ppg_vals, _ppg_raw))
+                        _total_pts_ovr_rank = 1 + (len(_all_tot_vals) - _bisect_right(_all_tot_vals, _total_raw))
         except Exception:
             logger.debug("player scoring aggregation failed", exc_info=True)
 
@@ -21741,32 +22260,14 @@ def api_player_details(player_id: str):
         if _rd_sf is None and _rd_1qb is not None:
             _rd_sf = _rd_1qb
 
-        def _rd_rank(key, *, pos_only=False):
-            pool = []
-            for x in (value_table or []):
-                if not isinstance(x, dict):
-                    continue
-                if str(x.get("position") or "").upper() in ("K", "DEF", "PICK"):
-                    continue
-                if pos_only and str(x.get("position") or "").upper() != _modal_pos:
-                    continue
-                try:
-                    v = float(x.get(key) or 0)
-                except (TypeError, ValueError):
-                    v = 0.0
-                if v <= 0:
-                    continue
-                pool.append((str(x.get("id")), v))
-            pool.sort(key=lambda t: t[1], reverse=True)
-            for i, (pid, _) in enumerate(pool):
-                if pid == str(player_id):
-                    return i + 1
-            return None
-
-        _rd_1qb_ovr = _rd_rank("redraft_value_1qb") if _rd_1qb else None
-        _rd_sf_ovr = _rd_rank("redraft_value_sf") if _rd_sf else None
-        _rd_1qb_pos = _rd_rank("redraft_value_1qb", pos_only=True) if _rd_1qb and _modal_pos else None
-        _rd_sf_pos = _rd_rank("redraft_value_sf", pos_only=True) if _rd_sf and _modal_pos else None
+        # Redraft ranks from the value-table sidecar (precomputed once per
+        # cache rebuild) instead of re-sorting the table four times.
+        _rd_1qb_ovr = _sidecar_player_rank(_mv_sc, "redraft_value_1qb", player_value, _player_tidx) if _rd_1qb else None
+        _rd_sf_ovr = _sidecar_player_rank(_mv_sc, "redraft_value_sf", player_value, _player_tidx) if _rd_sf else None
+        _rd_1qb_pos = _sidecar_player_rank(_mv_sc, "redraft_value_1qb", player_value, _player_tidx, scope=_modal_pos) \
+            if _rd_1qb and _modal_pos else None
+        _rd_sf_pos = _sidecar_player_rank(_mv_sc, "redraft_value_sf", player_value, _player_tidx, scope=_modal_pos) \
+            if _rd_sf and _modal_pos else None
         _rd_1qb_pos_lbl = f"{_modal_pos}{_rd_1qb_pos}" if _rd_1qb_pos and _modal_pos else None
         _rd_sf_pos_lbl = f"{_modal_pos}{_rd_sf_pos}" if _rd_sf_pos and _modal_pos else None
 
@@ -21789,6 +22290,15 @@ def api_player_details(player_id: str):
             return v * mult
 
         def _fmt_rank(key, fmt, *, pos_only=False):
+            # Fast path: without a TE premium the format ranks don't depend on
+            # the league, so they come from the value-table sidecar instead of
+            # re-sorting the table. TE-premium leagues keep the per-request
+            # path since the premium multiplier is league-specific.
+            if not _modal_tep:
+                return _sidecar_player_rank(
+                    _mv_sc, key, player_value, _player_tidx,
+                    scope=_modal_pos if pos_only else "ovr", fmt=fmt,
+                )
             pool = []
             for x in (value_table or []):
                 if not isinstance(x, dict):
@@ -21879,16 +22389,8 @@ def api_player_details(player_id: str):
                 "pos_rank_label": player_value.get("pos_rank_label"),
                 "sf_pos_rank": player_value.get("sf_pos_rank"),
                 "sf_pos_rank_label": player_value.get("sf_pos_rank_label"),
-                "value_ovr_rank": next((i + 1 for i, p in enumerate(sorted(
-                    [x for x in (value_table or []) if
-                     x.get("position") not in ("K", "DEF", "PICK") and float(x.get("value") or 0) > 0],
-                    key=lambda x: float(x.get("value") or 0), reverse=True
-                )) if str(p.get("id")) == str(player_id)), None),
-                "sf_value_ovr_rank": next((i + 1 for i, p in enumerate(sorted(
-                    [x for x in (value_table or []) if
-                     x.get("position") not in ("K", "DEF", "PICK") and float(x.get("sf_value") or 0) > 0],
-                    key=lambda x: float(x.get("sf_value") or 0), reverse=True
-                )) if str(p.get("id")) == str(player_id)), None),
+                "value_ovr_rank": _sidecar_player_rank(_mv_sc, "value", player_value, _player_tidx, raw_pos=True),
+                "sf_value_ovr_rank": _sidecar_player_rank(_mv_sc, "sf_value", player_value, _player_tidx, raw_pos=True),
                 "redraft_value_1qb": _rd_1qb,
                 "redraft_value_sf": _rd_sf,
                 "redraft_pos_rank": _rd_1qb_pos,
@@ -25742,6 +26244,13 @@ def api_trade_intel_player(player_id: str):
         return jsonify({"error": "Internal error"}), 500
 
 
+# Cache for the expensive COUNT(DISTINCT) in api_trade_database. Trade counts
+# only change when the cron ingests new trades, so a short TTL is safe and
+# avoids re-scanning ~500k rows on every page/filter change.
+_TRADE_DB_COUNT_CACHE: dict = {}
+_TRADE_DB_COUNT_TTL = 300  # seconds
+
+
 @app.route("/api/trade-database")
 def api_trade_database():
     """
@@ -25791,68 +26300,89 @@ def api_trade_database():
         lf_clause = "AND l.league_type = %s " if lf_param is not None else ""
 
         # Build player filter clauses.
-        # Always require both sides present so COUNT and rendered cards agree.
-        filter_clauses: list = [
-            "EXISTS (SELECT 1 FROM trade_intel_assets _sa WHERE _sa.trade_id = t.id AND _sa.side = 'a')",
-            "EXISTS (SELECT 1 FROM trade_intel_assets _sb WHERE _sb.trade_id = t.id AND _sb.side = 'b')",
-        ]
+        # Use uncorrelated IN-subqueries and joins instead of correlated
+        # EXISTS probes per trade row: with ~250k trades (2026 season) the
+        # per-row probes time out, while these plan as hash semi-joins.
+        # The old unconditional side-presence filters were dropped for the same
+        # reason; the Python renderer below still skips malformed trades
+        # lacking either side, so COUNT may slightly exceed rendered cards if
+        # such rows exist.
+        filter_clauses: list = []
         filter_params: list = []
+        join_clauses: list = []
 
         if player_a_ids and player_b_ids:
-            # Both sides specified: enforce that A and B land on opposite sides of
-            # the trade. DB side assignment is arbitrary, so accept either arrangement.
-            filter_clauses.append(
-                "("
-                "(EXISTS (SELECT 1 FROM trade_intel_assets _fa1 WHERE _fa1.trade_id = t.id"
-                "  AND _fa1.side = 'a' AND _fa1.asset_type = 'player' AND _fa1.player_id = ANY(%s))"
-                " AND EXISTS (SELECT 1 FROM trade_intel_assets _fb1 WHERE _fb1.trade_id = t.id"
-                "  AND _fb1.side = 'b' AND _fb1.asset_type = 'player' AND _fb1.player_id = ANY(%s)))"
-                " OR "
-                "(EXISTS (SELECT 1 FROM trade_intel_assets _fa2 WHERE _fa2.trade_id = t.id"
-                "  AND _fa2.side = 'b' AND _fa2.asset_type = 'player' AND _fa2.player_id = ANY(%s))"
-                " AND EXISTS (SELECT 1 FROM trade_intel_assets _fb2 WHERE _fb2.trade_id = t.id"
-                "  AND _fb2.side = 'a' AND _fb2.asset_type = 'player' AND _fb2.player_id = ANY(%s)))"
-                ")"
+            # Both sides specified: enforce that A and B land on opposite sides
+            # of the trade. DB side assignment is arbitrary, so accept either
+            # arrangement via the side inequality.
+            join_clauses.append(
+                "JOIN trade_intel_assets _ja ON _ja.trade_id = t.id"
+                " AND _ja.asset_type = 'player' AND _ja.player_id = ANY(%s)"
             )
-            filter_params.extend([player_a_ids, player_b_ids, player_a_ids, player_b_ids])
+            join_clauses.append(
+                "JOIN trade_intel_assets _jb ON _jb.trade_id = t.id"
+                " AND _jb.asset_type = 'player' AND _jb.player_id = ANY(%s)"
+                " AND _jb.side <> _ja.side"
+            )
+            filter_params.extend([player_a_ids, player_b_ids])
         elif player_a_ids:
             # Only one side specified: match on either DB side
             filter_clauses.append(
-                "EXISTS (SELECT 1 FROM trade_intel_assets _fa WHERE _fa.trade_id = t.id"
-                " AND _fa.asset_type = 'player' AND _fa.player_id = ANY(%s))"
+                "t.id IN (SELECT _fa.trade_id FROM trade_intel_assets _fa"
+                " WHERE _fa.asset_type = 'player' AND _fa.player_id = ANY(%s))"
             )
             filter_params.append(player_a_ids)
         elif player_b_ids:
             filter_clauses.append(
-                "EXISTS (SELECT 1 FROM trade_intel_assets _fb WHERE _fb.trade_id = t.id"
-                " AND _fb.asset_type = 'player' AND _fb.player_id = ANY(%s))"
+                "t.id IN (SELECT _fb.trade_id FROM trade_intel_assets _fb"
+                " WHERE _fb.asset_type = 'player' AND _fb.player_id = ANY(%s))"
             )
             filter_params.append(player_b_ids)
 
         if match_ids and not (player_a_ids or player_b_ids):
             # Legacy name-search: any-side match
             filter_clauses.append(
-                "EXISTS (SELECT 1 FROM trade_intel_assets _fm WHERE _fm.trade_id = t.id"
-                " AND _fm.asset_type = 'player' AND _fm.player_id = ANY(%s))"
+                "t.id IN (SELECT _fm.trade_id FROM trade_intel_assets _fm"
+                " WHERE _fm.asset_type = 'player' AND _fm.player_id = ANY(%s))"
             )
             filter_params.append(match_ids)
 
+        join_sql = (" " + " ".join(join_clauses)) if join_clauses else ""
         filter_sql = (" AND " + " AND ".join(filter_clauses)) if filter_clauses else ""
         sf_p = [sf_param] if sf_param is not None else []
         lf_p = [lf_param] if lf_param is not None else []
 
         with get_conn() as conn:
             count_params = [season] + sf_p + lf_p + filter_params
-            count_row = conn.execute(
-                f"""
-                SELECT COUNT(DISTINCT t.id) AS n
-                FROM trade_intel_trades t
-                LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id
-                WHERE t.season = %s {sf_clause}{lf_clause}{filter_sql}
-                """,
-                count_params,
-            ).fetchone()
-            total = int(count_row["n"]) if count_row else 0
+            # Cache the total: the COUNT(DISTINCT) scans all matching trades
+            # (~500k unfiltered) and dominates response time. Key on the filter
+            # fingerprint; bounded to avoid unbounded growth from ad-hoc searches.
+            import time as _tdb_time
+            _tdb_now = _tdb_time.time()
+            _tdb_key = (
+                season, sf_param, lf_param,
+                tuple(sorted(player_a_ids)), tuple(sorted(player_b_ids)),
+                tuple(sorted(match_ids)),
+            )
+            _tdb_hit = _TRADE_DB_COUNT_CACHE.get(_tdb_key)
+            if _tdb_hit and (_tdb_now - _tdb_hit[0]) < _TRADE_DB_COUNT_TTL:
+                total = _tdb_hit[1]
+            else:
+                count_row = conn.execute(
+                    f"""
+                    SELECT COUNT(DISTINCT t.id) AS n
+                    FROM trade_intel_trades t
+                    LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id{join_sql}
+                    WHERE t.season = %s {sf_clause}{lf_clause}{filter_sql}
+                    """,
+                    count_params,
+                ).fetchone()
+                total = int(count_row["n"]) if count_row else 0
+                _TRADE_DB_COUNT_CACHE[_tdb_key] = (_tdb_now, total)
+                # Bound the cache: drop oldest entries past 200 keys.
+                if len(_TRADE_DB_COUNT_CACHE) > 200:
+                    for _k in list(_TRADE_DB_COUNT_CACHE)[:50]:
+                        del _TRADE_DB_COUNT_CACHE[_k]
 
             row_params = [season] + sf_p + lf_p + filter_params + [limit + 1, page * limit]
             trade_rows = conn.execute(
@@ -25860,7 +26390,7 @@ def api_trade_database():
                 SELECT DISTINCT t.id, t.transaction_id, t.season, t.week, t.created_at,
                        l.scoring_type, l.is_superflex, l.num_teams
                 FROM trade_intel_trades t
-                LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id
+                LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id{join_sql}
                 WHERE t.season = %s {sf_clause}{lf_clause}{filter_sql}
                 ORDER BY t.created_at DESC NULLS LAST
                 LIMIT %s OFFSET %s
@@ -29353,7 +29883,20 @@ def build_portfolio_body(
     # performs its own full-page reload after the summaries are refreshed.
     refresh_handler_script = (
         "<script>(function(){"
-        "window.brRefreshCurrentPage=async function(accountId){"
+        "window.brRefreshCurrentPage=async function(opts){"
+        "opts=opts||{};"
+        "var signal=opts.signal;"
+        "/* Timeout so a hung /api/portfolio/refresh can't wedge the refresh UI;"
+        "   the abort signal from doRefresh() is also honored."
+        "   Note: account_id comes from the server session; do NOT send it in the"
+        "   payload (the API rejects requests that include it). */"
+        "var ctrl=(typeof AbortController!=='undefined')?new AbortController():null;"
+        "var timer=null;"
+        "if(ctrl){timer=setTimeout(function(){try{ctrl.abort();}catch(_){}} ,45000);"
+        "if(signal){if(signal.aborted){try{ctrl.abort();}catch(_){}}"
+        "else if(signal.addEventListener){signal.addEventListener('abort',function(){try{ctrl.abort();}catch(_){}});}}}"
+        "var fetchSignal=ctrl?ctrl.signal:(signal||undefined);"
+        "try{"
         "const keys=[...document.querySelectorAll('[data-summary-' + 'card]')]"
         ".filter(function(el){return el.style.display!=='none';})"
         ".map(function(el){return el.dataset.summaryCard;}).filter(Boolean);"
@@ -29363,13 +29906,13 @@ def build_portfolio_body(
         ".filter(function(lg){return lg.league_id;});"
         "if(!liveLeagues.length){return {handled:false};}"
         "await fetch('/api/portfolio/refresh',{method:'POST',headers:{'Content-Type':'application/json'},"
-        "body:JSON.stringify({account_id:accountId,leagues:liveLeagues})});"
-        "return {handled:false};"
-        "}"
+        "body:JSON.stringify({leagues:liveLeagues}),signal:fetchSignal});"
+        "return {handled:false};}"
         "const response=await fetch('/api/portfolio/refresh',{method:'POST',headers:{'Content-Type':'application/json'},"
-        "body:JSON.stringify({account_id:accountId,keys:keys})});"
+        "body:JSON.stringify({keys:keys}),signal:fetchSignal});"
         "if(!response.ok){throw new Error('Portfolio refresh failed: '+response.status);}"
         "return await response.json();"
+        "}finally{if(timer)clearTimeout(timer);}"
         "};"
         "})();</script>"
     )
@@ -30640,7 +31183,7 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
     </div>
     <div class="share-card">
       <div class="sc-header">
-        <div class="sc-brand"><img src="/static/BR_Mark_dark.png?v=f4228e0e" alt="BR Fantasy" style="height:20px;opacity:.9"> BR Fantasy</div>
+        <div class="sc-brand"><img src="/static/BR_Mark_dark.png?v=6c0c4828" alt="BR Fantasy" style="height:20px;opacity:.9"> BR Fantasy</div>
         <div class="sc-league">{league_name}</div>
       </div>
       <div class="sc-team-row">
@@ -30682,7 +31225,7 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
     function applyTheme(t) {{
       root.setAttribute('data-theme', t);
       var logo = document.querySelector('.sc-brand img');
-      if (logo) logo.src = t === 'dark' ? '/static/BR_Mark_dark.png?v=f4228e0e' : '/static/BR_Mark.png?v=f4228e0e';
+      if (logo) logo.src = t === 'dark' ? '/static/BR_Mark_dark.png?v=6c0c4828' : '/static/BR_Mark.png?v=6c0c4828';
       var btn = document.getElementById('scThemeToggle');
       if (btn) btn.innerHTML = t === 'dark' ? '&#9728;' : '&#9790;';
     }}
@@ -30743,7 +31286,7 @@ def share_card_og_image(platform: str, season: int, league_id: str, roster_id: s
         cache_key=f"team:{platform}:{season}:{league_id}:{roster_id}:v{int(_value_cache_bust_mtime() or 0)}",
     )
     if not png:
-        return redirect(f"{request.host_url.rstrip('/')}/static/BR_Logo.png?v=f4228e0e")
+        return redirect(f"{request.host_url.rstrip('/')}/static/BR_Logo.png?v=6c0c4828")
     return Response(png, mimetype="image/png",
                     headers={"Cache-Control": "public, max-age=3600"})
 
@@ -31017,13 +31560,10 @@ def page_trade_card(share_id: str):
     eff_diff = eff_a - eff_b
 
     baseline = max(eff_a, eff_b, 1.0)
-    if baseline >= 600:
-        _fair_pct = 0.05
-    elif baseline >= 300:
-        _fair_pct = 0.07
-    else:
-        _fair_pct = 0.10
-    fair_band = max(baseline * _fair_pct, 25.0)
+    # Shared continuous fair band — same definition as the trade calculator
+    # (utils.trade_value.fair_value_band).
+    from utils.trade_value import fair_value_band as _fair_value_band
+    fair_band = _fair_value_band(baseline)
 
     if abs(eff_diff) <= fair_band:
         verdict = "Fair Trade"
@@ -31166,7 +31706,7 @@ def page_trade_card(share_id: str):
   <meta name="twitter:title" content="{og_title}">
   <meta name="twitter:description" content="{verdict}">
   <meta name="twitter:image" content="{_og_image_url}">
-  <link rel="icon" href="/static/BR_Mark.png?v=f4228e0e" type="image/png">
+  <link rel="icon" href="/static/BR_Mark.png?v=6c0c4828" type="image/png">
   <script>
     (function(){{{"document.documentElement.setAttribute('data-theme','light');" if is_og else "var t=localStorage.getItem('sc-card-theme')||(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.setAttribute('data-theme',t);"}}})();
   </script>
@@ -31252,7 +31792,7 @@ def page_trade_card(share_id: str):
     <div class="card">
       <div class="card-header">
         <div class="brand">
-          <img src="/static/BR_Mark_dark.png?v=f4228e0e" id="tcLogo" alt="BR Fantasy" style="height:18px;opacity:.9">
+          <img src="/static/BR_Mark_dark.png?v=6c0c4828" id="tcLogo" alt="BR Fantasy" style="height:18px;opacity:.9">
           BR Fantasy
         </div>
         <div style="display:flex;align-items:center;gap:8px">
@@ -31307,7 +31847,7 @@ def page_trade_card(share_id: str):
     function applyTheme(t){{
       root.setAttribute('data-theme', t);
       var logo = document.getElementById('tcLogo');
-      if (logo) logo.src = t === 'dark' ? '/static/BR_Mark_dark.png?v=f4228e0e' : '/static/BR_Mark.png?v=f4228e0e';
+      if (logo) logo.src = t === 'dark' ? '/static/BR_Mark_dark.png?v=6c0c4828' : '/static/BR_Mark.png?v=6c0c4828';
       var btn = document.getElementById('tcToggle');
       if (btn) btn.innerHTML = t === 'dark' ? '&#9728;' : '&#9790;';
     }}
@@ -31367,7 +31907,7 @@ def trade_card_og_image(share_id: str):
         cache_key=f"trade:{share_id}",
     )
     if not png:
-        return redirect(f"{request.host_url.rstrip('/')}/static/BR_Logo.png?v=f4228e0e")
+        return redirect(f"{request.host_url.rstrip('/')}/static/BR_Logo.png?v=6c0c4828")
     return Response(png, mimetype="image/png",
                     headers={"Cache-Control": "public, max-age=3600"})
 

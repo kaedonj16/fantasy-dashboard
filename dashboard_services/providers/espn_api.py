@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import logging
 import threading
@@ -11,6 +12,7 @@ from functools import lru_cache
 from typing import Any, Dict, List, Optional, Tuple
 
 from espn_api.football import League
+from espn_api.football.box_score import BoxScore
 import requests
 
 from utils.utils import load_players_index
@@ -723,7 +725,45 @@ def _box_scores_cached(
         if hit and (now - hit[0]) < effective_ttl:
             return hit[1]
     # Fetch outside the lock so a slow ESPN call doesn't block other keys.
-    scores = _league(season, league_id).box_scores(week)
+    # espn-api's League.box_scores() intentionally substitutes the league's
+    # *current* scoring and matchup periods whenever ``week`` is in the future.
+    # That is useful for its historical-boxscore API, but is disastrous for a
+    # season schedule: every future request returns today's opponent.  Issue the
+    # same ESPN request ourselves so the requested scoring period is always
+    # preserved and translate it to the enclosing matchup period (playoff
+    # matchups may span more than one scoring period).
+    lg = _league(season, league_id)
+    scoring_period = int(week)
+    matchup_period = scoring_period
+    for period_id, scoring_periods in (getattr(lg.settings, "matchup_periods", None) or {}).items():
+        if scoring_period in scoring_periods:
+            matchup_period = int(period_id)
+            break
+    params = {"view": ["mMatchupScore", "mScoreboard"],
+              "scoringPeriodId": scoring_period}
+    filters = {"schedule": {"filterMatchupPeriodIds": {"value": [matchup_period]}}}
+    data = lg.espn_request.league_get(
+        params=params, headers={"x-fantasy-filter": json.dumps(filters)},
+    )
+    schedule = data.get("schedule") or []
+    pro_schedule = lg._get_pro_schedule(scoring_period)
+    positional_rankings = lg._get_positional_ratings(scoring_period)
+    scores = []
+    teams = {_safe_int(getattr(t, "team_id", None) or getattr(t, "id", None)): t
+             for t in (lg.teams or [])}
+    for raw in schedule:
+        score = BoxScore(raw, pro_schedule, positional_rankings, scoring_period, int(season))
+        score.home_team = teams.get(_safe_int(score.home_team), score.home_team)
+        score.away_team = teams.get(_safe_int(score.away_team), score.away_team)
+        winner = str(raw.get("winner") or "").upper()
+        score._br_finalized = winner in {"HOME", "AWAY", "TIE"}
+        raw_status = str(raw.get("status") or "").lower()
+        has_live_totals = any("totalPointsLive" in (raw.get(side) or {})
+                              for side in ("home", "away"))
+        score._br_status = "live" if raw_status in {"in", "live", "in_progress"} or has_live_totals else (
+            "final" if score._br_finalized else "scheduled"
+        )
+        scores.append(score)
     with _box_score_lock:
         _box_score_cache[key] = (time.time(), scores)
     return scores
@@ -1171,7 +1211,7 @@ def get_matchups(
 
         matchup_id += 1
 
-        def build_side(team, lineup, score):
+        def build_side(team, lineup, score, projected):
             players: List[str] = []
             players_points: Dict[str, float] = {}
 
@@ -1209,10 +1249,13 @@ def get_matchups(
                 "starters": starters,
                 "starters_points": starters_points,
                 "players_points": players_points,
+                "projected_points": safe_float(projected) if projected is not None and projected >= 0 else None,
+                "status": getattr(bs, "_br_status", None),
+                "finalized": bool(getattr(bs, "_br_finalized", False)),
             }
 
-        out.append(build_side(home, getattr(bs, "home_lineup", None), getattr(bs, "home_score", None)))
-        out.append(build_side(away, getattr(bs, "away_lineup", None), getattr(bs, "away_score", None)))
+        out.append(build_side(home, getattr(bs, "home_lineup", None), getattr(bs, "home_score", None), getattr(bs, "home_projected", None)))
+        out.append(build_side(away, getattr(bs, "away_lineup", None), getattr(bs, "away_score", None), getattr(bs, "away_projected", None)))
 
     return out
 
