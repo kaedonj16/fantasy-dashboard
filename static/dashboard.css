@@ -40597,7 +40597,11 @@ a, button, [role="button"], [role="tab"], summary, label,
         border: none;
         border-radius: 0;
         overflow: visible;
-        margin-inline: -6px;
+        /* No negative bleed: the hub clips overflow-x, so a negative
+           margin-inline pushes the "Matchup Preview" heading outside the
+           clipping box and cuts off its first letter. The container is
+           transparent/borderless now, so the bleed was invisible anyway. */
+        margin-inline: 0;
     }
     #weeklyLeftTabs .tab-panel.active {
         padding: 6px 2px 12px;

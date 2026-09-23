@@ -208,3 +208,34 @@ def test_stacked_subline_aligns_with_name_per_side():
         r"\.mb-cell-r\s+\.mb-nameline\s+\.mb-team\s*\{[^}]*align-self:\s*flex-end",
         block,
     ), "right-column sub-line should pin to the name's right edge"
+
+
+def test_weekly_tabs_container_does_not_bleed_outside_hub():
+    """The flattened mobile #weeklyLeftTabs must not use a negative inline
+    margin: the hub clips overflow-x, so a bleed pushes the 'Matchup Preview'
+    heading outside the clipping box and cuts off its first letter."""
+    css = _CSS.read_text(encoding="utf-8")
+    # Find the @media (max-width: 640px) block holding the flattening rule
+    # (background: transparent on the bare #weeklyLeftTabs selector).
+    found = None
+    for part in re.split(r"@media\s*\(\s*max-width:\s*640px\s*\)\s*\{", css)[1:]:
+        depth = 1
+        body = []
+        for ch in part:
+            if ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    break
+            if depth >= 1:
+                body.append(ch)
+        text = "".join(body)
+        m = re.search(r"#weeklyLeftTabs\s*\{([^}]*)\}", text)
+        if m and "background: transparent" in m.group(1):
+            found = m.group(1)
+            break
+    assert found is not None, "expected the flattened #weeklyLeftTabs mobile rule"
+    assert "margin-inline" not in found or re.search(
+        r"margin-inline:\s*0(?:px)?\s*;", found
+    ), "negative margin-inline would clip the matchup heading at the hub edge"
