@@ -838,9 +838,18 @@ function wvLoad() {{
 }}
 
 function wvLoadBigGames() {{
-  fetch(`/api/waiver-big-games?platform=${{WV_PLATFORM}}&league_id=${{WV_LEAGUE_ID}}&season=${{WV_SEASON}}`)
+  // Abort if the backend hangs so the section falls through to the error
+  // state with a retry instead of skeletons forever (matches wvLoadStartSit).
+  var bgController = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+  var bgTimer = null;
+  if (bgController) {{
+    bgTimer = setTimeout(function() {{ try {{ bgController.abort(); }} catch (_) {{}} }}, 20000);
+  }}
+  fetch(`/api/waiver-big-games?platform=${{WV_PLATFORM}}&league_id=${{WV_LEAGUE_ID}}&season=${{WV_SEASON}}`,
+        bgController ? {{ signal: bgController.signal }} : undefined)
     .then(r => r.json().then(d => ({{ ok: r.ok, d }})))
     .then(({{ok, d}}) => {{
+      if (bgTimer) clearTimeout(bgTimer);
       if (!ok || d.availability === 'unavailable' || d.availability === 'stale') {{
         const wrap = document.getElementById('wvBigGamesWrap');
         if (wrap) wrap.hidden = false;
@@ -850,6 +859,7 @@ function wvLoadBigGames() {{
       wvBigGamesData = d.discoveries || []; wvRenderBigGames(wvBigGamesData);
     }})
     .catch(() => {{
+      if (bgTimer) clearTimeout(bgTimer);
       const wrap = document.getElementById('wvBigGamesWrap'); if (wrap) wrap.hidden = false;
       window.brErrorState('wvBigGamesList', 'Availability could not be verified.', wvLoadBigGames);
     }});
