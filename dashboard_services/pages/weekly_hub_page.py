@@ -25,6 +25,7 @@ def build_weekly_hub_body(ctx: dict) -> str:
         _compute_fpts_against,
         _scoring_format_from_settings,
         _games_scheduled_today,
+        _games_live_or_imminent,
         _render_weekly_highlights,
         _league_is_redraft,
         build_optimal_body,
@@ -225,14 +226,17 @@ def build_weekly_hub_body(ctx: dict) -> str:
     week_select_html = "".join(options)
 
     # In-season entry point to the live Redzone, sitting by the week selector.
-    # The animated CTA banner now lives on the dashboard; here a calm static
-    # button keeps Redzone one tap away without adding more motion to this page.
+    # The button only glows red when games are actually live or imminent;
+    # otherwise it's a calm neutral link so it doesn't look live 24/7.
     _rz_btn_html = ""
     if not offseason_mode:
+        _rz_is_live = bool(_games_live_or_imminent(season, current_week))
+        _rz_cls = "weekly-rz-btn weekly-rz-btn-live" if _rz_is_live else "weekly-rz-btn"
+        _rz_dot = '<span class="weekly-rz-btn-dot" aria-hidden="true"></span>' if _rz_is_live else ""
         _rz_btn_html = (
-            '<a class="weekly-rz-btn" href="./redzone" '
+            f'<a class="{_rz_cls}" href="./redzone" '
             'title="Live scoring and red-zone alerts">'
-            '<span class="weekly-rz-btn-dot" aria-hidden="true"></span>Redzone</a>'
+            f'{_rz_dot}Redzone</a>'
         )
 
     top_scorers_html = render_weekly_top_scorers_for_week(

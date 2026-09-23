@@ -2677,6 +2677,47 @@ def _games_scheduled_today(season, week) -> bool:
         return False
 
 
+# Cache for the "new breakouts" Wednesday check (nav badge). Refreshed at
+# most once per hour so the nav doesn't hit the DB on every page load.
+_breakouts_new_cache = {"ts": 0.0, "is_new": False}
+
+
+def _breakouts_are_new() -> bool:
+    """True if a breakout calculation finished on/after the most recent Wednesday.
+
+    Breakout scores are recomputed every Wednesday; when the latest completed
+    run is from this week's Wednesday (or later), the nav shows a NEW badge.
+    """
+    import time
+    now = time.time()
+    if now - _breakouts_new_cache["ts"] < 3600:
+        return _breakouts_new_cache["is_new"]
+    is_new = False
+    try:
+        from datetime import datetime, timedelta
+        from dashboard_services.breakout_api import get_conn as _bo_conn
+        today = datetime.now().date()
+        # Most recent Wednesday (0=Mon … 2=Wed). If today is Wednesday,
+        # that's today.
+        days_since_wed = (today.weekday() - 2) % 7
+        wednesday = today - timedelta(days=days_since_wed)
+        with _bo_conn() as _bc:
+            with _bc.cursor() as _bcur:
+                _bcur.execute(
+                    "SELECT MAX(completed_at) AS m FROM weekly_breakout_runs "
+                    "WHERE status = 'complete'"
+                )
+                ts = (_bcur.fetchone() or {}).get("m")
+                if ts:
+                    ts_date = ts.date() if hasattr(ts, "date") else ts
+                    is_new = ts_date >= wednesday
+    except Exception:
+        is_new = False
+    _breakouts_new_cache["ts"] = now
+    _breakouts_new_cache["is_new"] = is_new
+    return is_new
+
+
 def _games_live_or_imminent(season, week, *, lead_minutes=60) -> bool:
     """True if one of the week's games dated today is live or kicks off soon.
 
@@ -4302,6 +4343,10 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
 
     nfl_state = get_nfl_state() or {}
     offseason_mode = _nfl_offseason_mode(nfl_state, season)
+    # NEW badge on Breakout Engine when this Wednesday's scores are in.
+    _bo_new_badge = (
+        " <span class='nav-new-badge'>NEW</span>" if _breakouts_are_new() else ""
+    )
     # Exposed for client code (e.g. the player-modal Redzone tab, which hides in
     # the offseason). Uses the same condition that gates the Redzone nav item.
     season_active_flag = f"<script>window.__seasonActive={'false' if offseason_mode else 'true'};</script>"
@@ -4407,7 +4452,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
                 ("Compare Players", "/compare", "compare"),
                 ("Top Movers", "/top-movers", "top-movers"),
                 ("Advanced Metrics", "/metrics", "advanced-metrics"),
-                ("Breakout Engine <span class='nav-pro-badge'>PRO</span>", "/breakouts", "breakouts"),
+                (f"Breakout Engine <span class='nav-pro-badge'>PRO</span>{_bo_new_badge}", "/breakouts", "breakouts"),
                 ("Prospects", "/prospects", "prospects"),
             ], ["players", "prospects", "breakouts", "top-movers", "compare"], "playersNavDropdown"),
             simple_dropdown("Draft", [
@@ -4601,7 +4646,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         ("Compare Players", "seo_pages.page_compare", "compare", False),
         ("Top Movers", "seo_pages.top_movers_page", "top-movers", False),
         ("Advanced Metrics", "league_pages.page_advanced_metrics", "advanced-metrics", False),
-        ("Breakout Engine <span class='nav-pro-badge'>PRO</span>", "page_breakouts", "breakouts", False),
+        (f"Breakout Engine <span class='nav-pro-badge'>PRO</span>{_bo_new_badge}", "page_breakouts", "breakouts", False),
         ("Prospect Rankings", "page_prospects", "prospects", False),
     ], ["players", "prospects", "breakouts", "top-movers", "compare"], "playersNavDropdown"))
     # Keeper Assistant only applies to keeper leagues; hide it for dynasty and
@@ -14473,6 +14518,27 @@ def page_breakouts(platform: str, season: int, league_id: str):
     except Exception:
         bo_season = max(season, datetime.now().year)
 
+    # Last-updated timestamp for the breakout page header. The weekly runs
+    # table records when each Wednesday calculation finished.
+    _bo_last_updated = ""
+    try:
+        from dashboard_services.breakout_api import get_conn as _bo_conn2
+        with _bo_conn2() as _bc2:
+            with _bc2.cursor() as _bcur2:
+                _bcur2.execute(
+                    "SELECT MAX(completed_at) AS m FROM weekly_breakout_runs "
+                    "WHERE status = 'complete'"
+                )
+                _bo_ts = (_bcur2.fetchone() or {}).get("m")
+                if _bo_ts:
+                    _bo_last_updated = (
+                        f'<div style="font-size: 12px; color: var(--text-muted); '
+                        f'margin-top: 4px;">Last Updated: '
+                        f'{_bo_ts.strftime("%b %d, %Y")}</div>'
+                    )
+    except Exception:
+        pass
+
     body_html = f"""
     <div class="card central">
       <div class="card-header">
@@ -14480,6 +14546,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
         <div style="font-size: 14px; color: var(--text-muted); margin-top: 4px;">
           Players positioned for breakouts based on opportunity, efficiency, and roster changes
         </div>
+        {_bo_last_updated}
       </div>
       <div class="card-body">
         <!-- Position Filter -->
