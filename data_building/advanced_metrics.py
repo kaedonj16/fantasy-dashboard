@@ -50,6 +50,20 @@ def premium_metrics_exposed() -> bool:
     return os.getenv("EXPOSE_PREMIUM_METRICS", "").strip().lower() in ("1", "true", "yes")
 
 
+# Derived intelligence metrics gated behind a per-user PRO subscription.
+# Raw volume/share/efficiency metrics stay free for everyone, as does
+# expected_ppr_per_game (it anchors the free Key Metrics / Start-Sit views).
+# The proprietary answers built on top (over-expected, trends, consistency,
+# matchup intel) are PRO. Enforced server-side in
+# routes/advanced_metrics_bp.py (leaderboard + movers 403) and reflected in
+# the page picker/pills.
+PRO_METRICS = frozenset({
+    "ppr_over_expected_per_game",
+    "wopr", "opportunity_trend", "xfp_trend",
+    "boom_rate", "bust_rate", "schedule_ease",
+})
+
+
 def strip_premium_metrics(metrics: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     """Remove premium (PFF) columns from a metrics dict for public responses.
 
@@ -168,6 +182,23 @@ def init_advanced_metrics_db():
             ALTER TABLE player_advanced_metrics
                 ADD COLUMN IF NOT EXISTS rz_targets_pg NUMERIC,
                 ADD COLUMN IF NOT EXISTS rz_carries_pg NUMERIC;
+        """)
+
+        # Weekly-series derived metrics (boom/bust rates, consistency, trends,
+        # RZ shares, snap totals). Populated by finalize_weekly_series_metrics
+        # during the snapshot build; older rows stay NULL and are skipped by
+        # the leaderboard gates.
+        conn.execute("""
+            ALTER TABLE player_advanced_metrics
+                ADD COLUMN IF NOT EXISTS total_snaps       NUMERIC,
+                ADD COLUMN IF NOT EXISTS rz_opp_share      NUMERIC,
+                ADD COLUMN IF NOT EXISTS rz_target_share   NUMERIC,
+                ADD COLUMN IF NOT EXISTS boom_rate         NUMERIC,
+                ADD COLUMN IF NOT EXISTS bust_rate         NUMERIC,
+                ADD COLUMN IF NOT EXISTS fp_cv             NUMERIC,
+                ADD COLUMN IF NOT EXISTS xfp_stddev       NUMERIC,
+                ADD COLUMN IF NOT EXISTS xfp_trend        NUMERIC,
+                ADD COLUMN IF NOT EXISTS opportunity_trend NUMERIC;
         """)
 
         # Backfill season from as_of_date for any rows that are missing it.
@@ -892,6 +923,177 @@ def finalize_role_scores_v2(
         m["role_score"] = round(_clip(idx / anchor, 0.0, 1.0) * 100.0 * conf, 1)
 
 
+# Per-position weekly PPR thresholds for boom/bust weeks. Mirrors
+# utils.consistency._POS_THRESHOLDS exactly (boom: week at/above is a smash
+# week; bust: week below likely lost the matchup).
+_BOOM_BUST_THRESHOLDS: Dict[str, Tuple[float, float]] = {
+    "QB": (25.0, 15.0),
+    "RB": (20.0, 8.0),
+    "WR": (20.0, 8.0),
+    "TE": (15.0, 5.0),
+}
+_DEFAULT_BOOM_BUST = (18.0, 7.0)
+
+
+def _population_stddev(vals: List[float]) -> Optional[float]:
+    """Population standard deviation (divide by N, not N-1). None when empty."""
+    n = len(vals)
+    if n == 0:
+        return None
+    mean = sum(vals) / n
+    var = sum((v - mean) ** 2 for v in vals) / n
+    return var ** 0.5
+
+
+def _recent_vs_season_ratio(vals: List[float], recent_n: int = 3) -> Optional[float]:
+    """Last-`recent_n` average ÷ season average − 1. None when unusable.
+
+    Positive = trending up. E.g. 0.15 means the recent stretch is 15% above
+    the season average.
+
+    Returns None when the recent window covers the whole sample
+    (len(vals) <= recent_n): the ratio is then mathematically forced to
+    exactly 0.0 for every player (e.g. weeks 1-3 of a season), which is
+    worse than no data at all.
+    """
+    if not vals:
+        return None
+    if len(vals) <= recent_n:
+        # The "recent" window IS the season sample; recent_avg == season_avg
+        # would force a meaningless 0.0. Wait for a real sample instead.
+        return None
+    season_avg = sum(vals) / len(vals)
+    if season_avg == 0:
+        return None
+    recent = vals[-recent_n:]
+    recent_avg = sum(recent) / len(recent)
+    return recent_avg / season_avg - 1.0
+
+
+def finalize_weekly_series_metrics(
+        metrics_list: List[Dict[str, Any]],
+        usage_table: List[Dict[str, Any]],
+        season: int,
+        through_week: int,
+) -> None:
+    """Fill weekly-series derived metrics on each metrics dict, in place.
+
+    Computes from the box-score weekly series (player_weekly_metrics) and the
+    weekly expected-points table (player_weekly_advanced_metrics):
+      total_snaps, rz_opp_share, rz_target_share, boom_rate, bust_rate,
+      fp_cv, xfp_stddev, xfp_trend, opportunity_trend.
+
+    Best-effort: any failure (missing tables, weekly source down) leaves the
+    keys unset (None) and never raises — the snapshot write must not be gated
+    on weekly data availability. Per-player errors are isolated so one bad
+    player cannot poison the rest of the slate.
+
+    RZ shares pool each player's weeks under the team listed in usage_table
+    (a mid-season trade misattributes pre-trade weeks to the new team; the
+    weekly layer has team_for_week if exactness is ever needed).
+    """
+    if not metrics_list:
+        return
+    try:
+        from data_building.weekly_metrics import get_weekly_series_by_player
+    except Exception:
+        logger.debug("weekly series unavailable; skipping weekly-series metrics",
+                     exc_info=True)
+        return
+
+    try:
+        series_by_pid = get_weekly_series_by_player(int(season), int(through_week)) or {}
+    except Exception:
+        logger.debug("get_weekly_series_by_player failed; skipping weekly-series metrics",
+                     exc_info=True)
+        return
+
+    # Weekly expected PPR in one bulk query (per-player helper would be N queries).
+    xfp_by_pid: Dict[str, List[float]] = {}
+    try:
+        init_weekly_advanced_metrics_db()
+        with get_conn() as conn:
+            rows = conn.execute(
+                "SELECT player_id, week, expected_ppr FROM player_weekly_advanced_metrics "
+                "WHERE season = %s AND week <= %s ORDER BY player_id, week",
+                (int(season), int(through_week)),
+            ).fetchall()
+        for r in rows:
+            if r["expected_ppr"] is None:
+                continue
+            xfp_by_pid.setdefault(str(r["player_id"]), []).append(float(r["expected_ppr"]))
+    except Exception:
+        logger.debug("weekly xFP unavailable; xfp metrics will stay None",
+                     exc_info=True)
+
+    team_by_pid = {str(p.get("id")): (p.get("team") or "") for p in usage_table}
+    metrics_by_pid = {str(m.get("player_id")): m for m in metrics_list}
+
+    # Team RZ denominators from the same weekly series (pooled per team).
+    team_rz_targets: Dict[str, float] = {}
+    team_rz_opps: Dict[str, float] = {}
+    for pid, weeks in series_by_pid.items():
+        team = team_by_pid.get(pid) or ""
+        if not team:
+            continue
+        for w in weeks:
+            rt = float(w.get("rz_targets") or 0)
+            rc = float(w.get("rz_carries") or 0)
+            team_rz_targets[team] = team_rz_targets.get(team, 0.0) + rt
+            team_rz_opps[team] = team_rz_opps.get(team, 0.0) + rt + rc
+
+    for pid, m in metrics_by_pid.items():
+        try:
+            weeks = series_by_pid.get(pid) or []
+            if not weeks:
+                continue
+            position = (m.get("position") or "").upper()
+            boom_t, bust_t = _BOOM_BUST_THRESHOLDS.get(position, _DEFAULT_BOOM_BUST)
+
+            ppr = [float(w["ppr_pts"]) for w in weeks if w.get("ppr_pts") is not None]
+            n = len(ppr)
+            if n:
+                m["boom_rate"] = sum(1 for v in ppr if v >= boom_t) / n
+                m["bust_rate"] = sum(1 for v in ppr if v < bust_t) / n
+                mean = sum(ppr) / n
+                sd = _population_stddev(ppr)
+                m["fp_cv"] = (sd / mean) if (sd is not None and mean) else None
+            else:
+                m["boom_rate"] = None
+                m["bust_rate"] = None
+                m["fp_cv"] = None
+
+            snaps = [float(w.get("snaps") or 0) for w in weeks]
+            m["total_snaps"] = sum(snaps) if any(snaps) else None
+
+            rz_t = sum(float(w.get("rz_targets") or 0) for w in weeks)
+            rz_c = sum(float(w.get("rz_carries") or 0) for w in weeks)
+            team = team_by_pid.get(pid) or ""
+            t_targets = team_rz_targets.get(team, 0.0)
+            t_opps = team_rz_opps.get(team, 0.0)
+            m["rz_target_share"] = (rz_t / t_targets) if t_targets > 0 else None
+            m["rz_opp_share"] = ((rz_t + rz_c) / t_opps) if t_opps > 0 else None
+
+            xfp = xfp_by_pid.get(pid) or []
+            m["xfp_stddev"] = _population_stddev(xfp)
+            m["xfp_trend"] = _recent_vs_season_ratio(xfp)
+
+            # Position key stat for the usage trend: QB snap %, RB touches,
+            # WR/TE targets. snap_pct is 0-100 in the weekly table; the ratio
+            # is unit-free so no rescaling is needed.
+            if position == "QB":
+                key_vals = [float(w.get("snap_pct") or 0) for w in weeks]
+            elif position == "RB":
+                key_vals = [float(w.get("touches") or 0) for w in weeks]
+            else:
+                key_vals = [float(w.get("targets") or 0) for w in weeks]
+            m["opportunity_trend"] = _recent_vs_season_ratio(key_vals)
+        except Exception:
+            logger.debug("weekly-series finalize failed for player %s", pid,
+                         exc_info=True)
+            continue
+
+
 def calculate_player_metrics(
         player_id: str,
         usage: Dict[str, float],
@@ -1029,6 +1231,15 @@ def build_advanced_metrics_snapshot(
     else:
         usage_map = usage_builder(season, range(1, completed_week + 1)) or {}
     summary["player_stats_rows"] = len(usage_map)
+    # Snap counts are absent from the Sleeper usage feed; merge them from
+    # nflverse so snap_share (and the snap_rows diagnostic) is populated.
+    # Best-effort: never gates the snapshot write.
+    try:
+        _n_snap = _merge_nflverse_snap_share(usage_map, season, completed_week)
+        if _n_snap:
+            logger.info("merged nflverse snap share for %d players", _n_snap)
+    except Exception:
+        logger.exception("snap share merge failed; continuing without snap data")
     skips: Counter = Counter()
     metrics_list: List[Dict[str, Any]] = []
     usage_table: List[Dict[str, Any]] = []
@@ -1060,6 +1271,12 @@ def build_advanced_metrics_snapshot(
     summary["skip_reasons"] = dict(sorted(skips.items()))
     if metrics_list:
         finalize_role_scores_v2(metrics_list, usage_table)
+        # Weekly-series derived metrics (boom/bust, consistency, trends, RZ
+        # shares, snap totals). Best-effort: never gates the snapshot write.
+        try:
+            finalize_weekly_series_metrics(metrics_list, usage_table, season, completed_week)
+        except Exception:
+            logger.exception("finalize_weekly_series_metrics failed; continuing without")
         snapshot_date = as_of_date or _date.today().isoformat()
         inserted, updated = save_metrics_snapshot(
             metrics_list, snapshot_date, season=season, return_counts=True)
@@ -1139,6 +1356,9 @@ def save_metrics_snapshot(metrics_list: List[Dict[str, Any]], as_of_date: str, s
                     total_targets, total_receptions, total_carries, total_touches, total_pass_att,
                     target_share, route_participation,
                     total_rush_tds, total_rec_tds, total_pass_tds, total_tds,
+                    total_snaps, rz_opp_share, rz_target_share,
+                    boom_rate, bust_rate, fp_cv,
+                    xfp_stddev, xfp_trend, opportunity_trend,
                     nfl_team, schedule_ease
                 )
                 VALUES (
@@ -1152,6 +1372,9 @@ def save_metrics_snapshot(metrics_list: List[Dict[str, Any]], as_of_date: str, s
                     %s, %s, %s, %s, %s,
                     %s, %s,
                     %s, %s, %s, %s,
+                    %s, %s, %s,
+                    %s, %s, %s,
+                    %s, %s, %s,
                     %s, %s
                 )
                 ON CONFLICT (player_id, as_of_date)
@@ -1189,6 +1412,18 @@ def save_metrics_snapshot(metrics_list: List[Dict[str, Any]], as_of_date: str, s
                     total_rec_tds = EXCLUDED.total_rec_tds,
                     total_pass_tds = EXCLUDED.total_pass_tds,
                     total_tds = EXCLUDED.total_tds,
+                    -- Weekly-series metrics: keep the existing value when the
+                    -- weekly source was down and produced NULLs, so a same-day
+                    -- outage cannot wipe good data.
+                    total_snaps = COALESCE(EXCLUDED.total_snaps, player_advanced_metrics.total_snaps),
+                    rz_opp_share = COALESCE(EXCLUDED.rz_opp_share, player_advanced_metrics.rz_opp_share),
+                    rz_target_share = COALESCE(EXCLUDED.rz_target_share, player_advanced_metrics.rz_target_share),
+                    boom_rate = COALESCE(EXCLUDED.boom_rate, player_advanced_metrics.boom_rate),
+                    bust_rate = COALESCE(EXCLUDED.bust_rate, player_advanced_metrics.bust_rate),
+                    fp_cv = COALESCE(EXCLUDED.fp_cv, player_advanced_metrics.fp_cv),
+                    xfp_stddev = COALESCE(EXCLUDED.xfp_stddev, player_advanced_metrics.xfp_stddev),
+                    xfp_trend = COALESCE(EXCLUDED.xfp_trend, player_advanced_metrics.xfp_trend),
+                    opportunity_trend = COALESCE(EXCLUDED.opportunity_trend, player_advanced_metrics.opportunity_trend),
                     nfl_team = COALESCE(EXCLUDED.nfl_team, player_advanced_metrics.nfl_team),
                     schedule_ease = COALESCE(EXCLUDED.schedule_ease, player_advanced_metrics.schedule_ease)
             """, (
@@ -1211,6 +1446,12 @@ def save_metrics_snapshot(metrics_list: List[Dict[str, Any]], as_of_date: str, s
                 route_partic,
                 metrics.get("total_rush_tds"), metrics.get("total_rec_tds"),
                 metrics.get("total_pass_tds"), metrics.get("total_tds"),
+                metrics.get("total_snaps"), metrics.get("rz_opp_share"),
+                metrics.get("rz_target_share"),
+                metrics.get("boom_rate"), metrics.get("bust_rate"),
+                metrics.get("fp_cv"),
+                metrics.get("xfp_stddev"), metrics.get("xfp_trend"),
+                metrics.get("opportunity_trend"),
                 metrics.get("nfl_team") or None,
                 metrics.get("schedule_ease"),
             ))
@@ -1224,6 +1465,35 @@ def save_metrics_snapshot(metrics_list: List[Dict[str, Any]], as_of_date: str, s
         return inserted, updated
 
 
+def _upsert_air_yards_wopr(season: int, rows_by_player: Dict[str, Dict[str, Any]]) -> int:
+    """Upsert pre-shaped {sleeper_id: {air_yards_per_game, air_yards_share, wopr}}
+    rows into the latest player_advanced_metrics snapshot row per player/season.
+    Returns the number of rows updated."""
+    if not rows_by_player:
+        return 0
+    updated = 0
+    with get_conn() as conn:
+        for sleeper_id, vals in rows_by_player.items():
+            result = conn.execute("""
+                UPDATE player_advanced_metrics
+                SET air_yards_per_game = %s,
+                    air_yards_share    = %s,
+                    wopr               = %s
+                WHERE player_id = %s
+                  AND season = %s
+                  AND as_of_date = (
+                      SELECT MAX(as_of_date) FROM player_advanced_metrics
+                      WHERE player_id = %s AND season = %s
+                  )
+            """, (
+                vals["air_yards_per_game"], vals["air_yards_share"], vals["wopr"],
+                sleeper_id, season, sleeper_id, season,
+            ))
+            if result.rowcount:
+                updated += result.rowcount
+    return updated
+
+
 def import_air_yards_from_stats_csv(season: int) -> int:
     """
     Read cache/stats_player_reg_{season}.csv (produced by nfl_data_py) and upsert
@@ -1232,6 +1502,10 @@ def import_air_yards_from_stats_csv(season: int) -> int:
     Matches rows by player_id (sleeper id from players_index) and updates the
     most-recent snapshot row for each player/season.  Safe to call repeatedly.
     Returns the number of rows updated.
+
+    Legacy path: nothing on the server produces this CSV, so prefer
+    import_air_yards(), which pulls fresh from nfl_data_py and only falls back
+    here.
     """
     import os
     import csv
@@ -1288,31 +1562,262 @@ def import_air_yards_from_stats_csv(season: int) -> int:
                 "wopr": wopr_val,
             }
 
-    if not rows_by_player:
+    return _upsert_air_yards_wopr(season, rows_by_player)
+
+
+def _aggregate_air_yards_weekly(rows) -> Tuple[Dict[str, Dict[str, Any]], Dict[str, Dict[str, float]]]:
+    """Aggregate weekly receiving rows into per-player and per-team totals.
+
+    rows: iterable of dicts with player_id (gsis), recent_team, targets,
+    receiving_air_yards. Weeks with no receiving involvement are skipped.
+    Returns (players, teams):
+      players: {gsis_id: {"ay", "targets", "games", "team"}}
+      teams:   {team: {"ay", "targets"}}
+    """
+    players: Dict[str, Dict[str, Any]] = {}
+    teams: Dict[str, Dict[str, float]] = {}
+    for r in rows or []:
+        pid = str(r.get("player_id") or "").strip()
+        if not pid:
+            continue
+        ay = _safe(r.get("receiving_air_yards"))
+        tg = _safe(r.get("targets"))
+        if ay <= 0 and tg <= 0:
+            continue
+        team = str(r.get("recent_team") or "").strip().upper()
+        p = players.setdefault(pid, {"ay": 0.0, "targets": 0.0, "games": 0, "team": team})
+        p["ay"] += ay
+        p["targets"] += tg
+        p["games"] += 1
+        if team:
+            p["team"] = team  # most recent team wins; traded players are approximate
+        t = teams.setdefault(team or "UNK", {"ay": 0.0, "targets": 0.0})
+        t["ay"] += ay
+        t["targets"] += tg
+    return players, teams
+
+
+def _air_yards_rows_from_aggregates(
+    players: Dict[str, Dict[str, Any]],
+    teams: Dict[str, Dict[str, float]],
+    gsis_to_sleeper: Dict[str, str],
+) -> Dict[str, Dict[str, Any]]:
+    """Shape per-gsis aggregates into {sleeper_id: {air_yards_per_game,
+    air_yards_share, wopr}}, matching the legacy CSV import's output shape.
+
+    WOPR uses the standard Hermsmeyer weighting: 1.5 * target_share +
+    0.7 * air_yards_share (shares as 0-1 fractions).
+    """
+    rows: Dict[str, Dict[str, Any]] = {}
+    for gsis_id, p in players.items():
+        sleeper_id = (gsis_to_sleeper or {}).get(str(gsis_id))
+        if not sleeper_id:
+            continue
+        team = teams.get(p["team"]) or {}
+        team_ay = _safe(team.get("ay"))
+        team_tg = _safe(team.get("targets"))
+        games = p["games"] or 0
+        ay = p["ay"]
+        tg = p["targets"]
+        ay_share_frac = (ay / team_ay) if team_ay > 0 else 0.0
+        tgt_share_frac = (tg / team_tg) if team_tg > 0 else 0.0
+        rows[str(sleeper_id)] = {
+            "air_yards_per_game": round(ay / games, 1) if games else None,
+            "air_yards_share": round(ay_share_frac * 100.0, 1),
+            "wopr": round(1.5 * tgt_share_frac + 0.7 * ay_share_frac, 3),
+        }
+    return rows
+
+
+_AY_WEEKLY_COLS = [
+    "player_id", "player_name", "position", "recent_team", "season",
+    "season_type", "week", "targets", "receiving_air_yards",
+]
+
+
+def _fetch_stats_player_week(season: int):
+    """Fetch weekly player stats from nflverse's current `stats_player` release.
+
+    Returns a DataFrame with legacy-compatible column names, or None on failure.
+    The old `player_stats` release (used by nfl_data_py) was retired 2025-08-01
+    and is frozen at 2024; current data lives under the `stats_player` tag.
+    """
+    import pandas as pd
+
+    url = (
+        "https://github.com/nflverse/nflverse-data/releases/download/"
+        f"stats_player/stats_player_week_{season}.parquet"
+    )
+    try:
+        df = pd.read_parquet(url)
+    except Exception:
+        return None
+    if df is None or getattr(df, "empty", True):
+        return None
+    # Rename new-release columns back to the legacy names the pipeline expects.
+    rename = {}
+    if "team" in df.columns and "recent_team" not in df.columns:
+        rename["team"] = "recent_team"
+    if rename:
+        df = df.rename(columns=rename)
+    cols = [c for c in _AY_WEEKLY_COLS if c in df.columns]
+    return df[cols] if cols else None
+
+
+def fetch_nflverse_air_yards(
+    season: int, completed_week: Optional[int] = None
+) -> Dict[str, Dict[str, Any]]:
+    """{sleeper_id: {air_yards_per_game, air_yards_share, wopr}} from a fresh
+    nflverse pull, or {} when unavailable.
+
+    Fetches directly from the current `stats_player` release (nflverse retired
+    the old `player_stats` release that nfl_data_py uses — it's frozen at 2024).
+    Falls back to nfl_data_py, then to the legacy stats CSV.
+    """
+    df = _fetch_stats_player_week(season)
+    if df is None:
+        try:
+            import nfl_data_py as nfl
+            df = nfl.import_weekly_data([season], columns=_AY_WEEKLY_COLS)
+        except Exception:
+            df = None
+    if df is None or getattr(df, "empty", True):
+        return {}
+    try:
+        if df is None or getattr(df, "empty", True):
+            return {}
+        rows = []
+        for r in df.to_dict("records"):
+            if str(r.get("season_type", "REG")).upper() != "REG":
+                continue
+            if completed_week is not None and _safe(r.get("week"), 0) > completed_week:
+                continue
+            if str(r.get("position") or "").upper() not in ("RB", "WR", "TE"):
+                continue
+            rows.append(r)
+        players, teams = _aggregate_air_yards_weekly(rows)
+        if not players:
+            return {}
+        from data_building.external_data.nflverse_metrics import _gsis_to_sleeper
+        return _air_yards_rows_from_aggregates(players, teams, _gsis_to_sleeper())
+    except Exception:
+        logger.exception("nflverse air yards fetch failed; falling back to stats CSV")
+        return {}
+
+
+def import_air_yards(season: int, completed_week: Optional[int] = None) -> int:
+    """Upsert air-yards-per-game / air-yards-share / WOPR for a season.
+
+    Primary source is a fresh nfl_data_py pull (no stale cache-CSV dependency);
+    falls back to the legacy stats-CSV import. Safe to call repeatedly.
+    Returns the number of rows updated.
+    """
+    rows = fetch_nflverse_air_yards(season, completed_week)
+    if rows:
+        return _upsert_air_yards_wopr(season, rows)
+    return import_air_yards_from_stats_csv(season)
+
+
+def _pfr_to_sleeper_map(season: int) -> Dict[str, str]:
+    """{pfr_player_id: sleeper_id} from nfl_data_py rosters (fallback: import_ids).
+
+    Returns {} when nfl_data_py is unavailable. Used to join snap-count rows
+    (keyed by PFR id) onto the Sleeper-keyed usage map.
+    """
+    mapping: Dict[str, str] = {}
+    try:
+        import nfl_data_py as nfl
+    except Exception:
+        return mapping
+    frames = []
+    for loader in (lambda: nfl.import_rosters([season]), nfl.import_ids):
+        try:
+            frames.append(loader())
+        except Exception:
+            continue
+    for df in frames:
+        try:
+            cols = {str(c).lower(): c for c in df.columns}
+            pfr_c = cols.get("pfr_id") or cols.get("pfr_player_id")
+            slp_c = cols.get("sleeper_id")
+            if not pfr_c or not slp_c:
+                continue
+            for _, row in df.iterrows():
+                pfr = str(row.get(pfr_c) or "").strip()
+                if not pfr or pfr.lower() in ("nan", "none"):
+                    continue
+                try:
+                    slp = str(int(float(row.get(slp_c))))
+                except (TypeError, ValueError):
+                    slp = str(row.get(slp_c) or "").strip()
+                if slp and slp.lower() != "nan":
+                    mapping[pfr] = slp
+            if mapping:
+                break
+        except Exception:
+            continue
+    return mapping
+
+
+def _average_snap_pct(rows) -> Dict[str, float]:
+    """rows: iterable of dicts with pfr_player_id + offense_pct (0-100 scale).
+    Returns {pfr_player_id: mean offense_pct}."""
+    acc: Dict[str, List[float]] = {}
+    for r in rows or []:
+        pid = str(r.get("pfr_player_id") or "").strip()
+        if not pid:
+            continue
+        acc.setdefault(pid, []).append(_safe(r.get("offense_pct")))
+    return {pid: sum(v) / len(v) for pid, v in acc.items() if v}
+
+
+def _merge_nflverse_snap_share(
+    usage_map: Dict[str, Dict[str, Any]],
+    season: int,
+    completed_week: Optional[int] = None,
+) -> int:
+    """Fill usage['avg_off_snap_pct'] (0-1 fraction) from nfl_data_py snap counts.
+
+    The Sleeper usage feed carries no snap data, so without this merge snap_share
+    (and the snap_rows diagnostic) is always empty. Only fills players missing a
+    value — never clobbers a real snap source. Best-effort: any failure leaves
+    the map untouched and returns 0; never gates the snapshot write.
+    """
+    if not usage_map:
         return 0
-
-    updated = 0
-    with get_conn() as conn:
-        for sleeper_id, vals in rows_by_player.items():
-            result = conn.execute("""
-                UPDATE player_advanced_metrics
-                SET air_yards_per_game = %s,
-                    air_yards_share    = %s,
-                    wopr               = %s
-                WHERE player_id = %s
-                  AND season = %s
-                  AND as_of_date = (
-                      SELECT MAX(as_of_date) FROM player_advanced_metrics
-                      WHERE player_id = %s AND season = %s
-                  )
-            """, (
-                vals["air_yards_per_game"], vals["air_yards_share"], vals["wopr"],
-                sleeper_id, season, sleeper_id, season,
-            ))
-            if result.rowcount:
-                updated += result.rowcount
-
-    return updated
+    try:
+        import nfl_data_py as nfl
+    except Exception:
+        return 0
+    try:
+        snaps = nfl.import_snap_counts([season])
+        if snaps is None or getattr(snaps, "empty", True):
+            return 0
+        rows = []
+        for r in snaps.to_dict("records"):
+            if str(r.get("season_type", "REG")).upper() != "REG":
+                continue
+            if completed_week is not None and _safe(r.get("week"), 0) > completed_week:
+                continue
+            rows.append(r)
+        avg_by_pfr = _average_snap_pct(rows)
+        if not avg_by_pfr:
+            return 0
+        pfr_to_sleeper = _pfr_to_sleeper_map(season)
+        merged = 0
+        for pfr_id, avg_pct in avg_by_pfr.items():
+            sleeper_id = pfr_to_sleeper.get(pfr_id)
+            if not sleeper_id:
+                continue
+            usage = usage_map.get(sleeper_id) or usage_map.get(str(sleeper_id))
+            if usage is None or usage.get("avg_off_snap_pct"):
+                continue
+            usage["avg_off_snap_pct"] = round(avg_pct / 100.0, 4)
+            merged += 1
+        return merged
+    except Exception:
+        logger.exception("nflverse snap merge failed; continuing without snap data")
+        return 0
 
 
 def get_player_metrics(player_id: str, as_of_date: Optional[str] = None) -> Optional[Dict[str, Any]]:
@@ -1490,6 +1995,9 @@ def get_player_career_metrics(
         'rushing_success_rate', 'receiving_success_rate',
         'rushing_epa_per_att', 'receiving_epa_per_target',
         'qb_hit_rate', 'explosive_pass_rate', 'pacr', 'racr',
+        'total_snaps', 'rz_opp_share', 'rz_target_share',
+        'boom_rate', 'bust_rate', 'fp_cv',
+        'xfp_stddev', 'xfp_trend', 'opportunity_trend',
     ]
 
     with get_conn() as conn:
@@ -1615,6 +2123,7 @@ _V_CARRIES   = {"col": "total_carries",    "label": "Min Carries",    "opts": [3
 _V_TOUCHES   = {"col": "total_touches",    "label": "Min Touches",    "opts": [40, 60, 100, 150]}
 _V_PASS_ATT  = {"col": "total_pass_att",   "label": "Min Attempts",   "opts": [100, 200, 300, 400]}
 _V_GAMES     = {"col": "games",            "label": "Min Games",      "opts": [4, 8, 12, 16]}
+_V_SNAPS     = {"col": "total_snaps",      "label": "Min Snaps",      "opts": [100, 200, 400, 800]}
 
 LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     # ── Value (fantasy points above/over replacement) ────────────────────────
@@ -1638,9 +2147,14 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     "role_score":           {"label": "Role Score",          "category": "General", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "hidden": True, "desc": "Internal opportunity signal (feeds breakout detection); not shown on the front end. Share of team targets/carries, red-zone usage, and (QB) passing + rushing workload."},
     "snap_share":           {"label": "Snap Share",          "category": "General", "positions": ["QB", "RB", "WR", "TE"], "pct": True, "pct_frac": True, "min_vol": _V_GAMES, "desc": "Percent of the team's offensive snaps the player was on the field for."},
     "opportunity_share":    {"label": "Opportunity Share",   "category": "General", "positions": ["RB", "WR", "TE"], "pct": True, "min_vol": _V_GAMES, "desc": "Share of the team's targets plus carries that went to this player."},
+    "td_rate_per_opp":      {"label": "TD Rate / Opp",       "category": "General", "positions": ["RB", "WR", "TE"], "efficiency": True, "pct": True, "pct_frac": True, "min_vol": _V_TOUCHES, "desc": "Percent of opportunities (carries + targets) that result in a touchdown; scoring efficiency on volume.", "computed_sql": "m.total_tds::float / NULLIF(m.total_touches, 0)", "computed_null": "m.total_tds IS NOT NULL AND m.total_touches IS NOT NULL AND m.total_touches > 0"},
+    "boom_rate":            {"label": "Boom Rate",           "category": "General", "positions": ["QB", "RB", "WR", "TE"], "pct": True, "pct_frac": True, "min_vol": _V_GAMES, "desc": "Share of games at/above the position boom threshold (QB 25 / RB-WR 20 / TE 15 PPR); how often the player wins you a week."},
+    "bust_rate":            {"label": "Bust Rate",           "category": "General", "positions": ["QB", "RB", "WR", "TE"], "pct": True, "pct_frac": True, "lower_better": True, "min_vol": _V_GAMES, "desc": "Share of games below the position bust threshold (QB 15 / RB-WR 8 / TE 5 PPR). Lower is better; high bust rate means frequent lineup-killing weeks."},
+    "fp_cv":                {"label": "FP Consistency (CV)", "category": "General", "positions": ["QB", "RB", "WR", "TE"], "lower_better": True, "min_vol": _V_GAMES, "desc": "Coefficient of variation of weekly PPR scores (std dev ÷ mean). Lower means steadier week-to-week scoring; high CV means boom-or-bust."},
+    "opportunity_trend":    {"label": "Usage Trend",         "category": "General", "positions": ["QB", "RB", "WR", "TE"], "pct": True, "pct_frac": True, "min_vol": _V_GAMES, "desc": "Last-3-week usage vs season average on the position key stat (QB: snap %, RB: touches, WR/TE: targets), as a fraction. Positive = role is growing."},
     "red_zone_usage":       {"label": "Red Zone Usage",      "category": "General", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Targets and carries inside the opponent's 20-yard line per game; a proxy for scoring opportunity."},
     "grades_offense":       {"label": "PFF Off Grade",       "category": "General", "positions": ["QB", "RB", "WR", "TE"], "efficiency": True, "min_vol": _V_GAMES, "desc": "PFF's overall offensive grade (0-100) from play-by-play charting."},
-    "schedule_ease":        {"label": "Schedule Ease",       "category": "General", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "hidden": True, "desc": "How easy the player's remaining schedule is vs. their position (0-100, 100 = easiest). Based on opponent defensive ratings from matchup_ratings."},
+    "schedule_ease":        {"label": "Schedule Ease",       "category": "General", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "How easy the player's remaining schedule is vs. their position (0-100, 100 = easiest). Based on opponent defensive ratings from matchup_ratings."},
     # ── Expected Points (xFP): opportunity-based value from play-by-play ──────
     # Every target/carry/dropback is assigned an expected fantasy value from its
     # context (air yards, completion prob, expected YAC, field position), so xFP
@@ -1654,6 +2168,8 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     "expected_ppr_per_game": {"label": "Expected FPTS/G", "category": "Expected Pts", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Opportunity-based expected full-PPR fantasy points per covered game. This is an expectation, not guaranteed future scoring or an unrealized-points balance.", "computed_sql": "m.expected_ppr::float / NULLIF(m.games, 0)", "computed_null": "m.expected_ppr IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
     "actual_ppr_per_game": {"label": "Actual FPTS/G", "category": "Expected Pts", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Actual full-PPR points reconstructed from the same covered play-by-play opportunities and games as expected points.", "computed_sql": "(m.expected_ppr + m.ppr_over_expected)::float / NULLIF(m.games, 0)", "computed_null": "m.expected_ppr IS NOT NULL AND m.ppr_over_expected IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
     "ppr_over_expected_per_game": {"label": "FPOE/G", "category": "Expected Pts", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Actual minus opportunity-based expected full-PPR points per matched covered game. It is not guaranteed future scoring or an unrealized-points balance.", "computed_sql": "m.ppr_over_expected::float / NULLIF(m.games, 0)", "computed_null": "m.ppr_over_expected IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
+    "xfp_stddev":           {"label": "xFP Std Dev",         "category": "Expected Pts", "positions": ["QB", "RB", "WR", "TE"], "lower_better": True, "min_vol": _V_GAMES, "desc": "Standard deviation of weekly expected PPR (opportunity-based). Lower means a steadier role; high means the workload itself swings wildly."},
+    "xfp_trend":            {"label": "xFP Trend",           "category": "Expected Pts", "positions": ["QB", "RB", "WR", "TE"], "pct": True, "pct_frac": True, "min_vol": _V_GAMES, "desc": "Last-3-week expected PPR/G vs season expected PPR/G, as a fraction. Positive = the player's opportunity quality is trending up, before outcomes."},
     "expected_half_ppr":    {"label": "Expected FP (Half)",  "category": "Expected Pts", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Expected fantasy points in half-PPR scoring (0.5 per reception). Opportunity-based; see Expected FP (PPR)."},
     "half_ppr_over_expected": {"label": "FP Over Exp (Half)", "category": "Expected Pts", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Actual half-PPR points minus expected. Negative = points left on the board."},
     "expected_standard":    {"label": "Expected FP (Std)",   "category": "Expected Pts", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Expected fantasy points in standard (non-PPR) scoring. Opportunity-based; see Expected FP (PPR)."},
@@ -1668,6 +2184,7 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     "nfl_passer_rating":    {"label": "Passer Rating",       "category": "Passing", "positions": ["QB"], "efficiency": True, "min_vol": _V_PASS_ATT, "desc": "Standard NFL passer rating (0-158.3)."},
     "epa_per_play":         {"label": "Passing EPA / Dropback", "category": "Passing", "positions": ["QB"], "efficiency": True, "min_vol": _V_PASS_ATT, "desc": "Passing Expected Points Added per qualifying quarterback dropback (nflverse play-by-play). Week ranges are weighted by covered dropbacks, never by an unweighted mean of weekly rates."},
     "passing_epa":          {"label": "Passing EPA",         "category": "Passing", "positions": ["QB"], "min_vol": _V_PASS_ATT, "desc": "Total Expected Points Added on pass attempts over the season (nflverse)."},
+    "passing_epa_per_att":  {"label": "Pass EPA / Att",      "category": "Passing", "positions": ["QB"], "efficiency": True, "min_vol": _V_PASS_ATT, "desc": "Expected Points Added per pass attempt (nflverse). Rate companion to total passing EPA.", "computed_sql": "m.passing_epa::float / NULLIF(m.total_pass_att, 0)", "computed_null": "m.passing_epa IS NOT NULL AND m.total_pass_att IS NOT NULL AND m.total_pass_att > 0"},
     "success_rate":         {"label": "Success Rate",        "category": "Passing", "positions": ["QB"], "efficiency": True, "pct": True, "min_vol": _V_PASS_ATT, "desc": "Percent of plays with positive EPA (nflverse)."},
     "ngs_avg_time_to_throw": {"label": "Time to Throw",      "category": "Passing", "positions": ["QB"], "efficiency": True, "min_vol": _V_PASS_ATT, "desc": "Average seconds from snap to throw (NFL Next Gen Stats). Lower often means a quicker processor; higher can mean holding to push the ball downfield."},
     "ngs_aggressiveness":   {"label": "Aggressiveness",      "category": "Passing", "positions": ["QB"], "efficiency": True, "pct": True, "min_vol": _V_PASS_ATT, "desc": "Percent of passing attempts thrown into tight windows (NFL Next Gen Stats). A public analogue to big-time-throw rate."},
@@ -1705,6 +2222,8 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     "breakaway_percentage": {"label": "Breakaway %",         "category": "Rushing", "positions": ["RB"], "efficiency": True, "pct": True, "min_vol": _V_CARRIES, "desc": "Percent of rushing yards that came on runs of 15+ yards; explosiveness."},
     "explosive_runs_10_plus": {"label": "Explosive Runs",   "category": "Rushing", "positions": ["RB"], "min_vol": _V_CARRIES, "integer": True, "desc": "Count of runs gaining 10 or more yards in the season (nflverse). Raw explosive-play volume."},
     "explosive_runs_pg":    {"label": "Explosive Runs/Carry", "category": "Rushing", "positions": ["RB"], "min_vol": _V_CARRIES, "desc": "Explosive runs (10+ yards) per carry.", "computed_sql": "m.explosive_runs_10_plus::float / NULLIF(v.vol, 0)", "computed_null": "m.explosive_runs_10_plus IS NOT NULL"},
+    "explosive_run_rate":   {"label": "Explosive Run %",     "category": "Rushing", "positions": ["RB"], "efficiency": True, "pct": True, "pct_frac": True, "min_vol": _V_CARRIES, "desc": "Percent of carries gaining 10+ yards; big-play rate on the ground (nflverse).", "computed_sql": "m.explosive_runs_10_plus::float / NULLIF(m.total_carries, 0)", "computed_null": "m.explosive_runs_10_plus IS NOT NULL AND m.total_carries IS NOT NULL AND m.total_carries > 0"},
+    "touches_per_snap":     {"label": "Touches / Snap",      "category": "Rushing", "positions": ["RB"], "efficiency": True, "min_vol": _V_SNAPS, "desc": "Share of offensive snaps that turn into a touch (carry or reception); how often the ball finds the player when on the field.", "computed_sql": "m.total_touches::float / NULLIF(m.total_snaps, 0)", "computed_null": "m.total_touches IS NOT NULL AND m.total_snaps IS NOT NULL AND m.total_snaps > 0"},
     "ngs_rush_yards_over_expected_per_att": {"label": "RYOE / Att", "category": "Rushing", "positions": ["RB"], "efficiency": True, "min_vol": _V_CARRIES, "desc": "Rush Yards Over Expected per attempt — yards created beyond what blocking/situation expected (NFL Next Gen Stats). A free creation metric, similar in spirit to elusive rating."},
     "ngs_avg_time_to_los":  {"label": "Time to LOS",         "category": "Rushing", "positions": ["RB"], "efficiency": True, "min_vol": _V_CARRIES, "desc": "Average seconds for the rusher to reach the line of scrimmage (NFL Next Gen Stats). Lower often means hitting the hole faster."},
     "ngs_percent_attempts_gte_eight_defenders": {"label": "8+ Box Rate", "category": "Rushing", "positions": ["RB"], "pct": True, "min_vol": _V_CARRIES, "desc": "Percent of rush attempts against 8 or more defenders in the box (NFL Next Gen Stats). Higher means a tougher rushing diet."},
@@ -1715,6 +2234,7 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     "avoided_tackles":      {"label": "Avoided Tackles",    "category": "Rushing", "positions": ["RB"], "min_vol": _V_CARRIES, "desc": "Tackles avoided (missed, broken, or forced) on rush attempts per PFF. Rewards runners who make defenders miss."},
     "avoided_tackles_pg":   {"label": "Avoided Tackles/Carry", "category": "Rushing", "positions": ["RB"], "min_vol": _V_CARRIES, "desc": "Tackles avoided per carry (PFF).", "computed_sql": "m.avoided_tackles::float / NULLIF(v.vol, 0)", "computed_null": "m.avoided_tackles IS NOT NULL"},
     "rz_carries_pg":        {"label": "RZ Carries/G",        "category": "Rushing", "positions": ["QB", "RB"], "min_vol": _V_GAMES, "desc": "Red zone rushing attempts per game (inside opponent's 20-yard line)."},
+    "rz_opp_share":         {"label": "RZ Opp Share",        "category": "Rushing", "positions": ["RB"], "pct": True, "pct_frac": True, "min_vol": _V_GAMES, "desc": "Share of the team's red-zone opportunities (carries + targets inside the 20) that went to this player; the goal-line role in one number."},
     # Touchdown group: rate, season total, and per-game kept adjacent.
     "rush_td_rate":         {"label": "Rush TD Rate",        "category": "Rushing", "subcategory": "Rushing",   "positions": ["RB", "QB"], "efficiency": True, "pct": True, "pct_frac": True, "min_vol": _V_CARRIES, "desc": "Percent of carries that result in a touchdown."},
     "total_rush_tds":       {"label": "Rush TDs",            "category": "Rushing", "subcategory": "Rushing",   "positions": ["RB", "QB"], "integer": True, "desc": "Total rushing touchdowns in the season."},
@@ -1737,6 +2257,8 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     "air_yards_share":      {"label": "Air Yards Share",     "category": "Receiving", "positions": ["WR", "TE"], "pct": True, "min_vol": _V_GAMES, "desc": "Share of the team's total passing air yards directed at this player; combines target share with depth of target."},
     "wopr":                 {"label": "WOPR",                "category": "Receiving", "positions": ["WR", "TE", "RB"], "min_vol": _V_GAMES, "desc": "Weighted Opportunity Rating: 1.5 × target share + 0.7 × air-yards share. Combines target volume and downfield opportunity."},
     "rz_targets_pg":        {"label": "RZ Targets/G",        "category": "Receiving", "positions": ["WR", "TE", "RB"], "min_vol": _V_GAMES, "desc": "Red zone targets per game (inside opponent's 20-yard line)."},
+    "rz_target_share":      {"label": "RZ Target Share",     "category": "Receiving", "positions": ["WR", "TE"], "pct": True, "pct_frac": True, "min_vol": _V_GAMES, "desc": "Share of the team's red-zone targets directed at this player; the trusted red-zone receiver in one number."},
+    "targets_per_snap":     {"label": "Targets / Snap",      "category": "Receiving", "positions": ["WR", "TE"], "efficiency": True, "min_vol": _V_SNAPS, "desc": "Targets per offensive snap; how often the player is looked at when on the field, independent of snap volume.", "computed_sql": "m.total_targets::float / NULLIF(m.total_snaps, 0)", "computed_null": "m.total_targets IS NOT NULL AND m.total_snaps IS NOT NULL AND m.total_snaps > 0"},
     "yards_per_target":     {"label": "Yards / Target",      "category": "Receiving", "positions": ["WR", "RB", "TE"], "efficiency": True, "min_vol": _V_TARGETS, "desc": "Receiving yards earned per time targeted; measures efficiency on volume."},
     "yards_per_reception":  {"label": "Yards / Reception",   "category": "Receiving", "positions": ["WR", "RB", "TE"], "efficiency": True, "min_vol": _V_RECS, "desc": "Average yards gained per catch; higher means a more downfield/explosive role."},
     "catch_rate":           {"label": "Catch Rate",          "category": "Receiving", "positions": ["WR", "RB", "TE"], "efficiency": True, "pct": True, "pct_frac": True, "min_vol": _V_TARGETS, "desc": "Percent of targets caught."},
@@ -1800,6 +2322,19 @@ _WEEKLY_METRICS: Dict[str, Any] = {
     "red_zone_usage":      {"sql": "AVG(COALESCE(rz_targets, 0) + COALESCE(rz_carries, 0))",                 "min_col": None,              "min_label": "Min Weeks",   "min_opts": []},
     "ppr_pts":          {"sql": "SUM(ppr_pts)",  "min_col": None, "min_label": "Min Weeks", "min_opts": []},
     "ppr_pts_per_game": {"sql": "AVG(ppr_pts)",  "min_col": None, "min_label": "Min Weeks", "min_opts": []},
+    # Per-snap and per-opportunity rates over a week range (weekly table has
+    # absolute snaps; snap_pct is 0-100 and would need rescaling).
+    "targets_per_snap": {"sql": "SUM(targets)::float / NULLIF(SUM(snaps), 0)",  "min_col": "SUM(targets)", "min_label": "Min Targets", "min_opts": [5, 10, 20, 40]},
+    "touches_per_snap": {"sql": "SUM(touches)::float / NULLIF(SUM(snaps), 0)",  "min_col": "SUM(touches)", "min_label": "Min Touches", "min_opts": [5, 10, 20, 40]},
+    "td_rate_per_opp":  {"sql": "(SUM(rec_tds) + SUM(rush_tds))::float / NULLIF(SUM(touches), 0)", "min_col": "SUM(touches)", "min_label": "Min Touches", "min_opts": [5, 10, 20, 40]},
+    # Boom/bust thresholds mirror utils.consistency._POS_THRESHOLDS exactly
+    # (QB 25/15, RB-WR 20/8, TE 15/5). position is in the GROUP BY so the CASE
+    # can branch per position even when no position filter is applied.
+    "boom_rate":        {"sql": "AVG(CASE WHEN position = 'QB' AND ppr_pts >= 25 THEN 1.0 WHEN position IN ('RB', 'WR') AND ppr_pts >= 20 THEN 1.0 WHEN position = 'TE' AND ppr_pts >= 15 THEN 1.0 ELSE 0.0 END)", "min_col": None, "min_label": "Min Weeks", "min_opts": []},
+    "bust_rate":        {"sql": "AVG(CASE WHEN position = 'QB' AND ppr_pts < 15 THEN 1.0 WHEN position IN ('RB', 'WR') AND ppr_pts < 8 THEN 1.0 WHEN position = 'TE' AND ppr_pts < 5 THEN 1.0 ELSE 0.0 END)", "min_col": None, "min_label": "Min Weeks", "min_opts": []},
+    # Population CV (STDDEV_POP), matching the season finalize and
+    # utils.consistency.consistency_profile.
+    "fp_cv":            {"sql": "STDDEV_POP(ppr_pts) / NULLIF(AVG(ppr_pts), 0)", "min_col": None, "min_label": "Min Weeks", "min_opts": []},
 }
 
 
@@ -3041,6 +3576,7 @@ def get_metric_leaderboard(
                 (["games", "total_targets", "total_receptions",
                   "total_carries", "total_touches", "total_pass_att",
                   "total_rush_tds", "total_rec_tds", "total_pass_tds", "total_tds",
+                  "total_snaps",
                   "completion_pct"],),
             ).fetchall()
         }
@@ -3680,6 +4216,19 @@ def get_player_metric_ranks(player_id: str, season: Optional[int] = None) -> Dic
                 "receiving_success_rate": ("total_targets", 15),
                 "receiving_epa_per_target": ("total_targets", 15),
                 "racr": ("total_targets", 15),
+                "passing_epa_per_att": ("total_pass_att", 50),
+                "explosive_run_rate": ("total_carries", 20),
+                "targets_per_snap": ("total_targets", 15),
+                "touches_per_snap": ("total_touches", 40),
+                "td_rate_per_opp": ("total_touches", 40),
+                "rz_opp_share": ("games", 4),
+                "rz_target_share": ("games", 4),
+                "boom_rate": ("games", 4),
+                "bust_rate": ("games", 4),
+                "fp_cv": ("games", 4),
+                "xfp_stddev": ("games", 4),
+                "xfp_trend": ("games", 4),
+                "opportunity_trend": ("games", 4),
             }
             # A season can have complementary rows written by the base usage,
             # NGS/FTN and optional premium importers. Coalesce newest-first per
@@ -3723,6 +4272,19 @@ def get_player_metric_ranks(player_id: str, season: Optional[int] = None) -> Dic
                     _row["explosive_runs_pg"] = _safe(_row.get("explosive_runs_10_plus")) / _carries
                 if _carries > 0 and _row.get("avoided_tackles") is not None:
                     _row["avoided_tackles_pg"] = _safe(_row.get("avoided_tackles")) / _carries
+                _touches = _safe(_row.get("total_touches"))
+                _snaps = _safe(_row.get("total_snaps"))
+                _pa = _safe(_row.get("total_pass_att"))
+                if _pa > 0 and _row.get("passing_epa") is not None:
+                    _row["passing_epa_per_att"] = _safe(_row.get("passing_epa")) / _pa
+                if _carries > 0 and _row.get("explosive_runs_10_plus") is not None:
+                    _row["explosive_run_rate"] = _safe(_row.get("explosive_runs_10_plus")) / _carries
+                if _snaps > 0 and _targets > 0:
+                    _row["targets_per_snap"] = _targets / _snaps
+                if _snaps > 0 and _touches > 0:
+                    _row["touches_per_snap"] = _touches / _snaps
+                if _touches > 0 and _row.get("total_tds") is not None:
+                    _row["td_rate_per_opp"] = _safe(_row.get("total_tds")) / _touches
             for metric, (gate_col, gate_min) in _SUPP_GATES.items():
                 gate_min = _policy.minimum(gate_col, gate_min)
                 if not srows or not any(r.get(metric) is not None for r in srows):
