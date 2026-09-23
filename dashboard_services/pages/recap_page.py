@@ -231,8 +231,14 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
 
     def ava_img(owner_name, rid="", size=32):
         ava = avatar_by_rid.get(str(rid)) or owner_avatar.get(owner_name, "")
+        # Data-URI crests from team_avatar() are fragile as <img> src (CSP,
+        # encoding); render the reliable inline SVG crest instead.
+        if ava.startswith("data:"):
+            ava = ""
         if ava:
-            return f"<img src='{ava}' alt='' loading='lazy' decoding='async' style='width:{size}px;height:{size}px;border-radius:50%;object-fit:cover;flex-shrink:0;' onerror=\"this.style.display='none'\">"
+            # visibility:hidden (not display:none) preserves the grid slot so a
+            # broken avatar can't shift the team name into the 34px column.
+            return f"<img src='{ava}' alt='' loading='lazy' decoding='async' style='width:{size}px;height:{size}px;border-radius:50%;object-fit:cover;flex-shrink:0;' onerror=\"this.style.visibility='hidden'\">"
         return team_crest(team_by_rid.get(rid) or owner_name or "?", size)
 
     def team_name(owner, rid=""):
