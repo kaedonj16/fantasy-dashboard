@@ -1,9 +1,13 @@
 """Matchup board: lineup-slot centre chips (FLEX/SF) + two-line Name / TEAM • POS headers."""
 from __future__ import annotations
 
+import re
+from pathlib import Path
 from unittest import mock
 
 import pytest
+
+_CSS = Path(__file__).resolve().parents[1] / "static" / "dashboard.css"
 
 
 def _matchups():
@@ -168,3 +172,70 @@ def test_team_meta_without_rank_keeps_old_format():
     html = _render(mmod, matchup, roster_positions=[])
     assert "(#" not in html
     assert "0-0 &bull; @Team A" in html
+
+
+def _media_640_block_with(selector: str) -> str:
+    """Return the @media (max-width: 640px) block containing `selector`."""
+    css = _CSS.read_text(encoding="utf-8")
+    parts = re.split(r"@media\s*\(\s*max-width:\s*640px\s*\)\s*\{", css)
+    assert len(parts) > 1, "expected a @media (max-width: 640px) block"
+    for chunk in parts[1:]:
+        depth = 1
+        body = []
+        for ch in chunk:
+            if ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    break
+            if depth >= 1:
+                body.append(ch)
+        text = "".join(body)
+        if selector in text:
+            return text
+    raise AssertionError(f"no @media (max-width: 640px) block contains {selector!r}")
+
+
+def test_stacked_subline_aligns_with_name_per_side():
+    """On phones the TEAM • POS sub-line must sit under the name on the same
+    edge (left column: left, right column: right), not drift centered."""
+    block = _media_640_block_with(".mb-nameline")
+    assert re.search(
+        r"\.mb-nameline\s+\.mb-team\s*\{[^}]*align-self:\s*flex-start", block
+    ), "left-column sub-line should pin to the name's left edge"
+    assert re.search(
+        r"\.mb-cell-r\s+\.mb-nameline\s+\.mb-team\s*\{[^}]*align-self:\s*flex-end",
+        block,
+    ), "right-column sub-line should pin to the name's right edge"
+
+
+def test_weekly_tabs_container_does_not_bleed_outside_hub():
+    """The flattened mobile #weeklyLeftTabs must not use a negative inline
+    margin: the hub clips overflow-x, so a bleed pushes the 'Matchup Preview'
+    heading outside the clipping box and cuts off its first letter."""
+    css = _CSS.read_text(encoding="utf-8")
+    # Find the @media (max-width: 640px) block holding the flattening rule
+    # (background: transparent on the bare #weeklyLeftTabs selector).
+    found = None
+    for part in re.split(r"@media\s*\(\s*max-width:\s*640px\s*\)\s*\{", css)[1:]:
+        depth = 1
+        body = []
+        for ch in part:
+            if ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    break
+            if depth >= 1:
+                body.append(ch)
+        text = "".join(body)
+        m = re.search(r"#weeklyLeftTabs\s*\{([^}]*)\}", text)
+        if m and "background: transparent" in m.group(1):
+            found = m.group(1)
+            break
+    assert found is not None, "expected the flattened #weeklyLeftTabs mobile rule"
+    assert "margin-inline" not in found or re.search(
+        r"margin-inline:\s*0(?:px)?\s*;", found
+    ), "negative margin-inline would clip the matchup heading at the hub edge"
