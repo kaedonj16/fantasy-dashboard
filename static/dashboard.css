@@ -14567,6 +14567,14 @@ html[data-theme="dark"] .podium .bar {
     background: #f59e0b;
 }
 
+.pos-badge.FLEX {
+    background: #14b8a6;
+}
+
+.pos-badge.SF {
+    background: #1d4ed8;
+}
+
 .pos-bar-inner {
     height: 100%;
     border-radius: 12px;
@@ -40502,7 +40510,9 @@ a, button, [role="button"], [role="tab"], summary, label,
 .mb-info--bye { opacity: .45; }
 
 .mb-nameline { display: flex; align-items: baseline; gap: 5px; min-width: 0; line-height: 1.2; }
-.mb-cell-r .mb-nameline { flex-direction: row-reverse; }
+/* Right side reads name-first ("Chris Olave NO • WR"), same order as the
+   left; the block itself is right-aligned by .mb-cell-r .mb-info. */
+.mb-cell-r .mb-nameline { flex-direction: row; justify-content: flex-end; }
 /* Full text, no ellipsis: names, game line and box score wrap rather than clip. */
 .mb-nameline { flex-wrap: wrap; }
 .mb-nameline .pname { font-size: 13px; font-weight: 700; color: var(--accent); white-space: normal; overflow-wrap: anywhere; min-width: 0; }
@@ -40577,4 +40587,33 @@ a, button, [role="button"], [role="tab"], summary, label,
     .mb-cell { padding: 7px 8px; }
     .mb-a { font-size: 15px; }
     .mb-pos .pos-badge { width: 30px; height: 19px; font-size: 9px; }
+
+    /* Cardless phone board: the tab container IS the visible "matchup card"
+       on the Weekly Hub (the carousel's own chrome is already stripped inside
+       the hub), so flatten it here and let the rows use the full width. The
+       tab pill bar keeps its own styling; only the container chrome goes. */
+    #weeklyLeftTabs {
+        background: transparent;
+        border: none;
+        border-radius: 0;
+        overflow: visible;
+        margin-inline: -6px;
+    }
+    #weeklyLeftTabs .tab-panel.active {
+        padding: 6px 2px 12px;
+    }
+    /* Two-line player header on phones: name on top, TEAM • POS beneath it.
+       (Desktop keeps the sub-line inline after the name.) */
+    .mb-nameline {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 1px;
+    }
+    .mb-cell-r .mb-nameline {
+        flex-direction: column;
+        align-items: flex-end;
+    }
+    .mb-team {
+        letter-spacing: .04em;
+    }
 }

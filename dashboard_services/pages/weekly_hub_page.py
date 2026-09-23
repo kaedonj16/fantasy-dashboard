@@ -203,6 +203,7 @@ def build_weekly_hub_body(ctx: dict) -> str:
             scoring_settings=ctx.get("raw_scoring_settings") or ctx.get("scoring_settings"),
             is_gotw=is_gotw,
             gotw_selection=_gotw_selection,
+            roster_positions=ctx.get("roster_positions") or [],
         )
         for m, is_gotw in zip(default_matchups, _gotw_flags)
     ]
