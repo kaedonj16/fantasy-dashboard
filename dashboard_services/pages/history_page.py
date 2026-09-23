@@ -1465,6 +1465,9 @@ def _wrapped_overlay_markup(slides: list, share_data: dict | None = None,
       <button type="button" class="wrapped-share" id="{ns}Share" aria-label="Share">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg><span>Share</span>
       </button>
+      <button type="button" class="wrapped-link" id="{ns}Link" aria-label="Copy shareable link">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg><span>Link</span>
+      </button>
       <button type="button" class="wrapped-close" id="{ns}Close" aria-label="Close">&times;</button>
       <div class="wrapped-stage" id="{ns}Stage">{''.join(slide_html)}</div>
       <button type="button" class="wrapped-tap wrapped-tap-prev" id="{ns}Prev" aria-label="Previous"></button>
@@ -1834,6 +1837,126 @@ def _wrapped_bootstrap_js(ns: str = "wrapped") -> str:
                 "Next", "Prev", "ShareData", "Link", "Toast"):
         js = js.replace(f"'wrapped{_id}'", f"'{ns}{_id}'")
     return js
+
+
+def _wrapped_public_bootstrap_js(ns: str = "wrapped") -> str:
+    """Auto-opening variant of the wrapped bootstrap for the public share page.
+
+    The stored overlay HTML is already in the DOM (no launch button, no lazy
+    fetch), so the launch-gating preamble and click handler are replaced with
+    a direct openWrapped() call. Everything else -- story navigation, share
+    card painting, copy-link (which just copies location.href on a public
+    page) -- is shared with the in-app bootstrap.
+    """
+    js = _wrapped_bootstrap_js(ns)
+
+    _preamble = (
+        "  var launch = document.getElementById('{ns}Launch');\n"
+        "  var mount = document.getElementById('{ns}Mount');\n"
+        "  if (!launch || !mount || launch.__wrapBound) return;\n"
+        "  launch.__wrapBound = true;\n"
+        "  var loaded = false, loading = false;\n"
+        "  // Lets the host page (e.g. the weekly hub's week switcher) point the button\n"
+        "  // at a different lazy URL and drop the already-fetched overlay, so the next\n"
+        "  // click re-fetches for the new target.\n"
+        "  launch.__wrappedReset = function () { loaded = false; mount.innerHTML = ''; };\n"
+    ).replace("{ns}", ns)
+    assert _preamble in js, "wrapped bootstrap preamble changed; update _wrapped_public_bootstrap_js"
+    js = js.replace(
+        _preamble,
+        "  // Public share page: no launcher; the deck is already in the DOM.\n"
+        "  var launch = null;\n"
+        "  var mount = null;\n",
+    )
+
+    _launch_handler = """  launch.addEventListener('click', function () {
+    var url = launch.getAttribute('data-wrapped-url');
+    if (loaded || !url) { openWrapped(); return; }   // already injected, or nothing to fetch
+    if (loading) return;
+    loading = true;
+    launch.classList.add('wrapped-launch-loading');
+    fetch(url, { headers: { 'X-Requested-With': 'fetch' } })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d && d.html) {
+          mount.innerHTML = d.html;
+          // Snapshot the pristine overlay (before open() mutates it) for the
+          // copy-link share flow.
+          launch.__wrappedPristine = d.html;
+          loaded = true;
+          openWrapped();
+        }
+      })
+      .catch(function () {})
+      .then(function () { loading = false; launch.classList.remove('wrapped-launch-loading'); });
+  });
+})();"""
+    assert _launch_handler in js, "wrapped bootstrap launch handler changed; update _wrapped_public_bootstrap_js"
+    js = js.replace(_launch_handler, "  openWrapped();\n})();")
+    return js
+
+
+def _wrapped_share_og_description(share_data: dict | None) -> str:
+    """One-line description for Open Graph unfurls, built from highlights."""
+    data = share_data or {}
+    bits = []
+    for h in (data.get("highlights") or [])[:4]:
+        k = str(h.get("k") or "").title()
+        n = str(h.get("n") or "")
+        v = str(h.get("v") or "")
+        bits.append(f"{k}: {n} ({v})" if v else f"{k}: {n}")
+    desc = " • ".join(b for b in bits if b.strip(": ()"))
+    return desc or "A fantasy football Wrapped story"
+
+
+def render_wrapped_share_page(*, overlay_html: str, share_data: dict | None,
+                              label: str, ns: str, css_url: str,
+                              logo_url: str) -> str:
+    """Standalone public HTML page for a shared Wrapped deck (no auth).
+
+    The stored overlay markup is injected verbatim and auto-played with the
+    public bootstrap variant. noindex keeps league decks out of search; OG
+    tags make the link unfurl in iMessage / social apps.
+    """
+    data = share_data or {}
+    title = label or "Fantasy Wrapped"
+    desc = _wrapped_share_og_description(data)
+    js = _wrapped_public_bootstrap_js(ns)
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>{_esc(title)}</title>
+<meta name="robots" content="noindex, nofollow">
+<meta property="og:title" content="{_esc(title, quote=True)}">
+<meta property="og:description" content="{_esc(desc, quote=True)}">
+<meta property="og:type" content="website">
+<meta property="og:image" content="{_esc(logo_url, quote=True)}">
+<link rel="stylesheet" href="{_esc(css_url, quote=True)}">
+<style>
+  html, body {{ margin: 0; padding: 0; background: #0b0b16; }}
+  .wrapped-share-cta {{
+    position: fixed; bottom: max(18px, env(safe-area-inset-bottom)); left: 0; right: 0;
+    z-index: 5000; display: flex; justify-content: center; pointer-events: none;
+  }}
+  .wrapped-share-cta a {{
+    pointer-events: auto; display: inline-flex; align-items: center; gap: 8px;
+    padding: 12px 22px; border-radius: 999px; font-weight: 800; font-size: 15px;
+    color: #fff; text-decoration: none;
+    background: linear-gradient(135deg, #38bdf8, #818cf8);
+    box-shadow: 0 8px 30px rgba(56, 189, 248, .35);
+  }}
+</style>
+</head>
+<body>
+{overlay_html}
+<div class="wrapped-share-cta"><a href="/">Make your own Wrapped</a></div>
+<script>window.__wrappedSharePublic = true;</script>
+<script>{js}</script>
+</body>
+</html>
+"""
 
 
 _WRAPPED_BOOTSTRAP_JS = r"""
