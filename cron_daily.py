@@ -465,36 +465,22 @@ _force_weeks = [int({week!r})] if completed_week == int({week!r}) else None
 summary = build_advanced_metrics_snapshot({season!r}, completed_week, force_weeks=_force_weeks)
 print(f"[cron] Advanced metrics snapshot: {{summary}}")
 
-# Air yards + WOPR from stats CSV — runs unconditionally (not gated on the
-# usage table or the offseason check), since the CSV is independent of the daily
-# snapshot. During the offseason current_season is the upcoming year (no CSV
-# yet), so fall back to the prior season.
+# Air yards + WOPR from nflverse (fresh pull every run — no stale CSV
+# dependency), with the legacy stats CSV as a fallback. Runs unconditionally
+# (not gated on the usage table or the offseason check). During the offseason
+# current_season is the upcoming year (no weeks yet), so fall back to the
+# prior season.
 try:
-    from data_building.advanced_metrics import import_air_yards_from_stats_csv, init_advanced_metrics_db
-    from pathlib import Path
-    from utils.paths import CACHE_DIR
+    from data_building.advanced_metrics import import_air_yards, init_advanced_metrics_db
     # Ensure the schema (incl. the wopr column) exists before writing, so the
     # WOPR import succeeds even on the first run / fresh DB rather than failing
     # silently until a later step's migration creates the column.
     init_advanced_metrics_db()
     _ay_season = current_season
-    _ay_csv = Path(CACHE_DIR) / f"stats_player_reg_{{_ay_season}}.csv"
-    if not _ay_csv.exists():
-        # Self-heal: fetch the current season's CSV from nfl_data_py so the
-        # import below populates the current season. Without this the code
-        # fell back to the prior season, leaving air_yards_share / WOPR empty
-        # for the current season (the "No data yet" the UI showed).
-        try:
-            import nfl_data_py as _nfl
-            _seasonal = _nfl.import_seasonal_data([int(_ay_season)])
-            if _seasonal is not None and len(_seasonal):
-                _seasonal.to_csv(_ay_csv, index=False)
-                print(f"[cron] Fetched stats_player_reg_{{_ay_season}}.csv from nfl_data_py ({{len(_seasonal)}} rows)")
-        except Exception as _fe:
-            print(f"[cron] nfl_data_py seasonal fetch failed, falling back to prior season: {{_fe}}")
-    if not _ay_csv.exists():
+    updated = import_air_yards(_ay_season, completed_week)
+    if not updated:
         _ay_season = current_season - 1
-    updated = import_air_yards_from_stats_csv(_ay_season)
+        updated = import_air_yards(_ay_season, None)
     print(f"[cron] Air yards + WOPR import: {{updated}} rows updated for season {{_ay_season}}")
 except Exception as _e:
     print(f"[cron] Air yards + WOPR import failed: {{_e}}")
