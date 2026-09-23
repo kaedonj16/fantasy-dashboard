@@ -14,7 +14,8 @@ week's scores per team, computes:
 Ties within a week are split (0.5 win / 0.5 loss vs each equal-scoring team),
 so all-play wins can be fractional.
 """
-from typing import Dict, List
+import math
+from typing import Dict
 
 
 def all_play_analysis(
@@ -31,10 +32,27 @@ def all_play_analysis(
         expected_wins, actual_wins, luck_delta, expected_seed, actual_rank
     }} for every team seen. Empty dict when there are no weeks.
     """
-    # Collect the full team set across all weeks (a team missing from one week,
-    # e.g. a bye in odd leagues, is simply not scored that week).
+    # Normalize defensively.  Callers normally do this while constructing the
+    # weekly map, but this public helper should never compare NaN/inf (whose
+    # ordering semantics would silently turn bad input into losses or ties).
+    valid_weeks: Dict[int, Dict[str, float]] = {}
+    for week, scores in (weekly_scores or {}).items():
+        clean = {}
+        for team, score in (scores or {}).items():
+            try:
+                value = float(score)
+            except (TypeError, ValueError, OverflowError):
+                continue
+            if math.isfinite(value):
+                clean[team] = value
+        # All-play has no meaning without an opponent comparison.
+        if len(clean) >= 2:
+            valid_weeks[week] = clean
+
+    # Collect the full team set across valid weeks (a team missing from one
+    # week, e.g. a bye in odd leagues, is simply not scored that week).
     teams = set()
-    for wk in weekly_scores.values():
+    for wk in valid_weeks.values():
         teams.update(wk.keys())
     if not teams:
         return {}
@@ -43,8 +61,8 @@ def all_play_analysis(
     ap_losses = {t: 0.0 for t in teams}
     weeks_played = {t: 0 for t in teams}
 
-    for wk in weekly_scores.values():
-        rows = [(t, s) for t, s in wk.items() if s is not None]
+    for wk in valid_weeks.values():
+        rows = list(wk.items())
         for t, s in rows:
             weeks_played[t] += 1
             for u, s2 in rows:
@@ -65,7 +83,12 @@ def all_play_analysis(
         pct = (w / total) if total > 0 else 0.0
         games = weeks_played[t]
         exp_w = pct * games
-        act_w = float(actual_wins.get(t, 0) or 0)
+        try:
+            act_w = float(actual_wins[t])
+            if not math.isfinite(act_w):
+                raise ValueError("non-finite actual wins")
+        except (KeyError, TypeError, ValueError, OverflowError):
+            act_w = None
         out[t] = {
             "all_play_wins": round(w, 1),
             "all_play_losses": round(l, 1),
@@ -73,7 +96,7 @@ def all_play_analysis(
             "games": games,
             "expected_wins": round(exp_w, 1),
             "actual_wins": act_w,
-            "luck_delta": round(act_w - exp_w, 1),
+            "luck_delta": round(act_w - exp_w, 1) if act_w is not None else None,
         }
 
     # Expected seed: rank by all-play pct (desc), tie-broken by all-play wins.
@@ -83,7 +106,10 @@ def all_play_analysis(
 
     # Actual seed: rank by actual wins (desc). Only meaningful as a comparison
     # point; the caller usually already has the real standings order.
-    order_actual = sorted(out.keys(), key=lambda t: -out[t]["actual_wins"])
+    order_actual = sorted(
+        (t for t in out if out[t]["actual_wins"] is not None),
+        key=lambda t: -out[t]["actual_wins"],
+    )
     for i, t in enumerate(order_actual):
         out[t]["actual_rank"] = i + 1
 
