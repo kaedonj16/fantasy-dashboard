@@ -1208,6 +1208,15 @@ def build_advanced_metrics_snapshot(
     else:
         usage_map = usage_builder(season, range(1, completed_week + 1)) or {}
     summary["player_stats_rows"] = len(usage_map)
+    # Snap counts are absent from the Sleeper usage feed; merge them from
+    # nflverse so snap_share (and the snap_rows diagnostic) is populated.
+    # Best-effort: never gates the snapshot write.
+    try:
+        _n_snap = _merge_nflverse_snap_share(usage_map, season, completed_week)
+        if _n_snap:
+            logger.info("merged nflverse snap share for %d players", _n_snap)
+    except Exception:
+        logger.exception("snap share merge failed; continuing without snap data")
     skips: Counter = Counter()
     metrics_list: List[Dict[str, Any]] = []
     usage_table: List[Dict[str, Any]] = []
@@ -1433,6 +1442,35 @@ def save_metrics_snapshot(metrics_list: List[Dict[str, Any]], as_of_date: str, s
         return inserted, updated
 
 
+def _upsert_air_yards_wopr(season: int, rows_by_player: Dict[str, Dict[str, Any]]) -> int:
+    """Upsert pre-shaped {sleeper_id: {air_yards_per_game, air_yards_share, wopr}}
+    rows into the latest player_advanced_metrics snapshot row per player/season.
+    Returns the number of rows updated."""
+    if not rows_by_player:
+        return 0
+    updated = 0
+    with get_conn() as conn:
+        for sleeper_id, vals in rows_by_player.items():
+            result = conn.execute("""
+                UPDATE player_advanced_metrics
+                SET air_yards_per_game = %s,
+                    air_yards_share    = %s,
+                    wopr               = %s
+                WHERE player_id = %s
+                  AND season = %s
+                  AND as_of_date = (
+                      SELECT MAX(as_of_date) FROM player_advanced_metrics
+                      WHERE player_id = %s AND season = %s
+                  )
+            """, (
+                vals["air_yards_per_game"], vals["air_yards_share"], vals["wopr"],
+                sleeper_id, season, sleeper_id, season,
+            ))
+            if result.rowcount:
+                updated += result.rowcount
+    return updated
+
+
 def import_air_yards_from_stats_csv(season: int) -> int:
     """
     Read cache/stats_player_reg_{season}.csv (produced by nfl_data_py) and upsert
@@ -1441,6 +1479,10 @@ def import_air_yards_from_stats_csv(season: int) -> int:
     Matches rows by player_id (sleeper id from players_index) and updates the
     most-recent snapshot row for each player/season.  Safe to call repeatedly.
     Returns the number of rows updated.
+
+    Legacy path: nothing on the server produces this CSV, so prefer
+    import_air_yards(), which pulls fresh from nfl_data_py and only falls back
+    here.
     """
     import os
     import csv
@@ -1497,31 +1539,228 @@ def import_air_yards_from_stats_csv(season: int) -> int:
                 "wopr": wopr_val,
             }
 
-    if not rows_by_player:
+    return _upsert_air_yards_wopr(season, rows_by_player)
+
+
+def _aggregate_air_yards_weekly(rows) -> Tuple[Dict[str, Dict[str, Any]], Dict[str, Dict[str, float]]]:
+    """Aggregate weekly receiving rows into per-player and per-team totals.
+
+    rows: iterable of dicts with player_id (gsis), recent_team, targets,
+    receiving_air_yards. Weeks with no receiving involvement are skipped.
+    Returns (players, teams):
+      players: {gsis_id: {"ay", "targets", "games", "team"}}
+      teams:   {team: {"ay", "targets"}}
+    """
+    players: Dict[str, Dict[str, Any]] = {}
+    teams: Dict[str, Dict[str, float]] = {}
+    for r in rows or []:
+        pid = str(r.get("player_id") or "").strip()
+        if not pid:
+            continue
+        ay = _safe(r.get("receiving_air_yards"))
+        tg = _safe(r.get("targets"))
+        if ay <= 0 and tg <= 0:
+            continue
+        team = str(r.get("recent_team") or "").strip().upper()
+        p = players.setdefault(pid, {"ay": 0.0, "targets": 0.0, "games": 0, "team": team})
+        p["ay"] += ay
+        p["targets"] += tg
+        p["games"] += 1
+        if team:
+            p["team"] = team  # most recent team wins; traded players are approximate
+        t = teams.setdefault(team or "UNK", {"ay": 0.0, "targets": 0.0})
+        t["ay"] += ay
+        t["targets"] += tg
+    return players, teams
+
+
+def _air_yards_rows_from_aggregates(
+    players: Dict[str, Dict[str, Any]],
+    teams: Dict[str, Dict[str, float]],
+    gsis_to_sleeper: Dict[str, str],
+) -> Dict[str, Dict[str, Any]]:
+    """Shape per-gsis aggregates into {sleeper_id: {air_yards_per_game,
+    air_yards_share, wopr}}, matching the legacy CSV import's output shape.
+
+    WOPR uses the standard Hermsmeyer weighting: 1.5 * target_share +
+    0.7 * air_yards_share (shares as 0-1 fractions).
+    """
+    rows: Dict[str, Dict[str, Any]] = {}
+    for gsis_id, p in players.items():
+        sleeper_id = (gsis_to_sleeper or {}).get(str(gsis_id))
+        if not sleeper_id:
+            continue
+        team = teams.get(p["team"]) or {}
+        team_ay = _safe(team.get("ay"))
+        team_tg = _safe(team.get("targets"))
+        games = p["games"] or 0
+        ay = p["ay"]
+        tg = p["targets"]
+        ay_share_frac = (ay / team_ay) if team_ay > 0 else 0.0
+        tgt_share_frac = (tg / team_tg) if team_tg > 0 else 0.0
+        rows[str(sleeper_id)] = {
+            "air_yards_per_game": round(ay / games, 1) if games else None,
+            "air_yards_share": round(ay_share_frac * 100.0, 1),
+            "wopr": round(1.5 * tgt_share_frac + 0.7 * ay_share_frac, 3),
+        }
+    return rows
+
+
+_AY_WEEKLY_COLS = [
+    "player_id", "player_name", "position", "recent_team", "season",
+    "season_type", "week", "targets", "receiving_air_yards",
+]
+
+
+def fetch_nflverse_air_yards(
+    season: int, completed_week: Optional[int] = None
+) -> Dict[str, Dict[str, Any]]:
+    """{sleeper_id: {air_yards_per_game, air_yards_share, wopr}} from a fresh
+    nfl_data_py weekly pull, or {} when nfl_data_py is unavailable.
+
+    Fresh pull every call: no dependency on a cache CSV that nothing on the
+    server produces (the legacy CSV path silently updated 0 rows).
+    """
+    try:
+        import nfl_data_py as nfl
+    except Exception:
+        return {}
+    try:
+        df = nfl.import_weekly_data([season], columns=_AY_WEEKLY_COLS)
+        if df is None or getattr(df, "empty", True):
+            return {}
+        rows = []
+        for r in df.to_dict("records"):
+            if str(r.get("season_type", "REG")).upper() != "REG":
+                continue
+            if completed_week is not None and _safe(r.get("week"), 0) > completed_week:
+                continue
+            if str(r.get("position") or "").upper() not in ("RB", "WR", "TE"):
+                continue
+            rows.append(r)
+        players, teams = _aggregate_air_yards_weekly(rows)
+        if not players:
+            return {}
+        from data_building.external_data.nflverse_metrics import _gsis_to_sleeper
+        return _air_yards_rows_from_aggregates(players, teams, _gsis_to_sleeper())
+    except Exception:
+        logger.exception("nflverse air yards fetch failed; falling back to stats CSV")
+        return {}
+
+
+def import_air_yards(season: int, completed_week: Optional[int] = None) -> int:
+    """Upsert air-yards-per-game / air-yards-share / WOPR for a season.
+
+    Primary source is a fresh nfl_data_py pull (no stale cache-CSV dependency);
+    falls back to the legacy stats-CSV import. Safe to call repeatedly.
+    Returns the number of rows updated.
+    """
+    rows = fetch_nflverse_air_yards(season, completed_week)
+    if rows:
+        return _upsert_air_yards_wopr(season, rows)
+    return import_air_yards_from_stats_csv(season)
+
+
+def _pfr_to_sleeper_map(season: int) -> Dict[str, str]:
+    """{pfr_player_id: sleeper_id} from nfl_data_py rosters (fallback: import_ids).
+
+    Returns {} when nfl_data_py is unavailable. Used to join snap-count rows
+    (keyed by PFR id) onto the Sleeper-keyed usage map.
+    """
+    mapping: Dict[str, str] = {}
+    try:
+        import nfl_data_py as nfl
+    except Exception:
+        return mapping
+    frames = []
+    for loader in (lambda: nfl.import_rosters([season]), nfl.import_ids):
+        try:
+            frames.append(loader())
+        except Exception:
+            continue
+    for df in frames:
+        try:
+            cols = {str(c).lower(): c for c in df.columns}
+            pfr_c = cols.get("pfr_id") or cols.get("pfr_player_id")
+            slp_c = cols.get("sleeper_id")
+            if not pfr_c or not slp_c:
+                continue
+            for _, row in df.iterrows():
+                pfr = str(row.get(pfr_c) or "").strip()
+                if not pfr or pfr.lower() in ("nan", "none"):
+                    continue
+                try:
+                    slp = str(int(float(row.get(slp_c))))
+                except (TypeError, ValueError):
+                    slp = str(row.get(slp_c) or "").strip()
+                if slp and slp.lower() != "nan":
+                    mapping[pfr] = slp
+            if mapping:
+                break
+        except Exception:
+            continue
+    return mapping
+
+
+def _average_snap_pct(rows) -> Dict[str, float]:
+    """rows: iterable of dicts with pfr_player_id + offense_pct (0-100 scale).
+    Returns {pfr_player_id: mean offense_pct}."""
+    acc: Dict[str, List[float]] = {}
+    for r in rows or []:
+        pid = str(r.get("pfr_player_id") or "").strip()
+        if not pid:
+            continue
+        acc.setdefault(pid, []).append(_safe(r.get("offense_pct")))
+    return {pid: sum(v) / len(v) for pid, v in acc.items() if v}
+
+
+def _merge_nflverse_snap_share(
+    usage_map: Dict[str, Dict[str, Any]],
+    season: int,
+    completed_week: Optional[int] = None,
+) -> int:
+    """Fill usage['avg_off_snap_pct'] (0-1 fraction) from nfl_data_py snap counts.
+
+    The Sleeper usage feed carries no snap data, so without this merge snap_share
+    (and the snap_rows diagnostic) is always empty. Only fills players missing a
+    value — never clobbers a real snap source. Best-effort: any failure leaves
+    the map untouched and returns 0; never gates the snapshot write.
+    """
+    if not usage_map:
         return 0
-
-    updated = 0
-    with get_conn() as conn:
-        for sleeper_id, vals in rows_by_player.items():
-            result = conn.execute("""
-                UPDATE player_advanced_metrics
-                SET air_yards_per_game = %s,
-                    air_yards_share    = %s,
-                    wopr               = %s
-                WHERE player_id = %s
-                  AND season = %s
-                  AND as_of_date = (
-                      SELECT MAX(as_of_date) FROM player_advanced_metrics
-                      WHERE player_id = %s AND season = %s
-                  )
-            """, (
-                vals["air_yards_per_game"], vals["air_yards_share"], vals["wopr"],
-                sleeper_id, season, sleeper_id, season,
-            ))
-            if result.rowcount:
-                updated += result.rowcount
-
-    return updated
+    try:
+        import nfl_data_py as nfl
+    except Exception:
+        return 0
+    try:
+        snaps = nfl.import_snap_counts([season])
+        if snaps is None or getattr(snaps, "empty", True):
+            return 0
+        rows = []
+        for r in snaps.to_dict("records"):
+            if str(r.get("season_type", "REG")).upper() != "REG":
+                continue
+            if completed_week is not None and _safe(r.get("week"), 0) > completed_week:
+                continue
+            rows.append(r)
+        avg_by_pfr = _average_snap_pct(rows)
+        if not avg_by_pfr:
+            return 0
+        pfr_to_sleeper = _pfr_to_sleeper_map(season)
+        merged = 0
+        for pfr_id, avg_pct in avg_by_pfr.items():
+            sleeper_id = pfr_to_sleeper.get(pfr_id)
+            if not sleeper_id:
+                continue
+            usage = usage_map.get(sleeper_id) or usage_map.get(str(sleeper_id))
+            if usage is None or usage.get("avg_off_snap_pct"):
+                continue
+            usage["avg_off_snap_pct"] = round(avg_pct / 100.0, 4)
+            merged += 1
+        return merged
+    except Exception:
+        logger.exception("nflverse snap merge failed; continuing without snap data")
+        return 0
 
 
 def get_player_metrics(player_id: str, as_of_date: Optional[str] = None) -> Optional[Dict[str, Any]]:
