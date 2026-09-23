@@ -131,3 +131,33 @@ def test_ai_unavailable_fallback_is_factual_not_headline(monkeypatch):
     assert "Alpha" in text and "Bravo" in text
     assert text != game["why"]
     assert "coin flip" not in text.lower() and "50-50" not in text
+
+
+def test_recap_avatar_never_uses_display_none_onerror():
+    """ESPN no-avatar teams must not collapse the grid.
+
+    A display:none avatar is removed from grid auto-placement, shifting the
+    team name into the 34px avatar column (crushed to 'Am...'). The onerror
+    handler must preserve layout with visibility:hidden instead.
+    """
+    page = (ROOT / "dashboard_services/pages/recap_page.py").read_text()
+    assert "this.style.display='none'" not in page
+    assert "this.style.visibility='hidden'" in page
+
+
+def test_recap_avatar_data_uri_uses_inline_crest():
+    """Data-URI crests from team_avatar() must not become <img> src.
+
+    Data URIs as img src are fragile (CSP, encoding); the reliable inline
+    SVG crest should be used instead so ESPN no-avatar teams always render.
+    """
+    page = (ROOT / "dashboard_services/pages/recap_page.py").read_text()
+    assert 'if ava.startswith("data:"):' in page
+
+
+def test_recap_efficiency_grid_pins_columns():
+    """Team name/percent must stay in their columns even if avatar is hidden."""
+    css = (ROOT / "static/dashboard.css").read_text()
+    assert ".weekly-recap .recap-eff-row > .recap-eff-team { grid-column:3; }" in css
+    assert ".weekly-recap .recap-eff-row > .recap-eff-percent { grid-column:4; }" in css
+    assert ".weekly-recap .recap-eff-card--bench .recap-eff-row > .recap-eff-team { grid-column:2; }" in css

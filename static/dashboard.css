@@ -28740,6 +28740,12 @@ button:disabled {
 .weekly-recap .recap-eff-detail { margin-top:2px; overflow:hidden; color:var(--muted); font-size:10px; font-variant-numeric:tabular-nums; text-overflow:ellipsis; white-space:nowrap; }
 .weekly-recap .recap-eff-percent { color:var(--win); font-size:20px; font-variant-numeric:tabular-nums; white-space:nowrap; }
 .weekly-recap .recap-eff-card--bench .recap-eff-row { grid-template-columns:34px minmax(0,1fr) auto; }
+/* Pin columns so a missing/hidden avatar can't shift the team name into the 34px slot. */
+.weekly-recap .recap-eff-row > .recap-eff-rank { grid-column:1; }
+.weekly-recap .recap-eff-row > .recap-eff-team { grid-column:3; }
+.weekly-recap .recap-eff-row > .recap-eff-percent { grid-column:4; }
+.weekly-recap .recap-eff-card--bench .recap-eff-row > .recap-eff-team { grid-column:2; }
+.weekly-recap .recap-eff-card--bench .recap-eff-row > .recap-eff-percent { grid-column:3; }
 .weekly-recap .recap-eff-insight { display:flex; flex-direction:column; margin-top:7px; padding-top:10px; border-top:1px solid var(--border); color:var(--muted); font-size:11px; }
 .weekly-recap .recap-eff-insight strong { color:var(--loss); font-size:22px; line-height:1.1; font-variant-numeric:tabular-nums; }
 .weekly-recap .recap-eff-partial { margin-top:8px; color:var(--muted); font-size:11px; }
