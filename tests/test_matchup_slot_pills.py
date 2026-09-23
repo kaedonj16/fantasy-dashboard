@@ -210,6 +210,20 @@ def test_stacked_subline_aligns_with_name_per_side():
     ), "right-column sub-line should pin to the name's right edge"
 
 
+def test_game_and_stat_lines_align_with_name_on_right():
+    """On phones the game line ("Sun 1:00 pm @ IND") and stat line
+    ("(#3 / 18.0)") are siblings of the name block, so the sub-line fix does
+    not reach them. Their text must pin to the name's right edge in the right
+    column, not drift centered/left."""
+    block = _media_640_block_with(".mb-game")
+    assert re.search(
+        r"\.mb-cell-r[^{]*\.mb-game[^{]*\{[^}]*text-align:\s*right", block
+    ), "right-column game line text should align right"
+    assert re.search(
+        r"\.mb-cell-r[^{]*\.mb-stat[^{]*\{[^}]*text-align:\s*right", block
+    ), "right-column stat line text should align right"
+
+
 def test_weekly_tabs_container_does_not_bleed_outside_hub():
     """The flattened mobile #weeklyLeftTabs must not use a negative inline
     margin: the hub clips overflow-x, so a bleed pushes the 'Matchup Preview'
