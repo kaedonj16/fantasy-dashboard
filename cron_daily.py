@@ -478,7 +478,21 @@ try:
     # silently until a later step's migration creates the column.
     init_advanced_metrics_db()
     _ay_season = current_season
-    if not Path(CACHE_DIR, f"stats_player_reg_{{_ay_season}}.csv").exists():
+    _ay_csv = Path(CACHE_DIR) / f"stats_player_reg_{{_ay_season}}.csv"
+    if not _ay_csv.exists():
+        # Self-heal: fetch the current season's CSV from nfl_data_py so the
+        # import below populates the current season. Without this the code
+        # fell back to the prior season, leaving air_yards_share / WOPR empty
+        # for the current season (the "No data yet" the UI showed).
+        try:
+            import nfl_data_py as _nfl
+            _seasonal = _nfl.import_seasonal_data([int(_ay_season)])
+            if _seasonal is not None and len(_seasonal):
+                _seasonal.to_csv(_ay_csv, index=False)
+                print(f"[cron] Fetched stats_player_reg_{{_ay_season}}.csv from nfl_data_py ({{len(_seasonal)}} rows)")
+        except Exception as _fe:
+            print(f"[cron] nfl_data_py seasonal fetch failed, falling back to prior season: {{_fe}}")
+    if not _ay_csv.exists():
         _ay_season = current_season - 1
     updated = import_air_yards_from_stats_csv(_ay_season)
     print(f"[cron] Air yards + WOPR import: {{updated}} rows updated for season {{_ay_season}}")

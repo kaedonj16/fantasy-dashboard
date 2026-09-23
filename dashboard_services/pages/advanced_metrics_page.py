@@ -1116,6 +1116,7 @@ _AM_JS = r"""
   const tbody     = document.getElementById('amTableBody');
   const loading   = document.getElementById('amLoading');
   const empty     = document.getElementById('amEmpty');
+  const tableWrap = document.querySelector('.am-table-wrap');
   if (!metricSel || !tbody) return;
 
   function amParseSeasons(raw) {
@@ -2309,9 +2310,6 @@ _AM_JS = r"""
       }).join('') + '</tr>';
     }).join('');
   }
-  function schemaMessageRow(message) {
-    return '<tr><td colspan="' + tableColumnSchema().length + '" class="am-schema-message">' + message + '</td></tr>';
-  }
   function verifyRenderedSchema() {
     const expected = tableColumnSchema().map(c => c.id).join('|');
     document.querySelectorAll('#amTable tbody tr.am-row:not(.am-pin-divider)').forEach(function(tr) {
@@ -2646,7 +2644,10 @@ _AM_JS = r"""
 
     if (loading) loading.style.display = 'none';
     if (!displayRows.length) {
-      empty.style.display = ''; tbody.innerHTML = schemaMessageRow('No matching players');
+      // No data: hide the table (headers included) and show the empty state
+      // in its place instead of stacking "No data yet" above the headers.
+      empty.style.display = ''; tbody.innerHTML = '';
+      if (tableWrap) tableWrap.style.display = 'none';
       if (avgNote) avgNote.style.display = 'none';
       if (paginationEl) paginationEl.style.display = 'none';
       window.brEmptyState(empty, state.rosterOnly
@@ -2655,6 +2656,7 @@ _AM_JS = r"""
       return;
     }
     empty.style.display = 'none';
+    if (tableWrap) tableWrap.style.display = '';
 
     // Average marker across all displayed rows (position-filtered but not roster/search filtered).
     let avgPct = null;
@@ -3791,7 +3793,7 @@ _AM_JS = r"""
     Promise.all([mainFetch, prevFetch])
       .then(([d, pd]) => {
         if (requestToken !== state.requestToken) return;
-        if (!d) { state.fetching = false; empty.style.display = ''; if (loading) loading.style.display = 'none'; tbody.innerHTML = schemaMessageRow('Data unavailable'); return; }
+        if (!d) { state.fetching = false; empty.style.display = ''; if (loading) loading.style.display = 'none'; tbody.innerHTML = ''; if (tableWrap) tableWrap.style.display = 'none'; return; }
         state.fetching = false;
         state.rows = d.players || [];
         state.volCol = d.vol_col || 'games';
@@ -3823,7 +3825,7 @@ _AM_JS = r"""
         state.fetching = false; if (loading) loading.style.display = 'none';
         // Network error (e.g. ERR_NETWORK_CHANGED): show a recoverable retry
         // rather than the misleading "No data for this metric yet." message.
-        empty.style.display = ''; tbody.innerHTML = schemaMessageRow('Couldn’t load this metric.');
+        empty.style.display = ''; tbody.innerHTML = ''; if (tableWrap) tableWrap.style.display = 'none';
         empty.innerHTML = 'Couldn’t load this metric, network hiccup. '
           + '<button type="button" id="amRetryBtn" style="margin-left:6px;padding:5px 12px;'
           + 'border:1px solid var(--border);border-radius:8px;background:var(--card);'
