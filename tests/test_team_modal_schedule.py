@@ -66,3 +66,41 @@ def test_menu_teardown_and_accessibility_contract():
     assert "if (e.key === 'Escape')" in js and "tmCloseMenu(true)" in js
     assert "trigger.setAttribute('aria-expanded', willOpen ? 'true' : 'false')" in js
     assert "window._tmScheduleAbort.abort()" in js
+
+
+def test_future_opponents_rematches_and_scheduled_zeroes_are_preserved():
+    by_week = {
+        1: [{"roster_id": 10, "matchup_id": 1, "points": 99, "finalized": True},
+            {"roster_id": 20, "matchup_id": 1, "points": 90, "finalized": True}],
+        2: [{"roster_id": 10, "matchup_id": 2, "points": 0, "status": "scheduled"},
+            {"roster_id": 30, "matchup_id": 2, "points": 0, "status": "scheduled"}],
+        3: [{"roster_id": 10, "matchup_id": 3, "points": 0, "status": "scheduled"},
+            {"roster_id": 20, "matchup_id": 3, "points": 0, "status": "scheduled"}],
+    }
+    data = build_team_schedule(
+        platform="espn", league_id="L", season=2026, roster_id="10",
+        league={"settings": {"total_weeks": 4}},
+        rosters=[{"roster_id": x, "owner_id": f"u{x}"} for x in (10, 20, 30)],
+        users=[{"user_id": f"u{x}", "display_name": f"Team {x}"} for x in (10, 20, 30)],
+        current_season=2026, current_week=2, get_week=lambda week: by_week.get(week, []),
+    )
+    assert [w.get("opponent", {}).get("roster_id") for w in data["weeks"][:3]] == ["20", "30", "20"]
+    assert data["weeks"][1]["state"] == "scheduled" and data["weeks"][1]["result"] is None
+    assert data["weeks"][3] == {"week": 4, "state": "unpublished", "published": False}
+
+
+def test_current_week_zero_requires_explicit_live_state():
+    scheduled = fixture(rows=[{"roster_id": 10, "matchup_id": 7, "points": 0, "status": "scheduled"},
+                              {"roster_id": 20, "matchup_id": 7, "points": 0}], current_week=1)["weeks"][0]
+    live = fixture(rows=[{"roster_id": 10, "matchup_id": 7, "points": 0, "status": "live"},
+                         {"roster_id": 20, "matchup_id": 7, "points": 0}], current_week=1)["weeks"][0]
+    assert scheduled["state"] == "scheduled" and scheduled["result"] is None
+    assert live["state"] == "live" and live["team_points"] == 0.0
+
+
+def test_schedule_markup_uses_existing_design_contract():
+    js = (ROOT / "static/app.js").read_text()
+    for token in ("tm-sched-week", "tm-sched-avatar", "tm-sched-opp-name", "tm-sched-chevron",
+                  "Select a matchup to view lineups and scores.", "tm-sched-row-open"):
+        assert token in js
+    assert "Lineups load from the provider" not in js

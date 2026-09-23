@@ -21571,6 +21571,7 @@ img, svg, canvas {
 .tm-sched-w { background: color-mix(in srgb, var(--win) 18%, transparent); color: var(--win); }
 .tm-sched-l { background: color-mix(in srgb, var(--warning) 18%, transparent); color: var(--warning); }
 .tm-sched-t { background: color-mix(in srgb, var(--info) 18%, transparent); color: var(--info); }
+.tm-sched-live { background: color-mix(in srgb, var(--warning) 18%, transparent); color: var(--warning); }
 .tm-sched-upcoming { background: var(--card-soft); color: var(--text-muted); }
 
 .tm-sched-opp {
@@ -21661,6 +21662,19 @@ img.tm-sched-avatar {
     background: var(--card-soft);
     padding: 14px 12px;
 }
+
+.tm-sched-detail[hidden] { display: none !important; }
+
+.tm-sched-detail .tm-lineup-side {
+    display: inline-block;
+    vertical-align: top;
+    width: calc(50% - 7px);
+}
+.tm-sched-detail .tm-lineup-side + .tm-lineup-side { margin-left: 10px; }
+.tm-sched-detail h4 { margin: 0 0 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tm-lineup-player { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 7px; padding: 5px 0; align-items: center; font-size: 12px; }
+.tm-lineup-player > span:nth-child(2) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tm-lineup-slot { color: var(--text-muted); font-size: 10px; font-weight: 700; }
 
 .tm-mu {
     border: 1px solid var(--border);
@@ -21817,6 +21831,13 @@ img.tm-sched-avatar {
 
 @media (max-width: 480px) {
     .tm-mu-hname { display: none; }
+    .tm-sched-row { gap: 6px; padding: 9px 8px; }
+    .tm-sched-vs { display: none; }
+    .tm-sched-avatar { width: 22px; height: 22px; }
+    .tm-sched-score { font-size: 11px; }
+    .tm-sched-result { min-width: 22px; padding: 0 4px; }
+    .tm-sched-detail .tm-lineup-side { display: block; width: 100%; }
+    .tm-sched-detail .tm-lineup-side + .tm-lineup-side { margin: 14px 0 0; }
 }
 
 .team-modal-empty {

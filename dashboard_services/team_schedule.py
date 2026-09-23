@@ -20,13 +20,15 @@ def _status(row: dict, opponent: dict | None, *, week: int, current_week: int,
         return "final"
     if raw in {"live", "in_progress", "in progress", "in"}:
         return "live"
+    if raw in {"scheduled", "upcoming", "pre"}:
+        return "scheduled"
     if viewed_season < current_season or (viewed_season == current_season and week < current_week):
         # Historical provider totals are authoritative, but only call the game
         # final when both sides actually published totals.
         return "final" if opponent and _number(row.get("points")) is not None and _number(opponent.get("points")) is not None else "unavailable"
-    if viewed_season == current_season and week == current_week and (
-            _number(row.get("points")) is not None or _number((opponent or {}).get("points")) is not None):
-        return "live"
+    # A numeric provider total (including 0) is not evidence that games have
+    # kicked off: ESPN publishes zero totals for future/current matchups.
+    # Live must be explicit provider/shared-state information.
     return "scheduled"
 
 
@@ -93,7 +95,7 @@ def build_team_schedule(*, platform: str, league_id: str, season: int, roster_id
         state = _status(mine, opponent, week=week, current_week=current_week,
                         viewed_season=season, current_season=current_season)
         item = {"week": week, "matchup_id": mid, "published": True, "state": state,
-                "is_bye": opponent is None and mid is not None,
+                "is_bye": bool(mine.get("is_bye")),
                 "team": team_meta(str(roster_id)),
                 "opponent": team_meta(str(opponent.get("roster_id"))) if opponent else None,
                 "team_points": _number(mine.get("points")),
