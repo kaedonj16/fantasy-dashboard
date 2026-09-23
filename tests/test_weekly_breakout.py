@@ -167,11 +167,24 @@ def test_rookie_week1_is_provisional_without_prior_history():
     res = wb.score_player(RB, [wk(1, 70, None, 4, car=18, ppr=15)], cutoff_week=1)
     assert res["provisional"] is True
     assert res["baseline_source"] == "none"
-    assert res["confidence"] <= 35.0            # provisional cap
+    # Provisional confidence is a smooth 0.6x discount of the underlying
+    # evidence (not the old hard 35.0 cliff): still low for one game, but it
+    # varies player to player instead of pinning at exactly 35.
+    assert res["confidence"] < 60.0
     assert res["classification"] in ("watchlist", "temporary_opportunity")
     assert res["signals"]["snap_share"]["baseline"] is None
     assert res["signals"]["snap_share"]["delta"] is None
     assert res["breakout_score"] < 100
+
+
+def test_provisional_confidence_discount_is_proportional():
+    # Unit-level: the provisional discount scales the evidence-based
+    # confidence instead of clipping it at a fixed ceiling.
+    rows = [wk(1, 70, None, 4, car=18, ppr=15)]
+    signals, _ = wb._position_signals("RB", rows, [], initial_role=True)
+    conf_prov, _ = wb._compute_confidence(signals, rows, [], "RB", 0, True)
+    conf_full, _ = wb._compute_confidence(signals, rows, [], "RB", 0, False)
+    assert conf_prov == pytest.approx(conf_full * 0.6, abs=0.15)
 
 
 def test_prior_season_baseline_used_when_thin_current_data():
@@ -382,7 +395,25 @@ def test_two_persistent_rookie_games_can_be_provisional_emerging():
     assert res["classification"] == "emerging_breakout"
     assert res["main_board_eligible"] is True
     assert res["score_basis"] == "initial_role"
-    assert res["breakout_score"] <= wb.INITIAL_PERSISTENT_CAP
+    # The persistent cap is evidence-scaled now (45 + 5 per supporting signal,
+    # max 60): strong multi-signal rookies earn headroom above the old fixed 45
+    # instead of every rookie pinning at exactly the same number.
+    expected_cap = wb._initial_persistent_cap(res["supporting_signal_count"])
+    assert res["breakout_score"] <= expected_cap
+    assert res["breakout_score"] > wb.INITIAL_PERSISTENT_CAP  # differentiated
+
+
+def test_evidence_scaled_cap_rewards_stronger_rookie_evidence():
+    rookie = {**WR, "years_exp": 0, "season": 2026, "draft_year": 2026,
+              "draft_round": 5}
+    strong = wb.score_player(rookie, [wk(1, 72, 23, 8), wk(2, 75, 25, 9)],
+                             cutoff_week=2)
+    weak = wb.score_player(rookie, [wk(1, 55, 12, 4), wk(2, 58, 13, 4)],
+                           cutoff_week=2)
+    assert strong["breakout_score"] > weak["breakout_score"]
+    assert wb._initial_persistent_cap(0) == 45.0
+    assert wb._initial_persistent_cap(3) == 60.0
+    assert wb._initial_persistent_cap(10) == 60.0  # capped at the max
 
 
 def test_rookie_transitions_to_real_change_window_in_week_three():
