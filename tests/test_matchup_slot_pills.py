@@ -253,3 +253,53 @@ def test_weekly_tabs_container_does_not_bleed_outside_hub():
     assert "margin-inline" not in found or re.search(
         r"margin-inline:\s*0(?:px)?\s*;", found
     ), "negative margin-inline would clip the matchup heading at the hub edge"
+
+
+def _css_without_media_queries() -> str:
+    """Base CSS with every @media block removed (the desktop rules)."""
+    css = _CSS.read_text(encoding="utf-8")
+    out = []
+    i, n = 0, len(css)
+    while i < n:
+        m = re.search(r"@media[^{]*\{", css[i:])
+        if not m:
+            out.append(css[i:])
+            break
+        out.append(css[i:i + m.start()])
+        depth, j = 1, i + m.end()
+        while j < n and depth:
+            if css[j] == "{":
+                depth += 1
+            elif css[j] == "}":
+                depth -= 1
+            j += 1
+        i = j
+    return "".join(out)
+
+
+def test_right_column_flips_team_pos_before_player_name():
+    """Desktop: the right column's inline header reads TEAM • POS before the
+    player name ("HOU • QB C.J. Stroud") -- flipped vs the left column's
+    name-first order. Phones keep the name-first two-line stack (name on top,
+    TEAM • POS beneath)."""
+    desktop = _css_without_media_queries()
+    assert re.search(
+        r"\.mb-cell-r\s+\.mb-nameline\s+\.mb-team\s*\{[^}]*order:\s*-1",
+        desktop,
+    ), "desktop right-column TEAM • POS should render before the player name"
+
+    phone = _media_640_block_with(".mb-nameline")
+    m = re.search(
+        r"\.mb-cell-r\s+\.mb-nameline\s+\.mb-team\s*\{([^}]*)\}", phone
+    )
+    assert m, "phone right-column sub-line rule missing"
+    assert re.search(r"order:\s*0", m.group(1)), \
+        "phones should keep the name-first stack, not flip TEAM • POS on top"
+
+    # The left column keeps name-first everywhere: no order flip on its
+    # sub-line rule.
+    for m in re.finditer(r"([^{}]+)\.mb-team\s*\{([^}]*)\}", _CSS.read_text(encoding="utf-8")):
+        selector, body = m.group(1), m.group(2)
+        if ".mb-cell-r" not in selector and ".mb-nameline" in selector:
+            assert "order:" not in body, \
+                "left-column header should keep the name-first order"
