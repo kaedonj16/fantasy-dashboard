@@ -43,8 +43,8 @@ _POSITIONS = ("QB", "RB", "WR", "TE")
 
 # Trend window shape. "recent" is the latest 1-2 completed games; "baseline" the
 # 3-4 immediately before it. The two never overlap.
-RECENT_MAX = 2
-BASELINE_MAX = 4
+RECENT_MAX = 3
+BASELINE_MAX = 17
 
 # Per-position "full workload" anchors used to turn raw per-game counts into a
 # 0-100 growth signal. These are typical every-down-starter per-game volumes, not
@@ -177,13 +177,13 @@ def split_windows(
     """Split a player's active weekly rows (oldest first) into non-overlapping
     recent and baseline windows.
 
-    Sizing keeps momentum meaningful with small samples - the old
-    recent-3-vs-season-average comparison put the same games on both sides and
-    reported zero momentum through three games:
+    The baseline is the full season to date (season-long culmination); the
+    recent window is the past few weeks so emerging role changes surface
+    quickly without single-game noise dominating:
 
         1 game  -> recent=1, baseline=0   (provisional; caller supplies a prior baseline)
-        2-3     -> recent=1, baseline=rest (1 vs 1, 1 vs 2)
-        4+      -> recent=2, baseline=up to 4 preceding
+        2-4     -> recent=2, baseline=rest (season to date before recent)
+        5+      -> recent=3, baseline=rest of season before recent
     """
     rows = list(active_rows)
     n = len(rows)
@@ -191,11 +191,11 @@ def split_windows(
         return [], []
     if n == 1:
         return rows[-1:], []
-    if n <= 3:
-        return rows[-1:], rows[:-1][-baseline_max:]
-    r = min(recent_max, 2)
+    if n <= 4:
+        return rows[-2:], rows[:-2]
+    r = min(recent_max, 3)
     recent = rows[n - r:]
-    baseline = rows[max(0, n - r - baseline_max): n - r]
+    baseline = rows[: n - r]
     return recent, baseline
 
 

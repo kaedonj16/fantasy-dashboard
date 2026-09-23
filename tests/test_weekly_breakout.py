@@ -44,19 +44,19 @@ def test_split_windows_never_overlap():
 
 
 def test_three_games_produce_momentum_not_zero():
-    # The old recent-3-vs-season comparison reported zero momentum through three
-    # games (same games on both sides). Here recent and baseline are disjoint.
+    # Recent and baseline are disjoint; with 3 games the recent window is the
+    # last 2 and the baseline is the season to date before that.
     rows = [wk(1, 30), wk(2, 30), wk(3, 60)]
     recent, baseline = wb.split_windows(rows)
-    assert [r["week"] for r in recent] == [3]
-    assert [r["week"] for r in baseline] == [1, 2]
+    assert [r["week"] for r in recent] == [2, 3]
+    assert [r["week"] for r in baseline] == [1]
 
 
-def test_four_plus_games_uses_two_recent_up_to_four_baseline():
+def test_five_plus_games_uses_three_recent_season_baseline():
     rows = [wk(i) for i in range(1, 8)]  # 7 games
     recent, baseline = wb.split_windows(rows)
-    assert [r["week"] for r in recent] == [6, 7]
-    assert [r["week"] for r in baseline] == [2, 3, 4, 5]  # preceding 4, non-overlapping
+    assert [r["week"] for r in recent] == [5, 6, 7]
+    assert [r["week"] for r in baseline] == [1, 2, 3, 4]  # full season before recent
 
 
 # ---------------------------------------------------------------------------
@@ -103,11 +103,15 @@ def test_td_spike_without_role_growth_is_not_a_breakout():
 
 
 def test_routes_and_high_value_usage_are_explainable_when_available():
-    rows = [wk(1, 25, 8, 2), wk(2, 28, 9, 2), wk(3, 70, 24, 8)]
+    # 5 weeks: season baseline is low, past few weeks show the role jump.
+    rows = [wk(1, 25, 8, 2), wk(2, 28, 9, 2), wk(3, 70, 24, 8),
+            wk(4, 72, 25, 8), wk(5, 68, 23, 7)]
     rows[0].update(routes=10, red_zone_opportunities=0)
     rows[1].update(routes=11, red_zone_opportunities=0)
     rows[2].update(routes=31, red_zone_opportunities=3)
-    res = wb.score_player(WR, rows, cutoff_week=3)
+    rows[3].update(routes=33, red_zone_opportunities=3)
+    rows[4].update(routes=30, red_zone_opportunities=2)
+    res = wb.score_player(WR, rows, cutoff_week=5)
     assert res["signals"]["routes_pg"]["delta"] > 15
     assert res["components"]["high_value_touches"] > 0
     assert res["components"]["unexpected_usage"] > 0
@@ -391,7 +395,7 @@ def test_rookie_transitions_to_real_change_window_in_week_three():
     res = wb.score_player(rookie, rows, cutoff_week=3)
     assert res["score_basis"] == "role_change"
     assert res["role_change_score"] is not None
-    assert res["baseline_weeks"] == [1, 2]
+    assert res["baseline_weeks"] == [1]
 
 
 def test_missing_cache_veteran_is_not_assumed_rookie():
