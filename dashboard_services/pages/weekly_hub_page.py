@@ -188,6 +188,8 @@ def build_weekly_hub_body(ctx: dict) -> str:
         season,
         scoring=_scoring_format_from_settings(ctx.get("scoring_settings")),
     )
+    from utils.standings_divisions import division_records_for_ctx
+    _hub_div_records = division_records_for_ctx(ctx)
     slides = [
         render_matchup_slide(
             season,
@@ -205,6 +207,7 @@ def build_weekly_hub_body(ctx: dict) -> str:
             is_gotw=is_gotw,
             gotw_selection=_gotw_selection,
             roster_positions=ctx.get("roster_positions") or [],
+            div_records=_hub_div_records,
         )
         for m, is_gotw in zip(default_matchups, _gotw_flags)
     ]

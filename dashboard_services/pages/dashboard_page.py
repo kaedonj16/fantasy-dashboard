@@ -59,11 +59,13 @@ def build_dashboard_body(ctx: dict) -> str:
     viewer = ctx.get("viewer") or {}
     viewer_roster_id = viewer.get("viewer_roster_id")
 
-    from utils.standings_divisions import resolve_divisions
+    from utils.standings_divisions import resolve_divisions, division_records
+    _div_info = resolve_divisions(ctx)
     standings_html = render_standings_compact(
         team_stats, movement=_standings_movement(df_weekly),
         owner_to_rid=_owner_to_rid_map(roster_map=ctx.get("roster_map"), df_weekly=df_weekly),
-        divisions=resolve_divisions(ctx),
+        divisions=_div_info,
+        div_records=division_records(df_weekly, (_div_info or {}).get("by_rid") or {}),
     )
     usage_movers_html = _render_usage_movers(ctx, viewer_roster_id)
     lineup_alert_html = _viewer_lineup_alert_html(ctx, viewer_roster_id)
@@ -127,6 +129,8 @@ def build_dashboard_body(ctx: dict) -> str:
                                                        str((m.get("right") or {}).get("roster_id", ""))) else 1,
     ) if _show_matchup_preview else []
     if _show_matchup_preview:
+        from utils.standings_divisions import division_records_for_ctx
+        _dash_div_records = division_records_for_ctx(ctx)
         slides = [
             render_matchup_slide(
                 season,
@@ -141,6 +145,7 @@ def build_dashboard_body(ctx: dict) -> str:
                 fpts_against=_fpts_against_dash,
                 compact=True,
                 scoring_settings=ctx.get("raw_scoring_settings") or ctx.get("scoring_settings"),
+                div_records=_dash_div_records,
             )
             for m in _dash_matchups
         ]

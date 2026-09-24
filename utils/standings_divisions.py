@@ -200,3 +200,85 @@ def assign_playoff_seeds(
     for rank, i in enumerate(order):
         seeds[i] = rank + 1
     return seeds
+
+
+def _norm_rid(rid) -> Optional[int]:
+    try:
+        return int(rid)
+    except (TypeError, ValueError):
+        return None
+
+
+def division_records(df_weekly, by_rid: Mapping[int, int]) -> Dict[int, Tuple[int, int, int]]:
+    """Per-team ``(wins, losses, ties)`` in games vs same-division opponents.
+
+    Opponents are paired via ``(week, matchup_id)`` on finalized rows. A game
+    counts toward the division record only when both teams carry the same
+    nonzero division id. Groups that aren't exactly two teams, or rows missing
+    ``matchup_id``, are skipped. Keys are int roster ids.
+    """
+    out: Dict[int, List[int]] = {}
+    if df_weekly is None or getattr(df_weekly, "empty", True):
+        return {}
+    try:
+        cols = set(df_weekly.columns)
+    except Exception:
+        return {}
+    if not {"week", "matchup_id", "roster_id", "points", "points_against"} <= cols:
+        return {}
+    try:
+        frame = df_weekly[df_weekly["finalized"] == True]  # noqa: E712
+    except Exception:
+        return {}
+    div_of = {_norm_rid(k): v for k, v in (by_rid or {}).items()}
+    for (_wk, _mid), grp in frame.groupby(["week", "matchup_id"]):
+        if len(grp) != 2:
+            continue
+        rows = list(grp.itertuples())
+        try:
+            ra, rb = _norm_rid(rows[0].roster_id), _norm_rid(rows[1].roster_id)
+        except AttributeError:
+            continue
+        if ra is None or rb is None:
+            continue
+        da, db = div_of.get(ra) or 0, div_of.get(rb) or 0
+        if not da or da != db:
+            continue
+        pa = float(rows[0].points or 0)
+        pb = float(rows[1].points or 0)
+        for rid, won, tied in ((ra, pa > pb, pa == pb), (rb, pb > pa, pa == pb)):
+            rec = out.setdefault(rid, [0, 0, 0])
+            if tied:
+                rec[2] += 1
+            elif won:
+                rec[0] += 1
+            else:
+                rec[1] += 1
+    return {rid: (w, l, t) for rid, (w, l, t) in out.items()}
+
+
+def format_record(wins: int, losses: int, ties: int = 0,
+                  div_record: Optional[Tuple[int, int, int]] = None) -> str:
+    """``'2-1'`` / ``'2-1-1'``, with the division record appended as
+    ``'2-1 (2-0)'`` when ``div_record`` is given (ties shown only when > 0)."""
+    rec = f"{int(wins)}-{int(losses)}"
+    if int(ties or 0):
+        rec += f"-{int(ties)}"
+    if div_record is not None:
+        dw, dl, dt = (int(x or 0) for x in div_record)
+        div = f"{dw}-{dl}"
+        if dt:
+            div += f"-{dt}"
+        rec += f" ({div})"
+    return rec
+
+
+def division_records_for_ctx(ctx: Mapping[str, Any]) -> Optional[Dict[int, Tuple[int, int, int]]]:
+    """``{roster_id: (w, l, t)}`` vs division opponents from the ctx's weekly
+    frame, or ``None`` when the league doesn't use divisions. Callers pass the
+    result straight into renderers so records show as ``'2-1 (2-0)'``."""
+    info = resolve_divisions(ctx) or {}
+    by_rid = info.get("by_rid") or {}
+    if not by_rid:
+        return None
+    return division_records(ctx.get("df_weekly"), by_rid)
