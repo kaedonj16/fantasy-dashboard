@@ -1077,6 +1077,9 @@ window.brHaptic = function (pattern) {
   // DOMParser/innerHTML never runs <script>; re-create each one (inline and the
   // allow-listed external ones) so page data bootstraps and page modules execute
   // after the swap. Order is preserved, so an inline cfg runs before its module.
+  // Inline page scripts must be re-runnable: no top-level let/const (a second
+  // execution throws "already declared" and leaves the swapped DOM hydrateless).
+  // Use var or function-scoped declarations for page-level state instead.
   function reexecScripts(container) {
     container.querySelectorAll('script').forEach(function (old) {
       var s = document.createElement('script');
