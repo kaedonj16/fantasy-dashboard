@@ -473,3 +473,13 @@ def test_wrapped_pause_button_css():
     assert "left: 196px" in css
     assert "z-index: 6" in css
     assert ".wrapped-pause:hover" in css
+
+
+def test_wrapped_coaching_slide_compact_css():
+    """The six-row coaching slide compacts its rows and shrinks the backdrop
+    word so nothing collides."""
+    root = Path(__file__).resolve().parents[1]
+    css = (root / "static/dashboard.css").read_text()
+    assert '.wrapped-slide[data-kind="coaching"] .wrapped-row {' in css
+    assert '.wrapped-slide[data-kind="coaching"] .wrapped-bgword {' in css
+    assert "font-size: 76px" in css

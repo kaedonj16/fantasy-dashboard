@@ -38318,6 +38318,32 @@ a.rz-demo-link:hover {
     font-size: 20px;
 }
 
+/* Coaching report packs six rows: compact them like the recap slide, and
+   shrink the backdrop word so it reads as texture instead of colliding
+   with the kicker and first rows. */
+.wrapped-slide[data-kind="coaching"] .wrapped-row {
+    padding: 12px 0;
+}
+
+.wrapped-slide[data-kind="coaching"] .wrapped-row-k {
+    font-size: 11px;
+    margin-bottom: 5px;
+}
+
+.wrapped-slide[data-kind="coaching"] .wrapped-row-n {
+    font-size: 19px;
+}
+
+.wrapped-slide[data-kind="coaching"] .wrapped-row-v {
+    font-size: 21px;
+}
+
+.wrapped-slide[data-kind="coaching"] .wrapped-bgword {
+    font-size: 76px;
+    top: 100px;
+    opacity: .1;
+}
+
 .wrapped-rays {
     position: absolute;
     z-index: 0;
