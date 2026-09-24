@@ -1324,6 +1324,18 @@ def _build_wrapped_slides(history_ctx: dict, summary: dict, league_name: str, se
     return slides
 
 
+def _wrapped_row_html(k, n, v) -> str:
+    """One wrapped rows-slide row: kicker, name, value."""
+    return (
+        "<div class='wrapped-row'>"
+        f"<div class='wrapped-row-k'>{_esc(str(k))}</div>"
+        "<div class='wrapped-row-m'>"
+        f"<span class='wrapped-row-n'>{_esc(str(n))}</span>"
+        + (f"<span class='wrapped-row-v'>{_esc(str(v))}</span>" if v not in (None, "") else "")
+        + "</div></div>"
+    )
+
+
 def _wrapped_overlay_markup(slides: list, share_data: dict | None = None,
                             season=None, ns: str = "wrapped",
                             footer_label: str | None = None) -> str:
@@ -1404,28 +1416,23 @@ def _wrapped_overlay_markup(slides: list, share_data: dict | None = None,
                     + "<span class='wrapped-recap-champ-lbl'>Champion</span></div>"
                 )
             hl = "".join(
-                "<div class='wrapped-row'>"
-                f"<div class='wrapped-row-k'>{_esc(str(h.get('k', '')))}</div>"
-                "<div class='wrapped-row-m'>"
-                f"<span class='wrapped-row-n'>{_esc(str(h.get('n', '')))}</span>"
-                + (f"<span class='wrapped-row-v'>{_esc(str(h.get('v', '')))}</span>" if h.get('v') not in (None, "") else "")
-                + "</div></div>"
                 # Cap at 4 on the slide (the Share card still draws up to 5) so a
                 # champion block + rows never overflow a small phone's story slide.
+                _wrapped_row_html(h.get("k", ""), h.get("n", ""), h.get("v"))
                 for h in (rd.get("highlights") or [])[:4]
             )
             body = kicker + champ_html + f"<div class='wrapped-rows'>{hl}</div>" + sub
-        elif s.get("rows"):
-            rows = "".join(
-                "<div class='wrapped-row'>"
-                f"<div class='wrapped-row-k'>{_esc(str(k))}</div>"
-                "<div class='wrapped-row-m'>"
-                f"<span class='wrapped-row-n'>{_esc(str(n))}</span>"
-                + (f"<span class='wrapped-row-v'>{_esc(str(v))}</span>" if v not in (None, "") else "")
-                + "</div></div>"
-                for k, n, v in s["rows"]
-            )
-            body = kicker + f"<div class='wrapped-rows'>{rows}</div>" + sub
+        elif s.get("sections") or s.get("rows"):
+            parts = []
+            if s.get("sections"):
+                for _sec in s["sections"]:
+                    parts.append(
+                        f"<div class='wrapped-row-sec'>{_esc(str(_sec.get('title', '')))}</div>")
+                    parts.extend(_wrapped_row_html(k, n, v)
+                                 for k, n, v in (_sec.get("rows") or []))
+            else:
+                parts.extend(_wrapped_row_html(k, n, v) for k, n, v in s["rows"])
+            body = kicker + f"<div class='wrapped-rows'>{''.join(parts)}</div>" + sub
         elif s.get("preview_teams"):
             # Next week's Game of the Week (a preview: no winner yet). Neutral
             # stacked hero, the projected win-% split bar, projected scoreline.
@@ -1501,11 +1508,16 @@ def _wrapped_overlay_markup(slides: list, share_data: dict | None = None,
       <button type="button" class="wrapped-link" id="{ns}Link" aria-label="Copy shareable link">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg><span>Link</span>
       </button>
+      <button type="button" class="wrapped-pause" id="{ns}Pause" aria-label="Pause auto-advance" aria-pressed="false">
+        <svg class="wp-ic-pause" width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>
+        <svg class="wp-ic-play" width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="display:none"><path d="M8 5.5v13a1 1 0 0 0 1.53.85l10.2-6.5a1 1 0 0 0 0-1.7L9.53 4.65A1 1 0 0 0 8 5.5z"/></svg>
+        <span>Pause</span>
+      </button>
       <button type="button" class="wrapped-close" id="{ns}Close" aria-label="Close">&times;</button>
       <div class="wrapped-stage" id="{ns}Stage">{''.join(slide_html)}</div>
       <button type="button" class="wrapped-tap wrapped-tap-prev" id="{ns}Prev" aria-label="Previous"></button>
       <button type="button" class="wrapped-tap wrapped-tap-next" id="{ns}Next" aria-label="Next"></button>
-      <div class="wrapped-hint">Tap to advance · Esc to close</div>
+      <div class="wrapped-hint">Tap to advance · P to pause · Esc to close</div>
       <script type="application/json" id="{ns}ShareData">{share_json}</script>
     </div>
     """
@@ -1848,6 +1860,69 @@ def _build_weekly_wrapped_slides(ctx: dict, league_name: str, season, week,
                                   else "The week's coldest starter"),
                            "bgword": f"{float(dud['pts']):.1f}"})
 
+        # ── Coaching report: efficiency top 3, biggest bust, worst start/sit
+        # calls — one slide built from the same datasets the recap's Lineup
+        # Review uses. Rows are grouped into labeled sections; skipped unless
+        # at least 3 rows are available.
+        _coach_sections = []
+        try:
+            from dashboard_services.season_efficiency import compute_league_season_efficiency
+            from dashboard_services.pages.recap_page import _weekly_efficiency_rows
+            _eff_data = compute_league_season_efficiency({**ctx, "efficiency_weeks": [week]})
+            _eff_rows = _weekly_efficiency_rows(_eff_data, week)
+        except Exception:
+            _eff_rows = []
+        _owner_by_rid = {}
+        try:
+            for _r, _o in zip(wdf["roster_id"], wdf["owner"]):
+                _owner_by_rid[str(_r)] = str(_o)
+        except Exception:
+            pass
+        _eff_section = []
+        for _i, _er in enumerate(_eff_rows[:3]):
+            _eff_section.append((
+                f"#{_i + 1}",
+                _owner_by_rid.get(str(_er["rid"]), f"Team {_er['rid']}"),
+                f"{_er['eff']:.0f}%",
+            ))
+        if _eff_section:
+            _coach_sections.append({"title": "LINEUP EFFICIENCY", "rows": _eff_section})
+        try:
+            from dashboard_services.recap_calculations import build_lineup_analysis
+            _analysis = build_lineup_analysis(
+                ctx.get("matchups_by_week") or {}, week,
+                roster_positions=ctx.get("roster_positions"))
+        except Exception:
+            _analysis = {}
+        if _analysis.get("available"):
+            _under = (_analysis.get("underperformers") or [])
+            if _under:
+                _b = _under[0]
+                # Don't repeat the dud slide's player when there's no
+                # trustworthy projection data (both rank raw starter points).
+                if str(_b.get("name") or "") != str((dud or {}).get("name") or ""):
+                    _bmeta = " · ".join(x for x in [_b.get("pos"), _b.get("nfl")] if x)
+                    _coach_sections.append({"title": "BIGGEST BUST", "rows": [(
+                        "",
+                        str(_b.get("name") or "—") + (f" ({_bmeta})" if _bmeta else ""),
+                        f"{float(_b.get('pts') or 0):.1f} PTS",
+                    )]})
+            _miss_section = []
+            for _i, _mo in enumerate((_analysis.get("missed_opportunities") or [])[:2]):
+                _st, _bn = _mo.get("starter") or {}, _mo.get("bench_player") or {}
+                _miss_section.append((
+                    f"#{_i + 1}",
+                    f"Started {_st.get('name') or '?'} over {_bn.get('name') or '?'}",
+                    f"+{float(_mo.get('gap') or 0):.1f}",
+                ))
+            if _miss_section:
+                _coach_sections.append({"title": "COACHING MISS", "rows": _miss_section})
+        if sum(len(_sec["rows"]) for _sec in _coach_sections) >= 3:
+            slides.append({"kind": "coaching", "eyebrow": "COACHING REPORT",
+                           "num": False, "big": "", "dp": 0, "suffix": "", "label": "",
+                           "sub": "Efficiency, busts & the week's worst start/sit calls",
+                           "sections": _coach_sections, "bgword": "COACH"})
+
     # ── Game of the week: a look AHEAD at next week's featured matchup ─────
     # The GOTW is a preview concept -- there is no winner yet. Closing teaser
     # of the deck, built from the same deterministic pick the hub badge and
@@ -1998,7 +2073,7 @@ def _wrapped_bootstrap_js(ns: str = "wrapped") -> str:
     default), matching the ids ``_wrapped_overlay_markup(..., ns=ns)`` emits."""
     js = _WRAPPED_BOOTSTRAP_JS
     for _id in ("Launch", "Mount", "Overlay", "Stage", "Share", "Close",
-                "Next", "Prev", "ShareData", "Link", "Toast"):
+                "Next", "Prev", "ShareData", "Link", "Toast", "Pause"):
         js = js.replace(f"'wrapped{_id}'", f"'{ns}{_id}'")
     return js
 
@@ -2364,6 +2439,7 @@ _WRAPPED_BOOTSTRAP_JS = r"""
     var slides = Array.prototype.slice.call(stage.querySelectorAll('.wrapped-slide'));
     var bars = Array.prototype.slice.call(overlay.querySelectorAll('.wrapped-bar'));
     var idx = 0, timer = null, DUR = 5000;   // each slide auto-advances after DUR
+    var paused = false, slideStart = 0, pausedAt = 0;   // pause/resume state
     var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
     function clearTimer() { if (timer) { clearTimeout(timer); timer = null; } }
@@ -2371,6 +2447,46 @@ _WRAPPED_BOOTSTRAP_JS = r"""
       clearTimer();
       if (n >= slides.length - 1) return;   // the finale (champion) holds
       timer = setTimeout(function () { go(n + 1); }, DUR);
+    }
+    // Pause/resume: freezing holds the progress tick where it was; resuming
+    // restarts the current slide's clock with only its remaining time left.
+    function paintPauseBtn() {
+      var btn = document.getElementById('wrappedPause');
+      if (!btn) return;
+      btn.setAttribute('aria-pressed', paused ? 'true' : 'false');
+      btn.setAttribute('aria-label', paused ? 'Resume auto-advance' : 'Pause auto-advance');
+      var s = btn.querySelector('span');
+      if (s) s.textContent = paused ? 'Play' : 'Pause';
+      var icP = btn.querySelector('.wp-ic-pause'), icPl = btn.querySelector('.wp-ic-play');
+      if (icP) icP.style.display = paused ? 'none' : '';
+      if (icPl) icPl.style.display = paused ? '' : 'none';
+    }
+    function setPaused(p) {
+      if (!!p === paused) { paintPauseBtn(); return; }
+      paused = !!p;
+      paintPauseBtn();
+      if (paused) {
+        clearTimer();
+        freezeBar();   // hold the tick where it was
+        pausedAt = Date.now();
+        return;
+      }
+      if (!overlay || overlay.hidden) return;
+      var n = idx;
+      if (n >= slides.length - 1) { setBars(n); return; }   // the finale holds
+      var remain = Math.max(0, DUR - (pausedAt ? pausedAt - slideStart : 0));
+      var fill = bars[n] && bars[n].firstElementChild;
+      if (fill && remain > 0) {
+        var w = fill.getBoundingClientRect().width;
+        var bw = (fill.parentElement && fill.parentElement.getBoundingClientRect().width) || 1;
+        fill.style.transition = 'none';
+        fill.style.width = Math.min(100, (w / bw) * 100) + '%';
+        void fill.offsetWidth;   // reflow so the transition restarts from the frozen width
+        fill.style.transition = 'width ' + remain + 'ms linear';
+        fill.style.width = '100%';
+      }
+      clearTimer();
+      timer = setTimeout(function () { go(n + 1); }, remain);
     }
     // Story-style ticks, driven from JS so they always mirror navigation:
     // skipping ahead snaps the skipped bar full and restarts the next from 0,
@@ -2418,15 +2534,18 @@ _WRAPPED_BOOTSTRAP_JS = r"""
         setTimeout(function () { window.brConfetti(el, { palette: ['#f5c451','#e0a828','#fff1c2','#ffffff'], y: el.clientHeight * 0.4, count: 120 }); }, 350);
       }
       scheduleNext(n);
+      slideStart = Date.now();   // anchor the pause/resume clock to this slide
     }
     function go(n) {
       if (n < 0) return;
       if (n >= slides.length) { close(); return; }
+      if (paused) { paused = false; paintPauseBtn(); }   // manual nav drops the frozen clock
       idx = n; playSlide(idx);
     }
     function open() {
       overlay.hidden = false; overlay.setAttribute('aria-hidden', 'false');
       document.documentElement.style.overflow = 'hidden';
+      paused = false; paintPauseBtn();
       idx = 0; requestAnimationFrame(function () { playSlide(0); });
     }
     function close() {
@@ -2436,6 +2555,13 @@ _WRAPPED_BOOTSTRAP_JS = r"""
     }
     overlay.__open = open;
     document.getElementById('wrappedClose').addEventListener('click', close);
+    var pauseBtn = document.getElementById('wrappedPause');
+    if (pauseBtn) {
+      pauseBtn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        setPaused(!paused);
+      });
+    }
     document.getElementById('wrappedNext').addEventListener('click', function () { go(idx + 1); });
     document.getElementById('wrappedPrev').addEventListener('click', function () { go(idx - 1); });
     document.addEventListener('keydown', function (e) {
@@ -2443,6 +2569,7 @@ _WRAPPED_BOOTSTRAP_JS = r"""
       if (e.key === 'Escape') close();
       else if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); go(idx + 1); }
       else if (e.key === 'ArrowLeft') go(idx - 1);
+      else if (e.key === 'p' || e.key === 'P') setPaused(!paused);
     });
     var sx = null;
     stage.addEventListener('touchstart', function (e) { sx = e.touches[0].clientX; }, { passive: true });
@@ -2465,7 +2592,8 @@ _WRAPPED_BOOTSTRAP_JS = r"""
         var done = function () {
           shareBtn.classList.remove('wrapped-share-busy');
           // Replay the slide's clock from the top: tick and timer back in sync.
-          setBars(idx); scheduleNext(idx);
+          if (paused) { paused = false; paintPauseBtn(); }
+          setBars(idx); scheduleNext(idx); slideStart = Date.now();
         };
         var logoP = window.brBrandLogo ? window.brBrandLogo() : Promise.resolve(null);
         logoP.then(function (logo) {

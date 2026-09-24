@@ -37697,6 +37697,34 @@ a.rz-demo-link:hover {
     background: rgba(255, 255, 255, .22);
 }
 
+/* Pause/play pill: sits next to Link, same chrome. */
+.wrapped-pause {
+    position: absolute;
+    top: 46px;
+    left: 196px;
+    z-index: 6;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    height: 38px;
+    padding: 0 15px 0 13px;
+    border: 0;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, .12);
+    color: #fff;
+    font-size: 14px;
+    font-weight: 800;
+}
+
+.wrapped-pause span {
+    line-height: 1;
+}
+
+.wrapped-pause:hover {
+    background: rgba(255, 255, 255, .22);
+}
+
 /* Toast for copy-link feedback. */
 .wrapped-toast {
     position: fixed;
@@ -37732,6 +37760,11 @@ a.rz-demo-link:hover {
     .wrapped-link {
         top: calc((100vh - var(--wrap-h)) / 2 + 44px);
         left: calc((100vw - var(--wrap-w)) / 2 + 106px);
+    }
+    .wrapped-pause {
+        /* Clear the progress bar (at +6px, ~35px tall) so the pill doesn't sit on it. */
+        top: calc((100vh - var(--wrap-h)) / 2 + 44px);
+        left: calc((100vw - var(--wrap-w)) / 2 + 194px);
     }
 }
 
@@ -38291,6 +38324,56 @@ a.rz-demo-link:hover {
 
 .wrapped-slide[data-kind="recap"] .wrapped-row-v {
     font-size: 20px;
+}
+
+/* Coaching report packs six rows: compact them like the recap slide, and
+   shrink the backdrop word so it reads as texture instead of colliding
+   with the kicker and first rows. */
+.wrapped-slide[data-kind="coaching"] .wrapped-row {
+    padding: 9px 0;
+}
+
+.wrapped-slide[data-kind="coaching"] .wrapped-row-k {
+    font-size: 10px;
+    margin-bottom: 4px;
+}
+
+.wrapped-slide[data-kind="coaching"] .wrapped-row-n {
+    font-size: 17px;
+}
+
+.wrapped-slide[data-kind="coaching"] .wrapped-row-v {
+    font-size: 18px;
+}
+
+.wrapped-slide[data-kind="coaching"] .wrapped-bgword {
+    font-size: 76px;
+    top: 100px;
+    opacity: .1;
+}
+
+/* Section headers inside a rows slide (coaching report groups). */
+.wrapped-row-sec {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 10px 0 1px;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    color: var(--wa);
+}
+
+.wrapped-row-sec:first-child {
+    margin-top: 0;
+}
+
+.wrapped-row-sec::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: rgba(255, 255, 255, .14);
 }
 
 .wrapped-rays {
