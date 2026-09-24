@@ -164,7 +164,20 @@ def _extract_assets(txn: dict, slot_map: dict[tuple, int] | None = None) -> list
             "pick_slot":       slot,
         })
 
-    return assets
+    # Sleeper occasionally lists the same draft pick twice in one transaction;
+    # collapse duplicates on the verified-resolution key so the insert below
+    # can't violate uq_tia_verified_pick_resolution (migration 037).
+    seen_pick_keys = set()
+    deduped_assets: list[dict] = []
+    for a in assets:
+        if a["asset_type"] == "pick" and a.get("pick_roster_id") is not None:
+            key = (a.get("pick_season"), a.get("pick_round"), str(a.get("pick_roster_id")))
+            if key in seen_pick_keys:
+                continue
+            seen_pick_keys.add(key)
+        deduped_assets.append(a)
+
+    return deduped_assets
 
 
 def _fetch_week(league_id: str, week: int) -> tuple[int, list[dict]]:
