@@ -132,6 +132,166 @@ def _f(v) -> Optional[float]:
     return f
 
 
+# PFR advanced rushing (yards before/after contact) via the nflverse
+# pfr_advstats release. Season files exist from 2018 on.
+PFR_ADVSTATS_FLOOR = 2018
+PFR_ADVSTATS_RUSH_URL = (
+    "https://github.com/nflverse/nflverse-data/releases/download/"
+    "pfr_advstats/advstats_week_rush_{season}.csv"
+)
+# Same id file nfl_data_py uses; direct download fallback when it is missing.
+_DP_PLAYERIDS_URL = (
+    "https://github.com/dynastyprocess/data/raw/master/files/db_playerids.csv"
+)
+
+_PFR_TO_SLEEPER: Optional[Dict[str, str]] = None
+
+
+def download_pfr_advstats_rush_csv(season: int, max_age_hours: float = 6.0) -> Optional[str]:
+    """Cached download of the PFR weekly advanced rushing CSV.
+
+    Returns the local path, or None when the download fails and no cached
+    copy exists. A stale cache beats nothing: a network blip must not wipe
+    the metric. Shared by the season snapshot merge and the weekly builder.
+    """
+    import time
+    import urllib.request
+    from pathlib import Path
+
+    from utils.paths import CACHE_DIR
+
+    dest = Path(CACHE_DIR) / f"pfr_advstats_week_rush_{season}.csv"
+    try:
+        if dest.exists() and (time.time() - dest.stat().st_mtime) < max_age_hours * 3600:
+            return str(dest)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        req = urllib.request.Request(
+            PFR_ADVSTATS_RUSH_URL.format(season=int(season)),
+            headers={"User-Agent": "fantasy-dashboard"},
+        )
+        tmp = dest.with_name(dest.name + ".tmp")
+        with urllib.request.urlopen(req, timeout=60) as resp, tmp.open("wb") as out:
+            out.write(resp.read())
+        tmp.replace(dest)
+        return str(dest)
+    except Exception as e:
+        print(f"[nflverse_metrics] PFR advstats rush download failed ({e})")
+        return str(dest) if dest.exists() else None
+
+
+def _pfr_to_sleeper() -> Dict[str, str]:
+    """Crosswalk PFR player id -> Sleeper id.
+
+    Prefers nfl_data_py.import_ids(); falls back to downloading the
+    DynastyProcess id file directly (stdlib csv, no pandas). Cached for the
+    life of the process. Returns {} when neither source is available.
+    """
+    global _PFR_TO_SLEEPER
+    if _PFR_TO_SLEEPER is not None:
+        return _PFR_TO_SLEEPER
+
+    mapping: Dict[str, str] = {}
+
+    def _norm_sleeper(v) -> Optional[str]:
+        if v is None or v == "":
+            return None
+        try:
+            text = str(int(float(v)))
+        except (ValueError, TypeError):
+            text = str(v).strip()
+        if not text or text.lower() in ("nan", "none", "null"):
+            return None
+        return text
+
+    try:
+        import nfl_data_py as nfl  # optional dependency
+        ids = nfl.import_ids()
+        cols = {str(c).lower(): c for c in ids.columns}
+        pfr_c = cols.get("pfr_id") or cols.get("pfr_player_id")
+        slp_c = cols.get("sleeper_id")
+        if pfr_c and slp_c:
+            for _, row in ids.iterrows():
+                pfr = str(row.get(pfr_c) or "").strip()
+                slp = _norm_sleeper(row.get(slp_c))
+                if pfr and pfr.lower() != "nan" and slp:
+                    mapping.setdefault(pfr, slp)
+    except Exception as e:
+        print(f"[nflverse_metrics] pfr crosswalk via nfl_data_py unavailable ({e})")
+
+    if not mapping:
+        try:
+            import csv
+            import tempfile
+            import urllib.request
+            from pathlib import Path
+
+            dest = Path(tempfile.gettempdir()) / "db_playerids.csv"
+            if not dest.exists():
+                req = urllib.request.Request(
+                    _DP_PLAYERIDS_URL, headers={"User-Agent": "fantasy-dashboard"})
+                with urllib.request.urlopen(req, timeout=60) as resp, dest.open("wb") as out:
+                    out.write(resp.read())
+            with dest.open(newline="", encoding="utf-8") as f:
+                for row in csv.DictReader(f):
+                    pfr = str(row.get("pfr_id") or "").strip()
+                    slp = _norm_sleeper(row.get("sleeper_id"))
+                    if pfr and pfr.lower() != "nan" and slp:
+                        mapping.setdefault(pfr, slp)
+        except Exception as e:
+            print(f"[nflverse_metrics] pfr crosswalk direct download unavailable ({e})")
+
+    _PFR_TO_SLEEPER = mapping
+    return mapping
+
+
+def build_pfr_contact_yards_weekly(season: int) -> Dict[Tuple[str, int], Dict[str, float]]:
+    """Per-(sleeper_id, week) yards before/after contact per carry (PFR).
+
+    The advstats release is natively weekly, so each row already carries the
+    week's carries; per-carry is that week's YBC / carries (never an average
+    of averages). w_carries is the volume weight for range re-aggregation.
+    Returns {} when the feed or the id crosswalk is unavailable.
+    """
+    out: Dict[Tuple[str, int], Dict[str, float]] = {}
+    if season < PFR_ADVSTATS_FLOOR:
+        return out
+    csv_path = download_pfr_advstats_rush_csv(season)
+    if not csv_path:
+        return out
+    crosswalk = _pfr_to_sleeper()
+    if not crosswalk:
+        print("[nflverse_metrics] PFR contact yards skipped: no id crosswalk")
+        return out
+    try:
+        import csv
+
+        with open(csv_path, newline="", encoding="utf-8") as f:
+            for row in csv.DictReader(f):
+                if str(row.get("game_type", "REG")).upper() != "REG":
+                    continue
+                try:
+                    week = int(float(row.get("week") or 0))
+                except (ValueError, TypeError):
+                    continue
+                if week <= 0:
+                    continue
+                pid = crosswalk.get(str(row.get("pfr_player_id") or "").strip())
+                if not pid:
+                    continue
+                carries = _f(row.get("carries"))
+                ybc = _f(row.get("rushing_yards_before_contact"))
+                yac = _f(row.get("rushing_yards_after_contact"))
+                if not carries or carries <= 0:
+                    continue
+                cols = out.setdefault((pid, week), {})
+                cols["ybc_per_carry"] = round((ybc or 0.0) / carries, 2)
+                cols["yac_per_carry"] = round((yac or 0.0) / carries, 2)
+                cols["w_carries"] = round(carries, 1)
+    except Exception as e:
+        print(f"[nflverse_metrics] PFR contact yards weekly build failed ({e})")
+    return out
+
+
 def _flag(v) -> float:
     """Treat bools / 0-1 flags as 0.0 or 1.0; missing/NaN → 0.0."""
     f = _f(v)
@@ -1159,6 +1319,16 @@ def build_nflverse_weekly_metrics_for_season(
                                 _row(pid, week)["epa_vs_stacked_box"] = round(stacked_epa, 3)
             except Exception as e:
                 print(f"[nflverse_metrics] weekly FTN unavailable for {season} ({e})")
+
+    # ---------- PFR advstats rushing (yards before/after contact) ----------
+    # Natively weekly; merged here so contact splits support week ranges like
+    # the other rushing efficiency metrics.
+    try:
+        for (pid, week), pfr_cols in build_pfr_contact_yards_weekly(season).items():
+            if pfr_cols:
+                out.setdefault((pid, week), {}).update(pfr_cols)
+    except Exception as e:
+        print(f"[nflverse_metrics] weekly PFR contact yards unavailable for {season} ({e})")
 
     # Drop any (pid, week) buckets that ended up with only weight columns and no
     # actual metric value (e.g. a player who only appears as a rusher weight).

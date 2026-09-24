@@ -410,7 +410,9 @@ def _add_rookie_eval_columns(conn) -> None:
             ADD COLUMN IF NOT EXISTS success_rate   NUMERIC,
             ADD COLUMN IF NOT EXISTS ngs_rush_yards_over_expected         NUMERIC,
             ADD COLUMN IF NOT EXISTS ngs_rush_yards_over_expected_per_att NUMERIC,
-            ADD COLUMN IF NOT EXISTS ngs_rush_efficiency                  NUMERIC;
+            ADD COLUMN IF NOT EXISTS ngs_rush_efficiency                  NUMERIC,
+            ADD COLUMN IF NOT EXISTS ybc_per_carry                         NUMERIC,
+            ADD COLUMN IF NOT EXISTS yac_per_carry                         NUMERIC;
     """)
 
     # Additional public nflverse metrics (NGS passing, FTN situation splits,
@@ -497,10 +499,18 @@ def calculate_rushing_metrics(usage: Dict[str, float]) -> Dict[str, Optional[flo
     # Rush TD rate
     rush_td_rate = rush_tds / carries if carries > 0 else None
 
+    # PFR contact splits (merged from the nflverse pfr_advstats release):
+    # yards before contact = lane the line created; yards after contact =
+    # what the runner created himself. Already per-carry from the merge.
+    ybc_per_carry = usage.get("ybc_per_carry")
+    yac_per_carry = usage.get("yac_per_carry")
+
     return {
         "yards_per_carry": yards_per_carry,
         "yards_per_touch": yards_per_touch,
         "rush_td_rate": rush_td_rate,
+        "ybc_per_carry": ybc_per_carry,
+        "yac_per_carry": yac_per_carry,
     }
 
 
@@ -1262,6 +1272,16 @@ def build_advanced_metrics_snapshot(
             logger.info("merged nflverse snap share for %d players", _n_snap)
     except Exception:
         logger.exception("snap share merge failed; continuing without snap data")
+    # PFR yards before/after contact are absent from the Sleeper feed too;
+    # merge per-carry contact splits from the nflverse PFR advstats release.
+    # Best-effort: never gates the snapshot write.
+    try:
+        _n_ybc = _merge_pfr_contact_yards(usage_map, season, completed_week)
+        summary["pfr_ybc_rows"] = _n_ybc
+        if _n_ybc:
+            logger.info("merged PFR contact yards for %d players", _n_ybc)
+    except Exception:
+        logger.exception("PFR contact-yards merge failed; continuing without")
     skips: Counter = Counter()
     metrics_list: List[Dict[str, Any]] = []
     usage_table: List[Dict[str, Any]] = []
@@ -1371,6 +1391,7 @@ def save_metrics_snapshot(metrics_list: List[Dict[str, Any]], as_of_date: str, s
                     player_id, as_of_date, season, position,
                     yards_per_target, catch_rate, yards_per_reception, target_quality_score,
                     yards_per_carry, yards_per_touch, rush_td_rate,
+                    ybc_per_carry, yac_per_carry,
                     yards_per_attempt, completion_pct, td_rate, int_rate,
                     snap_share, opportunity_share, red_zone_usage,
                     rz_targets_pg, rz_carries_pg,
@@ -1387,6 +1408,7 @@ def save_metrics_snapshot(metrics_list: List[Dict[str, Any]], as_of_date: str, s
                     %s, %s, %s, %s,
                     %s, %s, %s, %s,
                     %s, %s, %s,
+                    %s, %s,
                     %s, %s, %s, %s,
                     %s, %s, %s,
                     %s, %s,
@@ -1410,6 +1432,8 @@ def save_metrics_snapshot(metrics_list: List[Dict[str, Any]], as_of_date: str, s
                     yards_per_carry = EXCLUDED.yards_per_carry,
                     yards_per_touch = EXCLUDED.yards_per_touch,
                     rush_td_rate = EXCLUDED.rush_td_rate,
+                    ybc_per_carry = EXCLUDED.ybc_per_carry,
+                    yac_per_carry = EXCLUDED.yac_per_carry,
                     yards_per_attempt = EXCLUDED.yards_per_attempt,
                     completion_pct = EXCLUDED.completion_pct,
                     td_rate = EXCLUDED.td_rate,
@@ -1454,6 +1478,7 @@ def save_metrics_snapshot(metrics_list: List[Dict[str, Any]], as_of_date: str, s
                 metrics.get("yards_per_reception"), metrics.get("target_quality_score"),
                 metrics.get("yards_per_carry"), metrics.get("yards_per_touch"),
                 metrics.get("rush_td_rate"),
+                metrics.get("ybc_per_carry"), metrics.get("yac_per_carry"),
                 metrics.get("yards_per_attempt"), metrics.get("completion_pct"),
                 metrics.get("td_rate"), metrics.get("int_rate"),
                 metrics.get("snap_share"), metrics.get("opportunity_share"),
@@ -1842,6 +1867,81 @@ def _merge_nflverse_snap_share(
         return 0
 
 
+def _merge_pfr_contact_yards(
+    usage_map: Dict[str, Dict[str, Any]],
+    season: int,
+    completed_week: Optional[int] = None,
+) -> int:
+    """Fill usage['ybc_per_carry'] / usage['yac_per_carry'] from PFR advstats.
+
+    Yards before contact measures the rushing lane the line created; yards
+    after contact measures what the runner created himself. Both are
+    aggregated as season totals over completed REG weeks then divided by
+    total carries (never an average of weekly averages). Only fills players
+    missing a value — never clobbers. Best-effort: any failure leaves the
+    map untouched and returns 0; never gates the snapshot write.
+    """
+    if not usage_map:
+        return 0
+    try:
+        import csv
+
+        from data_building.external_data.nflverse_metrics import (
+            download_pfr_advstats_rush_csv,
+            _pfr_to_sleeper,
+        )
+
+        csv_path = download_pfr_advstats_rush_csv(season)
+        if csv_path is None:
+            return 0
+        totals: Dict[str, Dict[str, float]] = {}
+        with open(csv_path, newline="", encoding="utf-8") as f:
+            for row in csv.DictReader(f):
+                if str(row.get("game_type", "REG")).upper() != "REG":
+                    continue
+                try:
+                    week = int(float(row.get("week") or 0))
+                except (TypeError, ValueError):
+                    continue
+                if completed_week is not None and week > completed_week:
+                    continue
+                pfr_id = str(row.get("pfr_player_id") or "").strip()
+                if not pfr_id:
+                    continue
+                try:
+                    carries = float(row.get("carries") or 0)
+                    ybc = float(row.get("rushing_yards_before_contact") or 0)
+                    yac = float(row.get("rushing_yards_after_contact") or 0)
+                except (TypeError, ValueError):
+                    continue
+                if carries <= 0:
+                    continue
+                acc = totals.setdefault(pfr_id, {"carries": 0.0, "ybc": 0.0, "yac": 0.0})
+                acc["carries"] += carries
+                acc["ybc"] += ybc
+                acc["yac"] += yac
+        if not totals:
+            return 0
+        pfr_to_sleeper = _pfr_to_sleeper()
+        merged = 0
+        for pfr_id, acc in totals.items():
+            sleeper_id = pfr_to_sleeper.get(pfr_id)
+            if not sleeper_id:
+                continue
+            usage = usage_map.get(sleeper_id) or usage_map.get(str(sleeper_id))
+            if usage is None or acc["carries"] <= 0:
+                continue
+            if usage.get("ybc_per_carry") is None:
+                usage["ybc_per_carry"] = round(acc["ybc"] / acc["carries"], 2)
+                merged += 1
+            if usage.get("yac_per_carry") is None:
+                usage["yac_per_carry"] = round(acc["yac"] / acc["carries"], 2)
+        return merged
+    except Exception:
+        logger.exception("PFR contact-yards merge failed; continuing without")
+        return 0
+
+
 def get_player_metrics(player_id: str, as_of_date: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """
     Retrieve advanced metrics for a player.
@@ -1992,6 +2092,7 @@ def get_player_career_metrics(
     _NUMERIC_METRICS = [
         'yards_per_target', 'catch_rate', 'yards_per_reception', 'target_quality_score',
         'yards_per_carry', 'yards_per_touch', 'rush_td_rate',
+        'ybc_per_carry', 'yac_per_carry',
         'yards_per_attempt', 'completion_pct', 'td_rate', 'int_rate',
         'snap_share', 'route_participation', 'opportunity_share', 'red_zone_usage', 'role_score',
         'yards_after_catch', 'yards_after_catch_per_reception', 'avg_depth_of_target',
@@ -2249,6 +2350,8 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     "ngs_percent_attempts_gte_eight_defenders": {"label": "8+ Box Rate", "category": "Rushing", "positions": ["RB"], "pct": True, "min_vol": _V_CARRIES, "desc": "Percent of rush attempts against 8 or more defenders in the box (NFL Next Gen Stats). Higher means a tougher rushing diet."},
     "rushing_success_rate": {"label": "Rush Success %",      "category": "Rushing", "positions": ["RB", "QB"], "efficiency": True, "pct": True, "min_vol": _V_CARRIES, "desc": "Percent of rushes with positive EPA (nflverse)."},
     "rushing_epa_per_att":  {"label": "Rush EPA / Att",      "category": "Rushing", "positions": ["RB", "QB"], "efficiency": True, "min_vol": _V_CARRIES, "desc": "Expected Points Added per rush attempt (nflverse). Rate companion to total rushing EPA."},
+    "ybc_per_carry":        {"label": "YBC / Carry",         "category": "Rushing", "positions": ["RB", "QB"], "efficiency": True, "min_vol": _V_CARRIES, "desc": "Yards before contact per carry: the rushing lane the offensive line created before first contact (PFR via nflverse). Higher means better blocking. Pairs with YAC / Carry."},
+    "yac_per_carry":        {"label": "YAC / Carry",         "category": "Rushing", "positions": ["RB", "QB"], "efficiency": True, "min_vol": _V_CARRIES, "desc": "Yards after contact per carry: what the runner created himself after first contact (PFR via nflverse). Higher means more tackle-breaking. Pairs with YBC / Carry."},
     "epa_vs_stacked_box":   {"label": "EPA vs 8+ Box",       "category": "Rushing", "positions": ["RB"], "efficiency": True, "min_vol": _V_CARRIES, "desc": "Expected Points Added per rush against 8 or more defenders in the box (FTN + nflverse)."},
     "elusive_rating":       {"label": "Elusive Rating",      "category": "Rushing", "positions": ["RB"], "efficiency": True, "min_vol": _V_CARRIES, "desc": "PFF metric for yards created after contact and missed tackles forced, independent of blocking."},
     "avoided_tackles":      {"label": "Avoided Tackles",    "category": "Rushing", "positions": ["RB"], "min_vol": _V_CARRIES, "desc": "Tackles avoided (missed, broken, or forced) on rush attempts per PFF. Rewards runners who make defenders miss."},
@@ -2484,6 +2587,7 @@ WEEKLY_ADV_METRIC_COLS: List[str] = [
     "rushing_epa", "breakaway_percentage", "explosive_runs_10_plus",
     "ngs_rush_yards_over_expected", "ngs_rush_yards_over_expected_per_att",
     "ngs_rush_efficiency",
+    "ybc_per_carry", "yac_per_carry",
     "receiving_epa", "yards_after_catch", "yards_after_catch_per_reception",
     "ngs_avg_separation", "ngs_avg_cushion", "ngs_avg_intended_air_yards",
     "avg_depth_of_target", "ngs_avg_yac", "ngs_avg_expected_yac",
@@ -2801,6 +2905,7 @@ _ADV_WEEKLY_WEIGHTED_METRICS = {
     "ngs_rush_yards_over_expected_per_att": "w_carries", "ngs_rush_efficiency": "w_carries",
     "breakaway_percentage": "w_carries",
     "rushing_success_rate": "w_carries", "rushing_epa_per_att": "w_carries",
+    "ybc_per_carry": "w_carries", "yac_per_carry": "w_carries",
     "ngs_avg_time_to_los": "w_carries",
     "ngs_percent_attempts_gte_eight_defenders": "w_carries",
     "epa_vs_stacked_box": "w_carries",
