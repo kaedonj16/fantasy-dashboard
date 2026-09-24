@@ -94,13 +94,31 @@ def test_weighted_epa_sql_uses_only_covered_denominator():
     assert "CASE WHEN receiving_epa_per_target IS NOT NULL THEN w_targets END" in rec_sql
 
 
-def test_expected_actual_and_fpoe_share_matched_components():
-    actual_sql = _ADV_WEEKLY_DERIVED_METRICS["actual_ppr_per_game"][0]
-    expected_sql = _ADV_WEEKLY_DERIVED_METRICS["expected_ppr_per_game"][0]
-    fpoe_sql = _ADV_WEEKLY_DERIVED_METRICS["ppr_over_expected_per_game"][0]
-    assert "expected_ppr + ppr_over_expected" in actual_sql
-    assert "expected_ppr" in expected_sql
-    assert "ppr_over_expected" in fpoe_sql
+def test_per_game_expected_family_shares_matched_components():
+    """Each per-game expected/FPOE metric derives from the same weekly PBP
+    rows, so expected and over-expected are computed on an identical covered
+    sample. The redundant season-total metrics and Actual FPTS/G are gone
+    from the registry."""
+    from data_building.advanced_metrics import LEADERBOARD_METRICS
+    pairs = [
+        ("expected_ppr_per_game", "expected_ppr", "ppr_over_expected"),
+        ("ppr_over_expected_per_game", "expected_ppr", "ppr_over_expected"),
+        ("expected_half_ppr_per_game", "expected_half_ppr", "half_ppr_over_expected"),
+        ("half_ppr_over_expected_per_game", "expected_half_ppr", "half_ppr_over_expected"),
+        ("expected_standard_per_game", "expected_standard", "standard_over_expected"),
+        ("standard_over_expected_per_game", "expected_standard", "standard_over_expected"),
+    ]
+    for metric, exp_col, foe_col in pairs:
+        assert metric in LEADERBOARD_METRICS, metric
+        sql, not_null = _ADV_WEEKLY_DERIVED_METRICS[metric]
+        assert exp_col in sql and foe_col in sql, metric
+        assert exp_col in not_null and foe_col in not_null, metric
+    for removed in ("expected_ppr", "ppr_over_expected",
+                    "expected_half_ppr", "half_ppr_over_expected",
+                    "expected_standard", "standard_over_expected",
+                    "actual_ppr_per_game"):
+        assert removed not in LEADERBOARD_METRICS, removed
+        assert removed not in _ADV_WEEKLY_DERIVED_METRICS, removed
 
 
 def test_preset_context_counts_are_ordered_and_complete():
