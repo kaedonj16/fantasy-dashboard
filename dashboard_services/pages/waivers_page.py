@@ -105,6 +105,10 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-ctx-link:hover { background: var(--accent-soft); }
 .wv-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px 12px; flex-wrap: wrap; }
 .wv-faab-toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-muted); cursor: pointer; }
+/* The inline-flex above beats the UA stylesheet's [hidden] -> display:none, so
+   without this the FAAB checkbox stays visible in non-FAAB leagues even when
+   JS correctly sets hidden. Tapping it then re-renders nothing (no FAAB data). */
+.wv-faab-toggle[hidden] { display: none; }
 .wv-faab-toggle input { accent-color: var(--accent); width: 14px; height: 14px; margin: 0; }
 @media (max-width: 700px) {
   /* Big-game strip: drop its single metric onto a full-width row under the name. */
