@@ -125,14 +125,16 @@ def build_advanced_metrics_body(
         return {"label": mv["label"], "opts": sorted(set([1, *mv["opts"]]))}
 
     # Glossary: every metric grouped by category (same order as the dropdown).
+    # PRO-gated metrics carry the PRO badge.
     _legend_sections = []
     for cat in sorted(groups, key=_group_key):
         _rows = "".join(
             '<div class="am-legend-row">'
-            '<div class="am-legend-name">{label}</div>'
+            '<div class="am-legend-name">{label}{pro}</div>'
             '<div class="am-legend-desc">{desc}</div>'
             '</div>'.format(
                 label=_esc(metrics_spec[k]["label"]),
+                pro=' <span class="nav-pro-badge">PRO</span>' if k in PRO_METRICS else "",
                 desc=_esc(metrics_spec[k].get("desc") or "No description available."),
             )
             for k, _lbl in groups[cat]
