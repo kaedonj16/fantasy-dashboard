@@ -24,6 +24,13 @@ SUMMARY_URL = "https://site.web.api.espn.com/apis/site/v2/sports/football/nfl/su
 CDN_SUMMARY_URL = "https://cdn.espn.com/core/nfl/playbyplay"
 UA = "BRFantasy/1.0 (+https://brfantasyfootball.com)"
 TEAM_ALIASES = {"WSH": "WAS", "JAC": "JAX", "LA": "LAR"}
+# Fallback final-score source when ESPN blocks the scoreboard (403). nflverse
+# publishes one games.csv for all seasons; it carries home/away final scores
+# for completed games, so a finished week still renders "Final 24-31 @ LV"
+# even with ESPN down. Live games have blank scores and are skipped.
+_NFLVERSE_GAMES_URL = "https://github.com/nflverse/nflverse-data/releases/download/schedules/games.csv"
+_NFLVERSE_GAMES_TTL = 6 * 3600.0
+_nflverse_games_lock = threading.Lock()
 
 _session = requests.Session()
 _cache: OrderedDict[str, tuple[float, dict]] = OrderedDict()
@@ -250,10 +257,102 @@ def scoreboard_for_date(game_date: str, *, timeout: float = 10) -> dict[str, dic
     usable_success = bool(successful and time.time() - successful[0] <= _LAST_GOOD_MAX_AGE)
     availability = "stale" if stale and usable_success else ("unavailable" if stale else "available")
     fetched_at = datetime.utcfromtimestamp(successful[0]).isoformat() + "Z" if usable_success else None
+    games = {game["gameID"]: game for game in normalize_scoreboard(payload, stale=stale)}
+    if not games and availability == "unavailable":
+        # ESPN is refusing the scoreboard (403). Fall back to nflverse final
+        # scores so finished weeks still show "Final 24-31 @ LV" instead of a
+        # bare "Final". Stale-but-usable ESPN data above still wins when it
+        # exists, since it also covers live games.
+        nv_games = _nflverse_scoreboard_for_date(game_date)
+        if nv_games:
+            return ScoreboardResult(
+                {game["gameID"]: game for game in nv_games},
+                availability="available", stale=False, source="nflverse",
+                fetched_at=datetime.utcnow().isoformat() + "Z",
+            )
     return ScoreboardResult(
-        {game["gameID"]: game for game in normalize_scoreboard(payload, stale=stale)},
+        games,
         availability=availability, stale=bool(stale and usable_success), fetched_at=fetched_at,
     )
+
+
+def _nflverse_games_rows() -> list[dict]:
+    """All nflverse schedule rows, cached on disk and refreshed at most every 6h.
+
+    A stale on-disk copy is preferred over nothing, so a transient download
+    failure doesn't wipe final scores. Returns [] when no copy is available.
+    """
+    import csv
+
+    from utils.utils import CACHE_DIR
+
+    path = CACHE_DIR / "nflverse_games.csv"
+    fresh = path.exists() and (time.time() - path.stat().st_mtime) < _NFLVERSE_GAMES_TTL
+    if not fresh:
+        with _nflverse_games_lock:
+            fresh = path.exists() and (time.time() - path.stat().st_mtime) < _NFLVERSE_GAMES_TTL
+            if not fresh:
+                try:
+                    resp = _session.get(_NFLVERSE_GAMES_URL, timeout=(3.05, 20.0))
+                    resp.raise_for_status()
+                    tmp = path.with_name(path.name + ".tmp")
+                    tmp.write_bytes(resp.content)
+                    tmp.replace(path)
+                except Exception:
+                    log.warning("nflverse games.csv download failed", exc_info=True)
+    if not path.exists():
+        return []
+    try:
+        with path.open("r", encoding="utf-8", newline="") as f:
+            return list(csv.DictReader(f))
+    except Exception:
+        log.warning("nflverse games.csv unreadable", exc_info=True)
+        return []
+
+
+def _nflverse_scoreboard_for_date(game_date: str) -> list[dict]:
+    """Final-score game dicts for one YYYYMMDD date, in the normalized
+    scoreboard shape, sourced from the nflverse schedule.
+
+    Only rows with both scores present are returned -- scheduled/live games
+    have no final score yet and stay on the schedule/game-status path.
+    """
+    want = str(game_date or "")
+    games: list[dict] = []
+    for row in _nflverse_games_rows():
+        gameday = str(row.get("gameday") or "").replace("-", "")
+        if gameday != want:
+            continue
+        home = _team(row.get("home_team"))
+        away = _team(row.get("away_team"))
+        home_pts = str(row.get("home_score") or "").strip()
+        away_pts = str(row.get("away_score") or "").strip()
+        if not home or not away or not home_pts or not away_pts:
+            continue
+        try:
+            week = int(float(str(row.get("week") or "0")))
+        except (TypeError, ValueError):
+            week = 0
+        try:
+            season = int(float(str(row.get("season") or "0")))
+        except (TypeError, ValueError):
+            season = 0
+        game_id = f"{want}_{away}@{home}"
+        games.append({
+            "gameID": game_id, "internal_game_id": game_id,
+            "espn_event_id": str(row.get("espn") or ""),
+            "season": season or None, "season_type": 2, "week": week or None,
+            "gameTime": str(row.get("gameday") or ""), "gameTime_epoch": 0,
+            "home": home, "away": away,
+            "homePts": home_pts, "awayPts": away_pts,
+            "gameStatusCode": "2", "gameStatus": "Final",
+            "normalized_status": "final", "gameClock": "",
+            "lineScore": {"period": ""}, "source": "nflverse",
+            "fetched_at": datetime.utcnow().isoformat() + "Z", "stale": False,
+            "availability": {"score": True, "game_state": True, "player_stats": False,
+                             "team_stats": False, "plays": False},
+        })
+    return games
 
 
 def games_for_week(week: int, season: int, season_type: str = "reg") -> list[dict]:
