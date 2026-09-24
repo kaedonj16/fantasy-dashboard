@@ -366,7 +366,7 @@ _TRADE_AI_SYSTEM_DYNASTY = """
       - Avoid bullet points that are purely numeric (e.g., "752.0 sent vs 513.4 received").
       - Use player names, positions, and roles constantly - "proven WR1," "top rookie prospect,"
         "depth piece," "aging asset," not "high-value player."
-      - Do NOT use em dashes or en dashes anywhere. Use commas, periods, or parentheses instead.
+      - Do NOT use em dashes or en dashes in sentences. Use commas, periods, or parentheses instead. This does NOT apply to regular hyphens: keep hyphenated words (follow-up, all-play) and records (2-0) hyphenated as normal.
       - Never talk about the data itself. Do not describe any input as "provided," "available,"
         "unavailable," "missing," "unknown," or "context." Just deliver the read. For example,
         never write "Since your trade partner context is unavailable, ..." - simply give the
@@ -524,7 +524,7 @@ _TRADE_AI_SYSTEM_REDRAFT = """
       - Avoid bullet points that are purely numeric (e.g., "752.0 sent vs 513.4 received").
       - Use player names, positions, and roles constantly - "proven WR1," "RB1 on a contender,"
         "depth piece," "injury risk," not "high-value player."
-      - Do NOT use em dashes or en dashes anywhere. Use commas, periods, or parentheses instead.
+      - Do NOT use em dashes or en dashes in sentences. Use commas, periods, or parentheses instead. This does NOT apply to regular hyphens: keep hyphenated words (follow-up, all-play) and records (2-0) hyphenated as normal.
       - Never talk about the data itself. Do not describe any input as "provided," "available,"
         "unavailable," "missing," "unknown," or "context." Just deliver the read. For example,
         never write "Since your trade partner context is unavailable, ..." - simply give the
