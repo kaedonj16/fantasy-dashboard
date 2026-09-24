@@ -38322,20 +38322,20 @@ a.rz-demo-link:hover {
    shrink the backdrop word so it reads as texture instead of colliding
    with the kicker and first rows. */
 .wrapped-slide[data-kind="coaching"] .wrapped-row {
-    padding: 12px 0;
+    padding: 9px 0;
 }
 
 .wrapped-slide[data-kind="coaching"] .wrapped-row-k {
-    font-size: 11px;
-    margin-bottom: 5px;
+    font-size: 10px;
+    margin-bottom: 4px;
 }
 
 .wrapped-slide[data-kind="coaching"] .wrapped-row-n {
-    font-size: 19px;
+    font-size: 17px;
 }
 
 .wrapped-slide[data-kind="coaching"] .wrapped-row-v {
-    font-size: 21px;
+    font-size: 18px;
 }
 
 .wrapped-slide[data-kind="coaching"] .wrapped-bgword {
@@ -38349,10 +38349,10 @@ a.rz-demo-link:hover {
     display: flex;
     align-items: center;
     gap: 10px;
-    margin: 14px 0 2px;
-    font-size: 12px;
+    margin: 10px 0 1px;
+    font-size: 11px;
     font-weight: 800;
-    letter-spacing: .18em;
+    letter-spacing: .16em;
     text-transform: uppercase;
     color: var(--wa);
 }
