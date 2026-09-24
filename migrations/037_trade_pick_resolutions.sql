@@ -13,6 +13,33 @@ CREATE INDEX IF NOT EXISTS idx_tia_resolved_player
     ON trade_intel_assets (resolved_player_id)
     WHERE resolved_player_id IS NOT NULL;
 
+-- Deduplicate pick assets before the unique index: the same pick
+-- (provider / trade / season / round / original roster) was occasionally
+-- recorded twice for one trade (e.g. Sleeper listing the same draft pick
+-- twice in a transaction). Keep the resolved row when one exists, else the
+-- latest row. The NOT NULL filters mirror the unique index exactly: rows
+-- with a NULL key column can never conflict, so they are left alone.
+DELETE FROM trade_intel_assets a
+WHERE a.asset_type = 'pick'
+  AND a.pick_roster_id IS NOT NULL
+  AND a.provider IS NOT NULL
+  AND a.pick_season IS NOT NULL
+  AND a.pick_round IS NOT NULL
+  AND a.id NOT IN (
+      SELECT DISTINCT ON (b.provider, b.trade_id, b.pick_season,
+                          b.pick_round, b.pick_roster_id) b.id
+      FROM trade_intel_assets b
+      WHERE b.asset_type = 'pick'
+        AND b.pick_roster_id IS NOT NULL
+        AND b.provider IS NOT NULL
+        AND b.pick_season IS NOT NULL
+        AND b.pick_round IS NOT NULL
+      ORDER BY b.provider, b.trade_id, b.pick_season, b.pick_round,
+               b.pick_roster_id,
+               (b.resolved_player_id IS NOT NULL) DESC,
+               b.id DESC
+  );
+
 CREATE UNIQUE INDEX IF NOT EXISTS uq_tia_verified_pick_resolution
     ON trade_intel_assets
        (provider, trade_id, pick_season, pick_round, pick_roster_id)
