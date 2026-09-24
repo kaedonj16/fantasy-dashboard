@@ -381,7 +381,14 @@ def notify_lineup_lock():
             return
 
         games = load_week_schedule(season, week) or []
-        epochs = [g["gameTime_epoch"] for g in games if g.get("gameTime_epoch")]
+        # gameTime_epoch arrives as a string from the JSON schedule cache;
+        # coerce to float so the min()/1000 arithmetic below cannot TypeError.
+        epochs = []
+        for g in games:
+            try:
+                epochs.append(float(g.get("gameTime_epoch")))
+            except (TypeError, ValueError):
+                continue
         if not epochs:
             return
 
