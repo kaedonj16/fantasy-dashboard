@@ -222,26 +222,26 @@ def build_advanced_metrics_body(
 
     html = """
     <div class="card central">
-      <div class="card-header">
-        <div>
+      <div class="card-header am-head">
+        <div class="am-head-title">
           <h2>Advanced Metrics</h2>
-          <div style="font-size:14px;color:var(--text-muted);margin-top:4px;">
+          <div class="am-head-desc" style="font-size:14px;color:var(--text-muted);margin-top:4px;">
             Rank every player by a single advanced metric. Bars are relative to the leader.
           </div>
         </div>
-        <div style="display:flex;gap:8px;flex-shrink:0;flex-wrap:wrap;">
-          <button id="amGraphBtn" type="button" class="am-legend-btn" onclick="amOpenGraph()">
+        <div class="am-head-actions" style="display:flex;gap:8px;flex-shrink:0;flex-wrap:wrap;">
+          <button id="amGraphBtn" type="button" class="am-legend-btn" title="Graph metrics" onclick="amOpenGraph()">
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style="flex-shrink:0"><path d="M2 2v10h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="5" cy="9" r="1.3" fill="currentColor"/><circle cx="8" cy="5.5" r="1.3" fill="currentColor"/><circle cx="11" cy="7.5" r="1.3" fill="currentColor"/></svg>
-            Graph Metrics
+            <span class="am-legend-btn-label">Graph Metrics</span>
           </button>
-          <button id="amLegendBtn" type="button" class="am-legend-btn"
+          <button id="amLegendBtn" type="button" class="am-legend-btn" title="Metric glossary"
             onclick="document.getElementById('amLegendModal').style.display='flex'">
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style="flex-shrink:0"><circle cx="7" cy="7" r="6" stroke="currentColor" stroke-width="1.5"/><path d="M7 6.5v3M7 4.5h.01" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-            Metric Glossary
+            <span class="am-legend-btn-label">Metric Glossary</span>
           </button>
           <button id="amExportBtn" type="button" class="am-legend-btn" title="Download the current filtered view as a CSV">
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style="flex-shrink:0"><path d="M7 1.5v7m0 0 2.3-2.3M7 8.5 4.7 6.2M2.5 10v1.5a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1V10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            CSV
+            <span class="am-legend-btn-label">CSV</span>
           </button>
         </div>
       </div>
@@ -366,6 +366,7 @@ def build_advanced_metrics_body(
           <div id="amCompareChips" class="am-compare-chips"></div>
           <button id="amComparePinnedBtn" type="button" class="am-add-stat-btn" style="display:none;">&#8645; Compare Pinned</button>
           <button id="amClearExtrasBtn" type="button" class="am-add-stat-btn am-clear-btn" style="display:none;" onclick="amClearExtras()">&#10005; Clear</button>
+          <button id="amClearExtrasLink" type="button" class="am-clear-link" onclick="amClearExtras()">Clear all</button>
         </div>
 
         <!-- Filter bar: team/sort always; age, vol, and combo chips when active. -->
@@ -482,12 +483,18 @@ def build_advanced_metrics_body(
         </div>
 
         <div id="amAvgNote" class="am-avg-note" style="display:none;">
-          <span class="am-avg-swatch"></span>
-          <span id="amAvgNoteText"></span>
-          <span id="amTrendLegend" class="am-trend-legend" style="display:none;">
-            <span class="am-trend-up">&#8593;</span><span class="am-trend-down">&#8595;</span>
-            vs last season
-          </span>
+          <button type="button" id="amAvgToggle" class="am-avg-toggle" aria-expanded="false" aria-controls="amAvgGrid">
+            <span id="amAvgToggleText"></span>
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <div class="am-avg-full" id="amAvgFull">
+            <span id="amAvgNoteText"></span>
+            <span id="amTrendLegend" class="am-trend-legend" style="display:none;">
+              <span class="am-trend-up">&#8593;</span><span class="am-trend-down">&#8595;</span>
+              vs last season
+            </span>
+          </div>
+          <div class="am-avg-grid" id="amAvgGrid" hidden></div>
         </div>
 
         <div id="amWeekNote" class="am-week-note" style="display:none;">
@@ -798,8 +805,10 @@ def build_advanced_metrics_body(
         font-size:8px; font-weight:800; letter-spacing:.06em; color:var(--text-muted);
         opacity:1; white-space:nowrap;
       }
-      .am-avg-note { font-size:11px; color:var(--text-muted); margin:0 0 10px; display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
-      .am-avg-note .am-avg-swatch { display:inline-block; width:2px; height:12px; background:var(--text-muted); opacity:.55; }
+      .am-avg-note { font-size:11px; color:var(--text-muted); margin:0 0 10px; }
+      .am-avg-toggle { display:none; }
+      .am-avg-full { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+      .am-avg-grid { display:none; }
       .am-trend-legend { display:inline-flex; align-items:center; gap:3px; padding-left:8px; margin-left:2px; border-left:1px solid var(--border); }
       .am-trend-legend .am-trend-up, .am-trend-legend .am-trend-down { font-size:11px; }
       @media (max-width:600px){
@@ -1204,6 +1213,76 @@ def build_advanced_metrics_body(
       }
       html.og-render #amGraphPlot { width:100%; display:flex; align-items:center; justify-content:center; }
       html.og-render .am-graph-svg { width:auto !important; height:594px !important; max-width:1164px !important; }
+
+      /* ── Advanced Metrics mobile visual rework ──────────────────────────
+         Icon-button header, no shouting labels, search+season on one row,
+         solid + Metric button, fading preset rail, wrapping chips, collapsible
+         field averages, sticky player column. Desktop rules above untouched. */
+      .am-clear-link { display:none; }
+      @media (max-width:600px) {
+        /* 1. Header: icon-only actions, description hidden. */
+        .am-head .am-head-desc { display:none; }
+        .am-head .am-legend-btn-label { display:none; }
+        .am-head .am-legend-btn { padding:8px; }
+        .am-head .am-legend-btn svg { width:16px; height:16px; }
+        .am-head-actions { flex-wrap:nowrap !important; }
+        /* 2. Drop the shouting section labels (Primary Metric / Seasons / Search).
+           Scoped to direct labels inside #amControls so the What-changed,
+           Week Range and set labels keep theirs. */
+        .am-controls .am-ctrl > label.am-ctrl-label { display:none; }
+        /* 3. Search and season share one row: search flex-grows, season compact.
+           Mockup order is search-then-season, so re-order the DOM pair. */
+        #amSeasonCtrl { flex:0 1 128px; min-width:0; order:2; }
+        .am-ctrl-search { flex:1 1 0; min-width:0; order:1; }
+        .am-ctrl-search .am-search { font-size:14px; }
+        /* 4. + Metric: solid outlined button matching the position pills,
+           not the near-invisible dashed ghost. 8px radius per --radius-pill. */
+        #amAddStatBtn {
+          border:1px solid var(--border); border-radius:8px; background:var(--card);
+          color:var(--text); padding:6px 14px; font-size:12px; font-weight:600;
+        }
+        #amAddStatBtn:hover { border-color:var(--accent,#2563eb); color:var(--accent,#2563eb); }
+        /* 5. Decide presets: edge fade so the rail reads as swipeable. */
+        .am-decisions .am-decisions-label { display:none; }
+        .am-decisions {
+          -webkit-mask-image:linear-gradient(to right,#000 88%,transparent 100%);
+          mask-image:linear-gradient(to right,#000 88%,transparent 100%);
+        }
+        /* 6. Chips wrap to multiple lines; Clear becomes a text link. */
+        .am-compare-chips { flex-wrap:wrap; overflow-x:visible; padding-bottom:0; }
+        #amClearExtrasBtn { display:none !important; }
+        .am-clear-link {
+          display:none; border:0; background:none; padding:6px 4px; cursor:pointer;
+          color:var(--text-muted); font-size:13px; font-weight:600;
+          text-decoration:underline; text-underline-offset:3px; white-space:nowrap;
+        }
+        .am-clear-link.am-clear-link-show { display:inline-block; }
+        /* 7. Field averages: collapsed one-liner, tap to expand the grid. */
+        .am-avg-note { margin:2px 0 8px; }
+        .am-avg-toggle {
+          display:flex; align-items:center; justify-content:space-between; gap:8px;
+          width:100%; padding:10px 2px; background:none; border:0; cursor:pointer;
+          font-size:13px; color:var(--text-muted); text-align:left;
+        }
+        .am-avg-toggle #amAvgToggleText b, .am-avg-toggle #amAvgToggleText strong { color:var(--text); }
+        .am-avg-toggle svg { flex-shrink:0; color:var(--text-muted); transition:transform .15s ease; }
+        .am-avg-note.am-avg-open .am-avg-toggle svg { transform:rotate(180deg); }
+        .am-avg-full { display:none; }
+        .am-avg-note.am-avg-open .am-avg-grid {
+          display:grid; grid-template-columns:1fr 1fr; gap:6px 14px;
+          padding:2px 2px 10px; font-size:12.5px; color:var(--text-muted);
+        }
+        .am-avg-cell b, .am-avg-cell strong { color:var(--text); font-weight:600; }
+        /* 8. Results table: edge fade + sticky player column. */
+        .am-table-wrap {
+          -webkit-mask-image:linear-gradient(to right,#000 92%,transparent 100%);
+          mask-image:linear-gradient(to right,#000 92%,transparent 100%);
+        }
+        .am-table th.am-player, .am-table td.am-player {
+          position:sticky; left:0; z-index:2; background:var(--card);
+          box-shadow:8px 0 8px -8px rgba(0,0,0,.18);
+        }
+      }
     </style>
     """
 
@@ -1735,6 +1814,9 @@ _AM_JS = r"""
     if (addBtn) addBtn.disabled = state.extraMetrics.length >= MAX_COMPARE;
     const clearBtn = document.getElementById('amClearExtrasBtn');
     if (clearBtn) clearBtn.style.display = state.extraMetrics.length ? '' : 'none';
+    // Mobile shows a "Clear all" text link instead of the ghost button.
+    const clearLink = document.getElementById('amClearExtrasLink');
+    if (clearLink) clearLink.classList.toggle('am-clear-link-show', state.extraMetrics.length > 0);
     // Show the compare bar only when there's something to show.
     const hasPinned = pinnedBtn && pinnedBtn.style.display !== 'none';
     if (bar) bar.style.display = (state.extraMetrics.length > 0 || hasPinned) ? 'flex' : 'none';
@@ -2985,6 +3067,34 @@ _AM_JS = r"""
         });
         avgNoteTxt.textContent = lbl + ' averages: ' + parts.join(' · ');
         if (parts.length === 1) avgNoteTxt.textContent = lbl + ' average: ' + fmtVal(avg, state.metric);
+        // Mobile rework: collapsed one-liner ("Field avg · <Metric> <val>") plus
+        // an expandable grid. Desktop keeps the paragraph above untouched.
+        const avgToggleTxt = document.getElementById('amAvgToggleText');
+        if (avgToggleTxt) {
+          avgToggleTxt.textContent = '';
+          const primaryLabel = (cfg.metrics[state.metric] && cfg.metrics[state.metric].label) || state.metric;
+          avgToggleTxt.append(document.createTextNode(lbl + ' avg · ' + primaryLabel + ' '));
+          const avgVal = document.createElement('b');
+          avgVal.textContent = fmtVal(avg, state.metric);
+          avgToggleTxt.append(avgVal);
+        }
+        const avgGrid = document.getElementById('amAvgGrid');
+        if (avgGrid) {
+          avgGrid.textContent = '';
+          parts.forEach(function(p) {
+            const cell = document.createElement('div');
+            cell.className = 'am-avg-cell';
+            const idx = p.lastIndexOf(' ');
+            cell.append(document.createTextNode(idx > 0 ? p.slice(0, idx) + ' ' : p));
+            if (idx > 0) {
+              const vb = document.createElement('b');
+              vb.textContent = p.slice(idx + 1);
+              cell.append(vb);
+            }
+            avgGrid.append(cell);
+          });
+        }
+        if (avgNote) avgNote.classList.toggle('am-avg-open', !!window.__amAvgOpen);
         // Legend only when there are trend arrows to explain (single-metric view
         // with prior-season data loaded).
         const trendLegend = document.getElementById('amTrendLegend');
@@ -4766,6 +4876,18 @@ _AM_JS = r"""
     });
     _infoEl.addEventListener('blur', function(e) {
       if (typeof advLeaveMetricDef === 'function') advLeaveMetricDef(e);
+    });
+  }
+
+  // Field-averages one-liner toggle (mobile rework): tap to expand the grid.
+  // The open state persists across re-renders via window.__amAvgOpen.
+  const _avgToggle = document.getElementById('amAvgToggle');
+  if (_avgToggle) {
+    _avgToggle.addEventListener('click', function() {
+      window.__amAvgOpen = !window.__amAvgOpen;
+      const note = document.getElementById('amAvgNote');
+      if (note) note.classList.toggle('am-avg-open', !!window.__amAvgOpen);
+      _avgToggle.setAttribute('aria-expanded', window.__amAvgOpen ? 'true' : 'false');
     });
   }
 
