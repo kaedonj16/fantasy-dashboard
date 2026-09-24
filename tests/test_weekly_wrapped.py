@@ -517,5 +517,8 @@ def test_wrapped_overlay_renders_row_sections():
                                      footer_label="WEEK 3")
     assert "<div class='wrapped-row-sec'>LINEUP EFFICIENCY</div>" in html
     assert "<div class='wrapped-row-sec'>COACHING MISS</div>" in html
-    assert html.index("LINEUP EFFICIENCY") < html.index("Alpha")
-    assert html.index("COACHING MISS") < html.index("Started X over Y")
+    # Each section header renders immediately above its first row.
+    assert ("<div class='wrapped-row-sec'>LINEUP EFFICIENCY</div>"
+            "<div class='wrapped-row'>" in html)
+    assert ("<div class='wrapped-row-sec'>COACHING MISS</div>"
+            "<div class='wrapped-row'>" in html)
