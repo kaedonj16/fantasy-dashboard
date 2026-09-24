@@ -184,8 +184,24 @@ def test_recap_manager_line_uses_username_not_team_name():
     assert _usernames_by_roster_id(users2, [{"roster_id": 5, "owner_id": "uY"}]) == \
         {"5": "secondmanager"}
 
+    # Sleeper's league /users endpoint omits "username" entirely -- only
+    # "display_name" is set -- so the handle must fall back to display_name.
+    users3 = [{"user_id": "uD", "username": None, "display_name": "chefsef"}]
+    assert _usernames_by_roster_id(users3, [{"roster_id": 9, "owner_id": "uD"}]) == \
+        {"9": "chefsef"}
+
     # The scoreboard renders the resolved handle, falling back to the team
     # name only when no username resolved.
     source = (ROOT / "dashboard_services/pages/recap_page.py").read_text()
     assert "handle = username_by_rid.get(str(rid)) or owner" in source
     assert 'recap-team-manager">@{html.escape(handle)}' in source
+
+
+def test_recap_page_renders_weekly_wrapped_launcher():
+    """The recap page shows the Weekly Wrapped launcher beside its week
+    selector (the same component as the hub). The recap's selector does a
+    full page reload on change, so the server-rendered button covers each
+    week with no re-pointing JS needed."""
+    source = (ROOT / "dashboard_services/pages/recap_page.py").read_text()
+    assert "weekly_wrapped_launcher_html" in source
+    assert "{_weekly_wrapped_html}" in source
