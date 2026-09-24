@@ -61,3 +61,14 @@ def test_start_sit_api_scores_proj_and_form_with_league_settings():
     assert 'stats.get("pts_ppr")' not in body
     assert "week_stat_points" in extras
     assert '_st.get("pts_ppr")' not in extras
+
+
+def test_faab_toggle_hidden_attribute_beats_inline_flex():
+    body = _body()
+    # .wv-faab-toggle sets display:inline-flex, which beats the UA
+    # stylesheet's [hidden] -> display:none. Without an explicit [hidden]
+    # override the checkbox stays visible in non-FAAB leagues even though JS
+    # correctly sets hidden -- and tapping it re-renders no FAAB details.
+    assert ".wv-faab-toggle[hidden]" in body
+    rule = body.split(".wv-faab-toggle[hidden]", 1)[1].split("}", 1)[0]
+    assert "display" in rule and "none" in rule
