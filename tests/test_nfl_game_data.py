@@ -89,6 +89,9 @@ def test_forbidden_enters_cooldown_without_retry_or_false_last_good(monkeypatch)
         def raise_for_status(self):
             error = __import__('requests').HTTPError('forbidden'); error.response = self; raise error
     monkeypatch.setattr(nfl._session, "get", lambda *a, **k: calls.append(1) or Response())
+    # Isolate the ESPN-layer behavior under test from the nflverse fallback,
+    # which has its own dedicated tests below.
+    monkeypatch.setattr(nfl, "_nflverse_games_rows", lambda: [])
     first = nfl.scoreboard_for_date("20260922")
     second = nfl.scoreboard_for_date("20260922")
     assert len(calls) == 1
