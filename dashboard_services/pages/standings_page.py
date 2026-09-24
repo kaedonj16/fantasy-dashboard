@@ -32,18 +32,16 @@ def build_standings_body(ctx: dict) -> str:
           <div class="card-tabs">
             <div class="tab-strip">
               <button class="tab-btn active" data-tab="standings">Standings</button>
-              <button class="tab-btn" data-tab="details">Detailed</button>
               <button class="tab-btn" data-tab="shares">Value Share</button>
+              <label class="st-detail-toggle" title="Show extra stat columns">
+                <input type="checkbox" id="stDetailToggle">
+                <span class="st-detail-switch" aria-hidden="true"></span>
+                <span>Detailed</span>
+              </label>
             </div>
             <div class="tab-panels">
               <div class="tab-panel active" data-tab="standings">
                 <div id="stStandingsInner">{panels['standings']}</div>
-              </div>
-              <div class="tab-panel" data-tab="details">
-                <div id="stDetailsInner">{panels['details']}</div>
-                <div class="footer">
-                  Default sort: Win% ↓ then PF ↓. Click headers to sort.
-                </div>
               </div>
               <div class="tab-panel standings-shares-panel" data-tab="shares">
                 <div id="stSharesInner">{panels['shares']}</div>
@@ -58,7 +56,35 @@ def build_standings_body(ctx: dict) -> str:
     </div>
     <div id="stSidebarInner" class="standings-insights-wrap">{panels['sidebar']}</div>
     </div>
+    <script>
+    (function() {{
+      var KEY = 'br-standings-detailed';
+      function table() {{ return document.querySelector('table[data-page="standings"]'); }}
+      // Re-applied after week-selector swaps re-render the table, so the
+      // toggle state survives "Standings through Week N" changes.
+      window.applyStandingsDetail = function() {{
+        var on = false;
+        try {{ on = localStorage.getItem(KEY) === '1'; }} catch (e) {{}}
+        var t = table();
+        if (t) t.classList.toggle('show-detail', on);
+        var cb = document.getElementById('stDetailToggle');
+        if (cb) cb.checked = on;
+      }};
+      function init() {{
+        var cb = document.getElementById('stDetailToggle');
+        if (!cb || cb.__stDetailBound) return;
+        cb.__stDetailBound = true;
+        cb.addEventListener('change', function() {{
+          try {{ localStorage.setItem(KEY, cb.checked ? '1' : '0'); }} catch (e) {{}}
+          var t = table();
+          if (t) t.classList.toggle('show-detail', cb.checked);
+        }});
+        window.applyStandingsDetail();
+      }}
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+      else init();
+    }})();
+    </script>
     """
 
     return body
-

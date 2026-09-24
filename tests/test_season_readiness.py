@@ -121,8 +121,9 @@ def test_week_selector_renders_with_finalized_weeks(inseason_ctx):
     body = appmod.build_standings_body(ctx)
     assert "standingsWeek" in body
     assert "Week 10 · latest" in body
-    for pid in ("stStandingsInner", "stDetailsInner", "stPowerInner", "stSidebarInner", "stSharesInner"):
+    for pid in ("stStandingsInner", "stPowerInner", "stSidebarInner", "stSharesInner"):
         assert pid in body
+    assert "stDetailsInner" not in body  # merged into the standings table toggle
     assert 'data-tab="shares"' in body
     assert "Value Share" in body
     # The rankings-shakeup FLIP animation keys off data-rk-key.
@@ -136,8 +137,9 @@ def test_as_of_week_caps_records_and_renders_panels(inseason_ctx):
     games = ts5["Wins"] + ts5["Losses"] + ts5.get("Ties", 0)
     assert (games == 5).all()
     panels = appmod._standings_panels(capped)
-    for key in ("standings", "details", "power", "sidebar", "shares"):
+    for key in ("standings", "power", "sidebar", "shares"):
         assert panels[key] and len(panels[key]) > 100
+    assert "details" not in panels  # merged into the standings table toggle
     assert "data-rk-key" in (panels["standings"] + panels["power"])
 
 
@@ -151,8 +153,9 @@ def test_standings_week_endpoint_round_trip(inseason_ctx, monkeypatch):
     assert r.status_code == 200
     j = r.get_json() or {}
     assert j.get("ok") is True
-    for key in ("standings_html", "details_html", "power_html", "sidebar_html", "shares_html"):
+    for key in ("standings_html", "power_html", "sidebar_html", "shares_html"):
         assert isinstance(j.get(key), str) and len(j[key]) > 100
+    assert "details_html" not in j  # merged into the standings table toggle
 
 
 def test_gotw_card_renders_with_projections(inseason_ctx):

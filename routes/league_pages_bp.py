@@ -128,7 +128,6 @@ def api_standings_week():
             "ok": True,
             "week": week,
             "standings_html": panels["standings"],
-            "details_html": panels["details"],
             "power_html": panels["power"],
             "sidebar_html": panels["sidebar"],
             "tiles_html": panels.get("tiles", ""),
