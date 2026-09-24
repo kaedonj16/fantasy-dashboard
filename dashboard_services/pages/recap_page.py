@@ -34,8 +34,10 @@ def _usernames_by_roster_id(users: list[dict], rosters: list[dict]) -> dict[str,
 
     df_weekly's "owner" column holds the team name (roster_map), not the
     username, so resolve per roster: first by the roster's owner_id against
-    users[].user_id, then by matching users[].roster_id. Rosters with no
-    resolvable username are left out so callers can fall back to the team name.
+    users[].user_id, then by matching users[].roster_id. Sleeper's league
+    /users endpoint omits "username" (only "display_name" is set), so fall
+    back to display_name. Rosters with no resolvable username are left out
+    so callers can fall back to the team name.
     """
     users = users or []
     user_by_id = {u.get("user_id"): u for u in users}
@@ -46,7 +48,7 @@ def _usernames_by_roster_id(users: list[dict], rosters: list[dict]) -> dict[str,
         u = user_by_id.get(roster.get("owner_id"))
         if u is None:
             u = next((x for x in users if str(x.get("roster_id")) == rid), None)
-        uname = (u or {}).get("username") or ""
+        uname = (u or {}).get("username") or (u or {}).get("display_name") or ""
         if uname:
             out[rid] = uname
     return out
@@ -339,6 +341,17 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
     }
     _recap_share_json = json.dumps(_recap_share).replace("</", "<\\/")
 
+    # Weekly Wrapped launcher beside the week selector (same component as the
+    # weekly hub). Hidden for weeks with no completed games; the recap's week
+    # selector does a full page reload, so no re-pointing JS is needed.
+    _weekly_wrapped_html = ""
+    try:
+        from dashboard_services.pages.history_page import weekly_wrapped_launcher_html
+        _weekly_wrapped_html = weekly_wrapped_launcher_html(
+            ctx, _platform, _season, _league_id, selected_week)
+    except Exception:
+        logger.debug("recap: wrapped launcher build failed", exc_info=True)
+
     week_selector = f"""
 <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;flex-wrap:wrap;">
   <div style="flex:1;min-width:160px;">
@@ -349,6 +362,7 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
                  background:var(--card);color:var(--text);font-size:13px;cursor:pointer;">
     {week_opts}
   </select>
+  {_weekly_wrapped_html}
   {f'<a class="recap-history-link" href="{history_url}">History</a>' if history_url else ''}
   <button type="button" id="recapShareBtn"
           style="display:flex;align-items:center;gap:5px;padding:5px 12px;border-radius:6px;
