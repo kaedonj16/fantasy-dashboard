@@ -7662,7 +7662,8 @@ def _standings_sparkline(points, width: int = 76, height: int = 22) -> str:
 def render_standings(team_stats, length, all_play: dict = None,
                      playoff_spots: int = None, total_regular_weeks: int = None,
                      movement: dict = None, owner_to_rid: dict = None,
-                     sparklines: dict = None, divisions: dict = None) -> str:
+                     sparklines: dict = None, divisions: dict = None,
+                     detailed_df=None, efficiency: dict = None) -> str:
     if team_stats is None or team_stats.empty:
         return """
         <div class="card-body">
@@ -7775,6 +7776,21 @@ def render_standings(team_stats, length, all_play: dict = None,
     _STATUS_CLS = {"bye": "pp-bye", "clinched": "pp-clinched", "in": "pp-in",
                    "bubble": "pp-bubble", "eliminated": "pp-out"}
 
+    # ── Detail columns (revealed by the "Detailed" toggle; hidden by default
+    # via .st-detail-col CSS) ──────────────────────────────────────────────
+    def _dnum(v, nd: int) -> str:
+        return "–" if pd.isna(v) else f"{float(v):.{nd}f}"
+
+    _best_wk, _worst_wk = {}, {}
+    try:
+        if (detailed_df is not None and not detailed_df.empty
+                and "owner" in detailed_df.columns and "points" in detailed_df.columns):
+            _grp = detailed_df.groupby("owner")["points"]
+            _best_wk = {str(k): v for k, v in _grp.max().to_dict().items()}
+            _worst_wk = {str(k): v for k, v in _grp.min().to_dict().items()}
+    except Exception:
+        _best_wk, _worst_wk = {}, {}
+
     def _pp_tag(p):
         st = p["status"]
         if st == "bye":
@@ -7807,7 +7823,7 @@ def render_standings(team_stats, length, all_play: dict = None,
         # Division section header between groups (skip when no divisions).
         if _use_div and div_id and div_id != _prev_div:
             _label = str(_div_names.get(div_id) or f"Division {div_id}")
-            rows.append(_standings_div_header(_label, _div_counts.get(div_id, 0), 11))
+            rows.append(_standings_div_header(_label, _div_counts.get(div_id, 0), 17))
             _prev_div = div_id
             _is_div_lead = True
 
@@ -7834,6 +7850,21 @@ def render_standings(team_stats, length, all_play: dict = None,
             _luck_cell = f"<span class='luck-chip {_lcls}' title='Actual wins minus expected wins from all-play'>{_lsign}{_luck:.1f}</span>"
         _seed = _ap.get('expected_seed')
         _seed_cell = _ord_str(_seed) if _seed else "<span class='muted'>&ndash;</span>"
+
+        # Detail-column values (hidden until the "Detailed" toggle is on).
+        _winpct = _dnum(row.get("Win%"), 3)
+        _rid = (owner_to_rid or {}).get(owner)
+        _eff_raw = (efficiency or {}).get(str(_rid)) if _rid is not None else None
+        try:
+            _eff = "–" if pd.isna(_eff_raw) else f"{float(_eff_raw):.0f}%"
+        except (TypeError, ValueError):
+            _eff = "–"
+        _davg = _dnum(row.get("AVG"), 2)
+        _dstd = _dnum(row.get("STD"), 2)
+        _dbest = _dnum(_best_wk.get(owner), 2)
+        _dworst = _dnum(_worst_wk.get(owner), 2)
+        _dsosp = _dnum(row.get("past_sos"), 1)
+        _dsosf = _dnum(row.get("ros_sos"), 1)
 
         _p = pic_by_name.get(owner)
         _trcls = "st-div-leader" if _is_div_lead else ""
@@ -7884,6 +7915,14 @@ def render_standings(team_stats, length, all_play: dict = None,
               <td>{streak}</td>
               <td>{_luck_cell}</td>
               <td>{_seed_cell}</td>
+              <td class="st-detail-col num">{_winpct}</td>
+              <td class="st-detail-col num">{_eff}</td>
+              <td class="st-detail-col num">{_davg}</td>
+              <td class="st-detail-col num">{_dstd}</td>
+              <td class="st-detail-col num">{_dbest}</td>
+              <td class="st-detail-col num">{_dworst}</td>
+              <td class="st-detail-col num">{_dsosp}</td>
+              <td class="st-detail-col num">{_dsosf}</td>
             </tr>
         """)
 
@@ -7892,7 +7931,7 @@ def render_standings(team_stats, length, all_play: dict = None,
         if (_p and _p.get("scenario") and _p["status"] == "bubble"
                 and _p["seed"] in (_spots, (_spots or 0) + 1)):
             rows.append(
-                "<tr class='pp-scnrow'><td colspan='9'>"
+                "<tr class='pp-scnrow'><td colspan='17'>"
                 f"<div class='pp-scn'>{html.escape(_p['scenario'])}</div></td></tr>"
             )
 
@@ -7901,7 +7940,7 @@ def render_standings(team_stats, length, all_play: dict = None,
         if (not _use_div and _spots and int(row['Rank']) == _spots
                 and _spots < len(df)):
             rows.append(
-                "<tr class='pp-cutrow'><td colspan='9'>"
+                "<tr class='pp-cutrow'><td colspan='17'>"
                 "<div class='pp-cut'>Playoff line</div></td></tr>"
             )
 
@@ -7925,6 +7964,14 @@ def render_standings(team_stats, length, all_play: dict = None,
               <th scope="col">Streak</th>
               <th scope="col" title="Actual wins minus expected wins (from all-play). + = luckier than your scoring earned.">Luck</th>
               <th scope="col" title="Where you'd be seeded by all-play record instead of actual wins.">Exp. Seed</th>
+              <th scope="col" class="st-detail-col" title="Fraction of games won.">Win %</th>
+              <th scope="col" class="st-detail-col" title="Season lineup efficiency: actual points ÷ optimal-start points.">EFF</th>
+              <th scope="col" class="st-detail-col" title="Average points per game.">Average</th>
+              <th scope="col" class="st-detail-col" title="Standard deviation of weekly points.">Std Dev</th>
+              <th scope="col" class="st-detail-col" title="Highest single-week score.">Best Week</th>
+              <th scope="col" class="st-detail-col" title="Lowest single-week score.">Worst Week</th>
+              <th scope="col" class="st-detail-col" title="Strength of schedule faced so far.">SOS Past</th>
+              <th scope="col" class="st-detail-col" title="Strength of remaining schedule.">SOS Future</th>
             </tr>
           </thead>
           <tbody>
@@ -9134,83 +9181,6 @@ def render_standings_insights(team_stats, *, all_play=None, weekly_points=None,
     return f"<div class='st-insights'>{''.join(cards)}</div>"
 
 
-def render_team_stats(team_stats, df_weekly, owner_to_rid=None, efficiency=None) -> str:
-    # Show the table whenever there are teams. The season aggregates (Win %, PF,
-    # PA, …) exist from preseason on; only Best/Worst Week come from finalized
-    # weekly games, so those fall back to "–" before any week is final rather than
-    # hiding the whole table behind an empty-state message.
-    if team_stats is None or team_stats.empty:
-        return """
-        <div class="card-body">
-          <p>No detailed stats available for this season yet.</p>
-        </div>
-        """
-
-    stats_tbl = team_stats.rename(
-        columns={"owner": "Team", "AVG": "Average", "STD": "Std Dev", "Win%": "Win %",
-                 "past_sos": "SOS Past", "ros_sos": "SOS Future"}
-    ).copy()
-
-    if df_weekly is not None and not df_weekly.empty:
-        best = df_weekly.groupby("owner")["points"].max().rename("Best Week")
-        worst = df_weekly.groupby("owner")["points"].min().rename("Worst Week")
-        stats_tbl = (
-            stats_tbl
-            .merge(best, left_on="Team", right_index=True, how="left")
-            .merge(worst, left_on="Team", right_index=True, how="left")
-        )
-    else:
-        stats_tbl["Best Week"] = float("nan")
-        stats_tbl["Worst Week"] = float("nan")
-
-    # Lineup efficiency (moved here from the Standings table), keyed owner->rid->eff.
-    def _eff_for(owner):
-        rid = (owner_to_rid or {}).get(str(owner))
-        return (efficiency or {}).get(str(rid)) if rid is not None else None
-    stats_tbl["EFF"] = stats_tbl["Team"].map(_eff_for)
-
-    # SOS columns are optional depending on schedule data availability.
-    for c in ("SOS Past", "SOS Future"):
-        if c not in stats_tbl.columns:
-            stats_tbl[c] = float("nan")
-
-    cols = ["Team", "Win %", "PF", "EFF", "PA", "Average", "Std Dev",
-            "Best Week", "Worst Week", "SOS Past", "SOS Future"]
-    stats_tbl = stats_tbl[cols].copy()
-
-    for c in ("Win %", "PF", "PA", "Average", "Std Dev", "Best Week", "Worst Week",
-              "SOS Past", "SOS Future"):
-        stats_tbl[c] = stats_tbl[c].astype(float).round(3 if c == "Win %" else 2)
-
-    def _num(v, nd: int) -> str:
-        return "–" if pd.isna(v) else f"{float(v):.{nd}f}"
-
-    def _cell(col, v) -> str:
-        if col == "Team":
-            return f"<td class='team'>{_clickable_team_name(v, owner_to_rid)}</td>"
-        if col == "EFF":
-            return f"<td class='num'>{'–' if pd.isna(v) else f'{float(v):.0f}%'}</td>"
-        if col == "Win %":
-            return f"<td class='num'>{_num(v, 3)}</td>"
-        if col in ("SOS Past", "SOS Future"):
-            return f"<td class='num'>{_num(v, 1)}</td>"
-        return f"<td class='num'>{_num(v, 2)}</td>"
-
-    body_rows = []
-    for _, r in stats_tbl[cols].iterrows():
-        body_rows.append("<tr>" + "".join(_cell(c, r[c]) for c in cols) + "</tr>")
-
-    table_html = f"""
-        <div class="st-tblscroll">
-        <table id="stats" class="standings-table">
-          <thead><tr>{"".join([f"<th data-col='{i}'>{c}</th>" for i, c in enumerate(cols)])}</tr></thead>
-          <tbody>{''.join(body_rows)}</tbody>
-        </table>
-        </div>
-    """
-    return table_html
-
-
 def _build_offseason_standings_body(ctx: dict) -> str:
     """
     Offseason standings: left = dynasty rankings table, right = power rankings
@@ -9804,13 +9774,6 @@ def _standings_panels(ctx: dict, power_rankings=None) -> dict:
         logger.debug("[standings] lineup efficiency skipped", exc_info=True)
         _eff_by_rid = {}
 
-    standings_html = render_standings(
-        team_stats, num_teams, all_play=_all_play,
-        playoff_spots=_pp_spots, total_regular_weeks=_pp_weeks,
-        movement=_movement, owner_to_rid=_o2r, sparklines=_sparks,
-        divisions=_div_info,
-    )
-
     if (
             df_weekly is not None
             and not df_weekly.empty
@@ -9819,7 +9782,13 @@ def _standings_panels(ctx: dict, power_rankings=None) -> dict:
         detailed_df = df_weekly[df_weekly["finalized"] == True].copy()
     else:
         detailed_df = pd.DataFrame()
-    details_html = render_team_stats(team_stats, detailed_df, owner_to_rid=_o2r, efficiency=_eff_by_rid)
+
+    standings_html = render_standings(
+        team_stats, num_teams, all_play=_all_play,
+        playoff_spots=_pp_spots, total_regular_weeks=_pp_weeks,
+        movement=_movement, owner_to_rid=_o2r, sparklines=_sparks,
+        divisions=_div_info, detailed_df=detailed_df, efficiency=_eff_by_rid,
+    )
 
     power_html = render_power_and_playoffs(
         team_stats,
@@ -9843,7 +9812,6 @@ def _standings_panels(ctx: dict, power_rankings=None) -> dict:
     shares_html = render_share_rankings(ctx)
     return {
         "standings": standings_html,
-        "details": details_html,
         "power": power_html,
         "sidebar": sidebar_html,
         "tiles": tiles_html,
@@ -9916,7 +9884,6 @@ def _standings_week_selector(ctx: dict, weeks: list) -> str:
         return {{
           tiles:     document.getElementById('stTilesInner'),
           standings: document.getElementById('stStandingsInner'),
-          details:   document.getElementById('stDetailsInner'),
           power:     document.getElementById('stPowerInner'),
           sidebar:   document.getElementById('stSidebarInner'),
           shares:    document.getElementById('stSharesInner')
@@ -9945,7 +9912,7 @@ def _standings_week_selector(ctx: dict, weeks: list) -> str:
             if (my !== seq || !data || !data.ok) return;
             var p = panels();
             var map = {{ tiles: data.tiles_html, standings: data.standings_html,
-                        details: data.details_html, power: data.power_html,
+                        power: data.power_html,
                         sidebar: data.sidebar_html, shares: data.shares_html }};
             Object.keys(map).forEach(function(k) {{
               if (p[k] && typeof map[k] === 'string') {{
@@ -9955,6 +9922,7 @@ def _standings_week_selector(ctx: dict, weeks: list) -> str:
                 if (window.brInitMoments) window.brInitMoments(p[k]);
               }}
             }});
+            if (window.applyStandingsDetail) window.applyStandingsDetail();
           }})
           .catch(function(err) {{ if (err && err.name === 'AbortError') return; }})
           .finally(function() {{ if (my === seq) setLoading(false); }});
