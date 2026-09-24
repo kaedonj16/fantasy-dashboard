@@ -22,7 +22,10 @@ class _Policy:
 
 @pytest.fixture()
 def ensure_state(monkeypatch):
-    """Reset the helper's cooldown map and stub its two collaborators."""
+    """Reset the helper's cooldown map and stub its collaborators.
+
+    Files are simulated as missing (fresh deploy: cache wiped).
+    """
     monkeypatch.setattr(app, "_SLEEPER_WEEK_ENSURE_TS", {})
     calls = []
 
@@ -36,12 +39,38 @@ def ensure_state(monkeypatch):
     monkeypatch.setattr(
         "data_building.external_data.sleeper_bulk_stats.fetch_week_stats", fake_fetch
     )
+    monkeypatch.setattr(app, "_sleeper_week_cache_populated", lambda s, w: False)
     return calls
 
 
-def test_ensure_fetches_each_completed_week(ensure_state):
+def test_ensure_fetches_each_missing_completed_week(ensure_state):
     app._ensure_sleeper_week_files(2026)
     assert sorted(ensure_state) == [(2026, 1), (2026, 2)]
+
+
+def test_ensure_skips_populated_files_without_fetch(monkeypatch):
+    """Steady state: files on disk -> zero network, zero parsing.
+
+    The whole point of the stat() pre-check: a modal open must not
+    re-read/re-parse ~780KB files (or hit Sleeper) when there is nothing
+    to backfill.
+    """
+    monkeypatch.setattr(app, "_SLEEPER_WEEK_ENSURE_TS", {})
+    monkeypatch.setattr(
+        "utils.season_qualification.qualification_policy", lambda s: _Policy([1, 2])
+    )
+    monkeypatch.setattr(app, "_sleeper_week_cache_populated", lambda s, w: True)
+
+    def boom(season, week):
+        raise AssertionError("fetch must not run when files are populated")
+
+    monkeypatch.setattr(
+        "data_building.external_data.sleeper_bulk_stats.fetch_week_stats", boom
+    )
+    app._ensure_sleeper_week_files(2026)
+    app._ensure_sleeper_week_files(2026)
+    # No fetch, and the cooldown stays unarmed (nothing to retry).
+    assert app._SLEEPER_WEEK_ENSURE_TS == {}
 
 
 def test_ensure_cooldown_skips_repeat(ensure_state):
@@ -62,6 +91,7 @@ def test_ensure_never_raises_and_cools_down_on_failure(monkeypatch):
     monkeypatch.setattr(
         "utils.season_qualification.qualification_policy", lambda s: _Policy([1])
     )
+    monkeypatch.setattr(app, "_sleeper_week_cache_populated", lambda s, w: False)
 
     def boom(season, week):
         raise ConnectionError("sleeper down")

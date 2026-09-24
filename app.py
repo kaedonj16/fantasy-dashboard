@@ -11596,8 +11596,9 @@ def _load_season_weekly_points(season: int, scoring_settings: dict) -> dict:
     hit = _WEEKLY_PTS_CACHE.get(key)
     # The live season's week files are runtime-fetched and Render wipes
     # cache/ on every deploy: backfill completed weeks on demand so PPG
-    # doesn't go N/A after a deploy (fetch_week_stats no-ops on files
-    # that already exist; a per-season cooldown guards a Sleeper outage).
+    # doesn't go N/A after a deploy. The ensure is a few stat() calls when
+    # the files already exist (zero network/parse); a per-season cooldown
+    # guards a Sleeper outage when they don't.
     _ensure_sleeper_week_files(season)
     pattern = os.path.join(CACHE_DIR, "sleeper_stats", f"sleeper_stats_s{season}_w*.json")
     files = glob.glob(pattern)
@@ -17887,6 +17888,24 @@ _SLEEPER_WEEK_ENSURE_TS: dict = {}  # season(int) -> float
 _SLEEPER_WEEK_ENSURE_COOLDOWN_S = 10 * 60
 
 
+def _sleeper_week_cache_populated(season_year: int, week: int) -> bool:
+    """True when the week's Sleeper stat file exists on disk and is non-empty.
+
+    Small enough to call on every modal open: a single stat() call, zero
+    network, zero parsing, zero retained memory.
+    """
+    try:
+        return os.path.getsize(
+            os.path.join(
+                CACHE_DIR,
+                "sleeper_stats",
+                f"sleeper_stats_s{int(season_year)}_w{int(week)}.json",
+            )
+        ) > 2
+    except OSError:
+        return False
+
+
 def _ensure_sleeper_week_files(season_year: int) -> None:
     """Fetch-on-demand the Sleeper weekly stat files for completed weeks.
 
@@ -17897,26 +17916,37 @@ def _ensure_sleeper_week_files(season_year: int) -> None:
     a deploy the game log loses its actuals (projections skip finished
     weeks) and season PPG/total goes N/A until something else happens to
     fetch those weeks. Finished weeks are immutable, so each fetch is a
-    one-time backfill; ``fetch_week_stats`` no-ops cheaply when the file
-    already exists and is populated. Never raises.
+    one-time backfill. Never raises.
+
+    Cost profile: when every completed week already has a populated file on
+    disk (the steady state), this is a few stat() calls -- no network, no
+    JSON parsing, no retained memory. Only genuinely missing/empty files
+    reach ``fetch_week_stats``, guarded by a per-season cooldown so a
+    Sleeper outage can't stall modal opens.
     """
     try:
         season_year = int(season_year)
     except (TypeError, ValueError):
         return
+    try:
+        from utils.season_qualification import qualification_policy
+        completed = [int(w) for w in qualification_policy(season_year).completed_weeks]
+    except Exception:
+        return
+    missing = [w for w in completed if not _sleeper_week_cache_populated(season_year, w)]
+    if not missing:
+        return
     now = time.time()
     if now - _SLEEPER_WEEK_ENSURE_TS.get(season_year, 0.0) < _SLEEPER_WEEK_ENSURE_COOLDOWN_S:
         return
+    _SLEEPER_WEEK_ENSURE_TS[season_year] = now
     try:
-        from utils.season_qualification import qualification_policy
         from data_building.external_data.sleeper_bulk_stats import fetch_week_stats
-        completed = qualification_policy(season_year).completed_weeks
     except Exception:
         return
-    _SLEEPER_WEEK_ENSURE_TS[season_year] = now
-    for week in completed:
+    for week in missing:
         try:
-            fetch_week_stats(season_year, int(week))
+            fetch_week_stats(season_year, week)
         except Exception:
             continue
 
