@@ -206,3 +206,24 @@ def test_hub_week_change_js_targets_the_real_launcher_id():
     assert "id='{ns}Launch'" in hist
     launcher_id = f"{m.group(1)}Launch"
     assert f"getElementById('{launcher_id}')" in hub
+
+
+def test_wrapped_overlay_fetch_retries_instead_of_dying_silently():
+    """The /wrapped overlay endpoint can 502 while a cold worker is still
+    building the league context. The launcher must retry with backoff, treat
+    non-OK responses as failures, and surface a toast on final failure
+    instead of swallowing the error."""
+    from dashboard_services.pages import history_page as H
+
+    js = H._wrapped_bootstrap_js("weekly-wrapped")
+    # Retry loop with backoff.
+    assert "tryFetch" in js
+    assert "attempts < 3" in js
+    assert "setTimeout(tryFetch" in js
+    # HTTP errors (502/500/...) count as failures, not just network errors.
+    assert "!r.ok" in js
+    # Final failure tells the user to tap again; the old silent .catch is gone.
+    assert "Could not load the story" in js
+    assert ".catch(function () {})" not in js
+    # Loading state survives across retries and clears exactly once.
+    assert js.count("function done()") == 1
