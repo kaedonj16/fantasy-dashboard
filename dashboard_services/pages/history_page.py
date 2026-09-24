@@ -2007,6 +2007,31 @@ _WRAPPED_BOOTSTRAP_JS = r"""
     while (chars.length > 1 && ctx.measureText(chars.join('') + '…').width > max) chars.pop();
     return chars.join('') + '…';
   }
+  // Self-contained count-up for the public share page, which doesn't load the
+  // app bundle that defines window.brCountUp. Same opts shape ({to, dp, suffix, dur}).
+  function wrappedCountUp(el, opts) {
+    if (!el) return;
+    opts = opts || {};
+    var to = opts.to;
+    if (to == null || isNaN(to)) return;
+    var dp = opts.dp != null ? opts.dp : 0;
+    var suffix = opts.suffix || '';
+    var dur = opts.dur || 1100;
+    function fmt(n) { return n.toFixed(dp) + suffix; }
+    try {
+      if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) { el.textContent = fmt(to); return; }
+    } catch (e) {}
+    var start = null;
+    function frame(ts) {
+      if (start == null) start = ts;
+      var p = Math.min(1, (ts - start) / dur);
+      var eased = 1 - Math.pow(1 - p, 3);
+      el.textContent = fmt(to * eased);
+      if (p < 1) requestAnimationFrame(frame);
+      else el.textContent = fmt(to);
+    }
+    requestAnimationFrame(frame);
+  }
   // Centered text drawn via manual measurement with left alignment. WebKit
   // (iOS Safari) misplaces canvas fillText when textAlign is 'center' and the
   // string contains emoji -- the text splits into runs and the alignment is
@@ -2223,8 +2248,8 @@ _WRAPPED_BOOTSTRAP_JS = r"""
       // Tint the current progress tick with the active slide's accent.
       try { overlay.style.setProperty('--wa', getComputedStyle(el).getPropertyValue('--wa')); } catch (e) {}
       var num = el.querySelector('[data-w-count]');
-      if (num && window.brCountUp) {
-        window.brCountUp(num, { to: parseFloat(num.getAttribute('data-w-count')),
+      if (num) {
+        (window.brCountUp || wrappedCountUp)(num, { to: parseFloat(num.getAttribute('data-w-count')),
           dp: parseInt(num.getAttribute('data-w-dp') || '0', 10),
           suffix: num.getAttribute('data-w-suffix') || '', dur: 1100 });
       }

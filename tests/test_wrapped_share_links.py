@@ -187,3 +187,26 @@ def test_share_rate_limit_declared(offline_client, fake_store):
         assert codes[20] == 429, codes
     else:
         assert codes == [200] * 21, codes
+
+
+def test_share_page_bootstrap_counts_up_without_app_bundle():
+    """The public /wrapped/<token> page doesn't load the app JS bundle, so
+    window.brCountUp is undefined there. The bootstrap must carry its own
+    count-up fallback or the big numbers stay 0 (regression: pts showed 0
+    on share links)."""
+    from dashboard_services.pages.history_page import (
+        _wrapped_public_bootstrap_js,
+        render_wrapped_share_page,
+    )
+    js = _wrapped_public_bootstrap_js("weekly-wrapped")
+    assert "function wrappedCountUp" in js
+    assert "window.brCountUp || wrappedCountUp" in js
+    html = render_wrapped_share_page(
+        overlay_html="<div class='wrapped-slide'></div>",
+        share_data={"week": 3, "league": "Test League"},
+        label="Test League — Week 3 Wrapped",
+        ns="weekly-wrapped",
+        css_url="/static/dashboard.css",
+        logo_url="/static/BR_Logo_dark.png",
+    )
+    assert "function wrappedCountUp" in html
