@@ -38,6 +38,7 @@ try:
     from flask_compress import Compress
 except ImportError:
     Compress = None
+from dashboard_services.ai.front_office_report import get_front_office_report
 from dashboard_services.ai.renderer import (
     get_team_gm_memo,
     get_power_rankings_html,
@@ -18407,11 +18408,14 @@ def api_gm_memo():
     try:
         ctx = get_league_ctx_from_cache(platform, league_id, season)
         force_refresh = bool(payload.get("force"))
-        gm_memo_html = get_team_gm_memo(ctx, viewer_roster_id, force_refresh=force_refresh)
+        report = get_front_office_report(ctx, viewer_roster_id, force_refresh=force_refresh)
 
         return jsonify({
             "success": True,
-            "gm_memo_html": gm_memo_html
+            "card_html": report.get("card_html") or "",
+            "report_html": report.get("report_html") or "",
+            "verdict": report.get("verdict"),
+            "cached": bool(report.get("cached")),
         })
     except Exception as e:
         logger.exception("[api-gm-memo] Error: %s", e)

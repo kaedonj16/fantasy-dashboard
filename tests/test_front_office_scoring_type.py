@@ -281,3 +281,62 @@ def test_redraft_window_label_uses_odds_then_percentile():
     assert redraft_window_label() == ""
     assert "Retool" not in (redraft_window_label(playoff_pct=20) or "")
     assert "Window" not in (redraft_window_label(playoff_pct=90) or "")
+
+
+def _note_data():
+    return {
+        "scoring_type": "redraft",
+        "trade_targets": [
+            {"gets": [{"id": "p1", "name": "A", "position": "WR"}],
+             "gives": [], "partner": "Team X"},
+            {"gets": [{"id": "p2", "name": "B", "position": "RB"}],
+             "gives": [], "partner": "Team Y"},
+        ],
+        "waiver_targets": [
+            {"id": "w1", "name": "C", "position": "WR", "team": "FA"},
+        ],
+    }
+
+
+def test_front_office_note_schema_constrains_ids_by_enum():
+    from dashboard_services.ai.prompts import _front_office_note_items_schema
+    s = _front_office_note_items_schema("target_id", ["p1", "p2"], "desc")
+    assert s["type"] == "array"
+    items = s["items"]
+    assert items["properties"]["target_id"] == {"type": "string", "enum": ["p1", "p2"]}
+    assert items["required"] == ["target_id", "note"]
+    assert items["additionalProperties"] is False
+    # Empty id list must not emit an empty enum (it would reject every value).
+    s2 = _front_office_note_items_schema("id", [], "desc")
+    assert "enum" not in s2["items"]["properties"]["id"]
+
+
+def test_normalize_note_entries_filters_unknown_ids_and_blanks():
+    from dashboard_services.ai.prompts import normalize_note_entries
+    entries = [
+        {"target_id": "p1", "note": "Fills the WR2 hole."},
+        {"target_id": "pX", "note": "Hallucinated target."},
+        {"target_id": "p2", "note": "   "},
+        {"target_id": "p2", "note": 42},
+        {"target_id": "p1", "note": "Duplicate, loses to first."},
+        {"target_id": "p2", "note": "Second valid note for p2."},
+        "junk",
+        None,
+    ]
+    assert normalize_note_entries(entries, "target_id", ["p1", "p2"]) == {
+        "p1": "Fills the WR2 hole.",
+        "p2": "Second valid note for p2.",
+    }
+    assert normalize_note_entries([{"id": "w1", "note": "x"}], "id", []) == {}
+    assert normalize_note_entries(None, "target_id", ["p1"]) == {}
+
+
+def test_front_office_report_prompt_describes_note_arrays():
+    from dashboard_services.ai.prompts import build_front_office_report_prompt
+    prompt = build_front_office_report_prompt(_note_data(), "redraft")
+    assert "trade_notes: array" in prompt
+    assert '"target_id"' in prompt
+    assert "waiver_notes: array" in prompt
+    assert '"id"' in prompt
+    # No more loose object-mapping language for the notes.
+    assert "object mapping each trade target" not in prompt
