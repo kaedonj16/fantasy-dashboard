@@ -1505,6 +1505,7 @@ def render_matchup_slide(
         is_gotw: bool = False,
         gotw_selection: Optional[dict] = None,
         roster_positions: Optional[List[str]] = None,
+        div_records: dict = None,
 ) -> str:
     """One slide with rows like:
        [Left Name] [Left Pts/Proj] [Right Pts/Proj] [Right Name]
@@ -1519,6 +1520,9 @@ def render_matchup_slide(
     small matchup-win pop.
 
     compact: dashboard slides render only m-head + m-win-bar (no starter body).
+
+    div_records: optional {roster_id: (w, l, t)} of records vs division
+    opponents; when given, the team header record renders as "2-1 (2-0)".
     """
     proj = w > proj_week
     completed_week = not proj
@@ -1659,10 +1663,29 @@ def render_matchup_slide(
                 f"<span class='proj'>{live_proj_total:.1f}"
                 f"{_trend_arrow(live_proj_total)}</span>"), True
 
+    def _div_record_for(rid) -> Optional[tuple]:
+        """(w, l, t) vs division opponents for a roster id, or None."""
+        if div_records is None:
+            return None
+        try:
+            key = int(rid)
+        except (TypeError, ValueError):
+            return None
+        rec = div_records.get(key)
+        if rec is None:
+            rec = div_records.get(str(rid))
+        # Divisions are active (caller passed the map); a team with no
+        # division games yet shows 0-0 rather than dropping the parenthetical.
+        return rec if rec is not None else (0, 0, 0)
+
     def _team_col(t, side: str) -> str:
         rid = t.get('roster_id', '')
         name = t['name']
         record = t.get('record', '0-0')
+        _div = _div_record_for(rid)
+        if _div is not None and record != "-":
+            _dtxt = f"{_div[0]}-{_div[1]}" + (f"-{_div[2]}" if _div[2] else "")
+            record = f"{record} ({_dtxt})"
         username = t.get('username') or ''
         ava = t.get("avatar") or ""
         img_html = f"<img class='avatar m-av' src='{ava}' alt='' loading='lazy' decoding='async' onerror=\"this.style.display='none'\">" if ava else ""

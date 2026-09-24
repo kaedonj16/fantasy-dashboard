@@ -556,6 +556,53 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
             f'{performers[0]["pts"]:.1f} pts</span></div>'
         )
 
+    # ── Standings snapshot as of the selected week ─────────────────────────
+    # Hoisted above the scoreboard so matchup rows can show each team's
+    # record (with division record when the league uses divisions).
+    # Preview mode replaces the empty provider frame with deterministic sample
+    # rows. Feed that same frame into the shared historical builder rather than
+    # accidentally asking it to index the original zero-column DataFrame.
+    recap_ctx = dict(ctx)
+    recap_ctx["df_weekly"] = fin_df
+    historical_ctx = build_standings_as_of_week(recap_ctx, selected_week)
+    from dashboard_services.ai.context_builders import build_power_rankings_context
+    from utils.standings_divisions import resolve_divisions
+    division_info = resolve_divisions(historical_ctx) or {}
+    division_by_rid = division_info.get("by_rid") or {}
+    division_names = division_info.get("names") or {}
+    def _standings_rows(capped_ctx):
+        frame = capped_ctx["df_weekly"].copy()
+        frame["win"] = frame["points"] > frame["points_against"]
+        frame["tie"] = frame["points"] == frame["points_against"]
+        from utils.standings_divisions import division_records, format_record
+        _div_recs = division_records(frame, division_by_rid) if division_info else {}
+        rows = []
+        for rid, grp in frame.groupby("roster_id"):
+            try:
+                _rid_i = int(rid)
+            except (TypeError, ValueError):
+                _rid_i = None
+            _div_rec = None
+            if _rid_i is not None and division_by_rid.get(_rid_i):
+                _div_rec = _div_recs.get(_rid_i, (0, 0, 0))
+            _wins = int(grp["win"].sum())
+            _ties = int(grp["tie"].sum())
+            _losses = len(grp) - _wins - _ties
+            rows.append({
+                "rid": str(rid), "owner": grp["owner"].iloc[0],
+                "wins": _wins,
+                "ties": _ties,
+                "losses": _losses,
+                "pf": float(grp["points"].sum()),
+                "division": division_by_rid.get(int(rid)) if str(rid).isdigit() else None,
+                "record": format_record(_wins, _losses, _ties, _div_rec),
+            })
+        rows.sort(key=lambda x: (x.get("division") or 9999, -x["wins"], -x["pf"]))
+        return rows
+
+    standings_rows_data = _standings_rows(historical_ctx)
+    _record_by_rid = {s["rid"]: s["record"] for s in standings_rows_data}
+
     badge_map = _matchup_badges(matchups)
     # Game of the Week: the pre-week AI pick cached for this target week gets a
     # chip on the recap scoreboard too ("the game that was GOTW").
@@ -586,10 +633,12 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
             ava = team_link(owner, rid, ava_img(owner, rid, 36))
             nm = team_link(owner, rid, name, extra_class="recap-team-name-link")
             handle = username_by_rid.get(str(rid)) or owner
+            _rec = _record_by_rid.get(str(rid)) or ""
+            _rec_html = f'<div class="recap-team-record">{_rec}</div>' if _rec else ""
             return f"""<div class="recap-team recap-team--{side}{' recap-team--winner' if winner else ''}{' recap-team--loser' if loser else ''}">
               <div class="recap-team-identity">{ava}
                 <div class="recap-team-copy"><div class="recap-team-name">{nm}</div>
-                <div class="recap-team-manager">@{html.escape(handle)}</div></div>
+                <div class="recap-team-manager">@{html.escape(handle)}</div>{_rec_html}</div>
                 <strong class="recap-team-score">{points:.2f}</strong></div>
               {top_performer_html(rid)}
             </div>"""
@@ -668,36 +717,9 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
   {efficiency_content}
 </section>"""
 
-    # ── Shared historical standings + power snapshot ───────────────────────
-    # Preview mode replaces the empty provider frame with deterministic sample
-    # rows. Feed that same frame into the shared historical builder rather than
-    # accidentally asking it to index the original zero-column DataFrame.
-    recap_ctx = dict(ctx)
-    recap_ctx["df_weekly"] = fin_df
-    historical_ctx = build_standings_as_of_week(recap_ctx, selected_week)
-    from dashboard_services.ai.context_builders import build_power_rankings_context
-    from utils.standings_divisions import resolve_divisions
-    division_info = resolve_divisions(historical_ctx) or {}
-    division_by_rid = division_info.get("by_rid") or {}
-    division_names = division_info.get("names") or {}
-    def _standings_rows(capped_ctx):
-        frame = capped_ctx["df_weekly"].copy()
-        frame["win"] = frame["points"] > frame["points_against"]
-        frame["tie"] = frame["points"] == frame["points_against"]
-        rows = []
-        for rid, grp in frame.groupby("roster_id"):
-            rows.append({
-                "rid": str(rid), "owner": grp["owner"].iloc[0],
-                "wins": int(grp["win"].sum()),
-                "ties": int(grp["tie"].sum()),
-                "losses": len(grp) - int(grp["win"].sum()) - int(grp["tie"].sum()),
-                "pf": float(grp["points"].sum()),
-                "division": division_by_rid.get(int(rid)) if str(rid).isdigit() else None,
-            })
-        rows.sort(key=lambda x: (x.get("division") or 9999, -x["wins"], -x["pf"]))
-        return rows
-
-    standings_rows_data = _standings_rows(historical_ctx)
+    # ── Prior-week snapshot for movement + power ───────────────────────────
+    # (standings_rows_data is computed above the scoreboard so matchup rows
+    # can show records)
     prior_standings = []
     prior_power_teams = []
     if selected_week > 1:
@@ -723,7 +745,7 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
     <div class="st-bar"><div class="st-fill" style="width:{bar_pct:.0f}%;"></div></div>
   </div>
   <div class="st-rec">
-    <div class="wl">{s['wins']}-{s['losses']}{f"-{s['ties']}" if s['ties'] else ''}</div>
+    <div class="wl">{s['record']}</div>
     <div class="pf">{s['pf']:.1f} PF</div>
   </div>
   {movement}

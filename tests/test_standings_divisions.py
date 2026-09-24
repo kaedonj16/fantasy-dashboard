@@ -151,3 +151,145 @@ def test_playoff_picture_division_seeding():
     assert by_name["A"]["seed"] == 1
     assert by_name["C"]["seed"] == 2
     assert by_name["D"]["status"] != CLINCHED
+
+
+def test_format_record_with_division():
+    from utils.standings_divisions import format_record
+    assert format_record(2, 1) == "2-1"
+    assert format_record(2, 1, 0, (2, 0, 0)) == "2-1 (2-0)"
+    assert format_record(2, 1, 1, (1, 0, 1)) == "2-1-1 (1-0-1)"
+    # No parenthetical when divisions are off.
+    assert format_record(2, 1, 0, None) == "2-1"
+
+
+def _div_weekly_frame(pd):
+    # 4 teams, 2 divisions; week 1: 1v2 (div game), 3v4 (div game);
+    # week 2: 1v3 (cross-div), 2v4 (cross-div).
+    rows = [
+        # week, matchup_id, roster_id, points, points_against
+        (1, 101, 1, 100.0, 90.0), (1, 101, 2, 90.0, 100.0),
+        (1, 102, 3, 80.0, 80.0),  (1, 102, 4, 80.0, 80.0),
+        (2, 201, 1, 70.0, 110.0), (2, 201, 3, 110.0, 70.0),
+        (2, 202, 2, 95.0, 85.0),  (2, 202, 4, 85.0, 95.0),
+    ]
+    df = pd.DataFrame(rows, columns=["week", "matchup_id", "roster_id", "points", "points_against"])
+    df["finalized"] = True
+    df["owner"] = df["roster_id"].map({1: "A", 2: "B", 3: "C", 4: "D"})
+    return df
+
+
+def test_division_records_counts_only_division_games():
+    pd = pytest.importorskip("pandas")
+    from utils.standings_divisions import division_records
+    by_rid = {1: 1, 2: 1, 3: 2, 4: 2}
+    recs = division_records(_div_weekly_frame(pd), by_rid)
+    # Team 1: beat 2 (div) in wk1, lost to 3 (cross-div) in wk2 -> 1-0 div.
+    assert recs[1] == (1, 0, 0)
+    assert recs[2] == (0, 1, 0)
+    # Team 3: tied 4 (div) in wk1 -> 0-0-1 div (cross-div win over 1 excluded).
+    assert recs[3] == (0, 0, 1)
+    assert recs[4] == (0, 0, 1)
+    # Empty / missing columns are safe.
+    assert division_records(pd.DataFrame(), by_rid) == {}
+
+
+def test_render_standings_shows_division_record():
+    pytest.importorskip("flask")
+    pd = pytest.importorskip("pandas")
+    import app as appmod
+
+    rows = [
+        {"owner": "A", "Wins": 1, "Losses": 1, "Ties": 0, "PF": 170, "PA": 200,
+         "Streak": "", "avatar": "", "Win%": 0.5},
+        {"owner": "B", "Wins": 1, "Losses": 1, "Ties": 0, "PF": 185, "PA": 185,
+         "Streak": "", "avatar": "", "Win%": 0.5},
+        {"owner": "C", "Wins": 1, "Losses": 0, "Ties": 1, "PF": 190, "PA": 150,
+         "Streak": "", "avatar": "", "Win%": 0.75},
+        {"owner": "D", "Wins": 0, "Losses": 1, "Ties": 1, "PF": 165, "PA": 175,
+         "Streak": "", "avatar": "", "Win%": 0.25},
+    ]
+    df = pd.DataFrame(rows)
+    o2r = {"A": "1", "B": "2", "C": "3", "D": "4"}
+    divisions = {"by_rid": {1: 1, 2: 1, 3: 2, 4: 2}, "names": {1: "East", 2: "West"},
+                 "ids": [1, 2], "count": 2}
+    html = appmod.render_standings(
+        df, length=4, owner_to_rid=o2r, divisions=divisions,
+        detailed_df=_div_weekly_frame(pd),
+    )
+    assert "1-1 (1-0)" in html  # A: 1-1 overall, 1-0 in division
+    assert "1-0-1 (0-0-1)" in html  # C: tie was a division game
+    # Flat leagues keep the plain record.
+    flat = appmod.render_standings(df, length=4, owner_to_rid=o2r, divisions=None)
+    assert "(1-0)" not in flat
+    assert "1-1<" in flat or ">1-1<" in flat
+
+
+def test_render_standings_compact_shows_division_record():
+    pytest.importorskip("flask")
+    pd = pytest.importorskip("pandas")
+    import app as appmod
+
+    rows = [
+        {"owner": "A", "Wins": 1, "Losses": 1, "Ties": 0, "PF": 170, "PA": 200, "Rank": 1},
+        {"owner": "B", "Wins": 1, "Losses": 1, "Ties": 0, "PF": 185, "PA": 185, "Rank": 2},
+    ]
+    df = pd.DataFrame(rows)
+    o2r = {"A": "1", "B": "2"}
+    divisions = {"by_rid": {1: 1, 2: 1, 3: 2}, "names": {1: "East", 2: "West"},
+                 "ids": [1, 2], "count": 2}
+    html = appmod.render_standings_compact(
+        df, owner_to_rid=o2r, divisions=divisions,
+        div_records={1: (1, 0, 0), 2: (0, 1, 0)},
+    )
+    assert "1-1 (1-0)" in html
+    assert "1-1 (0-1)" in html
+
+
+def test_division_records_for_ctx_none_without_divisions():
+    from utils.standings_divisions import division_records_for_ctx
+    pd = pytest.importorskip("pandas")
+    # No division info -> None (renderers keep the plain record).
+    assert division_records_for_ctx({}) is None
+    assert division_records_for_ctx({"df_weekly": pd.DataFrame()}) is None
+    # Divisions active -> map, even with an empty frame.
+    ctx = {
+        "league_settings": {"divisions": 2},
+        "rosters": [
+            {"roster_id": 1, "settings": {"division": 1}},
+            {"roster_id": 2, "settings": {"division": 2}},
+        ],
+        "df_weekly": pd.DataFrame(),
+    }
+    assert division_records_for_ctx(ctx) == {}
+
+
+def test_render_matchup_slide_shows_division_record(monkeypatch):
+    pytest.importorskip("flask")
+    pytest.importorskip("requests")
+    from dashboard_services import matchups as mmod
+    monkeypatch.setattr(mmod, "load_teams_index", lambda *_a, **_k: {})
+    monkeypatch.setattr(mmod, "build_offense_rankings", lambda *_a, **_k: {})
+    monkeypatch.setattr(mmod, "load_week_schedule", lambda *_a, **_k: {})
+    monkeypatch.setattr(mmod, "build_team_schedule_lookup", lambda *_a, **_k: {})
+    monkeypatch.setattr(mmod, "_allow_live_game_indicators", lambda *_a, **_k: False)
+
+    def _team(name, rid, record):
+        return {
+            "name": name, "roster_id": rid, "record": record, "username": "u",
+            "avatar": "", "pts_total": None, "starters": [],
+        }
+
+    matchup = {"left": _team("Team A", "1", "2-1"), "right": _team("Team B", "2", "1-2")}
+    kw = dict(
+        status_by_pid={}, projections={}, players={}, teams={},
+        team_game_lookup={}, scoring_settings={},
+    )
+    html = mmod.render_matchup_slide(
+        "2026", matchup, w=1, proj_week=0,
+        div_records={1: (2, 0, 0), 2: (0, 1, 0)}, **kw)
+    assert "2-1 (2-0)" in html
+    assert "1-2 (0-1)" in html
+    # No div_records -> plain records.
+    plain = mmod.render_matchup_slide("2026", matchup, w=1, proj_week=0, **kw)
+    assert "2-1 (2-0)" not in plain
+    assert "2-1" in plain

@@ -7408,7 +7408,7 @@ def _clickable_team_name(owner, owner_to_rid=None, *, inner=None, cls="") -> str
 
 
 def render_standings_compact(team_stats, length=None, movement=None, owner_to_rid=None,
-                             divisions: dict = None) -> str:
+                             divisions: dict = None, div_records: dict = None) -> str:
     """Narrow standings for the dashboard left rail: Rank · Team · Record · PF.
 
     The full render_standings table has 8 columns and is too wide for a 340px
@@ -7416,6 +7416,9 @@ def render_standings_compact(team_stats, length=None, movement=None, owner_to_ri
     {owner: delta} map (positive = climbed since last week) rendered as a small
     arrow next to the rank. When ``divisions`` is active, rows group under
     division headers and ranks are playoff seeds (winners then wild cards).
+    ``div_records`` is an optional {roster_id: (w, l, t)} map of records vs
+    division opponents; when divisions are active the record renders as
+    "2-1 (2-0)".
     """
     if team_stats is None or team_stats.empty:
         return "<div class='muted' style='padding:12px 14px;'>No standings data yet.</div>"
@@ -7425,6 +7428,12 @@ def render_standings_compact(team_stats, length=None, movement=None, owner_to_ri
     _div_by_rid = (divisions or {}).get("by_rid") or {}
     _div_names = (divisions or {}).get("names") or {}
     _use_div = bool(_div_by_rid) and len({d for d in _div_by_rid.values() if d}) >= 2
+
+    # Division records (vs same-division opponents), passed in by the caller so
+    # the rail matches the dashboard's current week. Shown as "2-1 (2-0)"
+    # only when divisions are active.
+    from utils.standings_divisions import format_record
+    _div_records = div_records or {}
 
     def _row_div(owner) -> int:
         rid = (owner_to_rid or {}).get(str(owner))
@@ -7440,6 +7449,19 @@ def render_standings_compact(team_stats, length=None, movement=None, owner_to_ri
             or _div_by_rid.get(rid)
             or 0
         )
+
+    def _div_record_for(owner):
+        """(w, l, t) vs division opponents, or None when divisions are off."""
+        if not _use_div:
+            return None
+        rid = (owner_to_rid or {}).get(str(owner))
+        try:
+            rid_i = int(rid)
+        except (TypeError, ValueError):
+            return None
+        if not _div_by_rid.get(rid_i):
+            return None
+        return _div_records.get(rid_i, (0, 0, 0))
 
     df["_division"] = [_row_div(o) for o in df["owner"]]
     from utils.standings_divisions import assign_playoff_seeds
@@ -7479,9 +7501,9 @@ def render_standings_compact(team_stats, length=None, movement=None, owner_to_ri
             rows.append(_standings_div_header(_label, _div_counts.get(div_id, 0), 4))
             _prev_div = div_id
             _is_div_lead = True
-        record = f"{int(row['Wins'])}-{int(row['Losses'])}"
-        if int(row.get("Ties", 0) or 0):
-            record += f"-{int(row['Ties'])}"
+        record = format_record(int(row['Wins']), int(row['Losses']),
+                               int(row.get("Ties", 0) or 0),
+                               _div_record_for(row["owner"]))
         avatar = row.get("avatar", "")
         img = (
             f"<img class='avatar sm' src='{avatar}' alt='' loading='lazy' decoding='async' onerror=\"this.style.display='none'\">"
@@ -7683,6 +7705,12 @@ def render_standings(team_stats, length, all_play: dict = None,
     _div_names = (divisions or {}).get("names") or {}
     _use_div = bool(_div_by_rid) and len({d for d in _div_by_rid.values() if d}) >= 2
 
+    # Division records (vs same-division opponents) from the same weekly frame
+    # the table is built on, so the week selector's "through week N" view stays
+    # exact. Shown as "2-1 (2-0)" only when divisions are active.
+    from utils.standings_divisions import division_records, format_record
+    _div_records = division_records(detailed_df, _div_by_rid) if _use_div else {}
+
     def _row_div(owner) -> int:
         rid = (owner_to_rid or {}).get(str(owner))
         if rid is None:
@@ -7697,6 +7725,19 @@ def render_standings(team_stats, length, all_play: dict = None,
             or _div_by_rid.get(rid)
             or 0
         )
+
+    def _div_record_for(owner):
+        """(w, l, t) vs division opponents, or None when divisions are off."""
+        if not _use_div:
+            return None
+        rid = (owner_to_rid or {}).get(str(owner))
+        try:
+            rid_i = int(rid)
+        except (TypeError, ValueError):
+            return None
+        if not _div_by_rid.get(rid_i):
+            return None
+        return _div_records.get(rid_i, (0, 0, 0))
 
     df["_division"] = [_row_div(o) for o in df["owner"]]
 
@@ -7827,9 +7868,9 @@ def render_standings(team_stats, length, all_play: dict = None,
             _prev_div = div_id
             _is_div_lead = True
 
-        record = f"{int(row['Wins'])}-{int(row['Losses'])}"
-        if int(row.get("Ties", 0)):
-            record += f"-{int(row['Ties'])}"
+        record = format_record(int(row['Wins']), int(row['Losses']),
+                               int(row.get("Ties", 0) or 0),
+                               _div_record_for(row["owner"]))
 
         streak = row.get("Streak", "")
         avatar = row.get("avatar", "")

@@ -28877,6 +28877,7 @@ button:disabled {
 .weekly-recap .recap-team-name { color:var(--text); font-size:14px; font-weight:650; overflow-wrap:anywhere; }
 .weekly-recap .recap-team--winner .recap-team-name, .weekly-recap .recap-team--winner .recap-team-score { font-weight:850; }
 .weekly-recap .recap-team-manager { color:var(--muted); font-size:10px; overflow-wrap:anywhere; }
+.weekly-recap .recap-team-record { color:var(--muted); font-size:10px; font-variant-numeric:tabular-nums; }
 .weekly-recap .recap-team-score { display:none; font-size:20px; font-variant-numeric:tabular-nums; white-space:nowrap; }
 .weekly-recap .recap-matchup-score { text-align:center; }
 .weekly-recap .recap-matchup-scoreline { font-size:17px; font-weight:800; font-variant-numeric:tabular-nums; white-space:nowrap; }
