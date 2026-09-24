@@ -140,6 +140,20 @@ def _matchups():
     return mmod
 
 
+@pytest.fixture(autouse=True)
+def _offline_sleeper_skill_gap_fill(monkeypatch):
+    """Keep the board's Sleeper skill gap-fill offline.
+
+    These tests stub load_week_stats (the league snapshot) to stage
+    stale-leftover scenarios, but render_matchup_slide also gap-fills QB/RB/WR/TE
+    lines from the on-disk Sleeper per-player file via load_sleeper_week_stats.
+    A real file left on disk by an earlier test's runtime backfill would leak
+    real lines into these scenarios (pre-kickoff, no such file could exist).
+    """
+    mmod = _matchups()
+    monkeypatch.setattr(mmod, "load_sleeper_week_stats", lambda *_a, **_k: {})
+
+
 DANIELS_STATS = {
     "WAS": {
         "QB": {
@@ -538,6 +552,12 @@ def test_matchup_trusts_past_week_line_despite_lagging_code(monkeypatch):
     monkeypatch.setattr(mmod, "build_team_schedule_lookup", lambda *_a, **_k: {})
     monkeypatch.setattr(mmod, "_allow_live_game_indicators", lambda *_a, **_k: True)
     monkeypatch.setattr(mmod, "get_nfl_scores_for_date", lambda *_a, **_k: None)
+    # w < proj_week arms the past-week Sleeper backfill; keep it offline --
+    # the file must not be downloaded (or left on disk for later tests).
+    monkeypatch.setattr(
+        "data_building.external_data.sleeper_bulk_stats.fetch_week_stats",
+        lambda *_a, **_k: {},
+    )
 
     html = mmod.render_matchup_slide(
         "2026", _daniels_matchup(), w=1, proj_week=3,
