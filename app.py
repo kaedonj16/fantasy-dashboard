@@ -12054,6 +12054,30 @@ def api_start_sit_options():
 
     current_week = int(ctx.get("current_week") or 1)  # default week 1 in offseason
 
+    # ── Precomputed start-score bundles (daily cron) ────────────────────────
+    # When this league's scoring is exactly covered by one canonical variant
+    # and the batch has a bundle for every rostered player, the expensive
+    # per-request gathering below (stat-file scoring, usage map, conditions,
+    # consistency) is skipped: each player's score inputs come from the bundle
+    # plus a live injury overlay. Anything else falls back to the live path.
+    _ss_variant = None
+    _ss_bundles: dict = {}
+    try:
+        from data_building.start_score_bundle import (
+            load_start_score_bundles as _ss_load_bundles,
+            variant_for_exact_scoring as _ss_variant_for,
+        )
+        _ss_variant = _ss_variant_for(
+            ctx.get("raw_scoring_settings") or ctx.get("scoring_settings") or {})
+        if _ss_variant:
+            _got = _ss_load_bundles(season, current_week, _ss_variant, player_ids) or {}
+            if len(_got) >= len(set(player_ids)) and player_ids:
+                _ss_bundles = _got
+    except Exception:
+        logger.debug("[start-sit] bundle lookup skipped", exc_info=True)
+        _ss_variant, _ss_bundles = None, {}
+    _ss_use_bundles = bool(_ss_variant and _ss_bundles)
+
     # ── FPTS-against data (for "Def vs pos" pts/gm display) ──────────────────
     fpts_against: dict = {}
     try:
@@ -12114,14 +12138,16 @@ def api_start_sit_options():
 
     # ── Live game conditions: Vegas implied team totals + weather ─────────────
     # Cached and fully best-effort; on any failure rows just fall back to the
-    # static dome/cold venue tags.
+    # static dome/cold venue tags. Skipped when precomputed bundles cover the
+    # roster (implied_total / weather_kind come from the bundle instead).
     game_conditions: dict = {}
-    try:
-        from utils.game_conditions import build_week_conditions
-        if week_games:
-            game_conditions = build_week_conditions(season, current_week, week_games)
-    except Exception:
-        logger.debug("suppressed exception", exc_info=True)
+    if not _ss_use_bundles:
+        try:
+            from utils.game_conditions import build_week_conditions
+            if week_games:
+                game_conditions = build_week_conditions(season, current_week, week_games)
+        except Exception:
+            logger.debug("suppressed exception", exc_info=True)
 
     # ── Opponent play volume ("opp plays faced"): pace / possession context ──
     # Offensive plays each NFL defense faces per game, from open play-by-play.
@@ -12146,27 +12172,30 @@ def api_start_sit_options():
     weekly_pts_map: dict = {}
     prior_pts_map: dict = {}
     prior_season: Optional[int] = None
-    try:
-        from utils.consistency import BLEND_FULL_SEASON as _BLEND_FULL
-        from utils.league_scoring import stamp_scoring_aliases
-        _raw_ss = ctx.get("raw_scoring_settings") or ctx.get("scoring_settings") or {}
-        _eff_ss = stamp_scoring_aliases(_raw_ss) if _raw_ss else {}
-        weekly_pts_map = _load_season_weekly_points(season, _eff_ss)
-        # Per-player gate: load last season while ANY rostered player is still
-        # inside the crossfade window (fewer than a full crossfade's worth of
-        # current games), so a low-games player keeps blending even midseason
-        # after the league leaders have gone pure-current.
-        _needs_prior = any(
-            len(weekly_pts_map.get(str(_pid)) or []) < _BLEND_FULL for _pid in player_ids
-        )
-        if _needs_prior:
-            for _py in (season - 1, season - 2):
-                _pm = _load_season_weekly_points(_py, _eff_ss)
-                if max((len(v) for v in _pm.values()), default=0) >= 3:
-                    prior_pts_map, prior_season = _pm, _py
-                    break
-    except Exception:
-        logger.debug("suppressed exception", exc_info=True)
+    # Skipped when precomputed bundles cover the roster (bust_rate comes from
+    # the bundle instead).
+    if not _ss_use_bundles:
+        try:
+            from utils.consistency import BLEND_FULL_SEASON as _BLEND_FULL
+            from utils.league_scoring import stamp_scoring_aliases
+            _raw_ss = ctx.get("raw_scoring_settings") or ctx.get("scoring_settings") or {}
+            _eff_ss = stamp_scoring_aliases(_raw_ss) if _raw_ss else {}
+            weekly_pts_map = _load_season_weekly_points(season, _eff_ss)
+            # Per-player gate: load last season while ANY rostered player is still
+            # inside the crossfade window (fewer than a full crossfade's worth of
+            # current games), so a low-games player keeps blending even midseason
+            # after the league leaders have gone pure-current.
+            _needs_prior = any(
+                len(weekly_pts_map.get(str(_pid)) or []) < _BLEND_FULL for _pid in player_ids
+            )
+            if _needs_prior:
+                for _py in (season - 1, season - 2):
+                    _pm = _load_season_weekly_points(_py, _eff_ss)
+                    if max((len(v) for v in _pm.values()), default=0) >= 3:
+                        prior_pts_map, prior_season = _pm, _py
+                        break
+        except Exception:
+            logger.debug("suppressed exception", exc_info=True)
 
     def _resolve_consistency(pid: str, pos: str):
         return _blended_consistency(
@@ -12177,22 +12206,25 @@ def api_start_sit_options():
     # ── Weekly projections scored with this league's settings ────────────────
     # Score the raw Sleeper week file the same way the player modal does
     # (weekly_projection_points). A flattened ctx bundle can lag a scoring
-    # fix, so it is only a fallback.
+    # fix, so it is only a fallback. Skipped when precomputed bundles cover
+    # the roster (proj_pts comes from the bundle instead).
     from utils.fantasy_scoring import weekly_projection_points as _ss_wpp
     _ss_scoring = ctx.get("raw_scoring_settings") or ctx.get("scoring_settings") or {}
     _raw_week_map: dict = {}
-    try:
-        from utils.utils import load_week_projection as _ss_lwp
-        _raw_week_map = _ss_lwp(int(season), int(current_week)) or {}
-    except Exception:
-        _raw_week_map = {}
-    proj_by_week = ctx.get("proj_by_week")
-    if not proj_by_week:
+    _wk_proj: dict = {}
+    if not _ss_use_bundles:
         try:
-            proj_by_week = build_projections_by_week(season, 18, _ss_scoring)
+            from utils.utils import load_week_projection as _ss_lwp
+            _raw_week_map = _ss_lwp(int(season), int(current_week)) or {}
         except Exception:
-            proj_by_week = {}
-    _wk_proj = ((proj_by_week or {}).get(current_week) or {}).get("projections") or {}
+            _raw_week_map = {}
+        proj_by_week = ctx.get("proj_by_week")
+        if not proj_by_week:
+            try:
+                proj_by_week = build_projections_by_week(season, 18, _ss_scoring)
+            except Exception:
+                proj_by_week = {}
+        _wk_proj = ((proj_by_week or {}).get(current_week) or {}).get("projections") or {}
 
     def _lookup_proj(pid: str, pos: str = ""):
         pts = _ss_wpp(_raw_week_map, pid, _ss_scoring, pos)
@@ -12214,29 +12246,35 @@ def api_start_sit_options():
     # re-read and re-parse the weekly stat files on every load. Identical
     # inputs to the inline loop this replaces (same files in the same order,
     # same week_stat_points scorer, same >0 filter, last-4 files for recent).
+    # Skipped when precomputed bundles cover the roster (ppg comes from the
+    # bundle instead).
     season_ppg: dict = {}
     recent_ppg_map: dict = {}  # last 4 weeks
-    try:
-        _ws_pids, _ws_flat = _season_weekstat_points(season, _ss_scoring) or ((), ())
-        for _i, _pid in enumerate(_ws_pids):
-            _pid = str(_pid)
-            _base = _i * _WEEKSTAT_NCOLS
-            _n = _ws_flat[_base + 1]
-            if _n > 0:
-                season_ppg[_pid] = round(_ws_flat[_base] / _n, 1)
-            _rvals = [_v for _v in _ws_flat[_base + 2:_base + 6] if _v == _v]
-            if _rvals:
-                recent_ppg_map[_pid] = round(sum(_rvals) / len(_rvals), 1)
-    except Exception:
-        logger.debug("suppressed exception", exc_info=True)
+    if not _ss_use_bundles:
+        try:
+            _ws_pids, _ws_flat = _season_weekstat_points(season, _ss_scoring) or ((), ())
+            for _i, _pid in enumerate(_ws_pids):
+                _pid = str(_pid)
+                _base = _i * _WEEKSTAT_NCOLS
+                _n = _ws_flat[_base + 1]
+                if _n > 0:
+                    season_ppg[_pid] = round(_ws_flat[_base] / _n, 1)
+                _rvals = [_v for _v in _ws_flat[_base + 2:_base + 6] if _v == _v]
+                if _rvals:
+                    recent_ppg_map[_pid] = round(sum(_rvals) / len(_rvals), 1)
+        except Exception:
+            logger.debug("suppressed exception", exc_info=True)
 
     # ── Weekly usage trends: rising/falling role nudges close calls ──────────
+    # Skipped when precomputed bundles cover the roster (usage inputs come
+    # from the bundle instead). This is the per-request full-season DB scan.
     _ss_usage_trends: dict = {}
-    try:
-        from data_building.weekly_metrics import get_usage_trends as _get_ut
-        _ss_usage_trends = _get_ut(int(season))
-    except Exception:
-        _ss_usage_trends = {}
+    if not _ss_use_bundles:
+        try:
+            from data_building.weekly_metrics import get_usage_trends as _get_ut
+            _ss_usage_trends = _get_ut(int(season))
+        except Exception:
+            _ss_usage_trends = {}
 
     # Per-position 0-100 anchors so the compare can show the same position-
     # relative Start/Sit index the player modal / Compare page show. Uses the
@@ -12264,14 +12302,25 @@ def api_start_sit_options():
         on_bye = bool(opponent_map) and team not in opponent_map
         opp_label = opp_label_map.get(team, "BYE" if on_bye else "")
 
-        s_ppg = season_ppg.get(pid, 0.0)
-        recent_ppg = recent_ppg_map.get(pid, 0.0)
+        # Precomputed bundle for this player (None on the live fallback path).
+        # Injury status always comes from the live player map below, never the
+        # bundle: Q tags change intraday, the batch runs daily.
+        _bun = _ss_bundles.get(pid) if _ss_use_bundles else None
+        if _bun is not None:
+            s_ppg = _bun.get("season_ppg") or 0.0
+            recent_ppg = _bun.get("recent_ppg") or 0.0
+        else:
+            s_ppg = season_ppg.get(pid, 0.0)
+            recent_ppg = recent_ppg_map.get(pid, 0.0)
         full_player = players_full.get(pid) or {}
         raw_status = str(full_player.get("injury_status") or full_player.get("status") or "").strip()
         injury_status = None if raw_status in {"", "active", "Active", "ACT"} else raw_status
         # Projection = Sleeper weekly points for this week. Do not substitute
         # last-season or in-season actual PPG when Sleeper has 0 / no line.
-        proj_pts = _lookup_proj(pid, pos)
+        if _bun is not None:
+            proj_pts = _bun.get("proj_pts") or 0.0
+        else:
+            proj_pts = _lookup_proj(pid, pos)
 
         fpts_vs = round(fpts_against.get(opponent, {}).get(pos, 0.0), 1) if opponent else 0.0
         # Z-score matchup rank (rank 1 = easiest); fall back to fpts-against rank.
@@ -12287,29 +12336,47 @@ def api_start_sit_options():
         else:
             def_rank, def_total = None, 32
 
-        _imp_ss = (game_conditions.get(team) or {}).get("implied_total") if not on_bye else None
-        _wx_ss = (game_conditions.get(team) or {}).get("weather") if not on_bye else None
-        _wx_kind = (_wx_ss or {}).get("kind") if isinstance(_wx_ss, dict) else None
+        if _bun is not None:
+            _imp_ss = _bun.get("implied_total") if not on_bye else None
+            _wx_kind = _bun.get("weather_kind") if not on_bye else None
+        else:
+            _imp_ss = (game_conditions.get(team) or {}).get("implied_total") if not on_bye else None
+            _wx_ss = (game_conditions.get(team) or {}).get("weather") if not on_bye else None
+            _wx_kind = (_wx_ss or {}).get("kind") if isinstance(_wx_ss, dict) else None
 
         # Raw opponent play volume is display context, not itself a score input.
         _pv_ss = (_play_volume_context(team_play_volume, opponent, _tpv_nfl_avg)
                   if (opponent and not on_bye) else None)
 
         from utils.start_sit_context import expected_plays_context, role_confidence_from_trend
-        _pace_ss = expected_plays_context(team_play_volume, team, opponent, _tpv_nfl_avg)
+        if _bun is not None:
+            _pace_ss = {"expected_team_plays": _bun.get("expected_team_plays"),
+                        "league_average_plays": _bun.get("league_average_plays")}
+        else:
+            _pace_ss = expected_plays_context(team_play_volume, team, opponent, _tpv_nfl_avg)
 
         # ── Start/sit score: one engine (utils.start_sit_score). Matchup is not
         # re-multiplied -- weekly proj already reflects the opponent. Weather and
         # Vegas are applied here because projection feeds usually omit them.
         from utils.start_sit_score import compute_start_score, likely_range
-        _ut_ss = _ss_usage_trends.get(pid) or {}
-        _role_conf_ss = role_confidence_from_trend(_ut_ss)
+        if _bun is not None:
+            _ut_ss = {"delta": _bun.get("usage_delta"),
+                      "season_avg": _bun.get("usage_season_avg")}
+            _role_conf_ss = _bun.get("role_confidence")
+        else:
+            _ut_ss = _ss_usage_trends.get(pid) or {}
+            _role_conf_ss = role_confidence_from_trend(_ut_ss)
         usage_delta = _ut_ss.get("delta")
-        _cons = _resolve_consistency(pid, pos)
-        _bust = None
-        if _cons and not _cons.get("small_sample"):
-            _bust = _cons.get("bust_rate")
-        _ol_ss = _oline_for_player(season, team, pos)
+        if _bun is not None:
+            _bust = _bun.get("bust_rate")
+            _ol_ss = ({"primary_value": _bun.get("oline_index")}
+                      if _bun.get("oline_index") is not None else None)
+        else:
+            _cons = _resolve_consistency(pid, pos)
+            _bust = None
+            if _cons and not _cons.get("small_sample"):
+                _bust = _cons.get("bust_rate")
+            _ol_ss = _oline_for_player(season, team, pos)
         score, _factors, demotion = compute_start_score(
             proj_pts,
             on_bye=on_bye,
