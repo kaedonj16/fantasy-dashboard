@@ -31,6 +31,7 @@ CRON_STEPS = (
     "trade_intel_discovery",
     "trade_intel_crawl",
     "trade_intel_analytics",
+    "build_start_score_bundles",
     "notify_rival_trades",
     "trade_time_value_backfill",
     "espn_injury_return_dates",
@@ -712,6 +713,23 @@ print(f"[cron] Team play volume: {{teams}} teams persisted for {{res['season']}}
 print(f"team_play_volume season={{res['season']}} teams={{teams}} "
       f"avg={{res.get('nfl_avg_plays_faced_pg')}} persisted=true")
 """, "build_team_play_volume", timeout=900)
+
+    # ------------------------------------------------------------------ #
+    # Step 4e: Start/sit score input bundles (per player x variant)       #
+    # Daily precompute of every compute_start_score input so the Start/Sit #
+    # page becomes a DB lookup + live injury overlay + pure scoring,      #
+    # instead of re-reading stat files and rebuilding the usage map per   #
+    # request. Needs projections (step 2), usage (4a), o-line (4c) and    #
+    # play volume (4d) above.                                            #
+    # ------------------------------------------------------------------ #
+    _run_step(f"""
+from dotenv import load_dotenv; load_dotenv()
+from data_building.start_score_bundle import build_start_score_bundles
+summary = build_start_score_bundles({season!r}, {week!r})
+print(f"[cron] Start-score bundles: {{summary}}")
+if not summary.get("ok"):
+    raise RuntimeError(f"start-score bundles failed: {{summary.get('error')}}")
+""", "build_start_score_bundles", timeout=1800)
 
     # ------------------------------------------------------------------ #
     # Step 5: Model values                                                #
