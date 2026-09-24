@@ -25,7 +25,7 @@ def test_scoreboard_uses_explicit_side_classes_not_dom_position():
     assert ".recap-team--right .recap-team-identity" in css
     assert ".recap-team--right .recap-top-performer" in css
     assert ".recap-team:last-child" not in css
-    assert page.index("'right')") < page.index("recap-matchup-footer")
+    assert page.index("'right', loser=not tied)") < page.index("recap-matchup-footer")
 
 
 def test_shared_analysis_resolves_raw_processed_kicker_and_defense_and_zero():
