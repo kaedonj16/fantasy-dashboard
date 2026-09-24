@@ -1,8 +1,8 @@
 """NFL team schedule + box-score shaping for the player-modal Team tab.
 
-Reuses Tank01 schedule caches (``load_week_schedule``), scoreboard
-(``get_nfl_scores_for_date``), and box scores (``fetch_tank_boxscore`` /
-shared redzone cache). Pure-ish helpers live here so the Team-tab route and
+Reuses the on-disk week schedule caches (``load_week_schedule``), the ESPN
+scoreboard (``get_nfl_scores_for_date``), and box scores (shared redzone
+cache). Pure-ish helpers live here so the Team-tab route and
 lazy box-score endpoint stay thin and unit-testable without Flask.
 
 Avoid importing ``utils.utils`` at module load or from lightweight helpers —
@@ -351,9 +351,9 @@ def build_team_schedule(
 ) -> list[dict]:
     """Chronological schedule rows for one NFL team in a season.
 
-    Regular season weeks 1–18 come from on-disk ``load_week_schedule``. Missing
+    Regular season weeks 1-18 come from on-disk ``load_week_schedule``. Missing
     weeks become bye rows (or the known ``bye_week``). Optional postseason weeks
-    are fetched via Tank01 ``seasonType=post`` when available.
+    are fetched via the ESPN scoreboard when available.
 
     ``load_week_fn`` is injectable so unit tests never import ``utils.utils``
     (which requires ``requests`` — absent from the slim lint CI job).
