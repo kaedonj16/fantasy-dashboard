@@ -634,11 +634,12 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
             nm = team_link(owner, rid, name, extra_class="recap-team-name-link")
             handle = username_by_rid.get(str(rid)) or owner
             _rec = _record_by_rid.get(str(rid)) or ""
-            _rec_html = f'<div class="recap-team-record">{_rec}</div>' if _rec else ""
+            _rec_html = (f' <span class="recap-team-record">· {_rec}</span>'
+                         if _rec else "")
             return f"""<div class="recap-team recap-team--{side}{' recap-team--winner' if winner else ''}{' recap-team--loser' if loser else ''}">
               <div class="recap-team-identity">{ava}
                 <div class="recap-team-copy"><div class="recap-team-name">{nm}</div>
-                <div class="recap-team-manager">@{html.escape(handle)}</div>{_rec_html}</div>
+                <div class="recap-team-manager">@{html.escape(handle)}{_rec_html}</div></div>
                 <strong class="recap-team-score">{points:.2f}</strong></div>
               {top_performer_html(rid)}
             </div>"""

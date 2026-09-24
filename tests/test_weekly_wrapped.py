@@ -18,13 +18,13 @@ def _mock_week_ctx():
     from dashboard_services.pages import history_page as H  # noqa: F401
 
     df = pd.DataFrame([
-        {"week": 3, "owner": "Alpha", "points": 150.5, "matchup_id": 1, "finalized": True},
-        {"week": 3, "owner": "Beta", "points": 90.2, "matchup_id": 1, "finalized": True},
-        {"week": 3, "owner": "Gamma", "points": 120.0, "matchup_id": 2, "finalized": True},
-        {"week": 3, "owner": "Delta", "points": 119.4, "matchup_id": 2, "finalized": True},
+        {"week": 3, "owner": "Alpha", "points": 150.5, "matchup_id": 1, "finalized": True, "roster_id": "r1"},
+        {"week": 3, "owner": "Beta", "points": 90.2, "matchup_id": 1, "finalized": True, "roster_id": "r2"},
+        {"week": 3, "owner": "Gamma", "points": 120.0, "matchup_id": 2, "finalized": True, "roster_id": "r3"},
+        {"week": 3, "owner": "Delta", "points": 119.4, "matchup_id": 2, "finalized": True, "roster_id": "r4"},
         # Week 4: nothing finalized yet (projections only).
-        {"week": 4, "owner": "Alpha", "points": 0.0, "matchup_id": 1, "finalized": False},
-        {"week": 4, "owner": "Beta", "points": 0.0, "matchup_id": 1, "finalized": False},
+        {"week": 4, "owner": "Alpha", "points": 0.0, "matchup_id": 1, "finalized": False, "roster_id": "r1"},
+        {"week": 4, "owner": "Beta", "points": 0.0, "matchup_id": 1, "finalized": False, "roster_id": "r2"},
     ])
     return {
         "platform": "sleeper",
@@ -39,6 +39,7 @@ def _mock_week_ctx():
             "p3": {"name": "Star WR", "pos": "WR", "team": "DAL"},
             "p4": {"name": "Star TE", "pos": "TE", "team": "BAL"},
             "p5": {"name": "Cold K", "pos": "K", "team": "NE"},
+            "p6": {"name": "Top D", "pos": "DEF", "team": "SF"},
         },
     }
 
@@ -48,8 +49,8 @@ def _fake_boxscores(platform, league_id, week, season):
     return [
         {"players_points": {"p1": 32.5, "p2": 28.0, "p5": 1.2},
          "starters": ["p1", "p2", "p5"]},
-        {"players_points": {"p3": 24.1, "p4": 18.6},
-         "starters": ["p3", "p4"]},
+        {"players_points": {"p3": 24.1, "p4": 18.6, "p6": 22.0},
+         "starters": ["p3", "p4", "p6"]},
     ]
 
 
@@ -116,6 +117,115 @@ def test_weekly_top_player_pos_leaders_and_dud():
     dud = by_kind["dud"]
     assert dud["label"] == "Cold K"
     assert abs(float(dud["big"]) - 1.2) < 0.01
+
+
+def test_weekly_pos_leaders_include_kicker_and_defense():
+    from unittest import mock
+    from dashboard_services.pages import history_page as H
+
+    ctx = _mock_week_ctx()
+    with mock.patch("dashboard_services.platform_api.get_matchups",
+                    side_effect=_fake_boxscores):
+        slides = H._build_weekly_wrapped_slides(ctx, "Test League", 2026, 3)
+
+    by_kind = {s["kind"]: s for s in slides}
+    rows = dict((k, (n, v)) for k, n, v in by_kind["posleaders"]["rows"])
+    assert rows["K"][0] == "Cold K"
+    assert abs(float(rows["K"][1]) - 1.2) < 0.01
+    assert rows["DEF"][0] == "Top D"
+    assert abs(float(rows["DEF"][1]) - 22.0) < 0.01
+
+
+def test_weekly_lowest_score_slide():
+    from dashboard_services.pages import history_page as H
+
+    slides = H._build_weekly_wrapped_slides(_mock_week_ctx(), "Test League", 2026, 3,
+                                            include_players=False)
+    by_kind = {s["kind"]: s for s in slides}
+
+    # Beta 90.2 is the week's lowest finalized team total (Alpha 150.5 highest).
+    lo = by_kind["lowscore"]
+    assert lo["label"] == "Beta"
+    assert abs(float(lo["big"]) - 90.2) < 0.01
+    assert lo["eyebrow"] == "LOWEST SCORE · WEEK 3"
+
+
+def test_weekly_gotw_slide_previews_next_week():
+    from unittest import mock
+    from dashboard_services.pages import history_page as H
+
+    ctx = _mock_week_ctx()
+    game = {"team_a": "Alpha", "team_b": "Beta",
+            "roster_id_a": "r1", "roster_id_b": "r2",
+            "rank_a": 1, "rank_b": 2, "record_a": "2-0", "record_b": "1-1",
+            "win_prob_a": 58, "proj_a": 120.4, "proj_b": 118.9,
+            "target_week": 4}
+    with mock.patch.object(H, "_next_week_gotw_game", return_value=game):
+        slides = H._build_weekly_wrapped_slides(ctx, "Test League", 2026, 3,
+                                                include_players=True)
+
+    by_kind = {s["kind"]: s for s in slides}
+    gotw = by_kind["gotw"]
+    assert gotw["eyebrow"] == "WEEK 4 · GAME OF THE WEEK"
+    assert gotw["big"] == "Alpha vs Beta"
+    assert gotw["preview_teams"] == ["Alpha", "Beta"]
+    assert gotw["win_prob_a"] == 58
+    assert gotw["why"] == "#1 (2-0) vs #2 (1-1)"
+    assert gotw["scoreline"] == "120.4-118.9"
+    assert gotw["sub"] == "Projected 120.4–118.9"
+    # Teaser goes last in the deck (before the recap finale card).
+    assert slides[-1]["kind"] == "gotw"
+
+
+def test_weekly_gotw_slide_skipped_without_game():
+    from unittest import mock
+    from dashboard_services.pages import history_page as H
+
+    ctx = _mock_week_ctx()
+    with mock.patch.object(H, "_next_week_gotw_game", return_value=None):
+        slides = H._build_weekly_wrapped_slides(ctx, "Test League", 2026, 3,
+                                                include_players=True)
+
+    assert "gotw" not in {s["kind"] for s in slides}
+
+
+def test_weekly_gotw_slide_skipped_in_cheap_check():
+    from unittest import mock
+    from dashboard_services.pages import history_page as H
+
+    ctx = _mock_week_ctx()
+    # The hub's launcher check must never trigger the next-week fetch.
+    with mock.patch.object(H, "_next_week_gotw_game",
+                           side_effect=AssertionError("must not fetch")):
+        slides = H._build_weekly_wrapped_slides(ctx, "Test League", 2026, 3,
+                                                include_players=False)
+
+    assert "gotw" not in {s["kind"] for s in slides}
+
+
+def test_weekly_gotw_preview_markup():
+    from dashboard_services.pages import history_page as H
+
+    slides = [
+        {"kind": "intro", "eyebrow": "WEEK 3", "big": "Test League", "num": False,
+         "dp": 0, "suffix": "", "label": "", "sub": "x", "bgword": "W3"},
+        {"kind": "topscore", "eyebrow": "HIGH", "big": "150.5", "num": True,
+         "dp": 1, "suffix": " PTS", "label": "Alpha", "sub": "x"},
+        {**{"kind": "gotw", "eyebrow": "WEEK 4 · GAME OF THE WEEK",
+            "big": "Alpha vs Beta", "num": False, "dp": 0, "suffix": "",
+            "label": "", "sub": "Projected 120.4–118.9", "bgword": "GOTW",
+            "preview_teams": ["Alpha", "Beta"], "win_prob_a": 58,
+            "why": "#1 (2-0) vs #2 (1-1)"},
+         "scoreline": "120.4-118.9"},
+    ]
+    html = H._wrapped_overlay_markup(slides, None, ns="preview",
+                                     footer_label="WEEK 3")
+    assert "wrapped-duel-t'>Alpha<" in html
+    assert "wrapped-duel-t'>Beta<" in html
+    assert "wrapped-why'>#1 (2-0) vs #2 (1-1)<" in html
+    assert "wrapped-winbar-pct'>58%<" in html
+    assert "width:58%" in html
+    assert "wrapped-vs-hero-w" not in html  # no winner styling in a preview
 
 
 def test_weekly_overlay_footer_and_recap_finale(offline_client):
