@@ -13378,7 +13378,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     const emptyState = document.getElementById('gm-memo-empty');
     const loadingState = document.getElementById('gm-memo-loading');
-    const summaryState = document.getElementById('gm-memo-summary');
+    const summaryState = document.getElementById('gm-memo-result');
 
     // Show loading, hide empty state
     generateGmMemoBtn.disabled = true;

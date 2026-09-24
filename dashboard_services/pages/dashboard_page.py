@@ -217,7 +217,7 @@ def build_dashboard_body(ctx: dict) -> str:
                 <div class="loading-spinner" style="margin: 10px auto; width: 30px; height: 30px; border: 3px solid var(--border); border-radius: 50%; border-top-color: var(--accent); animation: spin 1s linear infinite; border-right-color: transparent;"></div>
               </div>
             </div>
-            <div id="gm-memo-summary" style="display:none;"></div>
+            <div id="gm-memo-result" style="display:none;"></div>
           </div>
         </section>
         """

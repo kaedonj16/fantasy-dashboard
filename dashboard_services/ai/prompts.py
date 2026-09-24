@@ -227,6 +227,17 @@ rebuilds, or multi-year windows.
 """ + "\n" + FRONT_OFFICE_REPORT_GROUND_RULES + "\n" + REDRAFT_HONESTY_RULES
 
 
+def _for_trade_target_label(g0: dict) -> str:
+    """Human label for a trade target. Age/value are optional; minimal test
+    fixtures may carry only id/name/position."""
+    extra = ""
+    if g0.get("age") is not None:
+        extra += f", age {g0['age']}"
+    if g0.get("value") is not None:
+        extra += f", value {g0['value']}"
+    return f"{g0.get('name')} ({g0.get('position')}{extra})"
+
+
 def build_front_office_prompt_payload(data: dict) -> dict:
     """Compact JSON the model sees. Numbers are precomputed; prose is its job."""
     grades = data.get("grades") or []
@@ -251,10 +262,10 @@ def build_front_office_prompt_payload(data: dict) -> dict:
         "weakest_room": f"{worst['pos']} ({worst['grade']}, {worst['rank']} of {worst['of']})" if worst else None,
         "roster_top_15": [
             {
-                "name": r["name"], "pos": r["position"], "team": r["team"],
-                "age": r["age"], "value": r["value"],
-                "pos_rank": r["pos_rank_label"] or None, "role": r["role"],
-                "injury": r["injury"] or None,
+                "name": r.get("name"), "pos": r.get("position"), "team": r.get("team"),
+                "age": r.get("age"), "value": r.get("value"),
+                "pos_rank": r.get("pos_rank_label") or None, "role": r.get("role"),
+                "injury": r.get("injury") or None,
             }
             for r in (data.get("roster_rows") or [])[:15]
         ],
@@ -264,13 +275,12 @@ def build_front_office_prompt_payload(data: dict) -> dict:
         "this_week": data.get("this_week"),
         "trade_targets": [
             {
-                "target": (
-                    f"{t['gets'][0]['name']} ({t['gets'][0]['position']}, "
-                    f"age {t['gets'][0]['age']}, value {t['gets'][0]['value']})"
-                ),
+                "target": _for_trade_target_label(t["gets"][0]),
                 "target_id": t["gets"][0]["id"],
                 "you_give": ", ".join(
-                    f"{g['name']} ({g['position']}, value {g['value']})" for g in t["gives"]
+                    f"{g.get('name')} ({g.get('position')}"
+                    f"{', value ' + str(g['value']) if g.get('value') is not None else ''})"
+                    for g in t["gives"]
                 ),
                 "partner": t["partner"],
             }
@@ -278,14 +288,14 @@ def build_front_office_prompt_payload(data: dict) -> dict:
         ],
         "waiver_targets": [
             {
-                "name": w["name"], "id": w["id"], "pos": w["position"],
-                "team": w["team"], "value": w["value"],
-                "pos_rank": w["pos_rank_label"] or None,
+                "name": w.get("name"), "id": w.get("id"), "pos": w.get("position"),
+                "team": w.get("team"), "value": w.get("value"),
+                "pos_rank": w.get("pos_rank_label") or None,
             }
             for w in (data.get("waiver_targets") or [])
         ],
         "cut_candidates": [
-            {"name": c["name"], "pos": c["position"], "value": c["value"]}
+            {"name": c.get("name"), "pos": c.get("position"), "value": c.get("value")}
             for c in (data.get("cut_candidates") or [])
         ],
     }

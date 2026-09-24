@@ -41130,10 +41130,10 @@ a, button, [role="button"], [role="tab"], summary, label,
 .for-list li { margin-bottom: 6px; }
 .for-note { color: var(--text-muted); }
 .for-two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-@media (max-width: 560px) { .for-two-col { grid-template-columns: 1fr; } }
+@media (max-width: 600px) { .for-two-col { grid-template-columns: 1fr; } }
 
 .for-grades { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
-@media (max-width: 560px) { .for-grades { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 600px) { .for-grades { grid-template-columns: repeat(2, 1fr); } }
 .for-grade-card {
   border: 1px solid var(--border); border-radius: 12px; padding: 10px;
   text-align: center; background: var(--card-soft);
