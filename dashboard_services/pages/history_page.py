@@ -1324,6 +1324,18 @@ def _build_wrapped_slides(history_ctx: dict, summary: dict, league_name: str, se
     return slides
 
 
+def _wrapped_row_html(k, n, v) -> str:
+    """One wrapped rows-slide row: kicker, name, value."""
+    return (
+        "<div class='wrapped-row'>"
+        f"<div class='wrapped-row-k'>{_esc(str(k))}</div>"
+        "<div class='wrapped-row-m'>"
+        f"<span class='wrapped-row-n'>{_esc(str(n))}</span>"
+        + (f"<span class='wrapped-row-v'>{_esc(str(v))}</span>" if v not in (None, "") else "")
+        + "</div></div>"
+    )
+
+
 def _wrapped_overlay_markup(slides: list, share_data: dict | None = None,
                             season=None, ns: str = "wrapped",
                             footer_label: str | None = None) -> str:
@@ -1404,28 +1416,23 @@ def _wrapped_overlay_markup(slides: list, share_data: dict | None = None,
                     + "<span class='wrapped-recap-champ-lbl'>Champion</span></div>"
                 )
             hl = "".join(
-                "<div class='wrapped-row'>"
-                f"<div class='wrapped-row-k'>{_esc(str(h.get('k', '')))}</div>"
-                "<div class='wrapped-row-m'>"
-                f"<span class='wrapped-row-n'>{_esc(str(h.get('n', '')))}</span>"
-                + (f"<span class='wrapped-row-v'>{_esc(str(h.get('v', '')))}</span>" if h.get('v') not in (None, "") else "")
-                + "</div></div>"
                 # Cap at 4 on the slide (the Share card still draws up to 5) so a
                 # champion block + rows never overflow a small phone's story slide.
+                _wrapped_row_html(h.get("k", ""), h.get("n", ""), h.get("v"))
                 for h in (rd.get("highlights") or [])[:4]
             )
             body = kicker + champ_html + f"<div class='wrapped-rows'>{hl}</div>" + sub
-        elif s.get("rows"):
-            rows = "".join(
-                "<div class='wrapped-row'>"
-                f"<div class='wrapped-row-k'>{_esc(str(k))}</div>"
-                "<div class='wrapped-row-m'>"
-                f"<span class='wrapped-row-n'>{_esc(str(n))}</span>"
-                + (f"<span class='wrapped-row-v'>{_esc(str(v))}</span>" if v not in (None, "") else "")
-                + "</div></div>"
-                for k, n, v in s["rows"]
-            )
-            body = kicker + f"<div class='wrapped-rows'>{rows}</div>" + sub
+        elif s.get("sections") or s.get("rows"):
+            parts = []
+            if s.get("sections"):
+                for _sec in s["sections"]:
+                    parts.append(
+                        f"<div class='wrapped-row-sec'>{_esc(str(_sec.get('title', '')))}</div>")
+                    parts.extend(_wrapped_row_html(k, n, v)
+                                 for k, n, v in (_sec.get("rows") or []))
+            else:
+                parts.extend(_wrapped_row_html(k, n, v) for k, n, v in s["rows"])
+            body = kicker + f"<div class='wrapped-rows'>{''.join(parts)}</div>" + sub
         elif s.get("preview_teams"):
             # Next week's Game of the Week (a preview: no winner yet). Neutral
             # stacked hero, the projected win-% split bar, projected scoreline.
@@ -1855,8 +1862,9 @@ def _build_weekly_wrapped_slides(ctx: dict, league_name: str, season, week,
 
         # ── Coaching report: efficiency top 3, biggest bust, worst start/sit
         # calls — one slide built from the same datasets the recap's Lineup
-        # Review uses. Skipped unless at least 3 rows are available.
-        _coach_rows = []
+        # Review uses. Rows are grouped into labeled sections; skipped unless
+        # at least 3 rows are available.
+        _coach_sections = []
         try:
             from dashboard_services.season_efficiency import compute_league_season_efficiency
             from dashboard_services.pages.recap_page import _weekly_efficiency_rows
@@ -1870,12 +1878,15 @@ def _build_weekly_wrapped_slides(ctx: dict, league_name: str, season, week,
                 _owner_by_rid[str(_r)] = str(_o)
         except Exception:
             pass
+        _eff_section = []
         for _i, _er in enumerate(_eff_rows[:3]):
-            _coach_rows.append((
-                f"#{_i + 1} EFFICIENCY",
+            _eff_section.append((
+                f"#{_i + 1}",
                 _owner_by_rid.get(str(_er["rid"]), f"Team {_er['rid']}"),
                 f"{_er['eff']:.0f}%",
             ))
+        if _eff_section:
+            _coach_sections.append({"title": "LINEUP EFFICIENCY", "rows": _eff_section})
         try:
             from dashboard_services.recap_calculations import build_lineup_analysis
             _analysis = build_lineup_analysis(
@@ -1891,23 +1902,26 @@ def _build_weekly_wrapped_slides(ctx: dict, league_name: str, season, week,
                 # trustworthy projection data (both rank raw starter points).
                 if str(_b.get("name") or "") != str((dud or {}).get("name") or ""):
                     _bmeta = " · ".join(x for x in [_b.get("pos"), _b.get("nfl")] if x)
-                    _coach_rows.append((
-                        "BIGGEST BUST",
+                    _coach_sections.append({"title": "BIGGEST BUST", "rows": [(
+                        "",
                         str(_b.get("name") or "—") + (f" ({_bmeta})" if _bmeta else ""),
                         f"{float(_b.get('pts') or 0):.1f} PTS",
-                    ))
-            for _mo in (_analysis.get("missed_opportunities") or [])[:2]:
+                    )]})
+            _miss_section = []
+            for _i, _mo in enumerate((_analysis.get("missed_opportunities") or [])[:2]):
                 _st, _bn = _mo.get("starter") or {}, _mo.get("bench_player") or {}
-                _coach_rows.append((
-                    "COACHING MISS",
+                _miss_section.append((
+                    f"#{_i + 1}",
                     f"Started {_st.get('name') or '?'} over {_bn.get('name') or '?'}",
                     f"+{float(_mo.get('gap') or 0):.1f}",
                 ))
-        if len(_coach_rows) >= 3:
+            if _miss_section:
+                _coach_sections.append({"title": "COACHING MISS", "rows": _miss_section})
+        if sum(len(_sec["rows"]) for _sec in _coach_sections) >= 3:
             slides.append({"kind": "coaching", "eyebrow": "COACHING REPORT",
                            "num": False, "big": "", "dp": 0, "suffix": "", "label": "",
                            "sub": "Efficiency, busts & the week's worst start/sit calls",
-                           "rows": _coach_rows[:6], "bgword": "COACH"})
+                           "sections": _coach_sections, "bgword": "COACH"})
 
     # ── Game of the week: a look AHEAD at next week's featured matchup ─────
     # The GOTW is a preview concept -- there is no winner yet. Closing teaser

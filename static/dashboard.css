@@ -38344,6 +38344,30 @@ a.rz-demo-link:hover {
     opacity: .1;
 }
 
+/* Section headers inside a rows slide (coaching report groups). */
+.wrapped-row-sec {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 14px 0 2px;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: .18em;
+    text-transform: uppercase;
+    color: var(--wa);
+}
+
+.wrapped-row-sec:first-child {
+    margin-top: 0;
+}
+
+.wrapped-row-sec::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: rgba(255, 255, 255, .14);
+}
+
 .wrapped-rays {
     position: absolute;
     z-index: 0;

@@ -382,13 +382,19 @@ def test_weekly_coaching_slide_combines_efficiency_bust_and_misses():
     assert "coaching" in by_kind
     coaching = by_kind["coaching"]
     assert coaching["eyebrow"] == "COACHING REPORT"
-    rows = list(coaching["rows"])
-    assert rows[0] == ("#1 EFFICIENCY", "Alpha", "99%")
-    assert rows[1] == ("#2 EFFICIENCY", "Beta", "93%")
-    assert rows[2] == ("#3 EFFICIENCY", "Gamma", "88%")
-    assert rows[3] == ("BIGGEST BUST", "Bust WR (WR · DAL)", "2.1 PTS")
-    assert rows[4] == ("COACHING MISS", "Started Cold QB over Hot QB", "+18.4")
-    assert rows[5] == ("COACHING MISS", "Started Cold RB over Hot RB", "+11.2")
+    sections = coaching["sections"]
+    assert [s["title"] for s in sections] == [
+        "LINEUP EFFICIENCY", "BIGGEST BUST", "COACHING MISS"]
+    assert sections[0]["rows"] == [
+        ("#1", "Alpha", "99%"),
+        ("#2", "Beta", "93%"),
+        ("#3", "Gamma", "88%"),
+    ]
+    assert sections[1]["rows"] == [("", "Bust WR (WR · DAL)", "2.1 PTS")]
+    assert sections[2]["rows"] == [
+        ("#1", "Started Cold QB over Hot QB", "+18.4"),
+        ("#2", "Started Cold RB over Hot RB", "+11.2"),
+    ]
 
 
 def test_weekly_coaching_slide_skipped_without_data():
@@ -433,9 +439,11 @@ def test_weekly_coaching_bust_skipped_when_it_repeats_the_dud():
         slides = H._build_weekly_wrapped_slides(ctx, "Test League", 2026, 3)
 
     coaching = {s["kind"]: s for s in slides}["coaching"]
-    kinds = [k for k, n, v in coaching["rows"]]
-    assert "BIGGEST BUST" not in kinds
-    assert kinds.count("COACHING MISS") == 2
+    titles = [s["title"] for s in coaching["sections"]]
+    assert "BIGGEST BUST" not in titles
+    assert titles.count("COACHING MISS") == 1
+    miss = [s for s in coaching["sections"] if s["title"] == "COACHING MISS"][0]
+    assert len(miss["rows"]) == 2
 
 
 def test_wrapped_overlay_has_pause_control():
@@ -483,3 +491,31 @@ def test_wrapped_coaching_slide_compact_css():
     assert '.wrapped-slide[data-kind="coaching"] .wrapped-row {' in css
     assert '.wrapped-slide[data-kind="coaching"] .wrapped-bgword {' in css
     assert "font-size: 76px" in css
+    assert ".wrapped-row-sec {" in css
+    assert ".wrapped-row-sec::after {" in css
+
+
+def test_wrapped_overlay_renders_row_sections():
+    """Slides with `sections` render labeled section headers above their rows."""
+    from dashboard_services.pages import history_page as H
+
+    slides = [
+        {"kind": "intro", "eyebrow": "WEEK 3", "big": "T", "num": False, "dp": 0,
+         "suffix": "", "label": "Wrapped", "sub": "s"},
+        {"kind": "topscore", "eyebrow": "HIGH", "big": "150.5", "num": True,
+         "dp": 1, "suffix": "", "label": "Alpha", "sub": "s"},
+        {"kind": "coaching", "eyebrow": "COACHING REPORT", "num": False,
+         "big": "", "dp": 0, "suffix": "", "label": "", "sub": "s",
+         "sections": [
+             {"title": "LINEUP EFFICIENCY",
+              "rows": [("#1", "Alpha", "99%"), ("#2", "Beta", "93%")]},
+             {"title": "COACHING MISS",
+              "rows": [("#1", "Started X over Y", "+1.0")]},
+         ], "bgword": "COACH"},
+    ]
+    html = H._wrapped_overlay_markup(slides, None, ns="weekly-wrapped",
+                                     footer_label="WEEK 3")
+    assert "<div class='wrapped-row-sec'>LINEUP EFFICIENCY</div>" in html
+    assert "<div class='wrapped-row-sec'>COACHING MISS</div>" in html
+    assert html.index("LINEUP EFFICIENCY") < html.index("Alpha")
+    assert html.index("COACHING MISS") < html.index("Started X over Y")
