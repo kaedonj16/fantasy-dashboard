@@ -20,34 +20,65 @@ def resolve_post_deploy_script(repo_root=None):
     return os.path.join(root, "scripts", "post_deploy.py")
 
 
+def _db_already_initialized() -> bool:
+    """True when the production database already has its core tables.
+
+    The previous first-run flag lived in tempfile.gettempdir(), which is
+    fresh on every Render deploy, so the heavy first-time init
+    (migrations + daily data build + full-app health check) ran before
+    gunicorn on EVERY deploy and blocked the port bind -- failed deploys
+    with "No open ports detected". Probing the database itself is the
+    correct already-initialized signal.
+    """
+    try:
+        from dashboard_services.db import get_conn
+    except Exception as exc:  # pragma: no cover - defensive
+        print(f"init check: could not import db layer ({exc}); assuming fresh")
+        return False
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1 FROM player_values LIMIT 1")
+                cur.fetchone()
+        return True
+    except Exception as exc:
+        # UndefinedTable on a genuinely fresh database, or a transient
+        # connection problem: fall through to init, whose own try/except
+        # keeps startup moving toward gunicorn on failure.
+        print(f"init check: probe failed ({type(exc).__name__}: {exc}); "
+              "assuming fresh database")
+        return False
+
+
 def main():
+    # Line-buffer stdout/stderr so Render logs show startup progress live.
+    # A hang before the port bind is otherwise invisible: block-buffered
+    # prints never flush when the process never reaches gunicorn.
+    try:
+        sys.stdout.reconfigure(line_buffering=True)
+        sys.stderr.reconfigure(line_buffering=True)
+    except Exception:
+        pass
+
     from dashboard_services.memory_diagnostics import format_memory_snapshot
     print("Production Startup - Fantasy Dashboard")
     print(f"Started: {datetime.now().isoformat()}")
     print(format_memory_snapshot("web startup begin"))
 
-    first_run_flag = os.path.join(
-        __import__("tempfile").gettempdir(), "fantasy_dashboard_initialized"
-    )
-
-    if not os.path.exists(first_run_flag):
-        print("First deployment detected - running initialization...")
+    if _db_already_initialized():
+        print("Database already initialized - skipping first-time init")
+    else:
+        print("Fresh database detected - running initialization...")
         print(format_memory_snapshot("before first-time initialization"))
         try:
             from scripts.initialize_production import main as init_main
             init_main()
-            with open(first_run_flag, 'w', encoding='utf-8') as f:
-                f.write(f"Initialized: {datetime.now().isoformat()}")
             print("First-time initialization completed successfully")
         except Exception as e:
             print(f"First-time initialization failed: {e}")
             print("Continuing with app startup (manual initialization may be needed)")
         finally:
             print(format_memory_snapshot("after first-time initialization"))
-    else:
-        print("Existing deployment detected - skipping initialization")
-        with open(first_run_flag, 'r', encoding='utf-8') as f:
-            print(f"Previously initialized: {f.read().strip()}")
 
     # Spawn post-deploy in the background so it doesn't delay gunicorn startup.
     # That process runs migrations and refreshes tokenless global ADP snapshots
