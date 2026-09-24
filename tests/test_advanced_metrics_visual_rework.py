@@ -50,14 +50,20 @@ def test_header_uses_compact_icon_buttons():
     assert ".am-head .am-legend-btn-label { display:none; }" in css
 
 
-def test_control_labels_hidden_on_mobile_but_present_on_desktop():
+def test_control_labels_removed_from_markup_with_aria_names():
+    # Desktop rework: the all-caps section labels are gone from the markup
+    # entirely; the controls carry accessible names instead.
     html = _html()
-    for text in ("Primary Metric", "Seasons", "Search"):
-        assert text in html, f'"{text}" label must remain in markup for desktop'
-    css = _rework_css(html)
-    # Scoped to direct labels inside #amControls: What-changed / Week Range /
-    # set labels elsewhere keep their text.
-    assert ".am-controls .am-ctrl > label.am-ctrl-label { display:none; }" in css
+    body = html.split("<style>")[0]  # labels would live in the markup, not CSS/JS
+    assert ">Primary Metric<" not in body
+    assert ">Seasons<" not in body
+    assert ">Search<" not in body
+    metric_btn = _tag(html, "amMetricBtn")
+    assert 'aria-label="Primary metric"' in metric_btn
+    search = _tag(html, "amSearch")
+    assert 'aria-label="Search players"' in search
+    season_btn = _tag(html, "amSeasonBtn")
+    assert 'aria-label="Select seasons"' in season_btn
 
 
 def test_search_and_season_share_one_mobile_row():
@@ -84,7 +90,8 @@ def test_add_metric_is_a_solid_button_not_a_ghost():
 def test_decide_presets_get_edge_fade_and_no_label():
     html = _html()
     css = _rework_css(html)
-    assert ".am-decisions .am-decisions-label { display:none; }" in css
+    # The "Decide:" label was removed from the markup by the desktop rework.
+    assert "am-decisions-label" not in html.split("<style>")[0]
     assert "-webkit-mask-image:linear-gradient(to right,#000 88%,transparent 100%);" in css
     assert "mask-image:linear-gradient(to right,#000 88%,transparent 100%);" in css
     # Accessible name is preserved on the pill group itself.

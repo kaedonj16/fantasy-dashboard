@@ -262,14 +262,8 @@ def build_advanced_metrics_body(
         <div class="am-toolbar" id="amToolbar">
         <div class="am-controls" id="amControls">
           <div class="am-ctrl">
-            <label class="am-ctrl-label">
-              Primary Metric
-              <span class="am-info" id="amMetricInfo" tabindex="0" role="button" aria-label="Metric description">
-                <i class="fa-solid fa-circle-info"></i>
-              </span>
-            </label>
             <div class="am-metric-picker" id="amMetricPickerWrap">
-              <button type="button" class="am-select am-metric-btn" id="amMetricBtn" aria-haspopup="listbox" aria-expanded="false">
+              <button type="button" class="am-select am-metric-btn" id="amMetricBtn" aria-haspopup="listbox" aria-expanded="false" aria-label="Primary metric">
                 <span id="amMetricBtnLabel"></span>
                 <i class="fa-solid fa-chevron-down am-metric-chevron"></i>
               </button>
@@ -278,7 +272,6 @@ def build_advanced_metrics_body(
             <select id="amMetric" style="display:none">__METRIC_OPTIONS__</select>
           </div>
           <div class="am-ctrl am-ctrl-season" id="amSeasonCtrl">
-            <label class="am-ctrl-label">Seasons</label>
             <div class="am-season-row">
               <div class="am-season-multi" id="amSeasonMulti">
                 <button type="button" class="am-select am-season-select am-season-btn" id="amSeasonBtn"
@@ -296,8 +289,7 @@ def build_advanced_metrics_body(
             <select id="amSeason" class="am-select am-season-select" style="display:none" aria-hidden="true">__SEASON_OPTIONS__</select>
           </div>
           <div class="am-ctrl am-ctrl-search">
-            <label class="am-ctrl-label">Search</label>
-            <input id="amSearch" type="text" autocomplete="off" placeholder="Search players…" class="am-search">
+            <input id="amSearch" type="text" autocomplete="off" placeholder="Search players…" class="am-search" aria-label="Search players">
           </div>
         </div>
 
@@ -321,20 +313,22 @@ def build_advanced_metrics_body(
           <button id="amSaveSetBtn" type="button" class="am-add-stat-btn am-mobile-filter" title="Save or update a named custom set">Save set</button>
           <button id="amDeleteSetBtn" type="button" class="am-add-stat-btn am-clear-btn am-mobile-filter" title="Delete the selected custom set">Delete</button>
           <button id="amFiltersBtn" type="button" class="am-sort-btn am-filters-btn">Filters &#9662;</button>
-          <label class="am-roster-toggle am-mobile-filter" id="amTrendToggleWrap" title="Show each player's recent usage trend (last 6 weeks) next to the metric">
-            <input type="checkbox" id="amTrendToggle">
-            <span>Usage trends</span>
+          <span class="am-ctl-divider" aria-hidden="true"></span>
+          <label class="am-roster-toggle am-toggle-chip am-mobile-filter" id="amTrendToggleWrap" title="Show each player's recent usage trend (last 6 weeks) next to the metric">
+            <input type="checkbox" class="am-toggle-input" id="amTrendToggle">
+            <span class="am-toggle-box" aria-hidden="true"><svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M1.5 5.2 4 7.7 8.5 2.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+            <span class="am-toggle-text">Usage trends</span>
           </label>
-          <label class="am-roster-toggle am-mobile-filter" id="amRosterToggleWrap" style="display:none;">
-            <input type="checkbox" id="amRosterToggle">
-            <span>My roster only</span>
+          <label class="am-roster-toggle am-toggle-chip am-mobile-filter" id="amRosterToggleWrap" style="display:none;">
+            <input type="checkbox" class="am-toggle-input" id="amRosterToggle">
+            <span class="am-toggle-box" aria-hidden="true"><svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M1.5 5.2 4 7.7 8.5 2.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+            <span class="am-toggle-text">My roster only</span>
           </label>
         </div>
 
         <!-- Decision presets: one-tap views organized by the question being answered.
              Pills are server-rendered; JS wires clicks and the active state. -->
         <div class="am-decisions" id="amDecisionPills" role="tablist" aria-label="Decision views">
-          <span class="am-decisions-label">Decide:</span>
           __DECISION_PILLS__
         </div>
         <div class="am-preset-tagline" id="amPresetTagline" aria-live="polite"></div>
@@ -1215,9 +1209,11 @@ def build_advanced_metrics_body(
       html.og-render .am-graph-svg { width:auto !important; height:594px !important; max-width:1164px !important; }
 
       /* ── Advanced Metrics mobile visual rework ──────────────────────────
-         Icon-button header, no shouting labels, search+season on one row,
-         solid + Metric button, fading preset rail, wrapping chips, collapsible
-         field averages, sticky player column. Desktop rules above untouched. */
+         Icon-button header, search+season on one row, solid + Metric button,
+         fading preset rail, wrapping chips, collapsible field averages,
+         sticky player column. (The old all-caps section labels were removed
+         from the markup entirely by the desktop rework; desktop rules above
+         untouched.) */
       .am-clear-link { display:none; }
       @media (max-width:600px) {
         /* 1. Header: icon-only actions, description hidden. */
@@ -1226,29 +1222,26 @@ def build_advanced_metrics_body(
         .am-head .am-legend-btn { padding:8px; }
         .am-head .am-legend-btn svg { width:16px; height:16px; }
         .am-head-actions { flex-wrap:nowrap !important; }
-        /* 2. Drop the shouting section labels (Primary Metric / Seasons / Search).
-           Scoped to direct labels inside #amControls so the What-changed,
-           Week Range and set labels keep theirs. */
-        .am-controls .am-ctrl > label.am-ctrl-label { display:none; }
-        /* 3. Search and season share one row: search flex-grows, season compact.
+        /* 2. Search and season share one row: search flex-grows, season compact.
            Mockup order is search-then-season, so re-order the DOM pair. */
         #amSeasonCtrl { flex:0 1 128px; min-width:0; order:2; }
         .am-ctrl-search { flex:1 1 0; min-width:0; order:1; }
         .am-ctrl-search .am-search { font-size:14px; }
-        /* 4. + Metric: solid outlined button matching the position pills,
+        /* 3. + Metric: solid outlined button matching the position pills,
            not the near-invisible dashed ghost. 8px radius per --radius-pill. */
         #amAddStatBtn {
           border:1px solid var(--border); border-radius:8px; background:var(--card);
           color:var(--text); padding:6px 14px; font-size:12px; font-weight:600;
         }
         #amAddStatBtn:hover { border-color:var(--accent,#2563eb); color:var(--accent,#2563eb); }
-        /* 5. Decide presets: edge fade so the rail reads as swipeable. */
-        .am-decisions .am-decisions-label { display:none; }
+        /* 4. Decide presets: edge fade so the rail reads as swipeable.
+           (The "Decide:" label was removed from the markup by the desktop
+           rework; the group keeps aria-label="Decision views".) */
         .am-decisions {
           -webkit-mask-image:linear-gradient(to right,#000 88%,transparent 100%);
           mask-image:linear-gradient(to right,#000 88%,transparent 100%);
         }
-        /* 6. Chips wrap to multiple lines; Clear becomes a text link. */
+        /* 5. Chips wrap to multiple lines; Clear becomes a text link. */
         .am-compare-chips { flex-wrap:wrap; overflow-x:visible; padding-bottom:0; }
         #amClearExtrasBtn { display:none !important; }
         .am-clear-link {
@@ -1257,7 +1250,7 @@ def build_advanced_metrics_body(
           text-decoration:underline; text-underline-offset:3px; white-space:nowrap;
         }
         .am-clear-link.am-clear-link-show { display:inline-block; }
-        /* 7. Field averages: collapsed one-liner, tap to expand the grid. */
+        /* 6. Field averages: collapsed one-liner, tap to expand the grid. */
         .am-avg-note { margin:2px 0 8px; }
         .am-avg-toggle {
           display:flex; align-items:center; justify-content:space-between; gap:8px;
@@ -1273,7 +1266,7 @@ def build_advanced_metrics_body(
           padding:2px 2px 10px; font-size:12.5px; color:var(--text-muted);
         }
         .am-avg-cell b, .am-avg-cell strong { color:var(--text); font-weight:600; }
-        /* 8. Results table: edge fade + sticky player column. */
+        /* 7. Results table: edge fade + sticky player column. */
         .am-table-wrap {
           -webkit-mask-image:linear-gradient(to right,#000 92%,transparent 100%);
           mask-image:linear-gradient(to right,#000 92%,transparent 100%);
@@ -1282,6 +1275,113 @@ def build_advanced_metrics_body(
           position:sticky; left:0; z-index:2; background:var(--card);
           box-shadow:8px 0 8px -8px rgba(0,0,0,.18);
         }
+      }
+
+      /* ── Advanced Metrics desktop visual rework ───────────────────────────
+         Kaedon-approved mockup: icon-only header actions, no all-caps control
+         labels, compact control rows, solid + Metric / + Filter buttons,
+         Usage-trends / My-roster toggle chips, unlabeled preset pills,
+         single-row week range, Clear-all text link, collapsible field
+         averages. The data table and all data logic are untouched.
+         Rules that would change the approved mobile look stay inside
+         min-width:601px; the rest are safe to share. */
+      /* 1. Header: icon-only actions (labels live in title attributes). */
+      .am-head .am-legend-btn-label { display:none; }
+      .am-head .am-legend-btn { padding:8px; }
+      .am-head .am-legend-btn svg { width:16px; height:16px; }
+      /* 2. Chips row: the Clear-all text link replaces the ghost button
+         everywhere now (JS already toggles .am-clear-link-show). */
+      #amClearExtrasBtn { display:none !important; }
+      .am-clear-link {
+        display:none; border:0; background:none; padding:6px 4px; cursor:pointer;
+        color:var(--text-muted); font-size:13px; font-weight:600;
+        text-decoration:underline; text-underline-offset:3px; white-space:nowrap;
+      }
+      .am-clear-link:hover { color:var(--loss); }
+      .am-clear-link.am-clear-link-show { display:inline-block; }
+      /* 3. Toggle chips replace the native checkboxes on desktop. The real
+         checkbox stays inside the label (visually hidden) so every existing
+         change-listener keeps working with zero JS changes. */
+      .am-toggle-chip { position:relative; color:var(--text-muted); }
+      .am-toggle-chip .am-toggle-input {
+        position:absolute; opacity:0; width:1px; height:1px; margin:0; pointer-events:none;
+      }
+      .am-toggle-chip .am-toggle-box {
+        width:14px; height:14px; flex-shrink:0;
+        border:1.5px solid color-mix(in srgb, var(--text-muted) 55%, transparent);
+        border-radius:4px; display:inline-flex; align-items:center; justify-content:center;
+        font-size:10px; line-height:1; color:transparent; background:transparent;
+        transition:background .12s, border-color .12s, color .12s;
+      }
+      .am-toggle-chip .am-toggle-input:checked + .am-toggle-box {
+        background:var(--accent,#2563eb); border-color:var(--accent,#2563eb); color:#fff;
+      }
+      .am-toggle-chip .am-toggle-input:checked ~ .am-toggle-text { color:var(--text); font-weight:700; }
+      .am-toggle-chip:focus-within { outline:2px solid var(--accent,#2563eb); outline-offset:1px; }
+      @media (max-width:600px) {
+        /* Mobile keeps the native checkbox look from the approved mobile rework. */
+        .am-toggle-chip { color:var(--text); }
+        .am-toggle-chip .am-toggle-input {
+          position:static; opacity:1; width:14px; height:14px; pointer-events:auto;
+        }
+        .am-toggle-chip .am-toggle-box { display:none; }
+        .am-toggle-chip .am-toggle-text { font-weight:600; }
+      }
+      .am-ctl-divider { display:none; }
+      @media (min-width:601px) {
+        /* 4. Row 1: metric + season + search share one clean row, no labels. */
+        #amControls { align-items:center; }
+        #amControls > .am-ctrl:first-child { flex:0 1 250px; min-width:0; }
+        #amSeasonCtrl { flex:0 1 auto; min-width:0; }
+        .am-ctrl-search { flex:1 1 200px; min-width:160px; }
+        #amMetricBtn { width:100%; min-width:0; }
+        /* 5. Row 2: positions left, tools right; solid buttons, no "Custom" echo. */
+        .am-subcontrols { gap:8px; }
+        #amActiveSet { display:none; }
+        #amAddStatBtn, #amAddFilterBtn, #amSaveSetBtn, #amDeleteSetBtn {
+          border:1px solid var(--border); border-radius:var(--radius-pill,8px);
+          background:var(--card); color:var(--text);
+          padding:6px 14px; font-size:12px; font-weight:600;
+        }
+        #amAddStatBtn:hover, #amAddFilterBtn:hover, #amSaveSetBtn:hover {
+          border-color:var(--accent,#2563eb); color:var(--accent,#2563eb);
+        }
+        #amDeleteSetBtn:hover { border-color:var(--loss); color:var(--loss); }
+        .am-ctl-divider { display:block; width:1px; height:24px; background:var(--border); flex-shrink:0; }
+        /* 6. Presets: no label in the markup; keep the rail tidy. */
+        .am-decisions { margin:8px 0 2px; }
+        /* 7. What-changed strip, quieter. */
+        .am-movers { padding:8px 14px; }
+        .am-movers-head { margin-bottom:6px; }
+        /* 8. Week range: quick pills + slim slider in one compact row. */
+        #amWeekCtrl { display:flex; flex-direction:row; align-items:center; gap:14px; }
+        #amWeekCtrl .am-weekbar-head { flex:0 0 auto; }
+        #amWeekCtrl .am-weekbar-head .am-ctrl-label { display:none; }
+        #amWkBarHost { flex:1 1 auto; min-width:0; }
+        /* Slimmer slider, scoped to this host so the shared wk-bar keeps its
+           size in the player and compare modals. */
+        #amWkBarHost .wk-bar-track { height:24px; }
+        #amWkBarHost .wk-bar-bg { top:8px; bottom:8px; }
+        #amWkBarHost .wk-bar-sel { top:8px; bottom:8px; }
+        #amWkBarHost .wk-bar-grip { height:22px; width:20px; }
+        #amWkBarHost .wk-bar-grip-l { margin-left:-10px; }
+        #amWkBarHost .wk-bar-grip-r { margin-right:-10px; }
+        /* 9. Field averages: collapsed one-liner, chevron expands the grid. */
+        .am-avg-note { margin:2px 0 8px; }
+        .am-avg-toggle {
+          display:flex; align-items:center; justify-content:space-between; gap:8px;
+          width:100%; padding:8px 2px; background:none; border:0; cursor:pointer;
+          font-size:13px; color:var(--text-muted); text-align:left;
+        }
+        .am-avg-toggle #amAvgToggleText b { color:var(--text); }
+        .am-avg-toggle svg { flex-shrink:0; color:var(--text-muted); transition:transform .15s ease; }
+        .am-avg-note.am-avg-open .am-avg-toggle svg { transform:rotate(180deg); }
+        .am-avg-full { display:none; }
+        .am-avg-note.am-avg-open .am-avg-grid {
+          display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr));
+          gap:6px 18px; padding:2px 2px 10px; font-size:12.5px; color:var(--text-muted);
+        }
+        .am-avg-cell b { color:var(--text); font-weight:600; }
       }
     </style>
     """
