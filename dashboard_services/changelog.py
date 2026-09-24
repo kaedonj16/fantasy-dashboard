@@ -5,6 +5,18 @@ Each entry represents a user-facing change.
 
 CHANGELOG = [
     {
+        "date": "2026-09-24",
+        "tag": "new",
+        "text": "Front Office Report v2: the Season Hub report is now a structured, data-grounded team briefing instead of a prose-only memo. The card shows a verdict stamp, headline, key numbers, and your top move. The full report adds week-over-week changes, positional grades, trade targets with Trade Analyzer links, waiver targets, cut candidates, and a GM alert. Every number is computed, never invented.",
+        "link": "/dashboard"
+    },
+    {
+        "date": "2026-09-24",
+        "tag": "new",
+        "text": "Weekly Wrapped: the weekly hub now has story-style recap decks for your week, just like the Season Wrapped. Both can be shared with a public link, so league mates can watch without logging in.",
+        "link": "/"
+    },
+    {
         "date": "2026-09-09",
         "tag": "fix",
         "text": "ESPN Start/Sit now reads your actual weekly lineup (including the QB slot) instead of treating missing ESPN slot ids as an empty lineup. The optimal-lineup banner compares against the same starters you see in the ESPN app.",
