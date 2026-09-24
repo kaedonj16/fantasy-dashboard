@@ -42,6 +42,30 @@ def forbid_paid_nfl_provider(monkeypatch):
     monkeypatch.setattr(requests.sessions.Session, "request", guarded)
     yield
 
+
+@pytest.fixture(autouse=True)
+def _no_sleeper_week_backfill_network(monkeypatch, request):
+    """Keep the runtime Sleeper week-file backfill offline in tests.
+
+    app._ensure_sleeper_week_files downloads missing completed-week files over
+    real HTTP. In the suite that makes modal/page renders hit the network and
+    leaves real files on disk, which then pollute later tests that stub the
+    league snapshot but read the on-disk file (e.g. the pre-kickoff board
+    tests). Neutralize it everywhere except its own test module, which stubs
+    the network layer and exercises the real helper.
+    """
+    if "test_sleeper_week_ensure" in getattr(request.module, "__name__", ""):
+        return
+    if not request.node.get_closest_marker("integration"):
+        return
+    try:
+        import app as appmod
+    except Exception:
+        return
+    if getattr(appmod, "_ensure_sleeper_week_files", None) is None:
+        return
+    monkeypatch.setattr(appmod, "_ensure_sleeper_week_files", lambda season: None)
+
 # Files that import Flask/pandas/app belong in the full-stack CI job, not the
 # pure-Python lint job. Auto-marked below so `pytest -m integration` / `-m
 # "not integration"` can split the suite without annotating every module.
