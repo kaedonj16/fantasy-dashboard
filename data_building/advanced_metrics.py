@@ -57,16 +57,16 @@ def premium_metrics_exposed() -> bool:
 # shows them to everyone. schedule_ease stays free: the Schedule Assistant
 # already ranks schedule ease for everyone. Gating any of these here would
 # be incoherent.
-# PRO is the proprietary "answers" layer: the full FPOE family (per-game and
-# cumulative), WOPR, usage/xFP trends, consistency/volatility answers
+# PRO is the proprietary "answers" layer: the full FPOE family (per-game),
+# WOPR, usage/xFP trends, consistency/volatility answers
 # (fp_cv, xfp_stddev), proprietary composites (role_score,
 # target_quality_score), and proprietary value (vorp, war).
 # Enforced server-side in routes/advanced_metrics_bp.py (leaderboard +
 # movers 403) and routes/players_bp.py (player modal + compare strip), and
 # reflected in the page picker/pills.
 PRO_METRICS = frozenset({
-    "ppr_over_expected_per_game", "ppr_over_expected",
-    "half_ppr_over_expected", "standard_over_expected",
+    "ppr_over_expected_per_game",
+    "half_ppr_over_expected_per_game", "standard_over_expected_per_game",
     "wopr", "opportunity_trend", "xfp_trend",
     "fp_cv", "xfp_stddev",
     "role_score", "target_quality_score",
@@ -2182,20 +2182,18 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     # context (air yards, completion prob, expected YAC, field position), so xFP
     # is what a league-average player would have scored on that exact workload.
     # actual − xFP = points over expected; a NEGATIVE value is fantasy points
-    # "left on the board" (elite usage not yet converted). Stored per reception
-    # format; season mode shows the season total, a week range shows the range
-    # total. See data_building/external_data/expected_points.py.
-    "expected_ppr":         {"label": "Expected FP (PPR)",   "category": "Expected Pts", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Expected fantasy points (full PPR): the points a league-average player would score on this exact target/carry/dropback workload, from play-by-play (air yards, completion probability, expected YAC, field-position TD equity). A pure opportunity/volume measure — outcome-independent."},
-    "ppr_over_expected":    {"label": "FP Over Exp (PPR)",   "category": "Expected Pts", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Actual full-PPR points minus expected (xFP). Positive = converted opportunity into more than expected (often TD-driven, prone to regression); NEGATIVE = fantasy points left on the board (elite usage not yet cashed in), historically a positive-regression signal."},
+    # "left on the board" (elite usage not yet converted). Per-game is the
+    # canonical form in every reception format (season totals are just per-game
+    # x games and mislead across different games played). A week range shows
+    # the range per-game rate. See data_building/external_data/expected_points.py.
     "expected_ppr_per_game": {"label": "Expected FPTS/G", "category": "Expected Pts", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Opportunity-based expected full-PPR fantasy points per covered game. This is an expectation, not guaranteed future scoring or an unrealized-points balance.", "computed_sql": "m.expected_ppr::float / NULLIF(m.games, 0)", "computed_null": "m.expected_ppr IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
-    "actual_ppr_per_game": {"label": "Actual FPTS/G", "category": "Expected Pts", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Actual full-PPR points reconstructed from the same covered play-by-play opportunities and games as expected points.", "computed_sql": "(m.expected_ppr + m.ppr_over_expected)::float / NULLIF(m.games, 0)", "computed_null": "m.expected_ppr IS NOT NULL AND m.ppr_over_expected IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
-    "ppr_over_expected_per_game": {"label": "FPOE/G", "category": "Expected Pts", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Actual minus opportunity-based expected full-PPR points per matched covered game. It is not guaranteed future scoring or an unrealized-points balance.", "computed_sql": "m.ppr_over_expected::float / NULLIF(m.games, 0)", "computed_null": "m.ppr_over_expected IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
+    "ppr_over_expected_per_game": {"label": "FPOE/G", "category": "Expected Pts", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Actual minus opportunity-based expected full-PPR points per matched covered game. Positive = converted opportunity into more than expected (often TD-driven, prone to regression); NEGATIVE = fantasy points left on the board (elite usage not yet cashed in), historically a positive-regression signal. It is not guaranteed future scoring or an unrealized-points balance.", "computed_sql": "m.ppr_over_expected::float / NULLIF(m.games, 0)", "computed_null": "m.ppr_over_expected IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
+    "expected_half_ppr_per_game": {"label": "Expected FPTS/G (Half)", "category": "Expected Pts", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Opportunity-based expected half-PPR fantasy points per covered game. This is an expectation, not guaranteed future scoring or an unrealized-points balance.", "computed_sql": "m.expected_half_ppr::float / NULLIF(m.games, 0)", "computed_null": "m.expected_half_ppr IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
+    "half_ppr_over_expected_per_game": {"label": "FPOE/G (Half)", "category": "Expected Pts", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Actual minus opportunity-based expected half-PPR points per matched covered game. NEGATIVE = fantasy points left on the board.", "computed_sql": "m.half_ppr_over_expected::float / NULLIF(m.games, 0)", "computed_null": "m.half_ppr_over_expected IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
+    "expected_standard_per_game": {"label": "Expected FPTS/G (Std)", "category": "Expected Pts", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Opportunity-based expected standard (non-PPR) fantasy points per covered game. This is an expectation, not guaranteed future scoring or an unrealized-points balance.", "computed_sql": "m.expected_standard::float / NULLIF(m.games, 0)", "computed_null": "m.expected_standard IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
+    "standard_over_expected_per_game": {"label": "FPOE/G (Std)", "category": "Expected Pts", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Actual minus opportunity-based expected standard (non-PPR) points per matched covered game. NEGATIVE = fantasy points left on the board.", "computed_sql": "m.standard_over_expected::float / NULLIF(m.games, 0)", "computed_null": "m.standard_over_expected IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
     "xfp_stddev":           {"label": "xFP Std Dev",         "category": "Expected Pts", "positions": ["QB", "RB", "WR", "TE"], "lower_better": True, "min_vol": _V_GAMES, "desc": "Standard deviation of weekly expected PPR (opportunity-based). Lower means a steadier role; high means the workload itself swings wildly."},
     "xfp_trend":            {"label": "xFP Trend",           "category": "Expected Pts", "positions": ["QB", "RB", "WR", "TE"], "pct": True, "pct_frac": True, "min_vol": _V_GAMES, "desc": "Last-3-week expected PPR/G vs season expected PPR/G, as a fraction. Positive = the player's opportunity quality is trending up, before outcomes."},
-    "expected_half_ppr":    {"label": "Expected FP (Half)",  "category": "Expected Pts", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Expected fantasy points in half-PPR scoring (0.5 per reception). Opportunity-based; see Expected FP (PPR)."},
-    "half_ppr_over_expected": {"label": "FP Over Exp (Half)", "category": "Expected Pts", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Actual half-PPR points minus expected. Negative = points left on the board."},
-    "expected_standard":    {"label": "Expected FP (Std)",   "category": "Expected Pts", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Expected fantasy points in standard (non-PPR) scoring. Opportunity-based; see Expected FP (PPR)."},
-    "standard_over_expected": {"label": "FP Over Exp (Std)",  "category": "Expected Pts", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Actual standard (non-PPR) points minus expected. Negative = points left on the board."},
     # ── Passing (volume → efficiency → touchdowns → grade) ───────────────────
     # Passing yards is derived (yards/attempt x attempts) so it needs no new column.
     "total_pass_yards":     {"label": "Pass Yards",          "category": "Passing", "positions": ["QB"], "integer": True, "desc": "Total passing yards in the season.", "computed_sql": "ROUND(m.yards_per_attempt * m.total_pass_att)", "computed_null": "m.yards_per_attempt IS NOT NULL AND m.total_pass_att IS NOT NULL"},
@@ -2817,20 +2815,30 @@ _ADV_WEEKLY_WEIGHTED_METRICS = {
 }
 
 # Per-game Expected-vs-Actual views are derived from the same weekly PBP rows.
-# Actual is reconstructed as expected + over-expected, guaranteeing (within
-# rounding) actual/G - expected/G == FPOE/G on an identical covered sample.
 _ADV_WEEKLY_DERIVED_METRICS = {
     "expected_ppr_per_game": (
         "(SUM(expected_ppr) FILTER (WHERE expected_ppr IS NOT NULL AND ppr_over_expected IS NOT NULL))::float / NULLIF(COUNT(*) FILTER (WHERE expected_ppr IS NOT NULL AND ppr_over_expected IS NOT NULL), 0)",
         "expected_ppr IS NOT NULL AND ppr_over_expected IS NOT NULL",
     ),
-    "actual_ppr_per_game": (
-        "SUM(expected_ppr + ppr_over_expected)::float / NULLIF(COUNT(*) FILTER (WHERE expected_ppr IS NOT NULL AND ppr_over_expected IS NOT NULL), 0)",
-        "expected_ppr IS NOT NULL AND ppr_over_expected IS NOT NULL",
-    ),
     "ppr_over_expected_per_game": (
         "(SUM(ppr_over_expected) FILTER (WHERE expected_ppr IS NOT NULL AND ppr_over_expected IS NOT NULL))::float / NULLIF(COUNT(*) FILTER (WHERE expected_ppr IS NOT NULL AND ppr_over_expected IS NOT NULL), 0)",
         "expected_ppr IS NOT NULL AND ppr_over_expected IS NOT NULL",
+    ),
+    "expected_half_ppr_per_game": (
+        "(SUM(expected_half_ppr) FILTER (WHERE expected_half_ppr IS NOT NULL AND half_ppr_over_expected IS NOT NULL))::float / NULLIF(COUNT(*) FILTER (WHERE expected_half_ppr IS NOT NULL AND half_ppr_over_expected IS NOT NULL), 0)",
+        "expected_half_ppr IS NOT NULL AND half_ppr_over_expected IS NOT NULL",
+    ),
+    "half_ppr_over_expected_per_game": (
+        "(SUM(half_ppr_over_expected) FILTER (WHERE expected_half_ppr IS NOT NULL AND half_ppr_over_expected IS NOT NULL))::float / NULLIF(COUNT(*) FILTER (WHERE expected_half_ppr IS NOT NULL AND half_ppr_over_expected IS NOT NULL), 0)",
+        "expected_half_ppr IS NOT NULL AND half_ppr_over_expected IS NOT NULL",
+    ),
+    "expected_standard_per_game": (
+        "(SUM(expected_standard) FILTER (WHERE expected_standard IS NOT NULL AND standard_over_expected IS NOT NULL))::float / NULLIF(COUNT(*) FILTER (WHERE expected_standard IS NOT NULL AND standard_over_expected IS NOT NULL), 0)",
+        "expected_standard IS NOT NULL AND standard_over_expected IS NOT NULL",
+    ),
+    "standard_over_expected_per_game": (
+        "(SUM(standard_over_expected) FILTER (WHERE expected_standard IS NOT NULL AND standard_over_expected IS NOT NULL))::float / NULLIF(COUNT(*) FILTER (WHERE expected_standard IS NOT NULL AND standard_over_expected IS NOT NULL), 0)",
+        "expected_standard IS NOT NULL AND standard_over_expected IS NOT NULL",
     ),
 }
 

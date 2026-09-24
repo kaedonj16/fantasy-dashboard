@@ -173,15 +173,17 @@ def test_pro_metrics_set_covers_full_answers_layer():
     from data_building.advanced_metrics import PRO_METRICS
 
     assert PRO_METRICS == frozenset({
-        "ppr_over_expected_per_game", "ppr_over_expected",
-        "half_ppr_over_expected", "standard_over_expected",
+        "ppr_over_expected_per_game",
+        "half_ppr_over_expected_per_game", "standard_over_expected_per_game",
         "wopr", "opportunity_trend", "xfp_trend",
         "fp_cv", "xfp_stddev",
         "role_score", "target_quality_score",
         "vorp", "war",
     })
     # Already visible on free surfaces — must stay free.
-    for free_key in ("expected_ppr_per_game", "boom_rate", "bust_rate", "schedule_ease"):
+    for free_key in ("expected_ppr_per_game", "expected_half_ppr_per_game",
+                     "expected_standard_per_game",
+                     "boom_rate", "bust_rate", "schedule_ease"):
         assert free_key not in PRO_METRICS, free_key
 
 
