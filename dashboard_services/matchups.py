@@ -43,7 +43,17 @@ STATUS_FINAL = "final"
 logger = logging.getLogger(__name__)
 
 
-def _week_stats_for_slide(season, w) -> dict:
+def _format_final_game_line(score_str: str, prefix: str) -> str:
+    """Final game line once the score is known: 'Final 24-31 @ LV'.
+
+    Falls back to a bare 'Final' when no score is available.
+    """
+    if score_str:
+        return f"Final {score_str} {prefix}"
+    return "Final"
+
+
+def _week_stats_for_slide(season, w, ensure_sleeper: bool = False) -> dict:
     """Week stats for a matchup slide, with a lazy K/IDP/DEF overlay.
 
     Completed weeks that were cached before the Sleeper stats-file lookup was
@@ -55,7 +65,21 @@ def _week_stats_for_slide(season, w) -> dict:
     are absent -- the underlying index and Sleeper reads are mtime-cached, so
     this stays cheap across the several slides on a page and is never written
     back to disk.
+
+    When ``ensure_sleeper`` is true (the caller knows the week is fully final),
+    the week's Sleeper per-player file is fetched once if absent -- finished
+    weeks are immutable, so the fetch is a one-time backfill that un-breaks
+    both this overlay and the per-player skill gap-fill below.
     """
+    if ensure_sleeper:
+        try:
+            from data_building.external_data.sleeper_bulk_stats import fetch_week_stats
+            fetch_week_stats(int(season), int(w))
+        except Exception:
+            logger.info(
+                "[matchups] Sleeper week-stats backfill skipped for season=%s week=%s",
+                season, w, exc_info=True,
+            )
     week_stats = load_week_stats(season, w) or {}
     if not week_stats:
         return week_stats
@@ -1519,7 +1543,7 @@ def render_matchup_slide(
         teams_index = load_teams_index()
         offense_ranks = build_offense_rankings(teams_index)
         _fpts_data = fpts_against or {}
-        week_stats = _week_stats_for_slide(season, w)
+        week_stats = _week_stats_for_slide(season, w, ensure_sleeper=past_week)
         team_schedule_lookup = build_team_schedule_lookup(load_week_schedule(season, w))
 
     # Live game progress: lets in-progress starters project their finish (banked
@@ -1755,9 +1779,7 @@ def render_matchup_slide(
 
         if status_code == "2":
             prefix = "@ " + opp if not is_home else "vs " + opp
-            if score_str:
-                return f"Final {prefix} {score_str}"
-            return "Final"
+            return _format_final_game_line(score_str, prefix)
 
         return ""
 

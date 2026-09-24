@@ -89,6 +89,9 @@ def test_forbidden_enters_cooldown_without_retry_or_false_last_good(monkeypatch)
         def raise_for_status(self):
             error = __import__('requests').HTTPError('forbidden'); error.response = self; raise error
     monkeypatch.setattr(nfl._session, "get", lambda *a, **k: calls.append(1) or Response())
+    # Isolate the ESPN-layer behavior under test from the nflverse fallback,
+    # which has its own dedicated tests below.
+    monkeypatch.setattr(nfl, "_nflverse_games_rows", lambda: [])
     first = nfl.scoreboard_for_date("20260922")
     second = nfl.scoreboard_for_date("20260922")
     assert len(calls) == 1
@@ -121,3 +124,60 @@ def test_last_good_is_exact_scope_aged_and_labeled(monkeypatch):
     nfl._failures.clear(); nfl._last_good["scoreboard:dates=20260911"] = (now - nfl._LAST_GOOD_MAX_AGE - 1, {"events": [_event()]})
     expired = nfl.scoreboard_for_date("20260911")
     assert expired.availability == "unavailable"
+
+
+def _nflverse_row(**overrides):
+    row = {
+        "game_id": "2026_02_CAR_ATL", "season": "2026", "game_type": "REG",
+        "week": "2", "gameday": "2026-09-20", "away_team": "CAR",
+        "away_score": "34", "home_team": "ATL", "home_score": "3", "espn": "401872900",
+    }
+    row.update(overrides)
+    return row
+
+
+def test_nflverse_fallback_normalizes_final_scores(monkeypatch):
+    monkeypatch.setattr(nfl, "_nflverse_games_rows", lambda: [_nflverse_row()])
+    games = nfl._nflverse_scoreboard_for_date("20260920")
+    assert len(games) == 1
+    game = games[0]
+    assert game["gameID"] == "20260920_CAR@ATL"
+    assert game["home"] == "ATL" and game["away"] == "CAR"
+    assert game["homePts"] == "3" and game["awayPts"] == "34"
+    assert game["gameStatusCode"] == "2"
+    assert game["normalized_status"] == "final"
+    assert game["source"] == "nflverse"
+    assert game["availability"]["score"] is True
+
+
+def test_nflverse_fallback_skips_unscored_and_other_dates(monkeypatch):
+    rows = [
+        _nflverse_row(),  # 2026-09-20 final
+        _nflverse_row(game_id="2026_03_X_Y", gameday="2026-09-24",
+                      away_team="NYG", away_score="", home_team="PHI", home_score=""),
+        _nflverse_row(game_id="2026_02_A_B", gameday="2026-09-21",
+                      away_team="DAL", away_score="21", home_team="WAS", home_score="20"),
+    ]
+    monkeypatch.setattr(nfl, "_nflverse_games_rows", lambda: rows)
+    games = nfl._nflverse_scoreboard_for_date("20260920")
+    assert [g["gameID"] for g in games] == ["20260920_CAR@ATL"]
+
+
+def test_scoreboard_for_date_falls_back_to_nflverse_when_espn_unavailable(monkeypatch):
+    nfl._cache.clear(); nfl._last_good.clear(); nfl._locks.clear(); nfl._failures.clear()
+    monkeypatch.setattr(nfl, "fetch_scoreboard", lambda **k: ({}, True))
+    monkeypatch.setattr(nfl, "_nflverse_games_rows", lambda: [_nflverse_row()])
+    result = nfl.scoreboard_for_date("20260920")
+    assert result.availability == "available"
+    assert result.source == "nflverse"
+    assert result["20260920_CAR@ATL"]["awayPts"] == "34"
+
+
+def test_scoreboard_for_date_stays_unavailable_when_no_fallback_games(monkeypatch):
+    nfl._cache.clear(); nfl._last_good.clear(); nfl._locks.clear(); nfl._failures.clear()
+    monkeypatch.setattr(nfl, "fetch_scoreboard", lambda **k: ({}, True))
+    monkeypatch.setattr(nfl, "_nflverse_games_rows", lambda: [])
+    result = nfl.scoreboard_for_date("20260920")
+    assert result == {}
+    assert result.availability == "unavailable"
+    assert result.source == "espn_nfl"
