@@ -72,3 +72,17 @@ class TestAiErrorHandling:
         # This would be tested via integration test with mocked OpenAI client
         # Should raise ValueError with appropriate message
         pass
+
+    def test_hyphenated_words_and_records_survive(self):
+        """Hyphens in compound words and records must come through intact;
+        only em dashes get comma-ified."""
+        text = '{"summary": "follow-up all-play back-to-back, now 2-0 on the season"}'
+        assert clean_ai_text(text) == text
+
+    def test_en_dash_ranges_survive_but_punctuation_dash_goes(self):
+        text = '{"summary": "161.46–76.26 final, a – b effort"}'
+        assert clean_ai_text(text) == '{"summary": "161.46–76.26 final, a, b effort"}'
+
+    def test_negative_json_numbers_survive(self):
+        text = '{"delta": -5.2, "note": "down -3 from last week"}'
+        assert clean_ai_text(text) == text
