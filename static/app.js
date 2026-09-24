@@ -13316,7 +13316,49 @@ document.addEventListener('DOMContentLoaded', function() {
   // The dashboard body can be replaced after a cold-cache background build.
   // Delegate this click from document instead of binding only to the button
   // that happened to exist at DOMContentLoaded time.
+  //
+  // v2: /api/gm-memo returns a condensed card summary plus the full report
+  // HTML. The summary renders in place; the full report opens in a modal.
+  // The modal is built dynamically (no inline scripts) so soft-swapped page
+  // roots can never strand it half-executed.
+  var _forReportHtml = '';
+  function _forCloseModal() {
+    var overlay = document.getElementById('forModalOverlay');
+    if (overlay) overlay.remove();
+    document.body.style.overflow = '';
+  }
+  function _forOpenModal() {
+    if (!_forReportHtml) return;
+    _forCloseModal();
+    var overlay = document.createElement('div');
+    overlay.className = 'for-modal-overlay';
+    overlay.id = 'forModalOverlay';
+    overlay.innerHTML =
+      '<div class="for-modal" role="dialog" aria-modal="true" aria-label="Front Office Report">'
+      + '<div class="for-modal-head">'
+      + '<div class="for-modal-title">Front Office Report</div>'
+      + '<button type="button" class="for-modal-close" id="forModalClose" aria-label="Close report">\u2715</button>'
+      + '</div>'
+      + '<div class="for-modal-body">' + window.brSanitizeHtml(_forReportHtml) + '</div>'
+      + '</div>';
+    document.body.appendChild(overlay);
+    document.body.style.overflow = 'hidden';
+  }
+  document.addEventListener('keydown', function(event) {
+    if (event.key === 'Escape') _forCloseModal();
+  });
   document.addEventListener('click', async function(event) {
+    var overlayEl = document.getElementById('forModalOverlay');
+    if (event.target.closest('#forModalClose') || (overlayEl && event.target === overlayEl)) {
+      _forCloseModal();
+      return;
+    }
+    if (event.target.closest('#forViewFullBtn')) {
+      event.preventDefault();
+      _forOpenModal();
+      return;
+    }
+
     const generateGmMemoBtn = event.target.closest('#generateGmMemoBtn');
     if (!generateGmMemoBtn) return;
 
@@ -13336,7 +13378,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     const emptyState = document.getElementById('gm-memo-empty');
     const loadingState = document.getElementById('gm-memo-loading');
-    const resultState = document.getElementById('gm-memo-result');
+    const summaryState = document.getElementById('gm-memo-result');
 
     // Show loading, hide empty state
     generateGmMemoBtn.disabled = true;
@@ -13347,7 +13389,7 @@ document.addEventListener('DOMContentLoaded', function() {
       emptyState.querySelectorAll('.gm-memo-error').forEach(el => el.remove());
     }
     if (loadingState) loadingState.style.display = 'block';
-    if (resultState) resultState.style.display = 'none';
+    if (summaryState) summaryState.style.display = 'none';
 
     try {
       const response = await fetch('/api/gm-memo', {
@@ -13387,13 +13429,14 @@ document.addEventListener('DOMContentLoaded', function() {
       if (!response.ok) throw new Error(data.error || `Request failed (${response.status}). Please try again.`);
 
       if (data.success) {
-        // Hide loading, show result
+        // Hide loading, show the card summary; stash the full report for the modal
         if (loadingState) loadingState.style.display = 'none';
-        if (resultState) {
-          resultState.style.display = 'block';
-          resultState.innerHTML = window.brSanitizeHtml(data.gm_memo_html);
-          if (window.brRevealText) window.brRevealText(resultState);
+        if (summaryState) {
+          summaryState.style.display = 'block';
+          summaryState.innerHTML = window.brSanitizeHtml(data.card_html || '');
+          if (window.brRevealText) window.brRevealText(summaryState);
         }
+        _forReportHtml = data.report_html || '';
         generateGmMemoBtn.textContent = 'Refresh Report';
       } else {
         // Show error
@@ -13425,8 +13468,8 @@ document.addEventListener('DOMContentLoaded', function() {
     } finally {
       generateGmMemoBtn.disabled = false;
       generateGmMemoBtn.removeAttribute('aria-busy');
-      const hasResult = resultState && resultState.style.display !== 'none'
-        && (resultState.innerHTML || '').trim();
+      const hasResult = summaryState && summaryState.style.display !== 'none'
+        && (summaryState.innerHTML || '').trim();
       generateGmMemoBtn.textContent = hasResult ? 'Refresh Report' : 'Generate Report';
     }
   });

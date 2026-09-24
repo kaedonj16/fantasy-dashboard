@@ -3,9 +3,29 @@ import os
 from typing import Generator
 
 from dashboard_services.ai.client import clean_ai_text, get_ai_client
-from dashboard_services.ai.prose import scrub_ai_result_strings
+from dashboard_services.ai.prose import scrub_ai_prose_field_names, scrub_ai_result_strings
 
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5.4-mini")
+
+# Prefix shared by the v2 Front Office Report system prompts. The report is
+# data-grounded: grades, ranks, values, and packages are computed server-side
+# and handed to the model as ground truth. The model narrates; it never
+# computes, invents, or contradicts the numbers.
+FRONT_OFFICE_REPORT_GROUND_RULES = """
+GROUND RULES (no exceptions):
+- Every grade, rank, value, record, and trade package below was computed from
+  live league data. Treat them as ground truth. Never recompute, dispute, or
+  contradict them.
+- Name specific players and cite specific numbers in every section. Never
+  write generic hedge ("address your needs", "consider upgrading", "the
+  fringes", "margin spots").
+- Never invent players, stats, injuries, ages, values, or ranks. If a field is
+  null, omit it; never narrate that it is missing.
+- Never echo JSON key names (snake_case) in prose. Write "playoff odds", not
+  "playoff_odds_pct".
+- STYLE: no em dashes anywhere. Use periods or colons. Records use hyphens
+  (2-0). Keep sentences short and direct, like a GM memo, not a chatbot.
+""".strip()
 
 # Appended to every system prompt that receives player data carrying positional
 # rank labels (pos_rank_label / sf_pos_rank_label). Without this, models read
@@ -187,6 +207,276 @@ Output format:
 Use only this JSON:
 {payload}
 """.strip()
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Front Office Report v2 (Season Hub card + modal)
+# ──────────────────────────────────────────────────────────────────────────────
+
+FRONT_OFFICE_REPORT_SYSTEM = """
+You are a sharp fantasy football front-office analyst writing a premium GM
+report. Be specific, concise, and grounded only in the provided JSON.
+""" + "\n" + FRONT_OFFICE_REPORT_GROUND_RULES + "\n" + DONT_NARRATE_GAPS
+
+FRONT_OFFICE_REPORT_SYSTEM_REDRAFT = """
+You are a sharp REDRAFT fantasy football front-office analyst writing a
+premium GM report. This is a single-season league: players are owned for this
+NFL season only. Focus on remaining-season production, playoff odds, injuries,
+and waiver/trade moves that win now. Never mention draft picks, dynasty value,
+rebuilds, or multi-year windows.
+""" + "\n" + FRONT_OFFICE_REPORT_GROUND_RULES + "\n" + REDRAFT_HONESTY_RULES
+
+
+def _for_trade_target_label(g0: dict) -> str:
+    """Human label for a trade target. Age/value are optional; minimal test
+    fixtures may carry only id/name/position."""
+    extra = ""
+    if g0.get("age") is not None:
+        extra += f", age {g0['age']}"
+    if g0.get("value") is not None:
+        extra += f", value {g0['value']}"
+    return f"{g0.get('name')} ({g0.get('position')}{extra})"
+
+
+def build_front_office_prompt_payload(data: dict) -> dict:
+    """Compact JSON the model sees. Numbers are precomputed; prose is its job."""
+    grades = data.get("grades") or []
+    best = min(grades, key=lambda g: g["rank"]) if grades else None
+    worst = max(grades, key=lambda g: g["rank"]) if grades else None
+    payload = {
+        "team": data.get("team_name"),
+        "record": data.get("record"),
+        "week": data.get("week"),
+        "season_phase": data.get("season_phase"),
+        "scoring_type": data.get("scoring_type"),
+        "direction": data.get("direction"),
+        "playoff_odds_pct": data.get("playoff_pct"),
+        "playoff_status": data.get("playoff_status"),
+        "points_for": data.get("points_for"),
+        "points_against": data.get("points_against"),
+        "positional_grades": [
+            {"pos": g["pos"], "grade": g["grade"], "rank": f"{g['rank']} of {g['of']}"}
+            for g in grades
+        ],
+        "strongest_room": f"{best['pos']} ({best['grade']}, {best['rank']} of {best['of']})" if best else None,
+        "weakest_room": f"{worst['pos']} ({worst['grade']}, {worst['rank']} of {worst['of']})" if worst else None,
+        "roster_top_15": [
+            {
+                "name": r.get("name"), "pos": r.get("position"), "team": r.get("team"),
+                "age": r.get("age"), "value": r.get("value"),
+                "pos_rank": r.get("pos_rank_label") or None, "role": r.get("role"),
+                "injury": r.get("injury") or None,
+            }
+            for r in (data.get("roster_rows") or [])[:15]
+        ],
+        "risers_7d": data.get("risers_7d"),
+        "fallers_7d": data.get("fallers_7d"),
+        "last_week": data.get("last_week"),
+        "this_week": data.get("this_week"),
+        "trade_targets": [
+            {
+                "target": _for_trade_target_label(t["gets"][0]),
+                "target_id": t["gets"][0]["id"],
+                "you_give": ", ".join(
+                    f"{g.get('name')} ({g.get('position')}"
+                    f"{', value ' + str(g['value']) if g.get('value') is not None else ''})"
+                    for g in t["gives"]
+                ),
+                "partner": t["partner"],
+            }
+            for t in (data.get("trade_targets") or [])
+        ],
+        "waiver_targets": [
+            {
+                "name": w.get("name"), "id": w.get("id"), "pos": w.get("position"),
+                "team": w.get("team"), "value": w.get("value"),
+                "pos_rank": w.get("pos_rank_label") or None,
+            }
+            for w in (data.get("waiver_targets") or [])
+        ],
+        "cut_candidates": [
+            {"name": c.get("name"), "pos": c.get("position"), "value": c.get("value")}
+            for c in (data.get("cut_candidates") or [])
+        ],
+    }
+    if data.get("draft_grade"):
+        payload["draft_grade"] = data["draft_grade"]
+    return payload
+
+
+def build_front_office_report_prompt(data: dict, scoring_type: str = "dynasty") -> str:
+    st = normalize_trade_scoring_type(scoring_type or (data or {}).get("scoring_type"))
+    payload = json_dumps_safe(build_front_office_prompt_payload(data or {}))
+    verdict_enum = (
+        "BUY / HOLD / SELL DEPTH / PRIORITIZE WAIVERS"
+        if st == "redraft"
+        else "BUY / HOLD / SELL VETERANS / REBUILD AGGRESSIVELY"
+    )
+    posture_line = (
+        "Posture must frame the team as contending, on the bubble, or out for "
+        "THIS season in a full sentence (from playoff_status when present)."
+        if st == "redraft"
+        else "Posture is one short paragraph on the team's current situation."
+    )
+    return f"""
+Write a Front Office Report for this team.
+
+{posture_line}
+
+Return a JSON object with these fields:
+- verdict: one of {verdict_enum}. Be decisive. A 2-0 team with elite rooms is
+  BUY. A losing team with aging assets is a SELL variant. Match the enum
+  exactly.
+- headline: one sharp line on the team's situation (max 12 words).
+- posture: one short paragraph on the team's current posture.
+- top_move: the single most important move, naming specific players
+  (one sentence).
+- trade_notes: array of {"target_id", "note"} objects, one per trade target
+  you can justify. target_id must be one of the target_id values in the JSON
+  below. Omit targets you cannot justify; do not invent ids.
+- waiver_notes: array of {"id", "note"} objects, one per waiver target worth
+  adding. id must be one of the id values in the JSON below. Omit the rest;
+  do not invent ids.
+- gm_alert: one or two sentences. The single most urgent thing the GM must
+  know: a deadline, an injury window, a collapsing room. Name names and
+  numbers.
+
+{FRONT_OFFICE_REPORT_GROUND_RULES}
+
+Use only this JSON:
+
+{payload}
+""".strip()
+
+
+def _front_office_note_items_schema(id_field: str, valid_ids: list, note_desc: str) -> dict:
+    """Strict array-of-entries schema for per-target notes.
+
+    Structured-output strict mode forbids dynamic-key objects
+    (propertyNames and additionalProperties-with-schema are unsupported, and
+    additionalProperties must be exactly false), so notes are modeled as an
+    array of {id, note} entries with the id constrained by enum to the target
+    ids present in the prompt payload. The model cannot emit notes for
+    unknown targets; post-parse normalization converts the array to the
+    {id: note} dict the renderers consume.
+    """
+    id_schema: dict = {"type": "string"}
+    if valid_ids:
+        # Empty enum would reject every value; with no targets the model
+        # should return an empty array and post-parse drops any stray rows.
+        id_schema["enum"] = [str(v) for v in valid_ids]
+    return {
+        "type": "array",
+        "description": note_desc,
+        "items": {
+            "type": "object",
+            "properties": {
+                id_field: id_schema,
+                "note": {"type": "string", "description": note_desc},
+            },
+            "required": [id_field, "note"],
+            "additionalProperties": False,
+        },
+    }
+
+
+def normalize_note_entries(entries, id_field: str, valid_ids) -> dict:
+    """Convert [{id, note}] entries to {id: note}.
+
+    Drops rows for unknown ids, non-string or blank notes, and duplicate ids
+    (first wins). Values are prose-scrubbed like the other AI strings.
+    """
+    valid = {str(v) for v in (valid_ids or [])}
+    out: dict[str, str] = {}
+    for e in entries or []:
+        if not isinstance(e, dict):
+            continue
+        key = e.get(id_field)
+        note = e.get("note")
+        if key is None or not isinstance(note, str):
+            continue
+        key = str(key)
+        if key not in valid or key in out:
+            continue
+        note = scrub_ai_prose_field_names(note).strip()
+        if note:
+            out[key] = note
+    return out
+
+
+def generate_front_office_report_result(data: dict) -> dict:
+    """LLM-backed narrative layer for the v2 Front Office Report."""
+    client = get_ai_client()
+    scoring_type = normalize_trade_scoring_type((data or {}).get("scoring_type"))
+    is_redraft = scoring_type == "redraft"
+    verdict_enum = (
+        ["BUY", "HOLD", "SELL DEPTH", "PRIORITIZE WAIVERS"]
+        if is_redraft
+        else ["BUY", "HOLD", "SELL VETERANS", "REBUILD AGGRESSIVELY"]
+    )
+    trade_targets = (data or {}).get("trade_targets") or []
+    trade_ids = [t["gets"][0]["id"] for t in trade_targets if (t.get("gets") or [None])[0]]
+    waiver_targets = (data or {}).get("waiver_targets") or []
+    waiver_ids = [w["id"] for w in waiver_targets if w.get("id") is not None]
+    schema = {
+        "type": "object",
+        "properties": {
+            "verdict": {"type": "string", "enum": verdict_enum},
+            "headline": {"type": "string"},
+            "posture": {"type": "string"},
+            "top_move": {"type": "string"},
+            "trade_notes": _front_office_note_items_schema(
+                "target_id", trade_ids,
+                "One sentence per trade target on why that specific deal helps this roster.",
+            ),
+            "waiver_notes": _front_office_note_items_schema(
+                "id", waiver_ids,
+                "One short reason per waiver target to add that specific player.",
+            ),
+            "gm_alert": {"type": "string"},
+        },
+        "required": ["verdict", "headline", "posture", "top_move", "gm_alert"],
+        "additionalProperties": False,
+    }
+    system_prompt = (
+        FRONT_OFFICE_REPORT_SYSTEM_REDRAFT if is_redraft else FRONT_OFFICE_REPORT_SYSTEM
+    )
+    user_prompt = build_front_office_report_prompt(data, scoring_type)
+    resp = client.responses.create(
+        model=OPENAI_MODEL,
+        input=[
+            {"role": "system", "content": system_prompt + POS_RANK_LABEL_NOTE},
+            {"role": "user", "content": user_prompt},
+        ],
+        text={
+            "format": {
+                "type": "json_schema",
+                "name": "front_office_report",
+                "schema": schema,
+            }
+        },
+    )
+    original = (resp.output_text or "").strip()
+    if not original:
+        raise ValueError("OpenAI API returned empty response for front_office_report")
+    raw = clean_ai_text(original)
+    if not raw:
+        raise ValueError("OpenAI API response became empty after cleaning for front_office_report")
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"OpenAI API returned invalid JSON for front_office_report: {e}") from e
+    if not isinstance(parsed, dict):
+        raise ValueError("LLM front_office_report did not return an object")
+    parsed = scrub_ai_result_strings(parsed)
+    # Normalize the strict note arrays to the {id: note} dicts the renderers
+    # consume. Belt and suspenders: the enum already blocks unknown ids, but
+    # a non-strict response could still smuggle extras through.
+    parsed["trade_notes"] = normalize_note_entries(
+        parsed.get("trade_notes"), "target_id", trade_ids)
+    parsed["waiver_notes"] = normalize_note_entries(
+        parsed.get("waiver_notes"), "id", waiver_ids)
+    return parsed
 
 
 TRADE_ANALYSIS_SYSTEM = """
