@@ -38201,6 +38201,14 @@ a.rz-demo-link:hover {
     animation-delay: .51s;
 }
 
+.wrapped-slide.active .wrapped-row:nth-child(5) {
+    animation-delay: .62s;
+}
+
+.wrapped-slide.active .wrapped-row:nth-child(6) {
+    animation-delay: .73s;
+}
+
 /* Champion finale: crown, gold record chip, light rays. */
 .wrapped-crown {
     position: relative;
