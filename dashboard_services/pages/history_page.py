@@ -1878,20 +1878,33 @@ def _wrapped_public_bootstrap_js(ns: str = "wrapped") -> str:
     if (loading) return;
     loading = true;
     launch.classList.add('wrapped-launch-loading');
-    fetch(url, { headers: { 'X-Requested-With': 'fetch' } })
-      .then(function (r) { return r.json(); })
-      .then(function (d) {
-        if (d && d.html) {
-          mount.innerHTML = d.html;
-          // Snapshot the pristine overlay (before open() mutates it) for the
-          // copy-link share flow.
-          launch.__wrappedPristine = d.html;
-          loaded = true;
-          openWrapped();
-        }
-      })
-      .catch(function () {})
-      .then(function () { loading = false; launch.classList.remove('wrapped-launch-loading'); });
+    // The overlay endpoint can 502 while a cold worker is still building the
+    // league context, so retry with backoff instead of dying silently.
+    var attempts = 0;
+    function done() { loading = false; launch.classList.remove('wrapped-launch-loading'); }
+    function fail() {
+      if (attempts < 3) { setTimeout(tryFetch, attempts * 1500); return; }
+      done();
+      toast('Could not load the story \\u2014 tap to try again');
+    }
+    function tryFetch() {
+      attempts++;
+      fetch(url, { headers: { 'X-Requested-With': 'fetch' } })
+        .then(function (r) { if (!r.ok) throw new Error('http ' + r.status); return r.json(); })
+        .then(function (d) {
+          if (d && d.html) {
+            mount.innerHTML = d.html;
+            // Snapshot the pristine overlay (before open() mutates it) for the
+            // copy-link share flow.
+            launch.__wrappedPristine = d.html;
+            loaded = true;
+            done();
+            openWrapped();
+          } else { fail(); }
+        })
+        .catch(function () { fail(); });
+    }
+    tryFetch();
   });
 })();"""
     assert _launch_handler in js, "wrapped bootstrap launch handler changed; update _wrapped_public_bootstrap_js"
@@ -2385,20 +2398,33 @@ _WRAPPED_BOOTSTRAP_JS = r"""
     if (loading) return;
     loading = true;
     launch.classList.add('wrapped-launch-loading');
-    fetch(url, { headers: { 'X-Requested-With': 'fetch' } })
-      .then(function (r) { return r.json(); })
-      .then(function (d) {
-        if (d && d.html) {
-          mount.innerHTML = d.html;
-          // Snapshot the pristine overlay (before open() mutates it) for the
-          // copy-link share flow.
-          launch.__wrappedPristine = d.html;
-          loaded = true;
-          openWrapped();
-        }
-      })
-      .catch(function () {})
-      .then(function () { loading = false; launch.classList.remove('wrapped-launch-loading'); });
+    // The overlay endpoint can 502 while a cold worker is still building the
+    // league context, so retry with backoff instead of dying silently.
+    var attempts = 0;
+    function done() { loading = false; launch.classList.remove('wrapped-launch-loading'); }
+    function fail() {
+      if (attempts < 3) { setTimeout(tryFetch, attempts * 1500); return; }
+      done();
+      toast('Could not load the story \u2014 tap to try again');
+    }
+    function tryFetch() {
+      attempts++;
+      fetch(url, { headers: { 'X-Requested-With': 'fetch' } })
+        .then(function (r) { if (!r.ok) throw new Error('http ' + r.status); return r.json(); })
+        .then(function (d) {
+          if (d && d.html) {
+            mount.innerHTML = d.html;
+            // Snapshot the pristine overlay (before open() mutates it) for the
+            // copy-link share flow.
+            launch.__wrappedPristine = d.html;
+            loaded = true;
+            done();
+            openWrapped();
+          } else { fail(); }
+        })
+        .catch(function () { fail(); });
+    }
+    tryFetch();
   });
 })();
 """
