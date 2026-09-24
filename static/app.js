@@ -12390,8 +12390,14 @@ document.addEventListener("DOMContentLoaded", () => {
       const formattedDate = formatDate(entry.date);
       let link = entry.link || "#";
 
-      // If logged in and link starts with /, prepend league context
-      if (isLoggedIn && link.startsWith('/')) {
+      // If logged in and link starts with /, prepend league context -- except
+      // for global-only pages ("/", /portfolio, /top-movers), which 404 when
+      // prefixed. Mirrors the push-broadcast URL policy in routes/push_bp.py.
+      var _clPath = link.split("?", 1)[0].split("#", 1)[0].replace(/\/+$/, "") || "/";
+      var _clGlobal = _clPath === "/" || ["/portfolio", "/top-movers"].some(function(g) {
+        return _clPath === g || _clPath.indexOf(g + "/") === 0;
+      });
+      if (isLoggedIn && link.startsWith('/') && !_clGlobal) {
         link = leaguePrefix + link;
       }
 

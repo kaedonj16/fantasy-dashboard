@@ -375,6 +375,53 @@ def api_cron_notifications():
     return jsonify({"ok": True})
 
 
+# Broadcast links are authored as app-relative paths that may be league-scoped
+# (/waivers, /dashboard, /teams, ...). The in-app changelog dropdown prepends
+# the viewer's /<platform>/<season>/<league_id> prefix; a push notification
+# must resolve the same prefix per recipient or the tap 404s. Paths in this
+# set are global-only and must never be prefixed.
+_BROADCAST_GLOBAL_PATHS = frozenset({"/portfolio", "/top-movers"})
+
+
+def _broadcast_season():
+    """Current NFL season for league-scoped broadcast URLs. Never raises."""
+    try:
+        from dashboard_services.api import get_nfl_state
+        season = int((get_nfl_state() or {}).get("season") or 0)
+        if season > 0:
+            return season
+    except Exception:
+        pass
+    import datetime as _dt
+    return _dt.datetime.now().year
+
+
+def _is_broadcast_global_path(url):
+    """True when a broadcast URL is global-only and must never be league-prefixed."""
+    path = url.split("?", 1)[0].split("#", 1)[0].rstrip("/") or "/"
+    return path == "/" or any(
+        path == g or path.startswith(g + "/") for g in _BROADCAST_GLOBAL_PATHS
+    )
+
+
+def _resolve_broadcast_url(url, platform, season, league_id):
+    """Resolve a broadcast URL against one recipient's league context.
+
+    League-scoped pages 404 without the /<platform>/<season>/<league_id>
+    prefix, so it is applied per recipient from their newest subscription row.
+    Global-only pages ("/", /portfolio, /top-movers) are left alone. When the
+    recipient has no league context, fall back to "/" rather than sending a
+    URL that is guaranteed to 404.
+    """
+    if not isinstance(url, str) or not url.startswith("/"):
+        return url or "/"
+    if _is_broadcast_global_path(url):
+        return url
+    if league_id and season:
+        return "/%s/%s/%s%s" % (platform or "sleeper", season, league_id, url)
+    return "/"
+
+
 def _push_broadcast(title: str, body: str, url: str = "/", tag: str = "update"):
     """Send a push to every subscribed device. Returns a (body_dict, status)
     tuple - deliberately NOT a Flask response, so it is safe to call outside a
@@ -395,10 +442,12 @@ def _push_broadcast(title: str, body: str, url: str = "/", tag: str = "update"):
             # which would each receive a copy. Collapse by owner_id (the
             # signed-in user) so a global broadcast lands once; anonymous rows
             # with no owner still de-dupe per endpoint. Newest row (id DESC) wins,
-            # so we send to the user's most recent subscription.
+            # so we send to the user's most recent subscription -- and its
+            # league context is what league-scoped broadcast URLs resolve
+            # against.
             rows = _pconn.execute(
-                "SELECT DISTINCT ON (dedupe_key) endpoint, p256dh, auth FROM ("
-                "  SELECT endpoint, p256dh, auth, id, "
+                "SELECT DISTINCT ON (dedupe_key) endpoint, p256dh, auth, league_id, platform FROM ("
+                "  SELECT endpoint, p256dh, auth, league_id, platform, id, "
                 "         COALESCE(NULLIF(owner_id, ''), 'ep:' || endpoint) AS dedupe_key "
                 "  FROM push_subscriptions"
                 ") s ORDER BY dedupe_key, id DESC"
@@ -407,7 +456,7 @@ def _push_broadcast(title: str, body: str, url: str = "/", tag: str = "update"):
         logger.warning("[push] broadcast query failed: %s", exc)
         return {"error": "DB error"}, 500
 
-    payload       = _json.dumps({"title": title, "body": body, "url": url, "tag": tag})
+    season = None  # resolved lazily per recipient; global URLs never need it
     try:
         from utils.push_notifications import _make_vapid
         vapid_obj = _make_vapid(keys["private"])
@@ -419,6 +468,18 @@ def _push_broadcast(title: str, body: str, url: str = "/", tag: str = "update"):
 
     for row in rows:
         ep, p256dh, auth = row["endpoint"], row["p256dh"], row["auth"]
+        league_id = (row.get("league_id") or "").strip()
+        platform = (row.get("platform") or "").strip()
+        # Resolve league-scoped broadcast URLs against this recipient's league
+        # context ("/waivers" -> "/sleeper/2026/<league>/waivers"); global URLs
+        # pass through untouched. The season lookup is lazy so broadcasts with
+        # global URLs never pay for it (and a Sleeper hiccup can't break them).
+        if (league_id and isinstance(url, str) and url.startswith("/")
+                and not _is_broadcast_global_path(url)):
+            if season is None:
+                season = _broadcast_season()
+        target_url = _resolve_broadcast_url(url, platform, season, league_id)
+        payload = _json.dumps({"title": title, "body": body, "url": target_url, "tag": tag})
         try:
             webpush(
                 subscription_info={"endpoint": ep, "keys": {"p256dh": p256dh, "auth": auth}},
