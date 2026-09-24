@@ -1640,9 +1640,12 @@ def render_matchup_slide(
             status_by_pid.get(p.get("pid"), STATUS_NOT_STARTED) in (STATUS_IN_PROGRESS, STATUS_FINAL)
             for p in (t.get("starters") or [])
         )
+        # No games started yet: the "live" total is just today's summed
+        # projections, so a trend arrow would only show drift between two
+        # projection snapshots, not real performance. Show it once players
+        # are actually on the field.
         if not any_started:
-            return (f"<span class='num m-proj-only'>{live_proj_total:.1f}</span>"
-                    f"{_trend_arrow(live_proj_total)}"), False
+            return f"<span class='num m-proj-only'>{live_proj_total:.1f}</span>", False
         # Provider scoreboard totals remain authoritative.  A partially mapped
         # Yahoo lineup may enrich rows but must never zero the matchup header.
         actual_total = t.get("pts_total")

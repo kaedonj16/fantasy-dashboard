@@ -215,3 +215,56 @@ def test_compact_slide_shows_fleaflicker_team_projected_points(monkeypatch):
     assert "66.3" in html
     assert "35.9" in html
     assert "m-proj-only" in html
+
+
+def _trend_matchup():
+    return {
+        "left": {
+            "name": "Free win", "roster_id": "1", "record": "0-0", "username": "a",
+            "avatar": "", "pts_total": 0.0, "proj_total": 120.4,
+            "starters": [{"pid": "p1", "name": "P1", "pos": "QB", "nfl": "KC", "pts": None}],
+        },
+        "right": {
+            "name": "Red Zone Zach", "roster_id": "2", "record": "0-0", "username": "b",
+            "avatar": "", "pts_total": 0.0, "proj_total": 124.6,
+            "starters": [{"pid": "p2", "name": "P2", "pos": "RB", "nfl": "SF", "pts": None}],
+        },
+    }
+
+
+def _render_trend_slide(mmod, matchup, status_by_pid):
+    return mmod.render_matchup_slide(
+        "2026", matchup, w=1, proj_week=0,
+        status_by_pid=status_by_pid,
+        projections={},
+        players={},
+        teams={},
+        team_game_lookup={},
+        compact=True,
+        scoring_settings={"rec": 1.0},
+    )
+
+
+def test_trend_arrow_hidden_until_games_start(monkeypatch):
+    """Pre-game the header shows the projection with no trend arrow: the
+    "live" total is just today's summed projections, so an arrow would only
+    show drift between two projection snapshots, not real performance."""
+    mmod = _matchups()
+    monkeypatch.setattr(mmod, "_allow_live_game_indicators", lambda *_a, **_k: False)
+    monkeypatch.setattr("utils.utils.load_week_projection", lambda *_a, **_k: {})
+    html = _render_trend_slide(mmod, _trend_matchup(), status_by_pid={})
+    assert "m-proj-only" in html
+    assert "mb-trend" not in html
+
+
+def test_trend_arrow_shows_once_a_game_starts(monkeypatch):
+    """Once a starter's game is in progress, the header shows whether the
+    live projected final is beating or missing the pregame number."""
+    mmod = _matchups()
+    monkeypatch.setattr(mmod, "_allow_live_game_indicators", lambda *_a, **_k: False)
+    monkeypatch.setattr("utils.utils.load_week_projection", lambda *_a, **_k: {})
+    matchup = _trend_matchup()
+    matchup["left"]["pts_total"] = 4.0
+    matchup["left"]["starters"][0]["pts"] = 4.0
+    html = _render_trend_slide(mmod, matchup, status_by_pid={"p1": mmod.STATUS_IN_PROGRESS})
+    assert "mb-trend-down" in html
