@@ -291,7 +291,7 @@ def test_weekly_bootstrap_js_uses_namespaced_ids():
 
     js = H._wrapped_bootstrap_js("weekly-wrapped")
     for _id in ("Launch", "Mount", "Overlay", "Stage", "Share", "Close",
-                "Next", "Prev", "ShareData"):
+                "Next", "Prev", "ShareData", "Link", "Toast", "Pause"):
         assert f"'weekly-wrapped{_id}'" in js
     # The default namespace is untouched.
     assert "'wrappedLaunch'" in H._wrapped_bootstrap_js("wrapped")
@@ -337,3 +337,139 @@ def test_wrapped_overlay_fetch_retries_instead_of_dying_silently():
     assert ".catch(function () {})" not in js
     # Loading state survives across retries and clears exactly once.
     assert js.count("function done()") == 1
+
+
+def _fake_coaching_efficiency(*args, **kwargs):
+    return {"by_rid": {
+        "r1": {"weeks": [{"week": 3, "actual": 148.0, "optimal": 150.0, "eff": 98.7}]},
+        "r2": {"weeks": [{"week": 3, "actual": 88.0, "optimal": 95.0, "eff": 92.6}]},
+        "r3": {"weeks": [{"week": 3, "actual": 110.0, "optimal": 125.0, "eff": 88.0}]},
+        "r4": {"weeks": [{"week": 3, "actual": 90.0, "optimal": 120.0, "eff": 75.0}]},
+    }}
+
+
+def _fake_lineup_analysis(*args, **kwargs):
+    return {
+        "available": True, "historical_projections": True,
+        "underperformers": [
+            {"name": "Bust WR", "pos": "WR", "nfl": "DAL", "pts": 2.1},
+        ],
+        "missed_opportunities": [
+            {"starter": {"name": "Cold QB"}, "bench_player": {"name": "Hot QB"},
+             "gap": 18.4, "team": "Alpha", "rid": "r1"},
+            {"starter": {"name": "Cold RB"}, "bench_player": {"name": "Hot RB"},
+             "gap": 11.2, "team": "Beta", "rid": "r2"},
+        ],
+    }
+
+
+def test_weekly_coaching_slide_combines_efficiency_bust_and_misses():
+    """The coaching slide carries the efficiency top 3, the biggest bust, and
+    the worst start/sit calls on one slide (lazy/full-deck path only)."""
+    from unittest import mock
+    from dashboard_services.pages import history_page as H
+
+    ctx = _mock_week_ctx()
+    with mock.patch("dashboard_services.platform_api.get_matchups",
+                    side_effect=_fake_boxscores), \
+         mock.patch("dashboard_services.season_efficiency.compute_league_season_efficiency",
+                    side_effect=_fake_coaching_efficiency), \
+         mock.patch("dashboard_services.recap_calculations.build_lineup_analysis",
+                    side_effect=_fake_lineup_analysis):
+        slides = H._build_weekly_wrapped_slides(ctx, "Test League", 2026, 3)
+
+    by_kind = {s["kind"]: s for s in slides}
+    assert "coaching" in by_kind
+    coaching = by_kind["coaching"]
+    assert coaching["eyebrow"] == "COACHING REPORT"
+    rows = list(coaching["rows"])
+    assert rows[0] == ("#1 EFFICIENCY", "Alpha", "99%")
+    assert rows[1] == ("#2 EFFICIENCY", "Beta", "93%")
+    assert rows[2] == ("#3 EFFICIENCY", "Gamma", "88%")
+    assert rows[3] == ("BIGGEST BUST", "Bust WR (WR · DAL)", "2.1 PTS")
+    assert rows[4] == ("COACHING MISS", "Started Cold QB over Hot QB", "+18.4")
+    assert rows[5] == ("COACHING MISS", "Started Cold RB over Hot RB", "+11.2")
+
+
+def test_weekly_coaching_slide_skipped_without_data():
+    """No coaching slide when efficiency and lineup analysis are unavailable."""
+    from unittest import mock
+    from dashboard_services.pages import history_page as H
+
+    ctx = _mock_week_ctx()
+    with mock.patch("dashboard_services.platform_api.get_matchups",
+                    side_effect=_fake_boxscores), \
+         mock.patch("dashboard_services.season_efficiency.compute_league_season_efficiency",
+                    return_value={}), \
+         mock.patch("dashboard_services.recap_calculations.build_lineup_analysis",
+                    return_value={"available": False}):
+        slides = H._build_weekly_wrapped_slides(ctx, "Test League", 2026, 3)
+
+    assert "coaching" not in {s["kind"] for s in slides}
+    # The cheap launcher check never builds the coaching slide.
+    cheap = H._build_weekly_wrapped_slides(ctx, "Test League", 2026, 3,
+                                           include_players=False)
+    assert "coaching" not in {s["kind"] for s in cheap}
+
+
+def test_weekly_coaching_bust_skipped_when_it_repeats_the_dud():
+    """Without trustworthy projections the bust ranking mirrors the dud slide's
+    coldest starter; the coaching slide must not name the same player twice."""
+    from unittest import mock
+    from dashboard_services.pages import history_page as H
+
+    def _same_as_dud(*args, **kwargs):
+        a = _fake_lineup_analysis()
+        a["underperformers"] = [{"name": "Cold K", "pos": "K", "nfl": "NE", "pts": 1.2}]
+        return a
+
+    ctx = _mock_week_ctx()
+    with mock.patch("dashboard_services.platform_api.get_matchups",
+                    side_effect=_fake_boxscores), \
+         mock.patch("dashboard_services.season_efficiency.compute_league_season_efficiency",
+                    side_effect=_fake_coaching_efficiency), \
+         mock.patch("dashboard_services.recap_calculations.build_lineup_analysis",
+                    side_effect=_same_as_dud):
+        slides = H._build_weekly_wrapped_slides(ctx, "Test League", 2026, 3)
+
+    coaching = {s["kind"]: s for s in slides}["coaching"]
+    kinds = [k for k, n, v in coaching["rows"]]
+    assert "BIGGEST BUST" not in kinds
+    assert kinds.count("COACHING MISS") == 2
+
+
+def test_wrapped_overlay_has_pause_control():
+    """The overlay ships a namespaced pause/play button wired to the player."""
+    from dashboard_services.pages import history_page as H
+
+    slides = [
+        {"kind": "intro", "eyebrow": "WEEK 3", "big": "T", "num": False, "dp": 0,
+         "suffix": "", "label": "Wrapped", "sub": "s"},
+        {"kind": "topscore", "eyebrow": "HIGH", "big": "150.5", "num": True,
+         "dp": 1, "suffix": "", "label": "Alpha", "sub": "s"},
+        {"kind": "lowscore", "eyebrow": "LOW", "big": "90.2", "num": True,
+         "dp": 1, "suffix": "", "label": "Beta", "sub": "s"},
+    ]
+    html = H._wrapped_overlay_markup(slides, None, ns="weekly-wrapped",
+                                     footer_label="WEEK 3")
+    assert 'id="weekly-wrappedPause"' in html
+    assert 'aria-pressed="false"' in html
+    assert "Pause auto-advance" in html
+
+    js = H._wrapped_bootstrap_js("weekly-wrapped")
+    assert "function setPaused" in js
+    assert "function paintPauseBtn" in js
+    assert "'weekly-wrappedPause'" in js
+    # P toggles pause without stealing the existing space-to-advance binding.
+    assert "setPaused(!paused)" in js
+    assert "e.key === ' '" in js
+
+
+def test_wrapped_pause_button_css():
+    """The pause pill matches the Share/Link chrome on mobile and desktop."""
+    root = Path(__file__).resolve().parents[1]
+    css = (root / "static/dashboard.css").read_text()
+    assert ".wrapped-pause {" in css
+    assert "left: 196px" in css
+    assert "z-index: 6" in css
+    assert ".wrapped-pause:hover" in css

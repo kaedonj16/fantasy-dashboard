@@ -37697,6 +37697,34 @@ a.rz-demo-link:hover {
     background: rgba(255, 255, 255, .22);
 }
 
+/* Pause/play pill: sits next to Link, same chrome. */
+.wrapped-pause {
+    position: absolute;
+    top: 46px;
+    left: 196px;
+    z-index: 6;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    height: 38px;
+    padding: 0 15px 0 13px;
+    border: 0;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, .12);
+    color: #fff;
+    font-size: 14px;
+    font-weight: 800;
+}
+
+.wrapped-pause span {
+    line-height: 1;
+}
+
+.wrapped-pause:hover {
+    background: rgba(255, 255, 255, .22);
+}
+
 /* Toast for copy-link feedback. */
 .wrapped-toast {
     position: fixed;
@@ -37732,6 +37760,11 @@ a.rz-demo-link:hover {
     .wrapped-link {
         top: calc((100vh - var(--wrap-h)) / 2 + 44px);
         left: calc((100vw - var(--wrap-w)) / 2 + 106px);
+    }
+    .wrapped-pause {
+        /* Clear the progress bar (at +6px, ~35px tall) so the pill doesn't sit on it. */
+        top: calc((100vh - var(--wrap-h)) / 2 + 44px);
+        left: calc((100vw - var(--wrap-w)) / 2 + 194px);
     }
 }
 
