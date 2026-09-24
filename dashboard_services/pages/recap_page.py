@@ -29,6 +29,21 @@ def _matchup_badges(matchups: list[dict]) -> dict[int, list[str]]:
     return {highest: ["Highest-Scoring Matchup"]}
 
 
+def _gotw_matchup_index(matchups: list[dict], selection: dict | None) -> int | None:
+    """Index of the matchup whose two roster ids equal the cached GOTW pick.
+
+    The GOTW selection is the pre-week AI pick; on the recap scoreboard it marks
+    "the game that was GOTW". Returns None when there is no usable selection.
+    """
+    ids = {str(r) for r in ((selection or {}).get("roster_ids") or [])}
+    if len(ids) != 2:
+        return None
+    for i, m in enumerate(matchups or []):
+        if {str(m.get("w_rid")), str(m.get("l_rid"))} == ids:
+            return i
+    return None
+
+
 def _usernames_by_roster_id(users: list[dict], rosters: list[dict]) -> dict[str, str]:
     """Map roster_id -> Sleeper username for the recap's @manager line.
 
@@ -542,16 +557,36 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
         )
 
     badge_map = _matchup_badges(matchups)
+    # Game of the Week: the pre-week AI pick cached for this target week gets a
+    # chip on the recap scoreboard too ("the game that was GOTW").
+    try:
+        from dashboard_services.ai.weekly_recap import get_cached_gotw_selection
+        _gotw_idx = _gotw_matchup_index(
+            matchups, get_cached_gotw_selection(_platform, _league_id, _season, selected_week or 0))
+    except Exception:
+        logger.warning("recap gotw lookup failed", exc_info=True)
+        _gotw_idx = None
+    if _gotw_idx is not None:
+        badge_map.setdefault(_gotw_idx, []).insert(0, "GOTW")
 
     def matchup_result_row(m, matchup_index):
         w_team = team_name(m["winner"], m["w_rid"])
         l_team = team_name(m["loser"], m["l_rid"])
-        result = "Tied" if m.get("tied") else f"Won by {m['margin']:.2f}"
-        def team_block(owner, rid, name, points, side, winner=False):
+        tied = bool(m.get("tied"))
+        result = "Tied" if tied else f"Won by {m['margin']:.2f}"
+        margin_html = (result if tied
+                       else f'<span class="recap-margin-pill">{result}</span>')
+        if tied:
+            scoreline = f"{m['w_pts']:.2f} <span>\u2013</span> {m['l_pts']:.2f}"
+        else:
+            scoreline = (f'<span class="recap-score-w">{m["w_pts"]:.2f}</span> '
+                         f"<span>\u2013</span> "
+                         f'<span class="recap-score-l">{m["l_pts"]:.2f}</span>')
+        def team_block(owner, rid, name, points, side, winner=False, loser=False):
             ava = team_link(owner, rid, ava_img(owner, rid, 36))
             nm = team_link(owner, rid, name, extra_class="recap-team-name-link")
             handle = username_by_rid.get(str(rid)) or owner
-            return f"""<div class="recap-team recap-team--{side}{' recap-team--winner' if winner else ''}">
+            return f"""<div class="recap-team recap-team--{side}{' recap-team--winner' if winner else ''}{' recap-team--loser' if loser else ''}">
               <div class="recap-team-identity">{ava}
                 <div class="recap-team-copy"><div class="recap-team-name">{nm}</div>
                 <div class="recap-team-manager">@{html.escape(handle)}</div></div>
@@ -563,15 +598,15 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
                    f'View matchup <span aria-hidden="true">&rsaquo;</span></a>')
         return f"""
 <article class="recap-matchup-row">
-  <div class="recap-matchup-badges">{''.join(f'<span>{label}</span>' for label in badge_map.get(matchup_index, []))}</div>
+  <div class="recap-matchup-badges">{''.join('<span class="recap-badge-gotw">' + label + '</span>' if label == "GOTW" else f'<span>{label}</span>' for label in badge_map.get(matchup_index, []))}</div>
   <div class="recap-matchup-main">
-    {team_block(m['winner'], m['w_rid'], w_team, m['w_pts'], 'left', not m.get('tied'))}
-    <div class="recap-matchup-score"><div class="recap-matchup-scoreline">{m['w_pts']:.2f} <span>–</span> {m['l_pts']:.2f}</div>
-      <div class="recap-matchup-margin">{result}</div>{view_mu}</div>
+    {team_block(m['winner'], m['w_rid'], w_team, m['w_pts'], 'left', winner=not tied)}
+    <div class="recap-matchup-score"><div class="recap-matchup-scoreline">{scoreline}</div>
+      <div class="recap-matchup-margin">{margin_html}</div>{view_mu}</div>
     <div class="recap-matchup-vs" aria-hidden="true"><span>VS</span></div>
-    {team_block(m['loser'], m['l_rid'], l_team, m['l_pts'], 'right')}
+    {team_block(m['loser'], m['l_rid'], l_team, m['l_pts'], 'right', loser=not tied)}
     <div class="recap-matchup-footer">
-      <span class="recap-matchup-margin">{result}</span>{view_mu}
+      <span class="recap-matchup-margin">{margin_html}</span>{view_mu}
     </div>
   </div>
 </article>"""

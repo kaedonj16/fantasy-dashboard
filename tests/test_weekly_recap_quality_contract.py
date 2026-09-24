@@ -184,3 +184,39 @@ def test_lineup_sections_have_independent_accessible_expansion_controls():
     assert "<details class='recap-lineup-more'>" in section
     assert "Show all" in section and "Show less" in section
     assert "<section class='rlc-section'>" in section
+
+
+def test_gotw_matchup_index_matches_cached_pick_by_roster_ids():
+    from dashboard_services.pages.recap_page import _gotw_matchup_index
+
+    matchups = [
+        {"w_rid": 10, "l_rid": 20},
+        {"w_rid": "30", "l_rid": "40"},
+    ]
+    # Order-insensitive and int/str-insensitive.
+    assert _gotw_matchup_index(matchups, {"roster_ids": ["20", "10"]}) == 0
+    assert _gotw_matchup_index(matchups, {"roster_ids": [30, 40]}) == 1
+    # No selection, malformed selection, or no matching matchup -> None.
+    assert _gotw_matchup_index(matchups, None) is None
+    assert _gotw_matchup_index(matchups, {}) is None
+    assert _gotw_matchup_index(matchups, {"roster_ids": ["10"]}) is None
+    assert _gotw_matchup_index(matchups, {"roster_ids": ["98", "99"]}) is None
+
+
+def test_scoreboard_highlights_winners_and_chips_gotw():
+    """Winners read at a glance: bold winner score, muted loser score, green
+    won-by pill, dimmed loser side; the GOTW matchup gets its own chip."""
+    source = (ROOT / "dashboard_services/pages/recap_page.py").read_text()
+    css = (ROOT / "static/dashboard.css").read_text()
+
+    for token in ("recap-score-w", "recap-score-l", "recap-margin-pill",
+                  "recap-team--loser", "recap-badge-gotw", '"GOTW"'):
+        assert token in source, token
+    for token in (".recap-score-w", ".recap-score-l", ".recap-margin-pill",
+                  ".recap-team--loser", ".recap-badge-gotw"):
+        assert token in css, token
+    # Ties keep the neutral treatment: no winner/loser emphasis, no pill.
+    assert "if tied" in source
+    # Repo design rule: no pill-shaped buttons (6px chips, not 999px).
+    pill_rule = css.split(".recap-margin-pill")[1].split("}")[0]
+    assert "999px" not in pill_rule
