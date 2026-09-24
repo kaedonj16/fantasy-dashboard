@@ -11839,6 +11839,20 @@ def _ss_game_env(home_team: "Optional[str]", week: int) -> "Optional[dict]":
     return None
 
 
+def _ss_qb_situation(team: "Optional[str]", depth_index: dict,
+                     full_players: dict) -> "Optional[dict]":
+    """Backup/third-string QB chip for a start/sit row, or None.
+
+    Thin wrapper over utils.qb_situation so the row builder keeps its local
+    naming; the real logic lives in the Flask-free utils module.
+    """
+    try:
+        from utils.qb_situation import qb_situation_chip
+        return qb_situation_chip(team, depth_index, full_players)
+    except Exception:
+        return None
+
+
 def _startsit_compare_extras(pid, pos, team, season, week, scoring_settings, *,
                              proj_pts=None, on_bye=False, opponent="",
                              home_team="", implied_total=None, weather=None):
@@ -12014,6 +12028,11 @@ def api_start_sit_options():
     ]
     players_index = ctx.get("players_index") or {}
     players_full = ctx.get("players") or {}
+    try:
+        from utils.waiver_score import build_depth_index as _ss_build_depth
+        _ss_depth_index = _ss_build_depth(players_full)
+    except Exception:
+        _ss_depth_index = {}
     model_value_table = list(get_model_value_table_cached() or [])
     _ss_vkey, _ss_vfb = _waiver_value_keys(ctx)
     _ss_rkey = _waiver_rank_label_key(ctx)
@@ -12358,6 +12377,8 @@ def api_start_sit_options():
             "usage_delta": usage_delta,
             "usage_stat": _ut_ss.get("stat"),
             "game_env": _ss_game_env(home_team_of.get(team), current_week) if not on_bye else None,
+            "qb_situation": (_ss_qb_situation(team, _ss_depth_index, players_full)
+                             if (pos in ("WR", "TE", "RB") and not on_bye) else None),
             "implied_total": _imp_ss,
             "weather": _wx_ss,
             "consistency": _cons,

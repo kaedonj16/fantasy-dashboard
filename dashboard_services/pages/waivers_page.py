@@ -289,7 +289,7 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-ss-stat-lbl { font-size: 10px; color: var(--text-subtle); text-transform: uppercase; letter-spacing: .04em; font-weight: 600; }
 .wv-ss-stat-val { font-size: 13px; font-weight: 700; color: var(--text); }
 .wv-ss-stat-val.muted { color: var(--text-muted); }
-.wv-ss-env, .wv-ss-total, .wv-ss-cons { font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 6px; align-self: flex-start; }
+.wv-ss-env, .wv-ss-total, .wv-ss-cons, .wv-ss-qb { font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 6px; align-self: flex-start; }
 .wv-ss-cons-steady   { background: color-mix(in srgb, var(--win) 16%, transparent); color: var(--win); }
 .wv-ss-cons-balanced { background: rgba(148,163,184,.16); color: var(--text-muted); }
 .wv-ss-cons-volatile { background: color-mix(in srgb, var(--warning) 18%, transparent); color: var(--warning); }
@@ -305,6 +305,12 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 [data-theme="dark"] .wv-ss-env-cold { background: rgba(56,189,248,.20); color: #7dd3fc; }
 [data-theme="dark"] .wv-ss-env-wind { background: rgba(148,163,184,.24); color: #cbd5e1; }
 [data-theme="dark"] .wv-ss-env-precip { background: rgba(59,130,246,.22); color: #93c5fd; }
+/* QB situation: backup (amber) vs third-string or deeper (red). Dark variants
+   keep the chip legible on the dark card background. */
+.wv-ss-qb-qb2 { background: rgba(245,158,11,.16); color: #b45309; }
+.wv-ss-qb-qb3 { background: rgba(239,68,68,.14); color: #b91c1c; }
+[data-theme="dark"] .wv-ss-qb-qb2 { background: rgba(245,158,11,.22); color: #fbbf24; }
+[data-theme="dark"] .wv-ss-qb-qb3 { background: rgba(239,68,68,.20); color: #f87171; }
 /* Vegas implied team total: green when high, muted when low */
 .wv-ss-total-high { background: color-mix(in srgb, var(--win) 16%, transparent); color: var(--win); }
 .wv-ss-total-mid  { background: rgba(148,163,184,.16); color: var(--text-muted); }
@@ -651,6 +657,17 @@ function wvVenueChip(p) {{
   return '<div class="wv-ss-stat"><span class="wv-ss-stat-lbl">' + lbl + '</span>' +
          '<span class="wv-ss-env wv-ss-env-' + env.kind + '" title="' + note + '">' +
          env.label + '</span></div>';
+}}
+
+// Backup / third-string QB signal: the team's effective starter is the QB2 or
+// deeper on the Sleeper depth chart. Rendered in the card header so it reads
+// without expanding the row; the tooltip names the actual starter.
+function wvQbChip(p) {{
+  const q = p.qb_situation;
+  if (!q || !q.label) return '';
+  const note = (q.note || '').replace(/"/g, '&quot;');
+  return '<span class="wv-ss-qb wv-ss-qb-' + q.kind + '" title="' + note + '">' +
+         q.label + '</span>';
 }}
 
 // Vegas implied team total chip.
@@ -1673,6 +1690,7 @@ function wvRenderStartSit() {{
               : '<span class="wv-cx-badge wv-cx-sit">SIT</span>';
 
       const injBadge = wvInjBadge(p.injury_status);
+      const qbChip = wvQbChip(p);
       const escName = (p.name || '').replace(/'/g, "\\'");
       const matchup = p.opponent
         ? `${{p.opponent}} ${{wvSsMatchupChip(p.def_rank, p.def_total)}}` : '';
@@ -1694,7 +1712,7 @@ function wvRenderStartSit() {{
               onclick="wvToggleSsRow(this)">
             ${{badge}}
             <span class="wv-cx-main">
-              <span class="wv-cx-name">${{p.name}}${{injBadge}}</span>
+              <span class="wv-cx-name">${{p.name}}${{injBadge}}${{qbChip}}</span>
               ${{matchup || demoteChip ? `<span class="wv-cx-why">${{matchup}}${{demoteChip}}</span>` : ''}}
               ${{h2h}}
             </span>
