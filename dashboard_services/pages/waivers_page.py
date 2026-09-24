@@ -1714,6 +1714,7 @@ function wvRenderStartSit() {{
             <span class="wv-cx-main">
               <span class="wv-cx-name">${{p.name}}${{injBadge}}${{qbChip}}</span>
               ${{matchup || demoteChip ? `<span class="wv-cx-why">${{matchup}}${{demoteChip}}</span>` : ''}}
+              ${{p.flex_safeguard ? `<span class="wv-cx-why"><span class="wv-cx-k">Flex safeguard</span>Q tag: moved to FLEX so a late scratch can be covered by any RB/WR/TE.</span>` : ''}}
               ${{h2h}}
             </span>
             ${{projBlock}}

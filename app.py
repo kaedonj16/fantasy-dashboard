@@ -11980,6 +11980,50 @@ def _startsit_compare_extras(pid, pos, team, season, week, scoring_settings, *,
     return out
 
 
+# Injury statuses that count as "questionable" for the Q-flex safeguard.
+# Matches the client-side wvInjBadge Q bucket (QUESTIONABLE / Q / GTD).
+_Q_FLEX_STATUSES = frozenset({"Q", "QUESTIONABLE", "GTD"})
+
+
+def _apply_q_flex_safeguard(positions_out: dict, flex_slots: int) -> int:
+    """Move Questionable positional starters into FLEX when possible.
+
+    A Q player slotted at WR/RB/TE is a late-scratch risk: if he's ruled out,
+    a positional slot can only be filled by that one position, while a FLEX
+    slot accepts any RB/WR/TE from the bench. So when a Q player earns a
+    positional start and a non-Q player of the same position is starting in
+    FLEX, swap their slots. The starter SET never changes, so projected points,
+    the optimal-lineup banner, and swap pairing are all unaffected; only the
+    slot badges move. Returns the number of safeguard swaps made.
+
+    ``positions_out`` is the {position: [player dicts]} map built by
+    ``api_start_sit_options`` (each dict carries ``start``, ``flex_start``,
+    ``on_bye`` and ``injury_status``). Mutates the dicts in place.
+    """
+    if not flex_slots or not positions_out:
+        return 0
+    swaps = 0
+    for pos in ("RB", "WR", "TE"):
+        for p in positions_out.get(pos) or []:
+            if not p.get("start") or p.get("flex_start") or p.get("on_bye"):
+                continue
+            if str(p.get("injury_status") or "").upper() not in _Q_FLEX_STATUSES:
+                continue
+            trade = next(
+                (f for f in positions_out.get(pos) or []
+                 if f.get("flex_start") and not f.get("on_bye")
+                 and str(f.get("injury_status") or "").upper() not in _Q_FLEX_STATUSES),
+                None,
+            )
+            if trade is None:
+                continue
+            p["flex_start"] = True
+            trade["flex_start"] = False
+            p["flex_safeguard"] = {"from_pos": pos, "via": trade.get("name")}
+            swaps += 1
+    return swaps
+
+
 @app.route("/api/start-sit-options")
 def api_start_sit_options():
     """
@@ -12448,6 +12492,8 @@ def api_start_sit_options():
         for p in sflex_cands[:sflex_slots]:
             p["start"] = True
             p["flex_start"] = True
+
+    _apply_q_flex_safeguard(positions_out, flex_slots)
 
     # ── Win-probability on the closest call at each position ─────────────────
     # The real start/sit tension is the marginal pair: the last player in a
