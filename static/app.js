@@ -48,7 +48,7 @@ window.brSanitizeHtml = function (html) {
   var ALLOWED = {
     P: 1, DIV: 1, SPAN: 1, STRONG: 1, EM: 1, B: 1, I: 1,
     UL: 1, OL: 1, LI: 1, BR: 1, H3: 1, H4: 1,
-    TABLE: 1, THEAD: 1, TBODY: 1, TR: 1, TH: 1, TD: 1, A: 1
+    TABLE: 1, THEAD: 1, TBODY: 1, TR: 1, TH: 1, TD: 1, A: 1, BUTTON: 1
   };
   var VOID = { BR: 1 };
   var DROP = { SCRIPT: 1, IFRAME: 1, OBJECT: 1, EMBED: 1, LINK: 1, META: 1, STYLE: 1, BASE: 1 };
@@ -13322,13 +13322,55 @@ document.addEventListener('DOMContentLoaded', function() {
   // The modal is built dynamically (no inline scripts) so soft-swapped page
   // roots can never strand it half-executed.
   var _forReportHtml = '';
+  var _forLoadingReport = false;
   function _forCloseModal() {
     var overlay = document.getElementById('forModalOverlay');
     if (overlay) overlay.remove();
     document.body.style.overflow = '';
   }
-  function _forOpenModal() {
-    if (!_forReportHtml) return;
+  // The card (with its View button) can outlive the JS state that backs it:
+  // a soft-swap re-executes the bundle and resets _forReportHtml while the
+  // card HTML persists in the swapped DOM. If the state is empty, pull the
+  // cached report on demand instead of silently doing nothing.
+  async function _forEnsureReportHtml() {
+    if (_forReportHtml) return true;
+    if (_forLoadingReport) return false;
+    var genBtn = document.getElementById('generateGmMemoBtn');
+    if (!genBtn) return false;
+    _forLoadingReport = true;
+    var viewBtn = document.getElementById('forViewFullBtn');
+    var origLabel = viewBtn ? viewBtn.textContent : '';
+    if (viewBtn) { viewBtn.disabled = true; viewBtn.textContent = 'Loading...'; }
+    try {
+      var resp = await fetch('/api/gm-memo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          league_id: genBtn.dataset.leagueId,
+          season: parseInt(genBtn.dataset.season, 10),
+          platform: genBtn.dataset.platform,
+          viewer_roster_id: genBtn.dataset.viewerRosterId
+        })
+      });
+      var data = {};
+      try { data = await resp.json(); } catch (_) {}
+      if (resp.status === 403 && data.paywall) {
+        if (typeof showPaywall === 'function') showPaywall('gm-memo');
+        return false;
+      }
+      if (!resp.ok || !data.success) return false;
+      _forReportHtml = data.report_html || '';
+      return !!_forReportHtml;
+    } catch (_) {
+      return false;
+    } finally {
+      _forLoadingReport = false;
+      if (viewBtn) { viewBtn.disabled = false; viewBtn.textContent = origLabel; }
+    }
+  }
+  async function _forOpenModal() {
+    var ready = await _forEnsureReportHtml();
+    if (!ready) return;
     _forCloseModal();
     var overlay = document.createElement('div');
     overlay.className = 'for-modal-overlay';
