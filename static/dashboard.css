@@ -28185,6 +28185,10 @@ tr.team-clickable {
     width: 112px;
 }
 
+#cache-freshness:hover .fp-pill-time {
+    display: none;
+}
+
 .fp-pill-icon {
     flex: 0 0 40px;
     width: 40px;

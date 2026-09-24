@@ -192,7 +192,7 @@ def test_freshness_labels_handle_unknown_seconds_future_and_days():
     # freshness gate, which reuses the same seconds/future-tolerant normalization.
     assert src.count("normalizeTimestamp(cacheTs())") == 3
     assert "t.textContent = ts ? 'Updated ' + fmtAge(ts) : ''" in src
-    assert "el.textContent = t ? fmtAge(t) : 'Unknown'" in src
+    assert "el.textContent = t ? fmtAge(t, true) : 'Unknown'" in src
     assert "'d ago'" in src
 
 

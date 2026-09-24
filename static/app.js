@@ -3274,18 +3274,19 @@ function showLoginGate(target, opts) {
     if (!Number.isFinite(value) || value <= 0) return 0;
     // Accept API timestamps in seconds, but keep DOM timestamps in ms.
     if (value < 100000000000) value *= 1000;
-    // A clock a little ahead is still "just now"; a wildly future value is bad data.
+    // A clock a little ahead is still "now"; a wildly future value is bad data.
     if (value > Date.now() + 5 * 60000) return 0;
     return Math.floor(value);
   }
-  function fmtAge(ts) {
+  function fmtAge(ts, short) {
     ts = normalizeTimestamp(ts);
     if (!ts) return '';
     var mins = Math.max(0, Math.floor((Date.now() - ts) / 60000));
-    if (mins < 1) return 'just now';
-    if (mins < 60) return mins + 'm ago';
+    if (mins < 1) return 'now';
+    if (mins < 60) return mins + (short ? 'm' : 'm ago');
     var hours = Math.floor(mins / 60);
-    return hours < 24 ? hours + 'h ago' : Math.floor(hours / 24) + 'd ago';
+    if (hours < 24) return hours + (short ? 'h' : 'h ago');
+    return Math.floor(hours / 24) + (short ? 'd' : 'd ago');
   }
   function cacheTs() {
     var main = document.getElementById('page-root');
@@ -3308,7 +3309,7 @@ function showLoginGate(target, opts) {
     if (!chip) return;
     var t = normalizeTimestamp(cacheTs());
     var el = chip.querySelector('.fp-pill-time');
-    if (el) el.textContent = t ? fmtAge(t) : 'Unknown';
+    if (el) el.textContent = t ? fmtAge(t, true) : 'Unknown';
     chip.classList.toggle('cf-stale', !!t && (Date.now() - t > STALE_MS));
     chip.style.opacity = '';
   }
