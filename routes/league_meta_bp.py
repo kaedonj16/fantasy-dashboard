@@ -398,7 +398,13 @@ def api_lineup_lock_hint():
     try:
         from utils.utils import load_week_schedule
         games = load_week_schedule(season, week) or []
-        epochs = [g["gameTime_epoch"] for g in games if g.get("gameTime_epoch")]
+        # gameTime_epoch arrives as a string from the JSON schedule cache.
+        epochs = []
+        for g in games:
+            try:
+                epochs.append(float(g.get("gameTime_epoch")))
+            except (TypeError, ValueError):
+                continue
         if not epochs:
             return jsonify({"ok": False})
         kickoff = datetime.fromtimestamp(min(epochs) / 1000, tz=timezone.utc)
