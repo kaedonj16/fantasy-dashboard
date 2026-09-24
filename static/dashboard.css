@@ -38064,6 +38064,75 @@ a.rz-demo-link:hover {
     color: rgba(255, 255, 255, .42);
 }
 
+/* Game of the Week slide: why line + stacked hero + win-% bar row. */
+.wrapped-why {
+    margin-top: 14px;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: .18em;
+    color: rgba(255, 255, 255, .55);
+}
+
+.wrapped-vs-hero {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    margin-top: 10px;
+}
+
+.wrapped-vs-hero-x {
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: .3em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, .38);
+    margin: 8px 0;
+}
+
+/* Next-week GOTW preview: no winner yet, so both names share one style. */
+.wrapped-duel-t {
+    font-size: clamp(28px, 8vw, 40px);
+    font-weight: 900;
+    letter-spacing: -.02em;
+    line-height: 1.05;
+    overflow-wrap: anywhere;
+}
+
+.wrapped-winbar-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    margin-top: 20px;
+}
+
+.wrapped-winbar-pct {
+    flex: 0 0 auto;
+    font-variant-numeric: tabular-nums;
+    font-size: 12px;
+    font-weight: 800;
+    color: var(--wa);
+}
+
+.wrapped-winbar-pct-r {
+    color: rgba(255, 255, 255, .45);
+}
+
+.wrapped-winbar {
+    flex: 1;
+    height: 8px;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, .14);
+    overflow: hidden;
+}
+
+.wrapped-winbar i {
+    display: block;
+    height: 100%;
+    border-radius: 4px;
+    background: linear-gradient(90deg, #7c3aed, #a78bfa);
+}
+
 /* List slides: label-over-name rows separated by hairlines, values in accent. */
 .wrapped-rows {
     display: flex;
@@ -38286,7 +38355,8 @@ a.rz-demo-link:hover {
 
 .wrapped-slide.active .wrapped-word,
 .wrapped-slide.active .wrapped-num,
-.wrapped-slide.active .wrapped-cname {
+.wrapped-slide.active .wrapped-cname,
+.wrapped-slide.active .wrapped-vs-hero {
     animation: wrapPop .6s var(--ease-spring) .16s both;
 }
 
@@ -38295,7 +38365,9 @@ a.rz-demo-link:hover {
 }
 
 .wrapped-slide.active .wrapped-scores,
-.wrapped-slide.active .wrapped-record {
+.wrapped-slide.active .wrapped-record,
+.wrapped-slide.active .wrapped-winbar-row,
+.wrapped-slide.active .wrapped-why {
     animation: wrapUp .5s var(--ease-out) .42s both;
 }
 
@@ -38396,7 +38468,9 @@ a.rz-demo-link:hover {
     .wrapped-slide.active .wrapped-kicker, .wrapped-slide.active .wrapped-league,
     .wrapped-slide.active .wrapped-word, .wrapped-slide.active .wrapped-num,
     .wrapped-slide.active .wrapped-cname, .wrapped-slide.active .wrapped-name,
+    .wrapped-slide.active .wrapped-vs-hero,
     .wrapped-slide.active .wrapped-scores, .wrapped-slide.active .wrapped-record,
+    .wrapped-slide.active .wrapped-winbar-row,
     .wrapped-slide.active .wrapped-divider, .wrapped-slide.active .wrapped-sub,
     .wrapped-slide.active .wrapped-row, .wrapped-slide.active .wrapped-bgword,
     .wrapped-slide.active .wrapped-crown,
