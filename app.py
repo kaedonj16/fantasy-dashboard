@@ -11594,6 +11594,11 @@ def _load_season_weekly_points(season: int, scoring_settings: dict) -> dict:
     completed_weeks = tuple(qualification_policy(int(season)).completed_weeks)
     key = (int(season), sig, completed_weeks)
     hit = _WEEKLY_PTS_CACHE.get(key)
+    # The live season's week files are runtime-fetched and Render wipes
+    # cache/ on every deploy: backfill completed weeks on demand so PPG
+    # doesn't go N/A after a deploy (fetch_week_stats no-ops on files
+    # that already exist; a per-season cooldown guards a Sleeper outage).
+    _ensure_sleeper_week_files(season)
     pattern = os.path.join(CACHE_DIR, "sleeper_stats", f"sleeper_stats_s{season}_w*.json")
     files = glob.glob(pattern)
     newest = max((os.path.getmtime(p) for p in files), default=0.0)
@@ -17876,6 +17881,46 @@ def _load_usage_rows_cached(season_year: int):
     return data
 
 
+# Cooldown for the on-demand Sleeper week-file backfill below (10 minutes).
+# A failed fetch (e.g. Sleeper outage) must not stall every modal open.
+_SLEEPER_WEEK_ENSURE_TS: dict = {}  # season(int) -> float
+_SLEEPER_WEEK_ENSURE_COOLDOWN_S = 10 * 60
+
+
+def _ensure_sleeper_week_files(season_year: int) -> None:
+    """Fetch-on-demand the Sleeper weekly stat files for completed weeks.
+
+    ``cache/sleeper_stats/sleeper_stats_s{season}_w*.json`` for the live
+    season are fetched at runtime (only past seasons ship in the repo), and
+    Render has no persistent disk, so every deploy wipes them. The
+    player-modal paths only glob those files -- they never fetch -- so after
+    a deploy the game log loses its actuals (projections skip finished
+    weeks) and season PPG/total goes N/A until something else happens to
+    fetch those weeks. Finished weeks are immutable, so each fetch is a
+    one-time backfill; ``fetch_week_stats`` no-ops cheaply when the file
+    already exists and is populated. Never raises.
+    """
+    try:
+        season_year = int(season_year)
+    except (TypeError, ValueError):
+        return
+    now = time.time()
+    if now - _SLEEPER_WEEK_ENSURE_TS.get(season_year, 0.0) < _SLEEPER_WEEK_ENSURE_COOLDOWN_S:
+        return
+    try:
+        from utils.season_qualification import qualification_policy
+        from data_building.external_data.sleeper_bulk_stats import fetch_week_stats
+        completed = qualification_policy(season_year).completed_weeks
+    except Exception:
+        return
+    _SLEEPER_WEEK_ENSURE_TS[season_year] = now
+    for week in completed:
+        try:
+            fetch_week_stats(season_year, int(week))
+        except Exception:
+            continue
+
+
 def _sleeper_stats_by_week(player_id: str, season_year: int) -> dict:
     """Return the player's real Sleeper stat lines for one season.
 
@@ -17883,6 +17928,7 @@ def _sleeper_stats_by_week(player_id: str, season_year: int) -> dict:
     Keeping the small lookup here prevents player-details from deciding that a
     rookie has not played merely because the derived usage_rows snapshot lags.
     """
+    _ensure_sleeper_week_files(season_year)
     import glob as _glob, json as _json, os as _os, re as _re
     out = {}
     pattern = _os.path.join(
@@ -22653,6 +22699,11 @@ def api_player_game_logs(player_id: str):
         # Reuse the years cache
         global _PLAYER_DETAIL_YEARS_CACHE, _PLAYER_DETAIL_YEARS_CACHE_TS
         now = time.time()
+        # The live season's week files are runtime-fetched and Render wipes
+        # cache/ on every deploy: backfill completed weeks before scanning
+        # for available years, or the current season vanishes from the log
+        # (its actuals with it) until something else fetches those weeks.
+        _ensure_sleeper_week_files(season)
         if not _PLAYER_DETAIL_YEARS_CACHE or now - _PLAYER_DETAIL_YEARS_CACHE_TS > _PLAYER_DETAIL_YEARS_TTL:
             stats_files = glob.glob(os.path.join(CACHE_DIR, "sleeper_stats", "sleeper_stats_*.json"))
             _fresh_years: set = set()
