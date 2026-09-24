@@ -962,6 +962,9 @@ const WV_BG_CAUTION = {{
   uncertain_baseline: 'thin history',
 }};
 
+// ── Unexpected performances (big-game detector) ───────────────────────────────
+// Compact rows: category badge + player + what-changed + week points. Factors,
+// caution, and ROS projection expand on tap.
 function wvRenderBigGames(items) {{
   const wrap = document.getElementById('wvBigGamesWrap');
   const list = document.getElementById('wvBigGamesList');
@@ -970,151 +973,206 @@ function wvRenderBigGames(items) {{
   if (wvCurrentPos !== 'ALL') rows = rows.filter(d => d.position === wvCurrentPos);
   if (!rows.length) {{ wrap.hidden = true; list.innerHTML = ''; return; }}
   wrap.hidden = false;
-  list.innerHTML = '<div class="wv-list-card">' + rows.slice(0, 8).map(d => {{
-    const cat = WV_BG_CATEGORY[d.category] || {{ label: d.category, cls: 'chip--muted' }};
+  const CAT = {{
+    priority: ['PRIORITY', 'wv-cx-priority'],
+    speculative: ['SPECULATIVE', 'wv-cx-spec'],
+    watchlist: ['WATCHLIST', 'wv-cx-watch'],
+  }};
+  list.innerHTML = '<div class="wv-cx-card">' + rows.slice(0, 8).map(d => {{
+    const meta = CAT[d.category] || [(d.category || '').toUpperCase() || 'WATCHLIST', 'wv-cx-watch'];
+    const badge = `<span class="wv-cx-badge ${{meta[1]}}">${{meta[0]}}</span>`;
     const live = d.status === 'in_progress'
-      ? '<span class="chip chip--sm chip--muted" title="Provisional — scored live during the game">Game in progress</span>' : '';
+      ? '<span class="wv-cx-chip warn">Game in progress</span>' : '';
     // Evidence-based copy generated from the actual factors (no generic filler).
     const facts = (d.factors || []).slice(0, 2).join(' · ');
     const cautions = (d.cautions || []).map(c => WV_BG_CAUTION[c]).filter(Boolean);
-    const cautionLine = cautions.length
-      ? `<div class="wv-drop-hint" title="Why the box score may not stick"><span class="wv-drop-lbl">Caution</span> ${{cautions.join(' · ')}}</div>` : '';
-    const sub = [d.position, d.team].filter(Boolean).join(' · ');
+    const sub = [d.team, d.position].filter(Boolean).join(' · ');
+    const wkPts = d.actual_points != null ? d.actual_points
+      : (d.week_points != null ? d.week_points : null);
+    const projBlock = wkPts != null
+      ? `<span class="wv-cx-proj"><span class="wv-cx-proj-num">${{wkPts}}</span><span class="wv-cx-proj-lbl">WK PTS</span></span>`
+      : '';
+    const escName = (d.name || '').replace(/'/g, "\\\\'");
+    const pid = d.player_id;
+
+    const ev = [];
+    if (facts) ev.push(`<div class="wv-cx-evl"><span class="k">FACTORS</span>${{facts}}</div>`);
+    if (cautions.length) ev.push(`<div class="wv-cx-evl caution"><span class="k">CAUTION</span>${{cautions.join(' · ')}}</div>`);
+    if (d.ros_ppg != null) ev.push(`<div class="wv-cx-evl"><span class="k">ROS PROJ</span>${{d.ros_ppg}} pts/gm</div>`);
+
     return `
-    <div class="wv-player-row" onclick="openPlayerModal('${{d.player_id}}', '${{(d.name||'').replace(/'/g,"\\'")}}')">
-      <div>
-        <div class="wv-player-name" data-wl-star-pid="${{d.player_id}}">${{d.name || ('Player ' + d.player_id)}}</div>
-        <div class="wv-player-sub">${{sub}}</div>
-        ${{facts ? `<div class="wv-drop-hint"><span class="wv-drop-lbl">What changed</span> ${{facts}}</div>` : ''}}
-        ${{cautionLine}}
-      </div>
-      <div class="wv-right">
-        <span class="wv-advice-metric"><span class="wv-advice-label">Category</span><span class="chip chip--sm ${{cat.cls}}">${{cat.label}}</span></span>
-        ${{live}}
+    <div class="wv-cx-row-wrap">
+      <button type="button" class="wv-cx-row" aria-expanded="false"
+          onclick="wvToggleSsRow(this)">
+        ${{badge}}
+        <span class="wv-cx-main">
+          <span class="wv-cx-name" data-wl-star-pid="${{pid}}">${{d.name || ('Player ' + pid)}}</span>
+          ${{sub ? `<span class="wv-cx-sub">${{sub}}</span>` : ''}}
+          ${{facts ? `<span class="wv-cx-why"><span class="wv-cx-k">WHAT CHANGED</span>${{facts}}</span>` : ''}}
+          ${{live}}
+        </span>
+        ${{projBlock}}
+        <span class="wv-cx-chev" aria-hidden="true">›</span>
+      </button>
+      <div class="wv-cx-detail">
+        ${{ev.length ? `<div class="wv-cx-evidence-list">${{ev.join('')}}</div>` : ''}}
+        <div class="wv-cx-actions" onclick="event.stopPropagation()">
+          <button type="button" onclick="event.stopPropagation();openPlayerModal('${{pid}}', '${{escName}}')">Open player</button>
+          <button type="button" onclick="event.stopPropagation();wvToggleCompare(${{JSON.stringify({{player_id: pid, name: d.name || ('Player ' + pid), position: d.position, team: d.team}}).replace(/"/g, '&quot;')}})">+ Compare</button>
+        </div>
       </div>
     </div>`;
   }}).join('') + '</div>';
   if (window._wlStarDecorate) window._wlStarDecorate(list);
 }}
 
+
 // ── Waiver list ───────────────────────────────────────────────────────────────
+// ── Best moves (waiver list) ──────────────────────────────────────────────────
+// Compact rows: outcome badge + player + lineup gain + proj/value. Drop,
+// schedule, usage, and FAAB evidence expand on tap. The group verdict names
+// the single best move before any row is read.
+function wvBmGroupVerdict(players) {{
+  if (!window._viewerRid || !players.length) return '';
+  const top = players[0];
+  const gain = Number(top.lineup_gain) || 0;
+  if (!(gain > 0)) return '';
+  // Signed gain, never "+-5.0".
+  const gainTxt = '+' + gain.toFixed(1);
+  let txt = `Top move: add <b>${{top.name}}</b> (${{gainTxt}} pts).`;
+  if (top.drop && top.drop.name) txt += ` Drop <b>${{top.drop.name}}</b>.`;
+  return `<div class="wv-cx-verdict">${{txt}}</div>`;
+}}
+
+function wvBmClaimLine(p) {{
+  let claimBid = '', claimTip = '', claimHi = false;
+  if (p.faab_mode === 'waiver_priority' && p.faab_claim_guidance) {{
+    claimBid = p.faab_claim_guidance;
+    claimTip = p.faab_rationale || '';
+    claimHi = /high/i.test(p.faab_claim_guidance);
+  }} else if (window.wvFaabEnabled && wvShowFaab && (p.faab_high != null || p.faab_target != null || p.faab_dollars_target != null)) {{
+    const hasDollars = p.faab_dollars_target != null;
+    if (hasDollars) {{
+      claimBid = 'FAAB bid $' + p.faab_dollars_low + ' · $' + p.faab_dollars_target + ' · $' + p.faab_dollars_high;
+      claimTip = 'Suggested FAAB bid (low · target · stretch), capped at your remaining budget. ';
+    }} else {{
+      const parts = [p.faab_low, p.faab_target, p.faab_high].filter(v => v != null);
+      claimBid = 'FAAB bid ' + parts.join(' · ') + '%';
+      const denom = p.faab_pct_denominator === 'remaining_budget' ? 'remaining budget' : 'season budget';
+      claimTip = 'Suggested FAAB as % of your ' + denom + ' (low · target · stretch). ';
+    }}
+    claimTip += (p.faab_rationale || '') + (p.faab_heuristic ? ' (heuristic estimate)' : '');
+  }}
+  if (!claimBid) return '';
+  return `<div class="wv-cx-evl${{claimHi ? ' caution' : ''}}"><span class="k">CLAIM</span><span title="${{String(claimTip).replace(/"/g, '&quot;')}}">${{claimBid}}</span></div>`;
+}}
+
 function wvRenderWaivers() {{
   const list = document.getElementById('wvWaiverList');
   let players = wvWaiverData;
   if (wvCurrentPos !== 'ALL') players = players.filter(p => p.position === wvCurrentPos);
   if (!players.length) {{ window.brEmptyState('wvWaiverList', {{ icon: 'search', title: 'No waiver targets', message: 'Nothing to add at this position right now.', compact: true }}); return; }}
-  list.innerHTML = '<div class="wv-list-card"><div class="wv-bm-head"><span class="wv-bm-h-player">Player</span><span class="wv-bm-h-action">Recommendation</span><span class="wv-bm-h-nums"><span>Proj</span><span>Value</span></span></div>' + players.slice(0, 20).map(p => {{
+  const OUTCOME = {{
+    add: ['ADD', 'wv-cx-add'],
+    add_drop: ['ADD & DROP', 'wv-cx-adddrop'],
+    stash: ['STASH', 'wv-cx-stash'],
+  }};
+  const verdict = wvBmGroupVerdict(players);
+  list.innerHTML = (verdict ? `<div class="wv-cx-group"><div class="wv-cx-group-head">${{verdict}}</div></div>` : '') +
+    '<div class="wv-cx-card">' + players.slice(0, 20).map(p => {{
+    const oc = OUTCOME[p.outcome] || ['ADD', 'wv-cx-add'];
+    const badge = `<span class="wv-cx-badge ${{oc[1]}}">${{oc[0]}}</span>`;
+
+    // One-line summary: the lineup gain is the answer to "why add?".
+    let gainTxt = '';
+    let gainLbl = 'LINEUP';
+    const gain = Number(p.lineup_gain) || 0;
+    if (gain > 0) {{
+      gainTxt = '+' + gain.toFixed(1) + ' pts this week';
+      if (p.replaces && p.replaces.name) gainTxt += ' · Starts over ' + p.replaces.name;
+    }} else if (p.signal) {{
+      gainTxt = p.signal;
+      gainLbl = 'Why add';
+    }}
+
+    const sub = [p.position, p.team, p.pos_rank_label,
+      p.rostered_pct != null ? Math.round(p.rostered_pct) + '% rostered' : '',
+      p.adds_48h ? ('+' + wvFmtAdds(p.adds_48h) + ' adds') : ''].filter(Boolean).join(' · ');
+
     let usageChip = '';
     if (p.usage_delta != null && p.usage_delta >= 1) {{
       const statLbl = p.usage_stat === 'snap_pct' ? 'snap%' : (p.usage_stat === 'touches' ? 'touches' : 'targets');
-      usageChip = `<span class="wv-usage-chip" title="Last-3-week avg vs season avg">&#9650; +${{p.usage_delta}} ${{statLbl}}</span>`;
+      usageChip = `<span class="wv-cx-chip">&#9650; +${{p.usage_delta}} ${{statLbl}}</span>`;
     }}
-    // Secondary signal chips shown next to the "why add" pill in the Action cell.
-    // Roster verdict (Add / Stash) leads, then any big-game / market signal.
-    let signalExtra = '';
-    const OUTCOME = {{ add: ['Add', 'chip--accent'], add_drop: ['Add & drop', 'chip--accent'], stash: ['Stash', 'chip--neutral'] }};
-    if (p.outcome && OUTCOME[p.outcome]) {{
-      signalExtra += `<span class="chip chip--sm ${{OUTCOME[p.outcome][1]}}" title="Roster-aware move for your team">${{OUTCOME[p.outcome][0]}}</span>`;
-    }}
+    // Big-game flag from last week rides along as a chip, not a row.
+    let bgChip = '';
     if (p.big_game && p.big_game.category) {{
-      const BG = {{ priority: ['Priority', 'chip--accent'], speculative: ['Speculative', 'chip--neutral'], watchlist: ['Watchlist', 'chip--muted'] }};
-      const meta = BG[p.big_game.category] || [p.big_game.category, 'chip--muted'];
+      const BG = {{ priority: 'Priority big game', speculative: 'Speculative big game', watchlist: 'Watchlist big game' }};
       const facts = (p.big_game.factors || []).join(' · ');
-      signalExtra += `<span class="chip chip--sm ${{meta[1]}}" title="Unexpected performance last week${{facts ? ': ' + facts : ''}}">${{meta[0]}}</span>`;
+      bgChip = `<span class="wv-cx-chip" title="Unexpected performance last week${{facts ? ': ' + facts : ''}}">${{BG[p.big_game.category] || 'Big game'}}</span>`;
     }}
-    if (p.market_opportunity) {{
-      signalExtra += `<span class="chip chip--sm chip--neutral" title="Market Projection ${{p.market_projection}}, difference ${{p.market_opportunity.delta > 0 ? '+' : ''}}${{p.market_opportunity.delta}}">${{p.market_opportunity.label}}</span>`;
-    }}
-    // Claim line under the pills: how to claim -- FAAB bid or qualitative waiver
-    // priority -- as one muted line.
-    let claimBid = '', claimTip = '', claimHi = false;
-    if (p.faab_mode === 'waiver_priority' && p.faab_claim_guidance) {{
-      claimBid = p.faab_claim_guidance;
-      claimTip = p.faab_rationale || '';
-      claimHi = /high/i.test(p.faab_claim_guidance);
-    }} else if (window.wvFaabEnabled && wvShowFaab && (p.faab_high != null || p.faab_target != null || p.faab_dollars_target != null)) {{
-      const hasDollars = p.faab_dollars_target != null;
-      if (hasDollars) {{
-        claimBid = 'FAAB bid $' + p.faab_dollars_low + ' · $' + p.faab_dollars_target + ' · $' + p.faab_dollars_high;
-        claimTip = 'Suggested FAAB bid (low · target · stretch), capped at your remaining budget. ';
-      }} else {{
-        const parts = [p.faab_low, p.faab_target, p.faab_high].filter(v => v != null);
-        claimBid = 'FAAB bid ' + parts.join(' · ') + '%';
-        const denom = p.faab_pct_denominator === 'remaining_budget' ? 'remaining budget' : 'season budget';
-        claimTip = 'Suggested FAAB as % of your ' + denom + ' (low · target · stretch). ';
-      }}
-      claimTip += (p.faab_rationale || '') + (p.faab_heuristic ? ' (heuristic estimate)' : '');
-    }}
-    const claimLine = claimBid
-      ? `<div class="wv-bm-claim${{claimHi ? ' hi' : ''}}" title="${{String(claimTip).replace(/"/g, '&quot;')}}">${{claimBid}}</div>` : '';
-    let gainHint = '';
-    if (p.lineup_gain != null && p.lineup_gain > 0) {{
-      const wk4 = (p.lineup_gain_4wk != null && p.lineup_gain_4wk > 0)
-        ? (', +' + p.lineup_gain_4wk + ' over 4 wks') : '';
-      gainHint = `<div class="wv-drop-hint" title="Projected fantasy-point gain to your best starting lineup">`
-        + `<span class="wv-drop-lbl">Lineup</span> +${{p.lineup_gain}} pts this week${{wk4}}</div>`;
-    }}
-    let replacesHint = '';
-    if (p.replaces && p.replaces.name) {{
-      replacesHint = `<div class="wv-drop-hint" title="Who this pickup would bump from your starting lineup">`
-        + `<span class="wv-drop-lbl">Starts over</span> `
-        + `<span class="wv-drop-pos">${{p.replaces.position}}</span> ${{p.replaces.name}}</div>`;
-    }}
-    let dropHint = '';
+
+    const projBlock = `<span class="wv-cx-proj">` +
+      `<span class="wv-cx-proj-num">${{p.ros_ppg != null ? p.ros_ppg : '–'}}</span>` +
+      `<span class="wv-cx-proj-lbl">PROJ</span>` +
+      (p.value > 0 ? `<span class="wv-cx-proj-sub">value ${{Math.round(p.value)}}</span>` : '') +
+      `</span>`;
+
+    // Evidence behind the tap: drop, schedule, usage, claim.
+    const ev = [];
     if (p.drop && p.drop.name) {{
-      dropHint = `<div class="wv-drop-hint" title="Suggested drop to make room. Your roster is full; weakest spare below this target's value">`
-        + `<span class="wv-drop-lbl">Drop</span> `
-        + `<span class="wv-drop-pos">${{p.drop.position}}</span> ${{p.drop.name}}</div>`;
+      ev.push(`<div class="wv-cx-evl"><span class="k">DROP</span>${{p.drop.name}}${{p.drop.position ? ' (' + p.drop.position + ')' : ''}} · Weakest spare below this target's value</div>`);
     }}
-    let urgencyHint = '';
     if (p.schedule_urgency) {{
-      urgencyHint = `<div class="wv-drop-hint" title="Approximate schedule window from upcoming matchup ranks">`
-        + `<span class="wv-drop-lbl">Schedule</span> ${{p.schedule_urgency}}</div>`;
+      ev.push(`<div class="wv-cx-evl"><span class="k">SCHEDULE</span>${{p.schedule_urgency}}</div>`);
     }}
-    let returnHint = '';
+    if (p.usage_delta != null && Math.abs(p.usage_delta) >= 1) {{
+      const statLbl = p.usage_stat === 'snap_pct' ? 'snap%' : (p.usage_stat === 'touches' ? 'touches' : 'targets');
+      const up = p.usage_delta > 0;
+      ev.push(`<div class="wv-cx-evl"><span class="k">USAGE</span><span class="wv-cx-chip${{up ? '' : ' bad'}}">${{up ? '▲' : '▼'}} ${{up ? '+' : ''}}${{p.usage_delta}} ${{statLbl}}</span> last-3-week avg vs season avg</div>`);
+    }}
     const vac = (p.vacated || []).filter(v => v && (v.weeks_out != null || v.return_source));
     if (vac.length) {{
       const espn = vac.some(v => v.return_source === 'espn');
       const wks = Math.max.apply(null, vac.map(v => Number(v.weeks_out) || 0));
-      const srcLbl = espn ? 'ESPN return' : 'Status estimate';
-      const srcTip = espn
-        ? 'Return window from ESPN injury report'
-        : 'Estimated from roster injury status (no ESPN return date)';
-      const wkLbl = wks > 0 ? (' ~' + wks + ' wk' + (wks === 1 ? '' : 's') + ' out') : '';
-      returnHint = `<div class="wv-drop-hint" title="${{srcTip}}">`
-        + `<span class="wv-drop-lbl">${{srcLbl}}</span>${{wkLbl}}</div>`;
+      ev.push(`<div class="wv-cx-evl"><span class="k">RETURN</span>${{espn ? 'ESPN return' : 'Status estimate'}}${{wks > 0 ? ': ~' + wks + ' wk' + (wks === 1 ? '' : 's') + ' out' : ''}}</div>`);
     }}
-    const sub = [p.position, p.team, p.pos_rank_label, p.age ? 'Age ' + parseFloat(p.age).toFixed(1) : '', p.rostered_pct != null ? Math.round(p.rostered_pct) + '% rostered' : '', p.adds_48h ? ('+' + wvFmtAdds(p.adds_48h) + ' adds') : ''].filter(Boolean).join(' · ');
+    const claimLine = wvBmClaimLine(p);
+    if (claimLine) ev.push(claimLine);
+    if (p.market_opportunity) {{
+      ev.push(`<div class="wv-cx-evl"><span class="k">MARKET</span>${{p.market_opportunity.label}} · Market projection ${{p.market_projection}}</div>`);
+    }}
+
+    const escName = (p.name || '').replace(/'/g, "\\\\'");
+    const cmpObj = JSON.stringify({{player_id: p.player_id, name: p.name, position: p.position, team: p.team}}).replace(/"/g, '&quot;');
+
     return `
-    <div class="wv-bm-row" onclick="openPlayerModal('${{p.player_id}}', '${{p.name.replace(/'/g,"\\'")}}')">
-      <div class="wv-bm-main">
-        <div class="wv-bm-name">${{p.name}}</div>
-        <div class="wv-bm-sub">${{sub}}${{usageChip}}</div>
-        ${{gainHint}}
-        ${{replacesHint}}
-        ${{dropHint}}
-        ${{urgencyHint}}
-        ${{returnHint}}
-      </div>
-      <div class="wv-bm-action">
-        <div class="wv-bm-chips">
-          <span class="chip chip--sm ${{p.signal_class}}" title="Why add">${{p.signal}}</span>
-          ${{signalExtra}}
+    <div class="wv-cx-row-wrap">
+      <button type="button" class="wv-cx-row" aria-expanded="false"
+          onclick="wvToggleSsRow(this)">
+        ${{badge}}
+        <span class="wv-cx-main">
+          <span class="wv-cx-name" data-wl-star-pid="${{p.player_id}}">${{p.name}}</span>
+          ${{sub ? `<span class="wv-cx-sub">${{sub}}${{usageChip}}</span>` : ''}}
+          ${{gainTxt ? `<span class="wv-cx-why"><span class="wv-cx-k">${{gainLbl}}</span>${{gainTxt}}</span>` : ''}}
+          ${{bgChip}}
+        </span>
+        ${{projBlock}}
+        <span class="wv-cx-chev" aria-hidden="true">›</span>
+      </button>
+      <div class="wv-cx-detail">
+        ${{ev.length ? `<div class="wv-cx-evidence-list">${{ev.join('')}}</div>` : ''}}
+        <div class="wv-cx-actions" onclick="event.stopPropagation()">
+          <button type="button" onclick="event.stopPropagation();openPlayerModal('${{p.player_id}}', '${{escName}}')">Open player</button>
+          <button type="button" onclick="event.stopPropagation();wvToggleCompare(${{cmpObj}})">+ Compare</button>
+          <a class="wv-cx-link" href="${{wvLeaguePath('/compare')}}?p1=${{encodeURIComponent(p.player_id)}}">Compare to roster</a>
         </div>
-        ${{claimLine}}
       </div>
-      <div class="wv-bm-nums">
-        <div class="wv-bm-num${{p.ros_ppg == null ? ' empty' : ''}}"><b>${{p.ros_ppg != null ? p.ros_ppg : '–'}}</b><i>proj</i></div>
-        <div class="wv-bm-num val${{p.value > 0 ? '' : ' empty'}}"><b>${{p.value > 0 ? Math.round(p.value) : '–'}}</b><i>value</i></div>
-      </div>
-      <div class="wv-ctx-links wv-bm-links" onclick="event.stopPropagation()">
-        <a class="wv-ctx-link" href="${{wvLeaguePath('/compare')}}?p1=${{encodeURIComponent(p.player_id)}}">Compare to roster</a>
-        <a class="wv-ctx-link" href="#" onclick="event.preventDefault();openPlayerModal('${{p.player_id}}', '${{p.name.replace(/'/g,"\\'")}}')">Open player</a>
-      </div>
-    </div>
-  `;
+    </div>`;
   }}).join('') + '</div>';
+  if (window._wlStarDecorate) window._wlStarDecorate(list);
 }}
+
 
 // ── Trending across leagues (Sleeper league-wide add counts) ───────────────────
 function wvFmtAdds(n) {{
@@ -1313,6 +1371,42 @@ function wvVerdict(a, b) {{
   return {{ idx: wi, reasons: wvVerdictReasons(a, b, wi) }};
 }}
 
+// ── Verdict-first compare ─────────────────────────────────────────────────────
+// The verdict leads, then the deciding factors as visual bars, then the full
+// comparison table behind one tap. The winner is the unified start_score; the
+// reasons come from its score_factors breakdown.
+function wvCmpBar(label, aVal, bVal) {{
+  if (aVal == null || bVal == null) return '';
+  const total = Number(aVal) + Number(bVal);
+  const aPct = total > 0 ? Math.max(4, Math.min(96, Number(aVal) / total * 100)) : 50;
+  const bPct = 100 - aPct;
+  const fmt = v => (Math.round(v * 10) / 10);
+  return `<div class="wv-cmp2-factor"><div class="fl">${{label}}</div>` +
+    `<div class="wv-cmp2-bar-row"><span class="vn">${{fmt(aVal)}}</span>` +
+    `<span class="wv-cmp2-track"><i class="a" style="width:${{aPct.toFixed(1)}}%"></i><i class="b" style="width:${{bPct.toFixed(1)}}%"></i></span>` +
+    `<span class="vn r">${{fmt(bVal)}}</span></div></div>`;
+}}
+
+// Numeric pair behind a verdict reason, for the factor bars. Reasons without
+// a clean numeric pair (weather, availability) return null and are skipped.
+function wvCmpReasonBar(reasonTxt, da, db) {{
+  const t = reasonTxt || '';
+  if (t.indexOf('higher projection') === 0) return ['PROJECTION', da.proj, db.proj];
+  if (t === 'a safer floor') return ['FLOOR', da.floorNum, db.floorNum];
+  if (t === 'better recent form') return ['RECENT FORM (L4 PPG)', da.l4, db.l4];
+  if (t === 'a higher team total') return ['VEGAS TOTAL', da.vegasNum, db.vegasNum];
+  return null;
+}}
+
+function wvToggleCmpFull(btn) {{
+  const full = document.getElementById('wvCmpFull');
+  if (!full) return;
+  const open = full.style.maxHeight && full.style.maxHeight !== '0px';
+  full.style.maxHeight = open ? '0px' : full.scrollHeight + 'px';
+  btn.setAttribute('aria-expanded', open ? 'false' : 'true');
+  btn.textContent = open ? btn.dataset.label : 'Hide full comparison';
+}}
+
 function wvRenderCompare() {{
   const panel = document.getElementById('wvComparePanel');
   const a = wvCompare[0], b = wvCompare[1];
@@ -1350,60 +1444,90 @@ function wvRenderCompare() {{
   const idxB = (b.start_score_pct == null ? null : Math.round(b.start_score_pct));
   const wIdx = wvWinPair(idxA, idxB, true);
 
-  const sub = (p) => [p.team, p.opponent || (p.on_bye ? 'BYE' : '')].filter(Boolean).join(' · ');
+  const sub = (p) => [p.team, p.position, p.opponent || (p.on_bye ? 'BYE' : '')].filter(Boolean).join(' · ');
 
   // Recommendation banner up top -- the reason people opened the advisor.
+  // The single unified start_score decides it.
   const v = wvVerdict(a, b);
   let verdictHtml = '';
+  let factorBars = '';
   if (v && v.idx != null) {{
     const w = v.idx === 0 ? a : b;
+    const wName = wvLastName(w.name).toUpperCase();
     let why = v.reasons.join(' and ');
     why = why.charAt(0).toUpperCase() + why.slice(1);
     verdictHtml =
-      '<div class="wv-cmp-verdict">' +
-        '<span class="wv-cmp-verdict-pill">START</span>' +
-        '<span class="wv-cmp-verdict-name">' + w.name + '</span>' +
-        '<span class="wv-cmp-verdict-why">' + why + '</span>' +
+      '<div class="wv-cmp2-verdict">' +
+        '<span class="wv-cmp2-pill">START</span>' +
+        '<span><span class="wv-cmp2-name">' + w.name + '</span>' +
+        '<span class="wv-cmp2-why">' + why + '.</span></span>' +
       '</div>';
+    // Deciding factors as bars: the top reasons with numeric pairs, led by
+    // the unified Start/Sit index itself.
+    const bars = [wvCmpBar('START/SIT INDEX', idxA, idxB)];
+    (v.reasons || []).slice(0, 2).forEach(r => {{
+      const rb = wvCmpReasonBar(r, da, db);
+      if (rb) bars.push(wvCmpBar('WHY ' + wName + ' WINS · ' + rb[0], rb[1], rb[2]));
+    }});
+    const barsHtml = bars.filter(Boolean).join('');
+    if (barsHtml) factorBars = `<div class="wv-cmp2-factors">${{barsHtml}}</div>`;
   }} else if (v) {{
     verdictHtml =
-      '<div class="wv-cmp-verdict toss">' +
-        '<span class="wv-cmp-verdict-pill">TOSS-UP</span>' +
-        '<span class="wv-cmp-verdict-why">Nearly identical outlook - go with your gut.</span>' +
+      '<div class="wv-cmp2-verdict toss">' +
+        '<span class="wv-cmp2-pill">TOSS-UP</span>' +
+        '<span><span class="wv-cmp2-why">Nearly identical outlook - go with your gut.</span></span>' +
       '</div>';
+    const idxBar = wvCmpBar('START/SIT INDEX', idxA, idxB);
+    if (idxBar) factorBars = `<div class="wv-cmp2-factors">${{idxBar}}</div>`;
   }}
+
+  const headCard = (p, dp, isWinner) => `
+    <div class="wv-cmp2-head${{isWinner ? ' winner' : ''}}">
+      <div class="nm">${{p.name}}</div>
+      <div class="mt">${{sub(p)}}</div>
+      <div class="pj">${{dp.proj != null ? dp.proj : '–'}}</div>
+      <div class="pl">PROJ</div>
+    </div>`;
+  const winnerIdx = (v && v.idx != null) ? v.idx : -1;
+
+  const fullRows =
+    row('Start/Sit index', dash(idxA), dash(idxB), wIdx[0], wIdx[1]) +
+    row('Proj PPG', dash(da.proj), dash(db.proj), wProj[0], wProj[1]) +
+    row('L4 PPG', dash(da.l4), dash(db.l4), wL4[0], wL4[1]) +
+    row('Value', dash(da.value), dash(db.value), wVal[0], wVal[1]) +
+    row('Floor–Ceil', da.flCeil, db.flCeil, wFl[0], wFl[1]) +
+    row('Profile', da.profile, db.profile) +
+    row('Boom / Bust', da.boomBust, db.boomBust) +
+    row('Opponent', da.opp, db.opp) +
+    row('Def vs pos', da.def, db.def, da.defCls, db.defCls) +
+    row('Matchup', da.mu, db.mu) +
+    row('Opp plays faced/game', dash(da.playsFaced), dash(db.playsFaced)) +
+    row('vs. NFL average', wvFmtVsAvg(da.playsVsAvg), wvFmtVsAvg(db.playsVsAvg)) +
+    row('Last 4 games', dash(da.playsL4), dash(db.playsL4)) +
+    row('Vegas total', da.vegas, db.vegas, wVeg[0], wVeg[1]) +
+    row('Venue', da.venue, db.venue);
+  const fullCount = (fullRows.match(/wv-cmp-row/g) || []).length;
 
   panel.innerHTML = `
     <div class="wv-compare-panel">
       <div class="wv-compare-header">
         <span>Compare</span>
-        <button onclick="wvClearCompare()" style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer;">Clear</button>
+        <button type="button" onclick="wvClearCompare()" style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer;">Clear</button>
       </div>
       ${{verdictHtml}}
-      <div class="wv-cmp">
-        <div class="wv-cmp-head">
-          <div class="wv-cmp-hcol"><div class="wv-cmp-name">${{a.name}}</div><div class="wv-cmp-headmeta">${{wvPosChip(a)}}<span class="wv-cmp-sub">${{sub(a)}}</span></div></div>
-          <div class="wv-cmp-vs">VS</div>
-          <div class="wv-cmp-hcol"><div class="wv-cmp-name">${{b.name}}</div><div class="wv-cmp-headmeta">${{wvPosChip(b)}}<span class="wv-cmp-sub">${{sub(b)}}</span></div></div>
-        </div>
-        ${{row('Start/Sit index', dash(idxA), dash(idxB), wIdx[0], wIdx[1])}}
-        ${{row('Proj PPG', dash(da.proj), dash(db.proj), wProj[0], wProj[1])}}
-        ${{row('L4 PPG', dash(da.l4), dash(db.l4), wL4[0], wL4[1])}}
-        ${{row('Value', dash(da.value), dash(db.value), wVal[0], wVal[1])}}
-        ${{row('Floor–Ceil', da.flCeil, db.flCeil, wFl[0], wFl[1])}}
-        ${{row('Profile', da.profile, db.profile)}}
-        ${{row('Boom / Bust', da.boomBust, db.boomBust)}}
-        ${{row('Opponent', da.opp, db.opp)}}
-        ${{row('Def vs pos', da.def, db.def, da.defCls, db.defCls)}}
-        ${{row('Matchup', da.mu, db.mu)}}
-        ${{row('Opp plays faced/game', dash(da.playsFaced), dash(db.playsFaced))}}
-        ${{row('vs. NFL average', wvFmtVsAvg(da.playsVsAvg), wvFmtVsAvg(db.playsVsAvg))}}
-        ${{row('Last 4 games', dash(da.playsL4), dash(db.playsL4))}}
-        ${{row('Vegas total', da.vegas, db.vegas, wVeg[0], wVeg[1])}}
-        ${{row('Venue', da.venue, db.venue)}}
+      <div class="wv-cmp2-heads">
+        ${{headCard(a, da, winnerIdx === 0)}}
+        <div class="wv-cmp2-vs">VS</div>
+        ${{headCard(b, db, winnerIdx === 1)}}
+      </div>
+      ${{factorBars}}
+      <button type="button" class="wv-cmp2-more" aria-expanded="false" data-label="Full comparison · ${{fullCount}} stats" onclick="wvToggleCmpFull(this)">Full comparison · ${{fullCount}} stats</button>
+      <div class="wv-cmp2-full" id="wvCmpFull">
+        <div class="wv-cmp">${{fullRows}}</div>
       </div>
     </div>`;
 }}
+
 
 function wvClearCompare() {{
   wvCompare = [null, null];
@@ -1429,7 +1553,89 @@ function wvStartSitPositions() {{
   return keys;
 }}
 
-// ── Start/Sit list ────────────────────────────────────────────────────────────
+// ── Compact Start/Sit list ────────────────────────────────────────────────────
+// Verdict + projection + one-line matchup is the whole row. Evidence
+// (floor/ceiling, L4 PPG, Vegas, opp plays faced, profile, injury) expands on
+// tap. The group verdict answers the decision before any row is read.
+function wvLastName(full) {{
+  const parts = String(full || '').trim().split(/\\s+/);
+  const suffix = /^(II|III|IV|V|JR|SR)\\.?$/i;
+  while (parts.length > 1 && suffix.test(parts[parts.length - 1])) parts.pop();
+  return parts.length ? parts[parts.length - 1] : (full || '');
+}}
+
+// "Start Walker and Warren. Flex Love over Judkins." Derived from the same
+// server flags as the badges, so it can never contradict them.
+function wvSsGroupVerdict(players) {{
+  const starts = players.filter(p => p.start === true);
+  const flexStarts = players.filter(p => p.flex_start === true);
+  const benchFlex = players.find(p => p.flex_eligible === true && p.start !== true && p.flex_start !== true);
+  const bits = [];
+  if (starts.length) {{
+    const names = starts.map(p => '<b>' + wvLastName(p.name) + '</b>');
+    bits.push('Start ' + (names.length > 1
+      ? names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1]
+      : names[0]) + '.');
+  }}
+  if (flexStarts.length) {{
+    const names = flexStarts.map(p => '<b>' + wvLastName(p.name) + '</b>').join(' and ');
+    bits.push('Flex ' + names + (benchFlex ? ' over ' + wvLastName(benchFlex.name) : '') + '.');
+  }}
+  return bits.length ? `<div class="wv-cx-verdict">${{bits.join(' ')}}</div>` : '';
+}}
+
+function wvSsMatchupChip(rank, total) {{
+  if (!rank || !total) return '';
+  const pct = rank / total;
+  const lbl = pct <= 0.25 ? 'easiest' : pct <= 0.5 ? 'favorable' : pct <= 0.75 ? 'tough' : 'hardest';
+  const cls = pct <= 0.5 ? '' : ' bad';
+  return `<span class="wv-cx-chip${{cls}}">#${{rank}} ${{lbl}}</span>`;
+}}
+
+// Evidence grid for one player: floor/ceiling, L4 PPG, Vegas, opp plays
+// faced, profile, injury. Only rows with data render.
+function wvSsEvidence(p) {{
+  const ev = [];
+  const c = p.consistency;
+  if (c && !c.small_sample && c.floor != null && c.ceiling != null) {{
+    ev.push(`<div class="wv-cx-ev"><span class="k">FLOOR - CEIL</span><span class="v">${{c.floor}} - ${{c.ceiling}}</span></div>`);
+  }}
+  if (p.recent_ppg > 0) {{
+    ev.push(`<div class="wv-cx-ev"><span class="k">L4 PPG</span><span class="v">${{p.recent_ppg}}</span></div>`);
+  }}
+  if (p.implied_total != null) {{
+    ev.push(`<div class="wv-cx-ev"><span class="k">VEGAS</span><span class="v">${{p.implied_total}} implied</span></div>`);
+  }}
+  const pv = p.play_volume;
+  if (pv && pv.plays_faced_pg != null) {{
+    let sub = '';
+    if (pv.vs_avg != null) {{
+      const a = Math.abs(pv.vs_avg).toFixed(1);
+      sub = `<span class="s">${{pv.vs_avg > 0 ? a + ' above' : (pv.vs_avg < 0 ? a + ' below' : 'at')}} NFL avg</span>`;
+    }}
+    ev.push(`<div class="wv-cx-ev"><span class="k">OPP PLAYS FACED</span><span class="v">${{pv.plays_faced_pg}}/gm</span>${{sub}}</div>`);
+  }}
+  if (c && !c.small_sample && c.label) {{
+    ev.push(`<div class="wv-cx-ev"><span class="k">PROFILE</span><span class="v">${{c.label}}</span></div>`);
+  }}
+  if (p.injury_status) {{
+    const plan = p.return_plan;
+    const sub = (plan && plan.verdict) ? `<span class="s">${{plan.verdict}}${{plan.weeks_label ? ' · ' + plan.weeks_label : ''}} (approx)</span>` : '';
+    ev.push(`<div class="wv-cx-ev"><span class="k">INJURY</span><span class="v">${{p.injury_status}}</span>${{sub}}</div>`);
+  }}
+  if (!ev.length) return '';
+  return `<div class="wv-cx-evidence">${{ev.join('')}}</div>`;
+}}
+
+function wvToggleSsRow(btn) {{
+  const wrap = btn.closest('.wv-cx-row-wrap');
+  if (!wrap) return;
+  const detail = wrap.querySelector('.wv-cx-detail');
+  if (!detail) return;
+  const open = wrap.classList.toggle('wv-cx-expanded');
+  btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  detail.style.maxHeight = open ? detail.scrollHeight + 'px' : '0px';
+}}
 function wvRenderStartSit() {{
   const el = document.getElementById('wvStartSit');
   const positions = wvStartSitPositions();
@@ -1439,73 +1645,79 @@ function wvRenderStartSit() {{
     const players = (wvStartSitData.positions || {{}})[pos] || [];
     if (!players.length) return '';
 
+    let benchLineDone = false;
     const rows = players.slice(0, 8).map(p => {{
       const isStart     = p.start === true;
       const isFlexStart = p.flex_start === true;
       const isFlex      = p.flex_eligible === true && !isStart;
       const isBye       = p.on_bye === true;
-      const isSelected  = wvIsSelected(p.player_id);
+      const isStarter   = isStart || isFlexStart;
+
+      // BENCH LINE goes between the last starter and the first benched player.
+      let sep = '';
+      if (!isStarter && !isBye && !benchLineDone) {{
+        // Only draw it when there was at least one starter above.
+        const hadStarter = players.slice(0, 8).some(q => q.start === true || q.flex_start === true);
+        if (hadStarter) sep = '<div class="wv-cx-benchline">BENCH LINE</div>';
+        benchLineDone = true;
+      }}
 
       const badge = isBye
-        ? '<span class="wv-ss-bye-badge">BYE</span>'
+        ? '<span class="wv-cx-badge wv-cx-bye">BYE</span>'
         : isFlexStart
-          ? '<span class="wv-ss-flex-start-badge">FLEX</span>'
+          ? '<span class="wv-cx-badge wv-cx-flexstart">FLEX</span>'
           : isStart
-            ? '<span class="wv-ss-start-badge">START</span>'
+            ? '<span class="wv-cx-badge wv-cx-start">START</span>'
             : isFlex
-              ? '<span class="wv-ss-flex-badge">FLEX?</span>'
-              : '<span class="wv-ss-sit-badge">SIT</span>';
+              ? '<span class="wv-cx-badge wv-cx-flexq">FLEX?</span>'
+              : '<span class="wv-cx-badge wv-cx-sit">SIT</span>';
 
       const injBadge = wvInjBadge(p.injury_status);
-      const plan = p.return_plan;
-      const planNote = (plan && plan.verdict)
-        ? `<span class="wv-ss-demote" title="${{(plan.reason || 'Approximate, not medical advice').replace(/"/g, '&quot;')}}">`
-          + `${{plan.verdict}}${{plan.weeks_label ? ' · ' + plan.weeks_label : ''}} (approx)</span>`
+      const escName = (p.name || '').replace(/'/g, "\\'");
+      const matchup = p.opponent
+        ? `${{p.opponent}} ${{wvSsMatchupChip(p.def_rank, p.def_total)}}` : '';
+      const demoteChip = (p.demotion === 'low_total')
+        ? '<span class="wv-cx-chip bad">Low team total</span>' : '';
+      // Head-to-head win probability on the marginal call (server-flagged).
+      const h2h = (isStart && p.close_call && p.close_call.win_prob != null)
+        ? `<span class="wv-cx-h2h"><span class="bar"><i style="width:${{Math.round(p.close_call.win_prob * 100)}}%"></i></span><b>${{Math.round(p.close_call.win_prob * 100)}}%</b> to outscore ${{p.close_call.vs_name}}</span>`
         : '';
-      const cmpCls   = isSelected ? 'selected' : '';
-      const statsRow = wvStatsRow(p);
-      // Projection is the answer to "start or sit?", so it leads as a hero
-      // number to the right of the supporting strip.
       const projBlock = (p.proj_pts > 0)
-        ? `<div class="wv-ss-proj"><div class="wv-ss-proj-num">${{p.proj_pts}}</div><div class="wv-ss-proj-lbl">proj pts</div></div>`
+        ? `<span class="wv-cx-proj"><span class="wv-cx-proj-num">${{p.proj_pts}}</span><span class="wv-cx-proj-lbl">PROJ</span></span>`
         : '';
-      const demoteNote = (p.demotion === 'low_total')
-        ? '<span class="wv-ss-demote">Low team total</span>' : '';
-      // Win-probability on the marginal start/sit call (last starter vs first
-      // benched). Only the server-flagged close call carries this.
-      const wpChip = (isStart && p.close_call && p.close_call.win_prob != null)
-        ? `<div class="wv-ss-winprob"><strong>${{Math.round(p.close_call.win_prob*100)}}%</strong> to outscore ${{p.close_call.vs_name}}</div>`
-        : '';
+      const evidence = wvSsEvidence(p);
+      const schedUrl = `${{wvLeaguePath('/schedule')}}?add=${{encodeURIComponent(p.player_id)}}`;
 
-      return `
-        <div class="wv-ss-player ${{isStart ? 'wv-ss-start' : ''}} ${{isBye ? 'wv-ss-bye' : ''}} ${{isSelected ? 'wv-ss-selected' : ''}}">
-          <div class="wv-ss-top">
-            <div class="wv-ss-name-block" onclick="openPlayerModal('${{p.player_id}}', '${{(p.name||'').replace(/'/g,"\\'")}}')">
-              ${{badge}}
-              <span class="wv-player-name">${{p.name}}</span>
-              ${{injBadge}}
-              ${{demoteNote}}
-              ${{planNote}}
-            </div>
-            <div class="wv-ss-actions">
-              <button class="wv-cmp-btn" type="button"
-                onclick="event.stopPropagation();openPlayerModal('${{p.player_id}}', '${{(p.name||'').replace(/'/g,"\\'")}}')">
-                Open player
-              </button>
-              <a class="wv-cmp-btn" href="${{wvLeaguePath('/schedule')}}?add=${{encodeURIComponent(p.player_id)}}" onclick="event.stopPropagation()">View schedule</a>
-              <button class="wv-cmp-btn ${{isSelected ? 'selected' : ''}}"
-                onclick="event.stopPropagation();wvToggleCompare(${{JSON.stringify(p).replace(/"/g,'&quot;')}})">
-                ${{isSelected ? '✓' : '+'}} Compare
-              </button>
+      return sep + `
+        <div class="wv-cx-row-wrap">
+          <button type="button" class="wv-cx-row" aria-expanded="false"
+              onclick="wvToggleSsRow(this)">
+            ${{badge}}
+            <span class="wv-cx-main">
+              <span class="wv-cx-name">${{p.name}}${{injBadge}}</span>
+              ${{matchup || demoteChip ? `<span class="wv-cx-why">${{matchup}}${{demoteChip}}</span>` : ''}}
+              ${{h2h}}
+            </span>
+            ${{projBlock}}
+            <span class="wv-cx-chev" aria-hidden="true">›</span>
+          </button>
+          <div class="wv-cx-detail">
+            ${{evidence}}
+            <div class="wv-cx-actions" onclick="event.stopPropagation()">
+              <button type="button" onclick="event.stopPropagation();openPlayerModal('${{p.player_id}}', '${{escName}}')">Open player</button>
+              <button type="button" onclick="event.stopPropagation();window.location.href='${{schedUrl}}'">View schedule</button>
+              <button type="button" class="${{wvIsSelected(p.player_id) ? 'selected' : ''}}"
+                onclick="event.stopPropagation();wvToggleCompare(${{JSON.stringify(p).replace(/"/g, '&quot;')}})">${{wvIsSelected(p.player_id) ? '✓' : '+'}} Compare</button>
             </div>
           </div>
-          <div class="wv-ss-body">${{statsRow}}${{projBlock}}</div>
-          ${{wpChip}}
         </div>`;
     }}).join('');
 
     const slotCount = reqs[pos] || 1;
-    return `<div class="wv-ss-pos-group"><div class="wv-ss-pos-label">${{pos}} <span style="font-size:10px;font-weight:500;color:var(--text-muted);">(${{slotCount}} starter${{slotCount > 1 ? 's' : ''}})</span></div>${{rows}}</div>`;
+    const verdict = wvSsGroupVerdict(players.slice(0, 8));
+    return `<div class="wv-cx-group"><div class="wv-cx-group-head">` +
+      `<div class="wv-cx-group-title">${{pos}} <span>(${{slotCount}} starter${{slotCount > 1 ? 's' : ''}})</span></div>` +
+      verdict + `</div><div class="wv-cx-card">${{rows}}</div></div>`;
   }}).join('');
 
   // Lineup advice banner only makes sense across the whole lineup, so show it
@@ -1515,6 +1727,7 @@ function wvRenderStartSit() {{
   else if (advice) {{ el.innerHTML = advice; }}
   else {{ window.brEmptyState(el, {{ icon: 'search', title: 'No roster data', message: 'We couldn’t find a lineup to analyze for this position.' }}); }}
 }}
+
 
 // Optimal-lineup verdict: the points left on the bench vs the viewer's current
 // starters, plus the specific swaps to fix it. Empty when the lineup is already
