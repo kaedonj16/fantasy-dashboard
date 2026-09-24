@@ -316,16 +316,16 @@ def build_advanced_metrics_body(
             <div id="amStatPicker" class="am-stat-picker" style="display:none;"></div>
           </div>
           <button id="amAddFilterBtn" type="button" class="am-add-stat-btn">&#43; Filter</button>
-          <select id="amSavedSet" class="am-select" title="Saved metric sets" style="max-width:150px"><option value="">Custom sets…</option></select>
-          <span id="amActiveSet" class="am-ctrl-label" title="Active metric set">Custom</span>
-          <button id="amSaveSetBtn" type="button" class="am-add-stat-btn" title="Save or update a named custom set">Save set</button>
-          <button id="amDeleteSetBtn" type="button" class="am-add-stat-btn am-clear-btn" title="Delete the selected custom set">Delete</button>
+          <select id="amSavedSet" class="am-select am-mobile-filter" title="Saved metric sets" style="max-width:150px"><option value="">Custom sets…</option></select>
+          <span id="amActiveSet" class="am-ctrl-label am-mobile-filter" title="Active metric set">Custom</span>
+          <button id="amSaveSetBtn" type="button" class="am-add-stat-btn am-mobile-filter" title="Save or update a named custom set">Save set</button>
+          <button id="amDeleteSetBtn" type="button" class="am-add-stat-btn am-clear-btn am-mobile-filter" title="Delete the selected custom set">Delete</button>
           <button id="amFiltersBtn" type="button" class="am-sort-btn am-filters-btn">Filters &#9662;</button>
-          <label class="am-roster-toggle" id="amTrendToggleWrap" title="Show each player's recent usage trend (last 6 weeks) next to the metric">
+          <label class="am-roster-toggle am-mobile-filter" id="amTrendToggleWrap" title="Show each player's recent usage trend (last 6 weeks) next to the metric">
             <input type="checkbox" id="amTrendToggle">
             <span>Usage trends</span>
           </label>
-          <label class="am-roster-toggle" id="amRosterToggleWrap" style="display:none;">
+          <label class="am-roster-toggle am-mobile-filter" id="amRosterToggleWrap" style="display:none;">
             <input type="checkbox" id="amRosterToggle">
             <span>My roster only</span>
           </label>
@@ -729,6 +729,9 @@ def build_advanced_metrics_body(
         #amFilterBar.am-mobile-open .am-add-filter-m { display:inline-block; }
         .am-subcontrols { row-gap:8px; }
         .am-positions { flex:1 1 auto; flex-wrap:wrap; overflow-x:visible; min-width:0; }
+        /* Decide pills: one swipeable row instead of three wrapped rows. */
+        .am-decisions { flex-wrap:nowrap; overflow-x:auto; -webkit-overflow-scrolling:touch; padding-bottom:4px; }
+        .am-decisions .am-decisions-label, .am-decisions .am-pill { flex-shrink:0; }
       }
       .am-pos {
         padding:6px 14px; border-radius:8px; border:1px solid var(--border);
