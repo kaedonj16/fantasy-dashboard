@@ -14608,12 +14608,12 @@ def page_breakouts(platform: str, season: int, league_id: str):
     </div>
 
     <script>
-      const BO_HAS_PREMIUM = {str(has_premium).lower()};
-      let breakoutCandidates = [];
-      let lockedCount = 0;
-      let currentFilter = 'ALL';
-      let currentPage = 1;
-      const PAGE_SIZE = 12;
+      var BO_HAS_PREMIUM = {str(has_premium).lower()};
+      var breakoutCandidates = [];
+      var lockedCount = 0;
+      var currentFilter = 'ALL';
+      var currentPage = 1;
+      var PAGE_SIZE = 12;
 
       // Fetch breakout candidates on page load (using new BreakoutEngine API)
       // Server selects the engine-specific floor: weekly watchlist calibration
