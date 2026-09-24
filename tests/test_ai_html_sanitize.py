@@ -66,3 +66,21 @@ def test_preserves_common_ai_markup():
 def test_empty_and_none():
     assert sanitize_ai_html("") == ""
     assert sanitize_ai_html(None) == ""
+
+
+def test_keeps_button_without_event_handlers():
+    # Regression: the Front Office Report card's "View full report" button was
+    # stripped by the sanitizer (button wasn't allowlisted), so the card
+    # rendered inert text and the full-report modal could never open.
+    dirty = (
+        '<div class="for-card-summary">'
+        '<button type="button" class="for-view-full" id="forViewFullBtn"'
+        ' onclick="evil()">View full report</button></div>'
+    )
+    clean = sanitize_ai_html(dirty)
+    assert "<button" in clean.lower()
+    assert 'id="forViewFullBtn"' in clean
+    assert 'class="for-view-full"' in clean
+    assert "onclick" not in clean.lower()
+    assert "evil" not in clean
+    assert "View full report" in clean

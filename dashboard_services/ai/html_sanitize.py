@@ -13,7 +13,7 @@ from urllib.parse import urlparse
 # Tags the AI renderer / fallbacks emit. Anything else is dropped (contents kept).
 _ALLOWED_TAGS = frozenset({
     "p", "div", "span", "strong", "em", "b", "i", "ul", "ol", "li", "br",
-    "h3", "h4", "table", "thead", "tbody", "tr", "th", "td", "a",
+    "h3", "h4", "table", "thead", "tbody", "tr", "th", "td", "a", "button",
 })
 _VOID_TAGS = frozenset({"br"})
 # Global attrs safe on any allowed tag. ``href`` is validated separately on <a>.
