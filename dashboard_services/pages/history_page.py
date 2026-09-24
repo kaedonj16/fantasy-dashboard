@@ -1426,6 +1426,39 @@ def _wrapped_overlay_markup(slides: list, share_data: dict | None = None,
                 for k, n, v in s["rows"]
             )
             body = kicker + f"<div class='wrapped-rows'>{rows}</div>" + sub
+        elif s.get("preview_teams"):
+            # Next week's Game of the Week (a preview: no winner yet). Neutral
+            # stacked hero, the projected win-% split bar, projected scoreline.
+            _teams = [str(t) for t in (s.get("preview_teams") or [])[:2]]
+            _hero = "<div class='wrapped-vs-hero'>"
+            for _i, _t in enumerate(_teams):
+                if _i:
+                    _hero += "<div class='wrapped-vs-hero-x'>vs</div>"
+                _hero += f"<div class='wrapped-duel-t'>{_esc(_t)}</div>"
+            _hero += "</div>"
+            _winbar = ""
+            _wpa = s.get("win_prob_a")
+            if isinstance(_wpa, (int, float)):
+                _wpi = int(round(_wpa))
+                _rpi = 100 - _wpi
+                _winbar = (
+                    "<div class='wrapped-winbar-row'>"
+                    f"<span class='wrapped-winbar-pct'>{_wpi}%</span>"
+                    "<div class='wrapped-winbar'>"
+                    f"<i style='width:{_wpi}%'></i>"
+                    "</div>"
+                    f"<span class='wrapped-winbar-pct wrapped-winbar-pct-r'>{_rpi}%</span>"
+                    "</div>")
+            _why = str(s.get("why") or "").strip()
+            _why_html = (f"<div class='wrapped-why'>{_esc(_why)}</div>"
+                         if _why else "")
+            body = (
+                kicker
+                + _why_html
+                + _hero
+                + _winbar
+                + sub
+            )
         elif s["num"]:
             unit = str(s.get("suffix") or "").strip()
             score_html = ""
@@ -1557,7 +1590,7 @@ def _mfield(m, key):
 
 def _wrapped_weekly_player_leaders(ctx: dict, week) -> dict:
     """Per-player fantasy production for a single week from that week's
-    boxscores. Returns {'top': entry, 'by_pos': {QB/RB/WR/TE: entry},
+    boxscores. Returns {'top': entry, 'by_pos': {QB/RB/WR/TE/K/DEF: entry},
     'dud': entry} where entry is {name, pos, nfl, pts}. 'dud' is the
     lowest-scoring starter (needs the provider's starters list; skipped when
     unavailable). One week, one fetch, per request -- no cache. {} when
@@ -1574,7 +1607,7 @@ def _wrapped_weekly_player_leaders(ctx: dict, week) -> dict:
     except Exception:
         return {}
 
-    _POS = ("QB", "RB", "WR", "TE")
+    _POS = ("QB", "RB", "WR", "TE", "K", "DEF")
     top = None
     by_pos: dict = {}
     dud = None
@@ -1603,6 +1636,83 @@ def _wrapped_weekly_player_leaders(ctx: dict, week) -> dict:
             if pid in starters and pv > 0 and (dud is None or pv < dud["pts"]):
                 dud = entry
     return {"top": top, "by_pos": by_pos, "dud": dud}
+
+
+def _next_week_gotw_game(ctx: dict, week: int, platform: str, league_id: str,
+                         season):
+    """The ``game_of_the_week`` dict for week+1 (next week's featured matchup).
+
+    Mirrors the weekly hub's deterministic pick: honors the cached GOTW
+    selection when present, otherwise computes it through the recap payload
+    builder and caches the selection so the hub badge agrees. Returns None
+    when next week's matchups/projections can't be built. Lazy-path only --
+    it fetches next-week matchup previews and projections.
+    """
+    try:
+        from dashboard_services.ai.weekly_recap import (
+            build_weekly_recap_payload,
+            get_cached_gotw_selection,
+            _gotw_cache_key,
+            save_cached_ai_text,
+        )
+        from app import _build_next_week_ctx
+    except Exception:
+        return None
+    try:
+        next_week = int(week) + 1
+        df_weekly = ctx.get("df_weekly")
+        matchups_by_week = ctx.get("matchups_by_week") or {}
+        roster_map = ctx.get("roster_map") or {}
+        if df_weekly is None or getattr(df_weekly, "empty", True):
+            return None
+        team_by_rid = {str(rid): name for rid, name in roster_map.items()}
+        if not team_by_rid:
+            return None
+        league = dict(ctx.get("league") or {})
+        if ctx.get("league_settings"):
+            merged = dict(ctx["league_settings"])
+            merged.update(league.get("settings") or {})
+            league["settings"] = merged
+        playoff_start = int((league.get("settings") or {}).get("playoff_week_start") or 14)
+
+        sel = get_cached_gotw_selection(str(platform or "sleeper"),
+                                        str(league_id or ""), season, next_week)
+        want = {str(x) for x in ((sel or {}).get("roster_ids") or []) if str(x)}
+
+        nctx = _build_next_week_ctx(ctx, next_week, playoff_start,
+                                    str(league_id or ""), season,
+                                    str(platform or "sleeper"), team_by_rid)
+        if not nctx:
+            return None
+        payload = build_weekly_recap_payload(
+            df_weekly, matchups_by_week, int(week), team_by_rid,
+            league, next_week_ctx=nctx)
+        game = (payload.get("next_week_preview") or {}).get("game_of_the_week") or {}
+        if not game or not game.get("team_a") or not game.get("team_b"):
+            return None
+        rids = [str(game.get("roster_id_a") or ""), str(game.get("roster_id_b") or "")]
+        if want and want != set(rids):
+            return None
+        if not want and all(rids):
+            # No cached pick yet: store this deterministic one so the hub
+            # badge and the wrapped teaser agree.
+            try:
+                save_cached_ai_text(
+                    _gotw_cache_key(platform, league_id, season, next_week), "",
+                    metadata={"gotw_selection": {
+                        "platform": str(platform or "").lower(),
+                        "league_id": str(league_id or ""),
+                        "season": str(season),
+                        "source_week": int(week),
+                        "target_week": int(next_week),
+                        "matchup_id": game.get("matchup_id"),
+                        "roster_ids": rids}})
+            except Exception:
+                pass
+        game["target_week"] = next_week
+        return game
+    except Exception:
+        return None
 
 
 def _build_weekly_wrapped_slides(ctx: dict, league_name: str, season, week,
@@ -1657,6 +1767,14 @@ def _build_weekly_wrapped_slides(ctx: dict, league_name: str, season, week,
                               "The week's biggest team total"),
                        "bgword": str(int(hi_pts))})
 
+    lo = wdf.loc[wdf["points"].idxmin()]
+    lo_pts = float(lo.get("points") or 0)
+    if 0 < lo_pts < hi_pts:
+        slides.append({**_num("lowscore", f"LOWEST SCORE · WEEK {week}",
+                              lo_pts, 1, " PTS", str(lo.get("owner", "-")),
+                              "The week's quietest team total"),
+                       "bgword": str(int(lo_pts))})
+
     # Pair the week's head-to-head results via matchup_id.
     matchup_rows = []
     if "matchup_id" in wdf.columns:
@@ -1675,6 +1793,8 @@ def _build_weekly_wrapped_slides(ctx: dict, league_name: str, season, week,
                 "winner": str(winner.get("owner", "-")),
                 "loser": str(loser.get("owner", "-")),
                 "winner_pts": wp, "loser_pts": lp, "margin": abs(wp - lp),
+                "roster_ids": ({str(r) for r in grp["roster_id"]}
+                               if "roster_id" in grp.columns else set()),
             })
 
     if matchup_rows:
@@ -1697,7 +1817,8 @@ def _build_weekly_wrapped_slides(ctx: dict, league_name: str, season, week,
 
     # ── Player awards: top scorer, best at each position, dud of the week ─────
     # The only slides that need a boxscore fetch, so the cheap availability
-    # check skips them.
+    # check skips them (and the next-week GOTW preview below, which fetches
+    # next week's matchup previews + projections).
     if include_players:
         leaders = _wrapped_weekly_player_leaders(ctx, week)
         top = (leaders or {}).get("top")
@@ -1711,7 +1832,7 @@ def _build_weekly_wrapped_slides(ctx: dict, league_name: str, season, week,
 
         by_pos = (leaders or {}).get("by_pos") or {}
         pos_rows = [(p, by_pos[p]["name"], f"{by_pos[p]['pts']:.1f}")
-                    for p in ("QB", "RB", "WR", "TE") if by_pos.get(p)]
+                    for p in ("QB", "RB", "WR", "TE", "K", "DEF") if by_pos.get(p)]
         if len(pos_rows) >= 3:
             slides.append({"kind": "posleaders", "eyebrow": "TOP AT EACH POSITION",
                            "num": False, "big": "", "dp": 0, "suffix": "", "label": "",
@@ -1726,6 +1847,39 @@ def _build_weekly_wrapped_slides(ctx: dict, league_name: str, season, week,
                                   f"{_dmeta}, the week's coldest starter" if _dmeta
                                   else "The week's coldest starter"),
                            "bgword": f"{float(dud['pts']):.1f}"})
+
+    # ── Game of the week: a look AHEAD at next week's featured matchup ─────
+    # The GOTW is a preview concept -- there is no winner yet. Closing teaser
+    # of the deck, built from the same deterministic pick the hub badge and
+    # the recap use. Lazy-build only (fetches next-week previews +
+    # projections), so the hub's cheap launcher check skips it.
+    if include_players:
+        _game = _next_week_gotw_game(
+            ctx, week, str(ctx.get("platform") or "sleeper"),
+            str(ctx.get("resolved_league_id") or ctx.get("league_id") or ""),
+            season)
+        if _game and _game.get("team_a") and _game.get("team_b"):
+            _nw = int(_game.get("target_week") or (week + 1))
+            _ra, _rb = _game.get("rank_a"), _game.get("rank_b")
+            _why = ""
+            if _ra and _rb:
+                _why = (f"#{_ra} ({_game.get('record_a') or '?'}) vs "
+                        f"#{_rb} ({_game.get('record_b') or '?'})")
+            _pa, _pb = _game.get("proj_a"), _game.get("proj_b")
+            if isinstance(_pa, (int, float)) and isinstance(_pb, (int, float)):
+                _sub = f"Projected {_pa:.1f}–{_pb:.1f}"
+                _scoreline = f"{_pa:.1f}-{_pb:.1f}"
+            else:
+                _sub = "Next week's featured showdown"
+                _scoreline = ""
+            _g = {**_txt("gotw", f"WEEK {_nw} · GAME OF THE WEEK",
+                         f"{_game['team_a']} vs {_game['team_b']}", "", _sub),
+                  "bgword": "GOTW",
+                  "preview_teams": [_game["team_a"], _game["team_b"]],
+                  "win_prob_a": _game.get("win_prob_a"),
+                  "why": _why}
+            _g["scoreline"] = _scoreline
+            slides.append(_g)
 
     return slides
 
@@ -1743,9 +1897,16 @@ def _wrapped_weekly_share_data(slides: list, league_name: str, season, week) -> 
     tp = by_kind.get("topplayer")
     if tp and tp.get("label"):
         highlights.append(_hi("TOP PLAYER", tp["label"], tp["big"]))
+    gw = by_kind.get("gotw")
+    if gw and gw.get("big"):
+        highlights.append(_hi("GAME OF THE WEEK", gw["big"],
+                              gw.get("scoreline") or ""))
     ts = by_kind.get("topscore")
     if ts and ts.get("label"):
         highlights.append(_hi("HIGH SCORE", ts["label"], ts["big"]))
+    ls = by_kind.get("lowscore")
+    if ls and ls.get("label"):
+        highlights.append(_hi("LOW SCORE", ls["label"], ls["big"]))
     bo = by_kind.get("blowout")
     if bo and bo.get("label"):
         highlights.append(_hi("BIGGEST BLOWOUT", bo["label"], bo["big"]))
