@@ -16685,6 +16685,79 @@ img, svg, canvas {
     }
 }
 
+/* ── Mid-width nav (769–1400px): collapse pills behind the hamburger ──
+   The league pills need ~1370px to sit on one row. Between the phone dock
+   (<=768px) and a wide desktop they used to flex-wrap into ragged rows with
+   strays like "My Leagues" alone on a row. Collapse into the hamburger
+   dropdown instead -- the same pattern the <=768px menu already uses. */
+@media (max-width: 1400px) {
+    .top-nav.br-mnav .nav-hamburger {
+        display: flex !important;
+    }
+    .top-nav.br-mnav .nav-pills-container {
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        background: var(--card);
+        border-bottom: 1px solid var(--border);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        flex-direction: column;
+        flex-wrap: nowrap;
+        justify-content: flex-start;
+        align-items: stretch;
+        padding: 8px;
+        gap: 4px;
+        max-height: 0;
+        overflow: hidden;
+        opacity: 0;
+        transition: max-height 0.3s ease, opacity 0.3s ease, padding 0.3s ease;
+    }
+    .top-nav.br-mnav .nav-pills-container.nav-open {
+        max-height: 70vh;
+        opacity: 1;
+        padding: 12px;
+        overflow-y: auto;
+    }
+    .top-nav.br-mnav .nav-pill {
+        width: 100%;
+        padding: 6px 12px;
+        border-radius: 10px;
+        text-align: center;
+        justify-content: center;
+        font-size: 14px;
+    }
+    .top-nav.br-mnav .nav-pill-dropdown-wrapper {
+        width: 100%;
+    }
+    .top-nav.br-mnav .nav-pill-dropdown-wrapper .nav-pill {
+        width: 100%;
+        border-radius: 10px;
+        font-size: 14px;
+        display: flex;
+        justify-content: center;
+    }
+    /* Submenus expand inline inside the collapsed menu (same as <=768px). */
+    .top-nav.br-mnav .nav-pill-dropdown-menu {
+        position: static;
+        transform: none;
+        left: auto;
+        top: auto;
+        box-shadow: none;
+        border-radius: 10px;
+        margin-top: 4px;
+        border: 1px solid var(--border);
+    }
+    .top-nav.br-mnav .nav-pills-bottom {
+        display: flex !important;
+        flex-direction: column;
+        gap: 8px;
+        padding-top: 12px;
+        margin-top: 12px;
+        border-top: 1px solid var(--border);
+    }
+}
+
 @media (max-width: 640px) {
     body {
         font-size: 14px;
