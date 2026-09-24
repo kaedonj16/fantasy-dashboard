@@ -3159,6 +3159,12 @@ html[data-theme="dark"] img[src*="discord-brands-solid.png"] {
     padding-bottom: 72px;
 }
 
+/* Standings page: drop the floating-pills clearance — it leaves a dead gap
+   under the tabs card. */
+.std-rework .tab-panels {
+    padding-bottom: 0;
+}
+
 .card .tab-panels {
     margin-top: 4px;
     width: 100%;
