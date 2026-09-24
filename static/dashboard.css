@@ -3762,6 +3762,36 @@ button:hover {
     display: table-cell;
 }
 
+/* Standings: freeze the Seed + Team columns so the row labels stay visible
+   when the table scrolls horizontally (notably with Detailed columns on).
+   Same frozen-pane pattern as .game-log-table. Full-width rows
+   (.st-div-row, .pp-scnrow, .pp-cutrow) are excluded: their colspan'd cell
+   must never become a 56px sticky box. */
+.standings-table[data-page="standings"] thead tr:not(.st-div-row):not(.pp-scnrow):not(.pp-cutrow) th:nth-child(1),
+.standings-table[data-page="standings"] tbody tr:not(.st-div-row):not(.pp-scnrow):not(.pp-cutrow) td:nth-child(1),
+.standings-table[data-page="standings"] thead tr:not(.st-div-row):not(.pp-scnrow):not(.pp-cutrow) th:nth-child(2),
+.standings-table[data-page="standings"] tbody tr:not(.st-div-row):not(.pp-scnrow):not(.pp-cutrow) td:nth-child(2) {
+    position: sticky;
+    background: var(--card);
+    z-index: 2;
+}
+.standings-table[data-page="standings"] thead tr:not(.st-div-row):not(.pp-scnrow):not(.pp-cutrow) th:nth-child(1),
+.standings-table[data-page="standings"] tbody tr:not(.st-div-row):not(.pp-scnrow):not(.pp-cutrow) td:nth-child(1) {
+    left: 0;
+    width: 56px;
+    min-width: 56px;
+}
+.standings-table[data-page="standings"] thead tr:not(.st-div-row):not(.pp-scnrow):not(.pp-cutrow) th:nth-child(2),
+.standings-table[data-page="standings"] tbody tr:not(.st-div-row):not(.pp-scnrow):not(.pp-cutrow) td:nth-child(2) {
+    left: 56px;
+    /* Subtle divider marks where the frozen pane ends and scrolling begins. */
+    border-right: 1px solid var(--border);
+}
+.standings-table[data-page="standings"] thead tr:not(.st-div-row):not(.pp-scnrow):not(.pp-cutrow) th:nth-child(1),
+.standings-table[data-page="standings"] thead tr:not(.st-div-row):not(.pp-scnrow):not(.pp-cutrow) th:nth-child(2) {
+    z-index: 3;
+}
+
 /* "Detailed" toggle switch, right-aligned in the standings tab strip. */
 .card .tab-strip .st-detail-toggle {
     margin-left: auto;

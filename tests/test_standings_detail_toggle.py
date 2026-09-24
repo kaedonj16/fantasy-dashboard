@@ -169,3 +169,21 @@ def test_body_renders_toggle_and_detail_cells():
     # Toggle lives in the tab strip, before (and outside) the week-swapped panel.
     assert (body.index('<label class="st-detail-toggle"')
             < body.index('<div id="stStandingsInner">'))
+
+
+def test_team_column_is_sticky_with_frozen_pane():
+    """Seed + Team columns freeze on horizontal scroll; full-width rows excluded."""
+    from pathlib import Path
+    css = Path("static/dashboard.css").read_text()
+    # Frozen pane: Seed (col 1) and Team (col 2) are sticky with solid bg.
+    assert '.standings-table[data-page="standings"]' in css
+    assert "position: sticky" in css
+    assert "left: 0" in css
+    assert "left: 56px" in css
+    # Corner header cells sit above both the scrolling cells and the top-sticky row.
+    assert "z-index: 3" in css
+    # Divider marks where the frozen pane ends.
+    assert "border-right: 1px solid var(--border)" in css
+    # Full-width rows (division headers, scenario/cut rows) must never be frozen.
+    for cls in ("st-div-row", "pp-scnrow", "pp-cutrow"):
+        assert f":not(.{cls})" in css
