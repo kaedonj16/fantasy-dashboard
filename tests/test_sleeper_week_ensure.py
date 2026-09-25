@@ -86,6 +86,50 @@ def test_ensure_cooldown_skips_repeat(ensure_state):
     assert len(ensure_state) == 2
 
 
+def test_ensure_fetches_missing_weeks_in_parallel(monkeypatch):
+    """Cold post-deploy backfill must not fetch weeks one at a time.
+
+    Sequential 20s-timeout fetches made a cold backfill take 60s+ and risk
+    tripping gunicorn's 120s worker timeout on the request that triggered
+    it (the Teams page first click). Weeks are independent files, so they
+    fetch concurrently.
+    """
+    import threading
+
+    monkeypatch.setattr(app, "_SLEEPER_WEEK_ENSURE_TS", {})
+    monkeypatch.setattr(
+        "utils.season_qualification.qualification_policy", lambda s: _Policy([1, 2, 3])
+    )
+    monkeypatch.setattr(app, "_sleeper_week_cache_populated", lambda s, w: False)
+
+    in_flight = 0
+    max_in_flight = 0
+    lock = threading.Lock()
+    calls = []
+
+    def fake_fetch(season, week):
+        nonlocal in_flight, max_in_flight
+        with lock:
+            in_flight += 1
+            max_in_flight = max(max_in_flight, in_flight)
+        try:
+            time.sleep(0.2)
+            calls.append(week)
+        finally:
+            with lock:
+                in_flight -= 1
+        return {}
+
+    monkeypatch.setattr(
+        "data_building.external_data.sleeper_bulk_stats.fetch_week_stats", fake_fetch
+    )
+    app._ensure_sleeper_week_files(2026)
+
+    assert sorted(calls) == [1, 2, 3]
+    # Sequential fetches would never overlap; parallel ones do.
+    assert max_in_flight >= 2
+
+
 def test_ensure_refetches_after_cooldown(ensure_state):
     app._ensure_sleeper_week_files(2026)
     app._SLEEPER_WEEK_ENSURE_TS[2026] = time.time() - app._SLEEPER_WEEK_ENSURE_COOLDOWN_S - 1

@@ -57,6 +57,25 @@ def _refresh_global_adp(season: int) -> None:
         traceback.print_exc()
 
 
+def _warm_team_rankings_cache(port: int, season: int) -> None:
+    """Warm the NFL team rankings cache so the first page click is fast.
+
+    The rankings compute downloads several weekly stat files on a cold
+    container and can take 60s+ (near gunicorn's 120s worker timeout), which
+    made the Teams page sit on "Loading team data." after a deploy until
+    someone refreshed. One localhost hit here populates the on-disk cache
+    that all gunicorn workers share. Best-effort: never raises.
+    """
+    url = f"http://127.0.0.1:{int(port)}/api/nfl-team-rankings?season={int(season)}"
+    try:
+        import requests
+
+        resp = requests.get(url, timeout=110)
+        print(f"[post-deploy] Team rankings warmup: HTTP {resp.status_code}")
+    except Exception as e:
+        print(f"[post-deploy] Team rankings warmup failed: {e}")
+
+
 def main():
     from dashboard_services.memory_diagnostics import format_memory_snapshot
     _load_dotenv()
@@ -66,6 +85,7 @@ def main():
     time.sleep(5)
 
     target_season = _get_season()
+    web_port = int(os.environ.get("PORT", 5000))
 
     # Always run migrations first — all SQL uses IF NOT EXISTS so it's safe
     # to run on every deploy even if nothing changed.
@@ -86,6 +106,11 @@ def main():
     print(format_memory_snapshot("before global ADP refresh"))
     _refresh_global_adp(target_season)
     print(format_memory_snapshot("after global ADP refresh"))
+
+    # Warm the team rankings disk cache so the first Teams page visit after
+    # a deploy does not pay the cold compute. Runs last; everything above is
+    # independent of it.
+    _warm_team_rankings_cache(web_port, target_season)
 
 
 if __name__ == "__main__":
