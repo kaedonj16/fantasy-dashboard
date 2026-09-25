@@ -1086,6 +1086,8 @@ def build_activity_body(ctx: dict) -> str:
 
     <script>
     (function() {{
+      var NEWS_SRC_NAMES = {{espn: 'ESPN', reddit: 'Reddit', gnews: 'Google News', all: 'all sources'}};
+      function newsSrcName(s) {{ return NEWS_SRC_NAMES[s] || s; }}
       function loadNflNews() {{
         var list = document.getElementById('nflNewsList');
         if (!list) return;
@@ -1093,11 +1095,21 @@ def build_activity_body(ctx: dict) -> str:
           .then(function(r) {{ return r.json(); }})
           .then(function(data) {{
             var items = data.news || [];
+            var failed = data.sources_failed || [];
+            var warn = '';
+            if (failed.length) {{
+              warn = '<div class="act-news-warn" role="alert">Some news sources unavailable ('
+                + failed.map(newsSrcName).join(', ') + ').'
+                + (items.length ? ' Showing partial results.' : '') + '</div>';
+            }}
             if (!items.length) {{
-              list.innerHTML = '<div style="padding:12px 14px;font-size:13px;color:var(--text-muted);">No news available.</div>';
+              list.innerHTML = warn
+                + '<div style="padding:12px 14px;font-size:13px;color:var(--text-muted);">'
+                + (failed.length ? 'News temporarily unavailable.' : 'No news available.')
+                + '</div>';
               return;
             }}
-            list.innerHTML = items.map(function(n) {{
+            list.innerHTML = warn + items.map(function(n) {{
               var linkOpen = n.url ? '<a href="' + n.url + '" target="_blank" rel="noopener" class="act-news-link">' : '<span>';
               var linkClose = n.url ? '</a>' : '</span>';
               return '<div class="act-news-item">' +
@@ -1107,7 +1119,10 @@ def build_activity_body(ctx: dict) -> str:
               '</div>';
             }}).join('');
           }})
-          .catch(function() {{ /* fail silently */ }});
+          .catch(function() {{
+            var listEl = document.getElementById('nflNewsList');
+            if (listEl) listEl.innerHTML = '<div style="padding:12px 14px;font-size:13px;color:var(--text-muted);">News temporarily unavailable.</div>';
+          }});
       }}
 
       if (document.readyState === 'loading') {{
@@ -1129,6 +1144,14 @@ def build_activity_body(ctx: dict) -> str:
       .act-news-link:hover {{ text-decoration: underline; color: #3b82f6; }}
       .act-news-desc {{ font-size: 11px; color: var(--text-muted); line-height: 1.35; margin-bottom: 3px; }}
       .act-news-meta {{ font-size: 10px; color: var(--text-muted); opacity: .7; }}
+      .act-news-warn {{
+        padding: 8px 14px;
+        font-size: 11px;
+        font-weight: 600;
+        color: #b45309;
+        background: rgba(245, 158, 11, .12);
+        border-bottom: 1px solid rgba(245, 158, 11, .35);
+      }}
 
       .bract-summary-grid {{
         display: grid;

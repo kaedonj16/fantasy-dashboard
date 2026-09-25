@@ -648,11 +648,16 @@ def api_player_news(player_id: str):
             or (f"https://a.espncdn.com/i/headshots/nfl/players/full/{espn_id}.png" if espn_id else "")
         )
 
-        items = get_player_news(player_name=name, espn_headshot=headshot, limit=8)
-        return jsonify({"player_id": player_id, "name": name, "news": items})
+        result = get_player_news(player_name=name, espn_headshot=headshot, limit=8)
+        return jsonify({
+            "player_id": player_id,
+            "name": name,
+            "news": result["news"],
+            "sources_failed": result["sources_failed"],
+        })
     except Exception:
         logger.exception("[player-news] error")
-        return jsonify({"player_id": player_id, "news": []}), 200
+        return jsonify({"player_id": player_id, "news": [], "sources_failed": ["all"]}), 200
 
 
 # ── /api/nfl-news ─────────────────────────────────────────────────────────────
@@ -663,8 +668,8 @@ def api_nfl_news():
     try:
         from dashboard_services.news import get_nfl_news
         limit = min(int(request.args.get("limit") or 15), 30)
-        items = get_nfl_news(limit=limit)
-        return jsonify({"news": items})
+        result = get_nfl_news(limit=limit)
+        return jsonify({"news": result["news"], "sources_failed": result["sources_failed"]})
     except Exception:
         logger.exception("[nfl-news] error")
-        return jsonify({"news": []}), 200
+        return jsonify({"news": [], "sources_failed": ["all"]}), 200

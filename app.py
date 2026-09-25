@@ -13709,12 +13709,14 @@ def _redzone_collect(platform, league_id, season, week):
         ep = _rz_safe_epoch(g.get("gameTime_epoch") or g.get("gameTimeEpoch"))
         if ep and now_ts >= ep:
             lag_teams.add(t)
+    espn_sb_status = None  # "stale"/"failed" when the ESPN scoreboard fallback degrades
     if missing_teams or lag_teams:
         try:
-            espn_lookup = _rz_espn_team_game(season, week) or {}
+            espn_lookup, espn_sb_status = _rz_espn_team_game(season, week)
+            espn_lookup = espn_lookup or {}
         except Exception:
-            espn_lookup = {}
-            logger.debug("[redzone] espn scoreboard fallback failed", exc_info=True)
+            espn_lookup, espn_sb_status = {}, "failed"
+            logger.warning("[redzone] espn scoreboard fallback failed", exc_info=True)
         for team in missing_teams:
             g = lookup_team_map(espn_lookup, team)
             if g:
@@ -14031,7 +14033,7 @@ def _redzone_collect(platform, league_id, season, week):
     except Exception:
         logger.debug("[redzone] scoring push trigger failed", exc_info=True)
 
-    return {
+    out = {
         "matchups": matchups_out,
         "rosters": [
             {"roster_id": r.get("roster_id"), "owner_id": r.get("owner_id"),
@@ -14048,6 +14050,13 @@ def _redzone_collect(platform, league_id, season, week):
         "pbp_by_game": pbp_by_game,
         "games": games,
     }
+    if espn_sb_status in ("stale", "failed"):
+        # Surface ESPN scoreboard degradation to the client (the old silent
+        # 403 → empty-scores failure mode). The frontend renders a "Scores
+        # delayed" chip. Deliberately NOT the "error" key: the client treats
+        # any payload carrying "error" as a failed poll and discards it.
+        out["scoreboard_status"] = espn_sb_status
+    return out
 
 
 def _redzone_fetch(platform, league_id, season, week=None, scope="league"):

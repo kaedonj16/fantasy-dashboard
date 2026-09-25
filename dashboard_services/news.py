@@ -14,6 +14,7 @@ tests.
 from __future__ import annotations
 
 import asyncio
+import logging
 import re
 import time
 from datetime import datetime, timezone
@@ -21,6 +22,14 @@ from typing import Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:  # annotations only; httpx is imported lazily at call time
     import httpx
+
+logger = logging.getLogger(__name__)
+
+# Short source codes reported in ``sources_failed`` when a fetch fails.
+# The frontend maps these to display names (ESPN / Google News / Reddit).
+SRC_ESPN = "espn"
+SRC_GNEWS = "gnews"
+SRC_REDDIT = "reddit"
 
 _CACHE: dict = {}
 _TTL = 900        # 15 min per-athlete
@@ -106,13 +115,14 @@ def _parse(article: dict) -> dict:
 # Async internals
 # ──────────────────────────────────────────────────────────────────────────────
 
-async def _async_fetch_athlete(client: httpx.AsyncClient, espn_id: str) -> tuple[str, list]:
-    """Return (espn_id, items) - never raises."""
+async def _async_fetch_athlete(client: httpx.AsyncClient, espn_id: str) -> tuple[str, list, Optional[str]]:
+    """Return (espn_id, items, error) - never raises. error is None on success,
+    else the SRC_* code of the failed source."""
     now = time.time()
     key = f"athlete_{espn_id}"
     cached = _CACHE.get(key)
     if cached and now - cached[0] < _TTL:
-        return espn_id, cached[1]
+        return espn_id, cached[1], None
     try:
         url = (
             f"https://site.api.espn.com/apis/site/v2/sports/football/nfl"
@@ -120,22 +130,28 @@ async def _async_fetch_athlete(client: httpx.AsyncClient, espn_id: str) -> tuple
         )
         r = await client.get(url, headers=_HEADERS, timeout=_TIMEOUT)
         if not r.is_success:
-            return espn_id, []
+            logger.warning("[news] ESPN athlete feed failed for espn_id=%s: HTTP %s",
+                           espn_id, r.status_code)
+            return espn_id, [], SRC_ESPN
         data = r.json()
         items = [_parse(a) for a in (data.get("feed") or data.get("articles") or []) if a.get("headline")]
         _CACHE[key] = (now, items)
-        return espn_id, items
-    except Exception:
-        return espn_id, []
+        return espn_id, items, None
+    except Exception as e:
+        logger.warning("[news] ESPN athlete feed failed for espn_id=%s: %s: %s",
+                       espn_id, type(e).__name__, e)
+        return espn_id, [], SRC_ESPN
 
 
-async def _async_fetch_general() -> list:
+async def _async_fetch_general() -> tuple[list, Optional[str]]:
+    """Return (items, error) - never raises. error is None on success,
+    else the SRC_* code of the failed source."""
     import httpx
     now = time.time()
     key = "general_nfl"
     cached = _CACHE.get(key)
     if cached and now - cached[0] < _GENERAL_TTL:
-        return cached[1]
+        return cached[1], None
     try:
         async with httpx.AsyncClient() as client:
             r = await client.get(
@@ -144,12 +160,14 @@ async def _async_fetch_general() -> list:
                 timeout=_TIMEOUT,
             )
         if not r.is_success:
-            return []
+            logger.warning("[news] ESPN general NFL feed failed: HTTP %s", r.status_code)
+            return [], SRC_ESPN
         items = [_parse(a) for a in (r.json().get("articles") or []) if a.get("headline")]
         _CACHE[key] = (now, items)
-        return items
-    except Exception:
-        return []
+        return items, None
+    except Exception as e:
+        logger.warning("[news] ESPN general NFL feed failed: %s: %s", type(e).__name__, e)
+        return [], SRC_ESPN
 
 
 async def _async_batch_athletes(espn_ids: list[str]) -> dict[str, list]:
@@ -207,15 +225,16 @@ def _parse_reddit_children(children: list, require_substr: Optional[str] = None)
     return items
 
 
-async def _async_fetch_reddit(client, player_name: str, limit: int = 8) -> list:
-    """Community-vetted Reddit posts mentioning a specific player. Never raises."""
+async def _async_fetch_reddit(client, player_name: str, limit: int = 8) -> tuple[list, Optional[str]]:
+    """Community-vetted Reddit posts mentioning a specific player. Never raises.
+    Returns (items, error); error is None on success, else SRC_REDDIT."""
     if not player_name:
-        return []
+        return [], None
     now = time.time()
     key = f"reddit_{_REDDIT_SUBS}_{player_name.lower()}"
     cached = _CACHE.get(key)
     if cached and now - cached[0] < _REDDIT_TTL:
-        return cached[1]
+        return cached[1], None
     try:
         r = await client.get(
             f"https://www.reddit.com/r/{_REDDIT_SUBS}/search.json",
@@ -226,25 +245,28 @@ async def _async_fetch_reddit(client, player_name: str, limit: int = 8) -> list:
             headers=_HEADERS, timeout=_TIMEOUT,
         )
         if not r.is_success:
-            return []
+            logger.warning("[news] Reddit search failed for %r: HTTP %s", player_name, r.status_code)
+            return [], SRC_REDDIT
         children = ((r.json() or {}).get("data") or {}).get("children") or []
         last = player_name.lower().split()[-1] if player_name.split() else ""
         items = _parse_reddit_children(children, require_substr=last)[:limit]
         _CACHE[key] = (now, items)
-        return items
-    except Exception:
-        return []
+        return items, None
+    except Exception as e:
+        logger.warning("[news] Reddit search failed for %r: %s: %s",
+                       player_name, type(e).__name__, e)
+        return [], SRC_REDDIT
 
 
-async def _async_fetch_reddit_hot(client, limit: int = 12) -> list:
+async def _async_fetch_reddit_hot(client, limit: int = 12) -> tuple[list, Optional[str]]:
     """Top community-vetted Reddit link posts of the day across r/nfl +
     r/fantasyfootball (no player filter) -- for the general activity feed. Never
-    raises."""
+    raises. Returns (items, error); error is None on success, else SRC_REDDIT."""
     now = time.time()
     key = f"reddit_hot_{_REDDIT_SUBS}"
     cached = _CACHE.get(key)
     if cached and now - cached[0] < _REDDIT_TTL:
-        return cached[1]
+        return cached[1], None
     try:
         r = await client.get(
             f"https://www.reddit.com/r/{_REDDIT_SUBS}/top.json",
@@ -252,13 +274,15 @@ async def _async_fetch_reddit_hot(client, limit: int = 12) -> list:
             headers=_HEADERS, timeout=_TIMEOUT,
         )
         if not r.is_success:
-            return []
+            logger.warning("[news] Reddit hot-posts feed failed: HTTP %s", r.status_code)
+            return [], SRC_REDDIT
         children = ((r.json() or {}).get("data") or {}).get("children") or []
         items = _parse_reddit_children(children)[:limit]
         _CACHE[key] = (now, items)
-        return items
-    except Exception:
-        return []
+        return items, None
+    except Exception as e:
+        logger.warning("[news] Reddit hot-posts feed failed: %s: %s", type(e).__name__, e)
+        return [], SRC_REDDIT
 
 
 def _parse_gnews_item(item_el) -> dict:
@@ -322,16 +346,16 @@ def _parse_gnews_xml(xml_text: str, require_substr: Optional[str] = None) -> lis
     return items
 
 
-async def _async_fetch_gnews(client, player_name: str, limit: int = 6) -> list:
+async def _async_fetch_gnews(client, player_name: str, limit: int = 6) -> tuple[list, Optional[str]]:
     """Beat-writer / local coverage for a specific player via Google News RSS.
-    Never raises."""
+    Never raises. Returns (items, error); error is None on success, else SRC_GNEWS."""
     if not player_name:
-        return []
+        return [], None
     now = time.time()
     key = f"gnews_{player_name.lower()}"
     cached = _CACHE.get(key)
     if cached and now - cached[0] < _GNEWS_TTL:
-        return cached[1]
+        return cached[1], None
     try:
         r = await client.get(
             _GNEWS_BASE,
@@ -339,24 +363,27 @@ async def _async_fetch_gnews(client, player_name: str, limit: int = 6) -> list:
             headers=_HEADERS, timeout=_TIMEOUT,
         )
         if not r.is_success:
-            return []
+            logger.warning("[news] Google News RSS failed for %r: HTTP %s", player_name, r.status_code)
+            return [], SRC_GNEWS
         last = player_name.lower().split()[-1] if player_name.split() else ""
         items = _parse_gnews_xml(r.text, require_substr=last)[:limit]
         _CACHE[key] = (now, items)
-        return items
-    except Exception:
-        return []
+        return items, None
+    except Exception as e:
+        logger.warning("[news] Google News RSS failed for %r: %s: %s",
+                       player_name, type(e).__name__, e)
+        return [], SRC_GNEWS
 
 
-async def _async_fetch_gnews_general(limit: int = 12) -> list:
+async def _async_fetch_gnews_general(limit: int = 12) -> tuple[list, Optional[str]]:
     """Recent general NFL coverage via Google News RSS -- for the activity feed.
-    Never raises."""
+    Never raises. Returns (items, error); error is None on success, else SRC_GNEWS."""
     import httpx
     now = time.time()
     key = "gnews_general"
     cached = _CACHE.get(key)
     if cached and now - cached[0] < _GENERAL_TTL:
-        return cached[1]
+        return cached[1], None
     try:
         async with httpx.AsyncClient() as client:
             r = await client.get(
@@ -365,12 +392,14 @@ async def _async_fetch_gnews_general(limit: int = 12) -> list:
                 headers=_HEADERS, timeout=_TIMEOUT,
             )
         if not r.is_success:
-            return []
+            logger.warning("[news] Google News general RSS failed: HTTP %s", r.status_code)
+            return [], SRC_GNEWS
         items = _parse_gnews_xml(r.text)[:limit]
         _CACHE[key] = (now, items)
-        return items
-    except Exception:
-        return []
+        return items, None
+    except Exception as e:
+        logger.warning("[news] Google News general RSS failed: %s: %s", type(e).__name__, e)
+        return [], SRC_GNEWS
 
 
 def _norm_url(u: str) -> str:
@@ -555,42 +584,63 @@ def _name_match(general: list, player_name: str, limit: int) -> list:
     return matched[:limit]
 
 
-async def _async_player_news(player_name: str, espn_id: Optional[str], limit: int) -> list:
+async def _async_player_news(player_name: str, espn_id: Optional[str], limit: int) -> tuple[list, list]:
     """Fetch ESPN + Google News + Reddit concurrently, then blend/dedupe. ESPN is
     the primary source (kept on any dedupe tie), then Google News (beat-writer
-    articles), then Reddit."""
+    articles), then Reddit. Returns (items, failed_sources) where failed_sources
+    names the SRC_* codes of sources that failed this fetch."""
     import httpx
+    failed: list[str] = []
     async with httpx.AsyncClient() as client:
         reddit_coro = _async_fetch_reddit(client, player_name)
         gnews_coro = _async_fetch_gnews(client, player_name)
         if espn_id:
-            (_eid, espn_items), gnews_items, reddit_items = await asyncio.gather(
+            athlete_res, gnews_res, reddit_res = await asyncio.gather(
                 _async_fetch_athlete(client, espn_id), gnews_coro, reddit_coro
             )
+            _, espn_items, espn_err = athlete_res
+            gnews_items, gnews_err = gnews_res
+            reddit_items, reddit_err = reddit_res
         else:
-            espn_items = []
-            gnews_items, reddit_items = await asyncio.gather(gnews_coro, reddit_coro)
+            espn_items, espn_err = [], None
+            gnews_res, reddit_res = await asyncio.gather(gnews_coro, reddit_coro)
+            gnews_items, gnews_err = gnews_res
+            reddit_items, reddit_err = reddit_res
+    for src, err in ((SRC_ESPN, espn_err), (SRC_GNEWS, gnews_err), (SRC_REDDIT, reddit_err)):
+        if err:
+            failed.append(src)
     # ESPN name-based fallback when the per-athlete feed is empty.
     if not espn_items and player_name:
-        espn_items = _name_match(await _async_fetch_general(), player_name, limit)
-    return _blend_sources([espn_items, gnews_items, reddit_items], limit)
+        fb_items, fb_err = await _async_fetch_general()
+        if fb_err and SRC_ESPN not in failed:
+            failed.append(SRC_ESPN)
+        espn_items = _name_match(fb_items, player_name, limit)
+    return _blend_sources([espn_items, gnews_items, reddit_items], limit), failed
 
 
-async def _async_general_news(limit: int) -> list:
+async def _async_general_news(limit: int) -> tuple[list, list]:
     """General activity-feed news: ESPN headlines blended with recent Google News
     NFL coverage and the day's top community-vetted Reddit link posts, deduped
-    and sorted by recency. ESPN is the primary source (kept on any dedupe tie)."""
+    and sorted by recency. ESPN is the primary source (kept on any dedupe tie).
+    Returns (items, failed_sources) where failed_sources names the SRC_* codes
+    of sources that failed this fetch."""
     import httpx
     async with httpx.AsyncClient() as client:
-        general, gnews_items, reddit_items = await asyncio.gather(
+        general_res, gnews_res, reddit_res = await asyncio.gather(
             _async_fetch_general(),
             _async_fetch_gnews_general(),
             _async_fetch_reddit_hot(client),
         )
+    general, general_err = general_res
+    gnews_items, gnews_err = gnews_res
+    reddit_items, reddit_err = reddit_res
+    failed = [src for src, err in
+              ((SRC_ESPN, general_err), (SRC_GNEWS, gnews_err), (SRC_REDDIT, reddit_err))
+              if err]
     # Blend a generous pool first (so fantasy items aren't truncated away), then
     # rerank for fantasy relevance and trim to the requested size.
     pool = _blend_sources([general, gnews_items, reddit_items], max(limit * 3, 40))
-    return _fantasy_rank_general(pool, limit)
+    return _fantasy_rank_general(pool, limit), failed
 
 
 def _run(coro):
@@ -612,7 +662,7 @@ def _run(coro):
 # Public API
 # ──────────────────────────────────────────────────────────────────────────────
 
-def get_player_news(player_name: str, espn_headshot: str = "", limit: int = 4) -> list:
+def get_player_news(player_name: str, espn_headshot: str = "", limit: int = 4) -> dict:
     """
     Return up to `limit` recent news items for a player, blended from:
       1. ESPN -- the per-athlete feed (ID derived from the headshot URL), or a
@@ -622,15 +672,24 @@ def get_player_news(player_name: str, espn_headshot: str = "", limit: int = 4) -
 
     All three are merged, deduped (by destination URL and headline), and sorted
     by recency. ESPN wins dedupe ties, then Google News, then Reddit. Any source
-    failing degrades gracefully to the others.
+    failing degrades gracefully to the others and is named in
+    ``sources_failed`` so the caller can surface it.
+
+    Returns {"news": [...], "sources_failed": [...]}.
     """
     eid = _espn_id(espn_headshot)
-    return _run(_async_player_news(player_name, eid, limit))
+    items, failed = _run(_async_player_news(player_name, eid, limit))
+    return {"news": items, "sources_failed": failed}
 
 
-def get_nfl_news(limit: int = 20) -> list:
+def get_nfl_news(limit: int = 20) -> dict:
     """Return recent general NFL news headlines for the activity feed: ESPN
     headlines blended with recent Google News NFL coverage and the day's top
     community-vetted Reddit link posts (r/fantasyfootball + r/nfl), deduped and
-    sorted by recency. Any source failing degrades gracefully to the others."""
-    return _run(_async_general_news(limit))
+    sorted by recency. Any source failing degrades gracefully to the others and
+    is named in ``sources_failed`` so the caller can surface it.
+
+    Returns {"news": [...], "sources_failed": [...]}.
+    """
+    items, failed = _run(_async_general_news(limit))
+    return {"news": items, "sources_failed": failed}
