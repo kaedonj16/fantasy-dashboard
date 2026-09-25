@@ -1670,38 +1670,337 @@ FORM_BODY = """
     </div>
   </section>
 
+  {% if not session.get('account_id') %}
+<div class="trust-strip">
+  <div class="trust-inner">
+    <span class="trust-item"><span class="trust-check">✓</span>Free to start</span>
+    <span class="trust-item"><span class="trust-check">✓</span>No account needed to look around</span>
+    <span class="trust-item"><span class="trust-check">✓</span>Read-only. Never touches your lineups</span>
+    <span class="trust-item"><span class="trust-check">✓</span>5 platforms &middot; 133 metrics &middot; 32 NFL teams</span>
+  </div>
+</div>
+
+<section class="home-previews">
+  <div class="home-previews-inner">
+    <header class="home-previews-head">
+      <span class="home-previews-eyebrow">Take the tour</span>
+      <h2 class="home-previews-title">This is what Sundays look like here</h2>
+      <p class="home-previews-lead">A peek at the tools your league gets. Connect a league to see them loaded with your teams and players.</p>
+    </header>
+
+    <div class="home-preview-block">
+      <div class="home-preview-copy">
+        <span class="home-preview-eyebrow">Matchup Board</span>
+        <h3 class="home-preview-title">Your matchup, rebuilt for your phone</h3>
+        <p class="home-preview-desc">Live scores, win probability, and every starter's projection in a board designed for game day. No pinching, no sideways scrolling.</p>
+      </div>
+      <div class="home-preview-visual">
+        <div class="hp-mb">
+          <div class="hp-mb-head">
+            <div><div class="hp-mb-team">You</div><div class="hp-mb-score">132.4</div></div>
+            <div class="is-right"><div class="hp-mb-team">Opp</div><div class="hp-mb-score">128.9</div></div>
+          </div>
+          <div class="m-win-bar" role="img" aria-label="Win probability: You 64 percent, Opp 36 percent">
+            <span class="m-wp-pct" style="color:#22c55e;">64%</span>
+            <div class="m-wp-track" style="background:linear-gradient(to right,#22c55e 64%,rgba(148,163,184,0.35) 64%);"></div>
+            <span class="m-wp-pct" style="color:var(--text-muted);text-align:right;">36%</span>
+          </div>
+          <div class="mb-row">
+            <div class="mb-cell mb-cell-l"><div class="mb-cell-row">
+              <div class="mb-info">
+                <div class="p-name-line mb-nameline"><span class="pname">Josh Allen</span><span class="meta p-team mb-team">BUF &bull; QB</span></div>
+                <span class="meta p-game-line mb-game">vs MIA</span>
+              </div>
+              <div class="mb-score"><span class="mb-a mb-win">28.4</span><span class="mb-pj">31.2</span></div>
+            </div></div>
+            <div class="mb-pos"><span class="pos-badge QB">QB</span></div>
+            <div class="mb-cell mb-cell-r"><div class="mb-cell-row">
+              <div class="mb-info">
+                <div class="p-name-line mb-nameline"><span class="pname">Lamar Jackson</span><span class="meta p-team mb-team">BAL &bull; QB</span></div>
+                <span class="meta p-game-line mb-game">@ KC</span>
+              </div>
+              <div class="mb-score"><span class="mb-a">26.1</span><span class="mb-pj">29.4</span></div>
+            </div></div>
+          </div>
+          <div class="mb-row">
+            <div class="mb-cell mb-cell-l"><div class="mb-cell-row">
+              <div class="mb-info">
+                <div class="p-name-line mb-nameline"><span class="pname">Jahmyr Gibbs</span><span class="meta p-team mb-team">DET &bull; RB</span></div>
+                <span class="meta p-game-line mb-game">vs CLE</span>
+              </div>
+              <div class="mb-score"><span class="mb-a mb-win">21.7</span><span class="mb-pj">19.8</span></div>
+            </div></div>
+            <div class="mb-pos"><span class="pos-badge RB">RB</span></div>
+            <div class="mb-cell mb-cell-r"><div class="mb-cell-row">
+              <div class="mb-info">
+                <div class="p-name-line mb-nameline"><span class="pname">Derrick Henry</span><span class="meta p-team mb-team">BAL &bull; RB</span></div>
+                <span class="meta p-game-line mb-game">@ KC</span>
+              </div>
+              <div class="mb-score"><span class="mb-a">14.2</span><span class="mb-pj">17.6</span></div>
+            </div></div>
+          </div>
+          <div class="mb-row">
+            <div class="mb-cell mb-cell-l"><div class="mb-cell-row">
+              <div class="mb-info">
+                <div class="p-name-line mb-nameline"><span class="pname">Drake London</span><span class="meta p-team mb-team">ATL &bull; WR</span></div>
+                <span class="meta p-game-line mb-game">vs WAS</span>
+              </div>
+              <div class="mb-score"><span class="mb-a mb-win">18.9</span><span class="mb-pj">17.4</span></div>
+            </div></div>
+            <div class="mb-pos"><span class="pos-badge WR">WR</span></div>
+            <div class="mb-cell mb-cell-r"><div class="mb-cell-row">
+              <div class="mb-info">
+                <div class="p-name-line mb-nameline"><span class="pname">Ja'Marr Chase</span><span class="meta p-team mb-team">CIN &bull; WR</span></div>
+                <span class="meta p-game-line mb-game">vs PIT</span>
+              </div>
+              <div class="mb-score"><span class="mb-a">12.3</span><span class="mb-pj">19.1</span></div>
+            </div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="home-preview-block is-flip">
+      <div class="home-preview-copy">
+        <span class="home-preview-eyebrow">Redzone</span>
+        <h3 class="home-preview-title">Every snap, one screen</h3>
+        <p class="home-preview-desc">Live NFL scores, scoring plays, and your players' fantasy points as they happen. Tap any game for the full box score.</p>
+      </div>
+      <div class="home-preview-visual">
+        <div class="hp-rz">
+          <div class="rz-game-strip"><div class="rz-game-strip-scroll" role="group" aria-label="NFL games">
+            <button type="button" class="rz-game-pill is-live is-selected" aria-pressed="true" aria-label="KC 24 at BUF 27, Q4 2:14">
+              <span class="rz-gp-team away"><span class="rz-gp-logo rz-gp-logo-txt">KC</span><span class="rz-gp-abv">KC</span><span class="rz-gp-score">24</span></span>
+              <span class="rz-gp-status">Q4 2:14</span>
+              <span class="rz-gp-team home"><span class="rz-gp-logo rz-gp-logo-txt">BUF</span><span class="rz-gp-abv">BUF</span><span class="rz-gp-score">27</span></span>
+            </button>
+            <button type="button" class="rz-game-pill is-live" aria-pressed="false" aria-label="DET 17 at GB 14, Q3 5:41">
+              <span class="rz-gp-team away"><span class="rz-gp-logo rz-gp-logo-txt">DET</span><span class="rz-gp-abv">DET</span><span class="rz-gp-score">17</span></span>
+              <span class="rz-gp-status">Q3 5:41</span>
+              <span class="rz-gp-team home"><span class="rz-gp-logo rz-gp-logo-txt">GB</span><span class="rz-gp-abv">GB</span><span class="rz-gp-score">14</span></span>
+            </button>
+            <button type="button" class="rz-game-pill is-final" aria-pressed="false" aria-label="PHI 31 at DAL 24, FINAL">
+              <span class="rz-gp-team away"><span class="rz-gp-logo rz-gp-logo-txt">PHI</span><span class="rz-gp-abv">PHI</span><span class="rz-gp-score">31</span></span>
+              <span class="rz-gp-status">FINAL</span>
+              <span class="rz-gp-team home"><span class="rz-gp-logo rz-gp-logo-txt">DAL</span><span class="rz-gp-abv">DAL</span><span class="rz-gp-score">24</span></span>
+            </button>
+          </div></div>
+          <div class="rz-player-row">
+            <span class="rz-pos-badge rz-pos-QB">QB</span>
+            <div class="rz-player-info"><div class="rz-player-name">Josh Allen</div><div class="rz-player-meta"><span class="rz-live-dot-sm"></span><span class="rz-meta-game live">Q4 2:14</span></div></div>
+            <div class="rz-player-pts live-pts">28.4</div>
+          </div>
+          <div class="rz-player-row">
+            <span class="rz-pos-badge rz-pos-RB">RB</span>
+            <div class="rz-player-info"><div class="rz-player-name">Jahmyr Gibbs</div><div class="rz-player-meta"><span class="rz-live-dot-sm"></span><span class="rz-meta-game live">Q3 5:41</span></div></div>
+            <div class="rz-player-pts live-pts">21.7</div>
+          </div>
+          <div class="rz-player-row">
+            <span class="rz-pos-badge rz-pos-WR">WR</span>
+            <div class="rz-player-info"><div class="rz-player-name">Drake London</div><div class="rz-player-meta"><span class="rz-meta-game final">Final</span></div></div>
+            <div class="rz-player-pts">18.9</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="home-preview-block">
+      <div class="home-preview-copy">
+        <span class="home-preview-eyebrow">Start/Sit</span>
+        <h3 class="home-preview-title">Set your lineup with confidence</h3>
+        <p class="home-preview-desc">A verdict, a projection, and the matchup case for every starter. Tap any row for the full evidence: usage, Vegas, and QB situation.</p>
+      </div>
+      <div class="home-preview-visual">
+        <div class="wv-cx-group">
+          <div class="wv-cx-group-head">
+            <div class="wv-cx-group-title">RB <span>(2 starters)</span></div>
+            <div class="wv-cx-verdict">Start <b>Gibbs</b> and <b>Jeanty</b>. Flex <b>London</b> over <b>Reed</b>.</div>
+          </div>
+          <div class="wv-cx-card">
+            <div class="wv-cx-row-wrap">
+              <button type="button" class="wv-cx-row" aria-expanded="false">
+                <span class="wv-cx-badge wv-cx-start">START</span>
+                <span class="wv-cx-main">
+                  <span class="wv-cx-name">Jahmyr Gibbs</span>
+                  <span class="wv-cx-why">vs CLE <span class="wv-cx-chip">#4 easiest</span></span>
+                </span>
+                <span class="wv-cx-proj"><span class="wv-cx-proj-num">18.4</span><span class="wv-cx-proj-lbl">PROJ</span></span>
+                <span class="wv-cx-chev" aria-hidden="true">&rsaquo;</span>
+              </button>
+            </div>
+            <div class="wv-cx-row-wrap">
+              <button type="button" class="wv-cx-row" aria-expanded="false">
+                <span class="wv-cx-badge wv-cx-start">START</span>
+                <span class="wv-cx-main">
+                  <span class="wv-cx-name">Ashton Jeanty</span>
+                  <span class="wv-cx-why">vs CHI <span class="wv-cx-chip">#11 favorable</span></span>
+                </span>
+                <span class="wv-cx-proj"><span class="wv-cx-proj-num">15.2</span><span class="wv-cx-proj-lbl">PROJ</span></span>
+                <span class="wv-cx-chev" aria-hidden="true">&rsaquo;</span>
+              </button>
+            </div>
+            <div class="wv-cx-benchline">BENCH LINE</div>
+            <div class="wv-cx-row-wrap">
+              <button type="button" class="wv-cx-row" aria-expanded="false">
+                <span class="wv-cx-badge wv-cx-sit">SIT</span>
+                <span class="wv-cx-main">
+                  <span class="wv-cx-name">Jayden Reed</span>
+                  <span class="wv-cx-why">@ DAL <span class="wv-cx-chip bad">#28 hardest</span></span>
+                </span>
+                <span class="wv-cx-proj"><span class="wv-cx-proj-num">9.3</span><span class="wv-cx-proj-lbl">PROJ</span></span>
+                <span class="wv-cx-chev" aria-hidden="true">&rsaquo;</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="home-preview-block is-flip">
+      <div class="home-preview-copy">
+        <span class="home-preview-eyebrow">Wrapped</span>
+        <h3 class="home-preview-title">Your season, wrapped</h3>
+        <p class="home-preview-desc">A shareable recap of your year. Best weeks, biggest duds, and the moments your league will never stop arguing about.</p>
+      </div>
+      <div class="home-preview-visual">
+        <div class="hm-deck wrapped-deck" id="tourDeck">
+          <section class="hm-slide is-active">
+            <div class="wrapped-kicker"><span class="wrapped-kicker-rule"></span><span class="wrapped-kicker-txt">Season Wrapped</span></div>
+            <div class="wrapped-num"><span class="wrapped-big">1,284</span><span class="wrapped-unit">pts</span></div>
+            <div class="wrapped-name">Points scored</div>
+            <div class="wrapped-sub">3rd place in Blackedraw</div>
+          </section>
+          <section class="hm-slide">
+            <div class="wrapped-kicker"><span class="wrapped-kicker-rule"></span><span class="wrapped-kicker-txt">Best week</span></div>
+            <div class="wrapped-num"><span class="wrapped-big">146.2</span></div>
+            <div class="wrapped-name">Week 9</div>
+            <div class="wrapped-sub">Never forget it.</div>
+          </section>
+          <section class="hm-slide">
+            <div class="wrapped-kicker"><span class="wrapped-kicker-rule"></span><span class="wrapped-kicker-txt">Biggest dud</span></div>
+            <div class="wrapped-num"><span class="wrapped-big">4.1</span><span class="wrapped-unit">pts</span></div>
+            <div class="wrapped-name">Your first-round pick</div>
+            <div class="wrapped-sub">Week 6. We do not talk about Week 6.</div>
+          </section>
+        </div>
+        <div class="hm-dots" id="tourDots">
+          <span class="hm-dot is-active"></span><span class="hm-dot"></span><span class="hm-dot"></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="home-preview-block">
+      <div class="home-preview-copy">
+        <span class="home-preview-eyebrow">Trade Strategy <span class="home-preview-pro">PRO</span></span>
+        <h3 class="home-preview-title">Know the trade before you offer it</h3>
+        <p class="home-preview-desc">Archetype-driven suggestions with Monte Carlo win probability. See exactly how each trade shifts your playoff odds, before you send it.</p>
+      </div>
+      <div class="home-preview-visual">
+        <div class="otc-real-trade-card">
+          <div class="otc-rt-body">
+            <div class="otc-rt-side">
+              <div class="otc-rt-label">You Get</div>
+              <div class="otc-rt-asset"><span class="otc-rt-pos" style="background:#8b5cf618;color:#8b5cf6;">TE</span><span class="otc-rt-name">Trey McBride</span></div>
+            </div>
+            <div class="otc-rt-divider"></div>
+            <div class="otc-rt-side">
+              <div class="otc-rt-label">You Give</div>
+              <div class="otc-rt-asset"><span class="otc-rt-pos" style="background:#22c55e18;color:#22c55e;">RB</span><span class="otc-rt-name">Brian Robinson Jr.</span></div>
+              <div class="otc-rt-asset"><span class="otc-rt-pos" style="background:#6366f112;color:#6366f1;">PICK</span><span class="otc-rt-name">2027 R2 pick</span></div>
+            </div>
+          </div>
+          <div class="otc-rt-footer">
+            <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;min-width:0;">
+              <span class="otc-grade">Steal</span>
+              <span class="otc-delta wk">+1.8% wk</span>
+              <span class="otc-delta po">+4.2% po</span>
+            </div>
+            <button type="button" class="sugg-target-get-btn otc-sugg-pkg-load-btn">Analyze</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tour-cta">
+      <p>Every one of these loads with <strong>your</strong> teams and players.</p>
+      <a href="#homeCardTitle" class="tour-cta-btn">Connect your league</a>
+    </div>
+  </div>
+</section>
+
+<section class="quotes">
+  <div style="text-align:center">
+    <span class="section-kicker">League love</span>
+    <h2 class="section-title">Managers talk</h2>
+    <p class="section-lead">From the Blackedraw group chat.</p>
+  </div>
+  <div class="quotes-grid">
+    <figure class="quote-card">
+      <blockquote>THATS ACTUALLY SO SICK BRO</blockquote>
+      <figcaption><strong>Jayden Waddell</strong>Pittsburgh Pilots, on the weekly recap</figcaption>
+    </figure>
+    <figure class="quote-card">
+      <blockquote>If you not already using Kaedon website.. you should, it's got start sit suggestions built into the site, trade suggestions, projections, etc.. outperformed all my projections in 3 leagues last week using it so highly recommend</blockquote>
+      <figcaption><strong>Blackedraw manager</strong>Name coming soon</figcaption>
+    </figure>
+    <figure class="quote-card">
+      <blockquote>Being able to see/do this is sick, can't wait to see what it looks like in season</blockquote>
+      <figcaption><strong>Blackedraw manager</strong>Name coming soon</figcaption>
+    </figure>
+  </div>
+</section>
+
+  <script>
+  (function() {
+    var deck = document.getElementById('tourDeck');
+    if (!deck) return;
+    var slides = deck.querySelectorAll('.hm-slide');
+    var dots = document.querySelectorAll('#tourDots .hm-dot');
+    if (!slides.length) return;
+    var i = 0;
+    setInterval(function() {
+      slides[i].classList.remove('is-active');
+      if (dots[i]) dots[i].classList.remove('is-active');
+      i = (i + 1) % slides.length;
+      slides[i].classList.add('is-active');
+      if (dots[i]) dots[i].classList.add('is-active');
+    }, 3200);
+  })();
+  </script>
+  {% endif %}
+
   <section class="home-pro" id="homeProSignup" aria-labelledby="homeProTitle">
     <div class="home-pro-inner">
       <header class="home-pro-head">
         <span class="home-pro-eyebrow">Unlock PRO</span>
         <h2 class="home-pro-title" id="homeProTitle">The tools that decide trades, waivers, and playoffs</h2>
-        <p class="home-pro-lead">PRO unlocks roster-aware analysis for your league. A Google account is required to subscribe. See what you get, then pick a plan and connect your league.</p>
+        <p class="home-pro-lead"><strong>Less than $1 a month.</strong> PRO unlocks roster-aware analysis built for your league, not generic advice. Pick a plan, connect your league, done.</p>
       </header>
       <ul class="home-pro-benefits">
         <li>
           <span class="home-pro-benefit-icon" aria-hidden="true"><i class="fa-solid fa-handshake"></i></span>
           <strong>Trade Strategy</strong>
-          <span>Roster-based suggestions with Monte Carlo win-probability shifts</span>
+          <span>See exactly how each trade shifts your playoff odds before you send it</span>
         </li>
         <li>
           <span class="home-pro-benefit-icon" aria-hidden="true"><i class="fa-solid fa-chart-line"></i></span>
           <strong>Trade Intelligence</strong>
-          <span>Live market values, buy-low and sell-high signals from real trades</span>
+          <span>Buy low and sell high on live market values from real trades</span>
         </li>
         <li>
           <span class="home-pro-benefit-icon" aria-hidden="true"><i class="fa-solid fa-fire"></i></span>
           <strong>Breakout Engine</strong>
-          <span>Spot value shifts from target share, snaps, and depth-chart changes</span>
+          <span>Next week's breakouts, flagged before your league notices</span>
         </li>
         <li>
           <span class="home-pro-benefit-icon" aria-hidden="true"><i class="fa-solid fa-trophy"></i></span>
           <strong>Playoff Impact</strong>
-          <span>Week-by-week simulations for your path to the playoffs</span>
+          <span>Week-by-week simulations of your path to the playoffs</span>
         </li>
         <li>
           <span class="home-pro-benefit-icon" aria-hidden="true"><i class="fa-solid fa-briefcase"></i></span>
           <strong>Front Office Report</strong>
-          <span>A weekly GM memo for your roster, needs, and next moves</span>
+          <span>A weekly GM memo on your roster needs and next moves</span>
         </li>
         <li>
           <span class="home-pro-benefit-icon" aria-hidden="true"><i class="fa-solid fa-newspaper"></i></span>
@@ -1711,20 +2010,110 @@ FORM_BODY = """
         <li>
           <span class="home-pro-benefit-icon" aria-hidden="true"><i class="fa-solid fa-clipboard-list"></i></span>
           <strong>Custom Draft Board</strong>
-          <span>Your board, values, and live overlay for startup and rookie drafts</span>
+          <span>Your board, your values, with a live overlay on draft day</span>
         </li>
         <li>
           <span class="home-pro-benefit-icon" aria-hidden="true"><i class="fa-solid fa-magnifying-glass-chart"></i></span>
           <strong>Draft Deep Dive</strong>
-          <span>Grade every pick and see how a class actually landed</span>
+          <span>Grade every pick and see how the class actually landed</span>
         </li>
       </ul>
       <div class="home-pro-cta-row">
         <button type="button" class="home-pro-open-btn" data-home-pro-open>Unlock PRO</button>
-        <span class="home-pro-cta-note">From $5/year. A Google account is required to subscribe.</span>
+        <span class="home-pro-cta-note">$10/year. Cancel anytime. A Google account is required to subscribe.</span>
       </div>
     </div>
   </section>
+
+  {% if not session.get('account_id') %}
+
+
+<section class="freeband">
+  <div class="freeband-inner" style="text-align:center">
+    <span class="section-kicker">Try it right now</span>
+    <h2 class="section-title">Free tools, no league required</h2>
+    <p class="section-lead">A whole wing of the site works without connecting anything. These are the live pages, not screenshots.</p>
+    <div class="freeband-grid" style="text-align:left">
+      <div class="freeband-card">
+        <h4>Dynasty rankings</h4>
+        <p>Redraft and dynasty ranks with trend arrows, updated as news breaks.</p>
+        <a href="/rankings/dynasty">Open the live rankings</a>
+      </div>
+      <div class="freeband-card">
+        <h4>Trade value chart</h4>
+        <p>Every player's market value on one chart, so you stop losing trades.</p>
+        <a href="/dynasty-trade-value-chart">Open the live chart</a>
+      </div>
+      <div class="freeband-card">
+        <h4>Strategy guides</h4>
+        <p>Original dynasty strategy writeups, from startup drafts to rebuilds.</p>
+        <a href="/guides">Read the guides</a>
+      </div>
+      <div class="freeband-card">
+        <h4>NFL Teams</h4>
+        <p>All 32 teams graded honestly: real per-game offense ranks and O-line grades.</p>
+        <a href="/nfl-teams">Explore NFL Teams</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="how">
+  <span class="section-kicker">How it works</span>
+  <h2 class="section-title">Three steps to game day</h2>
+  <div class="how-steps">
+    <div class="how-step">
+      <span class="how-num">1</span>
+      <h4>Connect your league</h4>
+      <p>Pick your platform and paste your league ID. Read-only, nothing changes on your host site.</p>
+    </div>
+    <div class="how-step">
+      <span class="how-num">2</span>
+      <h4>Claim your team</h4>
+      <p>Tell us which team is yours so every tool, projection, and alert is about your roster.</p>
+    </div>
+    <div class="how-step">
+      <span class="how-num">3</span>
+      <h4>Run your Sunday</h4>
+      <p>Matchups, Redzone, start/sit, and waivers, all wired to your league's real scoring.</p>
+    </div>
+  </div>
+</section>
+
+<section class="faq">
+  <div style="text-align:center; margin-bottom: 12px;">
+    <span class="section-kicker">FAQ</span>
+    <h2 class="section-title">Good questions</h2>
+  </div>
+  <details class="faq-item">
+    <summary><h4>Is it really free?</h4><span class="faq-plus">+</span></summary>
+    <p>Looking around is free, no account needed. PRO adds roster-aware tools like trade strategy and the breakout engine, from $10/year.</p>
+  </details>
+  <details class="faq-item">
+    <summary><h4>Will it mess with my league?</h4><span class="faq-plus">+</span></summary>
+    <p>No. The connection is read-only. It cannot change lineups, rosters, waivers, or settings anywhere.</p>
+  </details>
+  <details class="faq-item">
+    <summary><h4>Which platforms work?</h4><span class="faq-plus">+</span></summary>
+    <p>Sleeper, ESPN, Yahoo, MFL, and Fleaflicker, for redraft and dynasty.</p>
+  </details>
+  <details class="faq-item">
+    <summary><h4>Do my leaguemates need accounts?</h4><span class="faq-plus">+</span></summary>
+    <p>No. Connect once and share links to recaps, Wrapped, and matchup pages. They just open them.</p>
+  </details>
+</section>
+
+<section class="indie">
+  <p>Built by a fantasy manager, not a media company.<span>Designed for leagues like yours. Tuned every week of the season.</span></p>
+</section>
+
+<section class="final-cta">
+  <div class="final-cta-inner">
+    <h2>Your league has a story. Start reading it.</h2>
+    <p>Connect a league and see your matchup board in under a minute.</p>
+    <a href="#homeCardTitle" class="tour-cta-btn">Connect your league</a>
+  </div>
+</section>  {% endif %}
 
   <div class="home-content-wrapper">
     <section class="home-feature-list-card">
