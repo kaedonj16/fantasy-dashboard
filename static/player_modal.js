@@ -582,26 +582,14 @@ function openPlayerModal(playerId, playerName, opts) {
         return { v1: scale(base.v1), vs: scale(base.vs), p1, o1, ps, os };
       };
 
-      const _draftYrVal = data.draft_year ? String(data.draft_year) : '';
       const thirdValueCard = data.stats?.pos_rank
         ? `<div class="pm-hero-stat">
             <div class="pm-hero-label">Dynasty</div>
             <div class="pm-hero-val">${posRankLabel || data.stats.pos_rank}</div>
           </div>`
-        : `<div class="pm-hero-stat" style="position:relative;">
-            <div class="pm-hero-label" style="display:flex;align-items:center;gap:4px;">
-              Experience
-              <button onclick="pmEditDraftYear('${pid}')" title="Set draft year"
-                style="background:none;border:none;cursor:pointer;padding:0;line-height:1;color:var(--text-muted);font-size:11px;opacity:.55;" aria-label="Edit draft year">✏</button>
-            </div>
+        : `<div class="pm-hero-stat">
+            <div class="pm-hero-label">Experience</div>
             <div class="pm-hero-val" id="pmExpLabel">${expLabel}</div>
-            <div id="pmDraftYrEdit" style="display:none;margin-top:6px;gap:4px;align-items:center;flex-wrap:wrap;">
-              <input id="pmDraftYrInput" type="number" min="2000" max="2030" value="${_draftYrVal}"
-                placeholder="e.g. 2024"
-                style="width:72px;padding:3px 6px;border:1px solid var(--border);border-radius:6px;font-size:12px;background:var(--bg);color:var(--text);"/>
-              <button onclick="pmSaveDraftYear('${pid}')"
-                style="padding:3px 10px;border-radius:6px;background:var(--accent);color:#fff;border:none;cursor:pointer;font-size:12px;">Save</button>
-            </div>
           </div>`;
 
       const ppgVal       = data.stats?.ppg;
@@ -1636,40 +1624,6 @@ function openPlayerModal(playerId, playerName, opts) {
         `;
       }
     });
-}
-
-// ── Draft Year Edit (player modal) ───────────────────────────────────────────
-function pmEditDraftYear(playerId) {
-  const editEl = document.getElementById('pmDraftYrEdit');
-  if (!editEl) return;
-  const showing = editEl.style.display && editEl.style.display !== 'none';
-  editEl.style.display = showing ? 'none' : 'flex';
-}
-
-function pmSaveDraftYear(playerId) {
-  const input = document.getElementById('pmDraftYrInput');
-  if (!input) return;
-  const val = parseInt(input.value, 10);
-  if (!val || val < 2000 || val > 2030) { input.style.borderColor = '#ef4444'; return; }
-  input.style.borderColor = '';
-  fetch('/api/player-index/update', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({player_id: playerId, draft_year: val}),
-  })
-    .then(r => r.json())
-    .then(d => {
-      if (d.ok) {
-        const currentYear = new Date().getFullYear();
-        const yrs = Math.max(0, currentYear - val);
-        const label = yrs === 0 ? 'Rookie' : `${yrs} yr${yrs !== 1 ? 's' : ''}`;
-        const expEl = document.getElementById('pmExpLabel');
-        if (expEl) expEl.textContent = label;
-        const editEl = document.getElementById('pmDraftYrEdit');
-        if (editEl) editEl.style.display = 'none';
-      }
-    })
-    .catch(() => {});
 }
 
 function pmLeaguePath(suffix) {
