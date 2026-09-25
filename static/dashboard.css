@@ -39805,6 +39805,8 @@ a, button, [role="button"], [role="tab"], summary, label,
 .pm-team-name { font-size: 20px; font-weight: 800; line-height: 1; color: var(--text); }
 .pm-team-meta { font-size: 11.5px; color: var(--text-muted); margin-top: 3px; font-weight: 600; }
 .pm-team-next { margin-top: 7px; color: var(--text); font-size: 12px; font-weight: 700; }
+.pm-team-dvp { margin-top: 4px; color: var(--text-muted); font-size: 11.5px; font-weight: 600; }
+.pm-team-dvp b { color: var(--text); }
 .pm-team-context-warning { margin-top:8px; color:var(--text-muted); font-size:10px; line-height:1.4; }
 .pm-team-herostats { display: flex; gap: 9px; margin-top: 14px; }
 .pm-team-herostats .pm-hero-stat {
@@ -41658,6 +41660,11 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
 .wv-cx-why { display: block; margin-top: 3px; font-size: 12.5px; color: var(--text-muted); }
 .wv-cx-chip { display: inline-block; font-size: 11px; font-weight: 700; color: var(--win); background: rgba(34, 197, 94, 0.14); border-radius: 20px; padding: 2px 8px; margin-left: 4px; white-space: nowrap; }
 .wv-cx-chip.bad { color: var(--loss); background: rgba(239, 68, 68, 0.14); }
+/* Matchup chip: four tiers on the sched_rank_color ease scale (#1 = easiest). */
+.wv-cx-chip.mt1 { color: #22c55e; background: #22c55e18; }
+.wv-cx-chip.mt2 { color: #84cc16; background: #84cc1618; }
+.wv-cx-chip.mt3 { color: #f59e0b; background: #f59e0b18; }
+.wv-cx-chip.mt4 { color: #ef4444; background: #ef444418; }
 .wv-cx-proj { text-align: right; flex-shrink: 0; }
 .wv-cx-proj-num { display: block; font-size: 24px; font-weight: 800; letter-spacing: -0.5px; font-variant-numeric: tabular-nums; color: var(--text); }
 .wv-cx-proj-lbl { display: block; font-size: 9.5px; font-weight: 700; letter-spacing: 1.2px; color: var(--text-subtle); }

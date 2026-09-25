@@ -1604,9 +1604,10 @@ function wvSsGroupVerdict(players) {{
 function wvSsMatchupChip(rank, total) {{
   if (!rank || !total) return '';
   const pct = rank / total;
-  const lbl = pct <= 0.25 ? 'easiest' : pct <= 0.5 ? 'favorable' : pct <= 0.75 ? 'tough' : 'hardest';
-  const cls = pct <= 0.5 ? '' : ' bad';
-  return `<span class="wv-cx-chip${{cls}}">#${{rank}} ${{lbl}}</span>`;
+  // Four tiers on the sched_rank_color ease scale (#1 = easiest).
+  const tier = pct <= 0.25 ? 1 : pct <= 0.5 ? 2 : pct <= 0.75 ? 3 : 4;
+  const lbl = tier === 1 ? 'easiest' : tier === 2 ? 'favorable' : tier === 3 ? 'tough' : 'hardest';
+  return `<span class="wv-cx-chip mt${{tier}}">#${{rank}} ${{lbl}}</span>`;
 }}
 
 // Evidence grid for one player: floor/ceiling, L4 PPG, Vegas, opp plays
