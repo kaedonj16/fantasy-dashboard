@@ -5797,6 +5797,14 @@ def _pro_trial_banner() -> str:
         title = "PRO Trial"
         body = f"Trial ends in {days} {unit}. Full PRO is on while it lasts."
         cta_label = "See PRO plans"
+        if days <= 2:
+            # Trial-ending reminder (from the churn workstream): for the last
+            # two days the banner swaps to the urgent copy instead of the
+            # standard countdown.
+            when = "tomorrow" if days <= 1 else "in 2 days"
+            title = f"Your PRO trial ends {when}"
+            body = "Keep Trade Intel, Breakouts, and the Front Office Report without missing a beat."
+            cta_label = "Keep PRO"
         storage = "sessionStorage"
         dismiss_key = "pro-trial-banner-dismissed"
         accent = "var(--brand-blue, #2563eb)"
@@ -5862,6 +5870,64 @@ def _pro_trial_banner() -> str:
     try {{ store.setItem(key, '1'); }} catch (e) {{}}
   }});
 }})();
+</script>
+"""
+
+
+def _dunning_banner() -> str:
+    """Failed-renewal banner for signed-in users with an unresolved episode.
+
+    Stripe retries on its own schedule; this nudges the user to the billing
+    portal to update the card. Dismissible per tab session only, since the
+    underlying payment problem is unresolved.
+    """
+    from flask import session as _session
+    account_id = _session.get("account_id")
+    if not account_id:
+        return ""
+    try:
+        from utils import churn as _churn
+        if not _churn.has_open_dunning(int(account_id)):
+            return ""
+    except Exception:
+        return ""
+    return """
+<div id="brDunningBanner" role="alert" style="
+     position:fixed;bottom:24px;right:24px;z-index:10000;
+     background:var(--card);border:1px solid var(--border);
+     border-top:3px solid #dc2626;border-radius:14px;
+     box-shadow:0 12px 40px rgba(0,0,0,.22);
+     padding:18px 20px;width:330px;display:flex;flex-direction:column;gap:12px;">
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;">
+    <span style="font-size:14px;font-weight:700;color:var(--text);">Your PRO payment failed</span>
+    <button type="button" id="brDunningClose" aria-label="Dismiss"
+            style="background:none;border:none;color:var(--muted);font-size:18px;line-height:1;cursor:pointer;padding:4px 8px;flex-shrink:0;min-width:44px;min-height:44px;">&times;</button>
+  </div>
+  <p style="margin:0;font-size:13px;color:var(--muted);line-height:1.45;">We could not charge your card for PRO. Update your payment method to keep your premium tools.</p>
+  <button type="button" id="brDunningCta"
+     style="display:inline-flex;align-items:center;justify-content:center;padding:10px 14px;border-radius:9px;border:none;background:#dc2626;color:#fff;font-weight:700;font-size:13px;cursor:pointer;">
+    Update payment method</button>
+</div>
+<script>
+(function(){
+  var el = document.getElementById('brDunningBanner');
+  if (!el) return;
+  try { if (sessionStorage.getItem('br-dunning-dismissed') === '1') { el.style.display = 'none'; return; } } catch (e) {}
+  document.getElementById('brDunningClose').addEventListener('click', function() {
+    el.style.display = 'none';
+    try { sessionStorage.setItem('br-dunning-dismissed', '1'); } catch (e) {}
+  });
+  document.getElementById('brDunningCta').addEventListener('click', function() {
+    var btn = this; btn.disabled = true; btn.textContent = 'Opening billing...';
+    fetch('/api/create-portal-session', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({})})
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        if (d.url) { window.location.href = d.url; }
+        else { btn.disabled = false; btn.textContent = 'Update payment method'; }
+      })
+      .catch(function() { btn.disabled = false; btn.textContent = 'Update payment method'; });
+  });
+})();
 </script>
 """
 
@@ -6191,6 +6257,7 @@ def render_page(
     banner_html = _discord_banner()
     banner_html += _google_link_pro_banner()
     banner_html += _pro_trial_banner()
+    banner_html += _dunning_banner()
     if _session_signed_in():
         banner_html += _recap_ready_banner(league_id or "", platform or "", season or 0)
         banner_html += _draft_imminent_banner(

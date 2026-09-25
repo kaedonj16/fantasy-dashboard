@@ -1137,6 +1137,19 @@ print(f"[cron] Push digest flush: {sent} sent")
 
     _report_step_failures(season, week)
 
+    # ------------------------------------------------------------------ #
+    # Step 13: Churn reduction scan                                      #
+    # Dunning escalation (touch 2 while still past due), trial-expiry    #
+    # reminders (no-op until the free-trial workstream lands its          #
+    # pro_trials table), and the one-time win-back offer for lapsed PRO. #
+    # ------------------------------------------------------------------ #
+    _run_step("""
+from dotenv import load_dotenv; load_dotenv()
+from utils.churn import run_daily_scan
+summary = run_daily_scan()
+print(f"[cron] Churn scan: {summary}")
+""", "churn_reduction_scan")
+
     print(f"[cron] Daily run completed - Season {season}, Week {week}")
 
 
