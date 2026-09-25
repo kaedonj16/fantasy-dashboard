@@ -20460,11 +20460,17 @@ def _build_league_players_payload_uncached(kdef: bool = False) -> dict:
         logger.info(f"[api/league-players] pick injection skipped: {_e_picks}")
 
     # Compute rank_change_7d from player-only pool (QB/RB/WR/TE) so that picks
-    # and newly-added rookies don't distort movement arrows on the rankings page.
-    # Current rank = position in value-sorted player list; historical rank from DB snapshot.
+    # don't distort movement arrows on the rankings page. Both ranks are
+    # computed over the INTERSECTION of today's pool and the snapshot pool
+    # with competition tie handling on both sides: comparing an enumerate
+    # rank against the snapshot's min-tie rank manufactured phantom
+    # "down N spots" moves whenever the pool grew or players tied at 0.
     _PLAYER_POSITIONS = {"QB", "RB", "WR", "TE"}
     try:
-        from data_building.update_player_values_with_rankings import _load_historical_ranks as _lhr
+        from data_building.update_player_values_with_rankings import (
+            _load_historical_ranks as _lhr,
+            rank_change_vs_snapshot as _rc_vs,
+        )
         from datetime import timedelta as _td
 
         # Cache historical ranks by date so we don't hit DB on every request
@@ -20475,35 +20481,36 @@ def _build_league_players_payload_uncached(kdef: bool = False) -> dict:
             _hist_ranks = _lhr(_today - _td(days=7))
             setattr(app, _hist_cache_key, _hist_ranks)
 
-        # Current player-only rank: sort QB/RB/WR/TE by value descending
-        _player_rows = sorted(
-            [p for p in model_value_table
-             if isinstance(p, dict) and str(p.get("position", "")).upper() in _PLAYER_POSITIONS],
-            key=lambda p: float(p.get("value") or 0),
-            reverse=True,
-        )
-        _cur_rank_map = {str(p.get("id") or ""): idx + 1 for idx, p in enumerate(_player_rows)}
-
-        # Superflex current rank: same pool ordered by SF value (QBs rise sharply),
-        # paired with the SF historical rank so SF movement arrows are SF-correct.
-        _sf_player_rows = sorted(
-            [p for p in model_value_table
-             if isinstance(p, dict) and str(p.get("position", "")).upper() in _PLAYER_POSITIONS],
-            key=lambda p: float(p.get("sf_value") or p.get("value") or 0),
-            reverse=True,
-        )
-        _cur_sf_rank_map = {str(p.get("id") or ""): idx + 1 for idx, p in enumerate(_sf_player_rows)}
+        # Current player-only values (1QB and SF orderings)
+        _cur_vals: dict[str, float] = {}
+        _cur_sf_vals: dict[str, float] = {}
+        for _p in model_value_table:
+            if isinstance(_p, dict) and str(_p.get("position", "")).upper() in _PLAYER_POSITIONS:
+                _pid = str(_p.get("id") or "")
+                if not _pid:
+                    continue
+                _cur_vals[_pid] = float(_p.get("value") or 0)
+                _cur_sf_vals[_pid] = float(_p.get("sf_value") or _p.get("value") or 0)
+        _hist_vals = {
+            _pid: float(_h.get("value") or 0)
+            for _pid, _h in _hist_ranks.items() if isinstance(_h, dict)
+        }
+        _hist_sf_vals = {
+            _pid: float(_h.get("sf_value") if _h.get("sf_value") is not None else _h.get("value") or 0)
+            for _pid, _h in _hist_ranks.items() if isinstance(_h, dict)
+        }
+        _changes = _rc_vs(_cur_vals, _hist_vals)
+        _sf_changes = _rc_vs(_cur_sf_vals, _hist_sf_vals)
 
         for _p in model_value_table:
             _pid = str(_p.get("id") or "")
-            _cur = _cur_rank_map.get(_pid)
-            _hist = _hist_ranks.get(_pid)
-            if _cur is not None and _hist:
-                _p["rank_change_7d"] = _hist["overall_rank"] - _cur
-            _sf_cur = _cur_sf_rank_map.get(_pid)
-            if _sf_cur is not None and _hist and _hist.get("sf_overall_rank") is not None:
-                _p["sf_rank_change_7d"] = _hist["sf_overall_rank"] - _sf_cur
-            # leave rank_change_7d as-is (None or from JSON) for non-player-pos entries
+            if _pid in _changes:
+                _p["rank_change_7d"] = _changes[_pid]
+            if _pid in _sf_changes:
+                _p["sf_rank_change_7d"] = _sf_changes[_pid]
+            # leave rank_change_7d as-is (None or from JSON) for players
+            # absent from the 7-day-ago snapshot (new to the pool) and for
+            # non-player-pos entries
     except Exception:
         # Fall back to DB-stored values if recomputation fails
         try:

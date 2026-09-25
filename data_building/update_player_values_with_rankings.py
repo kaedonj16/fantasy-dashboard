@@ -92,12 +92,14 @@ def _normalize_redraft_values(
     }
 
 
-def _load_historical_ranks(target_date: date) -> Dict[str, Dict[str, int]]:
+def _load_historical_ranks(target_date: date) -> Dict[str, Dict[str, float]]:
     """
     Load per-player overall_rank and pos_rank from the closest snapshot on or
     before target_date using player_value_history.
 
-    Returns dict keyed by player_id: {'overall_rank': int, 'pos_rank': int}
+    Returns dict keyed by player_id with ranks plus the snapshot ``value`` /
+    ``sf_value`` so callers can re-rank the intersection of the snapshot pool
+    and today's pool with identical tie handling (see rank_change_vs_snapshot).
     """
     db_url = os.getenv("DATABASE_URL", "").strip()
     if not db_url or any(t in db_url for t in ("USER", "PASSWORD", "HOST")):
@@ -171,12 +173,56 @@ def _load_historical_ranks(target_date: date) -> Dict[str, Dict[str, int]]:
                 "pos_rank": int(r["pos_rank"]),
                 "sf_overall_rank": int(r["sf_overall_rank"]),
                 "sf_pos_rank": int(r["sf_pos_rank"]),
+                "value": float(r["value"]),
+                "sf_value": float(r["sf_value"]),
             }
             for _, r in hist.iterrows()
         }
     except Exception as e:
         print(f"[update_player_values] Could not load historical ranks: {e}")
         return {}
+
+
+def _competition_ranks(values: Dict[str, float]) -> Dict[str, int]:
+    """Rank pids by value desc with competition ("1224") tie handling.
+
+    Every tied value shares the best rank for that score, so a mass of
+    players tied at 0 all sit at one shared rank instead of being spread
+    across hundreds of phantom spots.
+    """
+    ordered = sorted(values, key=lambda pid: (-values[pid], pid))
+    ranks: Dict[str, int] = {}
+    last_val: float | None = None
+    last_rank = 0
+    for i, pid in enumerate(ordered):
+        v = values[pid]
+        if last_val is None or v != last_val:
+            last_rank = i + 1
+            last_val = v
+        ranks[pid] = last_rank
+    return ranks
+
+
+def rank_change_vs_snapshot(
+    cur_values: Dict[str, float],
+    hist_values: Dict[str, float],
+) -> Dict[str, int]:
+    """7-day rank movement over the intersection of two pools.
+
+    Both ranks are computed over the SAME player set with the SAME
+    competition tie handling, so pool growth (new rookies added) and mass
+    ties at 0 can no longer manufacture phantom "down N spots" moves.
+    Players absent from the historical snapshot are omitted (no trend yet)
+    instead of being ranked against a pool they were never in.
+
+    Returns pid -> (hist_rank - cur_rank); positive means the player rose.
+    """
+    pids = [pid for pid in cur_values if pid in hist_values]
+    if not pids:
+        return {}
+    cur_ranks = _competition_ranks({pid: cur_values[pid] for pid in pids})
+    hist_ranks = _competition_ranks({pid: hist_values[pid] for pid in pids})
+    return {pid: hist_ranks[pid] - cur_ranks[pid] for pid in pids}
 
 
 def update_player_values_with_rankings() -> int:
@@ -199,14 +245,11 @@ def update_player_values_with_rankings() -> int:
     # Add rankings to each player
     df['overall_rank'] = df['value'].rank(ascending=False, method='min')
 
-    # Player-only rank (QB/RB/WR/TE) used for rank_change_7d to match display pool.
+    # Player-only pool (QB/RB/TE/WR) used for rank_change_7d to match display pool.
     # Picks and other asset types are excluded so movement arrows reflect actual
-    # player-vs-player movement, not pool composition changes.
-    _player_mask = df['position'].isin({'QB', 'RB', 'WR', 'TE'})
-    df['player_rank'] = df['value'].where(_player_mask).rank(ascending=False, method='min')
-    # SF overall player-only rank, ordered by SF value (QBs rise a lot here) —
-    # drives sf_rank_change_7d so Superflex movement arrows are SF-correct.
-    df['sf_player_rank'] = df['sf_value'].where(_player_mask).rank(ascending=False, method='min')
+    # player-vs-player movement, not pool composition changes. The 7-day
+    # comparison itself is done over the intersection with the snapshot pool
+    # via rank_change_vs_snapshot (same set, same tie handling on both sides).
     # Load calibration overrides to get calibrated values for ranking
     try:
         from dashboard_services.player_value_history import load_calibration_overrides
@@ -236,6 +279,51 @@ def update_player_values_with_rankings() -> int:
     # Load historical ranks from 7 days ago for movement indicators
     hist_ranks = _load_historical_ranks(date.today() - timedelta(days=7))
 
+    # 7-day rank movement over the INTERSECTION of today's pool and the
+    # snapshot pool, with competition tie handling on both sides. Comparing
+    # today's enumerate-style rank against the snapshot's min-tie rank used
+    # to manufacture phantom "down N spots" moves whenever the pool grew or
+    # hundreds of players tied at 0.
+    _SKILL_POSITIONS = ("QB", "RB", "WR", "TE")
+    _hist_vals = {
+        pid: float(h["value"]) for pid, h in hist_ranks.items()
+        if isinstance(h, dict) and h.get("value") is not None
+    }
+    _hist_sf_vals = {
+        pid: float(h["sf_value"]) for pid, h in hist_ranks.items()
+        if isinstance(h, dict) and h.get("sf_value") is not None
+    }
+    _cur_vals: Dict[str, float] = {}
+    _cur_sf_vals: Dict[str, float] = {}
+    _cur_pos_vals: Dict[str, Dict[str, float]] = {}
+    _cur_sf_pos_vals: Dict[str, Dict[str, float]] = {}
+    _cal_col = "calibrated_value" if "calibrated_value" in df_smoothed.columns else "value"
+    _cal_sf_col = "calibrated_sf_value" if "calibrated_sf_value" in df_smoothed.columns else "sf_value"
+    for _, _r in df_smoothed.iterrows():
+        if _r["position"] not in _SKILL_POSITIONS:
+            continue
+        _pid = str(_r["id"])
+        _v = float(_r["value"] or 0)
+        _sv = float(_r["sf_value"] or _v)
+        _cur_vals[_pid] = _v
+        _cur_sf_vals[_pid] = _sv
+        _cv = float(_r[_cal_col] or 0)
+        _csv = float(_r[_cal_sf_col] or _cv)
+        _cur_pos_vals.setdefault(_r["position"], {})[_pid] = _cv
+        _cur_sf_pos_vals.setdefault(_r["position"], {})[_pid] = _csv
+    _changes = rank_change_vs_snapshot(_cur_vals, _hist_vals)
+    _sf_changes = rank_change_vs_snapshot(_cur_sf_vals, _hist_sf_vals)
+    _pos_changes: Dict[str, int] = {}
+    _sf_pos_changes: Dict[str, int] = {}
+    for _pos, _pv in _cur_pos_vals.items():
+        _pos_changes.update(
+            rank_change_vs_snapshot(_pv, {pid: _hist_vals[pid] for pid in _pv if pid in _hist_vals})
+        )
+    for _pos, _pv in _cur_sf_pos_vals.items():
+        _sf_pos_changes.update(
+            rank_change_vs_snapshot(_pv, {pid: _hist_sf_vals[pid] for pid in _pv if pid in _hist_sf_vals})
+        )
+
     # Load FC redraft values and normalize to the site's 0-999.9 scale.
     # Anchor players are selected by dynasty rank so established elites
     # sit near 999.9 regardless of inflated FC values for unproven rookies.
@@ -250,19 +338,11 @@ def update_player_values_with_rankings() -> int:
         cur_overall    = int(row['overall_rank'])
         cur_pos        = int(row['pos_rank'])
         cur_sf_pos     = int(row.get('sf_pos_rank', cur_pos))
-        _pr = row.get('player_rank')
-        cur_player_rank = int(_pr) if (_pr is not None and not pd.isna(_pr)) else None
-        _spr = row.get('sf_player_rank')
-        cur_sf_player_rank = int(_spr) if (_spr is not None and not pd.isna(_spr)) else None
 
-        hist = hist_ranks.get(pid)
-        rank_change_7d     = (hist['overall_rank'] - cur_player_rank) if (hist and cur_player_rank is not None) else None
-        pos_rank_change_7d = (hist['pos_rank'] - cur_pos) if hist else None
-        # SF movement: SF-ordered rank now vs 7 days ago (same shape as 1QB above).
-        _sf_hist_overall = hist.get('sf_overall_rank') if hist else None
-        _sf_hist_pos     = hist.get('sf_pos_rank') if hist else None
-        sf_rank_change_7d     = (_sf_hist_overall - cur_sf_player_rank) if (_sf_hist_overall is not None and cur_sf_player_rank is not None) else None
-        sf_pos_rank_change_7d = (_sf_hist_pos - cur_sf_pos) if (_sf_hist_pos is not None) else None
+        rank_change_7d        = _changes.get(pid)
+        pos_rank_change_7d    = _pos_changes.get(pid)
+        sf_rank_change_7d     = _sf_changes.get(pid)
+        sf_pos_rank_change_7d = _sf_pos_changes.get(pid)
 
         rd_1qb, rd_sf_raw = fc_redraft.get(pid, (None, None))
 
