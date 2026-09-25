@@ -2435,6 +2435,7 @@ window._brPromoEligible = function () {
     if (perm !== 'granted') return perm === 'denied' ? 'denied' : 'default';
     try {
       var ok = await subscribePush();  // creates/reuses + persists the subscription
+      if (ok && window.openPushPicker) { try { window.openPushPicker(); } catch (_) {} }
       return ok ? 'granted' : 'error';
     } catch (_) {
       return 'error';
@@ -2479,6 +2480,154 @@ window._brPromoEligible = function () {
     { key: 'top_movers',        label: 'Weekly Top Movers' },
   ];
 
+  // Fallback mirror of the server's PUSH_TYPE_BUCKETS (utils/push_notifications.py),
+  // used by the subscribe-time picker when /api/push/catalog is unreachable.
+  // The picker prefers the live catalog; keep this in sync with the server list.
+  var _NOTIF_BUCKETS = [
+    { id: 'lineup', label: 'Lineup and injuries', blurb: 'Lineup lock reminders, starter injury news, live TD alerts',
+      types: [
+        { key: 'lineup_lock', label: 'Lineup lock reminders' },
+        { key: 'injury', label: 'Starter injury alerts' },
+        { key: 'redzone_scores', label: 'RedZone score alerts' },
+      ] },
+    { id: 'matchups', label: 'Matchups live', blurb: 'Close games, matchup previews, standings moves',
+      types: [
+        { key: 'close_game', label: 'Close game alerts' },
+        { key: 'matchup_preview', label: 'Matchup previews' },
+        { key: 'standings_update', label: 'Standings updates' },
+      ] },
+    { id: 'waivers', label: 'Waivers and trends', blurb: 'Waiver targets, big drops, weekly top movers',
+      types: [
+        { key: 'waiver_candidates', label: 'Waiver wire updates' },
+        { key: 'transaction', label: 'Big drop alerts' },
+        { key: 'top_movers', label: 'Weekly top movers' },
+      ] },
+    { id: 'trades', label: 'Trades and value', blurb: 'Rival trades, dynasty value, breakouts, playoff odds',
+      types: [
+        { key: 'rival_trades', label: 'Rival trade alerts' },
+        { key: 'value_drops', label: 'Value drop alerts' },
+        { key: 'breakout_roster', label: 'Breakout player alerts' },
+        { key: 'playoff_odds', label: 'Playoff odds updates' },
+      ] },
+    { id: 'recaps', label: 'Recaps and watchlist', blurb: 'Weekly recaps and alerts on your starred players',
+      types: [
+        { key: 'recap_ready', label: 'Weekly recap available' },
+        { key: 'watchlist', label: 'Watchlist alerts' },
+      ] },
+  ];
+
+  // Shared toggle-switch row + HTML escaper for the notification modals.
+  function _toggleHtml(attr, val, label, on) {
+    return '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border);">'
+      + '<span style="font-size:13px;font-weight:600;color:var(--text);">' + label + '</span>'
+      + '<label style="position:relative;display:inline-block;width:36px;height:20px;flex-shrink:0;">'
+      + '<input type="checkbox" ' + attr + '="' + val + '"' + (on ? ' checked' : '') + ' style="opacity:0;width:0;height:0;">'
+      + '<span style="position:absolute;inset:0;background:' + (on ? 'var(--accent,#3b82f6)' : 'var(--border)') + ';border-radius:20px;cursor:pointer;transition:background .15s;" class="np-track"></span>'
+      + '<span style="position:absolute;top:2px;left:' + (on ? '18px' : '2px') + ';width:16px;height:16px;background:#fff;border-radius:50%;transition:left .15s;pointer-events:none;" class="np-thumb"></span>'
+      + '</label>'
+      + '</div>';
+  }
+  function _npEsc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function(c){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]; }); }
+  function _npPaintToggle(cb) {
+    var on = cb.checked;
+    var track = cb.parentElement.querySelector('.np-track');
+    var thumb = cb.parentElement.querySelector('.np-thumb');
+    if (track) track.style.background = on ? 'var(--accent,#3b82f6)' : 'var(--border)';
+    if (thumb) thumb.style.left = on ? '18px' : '2px';
+  }
+  function _npPutPrefs(endpoint, prefs) {
+    return fetch('/api/push/preferences', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ endpoint: endpoint, prefs: prefs }),
+    }).catch(function () {});
+  }
+
+  // "Tell me about" preference picker, shown right after a fresh subscribe.
+  // Buckets render from /api/push/catalog (server canonical list) with the
+  // baked-in mirror as fallback. Every bucket defaults ON, matching today's
+  // default-all-on subscribe behavior; Done persists the choices.
+  window.openPushPicker = async function(endpoint) {
+    endpoint = endpoint || window._pushEndpoint || null;
+    var buckets = null;
+    try {
+      var _cr = await fetch('/api/push/catalog', { cache: 'no-store' });
+      if (_cr.ok) {
+        var _cj = await _cr.json();
+        if (_cj && Array.isArray(_cj.buckets) && _cj.buckets.length) buckets = _cj.buckets;
+      }
+    } catch (_) {}
+    if (!buckets) buckets = _NOTIF_BUCKETS;
+    var prefs = {};
+    if (endpoint) {
+      try {
+        var _pr = await fetch('/api/push/preferences?endpoint=' + encodeURIComponent(endpoint));
+        if (_pr.ok) prefs = (await _pr.json()).prefs || {};
+      } catch (_) {}
+    }
+    function _bucketOn(b) {
+      return (b.types || []).every(function (t) { return prefs[t.key] !== false; });
+    }
+    var overlay = document.createElement('div');
+    overlay.id = 'pushPickerOverlay';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:10000;display:flex;align-items:flex-start;justify-content:center;padding:72px 16px 24px;';
+    var modal = document.createElement('div');
+    modal.style.cssText = 'background:var(--card,#fff);border:1px solid var(--border);border-radius:16px;padding:20px;width:100%;max-width:360px;max-height:calc(100vh - 96px);overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.2);';
+    var bucketRows = buckets.map(function (b) {
+      var on = _bucketOn(b);
+      return '<div style="padding:10px 0;border-bottom:1px solid var(--border);">'
+        + '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">'
+        + '<span style="font-size:13px;font-weight:700;color:var(--text);">' + _npEsc(b.label) + '</span>'
+        + '<label style="position:relative;display:inline-block;width:36px;height:20px;flex-shrink:0;">'
+        + '<input type="checkbox" data-bucket="' + _npEsc(b.id) + '"' + (on ? ' checked' : '') + ' style="opacity:0;width:0;height:0;">'
+        + '<span style="position:absolute;inset:0;background:' + (on ? 'var(--accent,#3b82f6)' : 'var(--border)') + ';border-radius:20px;cursor:pointer;transition:background .15s;" class="np-track"></span>'
+        + '<span style="position:absolute;top:2px;left:' + (on ? '18px' : '2px') + ';width:16px;height:16px;background:#fff;border-radius:50%;transition:left .15s;pointer-events:none;" class="np-thumb"></span>'
+        + '</label></div>'
+        + '<div style="font-size:11px;color:var(--text-muted);margin-top:3px;">' + _npEsc(b.blurb) + '</div>'
+        + '</div>';
+    }).join('');
+    var digestOn = prefs.digest === true;
+    modal.innerHTML = '<div style="font-size:15px;font-weight:800;color:var(--text);margin-bottom:2px;">Tell me about</div>'
+      + '<p style="font-size:12px;color:var(--text-muted);margin:0 0 6px;">Pick which alerts you want. You can change this anytime in Notification Settings.</p>'
+      + bucketRows
+      + '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 0 4px;">'
+      + '<span><span style="display:block;font-size:13px;font-weight:700;color:var(--text);">Hourly digest</span>'
+      + '<span style="display:block;font-size:11px;color:var(--text-muted);margin-top:2px;">Combine alerts across your leagues into one notification per hour.</span></span>'
+      + '<label style="position:relative;display:inline-block;width:36px;height:20px;flex-shrink:0;">'
+      + '<input type="checkbox" data-picker-digest="1"' + (digestOn ? ' checked' : '') + ' style="opacity:0;width:0;height:0;">'
+      + '<span style="position:absolute;inset:0;background:' + (digestOn ? 'var(--accent,#3b82f6)' : 'var(--border)') + ';border-radius:20px;cursor:pointer;transition:background .15s;" class="np-track"></span>'
+      + '<span style="position:absolute;top:2px;left:' + (digestOn ? '18px' : '2px') + ';width:16px;height:16px;background:#fff;border-radius:50%;transition:left .15s;pointer-events:none;" class="np-thumb"></span>'
+      + '</label></div>'
+      + '<div style="display:flex;gap:10px;margin-top:14px;">'
+      + '<button id="ppDone" style="flex:1;background:var(--accent,#3b82f6);color:#fff;border:none;border-radius:10px;padding:10px;font-size:13px;font-weight:700;cursor:pointer;">Done</button>'
+      + '<button id="ppSkip" style="flex:1;background:transparent;color:var(--text-muted);border:1px solid var(--border);border-radius:10px;padding:10px;font-size:13px;font-weight:700;cursor:pointer;">Skip for now</button>'
+      + '</div>';
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', function (e) { if (e.target === overlay) overlay.remove(); });
+    var bucketById = {};
+    buckets.forEach(function (b) { bucketById[b.id] = b; });
+    modal.querySelectorAll('input[data-bucket]').forEach(function (cb) {
+      cb.addEventListener('change', function () {
+        _npPaintToggle(cb);
+        var b = bucketById[cb.getAttribute('data-bucket')];
+        if (!b) return;
+        (b.types || []).forEach(function (t) { prefs[t.key] = cb.checked; });
+      });
+    });
+    var digestCb = modal.querySelector('input[data-picker-digest]');
+    if (digestCb) digestCb.addEventListener('change', function () { _npPaintToggle(digestCb); });
+    function _close(save) {
+      if (save && endpoint) {
+        if (digestCb) prefs.digest = digestCb.checked;
+        _npPutPrefs(endpoint, prefs);
+      }
+      overlay.remove();
+    }
+    modal.querySelector('#ppDone').addEventListener('click', function () { _close(true); });
+    modal.querySelector('#ppSkip').addEventListener('click', function () { _close(false); });
+  };
+
   window.openNotifPrefs = async function() {
     var endpoint = window._pushEndpoint;
     if (!endpoint) {
@@ -2517,6 +2666,7 @@ window._brPromoEligible = function () {
               await subscribePush();
               localStorage.setItem('push-notif-v1', 'subscribed');
               if (typeof showToast === 'function') showToast('Notifications enabled!', 'success');
+              if (window.openPushPicker) { try { window.openPushPicker(); } catch (_) {} }
             }
           } catch (_) {}
         }
@@ -2548,19 +2698,7 @@ window._brPromoEligible = function () {
       if (_sub) subKeys = _sub.toJSON().keys;
     } catch (_) {}
 
-    function _toggleHtml(attr, val, label, on) {
-      return '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border);">'
-        + '<span style="font-size:13px;font-weight:600;color:var(--text);">' + label + '</span>'
-        + '<label style="position:relative;display:inline-block;width:36px;height:20px;flex-shrink:0;">'
-        + '<input type="checkbox" ' + attr + '="' + val + '"' + (on ? ' checked' : '') + ' style="opacity:0;width:0;height:0;">'
-        + '<span style="position:absolute;inset:0;background:' + (on ? 'var(--accent,#3b82f6)' : 'var(--border)') + ';border-radius:20px;cursor:pointer;transition:background .15s;" class="np-track"></span>'
-        + '<span style="position:absolute;top:2px;left:' + (on ? '18px' : '2px') + ';width:16px;height:16px;background:#fff;border-radius:50%;transition:left .15s;pointer-events:none;" class="np-thumb"></span>'
-        + '</label>'
-        + '</div>';
-    }
-    function _esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function(c){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]; }); }
-
-    // Build modal
+    // Build modal (toggle rows via the hoisted _toggleHtml helper)
     var overlay = document.createElement('div');
     overlay.id = 'notifPrefsOverlay';
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:72px 16px 24px;';
@@ -2572,13 +2710,25 @@ window._brPromoEligible = function () {
       }
       return _toggleHtml('data-key', t.key, t.label, prefs[t.key] !== false);
     }).join('');
+    // Digest mode: one combined push per hour across leagues (device-level pref).
+    var _digestOn = prefs.digest === true;
+    var digestRow = '<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin:2px 0;">Delivery</div>'
+      + '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px solid var(--border);">'
+      + '<span><span style="display:block;font-size:13px;font-weight:600;color:var(--text);">Hourly digest</span>'
+      + '<span style="display:block;font-size:11px;color:var(--text-muted);margin-top:2px;">Combine alerts across your leagues into one notification per hour.</span></span>'
+      + '<label style="position:relative;display:inline-block;width:36px;height:20px;flex-shrink:0;">'
+      + '<input type="checkbox" data-digest="1"' + (_digestOn ? ' checked' : '') + ' style="opacity:0;width:0;height:0;">'
+      + '<span style="position:absolute;inset:0;background:' + (_digestOn ? 'var(--accent,#3b82f6)' : 'var(--border)') + ';border-radius:20px;cursor:pointer;transition:background .15s;" class="np-track"></span>'
+      + '<span style="position:absolute;top:2px;left:' + (_digestOn ? '18px' : '2px') + ';width:16px;height:16px;background:#fff;border-radius:50%;transition:left .15s;pointer-events:none;" class="np-thumb"></span>'
+      + '</label>'
+      + '</div>';
     // Per-league toggles (only when the user has more than one league)
     var leagueRows = '';
     if (leagues.length > 1) {
       leagueRows = '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);margin:16px 0 2px;">Leagues</div>'
         + leagues.map(function(lg) {
             var lid = String(lg.league_id || '');
-            return _toggleHtml('data-league', lid, _esc(lg.name || 'League'), enabledLeagues.indexOf(lid) !== -1);
+            return _toggleHtml('data-league', lid, _npEsc(lg.name || 'League'), enabledLeagues.indexOf(lid) !== -1);
           }).join('');
     }
     modal.innerHTML = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">'
@@ -2589,6 +2739,7 @@ window._brPromoEligible = function () {
       + '<p style="font-size:12px;color:var(--text-muted);margin:0;">Choose which alerts you want to receive.</p>'
       + '<button id="np-toggle-all" style="background:none;border:none;font-size:11px;font-weight:700;color:var(--accent,#3b82f6);cursor:pointer;padding:0;white-space:nowrap;margin-left:8px;"></button>'
       + '</div>'
+      + digestRow
       + rows
       + leagueRows;
     overlay.appendChild(modal);
@@ -2636,7 +2787,11 @@ window._brPromoEligible = function () {
         if (track) track.style.background = on ? 'var(--accent,#3b82f6)' : 'var(--border)';
         if (thumb) thumb.style.left = on ? '18px' : '2px';
         try {
-          if (cb.dataset.league !== undefined) {
+          if (cb.dataset.digest !== undefined) {
+            // Digest toggle (device-level): batch alerts into one hourly push.
+            prefs.digest = on;
+            await _npPutPrefs(endpoint, prefs);
+          } else if (cb.dataset.league !== undefined) {
             // League toggle: add (subscribe) or remove (unsubscribe) this league row
             if (on) {
               await fetch('/api/push/subscribe', {
@@ -2671,9 +2826,12 @@ window._brPromoEligible = function () {
 
   function showNotifBanner() {
     if (document.getElementById('push-notif-banner')) return;
-    // Don't stack two asks: if the install banner is still on screen, wait and
-    // retry rather than popping a second promo over it in the same moment.
-    if (document.getElementById('pwa-install-banner')) {
+    // The user may have subscribed (or been re-prompted) since page load.
+    try { if (localStorage.getItem(NOTIF_KEY) === 'subscribed') return; } catch (_) {}
+    // Don't stack two asks: if the install banner or the push re-prompt is
+    // still on screen, wait and retry rather than popping a second promo over
+    // it in the same moment.
+    if (document.getElementById('pwa-install-banner') || document.getElementById('push-reprompt-banner')) {
       setTimeout(showNotifBanner, 20000);
       return;
     }
@@ -2702,8 +2860,10 @@ window._brPromoEligible = function () {
         var permission = await Notification.requestPermission();
         if (permission === 'granted') {
           await subscribePush();
-          if (typeof showToast === 'function') showToast('Notifications enabled. Open Settings to customize.', 'success', 5000);
           localStorage.setItem(NOTIF_KEY, 'subscribed');
+          // Onboarding: let them pick alert buckets right away.
+          if (window.openPushPicker) { try { window.openPushPicker(); } catch (_) {} }
+          else if (typeof showToast === 'function') showToast('Notifications enabled. Open Settings to customize.', 'success', 5000);
         } else {
           localStorage.setItem(NOTIF_KEY, 'denied');
         }
@@ -2724,6 +2884,174 @@ window._brPromoEligible = function () {
     b.classList.remove('pwa-banner-visible');
     b.addEventListener('transitionend', function () { b.remove(); }, { once: true });
   }
+
+  // ── Push re-prompt for users without notifications enabled ──────────────
+  // Shown at high-value moments (RedZone, or the weekly hub / matchup board on
+  // game days), never on every page load. Caps: max once per day, max 4 total
+  // shows before auto-quieting. "Don't show again" persists permanently:
+  // localStorage for guests, /api/ui-prefs for signed-in users. Never shown
+  // when push is enabled, unsupported, or the browser hard-denied permission.
+  var RP_DISMISSED_KEY = 'push-reprompt-dismissed';
+  var RP_COUNT_KEY = 'push-reprompt-count';
+  var RP_LAST_KEY = 'push-reprompt-last';
+  var RP_MAX_SHOWS = 4;
+
+  function _rpGet(k) { try { return localStorage.getItem(k); } catch (_) { return null; } }
+  function _rpSet(k, v) { try { localStorage.setItem(k, v); } catch (_) {} }
+  function _rpToday() {
+    var d = new Date();
+    return d.getUTCFullYear() + '-' + ('0' + (d.getUTCMonth() + 1)).slice(-2) + '-' + ('0' + d.getUTCDate()).slice(-2);
+  }
+  // Mirror re-prompt state to the server for signed-in users (persists across devices).
+  function _rpSyncServer(patch) {
+    if (!window._isSignedIn) return;
+    try {
+      fetch('/api/ui-prefs', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prefs: patch }),
+      }).catch(function () {});
+    } catch (_) {}
+  }
+  // Seed local state from the server copy (server wins when present).
+  function _rpSeedFromServer() {
+    if (!window._isSignedIn) return;
+    fetch('/api/ui-prefs', { cache: 'no-store' }).then(function (r) {
+      return r.ok ? r.json() : null;
+    }).then(function (j) {
+      if (!j || !j.prefs) return;
+      var p = j.prefs;
+      if (p.push_reprompt_dismissed === true) _rpSet(RP_DISMISSED_KEY, '1');
+      var sc = parseInt(p.push_reprompt_count, 10);
+      var lc = parseInt(_rpGet(RP_COUNT_KEY) || '0', 10) || 0;
+      if (!isNaN(sc) && sc > lc) _rpSet(RP_COUNT_KEY, String(sc));
+      var sl = p.push_reprompt_last, ll = _rpGet(RP_LAST_KEY);
+      if (sl && (!ll || sl > ll)) _rpSet(RP_LAST_KEY, sl);
+    }).catch(function () {});
+  }
+
+  function _repromptEligible() {
+    if (_rpGet(RP_DISMISSED_KEY) === '1') return false;
+    // A "No thanks" on the legacy banner is also a permanent opt-out of push
+    // asks; never nag those users with the re-prompt either.
+    var legacy = null;
+    try { legacy = localStorage.getItem(NOTIF_KEY); } catch (_) {}
+    if (legacy === 'dismissed' || legacy === 'subscribed') return false;
+    if (!('Notification' in window)) return false;
+    if (Notification.permission === 'denied' || Notification.permission === 'granted') return false;
+    var count = parseInt(_rpGet(RP_COUNT_KEY) || '0', 10) || 0;
+    if (count >= RP_MAX_SHOWS) return false;              // auto-quiet after N total
+    if (_rpGet(RP_LAST_KEY) === _rpToday()) return false; // max once per day
+    // High-value moments only: RedZone (live games) or the weekly hub, which
+    // carries the matchup board, on NFL game days.
+    var shell = document.querySelector('.page-shell');
+    if (!shell) return false;
+    var page = shell.getAttribute('data-page');
+    if (page === 'redzone') return true;
+    if (page === 'weekly') {
+      var wd = new Date().getUTCDay(); // 0 = Sunday
+      return wd === 0 || wd === 3 || wd === 4 || wd === 5 || wd === 6;
+    }
+    return false;
+  }
+
+  function _hideReprompt() {
+    var b = document.getElementById('push-reprompt-banner');
+    if (!b) return;
+    b.classList.remove('pwa-banner-visible');
+    b.addEventListener('transitionend', function () { b.remove(); }, { once: true });
+  }
+
+  async function _maybeShowReprompt() {
+    if (document.getElementById('push-reprompt-banner')) return;
+    // Don't stack asks: wait if the install or legacy push banner is up.
+    if (document.getElementById('pwa-install-banner') || document.getElementById('push-notif-banner')) {
+      setTimeout(_maybeShowReprompt, 20000);
+      return;
+    }
+    if (!_repromptEligible()) return;
+    try {
+      var reg = await navigator.serviceWorker.ready;
+      var sub = await reg.pushManager.getSubscription();
+      if (sub) {
+        // Push is actually enabled (e.g. subscribed in another tab) -- record it
+        // and never prompt.
+        try { localStorage.setItem(NOTIF_KEY, 'subscribed'); } catch (_) {}
+        window._pushEndpoint = sub.endpoint;
+        return;
+      }
+    } catch (_) {}
+    if (!_repromptEligible()) return; // re-check after the async gap
+    // Record the show before rendering so caps hold even if the tab closes.
+    var count = (parseInt(_rpGet(RP_COUNT_KEY) || '0', 10) || 0) + 1;
+    _rpSet(RP_COUNT_KEY, String(count));
+    _rpSet(RP_LAST_KEY, _rpToday());
+    _rpSyncServer({ push_reprompt_count: count, push_reprompt_last: _rpToday() });
+
+    var banner = document.createElement('div');
+    banner.id = 'push-reprompt-banner';
+    banner.innerHTML =
+      '<div class="pwa-banner-left">' +
+        '<i class="fa-solid fa-bell push-bell-icon" aria-hidden="true"></i>' +
+        '<div>' +
+          '<div class="pwa-banner-title">Never miss a lineup alert</div>' +
+          '<div class="pwa-banner-sub">Get injury news and lineup reminders before kickoff.</div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="pwa-banner-actions">' +
+        '<button id="push-reprompt-allow" class="pwa-btn pwa-btn-install">Enable alerts</button>' +
+        '<button id="push-reprompt-no" class="pwa-btn pwa-btn-dismiss">Don\'t show again</button>' +
+      '</div>';
+    document.body.appendChild(banner);
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () { banner.classList.add('pwa-banner-visible'); });
+    });
+
+    document.getElementById('push-reprompt-allow').addEventListener('click', async function () {
+      _hideReprompt();
+      try {
+        var permission = await Notification.requestPermission();
+        if (permission === 'granted') {
+          await subscribePush();
+          try { localStorage.setItem(NOTIF_KEY, 'subscribed'); } catch (_) {}
+          if (typeof showToast === 'function') showToast('Notifications enabled!', 'success');
+          // Same onboarding as every other subscribe path: the picker.
+          if (window.openPushPicker) { try { window.openPushPicker(); } catch (_) {} }
+        } else {
+          try { localStorage.setItem(NOTIF_KEY, 'denied'); } catch (_) {}
+        }
+      } catch (err) {
+        console.warn('[push]', err);
+      }
+    });
+
+    document.getElementById('push-reprompt-no').addEventListener('click', function () {
+      _hideReprompt();
+      _rpSet(RP_DISMISSED_KEY, '1');
+      try { localStorage.setItem(NOTIF_KEY, 'dismissed'); } catch (_) {}
+      _rpSyncServer({ push_reprompt_dismissed: true });
+    });
+  }
+
+  // Seed server state, then evaluate once after the page has settled. Guests
+  // (no sign-in) run on localStorage alone.
+  _rpSeedFromServer();
+  setTimeout(_maybeShowReprompt, 20000);
+
+  // Re-evaluate after soft-nav page swaps (e.g. dashboard -> weekly hub), which
+  // don't reload app.js. RedZone always does a full load, so it needs no hook.
+  try {
+    if (typeof window.brSwapPageRoot === 'function' && !window.brSwapPageRoot._pushRepromptWrapped) {
+      (function (_origSwap) {
+        window.brSwapPageRoot = function (html) {
+          var ok = _origSwap(html);
+          if (ok) setTimeout(_maybeShowReprompt, 15000);
+          return ok;
+        };
+        window.brSwapPageRoot._pushRepromptWrapped = true;
+      })(window.brSwapPageRoot);
+    }
+  } catch (_) {}
 
   var asked = localStorage.getItem(NOTIF_KEY);
 

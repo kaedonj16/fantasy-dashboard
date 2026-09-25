@@ -1121,6 +1121,20 @@ print(f"[cron] Calibrated history snapshot: {n} players")
     else:
         print("[cron] Cache flush skipped — APP_URL or CRON_SECRET not set")
 
+    # ------------------------------------------------------------------ #
+    # Step 12: Flush the push digest                                     #
+    # Daily notification steps above buffer eligible pushes into the     #
+    # push_digest_items table for digest-mode devices. Flush here so the #
+    # combined digest goes out with the daily run instead of waiting for #
+    # the next hourly runner.                                            #
+    # ------------------------------------------------------------------ #
+    _run_step("""
+from dotenv import load_dotenv; load_dotenv()
+from utils.push_notifications import _flush_digest
+sent = _flush_digest()
+print(f"[cron] Push digest flush: {sent} sent")
+""", "push_digest_flush")
+
     _report_step_failures(season, week)
 
     print(f"[cron] Daily run completed - Season {season}, Week {week}")
