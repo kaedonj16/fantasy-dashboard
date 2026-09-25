@@ -677,14 +677,90 @@ def _pricing_body() -> str:
     <div class="pricing-alert" role="status"><i class="fa-solid fa-circle-xmark" aria-hidden="true"></i>
       Checkout was canceled. You have not been charged.
     </div>""" if canceled else ""
+
+    # PRO free trial: one-click start from the pricing page. ?trial=<flag> is
+    # set by /pro-trial/start after it runs.
+    trial_flag = request.args.get("trial", "").strip()
+    trial_notice = ""
+    if trial_flag == "started":
+        trial_notice = """
+    <div class="pricing-alert pricing-alert-success" role="status"><i class="fa-solid fa-circle-check" aria-hidden="true"></i>
+      Your 7-day PRO trial is on. Full PRO access, no card required.
+    </div>"""
+    elif trial_flag == "already_used":
+        trial_notice = """
+    <div class="pricing-alert" role="status"><i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+      This account already used its free trial. Pick a plan below to keep PRO.
+    </div>"""
+    elif trial_flag == "already-pro":
+        trial_notice = """
+    <div class="pricing-alert pricing-alert-success" role="status"><i class="fa-solid fa-circle-check" aria-hidden="true"></i>
+      You already have PRO access. Nothing to start.
+    </div>"""
+    elif trial_flag == "error":
+        trial_notice = """
+    <div class="pricing-alert" role="status"><i class="fa-solid fa-circle-xmark" aria-hidden="true"></i>
+      The trial could not start. Please try again.
+    </div>"""
+
+    # Trial CTA card: shown to guests and to signed-in users who never used
+    # the trial and are not already PRO. Active trials get a status card.
+    trial_state = None
+    trial_is_pro = False
+    try:
+        from dashboard_services import subscriptions as _subs
+        _trial_acct = _session.get("account_id")
+        _plat = (request.args.get("platform") or "sleeper").strip().lower()
+        if _plat not in _SUPPORTED_PLATFORMS:
+            _plat = "sleeper"
+        trial_is_pro = bool(_subs.has_premium_for_viewer(
+            _session.get("viewer_username"), _session.get("viewer_user_id"),
+            None, _plat, None,
+        ))
+        if _trial_acct:
+            trial_state = _subs.get_trial_state_for_keys(
+                [f"acct:{_trial_acct}", str(_trial_acct)])
+    except Exception:
+        logger.debug("pricing trial state failed", exc_info=True)
+
+    trial_active = bool(trial_state and trial_state.get("active"))
+    trial_used = bool(trial_state and trial_state.get("used"))
+    trial_section = ""
+    if trial_active:
+        _days = trial_state.get("days_left") or 1
+        _unit = "day" if _days == 1 else "days"
+        trial_section = f"""
+      <section class="pricing-section" aria-label="PRO trial status">
+        <div class="pricing-trial-card pricing-trial-active">
+          <div>
+            <h2>Your PRO trial is active</h2>
+            <p>Trial ends in {_days} {_unit}. Full PRO is on while it lasts.</p>
+          </div>
+          <span class="pricing-trial-count" aria-hidden="true">{_days}d</span>
+        </div>
+      </section>"""
+    elif not trial_used and not trial_is_pro:
+        trial_section = """
+      <section class="pricing-section" aria-label="PRO free trial">
+        <div class="pricing-trial-card">
+          <div>
+            <h2>Try PRO free for 7 days</h2>
+            <p>Full PRO access across everything. No card required. One trial per account.</p>
+          </div>
+          <a class="btn btn-primary" href="/pro-trial/start?next=/pricing">Start free trial</a>
+        </div>
+      </section>"""
+
     return f"""
     <main class="pricing-page">
       {canceled_banner}
+      {trial_notice}
       <header class="pricing-hero">
         <span class="pricing-eyebrow">BR Fantasy PRO</span>
         <h1>Make the next move with confidence.</h1>
         <p>Turn your roster, market activity, and league outlook into clearer trade, waiver, weekly, and draft decisions.</p>
       </header>
+      {trial_section}
 
       <section class="pricing-section pricing-plans" aria-labelledby="pricing-plans-title">
         <div class="pricing-section-heading"><h2 id="pricing-plans-title">Choose who gets PRO</h2><p>One annual charge. No monthly-price shorthand.</p></div>
@@ -923,6 +999,55 @@ def resume_pro_checkout():
         return redirect(url)
     logger.warning("[checkout] resume failed: %s", error)
     return redirect("/pricing?canceled=1")
+
+
+# ── PRO free trial ────────────────────────────────────────────────────────────
+# One click from the paywall/pricing page. No card: Stripe is not involved at
+# all (there is nothing to charge). Guests bounce through Google sign-in first
+# (the trial key is the Google account, same rule as paid checkout), then land
+# back here and the trial starts automatically.
+
+@billing_bp.route("/pro-trial/start")
+def pro_trial_start():
+    """Start the 7-day no-card PRO trial, then redirect to `next`.
+
+    `next` carries one of ?trial=started | already_used | already-pro | error.
+    """
+    from flask import redirect
+    from dashboard_services.subscriptions import (
+        has_premium_for_viewer,
+        start_pro_trial_for_account,
+    )
+
+    next_url = _safe_local_url(request.args.get("next") or "", "/pricing")
+    account_id = session.get("account_id")
+    if not account_id:
+        inner = "/pro-trial/start?next=" + urllib.parse.quote(next_url, safe="")
+        return redirect(
+            "/auth/google?intent=onboarding&next=" + urllib.parse.quote(inner, safe="")
+        )
+    try:
+        acct = int(account_id)
+    except (TypeError, ValueError):
+        return redirect(_with_trial_flag(next_url, "error"))
+
+    platform = _request_platform()
+    if platform not in _SUPPORTED_PLATFORMS:
+        platform = "sleeper"
+    if has_premium_for_viewer(
+        session.get("viewer_username"), session.get("viewer_user_id"),
+        None, platform, None,
+    ):
+        # Already PRO (paid plan or live trial): nothing to start.
+        return redirect(_with_trial_flag(next_url, "already-pro"))
+
+    result = start_pro_trial_for_account(acct)
+    return redirect(_with_trial_flag(next_url, result.get("code") or "error"))
+
+
+def _with_trial_flag(url: str, flag: str) -> str:
+    sep = "&" if "?" in url else "?"
+    return f"{url}{sep}trial={flag}"
 
 
 def _stripe_checkout_url(user_id: str, payload: dict) -> tuple[str | None, str | None]:
@@ -1270,6 +1395,23 @@ def api_subscription_status():
             sub_info["invite_path"] = league_invite_path(platform, season_i, league_id)
         else:
             sub_info["invite_path"] = None
+        # PRO free-trial state for the client (banner countdown, paywall CTA,
+        # one-time "trial ended" nudge). Trial gating itself is server-side in
+        # has_premium_for_viewer; these flags are display-only.
+        from dashboard_services.subscriptions import (
+            _pro_trial_session_keys,
+            get_trial_state_for_keys,
+        )
+        trial_state = get_trial_state_for_keys(_pro_trial_session_keys())
+        sub_info["trial_active"] = trial_state["active"]
+        sub_info["trial_ends_at"] = trial_state["ends_at"]
+        sub_info["trial_days_left"] = trial_state["days_left"]
+        sub_info["trial_ended"] = trial_state["just_ended"]
+        sub_info["trial_available"] = (
+            bool(session.get("account_id"))
+            and not trial_state["used"]
+            and not sub_info.get("has_premium")
+        )
         # Strip internal/PII fields - the client only needs entitlement flags.
         for _k in ("stripe_customer_id", "subscriber_user_id"):
             sub_info.pop(_k, None)

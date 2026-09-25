@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import os
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from functools import wraps
 from typing import Optional, Dict, Any, List
 
@@ -247,6 +247,12 @@ def has_premium_access(
                     if cur.fetchone():
                         return True
 
+                    # PRO free trial (additive, like a personal user plan).
+                    # trial_active_for_keys fails closed on DB errors and is
+                    # per-request memoized; the gate below never grants on error.
+                    if trial_active_for_keys([user_id]):
+                        return True
+
                 # Account-based (additive): premium on any linked platform
                 # identity covers the whole account, across platforms.
                 if account_id:
@@ -276,6 +282,12 @@ def has_premium_access(
                     """, (f"acct:{account_id}", str(account_id), now))
 
                     if cur.fetchone():
+                        return True
+
+                    # PRO free trial: trial rows are keyed acct:<id>, exactly
+                    # like Google-only checkout rows above. A live trial grants
+                    # full PRO, the same scope as a personal user plan.
+                    if trial_active_for_keys([f"acct:{account_id}", str(account_id)]):
                         return True
 
     except Exception as e:
@@ -707,3 +719,249 @@ def cancel_subscription(subscription_id: str, subscription_type: str = "league")
     except Exception as e:
         logger.error("[subscriptions] Error canceling subscription: %s", e)
         return False
+
+
+# ── PRO free trial ────────────────────────────────────────────────────────────
+# Adjustable defaults (also documented in the PR body):
+#   PRO_TRIAL_DAYS          trial length, days (default 7; env PRO_TRIAL_DAYS)
+#   PRO_TRIAL_REQUIRE_CARD  whether starting a trial needs a payment method
+#                           (default False: no-card, one-click signup)
+#   Trial scope is FULL PRO: a trial grants everything a personal "user" plan
+#   grants (every PRO feature, all of the holder's leagues).
+#   One trial per user ever: enforced by UNIQUE(user_key) on pro_trials.
+#   Re-claim via a brand-new Google account is out of scope.
+
+PRO_TRIAL_DAYS = int(os.environ.get("PRO_TRIAL_DAYS", "7") or 7)
+PRO_TRIAL_REQUIRE_CARD = os.environ.get("PRO_TRIAL_REQUIRE_CARD", "").strip().lower() in (
+    "1", "true", "yes",
+)
+
+
+_PRO_TRIALS_DDL = """
+CREATE TABLE IF NOT EXISTS pro_trials (
+    id SERIAL PRIMARY KEY,
+    user_key TEXT NOT NULL UNIQUE,
+    account_id BIGINT,
+    trial_started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    trial_ends_at TIMESTAMPTZ NOT NULL,
+    subscription_status TEXT NOT NULL DEFAULT 'active',
+    ended_notified BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    CONSTRAINT valid_pro_trial_status CHECK (
+        subscription_status IN ('active', 'expired')
+    )
+)
+"""
+
+
+def _ensure_pro_trials_table(cur) -> None:
+    """Create pro_trials if a migration never applied (idempotent)."""
+    cur.execute(_PRO_TRIALS_DDL)
+    cur.execute(
+        "CREATE INDEX IF NOT EXISTS idx_pro_trials_ends_at ON pro_trials(trial_ends_at)"
+    )
+    cur.execute(
+        "CREATE INDEX IF NOT EXISTS idx_pro_trials_account_id ON pro_trials(account_id)"
+    )
+
+
+def _pro_trial_session_keys() -> List[str]:
+    """Identity keys the trial system recognizes, best first.
+
+    Claim keys are always the Google account keys (``acct:<id>`` / bare id);
+    viewer ids are included as a read fallback so legacy rows still gate.
+    """
+    keys: List[str] = []
+    acct = _session_account_id()
+    if acct:
+        keys += [f"acct:{acct}", str(acct)]
+    try:
+        from flask import session as _session, has_request_context as _hrc
+        if _hrc():
+            for raw in (_session.get("viewer_user_id"), _session.get("viewer_username")):
+                key = str(raw or "").strip()
+                if key and key not in keys:
+                    keys.append(key)
+    except Exception:
+        pass
+    return keys
+
+
+_MISSING = object()
+
+
+def _trial_cache_get(key):
+    try:
+        from flask import g, has_request_context
+        if has_request_context():
+            cache = getattr(g, "_trial_cache", None)
+            if cache is None:
+                cache = {}
+                g._trial_cache = cache
+            return cache, cache.get(key, _MISSING)
+    except Exception:
+        pass
+    return None, _MISSING
+
+
+def _trial_row_for_keys(cur, keys: List[str]) -> Optional[dict]:
+    """Newest trial row matching any key, or None. Never raises."""
+    keys = [str(k) for k in (keys or []) if str(k or "").strip()]
+    if not keys:
+        return None
+    placeholders = ", ".join(["%s"] * len(keys))
+    cur.execute(
+        f"SELECT user_key, account_id, trial_started_at, trial_ends_at, "
+        f"subscription_status, ended_notified FROM pro_trials "
+        f"WHERE user_key IN ({placeholders}) "
+        f"ORDER BY trial_started_at DESC LIMIT 1",
+        tuple(keys),
+    )
+    return cur.fetchone()
+
+
+def trial_active_for_keys(keys: List[str]) -> bool:
+    """True when any of the keys holds an unexpired, active trial.
+
+    Fail closed: any DB error denies the trial grant (never the reverse).
+    Per-request memoized so the premium gate costs at most one trial query.
+    """
+    keys = [str(k) for k in (keys or []) if str(k or "").strip()]
+    if not keys:
+        return False
+    cache_key = ("active", tuple(sorted(set(keys))))
+    cache, hit = _trial_cache_get(cache_key)
+    if hit is not _MISSING:
+        return bool(hit)
+
+    result = False
+    try:
+        now = datetime.now(timezone.utc)
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                placeholders = ", ".join(["%s"] * len(cache_key[1]))
+                cur.execute(
+                    f"SELECT 1 FROM pro_trials "
+                    f"WHERE user_key IN ({placeholders}) "
+                    f"AND subscription_status = 'active' "
+                    f"AND trial_ends_at > %s LIMIT 1",
+                    (*cache_key[1], now),
+                )
+                result = bool(cur.fetchone())
+    except Exception:
+        logger.debug("[subscriptions] trial active check failed", exc_info=True)
+        result = False
+
+    if cache is not None:
+        cache[cache_key] = result
+    return result
+
+
+def start_pro_trial_for_account(account_id: int) -> Dict[str, Any]:
+    """Start the one free trial for a Google account.
+
+    Returns {"ok", "code", "message", "ends_at", "days"} where code is one of
+    "started", "already_used", "error". Idempotent under races: a unique
+    violation on the second concurrent INSERT resolves to "already_used".
+    """
+    user_key = f"acct:{account_id}"
+    now = datetime.now(timezone.utc)
+    ends_at = now + timedelta(days=PRO_TRIAL_DAYS)
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                _ensure_pro_trials_table(cur)
+                if _trial_row_for_keys(cur, [user_key, str(account_id)]):
+                    return {
+                        "ok": False, "code": "already_used",
+                        "message": "This account already used its free trial.",
+                        "ends_at": None, "days": PRO_TRIAL_DAYS,
+                    }
+                cur.execute(
+                    "INSERT INTO pro_trials "
+                    "(user_key, account_id, trial_started_at, trial_ends_at, subscription_status) "
+                    "VALUES (%s, %s, %s, %s, 'active')",
+                    (user_key, account_id, now, ends_at),
+                )
+        logger.info("[trial] started for account_id=%s ends=%s", account_id, ends_at.isoformat())
+        return {
+            "ok": True, "code": "started",
+            "message": f"PRO trial started. Full PRO for {PRO_TRIAL_DAYS} days, no card required.",
+            "ends_at": ends_at.isoformat(), "days": PRO_TRIAL_DAYS,
+        }
+    except Exception as exc:
+        # Concurrent double-claim: the loser hits the UNIQUE(user_key) wall.
+        pgcode = getattr(exc, "pgcode", "") or ""
+        name = type(exc).__name__
+        if pgcode == "23505" or "UniqueViolation" in name or "IntegrityError" in name:
+            logger.info("[trial] concurrent claim resolved as already_used account_id=%s", account_id)
+            return {
+                "ok": False, "code": "already_used",
+                "message": "This account already used its free trial.",
+                "ends_at": None, "days": PRO_TRIAL_DAYS,
+            }
+        logger.error("[subscriptions] Error starting PRO trial: %s", exc)
+        return {
+            "ok": False, "code": "error",
+            "message": "Could not start the trial. Please try again.",
+            "ends_at": None, "days": PRO_TRIAL_DAYS,
+        }
+
+
+def get_trial_state_for_keys(keys: List[str]) -> Dict[str, Any]:
+    """Describe trial state for the given keys.
+
+    Returns {"active", "used", "ends_at" (iso), "days_left", "just_ended",
+    "user_key"}. Lapsed trials are lazily flipped to 'expired' here; the
+    one-time "trial ended" nudge fires via "just_ended" exactly once (the
+    ended_notified flag is consumed on that read).
+    """
+    import math
+
+    state: Dict[str, Any] = {
+        "active": False, "used": False, "ends_at": None, "days_left": 0,
+        "just_ended": False, "user_key": None,
+    }
+    keys = [str(k) for k in (keys or []) if str(k or "").strip()]
+    if not keys:
+        return state
+    try:
+        now = datetime.now(timezone.utc)
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                row = _trial_row_for_keys(cur, keys)
+                if not row:
+                    return state
+                state["used"] = True
+                state["user_key"] = row.get("user_key")
+                ends_at = row.get("trial_ends_at")
+                status = row.get("subscription_status") or "active"
+                if status == "active" and ends_at and ends_at > now:
+                    state["active"] = True
+                    state["ends_at"] = ends_at.isoformat()
+                    remaining = (ends_at - now).total_seconds()
+                    state["days_left"] = max(1, int(math.ceil(remaining / 86400)))
+                    return state
+                if status == "active":
+                    # Clean downgrade: flip to expired so the gate denies PRO
+                    # from here on; the nudge fires once.
+                    cur.execute(
+                        "UPDATE pro_trials SET subscription_status = 'expired', "
+                        "ended_notified = TRUE, updated_at = NOW() "
+                        "WHERE user_key = %s AND subscription_status = 'active'",
+                        (row.get("user_key"),),
+                    )
+                    state["just_ended"] = not bool(row.get("ended_notified"))
+                elif not row.get("ended_notified"):
+                    # Already expired (e.g. flipped outside this path) but the
+                    # nudge never fired: fire it once now.
+                    cur.execute(
+                        "UPDATE pro_trials SET ended_notified = TRUE, "
+                        "updated_at = NOW() WHERE user_key = %s",
+                        (row.get("user_key"),),
+                    )
+                    state["just_ended"] = True
+    except Exception:
+        logger.debug("[subscriptions] trial state check failed", exc_info=True)
+    return state

@@ -5769,6 +5769,99 @@ def _google_link_pro_banner() -> str:
 """
 
 
+def _pro_trial_banner() -> str:
+    """Persistent PRO trial countdown card plus the one-time "trial ended" nudge.
+
+    Active trial: "Trial ends in N days", dismissible for the tab session
+    (it returns on the next visit, so the countdown stays visible).
+    Expired trial: a single "trial ended" nudge linking to /pricing; the
+    server consumes the one-time flag on this read so it never nags.
+    """
+    from flask import session as _session
+    acct = _session.get("account_id")
+    if not acct:
+        return ""
+    try:
+        from dashboard_services.subscriptions import get_trial_state_for_keys
+        state = get_trial_state_for_keys([f"acct:{acct}", str(acct)])
+    except Exception:
+        return ""
+
+    if state.get("active"):
+        days = state.get("days_left") or 1
+        unit = "day" if days == 1 else "days"
+        title = "PRO Trial"
+        body = f"Trial ends in {days} {unit}. Full PRO is on while it lasts."
+        cta_label = "See PRO plans"
+        storage = "sessionStorage"
+        dismiss_key = "pro-trial-banner-dismissed"
+        accent = "var(--brand-blue, #2563eb)"
+    elif state.get("just_ended"):
+        title = "Trial ended"
+        body = "Your PRO trial has ended. Keep every tool with a PRO plan."
+        cta_label = "See PRO plans"
+        storage = "localStorage"
+        dismiss_key = f"pro-trial-ended-{(state.get('user_key') or 'x')}"
+        accent = "var(--accent)"
+    else:
+        return ""
+
+    return f"""
+<style>
+@keyframes proTrialSlideUp {{
+  from {{ opacity:0; transform:translateY(16px); }}
+  to   {{ opacity:1; transform:translateY(0); }}
+}}
+#proTrialBanner {{ animation: proTrialSlideUp .3s ease forwards; }}
+@media (max-width: 768px) {{
+  #proTrialBanner {{
+    left:12px !important; right:12px !important; width:auto !important;
+    bottom:calc(var(--dock-safe-bottom) + 14px) !important;
+  }}
+}}
+</style>
+<div id="proTrialBanner" role="status" style="
+     display:none;
+     position:fixed;bottom:24px;right:24px;z-index:10000;
+     background:var(--card);
+     border:1px solid var(--border);
+     border-top:3px solid {accent};
+     border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,.22);
+     padding:18px 20px;width:320px;
+     flex-direction:column;gap:12px;">
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;">
+    <span style="font-size:14px;font-weight:700;color:var(--text);">{title}</span>
+    <button type="button" id="proTrialBannerClose"
+            style="background:none;border:none;color:var(--muted);font-size:18px;line-height:1;
+                   cursor:pointer;padding:0;flex-shrink:0;"
+            aria-label="Dismiss">&times;</button>
+  </div>
+  <p style="margin:0;font-size:13px;color:var(--muted);line-height:1.45;">{body}</p>
+  <a href="/pricing" style="display:inline-flex;align-items:center;justify-content:center;
+     padding:10px 14px;border-radius:9px;background:var(--brand-blue, #2563eb);color:#fff;
+     font-weight:700;font-size:13px;text-decoration:none;">
+    {cta_label}
+  </a>
+</div>
+<script>
+(function(){{
+  var el = document.getElementById('proTrialBanner');
+  if (!el) return;
+  var store = {storage};
+  var key = '{dismiss_key}';
+  try {{
+    if (store.getItem(key) === '1') return;
+  }} catch (e) {{}}
+  el.style.display = 'flex';
+  document.getElementById('proTrialBannerClose').addEventListener('click', function() {{
+    el.style.display = 'none';
+    try {{ store.setItem(key, '1'); }} catch (e) {{}}
+  }});
+}})();
+</script>
+"""
+
+
 def _discord_banner() -> str:
     """Dismissible weekly Discord invite banner shown every Sunday."""
     import datetime as _dt
@@ -6093,6 +6186,7 @@ def render_page(
 
     banner_html = _discord_banner()
     banner_html += _google_link_pro_banner()
+    banner_html += _pro_trial_banner()
     if _session_signed_in():
         banner_html += _recap_ready_banner(league_id or "", platform or "", season or 0)
         banner_html += _draft_imminent_banner(
