@@ -318,6 +318,85 @@ _STRIPE_PRICES = {
     },
 }
 
+# Dashboard-created Stripe Price IDs. When the env var for a plan + interval
+# is set, checkout uses that Price ID; when unset, checkout falls back to
+# ad-hoc price_data with the code defaults, so nothing breaks before the
+# dashboard Prices are wired up. An env-provided Price ID always wins.
+_ANNUAL_PRICE_ENV = {
+    "league": "STRIPE_PRICE_LEAGUE_ANNUAL",
+    "user": "STRIPE_PRICE_USER_ANNUAL",
+    "combo": "STRIPE_PRICE_COMBO_ANNUAL",
+    "single_league": "STRIPE_PRICE_SINGLE_LEAGUE_ANNUAL",
+}
+
+# Monthly billing defaults (unit_amount, cents). Same amounts and env names
+# as the monthly-plans workstream: Kaedon can override any of them with a
+# dashboard-created Price via the env vars below.
+_MONTHLY_DEFAULT_UNIT_AMOUNTS = {
+    "league": 499,         # $4.99/mo
+    "user": 299,           # $2.99/mo
+    "combo": 599,          # $5.99/mo
+    "single_league": 149,  # $1.49/mo
+}
+_MONTHLY_PRICE_ENV = {
+    "league": "STRIPE_PRICE_LEAGUE_MONTHLY",
+    "user": "STRIPE_PRICE_USER_MONTHLY",
+    "combo": "STRIPE_PRICE_COMBO_MONTHLY",
+    "single_league": "STRIPE_PRICE_SINGLE_LEAGUE_MONTHLY",
+}
+
+_BILLING_INTERVALS = ("month", "year")
+
+
+def _normalize_interval(value) -> str:
+    """Coerce a client/supplied interval to 'month' or 'year' (default year)."""
+    interval = str(value or "year").strip().lower()
+    return interval if interval in _BILLING_INTERVALS else "year"
+
+
+def _annual_price_id(plan: str) -> str:
+    """Stripe Price ID for the annual tier, from env (empty when unset)."""
+    env_name = _ANNUAL_PRICE_ENV.get(plan, "")
+    return os.environ.get(env_name, "").strip() if env_name else ""
+
+
+def _monthly_price_id(plan: str) -> str:
+    """Stripe Price ID for the monthly tier, from env (empty when unset)."""
+    env_name = _MONTHLY_PRICE_ENV.get(plan, "")
+    return os.environ.get(env_name, "").strip() if env_name else ""
+
+
+def _checkout_line_item(plan: str, interval: str = "year") -> dict:
+    """Build the Stripe Checkout line item for a plan + interval.
+
+    A dashboard-created Price ID (env) always wins over ad-hoc price_data.
+    Annual falls back to the existing ad-hoc price_data with the annual
+    defaults above; monthly falls back to ad-hoc price_data with the monthly
+    defaults.
+    """
+    interval = _normalize_interval(interval)
+    spec = _STRIPE_PRICES[plan]
+    if interval == "month":
+        price_id = _monthly_price_id(plan)
+        unit_amount = _MONTHLY_DEFAULT_UNIT_AMOUNTS[plan]
+    else:
+        price_id = _annual_price_id(plan)
+        unit_amount = spec["unit_amount"]
+    if price_id:
+        return {"price": price_id, "quantity": 1}
+    price_data = {
+        "currency": "usd",
+        "unit_amount": unit_amount,
+        "recurring": {"interval": interval},
+    }
+    if spec.get("product"):
+        price_data["product"] = spec["product"]
+    else:
+        price_data["product_data"] = {
+            "name": spec.get("product_name") or "BR Fantasy PRO",
+        }
+    return {"price_data": price_data, "quantity": 1}
+
 _LEAGUE_REQUIRED_PLANS = frozenset({"league", "combo", "single_league"})
 _MEMBERSHIP_REQUIRED_PLANS = frozenset({"league", "combo", "single_league"})
 
@@ -1142,7 +1221,6 @@ def _stripe_checkout_url(user_id: str, payload: dict) -> tuple[str | None, str |
     if platform not in _SUPPORTED_PLATFORMS:
         return None, "Invalid platform"
 
-    price_spec = _STRIPE_PRICES[plan]
     base_url = request.host_url.rstrip("/")
     return_url = _safe_local_url(return_url, "")
     success_url = base_url + "/pricing?success=1&session_id={CHECKOUT_SESSION_ID}"
@@ -1153,24 +1231,12 @@ def _stripe_checkout_url(user_id: str, payload: dict) -> tuple[str | None, str |
         cancel_url = f"{base_url}/{platform}/{season}/{urllib.parse.quote(league_id, safe='')}/pricing?canceled=1"
     else:
         cancel_url = base_url + "/pricing?canceled=1&platform=" + urllib.parse.quote(platform, safe="")
-    price_data = {
-        "currency": "usd",
-        "unit_amount": price_spec["unit_amount"],
-        "recurring": {"interval": "year"},
-    }
-    if price_spec.get("product"):
-        price_data["product"] = price_spec["product"]
-    else:
-        price_data["product_data"] = {
-            "name": price_spec.get("product_name") or "BR Fantasy PRO",
-        }
+    interval = _normalize_interval(payload.get("interval"))
+    line_item = _checkout_line_item(plan, interval)
     try:
         checkout = _stripe().checkout.Session.create(
             mode="subscription",
-            line_items=[{
-                "price_data": price_data,
-                "quantity": 1,
-            }],
+            line_items=[line_item],
             automatic_tax={"enabled": True},
             success_url=success_url,
             cancel_url=cancel_url,
