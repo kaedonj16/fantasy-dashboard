@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import logging
 import time
+from datetime import datetime
 
 from flask import Blueprint, jsonify, request
 
@@ -245,21 +246,81 @@ def api_advanced_metrics_leaderboard():
 
 @advanced_metrics_bp.route("/api/advanced-metrics/weekly-bulk")
 def api_advanced_metrics_weekly_bulk():
-    """All _WEEKLY_METRICS aggregated per player for a week range, in one response."""
+    """All _WEEKLY_METRICS aggregated per player for a week range, in one response.
+
+    The query is always scoped: ``season`` defaults to the current season and
+    the week range defaults to season-to-date. Results are paginated with
+    ``limit`` (default 2000, hard cap 5000) and ``offset``.
+    """
     from data_building.advanced_metrics import get_all_weekly_metrics_bulk
-    season_str    = (request.args.get("season")     or "").strip()
-    wstart_str    = (request.args.get("week_start") or "").strip()
-    wend_str      = (request.args.get("week_end")   or "").strip()
-    position      = (request.args.get("position")   or "").strip().upper() or None
-    season        = int(season_str)  if season_str.isdigit()  else None
-    week_start    = int(wstart_str)  if wstart_str.isdigit()  else None
-    week_end      = int(wend_str)    if wend_str.isdigit()    else None
+
+    _BAD = object()
+
+    def _qint(name):
+        raw = (request.args.get(name) or "").strip()
+        if not raw:
+            return None
+        try:
+            return int(raw)
+        except ValueError:
+            return _BAD
+
+    season = _qint("season")
+    week_start = _qint("week_start")
+    week_end = _qint("week_end")
+    limit = _qint("limit")
+    offset = _qint("offset")
+    bad = next(
+        (n for n, v in (("season", season), ("week_start", week_start),
+                        ("week_end", week_end), ("limit", limit),
+                        ("offset", offset)) if v is _BAD),
+        None,
+    )
+    if bad:
+        return jsonify({"ok": False,
+                        "error": f"Invalid '{bad}' parameter: expected an integer.",
+                        "code": "bad_request"}), 400
+
+    cur_season, cur_week = _current_season_week()
+    if season is None:
+        season = cur_season
+    if week_start is None:
+        week_start = 1
+    if week_end is None:
+        week_end = cur_week or 18
+    if not (1 <= week_start <= week_end <= 22):
+        return jsonify({"ok": False,
+                        "error": "Invalid week range: expected 1 <= week_start <= week_end <= 22.",
+                        "code": "bad_request"}), 400
+    limit = 2000 if limit is None else max(1, min(limit, 5000))
+    offset = 0 if offset is None else max(0, offset)
+    position = (request.args.get("position") or "").strip().upper() or None
+
     try:
-        data = get_all_weekly_metrics_bulk(season, week_start, week_end, position)
+        data = get_all_weekly_metrics_bulk(season, week_start, week_end, position,
+                                           limit=limit, offset=offset)
+        data = dict(data)
+        data.update({"season": season, "week_start": week_start, "week_end": week_end,
+                     "limit": limit, "offset": offset,
+                     "returned": len(data.get("byId", {}))})
         return jsonify(data)
     except Exception as e:
         logger.exception(f"[api/advanced-metrics/weekly-bulk] {e}")
-        return jsonify({"byId": {}, "keys": []}), 200
+        return jsonify({"ok": False, "error": "Could not load weekly metrics.",
+                        "code": "internal_error"}), 500
+
+
+def _current_season_week():
+    """(season, week) from NFL state, with safe fallbacks for offline/test use."""
+    try:
+        from dashboard_services.api import get_nfl_state
+        st = get_nfl_state() or {}
+        season = int(st.get("season") or datetime.now().year)
+        week = st.get("week")
+        week = int(week) if week else None
+        return season, week
+    except Exception:
+        return datetime.now().year, None
 
 
 @advanced_metrics_bp.route("/api/advanced-metrics/movers")
