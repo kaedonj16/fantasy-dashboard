@@ -782,6 +782,20 @@ def build_advanced_metrics_body(
       .am-player { width:220px; max-width:220px; }
       .am-barcell { width:auto; min-width:120px; }
       .am-table-wrap { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+      /* Sticky Player column: stays pinned during horizontal scroll on all viewports. */
+      .am-table thead th.am-player, .am-table tbody td.am-player {
+        position:sticky; left:0; z-index:2; background:var(--card);
+        box-shadow:8px 0 8px -8px rgba(0,0,0,.18);
+      }
+      .am-table thead th.am-player { z-index:3; }
+      /* Keep the sticky cells opaque through the row washes (opaque equivalents
+         of the translucent row backgrounds, blended over var(--card)). */
+      .am-table tbody tr.am-row:hover td.am-player { background:var(--bg-alt, rgba(0,0,0,.03)); }
+      .am-table tbody tr.am-row.am-owned td.am-player { background:color-mix(in srgb, var(--accent) 8%, var(--card)); }
+      .am-table tbody tr.am-row.am-owned:hover td.am-player { background:color-mix(in srgb, var(--accent) 14%, var(--card)); }
+      .am-table tbody tr.am-row.am-pinned td.am-player { background:color-mix(in srgb, var(--accent) 5%, var(--card)); }
+      .am-table tbody tr.am-row.am-pinned:hover td.am-player,
+      .am-table tbody tr.am-row.am-pinned.am-owned td.am-player { background:color-mix(in srgb, var(--accent) 10%, var(--card)); }
       /* Player cell: name on left, pos+team on right */
       .am-player td, td.am-player { display:table-cell; }
       .am-player-inner { display:flex; align-items:center; justify-content:space-between; gap:8px; overflow:hidden; }
@@ -1268,14 +1282,10 @@ def build_advanced_metrics_body(
           padding:2px 2px 10px; font-size:12.5px; color:var(--text-muted);
         }
         .am-avg-cell b, .am-avg-cell strong { color:var(--text); font-weight:600; }
-        /* 7. Results table: edge fade + sticky player column. */
+        /* 7. Results table: edge fade on horizontal scroll. */
         .am-table-wrap {
           -webkit-mask-image:linear-gradient(to right,#000 92%,transparent 100%);
           mask-image:linear-gradient(to right,#000 92%,transparent 100%);
-        }
-        .am-table th.am-player, .am-table td.am-player {
-          position:sticky; left:0; z-index:2; background:var(--card);
-          box-shadow:8px 0 8px -8px rgba(0,0,0,.18);
         }
       }
 

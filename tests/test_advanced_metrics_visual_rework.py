@@ -3,8 +3,8 @@
 Kaedon approved the mobile mockup (header + compact icon-only actions, no
 shouting control labels, search+season on one row, solid + Metric button,
 fading Decide rail, wrapping chips with a "Clear all" text link, collapsible
-field averages, sticky player column). Desktop rules are untouched by the
-rework block.
+field averages). The sticky player column now applies on all viewports (base
+table CSS); the rework block only adds the mobile edge fade.
 """
 import re
 
@@ -140,12 +140,23 @@ def test_results_table_has_fade_and_sticky_player_column():
     css = _rework_css(html)
     assert ".am-table-wrap {" in css
     assert "mask-image:linear-gradient(to right,#000 92%,transparent 100%);" in css
-    sticky = ".am-table th.am-player, .am-table td.am-player {"
-    assert sticky in css
-    block = css[css.index(sticky):css.index(sticky) + 220]
+    # Sticky player column lives in the base table CSS so it applies on all
+    # viewports (promoted from the old mobile-only rule).
+    base = _style(html)
+    sticky = ".am-table thead th.am-player, .am-table tbody td.am-player {"
+    assert sticky in base
+    block = base[base.index(sticky):base.index(sticky) + 260]
     assert "position:sticky" in block
     assert "left:0" in block
     assert "background:var(--card)" in block
+    # The thead cell paints above horizontally scrolling body cells.
+    assert ".am-table thead th.am-player { z-index:3; }" in base
+    # Row washes (hover / owned / pinned) stay opaque on the sticky cells.
+    assert ".am-table tbody tr.am-row:hover td.am-player" in base
+    assert ".am-table tbody tr.am-row.am-owned td.am-player" in base
+    assert ".am-table tbody tr.am-row.am-owned:hover td.am-player" in base
+    assert ".am-table tbody tr.am-row.am-pinned td.am-player" in base
+    assert ".am-table tbody tr.am-row.am-pinned.am-owned td.am-player" in base
 
 
 def test_add_metric_stays_visible_on_mobile():

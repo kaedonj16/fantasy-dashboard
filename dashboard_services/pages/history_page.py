@@ -633,7 +633,7 @@ def _standings_table(team_stats: pd.DataFrame) -> str:
             f"""
             <tr>
               <td>{_safe_int(row.get('Rank'))}</td>
-              <td>{row.get('owner', '-')}</td>
+              <td class="hist-team">{row.get('owner', '-')}</td>
               <td>{_record_str(row)}</td>
               <td>{_safe_float(row.get('PF')):.1f}</td>
               <td>{_safe_float(row.get('PA')):.1f}</td>
@@ -650,7 +650,7 @@ def _standings_table(team_stats: pd.DataFrame) -> str:
           <thead>
             <tr>
               <th>Rank</th>
-              <th>Team</th>
+              <th class="hist-team">Team</th>
               <th>Record</th>
               <th>PF</th>
               <th>PA</th>

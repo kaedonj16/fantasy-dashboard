@@ -406,17 +406,22 @@ def test_page_builder_adv_metrics_shell():
 
 
 def test_page_source_adv_metrics_table_markup():
-    # Rank badges, team-color abbr chips, and bar-left/value-right cells.
+    # Rank badges and bar-left/value-right cells. The abbr chip was removed;
+    # the team column is sticky instead.
     assert "nt-rbadge" in PAGE_SRC
-    assert "nt-abbr" in PAGE_SRC
+    assert "nt-abbr" not in PAGE_SRC
     assert "nt-mfill" in PAGE_SRC
     assert "nt-mtrack" in PAGE_SRC
     assert "nt-val" in PAGE_SRC
     # Rank column renders before the team column.
-    assert 'class="nt-rankcol"' in PAGE_SRC
-    # Team-color helpers and readable chip text.
+    assert 'class=\"nt-rankcol\"' in PAGE_SRC
+    # Team column sticks on horizontal scroll.
+    assert "th.nt-teamcol{{position:sticky" in PAGE_SRC
+    assert "td.nt-teamcol{{position:sticky" in PAGE_SRC
+    # Depth/box-score player column sticks too.
+    assert "table.nt-depth>tbody>tr>td:first-child{{position:sticky" in PAGE_SRC
+    # Team-color helpers.
     assert "function teamColor" in PAGE_SRC
-    assert "function fgFor" in PAGE_SRC
     assert "function rankBadge" in PAGE_SRC
     # Adv-metrics arrow direction (down for descending).
     assert "&#8595;" in PAGE_SRC
