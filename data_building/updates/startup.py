@@ -121,6 +121,10 @@ def main():
     cmd = [
         sys.executable, "-m", "gunicorn",
         "app:app",
+        # Lifecycle hooks (post_fork cache warmup). CLI flags still override
+        # anything in the config file. Path is absolute: the exec'd gunicorn
+        # inherits this process's cwd, but absolute is robust either way.
+        "--config", os.path.join(_REPO_ROOT, "gunicorn_conf.py"),
         "--bind", f"0.0.0.0:{port}",
         "--workers", str(workers),
         "--threads", str(threads),
