@@ -91,15 +91,34 @@ def get_transactions(platform: str, league_id: str, week: int, season: int) -> L
 
 
 def sync_league_globals(platform: str, league_id: str, season: int) -> None:
-    """Populate legacy globals until league settings become request-context data.
+    """Replace the league-config context with this league's settings.
 
-    TODO: replace process-global league configuration in a dedicated refactor.
+    Isolation guarantee: when this returns, the request/thread context holds
+    exactly this league's config -- or nothing at all when the provider has no
+    data (failed or empty response). It can never hold a *previous* league's
+    config: the context is cleared before the provider's data is consulted, so
+    a failed or partial sync cannot leave stale cross-league state behind for
+    later readers. (This is the scoped fix for the old process-global TODO:
+    the storage itself is request-scoped via ``flask.g`` inside the app, with
+    a thread-local fallback outside it.)
+
+    Residual risk / full refactor: the context is still ambient state rather
+    than an explicit parameter, so a code path that reads the globals without
+    syncing first sees empty defaults instead of failing loudly. The full
+    refactor is to thread an explicit league-context object through the call
+    chain instead of consulting ambient state; until then, out-of-request
+    consumers that run several leagues on one thread (background jobs, crons)
+    must re-sync -- or call
+    ``dashboard_services.api.clear_league_globals`` -- between leagues.
     """
     provider = get_provider(platform)
+    from dashboard_services.api import clear_league_globals, set_league_globals
+    # Clear before the provider data is consulted: a failed/empty/partial
+    # response must leave "no config", never the previous league's config.
+    clear_league_globals()
     try:
         data = provider.get_league_globals(league_id, season)
         if data:
-            from dashboard_services.api import set_league_globals
             set_league_globals(scoring_settings=data.get("scoring_settings"),
                                roster_positions=data.get("roster_positions"),
                                league_settings=data.get("league_settings"),

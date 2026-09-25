@@ -477,11 +477,13 @@ def get_effective_scoring_settings() -> Dict[str, float]:
 
 
 def get_roster_positions() -> List[str]:
-    return _league_state().get("roster_positions") or []
+    # Return a copy: callers must not be able to mutate the stored context.
+    return list(_league_state().get("roster_positions") or [])
 
 
 def get_league_settings() -> Dict[str, Any]:
-    return _league_state().get("league_settings") or {}
+    # Return a copy: callers must not be able to mutate the stored context.
+    return dict(_league_state().get("league_settings") or {})
 
 
 def get_total_rosters() -> int:
@@ -497,16 +499,36 @@ def set_league_globals(
     """
     Populate the request-scoped league context (e.g. from the ESPN integration,
     which does not go through the Sleeper ``get_league()`` path).
+
+    Values are copied on the way in, so later mutation of the caller's dicts --
+    including provider-side caches that retain the same objects -- cannot
+    corrupt the stored context. Only the arguments passed are updated (partial
+    updates are a supported pattern); use :func:`clear_league_globals` to reset
+    the whole context, e.g. when one thread processes several leagues in
+    sequence outside a request.
     """
     state = _league_state()
     if scoring_settings is not None:
-        state["scoring_settings"] = scoring_settings
+        state["scoring_settings"] = dict(scoring_settings)
     if roster_positions is not None:
-        state["roster_positions"] = roster_positions
+        state["roster_positions"] = list(roster_positions)
     if league_settings is not None:
-        state["league_settings"] = league_settings
+        state["league_settings"] = dict(league_settings)
     if total_rosters is not None:
         state["total_rosters"] = int(total_rosters)
+
+
+def clear_league_globals() -> None:
+    """Reset the request-scoped league context to empty.
+
+    Explicit reset point for consumers that process several leagues on one
+    thread outside a request (background jobs, crons, scripts): without it the
+    thread-local fallback in :func:`_league_state` would keep serving the
+    previous league's config to a later league that never re-syncs (or whose
+    sync fails). Inside a Flask request this is unnecessary -- ``flask.g`` is
+    already per-request -- but harmless.
+    """
+    _league_state().clear()
 
 
 @ttl_cache(ttl=300)
