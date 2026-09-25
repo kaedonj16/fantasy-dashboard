@@ -723,6 +723,9 @@ def _pricing_body() -> str:
         <details><summary>What does Entire League cover?</summary><p>Every manager gets PRO in one selected league. It does not give each manager PRO in their other leagues.</p></details>
         <details><summary>Does League + Personal cover everyone everywhere?</summary><p>No. Everyone gets PRO in the selected league; only the buyer gets PRO across all of their own leagues.</p></details>
         <details><summary>Is the whole Weekly Recap premium?</summary><p>No. The AI-written storyline is premium; the recap’s other available sections remain free.</p></details>
+        <details><summary>How does PRO billing work?</summary><p>PRO is billed once a year. Your subscription renews automatically each year at the then-current price until you cancel.</p></details>
+        <details><summary>How do I cancel?</summary><p>Cancel anytime through the subscription management link in your account. Your PRO access continues until the end of the current annual term.</p></details>
+        <details><summary>Can I get a refund?</summary><p>Annual charges are non-refundable except as required by law. Canceling stops future renewals but does not refund the current term.</p></details>
       </section>
     </main>
     """

@@ -2516,7 +2516,7 @@ BASE_HTML = """
           <a href="{contact_url}">Contact</a>
         </div>
         <div class="site-footer-note">
-          © <span id="footer-year"></span> BR Fantasy. All rights reserved.
+          © <span id="footer-year"></span> BR Fantasy. All rights reserved. Not affiliated with the NFL.
         </div>
         {yahoo_attribution}
       </div>

@@ -277,7 +277,7 @@ def privacy_page(platform: Optional[str] = None, season: Optional[int] = None,
           <div class="static-card-page">
 
             <h1 class="static-hero-title">Privacy Policy</h1>
-            <p class="static-page-meta">Last updated: August 25, 2026</p>
+            <p class="static-page-meta">Last updated: September 25, 2026</p>
             <div class="static-section">
               <div class="static-section-title">What We Collect</div>
               <p>
@@ -1015,7 +1015,8 @@ def terms_page(platform: Optional[str] = None, season: Optional[int] = None,
               <p>
                 All original code, design, and content on BR Fantasy are the property of
                 their respective creators. Sleeper&reg; is a registered trademark of
-                Sleeper Inc. and is not affiliated with BR Fantasy.
+                Sleeper Inc. and is not affiliated with BR Fantasy. The NFL and its
+                member clubs are not affiliated with, and do not endorse, BR Fantasy.
               </p>
             </div>
 
@@ -1027,6 +1028,22 @@ def terms_page(platform: Optional[str] = None, season: Optional[int] = None,
                 under their own terms. Premium subscriptions remove ads for covered accounts.
                 Do not click ads except to visit an advertiser you are genuinely interested in;
                 we never ask users to click ads or offer incentives for doing so.
+              </p>
+            </div>
+
+            <div class="static-section">
+              <div class="static-section-title">Subscriptions</div>
+              <p>
+                BR Fantasy PRO is billed once per year. Your subscription renews
+                automatically each year at the then-current price until you cancel.
+                You can cancel anytime through the subscription management link in
+                your account. Canceling stops future renewals, and your PRO access
+                continues until the end of the current annual term.
+              </p>
+              <p>
+                Annual charges are non-refundable except as required by law. If you
+                cancel during a term, you keep PRO access for the remainder of that
+                term but are not refunded for it.
               </p>
             </div>
 

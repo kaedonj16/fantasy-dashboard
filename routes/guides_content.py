@@ -26,7 +26,7 @@ GUIDES = {
               of league-to-league trades. It is not the same thing as a redraft ranking. A
               redraft ranking answers &ldquo;who scores the most points this season?&rdquo; A
               dynasty value answers &ldquo;what would the rest of the league actually give up to
-              acquire this player, accounting for age, contract of expected production, and
+              acquire this player, accounting for age, contract, expected production, and
               long-term outlook?&rdquo;
             </p>
             <p>
@@ -744,7 +744,7 @@ GUIDES = {
             </p>
             <div class="static-section-title">What the extra half-point actually does</div>
             <p>
-              Over 16 games, 0.5 extra PPR on 80 catches is 40 points. That is a
+              Over a 17-game season, 0.5 extra PPR on 80 catches is 40 points. That is a
               meaningful season total, which is why volume tight ends separate from
               blocking specialists who luck into six touchdowns. When you are deciding
               between a TE with 7 targets a week and a WR with 7 targets a week, TEP
