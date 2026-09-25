@@ -586,6 +586,230 @@ _FREE_FEATURES = [
 ]
 
 
+_MANAGE_PLAN_LABELS = {
+    "user": "Personal PRO",
+    "single_league": "One League PRO",
+    "league": "League PRO",
+    "combo": "League + Personal PRO",
+}
+
+_CANCEL_REASON_LABELS = [
+    ("too_expensive", "Too expensive"),
+    ("not_using", "Not using it enough"),
+    ("missing_feature", "Missing a feature I need"),
+    ("switched_tool", "Switched to another tool"),
+    ("seasonal", "Seasonal: I will be back"),
+    ("other", "Other"),
+]
+
+
+def _pricing_manage_card() -> str:
+    """'Your PRO' management card for signed-in subscribers on /pricing.
+
+    Shows plan + renewal, a Manage payment method button (Stripe portal), and
+    a Cancel PRO button that opens the survey + pause-offer modal first.
+    Returns "" for guests and non-subscribers.
+    """
+    from flask import session as _session
+    from utils import churn as _churn
+
+    user_id = (
+        _session.get("viewer_user_id")
+        or _session.get("viewer_username")
+        or (("acct:" + str(_session.get("account_id")).strip()) if _session.get("account_id") else None)
+    )
+    if not user_id:
+        return ""
+    subs = _churn.active_subscriptions_for_user(user_id)
+    if not subs:
+        return ""
+
+    def _fmt_date(value) -> str:
+        try:
+            if hasattr(value, "strftime"):
+                return value.strftime("%b %d, %Y")
+        except Exception:
+            pass
+        return str(value or "")
+
+    rows = []
+    for sub in subs:
+        plan = str(sub.get("plan") or "")
+        label = _MANAGE_PLAN_LABELS.get(plan, "PRO")
+        league = html.escape(str(sub.get("league_id") or ""), quote=True)
+        league_note = f" for league <code>{league}</code>" if league else ""
+        sub_id = html.escape(str(sub.get("stripe_subscription_id") or ""), quote=True)
+        renew = html.escape(_fmt_date(sub.get("expires_at")), quote=False)
+        rows.append(f"""
+        <div class="pro-billing-row" style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;padding:14px 0;border-top:1px solid var(--border);">
+          <div>
+            <div style="font-weight:700;font-size:15px;">{html.escape(label, quote=False)}{league_note}</div>
+            <div style="font-size:13px;color:var(--text-muted);">Renews {renew}. Cancel or pause anytime.</div>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button type="button" class="btn btn-secondary" onclick="brOpenPortal(this)">Manage payment method</button>
+            <button type="button" class="btn" style="border:1px solid #fca5a5;color:#b91c1c;background:transparent;"
+                    onclick="brOpenCancelModal('{sub_id}', '{renew}')">Cancel PRO</button>
+          </div>
+        </div>""")
+
+    reason_radios = "".join(
+        f"""<label style="display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border:1px solid var(--border);border-radius:10px;cursor:pointer;font-size:14px;">
+          <input type="radio" name="br-cancel-reason" value="{key}" style="margin-top:3px;"/>
+          <span>{label}</span></label>"""
+        for key, label in _CANCEL_REASON_LABELS
+    )
+
+    return f"""
+    <section class="pricing-section" id="pro-billing" aria-label="Manage your PRO">
+      <div class="card" style="max-width:760px;margin:0 auto;">
+        <div class="card-body" style="padding:26px 28px;">
+          <h2 style="margin:0 0 4px;font-size:20px;">Your PRO</h2>
+          <p style="margin:0 0 6px;font-size:14px;color:var(--text-muted);">Update your card, pause, or cancel. No phone calls, no dark patterns.</p>
+          {''.join(rows)}
+          <div id="brBillingMsg" style="display:none;margin-top:12px;font-size:14px;"></div>
+        </div>
+      </div>
+    </section>
+    <div id="brCancelModal" hidden
+         style="position:fixed;inset:0;z-index:10001;background:rgba(15,23,42,.55);align-items:center;justify-content:center;padding:20px;">
+      <div role="dialog" aria-modal="true" aria-labelledby="brCancelTitle"
+           style="background:var(--card);border:1px solid var(--border);border-radius:16px;max-width:480px;width:100%;padding:28px;box-shadow:0 24px 60px rgba(0,0,0,.3);">
+        <div id="brCancelStep1">
+          <h3 id="brCancelTitle" style="margin:0 0 6px;font-size:19px;">Sorry to see you go</h3>
+          <p style="margin:0 0 16px;font-size:14px;color:var(--text-muted);">Mind telling us why? Optional. It helps us build better.</p>
+          <div style="display:flex;flex-direction:column;gap:8px;">{reason_radios}</div>
+          <textarea id="brCancelDetail" rows="2" placeholder="Anything else? (optional)"
+                    style="width:100%;box-sizing:border-box;margin-top:10px;padding:10px 12px;border:1px solid var(--border);border-radius:10px;font-size:14px;background:var(--card);color:var(--text);"></textarea>
+          <div style="display:flex;gap:10px;margin-top:18px;justify-content:flex-end;">
+            <button type="button" class="btn btn-secondary" onclick="brCancelReason('skipped')">Skip</button>
+            <button type="button" class="btn btn-primary" onclick="brCancelReason('chosen')">Continue</button>
+          </div>
+        </div>
+        <div id="brCancelStep2" hidden>
+          <h3 style="margin:0 0 6px;font-size:19px;">Wait: pause instead?</h3>
+          <p style="margin:0 0 16px;font-size:14px;color:var(--text-muted);line-height:1.55;">
+            Keep every PRO tool free for 2 months. Billing pauses now and resumes automatically.
+            No need to cancel and resubscribe later.</p>
+          <div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;">
+            <button type="button" class="btn btn-secondary" onclick="brCancelGoFinal()">Continue to cancel</button>
+            <button type="button" class="btn btn-primary" onclick="brCancelFinal('pause')">Pause PRO for 2 months</button>
+          </div>
+        </div>
+        <div id="brCancelStep3" hidden>
+          <h3 style="margin:0 0 6px;font-size:19px;">Cancel PRO?</h3>
+          <p style="margin:0 0 18px;font-size:14px;color:var(--text-muted);line-height:1.55;">
+            You will keep PRO until <strong id="brCancelUntil"></strong>, then it turns off.
+            This cannot be undone automatically.</p>
+          <div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;">
+            <button type="button" class="btn btn-primary" onclick="brCloseCancelModal()">Keep PRO</button>
+            <button type="button" class="btn" style="border:1px solid #fca5a5;color:#b91c1c;background:transparent;"
+                    onclick="brCancelFinal('cancel')">Confirm cancellation</button>
+          </div>
+        </div>
+        <div id="brCancelDone" hidden>
+          <h3 style="margin:0 0 6px;font-size:19px;" id="brCancelDoneTitle">Done</h3>
+          <p style="margin:0 0 18px;font-size:14px;color:var(--text-muted);line-height:1.55;" id="brCancelDoneMsg"></p>
+          <div style="display:flex;justify-content:flex-end;">
+            <button type="button" class="btn btn-primary" onclick="brCloseCancelModal()">Close</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <script>
+    (function() {{
+      var subId = '', reason = 'skipped', detail = '';
+      window.brOpenPortal = function(btn) {{
+        btn.disabled = true;
+        fetch('/api/create-portal-session', {{
+          method: 'POST', headers: {{'Content-Type': 'application/json'}},
+          body: JSON.stringify({{}})
+        }}).then(function(r) {{ return r.json(); }}).then(function(d) {{
+          if (d.url) {{ window.location.href = d.url; }}
+          else {{
+            btn.disabled = false;
+            brBillingNote(d.error || 'Could not open billing. Please try again.', true);
+          }}
+        }}).catch(function() {{
+          btn.disabled = false;
+          brBillingNote('Could not open billing. Please try again.', true);
+        }});
+      }};
+      window.brBillingNote = function(msg, isErr) {{
+        var el = document.getElementById('brBillingMsg');
+        if (!el) return;
+        el.style.display = 'block';
+        el.style.color = isErr ? '#b91c1c' : '#166534';
+        el.textContent = msg;
+      }};
+      window.brOpenCancelModal = function(sid, until) {{
+        subId = sid; reason = 'skipped'; detail = '';
+        document.getElementById('brCancelUntil').textContent = until || 'the end of your billing period';
+        ['brCancelStep1','brCancelStep2','brCancelStep3','brCancelDone'].forEach(function(id, i) {{
+          document.getElementById(id).hidden = (i !== 0);
+        }});
+        var modal = document.getElementById('brCancelModal');
+        modal.hidden = false;
+        modal.style.display = 'flex';
+      }};
+      window.brCloseCancelModal = function() {{
+        var modal = document.getElementById('brCancelModal');
+        modal.hidden = true;
+        modal.style.display = 'none';
+      }};
+      window.brCancelReason = function(how) {{
+        if (how === 'chosen') {{
+          var sel = document.querySelector('input[name="br-cancel-reason"]:checked');
+          reason = sel ? sel.value : 'skipped';
+        }} else {{
+          reason = 'skipped';
+        }}
+        var ta = document.getElementById('brCancelDetail');
+        detail = ta ? ta.value : '';
+        document.getElementById('brCancelStep1').hidden = true;
+        document.getElementById('brCancelStep2').hidden = false;
+      }};
+      window.brCancelGoFinal = function() {{
+        document.getElementById('brCancelStep2').hidden = true;
+        document.getElementById('brCancelStep3').hidden = false;
+      }};
+      window.brCancelFinal = function(action) {{
+        fetch('/api/cancel-subscription', {{
+          method: 'POST', headers: {{'Content-Type': 'application/json'}},
+          body: JSON.stringify({{stripe_subscription_id: subId, action: action, reason: reason, reason_detail: detail}})
+        }}).then(function(r) {{ return r.json().then(function(d) {{ return {{ok: r.ok, d: d}}; }}); }}).then(function(res) {{
+          var title = document.getElementById('brCancelDoneTitle');
+          var msg = document.getElementById('brCancelDoneMsg');
+          ['brCancelStep1','brCancelStep2','brCancelStep3'].forEach(function(id) {{
+            document.getElementById(id).hidden = true;
+          }});
+          document.getElementById('brCancelDone').hidden = false;
+          if (res.ok && res.d.ok) {{
+            if (action === 'pause') {{
+              title.textContent = 'PRO paused';
+              msg.textContent = 'Your PRO is paused for 2 months. Billing resumes automatically. Nothing else to do.';
+            }} else {{
+              title.textContent = 'PRO canceled';
+              msg.textContent = 'Your PRO stays on until ' + (document.getElementById('brCancelUntil').textContent || 'the end of your billing period') + '. Thanks for being with us.';
+            }}
+          }} else {{
+            title.textContent = 'Something went wrong';
+            msg.textContent = (res.d && res.d.error) || 'Please try again or manage billing to finish this.';
+          }}
+        }}).catch(function() {{
+          window.brCloseCancelModal();
+          brBillingNote('Something went wrong. Please try again.', true);
+        }});
+      }};
+      var modal = document.getElementById('brCancelModal');
+      if (modal) modal.addEventListener('click', function(e) {{
+        if (e.target === modal) window.brCloseCancelModal();
+      }});
+    }})();
+    </script>
+    """
+
+
 def _pricing_body(league_id: str | None = None, platform: str = "sleeper") -> str:
     from flask import session as _session
     plan      = request.args.get("plan", "")
@@ -899,11 +1123,26 @@ def _pricing_body(league_id: str | None = None, platform: str = "sleeper") -> st
         </div>
       </section>"""
 
+    winback_status = request.args.get("winback", "")
+    winback_banner = ""
+    if winback_status in ("invalid", "active", "unavailable", "error"):
+        _wb_msgs = {
+            "invalid": "That offer link is invalid or expired.",
+            "active": "You already have active PRO. No need for the comeback offer.",
+            "unavailable": "That offer is no longer available.",
+            "error": "Something went wrong starting checkout. Please try again.",
+        }
+        winback_banner = f"""
+    <div class="pricing-alert" role="status"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i>
+      {html.escape(_wb_msgs[winback_status], quote=False)}
+    </div>"""
     return f"""
     <main class="pricing-page">
       {canceled_banner}
       {trial_notice}
       {portal_banner}
+      {winback_banner}
+      {_pricing_manage_card()} (feat(churn): dunning, cancel save flow, trial reminders, win-back)
       <header class="pricing-hero">
         <span class="pricing-eyebrow">BR Fantasy PRO</span>
         <h1>Make the next move with confidence.</h1>
@@ -1437,6 +1676,48 @@ def _handle_subscription_lifecycle_event(s, etype: str) -> None:
     )
 
 
+def _handle_payment_failed(sub_id: str) -> None:
+    """Dunning touch 1 on a failed renewal payment. Best-effort; never raises."""
+    try:
+        from utils import churn as _churn
+        from utils import churn_email as _churn_email
+        from utils.welcome_email import resolve_account_from_subscriber
+
+        try:
+            sub = _stripe().Subscription.retrieve(sub_id)
+        except Exception:
+            logger.warning("[stripe] payment_failed: could not retrieve sub=%s", sub_id)
+            return
+        meta = _metadata_dict(sub)
+        plan = (meta.get("plan") or "").strip() or _plan_from_subscription(sub)
+        user_id = _subscriber_user_id({
+            "user_id": meta.get("user_id") or "",
+            "account_id": meta.get("account_id") or "",
+        })
+        account_id = None
+        if user_id.startswith("acct:"):
+            try:
+                account_id = int(user_id.split(":", 1)[1])
+            except (TypeError, ValueError):
+                account_id = None
+        row = resolve_account_from_subscriber(user_id=user_id, account_id=account_id)
+        if not row or not (row.get("email") or "").strip():
+            logger.info("[stripe] payment_failed: no account email for sub=%s user=%s",
+                       sub_id, user_id)
+            return
+        aid = row.get("id")
+        if _churn.open_dunning(sub_id, aid, row["email"].strip(), plan):
+            sent = _churn_email.send_dunning_touch(
+                account_id=aid, email=row["email"].strip(),
+                first_name=row.get("first_name"), plan=plan, touch=1,
+            )
+            _churn.record_event(aid, "dunning_touch_1",
+                               {"sub_id": sub_id, "plan": plan, "sent": bool(sent)})
+            logger.info("[stripe] payment_failed dunning touch 1 sub=%s sent=%s", sub_id, sent)
+    except Exception:
+        logger.exception("[stripe] _handle_payment_failed error")
+
+
 @billing_bp.route("/api/stripe-webhook", methods=["POST"])
 def stripe_webhook():
     payload = request.get_data()
@@ -1507,6 +1788,11 @@ def stripe_webhook():
         sub_id = s.subscription
         if sub_id:
             try:
+                from utils import churn as _churn
+                _churn.resolve_dunning(_stripe_id(sub_id))
+            except Exception:
+                logger.debug("[stripe] resolve dunning after invoice.paid failed", exc_info=True)
+            try:
                 sub        = _stripe().Subscription.retrieve(sub_id)
                 expires_at = _subscription_period_end(sub)
                 from dashboard_services.db import get_conn
@@ -1527,8 +1813,31 @@ def stripe_webhook():
             except Exception as e:
                 logger.exception("[stripe] invoice.paid renewal error: %s", e)
 
+    elif etype == "invoice.payment_failed":
+        # Dunning: Stripe keeps retrying per its own schedule; we add the comms.
+        # Touch 1 fires here (idempotent per failure episode); the daily churn
+        # scan escalates to touch 2 after ~3 days while still past due, then
+        # goes quiet. The in-app banner keeps nudging in the meantime.
+        s      = event["data"]["object"]
+        sub_id = _stripe_id(_stripe_field(s, "subscription"))
+        if sub_id:
+            _handle_payment_failed(sub_id)
+
     elif etype in ("customer.subscription.deleted", "customer.subscription.updated"):
-        _handle_subscription_lifecycle_event(event["data"]["object"], etype)
+        s = event["data"]["object"]
+        _handle_subscription_lifecycle_event(s, etype)
+        # Churn bookkeeping from #1958: entitlement cancellation itself is owned
+        # by apply_subscription_lifecycle above; this only resolves dunning and
+        # records the analytics event.
+        if _stripe_field(s, "status") in ("canceled", "unpaid", "past_due"):
+            try:
+                from utils import churn as _churn
+                _churn.resolve_dunning(_stripe_id(_stripe_field(s, "id")))
+                if _stripe_field(s, "status") == "canceled":
+                    _churn.record_event(None, "subscription_ended",
+                                        {"sub_id": _stripe_id(_stripe_field(s, "id"))})
+            except Exception:
+                logger.debug("[stripe] churn bookkeeping on cancel failed", exc_info=True)
 
     return "", 200
 
@@ -1778,3 +2087,180 @@ def api_create_portal_session():
     except Exception:
         logger.exception("[api_create_portal_session] Error")
         return jsonify({"error": "Internal error"}), 500
+
+
+# ── Cancellation save flow ────────────────────────────────────────────────────
+# The pricing page's "Cancel PRO" opens a survey modal first; the final confirm
+# lands here. "Pause PRO for 2 months" is offered BEFORE the final confirm.
+# Pause uses Stripe's pause_collection with resumes_at (chosen over a coupon:
+# one API call, auto-resumes, subscription stays active so entitlements keep
+# working, nothing to reconcile later).
+
+def _cancel_owned_sub(user_id: str, sub_id: str) -> dict | None:
+    """Return the user's active sub row for sub_id, or None when not owned."""
+    from utils import churn as _churn
+
+    sub_id = (sub_id or "").strip()
+    if not sub_id:
+        return None
+    for row in _churn.active_subscriptions_for_user(user_id):
+        if row.get("stripe_subscription_id") == sub_id:
+            return row
+    return None
+
+
+@billing_bp.route("/api/pause-subscription", methods=["POST"])
+def api_pause_subscription():
+    """Pause PRO for 2 months (Stripe pause_collection, auto-resumes)."""
+    from utils import churn as _churn
+
+    user_id = _checkout_user_id()
+    if not user_id:
+        return jsonify({"error": "Not logged in"}), 401
+    data = request.get_json(silent=True) or {}
+    sub_id = str(data.get("stripe_subscription_id") or "").strip()
+    owned = _cancel_owned_sub(user_id, sub_id)
+    if not owned:
+        return jsonify({"error": "Subscription not found for your account."}), 404
+
+    result = _churn.pause_subscription(sub_id, months=_churn.PAUSE_MONTHS)
+    if not result.get("ok"):
+        return jsonify({"error": result.get("error") or "Could not pause."}), 502
+
+    account_id = None
+    if user_id.startswith("acct:"):
+        try:
+            account_id = int(user_id.split(":", 1)[1])
+        except (TypeError, ValueError):
+            account_id = None
+    _churn.record_event(account_id, "pause_accepted", {
+        "sub_id": sub_id,
+        "plan": owned.get("plan"),
+        "reason": str(data.get("reason") or "")[:40] or None,
+        "resumes_at": result.get("resumes_at"),
+    })
+    return jsonify({"ok": True, "resumes_at": result.get("resumes_at")})
+
+
+@billing_bp.route("/api/cancel-subscription", methods=["POST"])
+def api_cancel_subscription():
+    """Record the cancel survey, then pause or cancel at period end.
+
+    Body: {stripe_subscription_id, action: "pause"|"cancel",
+           reason: <one of CANCEL_REASONS or "skipped">, reason_detail: <text>}
+    The survey is optional: "skipped" is a valid reason.
+    """
+    from utils import churn as _churn
+
+    user_id = _checkout_user_id()
+    if not user_id:
+        return jsonify({"error": "Not logged in"}), 401
+    data = request.get_json(silent=True) or {}
+    sub_id = str(data.get("stripe_subscription_id") or "").strip()
+    owned = _cancel_owned_sub(user_id, sub_id)
+    if not owned:
+        return jsonify({"error": "Subscription not found for your account."}), 404
+
+    action = str(data.get("action") or "cancel").strip().lower()
+    reason = str(data.get("reason") or "skipped").strip().lower()
+    if reason not in _churn.CANCEL_REASONS and reason != "skipped":
+        reason = "other"
+    detail = str(data.get("reason_detail") or "").strip()[:500]
+
+    account_id = None
+    if user_id.startswith("acct:"):
+        try:
+            account_id = int(user_id.split(":", 1)[1])
+        except (TypeError, ValueError):
+            account_id = None
+    _churn.record_event(account_id, "cancel_survey", {
+        "sub_id": sub_id,
+        "plan": owned.get("plan"),
+        "reason": reason,
+        "reason_detail": detail or None,
+        "action": action,
+    })
+
+    if action == "pause":
+        result = _churn.pause_subscription(sub_id, months=_churn.PAUSE_MONTHS)
+        if not result.get("ok"):
+            return jsonify({"error": result.get("error") or "Could not pause."}), 502
+        _churn.record_event(account_id, "pause_accepted", {
+            "sub_id": sub_id, "plan": owned.get("plan"), "reason": reason,
+            "resumes_at": result.get("resumes_at"),
+        })
+        return jsonify({"ok": True, "paused": True, "resumes_at": result.get("resumes_at")})
+
+    result = _churn.cancel_at_period_end(sub_id)
+    if not result.get("ok"):
+        return jsonify({"error": result.get("error") or "Could not cancel."}), 502
+    _churn.record_event(account_id, "cancel_confirmed",
+                        {"sub_id": sub_id, "plan": owned.get("plan"), "reason": reason})
+    expires = owned.get("expires_at")
+    try:
+        expires_s = expires.isoformat() if hasattr(expires, "isoformat") else str(expires or "")
+    except Exception:
+        expires_s = ""
+    return jsonify({"ok": True, "canceled": True, "access_until": expires_s})
+
+
+# ── Win-back checkout ─────────────────────────────────────────────────────────
+# One-time offer email links here with a signed token (no login needed). The
+# endpoint re-checks "no active sub" and applies the WINBACK_COUPON_ID Stripe
+# coupon at checkout. Coupon + offer label are configured in the Stripe
+# dashboard / env (see PR body).
+
+@billing_bp.route("/pro/winback")
+def pro_winback():
+    from flask import redirect
+    from utils import churn as _churn
+
+    token = request.args.get("token", "")
+    account_id = _churn.verify_winback_token(token)
+    if not account_id:
+        return redirect("/pricing?winback=invalid")
+    if _churn.account_has_active_sub(account_id):
+        return redirect("/pricing?winback=active")
+    coupon = _churn.winback_coupon_id()
+    if not coupon:
+        logger.warning("[winback] WINBACK_COUPON_ID not set")
+        return redirect("/pricing?winback=unavailable")
+
+    price_spec = _STRIPE_PRICES["user"]
+    base_url = request.host_url.rstrip("/")
+    price_data = {
+        "currency": "usd",
+        "unit_amount": price_spec["unit_amount"],
+        "recurring": {"interval": "year"},
+    }
+    if price_spec.get("product"):
+        price_data["product"] = price_spec["product"]
+    else:
+        price_data["product_data"] = {"name": price_spec.get("product_name") or "BR Fantasy PRO"}
+    try:
+        checkout = _stripe().checkout.Session.create(
+            mode="subscription",
+            line_items=[{"price_data": price_data, "quantity": 1}],
+            discounts=[{"coupon": coupon}],
+            success_url=base_url + "/pricing?success=1&session_id={CHECKOUT_SESSION_ID}&winback=1",
+            cancel_url=base_url + "/pricing?canceled=1",
+            metadata={
+                "plan": "user",
+                "user_id": f"acct:{account_id}",
+                "account_id": str(account_id),
+                "winback": "1",
+            },
+            subscription_data={
+                "metadata": {
+                    "plan": "user",
+                    "user_id": f"acct:{account_id}",
+                    "account_id": str(account_id),
+                    "winback": "1",
+                },
+            },
+        )
+        _churn.record_event(account_id, "winback_checkout_started", {"coupon": coupon})
+        return redirect(checkout.url)
+    except Exception:
+        logger.exception("[winback] checkout session error")
+        return redirect("/pricing?winback=error")

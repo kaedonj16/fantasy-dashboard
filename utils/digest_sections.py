@@ -30,6 +30,9 @@ def email_shell(
     ``footer_kind`` controls unsubscribe copy:
       - ``weekly_digest`` (default)
       - ``onboarding``: signup / PRO welcome emails
+      - ``billing``: transactional account notices (dunning, trial expiry,
+        win-back). No unsubscribe link: these are required billing notices,
+        not marketing.
 
     ``header_theme`` controls the masthead:
       - ``dark`` (default): navy header with the light distressed wordmark.
@@ -104,7 +107,12 @@ def email_shell(
     </td>
   </tr>
 </table>"""
-    if footer_kind == "onboarding":
+    if footer_kind == "billing":
+        footer = (
+            "You're getting this because you have (or had) BR Fantasy PRO. "
+            "This is a billing notice, not marketing email."
+        )
+    elif footer_kind == "onboarding":
         footer = (
             "You're getting this because you created a BR Fantasy account "
             "(or upgraded to PRO). "
