@@ -16426,6 +16426,15 @@ img, svg, canvas {
     .utility-icon-btn {
         width: 32px;
         height: 32px;
+        /* Keep the 32px visual but expand the touch target to 44px with an
+           invisible hit area. Full 44px boxes would crowd the mobile header
+           grid (logo 180px + 3 buttons) on 320-360px phones. */
+        position: relative;
+    }
+    .utility-icon-btn::before {
+        content: "";
+        position: absolute;
+        inset: -6px; /* 32px + 12px = 44px touch target; neighbors are 12px apart so hit areas just meet */
     }
 }
 
