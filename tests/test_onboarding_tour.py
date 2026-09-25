@@ -38,7 +38,9 @@ def test_premium_welcome_restyle_and_replay():
     assert "showSubWelcome" in APP_JS
     assert "sub-welcome-overlay" in APP_JS
     assert "Welcome to PRO" in APP_JS
-    assert "Open Trade Suggestions" in APP_JS
+    # Trade Hub workstream restyled the welcome feature row to point at /trade?tab=suggestions.
+    assert "{ label: 'Trade Hub'" in APP_JS
+    assert "/trade?tab=suggestions" in APP_JS
     assert "Playoff Impact" in APP_JS
     assert "settingsWelcomeBtn" in APP_PY
     assert "PRO Welcome" in APP_PY

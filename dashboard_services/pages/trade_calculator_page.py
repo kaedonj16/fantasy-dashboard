@@ -130,9 +130,29 @@ def build_trade_calculator_body(
 
     is_guest_str = 'true' if is_guest else 'false'
     has_premium_str = 'true' if has_premium else 'false'
-    # Non-PRO users only see the Suggestions paywall CTA -- hide Build Around / Strategy.
+    # Non-PRO users only see the Trade Hub paywall CTA -- hide the hub tabs.
     sugg_paywall_display = "display:none;" if has_premium else ""
     sugg_pro_display = "" if has_premium else "display:none;"
+
+    # Trade Hub: Market Intel tab embeds the Trade Intelligence UI. Rendered
+    # server-side only for PRO (the endpoints 403 for non-PRO anyway); the
+    # script self-loads when the tab opens.
+    try:
+        from dashboard_services.pages.trade_intel_page import build_trade_intel_body
+        _hub_season = season if season else 2026
+        _hub_num_teams = int(num_teams_val or 10)
+        market_intel_html = build_trade_intel_body(
+            platform=platform_val,
+            season=int(_hub_season),
+            league_id=league_val or None,
+            has_premium=has_premium,
+            league_type="sf" if is_superflex else "1qb",
+            league_size=_hub_num_teams,
+            embedded=True,
+        ) if has_premium else ""
+    except Exception:
+        logger.warning("trade hub: market intel embed failed", exc_info=True)
+        market_intel_html = ""
 
     # League type toggle: checkbox with 1QB and SF labels
     sf_checked = ' checked' if is_superflex else ''
@@ -272,7 +292,7 @@ def build_trade_calculator_body(
           <div class="otc-main-tabs" data-br-slide-tabs>
             <button class="otc-main-tab is-active" data-tab="calculator">Calculator</button>
             <button class="otc-main-tab" data-tab="suggestions">
-              Suggestions <span class="nav-pro-badge">PRO</span>
+              Trade Hub <span class="nav-pro-badge">PRO</span>
             </button>
             <!-- Insights tab only shows on mobile (CSS): it surfaces the Player
                  Insights sidebar as a peer tab so the calc reads like other tabbed
@@ -839,6 +859,43 @@ def build_trade_calculator_body(
             .otc-sugg-subtab-toggle .br-slide-ind {{
               background:var(--text);border-radius:7px;
             }}
+            /* ── Trade Hub: shared "why this" ranking-explanation line ── */
+            .th-why {{
+              display:flex;gap:6px;align-items:flex-start;
+              margin-top:8px;padding-top:8px;
+              border-top:1px dashed var(--border);
+              font-size:11.5px;line-height:1.45;color:var(--text-muted);
+            }}
+            .th-why-lbl {{
+              flex-shrink:0;font-weight:700;font-size:10px;letter-spacing:.04em;
+              text-transform:uppercase;color:var(--accent,#2563eb);padding-top:1px;
+            }}
+            /* ── Trade Hub: saved packages ── */
+            .th-save-btn {{
+              border:1px solid var(--border);background:var(--card);color:var(--text-muted);
+              border-radius:8px;font-size:11px;font-weight:600;padding:4px 10px;cursor:pointer;
+              display:inline-flex;align-items:center;gap:5px;white-space:nowrap;
+            }}
+            .th-save-btn:hover {{ color:var(--text);border-color:var(--accent); }}
+            .th-save-btn.is-saved {{ color:var(--accent);border-color:var(--accent); }}
+            .th-saved-row {{
+              border:1px solid var(--border);border-radius:12px;padding:12px 14px;
+              background:var(--card);margin-bottom:10px;
+            }}
+            .th-saved-title {{ font-weight:700;font-size:13px; }}
+            .th-saved-actions {{ display:flex;gap:6px;flex-wrap:wrap;margin-top:8px; }}
+            .th-chip-btn {{
+              border:1px solid var(--border);background:var(--row);color:var(--text);
+              border-radius:8px;font-size:11px;font-weight:600;padding:5px 10px;cursor:pointer;
+            }}
+            .th-chip-btn:hover {{ border-color:var(--accent);color:var(--accent); }}
+            /* ── Trade Hub: shop-to-all-teams ── */
+            .th-shop-row {{
+              border:1px solid var(--border);border-radius:12px;padding:12px 14px;
+              background:var(--card);margin-bottom:10px;
+            }}
+            .th-shop-team {{ font-weight:700;font-size:13px; }}
+            .th-shop-meta {{ font-size:11.5px;color:var(--text-muted);margin-top:2px; }}
             /* ── Strategy panel ── */
             .otc-strategy-chips {{
               display:flex;overflow-x:auto;gap:6px;
@@ -985,16 +1042,18 @@ def build_trade_calculator_body(
             </div>
             <!-- Build Around / Strategy tools -- hidden when the user is not PRO -->
             <div id="otcSuggProContent" style="{sugg_pro_display}">
-            <!-- Sub-tab bar -->
+            <!-- Sub-tab bar: the unified Trade Hub -->
             <div class="otc-sugg-subtab-bar">
               <div class="otc-sugg-subtab-toggle" data-br-slide-tabs>
-                <button id="otcSubtabBuildAround" class="otc-sugg-subtab is-active">Build Around</button>
-                <button id="otcSubtabStrategy" class="otc-sugg-subtab">Strategy</button>
+                <button id="otcSubtabSuggestions" class="otc-sugg-subtab is-active" data-hubtab="suggestions">Suggestions</button>
+                <button id="otcSubtabTargets" class="otc-sugg-subtab" data-hubtab="targets">Targets</button>
+                <button id="otcSubtabMarket" class="otc-sugg-subtab" data-hubtab="market">Market Intel</button>
+                <button id="otcSubtabSaved" class="otc-sugg-subtab" data-hubtab="saved">Saved</button>
               </div>
             </div>
 
-            <!-- ── Build Around panel ───────────────────────────────────────────── -->
-            <div id="otcBuildAroundPanel">
+            <!-- ── Targets panel (build-around / find-returns search + trade targets) ── -->
+            <div id="otcBuildAroundPanel" style="display:none;">
               <div class="otc-sugg-tab-layout">
 
                 <!-- Build Around / Find Returns search -->
@@ -1037,8 +1096,8 @@ def build_trade_calculator_body(
               </div>
             </div><!-- /#otcBuildAroundPanel -->
 
-            <!-- ── Strategy panel ───────────────────────────────────────────────── -->
-            <div id="otcStrategyPanel" style="display:none;">
+            <!-- ── Suggestions panel (archetype engine) ───────────────────────────── -->
+            <div id="otcStrategyPanel">
 
               <!-- Archetype chips (single scrollable pill row) -->
               <div id="otcStrategyChips" class="otc-strategy-chips">
@@ -1075,6 +1134,21 @@ def build_trade_calculator_body(
               <div id="otcStrategyCards"></div>
 
             </div><!-- /#otcStrategyPanel -->
+
+            <!-- ── Market Intel panel (embedded Trade Intelligence) ─────────────── -->
+            <div id="otcMarketIntelPanel" style="display:none;padding:14px;">
+              {market_intel_html}
+            </div><!-- /#otcMarketIntelPanel -->
+
+            <!-- ── Saved packages panel (localStorage) ────────────────────────── -->
+            <div id="otcSavedPanel" style="display:none;padding:14px;">
+              <div class="otc-sugg-section-head" style="margin-bottom:10px;">
+                <span class="otc-sugg-section-title">Saved packages</span>
+                <span style="font-size:11px;color:var(--text-muted);">Kept on this device</span>
+              </div>
+              <div id="otcSavedBody"></div>
+              <div id="otcShopResults" style="display:none;margin-top:14px;"></div>
+            </div><!-- /#otcSavedPanel -->
             </div><!-- /#otcSuggProContent -->
 
           </div><!-- /#otcSuggestionsTab -->
