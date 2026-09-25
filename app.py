@@ -24768,6 +24768,40 @@ def api_defense_vs_position():
         return _api_err("Request failed", e)
 
 
+@app.route("/api/usage-table-status")
+def api_usage_table_status():
+    """Deploy observability: does this web container have a usage table?
+
+    The table is gitignored and the disk is ephemeral, so it must be rebuilt
+    on-container after every deploy (scripts/post_deploy.py). Without it,
+    depth charts silently fall back to the stale usage embedded in the
+    committed player index. This endpoint makes that visible.
+    """
+    import os
+    import time
+    try:
+        from utils.utils import load_usage_table, path_usage_table
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"import failed: {e}"})
+    table_path = path_usage_table()
+    exists = os.path.exists(table_path)
+    rows = 0
+    table = load_usage_table() if exists else None
+    if isinstance(table, dict):
+        rows = len(table)
+    elif isinstance(table, list):
+        rows = len(table)
+    return jsonify({
+        "ok": True,
+        "exists": exists,
+        "rows": rows,
+        "mtime": (
+            time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(os.path.getmtime(table_path)))
+            if exists else None
+        ),
+    })
+
+
 @app.route("/api/nfl-team-details")
 def api_nfl_team_details():
     """Public, league-free: lazy team profile for the NFL Teams page.
