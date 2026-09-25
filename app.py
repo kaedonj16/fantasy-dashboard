@@ -33317,6 +33317,313 @@ def trade_card_og_image(share_id: str):
                     headers={"Cache-Control": "public, max-age=3600"})
 
 
+# ── Shareable trade-outcome links (/o/<share_id>) ─────────────────────────────
+# Mirrors the /t/<id> + /trade-card/<id> pattern: the client shares a frozen
+# outcome payload (verdict + per-asset then/now values), the public card shows
+# "who won the trade", and og.png renders the social preview. Payloads are
+# capped and pruned after 5 days like the trade-card shares.
+
+from dashboard_services.trade_outcome_shares import (  # noqa: E402
+    create_outcome_share,
+    get_outcome_share,
+    sanitize_outcome_params,
+)
+
+
+@app.route("/api/save-trade-outcome", methods=["POST"])
+@limiter.limit("60 per minute")
+def api_save_trade_outcome():
+    """Mint a public share link for a trade-outcome verdict."""
+    data = request.get_json(force=True) or {}
+    params = sanitize_outcome_params(data)
+    if not params["a_rows"] and not params["b_rows"]:
+        return jsonify({"error": "No assets to share"}), 400
+    try:
+        share_id = create_outcome_share(params)
+    except Exception as exc:
+        logger.warning("[save-trade-outcome] DB error: %s", exc)
+        return jsonify({"error": "Could not save outcome"}), 500
+    return jsonify({"ok": True, "share_id": share_id})
+
+
+@app.route("/o/<share_id>")
+def shared_outcome_page(share_id: str):
+    """Short outcome share URL -- redirects to the standalone outcome card."""
+    if get_outcome_share(share_id) is None:
+        from app import render_page
+        body = """
+        <div style="max-width:520px;margin:60px auto;text-align:center;padding:0 16px;">
+          <div style="font-size:48px;margin-bottom:16px;">🏈</div>
+          <h2 style="font-size:22px;font-weight:700;margin:0 0 24px;">Trade outcome not found</h2>
+          <p style="color:var(--text-muted);margin:0 0 24px;">This link may have expired or the outcome was never shared.</p>
+          <a href="/trade" style="display:inline-block;padding:10px 24px;background:var(--accent,#3b82f6);color:#fff;border-radius:8px;text-decoration:none;font-weight:600;">Open Trade Calculator</a>
+        </div>"""
+        return render_page(
+            "Trade Outcome Not Found | BR Fantasy", None, "trade", body,
+            noindex=True, ad_eligible=False,
+        ), 404
+    from flask import redirect as _redirect
+    return _redirect(f"/trade-outcome-card/{share_id}", 302)
+
+
+@app.route("/trade-outcome-card/<share_id>")
+def page_trade_outcome_card(share_id: str):
+    """Standalone "who won the trade" card for a shared trade outcome."""
+    share = get_outcome_share(share_id)
+    if not share:
+        return ("<style>" + _BRAND_FACES_MINI + "</style>"
+                '<meta name="robots" content="noindex">'
+                "<h2 style='font-family:\"Archivo\",sans-serif;padding:40px'>Trade outcome not found.</h2>"), 404
+    import html as _html
+    p = share["params"] or {}
+    created_at = share.get("created_at")
+
+    t1 = _html.escape(str(p.get("team_a") or "Team A"))
+    t2 = _html.escape(str(p.get("team_b") or "Team B"))
+
+    # Trade date shown as M/D/YY like the trade card.
+    trade_date = ""
+    try:
+        td = str(p.get("trade_date") or "")
+        if td:
+            from datetime import date as _d
+            _td = _d.fromisoformat(td[:10])
+            trade_date = f"{_td.month}/{_td.day}/{_td.strftime('%y')}"
+    except Exception:
+        trade_date = ""
+
+    try:
+        from datetime import timezone as _tz
+        _dt = created_at
+        if hasattr(_dt, "astimezone"):
+            _dt = _dt.astimezone(_tz.utc)
+        shared_date = (f"{_dt.month}/{_dt.day}/{_dt.strftime('%y')}" if _dt else "")
+    except Exception:
+        shared_date = ""
+
+    verdict = str(p.get("verdict") or "EVEN")
+    net = float(p.get("net_delta_now") or 0)
+    net_str = f"{net:+.1f}"
+    if verdict == "WIN":
+        verdict_text = f"{t1} won the trade"
+        verdict_color = "#4ade80"
+    elif verdict == "LOSS":
+        verdict_text = f"{t2} won the trade"
+        verdict_color = "#f97316"
+    else:
+        verdict_text = "Dead even"
+        verdict_color = "#94a3b8"
+
+    total_a = float(p.get("total_a_now") or 0)
+    total_b = float(p.get("total_b_now") or 0)
+
+    def _asset_html(rows):
+        out = []
+        for r in rows or []:
+            name = _html.escape(str(r.get("name") or ""))
+            is_pick = bool(r.get("is_pick"))
+            pos_tag = ('<span class="oc-pos" style="background:rgba(139,92,246,.2);color:#a78bfa">PICK</span>'
+                       if is_pick else "")
+            then = r.get("value_then")
+            now = float(r.get("value_now") or 0)
+            delta = r.get("delta")
+            if then is not None and delta is not None:
+                d = float(delta)
+                dcls = "oc-plus" if d >= 0 else "oc-minus"
+                dstr = f" ({d:+.1f})"
+                sub = (f'<div class="oc-sub">Then {float(then):,.1f}'
+                       f' <span class="{dcls}">{now:,.1f}{dstr}</span></div>')
+            else:
+                sub = f'<div class="oc-sub">Now {now:,.1f}</div>' if now else ""
+            out.append(
+                f'<div class="oc-row">{pos_tag}<div class="oc-name">{name}{sub}</div></div>'
+            )
+        return "".join(out) or '<div class="oc-empty">No assets</div>'
+
+    side_a_html = _asset_html(p.get("a_rows"))
+    side_b_html = _asset_html(p.get("b_rows"))
+
+    then_note = ('<div class="oc-est">Trade-time values are approximate (nearest board).</div>'
+                 if p.get("then_estimated") else "")
+
+    og_title = f"{t1} vs {t2} | BR Fantasy Trade Outcome"
+    og_desc = f"{verdict_text} ({net_str} value)"
+
+    is_embed = request.args.get("embed") == "1"
+    is_og = request.args.get("og") == "1"
+    if is_og:
+        is_embed = True
+    copy_link_style = "display:none" if is_embed else ""
+    body_pad = "0" if is_embed else "16px"
+    share_url = request.url.split("?")[0]
+    _og_image_url = f"{request.host_url.rstrip('/')}/trade-outcome-card/{share_id}/og.png"
+
+    card_html = f"""<!doctype html>
+<html lang="en" id="ocRoot" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <title>Trade Outcome | BR Fantasy</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex">
+  <meta property="og:title" content="{og_title}">
+  <meta property="og:description" content="{og_desc}">
+  <meta property="og:image" content="{_og_image_url}">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:type" content="website">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="{og_title}">
+  <meta name="twitter:description" content="{og_desc}">
+  <meta name="twitter:image" content="{_og_image_url}">
+  <link rel="icon" href="/static/BR_Mark.png?v=6c0c4828" type="image/png">
+  <script>
+    (function(){{{"document.documentElement.setAttribute('data-theme','light');" if is_og else "var t=localStorage.getItem('sc-card-theme')||(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.setAttribute('data-theme',t);"}}})();
+  </script>
+  <style>
+    :root{{--oc-bg:#0b1120;--oc-card:#0f1d36;--oc-hdr:#0b1628;--oc-border:rgba(255,255,255,.1);--oc-border-sub:rgba(255,255,255,.07);--oc-text:#e2e8f0;--oc-text2:#f1f5f9;--oc-muted:#94a3b8;--oc-dim:#64748b;--oc-dimmer:#475569;}}
+    [data-theme="light"]{{--oc-bg:#f1f5f9;--oc-card:#ffffff;--oc-hdr:#f8fafc;--oc-border:rgba(0,0,0,.1);--oc-border-sub:rgba(0,0,0,.06);--oc-text:#1e293b;--oc-text2:#0f172a;--oc-muted:#475569;--oc-dim:#64748b;--oc-dimmer:#94a3b8;}}
+    *{{box-sizing:border-box;margin:0;padding:0}}
+    {_BRAND_FACES}
+    body{{background:var(--oc-bg);{'min-height:100vh;justify-content:center;' if not is_embed else ''}display:flex;flex-direction:column;align-items:center;padding:{body_pad};font-family:"Archivo",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}}
+    .wrap{{max-width:520px;width:100%;position:relative}}
+    .card{{background:var(--oc-card);border:1px solid var(--oc-border);border-radius:20px;overflow:hidden}}
+    .card-header{{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid var(--oc-border-sub);background:var(--oc-hdr)}}
+    .brand{{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;color:var(--oc-muted)}}
+    .badge{{font-size:11px;font-weight:700;padding:3px 10px;border-radius:8px;background:rgba(59,130,246,.15);color:#60a5fa;border:1px solid rgba(59,130,246,.25)}}
+    .badge .oc-date{{color:var(--oc-dim);font-weight:600;margin-left:6px}}
+    .verdict-banner{{text-align:center;padding:22px 18px 6px}}
+    .verdict-banner .vt{{font-size:24px;font-weight:900;color:{verdict_color};letter-spacing:.01em}}
+    .verdict-banner .vd{{font-size:13px;font-weight:600;color:var(--oc-muted);margin-top:6px}}
+    .sides{{display:grid;grid-template-columns:1fr 1fr;gap:0;margin-top:10px}}
+    .side{{padding:14px 16px}}
+    .side+.side{{border-left:1px solid var(--oc-border-sub)}}
+    .side-title{{font-size:9px;font-weight:700;letter-spacing:.08em;color:var(--oc-dim);text-transform:uppercase;margin-bottom:4px}}
+    .side-total{{font-size:22px;font-weight:900;color:var(--oc-text2);margin-bottom:10px}}
+    .side-total .oc-nowlbl{{font-size:10px;font-weight:600;color:var(--oc-dimmer);margin-left:6px}}
+    .oc-row{{display:flex;align-items:flex-start;gap:6px;padding:6px 0;border-bottom:1px solid var(--oc-border-sub)}}
+    .oc-row:last-child{{border-bottom:none}}
+    .oc-name{{flex:1;font-size:13px;font-weight:600;color:var(--oc-text);min-width:0;word-break:break-word}}
+    .oc-sub{{font-size:11px;font-weight:500;color:var(--oc-muted);margin-top:2px}}
+    .oc-pos{{font-size:9px;font-weight:700;padding:2px 5px;border-radius:4px;flex-shrink:0;margin-top:2px}}
+    .oc-plus{{color:#4ade80;font-weight:700}}
+    .oc-minus{{color:#f87171;font-weight:700}}
+    .oc-empty{{font-size:13px;color:var(--oc-dim);padding:8px 0}}
+    .oc-est{{margin:10px 16px 0;padding:7px 10px;border-radius:8px;background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.25);font-size:11px;color:#fbbf24}}
+    .divider{{border-top:1px solid var(--oc-border-sub);margin-top:12px}}
+    .footer{{padding:14px 18px;display:flex;gap:8px;justify-content:flex-end;background:var(--oc-hdr);border-top:1px solid var(--oc-border-sub)}}
+    .btn{{font-size:12px;font-weight:700;padding:8px 16px;border-radius:8px;border:none;cursor:pointer;text-decoration:none;display:inline-block}}
+    .btn-outline{{background:transparent;color:var(--oc-muted);border:1px solid var(--oc-border)}}
+    .btn-primary{{background:#3b82f6;color:#fff}}
+    .oc-toggle{{position:absolute;top:-36px;right:0;background:var(--oc-card);border:1px solid var(--oc-border);
+      color:var(--oc-muted);border-radius:8px;padding:5px 10px;font-size:14px;cursor:pointer;}}
+    @media(max-width:400px){{
+      .card-header{{padding:10px 12px}}
+      .side{{padding:10px 8px}}
+      .side-total{{font-size:16px;margin-bottom:8px}}
+      .oc-name{{font-size:12px}}
+      .verdict-banner .vt{{font-size:20px}}
+      .footer{{padding:10px 12px}}
+      .btn{{padding:7px 12px;font-size:11px}}
+    }}
+    {('''
+    /* og=1 render mode: fixed 1200x630 light canvas with the card centered and
+       scaled up to fill the landscape social-preview frame. */
+    html[data-theme]{{background:#eef2f7;}}
+    body{{width:1200px !important;height:630px !important;padding:0 !important;
+      justify-content:center !important;align-items:center !important;overflow:hidden;
+      background:radial-gradient(circle at 50% 0%, #ffffff 0%, #e2e8f0 75%) !important;}}
+    .wrap{{transform:scale(1.42);transform-origin:center center;}}
+    .card{{box-shadow:0 24px 60px rgba(15,23,42,.18);}}
+    ''') if is_og else ''}
+  </style>
+</head>
+<body{' class="og-mode"' if is_og else ''}>
+  <div class="wrap">
+    <button class="oc-toggle" id="ocToggle" style="{'display:none' if is_embed else ''}" title="Toggle dark/light">&#9728;</button>
+    <div class="card">
+      <div class="card-header">
+        <div class="brand">
+          <img src="/static/BR_Mark_dark.png?v=6c0c4828" id="ocLogo" alt="BR Fantasy" style="height:18px;opacity:.9">
+          BR Fantasy
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span class="badge">Trade Outcome{f'<span class="oc-date">{trade_date}</span>' if trade_date else ''}</span>
+        </div>
+      </div>
+
+      <div class="verdict-banner">
+        <div class="vt">{verdict_text}</div>
+        <div class="vd">{t1}: {net_str} value since the trade</div>
+      </div>
+
+      <div class="sides">
+        <div class="side">
+          <div class="side-title">{t1} received</div>
+          <div class="side-total">{total_a:,.1f}<span class="oc-nowlbl">now</span></div>
+          {side_a_html}
+        </div>
+        <div class="side">
+          <div class="side-title">{t2} received</div>
+          <div class="side-total">{total_b:,.1f}<span class="oc-nowlbl">now</span></div>
+          {side_b_html}
+        </div>
+      </div>
+
+      {then_note}
+
+      <div class="footer">
+        <button class="btn btn-outline" onclick="navigator.clipboard.writeText('{share_url}').then(()=>this.textContent='Copied!')" style="{copy_link_style}">Copy link</button>
+      </div>
+    </div>
+    <div style="text-align:center;margin-top:12px;font-size:11px;color:var(--oc-dimmer);{'display:none' if is_embed else ''}">
+      <a href="/" style="color:var(--oc-dimmer);text-decoration:none">brfantasyfootball.com</a>
+      {f'<span style="margin:0 6px;opacity:.4">·</span><span>Shared {shared_date}</span>' if shared_date else ''}
+    </div>
+  </div>
+  <script>
+  (function(){{
+    var root = document.getElementById('ocRoot');
+    function applyTheme(t){{
+      root.setAttribute('data-theme', t);
+      var logo = document.getElementById('ocLogo');
+      if (logo) logo.src = t === 'dark' ? '/static/BR_Mark_dark.png?v=6c0c4828' : '/static/BR_Mark.png?v=6c0c4828';
+      var btn = document.getElementById('ocToggle');
+      if (btn) btn.innerHTML = t === 'dark' ? '&#9728;' : '&#9790;';
+    }}
+    applyTheme({"'light'" if is_og else "localStorage.getItem('sc-card-theme') || (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')"});
+    var toggleBtn = document.getElementById('ocToggle');
+    if (toggleBtn) {{
+      toggleBtn.addEventListener('click', function(){{
+        var t = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+        localStorage.setItem('sc-card-theme', t);
+        applyTheme(t);
+      }});
+    }}
+  }})();
+  </script>
+</body>
+</html>"""
+    return card_html, 200, {"Content-Type": "text/html; charset=utf-8"}
+
+
+@app.route("/trade-outcome-card/<share_id>/og.png")
+def trade_outcome_card_og_image(share_id: str):
+    """Social-share preview image for a shared trade outcome -- a screenshot of
+    the outcome card's og=1 render mode. Falls back to the static logo if
+    headless rendering is unavailable so share links never break."""
+    from dashboard_services.og_render import render_url_to_png
+    render_url = f"{request.host_url.rstrip('/')}/trade-outcome-card/{share_id}?og=1"
+    png = render_url_to_png(
+        render_url, 1200, 630,
+        wait_selector=".card",
+        cache_key=f"outcome:{share_id}",
+    )
+    if not png:
+        return redirect(f"{request.host_url.rstrip('/')}/static/BR_Logo.png?v=6c0c4828")
+    return Response(png, mimetype="image/png",
+                    headers={"Cache-Control": "public, max-age=3600"})
+
+
 # Push-notification subsystem moved to routes/push_bp.py (registered below).
 # _push_broadcast is imported lazily by _notify_changelog_on_startup.
 

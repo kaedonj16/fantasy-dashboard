@@ -18279,7 +18279,10 @@ async function tmLoadTrades(rosterId) {
 }
 
 async function checkTradeOutcome(btn) {
-  const card = btn.closest('.trade-card');
+  // .trade-card covers the team-modal trades tab; .act-trade covers the
+  // activity feed (the old '.trade-card'-only lookup left the feed's button
+  // silently dead).
+  const card = btn.closest('.trade-card, .act-trade');
   if (!card) return;
   const resultEl = card.querySelector('.trade-outcome-result');
   if (!resultEl) return;
@@ -18364,7 +18367,22 @@ async function checkTradeOutcome(btn) {
           ${thenSection}
           <div class="outcome-section-label outcome-section-label--current">Current Value</div>
           <div class="outcome-rows">${nowRows}</div>
+          <div class="outcome-share"><button type="button" class="outcome-share-btn" onclick="shareTradeOutcome(this)">Share</button></div>
         </div>`;
+      // Stash the frozen payload for shareTradeOutcome (verdict + per-asset
+      // then/now values + the two team names for the card).
+      resultEl._outcomeSharePayload = {
+        team_a: firstTeam.team_name || 'Team A',
+        team_b: (teamsData[1] && teamsData[1].team_name) || 'Opponent',
+        trade_date: tradeDate,
+        verdict: data.verdict,
+        net_delta_now: data.net_delta_now,
+        total_received_now: data.total_received_now,
+        total_sent_now: data.total_sent_now,
+        then_estimated: !!data.then_estimated,
+        received: data.received,
+        sent: data.sent,
+      };
     }
 
     resultEl.style.display = 'block';
@@ -18375,6 +18393,39 @@ async function checkTradeOutcome(btn) {
     btn.textContent = 'Check Outcome';
   } finally {
     btn.disabled = false;
+  }
+}
+
+// Mint a shareable /o/<id> link for a rendered trade outcome. The frozen
+// payload was stashed on the result element by checkTradeOutcome.
+async function shareTradeOutcome(btn) {
+  const resultEl = btn.closest('.trade-outcome-result');
+  const payload = resultEl && resultEl._outcomeSharePayload;
+  const shareBox = resultEl && resultEl.querySelector('.outcome-share');
+  if (!payload || !shareBox) return;
+  btn.disabled = true;
+  btn.textContent = 'Saving…';
+  try {
+    const res = await fetch('/api/save-trade-outcome', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(function () { return {}; });
+    if (!res.ok || !data.share_id) throw new Error('save failed');
+    const url = window.location.origin + '/o/' + data.share_id;
+    shareBox.innerHTML =
+      '<a class="outcome-share-link" href="' + url + '" target="_blank" rel="noopener">' + url + '</a>' +
+      '<button type="button" class="outcome-share-btn" data-url="' + url + '" ' +
+      'onclick="navigator.clipboard.writeText(this.dataset.url).then(()=>{this.textContent=\'Copied!\';})">Copy link</button>';
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = 'Share';
+    const err = document.createElement('span');
+    err.className = 'outcome-share-err';
+    err.textContent = ' Could not save. Try again.';
+    shareBox.appendChild(err);
+    setTimeout(function () { err.remove(); }, 4000);
   }
 }
 

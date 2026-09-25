@@ -476,16 +476,14 @@ function openPlayerModal(playerId, playerName, opts) {
       }
       metaEl.innerHTML = metaHTML;
 
-      // Saved watchlist note, shown directly beneath the ownership line.
+      // Watchlist note beneath the ownership line. When the player is watched it
+      // is editable: _pmWlNoteHtml renders the saved note with an Edit button
+      // (or an "Add note" button when empty), and _pmWlNoteEdit swaps it for
+      // an inline editor that saves through the /note endpoint.
       try {
-        if (typeof _getWatchlist === 'function') {
-          const _wlItem = _getWatchlist().find(function (p) { return String(p.player_id) === String(playerId); });
-          const _wlNote = _wlItem && _wlItem.note ? String(_wlItem.note).trim() : '';
-          if (_wlNote) {
-            metaEl.insertAdjacentHTML('beforeend',
-              '<div class="pm-wl-note"><span class="pm-wl-note-star" aria-hidden="true">&#9733;</span>' +
-              escapeHtml(_wlNote) + '</div>');
-          }
+        if (typeof _getWatchlist === 'function' && typeof _pmWlNoteHtml === 'function') {
+          const _watched = _getWatchlist().some(function (p) { return String(p.player_id) === String(playerId); });
+          if (_watched) metaEl.insertAdjacentHTML('beforeend', _pmWlNoteHtml(playerId));
         }
       } catch (e) { /* watchlist store optional */ }
 
@@ -1905,6 +1903,69 @@ function pmInjectContextActions(playerId, playerName, data, leagueId, platform, 
     });
   }
 }
+
+// ── Watchlist note editing on the Overview tab ───────────────────────────────
+// Renders the saved note with an Edit button (or "+ Add note" when empty);
+// the editor commits through _wlSetNote (app.js), which updates localStorage
+// and mirrors to /api/watchlist/note when signed in. Clearing the text
+// deletes the note.
+function _pmWlNoteItem(playerId) {
+  try {
+    if (typeof _getWatchlist !== 'function') return null;
+    return _getWatchlist().find(function (p) { return String(p.player_id) === String(playerId); }) || null;
+  } catch (e) { return null; }
+}
+
+function _pmWlNoteHtml(playerId) {
+  var item = _pmWlNoteItem(playerId);
+  var note = item && item.note ? String(item.note).trim() : '';
+  var pid = escapeHtml(String(playerId));
+  var inner = note
+    ? '<span class="pm-wl-note-star" aria-hidden="true">&#9733;</span>' +
+      '<span class="pm-wl-note-text">' + escapeHtml(note) + '</span>' +
+      '<button type="button" class="pm-wl-note-edit" data-pm-note="' + pid + '">Edit</button>'
+    : '<button type="button" class="pm-wl-note-add" data-pm-note="' + pid + '">+ Add note</button>';
+  return '<div class="pm-wl-note" id="pmWlNote">' + inner + '</div>';
+}
+
+// Swap the note area for an inline editor. Enter/blur commits, Esc cancels.
+// The Escape branch stops propagation so the modal's own Escape-to-close
+// handler does not fire while canceling an edit.
+function _pmWlNoteEdit(playerId) {
+  var wrap = document.getElementById('pmWlNote');
+  if (!wrap) return;
+  var item = _pmWlNoteItem(playerId);
+  var current = item && item.note ? String(item.note) : '';
+  wrap.innerHTML = '<input type="text" class="pm-wl-note-input" maxlength="500" ' +
+    'placeholder="Add a note…" aria-label="Watchlist note">';
+  var input = wrap.querySelector('input');
+  input.value = current;
+  input.focus();
+  input.select();
+  var done = false;
+  function finish(save) {
+    if (done) return;
+    done = true;
+    if (save && typeof _wlSetNote === 'function' && input.value.trim() !== current.trim()) {
+      _wlSetNote(String(playerId), input.value.trim());
+    }
+    // Re-render from storage so the area always reflects the saved state.
+    wrap.outerHTML = _pmWlNoteHtml(playerId);
+  }
+  input.addEventListener('keydown', function (ev) {
+    if (ev.key === 'Enter') { ev.preventDefault(); ev.stopPropagation(); finish(true); }
+    else if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); finish(false); }
+  });
+  input.addEventListener('blur', function () { finish(true); });
+}
+
+document.addEventListener('click', function (e) {
+  var btn = e.target && e.target.closest ? e.target.closest('[data-pm-note]') : null;
+  if (!btn) return;
+  e.preventDefault();
+  e.stopPropagation();
+  _pmWlNoteEdit(btn.getAttribute('data-pm-note'));
+});
 
 // ── Player Modal Tab Switching (global) ──────────────────────────────────────
 function pmSwitchTab(tab, clickEvent) {
