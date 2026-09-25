@@ -195,8 +195,9 @@ def test_api_player_team_known_qb(flask_client, monkeypatch):
         ],
     )
     # Bust payload cache between monkeypatched runs.
-    from app import _TEAM_PAYLOAD_CACHE
+    from app import _TEAM_PAYLOAD_CACHE, _TEAM_OFFENSE_RANKS_CACHE
     _TEAM_PAYLOAD_CACHE.clear()
+    _TEAM_OFFENSE_RANKS_CACHE.clear()
 
     resp = flask_client.get("/api/player-team/4046?season=2025")
     assert resp.status_code == 200
@@ -243,6 +244,9 @@ def test_api_player_team_projection_season(flask_client, monkeypatch):
     monkeypatch.setattr("app.get_players_global", lambda: _mock_sleeper_players())
     monkeypatch.setattr("app._get_pfr_snap_counts_cached", lambda season: {})
     monkeypatch.setattr("app._has_stats_reg_csv", lambda season: False)
+    # Simulate the preseason: no completed games, so the table stays in
+    # projection mode instead of picking up real regular-season finals.
+    monkeypatch.setattr("app._nflverse_team_games_rows", lambda: [])
     monkeypatch.setattr(
         "utils.player_team_schedule.build_team_schedule",
         lambda *a, **k: [],
@@ -278,8 +282,9 @@ def test_api_player_team_projection_season(flask_client, monkeypatch):
         "app._list_team_tab_seasons",
         lambda current: [int(current), int(current) - 1],
     )
-    from app import _TEAM_PAYLOAD_CACHE
+    from app import _TEAM_PAYLOAD_CACHE, _TEAM_OFFENSE_RANKS_CACHE
     _TEAM_PAYLOAD_CACHE.clear()
+    _TEAM_OFFENSE_RANKS_CACHE.clear()
 
     resp = flask_client.get("/api/player-team/4046?season=2026")
     assert resp.status_code == 200
@@ -292,7 +297,8 @@ def test_api_player_team_projection_season(flask_client, monkeypatch):
     assert data["season"] == 2026
     assert data["available_seasons"] == [2026, 2025]
     assert data["ranks"]["pass_yds"] is not None
-    assert data["ranks"]["pass_yds"]["value"] >= 4200
+    # Per-game now: mocked 4200 + 200 team pass yards / 17.
+    assert data["ranks"]["pass_yds"]["value"] >= 4400 / 17
     assert data["ranks_more"]["pass_rate"] is not None
     assert data.get("schedule") == []
 

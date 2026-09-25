@@ -644,7 +644,8 @@ class Tank01Error(Exception):
 @ttl_cache(ttl=300)
 def get_nfl_scores_for_date(game_date: str, timeout: int = 20) -> dict:
     """
-    Wraps Tank01 getNFLScoresOnly.
+    Wraps the ESPN scoreboard for one date (``nfl_game_data.scoreboard_for_date``),
+    with an nflverse fallback for final scores when ESPN refuses.
 
     game_date: 'YYYYMMDD' string, e.g. '20251204'
     timeout: upstream request budget in seconds. Ordinary pages keep the
