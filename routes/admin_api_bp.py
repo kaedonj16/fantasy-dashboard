@@ -40,6 +40,15 @@ def get_league_ctx_from_cache(*a, **k):
     return _fn(*a, **k)
 
 
+# In-memory model value cache (also bust across gunicorn workers via the shared
+# marker in _touch_value_cache_bust). Initialized here so readers like
+# /api/debug-values never hit a NameError on a fresh worker before the first
+# flush; previously these names only came into existence via `global` the first
+# time /api/flush-value-cache ran.
+_MODEL_VALUE_CACHE = None
+_MODEL_VALUE_CACHE_TS = 0
+
+
 @admin_api_bp.route("/api/prewarm-league")
 @limiter.limit("60 per minute")
 def api_prewarm_league():
@@ -287,6 +296,11 @@ def api_debug_values():
     """
     Diagnostic endpoint for value provenance.
 
+    Auth: same CRON_SECRET gate as the sibling admin endpoints
+    (/api/flush-value-cache, /api/run-daily-cron). Pass the secret as
+    ``?secret=``, an ``X-Cron-Secret`` header, or JSON ``{"secret": ...}``.
+    Fails closed with 403 when CRON_SECRET is unset or does not match.
+
     Default: the top-20 players by value_1qb with their WLS/calibration columns,
     so you can confirm whether the WLS trade calibration is landing in the DB
     (calibration_backing = trade weight behind WLS; a weight near 0 means WLS is
@@ -296,6 +310,21 @@ def api_debug_values():
     player_values row (incl. calibration_backing), the FantasyCalc /
     DynastyProcess vendor values, and the last 14 daily history points.
     """
+    # CRON_SECRET check, identical to the sibling admin endpoints: require the
+    # secret to be set AND match -- when CRON_SECRET is unset the old
+    # `if secret and ...` guard would pass any request (short-circuit on falsy).
+    # GET has no JSON body by convention, so ?secret= and X-Cron-Secret are
+    # accepted in addition to the JSON body form the POST siblings use.
+    secret = os.environ.get("CRON_SECRET", "")
+    provided = str(
+        request.args.get("secret")
+        or request.headers.get("X-Cron-Secret")
+        or (request.get_json(silent=True) or {}).get("secret")
+        or ""
+    )
+    if not secret or not provided or not hmac.compare_digest(provided, secret):
+        return jsonify({"error": "unauthorized"}), 403
+
     _COLS = (
         "player_id, position, value_1qb, value_sf, "
         "calibrated_value_1qb, calibrated_value_sf, "
