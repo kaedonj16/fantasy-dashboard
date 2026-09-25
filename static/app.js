@@ -10982,7 +10982,12 @@ if (!platformBtns.length) return;
     const loadSignedInLeagues = (options) => window.brGetMyLeagues(options).then((data) => {
       const leagues = data.leagues || [];
       if (!leagues.length) {
+        // Fresh sign-in with nothing saved yet: drop straight into the claim
+        // flow instead of parking behind a "connect another league" button.
         signedInLeagueList.textContent = "Connect your first fantasy league below.";
+        const addLeagueBtn = document.getElementById("signedInAddLeague");
+        if (addLeagueBtn) addLeagueBtn.textContent = "Connect your first league";
+        setHomeCardState("connect");
         return;
       }
       const pageSize = 3;

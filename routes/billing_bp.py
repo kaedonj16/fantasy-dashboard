@@ -689,6 +689,10 @@ def _pricing_body() -> str:
       <section class="pricing-section pricing-plans" aria-labelledby="pricing-plans-title">
         <div class="pricing-section-heading"><h2 id="pricing-plans-title">Choose who gets PRO</h2><p>One annual charge. No monthly-price shorthand.</p></div>
         <div class="pricing-plan-grid">{plan_cards}</div>
+        <aside class="pricing-proof" aria-label="What managers say">
+          <blockquote>THATS ACTUALLY SO SICK BRO</blockquote>
+          <p>Jayden Waddell, Pittsburgh Pilots, on the weekly recap</p>
+        </aside>
         <p class="pricing-auth-note"><i class="fa-brands fa-google" aria-hidden="true"></i> Google sign-in is required to subscribe and keep access with your account.</p>
       </section>
 
