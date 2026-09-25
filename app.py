@@ -24174,22 +24174,38 @@ def _get_pfr_snap_counts_cached(season: int) -> dict:
 
 
 def _usage_for_player(player_id: str, players_index: dict, usage_table: dict) -> dict:
-    """Resolve usage block for a player from index or usage table."""
-    meta = (players_index or {}).get(str(player_id)) or {}
-    usage = meta.get("usage")
-    if isinstance(usage, dict) and usage:
-        return usage
+    """Resolve usage block for a player, preferring the daily usage table.
+
+    The usage table is rebuilt daily from Sleeper stats; the usage embedded in
+    the relevant-players index is only attached when a player is first added,
+    so it can go stale for existing players. Fall back to the embedded block
+    only when the table has no record for the player.
+    """
+    if not player_id:
+        return {}
+    pid = str(player_id)
     if isinstance(usage_table, dict):
-        u = usage_table.get(str(player_id))
-        if isinstance(u, dict):
+        u = usage_table.get(pid)
+        if isinstance(u, dict) and u:
             return u
     if isinstance(usage_table, list):
         for row in usage_table:
             if not isinstance(row, dict):
                 continue
             rid = str(row.get("id") or row.get("sleeper_id") or "")
-            if rid == str(player_id):
+            if rid != pid:
+                continue
+            inner = row.get("usage")
+            if isinstance(inner, dict) and inner:
+                return inner
+            # Tolerate a flat row that already carries usage keys.
+            if any(k in row for k in ("target_share", "carry_share", "touch_share", "ppr_per_game")):
                 return row
+            break
+    meta = (players_index or {}).get(pid) or {}
+    usage = meta.get("usage")
+    if isinstance(usage, dict) and usage:
+        return usage
     return {}
 
 
@@ -24774,6 +24790,10 @@ def api_nfl_team_details():
         full_players = get_players_global() or {}
         usage_index = load_relevant_index() or players_index
         usage_table = load_usage_table()
+        try:
+            usage_season = int((get_nfl_state() or {}).get("season") or season)
+        except Exception:
+            usage_season = season
         snap_season = (
             stats_season
             if _has_stats_reg_csv(stats_season)
@@ -24817,10 +24837,10 @@ def api_nfl_team_details():
                 offense.get("in_progress_weeks") or [],
             ),
             "roster_note": "Current roster",
-            "usage_season": snap_season,
-            "usage_note": f"Usage is from the {snap_season} season (latest available)."
-            if snap_season != season
-            else f"Usage is from the {snap_season} season.",
+            "usage_season": usage_season,
+            "usage_note": f"Usage is from the {usage_season} season (latest available)."
+            if usage_season != season
+            else f"Usage is from the {usage_season} season.",
             "depth_chart": depth_chart,
             "oline": oline_team,
             "schedule": schedule,
