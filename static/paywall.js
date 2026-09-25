@@ -214,6 +214,35 @@ window.showPaywall = function showPaywall(feature, opts) {
   modal.querySelector('.paywall-close').addEventListener('click', closePaywall);
   const first = focusables()[0];
   if (first) try { first.focus(); } catch (_) {}
+  _maybeAddTrialCta(modal);
+}
+
+/**
+ * Prepend a one-click free-trial CTA to the paywall modal when the visitor
+ * could still claim one. trial_available comes from /api/subscription-status
+ * (signed in, never used the trial, not already PRO). Guests always see it:
+ * the start endpoint routes them through Google sign-in first, then starts
+ * the trial automatically.
+ */
+function _maybeAddTrialCta(modal) {
+  var body = modal && modal.querySelector('.paywall-body');
+  if (!body || body.querySelector('.paywall-trial-strip')) return;
+  var showForGuest = !window._hasAccount;
+  getSubscriptionInfo().then(function (d) {
+    if (!d || d.has_premium) return;
+    if (!d.trial_available && !showForGuest) return;
+    var strip = document.createElement('div');
+    strip.className = 'paywall-trial-strip';
+    strip.innerHTML =
+      '<div class="paywall-trial-copy"><strong>New to PRO?</strong>' +
+      '<span>Start a 7-day free trial. No card required.</span></div>' +
+      '<button type="button" class="btn btn-primary paywall-trial-btn">Start free trial</button>';
+    strip.querySelector('.paywall-trial-btn').addEventListener('click', function () {
+      var next = window.location.pathname + window.location.search;
+      window.location.href = '/pro-trial/start?next=' + encodeURIComponent(next);
+    });
+    body.insertBefore(strip, body.firstChild);
+  }).catch(function () {});
 }
 
 function _hasGoogleAccount() {
