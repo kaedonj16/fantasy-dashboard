@@ -525,6 +525,26 @@
 .pricing-faq summary, .paywall-more summary { cursor:pointer; font-weight:700; }
 .pricing-faq details p, .paywall-more p { margin:8px 0 0; color:var(--text-muted); font-size:13px; line-height:1.5; }
 .pricing-alert { margin-bottom:18px; padding:12px 16px; border:1px solid #fecaca; border-radius:10px; background:#fef2f2; color:#b91c1c; }
+
+/* Dismissible inline upsell nudge (brUpsell.nudge). Slim, in-flow, mobile-safe:
+   never a gate, never a modal, and the x remembers the dismissal. */
+.br-upsell-nudge { display:flex; align-items:center; gap:10px; padding:10px 12px;
+  border:1px dashed var(--border); border-radius:12px;
+  background:color-mix(in srgb, var(--brand-blue, #2563eb) 6%, var(--card)); font-size:13px; line-height:1.4; }
+.br-upsell-nudge-msg { flex:1; min-width:0; color:var(--text); }
+.br-upsell-nudge-cta { flex-shrink:0; padding:7px 14px; border:none; border-radius:9px;
+  background:linear-gradient(135deg,#122d4b,#2563eb); color:#fff; font-size:12.5px; font-weight:700; cursor:pointer; white-space:nowrap; }
+.br-upsell-nudge-x { flex-shrink:0; border:none; background:none; color:var(--text-muted);
+  cursor:pointer; font-size:13px; padding:6px; line-height:1; border-radius:8px; }
+.br-upsell-nudge-x:hover { color:var(--text); background:var(--row); }
+@media (max-width:600px) {
+  .br-upsell-nudge { font-size:12.5px; padding:9px 10px; }
+  .br-upsell-nudge-cta { padding:7px 11px; }
+}
+
+/* Player modal metrics-tab PRO footer: a faint one-liner under the metrics. */
+.pm-pro-footer { margin:10px 0 4px; }
+.pm-pro-footer .br-upsell-nudge { font-size:12px; padding:8px 10px; background:transparent; }
 .paywall-body .paywall-benefit { max-width:620px; margin:0 auto 4px; }
 .paywall-body .paywall-pricing { margin-top:18px; }
 .paywall-more { max-width:620px; margin:10px auto 0; text-align:left; }

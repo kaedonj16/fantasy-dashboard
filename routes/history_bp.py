@@ -34,6 +34,20 @@ logger = logging.getLogger(__name__)
 history_bp = Blueprint("history", __name__)
 
 
+def _wrapped_request_has_premium(platform, season, league_id) -> bool:
+    """Per-user PRO check for the wrapped overlay endpoints. Fail closed."""
+    from flask import session
+    from dashboard_services.subscriptions import has_premium_for_viewer
+    try:
+        return bool(has_premium_for_viewer(
+            session.get("viewer_username"), session.get("viewer_user_id"),
+            league_id, platform or "sleeper", season,
+        ))
+    except Exception:
+        logger.debug("wrapped premium check failed", exc_info=True)
+        return False
+
+
 @history_bp.route("/api/history/ai-recap")
 @limiter.limit("10 per minute")
 def history_ai_recap():
@@ -163,7 +177,10 @@ def api_history_wrapped(platform: str, season: int, league_id: str):
 
         # Summary is cheap and the overlay builder needs it; cache it on the ctx.
         history_ctx.setdefault("summary", _build_summary(history_ctx))
-        html = render_history_wrapped_overlay(history_ctx, history_season)
+        show_pro_cta = not _wrapped_request_has_premium(
+            platform, season, resolved_history_league_id)
+        html = render_history_wrapped_overlay(history_ctx, history_season,
+                                              show_pro_cta=show_pro_cta)
         return jsonify({"html": html})
 
     except HTTPException:

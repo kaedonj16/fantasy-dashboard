@@ -1338,7 +1338,8 @@ def _wrapped_row_html(k, n, v) -> str:
 
 def _wrapped_overlay_markup(slides: list, share_data: dict | None = None,
                             season=None, ns: str = "wrapped",
-                            footer_label: str | None = None) -> str:
+                            footer_label: str | None = None,
+                            show_pro_cta: bool = False) -> str:
     """Return the Season Wrapped overlay markup (no launch button, no script) so
     it can be fetched and injected lazily. '' when there isn't enough to tell a
     story. Editorial layout: left-aligned content on a strict margin, a kicker
@@ -1499,8 +1500,9 @@ def _wrapped_overlay_markup(slides: list, share_data: dict | None = None,
         )
 
     share_json = json.dumps(share_data or {}).replace("</", "<\\/")
+    _pro_cta_attr = ' data-pro-cta="1"' if show_pro_cta else ""
     return f"""
-    <div class="wrapped-overlay" id="{ns}Overlay" hidden aria-hidden="true">
+    <div class="wrapped-overlay" id="{ns}Overlay" hidden aria-hidden="true"{_pro_cta_attr}>
       <div class="wrapped-progress">{bars}</div>
       <button type="button" class="wrapped-share" id="{ns}Share" aria-label="Share">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg><span>Share</span>
@@ -1562,9 +1564,12 @@ def _wrapped_share_data(slides: list, summary: dict, league_name: str, season) -
     }
 
 
-def render_history_wrapped_overlay(history_ctx: dict, selected_history_season) -> str:
+def render_history_wrapped_overlay(history_ctx: dict, selected_history_season,
+                                  show_pro_cta: bool = False) -> str:
     """Build the full Season Wrapped overlay markup (including the boxscore-backed
-    MVP / position slides). Called by the lazy /wrapped endpoint on first open."""
+    MVP / position slides). Called by the lazy /wrapped endpoint on first open.
+    ``show_pro_cta`` appends the free-user "Unlock the full story with PRO"
+    finale slide client-side (never on public share pages)."""
     league = history_ctx.get("league") or {}
     league_name = league.get("name") or "League History"
     summary = history_ctx.get("summary") or _build_summary(history_ctx)
@@ -1580,7 +1585,8 @@ def render_history_wrapped_overlay(history_ctx: dict, selected_history_season) -
             "sub": "Tap Share to send it to the group chat",
             "bgword": "RECAP", "recap": share_data,
         })
-    return _wrapped_overlay_markup(slides, share_data, season=selected_history_season)
+    return _wrapped_overlay_markup(slides, share_data, season=selected_history_season,
+                                   show_pro_cta=show_pro_cta)
 
 
 # ── Weekly Wrapped ────────────────────────────────────────────────────────────
@@ -1997,10 +2003,11 @@ def _wrapped_weekly_share_data(slides: list, league_name: str, season, week) -> 
     }
 
 
-def render_weekly_wrapped_overlay(ctx: dict, week) -> str:
+def render_weekly_wrapped_overlay(ctx: dict, week, show_pro_cta: bool = False) -> str:
     """Build the full Weekly Wrapped overlay markup (including the boxscore-backed
     top-player / position-leader / dud slides). Called by the lazy /wrapped
-    endpoint on first open."""
+    endpoint on first open. ``show_pro_cta`` appends the free-user "Unlock the
+    full story with PRO" finale slide client-side (never on public share pages)."""
     league = ctx.get("league") or {}
     league_name = league.get("name") or "League"
     season = ctx.get("season")
@@ -2017,7 +2024,8 @@ def render_weekly_wrapped_overlay(ctx: dict, week) -> str:
             "bgword": "RECAP", "recap": share_data,
         })
     return _wrapped_overlay_markup(slides, share_data, ns="weekly-wrapped",
-                                   footer_label=f"WEEK {week}")
+                                   footer_label=f"WEEK {week}",
+                                   show_pro_cta=show_pro_cta)
 
 
 def _week_is_done(ctx: dict, season, week) -> bool:
@@ -2467,6 +2475,78 @@ _WRAPPED_BOOTSTRAP_JS = r"""
     var stage = document.getElementById('wrappedStage');
     var slides = Array.prototype.slice.call(stage.querySelectorAll('.wrapped-slide'));
     var bars = Array.prototype.slice.call(overlay.querySelectorAll('.wrapped-bar'));
+
+    // PRO finale slide (client-side, free in-app users only): the deck ends on
+    // an "Unlock the full story with PRO" CTA instead of just stopping. The
+    // server sets data-pro-cta="1" on the overlay only for non-PRO viewers, so
+    // public share decks never get it. Appended before the slides/bars arrays
+    // are finalized so progress bars, auto-advance, and the finale hold treat
+    // it like a normal slide. Dismissible ("Not now"); the dismissal is
+    // remembered in localStorage so it never re-nags.
+    (function _maybeAppendProSlide() {
+      if (!overlay || !stage) return;
+      if (window.__wrappedSharePublic) return;
+      if (overlay.getAttribute('data-pro-cta') !== '1') return;
+      var KEY = 'wrapped-pro-cta';
+      var dismissed = false;
+      try {
+        if (window.brUpsell && window.brUpsell.dismissed(KEY)) dismissed = true;
+        else {
+          var _raw = localStorage.getItem('br-upsell-dismissed.v1');
+          if (_raw && JSON.parse(_raw)[KEY]) dismissed = true;
+        }
+      } catch (_) {}
+      if (dismissed) return;
+      var sec = document.createElement('section');
+      sec.className = 'wrapped-slide';
+      sec.setAttribute('data-kind', 'pro-cta');
+      sec.innerHTML =
+        '<div class="wrapped-bgword" aria-hidden="true">PRO</div>' +
+        '<div class="wrapped-kicker"><span class="wrapped-kicker-rule"></span>' +
+        '<span class="wrapped-kicker-txt">GO FURTHER</span></div>' +
+        '<div class="wrapped-pro-title">Unlock the full story with PRO</div>' +
+        '<div class="wrapped-divider"></div>' +
+        '<div class="wrapped-sub">Front Office Report, Breakout Engine, and AI trade analysis for your league.</div>' +
+        '<div class="wrapped-pro-ctas">' +
+          '<button type="button" class="wrapped-pro-go">Unlock PRO</button>' +
+          '<button type="button" class="wrapped-pro-dismiss">Not now</button>' +
+        '</div>';
+      stage.appendChild(sec);
+      var prog = overlay.querySelector('.wrapped-progress');
+      if (prog) {
+        var bar = document.createElement('span');
+        bar.className = 'wrapped-bar';
+        bar.innerHTML = '<i></i>';
+        prog.appendChild(bar);
+      }
+      // Re-gather so the new slide/bar participate in nav and progress.
+      slides = Array.prototype.slice.call(stage.querySelectorAll('.wrapped-slide'));
+      bars = Array.prototype.slice.call(overlay.querySelectorAll('.wrapped-bar'));
+      var goBtn = sec.querySelector('.wrapped-pro-go');
+      if (goBtn) goBtn.addEventListener('click', function () {
+        if (typeof window.showPaywall === 'function') window.showPaywall('wrapped-pro');
+        else window.location.href = '/pricing';
+      });
+      var noBtn = sec.querySelector('.wrapped-pro-dismiss');
+      if (noBtn) noBtn.addEventListener('click', function () {
+        try {
+          if (window.brUpsell) window.brUpsell.dismiss(KEY);
+          else {
+            var _r2 = localStorage.getItem('br-upsell-dismissed.v1');
+            var _o = _r2 ? JSON.parse(_r2) : {};
+            _o[KEY] = new Date().toISOString();
+            localStorage.setItem('br-upsell-dismissed.v1', JSON.stringify(_o));
+          }
+        } catch (_) {}
+        if (typeof close === 'function') close();
+      });
+      // Like a normal finale, tapping anywhere else on the slide closes.
+      sec.addEventListener('click', function (e) {
+        if (e.target && e.target.closest && e.target.closest('button')) return;
+        if (typeof close === 'function') close();
+      });
+    })();
+
     var idx = 0, timer = null, DUR = 5000;   // each slide auto-advances after DUR
     var paused = false, slideStart = 0, pausedAt = 0;   // pause/resume state
     var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;

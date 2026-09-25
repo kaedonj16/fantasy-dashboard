@@ -3887,6 +3887,31 @@ window.advPickSeason = function(playerId, leagueId, yr) {
   loadAdvancedMetrics(playerId, leagueId, next.join(','));
 };
 
+/**
+ * Player modal metrics tab: PRO metrics (VORP, WAR, WOPR, trends) are stripped
+ * server-side for free users. After a successful metrics render, free users
+ * get one slim dismissible line saying what was omitted, with a one-tap
+ * upgrade path. The dismissal is remembered (brUpsell infra in paywall.js),
+ * so it never nags. PRO users and error/empty states see nothing.
+ */
+function _pmMaybeProFooter(contentEl) {
+  try {
+    var root = document.getElementById('page-root');
+    if (!root || root.getAttribute('data-premium') === 'true') return;
+    if (!window.brUpsell) return;
+    var wrap = document.createElement('div');
+    wrap.className = 'pm-pro-footer';
+    contentEl.appendChild(wrap);
+    var shown = window.brUpsell.nudge(wrap, {
+      key: 'pm-metrics',
+      feature: 'advanced-metrics-metric-wopr',
+      message: 'PRO adds VORP, WAR, WOPR, and trend intelligence for every player.',
+      ctaLabel: 'Unlock'
+    });
+    if (!shown && wrap.parentNode) wrap.parentNode.removeChild(wrap);
+  } catch (_) { /* never break the metrics tab for a prompt */ }
+}
+
 function loadAdvancedMetrics(playerId, leagueId, season, weekStart, weekEnd) {
   const token = ++_advMetricsToken;
   const contentEl = document.getElementById('advancedMetricsContent');
@@ -4073,11 +4098,14 @@ function loadAdvancedMetrics(playerId, leagueId, season, weekStart, weekEnd) {
             const counts = (ranksData && ranksData.counts) ? ranksData.counts : null;
             const bounds = (ranksData && ranksData.bounds) ? ranksData.bounds : null;
             contentEl.innerHTML = buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive, counts, bounds, ranksData && ranksData.qualification);
+            _pmMaybeProFooter(contentEl);
           }).catch(function() {
             contentEl.innerHTML = buildAdvancedMetricsHTML(metricsData, null, cfg, weekActive, null, null);
+            _pmMaybeProFooter(contentEl);
           });
         } else {
           contentEl.innerHTML = buildAdvancedMetricsHTML(metricsData, null, cfg, weekActive, null, null);
+          _pmMaybeProFooter(contentEl);
         }
       });
 
