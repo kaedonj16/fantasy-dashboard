@@ -8236,8 +8236,13 @@ def _viewer_lineup_alert_html(ctx: dict, viewer_roster_id) -> str:
             roster_positions = ctx.get("roster_positions")
             if roster_positions is not None and hasattr(roster_positions, "tolist"):
                 roster_positions = roster_positions.tolist()
+            injury_status = {
+                pid: str((full_players.get(pid) or {}).get("injury_status") or "")
+                for pid in eligible
+            }
             swaps = projection_upgrades(
-                starters, eligible, proj_map, pos_map, roster_positions or []
+                starters, eligible, proj_map, pos_map, roster_positions or [],
+                injury_status=injury_status,
             )
             for s in swaps:
                 _in_name = (players_map.get(s["in"]) or {}).get("name") or f"Player {s['in']}"

@@ -12,6 +12,13 @@ from typing import Dict, List, Optional, Set
 # Compared case-insensitively: Sleeper commonly sends "OUT" / "SUSP".
 SERIOUS_INJURY_STATUSES = {"OUT", "DOUBTFUL", "IR", "PUP", "SUS", "SUSP", "NA", "NFI"}
 
+# Stricter set for swap suggestions: a swap nudge is an affirmative
+# recommendation to START someone, so any injury designation (including
+# Questionable) disqualifies a bench player from being suggested. Sitting an
+# injured starter for a healthy player is still suggested; only the "in" side
+# is filtered.
+SWAP_EXCLUDED_STATUSES = SERIOUS_INJURY_STATUSES | {"QUESTIONABLE"}
+
 # Placeholder ids Sleeper uses for an unfilled starting slot.
 EMPTY_SLOT_IDS = {"0", "", "None"}
 
@@ -78,6 +85,7 @@ def projection_upgrades(
     roster_positions: List[str],
     min_gain: float = 2.0,
     max_swaps: int = 2,
+    injury_status: Optional[Dict[str, str]] = None,
 ) -> List[dict]:
     """Same-position bench-for-starter swaps that raise projected points.
 
@@ -88,6 +96,11 @@ def projection_upgrades(
     cross-position flex upgrades are deliberately left out rather than risk
     recommending an impossible lineup.
 
+    Players with an injury designation are never suggested as the "in" side:
+    projections go stale when injury news breaks, so an Out/Doubtful player can
+    otherwise out-project a healthy starter and get recommended despite
+    probably not playing. Injured starters remain valid "out" candidates.
+
     Args:
         starters: current starter pids in slot order ("0" = empty slot).
         eligible_players: pids allowed to start (active roster, i.e. not on
@@ -97,6 +110,8 @@ def projection_upgrades(
         roster_positions: league slot list (e.g. ["QB","RB","RB","FLEX",...]).
         min_gain: minimum projected-point gain for a swap to be worth a nudge.
         max_swaps: cap on suggestions, best first.
+        injury_status: optional {pid: injury designation}; pids in
+            SWAP_EXCLUDED_STATUSES are excluded from the "in" side.
 
     Returns [{"in": pid, "out": pid, "gain": float}], best gain first.
     """
@@ -104,6 +119,13 @@ def projection_upgrades(
 
     starter_set = {str(p) for p in starters or [] if str(p) not in EMPTY_SLOT_IDS}
     pids = [str(p) for p in eligible_players or [] if str(p) not in EMPTY_SLOT_IDS]
+    if injury_status:
+        excluded = {
+            p for p in pids
+            if str(injury_status.get(p) or "").strip().upper() in SWAP_EXCLUDED_STATUSES
+        }
+        if excluded:
+            pids = [p for p in pids if p not in excluded]
     if not pids or not proj_map or not roster_positions or not starter_set:
         return []
 

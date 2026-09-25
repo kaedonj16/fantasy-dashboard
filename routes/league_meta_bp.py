@@ -487,9 +487,14 @@ def api_lineup_lock_hint():
                 pid: str((nfl_players.get(pid) or {}).get("position") or "")
                 for pid in eligible
             }
+            injury_status = {
+                pid: str((nfl_players.get(pid) or {}).get("injury_status") or "")
+                for pid in eligible
+            }
             swaps = projection_upgrades(
                 starters, eligible, proj_map_wk, pos_map,
                 roster_positions, min_gain=2.0, max_swaps=2,
+                injury_status=injury_status,
             )
             if swaps:
                 names = {}
