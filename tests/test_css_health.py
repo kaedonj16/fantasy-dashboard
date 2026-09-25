@@ -125,3 +125,22 @@ def test_rz_tokens_defined_on_root_for_out_of_page_surfaces():
     assert root_block, ":root, .rz-page token block missing"
     for token in ("--rz-card", "--rz-border", "--rz-text", "--rz-muted"):
         assert token in root_block.group(1), f"{token} not defined on :root"
+
+
+def test_rz_boxscore_sheet_clears_mobile_dock():
+    """Regression: the game box-score sheet used z-index 90/91, below the
+    mobile dock (.br-tabbar at --z-chrome), so its lower rows slid under the
+    dock and the body never scrolled on iOS. The sheet must sit at modal
+    level and its body must be a shrinking flex child of the max-height
+    column sheet."""
+    css = _css()
+    sheet = re.search(r"\.rz-bs-sheet\s*\{([^}]*)\}", css)
+    assert sheet, ".rz-bs-sheet block missing"
+    assert "var(--z-modal)" in sheet.group(1), \
+        ".rz-bs-sheet must clear the dock at --z-modal"
+    body = re.search(r"\.rz-bs-body\s*\{([^}]*)\}", css)
+    assert body, ".rz-bs-body block missing"
+    assert "min-height: 0" in body.group(1), \
+        ".rz-bs-body needs min-height: 0 to shrink and scroll inside the sheet"
+    assert "env(safe-area-inset-bottom)" in body.group(1), \
+        ".rz-bs-body bottom padding must clear the home indicator"
