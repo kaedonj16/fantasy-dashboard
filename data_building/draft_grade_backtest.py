@@ -34,6 +34,7 @@ import math
 from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
+from utils.draft_grade import clamp01
 from utils.pick_score import PS_AGE_PEAKS, PS_WEIGHTS, compute_pick_score
 
 
@@ -501,11 +502,7 @@ def _facet_youth(pos, age) -> float:
     if p not in ("QB", "RB", "WR", "TE"):
         return 0.5
     peak = PS_AGE_PEAKS.get(p, 27)
-    return _clamp01_local((peak - a + 4) / 8)
-
-
-def _clamp01_local(x: float) -> float:
-    return 0.0 if x < 0 else 1.0 if x > 1 else x
+    return clamp01((peak - a + 4) / 8)
 
 
 def team_facet_scores(sample: TeamSample) -> Dict[str, Optional[float]]:
@@ -545,7 +542,7 @@ def team_facet_scores(sample: TeamSample) -> Dict[str, Optional[float]]:
             wn_sum += float(ppgn) * wt
             wn_w += wt
         mv = float(pk.get("max_val") or 0) or 1.0
-        vnorm = _clamp01_local(float(pk.get("value") or 0) / mv)
+        vnorm = clamp01(float(pk.get("value") or 0) / mv)
         fut_vals.append(_facet_youth(pk.get("pos"), pk.get("age")) * vnorm)
 
     win_now = (wn_sum / wn_w) if wn_w > 0 else None
@@ -575,7 +572,7 @@ def team_facet_scores(sample: TeamSample) -> Dict[str, Optional[float]]:
         graded += counts[pos]
     eff = (useful / graded) if graded > 0 else 1.0
     cov_w, bal_w, eff_w = dr_construction_mix(dtype)
-    depth = _clamp01_local(cov_w * coverage + bal_w * (bsum / 4) + eff_w * eff)
+    depth = clamp01(cov_w * coverage + bal_w * (bsum / 4) + eff_w * eff)
 
     return {"win_now": win_now, "future": future, "depth": depth}
 
