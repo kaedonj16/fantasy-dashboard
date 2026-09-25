@@ -144,3 +144,16 @@ def test_rz_boxscore_sheet_clears_mobile_dock():
         ".rz-bs-body needs min-height: 0 to shrink and scroll inside the sheet"
     assert "env(safe-area-inset-bottom)" in body.group(1), \
         ".rz-bs-body bottom padding must clear the home indicator"
+
+
+def test_rz_sync_bar_styles_exist():
+    """Regression: the visit-reconcile "updating" bar must exist as a fixed
+    top bar with an .on state, an indeterminate creep animation, and a
+    reduced-motion fallback."""
+    css = _css()
+    bar = re.search(r"\.rz-sync-bar\s*\{([^}]*)\}", css)
+    assert bar, ".rz-sync-bar block missing"
+    assert "position: fixed" in bar.group(1), "sync bar must pin to the viewport"
+    assert re.search(r"\.rz-sync-bar\.on\s*\{", css), ".rz-sync-bar.on state missing"
+    assert "@keyframes rz-sync-creep" in css, "sync bar creep animation missing"
+    assert "prefers-reduced-motion" in css, "sync bar needs a reduced-motion fallback"

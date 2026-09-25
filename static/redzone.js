@@ -115,6 +115,10 @@
   var _RZ_FETCH_DEADLINE_MS  = 25000; // single league / aggregate user fetch
   var _RZ_STREAM_DEADLINE_MS = 90000; // whole My Leagues portfolio stream (up to 12 leagues)
   var _RZ_STREAM_IDLE_MS     = 20000; // no stream chunk for this long -> treat as stalled
+  // Off-day visit reconcile: only re-fetch when the injected snapshot is older
+  // than this (15 min). Game days always reconcile; a fresh off-day server
+  // render costs zero extra requests.
+  var _VISIT_RECONCILE_STALE_MS = 900000;
   // Last-good payload per scope so My Leagues → This League never paints
   // portfolio (cross-league) data under the league-scoped chrome.
   var _scopeCache = { league: null, user: null };
@@ -4731,6 +4735,57 @@
     });
   }
 
+  // Age of the server-injected snapshot in ms, from its own updated_at clock.
+  // Returns -1 when unknown (missing/zero) -- callers treat that as stale.
+  function _snapshotAgeMs() {
+    var t = _state && parseFloat(_state.updated_at || 0);
+    if (!(t > 0)) return -1;
+    return Date.now() - t * 1000;
+  }
+
+  // Visit reconcile: landing on Redzone (native load after another page, PWA
+  // launch, or a service-worker-cached shell) re-syncs with the live API once,
+  // right after first paint. Game days always reconcile -- plays may have
+  // happened since the snapshot was generated. Off-days reconcile only when
+  // the snapshot is stale, so a fresh server render costs zero extra requests.
+  // Runs as backfill so already-played events never fire live alerts, and never
+  // piles onto a poll/stream that already owns the network. Shows the thin
+  // "updating" sync bar while the reconcile's network request is in flight so
+  // the refresh is visible instead of silent.
+  // Thin "updating" bar pinned to the viewport top while the visit reconcile
+  // re-syncs. Created lazily on first use; harmless if the DOM isn't ready.
+  var _syncBarEl = null;
+  function _syncBar(on) {
+    if (on) {
+      if (!_syncBarEl) {
+        _syncBarEl = document.createElement('div');
+        _syncBarEl.className = 'rz-sync-bar';
+        _syncBarEl.setAttribute('aria-hidden', 'true');
+        document.body.appendChild(_syncBarEl);
+      }
+      void _syncBarEl.offsetWidth; // restart the creep animation on re-show
+      _syncBarEl.classList.add('on');
+    } else if (_syncBarEl) {
+      _syncBarEl.classList.remove('on');
+    }
+  }
+  function _visitReconcile() {
+    if (_inflight || _streaming) return; // a poll or the user-scope stream already owns the feed
+    var p;
+    if (_isDemo) {
+      p = _refresh();
+    } else {
+      var snapAge = _snapshotAgeMs();
+      var stale = snapAge < 0 || snapAge > _VISIT_RECONCILE_STALE_MS;
+      if (!_isGameDay() && !stale) return; // fresh off-day snapshot: nothing to do
+      _rzLog('visit-reconcile', { gameDay: _isGameDay(), snapAgeMs: snapAge });
+      p = (_scope === 'user') ? _refreshUserStream() : _refresh({ backfill: true }); // user stream always reconciles as bulk
+    }
+    _syncBar(true);
+    if (p && typeof p.then === 'function') p.then(function() { _syncBar(false); }, function() { _syncBar(false); });
+    else _syncBar(false);
+  }
+
   function _nextGameEpoch() {
     var now = Date.now() / 1000;
     var earliest = Infinity;
@@ -4789,6 +4844,7 @@
     _visListenersWired = true;
     var _resumeIfStale = function() {
       if (document.hidden) return;
+      if (_inflight || _streaming) return; // a request already owns the network; let it land
       if (!_isDemo && !_isGameDay()) return;
       // Skip a redundant refresh when data is already fresh and nothing failed.
       if (!_lastPollFailed && _lastDataAt != null
@@ -4798,6 +4854,10 @@
     };
     document.addEventListener('visibilitychange', _resumeIfStale);
     window.addEventListener('online', _resumeIfStale);
+    // BFCache restores (back/forward) don't reliably fire visibilitychange;
+    // pageshow with persisted=true covers the return-to-Redzone case the same
+    // way. The freshness + in-flight guards above dedupe the double fire.
+    window.addEventListener('pageshow', function(e) { if (e && e.persisted) _resumeIfStale(); });
   }
 
   // Seed initial matchup points so first refresh doesn't trigger flash
@@ -4814,31 +4874,25 @@
   _saveScopeRuntime(_scope); // initial real PBP is immediately restorable
   _alertsArmed = true;       // initial feed is backfill; only live polls alert after this
   _applyDefaultHero();       // no-op unless prefs restored a hero; focus stays opt-in by default
-  // The page loaded with a fresh server snapshot: treat it as our baseline data
-  // freshness so the resume-on-visible guard and the live/bulk heuristic start
-  // from "just updated" rather than "never".
-  if (_state && Object.keys(_state).length) { _lastDataAt = Date.now(); _lastSuccessAt = Date.now(); }
+  // The page loaded with a server snapshot: seed data freshness from the
+  // snapshot's own clock, not the boot time, so a stale snapshot served from
+  // the service-worker page cache reads as stale everywhere downstream
+  // (resume-on-visible guard, live/bulk heuristic, stale chip) instead of
+  // masquerading as "just updated".
+  if (_state && Object.keys(_state).length) {
+    var _bootSnapAge = _snapshotAgeMs();
+    _lastDataAt = _bootSnapAge >= 0 ? Date.now() - _bootSnapAge : Date.now();
+    _lastSuccessAt = _lastDataAt;
+  }
 
   _render();
   _refreshPushState();       // resolve real device-push readiness for the CTA
   // First load paints the server-injected snapshot immediately (never a blank
-  // feed), then pulls the very latest plays right away instead of waiting out
-  // the first poll interval. This also self-heals a stale snapshot served from
-  // the service-worker page cache on a repeat/PWA launch — the injected
-  // window.__rz__ there can be from a previous visit. Canonical PBP dedupe means
-  // the catch-up only adds genuinely newer plays, so nothing double-renders.
-  // Gated to demo and real game days; off-days have no live plays to refresh.
-  if (_isDemo) {
-    setTimeout(_refresh, 300);
-  } else if (_isGameDay()) {
-    setTimeout(function() {
-      if (_inflight || _streaming) return; // a poll already started — let it own the feed
-      // Reconcile as backfill: bring in the newest plays without treating them
-      // as live alerts. The user-scope stream already reconciles as 'bulk'.
-      if (_scope === 'user') _refreshUserStream();
-      else _refresh({ backfill: true });
-    }, 250);
-  }
+  // feed), then _visitReconcile pulls the latest right after paint instead of
+  // waiting out the first poll interval. Canonical PBP dedupe means the
+  // catch-up only adds genuinely newer plays, so nothing double-renders.
+  // Off-days with a fresh snapshot skip it entirely: zero extra requests.
+  setTimeout(_visitReconcile, 250);
   _timer = setInterval(_tick, 1000);
   // Re-evaluate hero-strip arrows when the viewport width changes.
   // ── Game box score sheet ──────────────────────────────────────────
