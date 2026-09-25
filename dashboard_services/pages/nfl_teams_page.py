@@ -159,13 +159,23 @@ table.nt-depth>thead>tr>th:first-child{{z-index:2}}
 .nt-opp-logo{{width:22px;height:22px;border-radius:50%;flex:none;background:var(--card-soft)}}
 .nt-wrow.nt-bye{{cursor:default;color:var(--text-muted)}}
 .nt-box{{padding:4px 12px 12px;font-size:13px}}
-.nt-boxscore-line{{font-size:13px;margin:6px 0 8px}}
+.nt-box-head{{display:flex;align-items:center;justify-content:center;gap:14px;padding:10px 4px 12px}}
+.nt-box-side{{display:flex;align-items:center;gap:8px;min-width:0}}
+.nt-box-logo{{width:30px;height:30px;object-fit:contain;flex:none}}
+.nt-box-abbr{{font-weight:700;font-size:13px;letter-spacing:.02em}}
+.nt-box-score{{font-size:22px;font-weight:800;font-variant-numeric:tabular-nums}}
+.nt-box-score.dim{{color:var(--text-muted);font-weight:700}}
+.nt-box-status{{font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.08em;white-space:nowrap}}
 .nt-boxscore-teams{{display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:start}}
 .nt-boxscore-team{{margin-bottom:0;min-width:0}}
 .nt-boxscore-team>b{{display:block;font-size:13px;margin-bottom:4px}}
 .nt-boxscore-team table.nt-depth th[colspan]{{background:var(--card-soft);font-size:11px;padding:5px 6px}}
-.nt-boxscore table.nt-depth th{{font-size:10px;padding:5px 6px}}
-.nt-boxscore table.nt-depth td{{padding:5px 6px;font-size:12px}}
+.nt-boxscore table.nt-depth{{border-collapse:collapse}}
+.nt-boxscore table.nt-depth th{{font-size:10px;padding:5px 6px;white-space:nowrap}}
+.nt-boxscore table.nt-depth th.nt-stat{{width:1%;text-align:right}}
+.nt-boxscore table.nt-depth td{{padding:5px 6px;font-size:12px;white-space:nowrap}}
+.nt-boxscore table.nt-depth td.nt-stat{{text-align:right;font-variant-numeric:tabular-nums}}
+.nt-boxscore table.nt-depth td.nt-pcell{{max-width:220px;overflow:hidden;text-overflow:ellipsis}}
 .nt-boxscore .nt-pname{{font-size:12px}}
 .nt-sheet-backdrop{{position:fixed;inset:0;z-index:calc(var(--z-modal) - 1);background:rgba(0,0,0,.6);opacity:0;transition:opacity .25s ease}}
 .nt-sheet-backdrop.open{{opacity:1}}
@@ -735,14 +745,34 @@ function openBoxSheet(key){{
   fetchBox(key,function(bx){{if(!_ntSheet||_ntSheet.key!==key)return;_ntSheet.data=bx;_ntSheetRender();}},
     function(){{if(!_ntSheet||_ntSheet.key!==key)return;_ntSheet.error=true;_ntSheetRender();}});
 }}
+function _boxCellEmpty(v){{
+  return v===null||v===undefined||v===""||v===0||v==="0"||v==="0/0";
+}}
+function _boxRowEmpty(p,cols){{
+  if(p.is_focus)return false;
+  var cells=p.cells||{{}};
+  for(var i=0;i<cols.length;i++){{if(!_boxCellEmpty(cells[cols[i].key]))return false;}}
+  return true;
+}}
 function boxHTML(bx,abbr,wkRow,onlyAbbr){{
   if(!bx||bx.available===false){{return '<div class="nt-fine">'+esc((bx&&bx.message)||"Box score unavailable.")+'</div>';}}
   var home=bx.home||{{}},away=bx.away||{{}};
   var h='<div class="nt-boxscore">';
   if(!onlyAbbr){{
-    h+='<div class="nt-boxscore-line"><b>'+esc(home.name||"")+'</b> '+esc(home.pts==null?"":home.pts)+
-      ' &middot; <b>'+esc(away.name||"")+'</b> '+esc(away.pts==null?"":away.pts)+
-      (bx.quarter?(' &middot; '+esc("Q"+bx.quarter+(bx.clock?" "+bx.clock:""))):"")+'</div>';
+    var aPts=away.pts,hPts=home.pts;
+    var aWin=aPts!=null&&hPts!=null&&Number(aPts)>Number(hPts);
+    var hWin=aPts!=null&&hPts!=null&&Number(hPts)>Number(aPts);
+    var stTxt=bx.status==="live"?((bx.quarter?("Q"+bx.quarter+(bx.clock?" "+bx.clock:"")):"Live")):(bx.status==="final"?"Final":"Scheduled");
+    h+='<div class="nt-box-head">'
+      +'<div class="nt-box-side">'+(away.logo?'<img class="nt-box-logo" src="'+esc(away.logo)+'" alt="" loading="lazy">':"")
+      +'<span class="nt-box-abbr" title="'+esc(away.name||"")+'">'+esc(away.team||"")+'</span>'
+      +'<span class="nt-box-score'+(aWin?"":" dim")+'">'+esc(aPts==null?"":aPts)+'</span></div>'
+      +'<span class="nt-box-status">'+esc(stTxt)+'</span>'
+      +'<div class="nt-box-side">'
+      +'<span class="nt-box-score'+(hWin?"":" dim")+'">'+esc(hPts==null?"":hPts)+'</span>'
+      +'<span class="nt-box-abbr" title="'+esc(home.name||"")+'">'+esc(home.team||"")+'</span>'
+      +(home.logo?'<img class="nt-box-logo" src="'+esc(home.logo)+'" alt="" loading="lazy">':"")+'</div>'
+      +'</div>';
   }}
   h+='<div class="nt-boxscore-teams">';
   var sides=[[home,away],[away,home]];
@@ -755,11 +785,13 @@ function boxHTML(bx,abbr,wkRow,onlyAbbr){{
     h+='<div class="nt-boxscore-team"><b>'+esc(info.name||ab)+'</b><div class="nt-tscroll"><table class="nt-depth">';
     grp.forEach(function(g){{
       var cols=g.columns||[];
+      var vis=(g.players||[]).filter(function(p){{return !_boxRowEmpty(p,cols);}});
+      if(!vis.length)return;
       h+='<tr><th colspan="'+(cols.length+1)+'">'+esc(g.pos||"")+'</th></tr>';
-      h+='<tr><th scope="col">Player</th>'+cols.map(function(c){{return '<th scope="col" class="nt-num">'+esc(c.label||c.key)+'</th>';}}).join("")+'</tr>';
-      (g.players||[]).forEach(function(p){{
-        h+='<tr><td>'+(p.id?'<button type="button" class="nt-pname" data-pid="'+esc(p.id)+'" data-pname="'+esc(p.name)+'">'+esc(p.name)+'</button>':esc(p.name))+'</td>';
-        cols.forEach(function(c){{var v=(p.cells||{{}})[c.key];h+='<td class="nt-num">'+(v==null?"":esc(v))+'</td>';}});
+      h+='<tr><th scope="col">Player</th>'+cols.map(function(c){{return '<th scope="col" class="nt-stat">'+esc(c.label||c.key)+'</th>';}}).join("")+'</tr>';
+      vis.forEach(function(p){{
+        h+='<tr><td class="nt-pcell">'+(p.id?'<button type="button" class="nt-pname" data-pid="'+esc(p.id)+'" data-pname="'+esc(p.name)+'">'+esc(p.name)+'</button>':esc(p.name))+'</td>';
+        cols.forEach(function(c){{var v=(p.cells||{{}})[c.key];h+='<td class="nt-stat">'+(v==null?"":esc(v))+'</td>';}});
         h+='</tr>';
       }});
     }});
