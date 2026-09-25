@@ -39770,6 +39770,9 @@ a, button, [role="button"], [role="tab"], summary, label,
 }
 .pm-team-headtop { display: flex; align-items: center; gap: 13px; }
 .pm-team-headtop .pm-team-header-text { flex: 1 1 auto; min-width: 0; }
+.pm-teams-page-linkrow { margin-top: 8px; }
+.pm-teams-page-link { color: var(--accent); font-size: 13px; font-weight: 600; text-decoration: none; }
+.pm-teams-page-link:hover { text-decoration: underline; }
 .pm-team-name { overflow-wrap: anywhere; }
 .pm-team-logo { width: 46px; height: 46px; object-fit: contain; flex: 0 0 auto; }
 .pm-crest {
