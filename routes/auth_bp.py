@@ -13,6 +13,8 @@ from flask import (
     render_template_string, request, session, url_for,
 )
 
+from extensions import limiter
+
 auth_bp = Blueprint("auth", __name__)
 logger = logging.getLogger(__name__)
 
@@ -20,9 +22,15 @@ logger = logging.getLogger(__name__)
 # ── Identify by username only (no league required) ────────────────────────────
 
 @auth_bp.route("/api/identify", methods=["POST"])
+@limiter.limit("30 per minute")
 def api_identify():
     """Set viewer session from a Sleeper username alone - no league needed.
     Returns JSON {ok, username, user_id, leagues:[{league_id, name, season}]}.
+
+    Rate limited: each call fans out to the Sleeper API (user lookup + league
+    list), so an uncapped endpoint lets anyone burn our upstream quota and
+    enumerate usernames. 30/min per IP is far above legitimate use (a handful
+    of calls per session).
     """
     from dashboard_services.api import (
         get_sleeper_user_by_username as get_sleeper_user,

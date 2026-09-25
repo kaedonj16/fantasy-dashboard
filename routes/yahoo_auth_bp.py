@@ -17,6 +17,8 @@ from flask import (
     Blueprint, jsonify, redirect, request, session, url_for,
 )
 
+from extensions import limiter
+
 yahoo_auth_bp = Blueprint("yahoo_auth", __name__)
 logger = logging.getLogger(__name__)
 
@@ -80,8 +82,13 @@ def yahoo_auth_start():
 
 
 @yahoo_auth_bp.route("/auth/yahoo/callback")
+@limiter.limit("30 per minute")
 def yahoo_auth_callback():
-    """Handle Yahoo OAuth callback, exchange code for tokens."""
+    """Handle Yahoo OAuth callback, exchange code for tokens.
+
+    Rate limited: a legitimate sign-in hits this once; the cap only bites
+    automated probing of the token-exchange path.
+    """
     from dashboard_services.providers.yahoo_api import (
         exchange_code_for_tokens, save_tokens, save_league_owner, get_login_guid,
     )
