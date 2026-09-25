@@ -78,10 +78,10 @@ def test_paywall_and_pricing_explain_pro_and_plan_coverage():
 def test_plan_cards_keep_original_keys_and_annual_prices():
     billing = (ROOT / "routes" / "billing_bp.py").read_text(encoding="utf-8")
     expected = {
-        "user": "$10/year",
-        "single_league": "$5/year",
-        "league": "$15/year",
-        "combo": "$20/year",
+        "user": "$20/year",
+        "single_league": "$10/year",
+        "league": "$35/year",
+        "combo": "$45/year",
     }
     for key, price in expected.items():
         assert f'("{key}",' in billing
