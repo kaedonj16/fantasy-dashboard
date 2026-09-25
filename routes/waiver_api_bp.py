@@ -319,7 +319,12 @@ def api_waiver_candidates():
             if isinstance(_u, dict):
                 _upid = str(_u.get("player_id") or _u.get("id") or "")
                 if _upid:
-                    _ppg_by_pid_wv[_upid] = _u.get("ppr_ppg")
+                    # Table rows are wrappers {"id", ..., "usage": {...}}; the
+                    # usage metrics live in the nested dict, not the wrapper.
+                    _u_inner = _u.get("usage")
+                    if not isinstance(_u_inner, dict):
+                        _u_inner = _u
+                    _ppg_by_pid_wv[_upid] = _u_inner.get("ppr_ppg")
     except Exception:
         logger.debug("suppressed exception", exc_info=True)
 
