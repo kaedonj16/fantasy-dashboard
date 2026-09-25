@@ -70,6 +70,16 @@ _RE_PASS = re.compile(
 )
 _RE_INT = re.compile(rf"({_NAME_TOK})\s+pass\b.*?INTERCEPTED")
 _RE_INCOMP = re.compile(rf"({_NAME_TOK})\s+pass\s+incomplete")
+# Incomplete pass with a named target: "J.Love pass incomplete deep right to
+# M.Golden." The receiver gets a target even though the pass fell incomplete
+# (without this, a WR's running line read "5/5 REC" on 5 catches and 7
+# incompletions because only completions credited targets).
+_RE_INCOMP_TO = re.compile(
+    rf"({_NAME_TOK})\s+pass\s+incomplete.*?\bto\s+({_NAME_TOK})"
+)
+# Intercepted pass: "M.Penix pass short middle intended for J.Dotson
+# INTERCEPTED by ..." -- the intended receiver is still charged a target.
+_RE_INT_TARGET = re.compile(rf"\bintended\s+for\s+({_NAME_TOK})")
 # The ball carrier is the name immediately before a rush action, not whatever
 # name leads the sentence ("G.Van Roten reported in as eligible. D.Maye
 # scrambles …"). Anchor on the action so pre-snap clauses don't steal credit.
@@ -140,6 +150,11 @@ def parse_pbp_play_stats(text: str) -> dict[str, dict]:
     text = _s(text)
     if not text:
         return {}
+    # A penalty-wiped play ("... enforced at GB 33 - No Play") officially never
+    # happened: credit nothing, or the running lines drift (a DPI-wiped deep
+    # shot counted as a 13th target on a 12-target game).
+    if "no play" in text.lower():
+        return {}
     out: dict[str, dict] = {}
     # A combined "TD + TWO-POINT CONVERSION" line scores its scrimmage play from
     # the touchdown portion only; the conversion is handled below with the 2PT
@@ -165,19 +180,34 @@ def parse_pbp_play_stats(text: str) -> dict[str, dict]:
     m = _RE_PASS.search(main)
     if m:
         passer, receiver, yds = m.group(1), m.group(2), _yards(m.group(3))
-        _accum(out, passer, pass_yds=yds, pass_cmp=1, pass_att=1)
-        _accum(out, receiver, rec=1, rec_yds=yds, targets=1)
-        if scored:
-            _accum(out, passer, pass_td=1)
-            _accum(out, receiver, rec_td=1)
+        # A completion overturned on review ("the pass completion ... was
+        # REVERSED - incomplete pass") officially never happened: score it as
+        # an incompletion (attempt + target, no catch or yards).
+        if "reversed" in low and "incomplete" in low:
+            _accum(out, passer, pass_att=1)
+            _accum(out, receiver, targets=1)
+        else:
+            _accum(out, passer, pass_yds=yds, pass_cmp=1, pass_att=1)
+            _accum(out, receiver, rec=1, rec_yds=yds, targets=1)
+            if scored:
+                _accum(out, passer, pass_td=1)
+                _accum(out, receiver, rec_td=1)
 
     mi = _RE_INT.search(main)
     if mi:
         _accum(out, mi.group(1), int=1, pass_att=1)
+        mt = _RE_INT_TARGET.search(main)
+        if mt:
+            _accum(out, mt.group(1), targets=1)
 
-    mc = _RE_INCOMP.search(main)
-    if mc:
-        _accum(out, mc.group(1), pass_att=1)
+    mct = _RE_INCOMP_TO.search(main)
+    if mct:
+        _accum(out, mct.group(1), pass_att=1)
+        _accum(out, mct.group(2), targets=1)
+    else:
+        mc = _RE_INCOMP.search(main)
+        if mc:
+            _accum(out, mc.group(1), pass_att=1)
 
     # Rushes only — never a pass, sack, kick or punt (those carry "for N yards"
     # too but must not be scored as rushing). Parse the scrimmage segment with

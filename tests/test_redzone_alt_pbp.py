@@ -391,7 +391,8 @@ def test_parse_pbp_interception_only_credits_passer_pick():
         "(Shotgun) D.Maye pass deep right intended for M.Hollins INTERCEPTED "
         "by J.Jobe [D.Lawrence] at SEA -3. Touchback."
     )
-    assert sl == {"d.maye": {"int": 1, "pass_att": 1}}
+    # An interception is a target for the intended receiver.
+    assert sl == {"d.maye": {"int": 1, "pass_att": 1}, "m.hollins": {"targets": 1}}
 
 
 def test_parse_pbp_sack_is_not_scored_as_a_rush():
@@ -813,3 +814,77 @@ def test_extract_espn_scoreboard_empty_is_safe():
     assert extract_espn_scoreboard_lookup({}) == {}
     assert extract_espn_scoreboard_lookup(None) == {}  # type: ignore[arg-type]
     assert extract_espn_scoreboard_lookup({"content": {"sbData": {"events": []}}}) == {}
+
+
+def test_parse_pbp_incomplete_pass_credits_receiver_target():
+    """Regression: the running line read "5/5 REC" on a 5-catch, 12-target
+    game because only completions credited targets."""
+    sl = parse_pbp_play_stats(
+        "(Shotgun) J.Love pass incomplete deep right to M.Golden."
+    )
+    assert sl["j.love"] == {"pass_att": 1}
+    assert sl["m.golden"] == {"targets": 1}
+
+
+def test_parse_pbp_incomplete_without_target_credits_only_passer():
+    sl = parse_pbp_play_stats(
+        "M.Penix pass incomplete short middle [L.Van Ness]."
+        "PENALTY on ATL-M.Penix, Intentional Grounding, 10 yards, "
+        "enforced at ATL 35."
+    )
+    assert sl["m.penix"] == {"pass_att": 1}
+    assert "m.golden" not in sl
+
+
+def test_parse_pbp_interception_credits_intended_receiver_target():
+    sl = parse_pbp_play_stats(
+        "(Shotgun) M.Penix pass short middle intended for J.Dotson "
+        "INTERCEPTED by X.McKinney at GB 40."
+    )
+    assert sl["m.penix"] == {"int": 1, "pass_att": 1}
+    assert sl["j.dotson"] == {"targets": 1}
+
+
+def test_parse_pbp_nullified_play_credits_nothing():
+    """A penalty-wiped ("No Play") deep shot is not a 13th target."""
+    sl = parse_pbp_play_stats(
+        "(Shotgun) J.Love pass incomplete deep left to M.Golden."
+        "PENALTY on ATL-M.Hughes, Defensive Pass Interference, 34 yards, "
+        "enforced at GB 33 - No Play."
+    )
+    assert sl == {}
+
+
+def test_parse_pbp_reversed_completion_scores_as_incompletion():
+    sl = parse_pbp_play_stats(
+        "(Shotgun) J.Love pass short right to T.Kraft to GB 45 for 4 yards "
+        "(J.Bates). FUMBLES (J.Bates), ball out of bounds at GB 42."
+        "The Replay Official reviewed the pass completion and the play was "
+        "REVERSED - incomplete pass."
+    )
+    assert sl["j.love"] == {"pass_att": 1}
+    assert sl["t.kraft"] == {"targets": 1}
+
+
+def test_parse_pbp_five_catches_twelve_targets_cumulative():
+    """Golden's real game: 5 completions + 7 targeted incompletions = 12."""
+    plays = [
+        "J.Love pass short right to M.Golden for 15 yards, TOUCHDOWN.",
+        "(Shotgun) J.Love pass deep right to M.Golden to ATL 43 for 45 yards (M.Hughes).",
+        "(Shotgun) J.Love pass short right to M.Golden pushed ob at GB 41 for 8 yards (M.Hughes).",
+        "(Shotgun) J.Love pass short left to M.Golden pushed ob at 50 for 12 yards (D.Deablo).",
+        "J.Love pass short left to M.Golden ran ob at ATL 10 for 20 yards (B.Bowman).",
+        "(Shotgun) J.Love pass incomplete deep right to M.Golden.",
+        "(Shotgun) J.Love pass incomplete deep left to M.Golden (B.Bowman).",
+        "(Shotgun) J.Love pass incomplete deep right to M.Golden (C.Henderson).",
+        "(Shotgun) J.Love pass incomplete short left to M.Golden (C.Henderson).",
+        "(Shotgun) J.Love pass incomplete deep right to M.Golden [C.Thomas].",
+        "(No Huddle, Shotgun) J.Love pass incomplete short right to M.Golden.",
+        "(Shotgun) J.Love pass incomplete short right to M.Golden [C.Thomas].",
+    ]
+    rec = targets = 0
+    for p in plays:
+        sl = parse_pbp_play_stats(p).get("m.golden", {})
+        rec += sl.get("rec", 0)
+        targets += sl.get("targets", 0)
+    assert (rec, targets) == (5, 12)

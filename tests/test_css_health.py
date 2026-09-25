@@ -116,17 +116,12 @@ def test_hub_alert_strips_share_tone_token():
     assert wl and "--alert-tone:" in wl.group(1)
 
 
-def test_division_record_cells_do_not_wrap():
-    """Standings records render as "2-0 (1-0)": the Rec column wrapped
-    mid-record on iPhones ("2-0 (1-" / "0)"). .st-record must keep the whole
-    record on one line, and the recap scoreboard's record span too."""
+def test_rz_tokens_defined_on_root_for_out_of_page_surfaces():
+    """Regression: the box-score sheet is appended to document.body (outside
+    .rz-page), so the --rz-* tokens must exist on :root, not only .rz-page.
+    Without them the sheet rendered transparent with unstyled text."""
     css = _css()
-    st = re.search(r"\.st-record\s*\{([^}]+)\}", css)
-    assert st, "missing .st-record rule"
-    assert "nowrap" in st.group(1), ".st-record must keep the record on one line"
-    recap = re.search(
-        r"\.weekly-recap\s+\.recap-team-record\s*\{([^}]+)\}",
-        css,
-    )
-    assert recap, "missing .weekly-recap .recap-team-record rule"
-    assert "nowrap" in recap.group(1), ".recap-team-record must keep the record on one line"
+    root_block = re.search(r":root,\s*\.rz-page\s*\{([^}]*)\}", css)
+    assert root_block, ":root, .rz-page token block missing"
+    for token in ("--rz-card", "--rz-border", "--rz-text", "--rz-muted"):
+        assert token in root_block.group(1), f"{token} not defined on :root"

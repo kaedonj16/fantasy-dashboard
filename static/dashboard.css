@@ -32343,6 +32343,11 @@ button:disabled {
 /* ── BR Redzone page ────────────────────────────────────────────────────────── */
 /* Built on the site's design tokens so it reads as part of the app. Red is the
    only RedZone-specific accent; everything else inherits the site theme. */
+/* Redzone design tokens live on :root (not just .rz-page) because Redzone
+   surfaces like the player-modal box-score sheet are appended to
+   document.body, outside the page root. They alias the global theme vars so
+   both themes keep working. */
+:root,
 .rz-page {
     --rz-red: #dc2626;
     --rz-red-soft: rgba(220, 38, 38, .10);
@@ -32357,6 +32362,8 @@ button:disabled {
     --rz-muted: var(--text-muted);
     --rz-hover: var(--accent-soft);
     --rz-content-gutter: 14px;
+}
+.rz-page {
     background: var(--rz-bg);
     min-height: calc(100vh - 56px);
     padding: 0 0 80px;
@@ -32385,7 +32392,7 @@ button:disabled {
     margin: 0 auto;
 }
 
-:root[data-theme="dark"] .rz-page {
+:root[data-theme="dark"] {
     --rz-red: #f04545;
     --rz-red-soft: rgba(240, 69, 69, .14);
 }
