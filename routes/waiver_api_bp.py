@@ -41,6 +41,7 @@ from utils.waiver_score import (
     waiver_signal as _waiver_signal,
     weeks_out_from_projections as _weeks_out_from_projections,
 )
+from utils.streaming_targets import streaming_targets as _streaming_targets
 
 logger = logging.getLogger(__name__)
 
@@ -108,6 +109,65 @@ def _load_do_not_drop(*args, **kwargs):
     return _fn(*args, **kwargs)
 
 
+def _waiver_faab_context(ctx):
+    """FAAB detection + season phase shared by both waiver-candidate paths.
+
+    Returns {"enabled", "total", "waiver_type", "phase"}. ``total`` is the season
+    budget (None when the league doesn't publish one); remaining budget is
+    filled from the viewer's roster by the caller. Fail closed when FAAB can't
+    be confirmed so a non-FAAB league never sees a bid it can't use.
+    """
+    _wv_settings = (ctx.get("league") or {}).get("settings") or {}
+    # Sleeper's waiver_type == 2 is NOT sufficient on its own -- rolling /
+    # waiver-priority leagues report the same code, so keying on it alone
+    # showed a bid % to non-FAAB leagues. A genuine FAAB league always carries a
+    # positive waiver_budget, so require both. ESPN uses an explicit
+    # acquisition budget.
+    _faab_enabled = (
+        # Sleeper FAAB: waiver_type flagged AND a real budget to spend.
+            (_safe_int(_wv_settings.get("waiver_type"), -1) == 2
+             and _safe_int(_wv_settings.get("waiver_budget"), 0) > 0)
+            or _safe_int(_wv_settings.get("acquisition_budget"), 0) > 0  # ESPN FAAB
+    )
+    # Season phase (#4): early adds have a whole season to pay off (bid up a
+    # touch); late-season fliers rarely do (bid down).
+    try:
+        _phase_state = get_nfl_state() or {}
+        _wk_now = int(_phase_state.get("week") or _phase_state.get("display_week") or 1)
+    except Exception:
+        _wk_now = 1
+    if _wk_now >= 17:
+        _season_phase = "playoffs"
+    elif _wk_now >= 14:
+        _season_phase = "late"
+    elif _wk_now <= 4:
+        _season_phase = "early"
+    else:
+        _season_phase = "mid"
+    # Season budget total (Sleeper waiver_budget / ESPN acquisition_budget). None
+    # when the league doesn't publish one -> guidance stays percentage-only.
+    _faab_total = None
+    if _safe_int(_wv_settings.get("waiver_budget"), 0) > 0:
+        _faab_total = _safe_int(_wv_settings.get("waiver_budget"), 0)
+    elif _safe_int(_wv_settings.get("acquisition_budget"), 0) > 0:
+        _faab_total = _safe_int(_wv_settings.get("acquisition_budget"), 0)
+    return {
+        "enabled": _faab_enabled,
+        "total": _faab_total,
+        "waiver_type": "faab" if _faab_enabled else "priority",
+        "phase": _season_phase,
+    }
+
+
+def _waiver_uses_k_def(roster_positions):
+    """Whether the league starts kickers / team defenses (gates the K/DST tabs)."""
+    rpos = [str(s).upper() for s in (roster_positions or [])]
+    return {
+        "k": "K" in rpos,
+        "def": any(s in ("DEF", "DST", "D/ST") for s in rpos),
+    }
+
+
 @waiver_api_bp.route("/api/waiver-candidates")
 def api_waiver_candidates():
     """
@@ -118,6 +178,10 @@ def api_waiver_candidates():
     league_id = (request.args.get("league_id") or "").strip()
     season = int(request.args.get("season") or datetime.now().year)
     position_filter = (request.args.get("position") or "").strip().upper()
+    # D/ST aliases converge on the DEF tab; K and DEF are scored by the
+    # streaming rankers (matchup-based), not the skill-position composite.
+    if position_filter in ("DST", "D/ST", "D-ST"):
+        position_filter = "DEF"
     # Recommendation horizon (#2): this_week (personalized immediate help, the
     # in-season default), four_week, or long-term stash. The ranking weights are
     # swapped per horizon so the list meaningfully reflects the choice.
@@ -132,6 +196,12 @@ def api_waiver_candidates():
         ctx = get_league_ctx_from_cache(platform, league_id, season)
     except Exception as e:
         return _api_err("Request failed", e)
+
+    # K / D/ST tabs: scored by the shared streaming rankers (matchup-based
+    # Vegas implied totals), presented in the same ranked-list shape as the
+    # skill-position candidates. Skips the skill-position pipeline entirely.
+    if position_filter in ("K", "DEF"):
+        return _api_waiver_candidates_kdef(position_filter, platform, league_id, season, ctx)
 
     rosters = ctx.get("rosters") or []
     rostered_ids = {
@@ -692,42 +762,11 @@ def api_waiver_candidates():
     # money; a player who fills the viewer's own roster need is nudged up. A band
     # rather than a number because league budgets differ ($100 / $1000 / rolling);
     # the % reads the same regardless. Gated client-side on the league using FAAB.
-    # FAAB detection. Sleeper's waiver_type == 2 is NOT sufficient on its own --
-    # rolling / waiver-priority leagues report the same code, so keying on it alone
-    # showed a bid % to non-FAAB leagues. A genuine FAAB league always carries a
-    # positive waiver_budget, so require both. ESPN uses an explicit acquisition
-    # budget. Fail closed when FAAB can't be confirmed so a non-FAAB league never
-    # sees a bid % it can't use.
-    _wv_settings = (ctx.get("league") or {}).get("settings") or {}
-    _faab_enabled = (
-        # Sleeper FAAB: waiver_type flagged AND a real budget to spend.
-            (_safe_int(_wv_settings.get("waiver_type"), -1) == 2
-             and _safe_int(_wv_settings.get("waiver_budget"), 0) > 0)
-            or _safe_int(_wv_settings.get("acquisition_budget"), 0) > 0  # ESPN FAAB
-    )
-    # Season phase (#4): early adds have a whole season to pay off (bid up a
-    # touch); late-season fliers rarely do (bid down).
-    try:
-        _phase_state = get_nfl_state() or {}
-        _wk_now = int(_phase_state.get("week") or _phase_state.get("display_week") or 1)
-    except Exception:
-        _wk_now = 1
-    if _wk_now >= 17:
-        _season_phase = "playoffs"
-    elif _wk_now >= 14:
-        _season_phase = "late"
-    elif _wk_now <= 4:
-        _season_phase = "early"
-    else:
-        _season_phase = "mid"
-    # Season budget total (Sleeper waiver_budget / ESPN acquisition_budget). None
-    # when the league doesn't publish one -> guidance stays percentage-only.
-    _faab_total = None
-    if _safe_int(_wv_settings.get("waiver_budget"), 0) > 0:
-        _faab_total = _safe_int(_wv_settings.get("waiver_budget"), 0)
-    elif _safe_int(_wv_settings.get("acquisition_budget"), 0) > 0:
-        _faab_total = _safe_int(_wv_settings.get("acquisition_budget"), 0)
-    _faab_waiver_type = "faab" if _faab_enabled else "priority"
+    _fx = _waiver_faab_context(ctx)
+    _faab_enabled = _fx["enabled"]
+    _season_phase = _fx["phase"]
+    _faab_total = _fx["total"]
+    _faab_waiver_type = _fx["waiver_type"]
     # Remaining budget is filled from the viewer's roster below (if identifiable);
     # referenced at call time so the closure picks up the assigned value.
     _faab_remaining = None
@@ -1021,7 +1060,312 @@ def api_waiver_candidates():
             logger.exception("[waiver-candidates] result row failed for %s", c.get("player_id"))
             continue
 
-    return jsonify({"candidates": result, "total": len(result), "faab_enabled": _faab_enabled})
+    _kd_flags = _waiver_uses_k_def(_rp_wv)
+    return jsonify({"candidates": result, "total": len(result),
+                    "faab_enabled": _faab_enabled,
+                    # Drives the "link your team" banner: True only when ?rid=
+                    # resolved to a real roster in this league.
+                    "personalized": _viewer_roster is not None,
+                    "league_uses_k": _kd_flags["k"],
+                    "league_uses_def": _kd_flags["def"]})
+
+
+def _kdef_roster_position(pid, players_index):
+    """Position of a rostered player for the K/DST waiver path.
+
+    Rostered defenses have team-abbr pids (e.g. "KC") that never appear in the
+    players index, so fall back to the NFL team list to tag them DEF.
+    """
+    meta = (players_index or {}).get(str(pid)) or {}
+    pos = str(meta.get("pos") or meta.get("position") or "").upper()
+    if pos in ("K", "DEF"):
+        return pos
+    try:
+        from utils.utils import NFL_TEAMS as _NFL_TEAMS
+        if str(pid).upper() in set(_NFL_TEAMS):
+            return "DEF"
+    except Exception:
+        pass
+    return pos
+
+
+def _forward_ppg_map(season, raw_scoring, entries):
+    """{pid: forward mean of upcoming weekly projections} for a small pid list.
+
+    Bounded helper for the K/DST waiver path: means the current week's and next
+    five weeks' league-scored projections, skipping bye weeks (team not
+    scheduled). The skill-position path has its own (heavier) machinery inline
+    in api_waiver_candidates. Never raises; unknown pids map to None.
+    ``entries`` is a list of (pid, team, pos).
+    """
+    out = {}
+    try:
+        from utils.utils import load_week_projection, load_week_schedule
+        from utils.fantasy_scoring import weekly_projection_points
+        nfl = get_nfl_state() or {}
+        proj_season = int(nfl.get("season") or season)
+        cur_week = int(nfl.get("week") or nfl.get("display_week") or 1)
+        weeks = []
+        for w in range(cur_week, cur_week + 6):
+            wm = load_week_projection(proj_season, w) or {}
+            teams = set()
+            for g in (load_week_schedule(proj_season, w) or []):
+                if isinstance(g, dict):
+                    for side in ("away", "home"):
+                        t = str(g.get(side) or "").upper()
+                        if t:
+                            teams.add(t)
+            weeks.append((wm if isinstance(wm, dict) else {}, teams))
+        for pid, team, pos in entries or []:
+            pid = str(pid)
+            team = str(team or "").upper()
+            vals = []
+            for wm, tset in weeks:
+                if tset and team and team not in tset:
+                    continue  # bye
+                try:
+                    p = weekly_projection_points(wm, pid, raw_scoring, pos or "")
+                except Exception:
+                    p = None
+                if p is not None:
+                    vals.append(max(0.0, float(p)))
+            out[pid] = (sum(vals) / len(vals)) if vals else None
+    except Exception:
+        logger.debug("suppressed exception", exc_info=True)
+    return out
+
+
+def _api_waiver_candidates_kdef(position, platform, league_id, season, ctx):
+    """K / D/ST waiver ranks, scored by the shared streaming rankers.
+
+    ``position`` is "K" or "DEF". Rows are presented in the same shape as the
+    skill-position candidates so the position tabs render one unified list UI:
+    composite_score (FAAB scale), signal, FAAB bands, and -- when ?rid= resolves
+    to the viewer's roster -- lineup gain, outcome, and a drop suggestion via
+    the shared optimal-lineup solver.
+    """
+    rid = (request.args.get("rid") or "").strip()
+    rosters = ctx.get("rosters") or []
+    players_index = ctx.get("players_index") or {}
+    rp = ctx.get("roster_positions") or []
+    raw_scoring = ctx.get("raw_scoring_settings") or {}
+
+    stream = _streaming_targets(ctx, season, players_index=players_index)
+    in_season = bool(stream.get("in_season"))
+    srows = list(stream.get("defense" if position == "DEF" else "kicker") or [])[:10]
+    kd_flags = _waiver_uses_k_def(rp)
+
+    # ── Personalization: the same ?rid= contract as the skill-position path. ──
+    viewer_roster = (next((r for r in rosters if str(r.get("roster_id")) == rid), None)
+                     if rid else None)
+    personalized = viewer_roster is not None
+
+    fx = _waiver_faab_context(ctx)
+    faab_remaining = None
+    viewer_active: list = []
+    viewer_pos: dict = {}
+    if viewer_roster:
+        _res = {str(p) for p in (viewer_roster.get("reserve") or [])}
+        _tax = {str(p) for p in (viewer_roster.get("taxi") or [])}
+        viewer_active = [str(p) for p in (viewer_roster.get("players") or [])
+                         if str(p) not in _res and str(p) not in _tax]
+        if fx["total"] is not None:
+            _rs = viewer_roster.get("settings") or {}
+            _used = _safe_int(_rs.get("waiver_budget_used"),
+                              _safe_int(_rs.get("acquisitionBudgetSpent"), 0))
+            faab_remaining = max(0, int(fx["total"]) - int(_used or 0))
+        viewer_pos = {pid: _kdef_roster_position(pid, players_index)
+                      for pid in viewer_active}
+
+    # Forward projected ppg for candidates + the viewer's own K/DEF. Bounded:
+    # ~10 candidates and a couple of rostered players x 6 weeks.
+    _entries = [(str(r.get("player_id")), r.get("team"), position) for r in srows]
+    _entries += [(pid, None, viewer_pos.get(pid, ""))
+                 for pid in viewer_active if viewer_pos.get(pid) in ("K", "DEF")]
+    fwd = _forward_ppg_map(season, raw_scoring, _entries)
+
+    _slot_n = len([s for s in (rp or [])
+                   if str(s).upper() not in ("IR", "TAXI", "RESERVE", "IR+")])
+    roster_full = bool(viewer_active) and _roster_needs_drop(len(viewer_active), _slot_n)
+
+    # Drop pool: active roster ordered by forward projection (K/DEF carry no
+    # model value, so projections are the honest comparator).
+    drop_pool = []
+    if viewer_active:
+        for pid in viewer_active:
+            drop_pool.append({"player_id": pid,
+                              "ppg": fwd.get(pid) or 0.0,
+                              "position": viewer_pos.get(pid, "")})
+        drop_pool.sort(key=lambda d: d["ppg"])
+
+    def _brief_kd(pid):
+        pid = str(pid)
+        meta = players_index.get(pid, {})
+        return {"player_id": pid,
+                "name": meta.get("name") or pid,
+                "position": viewer_pos.get(pid, "")}
+
+    def _drop_for_kd(cand_ppg, cand_pos):
+        if not roster_full or not drop_pool or cand_ppg is None:
+            return None
+        elig = [d for d in drop_pool if (d["ppg"] or 0.0) < cand_ppg]
+        if not elig:
+            return None  # everyone you'd cut projects better than the add
+        pos_count = sum(1 for d in drop_pool if d["position"] == cand_pos)
+        same_spare = [d for d in elig
+                      if d["position"] == cand_pos and pos_count > 1]
+        pick = (same_spare or elig)[0]
+        b = _brief_kd(pick["player_id"])
+        return {"player_id": b["player_id"], "name": b["name"],
+                "position": b["position"], "value": None}
+
+    # Lineup-based team improvement via the shared solver (only when the
+    # candidate actually has a projection; team defenses usually don't).
+    pts_map = {pid: max(0.0, fwd.get(pid) or 0.0) for pid in viewer_active}
+    pos_map = dict(viewer_pos)
+
+    try:
+        _adds_by_id = {}
+        for row in _sleeper_trending_adds(limit=50) or []:
+            _apid = str(row.get("player_id") or "")
+            if _apid:
+                _adds_by_id[_apid] = int(row.get("count") or 0)
+    except Exception:
+        _adds_by_id = {}
+
+    from utils.model_confidence import confidence_from_inputs
+
+    result = []
+    for r in srows:
+        try:
+            cid = str(r.get("player_id"))
+            cand_ppg = fwd.get(cid)
+            score = r.get("stream_score")
+            try:
+                score = float(score)
+            except (TypeError, ValueError):
+                score = 75.0
+
+            outcome = None
+            gain = None
+            gain_4wk = None
+            replaces = None
+            drop = None
+            le = None
+            if viewer_active and cand_ppg is not None:
+                pm = dict(pts_map)
+                pm[cid] = max(0.0, cand_ppg)
+                posm = dict(pos_map)
+                posm[cid] = position
+                try:
+                    from utils.waiver_lineup import evaluate_pickup as _eval_pickup
+                    le = _eval_pickup(
+                        cid, position, viewer_active,
+                        [{"pts_map": pm, "covered": True}], posm, rp,
+                        droppable_pids=[d["player_id"] for d in drop_pool])
+                except Exception:
+                    logger.debug("lineup eval failed for %s", cid, exc_info=True)
+                    le = None
+                if le is not None:
+                    outcome = le.outcome
+                    if le.outcome in ("add", "add_drop"):
+                        gain = round(le.week_gain, 1)
+                        gain_4wk = round(le.horizon_gain, 1)
+                        replaces = _brief_kd(le.replaces_pid) if le.replaces_pid else None
+                        if le.drop_pid:
+                            drow = _brief_kd(le.drop_pid)
+                            drop = {"player_id": drow["player_id"], "name": drow["name"],
+                                    "position": drow["position"], "value": None}
+            if drop is None and le is None:
+                # No lineup eval ran (unlinked roster, or no projection for the
+                # candidate): fall back to the projection-based pairing, which
+                # still only suggests a cut when the roster is full.
+                drop = _drop_for_kd(cand_ppg, position)
+
+            if position == "DEF":
+                imp = r.get("opp_implied")
+                imp_txt = (f"{imp:.0f} opp implied"
+                           if imp is not None else "implied total unavailable")
+                signal = f"Weak opposing offense · {imp_txt}"
+                sched_txt = f"{r.get('matchup') or ''} · {imp_txt}".strip(" ·")
+            else:
+                imp = r.get("own_implied")
+                imp_txt = (f"{imp:.0f} implied total"
+                           if imp is not None else "implied total unavailable")
+                signal = f"Strong offense · {imp_txt}"
+                sched_txt = f"{r.get('matchup') or ''} · {imp_txt}".strip(" ·")
+
+            _faab = _faab_recommendation(
+                score, budget_total=fx["total"], budget_remaining=faab_remaining,
+                waiver_type=fx["waiver_type"], season_phase=fx["phase"],
+                need_mult=1.0)
+            _conf = confidence_from_inputs(sum([
+                imp is not None,
+                bool(r.get("team")),
+                cand_ppg is not None,
+            ]), 3)
+            result.append({
+                "player_id": cid,
+                "name": r.get("name") or cid,
+                "position": position,
+                "team": r.get("team") or "",
+                "matchup": r.get("matchup") or "",
+                "value": None,
+                "age": None,
+                "pos_rank_label": "",
+                "rank_change_7d": None,
+                "breakout_score": 0.0,
+                "signal": signal,
+                "signal_class": "stream",
+                "composite_score": score,
+                "usage_delta": None,
+                "usage_stat": None,
+                "usage_series": None,
+                "injured_ahead": 0,
+                "healthy_ahead": None,
+                "vacated": [],
+                "ros_ppg": round(cand_ppg, 1) if cand_ppg is not None else None,
+                "roster_need": 0.0,
+                "scarcity": 0.0,
+                "schedule_ease_rank": None,
+                "schedule_urgency": sched_txt or None,
+                "faab_low": _faab.get("pct_low"),
+                "faab_target": _faab.get("pct_target"),
+                "faab_high": _faab.get("pct_high"),
+                "faab_rationale": _faab.get("rationale"),
+                "faab_mode": _faab.get("mode"),
+                "faab_pct_denominator": _faab.get("pct_denominator"),
+                "faab_dollars_low": _faab.get("low"),
+                "faab_dollars_target": _faab.get("target"),
+                "faab_dollars_high": _faab.get("high"),
+                "faab_claim_guidance": _faab.get("claim_guidance"),
+                "faab_heuristic": _faab.get("heuristic"),
+                "outcome": outcome,
+                "lineup_gain": gain,
+                "lineup_gain_4wk": gain_4wk,
+                "replaces": replaces,
+                "drop": drop,
+                "confidence": _conf,
+                "market_projection": None,
+                "market_opportunity": None,
+                "rostered_pct": None,
+                "adds_48h": _adds_by_id.get(cid),
+                "big_game": None,
+                "opp_implied": r.get("opp_implied"),
+                "own_implied": r.get("own_implied"),
+            })
+        except Exception:
+            logger.exception("[waiver-candidates] K/DEF row failed for %s",
+                             (r or {}).get("player_id"))
+            continue
+
+    return jsonify({"candidates": result, "total": len(result),
+                    "faab_enabled": fx["enabled"],
+                    "personalized": personalized,
+                    "position": position,
+                    "in_season": in_season,
+                    "league_uses_k": kd_flags["k"],
+                    "league_uses_def": kd_flags["def"]})
 
 
 @waiver_api_bp.route("/api/waiver-big-games")

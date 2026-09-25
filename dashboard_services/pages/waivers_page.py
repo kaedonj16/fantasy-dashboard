@@ -198,29 +198,28 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 }
 .wv-trend-sub { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
 
-/* Streaming this week: matchup-ranked D/ST and K, shown under the waiver list
-   only in season. Implied-total chip is green for a good spot, red for a dud
-   (meaning is inverted for defenses, where a low opponent total is good). */
-.wv-stream-head { margin-top: 22px; }
-.wv-stream-group { margin-bottom: 10px; }
-.wv-stream-sub {
-  font-size: 10px; font-weight: 700; color: var(--text-subtle, var(--text-muted));
-  text-transform: uppercase; letter-spacing: .05em; margin: 4px 2px 6px;
+/* Link-your-team banner: shown when the roster isn't identified, so generic
+   (non-personalized) ranks never masquerade as personalized. Dismissible;
+   the dismissal is remembered per league in localStorage. */
+.wv-link-banner {
+  display: flex; align-items: center; gap: 10px; justify-content: space-between;
+  border-radius: 10px; padding: 11px 12px; margin-bottom: 12px;
+  border: 1px solid color-mix(in srgb, var(--accent) 32%, var(--border));
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
 }
-.wv-stream-row {
-  display: flex; align-items: center; gap: 8px; padding: 8px 12px; margin-bottom: 6px;
-  border-radius: 8px; background: var(--card); border: 1px solid var(--border); cursor: pointer;
+.wv-link-banner[hidden] { display: none; }
+.wv-link-banner-main { display: flex; align-items: center; gap: 9px; font-size: 13px; color: var(--text); min-width: 0; }
+.wv-link-banner-main i { color: var(--accent); flex-shrink: 0; }
+.wv-link-banner-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.wv-link-banner-cta {
+  font-size: 12.5px; font-weight: 700; color: #fff; background: var(--accent);
+  border: none; border-radius: 8px; padding: 7px 13px; cursor: pointer; white-space: nowrap;
 }
-.wv-stream-row:hover { border-color: var(--accent); }
-.wv-stream-name { font-weight: 700; font-size: 13px; color: var(--text); }
-.wv-stream-matchup { font-size: 12px; color: var(--text-muted); flex: 1; }
-.wv-stream-imp {
-  font-size: 11px; font-weight: 800; padding: 2px 8px; border-radius: var(--radius-pill, 8px);
-  font-variant-numeric: tabular-nums; white-space: nowrap;
+.wv-link-banner-x {
+  font-size: 16px; line-height: 1; color: var(--text-muted); background: none;
+  border: none; cursor: pointer; padding: 4px 6px; border-radius: 6px;
 }
-.wv-stream-imp-good { background: color-mix(in srgb, var(--win) 16%, transparent); color: var(--win); }
-.wv-stream-imp-bad  { background: color-mix(in srgb, var(--loss) 14%, transparent); color: var(--loss); }
-.wv-stream-imp-mid  { background: rgba(148,163,184,.16); color: var(--text-muted); }
+.wv-link-banner-x:hover { color: var(--text); background: rgba(148,163,184,.15); }
 
 /* Lineup advice banner -- points left on the bench + suggested swaps */
 .wv-ss-advice { border-radius: 10px; padding: 12px 14px; margin-bottom: 16px; border: 1px solid var(--border); }
@@ -533,13 +532,20 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
         <button type="button" class="wv-horizon-btn" data-h="four_week" onclick="wvSetHorizon('four_week')">Next 4 weeks</button>
         <button type="button" class="wv-horizon-btn" data-h="stash" onclick="wvSetHorizon('stash')">Long-term stash</button>
       </div>
+      <!-- Link-your-team banner: only when the roster isn't identified, so the
+           generic ranks below are never mistaken for personalized ones. -->
+      <div id="wvLinkBanner" class="wv-link-banner" hidden>
+        <div class="wv-link-banner-main">
+          <i class="fa-solid fa-user-plus" aria-hidden="true"></i>
+          <span>Link your team for personalized ranks, drop suggestions, and lineup-gain projections.</span>
+        </div>
+        <div class="wv-link-banner-actions">
+          <button type="button" class="wv-link-banner-cta" onclick="wvLinkTeam()">Link my team</button>
+          <button type="button" class="wv-link-banner-x" onclick="wvDismissLinkBanner()" aria-label="Dismiss">×</button>
+        </div>
+      </div>
       <div id="wvWaiverList">
         {wv_skel}
-      </div>
-      <div id="wvStreamWrap" hidden>
-        <div class="wv-section-title wv-stream-head">Streaming this week</div>
-        <div id="wvStreamDef" class="wv-stream-group"></div>
-        <div id="wvStreamK" class="wv-stream-group"></div>
       </div>
     </div>
 
@@ -572,12 +578,48 @@ let wvTrendingData = [];
 let wvBigGamesData = [];
 let wvStartSitData = {{}};
 let wvCompare = [null, null]; // [playerA, playerB]
+let wvUsesK = false;   // league starts kickers (start-sit data or waiver-candidates)
+let wvUsesDef = false; // league starts team defenses (same two sources)
 
 if (!window.__brctx) window.__brctx = {{}};
 if (!window.__brctx.leagueId) window.__brctx.leagueId = WV_LEAGUE_ID;
 
 function wvLeaguePath(suffix) {{
   return '/' + WV_PLATFORM + '/' + WV_SEASON + '/' + WV_LEAGUE_ID + suffix;
+}}
+
+// ── Link-your-team banner ───────────────────────────────────────────────────
+// Shown whenever ?rid= didn't resolve to a roster (missing or stale), so the
+// generic ranks below are never mistaken for personalized ones. Dismissal is
+// remembered per league; linking your team hides it for good.
+function wvLinkBannerDismissed() {{
+  try {{ return localStorage.getItem('wv_link_banner_dismissed:' + WV_LEAGUE_ID) === '1'; }} catch (_) {{ return false; }}
+}}
+function wvRenderLinkBanner(personalized) {{
+  const el = document.getElementById('wvLinkBanner');
+  if (!el) return;
+  el.hidden = personalized === true || wvLinkBannerDismissed();
+}}
+function wvDismissLinkBanner() {{
+  try {{ localStorage.setItem('wv_link_banner_dismissed:' + WV_LEAGUE_ID, '1'); }} catch (_) {{}}
+  const el = document.getElementById('wvLinkBanner');
+  if (el) el.hidden = true;
+}}
+function wvLinkTeam() {{
+  // Same identify flow the dashboard's "Link my team" uses (the link modal's
+  // team picker / username lookup); it reloads the page on success, which
+  // re-runs wvLoad with the new _viewerRid.
+  if (window.linkMyTeam) {{ window.linkMyTeam(WV_PLATFORM, WV_LEAGUE_ID, WV_SEASON); }}
+  else if (window.openLinkModal) {{ window.openLinkModal(); }}
+  else {{ window.location.href = wvLeaguePath('/teams'); }}
+}}
+
+// K / D/ST pills are only meaningful when the league starts those positions.
+// Either source (start-sit requirements, waiver-candidates league flags) can
+// reveal them; nothing re-hides a pill the other source showed.
+function wvSyncKdPills() {{
+  document.querySelectorAll('.wv-pos-btn[data-pos="K"]').forEach(b => {{ b.hidden = !wvUsesK; }});
+  document.querySelectorAll('.wv-pos-btn[data-pos="DEF"]').forEach(b => {{ b.hidden = !wvUsesDef; }});
 }}
 
 function wvSetTab(tab) {{
@@ -591,12 +633,18 @@ function wvSetTab(tab) {{
 }}
 
 function wvSetPos(pos) {{
+  const prev = wvCurrentPos;
   wvCurrentPos = pos;
   document.querySelectorAll('.wv-pos-btn').forEach(b => {{
     const key = b.getAttribute('data-pos') || b.textContent;
     b.classList.toggle('active', key === pos);
   }});
-  wvRenderWaivers();
+  // K / D/ST tabs are a separate server-side ranked list (streaming rankers),
+  // so switching to or from one refetches; skill-position filters re-render
+  // the already-fetched list.
+  const kd = p => p === 'K' || p === 'DEF';
+  if (kd(pos) || kd(prev)) wvLoadCandidates();
+  else wvRenderWaivers();
   wvRenderStartSit();
   wvRenderTrending(wvTrendingData);
   wvRenderBigGames(wvBigGamesData);
@@ -801,25 +849,38 @@ function wvStatsRow(p) {{
 function wvLoadCandidates() {{
   const requestSeq = ++wvCandidateRequestSeq;
   const requestedHorizon = wvHorizon;
+  const requestedPos = wvCurrentPos;
   const requestedContext = `${{WV_PLATFORM}}:${{WV_SEASON}}:${{WV_LEAGUE_ID}}`;
   if (wvCandidateController) wvCandidateController.abort();
   wvCandidateController = typeof AbortController !== 'undefined' ? new AbortController() : null;
   const _wvRid = window._viewerRid ? ('&rid=' + encodeURIComponent(window._viewerRid)) : '';
   const _h = '&horizon=' + encodeURIComponent(requestedHorizon);
+  // K / D/ST tabs are scored server-side by the streaming rankers, so they get
+  // their own position-filtered request; skill positions keep the shared fetch.
+  const _pos = (requestedPos === 'K' || requestedPos === 'DEF')
+    ? ('&position=' + encodeURIComponent(requestedPos)) : '';
   // Without an identified roster we can't claim personalized improvement (#1).
   const bm = document.getElementById('wvBestMovesTitle');
   if (bm) bm.textContent = window._viewerRid ? 'Best moves for your team' : 'Top available players';
   window.brLoadingState('wvWaiverList', {{ rows: 4, compact: true, message: 'Loading ' + requestedHorizon.replace('_', ' ') + ' recommendations' }});
-  fetch(`/api/waiver-candidates?platform=${{WV_PLATFORM}}&league_id=${{WV_LEAGUE_ID}}&season=${{WV_SEASON}}${{_wvRid}}${{_h}}`,
+  fetch(`/api/waiver-candidates?platform=${{WV_PLATFORM}}&league_id=${{WV_LEAGUE_ID}}&season=${{WV_SEASON}}${{_wvRid}}${{_h}}${{_pos}}`,
         wvCandidateController ? {{ signal: wvCandidateController.signal }} : {{}})
     .then(r => r.json().then(d => ({{ ok: r.ok, d }})))
     .then(({{ ok, d }}) => {{
-      if (requestSeq !== wvCandidateRequestSeq || requestedHorizon !== wvHorizon || requestedContext !== `${{WV_PLATFORM}}:${{WV_SEASON}}:${{WV_LEAGUE_ID}}`) return;
+      if (requestSeq !== wvCandidateRequestSeq || requestedHorizon !== wvHorizon || requestedPos !== wvCurrentPos || requestedContext !== `${{WV_PLATFORM}}:${{WV_SEASON}}:${{WV_LEAGUE_ID}}`) return;
       if (!ok || d.error) {{
         window.brErrorState('wvWaiverList', (d && d.error) || 'Unable to load waiver data.', wvLoadCandidates);
         return;
       }}
       wvWaiverData = d.candidates || [];
+      // League K/DST usage flags also reveal the position pills (independent of
+      // the start-sit data path in wvSyncPosPills).
+      wvUsesK = wvUsesK || d.league_uses_k === true;
+      wvUsesDef = wvUsesDef || d.league_uses_def === true;
+      wvSyncKdPills();
+      // Explicit personalization state: ?rid= missing or unresolvable means
+      // generic ranks, and the banner says so instead of staying silent.
+      wvRenderLinkBanner(d.personalized === true);
       window.wvFaabEnabled = d.faab_enabled === true;
       const toggle = document.getElementById('wvFaabToggle');
       if (toggle) toggle.hidden = !window.wvFaabEnabled;
@@ -848,11 +909,6 @@ function wvLoad() {{
   fetch(`/api/trending-adds?platform=${{WV_PLATFORM}}&league_id=${{WV_LEAGUE_ID}}&season=${{WV_SEASON}}`)
     .then(r => r.json())
     .then(d => {{ wvTrendingData = d.trending || []; wvRenderTrending(wvTrendingData); }})
-    .catch(() => {{}});
-
-  fetch(`/api/streaming-options?platform=${{WV_PLATFORM}}&league_id=${{WV_LEAGUE_ID}}&season=${{WV_SEASON}}`)
-    .then(r => r.json())
-    .then(d => wvRenderStreaming(d))
     .catch(() => {{}});
 
   wvLoadStartSit();
@@ -1226,45 +1282,6 @@ function wvRenderTrending(items) {{
 }}
 
 // ── Streaming this week (matchup-based D/ST + K) ───────────────────────────────
-function wvStreamRow(p, implied, isDef) {{
-  const nm = (p.name || '').replace(/'/g, "\\\\'");
-  const impNum = implied != null ? +implied : null;
-  let impCls = 'mid';
-  if (impNum != null) impCls = impNum >= 26 ? 'high' : (impNum <= 18 ? 'low' : 'mid');
-  // For a defense a LOW opponent total is good, so invert the color meaning.
-  const good = isDef ? (impNum != null && impNum <= 18) : (impNum != null && impNum >= 26);
-  const bad  = isDef ? (impNum != null && impNum >= 26) : (impNum != null && impNum <= 18);
-  const impCls2 = good ? 'good' : (bad ? 'bad' : 'mid');
-  const impLabel = impNum != null
-    ? (isDef ? (impNum.toFixed(0) + ' opp') : (impNum.toFixed(0) + ' impl'))
-    : '';
-  const impChip = impLabel
-    ? `<span class="wv-stream-imp wv-stream-imp-${{impCls2}}" title="Vegas implied team total">${{impLabel}}</span>`
-    : '';
-  return `
-    <div class="wv-stream-row" onclick="openPlayerModal('${{p.player_id}}', '${{nm}}')">
-      <span class="wv-stream-name">${{p.name || ''}}</span>
-      <span class="wv-stream-matchup">${{p.matchup || ''}}</span>
-      ${{impChip}}
-      ${{p.adds_48h ? '<span class="wv-stream-imp wv-stream-imp-mid" title="Sleeper adds last 48h">+' + wvFmtAdds(p.adds_48h) + ' adds</span>' : ''}}
-    </div>`;
-}}
-function wvRenderStreaming(d) {{
-  const wrap = document.getElementById('wvStreamWrap');
-  const defEl = document.getElementById('wvStreamDef');
-  const kEl = document.getElementById('wvStreamK');
-  if (!wrap || !d || !d.in_season) {{ if (wrap) wrap.hidden = true; return; }}
-  const defs = d.defense || [], ks = d.kicker || [];
-  if (!defs.length && !ks.length) {{ wrap.hidden = true; return; }}
-  defEl.innerHTML = defs.length
-    ? '<div class="wv-stream-sub">Defense</div>' + defs.slice(0, 5).map(p => wvStreamRow(p, p.opp_implied, true)).join('')
-    : '';
-  kEl.innerHTML = ks.length
-    ? '<div class="wv-stream-sub">Kicker</div>' + ks.slice(0, 5).map(p => wvStreamRow(p, p.own_implied, false)).join('')
-    : '';
-  wrap.hidden = false;
-}}
-
 // ── Compare slot management ───────────────────────────────────────────────────
 function wvToggleCompare(p) {{
   const id = p.player_id;
@@ -1555,10 +1572,9 @@ function wvClearCompare() {{
 function wvSyncPosPills() {{
   const req = wvStartSitData._lineup_requirements || {{}};
   const pos = wvStartSitData.positions || {{}};
-  const showK = (req.K > 0) || ((pos.K || []).length > 0);
-  const showDef = (req.DEF > 0) || ((pos.DEF || []).length > 0);
-  document.querySelectorAll('.wv-pos-btn[data-pos="K"]').forEach(b => {{ b.hidden = !showK; }});
-  document.querySelectorAll('.wv-pos-btn[data-pos="DEF"]').forEach(b => {{ b.hidden = !showDef; }});
+  wvUsesK = wvUsesK || (req.K > 0) || ((pos.K || []).length > 0);
+  wvUsesDef = wvUsesDef || (req.DEF > 0) || ((pos.DEF || []).length > 0);
+  wvSyncKdPills();
 }}
 
 function wvStartSitPositions() {{
