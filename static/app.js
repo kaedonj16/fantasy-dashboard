@@ -1310,9 +1310,10 @@ window.brHaptic = function (pattern) {
       var nav = document.querySelector('.top-nav');
       if (nav) {
         nav.insertAdjacentElement('afterend', next.cloneNode(true));
-        // The clone is the server-rendered ticker: empty and hidden. Re-fill it
-        // (from cache after the first fetch) so the marquee actually shows and
-        // scrolls instead of sitting blank after a soft-nav into Home.
+        // The clone is the server-rendered ticker: an empty but visible
+        // reserved strip. Re-fill it (from cache after the first fetch) so the
+        // marquee actually shows and scrolls instead of sitting blank after a
+        // soft-nav into Home.
         if (typeof window.populateHomeTicker === 'function') window.populateHomeTicker();
       }
     }
@@ -9781,9 +9782,16 @@ window.initTradePage = function initTradePage(root = document) {
 
     if (!analyzeBtn) return;
 
+    // The guest flow uses a Sleeper username/league session instead of
+    // sign-in; preserve its server-rendered label rather than resetting it
+    // to "Analyze Trade".
+    const label = analyzeBtn.textContent.trim() === "Connect League to Analyze"
+      ? "Connect League to Analyze"
+      : "Analyze Trade";
+
     if (!hasLeague) {
       analyzeBtn.disabled = false;
-      analyzeBtn.textContent = "Analyze Trade";
+      analyzeBtn.textContent = label;
       analyzeBtn.classList.remove("otc-btn-disabled");
       analyzeBtn.removeAttribute("data-tooltip");
       return;
@@ -9791,7 +9799,7 @@ window.initTradePage = function initTradePage(root = document) {
 
     if (!selector) {
       analyzeBtn.disabled = true;
-      analyzeBtn.textContent = "Analyze Trade";
+      analyzeBtn.textContent = label;
       analyzeBtn.classList.add("otc-btn-disabled");
       analyzeBtn.setAttribute("data-tooltip", "Please select your team first to analyze trades");
       return;
@@ -9800,12 +9808,12 @@ window.initTradePage = function initTradePage(root = document) {
     const hasSelection = selector.value && selector.value !== "";
     if (hasSelection) {
       analyzeBtn.disabled = false;
-      analyzeBtn.textContent = "Analyze Trade";
+      analyzeBtn.textContent = label;
       analyzeBtn.classList.remove("otc-btn-disabled");
       analyzeBtn.removeAttribute("data-tooltip");
     } else {
       analyzeBtn.disabled = true;
-      analyzeBtn.textContent = "Analyze Trade";
+      analyzeBtn.textContent = label;
       analyzeBtn.classList.add("otc-btn-disabled");
       analyzeBtn.setAttribute("data-tooltip", "Please select your team first to analyze trades");
     }
@@ -10827,16 +10835,19 @@ document.addEventListener("DOMContentLoaded", () => {
 
 if (!platformBtns.length) return;
 
-  // Live-values ticker: fill from Top Movers (dynasty risers/fallers), then
-  // reveal. Any failure or an empty board just leaves it hidden. Exposed and
+  // Live-values ticker: the band renders from first paint as a reserved strip
+  // (see .home-ticker-band min-height) so filling it never shifts the league
+  // form below it. Fill from Top Movers (dynasty risers/fallers); an empty
+  // board or a failed fetch collapses the strip entirely. Exposed and
   // idempotent (not a one-shot IIFE) because the ticker is site chrome: a soft
-  // navigation into Home re-mounts an EMPTY server-rendered clone of it (see
-  // syncHomeTicker), so it must be re-populated there too or it sits frozen and
-  // blank. The built marquee HTML is cached so re-entry doesn't refetch.
+  // navigation into Home re-mounts a server-rendered clone of it (see
+  // syncHomeTicker), so it must be re-populated there too or it sits blank.
+  // The built marquee HTML is cached so re-entry doesn't refetch.
   window.populateHomeTicker = function populateHomeTicker() {
     const band = document.getElementById("homeTicker");
     const track = document.getElementById("homeTickerTrack");
     if (!band || !track) return;
+    const collapse = () => { band.hidden = true; band.setAttribute("aria-hidden", "true"); };
     // Already filled (e.g. this exact node was populated on a prior visit).
     if (track.childElementCount) { band.hidden = false; band.removeAttribute("aria-hidden"); return; }
     const reveal = (base) => {
@@ -10863,12 +10874,12 @@ if (!platformBtns.length) return;
     const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
     fetch("/api/top-movers").then((r) => r.json()).then((data) => {
       const items = (data && data.items) || [];
-      if (!items.length) return;
+      if (!items.length) { collapse(); return; }
       window.__homeTickerHtml = items.map((it) =>
         `<span class="mv">${esc(it.name)} <span class="${it.up ? "up" : "dn"}">${it.up ? "▲" : "▼"} ${it.pct}%</span></span>`
       ).join("");
       reveal(window.__homeTickerHtml);
-    }).catch(() => {});
+    }).catch(() => { collapse(); });
   };
   window.populateHomeTicker();
 

@@ -23,7 +23,7 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
   border: 1px solid var(--border); margin-bottom: 16px; background: var(--card);
 }
 .wv-tab-btn {
-  flex: 1; padding: 10px 0; font-size: 13px; font-weight: 700;
+  flex: 1; padding: 10px 0; min-height: 44px; font-size: 13px; font-weight: 700;
   border: none; background: none; color: var(--text-muted); cursor: pointer;
   transition: background .15s, color .15s;
 }
@@ -1026,7 +1026,7 @@ function wvRenderWaivers() {{
       returnHint = `<div class="wv-drop-hint" title="${{srcTip}}">`
         + `<span class="wv-drop-lbl">${{srcLbl}}</span>${{wkLbl}}</div>`;
     }}
-    const sub = [p.position, p.team, p.pos_rank_label, p.age ? 'Age ' + parseFloat(p.age).toFixed(1) : '', p.rostered_pct != null ? Math.round(p.rostered_pct) + '% rostered' : '', p.adds_48h ? ('+' + p.adds_48h + ' adds') : ''].filter(Boolean).join(' · ');
+    const sub = [p.position, p.team, p.pos_rank_label, p.age ? 'Age ' + parseFloat(p.age).toFixed(1) : '', p.rostered_pct != null ? Math.round(p.rostered_pct) + '% rostered' : '', p.adds_48h ? ('+' + wvFmtAdds(p.adds_48h) + ' adds') : ''].filter(Boolean).join(' · ');
     return `
     <div class="wv-bm-row" onclick="openPlayerModal('${{p.player_id}}', '${{p.name.replace(/'/g,"\\'")}}')">
       <div class="wv-bm-main">
@@ -1113,7 +1113,7 @@ function wvStreamRow(p, implied, isDef) {{
       <span class="wv-stream-name">${{p.name || ''}}</span>
       <span class="wv-stream-matchup">${{p.matchup || ''}}</span>
       ${{impChip}}
-      ${{p.adds_48h ? '<span class="wv-stream-imp wv-stream-imp-mid" title="Sleeper adds last 48h">+' + p.adds_48h + ' adds</span>' : ''}}
+      ${{p.adds_48h ? '<span class="wv-stream-imp wv-stream-imp-mid" title="Sleeper adds last 48h">+' + wvFmtAdds(p.adds_48h) + ' adds</span>' : ''}}
     </div>`;
 }}
 function wvRenderStreaming(d) {{

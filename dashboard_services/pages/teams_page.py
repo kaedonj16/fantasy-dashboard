@@ -555,9 +555,9 @@ def build_teams_body(ctx: dict) -> str:
             _bar_w = min(abs(z) / 2.0, 1.0) * 50.0
             _bar_dir = "up" if z >= 0 else "dn"
             if pos == strongest_pos:
-                _flag = "<span class='tc-flag s' aria-label='league-best room'>&#9650;</span>"
+                _flag = "<span class='tc-flag s' aria-label='Your strongest position group'>&#9650;</span>"
             elif pos == weakest_pos:
-                _flag = "<span class='tc-flag w' aria-label='thinnest room'>&#9660;</span>"
+                _flag = "<span class='tc-flag w' aria-label='Your weakest position group'>&#9660;</span>"
             else:
                 _flag = ""
 
@@ -576,7 +576,7 @@ def build_teams_body(ctx: dict) -> str:
                 "    </div>"
                 "  </td>"
                 "  <td class='pos-total'>{total:.1f}</td>"
-                "  <td class='pos-rank'>#{rank}{flag}</td>"
+                "  <td class='pos-rank' title='Starter-weighted rank: starters count full, depth counts partial — not raw total value'>#{rank}{flag}</td>"
                 "</tr>".format(
                     cls=highlight_class,
                     rank=rank,
@@ -873,6 +873,7 @@ def build_teams_body(ctx: dict) -> str:
             f"        {''.join(table_rows)}"
             "      </tbody>"
             "    </table>"
+            "    <div class='pos-rank-note'>Position ranks use starter-weighted value (starters full, depth partial) — not raw totals.</div>"
             "    </div>"
             "  </div>"
             "</div>"

@@ -3687,6 +3687,13 @@ button:hover {
     font-size: 13px;
 }
 
+/* Explains what the #rank column means (starter-weighted, not raw totals). */
+.pos-rank-note {
+    font-size: 11px;
+    color: var(--text-muted);
+    padding: 6px 2px 0;
+}
+
 .pos-strength-table th, .pos-strength-table td {
     padding: 5px;
 }
@@ -3713,6 +3720,15 @@ button:hover {
     text-overflow: ellipsis;
     white-space: nowrap;
     width: 38%;
+}
+
+/* Compact (dashboard rail) standings: let long team names wrap to a second
+   line instead of truncating with an ellipsis; the full name is also on the
+   cell's title attribute. */
+.standings-compact td.team {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
 }
 
 .standings-table td.team img {
@@ -4900,7 +4916,10 @@ thead th {
     font-size: 20px;
     line-height: 1;
     cursor: pointer;
-    padding: 0;
+    /* ~40px touch target via padding + negative margin: the hit area grows
+       without moving the visible glyph or shifting layout. */
+    padding: 10px;
+    margin: -10px;
 }
 
 .otc-chip-value {
@@ -6077,6 +6096,7 @@ strong + .player-badge,
 
 .otc-main-tab {
     padding: 7px 16px;
+    min-height: 44px;
     font-size: 13px;
     font-weight: 700;
     border: none;
@@ -8072,6 +8092,9 @@ select:focus {
 .trade-bar-indicator {
     position: absolute;
     top: -3px;
+    /* Default to center so the marker doesn't render as a sliver at the left
+       edge before JS positions it. */
+    left: 50%;
     width: 12px;
     height: 28px;
     border-radius: 12px;
@@ -8989,7 +9012,7 @@ select:focus {
         color: var(--text-muted);
         font-weight: 700;
         font-size: 12.5px;
-        padding: 9px 12px;
+        padding: 12px;
         border-radius: 10px;
         white-space: nowrap;
         cursor: pointer;
@@ -12954,6 +12977,9 @@ a.signed-home-league:hover {
     overflow: clip;
     width: 100vw;
     margin-left: calc(50% - 50vw);
+    /* Rendered from first paint (not hidden) so the async fill never shifts
+       the league form below; collapses via [hidden] only when empty/failed. */
+    min-height: 34px;
 }
 
 .home-ticker-tag {
@@ -12999,7 +13025,10 @@ a.signed-home-league:hover {
 .home-ticker-track {
     display: inline-flex;
     gap: 28px;
-    padding: 9px 22px;
+    /* Trailing padding equals the flex gap (and leading padding is 0) so the
+       -50% marquee loop lands exactly on the half seam with no jump or
+       dangling partial glyph at the clip edge. */
+    padding: 9px 28px 9px 0;
     white-space: nowrap;
     font-size: 13px;
     font-weight: 700;
@@ -16003,7 +16032,7 @@ img, svg, canvas {
     .home-ticker-track {
         font-size: 12px;
         gap: 20px;
-        padding: 8px 14px;
+        padding: 8px 20px 8px 0; /* seamless -50% loop: trailing padding = flex gap */
     }
 
     .home-feature-grid {
@@ -17115,13 +17144,13 @@ img, svg, canvas {
     .nav-pill {
         font-size: 0.75rem;
         padding: 4px 6px;
-        min-height: 28px;
+        min-height: 36px;
     }
 
     .changelog-bell-btn {
-        width: 28px !important;
-        height: 28px !important;
-        font-size: 12px !important;
+        width: 36px !important;
+        height: 36px !important;
+        font-size: 14px !important;
     }
 
     .card {
@@ -17273,13 +17302,13 @@ img, svg, canvas {
     .nav-pill {
         font-size: 14px;
         padding: 4px 6px;
-        min-height: 28px;
+        min-height: 36px;
         margin-top: 4px;
     }
 
     .changelog-bell-btn {
-        width: 28px !important;
-        height: 28px !important;
+        width: 36px !important;
+        height: 36px !important;
         font-size: 12px !important;
     }
 
@@ -38147,6 +38176,50 @@ a, button, [role="button"], [role="tab"], summary, label,
     button:active, [role="button"]:active, [role="tab"]:active,
     .pos-pill:active, .settings-toggle:active {
         transform: none;
+    }
+}
+
+/* Touch targets: the shared filter-pill family gets a 36px minimum height on
+   touch devices (waivers, trade database, rankings, trade calculator and
+   related filters); desktop sizing is untouched. */
+@media (pointer: coarse) {
+    .filter-pill,
+    .ti-pos,
+    .ti-lf-btn,
+    .tdb-lt,
+    .sched-rank-pos,
+    .dr-pos,
+    .cs-posf button,
+    .pvc-range-btn,
+    .pm-wt-tab,
+    .am-pos,
+    .am-qr,
+    .rf-tf-opt,
+    .rz-fp-opt {
+        min-height: 36px;
+    }
+
+    /* Trade calculator info buttons: 36px touch targets on touch devices. */
+    .otc-info-btn {
+        width: 36px;
+        height: 36px;
+    }
+}
+
+/* iOS Safari zooms the page when an input below 16px receives focus. Pin
+   text-like controls to 16px on phones so tapping the Sleeper username,
+   league picker, or search fields never triggers the zoom. */
+@media (max-width: 480px) {
+    input[type="text"],
+    input[type="password"],
+    input[type="number"],
+    input[type="email"],
+    input[type="search"],
+    input[type="tel"],
+    input[type="url"],
+    select,
+    textarea {
+        font-size: 16px;
     }
 }
 
