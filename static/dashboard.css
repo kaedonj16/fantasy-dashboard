@@ -36025,9 +36025,9 @@ a.rz-demo-link:hover {
     outline-offset: 2px;
 }
 .rz-game-pill.is-selected {
-    border-color: var(--rz-accent, #6366f1);
-    background: color-mix(in srgb, var(--rz-accent, #6366f1) 8%, var(--rz-card));
-    box-shadow: 0 0 0 1px var(--rz-accent, #6366f1);
+    border-color: var(--rz-red);
+    background: var(--rz-red-soft);
+    box-shadow: 0 0 0 1px var(--rz-red);
 }
 .rz-game-pill-all {
     min-width: 52px;
@@ -36040,7 +36040,7 @@ a.rz-demo-link:hover {
     letter-spacing: .08em;
     color: var(--rz-muted);
 }
-.rz-game-pill-all.is-selected .rz-gp-all { color: var(--rz-accent, #6366f1); }
+.rz-game-pill-all.is-selected .rz-gp-all { color: var(--rz-red); }
 .rz-gp-team {
     display: flex;
     align-items: center;
@@ -41669,7 +41669,7 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
 .rz-game-strip-scroll { display: flex; gap: 8px; overflow-x: auto; padding: 12px 12px 6px; scrollbar-width: none; }
 .rz-game-strip-scroll::-webkit-scrollbar { display: none; }
 .rz-game-pill { flex: 0 0 auto; min-width: 108px; max-width: 150px; min-height: 46px; display: flex; flex-direction: column; align-items: stretch; justify-content: center; gap: 2px; padding: 7px 10px; background: var(--rz-card); border: 1px solid var(--rz-border); border-radius: 14px; cursor: pointer; font: inherit; color: var(--rz-text); text-align: left; }
-.rz-game-pill.is-selected { border-color: #6366f1; background: rgba(99, 102, 241, 0.08); box-shadow: 0 0 0 1px #6366f1; }
+.rz-game-pill.is-selected { border-color: var(--rz-red); background: var(--rz-red-soft); box-shadow: 0 0 0 1px var(--rz-red); }
 .rz-gp-team { display: flex; align-items: center; gap: 5px; min-width: 0; }
 .rz-gp-logo-txt { font-size: 9px; font-weight: 800; color: var(--rz-muted); }
 .rz-gp-abv { font-size: 11px; font-weight: 800; letter-spacing: .02em; color: var(--rz-text); }
