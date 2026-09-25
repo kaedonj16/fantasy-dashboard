@@ -18516,16 +18516,34 @@ def _ensure_sleeper_week_files(season_year: int) -> None:
         from data_building.external_data.sleeper_bulk_stats import fetch_week_stats
     except Exception:
         return
+
     missing = [w for w in completed if not _sleeper_week_cache_populated(season_year, w)]
     if missing:
         now = time.time()
         if now - _SLEEPER_WEEK_ENSURE_TS.get(season_year, 0.0) >= _SLEEPER_WEEK_ENSURE_COOLDOWN_S:
             _SLEEPER_WEEK_ENSURE_TS[season_year] = now
-            for week in missing:
+            # Weeks are independent (each writes its own file), so fetch in
+            # parallel. Sequential fetches made a cold post-deploy backfill
+            # take 60s+ and risk tripping gunicorn's 120s worker timeout on
+            # the request that triggered it.
+            import concurrent.futures as _futures
+
+            def _fetch(week: int) -> None:
                 try:
                     fetch_week_stats(season_year, week)
                 except Exception:
-                    continue
+                    pass
+
+            with _futures.ThreadPoolExecutor(
+                max_workers=min(4, len(missing)), thread_name_prefix="sleeper-wk"
+            ) as pool:
+                for fut in _futures.as_completed(
+                    {pool.submit(_fetch, week): week for week in missing}
+                ):
+                    try:
+                        fut.result()
+                    except Exception:
+                        continue
     # ── Live week ──
     try:
         live_week = (max(completed) + 1) if completed else 1
@@ -23658,6 +23676,49 @@ def api_player_game_logs(player_id: str):
 # ── Player modal Team tab ─────────────────────────────────────────────────────
 _TEAM_OFFENSE_RANKS_CACHE: dict = {}
 _TEAM_OFFENSE_RANKS_TTL = 3600  # 1 hour
+
+
+def _team_offense_ranks_disk_path(season: int) -> str:
+    return os.path.join(CACHE_DIR, f"team_offense_ranks_{int(season)}.json")
+
+
+def _read_team_offense_ranks_disk(season: int):
+    """Return (computed_at, payload) from the on-disk ranks cache when fresh.
+
+    The container filesystem is shared by all gunicorn workers, so a payload
+    computed by one worker is instantly reusable by the others. Without this,
+    every worker pays the 60s+ cold compute (Sleeper week files + nflverse
+    CSV downloads) on its first hit, which is what made the Teams page look
+    broken on first click. Never raises.
+    """
+    try:
+        path = _team_offense_ranks_disk_path(season)
+        if not os.path.exists(path):
+            return None
+        with open(path, encoding="utf-8") as handle:
+            blob = json.load(handle) or {}
+        computed_at = float(blob.get("computed_at") or 0)
+        payload = blob.get("payload")
+        if not isinstance(payload, dict) or not computed_at:
+            return None
+        if time.time() - computed_at >= _TEAM_OFFENSE_RANKS_TTL:
+            return None
+        return computed_at, payload
+    except Exception:
+        logger.debug("team offense ranks disk cache read failed", exc_info=True)
+        return None
+
+
+def _write_team_offense_ranks_disk(season: int, payload: dict) -> None:
+    """Persist a computed ranks payload for sibling workers. Never raises."""
+    try:
+        path = _team_offense_ranks_disk_path(season)
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as handle:
+            json.dump({"computed_at": time.time(), "payload": payload}, handle)
+        os.replace(tmp, path)
+    except Exception:
+        logger.debug("team offense ranks disk cache write failed", exc_info=True)
 _PFR_SNAP_CACHE: dict = {}
 _PFR_SNAP_CACHE_TTL = 3600
 # Assembled Team-tab payloads, keyed by (player_id, season). Short TTL so a
@@ -23873,6 +23934,13 @@ def _compute_team_offense_ranks(season: int) -> dict:
     cached = _TEAM_OFFENSE_RANKS_CACHE.get(cache_key)
     if cached and time.time() - cached[0] < _TEAM_OFFENSE_RANKS_TTL:
         return cached[1]
+    # Cross-worker disk check before the expensive compute: the container
+    # filesystem is shared, so one worker's finished compute serves the rest.
+    disk = _read_team_offense_ranks_disk(season)
+    if disk:
+        computed_at, payload = disk
+        _TEAM_OFFENSE_RANKS_CACHE[cache_key] = (computed_at, payload)
+        return payload
 
     from utils.utils import load_teams_index
     from utils.team_offense_ranks import compute_team_offense, rank_offense_table
@@ -23918,6 +23986,7 @@ def _compute_team_offense_ranks(season: int) -> dict:
         "available_seasons": _list_team_tab_seasons(season),
     }
     _TEAM_OFFENSE_RANKS_CACHE[cache_key] = (time.time(), payload)
+    _write_team_offense_ranks_disk(season, payload)
     return payload
 
 
