@@ -57,6 +57,38 @@ def _refresh_global_adp(season: int) -> None:
         traceback.print_exc()
 
 
+def _build_usage_table_snapshot(season: int) -> None:
+    """Build the daily usage table on THIS container's disk.
+
+    data/usage_table.json is gitignored and Render gives the web container an
+    ephemeral disk, so every deploy wipes it. The daily cron rebuilds the
+    table on its own container, which the web container never sees (separate
+    disks), so without this step depth charts fall back to the stale usage
+    embedded in the committed relevant-players index (e.g. 2025 numbers
+    served as the current season, N/A for carry/touch shares). Completed
+    weeks are immutable cache hits; only a few Sleeper week files are
+    fetched. Best-effort: never raises.
+    """
+    try:
+        from dashboard_services.api import get_nfl_state
+        from data_building.external_data.sleeper_usage import (
+            write_usage_table_snapshot,
+        )
+        state = get_nfl_state() or {}
+        week = int(state.get("week") or 0)
+        season_type = str(state.get("season_type") or "").lower()
+        if season_type == "off" or week < 1:
+            weeks = range(1, 19)
+        else:
+            weeks = range(1, min(week + 1, 19))
+        path = write_usage_table_snapshot(season, weeks=weeks)
+        print(f"[post-deploy] Usage table snapshot: {path}")
+    except Exception as e:
+        print(f"[post-deploy] Usage table snapshot failed: {e}")
+        import traceback
+        traceback.print_exc()
+
+
 def _warm_team_rankings_cache(port: int, season: int) -> None:
     """Warm the NFL team rankings cache so the first page click is fast.
 
@@ -106,6 +138,13 @@ def main():
     print(format_memory_snapshot("before global ADP refresh"))
     _refresh_global_adp(target_season)
     print(format_memory_snapshot("after global ADP refresh"))
+
+    # Build the usage table on this container's disk so depth charts serve
+    # current-season numbers immediately instead of the stale embedded
+    # fallback. Independent of the daily cron (separate disk).
+    print(format_memory_snapshot("before usage table snapshot"))
+    _build_usage_table_snapshot(target_season)
+    print(format_memory_snapshot("after usage table snapshot"))
 
     # Warm the team rankings disk cache so the first Teams page visit after
     # a deploy does not pay the cold compute. Runs last; everything above is
