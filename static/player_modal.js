@@ -1292,17 +1292,24 @@ function openPlayerModal(playerId, playerName, opts) {
 
       // ── Lazy-load news into Overview panel ────────────────────────────────
       if (data.position && data.position !== 'PICK') {
+        const _newsSrcName = s => ({espn: 'ESPN', reddit: 'Reddit', gnews: 'Google News', all: 'all sources'}[s] || s);
         fetch(`/api/player-news/${encodeURIComponent(playerId)}`)
           .then(r => r.json())
           .then(nd => {
             const nb = document.getElementById('pmNewsBody');
             if (!nb) return;
             const items = nd.news || [];
+            const failed = nd.sources_failed || [];
+            const warn = failed.length
+              ? `<div class="pm-news-warn" role="alert">Some news sources unavailable (${failed.map(_newsSrcName).join(', ')}).</div>`
+              : '';
             if (!items.length) {
-              nb.innerHTML = '<span style="color:var(--text-muted);font-size:13px;">No recent news found.</span>';
+              nb.innerHTML = warn + (failed.length
+                ? '<span style="color:var(--text-muted);font-size:13px;">Couldn\'t load news right now.</span>'
+                : '<span style="color:var(--text-muted);font-size:13px;">No recent news found.</span>');
               return;
             }
-            nb.innerHTML = items.map(n => `
+            nb.innerHTML = warn + items.map(n => `
               <div class="pm-news-item">
                 <div class="pm-news-headline">
                   ${n.url
@@ -1316,7 +1323,7 @@ function openPlayerModal(playerId, playerName, opts) {
           })
           .catch(() => {
             const nb = document.getElementById('pmNewsBody');
-            if (nb) nb.innerHTML = '';
+            if (nb) nb.innerHTML = '<span style="color:var(--text-muted);font-size:13px;">Couldn\'t load news right now.</span>';
           });
       }
 

@@ -1201,18 +1201,23 @@ def build_espn_team_game_lookup(
     *,
     seasontype: int | str = 2,
     ttl: float = 60.0,
-) -> dict[str, dict]:
-    """ESPN CDN scoreboard for a whole week → ``{team_abv: game_dict}``.
+) -> tuple[dict[str, dict], str]:
+    """ESPN CDN scoreboard for a whole week → ``({team_abv: game_dict}, status)``.
 
     Lets ESPN transparently fill games Tank01 does not return (provider down,
-    rate limited, or a game played on a day other than "today"). Returns ``{}``
-    on any failure.
+    rate limited, or a game played on a day other than "today").
+
+    ``status`` is ``"fresh"`` when the scoreboard was just fetched, ``"stale"``
+    when the fetch failed and previously cached data is served instead, and
+    ``"failed"`` when no data is available at all. Failures are logged at
+    warning level with season/week context -- they used to be debug-only, which
+    let the ESPN-403 → empty-scores outage degrade silently.
     """
     key = f"{season}:{week}:{seasontype}"
     now = time.time()
     hit = _ESPN_SB_CACHE.get(key)
     if hit and (now - hit[0]) < ttl:
-        return hit[1]
+        return hit[1], "fresh"
     params = {
         "xhr": "1",
         "dates": str(season),
@@ -1229,18 +1234,24 @@ def build_espn_team_game_lookup(
             timeout=10,
         )
         if resp.status_code != 200:
-            logger.debug("[espn-sb] scoreboard HTTP %s", resp.status_code)
-            return hit[1] if hit else {}
+            logger.warning(
+                "[espn-sb] scoreboard HTTP %s (season=%s week=%s seasontype=%s)",
+                resp.status_code, season, week, seasontype,
+            )
+            return (hit[1], "stale") if hit else ({}, "failed")
         payload = resp.json()
-    except Exception:
-        logger.debug("[espn-sb] scoreboard fetch failed", exc_info=True)
-        return hit[1] if hit else {}
+    except Exception as e:
+        logger.warning(
+            "[espn-sb] scoreboard fetch failed (season=%s week=%s): %s: %s",
+            season, week, type(e).__name__, e,
+        )
+        return (hit[1], "stale") if hit else ({}, "failed")
 
     lookup = extract_espn_scoreboard_lookup(payload)
     if lookup:
         _ESPN_SB_CACHE[key] = (now, lookup)
-        return lookup
-    return hit[1] if hit else {}
+        return lookup, "fresh"
+    return (hit[1], "stale") if hit else ({}, "failed")
 
 
 # ── Orchestration ────────────────────────────────────────────────────────────
