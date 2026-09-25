@@ -132,19 +132,20 @@ def main():
         traceback.print_exc()
     print(format_memory_snapshot("after migrations"))
 
+    # Build the usage table FIRST, before the slower ADP refresh: depth charts
+    # serve current-season numbers only when this container has its own table
+    # (ephemeral disk; the daily cron writes a different disk). Without it they
+    # fall back to the stale usage embedded in the committed player index.
+    print(format_memory_snapshot("before usage table snapshot"))
+    _build_usage_table_snapshot(target_season)
+    print(format_memory_snapshot("after usage table snapshot"))
+
     # Populate this web container's ADP snapshots so the source columns / modal
     # work right after a deploy without a manual fetch. Independent of the
     # daily cron, so it runs every deploy without loading the breakout model.
     print(format_memory_snapshot("before global ADP refresh"))
     _refresh_global_adp(target_season)
     print(format_memory_snapshot("after global ADP refresh"))
-
-    # Build the usage table on this container's disk so depth charts serve
-    # current-season numbers immediately instead of the stale embedded
-    # fallback. Independent of the daily cron (separate disk).
-    print(format_memory_snapshot("before usage table snapshot"))
-    _build_usage_table_snapshot(target_season)
-    print(format_memory_snapshot("after usage table snapshot"))
 
     # Warm the team rankings disk cache so the first Teams page visit after
     # a deploy does not pay the cold compute. Runs last; everything above is
