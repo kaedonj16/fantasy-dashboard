@@ -58,6 +58,8 @@ def build_usage_map_for_season(
 
         "total_targets": float,
         "target_share": float,    # derived from Sleeper weekly targets (0–1)
+        "carry_share": float,     # player carries / team carries (0–1)
+        "touch_share": float,     # player (carries + targets) / team opportunities (0–1)
       }
     """
 
@@ -78,6 +80,7 @@ def build_usage_map_for_season(
     player_team_weeks: Dict[str, set] = {}
     team_week_opportunities: Dict[tuple, float] = {}
     team_week_targets: Dict[tuple, float] = {}
+    team_week_carries: Dict[tuple, float] = {}
     weeks_list = list(weeks)
     # Weeks whose cache must be refetched even when populated — the in-progress
     # week, whose file otherwise freezes on its first (partial) fetch and would
@@ -133,6 +136,7 @@ def build_usage_map_for_season(
                 player_team_weeks.setdefault(str(pid), set()).add(team_week)
                 team_week_opportunities[team_week] = team_week_opportunities.get(team_week, 0.0) + targets + carries
                 team_week_targets[team_week] = team_week_targets.get(team_week, 0.0) + targets
+                team_week_carries[team_week] = team_week_carries.get(team_week, 0.0) + carries
 
             ppr = float(stats.get("pts_ppr", 0) or 0)
             half_ppr = float(stats.get("pts_half_ppr", 0) or 0)
@@ -231,12 +235,16 @@ def build_usage_map_for_season(
     # attribution (important after trades), falling back to current metadata.
     player_team_opportunities: Dict[str, float] = {}
     player_team_targets: Dict[str, float] = {}
+    player_team_carries: Dict[str, float] = {}
     team_season_opportunities: Dict[str, float] = {}
     team_season_targets: Dict[str, float] = {}
+    team_season_carries: Dict[str, float] = {}
     for (team, _week), total in team_week_opportunities.items():
         team_season_opportunities[team] = team_season_opportunities.get(team, 0.0) + total
     for (team, _week), total in team_week_targets.items():
         team_season_targets[team] = team_season_targets.get(team, 0.0) + total
+    for (team, _week), total in team_week_carries.items():
+        team_season_carries[team] = team_season_carries.get(team, 0.0) + total
     for pid, acc in accum.items():
         meta = players_index.get(str(pid)) or players_index.get(pid) or {}
         team = player_team.get(str(pid))
@@ -249,11 +257,20 @@ def build_usage_map_for_season(
             only_team = next(iter(teams))
             player_team_opportunities[str(pid)] = team_season_opportunities.get(only_team, 0)
             player_team_targets[str(pid)] = team_season_targets.get(only_team, 0)
-        else:
+            player_team_carries[str(pid)] = team_season_carries.get(only_team, 0)
+        elif teams:
             # For traded players, use the actual team-week segments rather than
             # assigning their entire season to the current roster team.
             player_team_opportunities[str(pid)] = sum(team_week_opportunities.get(k, 0) for k in contexts)
             player_team_targets[str(pid)] = sum(team_week_targets.get(k, 0) for k in contexts)
+            player_team_carries[str(pid)] = sum(team_week_carries.get(k, 0) for k in contexts)
+        else:
+            # No weekly team attribution (e.g. stat rows without a team field).
+            # Fall back to the meta team so shares degrade to that team's
+            # season totals instead of 0/0.
+            player_team_opportunities[str(pid)] = team_season_opportunities.get(team, 0) if team else 0
+            player_team_targets[str(pid)] = team_season_targets.get(team, 0) if team else 0
+            player_team_carries[str(pid)] = team_season_carries.get(team, 0) if team else 0
 
     # ---- Collapse to per-game usage dict ----
     usage: Dict[str, Dict[str, float]] = {}
@@ -324,6 +341,14 @@ def build_usage_map_for_season(
             "target_share": (
                 acc["targets"] / player_team_targets[str(pid)]
                 if player_team_targets.get(str(pid), 0) > 0 else 0.0
+            ),
+            "carry_share": (
+                acc["carries"] / player_team_carries[str(pid)]
+                if player_team_carries.get(str(pid), 0) > 0 else 0.0
+            ),
+            "touch_share": (
+                (acc["carries"] + acc["targets"]) / player_team_opportunities[str(pid)]
+                if player_team_opportunities.get(str(pid), 0) > 0 else 0.0
             ),
             "season_targets": acc["targets"],
             "season_carries": acc["carries"],
