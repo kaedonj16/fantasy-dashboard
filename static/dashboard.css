@@ -36121,7 +36121,9 @@ a.rz-demo-link:hover {
 .rz-bs-backdrop {
     position: fixed;
     inset: 0;
-    z-index: 90;
+    /* Above the mobile dock (.br-tabbar at --z-chrome) so the scrim dims it;
+       one step below the sheet. Same approach as .rz-hist-overlay. */
+    z-index: calc(var(--z-modal) - 1);
     background: rgba(0, 0, 0, .6);
     opacity: 0;
     transition: opacity .25s ease;
@@ -36132,7 +36134,11 @@ a.rz-demo-link:hover {
     left: 0;
     right: 0;
     bottom: 0;
-    z-index: 91;
+    /* Modal level: clears the mobile bottom dock instead of sliding under it
+       (the old z-index 91 left the sheet's lower rows unreachable behind the
+       dock). The player modal opens later in DOM order, so a player tap from a
+       box-score row still paints above this sheet at the same level. */
+    z-index: var(--z-modal);
     max-width: 480px;
     margin: 0 auto;
     max-height: 88vh;
@@ -36181,8 +36187,12 @@ a.rz-demo-link:hover {
     line-height: 1;
 }
 .rz-bs-body {
+    /* flex child of the max-height column sheet: min-height 0 lets it shrink
+       and actually scroll on iOS Safari instead of overflowing the sheet. */
+    flex: 1 1 auto;
+    min-height: 0;
     overflow-y: auto;
-    padding: 12px 16px 28px;
+    padding: 12px 16px calc(28px + env(safe-area-inset-bottom));
     -webkit-overflow-scrolling: touch;
 }
 .rz-bs-sec {
