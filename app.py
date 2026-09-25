@@ -1361,10 +1361,6 @@ FORM_BODY = """
         <span class="home-platform-chip">MFL</span>
         <span class="home-platform-chip">Fleaflicker</span>
       </div>
-      <p class="home-pro-hero-cta">
-        <button type="button" class="home-pro-open-btn" data-home-pro-open>Unlock PRO</button>
-        <span>See what PRO includes. A Google account is required to subscribe.</span>
-      </p>
     </div>
 
     <div class="home-hero-right">
@@ -1374,7 +1370,7 @@ FORM_BODY = """
         {% if not session.get('account_id') %}
         <div class="home-account-entry home-account-top">
           <span class="home-account-lead">Connect your league below. No account needed to look around.</span>
-          <a class="home-signin-link" href="/auth/google?intent=login&amp;next=/">Already have an account? <strong>Sign in</strong></a>
+          <a class="google-continue-btn" href="/auth/google?intent=login&amp;next=/"><span class="google-button-title">Sign in with Google</span></a>
         </div>
         {% else %}
         <div id="signedInHome" class="signed-in-home">
@@ -1676,6 +1672,14 @@ FORM_BODY = """
         </p>
         </div>
       </div>
+      <figure class="home-hero-proof">
+        <blockquote>THATS ACTUALLY SO SICK BRO</blockquote>
+        <figcaption><strong>Jayden Waddell</strong><span>Pittsburgh Pilots, on the weekly recap</span></figcaption>
+      </figure>
+      <p class="home-pro-hero-cta">
+        <button type="button" class="home-pro-open-btn" data-home-pro-open>Unlock PRO</button>
+        <span>See what PRO includes. A Google account is required to subscribe.</span>
+      </p>
     </div>
   </section>
 
@@ -1983,7 +1987,7 @@ FORM_BODY = """
       <header class="home-pro-head">
         <span class="home-pro-eyebrow">Unlock PRO</span>
         <h2 class="home-pro-title" id="homeProTitle">The tools that decide trades, waivers, and playoffs</h2>
-        <p class="home-pro-lead"><strong>Less than $1 a month.</strong> PRO unlocks roster-aware analysis built for your league, not generic advice. Pick a plan, connect your league, done.</p>
+        <p class="home-pro-lead"><strong>From $5 a year.</strong> PRO unlocks roster-aware analysis built for your league, not generic advice. Pick a plan, connect your league, done.</p>
       </header>
       <ul class="home-pro-benefits">
         <li>
@@ -2014,7 +2018,7 @@ FORM_BODY = """
         <li>
           <span class="home-pro-benefit-icon" aria-hidden="true"><i class="fa-solid fa-newspaper"></i></span>
           <strong>Weekly Recap</strong>
-          <span>What happened in your league, written for managers</span>
+          <span>What happened in your league, written for managers. Only the AI storyline is PRO; the rest stays free</span>
         </li>
         <li>
           <span class="home-pro-benefit-icon" aria-hidden="true"><i class="fa-solid fa-clipboard-list"></i></span>
@@ -5296,7 +5300,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         signin_modal = (
             f"<div id='signinModal' class='signin-modal-overlay' role='dialog' aria-modal='true' aria-labelledby='signinModalTitle' aria-hidden='true'>"
             f"  <div class='signin-modal-box'>"
-            f"    <h3 class='signin-modal-title' id='signinModalTitle'>Sign in to your team</h3>"
+            f"    <h3 class='signin-modal-title' id='signinModalTitle'>Claim your team</h3>"
             f"    <p class='signin-modal-sub'>{_signin_sub}</p>"
             f"    <form method='POST' action='/set-viewer'>"
             f"      <input type='hidden' name='platform' value='{platform}'>"

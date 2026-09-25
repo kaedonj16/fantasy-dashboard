@@ -131,9 +131,10 @@ def test_google_actions_share_google_continue_style():
     markup = Path("app.py").read_text()
     css = Path("static/dashboard.css").read_text()
     assert 'id="googleContinueBtn" class="google-continue-btn"' in markup
-    # The top returning-user sign-in was intentionally demoted from a full
-    # Google button to a quiet link, so it no longer shares google-continue-btn.
-    assert 'class="home-signin-link" href="/auth/google?intent=login' in markup
+    # The top returning-user sign-in is a full secondary Google button
+    # (unmissable) rather than a quiet link, so it shares google-continue-btn.
+    assert 'class="google-continue-btn" href="/auth/google?intent=login' in markup
+    assert "home-signin-link" not in markup
     # The bottom "Create Account with Google" nudge was removed; saving now
     # happens only at step 3 via the inline #googleContinueBtn prompt.
     assert "google-create-account-btn" not in markup

@@ -11510,23 +11510,8 @@ select:focus {
     pointer-events: none;
 }
 
-/* Demoted sign-in: a quiet link instead of a full Google button competing with
-   the connect-a-league task (returning users only). */
-.home-signin-link {
-    display: inline-block;
-    margin-top: 8px;
-    font-size: 12.5px;
-    font-weight: 600;
-    color: #9fb0c6;
-    text-decoration: none;
-}
-.home-signin-link strong {
-    color: #8fb6ff;
-    font-weight: 800;
-}
-.home-signin-link:hover strong {
-    text-decoration: underline;
-}
+/* Sign-in on the home card is a secondary outline Google button for returning
+   users; the connect-a-league flow stays the primary task. */
 
 /* Onboarding card is always dark -- nested controls must not pull light-page tokens. */
 .home-card .home-steps-hint {
@@ -12507,8 +12492,49 @@ a.signed-home-league:hover {
 
 .home-hero-right {
     display: flex;
-    justify-content: flex-end;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0;
     animation: homeCardIn var(--dur-slow) var(--ease-out) .08s both;
+}
+
+/* The Get started card stays first; the testimonial and PRO CTA stack under
+   it so the free path comes before PRO on mobile and desktop. */
+.home-hero-right .home-hero-proof,
+.home-hero-right .home-pro-hero-cta {
+    width: 100%;
+    max-width: 380px;
+}
+
+.home-hero-proof {
+    margin: 12px 0 0;
+    padding: 12px 14px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: 0 10px 28px rgba(2,6,23,0.14);
+}
+
+.home-hero-proof blockquote {
+    margin: 0 0 6px;
+    font-size: 13.5px;
+    font-weight: 700;
+    line-height: 1.4;
+    letter-spacing: -0.1px;
+}
+
+.home-hero-proof figcaption {
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.home-hero-proof figcaption strong {
+    font-weight: 700;
+    margin-right: 4px;
+}
+
+.home-hero-right .home-pro-hero-cta {
+    margin: 14px 0 0;
 }
 
 .home-hero-editorial {
@@ -16179,6 +16205,11 @@ img, svg, canvas {
         min-width: 0;
         max-width: none;
         padding: 18px 16px 16px;
+    }
+
+    .home-hero-right .home-hero-proof,
+    .home-hero-right .home-pro-hero-cta {
+        max-width: none;
     }
 
     .home-card .platform-btn {
