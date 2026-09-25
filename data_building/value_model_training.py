@@ -1303,38 +1303,44 @@ def rewrite_value_table_with_model() -> Path:
             cleaned_assets[i]["sf_pos_rank_label"] = f"{pos}{rank}"
             rank += 1
 
-    # Calculate 7-day rank changes before writing JSON
-    from data_building.update_player_values_with_rankings import _load_historical_ranks
+    # Calculate 7-day rank changes before writing JSON. Both ranks are computed
+    # over the INTERSECTION of today's pool and the snapshot pool with
+    # competition tie handling on both sides, so pool growth and mass ties
+    # at 0 can't manufacture phantom "down N spots" moves.
+    from data_building.update_player_values_with_rankings import (
+        _load_historical_ranks,
+        rank_change_vs_snapshot,
+    )
 
-    # Calculate current overall ranks
-    player_assets = [a for a in cleaned_assets if a.get("position") != "PICK"]
-    player_assets.sort(key=lambda a: float(a.get("value") or 0.0), reverse=True)
-
-    # Build current rank maps
-    current_overall_ranks = {}
-    for overall_rank, asset in enumerate(player_assets, start=1):
-        pid = asset.get("id")
-        if pid:
-            current_overall_ranks[str(pid)] = overall_rank
-
-    # Calculate position ranks
-    current_pos_ranks = {}
-    pos_sorted_assets = {}
-    for asset in player_assets:
-        pos = asset.get("position")
-        if pos:
-            pos_sorted_assets.setdefault(pos, []).append(asset)
-
-    for pos, assets in pos_sorted_assets.items():
-        assets.sort(key=lambda a: float(a.get("value") or 0.0), reverse=True)
-        for pos_rank, asset in enumerate(assets, start=1):
-            pid = asset.get("id")
-            if pid:
-                current_pos_ranks.setdefault(pos, {})[str(pid)] = pos_rank
-
-    # Load historical ranks from 7 days ago
+    _SKILL_POSITIONS = ("QB", "RB", "WR", "TE")
     seven_days_ago = date.today() - timedelta(days=7)
     hist_ranks = _load_historical_ranks(seven_days_ago)
+    _hist_vals = {
+        pid: float(h["value"]) for pid, h in hist_ranks.items()
+        if isinstance(h, dict) and h.get("value") is not None
+    }
+
+    _cur_vals = {}
+    _cur_pos_vals = {}
+    for asset in cleaned_assets:
+        if asset.get("position") not in _SKILL_POSITIONS:
+            continue
+        pid = asset.get("id")
+        if not pid:
+            continue
+        pid = str(pid)
+        _v = float(asset.get("value") or 0.0)
+        _cur_vals[pid] = _v
+        _cur_pos_vals.setdefault(asset.get("position"), {})[pid] = _v
+
+    _overall_changes = rank_change_vs_snapshot(_cur_vals, _hist_vals)
+    _pos_changes = {}
+    for _pos, _pv in _cur_pos_vals.items():
+        _pos_changes.update(
+            rank_change_vs_snapshot(
+                _pv, {pid: _hist_vals[pid] for pid in _pv if pid in _hist_vals}
+            )
+        )
 
     # Add rank changes to all assets
     for asset in cleaned_assets:
@@ -1344,20 +1350,10 @@ def rewrite_value_table_with_model() -> Path:
             asset["rank_change_7d"] = None
             asset["pos_rank_change_7d"] = None
         else:
-            cur_overall = current_overall_ranks.get(pid)
-            cur_pos = current_pos_ranks.get(asset.get("position"), {}).get(pid)
-
-            hist = hist_ranks.get(pid)
-            if hist and cur_overall is not None:
-                # Positive = moved up (lower rank number is better)
-                asset["rank_change_7d"] = hist["overall_rank"] - cur_overall
-            else:
-                asset["rank_change_7d"] = None
-
-            if hist and cur_pos is not None:
-                asset["pos_rank_change_7d"] = hist["pos_rank"] - cur_pos
-            else:
-                asset["pos_rank_change_7d"] = None
+            # Positive = moved up (lower rank number is better). Players
+            # absent from the 7-day-ago snapshot get None (no trend yet).
+            asset["rank_change_7d"] = _overall_changes.get(pid)
+            asset["pos_rank_change_7d"] = _pos_changes.get(pid)
 
     out_path = DATA_DIR / "model_values.json"
     with out_path.open("w", encoding="utf-8") as f:
