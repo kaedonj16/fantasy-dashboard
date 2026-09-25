@@ -273,6 +273,7 @@ def notify_redzone_scores(league_id, platform, pbp_by_game, player_info,
         return 0
 
     sent = 0
+    league_name = _league_display_name(platform, league_id, season)
     for gid, plays in (pbp_by_game or {}).items():
         # Group scoring contributions by canonical NFL play, then by owner.
         by_play: dict = {}
@@ -334,6 +335,8 @@ def notify_redzone_scores(league_id, platform, pbp_by_game, player_info,
                 body = play.get("play_text") or "Touchdown!"
                 if pts:
                     body = f"{body}  +{round(pts, 1)} pts"
+                if league_name:
+                    body = f"{body} in {league_name}"
                 url = (f"/{platform}/{season}/{league_id}/redzone" if season
                        else f"/{platform}/{league_id}/redzone")
                 n = _broadcast_owner(
@@ -363,6 +366,31 @@ def _get_subscribed_leagues():
         return [(r["league_id"], r["platform"]) for r in rows]
     except Exception:
         return []
+
+
+_league_name_cache: dict = {}
+
+
+def _league_display_name(platform, league_id, season):
+    """Best-effort league name for push copy ("... in Blackedraw").
+
+    Cached per process: league names almost never change, and these notifiers
+    run hourly/daily. Returns "" when the name can't be resolved; callers fall
+    back to league-agnostic copy rather than dropping the notification.
+    """
+    key = (str(platform or ""), str(league_id or ""), str(season or ""))
+    if key in _league_name_cache:
+        return _league_name_cache[key]
+    name = ""
+    try:
+        if season:
+            from dashboard_services.platform_api import get_league
+            league = get_league(platform, str(league_id), int(season)) or {}
+            name = str(league.get("name") or "").strip()
+    except Exception:
+        name = ""
+    _league_name_cache[key] = name
+    return name
 
 
 # ── Notification 1: Lineup lock (60 min before first kickoff) ─────────────────
@@ -440,6 +468,7 @@ def notify_lineup_lock():
         sent = 0
         for league_id, platform in _get_subscribed_leagues():
             tag = f"lineup-lock-{season}-{week}"
+            league_name = _league_display_name(platform, league_id, season)
 
             issue_summary_by_owner: dict = {}
             bench_summary_by_owner: dict = {}
@@ -534,12 +563,16 @@ def notify_lineup_lock():
                 swap_line = bench_summary_by_owner.get(oid)
                 if swap_line:
                     body = f"{body} {swap_line}."
+                if league_name:
+                    body = f"{body} Check your lineup in {league_name}."
                 sent += _send_to_endpoints(
                     _filter_prefs(orows, "lineup_lock"),
                     "Your lineup needs attention", body, fix_url, tag,
                 )
             for oid, orows in bench_by_owner.items():
                 body = f"Week {week} kicks off soon. {bench_summary_by_owner[oid]}."
+                if league_name:
+                    body = f"{body} Check your lineup in {league_name}."
                 sent += _send_to_endpoints(
                     _filter_prefs(orows, "lineup_lock"),
                     "Points on your bench", body, fix_url, tag,
@@ -591,6 +624,7 @@ def notify_value_drops():
                         continue  # skip empty/None roster slots (unclaimed teams)
                     owner_id   = roster.get("owner_id") or ""
                     roster_ids = set(roster.get("players") or [])
+                    league_name = _league_display_name(platform, league_id, season)
                     drops = [
                         f for f in fallers
                         if f["player_id"] in roster_ids
@@ -603,7 +637,11 @@ def notify_value_drops():
                     _broadcast_owner(
                         league_id, owner_id,
                         title="Dynasty value dropping",
-                        body=f"{name} is losing dynasty value this week. Check your trade options.",
+                        body=(
+                            f"{name} is losing dynasty value this week. "
+                            "Check your trade options"
+                            f"{' in ' + league_name if league_name else ''}."
+                        ),
                         url=f"/{platform}/{season}/{league_id}/trade",
                         tag=f"value-drop-{league_id}-{top['player_id']}",
                         notif_type="value_drops",
@@ -661,6 +699,9 @@ def notify_waiver_candidates():
                 if not top:
                     continue
                 title, body = waiver_push_copy(top)
+                league_name = _league_display_name(platform, league_id, season)
+                if league_name:
+                    body = body.replace("in your league", f"in {league_name}")
                 _broadcast_league(
                     league_id,
                     title=title,
@@ -729,9 +770,14 @@ def notify_rival_trades():
                     top_pid    = max(high, key=lambda p: value_map.get(p, {}).get("value", 0))
                     top_player = value_map.get(top_pid, {})
                     name = top_player.get("name") or top_player.get("full_name") or "A top player"
+                    league_name = _league_display_name(platform, league_id, season)
+                    trade_title = (
+                        f"Trade alert in {league_name}" if league_name
+                        else "Trade alert in your league"
+                    )
                     _broadcast_league(
                         league_id,
-                        title="Trade alert in your league",
+                        title=trade_title,
                         body=f"{name} was just traded. Check the activity feed to see the full deal.",
                         url=f"/{platform}/{season}/{league_id}/activity",
                         tag=f"trade-{league_id}-{txn_id}",
@@ -797,6 +843,7 @@ def notify_playoff_odds():
 
                 rosters = get_rosters(platform, league_id, season) or []
                 roster_to_owner = {r.get("roster_id"): r.get("owner_id") for r in rosters}
+                league_name = _league_display_name(platform, league_id, season)
 
                 for roster_id, weeks in by_roster.items():
                     prev = weeks.get(week - 1)
@@ -811,7 +858,10 @@ def notify_playoff_odds():
                     _broadcast_owner(
                         league_id, owner_id,
                         title="Playoff picture update",
-                        body=f"Your playoff odds moved {direction} to {curr:.0f}% after week {week - 1}.",
+                        body=(
+                            f"Your playoff odds moved {direction} to {curr:.0f}% "
+                            f"after week {week - 1}{' in ' + league_name if league_name else ''}."
+                        ),
                         url=f"/{platform}/{season}/{league_id}/teams",
                         tag=f"playoff-{league_id}-{week}-{roster_id}",
                         notif_type="playoff_odds",
@@ -875,10 +925,15 @@ def notify_breakout_roster():
                     name = top.get("player_name") or "A player on your roster"
                     pos  = top.get("position") or ""
                     team = top.get("team") or ""
+                    league_name = _league_display_name(platform, league_id, season)
+                    breakout_body = (
+                        f"{name} ({pos}, {team}) is flagged as a breakout candidate"
+                        f"{' on your ' + league_name + ' roster' if league_name else ''}."
+                    )
                     _broadcast_owner(
                         league_id, owner_id,
                         title="Breakout candidate on your roster",
-                        body=f"{name} ({pos}, {team}) is flagged as a breakout candidate.",
+                        body=breakout_body,
                         url=f"/{platform}/{season}/{league_id}/breakouts",
                         tag=f"breakout-{league_id}-{top['player_id']}",
                         notif_type="breakout_roster",
@@ -974,10 +1029,15 @@ def notify_recap_ready():
 
         sent = 0
         for league_id, platform in leagues:
+            league_name = _league_display_name(platform, league_id, season)
+            recap_body = (
+                "Scores are final. Check your weekly recap to see how your team stacked up"
+                f"{' in ' + league_name if league_name else ''}."
+            )
             sent += _broadcast_league(
                 league_id,
                 title=f"Week {week} recap is live",
-                body="Scores are final. Check your weekly recap to see how your team stacked up.",
+                body=recap_body,
                 url=f"/{platform}/{season}/{league_id}/weekly",
                 tag=f"recap-ready-{season}-{week}",
                 notif_type="recap_ready",
@@ -1021,6 +1081,7 @@ def notify_matchup_preview():
 
         notified_any = False
         for league_id, platform in leagues:
+            league_name = _league_display_name(platform, league_id, season)
             try:
                 matchups = get_matchups(platform, league_id, int(week), int(season)) or []
                 rosters  = get_rosters(platform, league_id, int(season)) or []
@@ -1052,7 +1113,10 @@ def notify_matchup_preview():
                         _broadcast_owner(
                             league_id, owner_id,
                             title=f"Week {week} matchup preview",
-                            body=f"You're facing {opp_name} this week. Check your lineup.",
+                            body=(
+                                f"You're facing {opp_name} this week. "
+                                f"Check your lineup{' in ' + league_name if league_name else ''}."
+                            ),
                             url=f"/{platform}/{season}/{league_id}/matchups",
                             tag=f"matchup-preview-{league_id}-{week}",
                             notif_type="matchup_preview",
@@ -1110,6 +1174,7 @@ def notify_standings_update():
                 league_data   = get_league(platform, league_id, int(season)) or {}
                 settings      = league_data.get("settings") or {}
                 playoff_teams = int(settings.get("playoff_teams") or 6)
+                league_name   = str(league_data.get("name") or "").strip()
 
                 rosters = get_rosters(platform, league_id, int(season)) or []
                 if not rosters:
@@ -1148,7 +1213,10 @@ def notify_standings_update():
                         _broadcast_owner(
                             league_id, owner_id,
                             title="You moved into a playoff spot",
-                            body=f"You're {cp}{_ordinal_suffix(cp)} in your league after week {int(week) - 1}.",
+                            body=(
+                                f"You're {cp}{_ordinal_suffix(cp)} "
+                                f"in {league_name or 'your league'} after week {int(week) - 1}."
+                            ),
                             url=f"/{platform}/{season}/{league_id}/teams",
                             tag=f"standings-in-{league_id}-{week}",
                             notif_type="standings_update",
@@ -1157,7 +1225,10 @@ def notify_standings_update():
                         _broadcast_owner(
                             league_id, owner_id,
                             title="You dropped out of playoff position",
-                            body=f"You're {cp}{_ordinal_suffix(cp)} in your league after week {int(week) - 1}.",
+                            body=(
+                                f"You're {cp}{_ordinal_suffix(cp)} "
+                                f"in {league_name or 'your league'} after week {int(week) - 1}."
+                            ),
                             url=f"/{platform}/{season}/{league_id}/teams",
                             tag=f"standings-out-{league_id}-{week}",
                             notif_type="standings_update",
@@ -1214,6 +1285,7 @@ def notify_close_game():
         THRESHOLD = 20.0
 
         for league_id, platform in leagues:
+            league_name = _league_display_name(platform, league_id, season)
             try:
                 matchups = get_matchups(platform, league_id, int(week), int(season)) or []
                 rosters  = get_rosters(platform, league_id, int(season)) or []
@@ -1253,10 +1325,11 @@ def notify_close_game():
                         my_pts   = float(team.get("points") or 0)
                         opp_pts  = float(opp.get("points") or 0)
                         gap      = round(abs(my_pts - opp_pts), 1)
+                        mnf_league = f" with MNF left in {league_name}" if league_name else " with MNF left"
                         if my_pts >= opp_pts:
-                            body = f"You're up {gap} pts over {opp_name} with MNF left. Hold on tonight."
+                            body = f"You're up {gap} pts over {opp_name}{mnf_league}. Hold on tonight."
                         else:
-                            body = f"You're down {gap} pts to {opp_name} with MNF left. You can still take this."
+                            body = f"You're down {gap} pts to {opp_name}{mnf_league}. You can still take this."
                         _broadcast_owner(
                             league_id, owner_id,
                             title="Close matchup tonight",
@@ -1331,9 +1404,11 @@ def notify_transaction_drops():
                     name    = player.get("name") or player.get("full_name") or "A top player"
                     pos     = player.get("position") or ""
                     pos_str = f" ({pos})" if pos else ""
+                    league_name = _league_display_name(platform, league_id, season)
+                    drop_title = f"Big drop in {league_name}" if league_name else "Big drop in your league"
                     _broadcast_league(
                         league_id,
-                        title="Big drop in your league",
+                        title=drop_title,
                         body=f"{name}{pos_str} was just dropped. Act fast on waivers.",
                         url=f"/{platform}/{season}/{league_id}/players",
                         tag=f"drop-{league_id}-{txn_id}",
@@ -1387,6 +1462,7 @@ def notify_injury_alert():
         for league_id, platform in leagues:
             if platform != "sleeper":
                 continue
+            league_name = _league_display_name(platform, league_id, season)
             try:
                 rosters = get_rosters(league_id) or []
                 for roster in rosters:
@@ -1409,7 +1485,10 @@ def notify_injury_alert():
                         _broadcast_owner(
                             league_id, owner_id,
                             title="Starter injury alert",
-                            body=f"{name} ({pos}) is listed as {inj}. Check your lineup.",
+                            body=(
+                                f"{name} ({pos}) is listed as {inj}. "
+                                f"Check your lineup{' in ' + league_name if league_name else ''}."
+                            ),
                             url=f"/{platform}/{season}/{league_id}/weekly",
                             tag=f"injury-{league_id}-{pid}",
                             notif_type="injury",
