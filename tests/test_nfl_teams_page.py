@@ -1,0 +1,339 @@
+"""Public NFL Teams page: route, APIs, nav wiring, and the honest-rank contract.
+
+The page is league-free and guest-visible. Tests here cover the public page
+render, the two public APIs (shape, per-game sanity, null-not-fabricated
+missing values, actual/projection labeling), the nav entries, and the
+player-modal deep link.
+"""
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+pytest.importorskip("pandas")
+
+ROOT = Path(__file__).resolve().parents[1]
+
+PAGE_SRC = (ROOT / "dashboard_services/pages/nfl_teams_page.py").read_text(
+    encoding="utf-8"
+)
+APP_SRC = (ROOT / "app.py").read_text(encoding="utf-8")
+BP_SRC = (ROOT / "routes/league_pages_bp.py").read_text(encoding="utf-8")
+MODAL_JS = (ROOT / "static/player_modal.js").read_text(encoding="utf-8")
+SITEMAP_SRC = (ROOT / "routes/public_bp.py").read_text(encoding="utf-8")
+
+
+# ── Page builder (source-level) ───────────────────────────────────────────────
+
+
+def test_page_builder_has_all_views_and_scoped_styles():
+    from dashboard_services.pages.nfl_teams_page import build_nfl_teams_body
+
+    html = build_nfl_teams_body(2026, team="KC", view="passing",
+                               available_seasons=[2026, 2025])
+    assert 'data-view="overview"' in html
+    assert 'data-view="passing"' in html
+    assert 'data-view="rushing"' in html
+    assert 'data-view="oline"' in html
+    assert 'data-team="KC"' in html
+    assert 'data-view="passing"' in html
+    assert ".nt-page" in html
+    assert 'id="ntSeasonSel"' in html
+    assert "<option" in html and "2025" in html
+
+
+def test_page_builder_fetches_public_apis_and_syncs_url():
+    assert "/api/nfl-team-rankings" in PAGE_SRC
+    assert "/api/nfl-team-details" in PAGE_SRC
+    assert "/api/player-team-boxscore" in PAGE_SRC
+    assert "?team=" in PAGE_SRC
+    assert "?season=" in PAGE_SRC
+    assert "&view=" in PAGE_SRC
+
+
+def test_page_builder_discloses_honesty_rules():
+    assert "competition ranking" in PAGE_SRC
+    assert "N/A" in PAGE_SRC
+    assert "lower is better" in PAGE_SRC
+    assert "latest available" in PAGE_SRC
+
+
+def test_page_builder_avoids_em_dashes_in_copy():
+    for i, line in enumerate(PAGE_SRC.splitlines(), 1):
+        assert "—" not in line, f"em dash in page copy at line {i}"
+
+
+# ── Routes (source-level) ────────────────────────────────────────────────────
+
+
+def test_public_route_registered_without_login():
+    assert '@league_pages_bp.route("/nfl-teams")' in BP_SRC
+    assert "def page_nfl_teams" in BP_SRC
+    block = BP_SRC[BP_SRC.find("def page_nfl_teams"):]
+    assert "login_required" not in block[:400]
+    assert '"nfl-teams"' in APP_SRC  # nav meta
+    assert "/nfl-teams" in SITEMAP_SRC
+
+
+def test_apis_registered_and_use_shared_honest_service():
+    assert '@app.route("/api/nfl-team-rankings")' in APP_SRC
+    assert '@app.route("/api/nfl-team-details")' in APP_SRC
+    assert "def api_nfl_team_rankings" in APP_SRC
+    assert "def api_nfl_team_details" in APP_SRC
+    start = APP_SRC.find("def api_nfl_team_rankings")
+    body = APP_SRC[start:APP_SRC.find("# Same sanitizer", start)]
+    assert "_compute_team_offense_ranks" in body
+    assert "_nfl_teams_oline_ranks" in body
+    assert "_oline_ratings_with_fallback" in body
+    # Competition ranking lives in the shared service these helpers call.
+    assert "Ranks use competition ranking (1, 2, 2, 4)" in APP_SRC
+    assert "competition-ranked (lower rates better)" in APP_SRC
+    assert "ranked_metric" in APP_SRC  # lower-is-better O-line ranks
+    assert "from utils.team_offense_ranks import ranked_metric" in APP_SRC
+
+
+def test_nav_entries_in_all_sheets_and_dropdowns():
+    assert '"nfl-teams": "players"' in APP_SRC  # guest active parent
+    assert '"nfl-teams": "Teams"' in APP_SRC  # short label
+    assert '_sl("nfl-teams", "NFL Teams")' in APP_SRC  # mobile league sheet
+    assert '_gl("/nfl-teams", "NFL Teams", "nfl-teams")' in APP_SRC  # mobile guest
+    assert '("NFL Teams", "/nfl-teams", "nfl-teams")' in APP_SRC  # guest desktop
+    assert '("NFL Teams", "league_pages.page_nfl_teams", "nfl-teams", False)' in APP_SRC
+    for grp in (
+        '"Players": {"players", "compare", "top-movers", "advanced-metrics", "nfl-teams"',
+    ):
+        assert grp in APP_SRC
+
+
+def test_player_modal_deep_links_to_page():
+    assert "/nfl-teams?team=" in MODAL_JS
+    assert "pm-teams-page-link" in MODAL_JS
+
+
+# ── ranked_metric contract (pure) ────────────────────────────────────────────
+
+
+def test_ranked_metric_higher_better_competition_ranks():
+    from utils.team_offense_ranks import ranked_metric
+
+    ranks = ranked_metric({"A": 30.0, "B": 30.0, "C": 20.0, "D": None})
+    assert ranks["A"]["rank"] == 1
+    assert ranks["B"]["rank"] == 1
+    assert ranks["C"]["rank"] == 3
+    assert ranks["D"] is None
+    assert ranks["A"]["total"] == 3
+
+
+def test_ranked_metric_lower_better_keeps_original_values():
+    from utils.team_offense_ranks import ranked_metric
+
+    ranks = ranked_metric({"A": 20.0, "B": 35.0, "C": 20.0}, higher_better=False)
+    assert ranks["A"]["rank"] == 1
+    assert ranks["C"]["rank"] == 1
+    assert ranks["B"]["rank"] == 3
+    # Original (positive) values preserved; nothing negated leaks out.
+    assert ranks["A"]["value"] == 20.0
+    assert ranks["B"]["value"] == 35.0
+
+
+def test_ranked_metric_ranks_legitimate_zeroes():
+    from utils.team_offense_ranks import ranked_metric
+
+    ranks = ranked_metric({"A": 0.0, "B": 0.0, "C": 5.0})
+    assert ranks["A"]["rank"] == 2
+    assert ranks["B"]["rank"] == 2
+    assert ranks["A"]["value"] == 0.0
+
+
+# ── Live page + API contract (integration) ───────────────────────────────────
+
+_TEAMS_32 = [
+    "ARI", "ATL", "BAL", "BUF", "CAR", "CHI", "CIN", "CLE", "DAL", "DEN",
+    "DET", "GB", "HOU", "IND", "JAX", "KC", "LAC", "LAR", "LV", "MIA",
+    "MIN", "NE", "NO", "NYG", "NYJ", "PHI", "PIT", "SEA", "SF", "TB",
+    "TEN", "WSH",
+]
+
+
+def _canned_offense():
+    ranks_new = {
+        "points_pg": {"KC": {"rank": 1, "value": 30.0, "total": 2}},
+        "plays_pg": {"KC": {"rank": 1, "value": 65.0, "total": 2}},
+        "pass_yds_pg": {"KC": {"rank": 1, "value": 280.0, "total": 2}},
+        "pass_att_pg": {"KC": {"rank": 1, "value": 36.0, "total": 2}},
+        "rush_yds_pg": {"KC": {"rank": 2, "value": 120.0, "total": 2}},
+        "rush_att_pg": {"KC": {"rank": 2, "value": 28.0, "total": 2}},
+        "total_yds_pg": {"KC": {"rank": 1, "value": 400.0, "total": 2}},
+        "pass_tds_pg": {"KC": {"rank": 1, "value": 2.5, "total": 2}},
+        "rush_tds_pg": {"KC": {"rank": 1, "value": 1.0, "total": 2}},
+        "pass_rate": {"KC": {"rank": 1, "value": 0.56, "total": 2}},
+    }
+    # Old Team-tab keys map to the explicit per-game keys.
+    key_map = {
+        "points": "points_pg",
+        "pass_yds": "pass_yds_pg",
+        "pass_att": "pass_att_pg",
+        "rush_yds": "rush_yds_pg",
+        "rush_att": "rush_att_pg",
+        "total_yds": "total_yds_pg",
+        "pass_tds": "pass_tds_pg",
+        "rush_tds": "rush_tds_pg",
+        "plays_pg": "plays_pg",
+        "pass_rate": "pass_rate",
+    }
+    ranks = {old: ranks_new.get(new, {}) for old, new in key_map.items()}
+    return {
+        "stats_season": 2026,
+        "season": 2026,
+        "data_mode": "actual",
+        "completed_weeks": [1, 2],
+        "teams_index": {
+            t: {"Logo": f"https://x/{t}.png", "byeWeek": 10} for t in _TEAMS_32
+        },
+        "ranks": ranks,
+        "team_games": {t: 2 for t in _TEAMS_32},
+        "available_seasons": [2026, 2025],
+    }
+
+
+def _canned_oline():
+    return 2025, {
+        t: {
+            "composite": 50.0,
+            "pass_block": 52.0,
+            "run_block": 48.0,
+            "pressure_rate": 30.0,
+            "sack_rate": 6.0,
+            "line_yards": 4.0,
+        }
+        for t in _TEAMS_32
+    }
+
+
+def test_nfl_teams_page_is_public(offline_client):
+    resp = offline_client.get("/nfl-teams")
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    assert "NFL Team Rankings" in html
+    assert "nt-page" in html
+    assert "ntSeasonSel" in html
+
+
+def test_nfl_teams_page_honors_deep_link_query(offline_client):
+    resp = offline_client.get("/nfl-teams?team=KC&season=2026&view=passing")
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    assert 'data-team="KC"' in html
+    assert 'data-view="passing"' in html
+
+
+def test_nfl_team_rankings_api_contract(offline_client, monkeypatch):
+    import app as appmod
+
+    monkeypatch.setattr(
+        appmod, "_compute_team_offense_ranks", lambda season: _canned_offense()
+    )
+    monkeypatch.setattr(
+        appmod, "_oline_ratings_with_fallback", lambda season: _canned_oline()
+    )
+
+    resp = offline_client.get("/api/nfl-team-rankings?season=2026")
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["season"] == 2026
+    assert data["data_mode"] == "actual"
+    assert data["season_label"] == "2026 actuals, through Week 2"
+    assert data["available_seasons"] == [2026, 2025]
+    assert data["oline_season"] == 2025
+    assert data["oline_note"] == "2025 season (latest available)"
+    assert len(data["teams"]) == 32
+
+    kc = next(t for t in data["teams"] if t["team"] == "KC")
+    assert kc["name"] and kc["city"]
+    assert kc["bye_week"] == 10
+    assert kc["games"] == 2
+    assert kc["ranks"]["points_pg"] == {"rank": 1, "value": 30.0, "total": 2}
+    assert kc["ranks"]["plays_pg"]["value"] == 65.0
+    # Per-game sanity: these are per-game values, not season totals.
+    assert 0 < kc["ranks"]["points_pg"]["value"] < 60
+    assert 0 < kc["ranks"]["plays_pg"]["value"] < 100
+    assert kc["ranks"]["pass_yds_pg"]["value"] < 600
+    # Teams with no rank entries serialize as null, not fabricated zeroes.
+    ari = next(t for t in data["teams"] if t["team"] == "ARI")
+    assert ari["ranks"]["points_pg"] is None
+    # O-line rows carry their own season and competition ranks.
+    assert kc["oline"]["season"] == 2025
+    assert kc["oline"]["composite"]["rank"] == 1
+    assert kc["oline"]["pressure_rate"]["value"] == 30.0
+
+
+def test_nfl_team_rankings_projection_mode_labels(offline_client, monkeypatch):
+    import app as appmod
+
+    canned = _canned_offense()
+    canned["data_mode"] = "projection"
+    canned["completed_weeks"] = []
+    monkeypatch.setattr(
+        appmod, "_compute_team_offense_ranks", lambda season: canned
+    )
+    monkeypatch.setattr(
+        appmod, "_oline_ratings_with_fallback", lambda season: _canned_oline()
+    )
+
+    data = offline_client.get("/api/nfl-team-rankings?season=2026").get_json()
+    assert data["data_mode"] == "projection"
+    assert data["season_label"] == "2026 projections"
+
+
+def test_nfl_team_details_requires_team(offline_client):
+    resp = offline_client.get("/api/nfl-team-details")
+    assert resp.status_code == 400
+
+
+def test_nfl_team_details_contract(offline_client, monkeypatch):
+    import app as appmod
+
+    monkeypatch.setattr(
+        appmod, "_compute_team_offense_ranks", lambda season: _canned_offense()
+    )
+    monkeypatch.setattr(
+        appmod, "_oline_ratings_with_fallback", lambda season: _canned_oline()
+    )
+    monkeypatch.setattr(appmod, "get_players_index_global", lambda: {})
+    monkeypatch.setattr(appmod, "get_players_global", lambda: {})
+    import utils.utils as app_utils
+
+    monkeypatch.setattr(app_utils, "load_relevant_index", lambda: {})
+    monkeypatch.setattr(app_utils, "load_usage_table", lambda: None)
+    monkeypatch.setattr(
+        appmod,
+        "_build_player_team_depth_chart",
+        lambda *a, **k: {"QB": [{"id": "1", "name": "Test QB", "order": 1}]},
+    )
+    monkeypatch.setattr(appmod, "_has_stats_reg_csv", lambda s: True)
+    monkeypatch.setattr(appmod, "_resolve_stats_reg_season", lambda s: s)
+    monkeypatch.setattr(appmod, "_get_pfr_snap_counts_cached", lambda s: {})
+    import utils.player_team_schedule as sched
+
+    monkeypatch.setattr(
+        sched,
+        "build_team_schedule",
+        lambda team, season, **k: [{"week": 1, "opponent": "BUF", "bye": False}],
+    )
+
+    resp = offline_client.get("/api/nfl-team-details?team=KC&season=2026")
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["team"] == "KC"
+    assert data["team_name"]
+    assert data["season"] == 2026
+    assert data["data_mode"] == "actual"
+    assert "2026" in data["season_label"]
+    assert data["roster_note"] == "Current roster"
+    assert "2026" in data["usage_note"]
+    assert isinstance(data["depth_chart"], dict)
+    assert data["depth_chart"]["QB"][0]["name"] == "Test QB"
+    assert data["oline"]["season"] == 2025
+    assert isinstance(data["schedule"], list)
+    assert data["schedule"][0]["opponent"] == "BUF"

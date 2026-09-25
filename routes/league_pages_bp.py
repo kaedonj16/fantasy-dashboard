@@ -248,6 +248,38 @@ def page_advanced_metrics(platform: str = None, season: int = None, league_id: s
             )
     return render_page("Advanced Metrics", league_id, "advanced-metrics", body, platform, season, og_tags=og_tags)
 
+# ── NFL Teams (public research page; league variant keeps nav context) ────────
+
+@league_pages_bp.route("/nfl-teams")
+@league_pages_bp.route("/<platform>/<int:season>/<league_id>/nfl-teams")
+def page_nfl_teams(platform: str = None, season: int = None, league_id: str = None):
+    """Public NFL team rankings page. No league connection required."""
+    from dashboard_services.pages.nfl_teams_page import build_nfl_teams_body
+    from app import _list_team_tab_seasons, get_nfl_state
+
+    try:
+        cur = int((get_nfl_state() or {}).get("season") or 0)
+    except Exception:
+        cur = 0
+    import datetime as _dt
+    if not cur:
+        cur = _dt.datetime.now().year
+    available = _list_team_tab_seasons(cur)
+    try:
+        want = int(request.args.get("season") or (season or cur))
+    except (TypeError, ValueError):
+        want = season or cur
+    if want not in available:
+        want = available[0] if available else cur
+    team = "".join(ch for ch in str(request.args.get("team") or "").upper() if ch.isalpha())[:3]
+    view = str(request.args.get("view") or "overview")
+    body = build_nfl_teams_body(want, team=team, view=view, available_seasons=available)
+    return render_page(
+        "NFL Teams", league_id, "nfl-teams", body, platform, season,
+        description="NFL team rankings: real points per game, per-game offense splits, O-line ratings, depth charts, and schedules.",
+        canonical="/nfl-teams",
+    )
+
 # ── Optimal lineup (redirect to the Matchups tab) ─────────────────────────────
 
 @league_pages_bp.route("/<platform>/<int:season>/<league_id>/optimal")

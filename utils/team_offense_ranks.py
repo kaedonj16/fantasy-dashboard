@@ -366,3 +366,28 @@ def rank_offense_table(table: dict) -> dict:
     for metric in RANK_METRICS:
         ranks[metric] = competition_ranks({t: r.get(metric) for t, r in teams.items()})
     return ranks
+
+
+def ranked_metric(values: dict, higher_better: bool = True) -> dict:
+    """Competition-rank ``{team: value}`` honoring sort direction.
+
+    ``values`` maps team -> number or None (None = truly missing, unranked).
+    ``higher_better=False`` ranks lower values first (pressure/sack rates)
+    while keeping the original values in the entries. Same contract as
+    :func:`competition_ranks`: ties share a rank, zeroes are ranked.
+    """
+    if higher_better:
+        return competition_ranks(values)
+    negated = {t: (-v if v is not None else None) for t, v in (values or {}).items()}
+    ranked = competition_ranks(negated)
+    out = {}
+    for team, entry in ranked.items():
+        if entry is None:
+            out[team] = None
+        else:
+            out[team] = {
+                "rank": entry["rank"],
+                "value": (values or {}).get(team),
+                "total": entry["total"],
+            }
+    return out

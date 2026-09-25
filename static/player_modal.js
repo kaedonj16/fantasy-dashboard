@@ -2981,6 +2981,9 @@ function _pmBuildTeamHTML(data) {
   const dataMode = data.data_mode === 'projection' ? 'projection' : 'actual';
   const modeLabel = dataMode === 'projection' ? 'projections' : 'stats';
   const seasonNote = viewSeason ? `${viewSeason} · ${modeLabel}` : modeLabel;
+  // Deep link to the public NFL Teams research page (same team + season).
+  const teamsPageUrl = `/nfl-teams?team=${encodeURIComponent(team)}${viewSeason ? '&season=' + encodeURIComponent(viewSeason) : ''}`;
+  const teamsPageLink = `<a class="pm-teams-page-link" href="${teamsPageUrl}">Open ${team ? _pmEsc(team) : 'team'} on the NFL Teams page &raquo;</a>`;
   const availableSeasons = (data.available_seasons || []).map(Number).filter(Boolean);
   const pid = String(data.player_id || '').replace(/'/g, '');
   let seasonPills = '';
@@ -3070,6 +3073,7 @@ function _pmBuildTeamHTML(data) {
         </div>
         ${seasonPills}
       </div>
+      <div class="pm-teams-page-linkrow">${teamsPageLink}</div>
       ${data.team_timeframe && !data.team_timeframe.season_team_confirmed ? '<div class="pm-team-context-warning">No team record was found for this player in the selected season; current-team context is shown separately.</div>' : ''}
       ${heroStats ? '<div class="pm-team-herostats">' + heroStats + '</div>' : ''}
     </div>

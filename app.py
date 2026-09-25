@@ -3002,6 +3002,7 @@ _NAV_PAGE_META = {
     "compare": ("bars", "seo_pages.page_compare", ""),
     "top-movers": ("bars2", "seo_pages.top_movers_page", ""),
     "advanced-metrics": ("bars2", "league_pages.page_advanced_metrics", ""),
+    "nfl-teams": ("star", "league_pages.page_nfl_teams", ""),
     "breakouts": ("radar", "page_breakouts", ""),
     "prospects": ("award", "page_prospects", ""),
     "draft-history": ("history", "tool_pages.page_draft_history", ""),
@@ -3018,7 +3019,7 @@ _DOCK_LABELS = {
     "redzone": "Redzone", "waivers": "Waivers", "schedule": "Schedule", "trade": "Trades",
     "trade-suggestions": "Trades", "trade-database": "Trades", "trade-intel": "Intel",
     "compare": "Compare", "top-movers": "Movers", "advanced-metrics": "Metrics",
-    "breakouts": "Breakouts", "prospects": "Prospects", "draft-history": "History",
+    "nfl-teams": "Teams", "breakouts": "Breakouts", "prospects": "Prospects", "draft-history": "History",
     "draft-cheat-sheet": "Cheat",
     "awards": "Awards", "graphs": "Graphs", "history": "History",
 }
@@ -3276,6 +3277,7 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
     players_html = _sec("Players", [
         _sl("players", "Player Rankings"), _sl("compare", "Compare Players"),
         _sl("top-movers", "Top Movers"), _sl("advanced-metrics", "Advanced Metrics"),
+        _sl("nfl-teams", "NFL Teams"),
         _sl("breakouts", "Breakout Engine", pro=True), _sl("prospects", "Prospect Rankings"),
     ])
 
@@ -3325,7 +3327,7 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
         "Trades": {"trade", "trade-suggestions", "trade-database", "trade-intel"},
         "Weekly": {"weekly", "recap", "scout", "optimal", "waivers", "schedule", "redzone"},
         "League": {"standings", "teams", "activity", "league_health"},
-        "Players": {"players", "compare", "top-movers", "advanced-metrics", "breakouts", "prospects"},
+        "Players": {"players", "compare", "top-movers", "advanced-metrics", "nfl-teams", "breakouts", "prospects"},
         "Draft": {"draft", "draft-cheat-sheet", "keeper", "draft-history"},
         "Stats": {"awards", "graphs", "history"},
     }
@@ -3422,7 +3424,7 @@ _GUEST_ACTIVE_PARENT = {
     "trade": "trade", "trade-suggestions": "trade",
     "trade-database": "trade", "trade-intel": "trade",
     "players": "players", "compare": "players", "top-movers": "players",
-    "advanced-metrics": "players", "breakouts": "players", "prospects": "players",
+    "advanced-metrics": "players", "nfl-teams": "players", "breakouts": "players", "prospects": "players",
     "draft": "draft", "draft-history": "draft", "draft-cheat-sheet": "draft",
     "guides": "home", "glossary": "home", "faq": "home", "about": "home",
 }
@@ -3506,6 +3508,7 @@ def _mobile_nav_guest(active: str) -> str:
         _gl("/compare", "Compare Players", "compare"),
         _gl("/top-movers", "Top Movers", "top-movers"),
         _gl("/metrics", "Advanced Metrics", "advanced-metrics"),
+        _gl("/nfl-teams", "NFL Teams", "nfl-teams"),
         _gl("/breakouts", "Breakout Engine", "breakouts", pro=True),
         _gl("/prospects", "Prospect Rankings", "prospects"),
     ])
@@ -3534,7 +3537,7 @@ def _mobile_nav_guest(active: str) -> str:
 
     guest_groups = {
         "Trades": {"trade", "trade-suggestions", "trade-database", "trade-intel"},
-        "Players": {"players", "compare", "top-movers", "advanced-metrics", "breakouts", "prospects"},
+        "Players": {"players", "compare", "top-movers", "advanced-metrics", "nfl-teams", "breakouts", "prospects"},
         "Draft": {"draft", "draft-cheat-sheet", "draft-history"},
         "Learn": {"guides", "glossary", "faq", "about", "contact"},
     }
@@ -4469,9 +4472,10 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
                 ("Compare Players", "/compare", "compare"),
                 ("Top Movers", "/top-movers", "top-movers"),
                 ("Advanced Metrics", "/metrics", "advanced-metrics"),
+                ("NFL Teams", "/nfl-teams", "nfl-teams"),
                 (f"Breakout Engine <span class='nav-pro-badge'>PRO</span>{_bo_new_badge}", "/breakouts", "breakouts"),
                 ("Prospects", "/prospects", "prospects"),
-            ], ["players", "prospects", "breakouts", "top-movers", "compare"], "playersNavDropdown"),
+            ], ["players", "prospects", "breakouts", "top-movers", "compare", "nfl-teams"], "playersNavDropdown"),
             simple_dropdown("Draft", [
                 ("Draft Room", "/draft", "draft"),
                 ("Cheat Sheet", "/draft/cheat-sheet", "draft-cheat-sheet"),
@@ -4663,9 +4667,10 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         ("Compare Players", "seo_pages.page_compare", "compare", False),
         ("Top Movers", "seo_pages.top_movers_page", "top-movers", False),
         ("Advanced Metrics", "league_pages.page_advanced_metrics", "advanced-metrics", False),
+        ("NFL Teams", "league_pages.page_nfl_teams", "nfl-teams", False),
         (f"Breakout Engine <span class='nav-pro-badge'>PRO</span>{_bo_new_badge}", "page_breakouts", "breakouts", False),
         ("Prospect Rankings", "page_prospects", "prospects", False),
-    ], ["players", "prospects", "breakouts", "top-movers", "compare"], "playersNavDropdown"))
+    ], ["players", "prospects", "breakouts", "top-movers", "compare", "nfl-teams"], "playersNavDropdown"))
     # Keeper Assistant only applies to keeper leagues; hide it for dynasty and
     # plain redraft leagues.
     _draft_items = [
@@ -16514,6 +16519,30 @@ def _oline_rank_table(season: int, metric: str = "composite"):
     return rows
 
 
+def _oline_ratings_with_fallback(season: int) -> tuple:
+    """``(used_season, ratings)`` for O-line ratings with prior-season fallback.
+
+    Use the requested season's ratings, else fall back to the newest built
+    cache: O-line quality carries across seasons (year-over-year rho ~0.43),
+    so last season's rating beats showing nothing before the in-season build.
+    """
+    used_season = int(season)
+    ratings = _load_oline_ratings(used_season)
+    if not ratings:
+        newest = None
+        try:
+            for fn in os.listdir("cache"):
+                if fn.startswith("oline_ratings_s") and fn.endswith(".json"):
+                    yr = int(fn[len("oline_ratings_s"):-len(".json")])
+                    newest = yr if newest is None else max(newest, yr)
+        except Exception:
+            newest = None
+        if newest is not None and newest != used_season:
+            used_season = newest
+            ratings = _load_oline_ratings(newest)
+    return used_season, ratings or {}
+
+
 def _oline_for_player(season: int, team: str, position: str):
     """O-line context for a player's modal: the unit metric that matters for the
     player's position, its league rank, and the full set of indices.
@@ -16528,23 +16557,7 @@ def _oline_for_player(season: int, team: str, position: str):
         team = (team or "").upper().strip()
     if not team:
         return None
-    # Use the requested season's ratings, else fall back to the newest built
-    # cache: O-line quality carries across seasons (year-over-year rho ~0.43),
-    # so last season's rating beats showing nothing before the in-season build.
-    used_season = season
-    ratings = _load_oline_ratings(season)
-    if not ratings:
-        newest = None
-        try:
-            for fn in os.listdir("cache"):
-                if fn.startswith("oline_ratings_s") and fn.endswith(".json"):
-                    yr = int(fn[len("oline_ratings_s"):-len(".json")])
-                    newest = yr if newest is None else max(newest, yr)
-        except Exception:
-            newest = None
-        if newest is not None and newest != season:
-            used_season = newest
-            ratings = _load_oline_ratings(newest)
+    used_season, ratings = _oline_ratings_with_fallback(season)
     row = ratings.get(team) if ratings else None
     if not row:
         return None
@@ -23455,6 +23468,10 @@ def _compute_team_offense_ranks(season: int) -> dict:
         "completed_weeks": table.get("completed_weeks") or [],
         "teams_index": teams_index,
         "ranks": ranks,
+        "team_games": {
+            t: int((r or {}).get("games") or 0)
+            for t, r in ((table.get("teams") or {}).items())
+        },
         "available_seasons": _list_team_tab_seasons(season),
     }
     _TEAM_OFFENSE_RANKS_CACHE[cache_key] = (time.time(), payload)
@@ -23840,6 +23857,237 @@ def api_player_team_boxscore():
         return jsonify(payload)
     except Exception as e:
         logger.exception("[api_player_team_boxscore] error")
+        return _api_err("Request failed", e)
+
+
+# ── Public NFL Teams page APIs ──────────────────────────────────────────────
+# The league-wide rankings table is served by one request; per-team details
+# (depth chart, usage, schedule) lazy-load after a team is selected.
+
+_NFL_TEAM_RANK_KEY_MAP = {
+    "points_pg": "points",
+    "pass_yds_pg": "pass_yds",
+    "pass_att_pg": "pass_att",
+    "rush_yds_pg": "rush_yds",
+    "rush_att_pg": "rush_att",
+    "total_yds_pg": "total_yds",
+    "pass_tds_pg": "pass_tds",
+    "rush_tds_pg": "rush_tds",
+    "plays_pg": "plays_pg",
+    "pass_rate": "pass_rate",
+}
+
+_OLINE_RANK_FIELDS = (
+    ("composite", True),
+    ("pass_block", True),
+    ("run_block", True),
+    ("pressure_rate", False),
+    ("sack_rate", False),
+    ("line_yards", True),
+)
+
+_NFL_TEAM_DETAILS_CACHE: dict = {}
+_NFL_TEAM_DETAILS_TTL = 15 * 60
+
+
+def _nfl_teams_season_label(season: int, data_mode: str, completed_weeks) -> str:
+    weeks = sorted(int(w) for w in (completed_weeks or []) if w)
+    if data_mode == "projection":
+        return f"{season} projections"
+    if not weeks:
+        return f"{season} actuals"
+    if max(weeks) >= 18:
+        return f"{season} actuals, final"
+    return f"{season} actuals, through Week {max(weeks)}"
+
+
+def _nfl_teams_oline_ranks(ratings: dict) -> dict:
+    """Per-team O-line rank entries, competition-ranked (lower rates better)."""
+    from utils.team_offense_ranks import ranked_metric
+
+    per_field = {}
+    for field, higher_better in _OLINE_RANK_FIELDS:
+        per_field[field] = ranked_metric(
+            {t: (r or {}).get(field) for t, r in (ratings or {}).items()},
+            higher_better=higher_better,
+        )
+    teams = {}
+    for team in (ratings or {}):
+        entry = {}
+        for field, _ in _OLINE_RANK_FIELDS:
+            cell = per_field[field].get(team)
+            if cell is not None:
+                entry[field] = cell
+        teams[team] = entry
+    return teams
+
+
+@app.route("/api/nfl-team-rankings")
+def api_nfl_team_rankings():
+    """Public, league-free: one row per NFL team with honest per-game values.
+
+    Query: ?season=. Returns the shared _compute_team_offense_ranks table
+    remapped to explicit per-game keys, plus O-line rank rows and provenance
+    (data mode, completed weeks, O-line fallback season).
+    """
+    try:
+        from utils.nfl_teams import TEAM_FULL_NAMES, get_team_full_name
+
+        season = int(request.args.get("season") or 0)
+        valid = _list_team_tab_seasons(season)
+        if season not in valid:
+            season = valid[0] if valid else season
+        offense = _compute_team_offense_ranks(season)
+        data_mode = offense.get("data_mode") or "projection"
+        completed_weeks = offense.get("completed_weeks") or []
+        teams_index = offense.get("teams_index") or {}
+        ranks = offense.get("ranks") or {}
+        team_games = offense.get("team_games") or {}
+
+        oline_season, oline_ratings = _oline_ratings_with_fallback(season)
+        oline_ranks = _nfl_teams_oline_ranks(oline_ratings)
+
+        team_codes = sorted(
+            {t for t in teams_index if t in TEAM_FULL_NAMES}
+            | {t for t in team_games if t in TEAM_FULL_NAMES}
+        )
+        rows = []
+        for team in team_codes:
+            info = teams_index.get(team) or {}
+            full = get_team_full_name(team) or team
+            city, _, name = full.rpartition(" ")
+            team_ranks = {}
+            for new_key, old_key in _NFL_TEAM_RANK_KEY_MAP.items():
+                entry = (ranks.get(old_key) or {}).get(team)
+                team_ranks[new_key] = entry if entry is not None else None
+            orow = oline_ranks.get(team)
+            rows.append(
+                {
+                    "team": team,
+                    "city": city or full,
+                    "name": name or team,
+                    "logo": info.get("Logo") or "",
+                    "bye_week": info.get("byeWeek"),
+                    "games": team_games.get(team),
+                    "ranks": team_ranks,
+                    "oline": (
+                        {"season": oline_season, **orow}
+                        if orow is not None
+                        else None
+                    ),
+                }
+            )
+        payload = {
+            "season": season,
+            "data_mode": data_mode,
+            "completed_weeks": completed_weeks,
+            "season_label": _nfl_teams_season_label(
+                season, data_mode, completed_weeks
+            ),
+            "available_seasons": offense.get("available_seasons") or [],
+            "oline_season": oline_season,
+            "oline_note": (
+                f"{oline_season} season"
+                + ("" if oline_season == season else " (latest available)")
+            ),
+            "teams": rows,
+        }
+        return jsonify(clean_nan_for_json(payload))
+    except Exception as e:
+        logger.exception("[api_nfl_team_rankings] error")
+        return _api_err("Request failed", e)
+
+
+@app.route("/api/nfl-team-details")
+def api_nfl_team_details():
+    """Public, league-free: lazy team profile for the NFL Teams page.
+
+    Query: ?team=KC&season=. Roster is current; usage carries its source
+    season; the schedule carries the selected season; box scores reuse
+    /api/player-team-boxscore on game expand.
+    """
+    try:
+        team = _canon_team_abbr(request.args.get("team") or "")
+        season = int(request.args.get("season") or 0)
+        if not team:
+            return _api_err("Missing team", code=400)
+        valid = _list_team_tab_seasons(season)
+        if season not in valid:
+            season = valid[0] if valid else season
+
+        cache_key = (team, season)
+        cached = _NFL_TEAM_DETAILS_CACHE.get(cache_key)
+        if cached and time.time() - cached[0] < _NFL_TEAM_DETAILS_TTL:
+            return jsonify(clean_nan_for_json(cached[1]))
+
+        from utils.nfl_teams import get_team_full_name
+        from utils.player_team_schedule import build_team_schedule
+        from utils.utils import load_relevant_index, load_usage_table
+
+        offense = _compute_team_offense_ranks(season)
+        teams_index = offense.get("teams_index") or {}
+        info = teams_index.get(team) or {}
+        stats_season = int(offense.get("stats_season") or season)
+        data_mode = offense.get("data_mode") or "projection"
+
+        players_index = get_players_index_global() or {}
+        full_players = get_players_global() or {}
+        usage_index = load_relevant_index() or players_index
+        usage_table = load_usage_table()
+        snap_season = (
+            stats_season
+            if _has_stats_reg_csv(stats_season)
+            else _resolve_stats_reg_season(season)
+        )
+        pfr_snaps = _get_pfr_snap_counts_cached(snap_season)
+        depth_chart = _build_player_team_depth_chart(
+            "", team, full_players, usage_index, usage_table, teams_index, pfr_snaps
+        )
+        if isinstance(depth_chart, dict) and "rooms" in depth_chart:
+            depth_chart = depth_chart.get("rooms") or {}
+        depth_chart = (
+            depth_chart if isinstance(depth_chart, dict) else {}
+        )
+
+        oline_season, oline_ratings = _oline_ratings_with_fallback(season)
+        oline_row = (oline_ratings or {}).get(team)
+        oline_ranks = _nfl_teams_oline_ranks(oline_ratings)
+        oline_team = None
+        if oline_row is not None and oline_ranks.get(team) is not None:
+            oline_team = {"season": oline_season, **oline_ranks[team]}
+
+        schedule = build_team_schedule(
+            team,
+            int(stats_season if data_mode == "actual" else season),
+            bye_week=info.get("byeWeek"),
+            teams_index=teams_index,
+            include_postseason=(data_mode == "actual"),
+            enrich_scores=True,
+        )
+
+        payload = {
+            "team": team,
+            "team_name": get_team_full_name(team) or team,
+            "logo": info.get("Logo") or "",
+            "bye_week": info.get("byeWeek"),
+            "season": season,
+            "data_mode": data_mode,
+            "season_label": _nfl_teams_season_label(
+                season, data_mode, offense.get("completed_weeks") or []
+            ),
+            "roster_note": "Current roster",
+            "usage_season": snap_season,
+            "usage_note": f"Usage is from the {snap_season} season (latest available)."
+            if snap_season != season
+            else f"Usage is from the {snap_season} season.",
+            "depth_chart": depth_chart,
+            "oline": oline_team,
+            "schedule": schedule,
+        }
+        _NFL_TEAM_DETAILS_CACHE[cache_key] = (time.time(), payload)
+        return jsonify(clean_nan_for_json(payload))
+    except Exception as e:
+        logger.exception("[api_nfl_team_details] error")
         return _api_err("Request failed", e)
 
 

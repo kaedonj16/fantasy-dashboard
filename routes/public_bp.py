@@ -220,6 +220,7 @@ def sitemap_xml():
         ("/players", "0.7", "weekly"),
         ("/compare", "0.7", "weekly"),
         ("/breakouts", "0.7", "weekly"),
+        ("/nfl-teams", "0.7", "weekly"),
         ("/prospects", "0.7", "weekly"),
         ("/pricing", "0.6", "monthly"),
         ("/privacy", "0.3", "monthly"),
