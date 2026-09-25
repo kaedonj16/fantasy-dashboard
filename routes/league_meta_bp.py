@@ -4,6 +4,7 @@ import logging
 from datetime import datetime
 import pandas as pd
 from flask import Blueprint, jsonify, request, session
+from utils.api_params import api_int
 
 from dashboard_services.api import (
     get_sleeper_user_by_username,
@@ -51,7 +52,7 @@ def api_sleeper_user_leagues():
     if not username:
         return jsonify({"ok": False, "error": "Missing username"}), 400
 
-    season = int(request.args.get("season") or get_nfl_state().get("season"))
+    season = api_int("season", (get_nfl_state() or {}).get("season"))
 
     try:
         user = get_sleeper_user_by_username(username)
@@ -276,7 +277,7 @@ def api_espn_validate_league():
         return jsonify({"ok": False, "error": "Invalid ESPN league ID. Must be a number."}), 400
 
     nfl_state = get_nfl_state() or {}
-    season = int(request.args.get("season") or nfl_state.get("season") or datetime.now().year)
+    season = api_int("season", nfl_state.get("season") or datetime.now().year)
 
     try:
         # Public validation must never fall back to server/account cookies.
@@ -356,7 +357,7 @@ def api_espn_debug():
     league_id = (request.args.get("league_id") or "").strip()
     if league_id.isdigit():
         nfl_state = get_nfl_state() or {}
-        season = int(request.args.get("season") or nfl_state.get("season") or datetime.now().year)
+        season = api_int("season", nfl_state.get("season") or datetime.now().year)
         try:
             from dashboard_services.providers.espn_api import get_league as espn_get_league
             info = espn_get_league(season, league_id)

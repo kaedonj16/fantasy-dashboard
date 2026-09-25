@@ -22,10 +22,12 @@ import logging
 
 import pandas as pd
 from flask import Blueprint, jsonify, request
+from werkzeug.exceptions import HTTPException
 
 from dashboard_services.ai.history_recap import get_history_ai_recap
 from dashboard_services.api import resolve_league_id_for_season
 from extensions import limiter
+from utils.api_params import api_int
 
 logger = logging.getLogger(__name__)
 
@@ -94,7 +96,7 @@ def api_history_summary(platform: str, season: int, league_id: str):
     try:
         from dashboard_services.pages.history_page import get_history_summary_html
 
-        history_season = int(request.args.get("history_season", season))
+        history_season = api_int("history_season", season)
 
         # Check if this is a valid history season
         available_seasons = get_available_history_seasons(platform, league_id, season)
@@ -122,6 +124,8 @@ def api_history_summary(platform: str, season: int, league_id: str):
         html = get_history_summary_html(history_ctx)
         return jsonify({"html": html})
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.exception("[api_history_summary] Error")
         return _api_err("Request failed", e)
@@ -140,7 +144,7 @@ def api_history_wrapped(platform: str, season: int, league_id: str):
             render_history_wrapped_overlay,
         )
 
-        history_season = int(request.args.get("history_season", season))
+        history_season = api_int("history_season", season)
 
         available_seasons = get_available_history_seasons(platform, league_id, season)
         if not available_seasons or history_season not in available_seasons:
@@ -162,6 +166,8 @@ def api_history_wrapped(platform: str, season: int, league_id: str):
         html = render_history_wrapped_overlay(history_ctx, history_season)
         return jsonify({"html": html})
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.exception("[api_history_wrapped] Error")
         return _api_err("Request failed", e)
@@ -175,7 +181,7 @@ def api_history_standings(platform: str, season: int, league_id: str):
     try:
         from dashboard_services.pages.history_page import get_history_standings_html
 
-        history_season = int(request.args.get("history_season", season))
+        history_season = api_int("history_season", season)
 
         # Check if this is a valid history season
         available_seasons = get_available_history_seasons(platform, league_id, season)
@@ -203,6 +209,8 @@ def api_history_standings(platform: str, season: int, league_id: str):
         html = get_history_standings_html(history_ctx)
         return jsonify({"html": html})
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.exception("[api_history_standings] Error")
         return _api_err("Request failed", e)
@@ -216,19 +224,17 @@ def api_history_chart(platform: str, season: int, league_id: str):
     try:
         from dashboard_services.pages.history_page import _filtered_season_df
 
-        history_season = int(request.args.get("history_season", season))
+        history_season = api_int("history_season", season)
 
         # Check if this is a valid history season
         available_seasons = get_available_history_seasons(platform, league_id, season)
         if not available_seasons:
             return jsonify({
-                "error": "No data",
                 "html": "<div class='history-empty'>This is your first season. Week-by-week trends will be available after the season completes.</div>"
             })
 
         if history_season not in available_seasons:
             return jsonify({
-                "error": "No data",
                 "html": "<div class='history-empty'>No weekly data available for this season.</div>"
             })
 
@@ -247,8 +253,8 @@ def api_history_chart(platform: str, season: int, league_id: str):
         chart_df = _filtered_season_df(df_weekly)
 
         if chart_df.empty or not {"week", "owner", "points"}.issubset(chart_df.columns):
-            return jsonify({"error": "No data",
-                            "html": "<div class='history-empty'>No weekly scoring data available for this season.</div>"})
+            return jsonify({
+                "html": "<div class='history-empty'>No weekly scoring data available for this season.</div>"})
 
         # Build chart data for each team
         chart_data = []
@@ -262,6 +268,8 @@ def api_history_chart(platform: str, season: int, league_id: str):
 
         return jsonify({"data": chart_data})
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.exception("[api_history_chart] Error")
         return _api_err("Request failed", e)
