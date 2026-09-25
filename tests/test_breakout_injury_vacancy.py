@@ -12,15 +12,28 @@ import types
 
 import pytest
 
-# openai is a real dependency in CI but absent from the lean base suite; stub it
-# so importing the engine package (core → projections → openai) doesn't skip the
-# pure-function tests below.
-if "openai" not in sys.modules:
-    _stub = types.ModuleType("openai")
-    for _n in ("OpenAI", "RateLimitError", "APIConnectionError", "APIStatusError",
-               "APITimeoutError", "BadRequestError"):
-        setattr(_stub, _n, type(_n, (Exception,), {}))
-    sys.modules["openai"] = _stub
+
+@pytest.fixture
+def _openai_import_stub(monkeypatch):
+    """Make ``openai`` importable for the tests that import
+    ``data_building.breakout_engine.core`` (core -> projections ->
+    dashboard_services.ai.client -> openai), for the duration of the test only.
+
+    The stub used to be installed in ``sys.modules`` at import time, where it
+    lingered for the whole session and shadowed the real ``openai`` package for
+    later-collected test modules (this exact pattern poisoned CI collection of
+    an unrelated module on 2026-09-25). ``monkeypatch`` removes it afterwards,
+    so other modules see the environment's real ``openai`` — or its absence.
+    """
+    try:
+        import openai  # noqa: F401
+    except ImportError:
+        _stub = types.ModuleType("openai")
+        for _n in ("OpenAI", "RateLimitError", "APIConnectionError",
+                   "APIStatusError", "APITimeoutError", "BadRequestError"):
+            setattr(_stub, _n, type(_n, (Exception,), {}))
+        monkeypatch.setitem(sys.modules, "openai", _stub)
+
 
 comp = pytest.importorskip("data_building.breakout_engine.components")
 
@@ -101,7 +114,7 @@ def test_no_depth_injury_leaves_score_unchanged():
 
 # --- core wiring: "who is injured ahead" reuses the waiver helper --------------
 
-def test_depth_injury_for_finds_hurt_starter_ahead_and_names_them():
+def test_depth_injury_for_finds_hurt_starter_ahead_and_names_them(_openai_import_stub):
     """The engine's per-player lookup should surface a starter ranked ahead who
     is on IR, enriched with a display name, and ignore healthy teammates."""
     from data_building.breakout_engine.core import BreakoutEngine
@@ -131,7 +144,7 @@ def test_depth_injury_for_finds_hurt_starter_ahead_and_names_them():
     assert eng._depth_injury_for("starter") is None
 
 
-def test_depth_injury_for_returns_none_without_live_feed():
+def test_depth_injury_for_returns_none_without_live_feed(_openai_import_stub):
     """No live players map (historical rebuild) → never a vacancy."""
     from data_building.breakout_engine.core import BreakoutEngine
     eng = BreakoutEngine.__new__(BreakoutEngine)

@@ -9,35 +9,48 @@ the compute passes still run against the streamed source.
 """
 from __future__ import annotations
 
+import os
 import sys
 import types
 from datetime import datetime, timezone
 
-# analytics.py imports `from dashboard_services.db import get_conn`, which pulls in
-# psycopg. The DB is mocked in every test here, so stub that module if the real
-# driver isn't installed (e.g. a DB-less CI runner) — the stub's get_conn is never
-# called because each test monkeypatches analytics.get_conn.
-if "dashboard_services.db" not in sys.modules:
-    try:
-        import psycopg  # noqa: F401
-    except Exception:
-        _stub = types.ModuleType("dashboard_services.db")
-        _stub.get_conn = lambda *a, **k: None
-        if "dashboard_services" not in sys.modules:
-            # Keep it a real package (with __path__ to the source dir) so other
-            # test modules can still import sibling submodules like
-            # dashboard_services.archetype_engine — a plain ModuleType here has
-            # no __path__ and would shadow the namespace package for the rest of
-            # the run, breaking their imports at collection time.
-            import os
-            _pkg = types.ModuleType("dashboard_services")
-            _pkg.__path__ = [os.path.join(
-                os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                "dashboard_services")]
-            sys.modules["dashboard_services"] = _pkg
-        sys.modules["dashboard_services.db"] = _stub
+import pytest
 
-from data_building.trade_intel import analytics
+
+@pytest.fixture
+def analytics(monkeypatch):
+    """Import ``data_building.trade_intel.analytics`` with
+    ``dashboard_services.db`` stubbed when the psycopg driver is unavailable
+    (e.g. a DB-less runner).
+
+    The stub used to be installed in ``sys.modules`` at import time, where it
+    lingered for the whole session and shadowed the real
+    ``dashboard_services.db`` module for later-collected test modules.
+    Installing it via ``monkeypatch`` keeps it scoped to the tests that need
+    it. The stub's ``get_conn`` is never called anyway because each test
+    monkeypatches ``analytics.get_conn``.
+    """
+    # analytics.py imports `from dashboard_services.db import get_conn`, which
+    # pulls in psycopg. The DB is mocked in every test here, so stub that
+    # module if the real driver isn't installed.
+    if "dashboard_services.db" not in sys.modules:
+        try:
+            import psycopg  # noqa: F401
+        except Exception:
+            _stub = types.ModuleType("dashboard_services.db")
+            _stub.get_conn = lambda *a, **k: None
+            if "dashboard_services" not in sys.modules:
+                # Namespace package (no __init__.py): give the stand-in a real
+                # __path__ so sibling-submodule imports keep resolving for the
+                # rest of the run.
+                _pkg = types.ModuleType("dashboard_services")
+                _pkg.__path__ = [os.path.join(
+                    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                    "dashboard_services")]
+                monkeypatch.setitem(sys.modules, "dashboard_services", _pkg)
+            monkeypatch.setitem(sys.modules, "dashboard_services.db", _stub)
+    from data_building.trade_intel import analytics as _analytics
+    return _analytics
 
 
 class _FakeCursor:
@@ -104,7 +117,7 @@ def _sample_rows():
     ]
 
 
-def test_iter_trades_matches_load_trades(monkeypatch):
+def test_iter_trades_matches_load_trades(monkeypatch, analytics):
     rows = _sample_rows()
     monkeypatch.setattr(analytics, "get_conn", lambda *a, **k: _FakeConn(rows))
 
@@ -119,7 +132,7 @@ def test_iter_trades_matches_load_trades(monkeypatch):
     assert streamed[0]["num_teams"] == 12
 
 
-def test_compute_passes_run_against_stream(monkeypatch):
+def test_compute_passes_run_against_stream(monkeypatch, analytics):
     rows = _sample_rows()
     monkeypatch.setattr(analytics, "get_conn", lambda *a, **k: _FakeConn(rows))
     values = {
