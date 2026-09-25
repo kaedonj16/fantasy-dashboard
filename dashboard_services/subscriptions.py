@@ -27,6 +27,31 @@ from dashboard_services.db import get_conn
 logger = logging.getLogger(__name__)
 
 
+# Tables carrying the billing_interval column (migration 038). The runner stops
+# on the first failing migration file, so a non-idempotent earlier file can
+# leave this column missing even after deploy; the ensure below is the same
+# belt-and-braces pattern as _ensure_user_league_subscriptions_table.
+_BILLING_INTERVAL_TABLES = (
+    "league_subscriptions",
+    "user_subscriptions",
+    "user_league_subscriptions",
+)
+_BILLING_INTERVAL_ENSURED: set = set()
+
+
+def _ensure_billing_interval(cur, table: str) -> None:
+    """ADD COLUMN IF NOT EXISTS billing_interval, once per table per process."""
+    if table in _BILLING_INTERVAL_ENSURED:
+        return
+    if table not in _BILLING_INTERVAL_TABLES:
+        raise ValueError(f"unexpected subscription table: {table}")
+    cur.execute(
+        f"ALTER TABLE {table} "
+        "ADD COLUMN IF NOT EXISTS billing_interval TEXT NOT NULL DEFAULT 'year'"
+    )
+    _BILLING_INTERVAL_ENSURED.add(table)
+
+
 def pro_require_google() -> bool:
     """Hard cutover: user-plan PRO requires a Google ``account_id`` session.
 
@@ -564,29 +589,35 @@ def create_league_subscription(
         expires_at: datetime,
         platform: str = "sleeper",
         stripe_subscription_id: Optional[str] = None,
-        stripe_customer_id: Optional[str] = None
+        stripe_customer_id: Optional[str] = None,
+        billing_interval: str = "year",
 ) -> bool:
     """Create or update a league subscription."""
+    billing_interval = (billing_interval or "year").strip().lower()
+    if billing_interval not in ("month", "year"):
+        billing_interval = "year"
     try:
         with get_conn() as conn:
             with conn.cursor() as cur:
+                _ensure_billing_interval(cur, "league_subscriptions")
                 cur.execute("""
                     INSERT INTO league_subscriptions (
                         league_id, platform, subscriber_user_id,
                         subscription_status, stripe_subscription_id,
-                        stripe_customer_id, expires_at
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                        stripe_customer_id, expires_at, billing_interval
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (platform, league_id) DO UPDATE SET
                         subscriber_user_id = EXCLUDED.subscriber_user_id,
                         subscription_status = EXCLUDED.subscription_status,
                         stripe_subscription_id = EXCLUDED.stripe_subscription_id,
                         stripe_customer_id = EXCLUDED.stripe_customer_id,
                         expires_at = EXCLUDED.expires_at,
+                        billing_interval = EXCLUDED.billing_interval,
                         updated_at = NOW()
                 """, (
                     league_id, platform, subscriber_user_id,
                     'active', stripe_subscription_id,
-                    stripe_customer_id, expires_at
+                    stripe_customer_id, expires_at, billing_interval
                 ))
         return True
     except Exception as e:
@@ -599,26 +630,34 @@ def create_user_subscription(
         expires_at: datetime,
         platform: str = "sleeper",
         stripe_subscription_id: Optional[str] = None,
-        stripe_customer_id: Optional[str] = None
+        stripe_customer_id: Optional[str] = None,
+        billing_interval: str = "year",
 ) -> bool:
     """Create or update a user subscription."""
+    billing_interval = (billing_interval or "year").strip().lower()
+    if billing_interval not in ("month", "year"):
+        billing_interval = "year"
     try:
         with get_conn() as conn:
             with conn.cursor() as cur:
+                _ensure_billing_interval(cur, "user_subscriptions")
                 cur.execute("""
                     INSERT INTO user_subscriptions (
                         user_id, platform, subscription_status,
-                        stripe_subscription_id, stripe_customer_id, expires_at
-                    ) VALUES (%s, %s, %s, %s, %s, %s)
+                        stripe_subscription_id, stripe_customer_id, expires_at,
+                        billing_interval
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (user_id, platform) DO UPDATE SET
                         subscription_status = EXCLUDED.subscription_status,
                         stripe_subscription_id = EXCLUDED.stripe_subscription_id,
                         stripe_customer_id = EXCLUDED.stripe_customer_id,
                         expires_at = EXCLUDED.expires_at,
+                        billing_interval = EXCLUDED.billing_interval,
                         updated_at = NOW()
                 """, (
                     user_id, platform, 'active',
-                    stripe_subscription_id, stripe_customer_id, expires_at
+                    stripe_subscription_id, stripe_customer_id, expires_at,
+                    billing_interval
                 ))
         return True
     except Exception as e:
@@ -671,26 +710,34 @@ def create_user_league_subscription(
         platform: str = "sleeper",
         stripe_subscription_id: Optional[str] = None,
         stripe_customer_id: Optional[str] = None,
+        billing_interval: str = "year",
 ) -> bool:
     """Create or update a buyer-only single-league subscription."""
+    billing_interval = (billing_interval or "year").strip().lower()
+    if billing_interval not in ("month", "year"):
+        billing_interval = "year"
     try:
         with get_conn() as conn:
             with conn.cursor() as cur:
                 _ensure_user_league_subscriptions_table(cur)
+                _ensure_billing_interval(cur, "user_league_subscriptions")
                 cur.execute("""
                     INSERT INTO user_league_subscriptions (
                         user_id, platform, league_id, subscription_status,
-                        stripe_subscription_id, stripe_customer_id, expires_at
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                        stripe_subscription_id, stripe_customer_id, expires_at,
+                        billing_interval
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (user_id, platform, league_id) DO UPDATE SET
                         subscription_status = EXCLUDED.subscription_status,
                         stripe_subscription_id = EXCLUDED.stripe_subscription_id,
                         stripe_customer_id = EXCLUDED.stripe_customer_id,
                         expires_at = EXCLUDED.expires_at,
+                        billing_interval = EXCLUDED.billing_interval,
                         updated_at = NOW()
                 """, (
                     user_id, platform, league_id, 'active',
                     stripe_subscription_id, stripe_customer_id, expires_at,
+                    billing_interval,
                 ))
         return True
     except Exception as e:
@@ -719,6 +766,273 @@ def cancel_subscription(subscription_id: str, subscription_type: str = "league")
     except Exception as e:
         logger.error("[subscriptions] Error canceling subscription: %s", e)
         return False
+
+
+# ── Stripe subscription lifecycle sync ────────────────────────────────────────
+# Driven by the customer.subscription.updated / customer.subscription.deleted
+# webhook events. The event object already carries everything needed (status,
+# cancel_at_period_end, current period end), so no extra Stripe API calls.
+
+# Plan -> entitlement tables that plan owns. combo owns two rows (shared league
+# PRO plus personal user PRO); every other plan owns exactly one.
+_PLAN_LIFECYCLE_TABLES = {
+    "league": ("league_subscriptions",),
+    "user": ("user_subscriptions",),
+    "single_league": ("user_league_subscriptions",),
+    "combo": ("league_subscriptions", "user_subscriptions"),
+}
+
+# Stripe statuses that keep PRO access working. past_due is deliberately here:
+# Stripe is still retrying the payment (dunning nudges the buyer), so access
+# continues through the retry window instead of dropping on the first failure.
+_ACTIVE_LIKE_STATUSES = ("active", "trialing", "past_due")
+
+# Stripe statuses that end PRO access immediately.
+_REVOKED_STATUSES = ("canceled", "unpaid", "incomplete_expired")
+
+
+def _cancel_lifecycle_rows(cur, table: str, sub_id: str) -> None:
+    cur.execute(
+        f"UPDATE {table} SET subscription_status = 'canceled',"
+        " updated_at = NOW() WHERE stripe_subscription_id = %s",
+        (sub_id,),
+    )
+
+
+def _grant_lifecycle_table(
+    cur,
+    table: str,
+    *,
+    user_id: str,
+    league_id: str,
+    platform: str,
+    period_end,
+    interval: str,
+    sub_id: str,
+) -> bool:
+    """Write the missing entitlement row for a plan upgrade.
+
+    Never steals a row another subscription owns: when the natural key already
+    has an active row for a different subscription id, the grant is skipped.
+    Returns True when a row was written.
+    """
+    if table == "league_subscriptions":
+        if not league_id:
+            logger.warning(
+                "[subscriptions] lifecycle upgrade skipped: no league_id for sub=%s",
+                sub_id,
+            )
+            return False
+        cur.execute(
+            "SELECT stripe_subscription_id FROM league_subscriptions"
+            " WHERE platform = %s AND league_id = %s"
+            " AND subscription_status = 'active' AND expires_at > NOW() LIMIT 1",
+            (platform, league_id),
+        )
+        row = cur.fetchone()
+        if row and (row.get("stripe_subscription_id") or "") not in ("", sub_id):
+            logger.warning(
+                "[subscriptions] lifecycle upgrade skipped: league %s already"
+                " has an active subscription",
+                league_id,
+            )
+            return False
+        return bool(create_league_subscription(
+            league_id, user_id, period_end, platform=platform,
+            stripe_subscription_id=sub_id, billing_interval=interval,
+        ))
+    if table == "user_subscriptions":
+        if not user_id:
+            logger.warning(
+                "[subscriptions] lifecycle upgrade skipped: no user_id for sub=%s",
+                sub_id,
+            )
+            return False
+        cur.execute(
+            "SELECT stripe_subscription_id FROM user_subscriptions"
+            " WHERE user_id = %s AND platform = %s"
+            " AND subscription_status = 'active' AND expires_at > NOW() LIMIT 1",
+            (user_id, platform),
+        )
+        row = cur.fetchone()
+        if row and (row.get("stripe_subscription_id") or "") not in ("", sub_id):
+            logger.warning(
+                "[subscriptions] lifecycle upgrade skipped: user %s already"
+                " has an active subscription",
+                user_id,
+            )
+            return False
+        return bool(create_user_subscription(
+            user_id, period_end, platform=platform,
+            stripe_subscription_id=sub_id, billing_interval=interval,
+        ))
+    if table == "user_league_subscriptions":
+        if not user_id or not league_id:
+            logger.warning(
+                "[subscriptions] lifecycle upgrade skipped: missing identity for sub=%s",
+                sub_id,
+            )
+            return False
+        cur.execute(
+            "SELECT stripe_subscription_id FROM user_league_subscriptions"
+            " WHERE user_id = %s AND platform = %s AND league_id = %s"
+            " AND subscription_status = 'active' AND expires_at > NOW() LIMIT 1",
+            (user_id, platform, league_id),
+        )
+        row = cur.fetchone()
+        if row and (row.get("stripe_subscription_id") or "") not in ("", sub_id):
+            logger.warning(
+                "[subscriptions] lifecycle upgrade skipped: user %s league %s"
+                " already has an active subscription",
+                user_id, league_id,
+            )
+            return False
+        return bool(create_user_league_subscription(
+            user_id, league_id, period_end, platform=platform,
+            stripe_subscription_id=sub_id, billing_interval=interval,
+        ))
+    return False
+
+
+def apply_subscription_lifecycle(
+    sub_id: str,
+    *,
+    event_type: str,
+    status: str,
+    cancel_at_period_end: bool,
+    expires_at,
+    plan: str = "",
+    interval: str = "year",
+    user_id: str = "",
+    league_id: str = "",
+    platform: str = "sleeper",
+) -> dict:
+    """Reconcile entitlement rows with a subscription lifecycle webhook event.
+
+    Handles ``customer.subscription.updated`` and
+    ``customer.subscription.deleted``:
+
+    - updated, status active/trialing: rows go ``active`` with the fresh
+      period end and billing interval (this also recovers a subscription that
+      went past due and then paid). A plan change grants newly covered tables
+      and revokes tables the plan no longer covers.
+    - updated with ``cancel_at_period_end``: access is kept until the period
+      end; the later ``deleted`` event revokes.
+    - updated, status past_due: access is kept while Stripe retries; the
+      dunning flow nudges the buyer to fix payment in the meantime.
+    - updated, status unpaid/canceled/incomplete_expired: revoke immediately.
+    - deleted: an immediate cancel revokes at once; a scheduled
+      (cancel_at_period_end) cancel keeps access until the period end.
+
+    Returns a summary dict of what changed. Never raises for unknown plans or
+    missing rows; DB errors are logged and swallowed so the webhook stays 2xx.
+    """
+    summary = {
+        "sub_id": (sub_id or "").strip(),
+        "event": event_type,
+        "status": (status or "").strip().lower(),
+        "updated": [],
+        "granted": [],
+        "canceled": [],
+    }
+    sub_id = summary["sub_id"]
+    status = summary["status"]
+    if not sub_id:
+        return summary
+    plan = (plan or "").strip()
+    interval = (interval or "year").strip().lower()
+    if interval not in ("month", "year"):
+        interval = "year"
+    platform = (platform or "sleeper").strip() or "sleeper"
+    user_id = (user_id or "").strip()
+    league_id = (league_id or "").strip()
+
+    now = datetime.now(timezone.utc)
+    period_end = expires_at if isinstance(expires_at, datetime) else None
+    if period_end is not None and period_end.tzinfo is None:
+        period_end = period_end.replace(tzinfo=timezone.utc)
+
+    # A scheduled cancel keeps access until the period actually ends, for both
+    # the updated event that announces it and an early/out-of-order deleted.
+    keep_until_period_end = (
+        bool(cancel_at_period_end)
+        and period_end is not None
+        and period_end > now
+    )
+    revoke_now = (
+        event_type == "customer.subscription.deleted" and not keep_until_period_end
+    ) or (
+        event_type == "customer.subscription.updated" and status in _REVOKED_STATUSES
+    )
+
+    desired_tables = _PLAN_LIFECYCLE_TABLES.get(plan, ())
+
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                for table in _BILLING_INTERVAL_TABLES:
+                    _ensure_billing_interval(cur, table)
+                existing = set()
+                for table in _BILLING_INTERVAL_TABLES:
+                    cur.execute(
+                        f"SELECT id FROM {table}"
+                        " WHERE stripe_subscription_id = %s LIMIT 1",
+                        (sub_id,),
+                    )
+                    if cur.fetchone():
+                        existing.add(table)
+
+                for table in _BILLING_INTERVAL_TABLES:
+                    if table not in existing:
+                        continue
+                    plan_downgraded = (
+                        event_type == "customer.subscription.updated"
+                        and bool(desired_tables)
+                        and table not in desired_tables
+                    )
+                    if revoke_now or plan_downgraded:
+                        _cancel_lifecycle_rows(cur, table, sub_id)
+                        summary["canceled"].append(table)
+                    elif keep_until_period_end or status not in _REVOKED_STATUSES:
+                        if keep_until_period_end or status in _ACTIVE_LIKE_STATUSES:
+                            cur.execute(
+                                f"UPDATE {table} SET subscription_status = 'active',"
+                                " expires_at = %s, billing_interval = %s,"
+                                " updated_at = NOW()"
+                                " WHERE stripe_subscription_id = %s",
+                                (period_end, interval, sub_id),
+                            )
+                        else:
+                            # Unknown status (e.g. incomplete, paused): sync the
+                            # clock but do not flip access either way.
+                            cur.execute(
+                                f"UPDATE {table} SET expires_at = %s,"
+                                " billing_interval = %s, updated_at = NOW()"
+                                " WHERE stripe_subscription_id = %s",
+                                (period_end, interval, sub_id),
+                            )
+                        summary["updated"].append(table)
+
+                # Plan upgrade: grant tables the new plan covers that have no
+                # row for this subscription yet.
+                if (
+                    event_type == "customer.subscription.updated"
+                    and not revoke_now
+                    and status in ("active", "trialing")
+                    and desired_tables
+                ):
+                    for table in desired_tables:
+                        if table in existing:
+                            continue
+                        if _grant_lifecycle_table(
+                            cur, table, user_id=user_id, league_id=league_id,
+                            platform=platform, period_end=period_end,
+                            interval=interval, sub_id=sub_id,
+                        ):
+                            summary["granted"].append(table)
+    except Exception:
+        logger.exception("[subscriptions] lifecycle sync failed sub=%s", sub_id)
+    return summary
 
 
 # ── PRO free trial ────────────────────────────────────────────────────────────

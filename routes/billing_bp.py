@@ -17,7 +17,7 @@ from datetime import datetime, timedelta, timezone
 from flask import Blueprint, jsonify, request, session
 
 from dashboard_services.subscriptions import (
-    cancel_subscription,
+    apply_subscription_lifecycle,
     create_league_subscription,
     create_user_league_subscription,
     create_user_subscription,
@@ -120,6 +120,39 @@ def _plan_from_subscription(sub) -> str:
         plan = product_map.get(product_id)
         if plan:
             return plan
+    return ""
+
+
+_BILLING_INTERVALS = ("month", "year")
+
+
+def _normalize_interval(value) -> str:
+    """Coerce a client/supplied interval to 'month' or 'year' (default year)."""
+    interval = str(value or "year").strip().lower()
+    return interval if interval in _BILLING_INTERVALS else "year"
+
+
+def _interval_from_subscription(sub) -> str:
+    """Read the billing interval from a Stripe subscription's price.
+
+    Interval-agnostic: whatever Stripe says the current price renews on,
+    the DB stores. Returns "" when the price is not expanded or the product
+    is not one of ours, so callers can fall back to checkout metadata.
+    """
+    if not sub:
+        return ""
+    items = _stripe_field(sub, "items")
+    data = _stripe_field(items, "data") or []
+    product_map = _product_plan_map()
+    for item in data:
+        price = _stripe_field(item, "price") or {}
+        product = _stripe_field(price, "product")
+        if not product_map.get(_stripe_id(product)):
+            continue
+        recurring = _stripe_field(price, "recurring") or {}
+        interval = str(_stripe_field(recurring, "interval") or "").strip().lower()
+        if interval in _BILLING_INTERVALS:
+            return interval
     return ""
 
 
@@ -1244,6 +1277,61 @@ def create_checkout_session():
         return jsonify({"error": "Internal error"}), 500
 
 
+def _handle_subscription_lifecycle_event(s, etype: str) -> None:
+    """Sync entitlement rows with customer.subscription.updated/deleted.
+
+    Reads plan, interval, status, and cancel_at_period_end off the event's
+    subscription object (no extra Stripe API calls) and reconciles the
+    entitlement tables via apply_subscription_lifecycle. invoice.payment_failed
+    is intentionally not handled here: PR #1958 owns dunning for that event,
+    and the entitlement side is covered because a permanently failed
+    subscription surfaces here as unpaid/canceled.
+    """
+    sub_id = _stripe_id(_stripe_field(s, "id"))
+    if not sub_id:
+        logger.warning("[stripe] %s without subscription id; skipping", etype)
+        return
+    status = str(_stripe_field(s, "status") or "").strip().lower()
+    cancel_at_period_end = bool(_stripe_field(s, "cancel_at_period_end"))
+    try:
+        expires_at = _subscription_period_end(s)
+    except Exception:
+        expires_at = datetime.now(timezone.utc) + timedelta(days=32)
+    meta = _metadata_dict(s)
+    plan = (meta.get("plan") or "").strip()
+    if plan not in ("league", "user", "combo", "single_league"):
+        plan = _plan_from_subscription(s)
+    interval = _normalize_interval(
+        _interval_from_subscription(s) or meta.get("interval") or "year"
+    )
+    user_id = _subscriber_user_id({
+        "user_id": meta.get("user_id") or meta.get("account_id") or "",
+        "account_id": meta.get("account_id") or "",
+    })
+    platform = (meta.get("platform") or "sleeper").strip() or "sleeper"
+    league_id = (meta.get("league_id") or "").strip()
+    try:
+        result = apply_subscription_lifecycle(
+            sub_id,
+            event_type=etype,
+            status=status,
+            cancel_at_period_end=cancel_at_period_end,
+            expires_at=expires_at,
+            plan=plan,
+            interval=interval,
+            user_id=user_id,
+            league_id=league_id,
+            platform=platform,
+        )
+    except Exception:
+        logger.exception("[stripe] %s lifecycle sync failed sub=%s", etype, sub_id)
+        return
+    logger.info(
+        "[stripe] %s lifecycle sync sub=%s status=%s plan=%s interval=%s result=%s",
+        etype, sub_id, status, plan or "-", interval, result,
+    )
+
+
 @billing_bp.route("/api/stripe-webhook", methods=["POST"])
 def stripe_webhook():
     payload = request.get_data()
@@ -1264,6 +1352,8 @@ def stripe_webhook():
         return "", 400
 
     etype = event["type"]
+    # Observability: every verified event type is logged, handled or not.
+    logger.info("[stripe] webhook event type=%s", etype)
 
     if etype in ("checkout.session.completed", "customer.subscription.created"):
         s         = event["data"]["object"]
@@ -1333,12 +1423,7 @@ def stripe_webhook():
                 logger.exception("[stripe] invoice.paid renewal error: %s", e)
 
     elif etype in ("customer.subscription.deleted", "customer.subscription.updated"):
-        s = event["data"]["object"]
-        if s.status in ("canceled", "unpaid", "past_due"):
-            sub_id = s.id
-            cancel_subscription(sub_id, "league")
-            cancel_subscription(sub_id, "user")
-            cancel_subscription(sub_id, "single_league")
+        _handle_subscription_lifecycle_event(event["data"]["object"], etype)
 
     return "", 200
 
