@@ -18211,6 +18211,7 @@ def api_weekly_week():
             scoring_settings=ctx.get("raw_scoring_settings") or ctx.get("scoring_settings"),
             is_gotw=is_gotw,
             gotw_selection=_api_gotw,
+            league_id=ctx.get("resolved_league_id") or league_id,
         )
         for m, is_gotw in zip(matchups, _api_gotw_flags)
     ]

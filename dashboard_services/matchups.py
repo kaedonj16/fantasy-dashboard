@@ -1488,6 +1488,19 @@ def build_offense_rankings(teams_index: dict) -> dict:
     return rankings
 
 
+def _matchup_games_in_progress(m: dict, status_by_pid: dict) -> bool:
+    """True when any starter on either side has a game currently in progress."""
+    for side in ("left", "right"):
+        for p in ((m.get(side) or {}).get("starters") or []):
+            pid = p.get("pid")
+            status = status_by_pid.get(pid, STATUS_NOT_STARTED)
+            if pid is not None and status == STATUS_NOT_STARTED:
+                status = status_by_pid.get(str(pid), status)
+            if status == STATUS_IN_PROGRESS:
+                return True
+    return False
+
+
 def render_matchup_slide(
         season: str,
         m: dict,
@@ -1506,6 +1519,7 @@ def render_matchup_slide(
         gotw_selection: Optional[dict] = None,
         roster_positions: Optional[List[str]] = None,
         div_records: dict = None,
+        league_id: Optional[str] = None,
 ) -> str:
     """One slide with rows like:
        [Left Name] [Left Pts/Proj] [Right Pts/Proj] [Right Name]
@@ -1523,6 +1537,11 @@ def render_matchup_slide(
 
     div_records: optional {roster_id: (w, l, t)} of records vs division
     opponents; when given, the team header record renders as "2-1 (2-0)".
+
+    league_id: when given (and the slide is not compact), Sunday drama is
+    active: live weeks compare each poll's win-probability favorite against the
+    last recorded snapshot and play a lead-change moment on a flip; completed
+    weeks show the archived turning points for the matchup.
     """
     proj = w > proj_week
     completed_week = not proj
@@ -2157,6 +2176,7 @@ def render_matchup_slide(
 
     # Win probability: only for live/projection weeks (skip completed weeks)
     win_bar_html = ""
+    drama_html = ""
     if proj:
         l_prob = compute_win_prob(
             m["left"], m["right"], status_by_pid, week_proj_map,
@@ -2180,6 +2200,63 @@ def render_matchup_slide(
   <div class="m-wp-track" style="background:{track_bg};"></div>
   <span class="m-wp-pct" style="color:{r_col};text-align:right;">{rp}%</span>
 </div>"""
+            # Sunday drama: while games are actually live, compare this poll's
+            # favorite against the last recorded snapshot. A flipped favorite
+            # plays an in-page lead-change moment; the snapshot is archived for
+            # the post-game turning-points list. Lazy import + swallowed
+            # errors: drama must never break the slide.
+            if (
+                league_id and not compact and allow_live
+                and _matchup_games_in_progress(m, status_by_pid)
+            ):
+                try:
+                    from dashboard_services import sunday_drama as _drama
+                    _l_live = team_live_totals(
+                        m["left"], status_by_pid, week_proj_map,
+                        proj_lookup=_pid_proj, frac_lookup=_frac_lookup,
+                    )[1]
+                    _r_live = team_live_totals(
+                        m["right"], status_by_pid, week_proj_map,
+                        proj_lookup=_pid_proj, frac_lookup=_frac_lookup,
+                    )[1]
+                    _drama_res = _drama.record_snapshot(
+                        league_id=str(league_id), season=str(season), week=int(w),
+                        matchup_key=_drama.matchup_key_for(m),
+                        left_roster_id=str(m["left"].get("roster_id") or ""),
+                        right_roster_id=str(m["right"].get("roster_id") or ""),
+                        left_name=str(m["left"].get("name") or "Left team"),
+                        right_name=str(m["right"].get("name") or "Right team"),
+                        left_win_prob=float(l_prob),
+                        left_pts=float(_l_live), right_pts=float(_r_live),
+                    )
+                    _flip = (_drama_res or {}).get("flip")
+                    if _flip:
+                        _to = _flip["to"]
+                        _fname = str((m.get(_to) or {}).get("name") or "")
+                        _fpct = round((l_prob if _to == "left" else 1.0 - l_prob) * 100)
+                        drama_html = _drama.flip_banner_html(
+                            _fname, _fpct, (_drama_res or {}).get("observed_at"),
+                        )
+                except Exception:
+                    logging.getLogger(__name__).debug(
+                        "sunday drama flip check failed", exc_info=True,
+                    )
+
+    # Sunday drama archive: on completed weeks, show the biggest
+    # win-probability swings recorded while the games were live.
+    if (not proj) and league_id and not compact:
+        try:
+            from dashboard_services import sunday_drama as _drama
+            _tps = _drama.get_turning_points(
+                league_id=str(league_id), season=str(season), week=int(w),
+                matchup_key=_drama.matchup_key_for(m), limit=4,
+            )
+            if _tps:
+                drama_html = _drama.turning_points_html(_tps)
+        except Exception:
+            logging.getLogger(__name__).debug(
+                "sunday drama archive failed", exc_info=True,
+            )
 
     l_score, l_live = _score_html(m['left'], proj)
     r_score, r_live = _score_html(m['right'], proj)
@@ -2295,6 +2372,7 @@ def render_matchup_slide(
         {h2h_html}
       </div>
       {win_bar_html}
+      {drama_html}
       {moments_mount}
       {body_html}
     </div>
