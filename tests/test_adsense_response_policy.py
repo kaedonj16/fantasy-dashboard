@@ -135,3 +135,19 @@ def test_canonical_robots_and_sitemap_share_production_origin(offline_client, mo
     assert "Sitemap: https://brfantasyfootball.com/sitemap.xml" in robots
     assert locations
     assert all(url.startswith("https://brfantasyfootball.com/") or url == "https://brfantasyfootball.com" for url in locations)
+
+
+def test_missing_trade_outcome_is_noindex_and_ad_free(offline_client):
+    # /o/<id> (short URL) 404s through render_page like the /t/ trade shares.
+    response = offline_client.get("/o/definitely-missing-share")
+    assert response.status_code == 404
+    html = response.get_data(as_text=True)
+    assert 'name="robots" content="noindex, follow"' in html
+    assert 'data-ad-eligible="false"' in html
+    assert "adsbygoogle" not in html
+
+    # The standalone card itself carries a noindex meta tag (raw HTML page).
+    card = offline_client.get("/trade-outcome-card/definitely-missing-share")
+    assert card.status_code == 404
+    card_html = card.get_data(as_text=True)
+    assert 'name="robots" content="noindex"' in card_html
