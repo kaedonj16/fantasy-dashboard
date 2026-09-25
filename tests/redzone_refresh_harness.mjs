@@ -1,5 +1,5 @@
 // Behavioral harness for the Redzone refresh / polling / streaming lifecycle
-// (§1-3, §5). redzone.js is a DOM-guarded IIFE, so we extract the REAL async
+// (§1-3, §5, §7). redzone.js is a DOM-guarded IIFE, so we extract the REAL async
 // control-flow functions by source and evaluate them against injected fakes:
 // a fake clock (mocked setTimeout/clearTimeout/Date.now), a fake fetch, a fake
 // AbortController, and a fake NDJSON stream reader. This exercises the shipped
@@ -37,11 +37,12 @@ function constant(name) {
 const DEADLINE = constant('_RZ_FETCH_DEADLINE_MS');
 const STREAM_DEADLINE = constant('_RZ_STREAM_DEADLINE_MS');
 const STREAM_IDLE = constant('_RZ_STREAM_IDLE_MS');
+const VISIT_STALE = constant('_VISIT_RECONCILE_STALE_MS');
 
 const REAL = [
   '_rzLog', '_ownsScreen', '_cancelInflight', '_recoverScopeLoad', '_manualRefresh',
   '_refresh', '_refreshUserStream', '_tick', '_emptyUserState', '_mergeLeagueSlice',
-  '_hasViewerIdentityFields',
+  '_hasViewerIdentityFields', '_snapshotAgeMs', '_visitReconcile',
 ].map(extract).join('\n');
 
 // ── Fake infrastructure ─────────────────────────────────────────────────────
@@ -144,7 +145,7 @@ function build(opts) {
   opts = opts || {};
   const clock = new FakeClock();
   const logs = [];
-  const events = { renders: 0, partials: 0, applied: [], detects: [] };
+  const events = { renders: 0, partials: 0, applied: [], detects: [], syncBar: [] };
   const doc = { hidden: !!opts.hidden, getElementById: () => null };
   const win = { location: { pathname: '/sleeper/2025/123/redzone' }, console: null };
 
@@ -159,6 +160,7 @@ function build(opts) {
     var _RZ_FETCH_DEADLINE_MS = ${DEADLINE};
     var _RZ_STREAM_DEADLINE_MS = ${STREAM_DEADLINE};
     var _RZ_STREAM_IDLE_MS = ${STREAM_IDLE};
+    var _VISIT_RECONCILE_STALE_MS = ${VISIT_STALE};
     // ── mutable module state ──
     var _scope = D.scope, _streaming = false, _streamGen = 0, _reqSeq = 0, _inflight = null;
     var _scopeJustSwitched = false, _lastDataAt = null, _lastSuccessAt = null;
@@ -173,17 +175,19 @@ function build(opts) {
     function _partialUpdate() { D.ev.partials++; }
     function _setState(d) { _state = d || {}; D.ev.applied.push(d); }
     function _detectChanges(d, mode) { D.ev.detects.push(mode); }
+    function _syncBar(on) { D.ev.syncBar.push(!!on); } // visit-reconcile "updating" bar: record on/off
     function _seedPrevStats() {} function _saveScopeRuntime() {} function _applyDefaultHero() {}
     function _seedMilestones() {} function _seedInjuries() {} function _seedLeaders() {}
     function _resetFeedSnapshots() {} function _hydrateFeed() {} function _eid(e) { return e && e.id; }
     function _runtimeIdentity() { return 'x'; }
     function _pollInterval() { return 15; }
     function _anyLive() { return false; }
-    function _isGameDay() { return true; }
+    function _isGameDay() { return D.gameDay !== false; }
     function _fmtTimer(n) { return String(n); }
     ${REAL}
     return {
       refresh: _refresh, stream: _refreshUserStream, tick: _tick, manual: _manualRefresh,
+      reconcile: _visitReconcile, snapshotAge: _snapshotAgeMs,
       switchScope: function (s) { _saveScopeRuntime(); _streamGen++; _cancelInflight('scope-switch'); _streaming = false; _scope = s; _loadingScope = true; },
       setHidden: function (v) { document.hidden = v; },
       setCountdown: function (v) { _countdown = v; },
@@ -204,6 +208,7 @@ function build(opts) {
     AbortController: FakeController, TextDecoder: FakeTextDecoder,
     document: doc, window: win, root: { querySelectorAll: () => [] }, console: captureConsole,
     scope: opts.scope || 'league', loadingScope: !!opts.loadingScope,
+    gameDay: opts.gameDay,
     state: opts.state || {}, scopeCache: opts.scopeCache || { league: null, user: null },
     ev: events,
   };
@@ -414,6 +419,108 @@ async function run() {
     await clock.advance(DEADLINE + 1);
     await p;
     console.log('ok - §2 automatic polls never pile up (single in-flight request)');
+  }
+
+  // ── §7: VISIT RECONCILE — game day always re-syncs once, as backfill ──────
+  {
+    let calls = 0;
+    const snap = { scope: 'league', viewer_roster_id: '1', matchups: [], player_info: {},
+      games: {}, pbp_by_game: {}, updated_at: 600 };
+    const { api, clock, events } = build({ scope: 'league', state: snap, plan: () => {
+      calls++;
+      return { json: leaguePayload({ viewer_roster_id: '1' }) };
+    } });
+    CURRENT_CLOCK = clock;
+    await clock.advance(3600000);          // 1h later; snapshot is 50min old
+    api.reconcile();                       // game day (default stub): must re-sync
+    await clock.advance(5);
+    await flush();
+    assert.equal(calls, 1, 'game-day visit fires exactly one reconcile request');
+    assert.ok(events.detects.includes('bulk'), 'reconcile runs as backfill (no live alerts)');
+    assert.ok(api.state().lastDataAt > 0, 'fresh data advanced _lastDataAt');
+    assert.deepEqual(events.syncBar, [true, false], 'sync bar shows during the reconcile, hides after');
+    console.log('ok - §7 game-day visit reconciles once, as backfill');
+  }
+
+  // ── §7: fresh off-day snapshot costs ZERO extra requests ───────────────────
+  {
+    let calls = 0;
+    const { api, clock, events } = build({ scope: 'league', gameDay: false,
+      state: { scope: 'league', viewer_roster_id: '1', matchups: [], player_info: {},
+        games: {}, pbp_by_game: {}, updated_at: 3600 },
+      plan: () => { calls++; return { json: leaguePayload() }; } });
+    CURRENT_CLOCK = clock;
+    await clock.advance(3600000);          // 1h later; snapshot was generated "now"
+    assert.ok(api.snapshotAge() < VISIT_STALE, 'snapshot reads as fresh');
+    api.reconcile();
+    await clock.advance(5);
+    await flush();
+    assert.equal(calls, 0, 'fresh off-day snapshot costs zero requests');
+    assert.deepEqual(events.syncBar, [], 'no sync bar when nothing reconciles');
+    console.log('ok - §7 fresh off-day snapshot skips the reconcile (fast: no request)');
+  }
+
+  // ── §7: stale off-day snapshot (service-worker cache) still reconciles ─────
+  {
+    let calls = 0;
+    const { api, clock, events } = build({ scope: 'league', gameDay: false,
+      state: { scope: 'league', viewer_roster_id: '1', matchups: [], player_info: {},
+        games: {}, pbp_by_game: {}, updated_at: 600 },
+      plan: () => { calls++; return { json: leaguePayload({ viewer_roster_id: '1' }) }; } });
+    CURRENT_CLOCK = clock;
+    await clock.advance(3600000);          // 1h later; snapshot is 50min old
+    assert.ok(api.snapshotAge() > VISIT_STALE, 'snapshot reads as stale');
+    api.reconcile();
+    await clock.advance(5);
+    await flush();
+    assert.equal(calls, 1, 'stale off-day snapshot reconciles once');
+    assert.ok(events.detects.includes('bulk'), 'stale reconcile is backfill (no alert burst)');
+    assert.deepEqual(events.syncBar, [true, false], 'sync bar shows during the stale reconcile, hides after');
+    console.log('ok - §7 stale off-day snapshot reconciles once, as backfill');
+  }
+
+  // ── §7: reconcile NEVER piles onto an in-flight request ────────────────────
+  {
+    let calls = 0;
+    const { api, clock, events } = build({ scope: 'league',
+      state: { scope: 'league', viewer_roster_id: '1', matchups: [], player_info: {},
+        games: {}, pbp_by_game: {}, updated_at: 600 },
+      plan: () => { calls++; return { hangBody: true }; } });
+    CURRENT_CLOCK = clock;
+    await clock.advance(3600000);
+    const p = api.refresh();              // a poll owns the network...
+    await flush();
+    assert.equal(calls, 1, 'one request opened');
+    api.reconcile();                       // ...so the visit reconcile stands down
+    await clock.advance(5);
+    await flush();
+    assert.equal(calls, 1, 'reconcile never piles onto an in-flight request');
+    assert.deepEqual(events.syncBar, [], 'no sync bar when the reconcile stands down');
+    await clock.advance(DEADLINE + 1);     // cleanup: let the hung poll die
+    await p;
+    console.log('ok - §7 reconcile stands down while a request is in flight');
+  }
+
+  // ── §7: user scope reconciles through the My Leagues stream ────────────────
+  {
+    const okSlice = { type: 'league', index: 0, matchups: [{ roster_id: '0:1', matchup_id: '0:1' }],
+      rosters: [], users: [], player_info: {}, viewer_roster_id: '0:1', leagues: [{ league_id: 'l1', name: 'L1' }] };
+    const { api, clock, events } = build({ scope: 'user',
+      state: { scope: 'user', updated_at: 0, matchups: [], player_info: {}, games: {}, pbp_by_game: {} },
+      plan: (url) => (url.indexOf('stream=1') >= 0
+        ? { contentType: 'application/x-ndjson', stream: [
+            { chunk: ndjson({ type: 'meta', week: 1, season: 2025, leagues: [{ name: 'L1' }] }) },
+            { chunk: ndjson(okSlice) }, { done: true } ] }
+        : { json: { scope: 'user', viewer_roster_ids: [] } }) });
+    CURRENT_CLOCK = clock;
+    api.reconcile();
+    await clock.advance(50);
+    await flush();
+    const st = api.state();
+    assert.equal(st.streamGen, 1, 'user scope reconciles via the My Leagues stream');
+    assert.ok(st.scopeCache.user && st.scopeCache.user.matchups.length === 1, 'stream applied its league slice');
+    assert.deepEqual(events.syncBar, [true, false], 'sync bar shows during the stream reconcile, hides after');
+    console.log('ok - §7 user scope visit reconciles through the stream (bulk)');
   }
 
   CURRENT_CLOCK = null;

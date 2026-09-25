@@ -59,15 +59,36 @@ def test_clock_freshness_behavioral_harness():
 def test_first_load_kicks_off_immediate_catchup_on_game_day():
     """On a live game day the boot must not wait out the first poll interval --
     it paints the server-injected snapshot, then immediately reconciles to the
-    latest plays (self-healing a stale service-worker-cached shell). Previously
-    only demo mode refreshed on load."""
+    latest plays (self-healing a stale service-worker-cached shell). Off-days
+    with a fresh snapshot skip the reconcile entirely: zero extra requests."""
     boot = REDZONE_JS.rsplit("_render();", 1)[1]  # the boot tail after first paint
-    assert "if (_isDemo) {" in boot
-    assert "} else if (_isGameDay()) {" in boot
-    # Scope-aware immediate refresh, guarded against piling onto an in-flight poll.
-    assert "_refresh({ backfill: true })" in boot
-    assert "_refreshUserStream()" in boot
-    assert "if (_inflight || _streaming) return;" in boot
+    assert "setTimeout(_visitReconcile, 250);" in boot
+    reconcile = REDZONE_JS.split("function _visitReconcile() {", 1)[1].split("\n  }", 1)[0]
+    # Game days always reconcile; off-days only when the snapshot is stale.
+    assert "_isGameDay()" in reconcile
+    assert "_VISIT_RECONCILE_STALE_MS" in reconcile
+    # Scope-aware refresh, guarded against piling onto an in-flight poll/stream.
+    assert "if (_inflight || _streaming) return;" in reconcile
+    assert "_refresh({ backfill: true })" in reconcile
+    assert "_refreshUserStream()" in reconcile
+
+
+def test_boot_seeds_freshness_from_snapshot_clock():
+    """A service-worker-cached shell must not masquerade as "just updated":
+    the boot seeds _lastDataAt from the snapshot's own updated_at so the
+    resume-on-visible guard, the live/bulk heuristic, and the stale chip all
+    read the snapshot's true age."""
+    assert "function _snapshotAgeMs()" in REDZONE_JS
+    assert "_lastDataAt = _bootSnapAge >= 0 ? Date.now() - _bootSnapAge : Date.now();" in REDZONE_JS
+
+
+def test_bfcache_restore_reconciles_via_pageshow():
+    """Back/forward restores don't reliably fire visibilitychange; a pageshow
+    listener with persisted=true covers the return-to-Redzone case, and the
+    resume guard stands down while a request already owns the network."""
+    assert "window.addEventListener('pageshow'" in REDZONE_JS
+    assert "e.persisted" in REDZONE_JS
+    assert "if (_inflight || _streaming) return; // a request already owns the network" in REDZONE_JS
 
 
 def test_backfill_poll_reconciles_as_bulk_never_live_alerts():
