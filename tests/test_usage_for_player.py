@@ -74,3 +74,61 @@ def test_skips_non_dict_rows_in_list_table():
     table = ["junk", None, {"id": "8138", "usage": dict(FRESH)}]
     got = _usage_for_player("8138", {}, table)
     assert got == FRESH
+
+
+def _load_snap_pct_fn():
+    import sys
+    import types
+
+    src = (ROOT / "app.py").read_text(encoding="utf-8")
+    start = src.find("def _snap_pct_for_depth_player(")
+    assert start > 0, "_snap_pct_for_depth_player not found in app.py"
+    end = src.find("\ndef ", start + 10)
+    assert end > start
+    # Stub utils.utils.normalize_name (real one needs bs4, absent here).
+    # Save/restore sys.modules so the stub never leaks into other test files.
+    mod = types.ModuleType("utils.utils")
+    mod.normalize_name = lambda n: (n or "").lower().strip()
+    pkg = types.ModuleType("utils")
+    pkg.utils = mod
+    saved = {k: sys.modules.get(k) for k in ("utils", "utils.utils")}
+    sys.modules["utils"] = pkg
+    sys.modules["utils.utils"] = mod
+    try:
+        ns: dict = {}
+        exec(compile(src[start:end], "app.py::_snap_pct_for_depth_player", "exec"), ns)
+        return ns["_snap_pct_for_depth_player"]
+    finally:
+        for k, v in saved.items():
+            if v is None:
+                sys.modules.pop(k, None)
+            else:
+                sys.modules[k] = v
+
+
+_snap_pct_for_depth_player = _load_snap_pct_fn()
+
+
+def test_snap_pct_prefers_current_season_usage_over_pfr():
+    usage = {"avg_off_snap_pct": 0.83, "avg_off_snaps": 55.0}
+    pfr = {"bryce young": {"avg_off_snap_pct": 0.97}}
+    pct, src = _snap_pct_for_depth_player("1", "Bryce Young", "CAR", usage, pfr, 65.0)
+    assert pct == 83 and src == "usage"
+
+
+def test_snap_pct_falls_back_to_pfr_without_current_season_snaps():
+    usage = {"avg_off_snap_pct": 0.0, "avg_off_snaps": 0.0}
+    pfr = {"bryce young": {"avg_off_snap_pct": 0.97}}
+    pct, src = _snap_pct_for_depth_player("1", "Bryce Young", "CAR", usage, pfr, 65.0)
+    assert pct == 97 and src == "pfr"
+
+
+def test_snap_pct_derived_fallback_when_no_pct_anywhere():
+    usage = {"avg_off_snaps": 32.5}
+    pct, src = _snap_pct_for_depth_player("1", "Haynes King", "CAR", usage, {}, 65.0)
+    assert pct == 50 and src == "derived"
+
+
+def test_snap_pct_none_when_nothing_available():
+    pct, src = _snap_pct_for_depth_player("1", "Haynes King", "CAR", {}, {}, 65.0)
+    assert pct is None and src is None

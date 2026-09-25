@@ -24217,8 +24217,22 @@ def _snap_pct_for_depth_player(
         pfr_by_norm: dict,
         off_snaps_pg,
 ) -> tuple:
-    """Return (snap_pct, snap_pct_source) preferring PFR, then derived estimate."""
+    """Return (snap_pct, snap_pct_source) preferring current-season usage data.
+
+    The daily usage table carries this season's avg_off_snap_pct (0-1) from
+    Sleeper; it outranks PFR, which only has the prior season once the new
+    season is underway. PFR remains the fallback for players with no
+    current-season snaps (injured, new signings, or weeks Sleeper doesn't
+    publish snap percentages for).
+    """
     from utils.utils import normalize_name
+
+    usage_pct = (usage or {}).get("avg_off_snap_pct")
+    try:
+        if usage_pct is not None and float(usage_pct) > 0:
+            return round(float(usage_pct) * 100), "usage"
+    except (TypeError, ValueError):
+        pass
 
     norm = normalize_name(name or "")
     pfr = (pfr_by_norm.get(norm) or {}) if norm else {}
@@ -24230,7 +24244,7 @@ def _snap_pct_for_depth_player(
         except (TypeError, ValueError):
             pass
 
-    avg_snaps = usage.get("avg_off_snaps")
+    avg_snaps = (usage or {}).get("avg_off_snaps")
     if avg_snaps is not None and off_snaps_pg:
         try:
             denom = float(off_snaps_pg)
