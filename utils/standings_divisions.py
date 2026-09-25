@@ -273,6 +273,30 @@ def format_record(wins: int, losses: int, ties: int = 0,
     return rec
 
 
+def format_record_html(wins: int, losses: int, ties: int = 0,
+                       div_record: Optional[Tuple[int, int, int]] = None) -> str:
+    """HTML version of :func:`format_record` for table cells and meta lines.
+
+    The whole record sits in ``<span class="st-record">`` (``white-space:
+    nowrap``) so ``'2-0 (1-0)'`` never wraps mid-record on narrow phones, and
+    the parenthesized division part gets ``<span class="st-div-rec">`` (muted,
+    slightly smaller) to help it fit. Plain-text callers keep using
+    ``format_record``.
+    """
+    import html as _html
+    rec = f"{int(wins)}-{int(losses)}"
+    if int(ties or 0):
+        rec += f"-{int(ties)}"
+    rec_html = _html.escape(rec)
+    if div_record is not None:
+        dw, dl, dt = (int(x or 0) for x in div_record)
+        div = f"{dw}-{dl}"
+        if dt:
+            div += f"-{dt}"
+        rec_html += f' <span class="st-div-rec">({_html.escape(div)})</span>'
+    return f'<span class="st-record">{rec_html}</span>'
+
+
 def division_records_for_ctx(ctx: Mapping[str, Any]) -> Optional[Dict[int, Tuple[int, int, int]]]:
     """``{roster_id: (w, l, t)}`` vs division opponents from the ctx's weekly
     frame, or ``None`` when the league doesn't use divisions. Callers pass the

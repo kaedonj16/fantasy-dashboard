@@ -114,3 +114,19 @@ def test_hub_alert_strips_share_tone_token():
     assert ".bench-check-card.bench-miss" in css
     wl = re.search(r"\.wl-alerts\s*\{([^}]+)\}", css)
     assert wl and "--alert-tone:" in wl.group(1)
+
+
+def test_division_record_cells_do_not_wrap():
+    """Standings records render as "2-0 (1-0)": the Rec column wrapped
+    mid-record on iPhones ("2-0 (1-" / "0)"). .st-record must keep the whole
+    record on one line, and the recap scoreboard's record span too."""
+    css = _css()
+    st = re.search(r"\.st-record\s*\{([^}]+)\}", css)
+    assert st, "missing .st-record rule"
+    assert "nowrap" in st.group(1), ".st-record must keep the record on one line"
+    recap = re.search(
+        r"\.weekly-recap\s+\.recap-team-record\s*\{([^}]+)\}",
+        css,
+    )
+    assert recap, "missing .weekly-recap .recap-team-record rule"
+    assert "nowrap" in recap.group(1), ".recap-team-record must keep the record on one line"

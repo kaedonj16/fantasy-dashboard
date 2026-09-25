@@ -162,6 +162,19 @@ def test_format_record_with_division():
     assert format_record(2, 1, 0, None) == "2-1"
 
 
+def test_format_record_html_keeps_record_on_one_line():
+    from utils.standings_divisions import format_record_html
+    assert format_record_html(2, 0) == '<span class="st-record">2-0</span>'
+    assert format_record_html(2, 0, 0, (1, 0, 0)) == (
+        '<span class="st-record">2-0 <span class="st-div-rec">(1-0)</span></span>'
+    )
+    assert format_record_html(1, 0, 1, (0, 0, 1)) == (
+        '<span class="st-record">1-0-1 <span class="st-div-rec">(0-0-1)</span></span>'
+    )
+    # No parenthetical when divisions are off.
+    assert format_record_html(2, 1, 0, None) == '<span class="st-record">2-1</span>'
+
+
 def _div_weekly_frame(pd):
     # 4 teams, 2 divisions; week 1: 1v2 (div game), 3v4 (div game);
     # week 2: 1v3 (cross-div), 2v4 (cross-div).
@@ -216,12 +229,12 @@ def test_render_standings_shows_division_record():
         df, length=4, owner_to_rid=o2r, divisions=divisions,
         detailed_df=_div_weekly_frame(pd),
     )
-    assert "1-1 (1-0)" in html  # A: 1-1 overall, 1-0 in division
-    assert "1-0-1 (0-0-1)" in html  # C: tie was a division game
+    assert '<span class="st-record">1-1 <span class="st-div-rec">(1-0)</span></span>' in html  # A: 1-1 overall, 1-0 in division
+    assert '<span class="st-record">1-0-1 <span class="st-div-rec">(0-0-1)</span></span>' in html  # C: tie was a division game
     # Flat leagues keep the plain record.
     flat = appmod.render_standings(df, length=4, owner_to_rid=o2r, divisions=None)
     assert "(1-0)" not in flat
-    assert "1-1<" in flat or ">1-1<" in flat
+    assert ">1-1<" in flat
 
 
 def test_render_standings_compact_shows_division_record():
@@ -241,8 +254,8 @@ def test_render_standings_compact_shows_division_record():
         df, owner_to_rid=o2r, divisions=divisions,
         div_records={1: (1, 0, 0), 2: (0, 1, 0)},
     )
-    assert "1-1 (1-0)" in html
-    assert "1-1 (0-1)" in html
+    assert '<span class="st-record">1-1 <span class="st-div-rec">(1-0)</span></span>' in html
+    assert '<span class="st-record">1-1 <span class="st-div-rec">(0-1)</span></span>' in html
 
 
 def test_division_records_for_ctx_none_without_divisions():
@@ -287,9 +300,9 @@ def test_render_matchup_slide_shows_division_record(monkeypatch):
     html = mmod.render_matchup_slide(
         "2026", matchup, w=1, proj_week=0,
         div_records={1: (2, 0, 0), 2: (0, 1, 0)}, **kw)
-    assert "2-1 (2-0)" in html
-    assert "1-2 (0-1)" in html
+    assert '<span class="st-record">2-1 <span class="st-div-rec">(2-0)</span></span>' in html
+    assert '<span class="st-record">1-2 <span class="st-div-rec">(0-1)</span></span>' in html
     # No div_records -> plain records.
     plain = mmod.render_matchup_slide("2026", matchup, w=1, proj_week=0, **kw)
-    assert "2-1 (2-0)" not in plain
+    assert "(2-0)" not in plain
     assert "2-1" in plain
