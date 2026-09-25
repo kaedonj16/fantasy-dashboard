@@ -30,16 +30,24 @@ _CONTACT_EMAIL = os.environ.get("CONTACT_EMAIL", "admin@brfantasy.com").strip()
 def _seo_origin() -> str:
     """Canonical https origin for robots/sitemap URLs.
 
-    Prefers PRIMARY_DOMAIN (same normalization as app.py) so the sitemap always
-    advertises canonical URLs even when crawled via the onrender.com host; falls
-    back to the request origin (https-correct behind the proxy via ProxyFix).
+    Always the www origin: the site serves on www (apex 301s to www at
+    Render). Prefers PRIMARY_DOMAIN so the sitemap advertises canonical URLs
+    even when crawled via the onrender.com host; falls back to the request
+    origin (https-correct behind the proxy via ProxyFix), www-normalized for
+    bare domains.
     """
     pd = os.environ.get("PRIMARY_DOMAIN", "").strip().lower()
     if pd.startswith("www."):
         pd = pd[4:]
     if pd:
-        return f"https://{pd}"
-    return request.host_url.rstrip("/")
+        return f"https://www.{pd}"
+    try:
+        host = (request.host or "").split(":")[0].lower()
+    except Exception:
+        host = ""
+    if host and host.count(".") == 1 and not host.startswith("www."):
+        host = "www." + host
+    return f"https://{host}" if host else request.host_url.rstrip("/")
 
 
 def _render(title: str, league_id: Optional[str], active: str, body: str,

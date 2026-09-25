@@ -122,6 +122,7 @@ def test_canonical_robots_and_sitemap_share_production_origin(offline_client, mo
     import app
     import routes.public_bp as public
     monkeypatch.setattr(app, "PRIMARY_DOMAIN", "brfantasyfootball.com")
+    monkeypatch.setattr(app, "_WWW_HOST", "www.brfantasyfootball.com")
     monkeypatch.setenv("PRIMARY_DOMAIN", "brfantasyfootball.com")
 
     home = offline_client.get("/").get_data(as_text=True)
@@ -131,10 +132,10 @@ def test_canonical_robots_and_sitemap_share_production_origin(offline_client, mo
     root = ET.fromstring(sitemap_response.get_data(as_text=True))
     locations = [node.text for node in root.iter("{http://www.sitemaps.org/schemas/sitemap/0.9}loc")]
 
-    assert canonical == "https://brfantasyfootball.com/"
-    assert "Sitemap: https://brfantasyfootball.com/sitemap.xml" in robots
+    assert canonical == "https://www.brfantasyfootball.com/"
+    assert "Sitemap: https://www.brfantasyfootball.com/sitemap.xml" in robots
     assert locations
-    assert all(url.startswith("https://brfantasyfootball.com/") or url == "https://brfantasyfootball.com" for url in locations)
+    assert all(url.startswith("https://www.brfantasyfootball.com/") or url == "https://www.brfantasyfootball.com" for url in locations)
 
 
 def test_missing_trade_outcome_is_noindex_and_ad_free(offline_client):

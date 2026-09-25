@@ -529,12 +529,21 @@ def page_player_trade_value(slug: str):
             f"trades, then run the deal through the trade calculator."
         )
         _img = meta.get("espnHeadshot") or ""
+        from app import _site_origin as _origin_fn
+        _origin = _origin_fn()
+        _page_url = f"{_origin}/player/{slug_norm}" if _origin else f"/player/{slug_norm}"
+        _card = "summary_large_image" if _img else "summary"
         og_tags = (
+            f"<meta property='og:site_name' content='BR Fantasy'>"
             f"<meta property='og:title' content='{html.escape(title)}'>"
             f"<meta property='og:description' content='{html.escape(description)}'>"
             f"<meta property='og:type' content='profile'>"
+            f"<meta property='og:url' content='{html.escape(_page_url)}'>"
             + (f"<meta property='og:image' content='{html.escape(_img)}'>" if _img else "")
-            + "<meta name='twitter:card' content='summary'>"
+            + f"<meta name='twitter:card' content='{_card}'>"
+            f"<meta name='twitter:title' content='{html.escape(title)}'>"
+            f"<meta name='twitter:description' content='{html.escape(description)}'>"
+            + (f"<meta name='twitter:image' content='{html.escape(_img)}'>" if _img else "")
         )
 
         return render_page(title, None, "players", body,

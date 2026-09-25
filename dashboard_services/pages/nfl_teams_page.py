@@ -53,7 +53,7 @@ def build_nfl_teams_body(
 .nt-card{{margin-bottom:16px}}
 .nt-cbody{{padding:0 16px 16px}}
 .nt-chead{{padding:14px 16px 10px}}
-.nt-chead h2{{font-size:18px;margin:0}}
+.nt-chead h1,.nt-chead h2{{font-size:18px;margin:0}}
 .nt-sub{{color:var(--text-muted);margin:4px 0 0;font-size:13px}}
 .nt-controls{{display:flex;gap:8px;align-items:center;flex-wrap:wrap}}
 .nt-hbtn{{flex-shrink:0;display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border:1px solid var(--border);border-radius:8px;background:var(--card);color:var(--text-muted);font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;font-family:inherit}}
@@ -206,7 +206,7 @@ table.nt-depth>thead>tr>th:first-child{{z-index:2}}
 </style>
 <div class="card nt-card">
   <div class="card-header nt-chead">
-    <div><h2>NFL Team Rankings</h2><p class="nt-sub" id="ntSeasonSub">Loading team data.</p></div>
+    <div><h1>NFL Team Rankings</h1><p class="nt-sub" id="ntSeasonSub">Loading team data.</p></div>
     <div class="nt-controls">
       <button type="button" class="nt-hbtn" id="ntHowBtn">How ranks work</button>
       <button type="button" class="nt-hbtn" id="ntCsvBtn">CSV</button>
