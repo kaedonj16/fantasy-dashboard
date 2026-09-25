@@ -119,8 +119,6 @@ def _filter_prefs(rows, notif_type):
     enabled. Rows come from get_conn() (psycopg dict_row), so they are keyed by
     column name - indexing by position (r[0]) raised KeyError and, because the
     callers swallow exceptions, silently sent to nobody."""
-    import json as _json
-
     def _endpoint_tuple(r):
         return (r["endpoint"], r["p256dh"], r["auth"])
 
@@ -128,17 +126,316 @@ def _filter_prefs(rows, notif_type):
         return [_endpoint_tuple(r) for r in rows]
     result = []
     for r in rows:
-        prefs_raw = r.get("prefs")
-        if isinstance(prefs_raw, dict):
-            prefs = prefs_raw          # JSONB comes back already decoded
-        else:
-            try:
-                prefs = _json.loads(prefs_raw or "{}")
-            except Exception:
-                prefs = {}
-        if prefs.get(notif_type, True) is not False:
+        if _prefs_dict(r.get("prefs")).get(notif_type, True) is not False:
             result.append(_endpoint_tuple(r))
     return result
+
+
+def _prefs_dict(prefs_raw):
+    """Parse a push_subscriptions prefs value (JSONB dict or TEXT) into a dict."""
+    import json as _json
+    if isinstance(prefs_raw, dict):
+        return prefs_raw
+    try:
+        return _json.loads(prefs_raw or "{}")
+    except Exception:
+        return {}
+
+
+# ── Notification-type catalog (buckets for the subscribe-time picker) ─────────
+# Canonical grouping of the push catalog into friendly buckets. The client
+# renders its "tell me about" picker from /api/push/catalog (this list). Every
+# key here must match a notif_type used by a notify_* function, because
+# _filter_prefs checks prefs by that key.
+
+PUSH_TYPE_BUCKETS = [
+    {
+        "id": "lineup",
+        "label": "Lineup and injuries",
+        "blurb": "Lineup lock reminders, starter injury news, live TD alerts",
+        "types": [
+            {"key": "lineup_lock", "label": "Lineup lock reminders"},
+            {"key": "injury", "label": "Starter injury alerts"},
+            {"key": "redzone_scores", "label": "RedZone score alerts"},
+        ],
+    },
+    {
+        "id": "matchups",
+        "label": "Matchups live",
+        "blurb": "Close games, matchup previews, standings moves",
+        "types": [
+            {"key": "close_game", "label": "Close game alerts"},
+            {"key": "matchup_preview", "label": "Matchup previews"},
+            {"key": "standings_update", "label": "Standings updates"},
+        ],
+    },
+    {
+        "id": "waivers",
+        "label": "Waivers and trends",
+        "blurb": "Waiver targets, big drops, weekly top movers",
+        "types": [
+            {"key": "waiver_candidates", "label": "Waiver wire updates"},
+            {"key": "transaction", "label": "Big drop alerts"},
+            {"key": "top_movers", "label": "Weekly top movers"},
+        ],
+    },
+    {
+        "id": "trades",
+        "label": "Trades and value",
+        "blurb": "Rival trades, dynasty value, breakouts, playoff odds",
+        "types": [
+            {"key": "rival_trades", "label": "Rival trade alerts"},
+            {"key": "value_drops", "label": "Value drop alerts"},
+            {"key": "breakout_roster", "label": "Breakout player alerts"},
+            {"key": "playoff_odds", "label": "Playoff odds updates"},
+        ],
+    },
+    {
+        "id": "recaps",
+        "label": "Recaps and watchlist",
+        "blurb": "Weekly recaps and alerts on your starred players",
+        "types": [
+            {"key": "recap_ready", "label": "Weekly recap available"},
+            {"key": "watchlist", "label": "Watchlist alerts"},
+        ],
+    },
+]
+
+
+# ── Digest mode: per-device, per-hour batching ────────────────────────────────
+# When a device opts in (prefs["digest"] is True), eligible notifications are
+# buffered in the push_digest_items table instead of being sent immediately,
+# and the next _flush_digest() (end of run_hourly()/run_all_daily()) delivers
+# ONE combined push per device summarizing across leagues. The buffer is in
+# Postgres, not process memory, because cron_daily.py runs each notify step as
+# its own subprocess - an in-memory buffer could never combine those.
+#
+# Live, time-critical alerts stay immediate even in digest mode: a RedZone TD
+# an hour late is useless, and top_movers is a weekly global announcement that
+# is never league-duplicated.
+
+_DIGEST_ELIGIBLE_TYPES = frozenset({
+    "lineup_lock", "injury", "transaction", "close_game",
+    "waiver_candidates", "breakout_roster", "value_drops", "watchlist",
+    "rival_trades", "playoff_odds", "standings_update",
+    "recap_ready", "matchup_preview",
+})
+
+# (singular, plural) nouns for the digest summary line, keyed by notif_type.
+_DIGEST_LABELS = {
+    "lineup_lock": ("lineup alert", "lineup alerts"),
+    "injury": ("injury alert", "injury alerts"),
+    "transaction": ("big drop", "big drops"),
+    "close_game": ("close game", "close games"),
+    "waiver_candidates": ("waiver target", "waiver targets"),
+    "breakout_roster": ("breakout alert", "breakout alerts"),
+    "value_drops": ("value drop", "value drops"),
+    "watchlist": ("watchlist alert", "watchlist alerts"),
+    "rival_trades": ("trade alert", "trade alerts"),
+    "playoff_odds": ("playoff odds update", "playoff odds updates"),
+    "standings_update": ("standings update", "standings updates"),
+    "recap_ready": ("recap ready", "recaps ready"),
+    "matchup_preview": ("matchup preview", "matchup previews"),
+}
+
+_DIGEST_TABLE_INIT = False
+
+
+def _init_digest_table():
+    global _DIGEST_TABLE_INIT
+    if _DIGEST_TABLE_INIT:
+        return
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS push_digest_items (
+                    id          SERIAL PRIMARY KEY,
+                    endpoint    TEXT NOT NULL,
+                    p256dh      TEXT NOT NULL,
+                    auth        TEXT NOT NULL,
+                    account_key TEXT,
+                    league_id   TEXT NOT NULL DEFAULT '',
+                    platform    TEXT NOT NULL DEFAULT '',
+                    notif_type  TEXT NOT NULL DEFAULT '',
+                    title       TEXT NOT NULL DEFAULT '',
+                    body        TEXT NOT NULL DEFAULT '',
+                    url         TEXT NOT NULL DEFAULT '/',
+                    tag         TEXT NOT NULL DEFAULT '',
+                    hour_bucket TEXT NOT NULL DEFAULT '',
+                    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+            """)
+            conn.execute(
+                "ALTER TABLE push_digest_items ADD COLUMN IF NOT EXISTS account_key TEXT"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS push_digest_items_endpoint_idx "
+                "ON push_digest_items (endpoint)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS push_digest_items_account_key_idx "
+                "ON push_digest_items (account_key)"
+            )
+            conn.commit()
+        _DIGEST_TABLE_INIT = True
+    except Exception as exc:
+        logger.warning("[push] digest table init failed: %s", exc)
+
+
+def _digest_buffer(endpoint, p256dh, auth, notif_type, title, body, url, tag,
+                   league_id=None, platform=None, account_key=None):
+    """Buffer one notification for the next digest flush (digest opt-in devices).
+
+    account_key groups the flush per account (all of a user's devices share one
+    per-hour batch); rows without one (legacy / signed-out) fall back to
+    per-endpoint grouping.
+    """
+    _init_digest_table()
+    hour_bucket = datetime.now(timezone.utc).strftime("%Y%m%d%H")
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            # Bound the buffer per device so a broken cron can't pile up forever.
+            conn.execute(
+                """DELETE FROM push_digest_items WHERE endpoint = %s AND id NOT IN (
+                       SELECT id FROM push_digest_items WHERE endpoint = %s
+                       ORDER BY id DESC LIMIT 49)""",
+                (endpoint, endpoint),
+            )
+            conn.execute(
+                """INSERT INTO push_digest_items
+                   (endpoint, p256dh, auth, account_key, league_id, platform,
+                    notif_type, title, body, url, tag, hour_bucket)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                (endpoint, p256dh, auth, account_key,
+                 league_id or "", platform or "",
+                 notif_type or "", title or "", body or "", url or "/",
+                 tag or "", hour_bucket),
+            )
+            conn.commit()
+    except Exception as exc:
+        logger.warning("[push] digest buffer failed: %s", exc)
+
+
+def _digest_summary(items, season):
+    """Compose the one-push digest: title + body from buffered items.
+
+    Example: title "BR Fantasy digest",
+    body "5 alerts across 2 leagues: 3 waiver targets, 1 injury alert, 1 trade alert."
+    """
+    by_type: dict = {}
+    for it in items:
+        by_type.setdefault(it.get("notif_type") or "", []).append(it)
+    phrases = []
+    league_ids = set()
+    for nt, lst in by_type.items():
+        sing, plur = _DIGEST_LABELS.get(nt, ("alert", "alerts"))
+        phrases.append(f"{len(lst)} {sing if len(lst) == 1 else plur}")
+        for it in lst:
+            if it.get("league_id"):
+                league_ids.add(it["league_id"])
+    total = len(items)
+    if len(league_ids) == 1:
+        lid = next(iter(league_ids))
+        plat = next((it.get("platform") or "" for it in items if it.get("league_id") == lid), "")
+        name = _league_display_name(plat, lid, season)
+        loc = f" in {name}" if name else ""
+    elif len(league_ids) > 1:
+        loc = f" across {len(league_ids)} leagues"
+    else:
+        loc = ""
+    body = f"{total} alert{'s' if total != 1 else ''}{loc}: " + ", ".join(phrases) + "."
+    return "BR Fantasy digest", body
+
+
+def _flush_digest():
+    """Send one combined push per device for everything buffered since the last
+    flush. Items are batched per account per hour (account_key), with rows that
+    have no account key (legacy / signed-out) falling back to per-endpoint
+    grouping. Each device receives one digest of its own items -- type prefs
+    were already applied per device at buffer time. Called at the end of
+    run_hourly()/run_all_daily() and as the final cron_daily.py step."""
+    _init_digest_table()
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            rows = conn.execute(
+                "SELECT id, endpoint, p256dh, auth, account_key, league_id, "
+                "platform, notif_type, title, body, url, tag "
+                "FROM push_digest_items ORDER BY id"
+            ).fetchall()
+    except Exception as exc:
+        logger.warning("[push] digest flush read failed: %s", exc)
+        return 0
+    if not rows:
+        return 0
+    # Per-account, per-hour batch: the group key is the account key when the
+    # subscription has one, else the endpoint (legacy / signed-out rows).
+    by_group: dict = {}
+    for r in rows:
+        gkey = ("acct:" + r["account_key"]) if r.get("account_key") else ("ep:" + r["endpoint"])
+        group = by_group.setdefault(gkey, {})
+        entry = group.setdefault(
+            r["endpoint"],
+            {"p256dh": r["p256dh"], "auth": r["auth"], "items": [], "ids": []},
+        )
+        entry["items"].append(r)
+        entry["ids"].append(r["id"])
+    try:
+        from dashboard_services.api import get_nfl_state
+        season = (get_nfl_state() or {}).get("season")
+    except Exception:
+        season = None
+    sent = 0
+    flushed_ids = []
+    for _gkey, group in by_group.items():
+        for endpoint, entry in group.items():
+            title, body = _digest_summary(entry["items"], season)
+            sent += _send_to_endpoints(
+                [(endpoint, entry["p256dh"], entry["auth"])],
+                title, body, "/portfolio", "push-digest",
+            )
+            flushed_ids.extend(entry["ids"])
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            conn.execute(
+                "DELETE FROM push_digest_items WHERE id = ANY(%s)", (flushed_ids,)
+            )
+            conn.commit()
+    except Exception as exc:
+        logger.warning("[push] digest flush cleanup failed: %s", exc)
+    n_devices = sum(len(g) for g in by_group.values())
+    logger.info("[push] digest flush: groups=%d devices=%d sent=%d",
+                len(by_group), n_devices, sent)
+    return sent
+
+
+def _send_with_digest(rows, title, body, url="/", tag="update", notif_type=None,
+                      league_id=None, platform=None):
+    """Preference-filter rows, then send immediately or buffer into the digest.
+
+    Devices that opted into digest mode (prefs["digest"] is True) get eligible
+    types buffered for the next _flush_digest() instead of an immediate push.
+    Everything else (no prefs, digest off, ineligible type) sends immediately,
+    exactly like before. Returns the immediate sent count.
+    """
+    immediate = []
+    for r in rows:
+        prefs = _prefs_dict(r.get("prefs"))
+        if notif_type and prefs.get(notif_type, True) is False:
+            continue
+        tup = (r["endpoint"], r["p256dh"], r["auth"])
+        if (notif_type and prefs.get("digest") is True
+                and notif_type in _DIGEST_ELIGIBLE_TYPES):
+            _digest_buffer(tup[0], tup[1], tup[2], notif_type, title, body, url,
+                           tag, league_id=league_id,
+                           platform=platform or r.get("platform"),
+                           account_key=r.get("account_key"))
+        else:
+            immediate.append(tup)
+    return _send_to_endpoints(immediate, title, body, url, tag)
 
 
 def _broadcast_all(title, body, url="/", tag="update", notif_type=None):
@@ -148,10 +445,10 @@ def _broadcast_all(title, body, url="/", tag="update", notif_type=None):
             # DISTINCT ON (endpoint): a device may have several league rows, but a
             # global broadcast should reach each device only once.
             rows = conn.execute(
-                "SELECT DISTINCT ON (endpoint) endpoint, p256dh, auth, prefs "
+                "SELECT DISTINCT ON (endpoint) endpoint, p256dh, auth, prefs, account_key "
                 "FROM push_subscriptions ORDER BY endpoint"
             ).fetchall()
-        return _send_to_endpoints(_filter_prefs(rows, notif_type), title, body, url, tag)
+        return _send_with_digest(rows, title, body, url, tag, notif_type=notif_type)
     except Exception as exc:
         logger.warning("[push] broadcast_all failed: %s", exc)
         return 0
@@ -162,10 +459,11 @@ def _broadcast_league(league_id, title, body, url="/", tag="update", notif_type=
         from dashboard_services.db import get_conn
         with get_conn() as conn:
             rows = conn.execute(
-                "SELECT endpoint, p256dh, auth, prefs FROM push_subscriptions WHERE league_id = %s",
+                "SELECT endpoint, p256dh, auth, prefs, platform, account_key FROM push_subscriptions WHERE league_id = %s",
                 (str(league_id),)
             ).fetchall()
-        return _send_to_endpoints(_filter_prefs(rows, notif_type), title, body, url, tag)
+        return _send_with_digest(rows, title, body, url, tag,
+                                 notif_type=notif_type, league_id=str(league_id))
     except Exception as exc:
         logger.warning("[push] broadcast_league %s failed: %s", league_id, exc)
         return 0
@@ -183,13 +481,14 @@ def _broadcast_owner(league_id, owner_id, title, body, url="/", tag="update", no
         variants = list(owner_id_variants(owner_id)) or [str(owner_id)]
         with get_conn() as conn:
             rows = conn.execute(
-                "SELECT endpoint, p256dh, auth, prefs FROM push_subscriptions "
+                "SELECT endpoint, p256dh, auth, prefs, platform, account_key FROM push_subscriptions "
                 "WHERE league_id = %s AND owner_id = ANY(%s)",
                 (str(league_id), variants)
             ).fetchall()
         if not rows:
             return 0
-        return _send_to_endpoints(_filter_prefs(rows, notif_type), title, body, url, tag)
+        return _send_with_digest(rows, title, body, url, tag,
+                                 notif_type=notif_type, league_id=str(league_id))
     except Exception as exc:
         logger.warning("[push] broadcast_owner failed: %s", exc)
         return 0
@@ -539,7 +838,7 @@ def notify_lineup_lock():
 
             with get_conn() as conn:
                 rows = conn.execute(
-                    "SELECT endpoint, p256dh, auth, prefs, owner_id "
+                    "SELECT endpoint, p256dh, auth, prefs, owner_id, account_key "
                     "FROM push_subscriptions WHERE league_id = %s",
                     (str(league_id),)
                 ).fetchall()
@@ -565,17 +864,19 @@ def notify_lineup_lock():
                     body = f"{body} {swap_line}."
                 if league_name:
                     body = f"{body} Check your lineup in {league_name}."
-                sent += _send_to_endpoints(
-                    _filter_prefs(orows, "lineup_lock"),
+                sent += _send_with_digest(
+                    orows,
                     "Your lineup needs attention", body, fix_url, tag,
+                    notif_type="lineup_lock", league_id=league_id, platform=platform,
                 )
             for oid, orows in bench_by_owner.items():
                 body = f"Week {week} kicks off soon. {bench_summary_by_owner[oid]}."
                 if league_name:
                     body = f"{body} Check your lineup in {league_name}."
-                sent += _send_to_endpoints(
-                    _filter_prefs(orows, "lineup_lock"),
+                sent += _send_with_digest(
+                    orows,
                     "Points on your bench", body, fix_url, tag,
+                    notif_type="lineup_lock", league_id=league_id, platform=platform,
                 )
         logger.info("[notify] lineup_lock week %s sent %d", week, sent)
 
@@ -1635,7 +1936,7 @@ def notify_watchlist_alerts():
         try:
             with get_conn() as conn:
                 subs = conn.execute(
-                    "SELECT DISTINCT ON (endpoint) endpoint, p256dh, auth, prefs "
+                    "SELECT DISTINCT ON (endpoint) endpoint, p256dh, auth, prefs, account_key "
                     "FROM push_subscriptions WHERE owner_id = ANY(%s) "
                     "ORDER BY endpoint, id DESC",
                     (owner_candidates,),
@@ -1676,9 +1977,9 @@ def notify_watchlist_alerts():
             else:
                 body = f"{nm} is now {inj}"
 
-            n = _send_to_endpoints(
-                _filter_prefs(subs, "watchlist"),
-                "Watchlist alert", body, "/players", tag=f"wl-{pid}",
+            n = _send_with_digest(
+                subs, "Watchlist alert", body, "/players", tag=f"wl-{pid}",
+                notif_type="watchlist",
             )
             if n:
                 sent += n
@@ -1714,6 +2015,8 @@ def run_all_daily():
         snapshot_all_rankings()
     except Exception:
         logger.warning("[ranking-seed] daily snapshot failed", exc_info=True)
+    # One combined push per digest opt-in device for everything buffered above.
+    _flush_digest()
 
 
 def run_hourly():
@@ -1722,3 +2025,5 @@ def run_hourly():
     notify_close_game()
     notify_transaction_drops()
     notify_injury_alert()
+    # One combined push per digest opt-in device for everything buffered above.
+    _flush_digest()

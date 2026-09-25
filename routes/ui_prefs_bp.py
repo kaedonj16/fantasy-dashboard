@@ -26,6 +26,13 @@ _TABLE_READY = False
 _ALLOWED_PREF_KEYS = frozenset({
     "site_tour_done",
     "sub_welcome_done",
+    # Push re-prompt state (signed-in users; guests use localStorage mirrors):
+    # push_reprompt_dismissed = permanent "Don't show again"
+    # push_reprompt_count     = total times the re-prompt has been shown
+    # push_reprompt_last      = YYYY-MM-DD of the last show (once-per-day cap)
+    "push_reprompt_dismissed",
+    "push_reprompt_count",
+    "push_reprompt_last",
 })
 _ALLOWED_EVENTS = frozenset({
     "site_tour_start",
@@ -109,11 +116,23 @@ def _save_prefs(user_key: str, prefs: dict) -> dict:
 def _sanitize_prefs(raw) -> dict:
     if not isinstance(raw, dict):
         return {}
+    import re as _re
+    _date_re = _re.compile(r"^\d{4}-\d{2}-\d{2}$")
     out = {}
     for key, value in raw.items():
         if key not in _ALLOWED_PREF_KEYS:
             continue
-        if isinstance(value, bool):
+        if key == "push_reprompt_count":
+            # Small non-negative int; clamp absurd values.
+            try:
+                n = int(value)
+            except (TypeError, ValueError):
+                continue
+            out[key] = max(0, min(n, 1000))
+        elif key == "push_reprompt_last":
+            if isinstance(value, str) and _date_re.match(value):
+                out[key] = value
+        elif isinstance(value, bool):
             out[key] = value
         elif value in (0, 1, "0", "1", "true", "false"):
             out[key] = value in (1, "1", "true", True)

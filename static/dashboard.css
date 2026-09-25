@@ -29456,6 +29456,34 @@ button:disabled {
     transform: translateX(-50%) translateY(0);
 }
 
+/* Push re-prompt banner (high-value moments for users without push enabled).
+   Mirrors #push-notif-banner; the two never show together (mutual exclusion
+   in app.js), so they share the same slot above the PWA install banner. */
+#push-reprompt-banner {
+    position: fixed;
+    bottom: 88px; /* sits above the PWA install banner if both show */
+    left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    z-index: var(--z-banner-push);
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, .3);
+    padding: 14px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    width: clamp(280px, 90vw, 400px);
+    opacity: 0;
+    transition: opacity .3s ease, transform .3s ease;
+}
+
+#push-reprompt-banner.pwa-banner-visible {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+}
+
 /* On phones the fixed bottom dock (.br-mnav, 56px + safe-area) owns the bottom
    edge, so lift both promo banners above it instead of letting the dock cover
    them. The push banner stacks above the install banner just like on desktop. */
@@ -29464,6 +29492,9 @@ button:disabled {
         bottom: calc(var(--dock-safe-bottom) + 14px);
     }
     #push-notif-banner {
+        bottom: calc(var(--dock-safe-bottom) + 14px + 64px);
+    }
+    #push-reprompt-banner {
         bottom: calc(var(--dock-safe-bottom) + 14px + 64px);
     }
 }

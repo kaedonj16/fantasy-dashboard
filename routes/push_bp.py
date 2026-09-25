@@ -62,6 +62,15 @@ def _init_push_table():
                     conn.execute(f"ALTER TABLE push_subscriptions ADD COLUMN IF NOT EXISTS {col} {defn}")
                 except Exception:
                     logger.debug("suppressed exception", exc_info=True)
+            # Digest mode is per-account, not per-device: account_key holds the
+            # signed-in Google account id from the session at subscribe time.
+            # Rows subscribed while signed out keep account_key NULL and fall
+            # back to per-endpoint digest grouping.
+            try:
+                conn.execute("ALTER TABLE push_subscriptions ADD COLUMN IF NOT EXISTS account_key TEXT")
+                conn.execute("CREATE INDEX IF NOT EXISTS push_subscriptions_account_key_idx ON push_subscriptions (account_key)")
+            except Exception:
+                logger.debug("suppressed exception", exc_info=True)
             conn.commit()
             # Multi-league support: a device (endpoint) can subscribe to several
             # leagues -- one row per (endpoint, league_id). Replace the old
@@ -150,6 +159,9 @@ def api_push_subscribe():
     # then the client-supplied owner_id (the settings-modal league toggle path).
     owner_id  = (str(session.get("viewer_user_id") or "").strip()
                  or (data.get("owner_id") or "").strip() or None)
+    # account_key: the signed-in Google account id. Digest mode is per-account,
+    # so the account key ties this device's rows to the user's other devices.
+    account_key = str(session.get("account_id") or "").strip() or None
     # Accept either a single league_id or a league_ids[] array (register the
     # device for every league at once -- the default-to-all subscribe path).
     raw_leagues = data.get("league_ids")
@@ -165,15 +177,16 @@ def api_push_subscribe():
             for lid in leagues:
                 conn.execute(
                     """
-                    INSERT INTO push_subscriptions (endpoint, p256dh, auth, league_id, platform, owner_id)
-                    VALUES (%s, %s, %s, %s, %s, %s)
+                    INSERT INTO push_subscriptions (endpoint, p256dh, auth, league_id, platform, owner_id, account_key)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (endpoint, league_id) DO UPDATE
                         SET p256dh    = EXCLUDED.p256dh,
                             auth      = EXCLUDED.auth,
                             platform  = COALESCE(EXCLUDED.platform,  push_subscriptions.platform),
-                            owner_id  = COALESCE(EXCLUDED.owner_id,  push_subscriptions.owner_id)
+                            owner_id  = COALESCE(EXCLUDED.owner_id,  push_subscriptions.owner_id),
+                            account_key = COALESCE(EXCLUDED.account_key, push_subscriptions.account_key)
                     """,
-                    (endpoint, p256dh, auth, lid, platform, owner_id),
+                    (endpoint, p256dh, auth, lid, platform, owner_id, account_key),
                 )
             # Keep notification-type prefs consistent across all of this device's
             # league rows (prefs are a device-level choice, not per-league).
@@ -278,11 +291,55 @@ def api_push_preferences():
                     "UPDATE push_subscriptions SET prefs = %s WHERE endpoint = %s",
                     (_json.dumps(prefs), endpoint),
                 )
+                # Digest is a per-account choice: mirror this device's digest
+                # toggle onto the account's other devices so every device in
+                # the account batches the same way. Type prefs stay
+                # device-level and are left untouched here.
+                if isinstance(prefs, dict) and "digest" in prefs:
+                    digest_on = prefs.get("digest") is True
+                    rows = conn.execute(
+                        "SELECT endpoint, prefs, account_key FROM push_subscriptions "
+                        "WHERE endpoint = %s",
+                        (endpoint,),
+                    ).fetchall()
+                    acct = next(
+                        (r["account_key"] for r in rows if r.get("account_key")),
+                        None,
+                    )
+                    if acct:
+                        for r in conn.execute(
+                            "SELECT endpoint, prefs FROM push_subscriptions "
+                            "WHERE account_key = %s AND endpoint <> %s",
+                            (acct, endpoint),
+                        ).fetchall():
+                            try:
+                                other = _json.loads(r["prefs"] or "{}")
+                            except Exception:
+                                other = {}
+                            if (other.get("digest") is True) != digest_on:
+                                other["digest"] = digest_on
+                                conn.execute(
+                                    "UPDATE push_subscriptions SET prefs = %s "
+                                    "WHERE endpoint = %s",
+                                    (_json.dumps(other), r["endpoint"]),
+                                )
                 conn.commit()
         except Exception as exc:
             logger.warning("[push] preferences put error: %s", exc)
             return jsonify({"error": str(exc)}), 500
         return jsonify({"ok": True})
+
+
+@push_bp.route("/api/push/catalog")
+@limiter.limit("60 per minute")
+def api_push_catalog():
+    """The canonical notification-type catalog, grouped into friendly buckets.
+
+    The client's subscribe-time "tell me about" picker renders from this, so
+    the buckets can never drift out of sync with the server's notif_type keys.
+    """
+    from utils.push_notifications import PUSH_TYPE_BUCKETS
+    return jsonify({"buckets": PUSH_TYPE_BUCKETS})
 
 
 @push_bp.route("/api/push/broadcast", methods=["POST"])
