@@ -500,6 +500,7 @@ def get_subscription_info(user_id: Optional[str], league_id: Optional[str], plat
         "has_user_subscription": False,
         "has_single_league_subscription": False,
         "expires_at": None,
+        "billing_interval": "year",
         "subscriber_user_id": None,
         "stripe_customer_id": None,
     }
@@ -509,9 +510,11 @@ def get_subscription_info(user_id: Optional[str], league_id: Optional[str], plat
     try:
         with get_conn() as conn:
             with conn.cursor() as cur:
+                for _table in _BILLING_INTERVAL_TABLES:
+                    _ensure_billing_interval(cur, _table)
                 if league_id:
                     cur.execute("""
-                        SELECT expires_at, subscriber_user_id, stripe_customer_id
+                        SELECT expires_at, subscriber_user_id, stripe_customer_id, billing_interval
                         FROM league_subscriptions
                         WHERE league_id = %s
                           AND platform = %s
@@ -523,12 +526,13 @@ def get_subscription_info(user_id: Optional[str], league_id: Optional[str], plat
                     if row:
                         result["has_league_subscription"] = True
                         result["expires_at"] = row["expires_at"].isoformat() if row["expires_at"] else None
+                        result["billing_interval"] = row.get("billing_interval") or "year"
                         result["subscriber_user_id"] = row["subscriber_user_id"]
                         result["stripe_customer_id"] = row.get("stripe_customer_id")
 
                 if user_id:
                     cur.execute("""
-                        SELECT expires_at, stripe_customer_id
+                        SELECT expires_at, stripe_customer_id, billing_interval
                         FROM user_subscriptions
                         WHERE user_id = %s
                           AND platform = %s
@@ -541,12 +545,13 @@ def get_subscription_info(user_id: Optional[str], league_id: Optional[str], plat
                         result["has_user_subscription"] = True
                         if not result["expires_at"]:
                             result["expires_at"] = row["expires_at"].isoformat() if row["expires_at"] else None
+                            result["billing_interval"] = row.get("billing_interval") or "year"
                         if not result["stripe_customer_id"]:
                             result["stripe_customer_id"] = row.get("stripe_customer_id")
 
                     if league_id:
                         cur.execute("""
-                            SELECT expires_at, stripe_customer_id
+                            SELECT expires_at, stripe_customer_id, billing_interval
                             FROM user_league_subscriptions
                             WHERE user_id = %s
                               AND platform = %s
@@ -560,6 +565,7 @@ def get_subscription_info(user_id: Optional[str], league_id: Optional[str], plat
                             result["has_single_league_subscription"] = True
                             if not result["expires_at"]:
                                 result["expires_at"] = row["expires_at"].isoformat() if row["expires_at"] else None
+                                result["billing_interval"] = row.get("billing_interval") or "year"
                             if not result["stripe_customer_id"]:
                                 result["stripe_customer_id"] = row.get("stripe_customer_id")
 

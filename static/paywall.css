@@ -257,10 +257,16 @@
   margin-bottom: 8px;
 }
 
-.pricing-price span {
+.pricing-price span:not(.pp-price) {
   font-size: 16px;
   font-weight: 500;
   color: var(--text-muted);
+}
+
+.pricing-price .pp-price {
+  font-size: 36px;
+  font-weight: 800;
+  color: var(--text);
 }
 
 .pricing-desc {
@@ -500,6 +506,18 @@
 .pricing-section-heading h2 { margin:0 0 4px; font-size:22px; }
 .pricing-section-heading p { margin:0; font-size:14px; }
 .pricing-plan-grid { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:14px; }
+.billing-toggle { display:inline-flex; margin:0 0 16px; padding:4px; gap:4px; border:1px solid var(--border); border-radius:999px; background:var(--card); }
+.billing-toggle-btn { border:0; border-radius:999px; padding:8px 18px; font-size:14px; font-weight:700; color:var(--text-muted); background:transparent; cursor:pointer; }
+.billing-toggle-btn.is-active { color:#fff; background:linear-gradient(135deg,#122d4b,#2563eb); }
+.billing-toggle-save { display:inline-block; margin-left:8px; padding:2px 8px; border-radius:999px; font-size:11px; font-weight:800; color:#065f46; background:#d1fae5; }
+.billing-toggle-btn.is-active .billing-toggle-save { color:#d1fae5; background:rgba(255,255,255,.22); }
+.pricing-price .pp-price { display:inline; }
+.pricing-plan-grid[data-billing="year"] .pp-monthly { display:none; }
+.pricing-plan-grid[data-billing="month"] .pp-annual { display:none; }
+.pp-save { margin:6px 0 0; font-size:12px; font-weight:700; color:#047857; }
+.pricing-plan-grid[data-billing="month"] .pp-save { display:none; }
+[data-theme="dark"] .pp-save { color:#6ee7b7; }
+[data-theme="dark"] .billing-toggle-save { color:#a7f3d0; background:rgba(6,95,70,.5); }
 .pricing-plan-grid .pricing-option, .paywall-pricing .pricing-option { display:flex; min-width:0; flex-direction:column; text-align:left; }
 .pricing-plan-grid .pricing-header, .paywall-pricing .pricing-header { align-items:flex-start; gap:8px; flex-wrap:wrap; }
 .pricing-plan-grid .pricing-header h3, .pricing-header h4 { min-width:0; margin:0; color:var(--text); font-size:17px; line-height:1.25; overflow-wrap:anywhere; }

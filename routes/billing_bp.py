@@ -167,13 +167,15 @@ def _subscriber_user_id(meta: dict) -> str:
     return account_id if account_id.startswith("acct:") else f"acct:{account_id}"
 
 
-def _checkout_metadata(plan: str, user_id: str, league_id: str, platform: str, season: int) -> dict:
+def _checkout_metadata(plan: str, user_id: str, league_id: str, platform: str, season: int,
+                       interval: str = "year") -> dict:
     return {
         "plan": plan,
         "user_id": user_id,
         "league_id": league_id,
         "platform": platform,
         "season": str(season),
+        "interval": _normalize_interval(interval),
         "account_id": str(session.get("account_id") or ""),
     }
 
@@ -190,6 +192,7 @@ def _apply_plan_grant(
     source: str,
     account_id: str = "",
     season: str = "",
+    interval: str = "year",
 ) -> None:
     """Write the entitlement row(s) for a paid plan. Idempotent upserts."""
     plan = (plan or "").strip()
@@ -198,6 +201,7 @@ def _apply_plan_grant(
     platform = (platform or "sleeper").strip() or "sleeper"
     sub_id = _stripe_id(sub_id) or None
     cust_id = _stripe_id(cust_id) or None
+    interval = _normalize_interval(interval)
     if not plan:
         logger.info(
             "[stripe] %s missing plan metadata user=%s league=%s",
@@ -212,6 +216,7 @@ def _apply_plan_grant(
             stripe_subscription_id=sub_id,
             stripe_customer_id=cust_id,
             platform=platform,
+            billing_interval=interval,
         )
         granted = granted or bool(ok)
         logger.info(
@@ -224,6 +229,7 @@ def _apply_plan_grant(
             stripe_subscription_id=sub_id,
             stripe_customer_id=cust_id,
             platform=platform,
+            billing_interval=interval,
         )
         granted = granted or bool(ok)
         logger.info(
@@ -237,6 +243,7 @@ def _apply_plan_grant(
                 stripe_subscription_id=sub_id,
                 stripe_customer_id=cust_id,
                 platform=platform,
+                billing_interval=interval,
             )
             granted = granted or bool(ok)
             logger.info(
@@ -329,9 +336,9 @@ _ANNUAL_PRICE_ENV = {
     "single_league": "STRIPE_PRICE_SINGLE_LEAGUE_ANNUAL",
 }
 
-# Monthly billing defaults (unit_amount, cents). Same amounts and env names
-# as the monthly-plans workstream: Kaedon can override any of them with a
-# dashboard-created Price via the env vars below.
+# Monthly billing defaults (unit_amount, cents). ADJUSTABLE: edit here, or
+# create monthly Prices in the Stripe Dashboard and point the env vars below
+# at them -- an env-provided Price ID always wins over these defaults.
 _MONTHLY_DEFAULT_UNIT_AMOUNTS = {
     "league": 499,         # $4.99/mo
     "user": 299,           # $2.99/mo
@@ -397,6 +404,14 @@ def _checkout_line_item(plan: str, interval: str = "year") -> dict:
         }
     return {"price_data": price_data, "quantity": 1}
 
+
+def _annual_savings_pct(plan: str) -> int:
+    """Whole-percent saved by annual vs 12x the monthly default."""
+    annual = _STRIPE_PRICES[plan]["unit_amount"]
+    monthly_equiv = 12 * _MONTHLY_DEFAULT_UNIT_AMOUNTS[plan]
+    if monthly_equiv <= annual:
+        return 0
+    return round(100 * (monthly_equiv - annual) / monthly_equiv)
 _LEAGUE_REQUIRED_PLANS = frozenset({"league", "combo", "single_league"})
 _MEMBERSHIP_REQUIRED_PLANS = frozenset({"league", "combo", "single_league"})
 
@@ -539,11 +554,19 @@ def _try_grant_from_stripe_success() -> None:
         if plan == "combo" and not league_id and not user_id:
             return
 
+        # Interval from checkout metadata; trust Stripe's price when the
+        # metadata predates monthly billing.
+        interval = (meta.get("interval") or "").strip().lower()
+        if interval not in ("month", "year") and sub is not None:
+            interval = _interval_from_subscription(sub) or interval
+        interval = _normalize_interval(interval)
+
         _apply_plan_grant(
             plan, user_id, league_id, platform, expires_at, sub_id, cust_id,
             source="success-page",
             account_id=str(meta.get("account_id") or ""),
             season=str(meta.get("season") or ""),
+            interval=interval,
         )
     except Exception:
         logger.exception("[stripe] success-page session verification failed")
@@ -855,6 +878,7 @@ def _pricing_body(league_id: str | None = None, platform: str = "sleeper") -> st
         <p id="sub-msg" style="color:var(--text-muted);margin:0 0 28px;">
           Activating your premium access&hellip;
         </p>
+        <p id="sub-billing" style="display:none;color:var(--text);font-weight:700;margin:-18px 0 28px;font-size:15px;"></p>
         <div id="sub-spinner" style="margin:0 auto 16px;width:32px;height:32px;border:3px solid #e5e7eb;border-top-color:#2563eb;border-radius:50%;animation:paywall-spin .8s linear infinite;"></div>
         <div id="sub-invite" style="display:none;text-align:left;margin:0 0 20px;padding:16px;border:1px solid var(--border);border-radius:12px;background:var(--bg-alt, #f8fafc);">
           <div style="font-size:14px;font-weight:700;margin-bottom:6px;">PRO is on for your league</div>
@@ -942,9 +966,26 @@ def _pricing_body(league_id: str | None = None, platform: str = "sleeper") -> st
         window.location.href = returnTo || '/pricing';
       }}
 
-      function finishActive(msg, leaguePlan) {{
+      function billingLabel(d) {{
+        var interval = d.billing_interval === 'month' ? 'Monthly' : 'Annual';
+        var renews = '';
+        if (d.expires_at) {{
+          try {{
+            renews = ', renews ' + new Date(d.expires_at).toLocaleDateString(
+              'en-US', {{ month: 'short', day: 'numeric' }});
+          }} catch (e) {{}}
+        }}
+        return 'PRO ' + interval + renews;
+      }}
+
+      function finishActive(msg, leaguePlan, d) {{
         document.getElementById('sub-spinner').style.display = 'none';
         document.getElementById('sub-msg').textContent = msg;
+        var bill = document.getElementById('sub-billing');
+        if (bill && d) {{
+          bill.textContent = billingLabel(d);
+          bill.style.display = 'block';
+        }}
         var btn = document.getElementById('sub-return');
         var showedInvite = showInvitePanel();
         if (btn) btn.style.display = 'inline-block';
@@ -1003,13 +1044,13 @@ def _pricing_body(league_id: str | None = None, platform: str = "sleeper") -> st
               var leaguePlan = !!(d.has_league_subscription);
               finishActive(leaguePlan
                 ? 'PRO is active for your league.'
-                : 'Premium is active - taking you there now!', leaguePlan);
+                : 'Premium is active - taking you there now!', leaguePlan, d);
               if (!leaguePlan) setTimeout(redirect, 800);
             }} else if (attempts < maxAttempts) {{
               setTimeout(activate, 1000);
             }} else {{
               // Grant may be on its way via webhook - show continue anyway
-              finishActive('Access granted! If features take a moment to appear, try refreshing.', !!leagueId);
+              finishActive('Access granted! If features take a moment to appear, try refreshing.', !!leagueId, d);
               if (!leagueId) setTimeout(redirect, 2000);
             }}
           }})
@@ -1027,19 +1068,23 @@ def _pricing_body(league_id: str | None = None, platform: str = "sleeper") -> st
 
     selected_plan = plan if plan in {"user", "single_league", "league", "combo"} else ""
     plans = [
-        ("user", "Personal", "$20/year", "PRO for you across all your leagues", "Choose Personal", True),
-        ("single_league", "Individual: One League", "$10/year", "PRO for you in one selected league. Your league mates are not upgraded.", "Choose one league", False),
-        ("league", "Entire League", "$35/year", "PRO for every manager in one selected league", "Upgrade a league", False),
-        ("combo", "League + Personal", "$45/year", "PRO for every manager in one selected league, plus you across all your leagues. Other managers’ additional leagues are not upgraded.", "Choose League + Personal", False),
+        ("user", "Personal", "$20/year", "$2.99/mo", "PRO for you across all your leagues", "Choose Personal", True),
+        ("single_league", "Individual: One League", "$10/year", "$1.49/mo", "PRO for you in one selected league. Your league mates are not upgraded.", "Choose one league", False),
+        ("league", "Entire League", "$35/year", "$4.99/mo", "PRO for every manager in one selected league", "Upgrade a league", False),
+        ("combo", "League + Personal", "$45/year", "$5.99/mo", "PRO for every manager in one selected league, plus you across all your leagues. Other managers’ additional leagues are not upgraded.", "Choose League + Personal", False),
     ]
     plan_cards = "".join(
         f'''<article class="pricing-option{' featured' if recommended else ''}{' is-selected' if selected_plan == key else ''}" data-plan-card="{key}">
           <div class="pricing-header"><h3>{name}</h3>{'<span class="pricing-badge">Recommended</span>' if recommended else ''}</div>
-          <div class="pricing-price">{price.replace('/year', '<span>/year</span>')}</div>
+          <div class="pricing-price">
+            <span class="pp-price pp-annual">{annual_price.replace('/year', '<span>/year</span>')}</span>
+            <span class="pp-price pp-monthly">{monthly_price.replace('/mo', '<span>/mo</span>')}</span>
+          </div>
+          <p class="pp-save">Save {_annual_savings_pct(key)}% with annual billing</p>
           <p class="pricing-desc">{coverage}</p>
           <button type="button" class="btn {'btn-primary' if recommended else 'btn-secondary'} paywall-cta" onclick="initiatePurchase('{key}', this)">{cta}</button>
         </article>'''
-        for key, name, price, coverage, cta, recommended in plans
+        for key, name, annual_price, monthly_price, coverage, cta, recommended in plans
     )
     canceled_banner = """
     <div class="pricing-alert" role="status"><i class="fa-solid fa-circle-xmark" aria-hidden="true"></i>
@@ -1151,14 +1196,43 @@ def _pricing_body(league_id: str | None = None, platform: str = "sleeper") -> st
       {trial_section}
 
       <section class="pricing-section pricing-plans" aria-labelledby="pricing-plans-title">
-        <div class="pricing-section-heading"><h2 id="pricing-plans-title">Choose who gets PRO</h2><p>One annual charge. No monthly-price shorthand.</p></div>
-        <div class="pricing-plan-grid">{plan_cards}</div>
+        <div class="pricing-section-heading"><h2 id="pricing-plans-title">Choose who gets PRO</h2><p>Billed monthly or annually. Annual billing saves up to 44%.</p></div>
+        <div class="billing-toggle" role="group" aria-label="Billing interval">
+          <button type="button" class="billing-toggle-btn" data-billing-interval="month" aria-pressed="false">Monthly</button>
+          <button type="button" class="billing-toggle-btn is-active" data-billing-interval="year" aria-pressed="true">Annual<span class="billing-toggle-save">save up to 44%</span></button>
+        </div>
+        <div class="pricing-plan-grid" data-billing="year">{plan_cards}</div>
         <aside class="pricing-proof" aria-label="What managers say">
           <blockquote>THATS ACTUALLY SO SICK BRO</blockquote>
           <p>Jayden Waddell, Pittsburgh Pilots, on the weekly recap</p>
         </aside>
         <p class="pricing-auth-note"><i class="fa-brands fa-google" aria-hidden="true"></i> Google sign-in is required to subscribe and keep access with your account.</p>
       </section>
+      <script>
+      (function () {{
+        // Guest-safe: no network, just swaps the displayed prices and the
+        // interval paywall.js sends to /api/create-checkout-session.
+        function setBillingInterval(interval) {{
+          interval = interval === 'month' ? 'month' : 'year';
+          window.__brBillingInterval = interval;
+          document.querySelectorAll('[data-billing-interval]').forEach(function (btn) {{
+            var active = btn.getAttribute('data-billing-interval') === interval;
+            btn.classList.toggle('is-active', active);
+            btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+          }});
+          document.querySelectorAll('.pricing-plan-grid').forEach(function (grid) {{
+            grid.setAttribute('data-billing', interval);
+          }});
+        }}
+        window.brSetBillingInterval = setBillingInterval;
+        document.querySelectorAll('[data-billing-interval]').forEach(function (btn) {{
+          btn.addEventListener('click', function () {{
+            setBillingInterval(btn.getAttribute('data-billing-interval'));
+          }});
+        }});
+        setBillingInterval(window.__brBillingInterval || 'year');
+      }})();
+      </script>
 
       <section class="pricing-section" aria-labelledby="pro-includes-title">
         <div class="pricing-section-heading"><h2 id="pro-includes-title">What PRO includes</h2><p>Decision support built around the teams and leagues your plan covers.</p></div>
@@ -1190,6 +1264,7 @@ def _pricing_body(league_id: str | None = None, platform: str = "sleeper") -> st
         <details><summary>Does Individual: One League cover my league mates?</summary><p>No. It gives only you PRO in one selected league.</p></details>
         <details><summary>What does Entire League cover?</summary><p>Every manager gets PRO in one selected league. It does not give each manager PRO in their other leagues.</p></details>
         <details><summary>Does League + Personal cover everyone everywhere?</summary><p>No. Everyone gets PRO in the selected league; only the buyer gets PRO across all of their own leagues.</p></details>
+        <details><summary>How does monthly billing work?</summary><p>Choose Monthly above any plan. You are billed each month instead of once a year, and you can switch intervals or cancel from the manage-subscription link after checkout. Interval changes use Stripe's default proration.</p></details>
         <details><summary>Is the whole Weekly Recap premium?</summary><p>No. The AI-written storyline is premium; the recap’s other available sections remain free.</p></details>
         <details><summary>How does PRO billing work?</summary><p>PRO is billed once a year. Your subscription renews automatically each year at the then-current price until you cancel.</p></details>
         <details><summary>How do I cancel?</summary><p>Cancel anytime through the subscription management link in your account. Your PRO access continues until the end of the current annual term.</p></details>
@@ -1472,6 +1547,7 @@ def _stripe_checkout_url(user_id: str, payload: dict) -> tuple[str | None, str |
         cancel_url = base_url + "/pricing?canceled=1&platform=" + urllib.parse.quote(platform, safe="")
     interval = _normalize_interval(payload.get("interval"))
     line_item = _checkout_line_item(plan, interval)
+    meta = _checkout_metadata(plan, user_id, league_id, platform, season, interval)
     try:
         checkout = _stripe().checkout.Session.create(
             mode="subscription",
@@ -1479,9 +1555,8 @@ def _stripe_checkout_url(user_id: str, payload: dict) -> tuple[str | None, str |
             automatic_tax={"enabled": True},
             success_url=success_url,
             cancel_url=cancel_url,
-            metadata={"plan": plan, "user_id": user_id, "league_id": league_id,
-                      "platform": platform, "season": str(season),
-                      "account_id": str(session.get("account_id") or "")},
+            metadata=meta,
+            subscription_data={"metadata": meta},
         )
         return checkout.url, None
     except Exception:
@@ -1513,6 +1588,7 @@ def create_checkout_session():
     league_id  = str(payload.get("league_id") or "").strip()
     return_url = str(payload.get("return_url") or "").strip()
     platform   = _request_platform(payload)
+    interval   = _normalize_interval(payload.get("interval"))
     try:
         season = int(payload.get("season") or datetime.now().year)
     except (TypeError, ValueError):
@@ -1586,33 +1662,20 @@ def create_checkout_session():
     else:
         cancel_url = base_url + "/pricing?canceled=1&platform=" + urllib.parse.quote(platform, safe="")
 
-    price_data = {
-        "currency": "usd",
-        "unit_amount": price_spec["unit_amount"],
-        "recurring": {"interval": "year"},
-    }
-    if price_spec.get("product"):
-        price_data["product"] = price_spec["product"]
-    else:
-        price_data["product_data"] = {
-            "name": price_spec.get("product_name") or "BR Fantasy PRO",
-        }
+    line_item = _checkout_line_item(plan, interval)
 
     try:
         checkout = _stripe().checkout.Session.create(
             mode="subscription",
-            line_items=[{
-                "price_data": price_data,
-                "quantity": 1,
-            }],
+            line_items=[line_item],
             automatic_tax={"enabled": True},
             success_url=success_url,
             cancel_url=cancel_url,
-            metadata=_checkout_metadata(plan, user_id, league_id, platform, season),
+            metadata=_checkout_metadata(plan, user_id, league_id, platform, season, interval),
             # Copy onto the Subscription so invoice / subscription.created
             # events can grant One League even if session metadata is dropped.
             subscription_data={
-                "metadata": _checkout_metadata(plan, user_id, league_id, platform, season),
+                "metadata": _checkout_metadata(plan, user_id, league_id, platform, season, interval),
             },
         )
         return jsonify({"url": checkout.url})
@@ -1753,6 +1816,7 @@ def stripe_webhook():
         })
         platform  = meta.get("platform") or "sleeper"
         league_id = meta.get("league_id") or ""
+        sub = None
         if etype == "customer.subscription.created":
             sub_id = _stripe_id(_stripe_field(s, "id"))
             cust_id = _stripe_id(_stripe_field(s, "customer"))
@@ -1776,11 +1840,18 @@ def stripe_webhook():
             except Exception:
                 expires_at = datetime.now(timezone.utc) + timedelta(days=32)
 
+        # Interval-agnostic: Stripe's price is the source of truth (covers
+        # interval switches made in the billing portal), checkout metadata
+        # is the fallback for unexpanded prices.
+        interval = _interval_from_subscription(sub) or (meta.get("interval") or "").strip().lower()
+        interval = _normalize_interval(interval)
+
         _apply_plan_grant(
             plan, user_id, league_id, platform, expires_at, sub_id, cust_id,
             source=f"webhook:{etype}",
             account_id=str(meta.get("account_id") or ""),
             season=str(meta.get("season") or ""),
+            interval=interval,
         )
 
     elif etype == "invoice.paid":
@@ -1795,20 +1866,24 @@ def stripe_webhook():
             try:
                 sub        = _stripe().Subscription.retrieve(sub_id)
                 expires_at = _subscription_period_end(sub)
+                # Interval-agnostic: renewals just extend the period, and the
+                # interval column follows whatever price the subscription now
+                # runs on (e.g. a monthly->annual switch in the portal).
+                interval = _interval_from_subscription(sub) or "year"
                 from dashboard_services.db import get_conn
                 with get_conn() as conn:
                     with conn.cursor() as cur:
                         cur.execute(
-                            "UPDATE league_subscriptions SET expires_at=%s, updated_at=NOW() WHERE stripe_subscription_id=%s",
-                            (expires_at, sub_id),
+                            "UPDATE league_subscriptions SET expires_at=%s, billing_interval=%s, updated_at=NOW() WHERE stripe_subscription_id=%s",
+                            (expires_at, interval, sub_id),
                         )
                         cur.execute(
-                            "UPDATE user_subscriptions SET expires_at=%s, updated_at=NOW() WHERE stripe_subscription_id=%s",
-                            (expires_at, sub_id),
+                            "UPDATE user_subscriptions SET expires_at=%s, billing_interval=%s, updated_at=NOW() WHERE stripe_subscription_id=%s",
+                            (expires_at, interval, sub_id),
                         )
                         cur.execute(
-                            "UPDATE user_league_subscriptions SET expires_at=%s, updated_at=NOW() WHERE stripe_subscription_id=%s",
-                            (expires_at, sub_id),
+                            "UPDATE user_league_subscriptions SET expires_at=%s, billing_interval=%s, updated_at=NOW() WHERE stripe_subscription_id=%s",
+                            (expires_at, interval, sub_id),
                         )
             except Exception as e:
                 logger.exception("[stripe] invoice.paid renewal error: %s", e)
@@ -1872,7 +1947,9 @@ def api_subscription_status():
                 sub_info["subscription_type"] = (
                     "combo" if sub_info.get("has_league_subscription") else "user"
                 )
-                sub_info["expires_at"] = sub_info.get("expires_at") or legacy.get("expires_at")
+                if not sub_info.get("expires_at"):
+                    sub_info["expires_at"] = legacy.get("expires_at")
+                    sub_info["billing_interval"] = legacy.get("billing_interval") or "year"
                 sub_info["stripe_customer_id"] = (
                     sub_info.get("stripe_customer_id") or legacy.get("stripe_customer_id")
                 )

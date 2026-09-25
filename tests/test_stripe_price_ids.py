@@ -217,5 +217,6 @@ def test_checkout_url_fallback_keeps_urls_and_metadata(monkeypatch):
         "league_id": "123",
         "platform": "sleeper",
         "season": "2026",
+        "interval": "year",
         "account_id": "",
     }
