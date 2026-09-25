@@ -7827,7 +7827,7 @@ def render_standings_compact(team_stats, length=None, movement=None, owner_to_ri
     # Division records (vs same-division opponents), passed in by the caller so
     # the rail matches the dashboard's current week. Shown as "2-1 (2-0)"
     # only when divisions are active.
-    from utils.standings_divisions import format_record
+    from utils.standings_divisions import format_record_html
     _div_records = div_records or {}
 
     def _row_div(owner) -> int:
@@ -7896,7 +7896,7 @@ def render_standings_compact(team_stats, length=None, movement=None, owner_to_ri
             rows.append(_standings_div_header(_label, _div_counts.get(div_id, 0), 4))
             _prev_div = div_id
             _is_div_lead = True
-        record = format_record(int(row['Wins']), int(row['Losses']),
+        record = format_record_html(int(row['Wins']), int(row['Losses']),
                                int(row.get("Ties", 0) or 0),
                                _div_record_for(row["owner"]))
         avatar = row.get("avatar", "")
@@ -8103,7 +8103,7 @@ def render_standings(team_stats, length, all_play: dict = None,
     # Division records (vs same-division opponents) from the same weekly frame
     # the table is built on, so the week selector's "through week N" view stays
     # exact. Shown as "2-1 (2-0)" only when divisions are active.
-    from utils.standings_divisions import division_records, format_record
+    from utils.standings_divisions import division_records, format_record_html
     _div_records = division_records(detailed_df, _div_by_rid) if _use_div else {}
 
     def _row_div(owner) -> int:
@@ -8263,7 +8263,7 @@ def render_standings(team_stats, length, all_play: dict = None,
             _prev_div = div_id
             _is_div_lead = True
 
-        record = format_record(int(row['Wins']), int(row['Losses']),
+        record = format_record_html(int(row['Wins']), int(row['Losses']),
                                int(row.get("Ties", 0) or 0),
                                _div_record_for(row["owner"]))
 
