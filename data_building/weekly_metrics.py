@@ -20,6 +20,8 @@ from typing import Any, Dict, List, Optional
 
 import json
 import os
+import threading
+import time
 
 from dashboard_services.db import get_conn
 from data_building.external_data.sleeper_bulk_stats import fetch_week_stats
@@ -306,7 +308,7 @@ def _recent_vs_season_delta(vals: List[float], recent_n: int = 3) -> Optional[fl
     return round(sum(recent) / len(recent) - season_avg, 1)
 
 
-def get_usage_trends(season: int) -> Dict[str, Dict[str, Any]]:
+def _compute_usage_trends(season: int) -> Dict[str, Dict[str, Any]]:
     """Per-player usage trend map for the season.
 
     For each player with 2+ active weeks, returns the last-6-week series for
@@ -364,6 +366,39 @@ def get_usage_trends(season: int) -> Dict[str, Dict[str, Any]]:
             "weeks_played": len(weeks),
         }
     return out
+
+
+# The waiver page and the /api/weekly-trends endpoint call get_usage_trends()
+# on every request; the underlying query is a full table scan of
+# player_weekly_metrics (the 28s cold waiver load). Usage data only changes
+# when the daily cron rebuilds the table, so a short per-worker TTL kills the
+# per-request scan. Keyed by season; clear via clear_usage_trends_cache().
+_USAGE_TRENDS_TTL = 600.0
+_USAGE_TRENDS_CACHE: Dict[int, tuple] = {}
+_USAGE_TRENDS_LOCK = threading.Lock()
+
+
+def get_usage_trends(season: int) -> Dict[str, Dict[str, Any]]:
+    """Cached wrapper around _compute_usage_trends (10-minute per-worker TTL)."""
+    key = int(season)
+    now = time.monotonic()
+    with _USAGE_TRENDS_LOCK:
+        entry = _USAGE_TRENDS_CACHE.get(key)
+        if entry is not None and now - entry[0] < _USAGE_TRENDS_TTL:
+            return entry[1]
+    result = _compute_usage_trends(key)
+    with _USAGE_TRENDS_LOCK:
+        _USAGE_TRENDS_CACHE[key] = (time.monotonic(), result)
+        if len(_USAGE_TRENDS_CACHE) > 8:
+            oldest = min(_USAGE_TRENDS_CACHE, key=lambda k: _USAGE_TRENDS_CACHE[k][0])
+            del _USAGE_TRENDS_CACHE[oldest]
+    return result
+
+
+def clear_usage_trends_cache() -> None:
+    """Drop all cached usage-trend maps (tests / manual invalidation)."""
+    with _USAGE_TRENDS_LOCK:
+        _USAGE_TRENDS_CACHE.clear()
 
 
 def get_recent_momentum(player_id: str, season: int) -> Optional[float]:
