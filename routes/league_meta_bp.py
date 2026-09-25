@@ -1,6 +1,8 @@
 """Extracted from app.py -- league_meta_bp (see route list below)."""
 from __future__ import annotations
 import logging
+import os
+import hmac
 from datetime import datetime
 import pandas as pd
 from flask import Blueprint, jsonify, request, session
@@ -349,7 +351,23 @@ def api_espn_debug():
     Reports whether the server can see ESPN_S2 / ESPN_SWID (presence + length
     only -- never the values) and, if a league_id is given, the exact result of
     trying to load it. Hit /api/espn-debug?league_id=<id>[&season=<yr>].
+
+    Auth: CRON_SECRET gate, same as /api/debug-values. Pass the secret as
+    ``?secret=``, an ``X-Cron-Secret`` header, or JSON ``{"secret": ...}``.
+    Fails closed with 403 when CRON_SECRET is unset or does not match.
     """
+    # CRON_SECRET check, identical to /api/debug-values: require the secret to
+    # be set AND match. Fails closed when CRON_SECRET is unset.
+    secret = os.environ.get("CRON_SECRET", "")
+    provided = str(
+        request.args.get("secret")
+        or request.headers.get("X-Cron-Secret")
+        or (request.get_json(silent=True) or {}).get("secret")
+        or ""
+    )
+    if not secret or not provided or not hmac.compare_digest(provided, secret):
+        return jsonify({"error": "unauthorized"}), 403
+
     from dashboard_services.providers.espn_api import espn_diagnostics
     out = {"diagnostics": espn_diagnostics()}
 
