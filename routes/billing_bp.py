@@ -660,7 +660,7 @@ def _pricing_body() -> str:
     selected_plan = plan if plan in {"user", "single_league", "league", "combo"} else ""
     plans = [
         ("user", "Personal", "$10/year", "PRO for you across all your leagues", "Choose Personal", True),
-        ("single_league", "Individual — One League", "$5/year", "PRO for you in one selected league. Your league mates are not upgraded.", "Choose one league", False),
+        ("single_league", "Individual: One League", "$5/year", "PRO for you in one selected league. Your league mates are not upgraded.", "Choose one league", False),
         ("league", "Entire League", "$15/year", "PRO for every manager in one selected league", "Upgrade a league", False),
         ("combo", "League + Personal", "$20/year", "PRO for every manager in one selected league, plus you across all your leagues. Other managers’ additional leagues are not upgraded.", "Choose League + Personal", False),
     ]
@@ -703,7 +703,7 @@ def _pricing_body() -> str:
       </section>
 
       <section class="pricing-section" aria-labelledby="previews-title">
-        <div class="pricing-section-heading"><h2 id="previews-title">See the value in context</h2><p>Illustrative examples only—not your league results or current player recommendations.</p></div>
+        <div class="pricing-section-heading"><h2 id="previews-title">See the value in context</h2><p>Illustrative examples only. Not your league results or current player recommendations.</p></div>
         <div class="pricing-preview-grid">
           <article class="pricing-preview"><span>Sample preview</span><i class="fa-solid fa-right-left" aria-hidden="true"></i><h3>Roster-fit trade</h3><strong>Turn surplus WR depth into a starting RB</strong><p>Your receiver room can absorb the loss; the return fills the clearest weekly lineup gap without concentrating too much value in one asset.</p></article>
           <article class="pricing-preview"><span>Sample preview</span><i class="fa-solid fa-arrow-trend-up" aria-hidden="true"></i><h3>Breakout analysis</h3><strong>Opportunity: expanding · Confidence: medium</strong><p>Vacated targets and a clearer route to snaps create upside, while a small sample keeps confidence measured.</p></article>
@@ -719,7 +719,7 @@ def _pricing_body() -> str:
 
       <section class="pricing-section pricing-faq" aria-labelledby="faq-title">
         <div class="pricing-section-heading"><h2 id="faq-title">Plan coverage FAQ</h2></div>
-        <details><summary>Does Individual — One League cover my league mates?</summary><p>No. It gives only you PRO in one selected league.</p></details>
+        <details><summary>Does Individual: One League cover my league mates?</summary><p>No. It gives only you PRO in one selected league.</p></details>
         <details><summary>What does Entire League cover?</summary><p>Every manager gets PRO in one selected league. It does not give each manager PRO in their other leagues.</p></details>
         <details><summary>Does League + Personal cover everyone everywhere?</summary><p>No. Everyone gets PRO in the selected league; only the buyer gets PRO across all of their own leagues.</p></details>
         <details><summary>Is the whole Weekly Recap premium?</summary><p>No. The AI-written storyline is premium; the recap’s other available sections remain free.</p></details>

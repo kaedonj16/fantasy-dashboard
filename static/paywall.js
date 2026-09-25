@@ -83,7 +83,7 @@ window.brProPreview = function brProPreview(container, opts) {
 
 const BR_PRO_PLANS = [
   { key: 'user', name: 'Personal', price: '$10/year', coverage: 'PRO for you across all your leagues', cta: 'Choose Personal', recommended: true },
-  { key: 'single_league', name: 'Individual — One League', price: '$5/year', coverage: 'PRO for you in one selected league. Your league mates are not upgraded.', cta: 'Choose one league' },
+  { key: 'single_league', name: 'Individual: One League', price: '$5/year', coverage: 'PRO for you in one selected league. Your league mates are not upgraded.', cta: 'Choose one league' },
   { key: 'league', name: 'Entire League', price: '$15/year', coverage: 'PRO for every manager in one selected league', cta: 'Upgrade a league' },
   { key: 'combo', name: 'League + Personal', price: '$20/year', coverage: 'PRO for every manager in one selected league, plus you across all your leagues. Other managers’ additional leagues are not upgraded.', cta: 'Choose League + Personal' }
 ];

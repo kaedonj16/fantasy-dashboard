@@ -2869,7 +2869,7 @@
       host.insertBefore(box, host.firstChild);
     }
     box.innerHTML = '<b>Mock draft hit an error</b> (' + esc(where) + '): ' + esc(msg)
-      + ' &mdash; please screenshot this so it can be fixed.'
+      + '. Please screenshot this so it can be fixed.'
       + ' <button type="button" class="dr-sim-error-x" aria-label="Dismiss">&times;</button>';
     box.style.display = '';
     var x = box.querySelector('.dr-sim-error-x');
@@ -4307,8 +4307,8 @@
     // numeric 0-100 chip for Pick Score (pool-relative on live surfaces).
     var _isRec = opts.rank && p._ds != null;
     var psChip = _isRec
-      ? '<div class="dr-ba-pschip dr-ba-recchip" title="Recommendation Rank — who to draft now (Decision Score order). Not Pick Score.">#' + opts.rank + '<small>REC</small></div>'
-      : (ps != null ? '<div class="dr-ba-pschip" style="color:' + psColor(ps) + ';background:' + psColor(ps) + '1a;" title="Pick Score vs best available — player quality at this pick, not Recommendation Rank">'+ ps + '<small>PS</small></div>' : '');
+      ? '<div class="dr-ba-pschip dr-ba-recchip" title="Recommendation Rank: who to draft now (Decision Score order). Not Pick Score.">#' + opts.rank + '<small>REC</small></div>'
+      : (ps != null ? '<div class="dr-ba-pschip" style="color:' + psColor(ps) + ';background:' + psColor(ps) + '1a;" title="Pick Score vs best available: player quality at this pick, not Recommendation Rank">'+ ps + '<small>PS</small></div>' : '');
     var availClass = '';
     var availLine = '';
     if (opts.availAt){

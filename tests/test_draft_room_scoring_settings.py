@@ -162,8 +162,8 @@ def test_recommendation_rows_use_compact_rank_and_reason_copy():
     body = build_draft_room_body(None, None, None, is_guest=True)
 
     assert "Decision ' + p._ds + ' · recommendation #" not in source
-    assert 'dr-ba-recchip" title="Recommendation Rank — who to draft now (Decision Score order). Not Pick Score.">#' in source
-    assert 'title="Pick Score vs best available — player quality at this pick, not Recommendation Rank"' in source
+    assert 'dr-ba-recchip" title="Recommendation Rank: who to draft now (Decision Score order). Not Pick Score.">#' in source
+    assert 'title="Pick Score vs best available: player quality at this pick, not Recommendation Rank"' in source
     assert "Bye-week scheduling risk for starters" in source
     assert "ppgNum.toFixed(1) + ' proj'" in source
     assert ".dr-ba-recchip {" in body

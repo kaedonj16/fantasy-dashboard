@@ -55,8 +55,8 @@ def test_paywall_and_pricing_explain_pro_and_plan_coverage():
     for name in locked:
         assert name in billing
     for source in (billing, PAYWALL_JS):
-        assert source.index("Personal") < source.index("Individual — One League")
-        assert source.index("Individual — One League") < source.index("Entire League")
+        assert source.index("Personal") < source.index("Individual: One League")
+        assert source.index("Individual: One League") < source.index("Entire League")
         assert "Recommended" in source
         assert "Most popular" not in source
         assert "Your league mates are not upgraded" in source
