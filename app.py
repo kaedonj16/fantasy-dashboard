@@ -951,6 +951,12 @@ PRIMARY_DOMAIN = os.environ.get("PRIMARY_DOMAIN", "").strip().lower()
 if PRIMARY_DOMAIN.startswith("www."):
     PRIMARY_DOMAIN = PRIMARY_DOMAIN[4:]
 
+# SEO canonical host: the site serves on www (apex 301s to www at Render), so
+# canonical tags, og:url, sitemap locs, and social tags advertise the www
+# origin. Kept separate from PRIMARY_DOMAIN, which still drives the
+# onrender.com redirect target and cookie-domain derivation.
+_WWW_HOST = f"www.{PRIMARY_DOMAIN}" if PRIMARY_DOMAIN else ""
+
 _secret_key = os.environ.get('FLASK_SECRET_KEY', '')
 _is_production = os.environ.get('PYTHON_ENV', '').strip().lower() == 'production'
 if not _secret_key:
@@ -5974,10 +5980,14 @@ def _build_seo_meta_tags(
     else:
         parts.append("<meta name=\"robots\" content=\"index, follow\">")
         canon = canonical
+        if canon and canon.startswith("/"):
+            # Relative canonicals (e.g. "/nfl-teams") become absolute on the
+            # www origin so crawlers see one canonical host.
+            canon = f"{_site_origin()}{canon}"
         if not canon:
             try:
-                if PRIMARY_DOMAIN:
-                    canon = f"https://{PRIMARY_DOMAIN}{request.path}"
+                if _WWW_HOST:
+                    canon = f"https://{_WWW_HOST}{request.path}"
                 else:
                     canon = request.base_url
             except Exception:
@@ -5989,10 +5999,13 @@ def _build_seo_meta_tags(
 
 
 def _site_origin() -> str:
-    """Absolute origin (https://host) for building canonical/social URLs."""
+    """Absolute origin (https://host) for building canonical/social URLs.
+
+    Uses the www host: the site serves on www (apex 301s to www at Render).
+    """
     try:
-        if PRIMARY_DOMAIN:
-            return f"https://{PRIMARY_DOMAIN}"
+        if _WWW_HOST:
+            return f"https://{_WWW_HOST}"
         return request.host_url.rstrip("/")
     except Exception:
         return ""
