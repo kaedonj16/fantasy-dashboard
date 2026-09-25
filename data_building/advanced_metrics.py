@@ -412,7 +412,9 @@ def _add_rookie_eval_columns(conn) -> None:
             ADD COLUMN IF NOT EXISTS ngs_rush_yards_over_expected_per_att NUMERIC,
             ADD COLUMN IF NOT EXISTS ngs_rush_efficiency                  NUMERIC,
             ADD COLUMN IF NOT EXISTS ybc_per_carry                         NUMERIC,
-            ADD COLUMN IF NOT EXISTS yac_per_carry                         NUMERIC;
+            ADD COLUMN IF NOT EXISTS yac_per_carry                         NUMERIC,
+            ADD COLUMN IF NOT EXISTS catchable_pass_pct                    NUMERIC,
+            ADD COLUMN IF NOT EXISTS catchable_tgt_pct                     NUMERIC;
     """)
 
     # Additional public nflverse metrics (NGS passing, FTN situation splits,
@@ -478,6 +480,9 @@ def calculate_receiving_metrics(usage: Dict[str, float]) -> Dict[str, Optional[f
         "catch_rate": catch_rate,
         "yards_per_reception": yards_per_reception,
         "target_quality_score": target_quality,
+        # Catchable Tgt %: season value is filled by the PFR catchable merge
+        # (1 - drops / targets over completed REG weeks, totals divided).
+        "catchable_tgt_pct": usage.get("catchable_tgt_pct"),
     }
 
 
@@ -532,6 +537,10 @@ def calculate_passing_metrics(usage: Dict[str, float]) -> Dict[str, Optional[flo
         "completion_pct": completion_pct,
         "td_rate": td_rate,
         "int_rate": int_rate,
+        # Catchable %: season value is filled by the PFR catchable merge
+        # (1 - bad_throws / attempts over completed REG weeks, totals
+        # divided). Bad throws are PFR human charting, not PFF.
+        "catchable_pass_pct": usage.get("catchable_pass_pct"),
     }
 
 
@@ -1272,6 +1281,16 @@ def build_advanced_metrics_snapshot(
             logger.info("merged nflverse snap share for %d players", _n_snap)
     except Exception:
         logger.exception("snap share merge failed; continuing without snap data")
+    # PFR catchable-ball % is absent from the Sleeper feed too: merge
+    # bad-throw / drop counts from the nflverse pfr_advstats release.
+    # Best-effort: never gates the snapshot write.
+    try:
+        _n_catch = _merge_pfr_catchable(usage_map, season, completed_week)
+        summary["pfr_catchable_rows"] = _n_catch
+        if _n_catch:
+            logger.info("merged PFR catchable pct for %d players", _n_catch)
+    except Exception:
+        logger.exception("PFR catchable merge failed; continuing without")
     # PFR yards before/after contact are absent from the Sleeper feed too;
     # merge per-carry contact splits from the nflverse PFR advstats release.
     # Best-effort: never gates the snapshot write.
@@ -1390,9 +1409,11 @@ def save_metrics_snapshot(metrics_list: List[Dict[str, Any]], as_of_date: str, s
                 INSERT INTO player_advanced_metrics (
                     player_id, as_of_date, season, position,
                     yards_per_target, catch_rate, yards_per_reception, target_quality_score,
+                    catchable_tgt_pct,
                     yards_per_carry, yards_per_touch, rush_td_rate,
                     ybc_per_carry, yac_per_carry,
                     yards_per_attempt, completion_pct, td_rate, int_rate,
+                    catchable_pass_pct,
                     snap_share, opportunity_share, red_zone_usage,
                     rz_targets_pg, rz_carries_pg,
                     role_score, usage_trend, efficiency_trend, games,
@@ -1407,9 +1428,11 @@ def save_metrics_snapshot(metrics_list: List[Dict[str, Any]], as_of_date: str, s
                 VALUES (
                     %s, %s, %s, %s,
                     %s, %s, %s, %s,
+                    %s,
                     %s, %s, %s,
                     %s, %s,
                     %s, %s, %s, %s,
+                    %s,
                     %s, %s, %s,
                     %s, %s,
                     %s, %s, %s, %s,
@@ -1429,6 +1452,7 @@ def save_metrics_snapshot(metrics_list: List[Dict[str, Any]], as_of_date: str, s
                     catch_rate = COALESCE(EXCLUDED.catch_rate, player_advanced_metrics.catch_rate),
                     yards_per_reception = COALESCE(EXCLUDED.yards_per_reception, player_advanced_metrics.yards_per_reception),
                     target_quality_score = EXCLUDED.target_quality_score,
+                    catchable_tgt_pct = EXCLUDED.catchable_tgt_pct,
                     yards_per_carry = EXCLUDED.yards_per_carry,
                     yards_per_touch = EXCLUDED.yards_per_touch,
                     rush_td_rate = EXCLUDED.rush_td_rate,
@@ -1438,6 +1462,7 @@ def save_metrics_snapshot(metrics_list: List[Dict[str, Any]], as_of_date: str, s
                     completion_pct = EXCLUDED.completion_pct,
                     td_rate = EXCLUDED.td_rate,
                     int_rate = EXCLUDED.int_rate,
+                    catchable_pass_pct = EXCLUDED.catchable_pass_pct,
                     snap_share = COALESCE(EXCLUDED.snap_share, player_advanced_metrics.snap_share),
                     opportunity_share = COALESCE(EXCLUDED.opportunity_share, player_advanced_metrics.opportunity_share),
                     red_zone_usage = EXCLUDED.red_zone_usage,
@@ -1476,11 +1501,13 @@ def save_metrics_snapshot(metrics_list: List[Dict[str, Any]], as_of_date: str, s
                 metrics["player_id"], as_of_date, season, metrics["position"],
                 metrics.get("yards_per_target"), metrics.get("catch_rate"),
                 metrics.get("yards_per_reception"), metrics.get("target_quality_score"),
+                metrics.get("catchable_tgt_pct"),
                 metrics.get("yards_per_carry"), metrics.get("yards_per_touch"),
                 metrics.get("rush_td_rate"),
                 metrics.get("ybc_per_carry"), metrics.get("yac_per_carry"),
                 metrics.get("yards_per_attempt"), metrics.get("completion_pct"),
                 metrics.get("td_rate"), metrics.get("int_rate"),
+                metrics.get("catchable_pass_pct"),
                 metrics.get("snap_share"), metrics.get("opportunity_share"),
                 metrics.get("red_zone_usage"),
                 metrics.get("rz_targets_pg"), metrics.get("rz_carries_pg"),
@@ -1867,6 +1894,100 @@ def _merge_nflverse_snap_share(
         return 0
 
 
+def _merge_pfr_catchable(
+    usage_map: Dict[str, Dict[str, Any]],
+    season: int,
+    completed_week: Optional[int] = None,
+) -> int:
+    """Fill usage['catchable_pass_pct'] / usage['catchable_tgt_pct'] from PFR advstats.
+
+    QB Catchable % = 1 - bad_throws / attempts; WR/TE Catchable Tgt % =
+    1 - drops / targets. Bad throws and drops are PFR human charting via the
+    nflverse pfr_advstats release, not PFF. The advstats files carry only the
+    charted counts, so denominators come from the Sleeper weekly totals
+    already in usage_map (pass_att / targets over completed weeks).
+
+    Only completed REG weeks are aggregated; season numbers are computed as
+    totals-then-divided over those weeks, never as an average of weekly pcts.
+    Only fills players missing a value — never clobbers. Best-effort: any
+    failure leaves the map untouched and returns 0.
+    """
+    if not usage_map:
+        return 0
+    from data_building.external_data import nflverse_metrics as _nm
+
+    pass_totals: Dict[str, float] = {}
+    drop_totals: Dict[str, float] = {}
+
+    def _accumulate(path: Optional[str], count_col: str,
+                    totals: Dict[str, float]) -> None:
+        if not path:
+            return
+        import csv
+        with open(path, newline="", encoding="utf-8") as f:
+            for row in csv.DictReader(f):
+                if str(row.get("game_type", "REG")).upper() != "REG":
+                    continue
+                try:
+                    week = int(float(row.get("week") or 0))
+                except (ValueError, TypeError):
+                    continue
+                if week <= 0:
+                    continue
+                if completed_week is not None and week > completed_week:
+                    continue
+                pid = str(row.get("pfr_player_id") or "").strip()
+                if not pid:
+                    continue
+                try:
+                    count = float(row.get(count_col) or 0)
+                except (TypeError, ValueError):
+                    continue
+                totals[pid] = totals.get(pid, 0.0) + count
+
+    try:
+        _accumulate(_nm.download_pfr_advstats_pass_csv(season), "passing_bad_throws",
+                     pass_totals)
+        _accumulate(_nm.download_pfr_advstats_rec_csv(season), "receiving_drop",
+                     drop_totals)
+    except Exception as e:
+        logger.warning("PFR catchable merge: advstats unavailable (%s)", e)
+        return 0
+    if not pass_totals and not drop_totals:
+        return 0
+
+    try:
+        crosswalk = _nm._pfr_to_sleeper()
+    except Exception as e:
+        logger.warning("PFR catchable merge: crosswalk unavailable (%s)", e)
+        return 0
+    if not crosswalk:
+        return 0
+    # Sleeper -> pfr (the published crosswalk is pfr -> sleeper; first wins).
+    sleeper_to_pfr: Dict[str, str] = {}
+    for pfr, sleeper in crosswalk.items():
+        sleeper_to_pfr.setdefault(sleeper, pfr)
+
+    merged = 0
+    for sleeper_id, usage in usage_map.items():
+        pfr = sleeper_to_pfr.get(sleeper_id)
+        if not pfr:
+            continue
+        if usage.get("catchable_pass_pct") is None and pfr in pass_totals:
+            att = _safe(usage.get("pass_att")) or 0
+            if att > 0:
+                bad = pass_totals[pfr]
+                usage["catchable_pass_pct"] = round((att - bad) / att * 100.0, 1)
+                merged += 1
+        if usage.get("catchable_tgt_pct") is None and pfr in drop_totals:
+            tgt = _safe(usage.get("targets")) or 0
+            if tgt > 0:
+                drops = drop_totals[pfr]
+                usage["catchable_tgt_pct"] = round((tgt - drops) / tgt * 100.0, 1)
+                merged += 1
+    return merged
+
+
 def _merge_pfr_contact_yards(
     usage_map: Dict[str, Dict[str, Any]],
     season: int,
@@ -2093,6 +2214,7 @@ def get_player_career_metrics(
         'yards_per_target', 'catch_rate', 'yards_per_reception', 'target_quality_score',
         'yards_per_carry', 'yards_per_touch', 'rush_td_rate',
         'ybc_per_carry', 'yac_per_carry',
+        'catchable_pass_pct', 'catchable_tgt_pct',
         'yards_per_attempt', 'completion_pct', 'td_rate', 'int_rate',
         'snap_share', 'route_participation', 'opportunity_share', 'red_zone_usage', 'role_score',
         'yards_after_catch', 'yards_after_catch_per_reception', 'avg_depth_of_target',
@@ -2301,6 +2423,7 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     "yards_per_attempt":    {"label": "Yards / Attempt",    "category": "Passing", "positions": ["QB"], "efficiency": True, "min_vol": _V_PASS_ATT, "desc": "Passing yards per attempt; core passing efficiency stat."},
     "completion_pct":       {"label": "Completion %",       "category": "Passing", "positions": ["QB"], "efficiency": True, "pct": True, "min_vol": _V_PASS_ATT, "desc": "Percent of pass attempts completed."},
     "adjusted_completion_rate": {"label": "Adj Completion %", "category": "Passing", "positions": ["QB"], "efficiency": True, "pct": True, "min_vol": _V_PASS_ATT, "desc": "Completion percent adjusted for drops, throwaways, spikes, and batted passes."},
+    "catchable_pass_pct": {"label": "Catchable %", "category": "Passing", "positions": ["QB"], "efficiency": True, "pct": True, "min_vol": _V_PASS_ATT, "desc": "Percent of pass attempts that were catchable (1 minus the bad-throw rate). Bad throws are PFR charting via the nflverse pfr_advstats release, not PFF. Higher is better."},
     "cpoe":                 {"label": "CPOE",                "category": "Passing", "positions": ["QB"], "efficiency": True, "pct": True, "min_vol": _V_PASS_ATT, "desc": "Completion Percentage Over Expected — accuracy adjusted for throw difficulty (nflverse)."},
     "nfl_passer_rating":    {"label": "Passer Rating",       "category": "Passing", "positions": ["QB"], "efficiency": True, "min_vol": _V_PASS_ATT, "desc": "Standard NFL passer rating (0-158.3)."},
     "epa_per_play":         {"label": "Passing EPA / Dropback", "category": "Passing", "positions": ["QB"], "efficiency": True, "min_vol": _V_PASS_ATT, "desc": "Passing Expected Points Added per qualifying quarterback dropback (nflverse play-by-play). Week ranges are weighted by covered dropbacks, never by an unweighted mean of weekly rates."},
@@ -2398,6 +2521,7 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     "racr":                 {"label": "RACR",                "category": "Receiving", "positions": ["WR", "TE", "RB"], "efficiency": True, "min_vol": _V_TARGETS, "desc": "Receiver Air Conversion Ratio: receiving yards ÷ air yards. How much of the yards thrown at the player actually come in (catch + YAC)."},
     "contested_catch_rate": {"label": "Contested Catch %",   "category": "Receiving", "positions": ["WR", "TE"], "efficiency": True, "pct": True, "min_vol": _V_TARGETS, "desc": "Percent of contested (tightly covered) targets the player came down with."},
     "drop_rate":            {"label": "Drop Rate",           "category": "Receiving", "positions": ["WR", "RB", "TE"], "efficiency": True, "pct": True, "lower_better": True, "min_vol": _V_TARGETS, "desc": "Percent of catchable targets dropped. Lower is better."},
+    "catchable_tgt_pct":   {"label": "Catchable Tgt %",     "category": "Receiving", "positions": ["WR", "TE"], "efficiency": True, "pct": True, "min_vol": _V_TARGETS, "desc": "Percent of targets that were catchable (1 minus the drop rate). Drops are PFR charting via the nflverse pfr_advstats release, not PFF. Higher is better."},
     "target_quality_score": {"label": "Target Quality",      "category": "Receiving", "positions": ["WR", "RB", "TE"], "efficiency": True, "min_vol": _V_TARGETS, "hidden": True, "desc": "Legacy internal composite of targets per game, yards per target, and receiving touchdowns; hidden because it does not adjust for target depth, location, or game situation."},
     "receiving_epa":        {"label": "Receiving EPA",       "category": "Receiving", "positions": ["WR", "TE", "RB"], "min_vol": _V_TARGETS, "desc": "Total Expected Points Added on targets over the season (nflverse)."},
     # Touchdown group: season total and per-game kept adjacent.
@@ -2584,6 +2708,7 @@ def get_weekly_range_leaderboard(
 WEEKLY_ADV_METRIC_COLS: List[str] = [
     "passing_epa", "epa_per_play", "cpoe", "success_rate", "sack_rate",
     "scramble_rate", "nfl_passer_rating", "adjusted_completion_rate",
+    "catchable_pass_pct",
     "rushing_epa", "breakaway_percentage", "explosive_runs_10_plus",
     "ngs_rush_yards_over_expected", "ngs_rush_yards_over_expected_per_att",
     "ngs_rush_efficiency",
@@ -2592,6 +2717,7 @@ WEEKLY_ADV_METRIC_COLS: List[str] = [
     "ngs_avg_separation", "ngs_avg_cushion", "ngs_avg_intended_air_yards",
     "avg_depth_of_target", "ngs_avg_yac", "ngs_avg_expected_yac",
     "ngs_avg_yac_above_expectation", "ngs_catch_pct", "drop_rate",
+    "catchable_tgt_pct",
     "contested_catch_rate",
     "ngs_avg_time_to_throw", "ngs_aggressiveness", "ngs_avg_completed_air_yards",
     "ngs_avg_air_yards_differential", "ngs_avg_air_yards_to_sticks", "ngs_cpoe",
@@ -2892,6 +3018,7 @@ _ADV_WEEKLY_WEIGHTED_METRICS = {
     "epa_per_play": "w_dropbacks", "cpoe": "w_dropbacks", "success_rate": "w_dropbacks",
     "sack_rate": "w_dropbacks", "scramble_rate": "w_dropbacks", "nfl_passer_rating": "w_dropbacks",
     "adjusted_completion_rate": "w_pass_att",
+    "catchable_pass_pct": "w_pass_att",
     "qb_hit_rate": "w_dropbacks", "explosive_pass_rate": "w_pass_att",
     "play_action_rate": "w_dropbacks", "play_action_epa": "w_dropbacks",
     "out_of_pocket_rate": "w_dropbacks", "blitz_rate_faced": "w_dropbacks",
@@ -2912,6 +3039,7 @@ _ADV_WEEKLY_WEIGHTED_METRICS = {
     "ngs_avg_separation": "w_targets", "ngs_avg_cushion": "w_targets",
     "ngs_avg_intended_air_yards": "w_targets", "avg_depth_of_target": "w_targets",
     "ngs_catch_pct": "w_targets", "drop_rate": "w_targets", "contested_catch_rate": "w_targets",
+    "catchable_tgt_pct": "w_targets",
     "ngs_created_separation": "w_targets",
     "receiving_success_rate": "w_targets", "receiving_epa_per_target": "w_targets",
     "racr": "w_rec_air_yards",

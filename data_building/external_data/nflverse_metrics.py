@@ -139,12 +139,56 @@ PFR_ADVSTATS_RUSH_URL = (
     "https://github.com/nflverse/nflverse-data/releases/download/"
     "pfr_advstats/advstats_week_rush_{season}.csv"
 )
+# Passing (bad throws) and receiving (drops) from the same release. Both are
+# PFR human charting, not PFF. Neither file carries attempts/targets
+# denominators, so callers join those from Sleeper weekly data.
+PFR_ADVSTATS_PASS_URL = (
+    "https://github.com/nflverse/nflverse-data/releases/download/"
+    "pfr_advstats/advstats_week_pass_{season}.csv"
+)
+PFR_ADVSTATS_REC_URL = (
+    "https://github.com/nflverse/nflverse-data/releases/download/"
+    "pfr_advstats/advstats_week_rec_{season}.csv"
+)
 # Same id file nfl_data_py uses; direct download fallback when it is missing.
 _DP_PLAYERIDS_URL = (
     "https://github.com/dynastyprocess/data/raw/master/files/db_playerids.csv"
 )
 
 _PFR_TO_SLEEPER: Optional[Dict[str, str]] = None
+
+
+def _download_pfr_advstats_csv(kind: str, url: str, season: int,
+                               max_age_hours: float = 6.0) -> Optional[str]:
+    """Cached download of one nflverse pfr_advstats weekly CSV.
+
+    Returns the local path, or None when the download fails and no cached
+    copy exists. A stale cache beats nothing: a network blip must not wipe
+    the metric. Shared by the season snapshot merges and the weekly builder.
+    """
+    import time
+    import urllib.request
+    from pathlib import Path
+
+    from utils.paths import CACHE_DIR
+
+    dest = Path(CACHE_DIR) / f"pfr_advstats_week_{kind}_{season}.csv"
+    try:
+        if dest.exists() and (time.time() - dest.stat().st_mtime) < max_age_hours * 3600:
+            return str(dest)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        req = urllib.request.Request(
+            url.format(season=int(season)),
+            headers={"User-Agent": "fantasy-dashboard"},
+        )
+        tmp = dest.with_name(dest.name + ".tmp")
+        with urllib.request.urlopen(req, timeout=60) as resp, tmp.open("wb") as out:
+            out.write(resp.read())
+        tmp.replace(dest)
+        return str(dest)
+    except Exception as e:
+        print(f"[nflverse_metrics] PFR advstats {kind} download failed ({e})")
+        return str(dest) if dest.exists() else None
 
 
 def download_pfr_advstats_rush_csv(season: int, max_age_hours: float = 6.0) -> Optional[str]:
@@ -154,29 +198,17 @@ def download_pfr_advstats_rush_csv(season: int, max_age_hours: float = 6.0) -> O
     copy exists. A stale cache beats nothing: a network blip must not wipe
     the metric. Shared by the season snapshot merge and the weekly builder.
     """
-    import time
-    import urllib.request
-    from pathlib import Path
+    return _download_pfr_advstats_csv("rush", PFR_ADVSTATS_RUSH_URL, season, max_age_hours)
 
-    from utils.paths import CACHE_DIR
 
-    dest = Path(CACHE_DIR) / f"pfr_advstats_week_rush_{season}.csv"
-    try:
-        if dest.exists() and (time.time() - dest.stat().st_mtime) < max_age_hours * 3600:
-            return str(dest)
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        req = urllib.request.Request(
-            PFR_ADVSTATS_RUSH_URL.format(season=int(season)),
-            headers={"User-Agent": "fantasy-dashboard"},
-        )
-        tmp = dest.with_name(dest.name + ".tmp")
-        with urllib.request.urlopen(req, timeout=60) as resp, tmp.open("wb") as out:
-            out.write(resp.read())
-        tmp.replace(dest)
-        return str(dest)
-    except Exception as e:
-        print(f"[nflverse_metrics] PFR advstats rush download failed ({e})")
-        return str(dest) if dest.exists() else None
+def download_pfr_advstats_pass_csv(season: int, max_age_hours: float = 6.0) -> Optional[str]:
+    """Cached download of the PFR weekly advanced passing CSV (bad throws)."""
+    return _download_pfr_advstats_csv("pass", PFR_ADVSTATS_PASS_URL, season, max_age_hours)
+
+
+def download_pfr_advstats_rec_csv(season: int, max_age_hours: float = 6.0) -> Optional[str]:
+    """Cached download of the PFR weekly advanced receiving CSV (drops)."""
+    return _download_pfr_advstats_csv("rec", PFR_ADVSTATS_REC_URL, season, max_age_hours)
 
 
 def _pfr_to_sleeper() -> Dict[str, str]:
@@ -290,6 +322,86 @@ def build_pfr_contact_yards_weekly(season: int) -> Dict[Tuple[str, int], Dict[st
     except Exception as e:
         print(f"[nflverse_metrics] PFR contact yards weekly build failed ({e})")
     return out
+
+
+def build_pfr_catchable_weekly(season: int) -> Dict[Tuple[str, int], Dict[str, float]]:
+    """Per-(sleeper_id, week) bad-throw / drop counts (PFR charting).
+
+    Reads the advstats pass file (passing_bad_throws) and rec file
+    (receiving_drop). Both are PFR human charting, not PFF. Neither file
+    carries attempts/targets denominators, so this returns counts only and
+    the caller joins denominators (Sleeper weekly pass_att / targets, or the
+    pbp w_pass_att / w_targets weights). Season aggregation must total the
+    counts first, never average a pct column. A row with an explicit zero
+    count is meaningful (charted, none observed) and is kept.
+    Returns {} when the feed or the id crosswalk is unavailable.
+    """
+    out: Dict[Tuple[str, int], Dict[str, float]] = {}
+    if season < PFR_ADVSTATS_FLOOR:
+        return out
+    pass_path = download_pfr_advstats_pass_csv(season)
+    rec_path = download_pfr_advstats_rec_csv(season)
+    if not pass_path and not rec_path:
+        return out
+    crosswalk = _pfr_to_sleeper()
+    if not crosswalk:
+        print("[nflverse_metrics] PFR catchable pct skipped: no id crosswalk")
+        return out
+    try:
+        import csv
+
+        def _read(path: str, count_col: str, out_key: str) -> None:
+            with open(path, newline="", encoding="utf-8") as f:
+                for row in csv.DictReader(f):
+                    if str(row.get("game_type", "REG")).upper() != "REG":
+                        continue
+                    try:
+                        week = int(float(row.get("week") or 0))
+                    except (ValueError, TypeError):
+                        continue
+                    if week <= 0:
+                        continue
+                    pid = crosswalk.get(str(row.get("pfr_player_id") or "").strip())
+                    if not pid:
+                        continue
+                    try:
+                        count = float(row.get(count_col) or 0)
+                    except (TypeError, ValueError):
+                        continue
+                    cols = out.setdefault((pid, week), {})
+                    cols[out_key] = cols.get(out_key, 0.0) + count
+
+        if pass_path:
+            _read(pass_path, "passing_bad_throws", "bad_throws")
+        if rec_path:
+            _read(rec_path, "receiving_drop", "drops")
+    except Exception as e:
+        print(f"[nflverse_metrics] PFR catchable weekly build failed ({e})")
+    return out
+
+
+def _apply_catchable_weekly(
+    out: Dict[Tuple[str, int], Dict[str, float]],
+    counts: Dict[Tuple[str, int], Dict[str, float]],
+) -> None:
+    """Derive weekly catchable % in place from PFR count rows.
+
+    catchable_pass_pct = 1 - bad_throws / w_pass_att; catchable_tgt_pct =
+    1 - drops / w_targets (0-100 scale). Zero denominators are skipped. An
+    explicit zero count with positive volume yields 100.0.
+    """
+    for (pid, week), pfr_cols in counts.items():
+        row = out.setdefault((pid, week), {})
+        bad = pfr_cols.get("bad_throws")
+        if bad is not None:
+            att = row.get("w_pass_att") or 0.0
+            if att > 0:
+                row["catchable_pass_pct"] = round((att - bad) / att * 100.0, 1)
+        drops = pfr_cols.get("drops")
+        if drops is not None:
+            tgt = row.get("w_targets") or 0.0
+            if tgt > 0:
+                row["catchable_tgt_pct"] = round((tgt - drops) / tgt * 100.0, 1)
 
 
 def _flag(v) -> float:
@@ -1329,6 +1441,16 @@ def build_nflverse_weekly_metrics_for_season(
                 out.setdefault((pid, week), {}).update(pfr_cols)
     except Exception as e:
         print(f"[nflverse_metrics] weekly PFR contact yards unavailable for {season} ({e})")
+
+    # ---------- PFR advstats passing/receiving (catchable ball %) ----------
+    # Count-only rows: the weekly pct is derived against the pbp volume
+    # weights already in the row (w_pass_att / w_targets), so week ranges
+    # re-aggregate as totals ratios via the standard weighted machinery
+    # (never an average of weekly pcts). Zero denominators are skipped.
+    try:
+        _apply_catchable_weekly(out, build_pfr_catchable_weekly(season))
+    except Exception as e:
+        print(f"[nflverse_metrics] weekly PFR catchable pct unavailable for {season} ({e})")
 
     # Drop any (pid, week) buckets that ended up with only weight columns and no
     # actual metric value (e.g. a player who only appears as a rusher weight).
