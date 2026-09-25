@@ -23984,6 +23984,7 @@ def _compute_team_offense_ranks(season: int) -> dict:
         "season": season,
         "data_mode": data_mode,
         "completed_weeks": table.get("completed_weeks") or [],
+        "in_progress_weeks": table.get("in_progress_weeks") or [],
         "teams_index": teams_index,
         "ranks": ranks,
         "team_games": {
@@ -24577,14 +24578,18 @@ _NFL_TEAM_DETAILS_CACHE: dict = {}
 _NFL_TEAM_DETAILS_TTL = 15 * 60
 
 
-def _nfl_teams_season_label(season: int, data_mode: str, completed_weeks) -> str:
+def _nfl_teams_season_label(season: int, data_mode: str, completed_weeks,
+                            in_progress_weeks=None) -> str:
     weeks = sorted(int(w) for w in (completed_weeks or []) if w)
+    prog = sorted(int(w) for w in (in_progress_weeks or []) if w)
     if data_mode == "projection":
         return f"{season} projections"
-    if not weeks:
+    if not weeks and not prog:
         return f"{season} actuals"
-    if max(weeks) >= 18:
+    if weeks and max(weeks) >= 18 and not prog:
         return f"{season} actuals, final"
+    if prog:
+        return f"{season} actuals, Week {max(prog)} in progress"
     return f"{season} actuals, through Week {max(weeks)}"
 
 
@@ -24685,7 +24690,8 @@ def api_nfl_team_rankings():
             "data_mode": data_mode,
             "completed_weeks": completed_weeks,
             "season_label": _nfl_teams_season_label(
-                season, data_mode, completed_weeks
+                season, data_mode, completed_weeks,
+                offense.get("in_progress_weeks") or [],
             ),
             "available_seasons": offense.get("available_seasons") or [],
             "oline_season": oline_season,
@@ -24807,7 +24813,8 @@ def api_nfl_team_details():
             "season": season,
             "data_mode": data_mode,
             "season_label": _nfl_teams_season_label(
-                season, data_mode, offense.get("completed_weeks") or []
+                season, data_mode, offense.get("completed_weeks") or [],
+                offense.get("in_progress_weeks") or [],
             ),
             "roster_note": "Current roster",
             "usage_season": snap_season,

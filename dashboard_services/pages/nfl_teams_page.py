@@ -78,6 +78,8 @@ table.nt-rank tbody tr:hover td{{background:var(--row)}}
 table.nt-rank tbody tr.nt-sel td{{background:var(--accent-soft)}}
 .nt-rbadge{{display:inline-block;min-width:32px;text-align:center;font-size:11px;font-weight:800;padding:2px 6px;border-radius:999px;background:var(--row);color:var(--text-muted)}}
 .nt-rbadge.nt-gold{{background:color-mix(in srgb,var(--gold) 16%,transparent);color:var(--gold)}}
+.nt-rbadge.nt-tier-g{{background:color-mix(in srgb,var(--win) 15%,transparent);color:var(--win)}}
+.nt-rbadge.nt-tier-b{{background:color-mix(in srgb,var(--loss) 15%,transparent);color:var(--loss)}}
 .nt-tid{{display:flex;align-items:center;justify-content:space-between;gap:8px}}
 .nt-tleft{{display:flex;align-items:center;gap:10px;min-width:0}}
 .nt-logo{{width:28px;height:28px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;color:#fff;flex:none;overflow:hidden;background:var(--card-soft)}}
@@ -111,6 +113,8 @@ table.nt-rank tbody tr.nt-sel td.nt-teamcol{{background:var(--accent-soft)}}
 .nt-pid{{display:flex;align-items:center;gap:12px}}
 .nt-pid h2{{margin:0;font-size:18px}}
 .nt-pid .nt-meta{{margin:2px 0 0;font-size:12px;color:var(--text-muted)}}
+.nt-herohead{{border-radius:12px 12px 0 0}}
+.nt-record{{display:inline-block;font-size:12px;font-weight:800;background:var(--card-soft);border:1px solid var(--border);border-radius:6px;padding:2px 8px;margin-left:8px;vertical-align:2px;letter-spacing:.03em;white-space:nowrap}}
 .nt-pbody{{padding:16px}}
 .nt-pgrid{{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}}
 @media(max-width:700px){{.nt-pgrid{{grid-template-columns:1fr}}}}
@@ -150,8 +154,9 @@ table.nt-depth>thead>tr>th:first-child{{z-index:2}}
 .nt-wrow .nt-wk{{width:44px;color:var(--text-muted);font-size:12px;flex:none}}
 .nt-wrow .nt-opp{{flex:1;display:flex;align-items:center;gap:8px;font-weight:600}}
 .nt-wrow .nt-res{{font-size:13px;color:var(--text-muted)}}
-.nt-wrow .nt-res.nt-w{{color:var(--win);font-weight:700}}
-.nt-wrow .nt-res.nt-l{{color:var(--loss);font-weight:700}}
+.nt-wrow .nt-res.nt-w{{color:var(--win);font-weight:700;background:color-mix(in srgb,var(--win) 14%,transparent);border-radius:6px;padding:3px 8px;font-size:12px;white-space:nowrap}}
+.nt-wrow .nt-res.nt-l{{color:var(--loss);font-weight:700;background:color-mix(in srgb,var(--loss) 14%,transparent);border-radius:6px;padding:3px 8px;font-size:12px;white-space:nowrap}}
+.nt-opp-logo{{width:22px;height:22px;border-radius:50%;flex:none;background:var(--card-soft)}}
 .nt-wrow.nt-bye{{cursor:default;color:var(--text-muted)}}
 .nt-box{{padding:4px 12px 12px;font-size:13px}}
 .nt-boxscore-line{{font-size:15px;margin:8px 0 10px}}
@@ -189,6 +194,11 @@ var DEF={{view:"{view}",sortKey:null,sortDir:null,team:"{team}",season:"{season}
 var state=Object.assign({{}},DEF);
 function esc(s){{return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");}}
 function teamColor(t){{return (t&&(t.color||""))||"var(--accent)";}}
+function ntEnvRank(rank){{
+  if(!rank)return '<span class="nt-rbadge">N/A</span>';
+  var tier=rank<=10?" nt-tier-g":(rank>=23?" nt-tier-b":"");
+  return '<span class="nt-rbadge'+tier+'">#'+rank+'</span>';
+}}
 function rankBadge(rank,fg,bg){{
   if(!rank)return "";
   var style=(fg&&bg)?' style="background:'+bg+';color:'+fg+'"':"";
@@ -494,15 +504,22 @@ function renderProfile(){{
   var d=DETAIL;
   var nextG=null;(d.schedule||[]).forEach(function(g){{if(!nextG&&!g.bye&&g.status!=="final"&&g.status!=="live")nextG=g;}});
   var nextTxt=nextG?((nextG.is_home?"vs ":"at ")+nextG.opponent+(", "+(nextG.kickoff||nextG.date_label||"")).replace(/, $/,"")):"none remaining";
-  var h=backRow()+'<div class="nt-pcard"><div class="nt-phead2"><div class="nt-pid">'+logoHTML(t,true)+
-    '<div><h2>'+esc(t.city)+' '+esc(t.name)+'</h2><p class="nt-meta">'+esc(d.season_label||"")+' &middot; Bye week '+esc(String(t.bye_week==null?"?":t.bye_week))+' &middot; Next: '+esc(nextTxt)+'</p></div></div></div>';
+  var tcolor=teamColor(t);
+  var rec={{w:0,l:0,t:0}};
+  (d.schedule||[]).forEach(function(g){{
+    if(g.bye||g.status!=="final")return;
+    if(g.result==="W")rec.w++;else if(g.result==="L")rec.l++;else rec.t++;
+  }});
+  var recHtml=(rec.w+rec.l+rec.t)>0?'<span class="nt-record">'+esc(rec.w+"-"+rec.l+(rec.t?"-"+rec.t:""))+'</span>':"";
+  var h=backRow()+'<div class="nt-pcard"><div class="nt-phead2 nt-herohead" style="background:color-mix(in srgb,'+esc(tcolor)+' 10%,transparent);box-shadow:inset 0 3px 0 '+esc(tcolor)+'">'+
+    '<div class="nt-pid">'+logoHTML(t,true)+
+    '<div><h2>'+esc(t.city)+' '+esc(t.name)+recHtml+'</h2><p class="nt-meta">'+esc(d.season_label||"")+' &middot; Bye week '+esc(String(t.bye_week==null?"?":t.bye_week))+' &middot; Next: '+esc(nextTxt)+'</p></div></div></div>';
   h+='<div class="nt-pbody"><div class="nt-pgrid">';
   h+='<section class="nt-psec"><h3>Offensive environment</h3>';
-  var tcolor=teamColor(t);
   envRows(t).forEach(function(e2){{
     var w=e2.rank?Math.max(4,Math.round((33-e2.rank)/32*100)):4;
     h+='<div class="nt-erow"><div class="nt-elab">'+esc(e2.label)+'<span class="nt-eval">'+esc(e2.val)+'</span></div>'+
-      '<div class="nt-bar"><i style="width:'+w+'%;background:'+esc(tcolor)+'"></i></div><div class="nt-erk">'+(e2.rank?"#"+e2.rank:"N/A")+'</div></div>';
+      '<div class="nt-bar"><i style="width:'+w+'%;background:'+esc(tcolor)+'"></i></div><div class="nt-erk">'+ntEnvRank(e2.rank)+'</div></div>';
   }});
   h+='<p class="nt-fine">Volume and tendency ranks describe the offense, not player quality.</p></section>';
   var ol=d.oline;
@@ -549,15 +566,16 @@ function renderProfile(){{
     if(g.bye){{h+='<div class="nt-wrow nt-bye"><span class="nt-wk">'+esc(g.week_label||"")+'</span><span class="nt-opp">Bye week</span></div>';return;}}
     var key=state.team+"-"+g.week+"-"+(g.season_type||"reg");
     var oppAbbr=g.opponent||"";
+    var oppLogo=g.opponent_logo?'<img class="nt-opp-logo" src="'+esc(g.opponent_logo)+'" alt="" loading="lazy" onerror="this.remove()">':"";
     if(g.status==="final"&&g.game_id&&g.expandable!==false){{
       var won=g.result==="W";
-      h+='<button type="button" class="nt-wrow" data-w="'+esc(key)+'"><span class="nt-wk">'+esc(g.week_label||"")+'</span><span class="nt-opp">'+(g.is_home?"vs ":"at ")+esc(oppAbbr)+'</span><span class="nt-res '+(won?"nt-w":"nt-l")+'">'+(won?"W":"L")+" "+g.team_pts+"-"+g.opp_pts+'</span></button>';
+      h+='<button type="button" class="nt-wrow" data-w="'+esc(key)+'"><span class="nt-wk">'+esc(g.week_label||"")+'</span><span class="nt-opp">'+oppLogo+(g.is_home?"vs ":"at ")+esc(oppAbbr)+'</span><span class="nt-res '+(won?"nt-w":"nt-l")+'">'+(won?"W":"L")+" "+g.team_pts+"-"+g.opp_pts+'</span></button>';
       if(state.expanded[key]){{h+='<div class="nt-box" id="ntBox-'+esc(key)+'"><div class="nt-load">Loading box score.</div></div>';}}
     }}else if(g.status==="final"){{
       var won2=g.result==="W";
-      h+='<div class="nt-wrow nt-bye"><span class="nt-wk">'+esc(g.week_label||"")+'</span><span class="nt-opp">'+(g.is_home?"vs ":"at ")+esc(oppAbbr)+'</span><span class="nt-res '+(won2?"nt-w":"nt-l")+'">'+(won2?"W":"L")+" "+g.team_pts+"-"+g.opp_pts+'</span></div>';
+      h+='<div class="nt-wrow nt-bye"><span class="nt-wk">'+esc(g.week_label||"")+'</span><span class="nt-opp">'+oppLogo+(g.is_home?"vs ":"at ")+esc(oppAbbr)+'</span><span class="nt-res '+(won2?"nt-w":"nt-l")+'">'+(won2?"W":"L")+" "+g.team_pts+"-"+g.opp_pts+'</span></div>';
     }}else{{
-      h+='<div class="nt-wrow nt-bye"><span class="nt-wk">'+esc(g.week_label||"")+'</span><span class="nt-opp">'+(g.is_home?"vs ":"at ")+esc(oppAbbr)+'</span><span class="nt-res">'+esc(g.kickoff||g.date_label||"")+'</span></div>';
+      h+='<div class="nt-wrow nt-bye"><span class="nt-wk">'+esc(g.week_label||"")+'</span><span class="nt-opp">'+oppLogo+(g.is_home?"vs ":"at ")+esc(oppAbbr)+'</span><span class="nt-res">'+esc(g.kickoff||g.date_label||"")+'</span></div>';
     }}
   }});
   h+='</div><p class="nt-fine">Completed scores, kickoff times, and byes reuse the shared NFL game-data service.</p></section>';
