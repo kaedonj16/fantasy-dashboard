@@ -100,8 +100,10 @@ def api_health_timing():
 def api_health_pipeline():
     """Last-success / last-status timestamps for each cron_daily step.
 
-    Reads ``CACHE_DIR/pipeline_health.json`` written by
-    ``cron_daily.record_pipeline_health``. Missing file → empty object.
+    Reads ``CACHE_DIR/pipeline_health.json``. The cron container's disk is
+    invisible to the web container on Render, so cron_daily POSTs each step's
+    status to the CRON_SECRET-authenticated ``/api/cron/pipeline-health``
+    endpoint and the web process persists it here. Missing file → empty object.
     Requires X-Admin-Secret.
     """
     denied = _forbidden_unless_admin()
