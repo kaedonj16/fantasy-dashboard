@@ -2480,11 +2480,23 @@
     }
     return g.game_status || '';
   }
+  // Box score lives on the filtered-game board, so it only exists when the
+  // user is filtered to one NFL game (_renderNflBoard returns '' otherwise).
+  function _boxScoreButtonHtml() {
+    return '<button type="button" class="rz-boxscore-btn" data-boxscore-game="' + _esc(_filters.nfl) + '">'
+      + '<span class="rz-boxscore-ico" aria-hidden="true">▦</span>Box score</button>';
+  }
+
   function _renderNflBoard() {
     if (_filters.nfl === 'all') return '';
     var g = _nflGameInfo(_filters.nfl);
     if (!g || (!g.away && !g.home)) return '';
-    if (window._rzRenderGameBoard) return window._rzRenderGameBoard(g, { id: 'rz-nfl-board' });
+    if (window._rzRenderGameBoard) {
+      // The shared app.js renderer owns the board markup on the real page, so
+      // the button must attach here too. Without this the button only existed
+      // in the redzone.js fallback below, which never runs when app.js loaded.
+      return window._rzRenderGameBoard(g, { id: 'rz-nfl-board' }) + _boxScoreButtonHtml();
+    }
     var norm = _normGameStatus(g);
     var live = norm === 'live';
     // Pregame (and delayed / unknown) has no score yet -- show kickoff instead
@@ -2550,10 +2562,7 @@
       + team(away, aPts, awayPoss, 'away')
       + mid
       + team(home, hPts, homePoss, 'home')
-      // Box score lives on the filtered-game board, so it only exists when the
-      // user is filtered to one NFL game (this function returns '' otherwise).
-      + '<button type="button" class="rz-boxscore-btn" data-boxscore-game="' + _esc(_filters.nfl) + '">'
-      + '<span class="rz-boxscore-ico" aria-hidden="true">▦</span>Box score</button>'
+      + _boxScoreButtonHtml()
       + '</div>';
   }
 

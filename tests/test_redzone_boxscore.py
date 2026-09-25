@@ -25,29 +25,44 @@ def _board_fn():
     return REDZONE_JS[start:end]
 
 
+def _boxscore_button_fn():
+    # The button markup lives in this helper so both board render paths
+    # (the shared app.js renderer branch and the redzone.js fallback) stay
+    # in sync.
+    start = REDZONE_JS.index("function _boxScoreButtonHtml()")
+    end = REDZONE_JS.index("function _renderNflBoard()")
+    return REDZONE_JS[start:end]
+
+
 # ── Button placement: filtered-game board only ──────────────────────────
 def test_boxscore_button_renders_inside_filtered_game_board():
     board = _board_fn()
+    button = _boxscore_button_fn()
     # Unfiltered view renders nothing at all, so the button cannot leak there.
     assert "if (_filters.nfl === 'all') return '';" in board
-    assert "data-boxscore-game" in board
-    assert "Box score" in board
+    assert "data-boxscore-game" in button
+    assert "Box score" in button
+    # Both render paths attach it: the shared app.js renderer branch (the one
+    # that actually runs on the real page) and the redzone.js fallback.
+    assert board.count("_boxScoreButtonHtml()") >= 2
 
 
-def test_boxscore_button_is_not_in_the_shared_modal_board_renderer():
-    # The player-modal path delegates to window._rzRenderGameBoard and must
-    # not gain the button: the feature is scoped to the filtered Redzone view.
+def test_boxscore_button_is_not_in_the_shared_board_renderer_itself():
+    # The shared window._rzRenderGameBoard (app.js) is also used by the player
+    # modal, so the button must not live inside it. The Redzone filtered view
+    # appends the button at its own call site instead.
+    app_js = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+    assert "boxscore" not in app_js.lower()
     board = _board_fn()
-    modal_branch = board.split("if (window._rzRenderGameBoard)")[1].split("\n")[0]
-    assert "data-boxscore-game" not in modal_branch
+    branch = board.split("if (window._rzRenderGameBoard) {", 1)[1].split("\n    }", 1)[0]
+    assert "_boxScoreButtonHtml()" in branch
 
 
 def test_boxscore_button_carries_the_filtered_game_id():
-    board = _board_fn()
-    assert 'data-boxscore-game="' in board
+    button = _boxscore_button_fn()
+    assert 'data-boxscore-game="' in button
     # Bound to the single canonical filter, not a second selection state.
-    assert "_filters.nfl" in board.split("data-boxscore-game")[0].split("var boxBtn")[-1] or \
-        "_esc(_filters.nfl)" in board
+    assert "_esc(_filters.nfl)" in button
 
 
 # ── Click wiring ─────────────────────────────────────────────────────────
