@@ -392,7 +392,9 @@ def notify_lineup_lock():
         if not epochs:
             return
 
-        kickoff = datetime.fromtimestamp(min(epochs) / 1000, tz=timezone.utc)
+        # gameTime_epoch is seconds (nfl_game_data._iso_epoch); every other
+        # consumer uses fromtimestamp() directly, so no /1000 here.
+        kickoff = datetime.fromtimestamp(min(epochs), tz=timezone.utc)
         now     = datetime.now(tz=timezone.utc)
         mins    = (kickoff - now).total_seconds() / 60
         # 60-min-wide window so an hourly check always lands inside it; the
