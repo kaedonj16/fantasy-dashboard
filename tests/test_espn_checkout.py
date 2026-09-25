@@ -62,6 +62,7 @@ def test_checkout_preserves_provider_at_every_plan_entry(
     })
 
     assert response.status_code == 200
+    assert captured["automatic_tax"] == {"enabled": True}
     assert captured["metadata"]["platform"] == platform
     assert captured["metadata"]["season"] == "2026"
     assert captured["metadata"]["user_id"] == f"{platform}-owner-7"
@@ -240,6 +241,35 @@ def test_checkout_allows_google_account_without_sleeper_viewer(offline_client, m
     })
 
     assert response.status_code == 200
+    assert captured["automatic_tax"] == {"enabled": True}
     assert captured["metadata"]["user_id"] == "acct:42"
     assert captured["metadata"]["account_id"] == "42"
     assert captured["metadata"]["platform"] == "espn"
+
+
+def test_resume_checkout_session_enables_automatic_tax(offline_client, monkeypatch):
+    """The /pro/resume-checkout path builds its own Session: tax must apply."""
+    captured = {}
+
+    class _CheckoutSession:
+        @staticmethod
+        def create(**kwargs):
+            captured.update(kwargs)
+            return SimpleNamespace(url="https://checkout.stripe.test/resume")
+
+    monkeypatch.setattr(
+        billing, "_stripe",
+        lambda: SimpleNamespace(checkout=SimpleNamespace(Session=_CheckoutSession)),
+    )
+
+    with offline_client.session_transaction() as sess:
+        sess["account_id"] = 7
+    with offline_client.application.test_request_context("/pro/resume-checkout"):
+        from flask import session
+        session["account_id"] = 7
+        url, error = billing._stripe_checkout_url(
+            "sleeper-7", {"plan": "user", "platform": "sleeper", "season": 2026})
+
+    assert error is None
+    assert url == "https://checkout.stripe.test/resume"
+    assert captured["automatic_tax"] == {"enabled": True}
