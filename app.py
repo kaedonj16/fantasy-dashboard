@@ -3002,7 +3002,7 @@ _NAV_PAGE_META = {
     "compare": ("bars", "seo_pages.page_compare", ""),
     "top-movers": ("bars2", "seo_pages.top_movers_page", ""),
     "advanced-metrics": ("bars2", "league_pages.page_advanced_metrics", ""),
-    "nfl-teams": ("star", "league_pages.page_nfl_teams", ""),
+    "nfl-teams": ("shield", "league_pages.page_nfl_teams", ""),
     "breakouts": ("radar", "page_breakouts", ""),
     "prospects": ("award", "page_prospects", ""),
     "draft-history": ("history", "tool_pages.page_draft_history", ""),

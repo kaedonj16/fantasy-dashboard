@@ -337,3 +337,46 @@ def test_nfl_team_details_contract(offline_client, monkeypatch):
     assert data["oline"]["season"] == 2025
     assert isinstance(data["schedule"], list)
     assert data["schedule"][0]["opponent"] == "BUF"
+
+
+# ── Round 2: NaN fix, drill-in navigation, nav icon ───────────────────────────
+
+
+def test_page_normalizes_api_value_key():
+    # The APIs send entries as {rank, total, value}; the page normalizes
+    # value->v once per payload so renderers never print NaN.
+    assert "function normEntry" in PAGE_SRC
+    assert "e.value!==undefined" in PAGE_SRC
+    assert "normRankings(DATA)" in PAGE_SRC
+    assert "normOline(d.oline)" in PAGE_SRC
+
+
+def test_page_profile_formatters_render_na_not_nan():
+    # Genuinely-missing profile values must read N/A, never NaN or 0.0.
+    assert '"N/A":Number(v).toFixed(1)+" pts/g"' in PAGE_SRC
+    assert '"N/A":Math.round(v)+" /g"' in PAGE_SRC
+    assert '"N/A":Math.round(v*100)+"%"' in PAGE_SRC
+    assert '(cell&&cell.v!=null?Math.round(cell.v):"N/A")' in PAGE_SRC
+    assert "NaN pts/g" not in PAGE_SRC.replace('"N/A"', "")
+
+
+def test_page_drill_in_navigation():
+    # Team selection swaps to a detail view with a back button; the
+    # rankings table and view tabs hide while a team is open.
+    assert 'id="ntListWrap"' in PAGE_SRC
+    assert 'id="ntBack"' in PAGE_SRC
+    assert "All teams" in PAGE_SRC
+    assert 'list.style.display=inDetail?"none":""' in PAGE_SRC
+    assert 'tabs.style.display=inDetail?"none":""' in PAGE_SRC
+    assert "window.scrollTo(0,0)" in PAGE_SRC
+    assert 'addEventListener("popstate"' in PAGE_SRC
+
+
+def test_page_syncs_url_from_current_path():
+    # The league-context variant must keep its own path when pushing state.
+    assert "location.pathname" in PAGE_SRC
+    assert '"/nfl-teams"+p' not in PAGE_SRC
+
+
+def test_nfl_teams_nav_icon_is_shield():
+    assert '"nfl-teams": ("shield"' in APP_SRC
