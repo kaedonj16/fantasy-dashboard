@@ -121,6 +121,10 @@ services:
         sync: false
       - key: STRIPE_WEBHOOK_SECRET
         sync: false
+      # Sentry error tracking (server). Paste the DSN in the Render dashboard;
+      # empty/unset keeps the app running with tracking disabled (fail-soft).
+      - key: SENTRY_DSN
+        sync: false
       # Rookie data pipeline
       - key: SPORTRADAR_API_KEY
         sync: false
