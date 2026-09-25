@@ -447,6 +447,7 @@ async function initiatePurchase(type, btn) {
   // enough to view a league, not to subscribe. Guests who pick a league plan
   // without a league open the platform picker above the paywall, then Google.
   const ctx = window.__brctx || {};
+  const billingInterval = window.__brBillingInterval === 'month' ? 'month' : 'year';
   const leagueId = new URLSearchParams(window.location.search).get('league_id') ||
     window.location.pathname.split('/').filter(Boolean)[2] ||
     (ctx.leagueId || '');
@@ -492,7 +493,7 @@ async function initiatePurchase(type, btn) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ plan: type, league_id: leagueId, return_url: returnUrl,
-        platform: _platform, season: _season }),
+        platform: _platform, season: _season, interval: billingInterval }),
     });
     const data = await res.json();
     if (data.url) {
@@ -1165,7 +1166,7 @@ async function _initiatePurchaseWithLeague(type, btn, leagueId) {
     _startGoogleSubscribe(type, btn, { leagueId });
     return;
   }
-  // Build a post-checkout destination: league dashboard if we have a league,
+  const billingInterval = window.__brBillingInterval === 'month' ? 'month' : 'year';  // Build a post-checkout destination: league dashboard if we have a league,
   // otherwise the current page. Append ?new_subscriber=1 to trigger the welcome tour.
   const ctx = window.__brctx || {};
   const platform = ctx.platform || 'sleeper';
@@ -1190,7 +1191,7 @@ async function _initiatePurchaseWithLeague(type, btn, leagueId) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ plan: type, league_id: leagueId, return_url: returnUrl,
-        platform, season }),
+        platform, season, interval: billingInterval }),
     });
     const data = await res.json();
     if (data.url) {
