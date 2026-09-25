@@ -39040,6 +39040,62 @@ table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: point
     color: rgba(255, 255, 255, .5);
 }
 
+/* PRO finale slide (client-side, free users only): end-of-deck upsell. The
+   tap zones sit above slides, so hide them while the PRO slide is active and
+   let the slide's own buttons (and a tap-anywhere-to-close) take over. */
+.wrapped-overlay:has(.wrapped-slide[data-kind="pro-cta"].active) .wrapped-tap {
+    display: none;
+}
+
+.wrapped-pro-title {
+    font-family: "InterVariable", "Archivo", sans-serif;
+    font-weight: 900;
+    font-size: 40px;
+    line-height: 1.1;
+    letter-spacing: -.025em;
+    color: #fff;
+    max-width: 16ch;
+}
+
+.wrapped-pro-ctas {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 20px;
+}
+
+.wrapped-pro-go {
+    border: 0;
+    border-radius: 12px;
+    padding: 13px 22px;
+    font-size: 15px;
+    font-weight: 800;
+    color: #fff;
+    cursor: pointer;
+    background: linear-gradient(135deg, #122d4b, #2563eb);
+    box-shadow: 0 8px 24px rgba(37, 99, 235, .35);
+}
+
+.wrapped-pro-dismiss {
+    border: 1px solid rgba(255, 255, 255, .25);
+    border-radius: 12px;
+    padding: 13px 18px;
+    font-size: 14px;
+    font-weight: 700;
+    color: rgba(255, 255, 255, .85);
+    cursor: pointer;
+    background: transparent;
+}
+
+.wrapped-slide.active .wrapped-pro-title,
+.wrapped-slide.active .wrapped-pro-ctas {
+    animation: wrapUp .5s var(--ease-out) .3s both;
+}
+
+@media (max-width: 600px) {
+    .wrapped-pro-title { font-size: 32px; }
+}
+
 @media (prefers-reduced-motion: reduce) {
     .wrapped-overlay, .wrapped-slide.active::before,
     .wrapped-slide.active .wrapped-kicker, .wrapped-slide.active .wrapped-league,

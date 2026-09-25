@@ -51,6 +51,7 @@ def build_advanced_metrics_body(
         get_available_seasons, get_available_weeks_by_season, _WEEKLY_METRICS,
         ADV_WEEKLY_METRIC_KEYS, adv_weekly_vol_spec,
         PREMIUM_METRICS, premium_metrics_exposed, PRO_METRICS,
+        LEADERBOARD_METRICS,
     )
     _hide_premium = not premium_metrics_exposed()
     # Decision presets whose primary metric is PRO-gated (the four advanced
@@ -61,6 +62,39 @@ def build_advanced_metrics_body(
         key for key, p in ADVANCED_METRIC_PRESETS.items()
         if p.get("kind") == "decision" and p.get("primary") in PRO_METRICS
     ]
+    # Public-safe "what am I missing" copy for the PRO-gated metrics and the
+    # locked decision presets: names plus a one-line why-it-matters. Shipped
+    # to every client (names/descriptions only, never values) so a free user
+    # tapping a lock sees the metric name and why it matters instead of a
+    # generic paywall headline. No em dashes in UI copy (house style).
+    _PRO_METRIC_WHY = {
+        "ppr_over_expected_per_game": "Shows whether a player's points came from efficiency or just volume. Negative FPOE flags buy-low targets whose role is better than their box score.",
+        "half_ppr_over_expected_per_game": "The efficiency-vs-expectation read, tuned for half-PPR scoring.",
+        "standard_over_expected_per_game": "The efficiency-vs-expectation read, tuned for non-PPR scoring.",
+        "wopr": "Target share plus air-yards share in one number. One of the stickiest predictors of WR fantasy value.",
+        "opportunity_trend": "Whether the player's role is growing or shrinking over the last 3 weeks. Catches breakouts and benchings before the box score does.",
+        "xfp_trend": "Whether the quality of the player's opportunity is trending up. Separates real role growth from one hot week.",
+        "fp_cv": "How steady the weekly scoring is. Low CV means set-and-forget starters; high CV means boom-or-bust.",
+        "xfp_stddev": "How much the workload itself swings week to week. Steadier roles mean more predictable lineups.",
+        "role_score": "One composite of target, carry, and red-zone share. The backbone of breakout detection.",
+        "target_quality_score": "Rates the quality of a receiver's targets, not just the count. Separates target hogs from efficient ones.",
+        "vorp": "Season points above a replacement-level starter, sized to your league. The single best 'how valuable is this player' number.",
+        "war": "Translates VORP into wins. Tells you how many standings spots a player is actually worth.",
+    }
+    _pro_metric_info = {
+        key: {
+            "label": (LEADERBOARD_METRICS.get(key) or {}).get("label") or key,
+            "why": _PRO_METRIC_WHY.get(key) or "A PRO intelligence metric.",
+        }
+        for key in PRO_METRICS
+    }
+    _pro_preset_info = {
+        key: {
+            "label": ADVANCED_METRIC_PRESETS[key]["label"],
+            "tagline": ADVANCED_METRIC_PRESETS[key].get("tagline") or "",
+        }
+        for key in _pro_presets
+    }
     # Public metrics also live in this table; season discovery must not depend
     # on PFF entitlement (otherwise a newly ingested season such as 2026 is
     # hidden from the selector for ordinary users).
@@ -152,6 +186,8 @@ def build_advanced_metrics_body(
 
     cfg = json.dumps({
         "hasPremium": bool(has_premium),
+        "proMetricInfo": _pro_metric_info,
+        "proPresetInfo": _pro_preset_info,
         "leagueId": league_id or "",
         "platform": platform or "sleeper",
         "seasons": available_seasons,
@@ -1411,6 +1447,17 @@ def build_advanced_metrics_body(
 # Plain JS (template literals use ${...}; kept out of any f-string).
 _AM_JS = r"""
   const cfg = AM_CFG;
+  // PRO-gated metric/preset names + why-it-matters, for the paywall headline
+  // when a free user taps a lock (resolved in paywall.js).
+  window.__brProMetricInfo = cfg.proMetricInfo || {};
+  window.__brProPresetInfo = cfg.proPresetInfo || {};
+  // paywall.js loads deferred, so the brUpsell nudge infra may not exist yet
+  // while this inline script runs during the initial parse. Run fn once it
+  // does (deferred scripts always run before DOMContentLoaded).
+  function _whenUpsellReady(fn) {
+    if (window.brUpsell || document.readyState !== 'loading') { fn(); return; }
+    document.addEventListener('DOMContentLoaded', fn, { once: true });
+  }
   const metricSel = document.getElementById('amMetric');
   const posWrap   = document.getElementById('amPositions');
   const searchEl  = document.getElementById('amSearch');
@@ -1814,10 +1861,34 @@ _AM_JS = r"""
   function _loadMovers() {
     _initMoversCollapse();
     const host = document.getElementById('amMovers');
+    if (!host) return;
+    // The movers strip is PRO intelligence. Free users get one slim
+    // dismissible nudge instead of the strip: a value moment for it, never a
+    // gate, and the dismissal is remembered (brUpsell infra in paywall.js).
+    if (!cfg.hasPremium) {
+      _whenUpsellReady(function () {
+        var _shown = window.brUpsell && window.brUpsell.nudge(host, {
+          key: 'am-movers',
+          feature: 'advanced-metrics-movers',
+          message: 'PRO tracks who is heating up and cooling off across every metric.',
+          ctaLabel: 'Unlock'
+        });
+        if (_shown) {
+          host.style.display = '';
+          host.addEventListener('click', function _amHideOnDismiss(e) {
+            if (e.target && e.target.closest && e.target.closest('.br-upsell-nudge-x')) {
+              host.style.display = 'none';
+              host.removeEventListener('click', _amHideOnDismiss);
+            }
+          });
+        } else {
+          host.style.display = 'none';
+        }
+      });
+      return;
+    }
     const groups = document.getElementById('amMoversGroups');
-    if (!host || !groups) return;
-    // The movers strip is PRO intelligence; free users never see it.
-    if (!cfg.hasPremium) { host.style.display = 'none'; return; }
+    if (!groups) return;
     const params = new URLSearchParams({ platform: cfg.platform });
     const season = _moverSeason();
     if (season) params.set('season', String(season));
@@ -3324,9 +3395,11 @@ _AM_JS = r"""
           // instead of blank "–" values. Only the rows above the fold show
           // the lock; every row gets the same click target via delegation.
           if (ed.proLocked) {
-            const _ml = (cfg.metrics && cfg.metrics[key] && cfg.metrics[key].label) || key;
+            const _ml = (cfg.metrics && cfg.metrics[key] && cfg.metrics[key].label)
+              || (cfg.proMetricInfo && cfg.proMetricInfo[key] && cfg.proMetricInfo[key].label)
+              || key;
             metricCell += '<td class="am-barcell am-cell-locked" data-column-id="metric:' + key + '"'
-              + ' data-pro-metric="' + key + '" title="' + _esc(_ml) + ' is PRO only — tap to unlock">'
+              + ' data-pro-metric="' + key + '" title="' + _esc(_ml) + ' is PRO only: tap to unlock">'
               + '<div class="am-metric-cell"><div class="am-metric-bar"><div class="am-bar-track" style="opacity:.25"></div></div>'
               + '<div class="am-val-wrap"><span class="am-val" style="opacity:.7">🔒</span></div>'
               + '</div></td>';

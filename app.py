@@ -15347,16 +15347,26 @@ def page_breakouts(platform: str, season: int, league_id: str):
           let html = '<div class="breakout-grid">';
           filtered.forEach(candidate => {{ html += renderBreakoutCard(candidate); }});
           if (lockedCount > 0) {{
-            html += `
-              <div class="breakout-card" onclick="showPaywall('breakout-candidates')" style="cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;min-height:180px;border:2px dashed var(--border);">
-                <i class="fa-solid fa-lock" style="font-size:22px;color:var(--text-muted);"></i>
-                <div style="font-weight:700;font-size:15px;">${{lockedCount}} more candidates locked</div>
-                <div style="font-size:12px;color:var(--text-muted);text-align:center;">Upgrade to PRO to see all breakout<br>candidates with full details</div>
-                <span style="font-size:11px;font-weight:700;padding:4px 12px;background:linear-gradient(135deg,#122d4b,#2563eb);color:white;border-radius:8px;">Upgrade &rarr;</span>
-              </div>`;
+            // One dismissible inline nudge instead of the old locked card. The
+            // free preview candidates always stay visible; the nudge sits below
+            // the grid, never blocks anything, and remembers its dismissal.
+            html += '<div id="boUpsellNudge" style="margin-top:14px;"></div>';
           }}
           html += '</div>';
           container.innerHTML = html;
+          if (lockedCount > 0) {{
+            // paywall.js loads deferred; the fetch can resolve before it runs.
+            var _boNudge = function () {{
+              if (window.brUpsell) window.brUpsell.nudge(document.getElementById('boUpsellNudge'), {{
+                key: 'bo-locked',
+                feature: 'breakout-candidates',
+                message: lockedCount + ' more breakout candidates are locked. PRO unlocks the full list with full details.',
+                ctaLabel: 'Unlock'
+              }});
+            }};
+            if (window.brUpsell || document.readyState !== 'loading') _boNudge();
+            else document.addEventListener('DOMContentLoaded', _boNudge, {{ once: true }});
+          }}
           return;
         }}
 

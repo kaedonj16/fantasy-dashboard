@@ -80,6 +80,135 @@ window.brProPreview = function brProPreview(container, opts) {
   }
 };
 
+/**
+ * Shared dismissible upsell-nudge infra. Every prompt built on this:
+ * - never blocks a free feature (it is a banner, not a gate),
+ * - is dismissible, and the dismissal is remembered in localStorage so the
+ *   user is never re-nagged,
+ * - respects the existing promo frequency cap (window._brPromoEligible: only
+ *   on a later visit, >= 1 day after first seen) for passive prompts.
+ * User-initiated prompts (tapping a locked metric) skip the eligibility check:
+ * the user asked what they're missing, so answering is not nagging.
+ */
+(function () {
+  var STORE_KEY = 'br-upsell-dismissed.v1';
+
+  function _readStore() {
+    try {
+      var raw = localStorage.getItem(STORE_KEY);
+      var obj = raw ? JSON.parse(raw) : {};
+      return (obj && typeof obj === 'object') ? obj : {};
+    } catch (_) { return {}; }
+  }
+  function _writeStore(obj) {
+    try { localStorage.setItem(STORE_KEY, JSON.stringify(obj || {})); }
+    catch (_) { /* private mode: dismissal just won't persist */ }
+  }
+  function _esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  window.brUpsell = {
+    /** True when the user already dismissed this nudge key. */
+    dismissed: function (key) {
+      if (!key) return false;
+      return !!_readStore()[key];
+    },
+    /** Remember a dismissal so the nudge never shows again. */
+    dismiss: function (key) {
+      if (!key) return;
+      var store = _readStore();
+      store[key] = new Date().toISOString();
+      _writeStore(store);
+    },
+    /**
+     * Passive-prompt frequency cap. Reuses the existing promo eligibility
+     * (first-seen + 1 day) when the host page defines it; pages without it
+     * (share pages, modals) fall back to always eligible.
+     */
+    eligible: function () {
+      try {
+        if (typeof window._brPromoEligible === 'function') return !!window._brPromoEligible();
+      } catch (_) {}
+      return true;
+    },
+    /**
+     * Render a slim dismissible inline nudge into `container`.
+     * opts: { key (required, stable), message, ctaLabel, feature }.
+     * Returns true when the nudge rendered, false when skipped (dismissed,
+     * ineligible, or missing container/key). The CTA opens the paywall for
+     * `feature`; the x persists the dismissal.
+     */
+    nudge: function (container, opts) {
+      opts = opts || {};
+      var key = opts.key;
+      var el = (typeof container === 'string') ? document.getElementById(container) : container;
+      if (!el || !key) return false;
+      if (window.brUpsell.dismissed(key)) return false;
+      if (!window.brUpsell.eligible()) return false;
+      var feature = opts.feature || 'pro';
+      var ctaLabel = opts.ctaLabel || 'Unlock PRO';
+      el.innerHTML =
+        '<div class="br-upsell-nudge" role="note">' +
+          '<span class="br-upsell-nudge-msg">' + _esc(opts.message || 'Unlock more with PRO.') + '</span>' +
+          '<button type="button" class="br-upsell-nudge-cta">' + _esc(ctaLabel) + '</button>' +
+          '<button type="button" class="br-upsell-nudge-x" aria-label="Dismiss">' +
+            '<i class="fa-solid fa-xmark" aria-hidden="true"></i>' +
+          '</button>' +
+        '</div>';
+      var root = el.querySelector('.br-upsell-nudge');
+      if (!root) return false;
+      root.querySelector('.br-upsell-nudge-cta').addEventListener('click', function () {
+        if (typeof showPaywall === 'function') showPaywall(feature, { source: 'nudge:' + key });
+      });
+      root.querySelector('.br-upsell-nudge-x').addEventListener('click', function () {
+        window.brUpsell.dismiss(key);
+        if (root.parentNode) root.parentNode.removeChild(root);
+      });
+      return true;
+    }
+  };
+})();
+
+/**
+ * Resolve a paywall `feature` key to the { name, benefit } shown in the modal
+ * headline. PRO-gated metric and preset keys (advanced-metrics-metric-<key>,
+ * advanced-metrics-<preset>) resolve against the info maps the Advanced
+ * Metrics page publishes on window, so a free user tapping a lock sees WHAT
+ * they are missing (metric name + one-line why it matters) instead of a
+ * generic "Premium Feature" dead end.
+ */
+window.brResolveProFeature = function brResolveProFeature(feature) {
+  if (typeof feature !== 'string') return null;
+  var mm = feature.match(/^advanced-metrics-metric-([A-Za-z0-9_]+)$/);
+  if (mm) {
+    var info = (window.__brProMetricInfo || {})[mm[1]];
+    if (info && info.label) {
+      return { name: info.label, benefit: info.why || 'A PRO intelligence metric.' };
+    }
+    return { name: 'PRO metric', benefit: 'A PRO intelligence metric.' };
+  }
+  var pm = feature.match(/^advanced-metrics-([a-z_]+)$/);
+  if (pm) {
+    var pi = (window.__brProPresetInfo || {})[pm[1]];
+    if (pi && pi.label) {
+      return { name: pi.label, benefit: pi.tagline || 'A PRO decision view.' };
+    }
+  }
+  var extra = {
+    'advanced-metrics-movers': {
+      name: 'Movers: heating up and cooling off',
+      benefit: 'PRO tracks usage and xFP trends across every metric, so you see who is heating up and cooling off before your league does.'
+    },
+    'wrapped-pro': {
+      name: 'The full story',
+      benefit: 'PRO unlocks the Front Office Report, Breakout Engine, AI trade analysis, and the premium Wrapped storyline for your league.'
+    }
+  };
+  return extra[feature] || null;
+};
 
 const BR_PRO_PLANS = [
   { key: 'user', name: 'Personal', price: '$20/year', coverage: 'PRO for you across all your leagues', cta: 'Choose Personal', recommended: true },
@@ -126,7 +255,11 @@ window.showPaywall = function showPaywall(feature, opts) {
     'draft-analyzer': 'Draft Deep Dive Analyzer'
   };
 
-  const featureName = featureNames[feature] || 'Premium Feature';
+  // Dynamic PRO-gated metric/preset keys resolve to the metric name + its
+  // one-line why-it-matters, so a lock tap never lands on a generic headline.
+  const _resolved = (typeof window.brResolveProFeature === 'function')
+    ? window.brResolveProFeature(feature) : null;
+  const featureName = (_resolved && _resolved.name) || featureNames[feature] || 'Premium Feature';
   const featureBenefits = {
     'breakout-candidates': 'Find emerging players by opportunity, peer history, and confidence.',
     'breakout-analysis': 'See the opportunity signals and confidence behind a breakout case.',
@@ -140,7 +273,7 @@ window.showPaywall = function showPaywall(feature, opts) {
     'draft-trends-scout': 'Spot historical ranking and ADP movement before your draft.',
     'draft-analyzer': 'Review draft decisions against the players who were still available.'
   };
-  const featureBenefit = featureBenefits[feature] || 'Unlock more decision support for your fantasy teams.';
+  const featureBenefit = (_resolved && _resolved.benefit) || featureBenefits[feature] || 'Unlock more decision support for your fantasy teams.';
   const previewLine = opts.count != null
     ? `<p class="paywall-preview-line"><strong>${opts.count}</strong> ${opts.message || 'available with PRO'}</p>`
     : (opts.message ? `<p class="paywall-preview-line">${opts.message}</p>` : '');

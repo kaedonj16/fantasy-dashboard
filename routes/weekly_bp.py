@@ -20,6 +20,20 @@ logger = logging.getLogger(__name__)
 weekly_bp = Blueprint("weekly", __name__)
 
 
+def _weekly_wrapped_request_has_premium(platform, season, league_id) -> bool:
+    """Per-user PRO check for the weekly wrapped overlay endpoint. Fail closed."""
+    from flask import session
+    from dashboard_services.subscriptions import has_premium_for_viewer
+    try:
+        return bool(has_premium_for_viewer(
+            session.get("viewer_username"), session.get("viewer_user_id"),
+            league_id, platform or "sleeper", season,
+        ))
+    except Exception:
+        logger.debug("weekly wrapped premium check failed", exc_info=True)
+        return False
+
+
 @weekly_bp.route("/api/weekly/<platform>/<int:season>/<league_id>/<int:week>/wrapped")
 def api_weekly_wrapped(platform: str, season: int, league_id: str, week: int):
     """Build the full Weekly Wrapped overlay for one completed week (including
@@ -37,7 +51,9 @@ def api_weekly_wrapped(platform: str, season: int, league_id: str, week: int):
         if not ctx:
             return jsonify({"html": ""})
 
-        html = render_weekly_wrapped_overlay(ctx, week)
+        show_pro_cta = not _weekly_wrapped_request_has_premium(
+            platform, season, league_id)
+        html = render_weekly_wrapped_overlay(ctx, week, show_pro_cta=show_pro_cta)
         return jsonify({"html": html})
 
     except Exception as e:
