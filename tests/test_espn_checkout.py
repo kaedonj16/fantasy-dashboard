@@ -72,7 +72,7 @@ def test_checkout_preserves_provider_at_every_plan_entry(
     assert captured["cancel_url"].endswith(f"/{platform}/2026/123/pricing?canceled=1")
     if plan == "single_league":
         price_data = captured["line_items"][0]["price_data"]
-        assert price_data["unit_amount"] == 500
+        assert price_data["unit_amount"] == 1000
         assert "product_data" in price_data or "product" in price_data
 
 

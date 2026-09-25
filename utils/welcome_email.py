@@ -208,7 +208,7 @@ def build_signup_welcome(
         _lead(
             "Every Tuesday we send a personalized digest for your main league: start/sit, "
             "waivers, and value moves. When you want deeper tools like trade suggestions, "
-            "playoff sims, and breakout detection, PRO starts at $5/year "
+            "playoff sims, and breakout detection, PRO starts at $10/year "
             f'(<a href="{escape(pricing, quote=True)}" style="color:#3b82f6;font-weight:700;'
             'text-decoration:none;">see plans</a>).'
         ),

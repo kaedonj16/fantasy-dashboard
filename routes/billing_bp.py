@@ -275,11 +275,11 @@ def _maybe_send_pro_welcome(
 
 
 _STRIPE_PRICES = {
-    "league": {"unit_amount": 1500, "product": _STRIPE_LEAGUE_PRODUCT},
-    "user":   {"unit_amount": 1000, "product": _STRIPE_USER_PRODUCT},
-    "combo":  {"unit_amount": 2000, "product": _STRIPE_COMBO_PRODUCT},
+    "league": {"unit_amount": 3500, "product": _STRIPE_LEAGUE_PRODUCT},
+    "user":   {"unit_amount": 2000, "product": _STRIPE_USER_PRODUCT},
+    "combo":  {"unit_amount": 4500, "product": _STRIPE_COMBO_PRODUCT},
     "single_league": {
-        "unit_amount": 500,
+        "unit_amount": 1000,
         "product": _STRIPE_SINGLE_LEAGUE_PRODUCT,
         "product_name": "BR Fantasy Single League PRO",
     },
@@ -659,10 +659,10 @@ def _pricing_body() -> str:
 
     selected_plan = plan if plan in {"user", "single_league", "league", "combo"} else ""
     plans = [
-        ("user", "Personal", "$10/year", "PRO for you across all your leagues", "Choose Personal", True),
-        ("single_league", "Individual: One League", "$5/year", "PRO for you in one selected league. Your league mates are not upgraded.", "Choose one league", False),
-        ("league", "Entire League", "$15/year", "PRO for every manager in one selected league", "Upgrade a league", False),
-        ("combo", "League + Personal", "$20/year", "PRO for every manager in one selected league, plus you across all your leagues. Other managers’ additional leagues are not upgraded.", "Choose League + Personal", False),
+        ("user", "Personal", "$20/year", "PRO for you across all your leagues", "Choose Personal", True),
+        ("single_league", "Individual: One League", "$10/year", "PRO for you in one selected league. Your league mates are not upgraded.", "Choose one league", False),
+        ("league", "Entire League", "$35/year", "PRO for every manager in one selected league", "Upgrade a league", False),
+        ("combo", "League + Personal", "$45/year", "PRO for every manager in one selected league, plus you across all your leagues. Other managers’ additional leagues are not upgraded.", "Choose League + Personal", False),
     ]
     plan_cards = "".join(
         f'''<article class="pricing-option{' featured' if recommended else ''}{' is-selected' if selected_plan == key else ''}" data-plan-card="{key}">
