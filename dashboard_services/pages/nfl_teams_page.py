@@ -66,7 +66,7 @@ def build_nfl_teams_body(
 .nt-tabs button[aria-selected="true"]{{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}}
 .nt-tcard{{overflow:hidden;margin-top:12px}}
 .nt-tscroll{{overflow-x:auto}}
-table.nt-rank{{border-collapse:collapse;width:100%;min-width:680px}}
+table.nt-rank{{border-collapse:separate;border-spacing:0;width:100%;min-width:680px}}
 table.nt-rank thead th{{padding:8px 10px;border-bottom:1px solid var(--border);text-align:right;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);white-space:nowrap}}
 table.nt-rank thead th.nt-teamcol,table.nt-rank thead th.nt-rankcol{{text-align:left}}
 table.nt-rank th .nt-thbtn{{background:none;border:0;color:inherit;font:inherit;padding:0;cursor:pointer;white-space:nowrap}}
@@ -85,8 +85,12 @@ table.nt-rank tbody tr.nt-sel td{{background:var(--accent-soft)}}
 .nt-logo.nt-lg{{width:44px;height:44px;font-size:13px}}
 .nt-tid .nt-tn{{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}
 .nt-tright{{display:flex;align-items:center;gap:8px;flex:none}}
-.nt-abbr{{font-weight:800;font-size:11px;border-radius:6px;padding:4px 8px;letter-spacing:.04em}}
 .nt-gp{{font-size:11px;color:var(--text-muted);white-space:nowrap}}
+table.nt-rank thead th.nt-teamcol{{position:sticky;left:0;z-index:3;background:var(--bg)}}
+table.nt-rank tbody td.nt-teamcol{{position:sticky;left:0;z-index:1;background:var(--bg)}}
+table.nt-rank tbody tr:first-child td{{border-top:0}}
+table.nt-rank tbody tr:hover td.nt-teamcol{{background:var(--row)}}
+table.nt-rank tbody tr.nt-sel td.nt-teamcol{{background:var(--accent-soft)}}
 .nt-metric{{display:flex;align-items:center;gap:10px;justify-content:flex-end}}
 .nt-mbar{{flex:1;min-width:64px;max-width:170px}}
 .nt-mtrack{{position:relative;background:rgba(128,128,128,.18);border-radius:6px;height:10px;width:100%}}
@@ -135,6 +139,8 @@ table.nt-depth{{border-collapse:collapse;width:100%}}
 table.nt-depth th{{text-align:left;font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;padding:8px;border-bottom:1px solid var(--border)}}
 table.nt-depth th.nt-num,table.nt-depth td.nt-num{{text-align:right}}
 table.nt-depth td{{padding:9px 8px;border-top:1px solid var(--border);font-size:13px}}
+table.nt-depth>thead>tr>th:first-child,table.nt-depth>tbody>tr>td:first-child{{position:sticky;left:0;z-index:1;background:var(--card);border-right:1px solid var(--border)}}
+table.nt-depth>thead>tr>th:first-child{{z-index:2}}
 .nt-pname{{background:none;border:0;color:var(--accent);font:inherit;font-weight:600;cursor:pointer;padding:0;text-align:left;min-height:32px}}
 .nt-dno{{display:inline-flex;width:22px;height:22px;border-radius:50%;background:var(--card-soft);align-items:center;justify-content:center;font-size:11px;font-weight:700;margin-right:8px;color:var(--text-muted)}}
 .nt-inj{{display:inline-block;background:#8a5a00;color:#fff;font-size:10px;font-weight:800;border-radius:4px;padding:1px 5px;margin-left:6px}}
@@ -183,12 +189,6 @@ var DEF={{view:"{view}",sortKey:null,sortDir:null,team:"{team}",season:"{season}
 var state=Object.assign({{}},DEF);
 function esc(s){{return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");}}
 function teamColor(t){{return (t&&(t.color||""))||"var(--accent)";}}
-function fgFor(hex){{
-  var m=/^#([0-9a-f]{{6}})$/i.exec(hex||"");
-  if(!m)return "#fff";
-  var r=parseInt(m[1].slice(0,2),16),g=parseInt(m[1].slice(2,4),16),b=parseInt(m[1].slice(4,6),16);
-  return (0.299*r+0.587*g+0.114*b)>150?"#1a1a1a":"#fff";
-}}
 function rankBadge(rank,fg,bg){{
   if(!rank)return "";
   var style=(fg&&bg)?' style="background:'+bg+';color:'+fg+'"':"";
@@ -393,7 +393,7 @@ function renderTable(){{
     h+='<tr data-abbr="'+t.team+'" class="'+(state.team===t.team?"nt-sel":"")+'">'+
       '<td class="nt-rankcol">'+badge+'</td>'+
       '<td class="nt-teamcol"><span class="nt-tid"><span class="nt-tleft">'+logoHTML(t)+'<span class="nt-tn">'+esc(t.city)+' '+esc(t.name)+'</span></span>'+
-      '<span class="nt-tright"><span class="nt-abbr" style="background:'+esc(tc)+';color:'+fgFor(t.color)+'">'+t.team+'</span>'+
+      '<span class="nt-tright">'+
       '<span class="nt-gp">'+(t.games==null?"":t.games+" GP")+'</span></span></span></td>';
     cols.forEach(function(c){{
       var cell=cellFor(t,c);

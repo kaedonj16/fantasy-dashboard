@@ -933,6 +933,13 @@ def oline_rankings_page(season: Optional[int] = None):
         )
 
     body = f"""
+    <style>
+      .pub-oline-table thead th:nth-child(2),.pub-oline-table tbody td:nth-child(2){{
+        position:sticky;left:0;z-index:2;background:var(--card-soft);
+        border-right:1px solid #e5e7eb;
+      }}
+      .pub-oline-table thead th:nth-child(2){{z-index:3;}}
+    </style>
     <div class="static-page"><div class="static-card-page">
       <h1 class="static-hero-title">Offensive Line Rankings</h1>
       <div class="static-section">
@@ -946,7 +953,7 @@ def oline_rankings_page(season: Optional[int] = None):
       <div class="static-section">
         <div style="margin-bottom:10px;">{tabs}</div>
         <div style="overflow-x:auto;">
-        <table style="border-collapse:collapse;width:100%;font-size:14px;">
+        <table class="pub-oline-table" style="border-collapse:collapse;width:100%;font-size:14px;">
           <thead><tr style="text-align:left;color:#6b7280;font-size:12px;text-transform:uppercase;">
             <th style="padding:6px 10px;">#</th><th style="padding:6px 10px;">Team</th>
             <th style="padding:6px 10px;">Overall</th><th style="padding:6px 10px;">Pass</th>

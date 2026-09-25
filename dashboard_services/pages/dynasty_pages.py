@@ -187,7 +187,7 @@ def build_dynasty_value_chart_body(value_table: list[dict], as_of_date: str | No
       <thead>
         <tr>
           <th class="dvt-rank">#</th>
-          <th>Player</th>
+          <th class="dvt-player">Player</th>
           <th class="dvt-val" title="1QB Dynasty Value">1QB</th>
           <th class="dvt-val" title="Superflex Dynasty Value">SF</th>
           <th class="dvt-pos-rank">Pos Rank</th>
@@ -629,7 +629,7 @@ def build_rankings_hub_body(
       <thead>
         <tr>
           <th class="rnk-rank">#</th>
-          <th>Player</th>
+          <th class="rnk-player">Player</th>
           <th class="rnk-val">1QB</th>
           <th class="rnk-val">SF</th>
           <th class="rnk-age">Age</th>

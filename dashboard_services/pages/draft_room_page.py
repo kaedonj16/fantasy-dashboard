@@ -1513,6 +1513,28 @@ _DRAFT_ROOM_HTML = r"""
   .dd-ledger .num { font-variant-numeric:tabular-nums; }
   .dd-ledger tbody tr:hover { background:color-mix(in srgb,var(--accent) 5%,transparent); }
   .dd-ledger td.dd-plcell { white-space:normal; min-width:140px; }
+  /* Sticky identifying column (Player / Team): the leading Pick / # column scrolls under it. */
+  #drDdLedger thead th[data-k="name"],
+  #drDdLedger tbody td.dd-plcell,
+  .dd-ledger.dd-league thead th:nth-child(2),
+  .dd-ledger.dd-league tbody td.dd-plname,
+  .dd-ledger.dd-hist-table thead th:nth-child(2),
+  .dd-ledger.dd-hist-table tbody td.dd-plname {
+    position:sticky; left:0; z-index:2;
+    background:var(--card);
+    border-right:1px solid var(--border);
+  }
+  #drDdLedger thead th[data-k="name"],
+  .dd-ledger.dd-league thead th:nth-child(2),
+  .dd-ledger.dd-hist-table thead th:nth-child(2) { z-index:3; }
+  /* Row states, resolved opaque against the card so scrolled columns stay hidden. */
+  .dd-ledger tbody tr:hover td.dd-plcell,
+  .dd-ledger tbody tr:hover td.dd-plname {
+    background:color-mix(in srgb,var(--accent) 5%,var(--card));
+  }
+  .dd-ledger.dd-league tbody tr.dd-me td.dd-plname {
+    background:color-mix(in srgb,var(--accent) 9%,var(--card));
+  }
   .dd-plname { font-weight:600; }
   .dd-pl-sub { margin-top:3px; font-size:11px; font-weight:500; color:var(--text-muted); line-height:1.35; max-width:280px; }
   .dd-opp-sev { display:inline-block; margin-left:4px; font-size:10px; font-weight:700; letter-spacing:.02em; text-transform:uppercase; }

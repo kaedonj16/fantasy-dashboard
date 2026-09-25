@@ -258,6 +258,13 @@ def render_keeper_html(seed: dict) -> str:
   .kpr-tbl tbody td{{padding:10px 14px;border-bottom:1px solid color-mix(in srgb,var(--border) 55%,transparent);
     vertical-align:middle;font-variant-numeric:tabular-nums;white-space:nowrap;}}
   .kpr-tbl tbody tr:hover{{background:var(--card-soft,var(--bg-alt));}}
+  /* Sticky player column: the leading Player cell stays pinned during
+     horizontal scroll. Opaque backgrounds mirror the row states so the
+     scrolled cells slide under cleanly. */
+  .kpr-tbl thead th:first-child,.kpr-tbl tbody td:first-child{{position:sticky;left:0;z-index:2;
+    background:var(--card);border-right:1px solid var(--border);}}
+  .kpr-tbl thead th:first-child{{z-index:3;}}
+  .kpr-tbl tbody tr:hover td:first-child{{background:var(--card-soft,var(--bg-alt));}}
   /* Player cell: badge + name on one line, the editable round/years controls on
      a tidy second line instead of inputs jammed inline with the text. */
   .kpr-tbl td:first-child{{white-space:normal;}}

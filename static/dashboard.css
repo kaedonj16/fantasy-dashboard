@@ -41820,3 +41820,132 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
 .tour-cta-btn:hover { filter: brightness(1.06); }
 
 .home-pro-lead strong { color: var(--text); }
+
+/* ═══════════════════════════════════════════════════════════════════
+   Sticky identifying team/player columns (site-wide).
+   Each table's leading Team/Player column sticks at left:0 during
+   horizontal scroll; rank/pick utility columns scroll underneath.
+   ═══════════════════════════════════════════════════════════════════ */
+/* Sticky identifying Player column for the dynasty tables.
+   Only the Player column sticks at left:0; the rank (#) column scrolls
+   underneath it. Rows are transparent on the page background, so the
+   sticky cells use var(--bg) (theme-aware: #ffffff light / #020617 dark)
+   and replicate the translucent row-hover overlay. */
+#dvtTable th.dvt-player,
+#dvtTable td.dvt-name-cell,
+.rnk-table th.rnk-player,
+.rnk-table td.rnk-name-cell {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    background: var(--bg);
+    border-right: 1px solid var(--border);
+}
+#dvtTable th.dvt-player,
+.rnk-table th.rnk-player {
+    z-index: 3;
+}
+#dvtTable tr:hover td.dvt-name-cell,
+.rnk-table tr:hover td.rnk-name-cell {
+    background-color: var(--bg);
+    background-image: linear-gradient(rgba(255, 255, 255, .03), rgba(255, 255, 255, .03));
+}
+/* Sticky identifying Team column for the history standings table.
+   Only the Team column sticks at left:0; the Rank column scrolls
+   underneath it. Backgrounds replicate each existing row state:
+   body cells sit on var(--card), the header row is transparent over the
+   card (var(--card-soft)), and hover is #f8fbff. */
+.history-table th.hist-team,
+.history-table td.hist-team {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    background: var(--card);
+    border-right: 1px solid var(--border);
+}
+.history-table thead th.hist-team {
+    z-index: 3;
+    background: var(--card-soft);
+}
+.history-table tbody tr:hover td.hist-team {
+    background: #f8fbff;
+}
+/* Sticky leading Player column for the Front Office Report roster table
+   (table.for-table, built by dashboard_services/ai/front_office_report.py).
+   The full report renders in .for-modal (var(--card); dark theme #1a2535),
+   and thead th already carries background: var(--card-soft) from the base
+   rule below. This file is a drop-in for static/dashboard.css: append it
+   near the other .for-table rules (~line 41415) before the PR. Kept out of
+   dashboard.css during the sticky-columns branch to avoid edit collisions. */
+
+.for-table thead th:first-child,
+.for-table td.for-td-name {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  border-right: 1px solid var(--border);
+}
+.for-table thead th:first-child {
+  z-index: 3;
+  /* background comes from the existing .for-table th rule (var(--card-soft)) */
+}
+.for-table td.for-td-name {
+  background: var(--card);
+}
+[data-theme="dark"] .for-table td.for-td-name {
+  background: #1a2535; /* matches .for-modal dark background */
+}
+/* ── Playoff odds: sticky Team column ──────────────────────────────────────────
+   Staging file. The parent merges this block into static/dashboard.css
+   (appended after the existing playoff-odds section, ~line 9991) so the
+   rules win specificity ties. Do not edit static/dashboard.css directly
+   from parallel agents. */
+
+/* Desktop scroll container. The mobile media query already gives .po-wrap
+   overflow-x:auto; on desktop this is a no-op unless the table overflows. */
+.po-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+table.po-table th.po-team,
+table.po-table td.po-team {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    background: var(--card);
+    border-right: 1px solid var(--border);
+}
+
+table.po-table thead th.po-team {
+    z-index: 3;
+}
+
+/* Clickable-row hover paints the whole row via tr.team-clickable:hover td;
+   keep the sticky Team cell in sync (accent-soft is solid in both themes). */
+table.po-table tr.team-clickable:hover td.po-team {
+    background: var(--accent-soft);
+}
+/* ── Redzone box-score sheet: sticky Player column ─────────────────────────────
+   Staging file. The parent merges this block into static/dashboard.css
+   (appended after the existing box-score section, ~line 36303) so the
+   rules win specificity ties. Do not edit static/dashboard.css directly
+   from parallel agents.
+
+   The sheet's tables are transparent-rowed with no zebra/hover states, so
+   the sticky cells only need the sheet background. --rz-card resolves to
+   var(--card). */
+
+/* Header cell: the Player th carries no class, so target first-child. */
+table.rz-bs-table thead th:first-child,
+table.rz-bs-table td.rz-bs-pname {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    background: var(--rz-card);
+    border-right: 1px solid var(--rz-border);
+}
+
+table.rz-bs-table thead th:first-child {
+    z-index: 3;
+}

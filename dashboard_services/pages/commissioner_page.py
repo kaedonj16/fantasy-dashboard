@@ -611,6 +611,11 @@ def build_commissioner_body(ctx):
   .lh-parity-fair span {{ position:absolute; top:-15px; left:50%; transform:translateX(-50%); font-size:10px; font-weight:700; color:var(--muted); white-space:nowrap; }}
   .lh-pdot {{ position:absolute; top:26px; width:14px; height:14px; border-radius:50%; transform:translateX(-50%); border:2px solid var(--card); box-shadow:0 1px 3px rgba(0,0,0,.28); }}
   .lh-parity-scale {{ display:flex; justify-content:space-between; font-size:10.5px; color:var(--muted); margin:2px 4px 12px; }}
+  .comm-team-table thead th:first-child, .comm-team-table tbody td:first-child {{
+    position:sticky; left:0; z-index:2; background:var(--card);
+    border-right:1px solid var(--border);
+  }}
+  .comm-team-table thead th:first-child {{ z-index:3; }}
 </style>
 <div class="card lh-card">
   <div class="lh-hero2">
@@ -687,7 +692,7 @@ def build_commissioner_body(ctx):
 <div class="card" style="overflow:auto;margin-bottom:20px;">
   <div class="card-header"><h3>Team Overview</h3></div>
   {parity_html}
-  <table style="width:100%;border-collapse:collapse;">
+  <table class="comm-team-table" style="width:100%;border-collapse:collapse;">
     <thead><tr style="border-bottom:2px solid var(--border);">
       <th style="padding:10px 14px;text-align:left;font-size:12px;color:var(--muted);">TEAM</th>
       <th style="padding:10px;text-align:center;font-size:12px;color:var(--muted);">RECORD</th>
