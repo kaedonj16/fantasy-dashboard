@@ -2020,11 +2020,40 @@ def render_weekly_wrapped_overlay(ctx: dict, week) -> str:
                                    footer_label=f"WEEK {week}")
 
 
+def _week_is_done(ctx: dict, season, week) -> bool:
+    """True only when the NFL week is fully complete.
+
+    Weekly Wrapped is a recap of a finished week: a single Thursday final
+    must not surface it. A week counts as done when the league is in
+    season-complete/offseason mode, or when Sleeper's NFL state has advanced
+    past it. Fails open (returns True) when the state can't be determined so
+    a Sleeper hiccup never hides already-good decks.
+    """
+    try:
+        ctx = ctx or {}
+        if ctx.get("season_complete") or ctx.get("offseason_mode"):
+            return True
+        from dashboard_services.api import get_nfl_state
+        state = get_nfl_state() or {}
+        state_season = str(state.get("season") or "")
+        if state_season and state_season != str(season):
+            # Past season: every week is done. Future season: no data anyway.
+            return state_season > str(season)
+        current_week = int(state.get("week") or 0)
+        if current_week < 1:
+            return True
+        return int(week) < current_week
+    except Exception:
+        return True
+
+
 def weekly_wrapped_url(ctx: dict, platform: str, season, league_id: str, week) -> str:
     """Cheap (no boxscore) availability check for the Weekly Wrapped launcher:
-    the lazy endpoint URL when the week has enough finalized data for a >= 3
-    slide deck, else ''. Used by the hub render and the week-change API so the
-    button only appears for weeks with completed games."""
+    the lazy endpoint URL when the week is fully complete AND has enough
+    finalized data for a >= 3 slide deck, else ''. Used by the hub render and
+    the week-change API so the button only appears for finished weeks."""
+    if not _week_is_done(ctx, season, week):
+        return ""
     try:
         league = ctx.get("league") or {}
         league_name = league.get("name") or "League"
