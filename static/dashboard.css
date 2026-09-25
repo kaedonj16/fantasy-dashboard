@@ -13885,6 +13885,84 @@ a.signed-home-league:hover {
     padding: 0 12px 10px;
 }
 
+/* Sunday drama: lead-change moment banner (live weeks) and archived turning
+   points (completed weeks), rendered between the win bar and the body. */
+.m-drama-flip {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 12px 10px;
+    padding: 8px 12px;
+    border-radius: 10px;
+    background: rgba(34, 197, 94, 0.12);
+    border: 1px solid rgba(34, 197, 94, 0.35);
+    font-size: 12px;
+}
+
+.m-drama-flip-tag {
+    font-size: 10px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: #16a34a;
+    white-space: nowrap;
+}
+
+.m-drama-flip-time {
+    font-weight: 800;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.m-drama-flip-text {
+    font-weight: 700;
+    color: var(--text);
+}
+
+.m-drama-history {
+    margin: 0 12px 10px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: var(--surface, rgba(148, 163, 184, 0.08));
+    border: 1px solid var(--border);
+}
+
+.m-drama-history-title {
+    font-size: 10px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+}
+
+.m-drama-tp-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    font-size: 12px;
+    color: var(--text);
+}
+
+.m-drama-tp-time {
+    font-weight: 800;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+}
+
+.m-drama-tp-wp {
+    color: var(--text-muted);
+}
+
+.m-drama-tp-score {
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+}
+
 .m-slide--compact .m-head {
     margin-bottom: 0;
 }
@@ -37480,6 +37558,22 @@ table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: point
     }
     100% {
         box-shadow: inset 0 0 0 0 rgba(34, 197, 94, 0);
+    }
+}
+
+/* Sunday drama lead change: the banner pops in with a green flash, reusing the
+   generic brMoPop reveal so the base (unplayed) state stays visible for
+   no-JS and reduced-motion users. */
+.br-mo-play[data-br-moment="leadchange"] {
+    animation: brMoPop .5s var(--ease-spring) .05s both, brLeadFlash 1.4s ease .05s both;
+}
+
+@keyframes brLeadFlash {
+    0%, 100% {
+        box-shadow: 0 0 0 0 rgba(34, 197, 94, 0);
+    }
+    30% {
+        box-shadow: 0 0 22px 2px rgba(34, 197, 94, .45);
     }
 }
 
