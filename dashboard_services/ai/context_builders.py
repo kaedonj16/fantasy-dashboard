@@ -1560,79 +1560,110 @@ def build_trade_suggestions_context(
         if match_score == 0:
             continue
 
-        # Find specific player targets (partner's surplus positions that viewer needs)
-        targets_they_have = []
-        for pos in partner_surplus:
-            if pos in viewer_needs:
-                top = _roster_top_players(r, pos, exclude_ids=viewer_player_ids)[:2]
-                targets_they_have.extend(t for t in top if _target_tier_ok(t))
+        # ---- Logical trade construction: cheapest sufficient, not best-for-best.
+        # A GM fills a need at the lowest cost: the cheapest partner player who
+        # actually solves the problem, paid for with the cheapest fair package
+        # assembled from bench surplus. The starting lineup is never gutted to
+        # fund a trade: only players beyond the dedicated starting slots move.
+        def _startable(players: list, pos: str) -> list:
+            bar = _ng_starter_thr.get(pos, 350)
+            return [pl for pl in players if pl.get("value", 0) >= bar]
 
-        # Surplus-liquidation path: viewer has surplus to give but no explicit need.
-        # Partner can offer any high-value player at a position viewer is weak/neutral at.
+        def _bench_pool(positions) -> list:
+            """Startable players beyond the starting slots, cheapest first."""
+            pool: list = []
+            for pos in positions:
+                slots = _ng_depth_floor.get(pos, 1)
+                starters = _startable(_roster_top_players(roster, pos), pos)
+                n_sendable = max(0, len(starters) - slots)
+                pool.extend(sorted(starters, key=lambda pl: pl["value"])[:n_sendable])
+            return sorted(pool, key=lambda pl: pl["value"])
+
+        def _fairest_package(pool: list, target_val: float, max_pieces: int = 3):
+            """Cheapest-first prefixes; keep the one closest to fair value."""
+            best: list = []
+            best_fair = 0.0
+            running = 0.0
+            for i, pl in enumerate(pool):
+                if i >= max_pieces:
+                    break
+                running += pl["value"]
+                if running <= 0 or target_val <= 0:
+                    continue
+                fair = min(running, target_val) / max(running, target_val)
+                if fair > best_fair:
+                    best_fair, best = fair, pool[: i + 1]
+            return best, round(best_fair, 3)
+
         is_package_trade = False
-        if not targets_they_have and mutual_surplus_need:
-            is_package_trade = True
-            # Positions viewer isn't in surplus at, prioritized by weakest rank first
+        deal = None  # (fairness, target, package)
+
+        # Path 1: fill a real starter-gap need. Most urgent need first; at each,
+        # take the cheapest partner starter that a fair bench package can buy.
+        # Never default to their best player when a cheaper one solves it.
+        need_pool = _bench_pool([p for p in viewer_surplus if p in partner_needs])
+        if need_pool:
+            for pos in viewer_needs:
+                if pos not in partner_surplus:
+                    continue
+                cands = sorted(
+                    (
+                        t
+                        for t in _startable(
+                            _roster_top_players(r, pos, exclude_ids=viewer_player_ids), pos
+                        )
+                        if _target_tier_ok(t)
+                    ),
+                    key=lambda t: t["value"],
+                )
+                for cand in cands:
+                    package, fair = _fairest_package(need_pool, cand["value"])
+                    if fair >= 0.80:
+                        deal = (fair, cand, package)
+                        break
+                if deal is not None:
+                    break
+
+        # Path 2: surplus liquidation. No gap need, but the viewer holds surplus
+        # the partner can use: target the cheapest genuine upgrade at a weaker
+        # position (better than what the viewer already starts), funded from
+        # bench surplus across all surplus positions.
+        if deal is None and mutual_surplus_need:
             weaker_positions = sorted(
                 [pos for pos in _SCARCITY_POSITIONS if pos not in viewer_surplus],
                 key=lambda pos: viewer_ranks.get(pos, n_teams), reverse=True,
             )
             if not weaker_positions:
                 weaker_positions = list(_SCARCITY_POSITIONS)
-            for pos in weaker_positions:
-                top = _roster_top_players(r, pos, exclude_ids=viewer_player_ids)[:1]
-                targets_they_have.extend(p for p in top if p.get("value", 0) >= 350 and _target_tier_ok(p))
-            targets_they_have.sort(key=lambda x: x["value"], reverse=True)
-            targets_they_have = targets_they_have[:1]
+            pool = _bench_pool(list(viewer_surplus))
+            if pool:
+                upgrade_cands: list = []
+                for pos in weaker_positions:
+                    vbest = _pt_viewer_best.get(pos)
+                    viewer_best_val = vbest[1] if vbest else 0.0
+                    ups = [
+                        t
+                        for t in _roster_top_players(r, pos, exclude_ids=viewer_player_ids)
+                        if t.get("value", 0) >= 350
+                        and _target_tier_ok(t)
+                        and t["value"] > viewer_best_val
+                    ]
+                    if ups:
+                        upgrade_cands.append(min(ups, key=lambda t: t["value"]))
+                for cand in sorted(upgrade_cands, key=lambda t: t["value"]):
+                    package, fair = _fairest_package(pool, cand["value"])
+                    if fair >= 0.80:
+                        deal = (fair, cand, package)
+                        is_package_trade = True
+                        break
 
-        # Find what viewer could send (viewer's surplus that partner needs).
-        # Surplus positions: keep ≥1 (they have a starter and can trade depth).
-        # Non-surplus positions: keep ≥2 (don't gut a weak spot).
-        # Last resort: allow sending 1 if getting that position back.
-        getting_positions = {str(p.get("position", "")).upper() for p in targets_they_have}
-        partner_player_ids = {str(p.get("id")) for p in targets_they_have}
-        targets_viewer_sends = []
-        for pos in viewer_surplus:
-            if pos not in partner_needs:
-                continue
-            pos_depth = sum(
-                1 for pid in (roster.get("players") or [])
-                if str(model_value_lookup.get(str(pid), {}).get("position", "")).upper() == pos
-            )
-            min_keep = 1  # surplus positions can trade down to 1 starter
-            max_sendable = max(0, pos_depth - min_keep)
-            if max_sendable == 0:
-                if pos in getting_positions:
-                    max_sendable = 1
-                else:
-                    continue
-            top = _roster_top_players(roster, pos, exclude_ids=partner_player_ids)[:min(2, max_sendable)]
-            targets_viewer_sends.extend(top)
-
-        # Package trade fallback: if viewer has a surplus at multiple positions and needs
-        # to package them to match the target's value, pull from all surplus positions.
-        if is_package_trade and not targets_viewer_sends and targets_they_have:
-            target_val = targets_they_have[0]["value"]
-            all_surplus_sendable = []
-            for pos in viewer_surplus:
-                pos_depth = sum(
-                    1 for pid in (roster.get("players") or [])
-                    if str(model_value_lookup.get(str(pid), {}).get("position", "")).upper() == pos
-                )
-                if pos_depth >= 1:
-                    top = _roster_top_players(roster, pos)
-                    # Send 2nd player onward at surplus positions (keep 1 starter)
-                    all_surplus_sendable.extend(top[1:2] if pos_depth > 1 else top[:1])
-            all_surplus_sendable.sort(key=lambda x: x["value"], reverse=True)
-            # Build package until combined value lands in a fair band around the
-            # target (~92%), so consolidation offers are realistic rather than
-            # obvious underpays.
-            running = 0.0
-            for p in all_surplus_sendable:
-                if running >= target_val * 0.92:
-                    break
-                targets_viewer_sends.append(p)
-                running += p["value"]
+        # No logical, fair deal exists with this partner: skip rather than
+        # force a bad trade (avoids TBD suggestions and fleece-level packages).
+        if deal is None:
+            continue
+        _deal_fair, _deal_target, _deal_package = deal
+        targets_they_have = [_deal_target]
+        targets_viewer_sends = _deal_package
 
         # Only include partners where both sides have named players (avoids TBD suggestions)
         if not targets_they_have or not targets_viewer_sends:
@@ -1651,14 +1682,14 @@ def build_trade_suggestions_context(
 
         # Value fairness: how even the two sides are (1.0 = perfectly balanced).
         # A suggestion is only realistic if BOTH managers would plausibly ink it,
-        # so drop fleece-level mismatches and rank the rest by how fair they are
-        # rather than by positional fit alone. A modest premium is normal when
-        # consolidating depth into one stud, so the floor is lenient (0.62), but
-        # a lopsided robbery never gets surfaced.
+        # so anything more than ~25% lopsided in either direction never gets
+        # surfaced: an overpay is bad advice, an underpay is a fantasy the
+        # partner would reject. A modest premium is normal when consolidating
+        # depth into one stud, so the band is 0.80 rather than 1.00.
         _hi = max(value_you_get, value_you_give)
         _lo = min(value_you_get, value_you_give)
         fairness = round(_lo / _hi, 3) if _hi > 0 else 0.0
-        if fairness < 0.62:
+        if fairness < 0.80:
             continue
 
         # Composite ranking: positional fit still matters most, but a fair,

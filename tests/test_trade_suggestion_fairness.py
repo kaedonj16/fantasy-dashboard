@@ -1,10 +1,11 @@
 """Guards the ranking layers in build_trade_suggestions_context.
 
 The suggestion engine used to rank trade partners purely by positional fit. It
-now also (1) drops fleece-level value mismatches and ranks the rest by a fairness
-composite, and (2) nudges the ranking by how well the acquisition's age profile
-fits the viewer's competitive window (contenders → proven, rebuilders → youth).
-These tests pin both behaviors.
+now also (1) drops value mismatches more than ~25% lopsided in either direction
+and ranks the rest by a fairness composite, (2) builds consolidation packages by
+keeping the fairest prefix instead of overshooting, and (3) nudges the ranking
+by how well the acquisition's age profile fits the viewer's competitive window
+(contenders → proven, rebuilders → youth). These tests pin all three behaviors.
 
 Pure functions only (the heavy GM-context dependency is stubbed), so this runs
 in the base suite without Flask/pandas.
@@ -93,7 +94,7 @@ def test_surfaced_partners_are_not_fleece_level(monkeypatch):
     assert partners, "expected at least one realistic trade partner"
     # Every surfaced deal clears the fairness floor and carries the ranking fields.
     for p in partners:
-        assert p["fairness"] >= 0.62
+        assert p["fairness"] >= 0.80
         assert "suggestion_score" in p
 
 
@@ -286,3 +287,199 @@ def test_ceiling_blocks_the_elite_for_a_flex_only_viewer_end_to_end(monkeypatch)
     monkeypatch.setattr(pt, "consolidate_target_allowed", lambda a, b: True)
     off = cb.build_trade_suggestions_context(_build_ceiling_ctx(), "1")
     assert "Elite WR" in _acquire_names(off), "without the ceiling the elite WR is a fair, real target"
+
+
+# ── Overpay packages are never suggested ──────────────────────────────────────
+
+def _build_overpay_ctx():
+    """The Gibbs-for-two-WR1s shape: the viewer holds two elite WRs (~720 each,
+    Lamb/London analogues) plus a third startable WR, and two startable RBs (so
+    RB is no starter-gap need, only a ceiling want). The partner holds an elite
+    RB (1055, the Gibbs analogue) plus RB depth, and a starter hole at WR. The
+    only package the viewer can offer is both elite WRs (1435) for the 1055 RB:
+    a 36% overpay at 0.735 fairness. It must not be suggested."""
+    mvt = [
+        _mv("v_wr1", "Elite WR1", "WR", 720), _mv("v_wr2", "Elite WR2", "WR", 715),
+        _mv("v_wr3", "V WR3", "WR", 500),
+        _mv("v_rb1", "V RB1", "RB", 770), _mv("v_rb2", "V RB2", "RB", 500),
+        _mv("v_qb1", "V QB1", "QB", 1500), _mv("v_te1", "V TE1", "TE", 1000),
+    ]
+    rosters = [{"roster_id": "1",
+                "players": ["v_wr1", "v_wr2", "v_wr3", "v_rb1", "v_rb2", "v_qb1", "v_te1"]}]
+    roster_map = {"1": "Viewer"}
+
+    # Partner: elite-RB surplus, starter hole at WR, sub-bar QB/TE so the RB is
+    # the only package-trade candidate.
+    mvt += [
+        _mv("p_rb1", "Stud RB", "RB", 1055), _mv("p_rb2", "P RB2", "RB", 600),
+        _mv("p_rb3", "P RB3", "RB", 500), _mv("p_wr1", "P WR1", "WR", 300),
+        _mv("p_qb1", "P QB1", "QB", 300), _mv("p_te1", "P TE1", "TE", 300),
+    ]
+    rosters.append({"roster_id": "2",
+                    "players": ["p_rb1", "p_rb2", "p_rb3", "p_wr1", "p_qb1", "p_te1"]})
+    roster_map["2"] = "Team 2"
+
+    for i in range(3, 11):  # balanced filler: no needs, no surpluses
+        mvt += [_mv(f"f{i}_rb1", f"F{i} RB1", "RB", 1500), _mv(f"f{i}_rb2", f"F{i} RB2", "RB", 1200),
+                _mv(f"f{i}_wr1", f"F{i} WR1", "WR", 1500), _mv(f"f{i}_wr2", f"F{i} WR2", "WR", 1300),
+                _mv(f"f{i}_qb1", f"F{i} QB1", "QB", 1100), _mv(f"f{i}_te1", f"F{i} TE1", "TE", 1000)]
+        rosters.append({"roster_id": str(i),
+                        "players": [f"f{i}_rb1", f"f{i}_rb2", f"f{i}_wr1", f"f{i}_wr2",
+                                    f"f{i}_qb1", f"f{i}_te1"]})
+        roster_map[str(i)] = f"Team {i}"
+
+    return {
+        "rosters": rosters, "model_value_table": mvt, "roster_map": roster_map,
+        "picks_by_roster": {},
+        "standings_map": {r["roster_id"]: {"wins": 5, "losses": 5} for r in rosters},
+        "rookie_rankings": [], "league_type": "1qb",
+        "roster_positions": _LINEUP,
+    }
+
+
+def test_two_wr1s_for_one_rb1_overpay_is_not_suggested(monkeypatch):
+    """Regression: the engine once suggested giving two ~720 WRs (1435) for a
+    1055 RB (0.735 fairness, a 36% overpay). Anything past ~25% lopsided must
+    never surface, so this partner is dropped, not suggested."""
+    monkeypatch.setattr(
+        cb, "build_team_gm_context",
+        lambda ctx, rid: {"team_name": "Viewer", "direction": "balanced"},
+    )
+    # Neutralize the consolidation ceiling so the test isolates the fairness
+    # gate (the function re-imports it per call, so patching the source binds).
+    import utils.player_tiers as pt
+    monkeypatch.setattr(pt, "consolidate_target_allowed", lambda a, b: True)
+
+    res = cb.build_trade_suggestions_context(_build_overpay_ctx(), "1")
+    assert res is not None
+    names = [t["name"] for p in res["top_partners"] for t in (p.get("targets_they_have") or [])]
+    assert "Stud RB" not in names, (
+        "a 36%-overpay package (1435 of WR value for a 1055 RB) must not be suggested"
+    )
+    assert "Team 2" not in [p["team_name"] for p in res["top_partners"]]
+# ---------------------------------------------------------------------------
+# Cheapest-sufficient construction: the engine must not default to
+# "their best player for your best players". It targets the cheapest partner
+# player who actually solves the need and pays with the cheapest fair package
+# from bench surplus, never gutting the starting lineup.
+# ---------------------------------------------------------------------------
+
+def _build_cheapest_ctx():
+    """Viewer needs an RB (one 300-value body). Partner has RB surplus with a
+    1500 RB1 and a 700 RB2; viewer has WR surplus (1000/900/800). Fillers push
+    the 1500 RB out of elite range so both RBs are tier-allowed; the engine
+    must still CHOOSE the cheaper one."""
+    mvt = [
+        _mv("v_wr1", "Viewer WR1", "WR", 1000),
+        _mv("v_wr2", "Viewer WR2", "WR", 900),
+        _mv("v_wr3", "Viewer WR3", "WR", 800),
+        _mv("v_rb1", "Viewer RB1", "RB", 300),
+        _mv("v_qb1", "Viewer QB1", "QB", 1500),
+        _mv("v_te1", "Viewer TE1", "TE", 1000),
+        _mv("t2_rb1", "Partner RB1", "RB", 1500),
+        _mv("t2_rb2", "Partner RB2", "RB", 700),
+        _mv("t2_wr1", "Partner WR1", "WR", 400),
+        _mv("t2_qb1", "Partner QB1", "QB", 1100),
+        _mv("t2_te1", "Partner TE1", "TE", 1000),
+    ]
+    for i, val in enumerate([2100, 2000, 1900, 1800, 1700, 1600]):
+        mvt.append(_mv(f"frb{i}", f"Filler RB{i}", "RB", val))
+    rosters = [
+        {"roster_id": "1",
+         "players": ["v_wr1", "v_wr2", "v_wr3", "v_rb1", "v_qb1", "v_te1"]},
+        {"roster_id": "2",
+         "players": ["t2_rb1", "t2_rb2", "t2_wr1", "t2_qb1", "t2_te1"]},
+    ]
+    return {
+        "rosters": rosters,
+        "model_value_table": mvt,
+        "roster_map": {"1": "Viewer", "2": "Partner"},
+        "picks_by_roster": {},
+        "standings_map": {"1": {"wins": 5, "losses": 5},
+                           "2": {"wins": 5, "losses": 5}},
+        "rookie_rankings": [],
+        "league_type": "1qb",
+        "roster_positions": _LINEUP,
+    }
+
+
+def _run_cheapest(monkeypatch):
+    monkeypatch.setattr(
+        cb, "build_team_gm_context",
+        lambda ctx, rid: {"team_name": "Viewer", "direction": "balanced"},
+    )
+    return cb.build_trade_suggestions_context(_build_cheapest_ctx(), "1")
+
+
+def test_engine_targets_cheapest_need_filler_not_their_best(monkeypatch):
+    res = _run_cheapest(monkeypatch)
+    partners = res["top_partners"]
+    assert len(partners) >= 1, "expected a partner suggestion"
+    got = [t["name"] for t in partners[0]["targets_they_have"]]
+    assert got == ["Partner RB2"], f"should target the 700 RB2, not the 1500 RB1: {got}"
+    assert partners[0]["fairness"] >= 0.80
+
+
+def test_engine_pays_from_bench_never_guts_starters(monkeypatch):
+    res = _run_cheapest(monkeypatch)
+    give_names = [t["name"] for t in res["top_partners"][0]["targets_viewer_sends"]]
+    assert give_names == ["Viewer WR3"], f"should offer only the bench WR3: {give_names}"
+
+
+def _build_package_cheapest_ctx():
+    """No gap needs. Viewer has WR surplus; partner has two TE upgrades
+    (900 and 650) over the viewer's 500 TE."""
+    mvt = [
+        _mv("v_wr1", "Viewer WR1", "WR", 1000),
+        _mv("v_wr2", "Viewer WR2", "WR", 900),
+        _mv("v_wr3", "Viewer WR3", "WR", 800),
+        _mv("v_rb1", "Viewer RB1", "RB", 700),
+        _mv("v_rb2", "Viewer RB2", "RB", 650),
+        _mv("v_qb1", "Viewer QB1", "QB", 1500),
+        _mv("v_te1", "Viewer TE1", "TE", 500),
+        _mv("v_te2", "Viewer TE2", "TE", 200),
+        _mv("t2_te1", "Partner TE1", "TE", 900),
+        _mv("t2_te2", "Partner TE2", "TE", 650),
+        _mv("t2_wr1", "Partner WR1", "WR", 400),
+        _mv("t2_qb1", "Partner QB1", "QB", 1100),
+        _mv("t2_rb1", "Partner RB1", "RB", 700),
+        _mv("t2_rb2", "Partner RB2", "RB", 650),
+    ]
+    rosters = [
+        {"roster_id": "1", "players": ["v_wr1", "v_wr2", "v_wr3", "v_rb1",
+                                      "v_rb2", "v_qb1", "v_te1", "v_te2"]},
+        {"roster_id": "2", "players": ["t2_te1", "t2_te2", "t2_wr1", "t2_qb1",
+                                      "t2_rb1", "t2_rb2"]},
+    ]
+    return {
+        "rosters": rosters,
+        "model_value_table": mvt,
+        "roster_map": {"1": "Viewer", "2": "Partner"},
+        "picks_by_roster": {},
+        "standings_map": {"1": {"wins": 5, "losses": 5},
+                           "2": {"wins": 5, "losses": 5}},
+        "rookie_rankings": [],
+        "league_type": "1qb",
+        "roster_positions": _LINEUP,
+    }
+
+
+def _run_package_cheapest(monkeypatch):
+    monkeypatch.setattr(
+        cb, "build_team_gm_context",
+        lambda ctx, rid: {"team_name": "Viewer", "direction": "balanced"},
+    )
+    return cb.build_trade_suggestions_context(_build_package_cheapest_ctx(), "1")
+
+
+def test_package_path_targets_cheapest_genuine_upgrade(monkeypatch):
+    res = _run_package_cheapest(monkeypatch)
+    partners = res["top_partners"]
+    assert len(partners) >= 1, "expected a package suggestion"
+    p = partners[0]
+    got = [t["name"] for t in p["targets_they_have"]]
+    assert got == ["Partner TE2"], f"should target the 650 TE2, not the 900 TE1: {got}"
+    give_names = [t["name"] for t in p["targets_viewer_sends"]]
+    assert give_names == ["Viewer WR3"], f"should fund from the bench WR3: {give_names}"
+    assert p["fairness"] >= 0.80
+    assert p["is_package_trade"] is True
