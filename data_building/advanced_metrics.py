@@ -3241,8 +3241,14 @@ def get_all_weekly_metrics_bulk(
     week_start: Optional[int] = None,
     week_end: Optional[int] = None,
     position: Optional[str] = None,
+    limit: int = 5000,
+    offset: int = 0,
 ) -> Dict[str, Any]:
     """All _WEEKLY_METRICS aggregated per player for a week range, in one query.
+
+    ``limit`` is hard-capped at 5000 rows so an unscoped call can never
+    serialize the whole multi-season table. ``offset`` pages through results
+    in stable ``player_id`` order.
 
     Returns {
         "byId": { player_id: { metric_key: value | None, ..., "weeks": N,
@@ -3250,6 +3256,14 @@ def get_all_weekly_metrics_bulk(
         "keys": [ordered list of metric keys],
     }
     """
+    try:
+        limit = max(1, min(int(limit), 5000))
+    except (TypeError, ValueError):
+        limit = 5000
+    try:
+        offset = max(0, int(offset))
+    except (TypeError, ValueError):
+        offset = 0
     where_parts: list = []
     params: list = []
     if season:
@@ -3284,8 +3298,10 @@ def get_all_weekly_metrics_bulk(
             {where_clause}
             GROUP BY player_id, position
             HAVING COUNT(*) >= 1
+            ORDER BY player_id
+            LIMIT %s OFFSET %s
             """,
-            tuple(params),
+            tuple(params) + (limit, offset),
         ).fetchall()
 
     try:
