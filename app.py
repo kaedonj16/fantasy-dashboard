@@ -23921,6 +23921,143 @@ def _compute_team_offense_ranks(season: int) -> dict:
     return payload
 
 
+# ── Defense-vs-position matchup table ─────────────────────────────────────────
+_DEF_VS_POS_CACHE: dict = {}
+_DEF_VS_POS_TTL = 3600  # 1 hour
+
+
+def _def_vs_pos_disk_path(season: int) -> str:
+    return os.path.join(CACHE_DIR, f"defense_vs_position_{int(season)}.json")
+
+
+def _read_def_vs_pos_disk(season: int):
+    """Return (computed_at, fingerprint, payload) from the on-disk table cache.
+
+    Same cross-worker pattern as the team offense ranks: the container
+    filesystem is shared by all gunicorn workers, so one worker's compute
+    serves the rest. Never raises.
+    """
+    try:
+        path = _def_vs_pos_disk_path(season)
+        if not os.path.exists(path):
+            return None
+        with open(path, encoding="utf-8") as handle:
+            blob = json.load(handle) or {}
+        computed_at = float(blob.get("computed_at") or 0)
+        fingerprint = blob.get("fingerprint") or ""
+        payload = blob.get("payload")
+        if not isinstance(payload, dict) or not computed_at:
+            return None
+        if time.time() - computed_at >= _DEF_VS_POS_TTL:
+            return None
+        return computed_at, fingerprint, payload
+    except Exception:
+        logger.debug("defense-vs-position disk cache read failed", exc_info=True)
+        return None
+
+
+def _write_def_vs_pos_disk(season: int, fingerprint: str, payload: dict) -> None:
+    """Persist a computed table for sibling workers. Atomic. Never raises."""
+    try:
+        path = _def_vs_pos_disk_path(season)
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as handle:
+            json.dump(
+                {"computed_at": time.time(), "fingerprint": fingerprint,
+                 "payload": payload},
+                handle,
+            )
+        os.replace(tmp, path)
+    except Exception:
+        logger.debug("defense-vs-position disk cache write failed", exc_info=True)
+
+
+def _def_vs_pos_week_stats(season: int, week: int) -> dict:
+    """{player_id: stat_row} for one Sleeper weekly file; {} when missing."""
+    try:
+        path = os.path.join(
+            CACHE_DIR, "sleeper_stats",
+            f"sleeper_stats_s{int(season)}_w{int(week)}.json",
+        )
+        if not os.path.exists(path):
+            return {}
+        with open(path, encoding="utf-8") as handle:
+            data = json.load(handle)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        logger.debug("defense-vs-position week stats read failed", exc_info=True)
+        return {}
+
+
+def _compute_defense_vs_position(season: int) -> dict:
+    """Per-team per-position fantasy points/efficiency allowed, cached.
+
+    Memory cache (1h), then the cross-worker disk cache (1h). A disk entry
+    is only reused when its fingerprint still matches the current set of
+    completed games, so a game going final invalidates it immediately.
+    Never raises: failures degrade to an empty teams table.
+    """
+    season = int(season)
+    now = time.time()
+    try:
+        cached = _DEF_VS_POS_CACHE.get(season)
+        if cached and now - cached[0] < _DEF_VS_POS_TTL:
+            return cached[1]
+
+        from utils.defense_vs_position import (
+            build_defense_vs_position,
+            completed_defense_games,
+            table_fingerprint,
+        )
+
+        try:
+            schedule_rows = _nflverse_team_games_rows()
+        except Exception:
+            schedule_rows = []
+        try:
+            completed = completed_defense_games(schedule_rows, season)
+            fingerprint = table_fingerprint(completed)
+        except Exception:
+            completed, fingerprint = [], ""
+
+        disk = _read_def_vs_pos_disk(season)
+        if disk and fingerprint and disk[1] == fingerprint:
+            _DEF_VS_POS_CACHE[season] = (disk[0], disk[2])
+            return disk[2]
+
+        # Best-effort: make sure completed-week files exist (cooldown-guarded).
+        # Missing files are simply skipped by the aggregation below.
+        try:
+            _ensure_sleeper_week_files(season)
+        except Exception:
+            pass
+        try:
+            players_index = get_players_index_global() or {}
+        except Exception:
+            players_index = {}
+
+        table = build_defense_vs_position(
+            season,
+            schedule_rows,
+            lambda w: _def_vs_pos_week_stats(season, w),
+            players_index,
+        )
+        payload = {
+            "season": season,
+            "computed_at": now,
+            "fingerprint": table.get("fingerprint") or fingerprint,
+            "completed_games": table.get("completed_games") or 0,
+            "teams": table.get("teams") or {},
+        }
+        _DEF_VS_POS_CACHE[season] = (now, payload)
+        _write_def_vs_pos_disk(season, payload["fingerprint"], payload)
+        return payload
+    except Exception:
+        logger.debug("defense-vs-position compute failed", exc_info=True)
+        return {"season": season, "computed_at": now, "fingerprint": "",
+                "completed_games": 0, "teams": {}}
+
+
 def _get_pfr_snap_counts_cached(season: int) -> dict:
     """PFR snap counts via nfl_data_py, cached in-memory and on disk."""
     now = time.time()
@@ -24213,6 +24350,36 @@ def api_player_team(player_id: str):
             logger.debug("team schedule build failed for %s %s", team, season, exc_info=True)
             schedule = []
 
+        # Defense-vs-position for the upcoming matchup (best-effort): the
+        # next non-final game on the same schedule the Team tab renders,
+        # looked up in the defense-vs-position table for this payload's
+        # season. Rendered by the modal as
+        # "vs DAL: 24.1 FPTS/G allowed to WRs (8th easiest)".
+        def_vs_pos_matchup = None
+        try:
+            _next_game = next(
+                (g for g in (schedule or [])
+                 if isinstance(g, dict) and not g.get("bye")
+                 and str(g.get("status") or "") != "final"),
+                None,
+            )
+            _next_opp = _canon_team_abbr(str((_next_game or {}).get("opponent") or ""))
+            if _next_opp:
+                _dvp = _compute_defense_vs_position(int(season)) or {}
+                _prow = ((_dvp.get("teams") or {}).get(_next_opp) or {}).get(position) or {}
+                if _prow.get("rank"):
+                    def_vs_pos_matchup = {
+                        "opponent": _next_opp,
+                        "pos": position,
+                        "fpts_ppr_pg": _prow.get("fpts_ppr_pg"),
+                        "eff": _prow.get("eff"),
+                        "eff_label": _prow.get("eff_label"),
+                        "rank": _prow.get("rank"),
+                        "total": _prow.get("total"),
+                    }
+        except Exception:
+            logger.debug("def-vs-pos matchup failed for team tab", exc_info=True)
+
         _payload = {
             "available": True,
             "team": team,
@@ -24253,6 +24420,7 @@ def api_player_team(player_id: str):
             "depth_chart": depth_chart,
             "oline": _oline_for_player(int(stats_season), team, position),
             "schedule": schedule,
+            "def_vs_pos_matchup": def_vs_pos_matchup,
         }
         _TEAM_PAYLOAD_CACHE[_payload_key] = (time.time(), _payload)
         return jsonify(_payload)
@@ -24438,6 +24606,37 @@ def api_nfl_team_rankings():
         return jsonify(clean_nan_for_json(payload))
     except Exception as e:
         logger.exception("[api_nfl_team_rankings] error")
+        return _api_err("Request failed", e)
+
+
+@app.route("/api/defense-vs-position")
+def api_defense_vs_position():
+    """Public, league-free: fantasy points allowed per game by each NFL
+    defense, broken down by position (QB/RB/WR/TE).
+
+    Query: ?season=. Points come from Sleeper's precomputed weekly
+    pts_ppr / pts_half_ppr / pts_std, so all three scoring formats are
+    served. Ranks are 1 = most allowed = easiest matchup. Only games with
+    final scores count; a team's games are attributed individually, so a
+    Thursday final is included while the rest of the week is pending.
+    """
+    try:
+        season = int(request.args.get("season") or 0)
+        valid = _list_team_tab_seasons(season)
+        if season not in valid:
+            season = valid[0] if valid else season
+        table = _compute_defense_vs_position(season)
+        payload = {
+            "season": table.get("season", season),
+            "scoring": "sleeper_ppr_half_std",
+            "completed_games": table.get("completed_games") or 0,
+            "positions": ["QB", "RB", "WR", "TE"],
+            "rank_note": "rank 1 = most fantasy points allowed = easiest matchup",
+            "teams": table.get("teams") or {},
+        }
+        return jsonify(clean_nan_for_json(payload))
+    except Exception as e:
+        logger.exception("[api_defense_vs_position] error")
         return _api_err("Request failed", e)
 
 

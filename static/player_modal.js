@@ -2958,6 +2958,21 @@ function _pmBuildTeamHTML(data) {
   const nextContext = contextGame
     ? `Next: ${contextGame.ha === '@' ? '@ ' : 'vs '}${_pmEsc(contextGame.opponent_name || contextGame.opponent || '')}${contextGame.kickoff ? ' · ' + _pmEsc(contextGame.kickoff) : ''}`
     : (bye || `${summarySeason} ${summaryMode}`);
+  // Defense-vs-position for the upcoming matchup, served by the team-tab
+  // payload (best-effort; hidden when the opponent has no completed games).
+  const _dvp = data.def_vs_pos_matchup || null;
+  let dvpLine = '';
+  if (_dvp && _dvp.rank && _dvp.total) {
+    const _pct = Number(_dvp.rank) / Number(_dvp.total);
+    const _tier = _pct <= 0.25 ? 1 : _pct <= 0.50 ? 2 : _pct <= 0.75 ? 3 : 4;
+    const _posWord = { QB: 'QBs', RB: 'RBs', WR: 'WRs', TE: 'TEs' }[String(_dvp.pos || '').toUpperCase()] || 'players';
+    const _pts = _dvp.fpts_ppr_pg != null && isFinite(Number(_dvp.fpts_ppr_pg)) ? Number(_dvp.fpts_ppr_pg).toFixed(1) : '--';
+    const _effTip = (_dvp.eff != null && _dvp.eff_label) ? ` Also allowing ${_dvp.eff} ${_dvp.eff_label}.` : '';
+    const _tip = 'Fantasy points allowed per game, completed games only.' + _effTip;
+    dvpLine = `<div class="pm-team-dvp" title="${_pmEsc(_tip)}">`
+      + `vs ${_pmEsc(_dvp.opponent)}: <b>${_pts}</b> FPTS/G allowed to ${_posWord} `
+      + `<span class="game-log-matchup mt${_tier}">${_pmTeamOrdSup(Number(_dvp.rank))} easiest</span></div>`;
+  }
   const roleSummary = focusRole ? '<div class="pm-role-summary">' + roomCols.map(c => {
     let v = focusRole[c.key]; if (v == null && c.fallback) v = focusRole[c.fallback];
     const suffix = c.key.includes('share') && v != null ? '%' : '';
@@ -3069,7 +3084,7 @@ function _pmBuildTeamHTML(data) {
         <div class="pm-team-header-text">
           <div class="pm-team-name">${data.team_name || team}</div>
           <div class="pm-team-meta">${posLine}</div>
-          <div class="pm-team-next">${nextContext}</div>
+          <div class="pm-team-next">${nextContext}</div>${dvpLine}
         </div>
         ${seasonPills}
       </div>
