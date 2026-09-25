@@ -30,6 +30,7 @@ from dashboard_services.ai.cache import (
 from dashboard_services.ai.client import AIRateLimitError, AIUnavailableError
 from dashboard_services.ai.context_builders import (
     _ctx_is_sf,
+    _record_pf_pa_for_roster,
     build_model_value_lookup,
     build_team_gm_context,
     build_trade_suggestions_context,
@@ -52,7 +53,7 @@ from utils.roster_strength import STARTER_THRESHOLD
 
 logger = logging.getLogger(__name__)
 
-CACHE_VERSION = "v1"
+CACHE_VERSION = "v2"
 _SKILL_POS = ("QB", "RB", "WR", "TE")
 
 
@@ -269,8 +270,36 @@ def _trade_targets(ctx: dict, viewer_roster_id: str, scoring_type: str) -> list[
             f"/{platform}/{season}/{league_id}/trade"
             f"?a={get_ids}&b={give_ids}"
         )
+        # Partner acceptance context: why they'd say yes. The suggestion
+        # engine already pays from bench surplus at positions the partner
+        # needs, so the overlap below is usually non-empty; the computed
+        # line keeps the AI's note honest about the partner's motivation.
+        rid = str(p.get("roster_id") or "")
+        partner_record = ""
+        try:
+            partner_record = _record_pf_pa_for_roster(ctx, rid)[0] or ""
+        except Exception:
+            logger.debug("[front-office] partner record failed", exc_info=True)
+        partner_needs = [str(n).upper() for n in (p.get("partner_needs") or [])]
+        give_positions = [
+            str(g.get("position") or "").upper() for g in gives
+        ]
+        need_overlap = [pos for pos in give_positions if pos in partner_needs]
+        value_get = safe_float(p.get("value_you_get"))
+        value_give = safe_float(p.get("value_you_give"))
+        if need_overlap:
+            why_they_say_yes = (
+                f"Fills their {'/'.join(dict.fromkeys(need_overlap))} need."
+            )
+        elif value_give > value_get:
+            why_they_say_yes = "They win the value math."
+        else:
+            why_they_say_yes = "Straight value swap at a spot they can use."
         targets.append({
             "partner": _safe_str(p.get("team_name") or ""),
+            "partner_record": partner_record,
+            "partner_needs": partner_needs,
+            "why_they_say_yes": why_they_say_yes,
             "gets": [
                 {
                     "id": str(g.get("id")),
@@ -361,6 +390,186 @@ def _cut_candidates(roster_rows: list[dict]) -> list[dict]:
     return skill[-3:][::-1] if skill else []
 
 
+def _trade_deadline_info(ctx: dict) -> dict | None:
+    """Real trade-deadline countdown from league settings.
+
+    Sleeper keeps ``trade_deadline`` (week number) on league.settings; ESPN
+    maps tradeSettings.deadlineDate onto ``trade_deadline_ts``. Returns
+    {"deadline_week", "weeks_remaining"} or None when unknown/passed.
+    """
+    settings: dict = {}
+    try:
+        settings.update(ctx.get("league_settings") or {})
+        settings.update((ctx.get("league") or {}).get("settings") or {})
+    except Exception:
+        return None
+    try:
+        current_week = int(ctx.get("current_week") or ctx.get("week") or 0)
+    except (TypeError, ValueError):
+        return None
+    try:
+        deadline = int(settings.get("trade_deadline") or 0)
+    except (TypeError, ValueError):
+        deadline = 0
+    if 0 < deadline < 30:
+        if current_week > deadline:
+            return None  # deadline passed; the window is closed
+        return {"deadline_week": deadline, "weeks_remaining": deadline - current_week}
+    try:
+        deadline_ts = int(settings.get("trade_deadline_ts") or 0)
+    except (TypeError, ValueError):
+        deadline_ts = 0
+    if deadline_ts > 0:
+        import time as _time
+
+        remaining = deadline_ts - _time.time()
+        if remaining < 0:
+            return None
+        weeks = int(remaining // (7 * 86400))
+        return {
+            "deadline_week": max(1, current_week + weeks),
+            "weeks_remaining": weeks,
+        }
+    return None
+
+
+def _urgent_needs(ctx: dict, roster: dict, roster_rows: list[dict],
+                  week: int | None) -> list[dict]:
+    """Starters who won't be available soon: serious injury, or a bye in the
+    next two weeks. These holes jump the queue for trade/waiver priority."""
+    try:
+        from utils.lineup_issues import SERIOUS_INJURY_STATUSES
+    except Exception:
+        SERIOUS_INJURY_STATUSES = set()
+    bye_by_team: dict[str, int] = {}
+    try:
+        from utils.utils import path_teams_index, read_json_cached
+
+        teams = read_json_cached(path_teams_index()) or {}
+        for abv, meta in teams.items():
+            if not isinstance(meta, dict) or meta.get("byeWeek") is None:
+                continue
+            try:
+                bye_by_team[str(abv).strip().upper()] = int(meta["byeWeek"])
+            except (TypeError, ValueError):
+                continue
+    except Exception:
+        logger.debug("[front-office] bye lookup failed", exc_info=True)
+    rows_by_id = {str(r.get("id")): r for r in roster_rows}
+    urgent: list[dict] = []
+    for pid in roster.get("starters") or []:
+        row = rows_by_id.get(str(pid))
+        if not row:
+            continue
+        injury = str(row.get("injury") or "").strip().upper()
+        if injury and injury in SERIOUS_INJURY_STATUSES:
+            urgent.append({
+                "position": row.get("position"),
+                "player": row.get("name"),
+                "reason": "injury",
+                "detail": f"{row.get('name')} is {injury}",
+            })
+            continue
+        bye = bye_by_team.get(str(row.get("team") or "").strip().upper())
+        if bye and week and bye in (week + 1, week + 2):
+            urgent.append({
+                "position": row.get("position"),
+                "player": row.get("name"),
+                "reason": "bye",
+                "detail": f"{row.get('name')} on bye week {bye}",
+            })
+    return urgent
+
+
+def _apply_urgency(trade_targets: list[dict], waiver_targets: list[dict],
+                   urgent_needs: list[dict]) -> None:
+    """Flag + bubble up targets that fill an urgent (bye/injury) hole."""
+    urgent_by_pos: dict[str, str] = {}
+    for u in urgent_needs:
+        pos = str(u.get("position") or "").upper()
+        if pos and pos not in urgent_by_pos:
+            urgent_by_pos[pos] = str(u.get("detail") or "")
+    if not urgent_by_pos:
+        return
+    for t in trade_targets:
+        positions = {
+            str(g.get("position") or "").upper() for g in (t.get("gets") or [])
+        }
+        hit = next((p for p in positions if p in urgent_by_pos), "")
+        if hit:
+            t["urgent"] = True
+            t["urgent_reason"] = urgent_by_pos[hit]
+    trade_targets.sort(key=lambda t: (0 if t.get("urgent") else 1))
+    for w in waiver_targets:
+        pos = str(w.get("position") or "").upper()
+        if pos in urgent_by_pos:
+            w["urgent"] = True
+            w["urgent_reason"] = urgent_by_pos[pos]
+    waiver_targets.sort(key=lambda w: (0 if w.get("urgent") else 1))
+
+
+def _annotate_waiver_alternatives(trade_targets: list[dict],
+                                 waiver_targets: list[dict]) -> None:
+    """Don't trade for what the wire can fix: if a free agent at the same
+    position is worth at least half the trade target, flag it so the note
+    can say 'add X for free instead'."""
+    for t in trade_targets:
+        gets = t.get("gets") or []
+        if not gets:
+            continue
+        primary = gets[0]
+        pos = str(primary.get("position") or "").upper()
+        val = safe_float(primary.get("value"))
+        if val <= 0:
+            continue
+        alt = next(
+            (
+                w for w in waiver_targets
+                if str(w.get("position") or "").upper() == pos
+                and safe_float(w.get("value")) >= 0.5 * val
+            ),
+            None,
+        )
+        if alt:
+            t["waiver_alternative"] = {
+                "name": _safe_str(alt.get("name")),
+                "value": alt.get("value"),
+            }
+
+
+def _drop_add_pairs(cut_candidates: list[dict],
+                    waiver_targets: list[dict]) -> list[dict]:
+    """Pair each waiver add with its cleanest drop: same-position cut first,
+    else the cheapest remaining cut. This is the actual move, not two lists."""
+    pairs: list[dict] = []
+    used: set[str] = set()
+    for w in waiver_targets or []:
+        cands = [c for c in cut_candidates if str(c.get("id")) not in used]
+        if not cands:
+            break
+        same_pos = [
+            c for c in cands
+            if str(c.get("position") or "").upper()
+            == str(w.get("position") or "").upper()
+        ]
+        pool = same_pos or cands
+        drop = min(pool, key=lambda c: safe_float(c.get("value")))
+        used.add(str(drop.get("id")))
+        pairs.append({
+            "drop": {
+                "name": _safe_str(drop.get("name")),
+                "position": _safe_str(drop.get("position")),
+                "value": drop.get("value"),
+            },
+            "add": {
+                "name": _safe_str(w.get("name")),
+                "position": _safe_str(w.get("position")),
+                "value": w.get("value"),
+            },
+        })
+    return pairs
+
+
 def build_front_office_data(ctx: dict, viewer_roster_id: str) -> dict | None:
     """Assemble every computed input the report needs. Returns None when the
     roster cannot be resolved."""
@@ -392,6 +601,14 @@ def build_front_office_data(ctx: dict, viewer_roster_id: str) -> dict | None:
 
     last_week = _last_week_result(ctx, viewer_roster_id)
     this_week = _this_week_matchup(ctx, viewer_roster_id)
+    week = team_ctx.get("week")
+    trade_targets = _trade_targets(ctx, viewer_roster_id, scoring_type)
+    waiver_targets = _waiver_targets(ctx, viewer_roster_id, model_value_lookup,
+                                     scoring_type, weakest)
+    cut_candidates = _cut_candidates(roster_rows)
+    urgent_needs = _urgent_needs(ctx, roster, roster_rows, week)
+    _apply_urgency(trade_targets, waiver_targets, urgent_needs)
+    _annotate_waiver_alternatives(trade_targets, waiver_targets)
     data = {
         "team_name": team_ctx.get("team_name"),
         "record": team_ctx.get("record"),
@@ -412,9 +629,12 @@ def build_front_office_data(ctx: dict, viewer_roster_id: str) -> dict | None:
         "fallers_7d": _movers(roster_rows, rising=False),
         "last_week": last_week,
         "this_week": this_week,
-        "trade_targets": _trade_targets(ctx, viewer_roster_id, scoring_type),
-        "waiver_targets": _waiver_targets(ctx, viewer_roster_id, model_value_lookup, scoring_type, weakest),
-        "cut_candidates": _cut_candidates(roster_rows),
+        "trade_targets": trade_targets,
+        "waiver_targets": waiver_targets,
+        "cut_candidates": cut_candidates,
+        "drop_add_pairs": _drop_add_pairs(cut_candidates, waiver_targets),
+        "urgent_needs": urgent_needs,
+        "trade_deadline": _trade_deadline_info(ctx),
         "draft_grade": team_ctx.get("draft_grade"),
     }
     if scoring_type != "redraft":
@@ -702,6 +922,29 @@ def _trade_targets_html(targets: list[dict], trade_notes: dict) -> str:
         )
         note = html.escape(str(trade_notes.get(get["id"]) or ""))
         note_html = f"<div class='for-target-note'>{note}</div>" if note else ""
+        why = t.get("why_they_say_yes") or ""
+        partner_rec = t.get("partner_record") or ""
+        why_html = ""
+        if why:
+            why_html = (
+                "<div class='for-target-why'><span class='for-lbl-inline'>Why they'd say yes</span> "
+                f"{html.escape(why)}"
+                + (f" <span class='for-muted'>({html.escape(partner_rec)})</span>" if partner_rec else "")
+                + "</div>"
+            )
+        urgent_html = ""
+        if t.get("urgent"):
+            urgent_html = (
+                "<div class='for-target-urgent'><span class='for-lbl-inline'>Urgent</span> "
+                f"{html.escape(str(t.get('urgent_reason') or ''))}</div>"
+            )
+        alt = t.get("waiver_alternative") or {}
+        alt_html = ""
+        if alt.get("name"):
+            alt_html = (
+                "<div class='for-target-alt'><span class='for-lbl-inline'>Free alternative</span> "
+                f"{html.escape(str(alt['name']))} is on waivers.</div>"
+            )
         cards.append(
             "<div class='for-target-card'>"
             f"<div class='for-target-top'><div class='for-target-head'><strong>{html.escape(get['name'])}</strong> "
@@ -710,6 +953,9 @@ def _trade_targets_html(targets: list[dict], trade_notes: dict) -> str:
             + f" · value {get['value']:g}</span></div>"
             f"<span class='for-target-from'>From {html.escape(t['partner'])}</span></div>"
             f"<div class='for-target-give'><span class='for-lbl-inline'>You give</span> {give_names}</div>"
+            f"{urgent_html}"
+            f"{why_html}"
+            f"{alt_html}"
             f"{note_html}"
             f"<a class='for-analyze' href='{html.escape(t['analyzer_url'], quote=True)}'>Analyze this trade →</a>"
             "</div>"
@@ -727,12 +973,18 @@ def _waivers_cuts_html(data: dict, ai: dict) -> str:
         note = html.escape(str(wnotes.get(w["id"]) or ""))
         rank = f" · {html.escape(w['pos_rank_label'])}" if w.get("pos_rank_label") else ""
         note_html = f"<div class='for-pick-note'>{note}</div>" if note else ""
+        urgent_html = ""
+        if w.get("urgent"):
+            urgent_html = (
+                f" <span class='for-lbl-inline'>Urgent:</span> "
+                f"<span class='for-muted'>{html.escape(str(w.get('urgent_reason') or ''))}</span>"
+            )
         w_items.append(
             "<li class='for-pick'>"
             "<span class='for-pick-badge for-add'>+</span>"
             f"<div class='for-pick-body'><strong>{html.escape(w['name'])}</strong> "
             f"<span class='for-muted'>{html.escape(w['position'])}, {html.escape(w['team'])}{rank}</span>"
-            f"{note_html}</div></li>"
+            f"{urgent_html}{note_html}</div></li>"
         )
     c_items = []
     for c in data.get("cut_candidates") or []:
@@ -742,14 +994,31 @@ def _waivers_cuts_html(data: dict, ai: dict) -> str:
             f"<div class='for-pick-body'><strong>{html.escape(c['name'])}</strong> "
             f"<span class='for-muted'>{html.escape(c['position'])} · value {c['value']:g}</span></div></li>"
         )
-    if not w_items and not c_items:
+    pair_items = []
+    for p in data.get("drop_add_pairs") or []:
+        drop = p.get("drop") or {}
+        add = p.get("add") or {}
+        pair_items.append(
+            "<li class='for-pick'>"
+            f"<div class='for-pick-body'><strong>Drop {html.escape(str(drop.get('name')))}</strong> "
+            f"<span class='for-muted'>({html.escape(str(drop.get('position')))})</span>"
+            f" → <strong>Add {html.escape(str(add.get('name')))}</strong> "
+            f"<span class='for-muted'>({html.escape(str(add.get('position')))})</span></div></li>"
+        )
+    if not w_items and not c_items and not pair_items:
         return ""
     out = "<div class='for-sec'><div class='for-sec-title'>Waivers and cuts</div><div class='for-two-col'>"
     if w_items:
         out += f"<div><div class='for-sub'>Add</div><ul class='for-picklist'>{''.join(w_items)}</ul></div>"
     if c_items:
         out += f"<div><div class='for-sub'>Cut candidates</div><ul class='for-picklist'>{''.join(c_items)}</ul></div>"
-    return out + "</div></div>"
+    out += "</div>"
+    if pair_items:
+        out += (
+            "<div class='for-sub'>Paired moves</div>"
+            f"<ul class='for-picklist'>{''.join(pair_items)}</ul>"
+        )
+    return out + "</div>"
 
 
 def render_front_office_report_html(data: dict, ai: dict) -> str:
@@ -777,7 +1046,7 @@ def render_front_office_report_html(data: dict, ai: dict) -> str:
         )
     posture_html = f"<p class='for-posture'>{posture}</p>" if posture else ""
     stamp = _verdict_stamp(verdict)
-    chips_html = _hero_chips_html(week, rec, pct)
+    chips_html = _hero_chips_html(week, rec, pct, data.get("trade_deadline"))
 
     return f"""
     <div class='for-report'>
@@ -800,8 +1069,9 @@ def render_front_office_report_html(data: dict, ai: dict) -> str:
     """
 
 
-def _hero_chips_html(week, rec, pct) -> str:
-    """Small stat pills under the team name: week, record, playoff odds."""
+def _hero_chips_html(week, rec, pct, trade_deadline=None) -> str:
+    """Small stat pills under the team name: week, record, playoff odds,
+    trade deadline countdown."""
     chips = []
     if week:
         chips.append(f"<span class='for-chip'>Week {html.escape(str(week))}</span>")
@@ -814,6 +1084,19 @@ def _hero_chips_html(week, rec, pct) -> str:
             )
         except (TypeError, ValueError):
             pass
+    if isinstance(trade_deadline, dict):
+        try:
+            weeks_left = int(trade_deadline.get("weeks_remaining"))
+        except (TypeError, ValueError):
+            weeks_left = None
+        if weeks_left is not None and weeks_left >= 0:
+            label = (
+                "Trade deadline: this week" if weeks_left == 0
+                else f"Trade deadline: {weeks_left} wk" if weeks_left == 1
+                else f"Trade deadline: {weeks_left} wks"
+            )
+            hot = " for-chip-hot" if weeks_left <= 3 else ""
+            chips.append(f"<span class='for-chip{hot}'>{html.escape(label)}</span>")
     if not chips:
         return ""
     return f"<div class='for-hero-chips'>{''.join(chips)}</div>"

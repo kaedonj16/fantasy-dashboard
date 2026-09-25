@@ -41,6 +41,7 @@ _stub("dashboard_services.ai.client", AIRateLimitError=_E, AIUnavailableError=_E
 _stub(
     "dashboard_services.ai.context_builders",
     _ctx_is_sf=lambda *a: False,
+    _record_pf_pa_for_roster=lambda *a: ("", 0.0, 0.0),
     build_model_value_lookup=lambda *a: {},
     build_team_gm_context=lambda *a: {},
     build_trade_suggestions_context=lambda *a: {},
