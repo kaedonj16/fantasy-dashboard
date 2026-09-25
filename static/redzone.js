@@ -163,6 +163,15 @@
   // on the Top Scorers rows and position-leader tiles).
   root.addEventListener('click', function(e) {
     var target = e.target;
+    // Box score button on the filtered-game board. Delegated because the board
+    // re-renders on every poll; the sheet itself mounts on document.body so a
+    // re-render never destroys an open sheet.
+    var bsBtn = target && target.closest ? target.closest('[data-boxscore-game]') : null;
+    if (bsBtn && root.contains(bsBtn)) {
+      _openBoxScore(bsBtn.getAttribute('data-boxscore-game'));
+      e.stopPropagation();
+      return;
+    }
     // Walk up to find element with data-pid
     while (target && target !== root) {
       if (target.dataset && target.dataset.pid) {
@@ -2541,6 +2550,10 @@
       + team(away, aPts, awayPoss, 'away')
       + mid
       + team(home, hPts, homePoss, 'home')
+      // Box score lives on the filtered-game board, so it only exists when the
+      // user is filtered to one NFL game (this function returns '' otherwise).
+      + '<button type="button" class="rz-boxscore-btn" data-boxscore-game="' + _esc(_filters.nfl) + '">'
+      + '<span class="rz-boxscore-ico" aria-hidden="true">▦</span>Box score</button>'
       + '</div>';
   }
 
@@ -4819,5 +4832,195 @@
   }
   _timer = setInterval(_tick, 1000);
   // Re-evaluate hero-strip arrows when the viewport width changes.
+  // ── Game box score sheet ──────────────────────────────────────────
+  // Opened from the Box score button on the filtered-game board. Mounts on
+  // document.body (outside #rz-root) so board re-renders on every poll never
+  // destroy an open sheet. One fetch per open against
+  // /api/player-team-boxscore, which returns both teams; the toggle only swaps
+  // which side's tables render. Skill positions only (QB/RB/WR/TE).
+  var _boxSheet = null; // { gameId, team, data } | { gameId, error }
+  var _boxSheetEls = null;
+  var _BOX_SKILL_POS = { QB: 'Quarterbacks', RB: 'Running backs', WR: 'Wide receivers', TE: 'Tight ends' };
+
+  function _boxStatusLine(d) {
+    if (!d || d.started === false) return 'Not started';
+    if (d.status === 'final') return 'Final';
+    if (d.status === 'live') {
+      var q = d.quarter ? 'Q' + d.quarter : '';
+      var bits = [q, d.clock].filter(Boolean).join(' · ');
+      return bits || 'Live';
+    }
+    return d.status || '';
+  }
+
+  function _boxSheetBodyHtml() {
+    var s = _boxSheet;
+    if (!s) return '';
+    if (s.error) {
+      return '<div class="rz-bs-empty"><span class="rz-bs-empty-ico">▦</span>'
+        + '<p>Could not load the box score.</p>'
+        + '<button type="button" class="rz-bs-retry" data-box-retry="1">Try again</button></div>';
+    }
+    var d = s.data || {};
+    if (d.available === false) {
+      return '<div class="rz-bs-empty"><span class="rz-bs-empty-ico">▦</span><p>'
+        + _esc(d.error || 'Box score unavailable.') + '</p></div>';
+    }
+    if (d.started === false) {
+      return '<div class="rz-bs-empty"><span class="rz-bs-empty-ico">▦</span><p>'
+        + _esc(d.message || 'Box score available once the game begins.') + '</p></div>';
+    }
+    var away = d.away || {}, home = d.home || {};
+    var teams = d.teams || {};
+    var team = s.team && teams[s.team] ? s.team : (away.team || home.team || Object.keys(teams)[0] || '');
+    s.team = team;
+    var t = teams[team] || { groups: [] };
+    var toggle = '<div class="rz-bs-teams" role="group" aria-label="Team">'
+      + [away.team, home.team].filter(Boolean).map(function(abv) {
+          return '<button type="button" class="rz-bs-team' + (abv === team ? ' is-on' : '') + '"'
+            + ' data-box-team="' + _esc(abv) + '" aria-pressed="' + (abv === team ? 'true' : 'false') + '">'
+            + _esc(abv) + '</button>';
+        }).join('')
+      + '</div>';
+    var groups = (t.groups || []).filter(function(gr) {
+      return Object.prototype.hasOwnProperty.call(_BOX_SKILL_POS, gr.pos);
+    });
+    var tables = groups.map(function(gr) {
+      var cols = gr.columns || [];
+      var head = '<tr><th scope="col"><span class="rz-sr">Player</span></th>'
+        + cols.map(function(c) { return '<th scope="col">' + _esc(c.label || c.key) + '</th>'; }).join('')
+        + '</tr>';
+      var rows = (gr.players || []).map(function(p) {
+        var cells = cols.map(function(c) {
+          var v = (p.cells || {})[c.key];
+          return '<td>' + (v === null || v === undefined || v === '' ? '–' : _esc(String(v))) + '</td>';
+        }).join('');
+        return '<tr data-pid="' + _esc(p.id || '') + '" data-pname="' + _esc(p.name || '') + '">'
+          + '<td class="rz-bs-pname">' + _esc(p.name || '–') + '</td>' + cells + '</tr>';
+      }).join('');
+      if (!rows) return '';
+      return '<div class="rz-bs-ptitle">' + _esc(_BOX_SKILL_POS[gr.pos] || gr.pos) + '</div>'
+        + '<div class="rz-bs-tscroll"><table class="rz-bs-table"><thead>' + head
+        + '</thead><tbody>' + rows + '</tbody></table></div>';
+    }).join('');
+    if (!tables) {
+      tables = '<div class="rz-bs-empty"><p>No player stats yet.</p></div>';
+    }
+    return '<div class="rz-bs-sec">Player stats</div>' + toggle + tables;
+  }
+
+  function _renderBoxSheet() {
+    if (!_boxSheet || !_boxSheetEls) return;
+    var s = _boxSheet, d = s.error ? null : (s.data || {});
+    var title = 'Box score', sub = 'Loading…';
+    if (d) {
+      var away = d.away || {}, home = d.home || {};
+      if (away.team || home.team) title = (away.team || '–') + ' @ ' + (home.team || '–');
+      var st = _boxStatusLine(d);
+      var score = '';
+      if (d.started !== false && away.pts !== null && away.pts !== undefined
+          && home.pts !== null && home.pts !== undefined) {
+        score = ' · ' + away.pts + '–' + home.pts;
+      }
+      sub = st + score;
+    } else if (s.error) {
+      sub = 'Unavailable';
+    }
+    _boxSheetEls.title.textContent = title;
+    _boxSheetEls.sub.textContent = sub;
+    _boxSheetEls.body.innerHTML = _boxSheetBodyHtml();
+  }
+
+  function _closeBoxScore() {
+    if (_boxSheetEls) {
+      if (_boxSheetEls.backdrop.parentNode) _boxSheetEls.backdrop.parentNode.removeChild(_boxSheetEls.backdrop);
+      if (_boxSheetEls.sheet.parentNode) _boxSheetEls.sheet.parentNode.removeChild(_boxSheetEls.sheet);
+      _boxSheetEls = null;
+    }
+    _boxSheet = null;
+    document.removeEventListener('keydown', _boxSheetKey);
+    document.body.style.overflow = '';
+  }
+
+  function _boxSheetKey(e) {
+    if (e && e.key === 'Escape') _closeBoxScore();
+  }
+
+  function _openBoxScore(gameId) {
+    if (!gameId) return;
+    _closeBoxScore();
+    var backdrop = document.createElement('div');
+    backdrop.className = 'rz-bs-backdrop';
+    var sheet = document.createElement('div');
+    sheet.className = 'rz-bs-sheet';
+    sheet.setAttribute('role', 'dialog');
+    sheet.setAttribute('aria-modal', 'true');
+    sheet.setAttribute('aria-label', 'Game box score');
+    sheet.innerHTML =
+      '<div class="rz-bs-handle" aria-hidden="true"></div>'
+      + '<div class="rz-bs-head"><div><div class="rz-bs-title">Box score</div>'
+      + '<div class="rz-bs-sub">Loading…</div></div>'
+      + '<button type="button" class="rz-bs-x" data-box-close="1" aria-label="Close box score">✕</button></div>'
+      + '<div class="rz-bs-body"><div class="rz-bs-empty"><p>Loading…</p></div></div>';
+    document.body.appendChild(backdrop);
+    document.body.appendChild(sheet);
+    _boxSheetEls = {
+      backdrop: backdrop, sheet: sheet,
+      title: sheet.querySelector('.rz-bs-title'),
+      sub: sheet.querySelector('.rz-bs-sub'),
+      body: sheet.querySelector('.rz-bs-body'),
+    };
+    _boxSheet = { gameId: gameId, team: '', data: null };
+    // Animate in after mount so the transition runs.
+    requestAnimationFrame(function() {
+      requestAnimationFrame(function() {
+        backdrop.classList.add('open');
+        sheet.classList.add('open');
+      });
+    });
+    document.body.style.overflow = 'hidden';
+    document.addEventListener('keydown', _boxSheetKey);
+    backdrop.addEventListener('click', _closeBoxScore);
+    sheet.addEventListener('click', function(e) {
+      var t = e.target;
+      var closest = function(sel) { return t && t.closest ? t.closest(sel) : null; };
+      if (closest('[data-box-close]')) { _closeBoxScore(); return; }
+      var retry = closest('[data-box-retry]');
+      if (retry) { _openBoxScore(gameId); return; }
+      var teamBtn = closest('[data-box-team]');
+      if (teamBtn) {
+        _boxSheet.team = teamBtn.getAttribute('data-box-team');
+        _renderBoxSheet();
+        return;
+      }
+      // Player rows tap through to the player modal, mirroring the page's own
+      // data-pid delegation (the sheet lives outside #rz-root, so it wires its own).
+      var pr = closest('[data-pid]');
+      if (pr && window.openPlayerModal) {
+        var pid = pr.getAttribute('data-pid');
+        if (pid && pid !== '0') window.openPlayerModal(pid, pr.getAttribute('data-pname') || '', { tab: 'live' });
+      }
+    });
+    var qs = '?game_id=' + encodeURIComponent(gameId);
+    fetch('/api/player-team-boxscore' + qs)
+      .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(function(data) {
+        if (!_boxSheet || _boxSheet.gameId !== gameId) return; // user moved on
+        var d = data || {};
+        var vt = d.view_team;
+        var teams = d.teams || {};
+        _boxSheet.team = (vt && teams[vt]) ? vt : ((d.away || {}).team || '');
+        _boxSheet.data = d;
+        _renderBoxSheet();
+      })
+      .catch(function() {
+        if (!_boxSheet || _boxSheet.gameId !== gameId) return;
+        _boxSheet.error = true;
+        _renderBoxSheet();
+      });
+  }
+
+  // ── End game box score sheet ──
+
   window.addEventListener('resize', _updateHeroArrows);
 })();
