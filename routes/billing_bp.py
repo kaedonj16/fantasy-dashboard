@@ -507,12 +507,15 @@ _FREE_FEATURES = [
 ]
 
 
-def _pricing_body() -> str:
+def _pricing_body(league_id: str | None = None, platform: str = "sleeper") -> str:
     from flask import session as _session
     plan      = request.args.get("plan", "")
     success   = request.args.get("success") == "1"
     canceled  = request.args.get("canceled") == "1"
     return_to = request.args.get("return_to", "").strip()
+    platform  = (platform or "").strip().lower()
+    if platform not in _SUPPORTED_PLATFORMS:
+        platform = "sleeper"
 
     if success:
         # Build a proper destination from Stripe session metadata if return_to is missing
@@ -566,6 +569,7 @@ def _pricing_body() -> str:
           <p id="sub-invite-copied" style="display:none;margin:8px 0 0;font-size:12px;color:#16a34a;">Invite link copied.</p>
         </div>
         <a id="sub-return" href="{safe_return or '/pricing'}" style="display:none;margin-top:8px;padding:12px 28px;border-radius:9px;background:linear-gradient(135deg,#122d4b,#2563eb);color:white;font-weight:700;text-decoration:none;font-size:15px;">Continue to dashboard</a>
+        <button type="button" id="sub-portal" style="display:none;margin-top:8px;padding:12px 28px;border-radius:9px;border:1px solid var(--border);background:var(--card);color:var(--text);font-weight:700;font-size:15px;cursor:pointer;">Manage subscription</button>
       </div>
     </div>
     <script>
@@ -641,6 +645,34 @@ def _pricing_body() -> str:
         var btn = document.getElementById('sub-return');
         var showedInvite = showInvitePanel();
         if (btn) btn.style.display = 'inline-block';
+        var portalBtn = document.getElementById('sub-portal');
+        if (portalBtn) {{
+          portalBtn.style.display = 'inline-block';
+          if (!portalBtn.dataset.bound) {{
+            portalBtn.dataset.bound = '1';
+            portalBtn.addEventListener('click', function() {{
+              portalBtn.disabled = true;
+              var body = {{platform: platform}};
+              if (leagueId) body.league_id = leagueId;
+              fetch('/api/create-portal-session', {{
+                method: 'POST',
+                headers: {{'Content-Type': 'application/json'}},
+                body: JSON.stringify(body)
+              }})
+              .then(function(r) {{ return r.json().then(function(d) {{ return {{status: r.status, body: d}}; }}); }})
+              .then(function(res) {{
+                if (res.status === 200 && res.body && res.body.url) {{ window.location.href = res.body.url; return; }}
+                document.getElementById('sub-msg').textContent =
+                  (res.body && res.body.error) || 'Could not open the subscription portal. Please try again.';
+                portalBtn.disabled = false;
+              }})
+              .catch(function() {{
+                document.getElementById('sub-msg').textContent = 'Could not open the subscription portal. Please try again.';
+                portalBtn.disabled = false;
+              }});
+            }});
+          }}
+        }}
         // League buyers already got the invite moment here -- tag the dashboard
         // welcome as the feature CTA (no second invite), and suppress the
         // floating invite banner on arrival.
@@ -710,6 +742,10 @@ def _pricing_body() -> str:
     <div class="pricing-alert" role="status"><i class="fa-solid fa-circle-xmark" aria-hidden="true"></i>
       Checkout was canceled. You have not been charged.
     </div>""" if canceled else ""
+
+    # Manage-subscription banner: only renders when a Stripe customer resolves
+    # for the viewer (buyer-only on shared league rows). Silent otherwise.
+    portal_banner = _manage_subscription_banner(league_id, platform)
 
     # PRO free trial: one-click start from the pricing page. ?trial=<flag> is
     # set by /pro-trial/start after it runs.
@@ -788,6 +824,7 @@ def _pricing_body() -> str:
     <main class="pricing-page">
       {canceled_banner}
       {trial_notice}
+      {portal_banner}
       <header class="pricing-hero">
         <span class="pricing-eyebrow">BR Fantasy PRO</span>
         <h1>Make the next move with confidence.</h1>
@@ -935,7 +972,7 @@ def page_league_pro_invite(platform: str, season: int, league_id: str):
 def page_pricing(platform: str, season: int, league_id: str):
     from app import render_page
     _try_grant_from_stripe_success()
-    body_html = _pricing_body()
+    body_html = _pricing_body(league_id, platform)
     # active="pricing" keeps AdSense off this checkout/utility page.
     # lite_js: guests get public.js + seo_lite.css (pricing is card chrome only);
     # signed-in visitors still receive full app.js / dashboard.css via render_page.
@@ -951,10 +988,10 @@ def page_pricing_guest():
     _try_grant_from_stripe_success()
     nfl_state = get_nfl_state() or {}
     current_season = int(nfl_state.get("season") or datetime.now().year)
-    body_html = _pricing_body()
     platform = _request_platform()
     if platform not in _SUPPORTED_PLATFORMS:
         platform = "sleeper"
+    body_html = _pricing_body(None, platform)
     return render_page(
         "Pricing", None, "pricing", body_html, platform, current_season,
         lite_js=True,
@@ -1517,11 +1554,128 @@ def api_subscription_status():
 
 # ── Stripe Customer Portal ────────────────────────────────────────────────────
 
+def _portal_viewer_ids() -> set:
+    """Identity set used to match the viewer against a league plan's buyer."""
+    return {
+        str(session.get("viewer_username") or "").strip(),
+        str(session.get("viewer_user_id") or "").strip(),
+        (("acct:" + str(session.get("account_id")).strip()) if session.get("account_id") else ""),
+        str(session.get("account_id") or "").strip(),
+    }
+
+
+def _resolve_billing_customer_id(user_id, league_id=None, platform="sleeper"):
+    """Resolve the Stripe customer id the current viewer may manage.
+
+    Buyer-only for shared league rows: league mates must never be handed the
+    buyer's portal session, so a league row's customer is only used when the
+    viewer matches the plan's subscriber_user_id. Personal and single-league
+    rows always belong to the viewer, so no buyer check is needed there.
+    Returns None when no customer resolves. Never raises.
+    """
+    from dashboard_services.subscriptions import get_subscription_info
+    from utils.league_invite import is_league_plan_buyer
+
+    if platform not in _SUPPORTED_PLATFORMS:
+        return None
+
+    sub_info = get_subscription_info(user_id, league_id, platform)
+    customer_id = None
+    if league_id and sub_info.get("has_league_subscription"):
+        # Shared league row: only the buyer may manage the plan.
+        if is_league_plan_buyer(_portal_viewer_ids(), sub_info.get("subscriber_user_id")):
+            customer_id = sub_info.get("stripe_customer_id")
+    else:
+        customer_id = sub_info.get("stripe_customer_id")
+    # Fall back to user-only lookup (personal plan) if league lookup has no customer
+    if not customer_id and league_id:
+        user_sub = get_subscription_info(user_id, None, platform)
+        customer_id = user_sub.get("stripe_customer_id")
+    if not customer_id and session.get("viewer_username") and session.get("viewer_user_id"):
+        legacy_sub = get_subscription_info(session.get("viewer_username"), None, platform)
+        customer_id = legacy_sub.get("stripe_customer_id")
+    if not customer_id and session.get("account_id"):
+        acct_key = "acct:" + str(session.get("account_id")).strip()
+        if user_id != acct_key:
+            acct_sub = get_subscription_info(acct_key, None, platform)
+            customer_id = acct_sub.get("stripe_customer_id")
+        if not customer_id:
+            bare_sub = get_subscription_info(str(session.get("account_id")).strip(), None, platform)
+            customer_id = bare_sub.get("stripe_customer_id")
+    return customer_id
+
+
+def _portal_open_js(button_id: str, err_id: str, platform: str, league_id=None) -> str:
+    """Inline JS: POST to /api/create-portal-session and redirect to the portal URL."""
+    payload_parts = ["platform: " + json.dumps(platform or "")]
+    if league_id:
+        payload_parts.append("league_id: " + json.dumps(str(league_id)))
+    payload = "{" + ", ".join(payload_parts) + "}"
+    return (
+        "<script>\n"
+        "(function() {\n"
+        "  var btn = document.getElementById(" + json.dumps(button_id) + ");\n"
+        "  var err = document.getElementById(" + json.dumps(err_id) + ");\n"
+        "  if (!btn || btn.dataset.portalBound) return;\n"
+        "  btn.dataset.portalBound = '1';\n"
+        "  btn.addEventListener('click', function() {\n"
+        "    btn.disabled = true;\n"
+        "    fetch('/api/create-portal-session', {\n"
+        "      method: 'POST',\n"
+        "      headers: {'Content-Type': 'application/json'},\n"
+        "      body: JSON.stringify(" + payload + ")\n"
+        "    })\n"
+        "    .then(function(r) { return r.json().then(function(d) { return {status: r.status, body: d}; }); })\n"
+        "    .then(function(res) {\n"
+        "      if (res.status === 200 && res.body && res.body.url) { window.location.href = res.body.url; return; }\n"
+        "      var msg = (res.body && res.body.error) || 'Could not open the subscription portal. Please try again.';\n"
+        "      if (err) { err.textContent = msg; err.style.display = 'inline'; }\n"
+        "      btn.disabled = false;\n"
+        "    })\n"
+        "    .catch(function() {\n"
+        "      if (err) { err.textContent = 'Could not open the subscription portal. Please try again.'; err.style.display = 'inline'; }\n"
+        "      btn.disabled = false;\n"
+        "    });\n"
+        "  });\n"
+        "})();\n"
+        "</script>"
+    )
+
+
+def _manage_subscription_banner(league_id=None, platform: str = "sleeper") -> str:
+    """Render a 'Manage subscription' banner when a Stripe customer resolves.
+
+    Buyer-only for shared league rows. Silent (no banner, no exception) for
+    guests, free users, and league mates, so the pricing page never 500s.
+    """
+    try:
+        # Mirror checkout identity: Google-only managers have account_id without
+        # a Sleeper viewer id, and their Stripe rows are keyed as acct:<id>.
+        user_id = (
+            session.get("viewer_user_id")
+            or session.get("viewer_username")
+            or (("acct:" + str(session.get("account_id")).strip()) if session.get("account_id") else None)
+        )
+        if not user_id:
+            return ""
+        if _resolve_billing_customer_id(user_id, league_id, platform) is None:
+            return ""
+    except Exception:
+        logger.debug("manage-subscription banner lookup failed", exc_info=True)
+        return ""
+    return (
+        '<div class="pricing-alert pricing-alert-success" role="status" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">'
+        '<i class="fa-solid fa-credit-card" aria-hidden="true"></i>'
+        '<span>You already have PRO.</span>'
+        '<button type="button" id="manage-sub-btn" class="btn btn-secondary" style="padding:6px 14px;font-size:13px;">Manage subscription</button>'
+        '<span id="manage-sub-err" style="display:none;"></span>'
+        "</div>"
+    ) + _portal_open_js("manage-sub-btn", "manage-sub-err", platform, league_id)
+
+
 @billing_bp.route("/api/create-portal-session", methods=["POST"])
 def api_create_portal_session():
     """Create a Stripe billing portal session so users can manage subscriptions."""
-    from dashboard_services.subscriptions import get_subscription_info
-
     # Mirror checkout identity: Google-only managers have account_id without a
     # Sleeper viewer id, and their Stripe rows are keyed as acct:<id>.
     user_id = (
@@ -1540,23 +1694,7 @@ def api_create_portal_session():
         return jsonify({"error": "Invalid platform"}), 400
 
     try:
-        sub_info    = get_subscription_info(user_id, league_id, platform)
-        customer_id = sub_info.get("stripe_customer_id")
-        # Fall back to user-only lookup (personal plan) if league lookup has no customer
-        if not customer_id and league_id:
-            user_sub    = get_subscription_info(user_id, None, platform)
-            customer_id = user_sub.get("stripe_customer_id")
-        if not customer_id and session.get("viewer_username") and session.get("viewer_user_id"):
-            legacy_sub = get_subscription_info(session.get("viewer_username"), None, platform)
-            customer_id = legacy_sub.get("stripe_customer_id")
-        if not customer_id and session.get("account_id"):
-            acct_key = "acct:" + str(session.get("account_id")).strip()
-            if user_id != acct_key:
-                acct_sub = get_subscription_info(acct_key, None, platform)
-                customer_id = acct_sub.get("stripe_customer_id")
-            if not customer_id:
-                bare_sub = get_subscription_info(str(session.get("account_id")).strip(), None, platform)
-                customer_id = bare_sub.get("stripe_customer_id")
+        customer_id = _resolve_billing_customer_id(user_id, league_id, platform)
         if not customer_id:
             return jsonify({"error": "No Stripe customer found for your account. Contact support if you believe this is an error."}), 404
 
