@@ -186,7 +186,7 @@ def _api_err(msg: str = "Request failed", e: Exception = None, code: int = 500):
     """Return a safe API error response - logs the real exception, sends generic message to client."""
     if e is not None:
         logger.warning("API error: %s", msg, exc_info=True)
-    return jsonify({"error": msg, "ok": False}), code
+    return _api_error(msg, code="error", status=code)
 
 
 # Pure logic lives in utils/relative_time.py so it can be unit-tested without
@@ -7074,6 +7074,30 @@ def _espn_reconnect_home_url(season=None, league_id=None) -> str:
     return "/?" + urlencode(params)
 
 
+def _wants_api_json() -> bool:
+    """True when the caller expects a JSON error body.
+
+    /api/* paths always get JSON; anything else gets JSON only when the
+    request explicitly accepts it (fetch/XHR callers).
+    """
+    try:
+        if request.path.startswith("/api/"):
+            return True
+        return "application/json" in (request.headers.get("Accept") or "")
+    except Exception:
+        return False
+
+
+def _api_error(message: str, code: str = "error", status: int = 500):
+    """JSON error envelope for API callers.
+
+    Keeps the ``error`` key the frontend already reads (``data.error``) and
+    adds a stable machine-readable ``code``. ``ok: False`` is kept for
+    callers that check it.
+    """
+    return jsonify({"ok": False, "error": message, "code": code}), status
+
+
 def _branded_status_page(
     title: str,
     heading: str,
@@ -7084,10 +7108,11 @@ def _branded_status_page(
     primary_label: str = "&#8592; Back to home",
     secondary_href: str | None = None,
     secondary_label: str | None = None,
+    code: str = "error",
 ):
     """JSON for /api/*; branded HTML everywhere else."""
-    if request.path.startswith("/api/"):
-        return jsonify({"ok": False, "error": message}), status
+    if _wants_api_json():
+        return _api_error(message, code=code, status=status)
     safe_title = html.escape(title)
     safe_heading = html.escape(heading)
     safe_message = html.escape(message)
@@ -7140,6 +7165,7 @@ def handle_provider_unavailable(e):
         "League data is temporarily unavailable",
         message + " Please try again in a moment.",
         503,
+        code="provider_unavailable",
     )
 
 
@@ -7168,12 +7194,14 @@ def handle_provider_auth(e):
             primary_label="Reconnect ESPN",
             secondary_href="/",
             secondary_label="Back to home",
+            code="provider_access_denied",
         )
     return _branded_status_page(
         "League access required",
         "This league could not be accessed",
         message,
         403,
+        code="provider_access_denied",
     )
 
 
@@ -7187,12 +7215,35 @@ def handle_provider_not_found(e):
         "League not found",
         message,
         404,
+        code="league_not_found",
     )
+
+
+@app.errorhandler(400)
+def handle_400(e):
+    if _wants_api_json():
+        description = (getattr(e, "description", "") or "").strip()
+        message = description if description and "Traceback" not in description else "Bad request."
+        return _api_error(message, code="bad_request", status=400)
+    return e.get_response() if hasattr(e, "get_response") else (str(e), 400)
+
+
+@app.errorhandler(405)
+def handle_405(e):
+    if _wants_api_json():
+        return _api_error("Method not allowed.", code="method_not_allowed", status=405)
+    return e.get_response() if hasattr(e, "get_response") else (str(e), 405)
 
 
 @app.errorhandler(500)
 def handle_500(e):
     logger.exception("[500] Internal server error")
+    if _wants_api_json():
+        return _api_error(
+            "The server hit an unexpected error. This usually fixes itself - please try again in a moment.",
+            code="internal_error",
+            status=500,
+        )
     return (
             "<!doctype html><html lang='en'><head><title>Error - BR Fantasy</title>"
             "<meta name='viewport' content='width=device-width,initial-scale=1'>"
@@ -7214,6 +7265,12 @@ def handle_500(e):
 
 @app.errorhandler(404)
 def handle_404(e):
+    if _wants_api_json():
+        return _api_error(
+            "The requested API endpoint was not found.",
+            code="not_found",
+            status=404,
+        )
     return (
             "<!doctype html><html lang='en'><head><title>Page Not Found - BR Fantasy</title>"
             "<meta name='viewport' content='width=device-width,initial-scale=1'>"
