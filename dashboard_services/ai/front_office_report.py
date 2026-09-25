@@ -22,6 +22,7 @@ import json
 import logging
 
 from dashboard_services.ai.cache import (
+    AI_CACHE_FALLBACK_TTL,
     build_ai_cache_key,
     load_cached_ai_text,
     save_cached_ai_text,
@@ -471,6 +472,7 @@ def get_front_office_report(ctx: dict, viewer_roster_id: str, force_refresh: boo
             except Exception:
                 logger.debug("[front-office] bad cache entry, regenerating", exc_info=True)
 
+    cache_ttl = None
     if not ai_available():
         ai = _fallback_ai(data, reason="ai_disabled")
         card_html = render_front_office_card_html(data, ai)
@@ -487,18 +489,22 @@ def get_front_office_report(ctx: dict, viewer_roster_id: str, force_refresh: boo
             notice = _ai_error_notice(reason)
             card_html = render_front_office_card_html(data, ai)
             report_html = notice + render_front_office_report_html(data, ai)
+            # Transient failure: cache briefly so the next view retries the AI
+            # call instead of serving the "unavailable" notice for 12 hours.
+            cache_ttl = AI_CACHE_FALLBACK_TTL
         except Exception:
             logger.exception("[front-office] unexpected error")
             ai = _fallback_ai(data, reason="error")
             notice = _ai_error_notice()
             card_html = render_front_office_card_html(data, ai)
             report_html = notice + render_front_office_report_html(data, ai)
+            cache_ttl = AI_CACHE_FALLBACK_TTL
 
     save_cached_ai_text(cache_key, json.dumps({
         "card_html": card_html,
         "report_html": report_html,
         "verdict": ai.get("verdict"),
-    }, ensure_ascii=False))
+    }, ensure_ascii=False), ttl=cache_ttl)
     return {
         "card_html": _emit_ai_html(card_html),
         "report_html": _emit_ai_html(report_html),
@@ -604,10 +610,11 @@ def _grades_html(grades: list[dict]) -> str:
     cards = []
     for g in grades:
         pct = 100.0 * (g["of"] - g["rank"]) / max(g["of"] - 1, 1) if g["of"] > 1 else 50.0
+        letter = str(g["grade"]).lower()
         cards.append(
-            f"<div class='for-grade-card'>"
+            f"<div class='for-grade-card for-grade-{html.escape(letter)}'>"
             f"<div class='for-grade-pos'>{html.escape(g['pos'])}</div>"
-            f"<div class='for-grade-letter for-grade-{html.escape(g['grade'].lower())}'>{html.escape(g['grade'])}</div>"
+            f"<div class='for-grade-letter'>{html.escape(g['grade'])}</div>"
             f"<div class='for-grade-rank'>{g['rank']} of {g['of']}</div>"
             f"<div class='for-grade-bar'><span style='width:{pct:.0f}%'></span></div>"
             f"</div>"
@@ -635,34 +642,52 @@ def _roster_table_html(rows: list[dict]) -> str:
     return (
         "<div class='for-table-wrap'><table class='for-table'>"
         "<thead><tr><th>Player</th><th>Pos</th><th>Team</th><th>Age</th>"
-        "<th>Value</th><th>Pos rank</th><th>Role</th><th>7d</th></tr></thead>"
+        "<th>Value</th><th>Pos rank</th><th>Role</th><th>Trend</th></tr></thead>"
         f"<tbody>{''.join(body)}</tbody></table></div>"
     )
 
 
 def _changes_html(data: dict) -> str:
-    items = []
+    moves = []
     lw = data.get("last_week") or {}
+    score_html = ""
     if lw.get("result"):
         opp = f" vs {html.escape(lw['opponent'])}" if lw.get("opponent") else ""
         pa = lw.get("pa")
         score = f"{lw['pf']}-{pa}" if pa is not None else f"{lw['pf']}"
-        items.append(f"<li><strong>Week {lw['week']}:</strong> {lw['result']} {score}{opp}</li>")
+        badge = "for-score-w" if str(lw["result"]).upper().startswith("W") else "for-score-l"
+        score_html = (
+            "<div class='for-score-row'>"
+            f"<span class='{badge}'>{html.escape(str(lw['result']))}</span>"
+            f"<span><strong>Week {lw['week']}</strong> {html.escape(str(score))}"
+            f"<span class='for-muted'>{opp}</span></span>"
+            "</div>"
+        )
     for m in data.get("risers_7d") or []:
-        items.append(
-            f"<li><strong>{html.escape(m['name'])}</strong> "
-            f"({html.escape(m['position'])}) up {m['trend_7d']:g} spots this week</li>"
-        )
+        moves.append(_move_row(m, up=True))
     for m in data.get("fallers_7d") or []:
-        items.append(
-            f"<li><strong>{html.escape(m['name'])}</strong> "
-            f"({html.escape(m['position'])}) down {abs(m['trend_7d']):g} spots this week</li>"
-        )
-    if not items:
+        moves.append(_move_row(m, up=False))
+    if not score_html and not moves:
         return ""
+    moves_html = f"<ul class='for-moves'>{''.join(moves)}</ul>" if moves else ""
     return (
         "<div class='for-sec'><div class='for-sec-title'>Since last week</div>"
-        f"<ul class='for-list'>{''.join(items)}</ul></div>"
+        f"{score_html}{moves_html}"
+        "<div class='for-sec-note'>Spots gained or lost in dynasty trade-value rank vs 7 days ago.</div>"
+        "</div>"
+    )
+
+
+def _move_row(m: dict, up: bool) -> str:
+    delta = abs(m["trend_7d"]) if m.get("trend_7d") is not None else 0
+    cls = "for-up" if up else "for-down"
+    arrow = "&#9650;" if up else "&#9660;"
+    return (
+        "<li class='for-move'>"
+        f"<span class='for-move-delta {cls}'>{arrow} {delta:g}</span>"
+        f"<span class='for-move-body'><strong>{html.escape(m['name'])}</strong>"
+        f"<span class='for-muted'> {html.escape(m['position'])}</span></span>"
+        "</li>"
     )
 
 
@@ -679,12 +704,12 @@ def _trade_targets_html(targets: list[dict], trade_notes: dict) -> str:
         note_html = f"<div class='for-target-note'>{note}</div>" if note else ""
         cards.append(
             "<div class='for-target-card'>"
-            f"<div class='for-target-head'><strong>{html.escape(get['name'])}</strong> "
-            f"<span class='for-target-meta'>{html.escape(get['position'])}"
+            f"<div class='for-target-top'><div class='for-target-head'><strong>{html.escape(get['name'])}</strong> "
+            f"<span class='for-muted'>{html.escape(get['position'])}"
             + (f" · age {get['age']}" if get.get("age") not in (None, "") else "")
             + f" · value {get['value']:g}</span></div>"
-            f"<div class='for-target-meta'>From {html.escape(t['partner'])}</div>"
-            f"<div class='for-target-give'>You give: {give_names}</div>"
+            f"<span class='for-target-from'>From {html.escape(t['partner'])}</span></div>"
+            f"<div class='for-target-give'><span class='for-lbl-inline'>You give</span> {give_names}</div>"
             f"{note_html}"
             f"<a class='for-analyze' href='{html.escape(t['analyzer_url'], quote=True)}'>Analyze this trade →</a>"
             "</div>"
@@ -701,25 +726,29 @@ def _waivers_cuts_html(data: dict, ai: dict) -> str:
     for w in data.get("waiver_targets") or []:
         note = html.escape(str(wnotes.get(w["id"]) or ""))
         rank = f" · {html.escape(w['pos_rank_label'])}" if w.get("pos_rank_label") else ""
+        note_html = f"<div class='for-pick-note'>{note}</div>" if note else ""
         w_items.append(
-            f"<li><strong>{html.escape(w['name'])}</strong> "
-            f"({html.escape(w['position'])}, {html.escape(w['team'])}{rank})"
-            + (f" <span class='for-note'>{note}</span>" if note else "")
-            + "</li>"
+            "<li class='for-pick'>"
+            "<span class='for-pick-badge for-add'>+</span>"
+            f"<div class='for-pick-body'><strong>{html.escape(w['name'])}</strong> "
+            f"<span class='for-muted'>{html.escape(w['position'])}, {html.escape(w['team'])}{rank}</span>"
+            f"{note_html}</div></li>"
         )
     c_items = []
     for c in data.get("cut_candidates") or []:
         c_items.append(
-            f"<li><strong>{html.escape(c['name'])}</strong> "
-            f"({html.escape(c['position'])}, value {c['value']:g})</li>"
+            "<li class='for-pick'>"
+            "<span class='for-pick-badge for-cut'>&minus;</span>"
+            f"<div class='for-pick-body'><strong>{html.escape(c['name'])}</strong> "
+            f"<span class='for-muted'>{html.escape(c['position'])} · value {c['value']:g}</span></div></li>"
         )
     if not w_items and not c_items:
         return ""
     out = "<div class='for-sec'><div class='for-sec-title'>Waivers and cuts</div><div class='for-two-col'>"
     if w_items:
-        out += f"<div><div class='for-sub'>Add</div><ul class='for-list'>{''.join(w_items)}</ul></div>"
+        out += f"<div><div class='for-sub'>Add</div><ul class='for-picklist'>{''.join(w_items)}</ul></div>"
     if c_items:
-        out += f"<div><div class='for-sub'>Cut candidates</div><ul class='for-list'>{''.join(c_items)}</ul></div>"
+        out += f"<div><div class='for-sub'>Cut candidates</div><ul class='for-picklist'>{''.join(c_items)}</ul></div>"
     return out + "</div></div>"
 
 
@@ -731,16 +760,8 @@ def render_front_office_report_html(data: dict, ai: dict) -> str:
     gm_alert = html.escape(str(ai.get("gm_alert") or ""))
     team = html.escape(str(data.get("team_name") or "Front Office Report"))
     week = data.get("week")
-    week_lbl = f" · Week {week}" if week else ""
     rec = data.get("record")
-    rec_lbl = f" · {html.escape(rec)}" if rec else ""
     pct = data.get("playoff_pct")
-    odds_lbl = ""
-    if pct is not None:
-        try:
-            odds_lbl = f" · {float(pct):.0f}% playoff odds"
-        except (TypeError, ValueError):
-            pass
 
     grades_html = _grades_html(data.get("grades") or [])
     changes_html = _changes_html(data)
@@ -756,14 +777,15 @@ def render_front_office_report_html(data: dict, ai: dict) -> str:
         )
     posture_html = f"<p class='for-posture'>{posture}</p>" if posture else ""
     stamp = _verdict_stamp(verdict)
+    chips_html = _hero_chips_html(week, rec, pct)
 
     return f"""
     <div class='for-report'>
-      <div class='for-report-head'>
+      <div class='for-hero'>
         {stamp}
-        <div>
-          <div class='for-report-team'>{team}</div>
-          <div class='for-report-meta'>Front Office Report{week_lbl}{rec_lbl}{odds_lbl}</div>
+        <div class='for-hero-main'>
+          <div class='for-hero-team'>{team}</div>
+          {chips_html}
         </div>
       </div>
       <h3 class='for-headline'>{headline}</h3>
@@ -776,3 +798,22 @@ def render_front_office_report_html(data: dict, ai: dict) -> str:
       {alert_html}
     </div>
     """
+
+
+def _hero_chips_html(week, rec, pct) -> str:
+    """Small stat pills under the team name: week, record, playoff odds."""
+    chips = []
+    if week:
+        chips.append(f"<span class='for-chip'>Week {html.escape(str(week))}</span>")
+    if rec:
+        chips.append(f"<span class='for-chip'>{html.escape(str(rec))}</span>")
+    if pct is not None:
+        try:
+            chips.append(
+                f"<span class='for-chip for-chip-hot'>{float(pct):.0f}% playoff odds</span>"
+            )
+        except (TypeError, ValueError):
+            pass
+    if not chips:
+        return ""
+    return f"<div class='for-hero-chips'>{''.join(chips)}</div>"

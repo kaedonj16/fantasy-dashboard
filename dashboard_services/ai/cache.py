@@ -11,6 +11,11 @@ AI_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 AI_CACHE_TTL = 60 * 60 * 12  # 12 hours
 
+# Short TTL for AI-failure fallbacks. A transient OpenAI failure (rate limit,
+# outage, unexpected error) must not poison the cache for 12 hours; the next
+# view a few minutes later retries the AI call and the notice clears itself.
+AI_CACHE_FALLBACK_TTL = 5 * 60  # 5 minutes
+
 
 def _hash_payload(payload: dict) -> str:
     raw = json.dumps(payload, sort_keys=True, default=str)
@@ -30,17 +35,20 @@ def load_cached_ai_text(cache_key: str) -> str | None:
     try:
         obj = json.loads(path.read_text(encoding="utf-8"))
         ts = float(obj.get("ts") or 0)
-        if time.time() - ts > AI_CACHE_TTL:
+        ttl = obj.get("ttl") or AI_CACHE_TTL
+        if time.time() - ts > ttl:
             return None
         return obj.get("content")
     except Exception:
         return None
 
 
-def save_cached_ai_text(cache_key: str, content: str, *, metadata: dict | None = None) -> None:
+def save_cached_ai_text(cache_key: str, content: str, *, metadata: dict | None = None,
+                        ttl: int | None = None) -> None:
     path = AI_CACHE_DIR / f"{cache_key}.json"
     obj = {
         "ts": time.time(),
+        "ttl": ttl if ttl is not None else AI_CACHE_TTL,
         "content": content,
     }
     if metadata is not None:
