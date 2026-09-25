@@ -85,6 +85,9 @@ table.nt-rank tbody tr.nt-sel td.nt-teamcol{{box-shadow:inset 3px 0 0 var(--acce
 .nt-pcard{{background:var(--card);border:1px solid var(--border);border-radius:12px;margin-bottom:16px;overflow:hidden}}
 .nt-pcard.nt-empty{{padding:28px 20px;text-align:center;color:var(--text-muted)}}
 .nt-pcard.nt-empty h2{{color:var(--text);margin:0 0 6px;font-size:17px}}
+.nt-backrow{{margin:0 0 12px}}
+.nt-back{{background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:999px;padding:10px 18px;font-size:14px;font-weight:700;cursor:pointer;min-height:44px}}
+.nt-back:active{{transform:scale(.98)}}
 .nt-phead2{{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid var(--border)}}
 .nt-pid{{display:flex;align-items:center;gap:12px}}
 .nt-pid h2{{margin:0;font-size:18px}}
@@ -145,7 +148,7 @@ table.nt-depth td{{padding:9px 8px;border-top:1px solid var(--border);font-size:
   </div>
 </header>
 <div class="nt-tabs" role="tablist" id="ntTabs" aria-label="Ranking views">{tabs}</div>
-<div class="nt-tcard">
+<div class="nt-tcard" id="ntListWrap">
   <div class="nt-tscroll"><table class="nt-rank" id="ntTbl" aria-label="NFL team rankings"></table></div>
   <p class="nt-tnote" id="ntTableNote"></p>
 </div>
@@ -200,6 +203,22 @@ function cellFor(t,col){{
   if(col.k.indexOf("oline_")===0){{src=(t.oline||{{}})[col.k.slice(6)]||null;}}
   else{{src=(t.ranks||{{}})[col.k]||null;}}
   return src;
+}}
+/* The rankings APIs send entries as {{rank, total, value}}. Normalize value->v
+   once per payload so every renderer below can rely on entry.v. */
+function normEntry(e){{
+  if(e&&typeof e==="object"&&e.v===undefined&&e.value!==undefined){{e.v=e.value;}}
+  return e;
+}}
+function normOline(ol){{
+  if(!ol)return;
+  Object.keys(ol).forEach(function(k){{if(k!=="season")normEntry(ol[k]);}});
+}}
+function normRankings(d){{
+  (d.teams||[]).forEach(function(t){{
+    var r=t.ranks||{{}};Object.keys(r).forEach(function(k){{normEntry(r[k]);}});
+    normOline(t.oline);
+  }});
 }}
 function fmtVal(col,v){{
   if(v==null)return null;
@@ -272,7 +291,7 @@ function renderTable(){{
     }});
   }});
   tbl.querySelectorAll("tbody tr").forEach(function(tr){{
-    tr.addEventListener("click",function(){{update({{team:tr.getAttribute("data-abbr")}},true);}});
+    tr.addEventListener("click",function(){{update({{team:tr.getAttribute("data-abbr")}},true);scrollTop();}});
   }});
   var note="Ranks use competition ranking (1, 2, 2, 4) across all 32 teams. N/A means no data, not zero. "+
     "Lower pressure and sack rates rank better. O-line ratings are 0-100 unit scores from public play-by-play ("+esc(DATA.oline_note||"prior season")+").";
@@ -283,39 +302,45 @@ function renderTable(){{
 
 function envRows(t){{
   var R=t.ranks||{{}};
+  function na(v){{return v==null||isNaN(Number(v));}}
   function e(label,key,fmt){{
     var c=R[key];if(!c)return null;
     return {{label:label,val:fmt(c.v),rank:c.rank}};
   }}
   return [
-    e("Scoring","points_pg",function(v){{return Number(v).toFixed(1)+" pts/g";}}),
-    e("Plays / game","plays_pg",function(v){{return Number(v).toFixed(1);}}),
-    e("Pass yards","pass_yds_pg",function(v){{return Math.round(v)+" /g";}}),
-    e("Rush yards","rush_yds_pg",function(v){{return Math.round(v)+" /g";}}),
-    e("Pass rate","pass_rate",function(v){{return Math.round(v*100)+"%";}})
+    e("Scoring","points_pg",function(v){{return na(v)?"N/A":Number(v).toFixed(1)+" pts/g";}}),
+    e("Plays / game","plays_pg",function(v){{return na(v)?"N/A":Number(v).toFixed(1);}}),
+    e("Pass yards","pass_yds_pg",function(v){{return na(v)?"N/A":Math.round(v)+" /g";}}),
+    e("Rush yards","rush_yds_pg",function(v){{return na(v)?"N/A":Math.round(v)+" /g";}}),
+    e("Pass rate","pass_rate",function(v){{return na(v)?"N/A":Math.round(v*100)+"%";}})
   ].filter(Boolean);
 }}
 
+function backRow(){{
+  return '<div class="nt-backrow"><button type="button" class="nt-back" id="ntBack">&larr; All teams</button></div>';
+}}
+function wireBack(){{
+  var b=$("#ntBack");
+  if(b&&!b.__wired){{b.__wired=true;b.addEventListener("click",function(){{update({{team:""}},true);scrollTop();}});}}
+}}
 function renderProfile(){{
   var el=$("#ntProfile");
-  if(!state.team){{
-    el.innerHTML='<div class="nt-pcard nt-empty"><h2>Select a team to explore</h2><p>Tap any row above to open its offensive environment, line play, depth chart, and schedule.</p></div>';
-    return;
-  }}
+  if(!state.team){{el.innerHTML="";return;}}
   var t=(DATA&&DATA.teams||[]).filter(function(x){{return x.team===state.team;}})[0];
   if(!t){{el.innerHTML="";return;}}
   if(DETAIL_TEAM!==state.team||!DETAIL){{
-    el.innerHTML='<div class="nt-pcard"><div class="nt-load">Loading '+esc(state.team)+' details.</div></div>';
+    el.innerHTML=backRow()+'<div class="nt-pcard"><div class="nt-load">Loading '+esc(state.team)+' details.</div></div>';
+    wireBack();
     var want=state.team,season=state.season;
     api("/api/nfl-team-details?team="+encodeURIComponent(want)+"&season="+encodeURIComponent(season))
-      .then(function(d){{DETAIL=d;DETAIL_TEAM=want;if(state.team===want)renderProfile();}})
-      .catch(function(){{if(state.team===want){{el.innerHTML='<div class="nt-pcard"><div class="nt-err">Could not load team details.<br><button type="button" id="ntRetry">Retry</button></div></div>';var rb=$("#ntRetry");if(rb)rb.addEventListener("click",function(){{DETAIL=null;renderProfile();}});}}}});
+      .then(function(d){{normOline(d.oline);DETAIL=d;DETAIL_TEAM=want;if(state.team===want)renderProfile();}})
+      .catch(function(){{if(state.team===want){{el.innerHTML=backRow()+'<div class="nt-pcard"><div class="nt-err">Could not load team details.<br><button type="button" id="ntRetry">Retry</button></div></div>';wireBack();var rb=$("#ntRetry");if(rb)rb.addEventListener("click",function(){{DETAIL=null;renderProfile();}});}}}});
     return;
   }}
   var d=DETAIL;
   var nextG=null;(d.schedule||[]).forEach(function(g){{if(!nextG&&!g.bye&&g.status!=="final"&&g.status!=="live")nextG=g;}});
   var nextTxt=nextG?((nextG.is_home?"vs ":"at ")+nextG.opponent+(", "+(nextG.kickoff||nextG.date_label||"")).replace(/, $/,"")):"none remaining";
-  var h='<div class="nt-pcard"><div class="nt-phead2"><div class="nt-pid">'+logoHTML(t,true)+
+  var h=backRow()+'<div class="nt-pcard"><div class="nt-phead2"><div class="nt-pid">'+logoHTML(t,true)+
     '<div><h2>'+esc(t.city)+' '+esc(t.name)+'</h2><p class="nt-meta">'+esc(d.season_label||"")+' &middot; Bye week '+esc(String(t.bye_week==null?"?":t.bye_week))+' &middot; Next: '+esc(nextTxt)+'</p></div></div></div>';
   h+='<div class="nt-pbody"><div class="nt-pgrid">';
   h+='<section class="nt-psec"><h3>Offensive environment</h3>';
@@ -332,7 +357,7 @@ function renderProfile(){{
     h+='<div class="nt-chips">';
     [["Overall","composite"],["Pass block","pass_block"],["Run block","run_block"]].forEach(function(c){{
       var cell=ol[c[1]];
-      h+='<div class="nt-chip"><div class="nt-clab">'+c[0]+'</div><div class="nt-cval">'+(cell?Math.round(cell.v):"N/A")+'</div>'+
+      h+='<div class="nt-chip"><div class="nt-clab">'+c[0]+'</div><div class="nt-cval">'+(cell&&cell.v!=null?Math.round(cell.v):"N/A")+'</div>'+
         '<div class="nt-crk">'+(cell&&cell.rank?("#"+cell.rank+" &middot; "+ol.season+" season"):"no rank")+'</div></div>';
     }});
     h+='</div><details class="nt-method"><summary>Methodology and underlying metrics</summary>';
@@ -382,6 +407,7 @@ function renderProfile(){{
   h+='</div><p class="nt-fine">Completed scores, kickoff times, and byes reuse the shared NFL game-data service.</p></section>';
   h+='</div></div>';
   el.innerHTML=h;
+  wireBack();
   el.querySelectorAll(".nt-seg button").forEach(function(b){{
     b.addEventListener("click",function(){{update({{room:b.getAttribute("data-room")}},false);}});
   }});
@@ -457,17 +483,22 @@ function boxHTML(bx,abbr,wkRow){{
 
 function render(){{
   renderTabs();
+  var inDetail=!!state.team;
+  var list=$("#ntListWrap"),tabs=$("#ntTabs");
+  if(list)list.style.display=inDetail?"none":"";
+  if(tabs)tabs.style.display=inDetail?"none":"";
   if(!DATA){{loadRankings();return;}}
-  renderTable();
-  renderProfile();
+  if(inDetail){{renderProfile();}}
+  else{{renderTable();$("#ntProfile").innerHTML="";}}
 }}
+function scrollTop(){{try{{window.scrollTo(0,0);}}catch(e){{}}}}
 function loadRankings(){{
   var tbl=$("#ntTbl");
   tbl.innerHTML="";$("#ntTableNote").textContent="";
   $("#ntProfile").innerHTML='<div class="nt-pcard"><div class="nt-load">Loading team data.</div></div>';
   api("/api/nfl-team-rankings?season="+encodeURIComponent(state.season))
     .then(function(d){{
-      DATA=d;DETAIL=null;DETAIL_TEAM=null;
+      DATA=d;normRankings(DATA);DETAIL=null;DETAIL_TEAM=null;
       var seasons=d.available_seasons||[];
       var sel=$("#ntSeasonSel");
       if(sel&&seasons.length){{sel.innerHTML=seasons.map(function(s){{return '<option value="'+s+'"'+(String(s)===String(d.season)?" selected":"")+'>'+s+'</option>';}}).join("");}}
@@ -482,15 +513,16 @@ function syncUrl(push){{
   if(state.sortKey)p+="&sort="+encodeURIComponent(state.sortKey);
   if(state.sortDir)p+="&dir="+encodeURIComponent(state.sortDir);
   try{{
-    if(push&&history.pushState)history.pushState(null,"","/nfl-teams"+p);
-    else if(history.replaceState)history.replaceState(null,"","/nfl-teams"+p);
+    var base=location.pathname||"/nfl-teams";
+    if(push&&history.pushState)history.pushState(null,"",base+p);
+    else if(history.replaceState)history.replaceState(null,"",base+p);
   }}catch(e){{}}
 }}
 function readUrl(){{
   var q=new URLSearchParams(location.search);
   var s=q.get("season");if(s)state.season=s;
   var v=q.get("view");if(v&&VIEWS[v])state.view=v;
-  var t=(q.get("team")||"").toUpperCase();if(t)state.team=t;
+  var t=(q.get("team")||"").toUpperCase();state.team=t;
   var view=VIEWS[state.view];
   var k=q.get("sort");var d=q.get("dir");
   if(k&&view.cols.some(function(c){{return c.k===k;}})){{state.sortKey=k;state.sortDir=(d==="asc"?"asc":"desc");}}
@@ -501,7 +533,8 @@ function readUrl(){{
 function init(){{
   readUrl();
   var sel=$("#ntSeasonSel");
-  if(sel){{sel.value=state.season;sel.addEventListener("change",function(){{DATA=null;update({{season:sel.value,team:""}},false);}});}}
+  if(sel){{sel.value=state.season;sel.addEventListener("change",function(){{DATA=null;DETAIL=null;DETAIL_TEAM=null;update({{season:sel.value}},false);}});}}
+  if(window.addEventListener){{window.addEventListener("popstate",function(){{readUrl();DETAIL=null;DETAIL_TEAM=null;render();}});}}
   render();
 }}
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",init);else init();
