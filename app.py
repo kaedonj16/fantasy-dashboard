@@ -6538,9 +6538,10 @@ def build_league_context(platform: str, league_id: str, season: int) -> dict:
     roster_map = _build_roster_map(users, rosters)
 
     if df_weekly.empty and not offseason_mode:
-        print(
-            f"[build_league_context] no weekly data for requested_league_id={league_id}, "
-            f"resolved_league_id={resolved_league_id}, season={season}"
+        logger.warning(
+            "[build_league_context] no weekly data for requested_league_id=%s, "
+            "resolved_league_id=%s, season=%s",
+            league_id, resolved_league_id, season,
         )
 
     try:
@@ -11203,7 +11204,7 @@ def build_status_by_week(season: int, weeks: int, players_index, teams_index, id
             statuses = build_status_for_week(season, w, players_index, teams_index, idp_player_index)
             bundles[w] = {"statuses": statuses}
         except Exception as e:
-            print(f"Error loading week {w} schedule: {e}")
+            logger.warning("Error loading week %s schedule: %s", w, e)
             bundles[w] = {"statuses": {}}
     return bundles
 
@@ -25703,8 +25704,10 @@ def api_team_details(roster_id: str):
                 else:
                     logger.info(f"[api_team_details] No graphs generated - df_weekly is empty after filtering")
             else:
-                print(
-                    f"[api_team_details] No graphs generated - team_stats: {team_stats is not None}, df_weekly: {df_weekly is not None and not df_weekly.empty}")
+                logger.info(
+                    "[api_team_details] No graphs generated - team_stats: %s, df_weekly: %s",
+                    team_stats is not None,
+                    df_weekly is not None and not df_weekly.empty)
         except Exception as graph_err:
             logger.warning("[api_team_details] Error getting graph data: %s", graph_err)
             import traceback
