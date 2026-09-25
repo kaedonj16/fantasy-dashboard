@@ -28,9 +28,13 @@ def _stub_schedule_module(monkeypatch, games):
 
 
 def _games_with_string_epochs(kickoff: datetime):
-    ms = str(int(kickoff.timestamp() * 1000))  # string, like the JSON cache
+    # Seconds as strings, like the real JSON schedule cache
+    # (nfl_game_data._iso_epoch; every consumer treats them as seconds).
+    # Regression anchor: the notifier once divided these by 1000, pushing the
+    # computed kickoff back to 1970 so the 40-100 min window never matched.
+    sec = str(int(kickoff.timestamp()))
     return [
-        {"home": "KC", "away": "BUF", "gameTime_epoch": ms},
+        {"home": "KC", "away": "BUF", "gameTime_epoch": sec},
         {"home": "DAL", "away": "PHI", "gameTime_epoch": None},      # missing
         {"home": "SF", "away": "SEA", "gameTime_epoch": "not-a-time"},  # garbage
     ]

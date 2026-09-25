@@ -64,7 +64,8 @@ def test_lineup_lock_sends_bench_points_push():
     from unittest import mock
     import utils.push_notifications as pn
 
-    kick_ms = int((time.time() + 60 * 60) * 1000)  # inside the 40–100 min window
+    # Seconds, like the real schedule cache (nfl_game_data._iso_epoch).
+    kickoff_sec = int(time.time() + 60 * 60)  # inside the 40-100 min window
 
     class FakeConn:
         def __enter__(self): return self
@@ -101,7 +102,7 @@ def test_lineup_lock_sends_bench_points_push():
     with mock.patch("dashboard_services.api.get_nfl_state",
                     return_value={"season": 2025, "week": 9, "season_type": "reg"}), \
          mock.patch("utils.utils.load_week_schedule",
-                    return_value=[{"gameTime_epoch": kick_ms, "home": "KC", "away": "BUF"}]), \
+                    return_value=[{"gameTime_epoch": kickoff_sec, "home": "KC", "away": "BUF"}]), \
          mock.patch("dashboard_services.db.get_conn", return_value=FakeConn()), \
          mock.patch.object(pn, "_get_subscribed_leagues", return_value=[("L1", "sleeper")]), \
          mock.patch.object(pn, "_app_state_get", return_value=None), \
@@ -158,7 +159,7 @@ def test_lineup_lock_appends_swap_when_starter_is_out():
     from unittest import mock
     import utils.push_notifications as pn
 
-    kick_ms = int((time.time() + 60 * 60) * 1000)
+    kickoff_sec = int(time.time() + 60 * 60)  # seconds, like the schedule cache
 
     class FakeConn:
         def __enter__(self): return self
@@ -189,7 +190,7 @@ def test_lineup_lock_appends_swap_when_starter_is_out():
     with mock.patch("dashboard_services.api.get_nfl_state",
                     return_value={"season": 2025, "week": 9, "season_type": "reg"}), \
          mock.patch("utils.utils.load_week_schedule",
-                    return_value=[{"gameTime_epoch": kick_ms, "home": "KC", "away": "BUF"}]), \
+                    return_value=[{"gameTime_epoch": kickoff_sec, "home": "KC", "away": "BUF"}]), \
          mock.patch("dashboard_services.db.get_conn", return_value=FakeConn()), \
          mock.patch.object(pn, "_get_subscribed_leagues", return_value=[("L1", "sleeper")]), \
          mock.patch.object(pn, "_app_state_get", return_value=None), \

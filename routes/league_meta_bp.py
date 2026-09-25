@@ -407,7 +407,9 @@ def api_lineup_lock_hint():
                 continue
         if not epochs:
             return jsonify({"ok": False})
-        kickoff = datetime.fromtimestamp(min(epochs) / 1000, tz=timezone.utc)
+        # gameTime_epoch is seconds (nfl_game_data._iso_epoch); every other
+        # consumer uses fromtimestamp() directly, so no /1000 here.
+        kickoff = datetime.fromtimestamp(min(epochs), tz=timezone.utc)
         now = datetime.now(tz=timezone.utc)
         mins = (kickoff - now).total_seconds() / 60
         in_window = 40 <= mins <= 100
