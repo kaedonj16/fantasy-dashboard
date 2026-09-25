@@ -136,6 +136,12 @@ table.nt-rank tbody tr.nt-sel td.nt-teamcol{{background:var(--accent-soft)}}
 details.nt-method{{border:1px solid var(--border);border-radius:8px;padding:10px 12px;font-size:13px}}
 details.nt-method summary{{cursor:pointer;font-weight:700;min-height:32px}}
 .nt-mrow{{display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--border);font-size:13px}}
+.nt-def4{{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:6px 0 10px}}
+.nt-def4cell{{text-align:center;min-width:0}}
+.nt-def4pos{{font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px;white-space:nowrap}}
+.nt-def4val{{font-size:17px;font-weight:800;font-variant-numeric:tabular-nums;line-height:1.2}}
+.nt-def4cell .nt-rbadge{{margin-top:4px}}
+@media(max-width:420px){{.nt-def4{{grid-template-columns:repeat(2,1fr);row-gap:12px}}}}
 .nt-seg{{display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap}}
 .nt-seg button{{border:1px solid var(--border);background:var(--card);color:var(--text-muted);border-radius:8px;padding:8px 14px;font-size:13px;font-weight:700;cursor:pointer;min-height:40px;font-family:inherit}}
 .nt-seg button[aria-pressed="true"]{{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}}
@@ -507,14 +513,18 @@ function defenseSection(){{
   var dp=(DPOS&&DPOS.teams||{{}})[state.team];
   if(!DPOS){{ensureDefense();h+='<p class="nt-fine">Loading defensive matchup data.</p></section>';return h;}}
   if(DPOS.failed||!dp){{h+='<p class="nt-fine">Defensive matchup data is not available for this team and season.</p></section>';return h;}}
+  var cells="";
   ["QB","RB","WR","TE"].forEach(function(p){{
     var c=dp[p];if(!c||c.v==null)return;
     var tier=easeTier(c.rank,c.total);
     var fg=tier?EASE_FG[tier]:"inherit",bg=tier?EASE_BG[tier]:null;
-    var effTxt=c.eff!=null?'<span class="nt-fine"> '+Number(c.eff).toFixed(1)+' '+esc(shortEff(c.eff_label))+'</span>':"";
-    h+='<div class="nt-mrow"><span>vs '+p+'</span><span><b style="color:'+fg+'">'+Number(c.v).toFixed(1)+' FPTS/G</b> '+
-      rankBadge(c.rank,bg?fg:null,bg)+effTxt+'</span></div>';
+    var effTxt=c.eff!=null?'<div class="nt-fine">'+Number(c.eff).toFixed(1)+' '+esc(shortEff(c.eff_label))+'</div>':"";
+    cells+='<div class="nt-def4cell"><div class="nt-def4pos">vs '+p+'</div>'+
+      '<div class="nt-def4val"><b style="color:'+fg+'">'+Number(c.v).toFixed(1)+'</b></div>'+
+      '<div class="nt-fine">FPTS/G</div>'+
+      '<div>'+rankBadge(c.rank,bg?fg:null,bg)+'</div>'+effTxt+'</div>';
   }});
+  h+='<div class="nt-def4">'+cells+'</div>';
   h+='<p class="nt-fine">Fantasy points allowed per game (PPR). Rank 1 = most allowed = easiest matchup. Only completed games count.</p></section>';
   return h;
 }}
