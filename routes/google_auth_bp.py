@@ -24,6 +24,8 @@ from urllib.parse import urlencode
 
 from flask import Blueprint, redirect, request, session
 
+from extensions import limiter
+
 
 def _redirect_after_google(default: str):
     """Prefer a staged home PRO checkout over the usual post-login destination."""
@@ -100,8 +102,13 @@ def google_auth_start():
 
 
 @google_auth_bp.route("/auth/google/callback")
+@limiter.limit("30 per minute")
 def google_auth_callback():
-    """Handle Google's redirect: verify state, exchange code, sign the user in."""
+    """Handle Google's redirect: verify state, exchange code, sign the user in.
+
+    Rate limited: a legitimate sign-in hits this once; the cap only bites
+    automated probing of the token-exchange path.
+    """
     import requests
 
     if request.args.get("error"):

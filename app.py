@@ -996,8 +996,17 @@ if _cookie_domain:
 from extensions import limiter, LIMITER_BACKEND  # noqa: E402
 
 limiter.init_app(app)
-if LIMITER_BACKEND:
-    logger.info("[limiter] Flask-Limiter enabled (%s backend)", LIMITER_BACKEND)
+if LIMITER_BACKEND == "redis":
+    logger.info("[limiter] Flask-Limiter enabled (redis backend)")
+elif LIMITER_BACKEND:
+    # memory:// storage is per worker process: with N gunicorn workers the
+    # effective cap is N x the configured limit, so limits are advisory only.
+    # Set REDIS_URL for shared enforcement.
+    logger.warning(
+        "[limiter] Flask-Limiter enabled (%s backend) - limits are per-worker, "
+        "not shared; set REDIS_URL for multi-worker enforcement",
+        LIMITER_BACKEND,
+    )
 else:
     logger.warning("[limiter] Flask-Limiter not installed - rate limiting disabled")
 
