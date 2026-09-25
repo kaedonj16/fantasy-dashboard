@@ -79,3 +79,23 @@ def test_gm_memo_does_not_block_http_on_cold_playoff_sim():
     responsive_rule = responsive_source[responsive_source.index(".os-hero-stats {"):]
     responsive_rule = responsive_rule[:responsive_rule.index("}")]
     assert "grid-template-columns: 1fr 1fr;" in responsive_rule
+
+
+def test_front_office_schema_required_covers_all_properties():
+    """Strict structured output rejects the request when `required` misses any
+    key in `properties` (400 invalid_json_schema, seen live 2026-09-25:
+    "Missing 'trade_notes'")."""
+    from dashboard_services.ai.prompts import _front_office_report_schema
+
+    for scoring_type in ("redraft", "dynasty"):
+        data = {
+            "scoring_type": scoring_type,
+            "trade_targets": [{"gets": [{"id": "t1"}]}],
+            "waiver_targets": [{"id": "w1"}],
+        }
+        schema = _front_office_report_schema(data)
+        assert schema["type"] == "object"
+        assert schema["additionalProperties"] is False
+        assert set(schema["required"]) == set(schema["properties"].keys()), (
+            f"required must list every property key ({scoring_type})"
+        )

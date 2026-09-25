@@ -23,6 +23,8 @@ GROUND RULES (no exceptions):
   null, omit it; never narrate that it is missing.
 - Never echo JSON key names (snake_case) in prose. Write "playoff odds", not
   "playoff_odds_pct".
+- Never mention internal player IDs or target IDs in prose. Refer to players
+  by name only.
 - STYLE: no em dashes anywhere. Use periods or colons. Records use hyphens
   (2-0). Keep sentences short and direct, like a GM memo, not a chatbot.
 """.strip()
@@ -276,7 +278,6 @@ def build_front_office_prompt_payload(data: dict) -> dict:
         "trade_targets": [
             {
                 "target": _for_trade_target_label(t["gets"][0]),
-                "target_id": t["gets"][0]["id"],
                 "you_give": ", ".join(
                     f"{g.get('name')} ({g.get('position')}"
                     f"{', value ' + str(g['value']) if g.get('value') is not None else ''})"
@@ -404,9 +405,21 @@ def normalize_note_entries(entries, id_field: str, valid_ids) -> dict:
     return out
 
 
-def generate_front_office_report_result(data: dict) -> dict:
-    """LLM-backed narrative layer for the v2 Front Office Report."""
-    client = get_ai_client()
+def _front_office_target_ids(data: dict):
+    """(trade_ids, waiver_ids) constraining the strict note-entry enums."""
+    trade_targets = (data or {}).get("trade_targets") or []
+    trade_ids = [t["gets"][0]["id"] for t in trade_targets if (t.get("gets") or [None])[0]]
+    waiver_targets = (data or {}).get("waiver_targets") or []
+    waiver_ids = [w["id"] for w in waiver_targets if w.get("id") is not None]
+    return trade_ids, waiver_ids
+
+
+def _front_office_report_schema(data: dict) -> dict:
+    """Structured-output schema for the v2 Front Office Report.
+
+    Strict mode requires ``required`` to list every key in ``properties``;
+    OpenAI rejects the request otherwise (400 invalid_json_schema).
+    """
     scoring_type = normalize_trade_scoring_type((data or {}).get("scoring_type"))
     is_redraft = scoring_type == "redraft"
     verdict_enum = (
@@ -414,10 +427,7 @@ def generate_front_office_report_result(data: dict) -> dict:
         if is_redraft
         else ["BUY", "HOLD", "SELL VETERANS", "REBUILD AGGRESSIVELY"]
     )
-    trade_targets = (data or {}).get("trade_targets") or []
-    trade_ids = [t["gets"][0]["id"] for t in trade_targets if (t.get("gets") or [None])[0]]
-    waiver_targets = (data or {}).get("waiver_targets") or []
-    waiver_ids = [w["id"] for w in waiver_targets if w.get("id") is not None]
+    trade_ids, waiver_ids = _front_office_target_ids(data)
     schema = {
         "type": "object",
         "properties": {
@@ -435,9 +445,22 @@ def generate_front_office_report_result(data: dict) -> dict:
             ),
             "gm_alert": {"type": "string"},
         },
-        "required": ["verdict", "headline", "posture", "top_move", "gm_alert"],
+        # Structured-output strict mode requires `required` to list every key
+        # in `properties`.
+        "required": ["verdict", "headline", "posture", "top_move",
+                     "trade_notes", "waiver_notes", "gm_alert"],
         "additionalProperties": False,
     }
+    return schema
+
+
+def generate_front_office_report_result(data: dict) -> dict:
+    """LLM-backed narrative layer for the v2 Front Office Report."""
+    client = get_ai_client()
+    scoring_type = normalize_trade_scoring_type((data or {}).get("scoring_type"))
+    is_redraft = scoring_type == "redraft"
+    schema = _front_office_report_schema(data)
+    trade_ids, waiver_ids = _front_office_target_ids(data)
     system_prompt = (
         FRONT_OFFICE_REPORT_SYSTEM_REDRAFT if is_redraft else FRONT_OFFICE_REPORT_SYSTEM
     )
