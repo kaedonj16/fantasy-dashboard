@@ -386,6 +386,62 @@ _CATEGORY_MAP = {
 }
 
 
+# ESPN's summary boxscore ships each column twice: a machine key
+# (``passingYards``) and a display label (``YDS``). ``_CATEGORY_MAP`` is written
+# against the labels, but real payloads line the two arrays up positionally --
+# the old code preferred keys whenever the arrays had equal length, so almost
+# every offensive field silently failed to map (only ``sacks`` survived, which
+# is why box scores showed dashes for offense and lone zero-sack defensive
+# rows). Resolve each column through the label first, then through the key.
+_ESPN_KEY_TO_LABEL = {
+    "passing": {
+        "completions/passingattempts": "C/ATT",
+        "passingyards": "YDS",
+        "passingtouchdowns": "TD",
+        "interceptions": "INT",
+    },
+    "rushing": {
+        "rushingattempts": "CAR",
+        "rushingyards": "YDS",
+        "rushingtouchdowns": "TD",
+    },
+    "receiving": {
+        "receptions": "REC",
+        "receivingtargets": "TGTS",
+        "receivingyards": "YDS",
+        "receivingtouchdowns": "TD",
+    },
+    "fumbles": {"fumbleslost": "LOST"},
+    "kicking": {
+        "fieldgoalsmade-fieldgoalsattempted": "FG",
+        "extrapointsmade-extrapointsattempted": "XP",
+        "longestfieldgoalmade": "LNG",
+    },
+    "defensive": {
+        "totaltackles": "TOT",
+        "sacks": "SACKS",
+        "passesdefended": "PD",
+        "forcedfumbles": "FF",
+        "fumblesrecovered": "FR",
+        "defensivetouchdowns": "TD",
+    },
+}
+
+
+def _resolve_boxscore_target(cat_name: str, label: str, key: str):
+    """Map one boxscore column to its (block, stat) target via label or key."""
+    cat = _CATEGORY_MAP.get(cat_name) or {}
+    target = cat.get((label or "").upper())
+    if target:
+        return target, (label or "").upper()
+    alias = (_ESPN_KEY_TO_LABEL.get(cat_name) or {}).get((key or "").lower())
+    if alias:
+        target = cat.get(alias)
+        if target:
+            return target, alias
+    return None, ""
+
+
 def _number(value: Any) -> Any:
     text = str(value or "").strip()
     if not text: return None
@@ -411,9 +467,10 @@ def summary_to_legacy(summary: dict, game: dict, *, stale: bool = False) -> dict
         team = _team((side.get("team") or {}).get("abbreviation"))
         for category in side.get("statistics") or []:
             cat_name = str(category.get("name") or "").lower()
-            keys, labels = category.get("keys") or [], category.get("labels") or []
-            names = [str(x) for x in (keys if len(keys) == len(labels) and keys else labels)]
-            label_by_index = dict(enumerate(names))
+            keys = [str(x) for x in (category.get("keys") or [])]
+            labels = [str(x) for x in (category.get("labels") or [])]
+            # Pair keys and labels positionally; either may be absent.
+            columns = max(len(keys), len(labels))
             for row in category.get("athletes") or []:
                 athlete = row.get("athlete") or {}
                 espn_id = str(athlete.get("id") or "")
@@ -422,18 +479,21 @@ def summary_to_legacy(summary: dict, game: dict, *, stale: bool = False) -> dict
                     "teamAbv": team, "pos": (athlete.get("position") or {}).get("abbreviation") or "",
                 })
                 for idx, raw in enumerate(row.get("stats") or []):
-                    label = label_by_index.get(idx, "").upper()
-                    target = _CATEGORY_MAP.get(cat_name, {}).get(label)
+                    if idx >= columns:
+                        continue
+                    label = labels[idx] if idx < len(labels) else ""
+                    col_key = keys[idx] if idx < len(keys) else ""
+                    target, resolved = _resolve_boxscore_target(cat_name, label, col_key)
                     if not target: continue
-                    block, key = target; parsed = _number(raw)
+                    block, stat_key = target; parsed = _number(raw)
                     if parsed is None: continue
                     dest = entry.setdefault(block, {})
                     if isinstance(parsed, list):
-                        if key == "passCompletionsAndAttempts": dest.update(passCompletions=parsed[0], passAttempts=parsed[1])
-                        elif key == "fgMadeAndAttempts": dest.update(fgMade=parsed[0], fgAttempts=parsed[1])
-                        elif key == "xpMadeAndAttempts": dest.update(xpMade=parsed[0], xpAttempts=parsed[1])
-                    else: dest[key] = parsed
-                    available.add(f"{cat_name}.{label.lower()}")
+                        if stat_key == "passCompletionsAndAttempts": dest.update(passCompletions=parsed[0], passAttempts=parsed[1])
+                        elif stat_key == "fgMadeAndAttempts": dest.update(fgMade=parsed[0], fgAttempts=parsed[1])
+                        elif stat_key == "xpMadeAndAttempts": dest.update(xpMade=parsed[0], xpAttempts=parsed[1])
+                    else: dest[stat_key] = parsed
+                    available.add(f"{cat_name}.{resolved.lower()}")
     result = dict(game)
     result.update({"playerStats": player_stats, "teamStats": {}, "source": "espn_nfl",
                    "stale": stale, "fetched_at": datetime.utcnow().isoformat() + "Z",

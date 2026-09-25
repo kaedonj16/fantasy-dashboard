@@ -114,3 +114,14 @@ def test_hub_alert_strips_share_tone_token():
     assert ".bench-check-card.bench-miss" in css
     wl = re.search(r"\.wl-alerts\s*\{([^}]+)\}", css)
     assert wl and "--alert-tone:" in wl.group(1)
+
+
+def test_rz_tokens_defined_on_root_for_out_of_page_surfaces():
+    """Regression: the box-score sheet is appended to document.body (outside
+    .rz-page), so the --rz-* tokens must exist on :root, not only .rz-page.
+    Without them the sheet rendered transparent with unstyled text."""
+    css = _css()
+    root_block = re.search(r":root,\s*\.rz-page\s*\{([^}]*)\}", css)
+    assert root_block, ":root, .rz-page token block missing"
+    for token in ("--rz-card", "--rz-border", "--rz-text", "--rz-muted"):
+        assert token in root_block.group(1), f"{token} not defined on :root"

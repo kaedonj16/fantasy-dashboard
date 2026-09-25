@@ -22,30 +22,34 @@ class _Policy:
 
 @pytest.fixture()
 def ensure_state(monkeypatch):
-    """Reset the helper's cooldown map and stub its collaborators.
+    """Reset the helper's cooldown maps and stub its collaborators.
 
     Files are simulated as missing (fresh deploy: cache wiped).
     """
     monkeypatch.setattr(app, "_SLEEPER_WEEK_ENSURE_TS", {})
+    monkeypatch.setattr(app, "_SLEEPER_LIVE_WEEK_TS", {})
     calls = []
 
     def fake_policy(season):
         return _Policy([1, 2])
 
-    def fake_fetch(season, week):
-        calls.append((season, week))
+    def fake_fetch(season, week, force=False):
+        calls.append((season, week, force))
 
     monkeypatch.setattr("utils.season_qualification.qualification_policy", fake_policy)
     monkeypatch.setattr(
         "data_building.external_data.sleeper_bulk_stats.fetch_week_stats", fake_fetch
     )
     monkeypatch.setattr(app, "_sleeper_week_cache_populated", lambda s, w: False)
+    # The live-week kickoff check reads the real schedule cache; stub it so
+    # these tests don't depend on what week it really is.
+    monkeypatch.setattr(app, "_live_week_kickoff_passed", lambda s, w: False)
     return calls
 
 
 def test_ensure_fetches_each_missing_completed_week(ensure_state):
     app._ensure_sleeper_week_files(2026)
-    assert sorted(ensure_state) == [(2026, 1), (2026, 2)]
+    assert sorted(ensure_state) == [(2026, 1, False), (2026, 2, False)]
 
 
 def test_ensure_skips_populated_files_without_fetch(monkeypatch):
@@ -56,12 +60,14 @@ def test_ensure_skips_populated_files_without_fetch(monkeypatch):
     to backfill.
     """
     monkeypatch.setattr(app, "_SLEEPER_WEEK_ENSURE_TS", {})
+    monkeypatch.setattr(app, "_SLEEPER_LIVE_WEEK_TS", {})
+    monkeypatch.setattr(app, "_live_week_kickoff_passed", lambda s, w: False)
     monkeypatch.setattr(
         "utils.season_qualification.qualification_policy", lambda s: _Policy([1, 2])
     )
     monkeypatch.setattr(app, "_sleeper_week_cache_populated", lambda s, w: True)
 
-    def boom(season, week):
+    def boom(season, week, force=False):
         raise AssertionError("fetch must not run when files are populated")
 
     monkeypatch.setattr(
@@ -69,8 +75,9 @@ def test_ensure_skips_populated_files_without_fetch(monkeypatch):
     )
     app._ensure_sleeper_week_files(2026)
     app._ensure_sleeper_week_files(2026)
-    # No fetch, and the cooldown stays unarmed (nothing to retry).
+    # No fetch, and the cooldowns stay unarmed (nothing to retry).
     assert app._SLEEPER_WEEK_ENSURE_TS == {}
+    assert app._SLEEPER_LIVE_WEEK_TS == {}
 
 
 def test_ensure_cooldown_skips_repeat(ensure_state):
@@ -88,12 +95,14 @@ def test_ensure_refetches_after_cooldown(ensure_state):
 
 def test_ensure_never_raises_and_cools_down_on_failure(monkeypatch):
     monkeypatch.setattr(app, "_SLEEPER_WEEK_ENSURE_TS", {})
+    monkeypatch.setattr(app, "_SLEEPER_LIVE_WEEK_TS", {})
+    monkeypatch.setattr(app, "_live_week_kickoff_passed", lambda s, w: False)
     monkeypatch.setattr(
         "utils.season_qualification.qualification_policy", lambda s: _Policy([1])
     )
     monkeypatch.setattr(app, "_sleeper_week_cache_populated", lambda s, w: False)
 
-    def boom(season, week):
+    def boom(season, week, force=False):
         raise ConnectionError("sleeper down")
 
     monkeypatch.setattr(
@@ -129,3 +138,64 @@ def test_sleeper_stats_by_week_triggers_ensure(monkeypatch, tmp_path):
     monkeypatch.setattr(app, "CACHE_DIR", str(tmp_path))
     assert app._sleeper_stats_by_week("10229", 2026) == {}
     assert seen == [2026]
+
+
+def test_ensure_refreshes_live_week_after_kickoff(ensure_state, monkeypatch):
+    """Regression: a Thursday-night game must land in the Stats tab.
+
+    Week 3 is in progress (never "completed"), so the old helper never
+    fetched its file and the game log kept showing the projection. Once the
+    week's first kickoff has passed, the live week refetches with force=True.
+    """
+    monkeypatch.setattr(app, "_live_week_kickoff_passed", lambda s, w: True)
+    app._ensure_sleeper_week_files(2026)
+    assert (2026, 3, True) in ensure_state
+
+
+def test_ensure_skips_live_week_before_kickoff(ensure_state):
+    """No live fetch when the week's games haven't started yet."""
+    app._ensure_sleeper_week_files(2026)
+    assert all(week != 3 for _, week, _ in ensure_state)
+    assert app._SLEEPER_LIVE_WEEK_TS == {}
+
+
+def test_ensure_live_week_cooldown(ensure_state, monkeypatch):
+    """The live-week refresh is cooldown-guarded, not per-modal-open."""
+    monkeypatch.setattr(app, "_live_week_kickoff_passed", lambda s, w: True)
+    app._ensure_sleeper_week_files(2026)
+    app._ensure_sleeper_week_files(2026)
+    live = [c for c in ensure_state if c[1] == 3]
+    assert live == [(2026, 3, True)]
+
+
+def test_ensure_live_week_never_raises(monkeypatch):
+    """A Sleeper outage during the live refresh must not break modal opens."""
+    monkeypatch.setattr(app, "_SLEEPER_WEEK_ENSURE_TS", {})
+    monkeypatch.setattr(app, "_SLEEPER_LIVE_WEEK_TS", {})
+    monkeypatch.setattr(app, "_live_week_kickoff_passed", lambda s, w: True)
+    monkeypatch.setattr(
+        "utils.season_qualification.qualification_policy", lambda s: _Policy([1, 2])
+    )
+    monkeypatch.setattr(app, "_sleeper_week_cache_populated", lambda s, w: True)
+
+    def boom(season, week, force=False):
+        raise ConnectionError("sleeper down")
+
+    monkeypatch.setattr(
+        "data_building.external_data.sleeper_bulk_stats.fetch_week_stats", boom
+    )
+    app._ensure_sleeper_week_files(2026)  # must not raise
+    assert 2026 in app._SLEEPER_LIVE_WEEK_TS
+
+
+def test_ensure_skips_live_week_when_season_complete(ensure_state, monkeypatch):
+    """No live week exists once all 18 weeks are completed."""
+    monkeypatch.setattr(
+        "utils.season_qualification.qualification_policy",
+        lambda s: _Policy(list(range(1, 19))),
+    )
+    monkeypatch.setattr(app, "_sleeper_week_cache_populated", lambda s, w: True)
+    monkeypatch.setattr(app, "_live_week_kickoff_passed", lambda s, w: True)
+    app._ensure_sleeper_week_files(2026)
+    assert ensure_state == []
+    assert app._SLEEPER_LIVE_WEEK_TS == {}

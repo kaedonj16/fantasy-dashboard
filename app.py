@@ -18428,6 +18428,11 @@ def _load_usage_rows_cached(season_year: int):
 # A failed fetch (e.g. Sleeper outage) must not stall every modal open.
 _SLEEPER_WEEK_ENSURE_TS: dict = {}  # season(int) -> float
 _SLEEPER_WEEK_ENSURE_COOLDOWN_S = 10 * 60
+# Cooldown for the live (in-progress) week refresh (15 minutes). The live
+# week's file goes stale as each game finishes, so it refetches with
+# force=True; the cooldown keeps it to ~4 Sleeper hits/hour/season.
+_SLEEPER_LIVE_WEEK_TS: dict = {}  # season(int) -> float
+_SLEEPER_LIVE_WEEK_COOLDOWN_S = 15 * 60
 
 
 def _sleeper_week_cache_populated(season_year: int, week: int) -> bool:
@@ -18448,6 +18453,31 @@ def _sleeper_week_cache_populated(season_year: int, week: int) -> bool:
         return False
 
 
+def _live_week_kickoff_passed(season_year: int, week: int) -> bool:
+    """True once the week's first scheduled kickoff has passed.
+
+    Uses the cached schedule's ``gameTime_epoch`` so a Thursday-night game
+    marks its week as live even though the week is not "completed" yet.
+    Never raises.
+    """
+    try:
+        path = os.path.join(
+            CACHE_DIR, "schedule", f"schedule_s{int(season_year)}_w{int(week)}.json"
+        )
+        with open(path) as f:
+            games = json.load(f)
+        now = time.time()
+        for g in games if isinstance(games, list) else []:
+            try:
+                if float((g or {}).get("gameTime_epoch") or 0) <= now:
+                    return True
+            except (TypeError, ValueError):
+                continue
+    except Exception:
+        pass
+    return False
+
+
 def _ensure_sleeper_week_files(season_year: int) -> None:
     """Fetch-on-demand the Sleeper weekly stat files for completed weeks.
 
@@ -18465,6 +18495,13 @@ def _ensure_sleeper_week_files(season_year: int) -> None:
     JSON parsing, no retained memory. Only genuinely missing/empty files
     reach ``fetch_week_stats``, guarded by a per-season cooldown so a
     Sleeper outage can't stall modal opens.
+
+    The in-progress week is handled too: it is never "completed", so without
+    a live refresh a Thursday-night game would keep showing its projection
+    (with dashes) in the Stats tab until the whole week finalizes. Once the
+    week's first kickoff has passed, its file refetches with ``force=True``
+    on a 15-minute per-season cooldown so each finished game lands within
+    minutes.
     """
     try:
         season_year = int(season_year)
@@ -18475,22 +18512,34 @@ def _ensure_sleeper_week_files(season_year: int) -> None:
         completed = [int(w) for w in qualification_policy(season_year).completed_weeks]
     except Exception:
         return
-    missing = [w for w in completed if not _sleeper_week_cache_populated(season_year, w)]
-    if not missing:
-        return
-    now = time.time()
-    if now - _SLEEPER_WEEK_ENSURE_TS.get(season_year, 0.0) < _SLEEPER_WEEK_ENSURE_COOLDOWN_S:
-        return
-    _SLEEPER_WEEK_ENSURE_TS[season_year] = now
     try:
         from data_building.external_data.sleeper_bulk_stats import fetch_week_stats
     except Exception:
         return
-    for week in missing:
-        try:
-            fetch_week_stats(season_year, week)
-        except Exception:
-            continue
+    missing = [w for w in completed if not _sleeper_week_cache_populated(season_year, w)]
+    if missing:
+        now = time.time()
+        if now - _SLEEPER_WEEK_ENSURE_TS.get(season_year, 0.0) >= _SLEEPER_WEEK_ENSURE_COOLDOWN_S:
+            _SLEEPER_WEEK_ENSURE_TS[season_year] = now
+            for week in missing:
+                try:
+                    fetch_week_stats(season_year, week)
+                except Exception:
+                    continue
+    # ── Live week ──
+    try:
+        live_week = (max(completed) + 1) if completed else 1
+        if 1 <= live_week <= 18 and live_week not in completed:
+            now = time.time()
+            if now - _SLEEPER_LIVE_WEEK_TS.get(season_year, 0.0) >= _SLEEPER_LIVE_WEEK_COOLDOWN_S:
+                if _live_week_kickoff_passed(season_year, live_week):
+                    _SLEEPER_LIVE_WEEK_TS[season_year] = now
+                    try:
+                        fetch_week_stats(season_year, live_week, force=True)
+                    except Exception:
+                        pass
+    except Exception:
+        pass
 
 
 def _sleeper_stats_by_week(player_id: str, season_year: int) -> dict:

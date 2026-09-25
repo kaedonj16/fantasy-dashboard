@@ -181,3 +181,75 @@ def test_scoreboard_for_date_stays_unavailable_when_no_fallback_games(monkeypatc
     assert result == {}
     assert result.availability == "unavailable"
     assert result.source == "espn_nfl"
+
+
+def test_summary_parser_maps_real_espn_keys_not_just_labels():
+    """Regression: real ESPN payloads pair machine keys (passingYards) with
+    display labels (YDS). The old code preferred keys whenever the arrays had
+    equal length, so every offensive field missed the label-keyed map and the
+    box score rendered dashes (only sacks survived)."""
+    summary = {"boxscore": {"players": [{
+        "team": {"abbreviation": "GB"}, "statistics": [
+            {"name": "passing",
+             "keys": ["completions/passingAttempts", "passingYards",
+                      "yardsPerPassAttempt", "passingTouchdowns",
+                      "interceptions", "longestPass"],
+             "labels": ["C/ATT", "YDS", "AVG", "TD", "INT", "LNG"],
+             "athletes": [{
+                 "athlete": {"id": "123", "displayName": "Jordan Love",
+                             "position": {"abbreviation": "QB"}},
+                 "stats": ["28/53", "312", "5.9", "2", "1", "45"],
+             }]},
+            {"name": "receiving",
+             "keys": ["receptions", "receivingTargets", "receivingYards",
+                      "yardsPerReception", "longestReception",
+                      "receivingTouchdowns"],
+             "labels": ["REC", "TGTS", "YDS", "AVG", "TD", "LNG"],
+             "athletes": [{
+                 "athlete": {"id": "4701936", "displayName": "Matthew Golden",
+                             "position": {"abbreviation": "WR"}},
+                 "stats": ["5", "12", "100", "20.0", "45", "1"],
+             }]},
+            {"name": "defensive",
+             "keys": ["totalTackles", "soloTackles", "sacks", "tacklesForLoss",
+                      "passesDefended", "qbHits", "defensiveTouchdowns"],
+             "labels": ["TOT", "SOLO", "SACKS", "TFL", "PD", "QB HITS", "TD"],
+             "athletes": [{
+                 "athlete": {"id": "999", "displayName": "Some Defender",
+                             "position": {"abbreviation": "LB"}},
+                 "stats": ["3", "2", "0", "1", "0", "0", "0"],
+             }]},
+        ],
+    }]}}
+    result = nfl.summary_to_legacy(summary, {})
+    qb = result["playerStats"]["123"]
+    assert qb["Passing"]["passCompletions"] == 28
+    assert qb["Passing"]["passAttempts"] == 53
+    assert qb["Passing"]["passYds"] == 312
+    assert qb["Passing"]["passTD"] == 2
+    assert qb["Passing"]["int"] == 1
+    wr = result["playerStats"]["4701936"]
+    assert wr["Receiving"] == {"receptions": 5, "targets": 12,
+                              "recYds": 100, "recTD": 1}
+    lb = result["playerStats"]["999"]
+    assert lb["Defense"]["totalTackles"] == 3
+    assert lb["Defense"]["sacks"] == 0
+    assert "receiving.tgts" in result["field_availability"]
+
+
+def test_summary_parser_still_works_with_labels_only():
+    """Payloads without keys keep resolving through labels alone."""
+    summary = {"boxscore": {"players": [{
+        "team": {"abbreviation": "GB"}, "statistics": [
+            {"name": "receiving", "labels": ["REC", "TGTS", "YDS", "TD"],
+             "athletes": [{
+                 "athlete": {"id": "4701936", "displayName": "Matthew Golden",
+                             "position": {"abbreviation": "WR"}},
+                 "stats": ["5", "12", "100", "1"],
+             }]},
+        ],
+    }]}}
+    result = nfl.summary_to_legacy(summary, {})
+    wr = result["playerStats"]["4701936"]
+    assert wr["Receiving"] == {"receptions": 5, "targets": 12,
+                              "recYds": 100, "recTD": 1}
