@@ -159,9 +159,30 @@ table.nt-depth>thead>tr>th:first-child{{z-index:2}}
 .nt-opp-logo{{width:22px;height:22px;border-radius:50%;flex:none;background:var(--card-soft)}}
 .nt-wrow.nt-bye{{cursor:default;color:var(--text-muted)}}
 .nt-box{{padding:4px 12px 12px;font-size:13px}}
-.nt-boxscore-line{{font-size:15px;margin:8px 0 10px}}
-.nt-boxscore-team{{margin-bottom:12px}}
-.nt-boxscore-team table.nt-depth th[colspan]{{background:var(--card-soft)}}
+.nt-boxscore-line{{font-size:13px;margin:6px 0 8px}}
+.nt-boxscore-teams{{display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:start}}
+.nt-boxscore-team{{margin-bottom:0;min-width:0}}
+.nt-boxscore-team>b{{display:block;font-size:13px;margin-bottom:4px}}
+.nt-boxscore-team table.nt-depth th[colspan]{{background:var(--card-soft);font-size:11px;padding:5px 6px}}
+.nt-boxscore table.nt-depth th{{font-size:10px;padding:5px 6px}}
+.nt-boxscore table.nt-depth td{{padding:5px 6px;font-size:12px}}
+.nt-boxscore .nt-pname{{font-size:12px}}
+.nt-sheet-backdrop{{position:fixed;inset:0;z-index:calc(var(--z-modal) - 1);background:rgba(0,0,0,.6);opacity:0;transition:opacity .25s ease}}
+.nt-sheet-backdrop.open{{opacity:1}}
+.nt-sheet{{position:fixed;left:0;right:0;bottom:0;z-index:var(--z-modal);max-width:480px;margin:0 auto;max-height:88vh;max-height:88dvh;display:flex;flex-direction:column;background:var(--card);border:1px solid var(--border);border-bottom:none;border-radius:18px 18px 0 0;transform:translateY(102%);transition:transform .3s cubic-bezier(.32,.72,.28,1);color:var(--text)}}
+.nt-sheet.open{{transform:translateY(0)}}
+.nt-sheet-handle{{width:40px;height:4px;border-radius:2px;background:var(--border);margin:10px auto 2px;flex:0 0 auto}}
+.nt-sheet-head{{display:flex;align-items:center;gap:10px;padding:8px 16px 10px;border-bottom:1px solid var(--border);flex:0 0 auto}}
+.nt-sheet-title{{font-size:16px;font-weight:800}}
+.nt-sheet-sub{{font-size:11.5px;color:var(--text-muted);font-weight:600;margin-top:1px;font-variant-numeric:tabular-nums}}
+.nt-sheet-x{{margin-left:auto;appearance:none;cursor:pointer;width:32px;height:32px;border-radius:10px;border:1px solid var(--border);background:var(--card-soft);color:var(--text-muted);font-size:15px;font-weight:700;line-height:1;flex:none}}
+.nt-sheet-body{{flex:1 1 auto;min-height:0;overflow-y:auto;padding:12px 16px calc(28px + env(safe-area-inset-bottom));-webkit-overflow-scrolling:touch}}
+.nt-sheet-teams{{display:flex;gap:6px;margin-bottom:6px;background:var(--card-soft);border:1px solid var(--border);border-radius:12px;padding:4px}}
+.nt-sheet-team{{flex:1;appearance:none;cursor:pointer;border:none;background:transparent;color:var(--text-muted);font:inherit;font-size:13px;font-weight:800;padding:9px 6px;border-radius:9px;min-height:40px}}
+.nt-sheet-team.is-on{{background:var(--bg);color:var(--text);box-shadow:inset 0 0 0 1px var(--border)}}
+.nt-sheet .nt-boxscore-teams{{grid-template-columns:1fr}}
+.nt-sheet .nt-boxscore-team>b{{font-size:14px}}
+@media(prefers-reduced-motion:reduce){{.nt-sheet-backdrop,.nt-sheet{{transition:none}}}}
 .nt-err{{padding:24px 16px;text-align:center;color:var(--text-muted)}}
 .nt-err button{{margin-top:10px}}
 .nt-load{{padding:32px 16px;text-align:center;color:var(--text-muted)}}
@@ -595,6 +616,7 @@ function renderProfile(){{
   el.querySelectorAll(".nt-wrow[data-w]").forEach(function(b){{
     b.addEventListener("click",function(){{
       var key=b.getAttribute("data-w");
+      if(isMobileBox()){{openBoxSheet(key);return;}}
       var ex=Object.assign({{}},state.expanded);
       if(ex[key])delete ex[key];else ex[key]=1;
       update({{expanded:ex}},false);
@@ -605,38 +627,130 @@ function renderProfile(){{
 }}
 
 var BOX_CACHE={{}};
+function isMobileBox(){{return !!(window.matchMedia&&window.matchMedia("(max-width: 640px)").matches);}}
+function findWkRow(key){{
+  var parts=key.split("-");var abbr=parts[0];
+  var wkRow=null;(DETAIL.schedule||[]).forEach(function(g){{if(abbr+"-"+g.week+"-"+(g.season_type||"reg")===key)wkRow=g;}});
+  return {{abbr:abbr,wkRow:wkRow}};
+}}
+function fetchBox(key,ok,no){{
+  if(BOX_CACHE[key]){{ok(BOX_CACHE[key],true);return;}}
+  var found=findWkRow(key),abbr=found.abbr,wkRow=found.wkRow;
+  if(!wkRow||!wkRow.game_id){{no();return;}}
+  api("/api/player-team-boxscore?game_id="+encodeURIComponent(wkRow.game_id)+"&team="+encodeURIComponent(abbr))
+    .then(function(bx){{BOX_CACHE[key]=bx;ok(bx,false);}})
+    .catch(no);
+}}
+function wirePnameModal(host){{
+  host.querySelectorAll(".nt-pname").forEach(function(b){{
+    b.addEventListener("click",function(e){{
+      e.stopPropagation();
+      var pid=b.getAttribute("data-pid"),pname=b.getAttribute("data-pname");
+      if(pid&&typeof window.openPlayerModal==="function"){{window.openPlayerModal(pid,pname,{{}});}}
+    }});
+  }});
+}}
 function loadBox(key){{
   var host=document.getElementById("ntBox-"+CSS.escape(key));
   if(!host||host.__done)return;host.__done=true;
-  if(BOX_CACHE[key]){{host.innerHTML=BOX_CACHE[key];return;}}
-  var parts=key.split("-");var abbr=parts[0];
-  var wkRow=null;(DETAIL.schedule||[]).forEach(function(g){{if(abbr+"-"+g.week+"-"+(g.season_type||"reg")===key)wkRow=g;}});
-  if(!wkRow||!wkRow.game_id){{host.innerHTML='<div class="nt-fine">Box score unavailable.</div>';return;}}
-  api("/api/player-team-boxscore?game_id="+encodeURIComponent(wkRow.game_id)+"&team="+encodeURIComponent(abbr))
-    .then(function(bx){{
-      var html=boxHTML(bx,abbr,wkRow);
-      BOX_CACHE[key]=html;host.innerHTML=html;
-      host.querySelectorAll(".nt-pname").forEach(function(b){{
-        b.addEventListener("click",function(e){{
-          e.stopPropagation();
-          var pid=b.getAttribute("data-pid"),pname=b.getAttribute("data-pname");
-          if(pid&&typeof window.openPlayerModal==="function"){{window.openPlayerModal(pid,pname,{{}});}}
-        }});
-      }});
-    }})
-    .catch(function(){{host.innerHTML='<div class="nt-fine">Box score unavailable.</div>';host.__done=false;}});
+  fetchBox(key,function(bx){{
+    var found=findWkRow(key);
+    host.innerHTML=boxHTML(bx,found.abbr,found.wkRow);
+    wirePnameModal(host);
+  }},function(){{host.innerHTML='<div class="nt-fine">Box score unavailable.</div>';host.__done=false;}});
 }}
-function boxHTML(bx,abbr,wkRow){{
+// ── Mobile box-score sheet (Redzone-style bottom sheet) ──────────────
+// On phones the inline two-column box score becomes a bottom sheet showing
+// one team at a time with a toggle, mirroring the Redzone box score sheet.
+var _ntSheet=null,_ntSheetEls=null;
+function _ntSheetStatus(bx){{
+  if(!bx||bx.started===false)return "Not started";
+  if(bx.status==="final")return "Final";
+  if(bx.quarter)return "Q"+bx.quarter+(bx.clock?" "+bx.clock:"");
+  return bx.status||"Live";
+}}
+function _ntSheetRender(){{
+  if(!_ntSheet||!_ntSheetEls)return;
+  var s=_ntSheet,bx=s.data;
+  var home=(bx&&bx.home)||{{}},away=(bx&&bx.away)||{{}};
+  var title="Box score",sub="Loading.";
+  if(bx){{
+    var ha=home.team||"",aa=away.team||"";
+    if(aa||ha)title=(aa||"-")+" @ "+(ha||"-");
+    var hp=home.pts,ap=away.pts;
+    var score=(ap==null||hp==null)?"":ap+"-"+hp;
+    sub=_ntSheetStatus(bx)+(score?" · "+score:"");
+  }}else if(s.error){{sub="Unavailable";}}
+  _ntSheetEls.title.textContent=title;
+  _ntSheetEls.sub.textContent=sub;
+  var body=_ntSheetEls.body;
+  if(s.error||!bx){{body.innerHTML='<div class="nt-fine">'+esc((bx&&bx.message)||"Box score unavailable.")+'</div>';return;}}
+  var teams=[away.team,home.team].filter(Boolean);
+  var team=s.team&&bx.teams&&bx.teams[s.team]?s.team:teams[0];
+  s.team=team;
+  var toggle='<div class="nt-sheet-teams" role="group" aria-label="Team">'+teams.map(function(ab){{
+    return '<button type="button" class="nt-sheet-team'+(ab===team?" is-on":"")+'" data-ntsteam="'+esc(ab)+'" aria-pressed="'+(ab===team)+'">'+esc(ab)+'</button>';
+  }}).join("")+'</div>';
+  body.innerHTML=toggle+boxHTML(bx,team,null,team);
+  wirePnameModal(body);
+}}
+function _ntCloseSheet(){{
+  if(_ntSheetEls){{
+    if(_ntSheetEls.backdrop.parentNode)_ntSheetEls.backdrop.parentNode.removeChild(_ntSheetEls.backdrop);
+    if(_ntSheetEls.sheet.parentNode)_ntSheetEls.sheet.parentNode.removeChild(_ntSheetEls.sheet);
+    _ntSheetEls=null;
+  }}
+  _ntSheet=null;
+  document.removeEventListener("keydown",_ntSheetKey);
+  document.body.style.overflow="";
+}}
+function _ntSheetKey(e){{if(e&&e.key==="Escape")_ntCloseSheet();}}
+function openBoxSheet(key){{
+  _ntCloseSheet();
+  var backdrop=document.createElement("div");backdrop.className="nt-sheet-backdrop";
+  var sheet=document.createElement("div");sheet.className="nt-sheet";
+  sheet.setAttribute("role","dialog");sheet.setAttribute("aria-modal","true");sheet.setAttribute("aria-label","Game box score");
+  sheet.innerHTML='<div class="nt-sheet-handle" aria-hidden="true"></div>'
+    +'<div class="nt-sheet-head"><div><div class="nt-sheet-title">Box score</div>'
+    +'<div class="nt-sheet-sub">Loading.</div></div>'
+    +'<button type="button" class="nt-sheet-x" data-ntsclose="1" aria-label="Close box score">✕</button></div>'
+    +'<div class="nt-sheet-body"><div class="nt-load">Loading box score.</div></div>';
+  document.body.appendChild(backdrop);document.body.appendChild(sheet);
+  _ntSheetEls={{backdrop:backdrop,sheet:sheet,
+    title:sheet.querySelector(".nt-sheet-title"),sub:sheet.querySelector(".nt-sheet-sub"),
+    body:sheet.querySelector(".nt-sheet-body")}};
+  _ntSheet={{key:key,team:"",data:null,error:false}};
+  requestAnimationFrame(function(){{requestAnimationFrame(function(){{
+    backdrop.classList.add("open");sheet.classList.add("open");
+  }});}});
+  document.body.style.overflow="hidden";
+  document.addEventListener("keydown",_ntSheetKey);
+  backdrop.addEventListener("click",_ntCloseSheet);
+  sheet.addEventListener("click",function(e){{
+    var t=e.target,closest=function(sel){{return t&&t.closest?t.closest(sel):null;}};
+    if(closest("[data-ntsclose]")){{_ntCloseSheet();return;}}
+    var tb=closest("[data-ntsteam]");
+    if(tb&&_ntSheet){{_ntSheet.team=tb.getAttribute("data-ntsteam");_ntSheetRender();}}
+  }});
+  fetchBox(key,function(bx){{if(!_ntSheet||_ntSheet.key!==key)return;_ntSheet.data=bx;_ntSheetRender();}},
+    function(){{if(!_ntSheet||_ntSheet.key!==key)return;_ntSheet.error=true;_ntSheetRender();}});
+}}
+function boxHTML(bx,abbr,wkRow,onlyAbbr){{
   if(!bx||bx.available===false){{return '<div class="nt-fine">'+esc((bx&&bx.message)||"Box score unavailable.")+'</div>';}}
   var home=bx.home||{{}},away=bx.away||{{}};
-  var h='<div class="nt-boxscore"><div class="nt-boxscore-line"><b>'+esc(home.name||"")+'</b> '+esc(home.pts==null?"":home.pts)+
-    ' &middot; <b>'+esc(away.name||"")+'</b> '+esc(away.pts==null?"":away.pts)+
-    (bx.quarter?(' &middot; '+esc("Q"+bx.quarter+(bx.clock?" "+bx.clock:""))):"")+'</div>';
+  var h='<div class="nt-boxscore">';
+  if(!onlyAbbr){{
+    h+='<div class="nt-boxscore-line"><b>'+esc(home.name||"")+'</b> '+esc(home.pts==null?"":home.pts)+
+      ' &middot; <b>'+esc(away.name||"")+'</b> '+esc(away.pts==null?"":away.pts)+
+      (bx.quarter?(' &middot; '+esc("Q"+bx.quarter+(bx.clock?" "+bx.clock:""))):"")+'</div>';
+  }}
+  h+='<div class="nt-boxscore-teams">';
   var sides=[[home,away],[away,home]];
   sides.forEach(function(pair){{
     var info=pair[0];
     var ab=info.team||"";
-    var grp=(bx.teams&&bx.teams[ab]&&bx.teams[ab].groups)||[];
+    if(onlyAbbr&&ab!==onlyAbbr)return;
+    var grp=((bx.teams&&bx.teams[ab]&&bx.teams[ab].groups)||[]).filter(function(g){{return g.pos!=="DEF"&&g.pos!=="ST";}});
     if(!grp.length)return;
     h+='<div class="nt-boxscore-team"><b>'+esc(info.name||ab)+'</b><div class="nt-tscroll"><table class="nt-depth">';
     grp.forEach(function(g){{
@@ -651,7 +765,7 @@ function boxHTML(bx,abbr,wkRow){{
     }});
     h+='</table></div></div>';
   }});
-  h+='</div>';
+  h+='</div></div>';
   return h;
 }}
 
