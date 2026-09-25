@@ -3759,6 +3759,19 @@ button:hover {
     min-height: 46px;
 }
 
+/* Records with division detail ("2-0 (1-0)"): keep the whole record on one
+   line so the parenthesized division part never wraps mid-record on narrow
+   phones. Tabular numerals keep the column aligned; the division part is
+   muted and slightly smaller to help it fit. */
+.st-record {
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+.st-record .st-div-rec {
+    color: var(--text-muted);
+    font-size: 0.85em;
+}
+
 /* Standings "Detailed" toggle: 8 extra stat columns appended after Exp. Seed,
    hidden until the toggle adds .show-detail to the table. */
 .standings-table .st-detail-col {
@@ -28881,7 +28894,7 @@ button:disabled {
 .weekly-recap .recap-team-name { color:var(--text); font-size:14px; font-weight:650; overflow-wrap:anywhere; }
 .weekly-recap .recap-team--winner .recap-team-name, .weekly-recap .recap-team--winner .recap-team-score { font-weight:850; }
 .weekly-recap .recap-team-manager { color:var(--muted); font-size:10px; overflow-wrap:anywhere; }
-.weekly-recap .recap-team-record { color:var(--muted); font-size:10px; font-variant-numeric:tabular-nums; }
+.weekly-recap .recap-team-record { color:var(--muted); font-size:10px; font-variant-numeric:tabular-nums; white-space:nowrap; }
 .weekly-recap .recap-team-score { display:none; font-size:20px; font-variant-numeric:tabular-nums; white-space:nowrap; }
 .weekly-recap .recap-matchup-score { text-align:center; }
 .weekly-recap .recap-matchup-scoreline { font-size:17px; font-weight:800; font-variant-numeric:tabular-nums; white-space:nowrap; }

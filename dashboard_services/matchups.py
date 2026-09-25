@@ -1685,7 +1685,10 @@ def render_matchup_slide(
         _div = _div_record_for(rid)
         if _div is not None and record != "-":
             _dtxt = f"{_div[0]}-{_div[1]}" + (f"-{_div[2]}" if _div[2] else "")
-            record = f"{record} ({_dtxt})"
+            # Keep the whole "W-L (dW-dL)" record on one line (st-record) with
+            # the division part muted, matching the standings tables.
+            record = (f'<span class="st-record">{html.escape(record)} '
+                      f'<span class="st-div-rec">({html.escape(_dtxt)})</span></span>')
         username = t.get('username') or ''
         ava = t.get("avatar") or ""
         img_html = f"<img class='avatar m-av' src='{ava}' alt='' loading='lazy' decoding='async' onerror=\"this.style.display='none'\">" if ava else ""
