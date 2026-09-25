@@ -255,6 +255,7 @@ def test_weekly_overlay_footer_and_recap_finale(offline_client):
 
 def test_weekly_empty_week_returns_no_overlay(offline_client):
     import app
+    from unittest import mock
     from dashboard_services.pages import history_page as H
 
     ctx = _mock_week_ctx()
@@ -264,17 +265,57 @@ def test_weekly_empty_week_returns_no_overlay(offline_client):
     assert len(slides) < 3
     with app.app.test_request_context("/"):
         assert H.render_weekly_wrapped_overlay(ctx, 4) == ""
-    # ...and the launcher URL helper agrees.
-    assert H.weekly_wrapped_url(ctx, "sleeper", 2026, "L1", 4) == ""
-    assert H.weekly_wrapped_url(ctx, "sleeper", 2026, "L1", 3) == \
-        "/api/weekly/sleeper/2026/L1/3/wrapped"
+    # ...and the launcher URL helper agrees (NFL state: week 4 in progress).
+    with mock.patch("dashboard_services.api.get_nfl_state",
+                    return_value={"season": "2026", "week": 4,
+                                  "season_type": "regular"}):
+        assert H.weekly_wrapped_url(ctx, "sleeper", 2026, "L1", 4) == ""
+        assert H.weekly_wrapped_url(ctx, "sleeper", 2026, "L1", 3) == \
+            "/api/weekly/sleeper/2026/L1/3/wrapped"
 
 
-def test_weekly_launcher_is_namespaced_and_hides_without_scores():
+def test_weekly_wrapped_url_hidden_until_week_is_done():
+    from unittest import mock
     from dashboard_services.pages import history_page as H
 
     ctx = _mock_week_ctx()
-    shown = H.weekly_wrapped_launcher_html(ctx, "sleeper", 2026, "L1", 3)
+    # Week 3 is fully finalized AND done (NFL state past it): URL present.
+    with mock.patch("dashboard_services.api.get_nfl_state",
+                    return_value={"season": "2026", "week": 4,
+                                  "season_type": "regular"}):
+        assert H._week_is_done(ctx, 2026, 3) is True
+        assert H._week_is_done(ctx, 2026, 4) is False
+        assert H.weekly_wrapped_url(ctx, "sleeper", 2026, "L1", 4) == ""
+    # In-progress current week with enough slides still hides the button.
+    ctx_done = dict(ctx, df_weekly=ctx["df_weekly"].copy())
+    with mock.patch("dashboard_services.api.get_nfl_state",
+                    return_value={"season": "2026", "week": 3,
+                                  "season_type": "regular"}):
+        assert H._week_is_done(ctx_done, 2026, 3) is False
+        assert H.weekly_wrapped_url(ctx_done, "sleeper", 2026, "L1", 3) == ""
+    # Season-complete/offseason: every week counts as done.
+    assert H._week_is_done(dict(ctx, season_complete=True), 2026, 4) is True
+    assert H._week_is_done(dict(ctx, offseason_mode=True), 2026, 4) is True
+    # Past season: done. Sleeper failure: fail open (old behavior).
+    with mock.patch("dashboard_services.api.get_nfl_state",
+                    return_value={"season": "2026", "week": 18,
+                                  "season_type": "regular"}):
+        assert H._week_is_done(ctx, 2025, 17) is True
+    with mock.patch("dashboard_services.api.get_nfl_state",
+                    side_effect=RuntimeError("sleeper down")):
+        assert H._week_is_done(ctx, 2026, 3) is True
+
+
+def test_weekly_launcher_is_namespaced_and_hides_without_scores():
+    from unittest import mock
+    from dashboard_services.pages import history_page as H
+
+    ctx = _mock_week_ctx()
+    # NFL state past week 3: the week is done, so the launcher shows.
+    with mock.patch("dashboard_services.api.get_nfl_state",
+                    return_value={"season": "2026", "week": 4,
+                                  "season_type": "regular"}):
+        shown = H.weekly_wrapped_launcher_html(ctx, "sleeper", 2026, "L1", 3)
     assert "id='weekly-wrappedLaunch'" in shown
     assert "id='weekly-wrappedMount'" in shown
     assert "Weekly Wrapped" in shown
