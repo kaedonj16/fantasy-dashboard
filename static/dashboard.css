@@ -12507,8 +12507,16 @@ a.signed-home-league:hover {
 
 .home-hero-right {
     display: flex;
-    justify-content: flex-end;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
     animation: homeCardIn var(--dur-slow) var(--ease-out) .08s both;
+}
+
+/* The PRO CTA sits under the Get started card so the free path comes first
+   on mobile and desktop. */
+.home-hero-right .home-pro-hero-cta {
+    margin: 14px 2px 0;
 }
 
 .home-hero-editorial {

@@ -59,7 +59,8 @@ def test_pro_section_moved_after_quotes_with_reworked_copy():
     freeband_start = APP_PY.index('<section class="freeband">')
     assert quotes_start < pro_start < freeband_start
     pro = _pro_section()
-    assert "Less than $1 a month" in pro
+    assert "From $5 a year." in pro
+    assert "Less than $1 a month" not in pro
     assert "$10/year. Cancel anytime." in pro
     assert "From $5/year" not in pro
     assert "See exactly how each trade shifts your playoff odds before you send it" in pro
