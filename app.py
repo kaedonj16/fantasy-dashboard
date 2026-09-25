@@ -24533,6 +24533,21 @@ def _nfl_teams_oline_ranks(ratings: dict) -> dict:
     return teams
 
 
+# Team identity colors for the NFL Teams page (bars, chips). Kept next to the
+# rankings API that serves them; the in-function _NFL_COLORS copy elsewhere in
+# this file belongs to a different page.
+_NFL_TEAM_COLORS = {
+    "ARI": "#97233F", "ATL": "#A71930", "BAL": "#241773", "BUF": "#00338D",
+    "CAR": "#0085CA", "CHI": "#C83803", "CIN": "#FB4F14", "CLE": "#FF3C00",
+    "DAL": "#003594", "DEN": "#FB4F14", "DET": "#0076B6", "GB": "#2D5016",
+    "HOU": "#A71930", "IND": "#002C5F", "JAX": "#006778", "KC": "#E31837",
+    "LAC": "#0080C6", "LAR": "#003594", "LV": "#1A1A1A", "MIA": "#008E97",
+    "MIN": "#4F2683", "NE": "#C60C30", "NO": "#9F8958", "NYG": "#0B2265",
+    "NYJ": "#125740", "PHI": "#004C54", "PIT": "#FFB612", "SEA": "#69BE28",
+    "SF": "#AA0000", "TB": "#D50A0A", "TEN": "#4B92DB", "WAS": "#773141",
+}
+
+
 @app.route("/api/nfl-team-rankings")
 def api_nfl_team_rankings():
     """Public, league-free: one row per NFL team with honest per-game values.
@@ -24578,6 +24593,7 @@ def api_nfl_team_rankings():
                     "city": city or full,
                     "name": name or team,
                     "logo": info.get("Logo") or "",
+                    "color": _NFL_TEAM_COLORS.get(team) or "",
                     "bye_week": info.get("byeWeek"),
                     "games": team_games.get(team),
                     "ranks": team_ranks,

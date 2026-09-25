@@ -21,6 +21,7 @@ VIEW_DEFS = (
     ("passing", "Passing"),
     ("rushing", "Rushing"),
     ("oline", "Offensive Line"),
+    ("defense", "Defense"),
 )
 
 
@@ -49,44 +50,58 @@ def build_nfl_teams_body(
 <div class="nt-page" data-season="{season}" data-team="{team}" data-view="{view}">
 <style>
 .nt-page{{max-width:1060px;margin:0 auto;padding:18px 16px 28px;color:var(--text)}}
-.nt-phead{{display:flex;justify-content:space-between;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:14px}}
-.nt-phead h1{{font-size:24px;margin:0 0 4px}}
-.nt-sub{{color:var(--text-muted);margin:0;font-size:13px}}
-.nt-controls{{display:flex;gap:10px;align-items:center;flex-wrap:wrap}}
+.nt-card{{margin-bottom:16px}}
+.nt-cbody{{padding:0 16px 16px}}
+.nt-chead{{padding:14px 16px 10px}}
+.nt-chead h2{{font-size:18px;margin:0}}
+.nt-sub{{color:var(--text-muted);margin:4px 0 0;font-size:13px}}
+.nt-controls{{display:flex;gap:8px;align-items:center;flex-wrap:wrap}}
+.nt-hbtn{{flex-shrink:0;display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border:1px solid var(--border);border-radius:8px;background:var(--card);color:var(--text-muted);font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;font-family:inherit}}
+.nt-hbtn:hover{{background:var(--row)}}
 .nt-seaslab{{font-size:12px;color:var(--text-muted)}}
-.nt-csel select{{appearance:none;background:var(--card);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:9px 30px 9px 12px;font-size:14px;min-height:42px;cursor:pointer;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23888' fill='none' stroke-width='1.5'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center}}
-.nt-tabs{{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap}}
-.nt-tabs button{{border:1px solid var(--border);background:var(--card);color:var(--text-muted);border-radius:999px;padding:9px 16px;font-size:13px;font-weight:600;cursor:pointer;min-height:40px}}
+.nt-csel select{{appearance:none;background:var(--card);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:8px 30px 8px 12px;font-size:13px;min-height:38px;cursor:pointer;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23888' fill='none' stroke-width='1.5'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center}}
+.nt-tabs{{display:flex;gap:8px;margin:12px 0 2px;flex-wrap:wrap}}
+.nt-tabs button{{padding:7px 14px;border:1px solid var(--border);border-radius:999px;background:var(--card);color:var(--text);font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;transition:background .14s,border-color .14s;min-height:36px;font-family:inherit}}
+.nt-tabs button:hover{{background:var(--row)}}
 .nt-tabs button[aria-selected="true"]{{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}}
-.nt-tcard{{background:var(--card);border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:16px}}
+.nt-tcard{{overflow:hidden;margin-top:12px}}
 .nt-tscroll{{overflow-x:auto}}
-table.nt-rank{{border-collapse:collapse;width:100%;min-width:660px}}
-table.nt-rank thead th{{position:sticky;top:0;background:var(--card-soft);z-index:2;border-bottom:1px solid var(--border);padding:0;text-align:right;font-size:12px}}
-table.nt-rank thead th.nt-teamcol{{text-align:left;left:0;z-index:3}}
-table.nt-rank th .nt-thbtn{{background:none;border:0;color:var(--text);font:inherit;font-weight:700;padding:12px 10px;cursor:pointer;min-height:44px;white-space:nowrap}}
-table.nt-rank th .nt-thbtn .nt-arr{{color:var(--accent);margin-left:4px}}
-table.nt-rank td{{border-top:1px solid var(--border);padding:8px 10px;text-align:right;vertical-align:middle}}
-table.nt-rank td.nt-teamcol{{text-align:left;position:sticky;left:0;background:var(--card);z-index:1}}
+table.nt-rank{{border-collapse:collapse;width:100%;min-width:680px}}
+table.nt-rank thead th{{padding:8px 10px;border-bottom:1px solid var(--border);text-align:right;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);white-space:nowrap}}
+table.nt-rank thead th.nt-teamcol,table.nt-rank thead th.nt-rankcol{{text-align:left}}
+table.nt-rank th .nt-thbtn{{background:none;border:0;color:inherit;font:inherit;padding:0;cursor:pointer;white-space:nowrap}}
+table.nt-rank th .nt-thbtn:hover{{color:var(--text)}}
+table.nt-rank th .nt-arr{{color:var(--text-muted);margin-left:4px}}
+table.nt-rank td{{border-top:1px solid var(--border);padding:9px 10px;vertical-align:middle;font-size:14px}}
 table.nt-rank tbody tr{{cursor:pointer}}
-table.nt-rank tbody tr:hover td{{background:var(--card-soft)}}
-table.nt-rank tbody tr:hover td.nt-teamcol{{background:var(--card-soft)}}
+table.nt-rank tbody tr:hover td{{background:var(--row)}}
 table.nt-rank tbody tr.nt-sel td{{background:var(--accent-soft)}}
-table.nt-rank tbody tr.nt-sel td.nt-teamcol{{box-shadow:inset 3px 0 0 var(--accent)}}
-.nt-v{{font-weight:700;font-size:15px}}
-.nt-v.nt-na{{color:var(--text-muted);font-weight:500}}
-.nt-rk{{font-size:11px;color:var(--text-muted)}}
-.nt-tid{{display:flex;align-items:center;gap:8px}}
+.nt-rbadge{{display:inline-block;min-width:32px;text-align:center;font-size:11px;font-weight:800;padding:2px 6px;border-radius:999px;background:var(--row);color:var(--text-muted)}}
+.nt-rbadge.nt-gold{{background:color-mix(in srgb,var(--gold) 16%,transparent);color:var(--gold)}}
+.nt-tid{{display:flex;align-items:center;justify-content:space-between;gap:8px}}
+.nt-tleft{{display:flex;align-items:center;gap:10px;min-width:0}}
 .nt-logo{{width:28px;height:28px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;color:#fff;flex:none;overflow:hidden;background:var(--card-soft)}}
 .nt-logo img{{width:100%;height:100%;object-fit:cover}}
 .nt-logo.nt-lg{{width:44px;height:44px;font-size:13px}}
-.nt-tid .nt-tn{{font-weight:700}}
-.nt-tid .nt-tc{{font-size:11px;color:var(--text-muted)}}
+.nt-tid .nt-tn{{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}
+.nt-tright{{display:flex;align-items:center;gap:8px;flex:none}}
+.nt-abbr{{font-weight:800;font-size:11px;border-radius:6px;padding:4px 8px;letter-spacing:.04em}}
+.nt-gp{{font-size:11px;color:var(--text-muted);white-space:nowrap}}
+.nt-metric{{display:flex;align-items:center;gap:10px;justify-content:flex-end}}
+.nt-mbar{{flex:1;min-width:64px;max-width:170px}}
+.nt-mtrack{{position:relative;background:rgba(128,128,128,.18);border-radius:6px;height:10px;width:100%}}
+.nt-mfill{{position:absolute;left:0;top:0;bottom:0;border-radius:6px}}
+.nt-val{{font-weight:700;font-size:13px;white-space:nowrap;min-width:48px;text-align:right;font-variant-numeric:tabular-nums}}
+.nt-val.nt-na{{color:var(--text-muted);font-weight:500}}
+.nt-vwrap{{display:flex;flex-direction:column;align-items:flex-end;line-height:1.25}}
+.nt-eff{{font-size:10px;color:var(--text-muted);white-space:nowrap;font-variant-numeric:tabular-nums}}
 .nt-tnote{{margin:0;padding:10px 14px;font-size:12px;color:var(--text-muted);border-top:1px solid var(--border)}}
+@media(max-width:600px){{.nt-mbar{{display:none}}.nt-metric{{gap:0}}.nt-val{{min-width:40px;font-size:12px}}table.nt-rank{{min-width:520px}}}}
 .nt-pcard{{background:var(--card);border:1px solid var(--border);border-radius:12px;margin-bottom:16px;overflow:hidden}}
 .nt-pcard.nt-empty{{padding:28px 20px;text-align:center;color:var(--text-muted)}}
 .nt-pcard.nt-empty h2{{color:var(--text);margin:0 0 6px;font-size:17px}}
 .nt-backrow{{margin:0 0 12px}}
-.nt-back{{background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:999px;padding:10px 18px;font-size:14px;font-weight:700;cursor:pointer;min-height:44px}}
+.nt-back{{background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:999px;padding:10px 18px;font-size:14px;font-weight:700;cursor:pointer;min-height:44px;font-family:inherit}}
 .nt-back:active{{transform:scale(.98)}}
 .nt-phead2{{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid var(--border)}}
 .nt-pid{{display:flex;align-items:center;gap:12px}}
@@ -101,7 +116,7 @@ table.nt-rank tbody tr.nt-sel td.nt-teamcol{{box-shadow:inset 3px 0 0 var(--acce
 .nt-erow:first-of-type{{border-top:0}}
 .nt-elab{{font-size:13px}}
 .nt-eval{{display:block;font-size:11px;color:var(--text-muted)}}
-.nt-bar{{height:8px;background:var(--card-soft);border-radius:4px;overflow:hidden}}
+.nt-bar{{height:8px;background:rgba(128,128,128,.18);border-radius:4px;overflow:hidden}}
 .nt-bar i{{display:block;height:100%;background:var(--accent);border-radius:4px}}
 .nt-erk{{font-size:12px;font-weight:700;text-align:right}}
 .nt-fine{{font-size:12px;color:var(--text-muted);margin:10px 0 0}}
@@ -114,7 +129,7 @@ details.nt-method{{border:1px solid var(--border);border-radius:8px;padding:10px
 details.nt-method summary{{cursor:pointer;font-weight:700;min-height:32px}}
 .nt-mrow{{display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--border);font-size:13px}}
 .nt-seg{{display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap}}
-.nt-seg button{{border:1px solid var(--border);background:var(--card);color:var(--text-muted);border-radius:8px;padding:8px 14px;font-size:13px;font-weight:700;cursor:pointer;min-height:40px}}
+.nt-seg button{{border:1px solid var(--border);background:var(--card);color:var(--text-muted);border-radius:8px;padding:8px 14px;font-size:13px;font-weight:700;cursor:pointer;min-height:40px;font-family:inherit}}
 .nt-seg button[aria-pressed="true"]{{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}}
 table.nt-depth{{border-collapse:collapse;width:100%}}
 table.nt-depth th{{text-align:left;font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;padding:8px;border-bottom:1px solid var(--border)}}
@@ -139,18 +154,25 @@ table.nt-depth td{{padding:9px 8px;border-top:1px solid var(--border);font-size:
 .nt-err{{padding:24px 16px;text-align:center;color:var(--text-muted)}}
 .nt-err button{{margin-top:10px}}
 .nt-load{{padding:32px 16px;text-align:center;color:var(--text-muted)}}
+
 </style>
-<header class="nt-phead">
-  <div><h1>NFL Team Rankings</h1><p class="nt-sub" id="ntSeasonSub">Loading team data.</p></div>
-  <div class="nt-controls">
-    <label class="nt-seaslab" for="ntSeasonSel">Season</label>
-    <span class="nt-csel"><select id="ntSeasonSel" aria-label="Season">{season_opts}</select></span>
+<div class="card nt-card">
+  <div class="card-header nt-chead">
+    <div><h2>NFL Team Rankings</h2><p class="nt-sub" id="ntSeasonSub">Loading team data.</p></div>
+    <div class="nt-controls">
+      <button type="button" class="nt-hbtn" id="ntHowBtn">How ranks work</button>
+      <button type="button" class="nt-hbtn" id="ntCsvBtn">CSV</button>
+      <label class="nt-seaslab" for="ntSeasonSel">Season</label>
+      <span class="nt-csel"><select id="ntSeasonSel" aria-label="Season">{season_opts}</select></span>
+    </div>
   </div>
-</header>
-<div class="nt-tabs" role="tablist" id="ntTabs" aria-label="Ranking views">{tabs}</div>
-<div class="nt-tcard" id="ntListWrap">
-  <div class="nt-tscroll"><table class="nt-rank" id="ntTbl" aria-label="NFL team rankings"></table></div>
-  <p class="nt-tnote" id="ntTableNote"></p>
+  <div class="nt-cbody">
+    <div class="nt-tabs" role="tablist" id="ntTabs" aria-label="Ranking views">{tabs}</div>
+    <div class="nt-tcard" id="ntListWrap">
+      <div class="nt-tscroll"><table class="nt-rank" id="ntTbl" aria-label="NFL team rankings"></table></div>
+      <p class="nt-tnote" id="ntTableNote"></p>
+    </div>
+  </div>
 </div>
 <section id="ntProfile" aria-live="polite"></section>
 <script>
@@ -160,6 +182,65 @@ var $=function(s,r){{return (r||document).querySelector(s);}};
 var DEF={{view:"{view}",sortKey:null,sortDir:null,team:"{team}",season:"{season}",room:"QB",expanded:{{}}}};
 var state=Object.assign({{}},DEF);
 function esc(s){{return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");}}
+function teamColor(t){{return (t&&(t.color||""))||"var(--accent)";}}
+function fgFor(hex){{
+  var m=/^#([0-9a-f]{{6}})$/i.exec(hex||"");
+  if(!m)return "#fff";
+  var r=parseInt(m[1].slice(0,2),16),g=parseInt(m[1].slice(2,4),16),b=parseInt(m[1].slice(4,6),16);
+  return (0.299*r+0.587*g+0.114*b)>150?"#1a1a1a":"#fff";
+}}
+function rankBadge(rank,fg,bg){{
+  if(!rank)return "";
+  var style=(fg&&bg)?' style="background:'+bg+';color:'+fg+'"':"";
+  var gold=(!fg&&rank===1)?" nt-gold":"";
+  return '<span class="nt-rbadge'+gold+'"'+style+">#"+rank+"</span>";
+}}
+/* Matchup-ease colors mirror utils/schedule_ease.py sched_rank_color
+   (rank 1 = most allowed = easiest). Quartile tiers, not a new scale. */
+function easeTier(rank,total){{
+  if(!rank||!total)return 0;
+  var pct=rank/total;
+  return pct<=0.25?1:pct<=0.50?2:pct<=0.75?3:4;
+}}
+var EASE_FG={{1:"#22c55e",2:"#84cc16",3:"#f59e0b",4:"#ef4444"}};
+var EASE_BG={{1:"#22c55e18",2:"#84cc1618",3:"#f59e0b18",4:"#ef444418"}};
+function shortEff(label){{
+  var l=String(label||"").toLowerCase();
+  if(l.indexOf("attempt")>=0)return "Y/A";
+  if(l.indexOf("carry")>=0)return "Y/C";
+  if(l.indexOf("target")>=0)return "Y/T";
+  return label||"";
+}}
+/* Columns actually shown for the current view (projection mode hides scoring). */
+function visibleCols(){{
+  var cols=VIEWS[state.view].cols;
+  if(state.view==="defense")return cols;
+  return cols.filter(function(c){{return !(state.view==="overview"&&c.k==="points_pg"&&DATA.data_mode==="projection");}});
+}}
+/* Defense-vs-position payload, fetched lazily from /api/defense-vs-position
+   (PR #1908). {{season, teams}} on success, {{failed:true}} when the endpoint is
+   unavailable, so the tab degrades instead of breaking. */
+var DPOS=null;
+function ensureDefense(){{
+  if(DPOS&&(String(DPOS.season)===String(state.season)||DPOS.failed))return;
+  var season=state.season;
+  api("/api/defense-vs-position?season="+encodeURIComponent(season))
+    .then(function(d){{
+      var teams={{}};
+      var poss=d.positions||["QB","RB","WR","TE"];
+      Object.keys(d.teams||{{}}).forEach(function(ab){{
+        var src=d.teams[ab]||{{}},tp={{}};
+        poss.forEach(function(p){{
+          var c=src[p];
+          if(c&&c.fpts_ppr_pg!=null)tp[p]={{v:c.fpts_ppr_pg,rank:c.rank,total:c.total,eff:c.eff,eff_label:c.eff_label}};
+        }});
+        teams[ab]=tp;
+      }});
+      DPOS={{season:String(d.season||season),teams:teams}};
+      render();
+    }})
+    .catch(function(){{DPOS={{failed:true}};render();}});
+}}
 
 var VIEWS={{
 overview:{{label:"Overview",def:"points_pg",cols:[
@@ -184,7 +265,16 @@ oline:{{label:"Offensive Line",def:"oline_composite",cols:[
  {{k:"oline_run_block",t:"Run block",tip:"0-100 run blocking unit rating.",f:0,hb:true}},
  {{k:"oline_pressure_rate",t:"Pressure %",tip:"Share of dropbacks under pressure. Lower is better.",f:"pct1",hb:false}},
  {{k:"oline_sack_rate",t:"Sack %",tip:"Share of dropbacks ending in a sack. Lower is better.",f:"pct1",hb:false}},
- {{k:"oline_line_yards",t:"Line yds",tip:"Adjusted line yards per carry.",f:1,hb:true}}]}}
+ {{k:"oline_line_yards",t:"Line yds",tip:"Adjusted line yards per carry.",f:1,hb:true}}]}},
+/* Defense vs position: fantasy points allowed per game by each defense,
+   from /api/defense-vs-position (PR #1908). Rank 1 = most allowed =
+   easiest matchup. Loaded lazily; the tab degrades gracefully if the
+   endpoint is unavailable. */
+defense:{{label:"Defense",def:"QB",cols:[
+ {{k:"QB",t:"vs QB",tip:"Fantasy points allowed per game to QBs (PPR). Rank 1 = most allowed = easiest matchup.",f:1,hb:true}},
+ {{k:"RB",t:"vs RB",tip:"Fantasy points allowed per game to RBs (PPR). Rank 1 = most allowed = easiest matchup.",f:1,hb:true}},
+ {{k:"WR",t:"vs WR",tip:"Fantasy points allowed per game to WRs (PPR). Rank 1 = most allowed = easiest matchup.",f:1,hb:true}},
+ {{k:"TE",t:"vs TE",tip:"Fantasy points allowed per game to TEs (PPR). Rank 1 = most allowed = easiest matchup.",f:1,hb:true}}]}}
 }};
 var ROOMCOLS={{
 QB:[["snap_pct","Snap %"],["games","G"],["ppg","PPR PPG"]],
@@ -200,7 +290,8 @@ function api(u){{return fetch(u,{{credentials:"same-origin"}}).then(function(r){
 function update(patch,push){{Object.assign(state,patch);render();syncUrl(push);}}
 function cellFor(t,col){{
   var src;
-  if(col.k.indexOf("oline_")===0){{src=(t.oline||{{}})[col.k.slice(6)]||null;}}
+  if(state.view==="defense"){{src=((DPOS&&DPOS.teams||{{}})[t.team]||{{}})[col.k]||null;}}
+  else if(col.k.indexOf("oline_")===0){{src=(t.oline||{{}})[col.k.slice(6)]||null;}}
   else{{src=(t.ranks||{{}})[col.k]||null;}}
   return src;
 }}
@@ -244,11 +335,32 @@ function renderTabs(){{
   }});
 }}
 
+function downloadCsv(){{
+  if(!DATA||!DATA.teams)return;
+  var cols=visibleCols();
+  function q(x){{return '"'+String(x==null?"":x).replace(/"/g,'""')+'"';}}
+  var lines=["Team,"+cols.map(function(c){{return q(c.t);}}).join(",")];
+  DATA.teams.slice().sort(function(a,b){{return a.team<b.team?-1:1;}}).forEach(function(t){{
+    var row=[q(t.city+" "+t.name)];
+    cols.forEach(function(c){{
+      var cell=cellFor(t,c);
+      row.push(q(cell&&cell.v!=null?cell.v:""));
+    }});
+    lines.push(row.join(","));
+  }});
+  var blob=new Blob([lines.join("\n")],{{type:"text/csv"}});
+  var a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);
+  a.download="nfl-team-rankings-"+state.view+"-"+state.season+".csv";
+  document.body.appendChild(a);a.click();
+  setTimeout(function(){{URL.revokeObjectURL(a.href);a.remove();}},200);
+}}
+
 function renderTable(){{
   var tbl=$("#ntTbl");
   if(!DATA||!DATA.teams){{tbl.innerHTML="";$("#ntTableNote").textContent="";return;}}
   var view=VIEWS[state.view];
-  var cols=view.cols.filter(function(c){{return !(state.view==="overview"&&c.k==="points_pg"&&DATA.data_mode==="projection");}});
+  var cols=visibleCols();
   if(!state.sortKey||!cols.some(function(c){{return c.k===state.sortKey;}})){{state.sortKey=view.def;state.sortDir=defaultDir(view.cols[0]);}}
   var skey=state.sortKey,sdir=state.sortDir||"desc";
   var scol=cols.filter(function(c){{return c.k===skey;}})[0]||cols[0];
@@ -261,22 +373,44 @@ function renderTable(){{
     var d=sdir==="asc"?(av-bv):(bv-av);
     return d!==0?d:(a.team<b.team?-1:1);
   }});
-  var h='<thead><tr><th class="nt-teamcol" scope="col"><span style="display:inline-block;padding:12px 10px">Team</span></th>';
+  var h='<thead><tr><th class="nt-rankcol" scope="col"><span>Rank</span></th><th class="nt-teamcol" scope="col"><span>Team</span></th>';
   cols.forEach(function(c){{
     var active=(c.k===skey);
-    var arrow=active?(sdir==="asc"?"&#9650;":"&#9660;"):"";
+    var arrow=active?(sdir==="asc"?"&#8593;":"&#8595;"):"";
     h+='<th scope="col" aria-sort="'+(active?(sdir==="asc"?"ascending":"descending"):"none")+'">'+
-      '<button class="nt-thbtn" data-col="'+c.k+'" title="'+esc(c.tip)+'">'+esc(c.t)+'<span class="nt-arr">'+arrow+'</span></button></th>';
+      '<button class="nt-thbtn" data-col="'+c.k+'" title="'+esc(c.tip)+'" aria-label="Sort by '+esc(c.t)+'">'+esc(c.t)+'<span class="nt-arr">'+arrow+'</span></button></th>';
   }});
   h+='</tr></thead><tbody>';
   rows.forEach(function(t){{
+    var tc=teamColor(t);
+    var sc=cellFor(t,scol);
+    var isDef=(state.view==="defense");
+    var badge=rankBadge(sc&&sc.rank);
+    if(isDef&&sc&&sc.rank){{
+      var bt=easeTier(sc.rank,sc.total);
+      if(bt)badge=rankBadge(sc.rank,EASE_FG[bt],EASE_BG[bt]);
+    }}
     h+='<tr data-abbr="'+t.team+'" class="'+(state.team===t.team?"nt-sel":"")+'">'+
-      '<td class="nt-teamcol"><span class="nt-tid">'+logoHTML(t)+'<span><span class="nt-tn">'+t.team+'</span><br><span class="nt-tc">'+esc(t.city)+'</span></span></span></td>';
+      '<td class="nt-rankcol">'+badge+'</td>'+
+      '<td class="nt-teamcol"><span class="nt-tid"><span class="nt-tleft">'+logoHTML(t)+'<span class="nt-tn">'+esc(t.city)+' '+esc(t.name)+'</span></span>'+
+      '<span class="nt-tright"><span class="nt-abbr" style="background:'+esc(tc)+';color:'+fgFor(t.color)+'">'+t.team+'</span>'+
+      '<span class="nt-gp">'+(t.games==null?"":t.games+" GP")+'</span></span></span></td>';
     cols.forEach(function(c){{
       var cell=cellFor(t,c);
       var v=cell?fmtVal(c,cell.v):null;
-      if(v==null){{h+='<td><div class="nt-v nt-na">N/A</div></td>';}}
-      else{{h+='<td><div class="nt-v">'+v+'</div>'+(cell.rank?'<div class="nt-rk">#'+cell.rank+'</div>':"")+'</td>';}}
+      if(v==null){{h+='<td><div class="nt-metric"><span class="nt-val nt-na">N/A</span></div></td>';}}
+      else if(isDef){{
+        var tier=easeTier(cell.rank,cell.total);
+        var w2=cell.rank?Math.max(3,Math.round((33-cell.rank)/32*100)):0;
+        var fg=tier?EASE_FG[tier]:"var(--text)";
+        var effTxt=cell.eff!=null?'<span class="nt-eff">'+Number(cell.eff).toFixed(1)+' '+esc(shortEff(cell.eff_label))+'</span>':"";
+        h+='<td><div class="nt-metric"><span class="nt-mbar"><span class="nt-mtrack"><span class="nt-mfill" style="width:'+w2+'%;background:'+fg+'"></span></span></span>'+
+          '<span class="nt-vwrap"><span class="nt-val" style="color:'+fg+'">'+v+'</span>'+effTxt+'</span></div></td>';
+      }}
+      else{{
+        var w=cell.rank?Math.max(3,Math.round((33-cell.rank)/32*100)):0;
+        h+='<td><div class="nt-metric"><span class="nt-mbar"><span class="nt-mtrack"><span class="nt-mfill" style="width:'+w+'%;background:'+esc(tc)+'"></span></span></span><span class="nt-val">'+v+'</span></div></td>';
+      }}
     }});
     h+='</tr>';
   }});
@@ -295,6 +429,10 @@ function renderTable(){{
   }});
   var note="Ranks use competition ranking (1, 2, 2, 4) across all 32 teams. N/A means no data, not zero. "+
     "Lower pressure and sack rates rank better. O-line ratings are 0-100 unit scores from public play-by-play ("+esc(DATA.oline_note||"prior season")+").";
+  if(state.view==="defense"){{
+    note="Fantasy points allowed per game (PPR). Rank 1 = most allowed = easiest matchup. Only completed games count; defenses with no completed games are omitted.";
+    if(DPOS&&DPOS.failed)note+=" Defensive matchup data is currently unavailable.";
+  }}
   if(DATA.data_mode==="projection"){{note="Projection mode: per-game values are projected season totals divided by 17. Scoring is hidden because NFL points cannot be honestly projected from offense stats alone. "+note;}}
   $("#ntTableNote").textContent=note;
   $("#ntSeasonSub").textContent="Team-level research, not fantasy roster rankings. "+(DATA.season_label||"");
@@ -323,6 +461,22 @@ function wireBack(){{
   var b=$("#ntBack");
   if(b&&!b.__wired){{b.__wired=true;b.addEventListener("click",function(){{update({{team:""}},true);scrollTop();}});}}
 }}
+function defenseSection(){{
+  var h='<section class="nt-psec"><h3>Defense vs position</h3>';
+  var dp=(DPOS&&DPOS.teams||{{}})[state.team];
+  if(!DPOS){{ensureDefense();h+='<p class="nt-fine">Loading defensive matchup data.</p></section>';return h;}}
+  if(DPOS.failed||!dp){{h+='<p class="nt-fine">Defensive matchup data is not available for this team and season.</p></section>';return h;}}
+  ["QB","RB","WR","TE"].forEach(function(p){{
+    var c=dp[p];if(!c||c.v==null)return;
+    var tier=easeTier(c.rank,c.total);
+    var fg=tier?EASE_FG[tier]:"inherit",bg=tier?EASE_BG[tier]:null;
+    var effTxt=c.eff!=null?'<span class="nt-fine"> '+Number(c.eff).toFixed(1)+' '+esc(shortEff(c.eff_label))+'</span>':"";
+    h+='<div class="nt-mrow"><span>vs '+p+'</span><span><b style="color:'+fg+'">'+Number(c.v).toFixed(1)+' FPTS/G</b> '+
+      rankBadge(c.rank,bg?fg:null,bg)+effTxt+'</span></div>';
+  }});
+  h+='<p class="nt-fine">Fantasy points allowed per game (PPR). Rank 1 = most allowed = easiest matchup. Only completed games count.</p></section>';
+  return h;
+}}
 function renderProfile(){{
   var el=$("#ntProfile");
   if(!state.team){{el.innerHTML="";return;}}
@@ -344,10 +498,11 @@ function renderProfile(){{
     '<div><h2>'+esc(t.city)+' '+esc(t.name)+'</h2><p class="nt-meta">'+esc(d.season_label||"")+' &middot; Bye week '+esc(String(t.bye_week==null?"?":t.bye_week))+' &middot; Next: '+esc(nextTxt)+'</p></div></div></div>';
   h+='<div class="nt-pbody"><div class="nt-pgrid">';
   h+='<section class="nt-psec"><h3>Offensive environment</h3>';
+  var tcolor=teamColor(t);
   envRows(t).forEach(function(e2){{
     var w=e2.rank?Math.max(4,Math.round((33-e2.rank)/32*100)):4;
     h+='<div class="nt-erow"><div class="nt-elab">'+esc(e2.label)+'<span class="nt-eval">'+esc(e2.val)+'</span></div>'+
-      '<div class="nt-bar"><i style="width:'+w+'%"></i></div><div class="nt-erk">'+(e2.rank?"#"+e2.rank:"N/A")+'</div></div>';
+      '<div class="nt-bar"><i style="width:'+w+'%;background:'+esc(tcolor)+'"></i></div><div class="nt-erk">'+(e2.rank?"#"+e2.rank:"N/A")+'</div></div>';
   }});
   h+='<p class="nt-fine">Volume and tendency ranks describe the offense, not player quality.</p></section>';
   var ol=d.oline;
@@ -369,6 +524,7 @@ function renderProfile(){{
     h+='<p class="nt-fine">Ratings are 0-100 unit scores from public play-by-play, not commercial blocker grades. O-line ratings use the '+ol.season+' season (latest available); all other metrics use the selected season.</p></details>';
   }}
   h+='</section></div>';
+  h+=defenseSection();
   h+='<section class="nt-psec"><h3>Depth chart / competition</h3><div class="nt-seg" role="group" aria-label="Position room">';
   ["QB","RB","WR","TE"].forEach(function(p){{
     h+='<button type="button" data-room="'+p+'" aria-pressed="'+(state.room===p)+'">'+p+'</button>';
@@ -488,8 +644,18 @@ function render(){{
   if(list)list.style.display=inDetail?"none":"";
   if(tabs)tabs.style.display=inDetail?"none":"";
   if(!DATA){{loadRankings();return;}}
-  if(inDetail){{renderProfile();}}
-  else{{renderTable();$("#ntProfile").innerHTML="";}}
+  if(inDetail){{renderProfile();return;}}
+  if(state.view==="defense"){{
+    if(!DPOS||(!DPOS.failed&&String(DPOS.season)!==String(state.season))){{ensureDefense();showDefenseLoading();return;}}
+  }}
+  renderTable();$("#ntProfile").innerHTML="";
+}}
+function showDefenseLoading(){{
+  var tbl=$("#ntTbl");
+  if(tbl)tbl.innerHTML="";
+  $("#ntTableNote").textContent="";
+  $("#ntSeasonSub").textContent="Team-level research, not fantasy roster rankings. "+(DATA.season_label||"");
+  $("#ntProfile").innerHTML='<div class="nt-pcard"><div class="nt-load">Loading defensive matchup data.</div></div>';
 }}
 function scrollTop(){{try{{window.scrollTo(0,0);}}catch(e){{}}}}
 function loadRankings(){{
@@ -533,7 +699,14 @@ function readUrl(){{
 function init(){{
   readUrl();
   var sel=$("#ntSeasonSel");
-  if(sel){{sel.value=state.season;sel.addEventListener("change",function(){{DATA=null;DETAIL=null;DETAIL_TEAM=null;update({{season:sel.value}},false);}});}}
+  if(sel){{sel.value=state.season;sel.addEventListener("change",function(){{DATA=null;DETAIL=null;DETAIL_TEAM=null;DPOS=null;update({{season:sel.value}},false);}});}}
+  var how=$("#ntHowBtn");
+  if(how){{how.addEventListener("click",function(){{
+    var n=$("#ntTableNote");
+    if(n)n.style.display=(n.style.display==="none")?"":"none";
+  }});}}
+  var csv=$("#ntCsvBtn");
+  if(csv){{csv.addEventListener("click",downloadCsv);}}
   if(window.addEventListener){{window.addEventListener("popstate",function(){{readUrl();DETAIL=null;DETAIL_TEAM=null;render();}});}}
   render();
 }}

@@ -380,3 +380,104 @@ def test_page_syncs_url_from_current_path():
 
 def test_nfl_teams_nav_icon_is_shield():
     assert '"nfl-teams": ("shield"' in APP_SRC
+
+
+# ── Advanced Metrics visual language (source-level) ──────────────────────────
+
+
+def test_page_builder_adv_metrics_shell():
+    from dashboard_services.pages.nfl_teams_page import build_nfl_teams_body
+
+    html = build_nfl_teams_body(2026, team="", view="overview",
+                               available_seasons=[2026, 2025])
+    # Card shell with title, description, and header actions.
+    assert 'class="card nt-card"' in html
+    assert "NFL Team Rankings" in html
+    assert 'id="ntSeasonSub"' in html
+    assert 'id="ntHowBtn"' in html
+    assert 'id="ntCsvBtn"' in html
+    # Season selector survives the redesign.
+    assert 'id="ntSeasonSel"' in html
+    assert "<option" in html and "2025" in html
+    # View tabs and ranking table containers unchanged.
+    assert 'id="ntTabs"' in html
+    assert 'id="ntTbl"' in html
+    assert 'id="ntProfile"' in html
+
+
+def test_page_source_adv_metrics_table_markup():
+    # Rank badges, team-color abbr chips, and bar-left/value-right cells.
+    assert "nt-rbadge" in PAGE_SRC
+    assert "nt-abbr" in PAGE_SRC
+    assert "nt-mfill" in PAGE_SRC
+    assert "nt-mtrack" in PAGE_SRC
+    assert "nt-val" in PAGE_SRC
+    # Rank column renders before the team column.
+    assert 'class="nt-rankcol"' in PAGE_SRC
+    # Team-color helpers and readable chip text.
+    assert "function teamColor" in PAGE_SRC
+    assert "function fgFor" in PAGE_SRC
+    assert "function rankBadge" in PAGE_SRC
+    # Adv-metrics arrow direction (down for descending).
+    assert "&#8595;" in PAGE_SRC
+    # Leaders strip + CSV export are wired.
+    assert "function downloadCsv" in PAGE_SRC
+    assert "visibleCols" in PAGE_SRC
+    # Profile environment bars use the team color.
+    assert "background:'+esc(tcolor)+'" in PAGE_SRC
+    # Mobile hides the in-cell bars like Advanced Metrics does.
+    assert "@media(max-width:600px)" in PAGE_SRC
+
+
+def test_nfl_team_colors_cover_all_32():
+    import ast
+    import re
+
+    m = re.search(r"_NFL_TEAM_COLORS = (\{.*?\n\})", APP_SRC, re.S)
+    assert m, "team color map missing from app.py"
+    colors = ast.literal_eval(m.group(1))
+    expected = {"ARI", "ATL", "BAL", "BUF", "CAR", "CHI", "CIN", "CLE", "DAL",
+                "DEN", "DET", "GB", "HOU", "IND", "JAX", "KC", "LAC", "LAR",
+                "LV", "MIA", "MIN", "NE", "NO", "NYG", "NYJ", "PHI", "PIT",
+                "SEA", "SF", "TB", "TEN", "WAS"}
+    assert set(colors) == expected
+    for abbr, color in colors.items():
+        assert re.fullmatch(r"#[0-9a-fA-F]{6}", color), f"bad color {abbr}"
+    assert colors["KC"] == "#E31837"
+
+
+def test_api_rankings_row_includes_team_color():
+    assert '"color": _NFL_TEAM_COLORS.get(team)' in APP_SRC
+
+
+# ── Defense view (wires PR #1908 at runtime; degrades if unmerged) ────────────
+
+
+def test_page_builder_has_defense_view():
+    from dashboard_services.pages.nfl_teams_page import build_nfl_teams_body
+
+    html = build_nfl_teams_body(2026, team="", view="defense",
+                               available_seasons=[2026, 2025])
+    assert 'data-view="defense"' in html
+    assert ">Defense</button>" in html
+
+
+def test_page_source_defense_view_wiring():
+    # Consumed at runtime from the #1908 endpoint; nothing imported.
+    assert "/api/defense-vs-position" in PAGE_SRC
+    assert "defense_vs_position" not in PAGE_SRC.replace(
+        "/api/defense-vs-position", "")
+    # Ease colors mirror utils/schedule_ease.py sched_rank_color tiers.
+    assert "function easeTier" in PAGE_SRC
+    assert "sched_rank_color" in PAGE_SRC
+    assert "#22c55e" in PAGE_SRC
+    assert "#ef4444" in PAGE_SRC
+    # Efficiency shown as a secondary line with short labels.
+    assert "function shortEff" in PAGE_SRC
+    assert "nt-eff" in PAGE_SRC
+    # Graceful degradation when the endpoint is unavailable.
+    assert "DPOS={{failed:true}}" in PAGE_SRC
+    assert "Defensive matchup data is currently unavailable." in PAGE_SRC
+    # Team drill-in gains a Defense vs position section.
+    assert "function defenseSection" in PAGE_SRC
+    assert "Defense vs position" in PAGE_SRC
