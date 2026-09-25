@@ -430,6 +430,13 @@ def test_page_source_adv_metrics_table_markup():
     assert "visibleCols" in PAGE_SRC
     # Profile environment bars use the team color.
     assert "background:'+esc(tcolor)+'" in PAGE_SRC
+    # Team detail hero: record badge, team-color accent, opponent logos in
+    # the schedule, tiered env rank badges.
+    assert "nt-record" in PAGE_SRC
+    assert "nt-herohead" in PAGE_SRC
+    assert "nt-opp-logo" in PAGE_SRC
+    assert "function ntEnvRank" in PAGE_SRC
+    assert "nt-tier-g" in PAGE_SRC
     # Mobile hides the in-cell bars like Advanced Metrics does.
     assert "@media(max-width:600px)" in PAGE_SRC
 

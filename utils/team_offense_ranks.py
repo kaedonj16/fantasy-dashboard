@@ -184,6 +184,47 @@ def aggregate_sleeper_team_weeks(get_week_teams, weeks) -> dict:
     return totals
 
 
+def aggregate_sleeper_team_weeks_for_teams(get_week_teams, completed) -> dict:
+    """Sum Sleeper weekly TEAM rows, attributing each week only to the teams
+    whose game that week has a final score.
+
+    ``completed`` is the ``aggregate_completed_games`` mapping
+    (``{team: {"weeks": [...]}}``). A Thursday final is included for those
+    two teams while the rest of the week is still pending; teams that have
+    not played yet contribute nothing for that week.
+    """
+    need: dict = {}
+    for team, entry in (completed or {}).items():
+        team = canon_team(team)
+        if not team:
+            continue
+        for w in (entry or {}).get("weeks") or []:
+            try:
+                wi = int(w)
+            except (TypeError, ValueError):
+                continue
+            need.setdefault(wi, set()).add(team)
+    totals: dict = {}
+    for week in sorted(need):
+        try:
+            week_teams = get_week_teams(week) or {}
+        except Exception:
+            continue
+        canon_rows = {}
+        for key, row in week_teams.items():
+            ct = canon_team(key)
+            if ct and isinstance(row, dict):
+                canon_rows[ct] = row
+        for team in need[week]:
+            row = canon_rows.get(team)
+            if not isinstance(row, dict):
+                continue
+            bucket = totals.setdefault(team, {k: 0.0 for k in STAT_KEYS})
+            for key in STAT_KEYS:
+                bucket[key] += _stat_value(row, key)
+    return totals
+
+
 def read_csv_team_totals(csv_path: str) -> dict:
     """Sum a stats_player_reg CSV into per-team stat totals (past seasons)."""
     totals: dict = {}
@@ -286,30 +327,27 @@ def compute_team_offense(season: int, *, games_rows=None, get_week_teams=None,
     ``plays_pg_map``: ``{team: plays/game}`` from the team_play_volume
     service.
 
-    Points, games, and stat totals are all restricted to fully-completed
-    weeks so mid-week slates never produce mixed denominators.
+    Points, games, and stat totals are attributed per team: every game with
+    a final score counts for the two teams that played it, even mid-week
+    (a Thursday final is included for those teams while the rest of the
+    week is pending, mirroring the defense-vs-position table). Per-game
+    denominators are each team's own completed games.
     """
     season = int(season)
     rows = games_rows or []
     weeks = fully_completed_weeks(season, rows)
-    # Restrict everything (points, games, stat totals) to fully-completed
-    # weeks so per-game denominators stay consistent mid-week: a Sunday
-    # slate without Monday night is not a completed week.
-    full = set(weeks)
-    scored_rows = [r for r in rows
-                   if isinstance(r, dict) and _row_season_week(r)[1] in full]
-    completed = aggregate_completed_games(season, scored_rows)
+    completed = aggregate_completed_games(season, rows)
     has_actuals = any(e["games"] > 0 for e in completed.values())
     if has_actuals:
         data_mode = "actual"
         if csv_path and os.path.exists(csv_path):
             totals = read_csv_team_totals(csv_path)
         else:
-            totals = aggregate_sleeper_team_weeks(get_week_teams, weeks)
+            totals = aggregate_sleeper_team_weeks_for_teams(get_week_teams, completed)
     else:
         data_mode = "projection"
         totals = dict(projected_totals or {})
-    return build_offense_table(
+    table = build_offense_table(
         season,
         completed=completed,
         totals=totals,
@@ -317,6 +355,12 @@ def compute_team_offense(season: int, *, games_rows=None, get_week_teams=None,
         data_mode=data_mode,
         completed_weeks=weeks,
     )
+    any_weeks = sorted(
+        {w for e in completed.values() for w in (e.get("weeks") or [])}
+    )
+    full = set(weeks)
+    table["in_progress_weeks"] = [w for w in any_weeks if w not in full]
+    return table
 
 
 def competition_ranks(values: dict) -> dict:

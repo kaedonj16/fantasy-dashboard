@@ -10,10 +10,13 @@ from __future__ import annotations
 import csv
 import os
 
+import pytest
+
 from utils.team_offense_ranks import (
     PROJECTION_DIVISOR,
     aggregate_completed_games,
     aggregate_sleeper_team_weeks,
+    aggregate_sleeper_team_weeks_for_teams,
     canon_team,
     competition_ranks,
     compute_team_offense,
@@ -66,6 +69,13 @@ def _week_teams(week):
                     "pass_tds": 1, "rush_tds": 0},
             "NYG": {"pass_yds": 180, "pass_att": 25, "rush_yds": 70, "rush_att": 18,
                     "pass_tds": 1, "rush_tds": 0},
+        },
+        3: {
+            # Thursday final: only KC and LV have played week 3.
+            "KC": {"pass_yds": 340, "pass_att": 40, "rush_yds": 90, "rush_att": 20,
+                   "pass_tds": 3, "rush_tds": 0},
+            "LV": {"pass_yds": 210, "pass_att": 30, "rush_yds": 80, "rush_att": 18,
+                   "pass_tds": 1, "rush_tds": 0},
         },
     }
     return rows.get(week, {})
@@ -170,15 +180,57 @@ def test_compute_actual_uses_real_ppg_not_proxy():
     assert kc["pass_rate"] == 73 / (73 + 47)
 
 
-def test_compute_actual_midweek_uses_fully_completed_weeks_only():
+def test_compute_actual_midweek_includes_thursday_final_per_team():
     rows = _two_week_rows() + [
-        _game(2026, 3, "KC", "LV", "35", "10"),   # Sunday final...
-        _game(2026, 3, "BUF", "MIA", "", ""),     # ...but MNF not played yet
+        _game(2026, 3, "KC", "LV", "35", "10"),   # Thursday final...
+        _game(2026, 3, "BUF", "MIA", "", ""),     # ...rest of week pending
     ]
     table = compute_team_offense(2026, games_rows=rows, get_week_teams=_week_teams)
     assert table["completed_weeks"] == [1, 2]
-    assert table["teams"]["KC"]["games"] == 2
-    assert table["teams"]["KC"]["points_pg"] == 28.5  # week 3 excluded
+    assert table["in_progress_weeks"] == [3]
+    kc = table["teams"]["KC"]
+    assert kc["games"] == 3
+    assert kc["points_pg"] == pytest.approx((30 + 27 + 35) / 3)
+    # Thursday stats attributed to the two teams that played.
+    assert kc["pass_yds_pg"] == pytest.approx((300 + 320 + 340) / 3)
+    lv = table["teams"]["LV"]
+    assert lv["games"] == 1
+    assert lv["points_pg"] == 10.0
+    assert lv["pass_yds_pg"] == 210.0
+    # Teams that have not played week 3 are untouched.
+    assert table["teams"]["BUF"]["games"] == 1
+    assert "MIA" not in table["teams"]
+
+
+def test_aggregate_sleeper_team_weeks_for_teams_only_final_teams():
+    completed = {
+        "KC": {"points": 92.0, "games": 3, "weeks": [1, 2, 3]},
+        "LV": {"points": 10.0, "games": 1, "weeks": [3]},
+        "BUF": {"points": 20.0, "games": 1, "weeks": [1]},
+        "DAL": {"points": 41.0, "games": 2, "weeks": [1, 2]},
+    }
+    totals = aggregate_sleeper_team_weeks_for_teams(_week_teams, completed)
+    assert totals["KC"]["pass_yds"] == 960.0   # 300 + 320 + 340
+    assert totals["LV"]["pass_yds"] == 210.0   # week 3 only
+    assert totals["BUF"]["pass_yds"] == 250.0  # week 1 only
+    assert totals["DAL"]["pass_yds"] == 420.0  # 200 + 220
+    assert "PHI" not in totals
+
+
+def test_season_label_week_in_progress():
+    pytest.importorskip("pandas")
+    pytest.importorskip("flask")
+    from app import _nfl_teams_season_label
+    assert _nfl_teams_season_label(2026, "actual", [1, 2], [3]) == \
+        "2026 actuals, Week 3 in progress"
+    assert _nfl_teams_season_label(2026, "actual", [1, 2], []) == \
+        "2026 actuals, through Week 2"
+    assert _nfl_teams_season_label(2026, "actual", [1, 2]) == \
+        "2026 actuals, through Week 2"
+    assert _nfl_teams_season_label(2026, "projection", [], []) == \
+        "2026 projections"
+    assert _nfl_teams_season_label(2026, "actual", [], []) == \
+        "2026 actuals"
 
 
 def test_compute_projection_divides_by_17_and_omits_scoring():
