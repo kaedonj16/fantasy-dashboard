@@ -375,6 +375,10 @@ def start_sit_swap_note(
         swaps = projection_upgrades(
             [str(p) for p in starters], eligible, proj_map, pos_map,
             list(roster_positions or []), min_gain=min_gain, max_swaps=1,
+            injury_status={
+                pid: str((nfl_players.get(pid) or {}).get("injury_status") or "")
+                for pid in eligible
+            },
         )
     except Exception:
         logger.debug("[digest-actions] projection_upgrades failed", exc_info=True)

@@ -178,6 +178,64 @@ def test_max_swaps_cap():
     assert len(swaps) == 1
 
 
+# ---- projection_upgrades injury filtering -----------------------------------
+
+# Bug: the Season Hub suggested starting Caleb Williams (Doubtful) and Nico
+# Collins (Questionable) because their stale projections still out-projected
+# healthy starters. Injured bench players must never be the "in" side.
+
+
+def _swap_proj():
+    starters = ["q1", "r1", "r2", "w1", "w2", "t1", "r3"]
+    proj = {"q1": 18, "r1": 12, "r2": 10, "r3": 9, "w1": 11, "w2": 4, "w3": 13, "t1": 7}
+    return starters, proj
+
+
+def test_injured_bench_player_never_suggested_to_start():
+    starters, proj = _swap_proj()
+    for status in ("Out", "OUT", "Doubtful", "IR", "SUSP"):
+        swaps = projection_upgrades(
+            starters, list(POS), proj, POS, SLOTS, injury_status={"w3": status}
+        )
+        assert all(s["in"] != "w3" for s in swaps), status
+
+
+def test_questionable_bench_player_not_suggested_to_start():
+    # Stricter than find_lineup_issues on purpose: a swap nudge is an
+    # affirmative recommendation to start someone, so any designation
+    # disqualifies the bench player.
+    starters, proj = _swap_proj()
+    swaps = projection_upgrades(
+        starters, list(POS), proj, POS, SLOTS, injury_status={"w3": "Questionable"}
+    )
+    assert all(s["in"] != "w3" for s in swaps)
+
+
+def test_injured_starter_can_still_be_suggested_as_out():
+    # Sitting an injured starter for a healthy bench player is good advice.
+    starters, proj = _swap_proj()
+    swaps = projection_upgrades(
+        starters, list(POS), proj, POS, SLOTS, injury_status={"w2": "Out"}
+    )
+    assert swaps
+    assert swaps[0]["in"] == "w3" and swaps[0]["out"] == "w2"
+
+
+def test_no_injury_map_keeps_old_behavior():
+    starters, proj = _swap_proj()
+    swaps = projection_upgrades(starters, list(POS), proj, POS, SLOTS)
+    assert swaps[0]["in"] == "w3" and swaps[0]["out"] == "w2"
+
+
+def test_all_bench_injured_returns_no_swaps():
+    starters, proj = _swap_proj()
+    swaps = projection_upgrades(
+        starters, list(POS), proj, POS, SLOTS,
+        injury_status={"w3": "Out", "t2": "Questionable"},
+    )
+    assert swaps == []
+
+
 # ---- pair_start_sit_swaps ---------------------------------------------------
 
 # Screenshot bug: Purdy (QB) and Wilson (WR) should start; Williams (QB) and
