@@ -283,6 +283,10 @@ def build_front_office_prompt_payload(data: dict) -> dict:
                     for g in t["gives"]
                 ),
                 "partner": t["partner"],
+                "partner_record": t.get("partner_record") or None,
+                "why_they_say_yes": t.get("why_they_say_yes"),
+                "waiver_alternative": t.get("waiver_alternative") or None,
+                "urgent_need": t.get("urgent_reason") or None,
             }
             for t in (data.get("trade_targets") or [])
         ],
@@ -291,6 +295,7 @@ def build_front_office_prompt_payload(data: dict) -> dict:
                 "name": w.get("name"), "id": w.get("id"), "pos": w.get("position"),
                 "team": w.get("team"), "value": w.get("value"),
                 "pos_rank": w.get("pos_rank_label") or None,
+                "urgent_need": w.get("urgent_reason") or None,
             }
             for w in (data.get("waiver_targets") or [])
         ],
@@ -298,6 +303,17 @@ def build_front_office_prompt_payload(data: dict) -> dict:
             {"name": c.get("name"), "pos": c.get("position"), "value": c.get("value")}
             for c in (data.get("cut_candidates") or [])
         ],
+        "drop_add_pairs": [
+            {
+                "drop": p["drop"]["name"], "add": p["add"]["name"],
+            }
+            for p in (data.get("drop_add_pairs") or [])
+        ],
+        "urgent_needs": [
+            {"position": u.get("position"), "detail": u.get("detail")}
+            for u in (data.get("urgent_needs") or [])
+        ],
+        "trade_deadline": data.get("trade_deadline"),
     }
     if data.get("draft_grade"):
         payload["draft_grade"] = data["draft_grade"]
@@ -330,16 +346,23 @@ Return a JSON object with these fields:
 - headline: one sharp line on the team's situation (max 12 words).
 - posture: one short paragraph on the team's current posture.
 - top_move: the single most important move, naming specific players
-  (one sentence).
+  (one sentence). When a drop_add_pairs entry covers the top waiver add,
+  phrase it as the paired move ("Drop X, add Y").
 - trade_notes: array of {"target_id", "note"} objects, one per trade target
   you can justify. target_id must be one of the target_id values in the JSON
-  below. Omit targets you cannot justify; do not invent ids.
+  below. Omit targets you cannot justify; do not invent ids. Each note is two
+  clauses: why the deal helps this roster, then why the partner says yes
+  (use why_they_say_yes and partner_record; never invent a motive). If the
+  target has urgent_need, name the timeline ("needed before the week 6 bye").
+  If it has waiver_alternative, say the free add's name instead of pushing
+  the trade.
 - waiver_notes: array of {"id", "note"} objects, one per waiver target worth
   adding. id must be one of the id values in the JSON below. Omit the rest;
-  do not invent ids.
+  do not invent ids. If the target has urgent_need, lead with the timeline.
 - gm_alert: one or two sentences. The single most urgent thing the GM must
-  know: a deadline, an injury window, a collapsing room. Name names and
-  numbers.
+  know. Lead with the first urgent_needs entry when present; otherwise lead
+  with the trade deadline when trade_deadline.weeks_remaining is 3 or less
+  ("Trade deadline in N weeks."). Name names and numbers.
 
 {FRONT_OFFICE_REPORT_GROUND_RULES}
 
