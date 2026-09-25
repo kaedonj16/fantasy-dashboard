@@ -213,6 +213,22 @@ def _wls_fresh() -> bool:
 # Subprocess runner - each step gets a fresh process so memory fully releases
 # ---------------------------------------------------------------------------
 
+# (step_name, reason) for every failed step in the current run. main() sends
+# one aggregated failure email at the end instead of staying silent when
+# individual steps fail but the process itself survives.
+_FAILED_STEPS: list = []
+
+
+class _CronStepFailures(Exception):
+    """Aggregated per-step failures, for the end-of-run failure email."""
+
+    def __init__(self, failed_steps):
+        self.failed_steps = list(failed_steps)
+        super().__init__(
+            "%d cron step(s) failed: %s" % (len(failed_steps), ", ".join(failed_steps))
+        )
+
+
 def _run_step(code: str, step_name: str, timeout: int = 3600) -> bool:
     """
     Run Python code in a fresh interpreter subprocess.
@@ -227,39 +243,88 @@ def _run_step(code: str, step_name: str, timeout: int = 3600) -> bool:
             env=os.environ.copy(),
         )
         if result.returncode != 0:
-            print(f"[cron] {step_name} exited with code {result.returncode}")
+            reason = f"exited with code {result.returncode}"
+            print(f"[cron] {step_name} {reason}")
+            _FAILED_STEPS.append((step_name, reason))
             record_pipeline_health(step_name, "error")
             return False
         record_pipeline_health(step_name, "ok")
         return True
     except subprocess.TimeoutExpired:
-        print(f"[cron] {step_name} timed out after {timeout}s")
+        reason = f"timed out after {timeout}s"
+        print(f"[cron] {step_name} {reason}")
+        _FAILED_STEPS.append((step_name, reason))
         record_pipeline_health(step_name, "timeout")
         return False
     except Exception as e:
-        print(f"[cron] {step_name} failed to launch: {e}")
+        reason = f"failed to launch: {e}"
+        print(f"[cron] {step_name} {reason}")
+        _FAILED_STEPS.append((step_name, reason))
         record_pipeline_health(step_name, "error")
         return False
 
 
 def record_pipeline_health(step_name: str, status: str, path: Optional[Path] = None) -> Path:
-    """Persist last-success / last-status per cron step (not only failure email)."""
-    dest = path or (CACHE_DIR / "pipeline_health.json")
-    data = {}
-    try:
-        if dest.exists():
-            data = json.loads(dest.read_text(encoding="utf-8")) or {}
-    except Exception:
-        data = {}
-    now = datetime.now(timezone.utc).isoformat()
-    data[str(step_name)] = {"status": str(status), "at": now}
-    if status == "ok":
-        data[str(step_name)]["last_success"] = now
-    data["_updated"] = now
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    dest.write_text(json.dumps(data, indent=2), encoding="utf-8")
-    print(f"[cron-health] step={step_name} status={status} at={now}")
+    """Persist last-success / last-status per cron step (not only failure email).
+
+    Writes locally AND mirrors the step to the web app so /api/health/pipeline
+    can read it: the cron container's disk is invisible to the web container
+    on Render. The mirror is best-effort and skipped silently when APP_URL or
+    CRON_SECRET is unset (same vars as the cache-flush step).
+    """
+    from utils.pipeline_health import write_step_health, health_path
+
+    dest = path or health_path()
+    write_step_health(step_name, status, cache_dir=dest.parent)
+    print(f"[cron-health] step={step_name} status={status}")
+    _mirror_step_health_to_web(step_name, status)
     return dest
+
+
+def _mirror_step_health_to_web(step_name: str, status: str) -> None:
+    app_url = os.environ.get("APP_URL", "").rstrip("/")
+    cron_secret = os.environ.get("CRON_SECRET", "")
+    if not app_url or not cron_secret:
+        return
+    try:
+        import urllib.request
+        body = json.dumps({"secret": cron_secret, "step": step_name, "status": status}).encode()
+        req = urllib.request.Request(
+            f"{app_url}/api/cron/pipeline-health",
+            data=body,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            if resp.status != 200:
+                print(f"[cron-health] web mirror got HTTP {resp.status}")
+    except Exception as e:
+        print(f"[cron-health] web mirror failed (non-fatal): {e}")
+
+
+def _report_step_failures(season, week) -> None:
+    """Log at error and email the aggregated per-step failures, if any."""
+    if not _FAILED_STEPS:
+        return
+    logger = logging.getLogger(__name__)
+    detail = ", ".join(f"{name} ({reason})" for name, reason in _FAILED_STEPS)
+    logger.error("[cron] %d step(s) failed: %s", len(_FAILED_STEPS), detail)
+    print(f"[cron] FAILED STEPS ({len(_FAILED_STEPS)}): {detail}")
+    try:
+        from utils.email_notifications import send_cron_failure_notification
+        failed_names = [name for name, _ in _FAILED_STEPS]
+        send_cron_failure_notification(
+            _CronStepFailures(failed_names),
+            {
+                "failed_steps": failed_names,
+                "failure_reasons": {name: reason for name, reason in _FAILED_STEPS},
+                "season": season,
+                "week": week,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            },
+        )
+    except Exception:
+        logger.debug("suppressed exception", exc_info=True)
 
 
 def main():
@@ -1055,6 +1120,8 @@ print(f"[cron] Calibrated history snapshot: {n} players")
             print(f"[cron] Cache flush failed (non-fatal): {_flush_err}")
     else:
         print("[cron] Cache flush skipped — APP_URL or CRON_SECRET not set")
+
+    _report_step_failures(season, week)
 
     print(f"[cron] Daily run completed - Season {season}, Week {week}")
 

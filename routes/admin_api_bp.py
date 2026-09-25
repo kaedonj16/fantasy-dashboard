@@ -221,6 +221,34 @@ def api_flush_value_cache():
     return jsonify({"ok": True, "message": "Model value + advanced-metrics caches cleared - next request will reload from DB."})
 
 
+@admin_api_bp.route("/api/cron/pipeline-health", methods=["POST"])
+@limiter.limit("60 per minute")
+def api_cron_pipeline_health():
+    """Ingest one cron step's pipeline health (called by cron_daily).
+
+    The cron container's disk is invisible to the web container on Render, so
+    the cron POSTs each step's status here and the web persists it to its own
+    CACHE_DIR/pipeline_health.json, which /api/health/pipeline reads back.
+
+    Caller must pass the correct CRON_SECRET (same env var used by the cron
+    job). Fail closed when CRON_SECRET is unset.
+    """
+    payload = request.get_json(force=True, silent=True) or {}
+    secret = os.environ.get("CRON_SECRET", "")
+    provided = str(payload.get("secret") or "")
+    # Require the secret to be set AND match - when CRON_SECRET is unset the
+    # old `if secret and ...` guard would pass any request (short-circuit on falsy).
+    if not secret or not provided or not hmac.compare_digest(provided, secret):
+        return jsonify({"error": "unauthorized"}), 403
+    step = str(payload.get("step") or "").strip()[:120]
+    status = str(payload.get("status") or "").strip()
+    if not step or status not in ("ok", "error", "timeout", "skipped"):
+        return jsonify({"error": "step and a valid status (ok/error/timeout/skipped) are required"}), 400
+    from utils.pipeline_health import write_step_health
+    data = write_step_health(step, status)
+    return jsonify({"ok": True, "step": step, "status": status, "steps": len(data)})
+
+
 @admin_api_bp.route("/api/run-daily-cron", methods=["POST"])
 @limiter.limit("5 per hour")
 def api_run_daily_cron():

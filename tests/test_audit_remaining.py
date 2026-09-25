@@ -253,7 +253,10 @@ def test_pipeline_health_is_recorded_per_cron_step():
     health_bp = (ROOT / "routes" / "health_bp.py").read_text(encoding="utf-8")
     assert '/api/health/pipeline' in health_bp
     assert "pipeline_health.json" in health_bp
-    assert "last_success" in CRON
+    # last_success bookkeeping lives in utils/pipeline_health.write_step_health
+    # (cron_daily delegates there); pin it at its real home.
+    pipeline_health_src = (ROOT / "utils" / "pipeline_health.py").read_text(encoding="utf-8")
+    assert "last_success" in pipeline_health_src
 
 
 def test_record_pipeline_health_writes_json(tmp_path):
