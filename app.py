@@ -3670,7 +3670,7 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
     ])
 
     trade_rows = [
-        _sl("trade", "Trade Calculator"), _sl("trade-suggestions", "Suggestions", pro=True),
+        _sl("trade", "Trade Calculator"), _sl("trade-suggestions", "Trade Hub", pro=True),
         _sl("trade-database", "Trade Database"),
         _sl("trade-intel", "Trade Intel", pro=True),
     ]
@@ -3901,7 +3901,7 @@ def _mobile_nav_guest(active: str) -> str:
 
     trades_html = _sec("Trades", [
         _gl("/trade", "Trade Calculator", "trade"),
-        _gl("/trade?tab=suggestions", "Suggestions", "trade-suggestions", pro=True),
+        _gl("/trade?tab=suggestions", "Trade Hub", "trade-suggestions", pro=True),
         _gl("/trade-database", "Trade Database", "trade-database"),
         _gl("/trade-intel", "Trade Intel", "trade-intel", pro=True),
     ])
@@ -4865,7 +4865,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         pills += [
             simple_dropdown("Trades", [
                 ("Trade Calculator", "/trade", "trade"),
-                ("Suggestions <span class='nav-pro-badge'>PRO</span>", "/trade?tab=suggestions", "trade-suggestions"),
+                ("Trade Hub <span class='nav-pro-badge'>PRO</span>", "/trade?tab=suggestions", "trade-suggestions"),
                 ("Trade Database", "/trade-database", "trade-database"),
                 ("Trade Intel <span class='nav-pro-badge'>PRO</span>", "/trade-intel", "trade-intel"),
             ], ["trade", "trade-database", "trade-intel"], "tradesNavDropdown"),
@@ -5007,7 +5007,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     nav_pills.append(nav_pill("Dashboard", "page_dashboard", "dashboard"))
     nav_pills.append(nav_pill_dropdown("Trades", [
         ("Trade Calculator", "trade.page_trade", "trade", False),
-        ("Suggestions <span class='nav-pro-badge'>PRO</span>", "trade.page_trade", "trade-suggestions", False,
+        ("Trade Hub <span class='nav-pro-badge'>PRO</span>", "trade.page_trade", "trade-suggestions", False,
          "?tab=suggestions"),
         ("Trade Database", "trade.page_trade_database", "trade-database", False),
         # Market comps are Sleeper-sourced; the page still applies to ESPN/Yahoo/MFL
@@ -27480,6 +27480,20 @@ def api_trade_intel_trending():
             model_val = float(r["model_value"] or 0)
             market_val = float(r["market_value"] or 0)
             delta = round(market_val - model_val, 1) if model_val and market_val else None
+            market_trend = round(float(r["market_trend_1qb"]) * _market_scale(), 1) if r[
+                                                                                            "market_trend_1qb"] is not None else None
+            # Trade Hub: shared server-computed "Why this" line.
+            try:
+                from dashboard_services.trade_hub import why_line_for_market
+                _why_line = why_line_for_market({
+                    "trade_count_7d": r["trade_count_7d"],
+                    "market_trend": market_trend,
+                    "value_delta": delta,
+                    "model_value": model_val,
+                    "buy_sell_ratio": None,
+                })
+            except Exception:
+                _why_line = ""
             result.append({
                 "player_id": pid,
                 "name": info.get("name", pid),
@@ -27491,8 +27505,8 @@ def api_trade_intel_trending():
                 "market_value": market_val or None,
                 "model_value": model_val or None,
                 "value_delta": delta,
-                "market_trend": round(float(r["market_trend_1qb"]) * _market_scale(), 1) if r[
-                                                                                                "market_trend_1qb"] is not None else None,
+                "market_trend": market_trend,
+                "why_line": _why_line or None,
             })
 
         # Calculate pagination info
@@ -28989,9 +29003,57 @@ def api_archetype_suggestions():
             ctx=ctx,
             untouchable_ids=untouchable_ids,
         )
+        # Trade Hub: shared server-computed "Why this" line on every suggestion.
+        try:
+            from dashboard_services.trade_hub import why_line_for_suggestion
+            for s in results.get("suggestions") or []:
+                if isinstance(s, dict) and not s.get("why_line"):
+                    s["why_line"] = why_line_for_suggestion(s)
+        except Exception:
+            pass
         return jsonify(results)
     except Exception as exc:
         return _api_err("Archetype suggestions failed", exc)
+
+
+@app.route("/api/trade-hub/shop-package", methods=["POST"])
+def api_trade_hub_shop_package():
+    """POST /api/trade-hub/shop-package
+
+    Trade Hub shop-to-all-teams: re-price an outgoing package against every
+    roster's needs and return a value-matched counter for each team.
+    Premium-gated. Body: {platform, league_id, season, viewer_roster_id,
+    give_asset_ids: [...]}
+    """
+    body = request.get_json(silent=True) or {}
+    platform = str(body.get("platform") or "sleeper").strip()
+    league_id = str(body.get("league_id") or "").strip()
+    season = int(body.get("season") or datetime.now().year)
+    viewer_roster_id = str(body.get("viewer_roster_id") or "").strip()
+    give_asset_ids = [str(a) for a in (body.get("give_asset_ids") or []) if a]
+    if not league_id or not give_asset_ids:
+        return jsonify({"ok": False, "error": "league_id and give_asset_ids required"}), 400
+
+    user_id = session.get("viewer_username") or None
+    if not has_premium_for_viewer(user_id, session.get("viewer_user_id"), league_id, platform, season):
+        return jsonify({"ok": False, "paywall": True, "error": "Premium required"}), 403
+
+    try:
+        from dashboard_services.trade_hub import shop_package
+        from utils.lineup_slots import is_superflex_lineup
+        ctx = get_league_ctx_from_cache(platform=platform, league_id=league_id, season=season)
+        _rp = ctx.get("roster_positions") or []
+        result = shop_package(
+            ctx,
+            viewer_roster_id=viewer_roster_id,
+            send_ids=give_asset_ids,
+            league_type="sf" if is_superflex_lineup(_rp) else "1qb",
+            league_size=len(ctx.get("rosters") or []) or 10,
+        )
+        result["ok"] = True
+        return jsonify(result)
+    except Exception as exc:
+        return _api_err("Shop package failed", exc)
 
 
 # Pick-asset id parsing lives in utils/pick_slots.py; re-exported under the

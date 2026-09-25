@@ -22,6 +22,7 @@ CHEAT_JS = (ROOT / "static" / "cheat_sheet.js").read_text(encoding="utf-8")
 DRAFT_JS = (ROOT / "static" / "draft_room.js").read_text(encoding="utf-8")
 BREAKOUT_BP = (ROOT / "routes" / "breakout_api_bp2.py").read_text(encoding="utf-8")
 TRADE_BP = (ROOT / "routes" / "trade_bp.py").read_text(encoding="utf-8")
+TRADE_INTEL_PAGE = (ROOT / "dashboard_services" / "pages" / "trade_intel_page.py").read_text(encoding="utf-8")
 
 
 def test_home_platform_chips_label_yahoo_and_mfl():
@@ -101,7 +102,8 @@ def test_nav_shows_trade_intel_and_redzone_on_every_platform():
 
 
 def test_trade_intel_explains_sleeper_source():
-    assert "Market comps come from real Sleeper dynasty trades" in TRADE_BP
+    # The note's canonical source is the extracted Trade Intelligence builder.
+    assert "Market comps come from real Sleeper dynasty trades" in TRADE_INTEL_PAGE
 
 
 def test_paywall_lists_shipped_pro_features_only():
@@ -117,7 +119,7 @@ def test_paywall_lists_shipped_pro_features_only():
     assert "amPaywall" not in am
     calc = (ROOT / "dashboard_services" / "pages" / "trade_calculator_page.py").read_text(encoding="utf-8")
     assert "Sleeper dynasty comps" in calc
-    assert "Market comps come from real Sleeper dynasty trades" in TRADE_BP
+    assert "Market comps come from real Sleeper dynasty trades" in TRADE_INTEL_PAGE
     rz = (ROOT / "static" / "redzone.js").read_text(encoding="utf-8")
     assert "Tank01 box scores" in rz
     recap = (ROOT / "dashboard_services" / "pages" / "recap_page.py").read_text(encoding="utf-8")
@@ -158,8 +160,8 @@ def test_in_season_front_office_is_premium_gated():
 
 
 def test_trade_suggestions_hides_build_around_without_pro():
-    """Free users on Suggestions should only see the upgrade CTA, not the
-    locked Build Around / Strategy tools underneath it."""
+    """Free users on the Trade Hub should only see the upgrade CTA, not the
+    locked hub tabs underneath it."""
     calc = (ROOT / "dashboard_services" / "pages" / "trade_calculator_page.py").read_text(encoding="utf-8")
     assert 'id="otcSuggProContent"' in calc
     assert 'sugg_pro_display = "" if has_premium else "display:none;"' in calc
@@ -181,7 +183,12 @@ def test_trade_suggestions_hides_build_around_without_pro():
     assert "display:none" not in style_for(pro, "otcSuggProContent")
     assert "display:none" not in style_for(free, "otcSuggPaywall")
     assert "display:none" in style_for(pro, "otcSuggPaywall")
-    assert 'id="otcSubtabBuildAround"' in free
+    assert 'id="otcSubtabSuggestions"' in free
+    assert 'id="otcSubtabTargets"' in free
+    assert 'id="otcSubtabMarket"' in free
+    assert 'id="otcSubtabSaved"' in free
+    # No market-intel markup leaks to non-PRO (endpoints 403 too).
+    assert "tiGrid" not in free
 
 
 def test_player_insights_targets_tab_shows_upgrade_state_like_breakouts():

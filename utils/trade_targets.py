@@ -438,6 +438,13 @@ def rank_position_candidates(
         out = dict(row)
         out["why"] = why
         out["fit_score"] = round(score, 3)
+        # Trade Hub: shared server-computed "Why this" line (owner_needs still
+        # present here; _public() strips it later).
+        try:
+            from dashboard_services.trade_hub import why_line_for_target
+            out["why_line"] = why_line_for_target(out)
+        except Exception:
+            pass
         ranked.append((score, out))
     ranked.sort(key=lambda t: (-t[0], -float(t[1].get("value") or 0.0)))
     return [row for _, row in ranked[: max(0, int(limit))]]

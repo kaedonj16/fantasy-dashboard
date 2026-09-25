@@ -7429,6 +7429,217 @@ window.initTradePage = function initTradePage(root = document) {
     }
     applySuggGating();
 
+    // ── Trade Hub: shared "Why this" component ───────────────────────────────
+    // The explanation text is always generated server-side (dashboard_services/
+    // trade_hub.py); this renders the same component on every hub tab.
+    window.brWhyLine = function (text) {
+      if (!text) return "";
+      return `<div class="th-why"><span class="th-why-lbl">Why this</span><span>${escapeHtml(String(text))}</span></div>`;
+    };
+
+    // ── Trade Hub: saved packages (league-scoped localStorage) ──────────────
+    function _hubStorageKey() {
+      const plat = (root.querySelector("#platformInput")?.value || "").trim().toLowerCase() || "sleeper";
+      const lg = (root.querySelector("#leagueIdInput")?.value || "").trim() || "guest";
+      const vr = (root.querySelector("#viewerRosterIdInput")?.value || "").trim() || "guest";
+      return `trade-hub-saved:${plat}:${lg}:${vr}`;
+    }
+    function _hubSavedList() {
+      try {
+        const raw = localStorage.getItem(_hubStorageKey());
+        const arr = raw ? JSON.parse(raw) : [];
+        return Array.isArray(arr) ? arr : [];
+      } catch { return []; }
+    }
+    function _hubSaveList(list) {
+      try { localStorage.setItem(_hubStorageKey(), JSON.stringify(list.slice(0, 100))); } catch {}
+    }
+    window.brHubPkgId = function (pkg) {
+      const ids = []
+        .concat(pkg.give || []).concat(pkg.get || [])
+        .map(a => String(a.id || a.player_id || a.name)).sort().join("|");
+      let h = 0;
+      for (let i = 0; i < ids.length; i++) h = ((h * 31) + ids.charCodeAt(i)) >>> 0;
+      return "hub:" + h.toString(36);
+    };
+    window.brHubIsSaved = function (pkg) {
+      const id = window.brHubPkgId(pkg);
+      return _hubSavedList().some(p => p.id === id);
+    };
+    window.brHubToggleSave = function (pkg, btn) {
+      const id = window.brHubPkgId(pkg);
+      let list = _hubSavedList();
+      const ix = list.findIndex(p => p.id === id);
+      if (ix >= 0) {
+        list.splice(ix, 1);
+        if (btn) { btn.classList.remove("is-saved"); btn.querySelector("span:last-child").textContent = "Save"; }
+      } else {
+        list.unshift({
+          id,
+          saved_at: Date.now(),
+          get: (pkg.get || []).map(a => ({ id: a.id || a.player_id || null, name: a.name, position: a.position })),
+          give: (pkg.give || []).map(a => ({ id: a.id || a.player_id || null, name: a.name, position: a.position })),
+          why_line: pkg.why_line || "",
+          label: pkg.label || "",
+        });
+        if (btn) { btn.classList.add("is-saved"); btn.querySelector("span:last-child").textContent = "Saved"; }
+      }
+      _hubSaveList(list);
+      renderSavedHub();
+      return ix < 0;
+    };
+    window.brHubRemove = function (id) {
+      _hubSaveList(_hubSavedList().filter(p => p.id !== id));
+      renderSavedHub();
+    };
+    window.brHubSaveBtn = function (pkg) {
+      const saved = window.brHubIsSaved(pkg);
+      const data = encodeURIComponent(JSON.stringify({
+        get: pkg.get || [], give: pkg.give || [],
+        why_line: pkg.why_line || "", label: pkg.label || "",
+      }));
+      return `<button class="th-save-btn${saved ? " is-saved" : ""}" data-hub-save="${data}">`
+        + `<span>☆</span><span>${saved ? "Saved" : "Save"}</span></button>`;
+    };
+
+    function _hubAssetHtml(a) {
+      const col = typeof posColor === "function" ? posColor(a.position || "WR") : "#888";
+      return `<span style="display:inline-block;margin:0 4px 4px 0;padding:2px 8px;border-radius:6px;"
+        title="${escapeHtml(String(a.name || ""))}">
+        <b style="color:${col};">${escapeHtml(String(a.position || ""))}</b>
+        ${escapeHtml(String(a.name || ""))}</span>`;
+    }
+
+    window.renderSavedHub = function renderSavedHub() {
+      const body = root.querySelector("#otcSavedBody");
+      if (!body) return;
+      const list = _hubSavedList();
+      const shop = root.querySelector("#otcShopResults");
+      if (!list.length) {
+        body.innerHTML = `<div style="text-align:center;color:var(--text-muted);padding:36px 12px;font-size:13px;">
+          Nothing saved yet. Tap <b>Save</b> on any suggestion, target package, or search result
+          to keep it here for this league.</div>`;
+        return;
+      }
+      body.innerHTML = list.map(p => {
+        const data = encodeURIComponent(JSON.stringify(p));
+        return `<div class="th-saved-row">
+          <div class="th-saved-title">${escapeHtml(p.label || "Trade package")}</div>
+          <div style="margin-top:6px;">
+            <div style="font-size:11px;color:var(--text-muted);">YOU GET</div>
+            <div>${(p.get || []).map(_hubAssetHtml).join("")}</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">YOU GIVE</div>
+            <div>${(p.give || []).map(_hubAssetHtml).join("")}</div>
+          </div>
+          ${window.brWhyLine(p.why_line)}
+          <div class="th-saved-actions">
+            <button class="th-chip-btn" data-hub-analyze="${data}">Analyze</button>
+            <button class="th-chip-btn" data-hub-shop="${data}">Shop to all teams</button>
+            <button class="th-chip-btn" data-hub-remove="${p.id}">Delete</button>
+          </div>
+        </div>`;
+      }).join("");
+    };
+
+    // Saved-tab clicks + hub save buttons (delegated, survives re-renders)
+    root.addEventListener("click", (e) => {
+      const saveBtn = e.target.closest("[data-hub-save]");
+      if (saveBtn) {
+        try {
+          const pkg = JSON.parse(decodeURIComponent(saveBtn.dataset.hubSave));
+          window.brHubToggleSave(pkg, saveBtn);
+        } catch {}
+        return;
+      }
+      const rmBtn = e.target.closest("[data-hub-remove]");
+      if (rmBtn) { window.brHubRemove(rmBtn.dataset.hubRemove); return; }
+      const anBtn = e.target.closest("[data-hub-analyze]");
+      if (anBtn) {
+        try {
+          const p = JSON.parse(decodeURIComponent(anBtn.dataset.hubAnalyze));
+          _hubLoadIntoCalculator(p);
+        } catch {}
+        return;
+      }
+      const shopBtn = e.target.closest("[data-hub-shop]");
+      if (shopBtn) {
+        try {
+          const p = JSON.parse(decodeURIComponent(shopBtn.dataset.hubShop));
+          _hubShopPackage(p);
+        } catch {}
+        return;
+      }
+      const shopCardBtn = e.target.closest("[data-hub-shop-card]");
+      if (shopCardBtn) {
+        try {
+          const p = JSON.parse(decodeURIComponent(shopCardBtn.dataset.hubShopCard));
+          _setSuggSubtab("saved");
+          setTimeout(() => _hubShopPackage(p), 30);
+        } catch {}
+      }
+    });
+
+    async function _hubLoadIntoCalculator(p) {
+      // Load the saved package into the calculator: side A = you receive, side B = you give.
+      await ensurePlayersLoaded();
+      const byId = (a) => allPlayers.find(x => String(x.id) === String(a.id || a.player_id))
+        || (a.name && allPlayers.find(x => x.name && x.name.toLowerCase() === String(a.name).toLowerCase()));
+      state.sideAPlayers.length = 0; state.sideBPlayers.length = 0;
+      state.sideAPicks.length = 0; state.sideBPicks.length = 0;
+      (p.get || []).forEach(a => {
+        const o = byId(a); if (!o) return;
+        if (o.position === "PICK") state.sideAPicks.push({ id: o.id, display: o.name });
+        else state.sideAPlayers.push(o);
+      });
+      (p.give || []).forEach(a => {
+        const o = byId(a); if (!o) return;
+        if (o.position === "PICK") state.sideBPicks.push({ id: o.id, display: o.name });
+        else if (!state.sideBPlayers.some(x => String(x.id) === String(o.id))) state.sideBPlayers.push(o);
+      });
+      saveState(); renderChips("A"); renderChips("B"); syncEmptyState("A"); syncEmptyState("B");
+      forceViewerSideA(); analyzeTrade(); switchTab("calculator");
+      const shell = root.querySelector(".otc-shell");
+      if (shell) shell.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+
+    async function _hubShopPackage(p) {
+      const panel = root.querySelector("#otcShopResults");
+      if (!panel) return;
+      panel.style.display = "";
+      panel.innerHTML = `<div style="color:var(--text-muted);font-size:13px;padding:12px 0;">Shopping this package against every roster…</div>`;
+      const ids = (p.give || []).map(a => a.id || a.player_id).filter(Boolean);
+      const leagueId = (root.querySelector("#leagueIdInput")?.value || "").trim();
+      const platform = (root.querySelector("#platformInput")?.value || "sleeper").trim();
+      const season = (root.querySelector("#seasonInput")?.value || "").trim();
+      const viewerRosterId = (root.querySelector("#viewerRosterIdInput")?.value || "").trim();
+      try {
+        const resp = await fetch("/api/trade-hub/shop-package", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ league_id: leagueId, platform, season, viewer_roster_id: viewerRosterId, give_asset_ids: ids }),
+        });
+        const data = await resp.json();
+        if (!data.ok) {
+          panel.innerHTML = `<div style="color:var(--text-muted);font-size:13px;">Shop unavailable: ${escapeHtml(data.error || "unknown error")}</div>`;
+          return;
+        }
+        const rows = (data.teams || []).map(r => `
+          <div class="th-shop-row">
+            <div class="th-shop-team">${escapeHtml(r.team || "Team")}</div>
+            <div class="th-shop-meta">${escapeHtml((r.suggested_get || []).map(a => a.name).join(", ") || "No fair match")}
+              ${r.fairness != null ? ` · ${Math.round(r.fairness * 100)}% fair` : ""}</div>
+            ${window.brWhyLine(r.why_line)}
+          </div>`).join("");
+        const sendNames = (data.send || []).map(a => a.name).join(", ");
+        panel.innerHTML = `<div class="otc-sugg-section-head" style="margin:6px 0 10px;">
+            <span class="otc-sugg-section-title">Shop results</span>
+            <span style="font-size:11px;color:var(--text-muted);">Shopping: ${escapeHtml(sendNames)}</span>
+          </div>` + (rows || `<div style="color:var(--text-muted);font-size:13px;">No value-matched returns found.</div>`);
+      } catch (err) {
+        panel.innerHTML = `<div style="color:var(--text-muted);font-size:13px;">Shop failed. Please try again.</div>`;
+      }
+    }
+
     function switchTab(name) {
       const hasPremium = applySuggGating();
       if (name === "suggestions" && !hasPremium) {
@@ -7466,8 +7677,9 @@ window.initTradePage = function initTradePage(root = document) {
 
     tabs.forEach(t => t.addEventListener("click", () => switchTab(t.dataset.tab)));
 
-    // Auto-open suggestions tab when arriving via ?tab=suggestions link
-    if (new URLSearchParams(window.location.search).get("tab") === "suggestions") {
+    // Auto-open the Trade Hub when arriving via ?tab=suggestions or ?tab=hub link
+    const _hubTabParam = new URLSearchParams(window.location.search).get("tab");
+    if (_hubTabParam === "suggestions" || _hubTabParam === "hub") {
       switchTab("suggestions");
     }
 
@@ -7832,6 +8044,7 @@ window.initTradePage = function initTradePage(root = document) {
               data-receive='${esc(JSON.stringify(opt.receive)).replace(/'/g, "&#39;")}'>
               Analyze
             </button>
+            ${window.brHubSaveBtn({ get: opt.receive || [], give: [{ id: playerId, name: playerName, position: focusPos }], why_line: "", label: playerName + " trade" })}
           </div>`;
 
         const bindSendLoadBtns = () => {
@@ -8065,12 +8278,15 @@ window.initTradePage = function initTradePage(root = document) {
           </div>
           ${patternSigHtml}
           ${throwInHtml}
+          <div style="display:flex;gap:6px;align-items:center;margin-top:8px;">
+          ${window.brHubSaveBtn({ get: [{ id: playerId, name: playerName, position: focusPos }].concat(extra ? [extra] : []), give: pkg.assets || [], why_line: "", label: playerName + " package" })}
           <button class="otc-sugg-pkg-load-btn"
             data-focus-id="${playerId}"
             data-assets="${encodeURIComponent(JSON.stringify(pkg.assets))}"
             ${extra ? `data-extra-receive="${encodeURIComponent(JSON.stringify(extra))}"` : ''}>
             Analyze
           </button>
+          </div>
         </div>`;
       }).join("");
 
@@ -8433,8 +8649,10 @@ window.initTradePage = function initTradePage(root = document) {
 
     // ── Suggestions-tab Trade Targets (different from sidebar) ───
     async function loadSuggTargets() {
-      // Skip if Strategy sub-tab is active - strategy loader handles that
-      if ((localStorage.getItem("sugg-subtab") || "build") === "strategy") return;
+      // Skip if Suggestions sub-tab is active - strategy loader handles that.
+      // Reads localStorage (not _activeSubtab) because this can run during
+      // init before the in-memory value is declared.
+      if (_hubStoredSubtab() === "suggestions") return;
 
       const container = root.querySelector("#otcSuggTargetsBody");
       if (!container) return;
@@ -8512,10 +8730,12 @@ window.initTradePage = function initTradePage(root = document) {
           const col      = posColor2[pos] || "var(--accent)";
           const safeName = escapeHtml(t.name);
           const safePid  = escapeHtml(t.player_id);
-          const whyBits  = [t.owner_team, t.why].filter(Boolean);
-          const why      = whyBits.length
-            ? `<span class="otc-sugg-target-why">${escapeHtml(whyBits.join(" · "))}</span>`
-            : "";
+          // Shared hub component; the server computes why_line. Fall back to
+          // the legacy owner/why join until cached responses roll over.
+          const why = window.brWhyLine(t.why_line)
+            || ([t.owner_team, t.why].filter(Boolean).length
+              ? `<span class="otc-sugg-target-why">${escapeHtml([t.owner_team, t.why].filter(Boolean).join(" · "))}</span>`
+              : "");
           return `<div class="otc-sugg-target-row">
             <span class="otc-sugg-target-pos" style="background:${col}20;color:${col};">${pos}</span>
             <span class="otc-sugg-target-meta">
@@ -8632,7 +8852,7 @@ window.initTradePage = function initTradePage(root = document) {
         if (!pid || !name) return;
 
         // Strategy cards switching to Build Around so results are visible
-        if (fromStrategy) _setSuggSubtab("build");
+        if (fromStrategy) _setSuggSubtab("targets");
 
         if (playerInput) {
           playerInput.value = name;
@@ -8658,18 +8878,26 @@ window.initTradePage = function initTradePage(root = document) {
     }
     bindSuggTargetsClick();
 
-    // ── Sub-tabs: "Build Around" | "Strategy" ────────────────────────────────
-    const btnSubBuild      = root.querySelector("#otcSubtabBuildAround");
-    const btnSubStrategy   = root.querySelector("#otcSubtabStrategy");
-    const buildAroundPanel = root.querySelector("#otcBuildAroundPanel");
-    const strategyPanel    = root.querySelector("#otcStrategyPanel");
+    // ── Trade Hub sub-tabs: Suggestions | Targets | Market Intel | Saved ────────
+    const hubSubBtns       = Array.from(root.querySelectorAll(".otc-sugg-subtab[data-hubtab]"));
+    const targetsPanel     = root.querySelector("#otcBuildAroundPanel");
+    const suggPanel        = root.querySelector("#otcStrategyPanel");
+    const marketPanel      = root.querySelector("#otcMarketIntelPanel");
+    const savedPanel       = root.querySelector("#otcSavedPanel");
     const strategyChips    = root.querySelector("#otcStrategyChips");
     const strategyImpact   = root.querySelector("#otcStrategyImpact");
     const strategyCards    = root.querySelector("#otcStrategyCards");
     const strategyCardsHead = root.querySelector("#otcStrategyCardsHead");
     const strategyClearBtn  = root.querySelector("#otcStrategyClearFilter");
 
-    let _activeSubtab    = localStorage.getItem("sugg-subtab")    || "build";
+    // Back-compat: older keys "build" -> "targets", "strategy" -> "suggestions".
+    function _hubStoredSubtab() {
+      const v = localStorage.getItem("sugg-subtab") || "suggestions";
+      if (v === "build") return "targets";
+      if (v === "strategy") return "suggestions";
+      return ["suggestions", "targets", "market", "saved"].includes(v) ? v : "suggestions";
+    }
+    let _activeSubtab    = _hubStoredSubtab();
     let _activeArchetype = localStorage.getItem("sugg-archetype") || "";
     let _strategyData    = [];
     let _strategyFilter  = null;
@@ -8687,19 +8915,23 @@ window.initTradePage = function initTradePage(root = document) {
     function _setSuggSubtab(tab) {
       _activeSubtab = tab;
       localStorage.setItem("sugg-subtab", tab);
-      const isBuild = tab === "build";
-      if (buildAroundPanel)  buildAroundPanel.style.display  = isBuild ? "" : "none";
-      if (strategyPanel)     strategyPanel.style.display     = isBuild ? "none" : "";
-      if (btnSubBuild)    btnSubBuild.classList.toggle("is-active", isBuild);
-      if (btnSubStrategy) btnSubStrategy.classList.toggle("is-active", !isBuild);
-      if (!isBuild) {
+      const panels = { suggestions: suggPanel, targets: targetsPanel, market: marketPanel, saved: savedPanel };
+      Object.keys(panels).forEach(k => {
+        const el = panels[k];
+        if (el) el.style.display = k === tab ? "" : "none";
+      });
+      hubSubBtns.forEach(b => b.classList.toggle("is-active", b.dataset.hubtab === tab));
+      if (tab === "suggestions") {
         let arch = _activeArchetype || "contending";
         if (getScoringType() === "redraft" && arch === "rebuilding") arch = "contending";
         _setStrategyChip(arch);
         loadStrategyView(arch);
-      } else {
+      } else if (tab === "targets") {
         loadSuggTargets();
+      } else if (tab === "saved") {
+        renderSavedHub();
       }
+      // "market" self-loads: the embedded Trade Intelligence script fetches on first open.
     }
 
     function _archDesc() {
@@ -8741,8 +8973,7 @@ window.initTradePage = function initTradePage(root = document) {
       }
     }
 
-    if (btnSubBuild)    btnSubBuild.addEventListener("click",    () => _setSuggSubtab("build"));
-    if (btnSubStrategy) btnSubStrategy.addEventListener("click", () => _setSuggSubtab("strategy"));
+    hubSubBtns.forEach(b => b.addEventListener("click", () => _setSuggSubtab(b.dataset.hubtab)));
 
     if (strategyChips) {
       strategyChips.addEventListener("click", e => {
@@ -8766,9 +8997,11 @@ window.initTradePage = function initTradePage(root = document) {
     function _onContextChangePatch() {
       suggTargetsLoaded = false;
       if (suggTab.style.display !== "none") {
-        if (_activeSubtab !== "build" && _activeArchetype) {
+        if (_activeSubtab === "suggestions" && _activeArchetype) {
           loadStrategyView(_activeArchetype);
-        } else {
+        } else if (_activeSubtab === "saved") {
+          renderSavedHub();
+        } else if (_activeSubtab !== "market") {
           loadSuggTargets();
         }
       }
@@ -8779,7 +9012,7 @@ window.initTradePage = function initTradePage(root = document) {
     if (seasonInputEl2) seasonInputEl2.addEventListener("change", _onContextChangePatch);
 
     // Restore sub-tab on load
-    setTimeout(() => { if (_activeSubtab === "strategy") _setSuggSubtab("strategy"); }, 0);
+    setTimeout(() => { _setSuggSubtab(_hubStoredSubtab()); }, 0);
 
     // ── Strategy view loader ──────────────────────────────────────────────────
     async function loadStrategyView(archetype) {
@@ -9139,15 +9372,20 @@ window.initTradePage = function initTradePage(root = document) {
             </div>
           </div>
           ${fitHtml ? `<div class="otc-rt-fit">${fitHtml}</div>` : ""}
+          ${window.brWhyLine(t.why_line)}
           <div class="otc-rt-footer">
             <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;min-width:0;">
               ${gradeHtml}${acptHtml}${wpdHtml}${podHtml}
               ${partnerHtml}
             </div>
-            <button class="sugg-target-get-btn otc-sugg-pkg-load-btn"
-              data-direction="analyze"
-              data-receive="${receiveEnc}"
-              data-send="${sendEnc}">Analyze</button>
+            <div style="display:flex;gap:6px;align-items:center;">
+              ${window.brHubSaveBtn({ get: getAssets, give: giveAssets, why_line: t.why_line || "", label: (t.name || "Trade") + " trade" })}
+              <button class="th-chip-btn" data-hub-shop-card="${encodeURIComponent(JSON.stringify({ get: getAssets, give: giveAssets, why_line: t.why_line || "", label: (t.name || "Trade") + " trade" }))}">Shop</button>
+              <button class="sugg-target-get-btn otc-sugg-pkg-load-btn"
+                data-direction="analyze"
+                data-receive="${receiveEnc}"
+                data-send="${sendEnc}">Analyze</button>
+            </div>
           </div>
         </div>`;
       }).join("");
@@ -20066,8 +20304,8 @@ window.showSubWelcome = function (opts) {
     personal: {
       eyebrow: 'PRO',
       title: 'Welcome to PRO',
-      lead: 'Start with Trade Suggestions -- archetype packages with playoff-odds impact -- or take a short PRO tour.',
-      primaryLabel: 'Open Trade Suggestions →',
+      lead: 'Start with the Trade Hub -- archetype packages with playoff-odds impact -- or take a short PRO tour.',
+      primaryLabel: 'Open Trade Hub →',
       primaryHref: base + '/trade?tab=suggestions',
       primaryCta: 'trade-suggestions',
     },
@@ -20075,22 +20313,22 @@ window.showSubWelcome = function (opts) {
       eyebrow: 'League PRO',
       title: 'PRO is on for your league',
       lead: 'Managers can join from the invite you just got. Here are the tools worth opening first.',
-      primaryLabel: 'Open Trade Suggestions →',
+      primaryLabel: 'Open Trade Hub →',
       primaryHref: base + '/trade?tab=suggestions',
       primaryCta: 'trade-suggestions',
     },
     claim: {
       eyebrow: 'League PRO',
       title: 'League PRO unlocked',
-      lead: 'A league mate shared PRO with you. Start with Trade Suggestions, or take a short PRO tour.',
-      primaryLabel: 'Open Trade Suggestions →',
+      lead: 'A league mate shared PRO with you. Start with the Trade Hub, or take a short PRO tour.',
+      primaryLabel: 'Open Trade Hub →',
       primaryHref: base + '/trade?tab=suggestions',
       primaryCta: 'trade-suggestions',
     },
   }[variant];
 
   var features = [
-    { label: 'Trade Suggestions', desc: 'Archetype packages with playoff-odds impact', href: base + '/trade?tab=suggestions' },
+    { label: 'Trade Hub', desc: 'Archetype packages with playoff-odds impact', href: base + '/trade?tab=suggestions' },
     { label: 'Playoff Impact', desc: 'Simulate how a deal shifts your odds before you send it', href: base + '/trade' },
     { label: 'Front Office Report', desc: 'AI roster briefing personalized to your team', href: base + '/dashboard' },
     { label: 'Trade Intel', desc: 'Market values, momentum, and real trade frequency', href: base + '/trade-intel' },
@@ -21025,7 +21263,7 @@ function setupFunAwardsGrid() {
     // ── Tools ────────────────────────────────────────────────────────────────
     { label: 'Trade Calculator', keywords: ['trade', 'calculator', 'otc'], path: '/trade', icon: 'fa-right-left' },
     { label: 'Trade Database', keywords: ['trade', 'database', 'trades'], path: '/trade-database', icon: 'fa-database' },
-    { label: 'Trade Targets', keywords: ['trade', 'targets', 'suggestions'], path: '/trade', suffix: '?tab=suggestions', icon: 'fa-bullseye' },
+    { label: 'Trade Hub', keywords: ['trade', 'targets', 'suggestions', 'hub'], path: '/trade', suffix: '?tab=suggestions', icon: 'fa-bullseye' },
     { label: 'Trade Intel', keywords: ['trade', 'intel', 'intelligence'], path: '/trade-intel', icon: 'fa-chart-line' },
     { label: 'Waivers', keywords: ['waiver', 'waivers', 'pickup', 'faab'], path: '/waivers', icon: 'fa-inbox' },
     { label: 'Start/Sit', keywords: ['start', 'sit', 'lineup'], path: '/waivers', suffix: '?tab=startsit', icon: 'fa-clipboard-list' },
