@@ -31,9 +31,9 @@ _VALID_KINDS = ("season", "weekly")
 def _share_label(kind: str, share_data: dict) -> str:
     league = str(share_data.get("league") or "League")
     if kind == "weekly" and share_data.get("week"):
-        return f"{league} — Week {share_data['week']} Wrapped"
+        return f"{league}: Week {share_data['week']} Wrapped"
     season = str(share_data.get("season") or "").strip()
-    return f"{league} — {season} Season Wrapped".replace("  ", " ").strip(" —")
+    return f"{league}: {season} Season Wrapped".replace("  ", " ").strip(" :")
 
 
 @wrapped_share_bp.route("/api/wrapped/share", methods=["POST"])

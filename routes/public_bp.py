@@ -944,7 +944,7 @@ def oline_rankings_page(season: Optional[int] = None):
       <h1 class="static-hero-title">Offensive Line Rankings</h1>
       <div class="static-section">
         <p>Unit ratings on a 0&ndash;100 scale (100 = best), derived entirely from
-        public nflverse play-by-play &mdash; no licensed grades. Pass block blends
+        public nflverse play-by-play. No licensed grades. Pass block blends
         opponent-adjusted pressure and sack rate (residualised for the QB's time to
         throw); run block uses opponent-adjusted Adjusted Line Yards. These are
         directional <em>unit</em> tiers, not per-lineman grades.

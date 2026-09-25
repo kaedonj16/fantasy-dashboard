@@ -344,7 +344,7 @@ def api_advanced_metrics_movers():
     )[:6]
     note = ""
     if not heating and not cooling and not outliers:
-        note = "Trends need a few games of volume — check back soon."
+        note = "Trends need a few games of volume. Check back soon."
     return jsonify({"heating": heating, "cooling": cooling,
                     "outliers": outliers, "note": note})
 
