@@ -481,3 +481,62 @@ def test_page_source_defense_view_wiring():
     # Team drill-in gains a Defense vs position section.
     assert "function defenseSection" in PAGE_SRC
     assert "Defense vs position" in PAGE_SRC
+
+
+# ── Rendered inline-script syntax ────────────────────────────────────────────
+
+def _inline_scripts(html):
+    import re
+    return [s for s in re.findall(r"<script>(.*?)</script>", html, re.S)
+            if s.strip()]
+
+
+def test_rendered_inline_scripts_parse_as_javascript():
+    # Regression: the page template is an f-string, so a JS string escape like
+    # "\n" (CSV download) was rendered as a raw newline, producing
+    # `lines.join("<newline>")` -- a SyntaxError that killed the whole inline
+    # script and left the page stuck on "Loading team data." Source-level
+    # checks cannot catch this; the rendered HTML must be syntax-checked.
+    import shutil
+    import subprocess
+    import tempfile
+    from pathlib import Path as _P
+
+    from dashboard_services.pages.nfl_teams_page import build_nfl_teams_body
+
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node not available for JS syntax check")
+
+    for view in ("overview", "defense"):
+        html = build_nfl_teams_body(2026, team="", view=view,
+                                   available_seasons=[2026, 2025])
+        scripts = _inline_scripts(html)
+        assert scripts, f"no inline scripts rendered for view={view}"
+        for idx, src in enumerate(scripts):
+            with tempfile.NamedTemporaryFile("w", suffix=".js",
+                                             delete=False,
+                                             encoding="utf-8") as fh:
+                fh.write(src)
+                tmp = _P(fh.name)
+            try:
+                proc = subprocess.run([node, "--check", str(tmp)],
+                                      capture_output=True, text=True,
+                                      timeout=30)
+            finally:
+                tmp.unlink(missing_ok=True)
+            assert proc.returncode == 0, (
+                f"view={view} inline script {idx} has a JS syntax error:\n"
+                f"{proc.stderr.strip()}"
+            )
+
+
+def test_rendered_csv_download_keeps_js_newline_escape():
+    # The exact line that broke: the served JS must contain lines.join("\n")
+    # with a real JS escape, never a raw newline inside the string literal.
+    from dashboard_services.pages.nfl_teams_page import build_nfl_teams_body
+
+    html = build_nfl_teams_body(2026, team="", view="overview",
+                               available_seasons=[2026, 2025])
+    assert 'lines.join("\\n")' in html
+    assert 'lines.join("\n")' not in html.replace('lines.join("\\n")', "")

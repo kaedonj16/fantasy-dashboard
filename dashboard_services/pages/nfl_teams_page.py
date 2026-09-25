@@ -348,7 +348,7 @@ function downloadCsv(){{
     }});
     lines.push(row.join(","));
   }});
-  var blob=new Blob([lines.join("\n")],{{type:"text/csv"}});
+  var blob=new Blob([lines.join("\\n")],{{type:"text/csv"}});
   var a=document.createElement("a");
   a.href=URL.createObjectURL(blob);
   a.download="nfl-team-rankings-"+state.view+"-"+state.season+".csv";
