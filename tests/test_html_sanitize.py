@@ -49,6 +49,20 @@ def test_consent_placeholder_comment_is_gone(offline_client):
     assert "Cookie consent handled by" not in html
 
 
+def test_comments_stripped_when_response_is_gzip_compressed(offline_client):
+    # Prod parity: Flask-Compress gzips HTML (browsers send Accept-Encoding).
+    # The stripper must run BEFORE compression, not choke on gzip bytes.
+    pytest.importorskip("flask_compress")
+    import gzip
+
+    r = offline_client.get("/", headers={"Accept-Encoding": "gzip"})
+    assert r.status_code == 200
+    assert r.headers.get("Content-Encoding") == "gzip", "expected flask-compress to gzip"
+    html = gzip.decompress(r.get_data()).decode("utf-8")
+    assert "<!--" not in html
+    assert "fundingchoicesmessages.google.com/i/pub-9164153092633845" in html
+
+
 def test_public_pages_have_no_html_comments(offline_client):
     for path in ("/privacy", "/terms", "/about", "/guides"):
         html = offline_client.get(path).get_data(as_text=True)
