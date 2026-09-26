@@ -1,7 +1,11 @@
+import logging
+
 import pandas as pd
 
 from .platform_api import get_matchups
 from .players import build_roster_map
+
+logger = logging.getLogger(__name__)
 
 
 def render_awards_section(awards: dict) -> str:
@@ -73,7 +77,17 @@ def highest_single_game_points(league_id: str,
     best = ["", 0.0, "", "", "", "", ""]
 
     for w in range(1, weeks):
-        matchups = get_matchups(platform, league_id, w, season) or []
+        try:
+            matchups = get_matchups(platform, league_id, w, season) or []
+        except Exception:
+            # A single failed week (e.g. a Fleaflicker edge/WAF HTML 403 on
+            # FetchLeagueScoreboard) must not 503 the whole dashboard.
+            # Score the weeks that did load and move on.
+            logger.debug(
+                "highest_single_game_points: week %s unavailable platform=%s league=%s; skipping",
+                w, platform, league_id, exc_info=True,
+            )
+            continue
         for row in matchups:
             rid = row.get("roster_id")
             owner = roster_map.get(str(rid), f"Roster {rid}")
