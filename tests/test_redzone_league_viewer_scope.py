@@ -21,7 +21,10 @@ def _league_scope_branch() -> str:
     end = app.index("\ndef ", start + 1)
     body = app[start:end]
     # Everything after the user-scope early return is the league branch.
-    return body[body.index('d = _redzone_collect(platform, league_id, season, week)'):]
+    # (The collect goes through the shared short-TTL _rz_cached_collect; the
+    # branch under test is everything from that call to the next def.)
+    marker = "_rz_cached_collect("
+    return body[body.index(marker):]
 
 
 def test_league_scope_reresolves_viewer_for_this_league():

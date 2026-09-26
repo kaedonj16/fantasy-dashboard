@@ -69,6 +69,9 @@ def _init_push_table():
             try:
                 conn.execute("ALTER TABLE push_subscriptions ADD COLUMN IF NOT EXISTS account_key TEXT")
                 conn.execute("CREATE INDEX IF NOT EXISTS push_subscriptions_account_key_idx ON push_subscriptions (account_key)")
+                # Perf: every broadcast filters by (league_id, owner_id); the
+                # existing endpoint/account_key indexes do not serve these.
+                conn.execute("CREATE INDEX IF NOT EXISTS push_subscriptions_league_owner_idx ON push_subscriptions (league_id, owner_id)")
             except Exception:
                 logger.debug("suppressed exception", exc_info=True)
             conn.commit()
