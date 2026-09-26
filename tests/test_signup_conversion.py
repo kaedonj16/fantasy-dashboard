@@ -121,7 +121,11 @@ def test_oauth_state_nonce_pkce_untouched():
 # ── Post-signup claim-your-team fast path ─────────────────────────────────────
 
 def test_zero_league_signin_drops_into_claim_flow():
-    branch = APP_JS[APP_JS.index("if (!leagues.length) {"):APP_JS.index("if (!leagues.length) {") + 600]
+    # Anchor on the claim-flow copy, not the bare `if (!leagues.length) {`
+    # (the push-settings backfill added another one earlier in the file).
+    anchor = 'signedInLeagueList.textContent = "Connect your first fantasy league below."'
+    at = APP_JS.index(anchor)
+    branch = APP_JS[at - 200:at + 400]
     assert 'setHomeCardState("connect")' in branch
     assert "Connect your first league" in branch
 

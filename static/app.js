@@ -2362,21 +2362,39 @@ window._brPromoEligible = function () {
     return out;
   }
 
-  // Gather every league_id the signed-in user belongs to (default: subscribe to
-  // all of them). Falls back to just the current-page league if lookup fails.
-  async function _collectUserLeagueIds(currentLeague) {
-    var ids = [];
+  // Gather every league the signed-in user belongs to (default: subscribe to
+  // all of them), each with its platform. Falls back to just the current-page
+  // league if lookup fails.
+  async function _collectUserLeagues(currentLeague, currentPlatform) {
+    var out = [];
     try {
-      var r = await fetch('/api/sleeper-user-leagues', { cache: 'no-store' });
+      var r = await fetch('/api/my-leagues', { cache: 'no-store' });
       if (r.ok) {
         var j = await r.json();
-        if (j && j.ok && Array.isArray(j.leagues)) {
-          ids = j.leagues.map(function (l) { return String(l.league_id || ''); }).filter(Boolean);
+        if (j && j.ok && Array.isArray(j.leagues) && j.leagues.length) {
+          out = j.leagues.map(function (l) {
+            return { id: String(l.league_id || ''), platform: (l.platform || 'sleeper').toLowerCase() };
+          }).filter(function (x) { return x.id; });
         }
       }
     } catch (_) {}
-    if (currentLeague && ids.indexOf(currentLeague) === -1) ids.push(currentLeague);
-    return ids;
+    if (!out.length) {
+      try {
+        var r2 = await fetch('/api/sleeper-user-leagues', { cache: 'no-store' });
+        if (r2.ok) {
+          var j2 = await r2.json();
+          if (j2 && j2.ok && Array.isArray(j2.leagues)) {
+            out = j2.leagues.map(function (l) {
+              return { id: String(l.league_id || ''), platform: 'sleeper' };
+            }).filter(function (x) { return x.id; });
+          }
+        }
+      } catch (_) {}
+    }
+    if (currentLeague && !out.some(function (x) { return x.id === currentLeague; })) {
+      out.push({ id: currentLeague, platform: (currentPlatform || 'sleeper').toLowerCase() });
+    }
+    return out;
   }
 
   // Register a subscription for the device across every league the user is in.
@@ -2386,18 +2404,25 @@ window._brPromoEligible = function () {
     var _parts    = window.location.pathname.split('/').filter(Boolean);
     var _platform = (_parts[0] || 'sleeper').toLowerCase();
     var _league   = _parts.length >= 3 ? _parts[2] : '';
-    if (!['sleeper', 'espn'].includes(_platform)) { _platform = 'sleeper'; _league = ''; }
-    var leagueIds = await _collectUserLeagueIds(_league);
-    await fetch('/api/push/subscribe', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        endpoint:   s.endpoint,
-        keys:       s.keys,
-        league_ids: leagueIds,
-        platform:   _platform || 'sleeper',
-      }),
+    if (['sleeper', 'espn', 'yahoo', 'mfl', 'fleaflicker'].indexOf(_platform) === -1) { _platform = 'sleeper'; _league = ''; }
+    var userLeagues = await _collectUserLeagues(_league, _platform);
+    // The subscribe endpoint takes one platform per call, so group by platform.
+    var byPlatform = {};
+    userLeagues.forEach(function (x) {
+      (byPlatform[x.platform] = byPlatform[x.platform] || []).push(x.id);
     });
+    for (var plat in byPlatform) {
+      await fetch('/api/push/subscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          endpoint:   s.endpoint,
+          keys:       s.keys,
+          league_ids: byPlatform[plat],
+          platform:   plat,
+        }),
+      });
+    }
     window._pushEndpoint = s.endpoint;
   }
 
@@ -2685,9 +2710,17 @@ window._brPromoEligible = function () {
     // subscription keys (needed to re-register a league toggled back on).
     var leagues = [], enabledLeagues = [], subKeys = null;
     try {
-      var lr = await fetch('/api/sleeper-user-leagues', { cache: 'no-store' });
-      if (lr.ok) { var lj = await lr.json(); if (lj && lj.ok && Array.isArray(lj.leagues)) leagues = lj.leagues; }
+      // /api/my-leagues covers every platform (Sleeper, ESPN, Yahoo, MFL,
+      // Fleaflicker); the Sleeper-only endpoint is the signed-out fallback.
+      var lr = await fetch('/api/my-leagues', { cache: 'no-store' });
+      if (lr.ok) { var lj = await lr.json(); if (lj && lj.ok && Array.isArray(lj.leagues) && lj.leagues.length) leagues = lj.leagues; }
     } catch (_) {}
+    if (!leagues.length) {
+      try {
+        var lr2 = await fetch('/api/sleeper-user-leagues', { cache: 'no-store' });
+        if (lr2.ok) { var lj2 = await lr2.json(); if (lj2 && lj2.ok && Array.isArray(lj2.leagues)) leagues = lj2.leagues; }
+      } catch (_) {}
+    }
     try {
       var er = await fetch('/api/push/leagues?endpoint=' + encodeURIComponent(endpoint));
       if (er.ok) enabledLeagues = (await er.json()).league_ids || [];
@@ -2794,12 +2827,16 @@ window._brPromoEligible = function () {
           } else if (cb.dataset.league !== undefined) {
             // League toggle: add (subscribe) or remove (unsubscribe) this league row
             if (on) {
+              var _lg = null;
+              for (var _li = 0; _li < leagues.length; _li++) {
+                if (String(leagues[_li].league_id) === cb.dataset.league) { _lg = leagues[_li]; break; }
+              }
               await fetch('/api/push/subscribe', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                   endpoint: endpoint, keys: subKeys, league_id: cb.dataset.league,
-                  platform: 'sleeper', owner_id: (window._viewerUid || null),
+                  platform: ((_lg && _lg.platform) || 'sleeper').toLowerCase(), owner_id: (window._viewerUid || null),
                 }),
               });
             } else {
