@@ -515,8 +515,73 @@
   font-size: 26px;
 }
 #homeProModal .home-pro-banner h2 i {
-  color: #fbbf24;
+  color: #f6b90c;
   margin-right: 8px;
+}
+@supports ((-webkit-background-clip: text) or (background-clip: text)) {
+  #homeProModal .home-pro-banner h2 i {
+    background: linear-gradient(180deg, #ffedb0 0%, #f6b90c 58%, #cf8a05 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+}
+.home-pro-banner-logo {
+  display: block;
+  height: 30px;
+  width: auto;
+  margin: 0 0 10px;
+}
+/* Per-card billing interval toggle in the PRO modals */
+.paywall-interval-toggle {
+  display: inline-flex;
+  padding: 3px;
+  gap: 2px;
+  margin: 0 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(127, 140, 160, 0.08);
+}
+.paywall-interval-toggle button {
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 6px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.paywall-interval-toggle button.is-active {
+  background: linear-gradient(135deg, #122d4b, #2563eb);
+  color: #fff;
+}
+.paywall-interval-save {
+  font-size: 10px;
+  font-weight: 800;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: rgba(52, 211, 153, 0.18);
+  color: #34d399;
+}
+.paywall-interval-toggle button.is-active .paywall-interval-save {
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+}
+/* Annual savings incentive under each plan price */
+.paywall-save-line {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+  color: #1a7f4b;
+  margin-top: 4px;
+}
+.paywall-save-line.is-alt {
+  color: var(--text-muted);
+  font-weight: 600;
 }
 .home-pro-tagline {
   margin: 6px 0 0;

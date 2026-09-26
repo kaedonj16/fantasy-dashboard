@@ -3712,6 +3712,13 @@ button:hover {
     padding: 5px;
 }
 
+.pos-rank-note {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 10px;
+    line-height: 1.45;
+}
+
 .standings-table {
     width: 100%;
     border-collapse: collapse;
