@@ -249,9 +249,11 @@ _PLOTLY_LOADER = (
 
 DASHBOARD_CACHE = {}
 # Bound the per-league cache. Each entry holds a full league context plus
-# rendered page HTML, and on the public site any visitor can look up any league,
-# so without eviction this dict grows without limit (a slow OOM on a
-# long-running worker). Cap the entry count and evict the oldest ~10% when
+# rendered page HTML (tens of MB), and on the public site any visitor can look
+# up any league, so without eviction this dict grows without limit (a slow OOM
+# on a long-running worker). The cap is deliberately small: each gunicorn
+# worker holds its own full copy, so the worst case is 2x this many entries
+# against the 2GB plan. Cap the entry count and evict the oldest ~10% when
 # exceeded -- the same bounded pattern used by _GAME_LOGS_CACHE below.
 def _positive_env_int(name: str, default: int) -> int:
     try:
@@ -260,7 +262,7 @@ def _positive_env_int(name: str, default: int) -> int:
         return default
 
 
-DASHBOARD_CACHE_MAX = _positive_env_int("DASHBOARD_CACHE_MAX", 24)
+DASHBOARD_CACHE_MAX = _positive_env_int("DASHBOARD_CACHE_MAX", 8)
 _DASHBOARD_CACHE_LOCK = threading.RLock()
 
 
@@ -23613,7 +23615,11 @@ def api_player_adp(player_id: str):
 # weekly stats and updated projections still surface.
 _GAME_LOGS_CACHE: Dict[str, tuple] = {}
 _GAME_LOGS_CACHE_TTL = 300  # seconds
-_GAME_LOGS_CACHE_MAX = 1500  # entries; evict oldest when exceeded
+# Kept small on purpose: each entry holds a player's multi-season game logs and
+# every gunicorn worker keeps its own full copy, so 1500 entries/worker was a
+# meaningful slice of the 2GB plan. 500 still covers the modal prefetch working
+# set; entries evict oldest-first when exceeded.
+_GAME_LOGS_CACHE_MAX = 500  # entries; evict oldest when exceeded
 
 
 def _game_logs_cache_key(player_id: str, season: int, scoring_settings: dict) -> str:
