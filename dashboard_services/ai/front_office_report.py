@@ -48,7 +48,6 @@ from dashboard_services.ai.renderer import (
     ai_available,
 )
 from dashboard_services.providers.espn_api import safe_float
-from utils.lineup_slots import canonicalize_slots, count_lineup_slots
 from utils.roster_strength import STARTER_THRESHOLD
 
 logger = logging.getLogger(__name__)
@@ -114,59 +113,58 @@ def _build_roster_rows(ctx: dict, roster: dict, model_value_lookup: dict) -> lis
 
 
 def _grade_for_percentile(pct: float) -> str:
-    if pct >= 90:
+    if pct >= 80:
         return "A"
-    if pct >= 75:
+    if pct >= 60:
         return "B"
-    if pct >= 55:
+    if pct >= 40:
         return "C"
-    if pct >= 30:
+    if pct >= 20:
         return "D"
     return "F"
 
 
 def _positional_grades(ctx: dict, viewer_roster_id: str, model_value_lookup: dict) -> list[dict]:
-    """League-relative positional grades. Score = sum of top-N values per
-    position where N tracks the league's starter slots. Rank is explicit so
-    the grade is auditable."""
-    slots = count_lineup_slots(canonicalize_slots(ctx.get("roster_positions") or []))
-    need = {
-        "QB": max(1, slots.get("QB", 1) + slots.get("SUPER_FLEX", 0)),
-        "RB": max(2, slots.get("RB", 2) + slots.get("FLEX", 0)),
-        "WR": max(2, slots.get("WR", 2) + slots.get("FLEX", 0)),
-        "TE": max(1, slots.get("TE", 1)),
-    }
+    """League-relative positional grades.
+
+    Ranks come from rank_rosters_by_position, the same starter-weighted
+    ranking the Teams page shows, so the two surfaces always agree. The
+    grade is a coarse letter off the rank percentile (2nd of 10 is an A).
+    """
+    from utils.roster_strength import rank_rosters_by_position
+    from utils.utils import count_roster_positions
+
     rosters = ctx.get("rosters") or []
     n_teams = len(rosters)
-
-    def _team_pos_sum(roster: dict, pos: str, k: int) -> float:
-        vals = []
-        for pid in roster.get("players") or []:
+    team_pos_values: dict[str, dict[str, list[float]]] = {}
+    for r in rosters:
+        rid = str(r.get("roster_id"))
+        buckets: dict[str, list[float]] = {pos: [] for pos in _SKILL_POS}
+        for pid in r.get("players") or []:
             mv = model_value_lookup.get(str(pid)) or {}
-            p = str(mv.get("position") or "").upper()
-            if p != pos:
+            pos = str(mv.get("position") or "").upper()
+            if pos not in buckets:
                 continue
-            vals.append(safe_float(mv.get("value") or mv.get("model_value") or mv.get("trade_value")))
-        vals.sort(reverse=True)
-        return round(sum(vals[:k]), 1)
-
+            val = safe_float(mv.get("value") or mv.get("model_value") or mv.get("trade_value"))
+            if val <= 0:
+                continue
+            buckets[pos].append(val)
+        team_pos_values[rid] = buckets
+    slot_counts = count_roster_positions(ctx.get("roster_positions") or [])
+    strengths, ranks = rank_rosters_by_position(
+        team_pos_values, slot_counts, positions=list(_SKILL_POS)
+    )
+    viewer = str(viewer_roster_id)
     grades = []
     for pos in _SKILL_POS:
-        k = need[pos]
-        scored = sorted(
-            ((_team_pos_sum(r, pos, k), str(r.get("roster_id"))) for r in rosters),
-            key=lambda t: t[0],
-            reverse=True,
-        )
-        viewer_score = next((s for s, rid in scored if rid == str(viewer_roster_id)), 0.0)
-        rank = next((i + 1 for i, (_, rid) in enumerate(scored) if rid == str(viewer_roster_id)), n_teams)
+        rank = (ranks.get(pos) or {}).get(viewer, n_teams)
         pct = 100.0 * (n_teams - rank) / max(n_teams - 1, 1) if n_teams > 1 else 50.0
         grades.append({
             "pos": pos,
             "grade": _grade_for_percentile(pct),
             "rank": rank,
             "of": n_teams,
-            "score": viewer_score,
+            "score": round(float((strengths.get(viewer) or {}).get(pos) or 0.0), 1),
         })
     return grades
 

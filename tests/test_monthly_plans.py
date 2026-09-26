@@ -420,3 +420,52 @@ def test_success_page_shows_billing_line_and_manage_link():
     # monthly plans only adds the interval-aware billing line above it.
     assert 'id="sub-portal"' in src
     assert "/api/create-portal-session" in src
+
+
+def test_paywall_modal_has_per_card_billing_toggle():
+    import pathlib
+    js = pathlib.Path("static/paywall.js").read_text(encoding="utf-8")
+    assert "paywall-interval-toggle" in js
+    assert 'data-interval="year"' in js
+    assert 'data-interval="month"' in js
+    assert "data-price-annual" in js
+    assert "data-price-monthly" in js
+    assert "setPaywallCardInterval" in js
+    assert "_resolveBillingInterval" in js
+    assert "save 44%" in js
+
+
+def test_paywall_modal_resolves_card_interval_before_global():
+    import pathlib
+    js = pathlib.Path("static/paywall.js").read_text(encoding="utf-8")
+    # initiatePurchase and _initiatePurchaseWithLeague both resolve per-card
+    assert js.count("_resolveBillingInterval(btn, type)") == 2
+    # per-plan choice survives the guest Google redirect via sessionStorage
+    assert "brBillingInterval:' + planKey" in js or 'brBillingInterval:" + planKey' in js
+
+
+def test_paywall_modal_uses_logo_and_gold_crown():
+    import pathlib
+    js = pathlib.Path("static/paywall.js").read_text(encoding="utf-8")
+    assert 'src="/static/Website_Logo_dark.png"' in js
+    assert '<p class="home-pro-eyebrow">BR Fantasy PRO</p>' not in js
+    css = pathlib.Path("static/paywall.css").read_text(encoding="utf-8")
+    assert ".home-pro-banner-logo" in css
+    assert "linear-gradient(180deg, #ffedb0" in css
+
+
+def test_paywall_modal_removed_pick_after_checkout_copy():
+    import pathlib
+    js = pathlib.Path("static/paywall.js").read_text(encoding="utf-8")
+    assert "Pick it after checkout" not in js
+    assert "Pick them after checkout" not in js
+
+
+def test_paywall_modal_shows_annual_savings_incentive():
+    import pathlib
+    js = pathlib.Path("static/paywall.js").read_text(encoding="utf-8")
+    assert "paywall-save-line" in js
+    assert "Save ${saveLine} a year vs monthly" in js
+    assert "Annual would save you ${saveLine} a year" in js
+    css = pathlib.Path("static/paywall.css").read_text(encoding="utf-8")
+    assert ".paywall-save-line" in css

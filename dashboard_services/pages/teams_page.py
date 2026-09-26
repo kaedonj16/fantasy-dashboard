@@ -576,7 +576,7 @@ def build_teams_body(ctx: dict) -> str:
                 "    </div>"
                 "  </td>"
                 "  <td class='pos-total'>{total:.1f}</td>"
-                "  <td class='pos-rank' title='Starter-weighted rank: starters count full, depth counts partial — not raw total value'>#{rank}{flag}</td>"
+                "  <td class='pos-rank' title='Starter-weighted rank: starters count full, depth counts partial. Not raw total value'>#{rank}{flag}</td>"
                 "</tr>".format(
                     cls=highlight_class,
                     rank=rank,
@@ -873,7 +873,7 @@ def build_teams_body(ctx: dict) -> str:
             f"        {''.join(table_rows)}"
             "      </tbody>"
             "    </table>"
-            "    <div class='pos-rank-note'>Position ranks use starter-weighted value (starters full, depth partial) — not raw totals.</div>"
+            "    <div class='pos-rank-note'>Position ranks use starter-weighted value (starters full, depth partial). Not raw totals.</div>"
             "    </div>"
             "  </div>"
             "</div>"

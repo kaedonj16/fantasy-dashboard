@@ -229,6 +229,13 @@ const BR_LEAGUE_PLANS = {};
 
 function proPlanCards(options) {
   options = options || {};
+  /** Dollars saved per year by annual vs 12x monthly, e.g. "$23.88". */
+  function _annualSavings(plan) {
+    const a = parseFloat((String(plan.annual).match(/[\d.]+/) || [0])[0]) || 0;
+    const m = parseFloat((String(plan.monthly).match(/[\d.]+/) || [0])[0]) || 0;
+    const save = Math.round((m * 12 - a) * 100) / 100;
+    return save > 0 ? '$' + save.toFixed(2) : '';
+  }
   return BR_PRO_PLANS.map(function (plan) {
     const action = options.dataPlan
       ? `data-plan="${plan.key}"`
@@ -236,6 +243,9 @@ function proPlanCards(options) {
     const bullets = (plan.bullets || []).map(function (b) {
       return `<li><i class="fa-solid fa-check" aria-hidden="true"></i><span>${b}</span></li>`;
     }).join('');
+    const annualPrice = plan.annual.replace('/year', '<span>/year</span>');
+    const monthlyPrice = plan.monthly.replace('/mo', '<span>/mo</span>');
+    const saveLine = _annualSavings(plan);
     return `<article class="pricing-option${plan.recommended ? ' featured' : ''}" data-plan-card="${plan.key}">
       ${plan.recommended ? '<div class="pricing-badge">Recommended</div>' : ''}
       <div class="pricing-plan-top">
@@ -245,11 +255,56 @@ function proPlanCards(options) {
           <p class="pricing-leagues">${plan.leagues}</p>
         </div>
       </div>
-      <div class="pricing-price">${plan.annual.replace('/year', '<span>/year</span>')}<span class="paywall-price-alt">or ${plan.monthly} billed monthly</span></div>
+      <div class="paywall-interval-toggle" role="group" aria-label="Billing period for ${plan.name}">
+        <button type="button" class="is-active" data-interval="year" aria-pressed="true" onclick="setPaywallCardInterval(this)">Annual<span class="paywall-interval-save">save 44%</span></button>
+        <button type="button" data-interval="month" aria-pressed="false" onclick="setPaywallCardInterval(this)">Monthly</button>
+      </div>
+      <div class="pricing-price" data-price-annual>${annualPrice}<span class="paywall-price-alt">or ${plan.monthly} billed monthly</span>${saveLine ? `<span class="paywall-save-line">Save ${saveLine} a year vs monthly</span>` : ''}</div>
+      <div class="pricing-price" data-price-monthly hidden>${monthlyPrice}<span class="paywall-price-alt">billed monthly</span>${saveLine ? `<span class="paywall-save-line is-alt">Annual would save you ${saveLine} a year</span>` : ''}</div>
       <ul class="pricing-bullets">${bullets}</ul>
       <button type="button" class="btn ${plan.recommended ? 'btn-primary' : 'btn-secondary'} paywall-cta" ${action}>${plan.cta}</button>
     </article>`;
   }).join('');
+}
+
+/** Per-card billing toggle in the PRO modals. Swaps the card's price and
+ * remembers the choice per plan so checkout uses the selected interval,
+ * including the guest Google-redirect resume where the card is gone. */
+window.setPaywallCardInterval = function setPaywallCardInterval(btn) {
+  const group = btn.closest('.paywall-interval-toggle');
+  if (!group) return;
+  const interval = btn.dataset.interval === 'month' ? 'month' : 'year';
+  group.querySelectorAll('button').forEach(function (b) {
+    const on = b === btn;
+    b.classList.toggle('is-active', on);
+    b.setAttribute('aria-pressed', on ? 'true' : 'false');
+  });
+  const card = btn.closest('[data-plan-card]');
+  const planKey = card ? card.getAttribute('data-plan-card') : '';
+  if (card) {
+    card.querySelectorAll('[data-price-annual]').forEach(function (el) { el.hidden = interval !== 'year'; });
+    card.querySelectorAll('[data-price-monthly]').forEach(function (el) { el.hidden = interval !== 'month'; });
+  }
+  if (planKey) {
+    try { sessionStorage.setItem('brBillingInterval:' + planKey, interval); } catch (e) {}
+  }
+  window.__brBillingInterval = interval;
+};
+
+/** Resolve the checkout interval for a plan CTA: the clicked card's own
+ * toggle wins, then a remembered per-plan choice, then the site-wide
+ * billing toggle. */
+function _resolveBillingInterval(btn, planKey) {
+  const card = btn && btn.closest ? btn.closest('[data-plan-card]') : null;
+  const active = card && card.querySelector('.paywall-interval-toggle button.is-active');
+  if (active) return active.dataset.interval === 'month' ? 'month' : 'year';
+  if (planKey) {
+    try {
+      const remembered = sessionStorage.getItem('brBillingInterval:' + planKey);
+      if (remembered === 'month' || remembered === 'year') return remembered;
+    } catch (e) {}
+  }
+  return window.__brBillingInterval === 'month' ? 'month' : 'year';
 }
 
 /**
@@ -469,7 +524,7 @@ async function initiatePurchase(type, btn) {
   // sign-in prompt first. New-catalog plans never require a league at
   // checkout; a league open on the page seeds the first PRO slot.
   const ctx = window.__brctx || {};
-  const billingInterval = window.__brBillingInterval === 'month' ? 'month' : 'year';
+  const billingInterval = _resolveBillingInterval(btn, type);
   const leagueId = new URLSearchParams(window.location.search).get('league_id') ||
     window.location.pathname.split('/').filter(Boolean)[2] ||
     (ctx.leagueId || '');
@@ -1179,7 +1234,7 @@ async function _initiatePurchaseWithLeague(type, btn, leagueId) {
     _startGoogleSubscribe(type, btn, { leagueId });
     return;
   }
-  const billingInterval = window.__brBillingInterval === 'month' ? 'month' : 'year';
+  const billingInterval = _resolveBillingInterval(btn, type);
   // Build a post-checkout destination: league dashboard if we have a league,
   // otherwise the current page. Append ?new_subscriber=1 to trigger the welcome tour.
   const ctx = window.__brctx || {};
@@ -1267,7 +1322,7 @@ function openHomeProModal() {
     <div class="paywall-content">
       <div class="paywall-header home-pro-banner">
         <div class="home-pro-banner-text">
-          <p class="home-pro-eyebrow">BR Fantasy PRO</p>
+          <img class="home-pro-banner-logo" src="/static/Website_Logo_dark.png" alt="BR Fantasy">
           <h2 id="homeProModalTitle"><i class="fa-solid fa-crown" aria-hidden="true"></i> Unlock PRO</h2>
           <p class="home-pro-tagline">Sharper decisions for every league you run.</p>
         </div>

@@ -91,10 +91,10 @@ def _sample_data(**over):
         "risers_7d": [{"id": "101", "name": "Michael Wilson", "position": "WR", "trend_7d": 29}],
         "fallers_7d": [{"id": "202", "name": "Jaylen Warren", "position": "RB", "trend_7d": -58}],
         "grades": [
-            {"pos": "QB", "grade": "F", "rank": 8, "of": 10},
-            {"pos": "RB", "grade": "C", "rank": 4, "of": 10},
-            {"pos": "WR", "grade": "B", "rank": 2, "of": 10},
-            {"pos": "TE", "grade": "B", "rank": 2, "of": 10},
+            {"pos": "QB", "grade": "D", "rank": 8, "of": 10},
+            {"pos": "RB", "grade": "B", "rank": 4, "of": 10},
+            {"pos": "WR", "grade": "A", "rank": 2, "of": 10},
+            {"pos": "TE", "grade": "A", "rank": 2, "of": 10},
         ],
         "roster_rows": [
             {
@@ -185,8 +185,9 @@ def test_score_row_renders_win_badge():
 
 def test_grades_carry_tint_class_on_card():
     out = _render()
-    assert "for-grade-card for-grade-f" in out
+    assert "for-grade-card for-grade-d" in out
     assert "for-grade-card for-grade-b" in out
+    assert "for-grade-card for-grade-a" in out
     # letter element itself no longer carries the color class
     assert "for-grade-letter for-grade-" not in out
 
@@ -239,3 +240,47 @@ def test_css_has_new_report_selectors():
         ".for-pick-badge", ".for-modal-body .ai-error-notice",
     ):
         assert sel in css, f"missing CSS selector {sel}"
+
+
+def test_positional_grades_match_teams_page_ranking(monkeypatch):
+    import dashboard_services.ai.front_office_report as fmod
+    from utils.roster_strength import rank_rosters_by_position
+    from utils.utils import count_roster_positions
+
+    # The pure-test env stubs safe_float to always return the default; the
+    # grades math needs the real conversion.
+    monkeypatch.setattr(
+        fmod, "safe_float", lambda x, default=0.0: default if x is None else float(x)
+    )
+    _positional_grades = fmod._positional_grades
+
+    lookup = {
+        "p1": {"position": "WR", "value": 900},
+        "p2": {"position": "WR", "value": 100},
+        "p3": {"position": "WR", "value": 800},
+    }
+    rosters = [
+        {"roster_id": 1, "players": ["p1", "p2"]},
+        {"roster_id": 2, "players": ["p3"]},
+    ]
+    ctx = {"rosters": rosters, "roster_positions": ["WR", "WR", "BN", "BN"]}
+    grades = _positional_grades(ctx, 1, lookup)
+    by_pos = {g["pos"]: g for g in grades}
+
+    team_pos_values = {
+        "1": {"QB": [], "RB": [], "WR": [900.0, 100.0], "TE": []},
+        "2": {"QB": [], "RB": [], "WR": [800.0], "TE": []},
+    }
+    _, expected_ranks = rank_rosters_by_position(
+        team_pos_values,
+        count_roster_positions(ctx["roster_positions"]),
+        positions=["QB", "RB", "WR", "TE"],
+    )
+    assert by_pos["WR"]["rank"] == expected_ranks["WR"]["1"]
+    assert by_pos["WR"]["of"] == 2
+
+
+def test_second_of_ten_grades_an_a():
+    from dashboard_services.ai.front_office_report import _grade_for_percentile
+    assert _grade_for_percentile(100.0 * (10 - 2) / 9) == "A"
+    assert _grade_for_percentile(100.0 * (10 - 8) / 9) == "D"
