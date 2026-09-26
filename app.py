@@ -904,6 +904,29 @@ _STATIC_SECURITY_HEADERS = {
 
 
 @app.after_request
+def _strip_html_comments(response):
+    """Remove developer HTML comments from served pages.
+
+    Reviewers and crawlers see raw page text; internal notes left in comments
+    read as sloppy and can leak implementation detail. Comments inside
+    script/style/pre/textarea blocks are left alone (there `<!--` is content).
+    """
+    try:
+        if not (response.content_type or "").startswith("text/html"):
+            return response
+        if response.is_streamed or response.direct_passthrough:
+            return response
+        html = response.get_data(as_text=True)
+        if "<!--" not in html:
+            return response
+        from utils.html_sanitize import strip_html_comments
+        response.set_data(strip_html_comments(html))
+    except Exception:
+        logger.debug("html comment strip failed", exc_info=True)
+    return response
+
+
+@app.after_request
 def _add_security_headers(response):
     """Attach CSP + hardening headers to every response. Uses setdefault so any
     endpoint that intentionally set its own value (e.g. a stricter one) wins."""
@@ -2533,7 +2556,7 @@ BASE_HTML = """
     </footer>
 
     <!-- Page navigation loading overlay -->
-    <!-- Cookie consent handled by Google's certified CMP (Funding Choices) -->
+    {funding_choices}
 
     <script>
       {adsense_init}
@@ -5388,6 +5411,11 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
 # thread (Total Blocking Time). We now load it lazily (see _AD_INIT) on first
 # user interaction or at idle, so it's off the initial render path. The ad <ins>
 # slots still reserve their fixed height, so deferring the fill causes no CLS.
+# Google Funding Choices (certified CMP): renders the cookie-consent message
+# configured in AdSense > Privacy & messaging. Async so it never blocks first
+# paint; the googlefcPresent signal iframe is Google's documented snippet.
+_FUNDING_CHOICES = """<script async src="https://fundingchoicesmessages.google.com/i/pub-9164153092633845?ers=1"></script>
+<script>(function(){function signalGooglefcPresent(){if(!window.frames['googlefcPresent']){if(document.body){var iframe=document.createElement('iframe');iframe.style='width: 0; height: 0; border: none; z-index: -1000; left: -1000px; top: -1000px;';iframe.style.display='none';iframe.name='googlefcPresent';document.body.appendChild(iframe);}else{setTimeout(signalGooglefcPresent,0);}}}signalGooglefcPresent();})();</script>"""
 _AD_SCRIPT = ''
 _AD_TOP = """<aside class="ad-container ad-top-banner" aria-label="Advertisement"><span class="ad-disclosure">Advertisement</span><ins class="adsbygoogle" style="display:block;overflow:hidden;" data-ad-client="ca-pub-9164153092633845" data-ad-slot="5233061286" data-ad-format="horizontal" data-full-width-responsive="false"></ins></aside>"""
 _AD_BOTTOM = """<aside class="ad-container ad-bottom-content" aria-label="Advertisement"><span class="ad-disclosure">Advertisement</span><ins class="adsbygoogle" style="display:block;overflow:hidden;" data-ad-client="ca-pub-9164153092633845" data-ad-slot="5233061286" data-ad-format="horizontal" data-full-width-responsive="false"></ins></aside>"""
@@ -6379,6 +6407,7 @@ def render_page(
         user_premium="true" if is_premium else "false",
         ad_eligible="true" if show_ads else "false",
         adsense_script="" if (_soft_nav or not show_ads) else _AD_SCRIPT,
+        funding_choices="" if (_soft_nav or not show_ads) else _FUNDING_CHOICES,
         ad_top="" if (_soft_nav or not show_ads) else _AD_TOP,
         ad_bottom="" if (_soft_nav or not show_ads) else _AD_BOTTOM,
         adsense_init="" if (_soft_nav or not show_ads) else _AD_INIT,
