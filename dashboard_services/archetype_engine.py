@@ -47,7 +47,7 @@ _SIM_LOCKS_GUARD = threading.Lock()
 # finished result per exact input so those are instant. TTL sits under the sim
 # cache's so a result never outlives the sim state it was built from.
 _RESULT_CACHE: Dict[tuple, Any] = {}
-_RESULT_CACHE_TTL = 120  # seconds
+_RESULT_CACHE_TTL = 300  # seconds (matches the sim-state cache window)
 _RESULT_CACHE_MAX = 256
 
 # Suggestion ranking uses the same 2k count as the trade-calculator Playoff

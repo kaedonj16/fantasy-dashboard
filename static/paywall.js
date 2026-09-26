@@ -732,11 +732,11 @@ window.refreshLeagueProInviteCta = async function refreshLeagueProInviteCta() {
             style="background:none;border:none;color:var(--text-muted);font-size:18px;cursor:pointer;line-height:1;">&times;</button>
         </div>
         <p style="margin:0;font-size:13px;color:var(--text-muted);line-height:1.45;">
-          A league mate unlocked shared premium. Try Trade Intel or the Breakout Engine.
+          A league mate unlocked shared premium. Try the Trade Hub or the Breakout Engine.
         </p>
-        <a href="/${encodeURIComponent(ctx.platform || 'sleeper')}/${encodeURIComponent(ctx.season || '')}/${encodeURIComponent(lid)}/trade-intel"
+        <a href="/${encodeURIComponent(ctx.platform || 'sleeper')}/${encodeURIComponent(ctx.season || '')}/${encodeURIComponent(lid)}/trade?tab=suggestions"
            style="display:inline-block;text-align:center;padding:10px 12px;border-radius:9px;background:#2563eb;color:#fff;font-weight:700;font-size:13px;text-decoration:none;">
-          Open Trade Intel
+          Open Trade Hub
         </a>`;
     } else {
       const claimHref = data.invite_path

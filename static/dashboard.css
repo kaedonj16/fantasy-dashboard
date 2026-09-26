@@ -42335,3 +42335,46 @@ table.rz-bs-table td.rz-bs-pname {
 table.rz-bs-table thead th:first-child {
     z-index: 3;
 }
+
+/* ── Trade Hub: top trade chips (Targets tab, under the search bar) ───────── */
+.otc-top-chips-label {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-muted);
+    letter-spacing: .05em;
+    text-transform: uppercase;
+    margin: 10px 0 6px;
+}
+.otc-top-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+.otc-top-chip {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 6px;
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--row);
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: border-color .15s, background .15s;
+}
+.otc-top-chip:hover {
+    border-color: var(--accent);
+    background: var(--card);
+}
+.otc-top-chip-pos {
+    font-size: 11px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+.otc-top-chip-team {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+}

@@ -3428,7 +3428,6 @@ _NAV_PAGE_META = {
     "trade": ("swap", "trade.page_trade", ""),
     "trade-suggestions": ("swap", "trade.page_trade", "?tab=suggestions"),
     "trade-database": ("swap", "trade.page_trade_database", ""),
-    "trade-intel": ("radar", "trade.page_trade_intel", ""),
     "compare": ("bars", "seo_pages.page_compare", ""),
     "top-movers": ("bars2", "seo_pages.top_movers_page", ""),
     "advanced-metrics": ("bars2", "league_pages.page_advanced_metrics", ""),
@@ -3447,7 +3446,7 @@ _DOCK_LABELS = {
     "draft": "Draft", "keeper": "Keeper", "standings": "Standings", "activity": "Activity",
     "league_health": "Health", "recap": "Recap", "scout": "Scout", "optimal": "Lineup",
     "redzone": "Redzone", "waivers": "Waivers", "schedule": "Schedule", "trade": "Trades",
-    "trade-suggestions": "Trades", "trade-database": "Trades", "trade-intel": "Intel",
+    "trade-suggestions": "Trades", "trade-database": "Trades",
     "compare": "Compare", "top-movers": "Movers", "advanced-metrics": "Metrics",
     "nfl-teams": "Teams", "breakouts": "Breakouts", "prospects": "Prospects", "draft-history": "History",
     "draft-cheat-sheet": "Cheat",
@@ -3700,7 +3699,6 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
     trade_rows = [
         _sl("trade", "Trade Calculator"), _sl("trade-suggestions", "Trade Hub", pro=True),
         _sl("trade-database", "Trade Database"),
-        _sl("trade-intel", "Trade Intel", pro=True),
     ]
     trades_html = _sec("Trades", trade_rows)
 
@@ -3754,7 +3752,7 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
     ])
 
     category_keys = {
-        "Trades": {"trade", "trade-suggestions", "trade-database", "trade-intel"},
+        "Trades": {"trade", "trade-suggestions", "trade-database"},
         "Weekly": {"weekly", "recap", "scout", "optimal", "waivers", "schedule", "redzone"},
         "League": {"standings", "teams", "activity", "league_health"},
         "Players": {"players", "compare", "top-movers", "advanced-metrics", "nfl-teams", "breakouts", "prospects"},
@@ -3852,7 +3850,7 @@ _GUEST_DOCK_TABS = (
 _GUEST_ACTIVE_PARENT = {
     "home": "home",
     "trade": "trade", "trade-suggestions": "trade",
-    "trade-database": "trade", "trade-intel": "trade",
+    "trade-database": "trade",
     "players": "players", "compare": "players", "top-movers": "players",
     "advanced-metrics": "players", "nfl-teams": "players", "breakouts": "players", "prospects": "players",
     "draft": "draft", "draft-history": "draft", "draft-cheat-sheet": "draft",
@@ -3931,7 +3929,6 @@ def _mobile_nav_guest(active: str) -> str:
         _gl("/trade", "Trade Calculator", "trade"),
         _gl("/trade?tab=suggestions", "Trade Hub", "trade-suggestions", pro=True),
         _gl("/trade-database", "Trade Database", "trade-database"),
-        _gl("/trade-intel", "Trade Intel", "trade-intel", pro=True),
     ])
     players_html = _sec("Players", [
         _gl("/players", "Player Rankings", "players"),
@@ -3966,7 +3963,7 @@ def _mobile_nav_guest(active: str) -> str:
     ])
 
     guest_groups = {
-        "Trades": {"trade", "trade-suggestions", "trade-database", "trade-intel"},
+        "Trades": {"trade", "trade-suggestions", "trade-database"},
         "Players": {"players", "compare", "top-movers", "advanced-metrics", "nfl-teams", "breakouts", "prospects"},
         "Draft": {"draft", "draft-cheat-sheet", "draft-history"},
         "Learn": {"guides", "glossary", "faq", "about", "contact"},
@@ -4895,8 +4892,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
                 ("Trade Calculator", "/trade", "trade"),
                 ("Trade Hub <span class='nav-pro-badge'>PRO</span>", "/trade?tab=suggestions", "trade-suggestions"),
                 ("Trade Database", "/trade-database", "trade-database"),
-                ("Trade Intel <span class='nav-pro-badge'>PRO</span>", "/trade-intel", "trade-intel"),
-            ], ["trade", "trade-database", "trade-intel"], "tradesNavDropdown"),
+            ], ["trade", "trade-database"], "tradesNavDropdown"),
             simple_dropdown("Players", [
                 ("Player Rankings", "/players", "players"),
                 ("Compare Players", "/compare", "compare"),
@@ -5038,10 +5034,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         ("Trade Hub <span class='nav-pro-badge'>PRO</span>", "trade.page_trade", "trade-suggestions", False,
          "?tab=suggestions"),
         ("Trade Database", "trade.page_trade_database", "trade-database", False),
-        # Market comps are Sleeper-sourced; the page still applies to ESPN/Yahoo/MFL
-        # rosters and explains that on the Trade Intel screen.
-        ("Trade Intel <span class='nav-pro-badge'>PRO</span>", "trade.page_trade_intel", "trade-intel", False),
-    ], ["trade", "trade-database", "trade-intel"], "tradesNavDropdown"))
+    ], ["trade", "trade-database"], "tradesNavDropdown"))
     # Weekly dropdown is available as soon as the draft is done
     draft_ended = has_draft_ended(league_id, platform, season)
     if draft_ended or not offseason_mode:
@@ -29202,6 +29195,21 @@ def api_trade_targets():
         owner_needs_by_roster=owner_needs_by_roster,
     )
 
+    top_chips = sorted(
+        (
+            {
+                "player_id": p,
+                "name": values_by_id[p]["name"],
+                "position": values_by_id[p]["position"],
+                "team": values_by_id[p].get("team") or "",
+                "pos_rank_label": values_by_id[p].get("pos_rank_label") or "",
+            }
+            for p in viewer_pids
+            if p in values_by_id and values_by_id[p]["position"] in POSITIONS
+        ),
+        key=lambda c: float(values_by_id[c["player_id"]]["value"]),
+        reverse=True,
+    )[:6]
     return jsonify({
         "by_position": picked.get("by_position") or {},
         "all_positions": picked.get("all_positions") or {},
@@ -29211,6 +29219,7 @@ def api_trade_targets():
         "window": picked.get("window") or "balanced",
         "summary": picked.get("summary") or "",
         "needed_positions": picked.get("needed_positions") or [],
+        "top_chips": top_chips,
     })
 
 
