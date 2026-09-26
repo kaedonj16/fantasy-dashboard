@@ -41710,6 +41710,11 @@ a, button, [role="button"], [role="tab"], summary, label,
 [data-theme="dark"] .for-score-w { color: #34d399; }
 [data-theme="dark"] .for-score-l { color: #f87171; }
 .for-moves { margin: 0; padding: 0; list-style: none; }
+.for-moves-cols { margin-top: 4px; }
+.for-moves-col-title {
+  font-size: 11.5px; font-weight: 800; letter-spacing: 0.07em; text-transform: uppercase;
+  margin: 8px 0 2px;
+}
 .for-move { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--border); }
 .for-move:last-child { border-bottom: none; }
 .for-move-delta { flex-shrink: 0; min-width: 54px; font-weight: 800; font-size: 13.5px; font-variant-numeric: tabular-nums; }
