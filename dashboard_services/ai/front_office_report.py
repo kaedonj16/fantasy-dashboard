@@ -595,7 +595,7 @@ def build_front_office_data(ctx: dict, viewer_roster_id: str) -> dict | None:
         cands = [r for r in rows if r.get("trend_7d")]
         cands.sort(key=lambda r: r["trend_7d"], reverse=rising)
         return [
-            {"name": r["name"], "position": r["position"], "trend_7d": r["trend_7d"]}
+            {"id": r.get("id"), "name": r["name"], "position": r["position"], "trend_7d": r["trend_7d"]}
             for r in cands[:n]
         ]
 
@@ -883,13 +883,22 @@ def _changes_html(data: dict) -> str:
             f"<span class='for-muted'>{opp}</span></span>"
             "</div>"
         )
-    for m in data.get("risers_7d") or []:
-        moves.append(_move_row(m, up=True))
-    for m in data.get("fallers_7d") or []:
-        moves.append(_move_row(m, up=False))
-    if not score_html and not moves:
+    ups = [_move_row(m, up=True) for m in data.get("risers_7d") or []]
+    downs = [_move_row(m, up=False) for m in data.get("fallers_7d") or []]
+    if not score_html and not ups and not downs:
         return ""
-    moves_html = f"<ul class='for-moves'>{''.join(moves)}</ul>" if moves else ""
+    cols = []
+    if ups:
+        cols.append(
+            "<div class='for-moves-col'><div class='for-moves-col-title for-up'>Risers</div>"
+            f"<ul class='for-moves'>{''.join(ups)}</ul></div>"
+        )
+    if downs:
+        cols.append(
+            "<div class='for-moves-col'><div class='for-moves-col-title for-down'>Fallers</div>"
+            f"<ul class='for-moves'>{''.join(downs)}</ul></div>"
+        )
+    moves_html = f"<div class='for-two-col for-moves-cols'>{''.join(cols)}</div>" if cols else ""
     return (
         "<div class='for-sec'><div class='for-sec-title'>Since last week</div>"
         f"{score_html}{moves_html}"
@@ -902,10 +911,19 @@ def _move_row(m: dict, up: bool) -> str:
     delta = abs(m["trend_7d"]) if m.get("trend_7d") is not None else 0
     cls = "for-up" if up else "for-down"
     arrow = "&#9650;" if up else "&#9660;"
+    name = html.escape(m["name"])
+    pid = str(m.get("id") or "")
+    if pid:
+        name_html = (
+            f"<span class='player-clickable' data-player-id='{html.escape(pid, quote=True)}'"
+            f" data-player-name='{html.escape(m['name'], quote=True)}'><strong>{name}</strong></span>"
+        )
+    else:
+        name_html = f"<strong>{name}</strong>"
     return (
         "<li class='for-move'>"
         f"<span class='for-move-delta {cls}'>{arrow} {delta:g}</span>"
-        f"<span class='for-move-body'><strong>{html.escape(m['name'])}</strong>"
+        f"<span class='for-move-body'>{name_html}"
         f"<span class='for-muted'> {html.escape(m['position'])}</span></span>"
         "</li>"
     )

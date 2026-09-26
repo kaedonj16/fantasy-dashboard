@@ -88,8 +88,8 @@ def _sample_data(**over):
         "record": "2-0",
         "playoff_pct": 99.4,
         "last_week": {"week": 2, "result": "W", "pf": 157.6, "pa": 105.3, "opponent": "Veiny Oilers"},
-        "risers_7d": [{"name": "Michael Wilson", "position": "WR", "trend_7d": 29}],
-        "fallers_7d": [{"name": "Jaylen Warren", "position": "RB", "trend_7d": -58}],
+        "risers_7d": [{"id": "101", "name": "Michael Wilson", "position": "WR", "trend_7d": 29}],
+        "fallers_7d": [{"id": "202", "name": "Jaylen Warren", "position": "RB", "trend_7d": -58}],
         "grades": [
             {"pos": "QB", "grade": "F", "rank": 8, "of": 10},
             {"pos": "RB", "grade": "C", "rank": 4, "of": 10},
@@ -157,6 +157,24 @@ def test_move_rows_label_trade_value_spots():
     assert "for-move-delta for-down" in out
     assert "Michael Wilson" in out and "Jaylen Warren" in out
     assert "Spots gained or lost in dynasty trade-value rank" in out
+
+
+def test_moves_split_into_risers_left_fallers_right():
+    out = _render()
+    assert "for-moves-cols" in out
+    assert out.index("Risers") < out.index("Michael Wilson")
+    assert out.index("Fallers") < out.index("Jaylen Warren")
+    # Risers column comes before the fallers column.
+    assert out.index("Michael Wilson") < out.index("Fallers")
+    assert out.index("Jaylen Warren") < out.index("Spots gained or lost")
+
+
+def test_move_rows_are_clickable_player_names():
+    out = _render()
+    assert "player-clickable" in out
+    assert "data-player-id='101'" in out
+    assert "data-player-id='202'" in out
+    assert "data-player-name='Michael Wilson'" in out
 
 
 def test_score_row_renders_win_badge():
