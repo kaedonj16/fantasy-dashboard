@@ -40,12 +40,25 @@ ADVANCED_METRIC_PRESETS = {
 }
 
 
+# Gold lock icon for PRO-locked UI (decision pills, etc.). Theme-colored like
+# the PRO badge; no emoji. Inherits gold via .am-lock-ico.
+_LOCK_SVG_HTML = (
+    '<span class="am-lock-ico" aria-hidden="true">'
+    '<svg width="12" height="12" viewBox="0 0 12 12" fill="none">'
+    '<rect x="2.5" y="5.5" width="7" height="5" rx="1.2" fill="currentColor"/>'
+    '<path d="M4 5.5V4a2 2 0 0 1 4 0v1.5" stroke="currentColor" '
+    'stroke-width="1.6" stroke-linecap="round"/>'
+    "</svg></span>"
+)
+
+
 def build_advanced_metrics_body(
         has_premium: bool,
         metrics_spec: dict,
         league_id: Optional[str] = None,
         season: Optional[int] = None,
         platform: Optional[str] = None,
+        is_guest: bool = False,
 ) -> str:
     from data_building.advanced_metrics import (
         get_available_seasons, get_available_weeks_by_season, _WEEKLY_METRICS,
@@ -242,7 +255,7 @@ def build_advanced_metrics_body(
     def _pill_html(key, p):
         locked = (not has_premium) and key in _pro_presets
         cls = "am-pill am-pill-locked" if locked else "am-pill"
-        lock = " 🔒" if locked else ""
+        lock = " " + _LOCK_SVG_HTML if locked else ""
         return (
             '<button type="button" class="{cls}" role="tab" data-preset="{key}"'
             ' data-locked="{locked}" title="{tag}">{label}{lock}</button>'
@@ -257,6 +270,16 @@ def build_advanced_metrics_body(
     )
     # "All metrics" restores the classic browse-everything view.
     decision_pills += '<button type="button" class="am-pill am-pill-all" data-preset="" title="Browse all metrics by category">All metrics</button>'
+
+    # Custom metric sets (saved to localStorage) are a signed-in perk: guests
+    # get no dropdown, no Save/Delete buttons.
+    _custom_sets_html = (
+        '<select id="amSavedSet" class="am-select am-mobile-filter" title="Saved metric sets" style="max-width:150px"><option value="">Custom sets…</option></select>\n'
+        '          <span id="amActiveSet" class="am-ctrl-label am-mobile-filter" title="Active metric set">Custom</span>\n'
+        '          <button id="amSaveSetBtn" type="button" class="am-add-stat-btn am-mobile-filter" title="Save or update a named custom set">Save set</button>\n'
+        '          <button id="amDeleteSetBtn" type="button" class="am-add-stat-btn am-clear-btn am-mobile-filter" title="Delete the selected custom set">Delete</button>'
+        if not is_guest else ""
+    )
 
     html = """
     <div class="card central">
@@ -346,10 +369,7 @@ def build_advanced_metrics_body(
             <div id="amStatPicker" class="am-stat-picker" style="display:none;"></div>
           </div>
           <button id="amAddFilterBtn" type="button" class="am-add-stat-btn">&#43; Filter</button>
-          <select id="amSavedSet" class="am-select am-mobile-filter" title="Saved metric sets" style="max-width:150px"><option value="">Custom sets…</option></select>
-          <span id="amActiveSet" class="am-ctrl-label am-mobile-filter" title="Active metric set">Custom</span>
-          <button id="amSaveSetBtn" type="button" class="am-add-stat-btn am-mobile-filter" title="Save or update a named custom set">Save set</button>
-          <button id="amDeleteSetBtn" type="button" class="am-add-stat-btn am-clear-btn am-mobile-filter" title="Delete the selected custom set">Delete</button>
+          __CUSTOM_SETS__
           <button id="amFiltersBtn" type="button" class="am-sort-btn am-filters-btn">Filters &#9662;</button>
           <span class="am-ctl-divider" aria-hidden="true"></span>
           <label class="am-roster-toggle am-toggle-chip am-mobile-filter" id="amTrendToggleWrap" title="Show each player's recent usage trend (last 6 weeks) next to the metric">
@@ -555,7 +575,7 @@ def build_advanced_metrics_body(
       </div>
     </div>
     """.replace("__METRIC_OPTIONS__", metric_options).replace("__SEASON_OPTIONS__", season_options).replace(
-        "__LEGEND__", legend_html).replace("__DECISION_PILLS__", decision_pills).replace("{count}", str(sum(1 for s in metrics_spec.values() if not s.get("hidden"))))
+        "__LEGEND__", legend_html).replace("__DECISION_PILLS__", decision_pills).replace("__CUSTOM_SETS__", _custom_sets_html).replace("{count}", str(sum(1 for s in metrics_spec.values() if not s.get("hidden"))))
 
     style = """
     <style>
@@ -997,9 +1017,16 @@ def build_advanced_metrics_body(
       .am-trend-delta-up   { color:var(--win); }
       .am-trend-delta-down { color:var(--loss); }
       .am-trend-delta-flat { color:var(--text-muted); opacity:.6; }
-      /* PRO-locked extra column cells: tappable, open the paywall */
-      .am-cell-locked { cursor:pointer; }
-      .am-cell-locked:hover { background:var(--row); }
+      /* PRO-locked column: blocked like a paywalled column. Blurred
+         placeholder bars read as hidden data; the lock badge and the
+         tinted column are one tap target that opens the paywall. */
+      th.am-th-locked { color:var(--gold, #ca8a04); }
+      th.am-th-locked .am-lock-ico { color:var(--gold, #ca8a04); }
+      .am-cell-locked { cursor:pointer; background:rgba(202,138,4,.05); }
+      .am-cell-locked:hover { background:rgba(202,138,4,.10); }
+      .am-cell-locked .am-locked-blur { background:var(--text-muted); filter:blur(4px); opacity:.55; }
+      .am-cell-locked .am-val-wrap { position:relative; }
+      .am-lock-ico { display:inline-block; vertical-align:-2px; color:var(--gold, #ca8a04); }
       @media (max-width:600px) { .am-trendcell { min-width:80px; } .am-spark { width:44px; height:14px; } }
       /* Pinned-player comparison modal -- width grows with player count */
       .am-cmp-card { max-width:min(95vw,1100px); }
@@ -1451,6 +1478,26 @@ _AM_JS = r"""
   // when a free user taps a lock (resolved in paywall.js).
   window.__brProMetricInfo = cfg.proMetricInfo || {};
   window.__brProPresetInfo = cfg.proPresetInfo || {};
+  // Metric display name. PRO-gated metrics are absent from cfg.metrics for
+  // free viewers, so fall back to the PRO info map: a locked column header
+  // must read "FPOE/G", never the raw key "ppr_over_expected_per_game".
+  function _mLabel(key) {
+    return (cfg.metrics[key] && cfg.metrics[key].label)
+        || (cfg.proMetricInfo && cfg.proMetricInfo[key] && cfg.proMetricInfo[key].label)
+        || key;
+  }
+  function _mLocked(key) {
+    return !cfg.hasPremium && !!(
+      (cfg.metrics[key] && cfg.metrics[key].pro) ||
+      (cfg.proMetricInfo && cfg.proMetricInfo[key]));
+  }
+  // Gold lock icon for locked PRO columns, theme-colored like the PRO badge.
+  // No emoji: the icon inherits the gold via .am-lock-ico.
+  const _LOCK_SVG = '<span class="am-lock-ico" aria-hidden="true">'
+    + '<svg width="12" height="12" viewBox="0 0 12 12" fill="none">'
+    + '<rect x="2.5" y="5.5" width="7" height="5" rx="1.2" fill="currentColor"/>'
+    + '<path d="M4 5.5V4a2 2 0 0 1 4 0v1.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>'
+    + '</svg></span>';
   // paywall.js loads deferred, so the brUpsell nudge infra may not exist yet
   // while this inline script runs during the initial parse. Run fn once it
   // does (deferred scripts always run before DOMContentLoaded).
@@ -1990,7 +2037,7 @@ _AM_JS = r"""
     // Only show extra-metric chips (not the primary) -- the primary is already
     // visible in the dropdown, so showing it here when alone is redundant clutter.
     chipsEl.innerHTML = state.extraMetrics.map(function(key) {
-      const lbl = (cfg.metrics[key] && cfg.metrics[key].label) || key;
+      const lbl = _mLabel(key);
       return '<span class="am-chip">' + lbl
         + '<button class="am-chip-x" onclick="event.stopPropagation();amRemoveExtra(\'' + key + '\')" aria-label="Remove">\xd7</button></span>';
     }).join('');
@@ -2610,7 +2657,7 @@ _AM_JS = r"""
     html += '</tr></thead><tbody>';
 
     metricsList.forEach(key => {
-      const lbl = (cfg.metrics[key] && cfg.metrics[key].label) || key;
+      const lbl = _mLabel(key);
       const lower = !!(cfg.metrics[key] && cfg.metrics[key].lowerBetter);
       const stats = _amPosStats(key);  // positional ranks + per-position bounds
       const vals = players.map((p, i) => valueFor(p, i, key));
@@ -2840,10 +2887,14 @@ _AM_JS = r"""
     ];
     contextColsFor().forEach(c => cols.push(c));
     if (state.filterColKeys) [...state.filterColKeys].forEach(function(key) {
-      if (key !== state.metric && !state.extraMetrics.includes(key)) cols.push({id:'filter:' + key,kind:'filter',metricKey:key,label:(cfg.metrics[key]&&cfg.metrics[key].label)||key,sortKey:key});
+      if (key !== state.metric && !state.extraMetrics.includes(key)) cols.push({id:'filter:' + key,kind:'filter',metricKey:key,label:_mLabel(key),sortKey:key});
     });
-    cols.push({id:'metric:' + state.metric,kind:'metric',metricKey:state.metric,label:(cfg.metrics[state.metric]&&cfg.metrics[state.metric].label)||state.metric,sortKey:state.metric,primary:true});
-    state.extraMetrics.forEach(function(key) { cols.push({id:'metric:' + key,kind:'metric',metricKey:key,label:(cfg.metrics[key]&&cfg.metrics[key].label)||key,sortKey:key}); });
+    cols.push({id:'metric:' + state.metric,kind:'metric',metricKey:state.metric,label:_mLabel(state.metric),sortKey:state.metric,primary:true});
+    state.extraMetrics.forEach(function(key) {
+      const _locked = _mLocked(key);
+      cols.push({id:'metric:' + key, kind:'metric', metricKey:key,
+        label: _mLabel(key), sortKey:key, locked: _locked});
+    });
     if (state.showTrends) cols.push({id:'trend',kind:'trend',label:'Recent'});
     return cols;
   }
@@ -2854,13 +2905,20 @@ _AM_JS = r"""
     tableColumnSchema().forEach(function(c) {
       const th = document.createElement('th'); th.dataset.columnId = c.id;
       th.textContent = c.label; if (c.title) th.title = c.title;
+      if (c.locked) th.insertAdjacentHTML('beforeend', ' ' + _LOCK_SVG);
       if (c.kind === 'rank') th.className = 'am-rank';
       else if (c.kind === 'player') th.className = 'am-player';
       else if (c.kind === 'season') { th.className = 'am-season-col'; th.id = 'amSeasonColHdr'; th.style.display = amIsEachYear() ? '' : 'none'; }
       else if (c.kind === 'weeks') { th.className = 'am-weeks'; th.style.display = state.responseWeekFiltered ? '' : 'none'; }
-      else if (c.kind === 'metric') { th.className = 'am-barcell' + (c.primary ? '' : ' am-extra-header'); th.id = c.primary ? 'amMetricHeader' : 'amExtraHeader_' + c.metricKey; _bindColTip(th,c.metricKey); }
+      else if (c.kind === 'metric') { th.className = 'am-barcell' + (c.primary ? '' : ' am-extra-header') + (c.locked ? ' am-th-locked' : ''); th.id = c.primary ? 'amMetricHeader' : 'amExtraHeader_' + c.metricKey; _bindColTip(th,c.metricKey); if (c.locked) th.title = _mLabel(c.metricKey) + ' is PRO only: tap to unlock'; }
       else { th.className = 'am-games' + (c.kind === 'sample' ? ' am-context-col-hdr' : ' am-filter-col-hdr'); if (c.kind === 'filter') { th.id='amFilterColHdr_'+c.metricKey; _bindColTip(th,c.metricKey); } }
-      if (c.sortKey) { th.classList.add('am-sortable'); th.addEventListener('click',function(){sortByCol(c.sortKey);}); }
+      if (c.locked) {
+        // Locked PRO column header: tapping opens the paywall, not a sort.
+        th.classList.add('am-sortable');
+        th.addEventListener('click', function() {
+          if (typeof window.showPaywall === 'function') window.showPaywall('advanced-metrics-metric-' + c.metricKey);
+        });
+      } else if (c.sortKey) { th.classList.add('am-sortable'); th.addEventListener('click',function(){sortByCol(c.sortKey);}); }
       tr.appendChild(th);
     });
     updateSortHeaders();
@@ -3240,11 +3298,11 @@ _AM_JS = r"""
         avgNote.style.display = '';
         const lbl = state.position !== 'ALL' ? state.position : 'Field';
         // One entry per visible metric column: primary first, then extras.
-        const parts = [((cfg.metrics[state.metric] && cfg.metrics[state.metric].label) || state.metric)
+        const parts = [(_mLabel(state.metric))
           + ' ' + fmtVal(avg, state.metric)];
         state.extraMetrics.forEach(function(key) {
           if (extraAvgMap[key] != null) {
-            parts.push(((cfg.metrics[key] && cfg.metrics[key].label) || key)
+            parts.push((_mLabel(key))
               + ' ' + fmtVal(extraAvgMap[key], key));
           }
         });
@@ -3255,7 +3313,7 @@ _AM_JS = r"""
         const avgToggleTxt = document.getElementById('amAvgToggleText');
         if (avgToggleTxt) {
           avgToggleTxt.textContent = '';
-          const primaryLabel = (cfg.metrics[state.metric] && cfg.metrics[state.metric].label) || state.metric;
+          const primaryLabel = _mLabel(state.metric);
           avgToggleTxt.append(document.createTextNode(lbl + ' avg · ' + primaryLabel + ' '));
           const avgVal = document.createElement('b');
           avgVal.textContent = fmtVal(avg, state.metric);
@@ -3391,17 +3449,19 @@ _AM_JS = r"""
               + '</div></td>';
             return;
           }
-          // PRO-locked extra column: a lock cell that opens the paywall
-          // instead of blank "–" values. Only the rows above the fold show
-          // the lock; every row gets the same click target via delegation.
+          // PRO-locked extra column: the column renders blocked, like a
+          // paywalled column. Blurred placeholder bars (deterministic width
+          // per player so it reads as hidden data) plus a lock badge; the
+          // whole column is one click target that opens the paywall.
           if (ed.proLocked) {
-            const _ml = (cfg.metrics && cfg.metrics[key] && cfg.metrics[key].label)
-              || (cfg.proMetricInfo && cfg.proMetricInfo[key] && cfg.proMetricInfo[key].label)
-              || key;
+            const _ml = _mLabel(key);
+            const _rs = String(amRowKey(r)); let _hh = 0;
+            for (let _i = 0; _i < _rs.length; _i++) _hh = (_hh * 31 + _rs.charCodeAt(_i)) % 97;
+            const _bw = 30 + _hh;
             metricCell += '<td class="am-barcell am-cell-locked" data-column-id="metric:' + key + '"'
               + ' data-pro-metric="' + key + '" title="' + _esc(_ml) + ' is PRO only: tap to unlock">'
-              + '<div class="am-metric-cell"><div class="am-metric-bar"><div class="am-bar-track" style="opacity:.25"></div></div>'
-              + '<div class="am-val-wrap"><span class="am-val" style="opacity:.7">🔒</span></div>'
+              + '<div class="am-metric-cell"><div class="am-metric-bar"><div class="am-bar-track"><div class="am-bar-fill am-locked-blur" style="width:' + _bw + '%"></div></div></div>'
+              + '<div class="am-val-wrap">' + _LOCK_SVG + '</div>'
               + '</div></td>';
             return;
           }
@@ -4524,10 +4584,10 @@ _AM_JS = r"""
       // Order: Age/Exp → volume/rates → primary metric → extra metrics
       const opts = [{ value: 'age', label: 'Age' }, { value: 'exp', label: 'Years Exp' }];
       volOpts.forEach(function(o) { opts.push(o); });
-      opts.push({ value: 'primary', label: (cfg.metrics[state.metric] && cfg.metrics[state.metric].label) || state.metric });
+      opts.push({ value: 'primary', label: _mLabel(state.metric) });
       state.extraMetrics.forEach(function(key) {
         if (added.has(key)) return;
-        opts.push({ value: key, label: (cfg.metrics[key] && cfg.metrics[key].label) || key });
+        opts.push({ value: key, label: _mLabel(key) });
       });
 
       filterKey.innerHTML = opts.map(function(o) {
@@ -4536,10 +4596,10 @@ _AM_JS = r"""
     }
     chips.innerHTML = state.comboFilters.map(function(f, idx) {
       const lbl = f.key === 'primary'
-        ? ((cfg.metrics[state.metric] && cfg.metrics[state.metric].label) || state.metric)
+        ? (_mLabel(state.metric))
         : f.key === 'age' ? 'Age'
         : f.key === 'exp' ? 'Years Exp'
-        : ((cfg.metrics[f.key] && cfg.metrics[f.key].label) || f.key);
+        : (_mLabel(f.key));
       const opSym = f.op === 'gte' ? '≥' : '≤';
       return '<span class="am-filter-chip">' + lbl + ' ' + opSym + ' ' + f.val
         + ' <button class="am-chip-x" onclick="amRemoveFilter(' + idx + ')" aria-label="Remove">\xd7</button></span>';
@@ -4803,13 +4863,13 @@ _AM_JS = r"""
     exportBtn.addEventListener('click', function() {
       const rows = state._exportRows || [];
       if (!rows.length) return;
-      const metricLbl = (cfg.metrics[state.metric] && cfg.metrics[state.metric].label) || state.metric;
+      const metricLbl = _mLabel(state.metric);
       const extraKeys = state.extraMetrics.filter(k => state.extraData[k]);
       const sampleCols = contextColsFor();
       const head = ['Player', 'Team', 'Pos', 'Age', 'Exp', 'Games']
         .concat(sampleCols.map(c => c.title))
         .concat([metricLbl])
-        .concat(extraKeys.map(k => (cfg.metrics[k] && cfg.metrics[k].label) || k));
+        .concat(extraKeys.map(k => _mLabel(k)));
       if (amIsEachYear()) head.splice(1, 0, 'Year');
       const esc = function(v) {
         if (v == null) return '';
