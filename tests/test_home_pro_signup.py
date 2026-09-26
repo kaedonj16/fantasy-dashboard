@@ -53,7 +53,7 @@ def test_home_pro_js_opens_modal_then_stages_google():
     assert "className = 'paywall-modal'" in source
     assert 'proPlanCards({ dataPlan: true })' in source
     plans = PAYWALL_JS[PAYWALL_JS.index('const BR_PRO_PLANS'):PAYWALL_JS.index('function proPlanCards')]
-    for key in ('user', 'single_league', 'league', 'combo'):
+    for key in ('starter', 'all_pro', 'hall_of_fame'):
         assert f"key: '{key}'" in plans
     assert 'id="homeProGoogle" class="google-continue-btn"' in source
     assert "fetch('/api/pro-signup/pending'" in source
@@ -89,17 +89,18 @@ def test_google_and_yahoo_resume_pending_checkout():
     assert 'return _redirect_after_google(destination or next_url)' in GOOGLE
 
 
-def test_pro_signup_pending_requires_plan_and_league(offline_client):
+def test_pro_signup_pending_requires_valid_plan(offline_client):
     missing = offline_client.post("/api/pro-signup/pending", json={})
     assert missing.status_code == 400
     assert missing.json["ok"] is False
 
-    league_missing = offline_client.post("/api/pro-signup/pending", json={"plan": "league"})
-    assert league_missing.status_code == 400
+    # Retired plans are rejected for new signups; a league is never required.
+    legacy = offline_client.post("/api/pro-signup/pending", json={"plan": "league"})
+    assert legacy.status_code == 400
 
-    user_ok = offline_client.post("/api/pro-signup/pending", json={"plan": "user"})
-    assert user_ok.status_code == 200
-    assert user_ok.json["ok"] is True
+    no_league_ok = offline_client.post("/api/pro-signup/pending", json={"plan": "hall_of_fame"})
+    assert no_league_ok.status_code == 200
+    assert no_league_ok.json["ok"] is True
 
     bad_plan = offline_client.post("/api/pro-signup/pending", json={
         "plan": "lifetime", "league_id": "123", "platform": "sleeper",
@@ -107,7 +108,7 @@ def test_pro_signup_pending_requires_plan_and_league(offline_client):
     assert bad_plan.status_code == 400
 
     ok = offline_client.post("/api/pro-signup/pending", json={
-        "plan": "single_league",
+        "plan": "starter",
         "league_id": "999",
         "platform": "espn",
         "season": 2026,
@@ -118,7 +119,7 @@ def test_pro_signup_pending_requires_plan_and_league(offline_client):
     assert ok.json["auth_url"] == "/auth/google?intent=onboarding&next=/pro/resume-checkout"
 
     with offline_client.session_transaction() as sess:
-        assert sess["pending_checkout"]["plan"] == "single_league"
+        assert sess["pending_checkout"]["plan"] == "starter"
         assert sess["pending_checkout"]["league_id"] == "999"
         assert sess["pending_link"]["platform"] == "espn"
         assert sess["pending_link"]["username"] == "Ryan"
@@ -127,7 +128,7 @@ def test_pro_signup_pending_requires_plan_and_league(offline_client):
 def test_resume_checkout_sends_guests_to_google(offline_client):
     with offline_client.session_transaction() as sess:
         sess["pending_checkout"] = {
-            "plan": "user", "league_id": "123", "platform": "sleeper", "season": 2026,
+            "plan": "hall_of_fame", "league_id": "123", "platform": "sleeper", "season": 2026,
         }
     response = offline_client.get("/pro/resume-checkout")
     assert response.status_code == 302
@@ -139,7 +140,7 @@ def test_resume_checkout_requires_google_not_sleeper_only(offline_client):
         sess["viewer_username"] = "Ryan"
         sess["viewer_user_id"] = "u1"
         sess["pending_checkout"] = {
-            "plan": "user", "league_id": "123", "platform": "sleeper", "season": 2026,
+            "plan": "hall_of_fame", "league_id": "123", "platform": "sleeper", "season": 2026,
         }
     response = offline_client.get("/pro/resume-checkout")
     assert response.status_code == 302
@@ -166,7 +167,7 @@ def test_resume_checkout_opens_stripe_for_signed_in_users(offline_client, monkey
         sess["account_id"] = 44
         sess["viewer_user_id"] = "u44"
         sess["pending_checkout"] = {
-            "plan": "single_league",
+            "plan": "starter",
             "league_id": "555",
             "platform": "sleeper",
             "season": 2026,
@@ -175,7 +176,7 @@ def test_resume_checkout_opens_stripe_for_signed_in_users(offline_client, monkey
     response = offline_client.get("/pro/resume-checkout")
     assert response.status_code == 302
     assert response.headers["Location"] == "https://checkout.stripe.test/home-pro"
-    assert captured["metadata"]["plan"] == "single_league"
+    assert captured["metadata"]["plan"] == "starter"
     assert captured["metadata"]["league_id"] == "555"
     assert "/sleeper/2026/555/dashboard" in unquote(captured["success_url"])
 
@@ -241,7 +242,7 @@ def test_google_callback_resumes_home_pro_checkout(monkeypatch):
                 "season": 2026, "username": "Ryan",
             }
             sess["pending_checkout"] = {
-                "plan": "single_league", "league_id": "555",
+                "plan": "starter", "league_id": "555",
                 "platform": "sleeper", "season": 2026,
             }
         response = client.get("/auth/google/callback?code=code&state=state")

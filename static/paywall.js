@@ -211,10 +211,9 @@ window.brResolveProFeature = function brResolveProFeature(feature) {
 };
 
 const BR_PRO_PLANS = [
-  { key: 'user', name: 'Personal', price: '$20/year', coverage: 'PRO for you across all your leagues', cta: 'Choose Personal', recommended: true },
-  { key: 'single_league', name: 'Individual: One League', price: '$10/year', coverage: 'PRO for you in one selected league. Your league mates are not upgraded.', cta: 'Choose one league' },
-  { key: 'league', name: 'Entire League', price: '$35/year', coverage: 'PRO for every manager in one selected league', cta: 'Upgrade a league' },
-  { key: 'combo', name: 'League + Personal', price: '$45/year', coverage: 'PRO for every manager in one selected league, plus you across all your leagues. Other managers’ additional leagues are not upgraded.', cta: 'Choose League + Personal' }
+  { key: 'starter', name: 'Starter', price: '$10/year', coverage: 'PRO for you in 1 league of your choice. Pick it after checkout and change it anytime.', cta: 'Choose Starter' },
+  { key: 'all_pro', name: 'All-Pro', price: '$30/year', coverage: 'PRO for you in up to 5 leagues. Pick them after checkout and change them anytime.', cta: 'Choose All-Pro', recommended: true },
+  { key: 'hall_of_fame', name: 'Hall of Fame', price: '$50/year', coverage: 'PRO for you in every league you play. Your league mates are not upgraded.', cta: 'Choose Hall of Fame' }
 ];
 
 function proPlanCards(options) {
@@ -395,12 +394,9 @@ function _checkoutLeagueId() {
 function _startGoogleSubscribe(planType, triggerBtn, extra) {
   extra = extra || {};
   const ctx = window.__brctx || {};
+  // A league open on the page seeds the first PRO league slot; it is never
+  // required at checkout under the new catalog.
   const leagueId = extra.leagueId || _checkoutLeagueId();
-  const needsLeague = planType === 'league' || planType === 'combo' || planType === 'single_league';
-  if (needsLeague && !leagueId) {
-    _showIdentifyModal(planType, triggerBtn);
-    return;
-  }
   const payload = {
     plan: planType,
     league_id: leagueId || '',
@@ -443,22 +439,17 @@ function _startGoogleSubscribe(planType, triggerBtn, extra) {
 }
 
 async function initiatePurchase(type, btn) {
-  // Checkout requires a Google account site-wide. Sleeper-only sign-in is
-  // enough to view a league, not to subscribe. Guests who pick a league plan
-  // without a league open the platform picker above the paywall, then Google.
+  // Checkout requires a Google account site-wide. Guests get the Google
+  // sign-in prompt first. New-catalog plans never require a league at
+  // checkout; a league open on the page seeds the first PRO slot.
   const ctx = window.__brctx || {};
   const billingInterval = window.__brBillingInterval === 'month' ? 'month' : 'year';
   const leagueId = new URLSearchParams(window.location.search).get('league_id') ||
     window.location.pathname.split('/').filter(Boolean)[2] ||
     (ctx.leagueId || '');
-  const needsLeague = type === 'league' || type === 'combo' || type === 'single_league';
 
   if (!_hasGoogleAccount()) {
-    if (needsLeague && !leagueId) {
-      _openCheckoutLeaguePicker(type, btn);
-      return;
-    }
-    if (needsLeague && leagueId) {
+    if (leagueId) {
       _startGoogleSubscribe(type, btn);
       return;
     }
@@ -466,15 +457,10 @@ async function initiatePurchase(type, btn) {
     return;
   }
 
-  if (needsLeague && !leagueId) {
-    _showLeaguePickerModal(type, btn);
-    return;
-  }
-
   // Build a destination that lands in the league dashboard after payment
   const _platform = ctx.platform || 'sleeper';
   const _season   = ctx.season   || new Date().getFullYear();
-  const _welcome = (type === 'league' || type === 'combo') ? 'league' : 'personal';
+  const _welcome = 'personal';
   const returnUrl = leagueId
     ? `/${_platform}/${_season}/${leagueId}/dashboard?new_subscriber=1&welcome=${_welcome}`
     : `${window.location.pathname}?new_subscriber=1&welcome=${_welcome}`;
@@ -742,7 +728,7 @@ function _stackAbovePaywall(modal) {
   _pausePaywallForNested();
 }
 
-const _CHECKOUT_PLANS = { single_league: 1, league: 1, combo: 1, user: 1 };
+const _CHECKOUT_PLANS = { starter: 1, all_pro: 1, hall_of_fame: 1 };
 
 function _hookCheckoutLinkModal() {
   if (window.__brCheckoutLinkHooked) return;
@@ -911,20 +897,15 @@ function _showIdentifyModal(planType, triggerBtn) {
   const existing = document.getElementById('_identifyModal');
   if (existing) existing.remove();
 
-  const needsLeague = planType === 'league' || planType === 'combo' || planType === 'single_league';
+  // New-catalog plans never require a league before checkout; the identify
+  // modal always routes to plain Google sign-in. The league-specific
+  // branches below are inert while needsLeague is false.
+  const needsLeague = false;
+  const platformTabs = '';
   const next = encodeURIComponent(window.location.pathname + window.location.search);
   const yahooOn = !!document.querySelector('#linkModal .link-tab[data-lp="yahoo"]');
-  const googleCtl = needsLeague
-    ? `<button type="button" class="google-continue-btn" id="_identifyGoogle"><span class="google-button-title">Continue with Google</span></button>`
-    : `<a class="google-continue-btn" id="_identifyGoogle" href="/auth/google?intent=login&amp;next=${next}"><span class="google-button-title">Continue with Google</span></a>`;
-  const platformTabs = needsLeague ? `
-      <div class="link-tabs" id="_identifyPlatTabs" role="tablist" style="margin-bottom:14px;">
-        <button type="button" class="link-tab active" data-lp="sleeper">Sleeper</button>
-        <button type="button" class="link-tab" data-lp="espn">ESPN</button>
-        <button type="button" class="link-tab" data-lp="mfl">MFL</button>
-        <button type="button" class="link-tab" data-lp="fleaflicker">Fleaflicker</button>
-        ${yahooOn ? '<button type="button" class="link-tab" data-lp="yahoo">Yahoo</button>' : ''}
-      </div>` : '';
+  const googleCtl =
+    `<a class="google-continue-btn" id="_identifyGoogle" href="/auth/google?intent=login&amp;next=${next}"><span class="google-button-title">Continue with Google</span></a>`;
 
   const modal = document.createElement('div');
   modal.id = '_identifyModal';
@@ -1166,14 +1147,13 @@ async function _initiatePurchaseWithLeague(type, btn, leagueId) {
     _startGoogleSubscribe(type, btn, { leagueId });
     return;
   }
-  const billingInterval = window.__brBillingInterval === 'month' ? 'month' : 'year';  // Build a post-checkout destination: league dashboard if we have a league,
+  const billingInterval = window.__brBillingInterval === 'month' ? 'month' : 'year';
+  // Build a post-checkout destination: league dashboard if we have a league,
   // otherwise the current page. Append ?new_subscriber=1 to trigger the welcome tour.
   const ctx = window.__brctx || {};
   const platform = ctx.platform || 'sleeper';
   const season   = ctx.season   || new Date().getFullYear();
-  const _welcome = (type === 'league' || type === 'combo' || type === 'single_league')
-    ? ((type === 'league' || type === 'combo') ? 'league' : 'personal')
-    : 'personal';
+  const _welcome = 'personal';
   const returnUrl = leagueId
     ? `/${platform}/${season}/${leagueId}/dashboard?new_subscriber=1&welcome=${_welcome}`
     : (window.location.pathname + `?new_subscriber=1&welcome=${_welcome}`);

@@ -364,7 +364,7 @@ def google_auth_callback():
                 f"/{pending['league_id']}/dashboard"
             )
             checkout_plan = str(pending.get("checkout_plan") or "").strip()
-            if checkout_plan in {"single_league", "league", "combo", "user"}:
+            if checkout_plan in {"starter", "all_pro", "hall_of_fame"}:
                 dest = (
                     f"/{pending['platform']}/{pending.get('season') or ''}"
                     f"/{pending['league_id']}/pricing?plan={checkout_plan}&checkout=1"

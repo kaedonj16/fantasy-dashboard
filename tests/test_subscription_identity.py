@@ -3,13 +3,16 @@ from dashboard_services import subscriptions
 
 
 class _Cursor:
-    def __init__(self, rows):
-        self.rows = iter(rows)
+    def __init__(self, all_batches=()):
+        # One fetchall() result per account-branch query (JOIN, then direct).
+        self._batches = list(all_batches)
         self.queries = []
     def __enter__(self): return self
     def __exit__(self, *_): pass
-    def execute(self, sql, params): self.queries.append((sql, params))
-    def fetchone(self): return next(self.rows, None)
+    def execute(self, sql, params=None): self.queries.append((sql, params))
+    def fetchone(self): return None
+    def fetchall(self):
+        return self._batches.pop(0) if self._batches else []
 
 
 class _Conn:
@@ -20,7 +23,9 @@ class _Conn:
 
 
 def test_account_entitlement_matches_stable_id_or_legacy_handle(monkeypatch):
-    cursor = _Cursor([{"exists": 1}])
+    cursor = _Cursor([[{
+        "user_id": "sleeper-9", "plan_key": "hall_of_fame",
+    }]])
     monkeypatch.setattr(subscriptions, "get_conn", lambda: _Conn(cursor))
     assert subscriptions.has_premium_access(None, None, account_id=42)
     sql, params = cursor.queries[-1]
@@ -32,7 +37,7 @@ def test_account_entitlement_matches_direct_acct_subscription(monkeypatch):
     # Google-only checkout stores user_id as acct:<id> when no platform identity
     # is linked yet. The JOIN against account_identities misses; the direct
     # lookup must still grant.
-    cursor = _Cursor([None, {"exists": 1}])
+    cursor = _Cursor([[], [{"user_id": "acct:42", "plan_key": "user"}]])
     monkeypatch.setattr(subscriptions, "get_conn", lambda: _Conn(cursor))
     assert subscriptions.has_premium_access(None, None, account_id=42)
     sql, params = cursor.queries[-1]
