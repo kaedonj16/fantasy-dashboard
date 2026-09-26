@@ -70,9 +70,18 @@ def test_checkout_requires_league_membership_for_league_plans():
     checkout = checkout[: checkout.index("line_item = _checkout_line_item")]
     assert "viewer_is_league_member" in checkout
     assert "_MEMBERSHIP_REQUIRED_PLANS" in BILLING
+    assert "_LEGACY_MEMBERSHIP_REQUIRED_PLANS" in BILLING
     assert "single_league" in BILLING
     assert "403" in checkout
-    assert 'plan in _MEMBERSHIP_REQUIRED_PLANS' in checkout
+    assert "plan in _MEMBERSHIP_REQUIRED_PLANS" in checkout
+    # New-catalog plans never require a league at checkout (slots are picked
+    # after purchase); grandfathered league plans keep the membership gate in
+    # the resume flow.
+    assert "_MEMBERSHIP_REQUIRED_PLANS = frozenset()" in BILLING
+    resume = BILLING[BILLING.index("def resume_pro_checkout"):]
+    resume = resume[: resume.index("return_url = (")]
+    assert "viewer_is_league_member" in resume
+    assert "plan in _LEGACY_MEMBERSHIP_REQUIRED_PLANS" in resume
 
 
 def test_refresh_league_requires_viewing_member_or_secret():
@@ -343,10 +352,10 @@ def test_checkout_overlays_stack_above_paywall():
     assert "_stackAbovePaywall" in paywall
     assert "dataset.nestedOpen" in paywall
     initiate = paywall[paywall.index("async function initiatePurchase"): paywall.index("function addPremiumBadge")]
-    # New-catalog flow: no league picker at checkout. Guests are Google-gated
-    # (direct subscribe when a league is open, identify modal otherwise); the
-    # picker now only serves the link-modal "other platform" path.
+    # New-catalog plans never require a league at checkout: a league open on
+    # the page just seeds the first PRO slot after purchase.
     assert "_openCheckoutLeaguePicker" not in initiate
+    assert "seeds the first PRO slot" in initiate
     assert "_showIdentifyModal(type, btn)" in initiate
     assert "_startGoogleSubscribe(type, btn)" in initiate
     assert "brOpenSignin" not in initiate

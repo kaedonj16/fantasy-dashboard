@@ -18,6 +18,11 @@ _SIGNUP_STATE = "signup_welcome_sent:"  # + account_id
 _PRO_STATE = "pro_welcome_sent:"  # + account_id
 
 _PLAN_LABELS = {
+    # Current catalog (for sale).
+    "starter": "Starter PRO",
+    "all_pro": "All-Pro PRO",
+    "hall_of_fame": "Hall of Fame PRO",
+    # Retired from sale but grandfathered for existing subscribers.
     "single_league": "One League PRO",
     "user": "Personal PRO",
     "league": "League PRO",
@@ -291,6 +296,7 @@ def build_pro_welcome(
             "Hall of Fame PRO follows you across every league on your Google account, "
             "ideal if you manage multiple teams."
         ),
+        # Grandfathered retired plans (no longer sold).
         "single_league": (
             "One League PRO unlocks premium tools for the league you chose at checkout. "
             "Other leagues stay on the free tier unless you upgrade."
@@ -341,7 +347,7 @@ def build_pro_welcome(
             teams,
         ),
     ]
-    if plan_key in ("hall_of_fame", "user", "combo"):
+    if plan_key in ("user", "combo", "all_pro", "hall_of_fame"):
         feats.append(
             (
                 "Cross-league This Week's Moves",
