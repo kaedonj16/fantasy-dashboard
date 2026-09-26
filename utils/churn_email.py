@@ -21,6 +21,11 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 _PLAN_LABELS = {
+    # Current catalog (for sale).
+    "starter": "Starter PRO",
+    "all_pro": "All-Pro PRO",
+    "hall_of_fame": "Hall of Fame PRO",
+    # Retired from sale but grandfathered for existing subscribers.
     "single_league": "One League PRO",
     "user": "Personal PRO",
     "league": "League PRO",

@@ -99,7 +99,7 @@ def test_pricing_page_no_retired_plans_in_purchase_ui(offline_client):
         "single_league",
     ):
         assert retired not in region, retired
-    assert "Choose your PRO plan" in html
+    assert "Choose your coverage" in html
 
 
 def test_pricing_savings_math():

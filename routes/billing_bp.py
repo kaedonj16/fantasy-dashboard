@@ -773,7 +773,7 @@ _MANAGE_PLAN_LABELS = {
     "starter": "Starter PRO",
     "all_pro": "All-Pro PRO",
     "hall_of_fame": "Hall of Fame PRO",
-    # Grandfathered labels for existing subscribers.
+    # Retired from sale but grandfathered for existing subscribers.
     "user": "Personal PRO",
     "single_league": "One League PRO",
     "league": "League PRO",
@@ -1381,8 +1381,8 @@ def _pricing_body(league_id: str | None = None, platform: str = "sleeper") -> st
 
     selected_plan = plan if plan in {"starter", "all_pro", "hall_of_fame"} else ""
     plans = [
-        ("starter", "Starter", "$10/year", "$1.49/mo", "PRO for you in 1 league of your choice. Pick it after checkout and change it anytime.", "Choose Starter", False),
-        ("all_pro", "All-Pro", "$30/year", "$4.49/mo", "PRO for you in up to 5 leagues. Pick them after checkout and change them anytime.", "Choose All-Pro", True),
+        ("starter", "Starter", "$10/year", "$1.49/mo", "PRO for you in 1 league of your choice. Pick it after checkout and change it anytime. Your league mates are not upgraded.", "Choose Starter", False),
+        ("all_pro", "All-Pro", "$30/year", "$4.49/mo", "PRO for you in up to 5 leagues. Pick them after checkout and change them anytime. Your league mates are not upgraded.", "Choose All-Pro", True),
         ("hall_of_fame", "Hall of Fame", "$50/year", "$7.49/mo", "PRO for you in every league you play. Your league mates are not upgraded.", "Choose Hall of Fame", False),
     ]
 
@@ -1401,7 +1401,7 @@ def _pricing_body(league_id: str | None = None, platform: str = "sleeper") -> st
             <span class="pp-price pp-annual">{annual_price.replace('/year', '<span>/year</span>')}</span>
             <span class="pp-price pp-monthly">{monthly_price.replace('/mo', '<span>/mo</span>')}</span>
           </div>
-          <p class="pp-save">Save {_annual_savings_pct(key)}% with annual billing</p>
+          <p class="pp-save">Save 44% with annual billing</p>
           <p class="pricing-desc">{coverage}</p>
           <button type="button" class="btn {'btn-primary' if recommended else 'btn-secondary'} paywall-cta" onclick="initiatePurchase('{key}', this)">{cta}</button>
         </article>'''
@@ -1517,7 +1517,7 @@ def _pricing_body(league_id: str | None = None, platform: str = "sleeper") -> st
       {trial_section}
 
       <section class="pricing-section pricing-plans" aria-labelledby="pricing-plans-title">
-        <div class="pricing-section-heading"><h2 id="pricing-plans-title">Choose your PRO plan</h2><p>Billed monthly or annually. Annual billing saves 44%.</p></div>
+        <div class="pricing-section-heading"><h2 id="pricing-plans-title">Choose your coverage</h2><p>Every plan is personal: PRO covers you in the leagues you unlock, not your league mates. Billed monthly or annually. Annual billing saves up to 44%.</p></div>
         <div class="billing-toggle" role="group" aria-label="Billing interval">
           <button type="button" class="billing-toggle-btn" data-billing-interval="month" aria-pressed="false">Monthly</button>
           <button type="button" class="billing-toggle-btn is-active" data-billing-interval="year" aria-pressed="true">Annual<span class="billing-toggle-save">save 44%</span></button>
@@ -1560,7 +1560,7 @@ def _pricing_body(league_id: str | None = None, platform: str = "sleeper") -> st
         <div class="pricing-benefit-groups">
           <article><i class="fa-solid fa-handshake" aria-hidden="true"></i><h3>Trade decisions</h3><p>Roster-based suggestions, Trade Intel, AI trade analysis and counters, and playoff-impact simulations.</p></article>
           <article><i class="fa-solid fa-fire" aria-hidden="true"></i><h3>Player discovery</h3><p>Breakout Engine opportunity signals, historical peers, and confidence-adjusted projections.</p></article>
-          <article><i class="fa-solid fa-calendar-week" aria-hidden="true"></i><h3>Weekly guidance</h3><p>Front Office Report, the premium AI weekly recap storyline, and cross-league “This week’s moves.” The cross-league digest requires Hall of Fame coverage across your leagues.</p></article>
+          <article><i class="fa-solid fa-calendar-week" aria-hidden="true"></i><h3>Weekly guidance</h3><p>Front Office Report, the premium AI weekly recap storyline, and cross-league “This week’s moves.” The cross-league digest requires All-Pro or Hall of Fame coverage across your leagues.</p></article>
           <article><i class="fa-solid fa-clipboard-list" aria-hidden="true"></i><h3>Draft tools</h3><p>Custom Draft Board, Trend Scout, and Draft Deep Dive.</p></article>
         </div>
       </section>
@@ -1582,12 +1582,14 @@ def _pricing_body(league_id: str | None = None, platform: str = "sleeper") -> st
 
       <section class="pricing-section pricing-faq" aria-labelledby="faq-title">
         <div class="pricing-section-heading"><h2 id="faq-title">Plan coverage FAQ</h2></div>
+        <details><summary>Does Starter cover my league mates?</summary><p>No. It gives only you PRO in one league you choose.</p></details>
+        <details><summary>What does All-Pro cover?</summary><p>PRO for you in up to 5 leagues you choose. Your league mates are not upgraded.</p></details>
+        <details><summary>Does Hall of Fame cover everyone everywhere?</summary><p>No. It gives you PRO in every league you play. Your league mates stay on the free tier.</p></details>
         <details><summary>How do Starter and All-Pro league slots work?</summary><p>After checkout you pick which leagues get PRO: 1 league on Starter, up to 5 on All-Pro. You can change your picks anytime from your PRO settings, and PRO applies only to you in those leagues.</p></details>
-        <details><summary>Does Hall of Fame cover my league mates?</summary><p>No. Hall of Fame gives only you PRO in every league you play. Your league mates need their own plan.</p></details>
         <details><summary>How does monthly billing work?</summary><p>Choose Monthly above any plan. You are billed each month instead of once a year, and you can switch intervals or cancel from the manage-subscription link after checkout. Interval changes use Stripe's default proration.</p></details>
         <details><summary>Is the whole Weekly Recap premium?</summary><p>No. The AI-written storyline is premium; the recap’s other available sections remain free.</p></details>
-        <details><summary>How does PRO billing work?</summary><p>PRO renews automatically at the then-current price until you cancel. Annual plans bill once a year; monthly plans bill each month.</p></details>
-        <details><summary>How do I cancel?</summary><p>Cancel anytime through the subscription management link in your account. Your PRO access continues until the end of the current billing term.</p></details>
+        <details><summary>How does PRO billing work?</summary><p>PRO is billed monthly or annually, depending on the interval you choose at checkout. Your subscription renews automatically at the then-current price until you cancel.</p></details>
+        <details><summary>How do I cancel?</summary><p>Cancel anytime through the subscription management link in your account. Your PRO access continues until the end of the current term.</p></details>
         <details><summary>Can I get a refund?</summary><p>Charges are non-refundable except as required by law. Canceling stops future renewals but does not refund the current term.</p></details>
       </section>
     </main>

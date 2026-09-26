@@ -271,7 +271,7 @@ def test_manage_card_shows_slot_picker_for_starter(offline_client, monkeypatch):
     assert 'class="br-slots"' in html
     assert 'data-platform="sleeper"' in html
     assert "brSaveProLeagues" in html
-    assert "1 league" in html
+    assert "covers PRO for you in 1" in html
 
 
 def test_manage_card_no_picker_for_unlimited_plan(offline_client, monkeypatch):

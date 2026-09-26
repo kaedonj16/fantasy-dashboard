@@ -211,8 +211,8 @@ window.brResolveProFeature = function brResolveProFeature(feature) {
 };
 
 const BR_PRO_PLANS = [
-  { key: 'starter', name: 'Starter', leagues: '1 league', annual: '$10/year', monthly: '$1.49/mo', coverage: 'PRO for you in 1 league of your choice. Pick it after checkout and change it anytime.', cta: 'Choose Starter' },
-  { key: 'all_pro', name: 'All-Pro', leagues: '5 leagues', annual: '$30/year', monthly: '$4.49/mo', coverage: 'PRO for you in up to 5 leagues. Pick them after checkout and change them anytime.', cta: 'Choose All-Pro', recommended: true },
+  { key: 'starter', name: 'Starter', leagues: '1 league', annual: '$10/year', monthly: '$1.49/mo', coverage: 'PRO for you in 1 league of your choice. Pick it after checkout and change it anytime. Your league mates are not upgraded.', cta: 'Choose Starter' },
+  { key: 'all_pro', name: 'All-Pro', leagues: '5 leagues', annual: '$30/year', monthly: '$4.49/mo', coverage: 'PRO for you in up to 5 leagues. Pick them after checkout and change them anytime. Your league mates are not upgraded.', cta: 'Choose All-Pro', recommended: true },
   { key: 'hall_of_fame', name: 'Hall of Fame', leagues: 'Unlimited leagues', annual: '$50/year', monthly: '$7.49/mo', coverage: 'PRO for you in every league you play. Your league mates are not upgraded.', cta: 'Choose Hall of Fame' }
 ];
 
