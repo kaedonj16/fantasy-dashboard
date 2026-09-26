@@ -564,22 +564,22 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 
     script = f"""
 <script>
-const WV_PLATFORM = '{platform}';
-const WV_SEASON = {season};
-const WV_LEAGUE_ID = '{league_id}';
-let wvCurrentPos = 'ALL';
-let wvWaiverData = [];
-let wvHorizon = 'this_week';  // #2: default in-season to personalized immediate help
-let wvShowFaab = false;  // FAAB hidden by default; the toggle opts it in
-let wvFaabPreferenceSet = false;
-let wvCandidateRequestSeq = 0;
-let wvCandidateController = null;
-let wvTrendingData = [];
-let wvBigGamesData = [];
-let wvStartSitData = {{}};
-let wvCompare = [null, null]; // [playerA, playerB]
-let wvUsesK = false;   // league starts kickers (start-sit data or waiver-candidates)
-let wvUsesDef = false; // league starts team defenses (same two sources)
+var WV_PLATFORM = '{platform}';
+var WV_SEASON = {season};
+var WV_LEAGUE_ID = '{league_id}';
+var wvCurrentPos = 'ALL';
+var wvWaiverData = [];
+var wvHorizon = 'this_week';  // #2: default in-season to personalized immediate help
+var wvShowFaab = false;  // FAAB hidden by default; the toggle opts it in
+var wvFaabPreferenceSet = false;
+var wvCandidateRequestSeq = 0;
+var wvCandidateController = null;
+var wvTrendingData = [];
+var wvBigGamesData = [];
+var wvStartSitData = {{}};
+var wvCompare = [null, null]; // [playerA, playerB]
+var wvUsesK = false;   // league starts kickers (start-sit data or waiver-candidates)
+var wvUsesDef = false; // league starts team defenses (same two sources)
 
 if (!window.__brctx) window.__brctx = {{}};
 if (!window.__brctx.leagueId) window.__brctx.leagueId = WV_LEAGUE_ID;
@@ -1022,12 +1022,12 @@ function wvLoadStartSit() {{
 }}
 
 // ── Unexpected performances available (big-game detector) ──────────────────────
-const WV_BG_CATEGORY = {{
+var WV_BG_CATEGORY = {{
   priority: {{ label: 'Priority pickup', cls: 'chip--accent' }},
   speculative: {{ label: 'Speculative add', cls: 'chip--neutral' }},
   watchlist: {{ label: 'Watchlist', cls: 'chip--muted' }},
 }};
-const WV_BG_CAUTION = {{
+var WV_BG_CAUTION = {{
   td_dependent: 'leaned on TDs',
   one_big_play: 'one long play',
   hot_efficiency: 'unsustainable efficiency',
@@ -1356,7 +1356,7 @@ function wvWinPair(av, bv, higher) {{
 }}
 
 // Position-tinted rank chip (QB38, WR12…) for the compare header.
-const WV_POS_COL = {{ QB: '#3b82f6', RB: '#22c55e', WR: '#f59e0b', TE: '#8b5cf6', K: '#14b8a6', DEF: '#64748b' }};
+var WV_POS_COL = {{ QB: '#3b82f6', RB: '#22c55e', WR: '#f59e0b', TE: '#8b5cf6', K: '#14b8a6', DEF: '#64748b' }};
 function wvPosChip(p) {{
   const lbl = p.pos_rank_label || p.position || '';
   if (!lbl) return '';
@@ -1816,11 +1816,9 @@ function wvLineupAdvice() {{
   </div>`;
 }}
 
-document.addEventListener('DOMContentLoaded', wvLoad);
-
 // Deep link: ?tab=startsit opens the Start/Sit Advisor (switches the mobile
 // tab and scrolls the section into view on desktop).
-document.addEventListener('DOMContentLoaded', function() {{
+function wvDeepLink() {{
   try {{
     const params = new URLSearchParams(window.location.search);
     if ((params.get('tab') || '').toLowerCase() === 'startsit') {{
@@ -1830,7 +1828,18 @@ document.addEventListener('DOMContentLoaded', function() {{
       if (sec) sec.scrollIntoView({{ behavior: 'smooth', block: 'start' }});
     }}
   }} catch (e) {{}}
-}});
+}}
+
+// This script re-executes after an in-place page swap (auto-revalidate /
+// refresh), when DOMContentLoaded has already fired: init immediately instead
+// of waiting for an event that will never come again.
+if (document.readyState === 'loading') {{
+  document.addEventListener('DOMContentLoaded', wvLoad);
+  document.addEventListener('DOMContentLoaded', wvDeepLink);
+}} else {{
+  wvLoad();
+  wvDeepLink();
+}}
 </script>
 """
 
