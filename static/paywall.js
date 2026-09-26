@@ -212,10 +212,10 @@ window.brResolveProFeature = function brResolveProFeature(feature) {
 
 const BR_PRO_PLANS = [
   { key: 'starter', name: 'Starter', leagues: '1 league', icon: 'fa-solid fa-seedling', annual: '$10/year', monthly: '$1.49/mo',
-    bullets: ['PRO for you in 1 league of your choice', 'Pick it after checkout and change it anytime', 'Your league mates are not upgraded'],
+    bullets: ['PRO for you in 1 league of your choice', 'Your league mates are not upgraded'],
     cta: 'Choose Starter' },
   { key: 'all_pro', name: 'All-Pro', leagues: '5 leagues', icon: 'fa-solid fa-trophy', annual: '$30/year', monthly: '$4.49/mo', recommended: true,
-    bullets: ['PRO for you in up to 5 leagues', 'Pick them after checkout and change them anytime', 'Your league mates are not upgraded'],
+    bullets: ['PRO for you in up to 5 leagues', 'Your league mates are not upgraded'],
     cta: 'Choose All-Pro' },
   { key: 'hall_of_fame', name: 'Hall of Fame', leagues: 'Unlimited leagues', icon: 'fa-solid fa-medal', annual: '$50/year', monthly: '$7.49/mo',
     bullets: ['PRO for you in every league you play', 'Your league mates are not upgraded'],
@@ -1276,7 +1276,7 @@ function openHomeProModal() {
       <div class="paywall-body">
         <div id="homeProStepPlan" class="home-pro-step">
           <h3>Choose a plan</h3>
-          <p class="home-pro-plan-note">A Google account is required to subscribe. After checkout, assign your PRO leagues from the Your PRO card on the pricing page.</p>
+          <p class="home-pro-plan-note">A Google account is required to subscribe. After checkout, assign your PRO leagues from the Your PRO card on the pricing page. You can change it anytime.</p>
           <div class="paywall-pricing">${proPlanCards({ dataPlan: true })}</div>
           <p class="paywall-auth-note"><i class="fa-brands fa-google" aria-hidden="true"></i> Google sign-in is required at checkout.</p>
           <a class="paywall-full-pricing" href="/pricing">Compare features and see sample previews</a>
