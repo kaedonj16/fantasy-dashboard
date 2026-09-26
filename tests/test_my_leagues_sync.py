@@ -124,3 +124,38 @@ def test_favorite_endpoint_requires_an_account(offline_client):
         json={"platform": "sleeper", "league_id": "abc", "favorite": True},
     )
     assert response.status_code == 401
+
+
+def test_my_leagues_survives_reconcile_scheduler_failure(offline_client, monkeypatch):
+    """A scheduler hiccup must not discard the resolved league list.
+
+    Regression: the fire-and-forget reconciliation used to run inside the same
+    try block before the rows were built, so a throw there (e.g. thread
+    exhaustion) returned an empty list and clients silently fell back to the
+    Sleeper-only endpoint.
+    """
+    import dashboard_services.accounts as accounts
+
+    leagues = [
+        {"platform": "sleeper", "league_id": "s1", "season": 2026, "name": "Sleeper One"},
+        {"platform": "espn", "league_id": "e1", "season": 2026, "name": "ESPN One"},
+        {"platform": "yahoo", "league_id": "y1", "season": 2026, "name": "Yahoo One"},
+    ]
+    monkeypatch.setattr(
+        accounts,
+        "resolve_my_leagues",
+        lambda viewer_user_id, account_id, current_season: (leagues, 2026),
+    )
+
+    def _boom(account_id, season):
+        raise RuntimeError("can't start new thread")
+
+    monkeypatch.setattr(accounts, "schedule_account_league_reconciliation", _boom)
+    with offline_client.session_transaction() as sess:
+        sess["account_id"] = 42
+
+    response = offline_client.get("/api/my-leagues")
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data["ok"] is True
+    assert [lg["league_id"] for lg in data["leagues"]] == ["s1", "e1", "y1"]
