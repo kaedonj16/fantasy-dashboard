@@ -8731,9 +8731,10 @@ window.initTradePage = function initTradePage(root = document) {
       const esc = s => (s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
       box.innerHTML = visible.map(c => {
         const col = (POS_COLORS || {})[c.position] || "var(--accent)";
-        const posLabel = [c.position, c.pos_rank_label].filter(Boolean).join(" ");
+        const posLabel = c.pos_rank_label || c.position;
+        const tint = col.charCodeAt(0) === 35 ? col + "1A" : "transparent";
         return `<button class="otc-top-chip" data-id="${esc(String(c.player_id))}" data-name="${esc(c.name)}" title="Build around ${esc(c.name)}">` +
-          `<span class="otc-top-chip-pos" style="color:${col}">${esc(posLabel)}</span>` +
+          `<span class="otc-top-chip-pos" style="color:${col};background:${tint}">${esc(posLabel)}</span>` +
           `<span class="otc-top-chip-name">${esc(c.name)}</span>` +
           `<span class="otc-top-chip-team">${esc(c.team)}</span></button>`;
       }).join("");
@@ -9438,7 +9439,7 @@ window.initTradePage = function initTradePage(root = document) {
           }).join("");
         }
 
-        // Value grade badge
+        // Value grade badge (with acceptance % folded in: one pill, not two)
         const giveVal = giveAssets.reduce((s, a) => s + (a.value || 0), 0);
         const getVal  = getAssets.reduce((s, a) => s + (a.value || 0), 0) || (t.value || 0);
         const ratio   = giveVal > 0 ? getVal / giveVal : 0;
@@ -9456,16 +9457,8 @@ window.initTradePage = function initTradePage(root = document) {
             ? { label: "Fair value",    color: "#6366f1" }
             : { label: "Slight overpay",color: "#f59e0b" };
         }
-        const gradeHtml = `<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;background:${gradeInfo.color}15;border:1px solid ${gradeInfo.color}30;color:${gradeInfo.color};white-space:nowrap;">${gradeInfo.label}</span>`;
-
-        // Acceptance badge
-        const acpt = t.acceptance_pct != null ? t.acceptance_pct : null;
-        const acptColor = acpt >= 70 ? "#10b981" : acpt >= 50 ? "#6366f1" : "#f59e0b";
-        const acptHtml = acpt != null
-          ? `<span style="display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;background:${acptColor}15;border:1px solid ${acptColor}30;color:${acptColor};white-space:nowrap;">
-               <span style="width:5px;height:5px;border-radius:50%;background:${acptColor};flex-shrink:0;"></span>${acpt}% accept
-             </span>`
-          : "";
+        const acpt = t.acceptance_pct != null ? Math.round(t.acceptance_pct) : null;
+        const gradeHtml = `<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;background:${gradeInfo.color}15;border:1px solid ${gradeInfo.color}30;color:${gradeInfo.color};white-space:nowrap;">${gradeInfo.label}${acpt != null ? ` &middot; ${acpt}% accept` : ""}</span>`;
 
         // Win % + playoff odds - always prefer net_* fields (full trade swap effect)
         const wpd = (t.net_win_prob_delta ?? t.win_prob_delta) || 0;
@@ -9480,12 +9473,6 @@ window.initTradePage = function initTradePage(root = document) {
         const pName   = esc(t.partner_team || "");
         const partnerHtml = pName
           ? `<span class="otc-strategy-partner"><span class="dot" style="background:${pAColor};"></span>${pName}</span>`
-          : "";
-
-        // Partner-fit chip: why this package suits the other side's roster.
-        const fitNote = t.fit_note ? esc(t.fit_note) : "";
-        const fitHtml = fitNote
-          ? `<span class="otc-strategy-fit"><i class="fa-solid fa-bullseye"></i>${fitNote}</span>`
           : "";
 
         // Analyze button data
@@ -9504,11 +9491,10 @@ window.initTradePage = function initTradePage(root = document) {
               ${renderAssetHtml(giveAssets)}
             </div>
           </div>
-          ${fitHtml ? `<div class="otc-rt-fit">${fitHtml}</div>` : ""}
           ${window.brWhyLine(t.why_line)}
           <div class="otc-rt-footer">
             <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;min-width:0;">
-              ${gradeHtml}${acptHtml}${wpdHtml}${podHtml}
+              ${gradeHtml}${wpdHtml}${podHtml}
               ${partnerHtml}
             </div>
             <div style="display:flex;gap:6px;align-items:center;">

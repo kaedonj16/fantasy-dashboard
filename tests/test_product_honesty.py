@@ -355,6 +355,7 @@ def test_targets_tab_has_top_chips_strip():
     assert 'id="otcTopChipsWrap"' in TRADE_PAGE
     assert 'id="otcTopChips"' in TRADE_PAGE
     assert "Your top trade chips" in TRADE_PAGE
+    assert "Tap to search this player" in TRADE_PAGE
     # Rendered + wired in the hub JS: untouchables filtered, chip tap runs
     # the same search as the player dropdown. The strip collapses once a
     # player is picked and returns when the search box is cleared.
@@ -364,3 +365,20 @@ def test_targets_tab_has_top_chips_strip():
     assert 'runSearchForCurrent(chip.dataset.id, chip.dataset.name)' in APP_JS
     assert "_setTopChipsCollapsed(true)" in APP_JS
     assert 'if (!q.length) _setTopChipsCollapsed(false);' in APP_JS
+
+
+def test_strategy_cards_are_decluttered():
+    # The fit eyebrow ("From their WR surplus") duplicated the first sentence
+    # of the Why-this line, so it was removed from the card template. The
+    # accept % now folds into the value-grade pill instead of a second pill.
+    body = APP_JS[APP_JS.index("function _renderStrategyCards"):]
+    end = body.find("})();")
+    body = body[:end] if end != -1 else body
+    assert "otc-rt-fit" not in body
+    assert "acptHtml" not in body
+    assert "&middot; ${acpt}% accept" in body
+    assert "${gradeHtml}${wpdHtml}${podHtml}" in body
+
+
+def test_why_this_label_stacks_above_text():
+    assert "flex-direction:column" in TRADE_PAGE.split(".th-why {{")[1].split("}}")[0]

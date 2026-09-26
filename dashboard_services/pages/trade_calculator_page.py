@@ -861,14 +861,14 @@ def build_trade_calculator_body(
             }}
             /* ── Trade Hub: shared "why this" ranking-explanation line ── */
             .th-why {{
-              display:flex;gap:6px;align-items:flex-start;
+              display:flex;flex-direction:column;gap:2px;align-items:stretch;
               margin-top:8px;padding-top:8px;
               border-top:1px dashed var(--border);
               font-size:11.5px;line-height:1.45;color:var(--text-muted);
             }}
             .th-why-lbl {{
-              flex-shrink:0;font-weight:700;font-size:10px;letter-spacing:.04em;
-              text-transform:uppercase;color:var(--accent,#2563eb);padding-top:1px;
+              font-weight:700;font-size:10px;letter-spacing:.04em;
+              text-transform:uppercase;color:var(--accent,#2563eb);
             }}
             /* Stacked variant: label above full-width text (trade targets list). */
             .th-why-stacked {{
@@ -1078,7 +1078,10 @@ def build_trade_calculator_body(
                     </div>
                   </div>
                   <div id="otcTopChipsWrap" style="display:none;">
-                    <div class="otc-top-chips-label">Your top trade chips</div>
+                    <div class="otc-top-chips-head">
+                      <div class="otc-top-chips-label">Your top trade chips</div>
+                      <div class="otc-top-chips-hint">Tap to search this player</div>
+                    </div>
                     <div id="otcTopChips" class="otc-top-chips"></div>
                   </div>
                   <div id="suggResultsMeta" class="otc-sugg-meta" style="display:none;"></div>
