@@ -1,4 +1,4 @@
-"""Deploy-time warmup of league-independent shared caches.
+"""Deploy-time warmup of shared caches and recently-visited league contexts.
 
 Every deploy wipes the per-worker in-memory caches, so the first requests on
 each gunicorn worker pay full cold rebuilds (league context builds stall
@@ -6,8 +6,12 @@ requests for 7-28s). Gunicorn's ``post_fork`` hook (see ``gunicorn_conf.py``)
 runs :func:`warm_shared_caches` in a daemon thread inside each worker AFTER
 the port bind, so warmup never blocks the bind and never stalls a request.
 
-Only league-INDEPENDENT data is warmed here: per-league contexts depend on
-which leagues users visit and must not be pre-built in every worker.
+Two phases:
+- League-INDEPENDENT shared caches (players, projections, usage trends...).
+- Recently-VISITED league contexts: the leagues accounts actually opened in
+  the last week are warmed in the background too, so the first real visit
+  after a deploy finds them cached instead of building synchronously.
+
 Warming is best-effort and fail-soft: each step is isolated, exceptions are
 logged and swallowed, and the whole pass never raises.
 
@@ -62,6 +66,60 @@ def _load_model_value_table() -> None:
     get_model_value_table_cached()
 
 
+def _recent_league_visits(limit: int = 20, days: int = 7) -> list[tuple[str, str, int]]:
+    """Distinct (platform, league_id, season) visited in the last `days` days.
+
+    Returns at most `limit` rows, most-recent first. Empty on any DB error.
+    """
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT DISTINCT ON (platform, league_id, season)
+                    platform, league_id, season
+                FROM account_league_visits
+                WHERE last_visit_at > now() - (%s || ' days')::interval
+                ORDER BY platform, league_id, season, last_visit_at DESC
+                LIMIT %s
+                """,
+                (str(days), limit),
+            ).fetchall()
+        out = []
+        for r in rows:
+            try:
+                platform, league_id, season = r[0], r[1], int(r[2])
+            except (TypeError, ValueError, IndexError):
+                continue
+            if not platform or not league_id:
+                continue
+            out.append((str(platform), str(league_id), season))
+        return out
+    except Exception:
+        logger.debug("[startup-warmup] recent league visits lookup failed", exc_info=True)
+        return []
+
+
+def _warm_recent_leagues() -> None:
+    """Background-warm contexts for recently-visited leagues.
+
+    Uses app's _warm_league_ctx_async, which builds each context in a daemon
+    thread behind the per-process warm semaphore and the cross-worker
+    single-flight lock, so workers never duplicate provider work and never
+    exceed the memory budget for concurrent builds.
+    """
+    # Deferred import: app.py is fully loaded by the time post_fork fires.
+    from app import _warm_league_ctx_async
+    for platform, league_id, season in _recent_league_visits():
+        try:
+            _warm_league_ctx_async(platform, league_id, season)
+        except Exception:
+            logger.debug(
+                "[startup-warmup] warm dispatch failed for %s/%s",
+                platform, league_id, exc_info=True,
+            )
+
+
 def warm_shared_caches() -> None:
     """Warm league-independent caches in this worker. Never raises."""
     if not _ENABLED:
@@ -98,6 +156,7 @@ def warm_shared_caches() -> None:
         ("season_projections", _season_projections),
         ("usage_trends", _usage_trends),
         ("model_value_table", _load_model_value_table),
+        ("recent_leagues", _warm_recent_leagues),
     ):
         _step(name, fn)
 
