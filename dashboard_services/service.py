@@ -21,6 +21,7 @@ from dashboard_services.display_names import public_owner_label
 from dashboard_services.matchups import build_matchup_preview
 from dashboard_services.platform_api import get_matchups, get_transactions as platform_get_transactions
 from dashboard_services.players import build_roster_display_maps
+from dashboard_services.providers.base import ProviderUnavailableError
 from dashboard_services.team_crest import team_crest_data_uri
 from utils.utils import safe_owner_name
 
@@ -59,7 +60,16 @@ def matchup_cards_last_week(
       top_by_pos_dict: {'QB': [ {name, pts, nfl, team, owner}, ... up to 3 ], ...}
     """
     last_week = int(df_weekly["week"].max())
-    raw = get_matchups(platform, league_id, last_week, season) or []
+    try:
+        raw = get_matchups(platform, league_id, last_week, season) or []
+    except ProviderUnavailableError:
+        # A blocked/failed scoreboard fetch must not 503 the whole weekly hub;
+        # the top-scorers section just renders empty, like build_matchup_preview.
+        logger.warning(
+            "matchup_cards_last_week: get_matchups failed platform=%s league=%s week=%s; degrading",
+            platform, league_id, last_week,
+        )
+        return last_week, "", {}
 
     # group rows per matchup_id
     by_mid: dict[Any, list] = defaultdict(list)

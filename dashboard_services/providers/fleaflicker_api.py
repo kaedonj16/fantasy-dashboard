@@ -898,8 +898,15 @@ class FleaflickerProvider(ProviderAdapter):
                 # Optional detail endpoints fail independently in practice.  A
                 # single game boxscore must not poison the league-wide host
                 # breaker and prevent the next game's boxscore from loading.
+                # A 4xx means the host answered: method-specific edge/WAF blocks
+                # (e.g. an HTML 403 on FetchLeagueScoreboard while standings
+                # succeed) must not trip the host-wide breaker either.  Only
+                # network failures and 5xx trip it.
+                status = response.status_code if response is not None else None
+                host_might_be_down = status is None or status >= 500
                 if (isinstance(exc, ProviderUnavailableError)
-                        and method != "FetchLeagueBoxscore"):
+                        and method != "FetchLeagueBoxscore"
+                        and host_might_be_down):
                     _trip_host_down(auth, exc)
                 raise
             except ValueError as exc:

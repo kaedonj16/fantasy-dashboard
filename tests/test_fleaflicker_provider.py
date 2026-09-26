@@ -1589,3 +1589,41 @@ def test_call_does_not_retry_not_found(mock_get):
     with pytest.raises(LeagueNotFoundError):
         FleaflickerProvider()._call("FetchLeagueStandings", "14153", 2026)
     assert mock_get.call_count == 1
+
+
+def _html_403_response():
+    resp = Mock(status_code=403, headers={"Content-Type": "text/html"}, cookies={})
+    resp.text = "<html><body>Access Denied</body></html>"
+    return resp
+
+
+@patch("dashboard_services.providers.fleaflicker_api._request_get")
+def test_waf_403_does_not_trip_host_breaker(mock_get):
+    """A method-specific edge/WAF block (HTML 403 on one method while others
+    succeed) must not poison the host-wide breaker and take down every method."""
+    import dashboard_services.providers.fleaflicker_api as flea
+    mock_get.return_value = _html_403_response()
+    with pytest.raises(ProviderUnavailableError):
+        FleaflickerProvider()._call("FetchLeagueScoreboard", "92916", 2026, ttl=0)
+    # The per-key failure is cached, but the host breaker must stay clear.
+    flea._raise_if_host_down(None)
+
+
+@patch("dashboard_services.providers.fleaflicker_api._request_get")
+def test_5xx_still_trips_host_breaker(mock_get):
+    import dashboard_services.providers.fleaflicker_api as flea
+    mock_get.return_value = response("", status=500)
+    with pytest.raises(ProviderUnavailableError):
+        FleaflickerProvider()._call("FetchLeagueScoreboard", "92916", 2026, ttl=0)
+    with pytest.raises(ProviderUnavailableError):
+        flea._raise_if_host_down(None)
+
+
+@patch("dashboard_services.providers.fleaflicker_api._request_get")
+def test_network_failure_still_trips_host_breaker(mock_get):
+    import dashboard_services.providers.fleaflicker_api as flea
+    mock_get.side_effect = ProviderUnavailableError("Fleaflicker is temporarily unavailable.")
+    with pytest.raises(ProviderUnavailableError):
+        FleaflickerProvider()._call("FetchLeagueScoreboard", "92916", 2026, ttl=0)
+    with pytest.raises(ProviderUnavailableError):
+        flea._raise_if_host_down(None)
