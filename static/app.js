@@ -17467,11 +17467,20 @@ function _ssVerdictReasons(win, lose) {
   const cand = [];
   const pw = fw.proj || 0, pl = fl.proj || 0;
   if (pw > pl) cand.push({ imp: pl > 0 ? pw / pl : 2, txt: 'higher projection (+' + (pw - pl).toFixed(1) + ')' });
+  const sw = (win.stats && win.stats.start_sit) || {}, sl = (lose.stats && lose.stats.start_sit) || {};
   [['floor', 'a safer floor'], ['form', 'better recent form'], ['usage', 'a rising role'],
    ['vegas', 'a higher team total'], ['weather', 'a cleaner forecast'], ['avail', 'fewer injury concerns'],
    ['oline', 'a stronger offensive line']]
     .forEach(function (f) {
-      const mw = fw[f[0]] != null ? fw[f[0]] : 1, ml = fl[f[0]] != null ? fl[f[0]] : 1;
+      let mw = fw[f[0]] != null ? fw[f[0]] : 1, ml = fl[f[0]] != null ? fl[f[0]] : 1;
+      if (f[0] === 'vegas') {
+        // The score factor is a position-adjusted multiplier, but this reason
+        // names the higher *team total*: compare implied totals directly. A
+        // milder RB haircut can otherwise outrank a genuinely higher WR total.
+        const tw = sw.implied_total, tl = sl.implied_total;
+        if (tw == null || tl == null) return;
+        mw = tw; ml = tl;
+      }
       if (mw > ml + 1e-9) cand.push({ imp: ml > 0 ? mw / ml : 2, txt: f[1] });
     });
   cand.sort((x, y) => y.imp - x.imp);
