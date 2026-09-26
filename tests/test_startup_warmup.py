@@ -32,6 +32,7 @@ def stubbed_loaders(monkeypatch):
                         _rec("projections"))
     monkeypatch.setattr(wm, "get_usage_trends", _rec("usage_trends"))
     monkeypatch.setattr(sw, "_load_model_value_table", _rec("value_table"))
+    monkeypatch.setattr(sw, "_warm_recent_leagues", _rec("recent_leagues"))
     monkeypatch.setattr(sw, "_ENABLED", True)
     return calls
 
@@ -48,6 +49,7 @@ def test_warmup_runs_every_step_once(stubbed_loaders):
         "projections",
         "usage_trends",
         "value_table",
+        "recent_leagues",
     ]
     # season-scoped steps receive the season from nfl state
     for name, args, _kw in stubbed_loaders:
@@ -65,7 +67,7 @@ def test_one_failing_step_does_not_block_others(stubbed_loaders, monkeypatch):
     sw.warm_shared_caches()  # must not raise
     names = _names(stubbed_loaders)
     assert "players_index" not in names
-    assert len(names) == 4
+    assert len(names) == 5
 
 
 def test_disabled_warmup_is_noop(stubbed_loaders, monkeypatch):
@@ -81,4 +83,81 @@ def test_warmup_async_spawns_daemon_thread(stubbed_loaders):
     assert thread.daemon
     thread.join(timeout=30)
     assert not thread.is_alive()
-    assert len(stubbed_loaders) == 5
+    assert len(stubbed_loaders) == 6
+
+
+# ── Recent-league warmup ──────────────────────────────────────────────────
+
+def test_recent_league_visits_returns_empty_on_db_error(monkeypatch):
+    import dashboard_services.db as db
+
+    def _boom():
+        raise RuntimeError("db is down")
+
+    monkeypatch.setattr(db, "get_conn", _boom)
+    assert sw._recent_league_visits() == []
+
+
+def test_recent_league_visits_parses_rows(monkeypatch):
+    import dashboard_services.db as db
+
+    class _Conn:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def execute(self, _q, _params):
+            class _R:
+                def fetchall(self):
+                    return [
+                        ("sleeper", "12345", 2026),
+                        ("espn", "67890", 2026),
+                        ("sleeper", None, 2026),  # malformed: skipped
+                    ]
+            return _R()
+
+    monkeypatch.setattr(db, "get_conn", lambda: _Conn())
+    assert sw._recent_league_visits() == [
+        ("sleeper", "12345", 2026),
+        ("espn", "67890", 2026),
+    ]
+
+
+def test_warm_recent_leagues_dispatches_each_visit(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        sw, "_recent_league_visits",
+        lambda: [("sleeper", "1", 2026), ("yahoo", "2", 2026)],
+    )
+
+    import sys
+    import types
+
+    fake_app = types.ModuleType("app")
+    fake_app._warm_league_ctx_async = lambda p, l, s: calls.append((p, l, s))
+    monkeypatch.setitem(sys.modules, "app", fake_app)
+
+    sw._warm_recent_leagues()  # must not raise
+    assert calls == [("sleeper", "1", 2026), ("yahoo", "2", 2026)]
+
+
+def test_warm_recent_leagues_never_raises(monkeypatch):
+    monkeypatch.setattr(
+        sw, "_recent_league_visits",
+        lambda: [("sleeper", "1", 2026)],
+    )
+
+    import sys
+    import types
+
+    fake_app = types.ModuleType("app")
+
+    def _boom(*a):
+        raise RuntimeError("warm failed")
+
+    fake_app._warm_league_ctx_async = _boom
+    monkeypatch.setitem(sys.modules, "app", fake_app)
+
+    sw._warm_recent_leagues()  # must not raise
