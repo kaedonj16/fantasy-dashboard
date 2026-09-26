@@ -469,3 +469,240 @@
   .pricing-trial-card { flex-direction:column; align-items:stretch; text-align:center; }
   .paywall-trial-strip { flex-direction:column; align-items:stretch; text-align:center; }
 }
+
+/* ── PRO plan modal redesign ──────────────────────────────────────────
+   Premium banner header + elevated plan cards. Card rules are scoped to
+   .paywall-pricing (the modal grids) so the server-rendered /pricing page
+   (.pricing-plan-grid) keeps its own look. */
+
+/* Banner header (home PRO modal only) */
+#homeProModal .paywall-content {
+  max-width: 940px;
+}
+#homeProModal .home-pro-banner {
+  position: relative;
+  overflow: hidden;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 26px 28px 24px;
+  border-bottom: none;
+  border-radius: 16px 16px 0 0;
+  background: linear-gradient(120deg, #0a1c34 0%, #14386b 48%, #2563eb 100%);
+}
+#homeProModal .home-pro-banner::before {
+  content: "";
+  position: absolute;
+  width: 360px;
+  height: 360px;
+  right: -130px;
+  top: -170px;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.16), transparent 65%);
+  pointer-events: none;
+}
+#homeProModal .home-pro-banner-text {
+  position: relative;
+}
+.home-pro-eyebrow {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.72);
+}
+#homeProModal .home-pro-banner h2 {
+  color: #fff;
+  font-size: 26px;
+}
+#homeProModal .home-pro-banner h2 i {
+  color: #fbbf24;
+  margin-right: 8px;
+}
+.home-pro-tagline {
+  margin: 6px 0 0;
+  color: rgba(255, 255, 255, 0.84);
+  font-size: 14px;
+}
+#homeProModal .paywall-close {
+  position: relative;
+  flex-shrink: 0;
+  color: rgba(255, 255, 255, 0.8);
+}
+#homeProModal .paywall-close:hover {
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+}
+
+/* Plan step heading */
+#homeProModal .home-pro-step h3 {
+  text-align: center;
+  font-size: 24px;
+  margin-bottom: 8px;
+}
+.home-pro-plan-note {
+  text-align: center;
+  max-width: 560px;
+  margin: 0 auto;
+  font-size: 14px;
+  color: var(--text-muted);
+  line-height: 1.55;
+}
+
+/* Card grid: 3 plans, centered */
+.paywall-pricing {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  max-width: 880px;
+  margin-left: auto;
+  margin-right: auto;
+  padding-top: 14px;
+}
+.paywall-body .paywall-pricing {
+  margin-top: 20px;
+}
+
+/* Cards */
+.paywall-pricing .pricing-option {
+  position: relative;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 26px 22px 22px;
+  background: var(--card);
+  box-shadow: 0 2px 10px rgba(15, 30, 60, 0.05);
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+.paywall-pricing .pricing-option:hover {
+  transform: translateY(-3px);
+  border-color: color-mix(in srgb, var(--brand-blue, #2563eb) 55%, var(--border));
+  box-shadow: 0 14px 30px rgba(15, 30, 60, 0.12);
+}
+.paywall-pricing .pricing-option.featured {
+  border: 1.5px solid var(--brand-blue, #2563eb);
+  background: color-mix(in srgb, var(--brand-blue, #2563eb) 6%, var(--card));
+  box-shadow: 0 10px 30px color-mix(in srgb, var(--brand-blue, #2563eb) 22%, transparent);
+}
+
+/* Floating recommended badge */
+.paywall-pricing .pricing-badge {
+  position: absolute;
+  top: -13px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: linear-gradient(135deg, #122d4b, #2563eb);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 5px 14px;
+  border-radius: 12px;
+  white-space: nowrap;
+  box-shadow: 0 4px 10px rgba(37, 99, 235, 0.35);
+}
+
+/* Icon + name row */
+.pricing-plan-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.pricing-plan-icon {
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--brand-blue, #2563eb) 12%, transparent);
+  color: var(--brand-blue, #2563eb);
+  font-size: 20px;
+}
+.paywall-pricing .pricing-option.featured .pricing-plan-icon {
+  background: linear-gradient(135deg, #122d4b, #2563eb);
+  color: #fff;
+}
+.pricing-plan-name h4 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text);
+}
+.paywall-pricing .pricing-leagues {
+  margin: 3px 0 0;
+  font-size: 11.5px;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* Price */
+.paywall-pricing .pricing-price {
+  font-size: 34px;
+  margin: 0 0 2px;
+}
+.paywall-pricing .paywall-price-alt {
+  font-size: 12.5px;
+  margin-top: 4px;
+}
+
+/* Feature bullets */
+.pricing-bullets {
+  list-style: none;
+  margin: 14px 0 20px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  flex: 1;
+}
+.pricing-bullets li {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: var(--text);
+}
+.pricing-bullets i {
+  color: #16a34a;
+  font-size: 12px;
+  margin-top: 4px;
+  flex-shrink: 0;
+}
+[data-theme="dark"] .pricing-bullets i {
+  color: #4ade80;
+}
+
+/* CTA pinned to card bottom */
+.paywall-pricing .paywall-cta {
+  margin-top: auto;
+  border-radius: 10px;
+}
+
+/* Auth note + compare link under the cards */
+#homeProModal .paywall-auth-note {
+  margin-top: 18px;
+}
+#homeProModal .paywall-full-pricing {
+  margin-top: 8px;
+}
+
+/* Stack on small screens; most-popular plan first */
+@media (max-width: 920px) {
+  .paywall-pricing {
+    grid-template-columns: 1fr;
+    max-width: 440px;
+  }
+  .paywall-pricing .pricing-option.featured {
+    order: -1;
+  }
+  #homeProModal .home-pro-banner {
+    padding: 22px 20px 20px;
+  }
+  #homeProModal .home-pro-banner h2 {
+    font-size: 22px;
+  }
+}

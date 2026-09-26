@@ -211,9 +211,15 @@ window.brResolveProFeature = function brResolveProFeature(feature) {
 };
 
 const BR_PRO_PLANS = [
-  { key: 'starter', name: 'Starter', leagues: '1 league', annual: '$10/year', monthly: '$1.49/mo', coverage: 'PRO for you in 1 league of your choice. Pick it after checkout and change it anytime. Your league mates are not upgraded.', cta: 'Choose Starter' },
-  { key: 'all_pro', name: 'All-Pro', leagues: '5 leagues', annual: '$30/year', monthly: '$4.49/mo', coverage: 'PRO for you in up to 5 leagues. Pick them after checkout and change them anytime. Your league mates are not upgraded.', cta: 'Choose All-Pro', recommended: true },
-  { key: 'hall_of_fame', name: 'Hall of Fame', leagues: 'Unlimited leagues', annual: '$50/year', monthly: '$7.49/mo', coverage: 'PRO for you in every league you play. Your league mates are not upgraded.', cta: 'Choose Hall of Fame' }
+  { key: 'starter', name: 'Starter', leagues: '1 league', icon: 'fa-solid fa-seedling', annual: '$10/year', monthly: '$1.49/mo',
+    bullets: ['PRO for you in 1 league of your choice', 'Pick it after checkout and change it anytime', 'Your league mates are not upgraded'],
+    cta: 'Choose Starter' },
+  { key: 'all_pro', name: 'All-Pro', leagues: '5 leagues', icon: 'fa-solid fa-trophy', annual: '$30/year', monthly: '$4.49/mo', recommended: true,
+    bullets: ['PRO for you in up to 5 leagues', 'Pick them after checkout and change them anytime', 'Your league mates are not upgraded'],
+    cta: 'Choose All-Pro' },
+  { key: 'hall_of_fame', name: 'Hall of Fame', leagues: 'Unlimited leagues', icon: 'fa-solid fa-medal', annual: '$50/year', monthly: '$7.49/mo',
+    bullets: ['PRO for you in every league you play', 'Your league mates are not upgraded'],
+    cta: 'Choose Hall of Fame' }
 ];
 
 /** Plans that need a league chosen before checkout (seeds the first PRO slot).
@@ -227,11 +233,20 @@ function proPlanCards(options) {
     const action = options.dataPlan
       ? `data-plan="${plan.key}"`
       : `onclick="initiatePurchase('${plan.key}', this)"`;
+    const bullets = (plan.bullets || []).map(function (b) {
+      return `<li><i class="fa-solid fa-check" aria-hidden="true"></i><span>${b}</span></li>`;
+    }).join('');
     return `<article class="pricing-option${plan.recommended ? ' featured' : ''}" data-plan-card="${plan.key}">
-      <div class="pricing-header"><h4>${plan.name}</h4>${plan.recommended ? '<div class="pricing-badge">Recommended</div>' : ''}</div>
-      <p class="pricing-leagues">${plan.leagues}</p>
-      <div class="pricing-price">${plan.annual.replace('/year', '<span>/year</span>')}<span class="paywall-price-alt"> or ${plan.monthly}</span></div>
-      <p class="pricing-desc">${plan.coverage}</p>
+      ${plan.recommended ? '<div class="pricing-badge">Recommended</div>' : ''}
+      <div class="pricing-plan-top">
+        <span class="pricing-plan-icon" aria-hidden="true"><i class="${plan.icon || 'fa-solid fa-star'}"></i></span>
+        <div class="pricing-plan-name">
+          <h4>${plan.name}</h4>
+          <p class="pricing-leagues">${plan.leagues}</p>
+        </div>
+      </div>
+      <div class="pricing-price">${plan.annual.replace('/year', '<span>/year</span>')}<span class="paywall-price-alt">or ${plan.monthly} billed monthly</span></div>
+      <ul class="pricing-bullets">${bullets}</ul>
       <button type="button" class="btn ${plan.recommended ? 'btn-primary' : 'btn-secondary'} paywall-cta" ${action}>${plan.cta}</button>
     </article>`;
   }).join('');
@@ -1250,14 +1265,18 @@ function openHomeProModal() {
   modal.innerHTML = `
     <div class="paywall-overlay"></div>
     <div class="paywall-content">
-      <div class="paywall-header">
-        <h2 id="homeProModalTitle"><i class="fa-solid fa-unlock" aria-hidden="true"></i> Unlock PRO</h2>
+      <div class="paywall-header home-pro-banner">
+        <div class="home-pro-banner-text">
+          <p class="home-pro-eyebrow">BR Fantasy PRO</p>
+          <h2 id="homeProModalTitle"><i class="fa-solid fa-crown" aria-hidden="true"></i> Unlock PRO</h2>
+          <p class="home-pro-tagline">Sharper decisions for every league you run.</p>
+        </div>
         <button type="button" class="paywall-close" aria-label="Close">&times;</button>
       </div>
       <div class="paywall-body">
         <div id="homeProStepPlan" class="home-pro-step">
           <h3>Choose a plan</h3>
-          <p>A Google account is required to subscribe. After checkout, assign your PRO leagues from the Your PRO card on the pricing page.</p>
+          <p class="home-pro-plan-note">A Google account is required to subscribe. After checkout, assign your PRO leagues from the Your PRO card on the pricing page.</p>
           <div class="paywall-pricing">${proPlanCards({ dataPlan: true })}</div>
           <p class="paywall-auth-note"><i class="fa-brands fa-google" aria-hidden="true"></i> Google sign-in is required at checkout.</p>
           <a class="paywall-full-pricing" href="/pricing">Compare features and see sample previews</a>
