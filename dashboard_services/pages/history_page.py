@@ -2203,10 +2203,13 @@ def render_wrapped_share_page(*, overlay_html: str, share_data: dict | None,
                               logo_url: str) -> str:
     """Standalone public HTML page for a shared Wrapped deck (no auth).
 
-    The stored overlay markup is injected verbatim and auto-played with the
-    public bootstrap variant. noindex keeps league decks out of search; OG
-    tags make the link unfurl in iMessage / social apps.
+    The stored overlay markup is sanitized (active content stripped) before
+    injection and auto-played with the public bootstrap variant. noindex
+    keeps league decks out of search; OG tags make the link unfurl in
+    iMessage / social apps.
     """
+    from dashboard_services.wrapped_shares import sanitize_overlay_html
+    overlay_html = sanitize_overlay_html(overlay_html or "")
     data = share_data or {}
     title = label or "Fantasy Wrapped"
     desc = _wrapped_share_og_description(data)

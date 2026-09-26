@@ -44,7 +44,7 @@ def api_wrapped_share_create():
     Body: {kind: "season"|"weekly", ns, overlay_html, share_data}.
     Returns {"url": "<public url>"}.
     """
-    from dashboard_services.wrapped_shares import create_wrapped_share
+    from dashboard_services.wrapped_shares import create_wrapped_share, sanitize_overlay_html
 
     try:
         body = request.get_json(force=True, silent=True) or {}
@@ -59,6 +59,11 @@ def api_wrapped_share_create():
     if kind not in _VALID_KINDS:
         return jsonify({"error": "kind must be 'season' or 'weekly'"}), 400
     if not isinstance(overlay_html, str) or "wrapped-slide" not in overlay_html:
+        return jsonify({"error": "overlay_html missing or invalid"}), 400
+    # The overlay is untrusted client HTML rendered verbatim on a public page:
+    # strip scripts, event handlers, and unsafe URLs before storing.
+    overlay_html = sanitize_overlay_html(overlay_html)
+    if "wrapped-slide" not in overlay_html:
         return jsonify({"error": "overlay_html missing or invalid"}), 400
     if len(overlay_html.encode("utf-8")) > MAX_OVERLAY_BYTES:
         return jsonify({"error": "Deck too large"}), 413
