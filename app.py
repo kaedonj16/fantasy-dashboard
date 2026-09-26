@@ -1833,7 +1833,7 @@ FORM_BODY = """
         <div class="wv-cx-group">
           <div class="wv-cx-group-head">
             <div class="wv-cx-group-title">RB <span>(2 starters)</span></div>
-            <div class="wv-cx-verdict">Start <b>Gibbs</b> and <b>Jeanty</b>. Flex <b>London</b> over <b>Reed</b>.</div>
+            <div class="wv-cx-verdict">Start <b>Gibbs</b> and <b>Jeanty</b>. Flex <b>London</b> over <b>Kamara</b>.</div>
           </div>
           <div class="wv-cx-card">
             <div class="wv-cx-row-wrap">
@@ -1863,8 +1863,8 @@ FORM_BODY = """
               <button type="button" class="wv-cx-row" aria-expanded="false">
                 <span class="wv-cx-badge wv-cx-sit">SIT</span>
                 <span class="wv-cx-main">
-                  <span class="wv-cx-name">Jayden Reed</span>
-                  <span class="wv-cx-why">@ DAL <span class="wv-cx-chip bad">#28 hardest</span></span>
+                  <span class="wv-cx-name">Alvin Kamara</span>
+                  <span class="wv-cx-why">@ TB <span class="wv-cx-chip bad">#24 hardest</span></span>
                 </span>
                 <span class="wv-cx-proj"><span class="wv-cx-proj-num">9.3</span><span class="wv-cx-proj-lbl">PROJ</span></span>
                 <span class="wv-cx-chev" aria-hidden="true">&rsaquo;</span>

@@ -211,10 +211,15 @@ window.brResolveProFeature = function brResolveProFeature(feature) {
 };
 
 const BR_PRO_PLANS = [
-  { key: 'starter', name: 'Starter', price: '$10/year', coverage: 'PRO for you in 1 league of your choice. Pick it after checkout and change it anytime.', cta: 'Choose Starter' },
-  { key: 'all_pro', name: 'All-Pro', price: '$30/year', coverage: 'PRO for you in up to 5 leagues. Pick them after checkout and change them anytime.', cta: 'Choose All-Pro', recommended: true },
-  { key: 'hall_of_fame', name: 'Hall of Fame', price: '$50/year', coverage: 'PRO for you in every league you play. Your league mates are not upgraded.', cta: 'Choose Hall of Fame' }
+  { key: 'starter', name: 'Starter', leagues: '1 league', annual: '$10/year', monthly: '$1.49/mo', coverage: 'PRO for you in 1 league of your choice. Pick it after checkout and change it anytime.', cta: 'Choose Starter' },
+  { key: 'all_pro', name: 'All-Pro', leagues: '5 leagues', annual: '$30/year', monthly: '$4.49/mo', coverage: 'PRO for you in up to 5 leagues. Pick them after checkout and change them anytime.', cta: 'Choose All-Pro', recommended: true },
+  { key: 'hall_of_fame', name: 'Hall of Fame', leagues: 'Unlimited leagues', annual: '$50/year', monthly: '$7.49/mo', coverage: 'PRO for you in every league you play. Your league mates are not upgraded.', cta: 'Choose Hall of Fame' }
 ];
+
+/** Plans that need a league chosen before checkout (seeds the first PRO slot).
+ * Empty: no current plan requires a league at checkout. Starter/All-Pro buyers
+ * pick their slot leagues after purchase from the Your PRO card on /pricing. */
+const BR_LEAGUE_PLANS = {};
 
 function proPlanCards(options) {
   options = options || {};
@@ -224,7 +229,8 @@ function proPlanCards(options) {
       : `onclick="initiatePurchase('${plan.key}', this)"`;
     return `<article class="pricing-option${plan.recommended ? ' featured' : ''}" data-plan-card="${plan.key}">
       <div class="pricing-header"><h4>${plan.name}</h4>${plan.recommended ? '<div class="pricing-badge">Recommended</div>' : ''}</div>
-      <div class="pricing-price">${plan.price.replace('/year', '<span>/year</span>')}</div>
+      <p class="pricing-leagues">${plan.leagues}</p>
+      <div class="pricing-price">${plan.annual.replace('/year', '<span>/year</span>')}<span class="paywall-price-alt"> or ${plan.monthly}</span></div>
       <p class="pricing-desc">${plan.coverage}</p>
       <button type="button" class="btn ${plan.recommended ? 'btn-primary' : 'btn-secondary'} paywall-cta" ${action}>${plan.cta}</button>
     </article>`;
@@ -397,6 +403,11 @@ function _startGoogleSubscribe(planType, triggerBtn, extra) {
   // A league open on the page seeds the first PRO league slot; it is never
   // required at checkout under the new catalog.
   const leagueId = extra.leagueId || _checkoutLeagueId();
+  const needsLeague = !!BR_LEAGUE_PLANS[planType];
+  if (needsLeague && !leagueId) {
+    _showIdentifyModal(planType, triggerBtn);
+    return;
+  }
   const payload = {
     plan: planType,
     league_id: leagueId || '',
@@ -460,10 +471,12 @@ async function initiatePurchase(type, btn) {
   // Build a destination that lands in the league dashboard after payment
   const _platform = ctx.platform || 'sleeper';
   const _season   = ctx.season   || new Date().getFullYear();
-  const _welcome = 'personal';
+  const _welcome = 'personal';  // All current plans are buyer-only coverage.
+  // No league context at checkout: land on /pricing so the Your PRO card
+  // can nudge the buyer to assign their league slots.
   const returnUrl = leagueId
     ? `/${_platform}/${_season}/${leagueId}/dashboard?new_subscriber=1&welcome=${_welcome}`
-    : `${window.location.pathname}?new_subscriber=1&welcome=${_welcome}`;
+    : `/pricing?new_subscriber=1&welcome=${_welcome}`;
 
   if (btn) {
     btn.disabled = true;
@@ -897,15 +910,19 @@ function _showIdentifyModal(planType, triggerBtn) {
   const existing = document.getElementById('_identifyModal');
   if (existing) existing.remove();
 
-  // New-catalog plans never require a league before checkout; the identify
-  // modal always routes to plain Google sign-in. The league-specific
-  // branches below are inert while needsLeague is false.
-  const needsLeague = false;
-  const platformTabs = '';
+  const needsLeague = !!BR_LEAGUE_PLANS[planType];
   const next = encodeURIComponent(window.location.pathname + window.location.search);
   const yahooOn = !!document.querySelector('#linkModal .link-tab[data-lp="yahoo"]');
   const googleCtl =
     `<a class="google-continue-btn" id="_identifyGoogle" href="/auth/google?intent=login&amp;next=${next}"><span class="google-button-title">Continue with Google</span></a>`;
+  const platformTabs = needsLeague ? `
+      <div class="link-tabs" id="_identifyPlatTabs" role="tablist" style="margin-bottom:14px;">
+        <button type="button" class="link-tab active" data-lp="sleeper">Sleeper</button>
+        <button type="button" class="link-tab" data-lp="espn">ESPN</button>
+        <button type="button" class="link-tab" data-lp="mfl">MFL</button>
+        <button type="button" class="link-tab" data-lp="fleaflicker">Fleaflicker</button>
+        ${yahooOn ? '<button type="button" class="link-tab" data-lp="yahoo">Yahoo</button>' : ''}
+      </div>` : '';
 
   const modal = document.createElement('div');
   modal.id = '_identifyModal';
@@ -1153,10 +1170,12 @@ async function _initiatePurchaseWithLeague(type, btn, leagueId) {
   const ctx = window.__brctx || {};
   const platform = ctx.platform || 'sleeper';
   const season   = ctx.season   || new Date().getFullYear();
-  const _welcome = 'personal';
+  const _welcome = 'personal';  // All current plans are buyer-only coverage.
+  // No league context at checkout: land on /pricing so the Your PRO card
+  // can nudge the buyer to assign their league slots.
   const returnUrl = leagueId
     ? `/${platform}/${season}/${leagueId}/dashboard?new_subscriber=1&welcome=${_welcome}`
-    : (window.location.pathname + `?new_subscriber=1&welcome=${_welcome}`);
+    : `/pricing?new_subscriber=1&welcome=${_welcome}`;
 
   if (btn) {
     btn.disabled = true;
@@ -1212,13 +1231,6 @@ window._initiatePurchaseWithLeague = _initiatePurchaseWithLeague;
 })();
 
 function openHomeProModal() {
-  const PLAN_LABELS = BR_PRO_PLANS.reduce(function (labels, plan) {
-    labels[plan.key] = plan.name + ' · ' + plan.price;
-    return labels;
-  }, {});
-  const NEEDS_SEASON = { mfl: true, fleaflicker: true };
-  const year = (window.__brctx && window.__brctx.season) || new Date().getFullYear();
-
   // CRITICAL: Properly close existing paywalls before removing them to restore inert state
   const existingPaywalls = document.querySelectorAll('.paywall-modal');
   if (existingPaywalls.length > 0) {
@@ -1243,59 +1255,12 @@ function openHomeProModal() {
         <button type="button" class="paywall-close" aria-label="Close">&times;</button>
       </div>
       <div class="paywall-body">
-        <ol class="home-pro-progress" aria-label="PRO signup steps">
-          <li class="is-active" data-home-pro-step="plan">1. Plan</li>
-          <li data-home-pro-step="league">2. League</li>
-        </ol>
         <div id="homeProStepPlan" class="home-pro-step">
           <h3>Choose a plan</h3>
-          <p>Then enter your league. A Google account is required to subscribe.</p>
+          <p>A Google account is required to subscribe. After checkout, assign your PRO leagues from the Your PRO card on the pricing page.</p>
           <div class="paywall-pricing">${proPlanCards({ dataPlan: true })}</div>
           <p class="paywall-auth-note"><i class="fa-brands fa-google" aria-hidden="true"></i> Google sign-in is required at checkout.</p>
           <a class="paywall-full-pricing" href="/pricing">Compare features and see sample previews</a>
-        </div>
-        <div id="homeProStepLeague" class="home-pro-step" hidden>
-          <button type="button" id="homeProBack" class="home-pro-back">Change plan</button>
-          <p class="home-pro-picked">Selected: <strong id="homeProPickedLabel"></strong></p>
-          <div id="homeProSavedWrap" hidden>
-            <label for="homeProSavedSelect">Your saved leagues</label>
-            <select id="homeProSavedSelect"><option value="">Choose a saved league</option></select>
-            <p class="home-pro-or">or connect a different league</p>
-          </div>
-          <div class="home-pro-platforms" role="radiogroup" aria-label="League platform">
-            <button type="button" class="home-pro-platform is-active" data-platform="sleeper" aria-pressed="true">Sleeper</button>
-            <button type="button" class="home-pro-platform" data-platform="espn" aria-pressed="false">ESPN</button>
-            <button type="button" class="home-pro-platform" data-platform="yahoo" aria-pressed="false">Yahoo</button>
-            <button type="button" class="home-pro-platform" data-platform="mfl" aria-pressed="false">MFL</button>
-            <button type="button" class="home-pro-platform" data-platform="fleaflicker" aria-pressed="false">Fleaflicker</button>
-          </div>
-          <div id="homeProSleeperFields" class="home-pro-fields">
-            <label for="homeProSleeperUser">Sleeper username</label>
-            <div class="home-pro-inline">
-              <input type="text" id="homeProSleeperUser" autocomplete="username" placeholder="Your Sleeper username">
-              <button type="button" id="homeProFindLeagues">Find leagues</button>
-            </div>
-            <div id="homeProSleeperLeagueWrap" hidden>
-              <label for="homeProSleeperLeague">Choose league</label>
-              <select id="homeProSleeperLeague"><option value="">Select a league</option></select>
-            </div>
-          </div>
-          <div id="homeProIdFields" class="home-pro-fields" hidden>
-            <label for="homeProLeagueId">League ID</label>
-            <input type="text" id="homeProLeagueId" autocomplete="off" placeholder="From your league URL">
-            <div id="homeProSeasonWrap" hidden>
-              <label for="homeProSeason">Season</label>
-              <input type="text" id="homeProSeason" inputmode="numeric" value="${year}">
-            </div>
-          </div>
-          <p id="homeProError" class="home-pro-error" hidden></p>
-          <div class="home-pro-actions">
-            <button type="button" id="homeProGoogle" class="google-continue-btn">
-              <span class="google-button-title">Continue with Google</span>
-              <span>Creates your account and opens secure checkout</span>
-            </button>
-            <button type="button" id="homeProCheckout" class="home-pro-checkout-btn" hidden>Continue to checkout</button>
-          </div>
         </div>
       </div>
     </div>`;
@@ -1304,26 +1269,6 @@ function openHomeProModal() {
   const inertRoot = document.getElementById('app-scale') || document.getElementById('page-root');
   if (inertRoot) inertRoot.setAttribute('inert', '');
   const prevFocus = document.activeElement;
-  const stepPlan = modal.querySelector('#homeProStepPlan');
-  const stepLeague = modal.querySelector('#homeProStepLeague');
-  const pickedLabel = modal.querySelector('#homeProPickedLabel');
-  const errorEl = modal.querySelector('#homeProError');
-  const savedWrap = modal.querySelector('#homeProSavedWrap');
-  const savedSelect = modal.querySelector('#homeProSavedSelect');
-  const sleeperFields = modal.querySelector('#homeProSleeperFields');
-  const idFields = modal.querySelector('#homeProIdFields');
-  const seasonWrap = modal.querySelector('#homeProSeasonWrap');
-  const sleeperUser = modal.querySelector('#homeProSleeperUser');
-  const sleeperLeagueWrap = modal.querySelector('#homeProSleeperLeagueWrap');
-  const sleeperLeague = modal.querySelector('#homeProSleeperLeague');
-  const leagueIdInput = modal.querySelector('#homeProLeagueId');
-  const seasonInput = modal.querySelector('#homeProSeason');
-  const findBtn = modal.querySelector('#homeProFindLeagues');
-  const googleBtn = modal.querySelector('#homeProGoogle');
-  const checkoutBtn = modal.querySelector('#homeProCheckout');
-  const progressItems = modal.querySelectorAll('[data-home-pro-step]');
-  let selectedPlan = '';
-  let selectedPlatform = 'sleeper';
 
   function closeModal() {
     modal.remove();
@@ -1349,181 +1294,20 @@ function openHomeProModal() {
   modal.querySelector('.paywall-overlay').addEventListener('click', closeModal);
   modal.querySelector('.paywall-close').addEventListener('click', closeModal);
 
-  function currentSeason() {
-    const raw = (seasonInput && seasonInput.value) || year;
-    return parseInt(raw, 10) || new Date().getFullYear();
-  }
-  function showError(msg) {
-    if (!errorEl) return;
-    errorEl.hidden = !msg;
-    errorEl.textContent = msg || '';
-  }
-  function setStep(step) {
-    const league = step === 'league';
-    if (stepPlan) stepPlan.hidden = league;
-    if (stepLeague) stepLeague.hidden = !league;
-    progressItems.forEach(function (item) {
-      item.classList.toggle('is-active', item.getAttribute('data-home-pro-step') === step);
-    });
-    showError('');
-  }
-  function setPlatform(platform) {
-    selectedPlatform = platform;
-    modal.querySelectorAll('.home-pro-platform').forEach(function (btn) {
-      const on = btn.getAttribute('data-platform') === platform;
-      btn.classList.toggle('is-active', on);
-      btn.setAttribute('aria-pressed', on ? 'true' : 'false');
-    });
-    const sleeper = platform === 'sleeper';
-    if (sleeperFields) sleeperFields.hidden = !sleeper;
-    if (idFields) idFields.hidden = sleeper;
-    if (seasonWrap) seasonWrap.hidden = !NEEDS_SEASON[platform];
-  }
-  function collectPayload() {
-    const savedVal = savedSelect && savedSelect.value ? savedSelect.value : '';
-    if (savedVal) {
-      const opt = savedSelect.options[savedSelect.selectedIndex];
-      return {
-        plan: selectedPlan,
-        platform: opt.getAttribute('data-platform') || 'sleeper',
-        league_id: savedVal,
-        season: parseInt(opt.getAttribute('data-season') || '', 10) || currentSeason(),
-        name: (opt.textContent || '').trim() || null,
-        username: (sleeperUser && sleeperUser.value || '').trim() || null,
-      };
-    }
-    if (selectedPlatform === 'sleeper') {
-      const opt = sleeperLeague && sleeperLeague.options[sleeperLeague.selectedIndex];
-      return {
-        plan: selectedPlan,
-        platform: 'sleeper',
-        league_id: (sleeperLeague && sleeperLeague.value || '').trim(),
-        season: currentSeason(),
-        name: opt && opt.textContent ? opt.textContent.trim() : null,
-        username: (sleeperUser && sleeperUser.value || '').trim() || null,
-      };
-    }
-    return {
-      plan: selectedPlan,
-      platform: selectedPlatform,
-      league_id: (leagueIdInput && leagueIdInput.value || '').trim(),
-      season: currentSeason(),
-      username: null,
-      name: null,
-    };
-  }
-  function validatePayload(payload) {
-    if (!payload.plan) return 'Pick a plan to continue.';
-    if (!payload.league_id) return 'Enter your league info to continue.';
-    if (payload.platform === 'sleeper' && !payload.username && !(savedSelect && savedSelect.value)) {
-      return 'Enter your Sleeper username and choose a league.';
-    }
-    return '';
-  }
-  function loadSavedLeagues() {
-    if (!window._hasAccount || !savedWrap || !savedSelect) return;
-    window.brGetMyLeagues({ force: false })
-      .then(function (data) {
-        const leagues = (data && data.leagues) || [];
-        if (!leagues.length) return;
-        savedSelect.innerHTML = '<option value="">Choose a saved league</option>' + leagues.map(function (lg) {
-          const id = lg.league_id || lg.id || '';
-          const name = lg.name || lg.league_name || id;
-          const plat = lg.platform || 'sleeper';
-          const season = lg.season || '';
-          const label = season ? (name + ' (' + plat + ' · ' + season + ')') : (name + ' (' + plat + ')');
-          return '<option value="' + String(id).replace(/"/g, '') + '" data-platform="' + plat + '" data-season="' + season + '">' + label + '</option>';
-        }).join('');
-        savedWrap.hidden = false;
-      })
-      .catch(function () {});
-  }
-
+  // No plan needs a league at checkout: picking a plan goes straight to the
+  // Google sign-in / checkout flow. Starter/All-Pro buyers assign their league
+  // slots from the Your PRO card on /pricing after purchase.
   modal.querySelectorAll('[data-plan]').forEach(function (btn) {
     btn.addEventListener('click', function () {
-      selectedPlan = btn.getAttribute('data-plan') || '';
-      if (pickedLabel) pickedLabel.textContent = PLAN_LABELS[selectedPlan] || selectedPlan;
-      if (checkoutBtn) checkoutBtn.hidden = !window._hasAccount;
-      setStep('league');
-      loadSavedLeagues();
+      const selectedPlan = btn.getAttribute('data-plan') || '';
+      if (window._hasAccount) {
+        initiatePurchase(selectedPlan, btn);
+      } else {
+        _startGoogleSubscribe(selectedPlan, btn);
+      }
     });
-  });
-  modal.querySelector('#homeProBack').addEventListener('click', function () { setStep('plan'); });
-  modal.querySelectorAll('.home-pro-platform').forEach(function (btn) {
-    btn.addEventListener('click', function () {
-      setPlatform(btn.getAttribute('data-platform') || 'sleeper');
-    });
-  });
-  findBtn.addEventListener('click', async function () {
-    const username = (sleeperUser && sleeperUser.value || '').trim();
-    if (!username) { showError('Enter a Sleeper username.'); return; }
-    showError('');
-    findBtn.disabled = true;
-    findBtn.textContent = 'Loading...';
-    try {
-      const res = await fetch('/api/sleeper-user-leagues?username=' + encodeURIComponent(username));
-      const data = await res.json();
-      if (!res.ok || !data.ok) throw new Error(data.error || 'Unable to load leagues.');
-      const leagues = data.leagues || [];
-      if (!leagues.length) throw new Error('No leagues found for that username.');
-      sleeperLeague.innerHTML = '<option value="">Select a league</option>' + leagues.map(function (lg) {
-        const id = lg.league_id || lg.id || '';
-        return '<option value="' + String(id).replace(/"/g, '') + '">' + (lg.name || 'League') + '</option>';
-      }).join('');
-      sleeperLeagueWrap.hidden = false;
-    } catch (err) {
-      showError(err.message || 'Unable to load leagues.');
-      sleeperLeagueWrap.hidden = true;
-    } finally {
-      findBtn.disabled = false;
-      findBtn.textContent = 'Find leagues';
-    }
-  });
-  googleBtn.addEventListener('click', async function () {
-    const payload = collectPayload();
-    const invalid = validatePayload(payload);
-    if (invalid) { showError(invalid); return; }
-    showError('');
-    googleBtn.disabled = true;
-    try {
-      const res = await fetch('/api/pro-signup/pending', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      const data = await res.json();
-      if (!res.ok || !data.ok) throw new Error(data.error || 'Could not save this signup.');
-      window.location.href = data.auth_url || '/auth/google?intent=onboarding&next=/pro/resume-checkout';
-    } catch (err) {
-      showError(err.message || 'Unable to continue with Google.');
-      googleBtn.disabled = false;
-    }
-  });
-  checkoutBtn.addEventListener('click', async function () {
-    const payload = collectPayload();
-    const invalid = validatePayload(payload);
-    if (invalid) { showError(invalid); return; }
-    showError('');
-    if (window.__brctx) {
-      window.__brctx.platform = payload.platform;
-      window.__brctx.season = payload.season;
-      window.__brctx.leagueId = payload.league_id;
-    }
-    if (!_hasGoogleAccount()) {
-      _startGoogleSubscribe(payload.plan, checkoutBtn, {
-        leagueId: payload.league_id,
-        platform: payload.platform,
-        season: payload.season,
-        username: payload.username,
-      });
-      return;
-    }
-    if (typeof _initiatePurchaseWithLeague === 'function') {
-      _initiatePurchaseWithLeague(payload.plan, checkoutBtn, payload.league_id);
-    }
   });
 
-  setPlatform('sleeper');
   const first = focusables()[0];
   if (first) try { first.focus(); } catch (_) {}
 }
