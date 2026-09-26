@@ -1993,7 +1993,7 @@ FORM_BODY = """
       <header class="home-pro-head">
         <span class="home-pro-eyebrow">Unlock PRO</span>
         <h2 class="home-pro-title" id="homeProTitle">The tools that decide trades, waivers, and playoffs</h2>
-        <p class="home-pro-lead"><strong>From $5 a year.</strong> PRO unlocks roster-aware analysis built for your league, not generic advice. Pick a plan, connect your league, done.</p>
+        <p class="home-pro-lead"><strong>From $10 a year.</strong> PRO unlocks roster-aware analysis built for your league, not generic advice. Pick a plan, connect your league, done.</p>
       </header>
       <ul class="home-pro-benefits">
         <li>
