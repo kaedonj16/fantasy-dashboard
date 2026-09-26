@@ -353,10 +353,11 @@ def privacy_page(platform: Optional[str] = None, season: Optional[int] = None,
               <div class="static-section-title">Cookies</div>
               <p>
                 Essential cookies maintain your login session, subscription access, preferences,
-                and security. Where required, the consent message configured in Google's
-                Privacy &amp; messaging controls lets you accept, reject, or manage non-essential
-                advertising cookies. Availability of that control depends on the message being
-                published in the site's AdSense account. You can also clear cookies in your browser.
+                and security. Where required, the consent message powered by Google Funding Choices
+                and configured in Privacy &amp; messaging controls lets you accept,
+                reject, or manage non-essential advertising cookies. Availability of that
+                control depends on the message being published in the site's AdSense account.
+                You can also clear cookies in your browser.
                 Disabling essential cookies may prevent account features from working.
               </p>
             </div>
