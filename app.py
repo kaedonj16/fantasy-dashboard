@@ -904,29 +904,6 @@ _STATIC_SECURITY_HEADERS = {
 
 
 @app.after_request
-def _strip_html_comments(response):
-    """Remove developer HTML comments from served pages.
-
-    Reviewers and crawlers see raw page text; internal notes left in comments
-    read as sloppy and can leak implementation detail. Comments inside
-    script/style/pre/textarea blocks are left alone (there `<!--` is content).
-    """
-    try:
-        if not (response.content_type or "").startswith("text/html"):
-            return response
-        if response.is_streamed or response.direct_passthrough:
-            return response
-        html = response.get_data(as_text=True)
-        if "<!--" not in html:
-            return response
-        from utils.html_sanitize import strip_html_comments
-        response.set_data(strip_html_comments(html))
-    except Exception:
-        logger.debug("html comment strip failed", exc_info=True)
-    return response
-
-
-@app.after_request
 def _add_security_headers(response):
     """Attach CSP + hardening headers to every response. Uses setdefault so any
     endpoint that intentionally set its own value (e.g. a stricter one) wins."""
@@ -1052,6 +1029,32 @@ if Compress is not None:
     # off for large immutable statics, which are CDN/edge-cached after the first hit.
     app.config["COMPRESS_BR_LEVEL"] = 6
     _compress.init_app(app)
+
+# NOTE: this handler MUST stay registered after Flask-Compress (above).
+# after_request handlers run in reverse registration order, so this strips
+# comments BEFORE compression. Registered earlier, it would see gzipped bytes,
+# get_data(as_text=True) would raise, and comments would silently survive.
+@app.after_request
+def _strip_html_comments(response):
+    """Remove developer HTML comments from served pages.
+
+    Reviewers and crawlers see raw page text; internal notes left in comments
+    read as sloppy and can leak implementation detail. Comments inside
+    script/style/pre/textarea blocks are left alone (there `<!--` is content).
+    """
+    try:
+        if not (response.content_type or "").startswith("text/html"):
+            return response
+        if response.is_streamed or response.direct_passthrough:
+            return response
+        html = response.get_data(as_text=True)
+        if "<!--" not in html:
+            return response
+        from utils.html_sanitize import strip_html_comments
+        response.set_data(strip_html_comments(html))
+    except Exception:
+        logger.debug("html comment strip failed", exc_info=True)
+    return response
 
 try:
     init_value_history_db()
