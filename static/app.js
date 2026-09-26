@@ -2362,39 +2362,21 @@ window._brPromoEligible = function () {
     return out;
   }
 
-  // Gather every league the signed-in user belongs to (default: subscribe to
-  // all of them), each with its platform. Falls back to just the current-page
-  // league if lookup fails.
-  async function _collectUserLeagues(currentLeague, currentPlatform) {
-    var out = [];
+  // Gather every league_id the signed-in user belongs to (default: subscribe to
+  // all of them). Falls back to just the current-page league if lookup fails.
+  async function _collectUserLeagueIds(currentLeague) {
+    var ids = [];
     try {
-      var r = await fetch('/api/my-leagues', { cache: 'no-store' });
+      var r = await fetch('/api/sleeper-user-leagues', { cache: 'no-store' });
       if (r.ok) {
         var j = await r.json();
-        if (j && j.ok && Array.isArray(j.leagues) && j.leagues.length) {
-          out = j.leagues.map(function (l) {
-            return { id: String(l.league_id || ''), platform: (l.platform || 'sleeper').toLowerCase() };
-          }).filter(function (x) { return x.id; });
+        if (j && j.ok && Array.isArray(j.leagues)) {
+          ids = j.leagues.map(function (l) { return String(l.league_id || ''); }).filter(Boolean);
         }
       }
     } catch (_) {}
-    if (!out.length) {
-      try {
-        var r2 = await fetch('/api/sleeper-user-leagues', { cache: 'no-store' });
-        if (r2.ok) {
-          var j2 = await r2.json();
-          if (j2 && j2.ok && Array.isArray(j2.leagues)) {
-            out = j2.leagues.map(function (l) {
-              return { id: String(l.league_id || ''), platform: 'sleeper' };
-            }).filter(function (x) { return x.id; });
-          }
-        }
-      } catch (_) {}
-    }
-    if (currentLeague && !out.some(function (x) { return x.id === currentLeague; })) {
-      out.push({ id: currentLeague, platform: (currentPlatform || 'sleeper').toLowerCase() });
-    }
-    return out;
+    if (currentLeague && ids.indexOf(currentLeague) === -1) ids.push(currentLeague);
+    return ids;
   }
 
   // Register a subscription for the device across every league the user is in.
@@ -2404,25 +2386,18 @@ window._brPromoEligible = function () {
     var _parts    = window.location.pathname.split('/').filter(Boolean);
     var _platform = (_parts[0] || 'sleeper').toLowerCase();
     var _league   = _parts.length >= 3 ? _parts[2] : '';
-    if (['sleeper', 'espn', 'yahoo', 'mfl', 'fleaflicker'].indexOf(_platform) === -1) { _platform = 'sleeper'; _league = ''; }
-    var userLeagues = await _collectUserLeagues(_league, _platform);
-    // The subscribe endpoint takes one platform per call, so group by platform.
-    var byPlatform = {};
-    userLeagues.forEach(function (x) {
-      (byPlatform[x.platform] = byPlatform[x.platform] || []).push(x.id);
+    if (!['sleeper', 'espn'].includes(_platform)) { _platform = 'sleeper'; _league = ''; }
+    var leagueIds = await _collectUserLeagueIds(_league);
+    await fetch('/api/push/subscribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        endpoint:   s.endpoint,
+        keys:       s.keys,
+        league_ids: leagueIds,
+        platform:   _platform || 'sleeper',
+      }),
     });
-    for (var plat in byPlatform) {
-      await fetch('/api/push/subscribe', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          endpoint:   s.endpoint,
-          keys:       s.keys,
-          league_ids: byPlatform[plat],
-          platform:   plat,
-        }),
-      });
-    }
     window._pushEndpoint = s.endpoint;
   }
 
@@ -2710,17 +2685,9 @@ window._brPromoEligible = function () {
     // subscription keys (needed to re-register a league toggled back on).
     var leagues = [], enabledLeagues = [], subKeys = null;
     try {
-      // /api/my-leagues covers every platform (Sleeper, ESPN, Yahoo, MFL,
-      // Fleaflicker); the Sleeper-only endpoint is the signed-out fallback.
-      var lr = await fetch('/api/my-leagues', { cache: 'no-store' });
-      if (lr.ok) { var lj = await lr.json(); if (lj && lj.ok && Array.isArray(lj.leagues) && lj.leagues.length) leagues = lj.leagues; }
+      var lr = await fetch('/api/sleeper-user-leagues', { cache: 'no-store' });
+      if (lr.ok) { var lj = await lr.json(); if (lj && lj.ok && Array.isArray(lj.leagues)) leagues = lj.leagues; }
     } catch (_) {}
-    if (!leagues.length) {
-      try {
-        var lr2 = await fetch('/api/sleeper-user-leagues', { cache: 'no-store' });
-        if (lr2.ok) { var lj2 = await lr2.json(); if (lj2 && lj2.ok && Array.isArray(lj2.leagues)) leagues = lj2.leagues; }
-      } catch (_) {}
-    }
     try {
       var er = await fetch('/api/push/leagues?endpoint=' + encodeURIComponent(endpoint));
       if (er.ok) enabledLeagues = (await er.json()).league_ids || [];
@@ -2827,16 +2794,12 @@ window._brPromoEligible = function () {
           } else if (cb.dataset.league !== undefined) {
             // League toggle: add (subscribe) or remove (unsubscribe) this league row
             if (on) {
-              var _lg = null;
-              for (var _li = 0; _li < leagues.length; _li++) {
-                if (String(leagues[_li].league_id) === cb.dataset.league) { _lg = leagues[_li]; break; }
-              }
               await fetch('/api/push/subscribe', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                   endpoint: endpoint, keys: subKeys, league_id: cb.dataset.league,
-                  platform: ((_lg && _lg.platform) || 'sleeper').toLowerCase(), owner_id: (window._viewerUid || null),
+                  platform: 'sleeper', owner_id: (window._viewerUid || null),
                 }),
               });
             } else {
@@ -7472,9 +7435,9 @@ window.initTradePage = function initTradePage(root = document) {
     // ── Trade Hub: shared "Why this" component ───────────────────────────────
     // The explanation text is always generated server-side (dashboard_services/
     // trade_hub.py); this renders the same component on every hub tab.
-    window.brWhyLine = function (text, stacked) {
+    window.brWhyLine = function (text) {
       if (!text) return "";
-      return `<div class="th-why${stacked ? " th-why-stacked" : ""}"><span class="th-why-lbl">Why this</span><span>${escapeHtml(String(text))}</span></div>`;
+      return `<div class="th-why"><span class="th-why-lbl">Why this</span><span>${escapeHtml(String(text))}</span></div>`;
     };
 
     // ── Trade Hub: saved packages (league-scoped localStorage) ──────────────
@@ -8731,9 +8694,10 @@ window.initTradePage = function initTradePage(root = document) {
       const esc = s => (s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
       box.innerHTML = visible.map(c => {
         const col = (POS_COLORS || {})[c.position] || "var(--accent)";
-        const posLabel = [c.position, c.pos_rank_label].filter(Boolean).join(" ");
+        const posLabel = c.pos_rank_label || c.position;
+        const tint = col.charCodeAt(0) === 35 ? col + "1A" : "transparent";
         return `<button class="otc-top-chip" data-id="${esc(String(c.player_id))}" data-name="${esc(c.name)}" title="Build around ${esc(c.name)}">` +
-          `<span class="otc-top-chip-pos" style="color:${col}">${esc(posLabel)}</span>` +
+          `<span class="otc-top-chip-pos" style="color:${col};background:${tint}">${esc(posLabel)}</span>` +
           `<span class="otc-top-chip-name">${esc(c.name)}</span>` +
           `<span class="otc-top-chip-team">${esc(c.team)}</span></button>`;
       }).join("");
@@ -8828,20 +8792,20 @@ window.initTradePage = function initTradePage(root = document) {
           const safePid  = escapeHtml(t.player_id);
           // Shared hub component; the server computes why_line. Fall back to
           // the legacy owner/why join until cached responses roll over.
-          // Stacked full-width under the name row so the text has room.
-          const whyText = t.why_line
-            || [t.owner_team, t.why].filter(Boolean).join(" · ");
-          const why = window.brWhyLine(whyText, true);
+          const why = window.brWhyLine(t.why_line)
+            || ([t.owner_team, t.why].filter(Boolean).length
+              ? `<span class="otc-sugg-target-why">${escapeHtml([t.owner_team, t.why].filter(Boolean).join(" · "))}</span>`
+              : "");
           return `<div class="otc-sugg-target-row">
-            <div class="otc-sugg-target-head">
-              <span class="otc-sugg-target-pos" style="background:${col}20;color:${col};">${pos}</span>
+            <span class="otc-sugg-target-pos" style="background:${col}20;color:${col};">${pos}</span>
+            <span class="otc-sugg-target-meta">
               <span class="otc-sugg-target-name">${safeName}</span>
-              <button class="sugg-target-get-btn otc-sugg-target-btn"
-                data-pid="${safePid}" data-name="${safeName}">
-                Find packages
-              </button>
-            </div>
-            ${why}
+              ${why}
+            </span>
+            <button class="sugg-target-get-btn otc-sugg-target-btn"
+              data-pid="${safePid}" data-name="${safeName}">
+              Find packages
+            </button>
           </div>`;
         }
 
@@ -9438,7 +9402,7 @@ window.initTradePage = function initTradePage(root = document) {
           }).join("");
         }
 
-        // Value grade badge
+        // Value grade badge (with acceptance % folded in: one pill, not two)
         const giveVal = giveAssets.reduce((s, a) => s + (a.value || 0), 0);
         const getVal  = getAssets.reduce((s, a) => s + (a.value || 0), 0) || (t.value || 0);
         const ratio   = giveVal > 0 ? getVal / giveVal : 0;
@@ -9456,16 +9420,8 @@ window.initTradePage = function initTradePage(root = document) {
             ? { label: "Fair value",    color: "#6366f1" }
             : { label: "Slight overpay",color: "#f59e0b" };
         }
-        const gradeHtml = `<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;background:${gradeInfo.color}15;border:1px solid ${gradeInfo.color}30;color:${gradeInfo.color};white-space:nowrap;">${gradeInfo.label}</span>`;
-
-        // Acceptance badge
-        const acpt = t.acceptance_pct != null ? t.acceptance_pct : null;
-        const acptColor = acpt >= 70 ? "#10b981" : acpt >= 50 ? "#6366f1" : "#f59e0b";
-        const acptHtml = acpt != null
-          ? `<span style="display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;background:${acptColor}15;border:1px solid ${acptColor}30;color:${acptColor};white-space:nowrap;">
-               <span style="width:5px;height:5px;border-radius:50%;background:${acptColor};flex-shrink:0;"></span>${acpt}% accept
-             </span>`
-          : "";
+        const acpt = t.acceptance_pct != null ? Math.round(t.acceptance_pct) : null;
+        const gradeHtml = `<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;background:${gradeInfo.color}15;border:1px solid ${gradeInfo.color}30;color:${gradeInfo.color};white-space:nowrap;">${gradeInfo.label}${acpt != null ? ` &middot; ${acpt}% accept` : ""}</span>`;
 
         // Win % + playoff odds - always prefer net_* fields (full trade swap effect)
         const wpd = (t.net_win_prob_delta ?? t.win_prob_delta) || 0;
@@ -9480,12 +9436,6 @@ window.initTradePage = function initTradePage(root = document) {
         const pName   = esc(t.partner_team || "");
         const partnerHtml = pName
           ? `<span class="otc-strategy-partner"><span class="dot" style="background:${pAColor};"></span>${pName}</span>`
-          : "";
-
-        // Partner-fit chip: why this package suits the other side's roster.
-        const fitNote = t.fit_note ? esc(t.fit_note) : "";
-        const fitHtml = fitNote
-          ? `<span class="otc-strategy-fit"><i class="fa-solid fa-bullseye"></i>${fitNote}</span>`
           : "";
 
         // Analyze button data
@@ -9504,11 +9454,10 @@ window.initTradePage = function initTradePage(root = document) {
               ${renderAssetHtml(giveAssets)}
             </div>
           </div>
-          ${fitHtml ? `<div class="otc-rt-fit">${fitHtml}</div>` : ""}
           ${window.brWhyLine(t.why_line)}
           <div class="otc-rt-footer">
             <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;min-width:0;">
-              ${gradeHtml}${acptHtml}${wpdHtml}${podHtml}
+              ${gradeHtml}${wpdHtml}${podHtml}
               ${partnerHtml}
             </div>
             <div style="display:flex;gap:6px;align-items:center;">

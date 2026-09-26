@@ -6969,22 +6969,11 @@ strong + .player-badge,
 /* Target rows inside suggestions tab */
 .otc-sugg-target-row {
     display: flex;
-    flex-direction: column;
-    align-items: stretch;
-    padding: 10px 14px;
-    border-bottom: 1px solid var(--border);
-    transition: background 0.1s;
-}
-
-.otc-sugg-target-head {
-    display: flex;
     align-items: center;
     gap: 8px;
-}
-
-.otc-sugg-target-head .otc-sugg-target-name {
-    flex: 1;
-    min-width: 0;
+    padding: 6px 14px;
+    border-bottom: 1px solid var(--border);
+    transition: background 0.1s;
 }
 
 .otc-sugg-target-row:last-child {
@@ -7005,6 +6994,14 @@ strong + .player-badge,
     text-align: center;
 }
 
+.otc-sugg-target-meta {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+
 .otc-sugg-target-name {
     font-size: 12px;
     font-weight: 600;
@@ -7019,6 +7016,14 @@ strong + .player-badge,
     color: var(--text-muted);
     padding: 4px 14px 8px;
     line-height: 1.35;
+}
+
+.otc-sugg-target-why {
+    font-size: 10px;
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .otc-sugg-target-btn {
@@ -42337,13 +42342,25 @@ table.rz-bs-table thead th:first-child {
 }
 
 /* ── Trade Hub: top trade chips (Targets tab, under the search bar) ───────── */
+.otc-top-chips-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    margin: 10px 0 6px;
+}
 .otc-top-chips-label {
     font-size: 11px;
     font-weight: 700;
     color: var(--text-muted);
     letter-spacing: .05em;
     text-transform: uppercase;
-    margin: 10px 0 6px;
+}
+.otc-top-chips-hint {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-subtle);
+    white-space: nowrap;
 }
 .otc-top-chips {
     display: flex;
@@ -42352,26 +42369,33 @@ table.rz-bs-table thead th:first-child {
 }
 .otc-top-chip {
     display: inline-flex;
-    align-items: baseline;
-    gap: 6px;
-    padding: 6px 10px;
+    align-items: center;
+    gap: 7px;
+    padding: 4px 10px 4px 4px;
     border: 1px solid var(--border);
     border-radius: 10px;
     background: var(--row);
     color: var(--text);
     font-size: 13px;
-    font-weight: 600;
     cursor: pointer;
-    transition: border-color .15s, background .15s;
+    transition: border-color .15s, transform .1s;
 }
 .otc-top-chip:hover {
     border-color: var(--accent);
-    background: var(--card);
+}
+.otc-top-chip:active {
+    transform: scale(.97);
 }
 .otc-top-chip-pos {
-    font-size: 11px;
-    font-weight: 700;
+    font-size: 10.5px;
+    font-weight: 800;
+    letter-spacing: .02em;
+    padding: 3px 7px;
+    border-radius: 6px;
     white-space: nowrap;
+}
+.otc-top-chip-name {
+    font-weight: 600;
 }
 .otc-top-chip-team {
     font-size: 11px;
