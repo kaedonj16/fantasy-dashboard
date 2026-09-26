@@ -7469,9 +7469,9 @@ window.initTradePage = function initTradePage(root = document) {
     // ── Trade Hub: shared "Why this" component ───────────────────────────────
     // The explanation text is always generated server-side (dashboard_services/
     // trade_hub.py); this renders the same component on every hub tab.
-    window.brWhyLine = function (text) {
+    window.brWhyLine = function (text, stacked) {
       if (!text) return "";
-      return `<div class="th-why"><span class="th-why-lbl">Why this</span><span>${escapeHtml(String(text))}</span></div>`;
+      return `<div class="th-why${stacked ? " th-why-stacked" : ""}"><span class="th-why-lbl">Why this</span><span>${escapeHtml(String(text))}</span></div>`;
     };
 
     // ── Trade Hub: saved packages (league-scoped localStorage) ──────────────
@@ -8769,20 +8769,20 @@ window.initTradePage = function initTradePage(root = document) {
           const safePid  = escapeHtml(t.player_id);
           // Shared hub component; the server computes why_line. Fall back to
           // the legacy owner/why join until cached responses roll over.
-          const why = window.brWhyLine(t.why_line)
-            || ([t.owner_team, t.why].filter(Boolean).length
-              ? `<span class="otc-sugg-target-why">${escapeHtml([t.owner_team, t.why].filter(Boolean).join(" · "))}</span>`
-              : "");
+          // Stacked full-width under the name row so the text has room.
+          const whyText = t.why_line
+            || [t.owner_team, t.why].filter(Boolean).join(" · ");
+          const why = window.brWhyLine(whyText, true);
           return `<div class="otc-sugg-target-row">
-            <span class="otc-sugg-target-pos" style="background:${col}20;color:${col};">${pos}</span>
-            <span class="otc-sugg-target-meta">
+            <div class="otc-sugg-target-head">
+              <span class="otc-sugg-target-pos" style="background:${col}20;color:${col};">${pos}</span>
               <span class="otc-sugg-target-name">${safeName}</span>
-              ${why}
-            </span>
-            <button class="sugg-target-get-btn otc-sugg-target-btn"
-              data-pid="${safePid}" data-name="${safeName}">
-              Find packages
-            </button>
+              <button class="sugg-target-get-btn otc-sugg-target-btn"
+                data-pid="${safePid}" data-name="${safeName}">
+                Find packages
+              </button>
+            </div>
+            ${why}
           </div>`;
         }
 

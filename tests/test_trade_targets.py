@@ -444,7 +444,8 @@ class TestApiWiring:
     def test_suggestions_ui_shows_why(self):
         from pathlib import Path
         js = (Path(__file__).resolve().parents[1] / "static" / "app.js").read_text(encoding="utf-8")
-        assert "otc-sugg-target-why" in js
+        assert "th-why-stacked" in js
+        assert "otc-sugg-target-head" in js
         assert "t.why" in js
         assert "data.targets" in js
         assert "otc-sugg-targets-summary" in js
