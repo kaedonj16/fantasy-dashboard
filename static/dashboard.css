@@ -6969,11 +6969,22 @@ strong + .player-badge,
 /* Target rows inside suggestions tab */
 .otc-sugg-target-row {
     display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 6px 14px;
+    flex-direction: column;
+    align-items: stretch;
+    padding: 10px 14px;
     border-bottom: 1px solid var(--border);
     transition: background 0.1s;
+}
+
+.otc-sugg-target-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.otc-sugg-target-head .otc-sugg-target-name {
+    flex: 1;
+    min-width: 0;
 }
 
 .otc-sugg-target-row:last-child {
@@ -6994,14 +7005,6 @@ strong + .player-badge,
     text-align: center;
 }
 
-.otc-sugg-target-meta {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-}
-
 .otc-sugg-target-name {
     font-size: 12px;
     font-weight: 600;
@@ -7016,14 +7019,6 @@ strong + .player-badge,
     color: var(--text-muted);
     padding: 4px 14px 8px;
     line-height: 1.35;
-}
-
-.otc-sugg-target-why {
-    font-size: 10px;
-    color: var(--text-muted);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
 }
 
 .otc-sugg-target-btn {

@@ -870,6 +870,13 @@ def build_trade_calculator_body(
               flex-shrink:0;font-weight:700;font-size:10px;letter-spacing:.04em;
               text-transform:uppercase;color:var(--accent,#2563eb);padding-top:1px;
             }}
+            /* Stacked variant: label above full-width text (trade targets list). */
+            .th-why-stacked {{
+              display:block;
+            }}
+            .th-why-stacked .th-why-lbl {{
+              display:block;margin-bottom:3px;padding-top:0;
+            }}
             /* ── Trade Hub: saved packages ── */
             .th-save-btn {{
               border:1px solid var(--border);background:var(--card);color:var(--text-muted);
