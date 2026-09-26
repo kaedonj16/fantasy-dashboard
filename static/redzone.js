@@ -122,6 +122,10 @@
   // Last-good payload per scope so My Leagues → This League never paints
   // portfolio (cross-league) data under the league-scoped chrome.
   var _scopeCache = { league: null, user: null };
+  // Server ETag per scope for conditional redzone-data polls. When the
+  // server's collect hasn't changed it answers 304 and the client keeps its
+  // state, skipping the ~1MB download + re-parse on every 15s poll.
+  var _rzEtagByScope = { league: null, user: null };
   // Canonical PBP is durable and scope-local. Payload caching alone is not
   // enough: an empty/partial poll must not discard already reconciled plays.
   var _scopeRuntime = { league: null, user: null };
@@ -4431,11 +4435,40 @@
       var url = apiBase + '/redzone-data?_cb=' + Date.now() + '&scope=' + myScope;
       if (_isDemo) { _demoT += 15; url += '&demo=1&t=' + _demoT; }
 
-      var resp = await fetch(url, { cache: 'no-store', signal: controller ? controller.signal : undefined });
+      // Conditional poll: send the last ETag so an unchanged server collect
+      // answers 304 with no body (demo varies every tick, so skip it there).
+      // typeof-guard: the var is module-level in production, but defensive
+      // here keeps refresh working if it is ever undefined.
+      var _fetchHeaders = {};
+      var _prevEtag = (!_isDemo && typeof _rzEtagByScope !== 'undefined') ? _rzEtagByScope[myScope] : null;
+      if (_prevEtag) _fetchHeaders['If-None-Match'] = _prevEtag;
+      var resp = await fetch(url, { cache: 'no-store', signal: controller ? controller.signal : undefined, headers: _fetchHeaders });
       // Consume + parse the body under the SAME deadline before releasing it.
       var newData = null, parseErr = null;
-      if (resp.ok) { try { newData = await resp.json(); } catch (e) { parseErr = e; } }
+      if (resp.ok && resp.status !== 304) { try { newData = await resp.json(); } catch (e) { parseErr = e; } }
+      var _respEtag = null;
+      try { _respEtag = resp.headers.get('ETag'); } catch (_) {}
+      if (_respEtag && !_isDemo && typeof _rzEtagByScope !== 'undefined') _rzEtagByScope[myScope] = _respEtag;
       _release();
+
+      // 304: server confirms our snapshot is current. Nothing to parse or
+      // apply; just record freshness and reset the countdown.
+      if (resp.status === 304) {
+        // Only the current owner may touch state / controls. A superseded
+        // request (newer poll, scope switch, or manual preempt) discards
+        // silently, even for a 304.
+        if (!_ownsScreen(mySeq, myGen, myScope)) {
+          _rzLog('discard-obsolete', { scope: myScope, seq: mySeq, ms: Date.now() - startedAt });
+          return;
+        }
+        _lastPollFailed = false;
+        _scopeLoadError = null;
+        _lastSuccessAt = Date.now();
+        _lastDataAt = Date.now();
+        _countdown = _pollInterval();
+        _rzLog('refresh-304', { scope: myScope, ms: Date.now() - startedAt });
+        return;
+      }
 
       // Only the current owner may touch state / controls. A superseded request
       // (newer poll, scope switch, or manual preempt) discards silently.

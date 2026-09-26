@@ -490,6 +490,10 @@ def _viewer_league_ids(viewer_user_id: str, season: int) -> set:
     raw = get_sleeper_user_leagues(str(viewer_user_id), int(season)) or []
     ids = {str(lg.get("league_id")) for lg in raw if lg.get("league_id")}
     _MEMBER_CACHE[ck] = (ids, time.time())
+    # Unbounded key space (any viewer); cap so long-lived workers can't leak.
+    if len(_MEMBER_CACHE) > 2048:
+        for _k in sorted(_MEMBER_CACHE, key=lambda k: _MEMBER_CACHE[k][1])[:205]:
+            _MEMBER_CACHE.pop(_k, None)
     return ids
 
 

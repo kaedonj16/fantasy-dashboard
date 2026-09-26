@@ -2906,17 +2906,39 @@ def store_awards_agg(platform: str, season: int, league_id: str, payload) -> Non
 
 # -------- global NFL data caches (shared across leagues) --------
 _PLAYERS_GLOBAL = None
+_PLAYERS_GLOBAL_TS = 0.0
+# The Sleeper player feed is ~38MB parsed; refresh hourly (not every request)
+# so roster moves/injuries land without a redeploy, but workers aren't
+# re-downloading + re-parsing it every few minutes. Previously this was pinned
+# for the process lifetime, which also made get_nfl_players' own 300s TTL
+# dead code.
+_PLAYERS_GLOBAL_TTL = 3600.0
 _PLAYERS_INDEX_GLOBAL = None
 _players_global_lock = threading.Lock()
 _players_index_lock = threading.Lock()
 
 
 def get_players_global():
-    global _PLAYERS_GLOBAL
-    if _PLAYERS_GLOBAL is None:
-        with _players_global_lock:
-            if _PLAYERS_GLOBAL is None:
-                _PLAYERS_GLOBAL = get_nfl_players()
+    global _PLAYERS_GLOBAL, _PLAYERS_GLOBAL_TS
+    now = time.time()
+    if _PLAYERS_GLOBAL is not None and now - _PLAYERS_GLOBAL_TS < _PLAYERS_GLOBAL_TTL:
+        return _PLAYERS_GLOBAL
+    with _players_global_lock:
+        now = time.time()
+        if _PLAYERS_GLOBAL is not None and now - _PLAYERS_GLOBAL_TS < _PLAYERS_GLOBAL_TTL:
+            return _PLAYERS_GLOBAL
+        try:
+            fresh = get_nfl_players()
+        except Exception:
+            fresh = None
+        if fresh:
+            _PLAYERS_GLOBAL = fresh
+            _PLAYERS_GLOBAL_TS = time.time()
+        elif _PLAYERS_GLOBAL is None:
+            # Don't pin a failure: cache the empty result briefly so a
+            # Sleeper outage doesn't retry the 38MB fetch on every request.
+            _PLAYERS_GLOBAL = {}
+            _PLAYERS_GLOBAL_TS = time.time()
     return _PLAYERS_GLOBAL
 
 
@@ -12187,6 +12209,9 @@ def _load_season_weekly_points(season: int, scoring_settings: dict) -> dict:
     except Exception:
         logger.debug("[start-sit] weekly points load failed", exc_info=True)
     _WEEKLY_PTS_CACHE[key] = (time.time(), out)
+    # Key space is per league scoring config (unbounded across visitors);
+    # prune so long-lived workers can't accumulate entries forever.
+    _prune_ttl_cache(_WEEKLY_PTS_CACHE, 32)
     return out
 
 
@@ -14209,6 +14234,39 @@ def _redzone_collect(platform, league_id, season, week):
     return out
 
 
+# Short-TTL shared cache for the league-scope redzone collect. The collect is
+# viewer-independent (viewer_roster_id is stamped afterwards in
+# _redzone_fetch), so N viewers polling the same league share one collect per
+# TTL window instead of each paying the full per-game assembly. Entries are
+# (expires_ts, etag, collected_at, payload); callers must never mutate the
+# cached payload dict.
+_RZ_COLLECT_CACHE: dict = {}
+_RZ_COLLECT_TTL = 20.0
+
+
+def _rz_cached_collect(platform, league_id, season, week):
+    """Return (payload, etag, collected_at) for the league-scope collect.
+
+    The etag is a content hash of the collect result, so api_redzone_data can
+    answer conditional polls with 304 without re-serializing the ~1MB body.
+    """
+    now = time.time()
+    key = (str(platform), int(season), str(league_id), int(week))
+    entry = _RZ_COLLECT_CACHE.get(key)
+    if entry is not None and entry[0] > now:
+        return entry[3], entry[1], entry[2]
+    d = _redzone_collect(platform, league_id, season, week)
+    collected_at = time.time()
+    try:
+        fp = json.dumps(d, sort_keys=True, default=str)
+        etag = '"rz-%s"' % hashlib.sha1(fp.encode()).hexdigest()[:32]
+    except Exception:
+        etag = '"rz-%d"' % int(collected_at)
+    _RZ_COLLECT_CACHE[key] = (now + _RZ_COLLECT_TTL, etag, collected_at, d)
+    _prune_ttl_cache(_RZ_COLLECT_CACHE, 32)
+    return d, etag, collected_at
+
+
 def _redzone_fetch(platform, league_id, season, week=None, scope="league"):
     """Return live Redzone payload. scope='league' (all teams in this league)
     or scope='user' (the viewer's team across all their leagues)."""
@@ -14250,7 +14308,12 @@ def _redzone_fetch(platform, league_id, season, week=None, scope="league"):
                 "error": "portfolio_unavailable",
             }
 
-    d = _redzone_collect(platform, league_id, season, week)
+    # League-scope collect is shared across viewers (short TTL); stamp the
+    # per-viewer fields onto a copy so the cached payload is never mutated.
+    _rz_d, _rz_etag, _rz_collected_at = _rz_cached_collect(
+        platform, league_id, season, week
+    )
+    d = dict(_rz_d)
     # Resolve the viewer's roster for THIS league the same way the rest of the
     # site does, instead of trusting the raw session viewer_roster_id. Roster
     # ids are league-scoped integers, so a session id resolved for a different
@@ -14270,8 +14333,17 @@ def _redzone_fetch(platform, league_id, season, week=None, scope="league"):
         "viewer_roster_id": vrid,
         "viewer_roster_ids": [vrid] if vrid else [],
         "games_today": gt,
-        "updated_at": time.time(),
+        # Honest clock: the data's age is the collect's age, not this request's.
+        "updated_at": _rz_collected_at,
     })
+    # Per-viewer etag: the collect etag covers the shared body; fold in the
+    # viewer id so a mid-session identity change can't serve a stale 304.
+    try:
+        g.rz_etag = '"rzv-%s"' % hashlib.sha1(
+            ("%s|%s" % (_rz_etag, vrid)).encode()
+        ).hexdigest()[:32]
+    except Exception:
+        pass
     return d
 
 
@@ -14666,7 +14738,22 @@ def api_redzone_data(platform: str, season: int, league_id: str):
         except Exception as _e:
             logger.warning("[redzone] user-scope stream failed, using aggregate: %s", _e)
     try:
-        response = jsonify(_redzone_fetch(platform, league_id, season, week=week, scope=scope))
+        data = _redzone_fetch(platform, league_id, season, week=week, scope=scope)
+        # Conditional polls: when the client already holds this exact payload
+        # (ETag = content hash of the shared collect + viewer id), answer 304
+        # without re-serializing or re-sending the ~1MB body.
+        etag = None
+        try:
+            etag = g.get("rz_etag") if hasattr(g, "get") else getattr(g, "rz_etag", None)
+        except Exception:
+            etag = None
+        if etag and request.headers.get("If-None-Match") == etag:
+            response = app.response_class(status=304)
+            response.headers["ETag"] = etag
+            return response
+        response = jsonify(data)
+        if etag:
+            response.headers["ETag"] = etag
         response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
         response.headers["Pragma"] = "no-cache"
         return response
@@ -20129,6 +20216,58 @@ _LP_PAYLOAD_LOCK = threading.Lock()
 _LP_OVERLAY_CACHE: dict = {}
 _LP_OVERLAY_LOCK = threading.Lock()
 _LP_BOARD_JSON_CACHE: dict = {}
+# ETag versions for /api/league-players default-path responses:
+# version_key -> etag. The key embeds every input that determines the body
+# (overlay cache key incl. model_ts + adp_sig, superflex flip, view, and the
+# historical-aggregates mtime token), so a 304 is served without rebuilding
+# or re-serializing the ~1MB payload. Entries are naturally invalidated when
+# the key changes; pruned on write as a backstop.
+_LP_ETAG_CACHE: dict = {}
+
+
+def _lp_response_version_key(*, overlay_key, is_sf: bool, view: str) -> tuple:
+    """Version tuple identifying one /api/league-players response body."""
+    try:
+        from dashboard_services.historical.aggregates_store import (
+            profile_aggregates_version,
+        )
+        hist_v = profile_aggregates_version()
+    except Exception:
+        hist_v = None
+    return (tuple(overlay_key), bool(is_sf), str(view), hist_v)
+
+
+def _lp_etag_for(version_key: tuple) -> str:
+    cached = _LP_ETAG_CACHE.get(version_key)
+    if cached is not None:
+        return cached
+    etag = '"lp-%s"' % hashlib.sha1(repr(version_key).encode()).hexdigest()[:32]
+    _LP_ETAG_CACHE[version_key] = etag
+    _prune_ttl_cache(_LP_ETAG_CACHE, 128)
+    return etag
+
+
+def _lp_not_modified_response(etag: str):
+    """304 for a matching If-None-Match, else None."""
+    if request.headers.get("If-None-Match") == etag:
+        resp = app.response_class(status=304)
+        resp.headers["ETag"] = etag
+        return resp
+    return None
+
+
+def _lp_cacheable_response(body: str, version_key: tuple):
+    """200 JSON response with ETag + short client cache for league-players."""
+    etag = _lp_etag_for(version_key)
+    not_modified = _lp_not_modified_response(etag)
+    if not_modified is not None:
+        return not_modified
+    resp = app.response_class(body, mimetype="application/json")
+    resp.headers["ETag"] = etag
+    # Data changes at most on cron rebuilds (which change the ETag); a short
+    # client cache absorbs repeat visits, 304s handle everything after.
+    resp.headers["Cache-Control"] = "public, max-age=60"
+    return resp
 
 _ADP_FIELDS = ("avg_pick", "sf_avg_pick", "rookie_avg_pick",
                "sf_rookie_avg_pick", "redraft_avg_pick", "sf_redraft_avg_pick")
@@ -21474,24 +21613,32 @@ def _dumps_league_players(payload: dict) -> str:
     return body.replace("<", "\\u003c").replace(">", "\\u003e")
 
 
-def _board_league_players_response(payload: dict, *, overlay_key, is_sf: bool):
+def _board_league_players_response(payload: dict, *, overlay_key, is_sf: bool,
+                                    version_key=None):
     """Cheat-sheet JSON: skill players, board columns, compact encoding."""
+    if version_key is not None:
+        etag = _lp_etag_for(version_key)
+        not_modified = _lp_not_modified_response(etag)
+        if not_modified is not None:
+            return not_modified
     cache_key = overlay_key + (bool(is_sf),)
     cached = _LP_BOARD_JSON_CACHE.get(cache_key)
     if cached is not None:
-        resp = app.response_class(cached, mimetype="application/json")
-        resp.headers["Cache-Control"] = "no-store"
-        return resp
-    from dashboard_services.league_players_board import slim_board_payload
-    slim = slim_board_payload(payload, is_superflex=is_sf)
-    body = _dumps_league_players(slim)
-    _LP_BOARD_JSON_CACHE[cache_key] = body
+        body = cached
+    else:
+        from dashboard_services.league_players_board import slim_board_payload
+        slim = slim_board_payload(payload, is_superflex=is_sf)
+        body = _dumps_league_players(slim)
+        _LP_BOARD_JSON_CACHE[cache_key] = body
+        _prune_ttl_cache(_LP_BOARD_JSON_CACHE, 64)
+    if version_key is not None:
+        return _lp_cacheable_response(body, version_key)
     resp = app.response_class(body, mimetype="application/json")
     resp.headers["Cache-Control"] = "no-store"
     return resp
 
 
-def _league_players_response(payload: dict):
+def _league_players_response(payload: dict, version_key=None):
     """Stamp compact historical signals, then jsonify. Does not change ranking inputs."""
     if "historical_available" not in (payload or {}):
         try:
@@ -21501,6 +21648,8 @@ def _league_players_response(payload: dict):
             logger.debug("[api/league-players] historical stamp skipped", exc_info=True)
             payload = dict(payload or {})
             payload["historical_available"] = False
+    if version_key is not None:
+        return _lp_cacheable_response(_dumps_league_players(payload), version_key)
     resp = jsonify(_sanitize_for_json(payload))
     resp.headers["Cache-Control"] = "no-store"
     return resp
@@ -21540,17 +21689,28 @@ def api_league_players():
         scoring_type=_mi_scoring,
     )
 
+    _lp_version_key = _lp_response_version_key(
+        overlay_key=overlay_key, is_sf=_mi_is_sf,
+        view="board" if _view_board else "full",
+    )
+
     def _finish(result, *, board_cacheable=True):
         if _view_board:
             if board_cacheable:
                 return _board_league_players_response(
                     result, overlay_key=overlay_key, is_sf=_mi_is_sf,
+                    version_key=_lp_version_key,
                 )
             from dashboard_services.league_players_board import slim_board_payload
             slim = slim_board_payload(result, is_superflex=_mi_is_sf)
             resp = app.response_class(_dumps_league_players(slim), mimetype="application/json")
             resp.headers["Cache-Control"] = "no-store"
             return resp
+        if board_cacheable:
+            return _league_players_response(
+                _apply_league_type_market(result, is_sf=_mi_is_sf),
+                version_key=_lp_version_key,
+            )
         return _league_players_response(_apply_league_type_market(result, is_sf=_mi_is_sf))
 
     # Historical draft views pass ?season=<yr> so grades use the ADP OF THAT
@@ -24700,6 +24860,9 @@ def api_player_team(player_id: str):
             "def_vs_pos_matchup": def_vs_pos_matchup,
         }
         _TEAM_PAYLOAD_CACHE[_payload_key] = (time.time(), _payload)
+        # Keyed per team/season/mode; prune so the key space can't grow
+        # unbounded across long-lived workers.
+        _prune_ttl_cache(_TEAM_PAYLOAD_CACHE, 64)
         return jsonify(_payload)
     except Exception as e:
         logger.exception("[api_player_team] error")
@@ -25064,6 +25227,8 @@ def api_nfl_team_details():
             "schedule": schedule,
         }
         _NFL_TEAM_DETAILS_CACHE[cache_key] = (time.time(), payload)
+        # 15m TTL alone doesn't bound the key space; prune on write.
+        _prune_ttl_cache(_NFL_TEAM_DETAILS_CACHE, 64)
         return jsonify(clean_nan_for_json(payload))
     except Exception as e:
         logger.exception("[api_nfl_team_details] error")

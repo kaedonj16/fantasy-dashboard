@@ -249,6 +249,31 @@ def _merge_cohort_index(data: dict, overlay: Mapping[str, Any]) -> dict:
     return data
 
 
+def profile_aggregates_version() -> tuple:
+    """Cheap version token for the historical aggregates.
+
+    Returns the same mtime tuple ``load_profile_aggregates`` uses as its
+    internal cache key, without loading any data. Lets callers (e.g. ETag
+    computation for /api/league-players) detect aggregate changes with a
+    handful of stat() calls.
+    """
+    try:
+        mtime = PROFILE_PATH.stat().st_mtime
+    except OSError:
+        mtime = None
+    return (
+        mtime,
+        _file_mtime(CAREER_PATH_OVERLAY_PATH),
+        _file_mtime(USAGE_VOLUME_OVERLAY_PATH),
+        _nflverse_mtime_token(),
+        _file_mtime(COHORT_INDEX_PATH),
+        _file_mtime(LIVE_DRAFT_PICKS_PATH),
+        _file_mtime(PLAYERS_INDEX_RELEVANT_PATH) or _file_mtime(PLAYERS_INDEX_PATH),
+        _file_mtime(NFL_DRAFT_PICKS_PATH),
+        _file_mtime(TEAM_OFFENSE_OVERLAY_PATH),
+    )
+
+
 def load_profile_aggregates(*, path: Optional[Any] = None) -> dict:
     """Return the precomputed JSON, or ``{}`` when the file is missing."""
     target = path if path is not None else PROFILE_PATH

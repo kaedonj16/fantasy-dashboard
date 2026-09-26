@@ -248,7 +248,8 @@ def test_user_scope_fetch_fallback_keeps_user_scope():
     assert "portfolio_unavailable" in block
     assert '"scope": "user"' in block
     # Must not fall through to league collect after a user-scope failure.
-    assert block.index("portfolio_unavailable") < block.index("_redzone_collect(")
+    # (The league collect goes through the shared _rz_cached_collect wrapper.)
+    assert block.index("portfolio_unavailable") < block.index("_rz_cached_collect(")
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="Node.js not available")

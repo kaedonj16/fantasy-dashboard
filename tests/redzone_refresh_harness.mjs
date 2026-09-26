@@ -169,6 +169,7 @@ function build(opts) {
     var _state = D.state, _scopeCache = D.scopeCache, _scopeRuntime = { league: null, user: null };
     var _mlFailed = null, _mlNames = [], _mlLoaded = null, _prevMatchupPts = {};
     var _feed = [], _shownFeedIds = new Set(), _isDemo = false, _demoT = 0;
+    var _rzEtagByScope = { league: null, user: null }; // server ETags for conditional redzone-data polls
     var _alertsArmed = false, _flashRids = new Set();
     // ── stubbed collaborators (record, never touch a real DOM) ──
     function _render() { D.ev.renders++; }

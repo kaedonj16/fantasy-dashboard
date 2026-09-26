@@ -285,6 +285,12 @@ def _ensure_disc_table():
             )
             """
         )
+        # Perf: get_week_discoveries() runs twice per waiver page load filtering
+        # on (season, week, category) against this strictly-additive table.
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_wbgd_season_week_cat "
+            "ON waiver_big_game_discoveries (season, week, category)"
+        )
         conn.commit()
     _DISC_TABLE_READY = True
 
