@@ -117,9 +117,6 @@ def api_my_leagues():
             )
         else:  # compatibility for injected/legacy resolvers
             leagues, _season = resolve_my_leagues(*_args)
-        if session.get("account_id"):
-            from dashboard_services.accounts import schedule_account_league_reconciliation
-            schedule_account_league_reconciliation(session.get("account_id"), _season)
         from utils.league_chrome import fields_from_provider_league, format_label
         for m in leagues:
             plat = m.get("platform") or "sleeper"
@@ -145,6 +142,16 @@ def api_my_leagues():
                     row["size"] = int(live["size"])
                 row["format"] = format_label(live.get("size") or 0, bool(live.get("is_sf")))
             out.append(row)
+        # Fire-and-forget membership reconciliation runs only after the list is
+        # built, in its own guard: a scheduler hiccup (e.g. thread exhaustion)
+        # must never discard the resolved leagues and silently downgrade
+        # clients to a fallback league source.
+        if session.get("account_id"):
+            try:
+                from dashboard_services.accounts import schedule_account_league_reconciliation
+                schedule_account_league_reconciliation(session.get("account_id"), _season)
+            except Exception:
+                logger.debug("[my-leagues] reconcile schedule failed", exc_info=True)
     except Exception as exc:
         logger.warning("[my-leagues] resolve failed: %s", exc)
 
