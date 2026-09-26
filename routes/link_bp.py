@@ -609,7 +609,7 @@ def link_pending():
         "username": (str(data.get("username")).strip() or None) if data.get("username") else None,
     }
     checkout_plan = str(data.get("checkout_plan") or "").strip()
-    if checkout_plan in {"single_league", "league", "combo", "user"}:
+    if checkout_plan in {"starter", "all_pro", "hall_of_fame"}:
         session["pending_link"]["checkout_plan"] = checkout_plan
         from urllib.parse import quote
         next_url = (

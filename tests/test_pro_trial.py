@@ -5,8 +5,10 @@ from dashboard_services import subscriptions
 
 
 class _Cursor:
-    def __init__(self, rows):
+    def __init__(self, rows, all_batches=()):
         self.rows = iter(rows)
+        # One fetchall() result per account-branch query (JOIN, then direct).
+        self._batches = list(all_batches)
         self.queries = []
 
     def __enter__(self):
@@ -20,6 +22,9 @@ class _Cursor:
 
     def fetchone(self):
         return next(self.rows, None)
+
+    def fetchall(self):
+        return self._batches.pop(0) if self._batches else []
 
 
 class _Conn:
@@ -48,8 +53,8 @@ def _trial_row(hours_left=48.0, notified=False, status=None):
     }
 
 
-def _patch_conn(monkeypatch, rows):
-    cursor = _Cursor(rows)
+def _patch_conn(monkeypatch, rows, all_batches=()):
+    cursor = _Cursor(rows, all_batches=all_batches)
     monkeypatch.setattr(subscriptions, "get_conn", lambda: _Conn(cursor))
     return cursor
 
@@ -57,8 +62,8 @@ def _patch_conn(monkeypatch, rows):
 # ── Gate: trial extends the existing PRO check ───────────────────────────────
 
 def test_trial_grants_premium_via_account_check(monkeypatch):
-    # Two subscription misses, then the trial hit.
-    cursor = _patch_conn(monkeypatch, [None, None, {"exists": 1}])
+    # Two account-branch subscription misses (fetchall), then the trial hit.
+    cursor = _patch_conn(monkeypatch, [{"exists": 1}], all_batches=[[], []])
     assert subscriptions.has_premium_access(None, None, account_id=42) is True
     sql, params = cursor.queries[-1]
     assert "pro_trials" in sql
@@ -66,13 +71,13 @@ def test_trial_grants_premium_via_account_check(monkeypatch):
 
 
 def test_no_trial_no_premium(monkeypatch):
-    _patch_conn(monkeypatch, [None, None, None])
+    _patch_conn(monkeypatch, [None], all_batches=[[], []])
     assert subscriptions.has_premium_access(None, None, account_id=42) is False
 
 
 def test_expired_trial_grants_nothing(monkeypatch):
     # Trial query filters ends_at > now, so a lapsed trial returns no row.
-    _patch_conn(monkeypatch, [None, None, None])
+    _patch_conn(monkeypatch, [None], all_batches=[[], []])
     assert subscriptions.has_premium_access(None, None, account_id=42) is False
 
 

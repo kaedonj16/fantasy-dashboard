@@ -67,7 +67,7 @@ def test_billing_portal_accepts_acct_identity():
 
 def test_checkout_requires_league_membership_for_league_plans():
     checkout = BILLING[BILLING.index("def create_checkout_session"):]
-    checkout = checkout[: checkout.index("price_spec = _STRIPE_PRICES")]
+    checkout = checkout[: checkout.index("line_item = _checkout_line_item")]
     assert "viewer_is_league_member" in checkout
     assert "_MEMBERSHIP_REQUIRED_PLANS" in BILLING
     assert "single_league" in BILLING
@@ -343,8 +343,12 @@ def test_checkout_overlays_stack_above_paywall():
     assert "_stackAbovePaywall" in paywall
     assert "dataset.nestedOpen" in paywall
     initiate = paywall[paywall.index("async function initiatePurchase"): paywall.index("function addPremiumBadge")]
-    assert "_openCheckoutLeaguePicker" in initiate
+    # New-catalog flow: no league picker at checkout. Guests are Google-gated
+    # (direct subscribe when a league is open, identify modal otherwise); the
+    # picker now only serves the link-modal "other platform" path.
+    assert "_openCheckoutLeaguePicker" not in initiate
     assert "_showIdentifyModal(type, btn)" in initiate
+    assert "_startGoogleSubscribe(type, btn)" in initiate
     assert "brOpenSignin" not in initiate
     assert "_openCheckoutLeaguePicker" in paywall
     assert "linkModal" in paywall[paywall.index("function _openCheckoutLeaguePicker"): paywall.index("function _showLeaguePickerModal")]
@@ -362,7 +366,7 @@ def test_checkout_overlays_stack_above_paywall():
 
 
 def test_checkout_google_uses_link_modal_platforms():
-    """One League / Google checkout must pick a league on every platform first."""
+    """Google checkout resume must carry the new-catalog plan on every platform."""
     paywall = (ROOT / "static" / "paywall.js").read_text(encoding="utf-8")
     app_py = (ROOT / "app.py").read_text(encoding="utf-8")
     link_bp = (ROOT / "routes" / "link_bp.py").read_text(encoding="utf-8")
@@ -373,7 +377,7 @@ def test_checkout_google_uses_link_modal_platforms():
     assert "payload.checkout_plan" in app_py
     assert "checkout_plan" in link_bp
     assert "/pricing?plan=" in link_bp
-    assert 'checkout_plan in {"single_league", "league", "combo", "user"}' in google
+    assert 'checkout_plan in {"starter", "all_pro", "hall_of_fame"}' in google
     assert "/pricing?plan={checkout_plan}&checkout=1" in google
     assert "resumeCheckoutFromGoogle" in paywall
 

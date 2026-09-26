@@ -25,6 +25,10 @@ _PLAN_LABELS = {
     "user": "Personal PRO",
     "league": "League PRO",
     "combo": "League + Personal PRO",
+    # Current catalog.
+    "starter": "Starter PRO",
+    "all_pro": "All-Pro PRO",
+    "hall_of_fame": "Hall of Fame PRO",
 }
 
 

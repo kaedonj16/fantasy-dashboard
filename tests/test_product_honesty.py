@@ -56,12 +56,12 @@ def test_paywall_and_pricing_explain_pro_and_plan_coverage():
     for name in locked:
         assert name in billing
     for source in (billing, PAYWALL_JS):
-        assert source.index("Personal") < source.index("Individual: One League")
-        assert source.index("Individual: One League") < source.index("Entire League")
+        assert source.index("Starter") < source.index("All-Pro")
+        assert source.index("All-Pro") < source.index("Hall of Fame")
         assert "Recommended" in source
         assert "Most popular" not in source
         assert "Your league mates are not upgraded" in source
-        assert "Other managers’ additional leagues are not upgraded" in source
+        assert "change it anytime" in source
     assert "What PRO includes" in billing
     assert "What remains free" in billing
     assert "Sample preview" in billing
@@ -79,17 +79,18 @@ def test_paywall_and_pricing_explain_pro_and_plan_coverage():
 def test_plan_cards_keep_original_keys_and_annual_prices():
     billing = (ROOT / "routes" / "billing_bp.py").read_text(encoding="utf-8")
     expected = {
-        "user": "$20/year",
-        "single_league": "$10/year",
-        "league": "$35/year",
-        "combo": "$45/year",
+        "starter": "$10/year",
+        "all_pro": "$30/year",
+        "hall_of_fame": "$50/year",
     }
     for key, price in expected.items():
         assert f'("{key}",' in billing
-        assert f"initiatePurchase('{{key}}', this)" in billing
+        assert "initiatePurchase('{key}', this)" in billing
         assert f"key: '{key}'" in PAYWALL_JS
         assert price in billing
         assert price in PAYWALL_JS
+    # The paywall cards build onclick from the BR_PRO_PLANS key at runtime.
+    assert "initiatePurchase('${plan.key}', this)" in PAYWALL_JS
 
 
 def test_nav_shows_trade_intel_and_redzone_on_every_platform():

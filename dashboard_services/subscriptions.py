@@ -6,7 +6,12 @@ Premium Features:
 - Breakout candidates
 - Viewable advanced metrics
 
-Subscription types:
+Subscription types (current catalog):
+- starter: personal PRO for 1 selected league (league slots, buyer-only)
+- all_pro: personal PRO for up to 5 selected leagues (league slots, buyer-only)
+- hall_of_fame: personal PRO across all of the buyer's leagues
+
+Grandfathered (no longer sold, renewals and entitlements keep working):
 - league: shared PRO for every manager in one league
 - user: personal PRO across all of a user's leagues
 - single_league: personal PRO for one selected league only (buyer-only)
@@ -50,6 +55,57 @@ def _ensure_billing_interval(cur, table: str) -> None:
         "ADD COLUMN IF NOT EXISTS billing_interval TEXT NOT NULL DEFAULT 'year'"
     )
     _BILLING_INTERVAL_ENSURED.add(table)
+
+
+# League-slot caps for the slot-capped catalog plans (migration 039).
+# hall_of_fame and the grandfathered 'user' plan are PRO everywhere, so they
+# have no cap (None). Mirrored in routes/billing_bp.py as _PLAN_LEAGUE_CAP;
+# keep the two in sync.
+_SLOT_CAP_BY_PLAN: Dict[str, int] = {
+    "starter": 1,
+    "all_pro": 5,
+}
+
+_PLAN_KEY_ENSURED = False
+
+
+def _ensure_plan_key(cur) -> None:
+    """ADD COLUMN IF NOT EXISTS plan_key on user_subscriptions (idempotent)."""
+    global _PLAN_KEY_ENSURED
+    if _PLAN_KEY_ENSURED:
+        return
+    cur.execute(
+        "ALTER TABLE user_subscriptions ADD COLUMN IF NOT EXISTS plan_key TEXT"
+    )
+    _PLAN_KEY_ENSURED = True
+
+
+_PRO_LEAGUE_SLOTS_DDL = """
+CREATE TABLE IF NOT EXISTS pro_league_slots (
+    id SERIAL PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    platform TEXT NOT NULL DEFAULT 'sleeper',
+    league_id TEXT NOT NULL,
+    stripe_subscription_id TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    CONSTRAINT unique_pro_league_slot UNIQUE (user_id, platform, league_id)
+)
+"""
+
+
+def _ensure_pro_league_slots_table(cur) -> None:
+    """Create pro_league_slots if migration 039 never applied (idempotent)."""
+    cur.execute(_PRO_LEAGUE_SLOTS_DDL)
+    cur.execute(
+        "CREATE INDEX IF NOT EXISTS idx_pro_league_slots_user "
+        "ON pro_league_slots (user_id, platform)"
+    )
+
+
+def slot_cap_for_plan(plan_key: Optional[str]) -> Optional[int]:
+    """League-slot cap for a catalog plan: int, or None when unlimited."""
+    return _SLOT_CAP_BY_PLAN.get((plan_key or "").strip().lower())
 
 
 def pro_require_google() -> bool:
@@ -208,6 +264,56 @@ def has_user_league_subscription(
         return False
 
 
+def has_any_user_league_subscription(
+    user_id: Optional[str],
+    platform: str = "sleeper",
+    account_id: Optional[int] = None,
+    user_keys: Optional[List[str]] = None,
+) -> bool:
+    """True when the user holds any active legacy single-league row (any league).
+
+    ``user_keys`` widens the direct identity check to every alias the
+    checkout flow uses (stable viewer id, username, acct keys); the legacy
+    row was granted under whichever identity paid for it.
+    """
+    keys = [k for k in dict.fromkeys([*(user_keys or []), user_id or ""]) if k]
+    if not keys and not account_id:
+        return False
+    platform = platform or "sleeper"
+    now = datetime.now(timezone.utc)
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                _ensure_user_league_subscriptions_table(cur)
+                if keys:
+                    cur.execute("""
+                        SELECT 1 FROM user_league_subscriptions
+                        WHERE user_id = ANY(%s)
+                          AND platform = %s
+                          AND subscription_status = 'active'
+                          AND expires_at > %s
+                        LIMIT 1
+                    """, (keys, platform, now))
+                    if cur.fetchone():
+                        return True
+                if account_id:
+                    keys = _account_user_keys(int(account_id))
+                    cur.execute("""
+                        SELECT 1 FROM user_league_subscriptions
+                        WHERE user_id = ANY(%s)
+                          AND platform = %s
+                          AND subscription_status = 'active'
+                          AND expires_at > %s
+                        LIMIT 1
+                    """, (keys, platform, now))
+                    if cur.fetchone():
+                        return True
+                return False
+    except Exception as e:
+        logger.error("[subscriptions] Error checking any single-league access: %s", e)
+        return False
+
+
 def has_premium_access(
     user_id: Optional[str],
     league_id: Optional[str],
@@ -244,6 +350,10 @@ def has_premium_access(
     try:
         with get_conn() as conn:
             with conn.cursor() as cur:
+                # Belt-and-braces: plan_key / slots may be missing when
+                # migration 039 has not applied yet.
+                _ensure_plan_key(cur)
+                _ensure_pro_league_slots_table(cur)
                 # Check league subscription first (if league_id provided)
                 if league_id:
                     cur.execute("""
@@ -261,16 +371,28 @@ def has_premium_access(
                 # Check user subscription (if user_id provided)
                 if user_id:
                     cur.execute("""
-                        SELECT 1 FROM user_subscriptions
+                        SELECT plan_key FROM user_subscriptions
                         WHERE user_id = %s
                           AND platform = %s
                           AND subscription_status = 'active'
                           AND expires_at > %s
                         LIMIT 1
                     """, (user_id, platform, now))
-
-                    if cur.fetchone():
-                        return True
+                    _urow = cur.fetchone()
+                    if _urow:
+                        _upk = ((_urow.get("plan_key") if isinstance(_urow, dict)
+                                 else _urow[0]) or "").strip().lower()
+                        if _upk in _SLOT_CAP_BY_PLAN:
+                            # Slot-capped plan (starter/all_pro): PRO only in
+                            # the selected leagues, never account-wide.
+                            if league_id and _slot_row_active(
+                                cur, user_id, platform, league_id, now,
+                            ):
+                                return True
+                        else:
+                            # hall_of_fame / grandfathered 'user' / legacy NULL
+                            # plan_key: personal PRO across all leagues.
+                            return True
 
                     # PRO free trial (additive, like a personal user plan).
                     # trial_active_for_keys fails closed on DB errors and is
@@ -280,9 +402,12 @@ def has_premium_access(
 
                 # Account-based (additive): premium on any linked platform
                 # identity covers the whole account, across platforms.
+                # Slot-capped plans (starter/all_pro) only grant the leagues in
+                # their slots; unlimited plans (hall_of_fame, grandfathered
+                # 'user') grant account-wide.
                 if account_id:
                     cur.execute("""
-                        SELECT 1
+                        SELECT us.user_id, us.plan_key
                         FROM user_subscriptions us
                         JOIN account_identities ai
                           ON ai.platform = us.platform
@@ -290,24 +415,38 @@ def has_premium_access(
                         WHERE ai.account_id = %s
                           AND us.subscription_status = 'active'
                           AND us.expires_at > %s
-                        LIMIT 1
                     """, (account_id, now))
-
-                    if cur.fetchone():
-                        return True
+                    for _r in (cur.fetchall() or []):
+                        _uk = _r.get("user_id") if isinstance(_r, dict) else _r[0]
+                        _pk = ((_r.get("plan_key") if isinstance(_r, dict)
+                                else _r[1]) or "").strip().lower()
+                        if _pk in _SLOT_CAP_BY_PLAN:
+                            if league_id and _slot_row_active(
+                                cur, _uk, platform, league_id, now,
+                            ):
+                                return True
+                        else:
+                            return True
 
                     # Google-only checkout (no platform identity yet) stores the
                     # subscription against acct:<id> (or the bare account id).
                     cur.execute("""
-                        SELECT 1 FROM user_subscriptions
+                        SELECT user_id, plan_key FROM user_subscriptions
                         WHERE user_id IN (%s, %s)
                           AND subscription_status = 'active'
                           AND expires_at > %s
-                        LIMIT 1
                     """, (f"acct:{account_id}", str(account_id), now))
-
-                    if cur.fetchone():
-                        return True
+                    for _r in (cur.fetchall() or []):
+                        _uk = _r.get("user_id") if isinstance(_r, dict) else _r[0]
+                        _pk = ((_r.get("plan_key") if isinstance(_r, dict)
+                                else _r[1]) or "").strip().lower()
+                        if _pk in _SLOT_CAP_BY_PLAN:
+                            if league_id and _slot_row_active(
+                                cur, _uk, platform, league_id, now,
+                            ):
+                                return True
+                        else:
+                            return True
 
                     # PRO free trial: trial rows are keyed acct:<id>, exactly
                     # like Google-only checkout rows above. A live trial grants
@@ -322,6 +461,12 @@ def has_premium_access(
 
     # Buyer-only single-league plan (own connection -- avoid nesting get_conn).
     if league_id and has_user_league_subscription(
+        user_id, league_id, platform, account_id=account_id,
+    ):
+        return True
+
+    # Slot-capped plans (starter/all_pro): PRO only in the selected leagues.
+    if league_id and has_pro_league_slot(
         user_id, league_id, platform, account_id=account_id,
     ):
         return True
@@ -447,9 +592,18 @@ def has_premium_for_viewer(
 
     # Single-league personal plan (buyer-only for this league). Prefer the
     # Google account key; soft dual-read still honors Sleeper viewer ids.
+    # Covers both the grandfathered single_league rows and the new
+    # slot-capped plans (starter/all_pro) via pro_league_slots.
     if not result and league_id:
-        if _acct and has_user_league_subscription(
-            viewer_user_id or viewer_username, league_id, platform, account_id=_acct,
+        if _acct and (
+            has_user_league_subscription(
+                viewer_user_id or viewer_username, league_id, platform,
+                account_id=_acct,
+            )
+            or has_pro_league_slot(
+                viewer_user_id or viewer_username, league_id, platform,
+                account_id=_acct,
+            )
         ):
             result = True
         elif not _require_google:
@@ -459,6 +613,10 @@ def has_premium_for_viewer(
                 result = True
             elif viewer_username and has_user_league_subscription(
                 viewer_username, league_id, platform,
+            ):
+                result = True
+            elif (viewer_user_id or viewer_username) and has_pro_league_slot(
+                viewer_user_id or viewer_username, league_id, platform,
             ):
                 result = True
 
@@ -503,6 +661,7 @@ def get_subscription_info(user_id: Optional[str], league_id: Optional[str], plat
         "billing_interval": "year",
         "subscriber_user_id": None,
         "stripe_customer_id": None,
+        "user_plan_key": None,
     }
 
     now = datetime.now(timezone.utc)
@@ -512,6 +671,7 @@ def get_subscription_info(user_id: Optional[str], league_id: Optional[str], plat
             with conn.cursor() as cur:
                 for _table in _BILLING_INTERVAL_TABLES:
                     _ensure_billing_interval(cur, _table)
+                _ensure_plan_key(cur)
                 if league_id:
                     cur.execute("""
                         SELECT expires_at, subscriber_user_id, stripe_customer_id, billing_interval
@@ -532,7 +692,7 @@ def get_subscription_info(user_id: Optional[str], league_id: Optional[str], plat
 
                 if user_id:
                     cur.execute("""
-                        SELECT expires_at, stripe_customer_id, billing_interval
+                        SELECT expires_at, stripe_customer_id, billing_interval, plan_key
                         FROM user_subscriptions
                         WHERE user_id = %s
                           AND platform = %s
@@ -543,6 +703,10 @@ def get_subscription_info(user_id: Optional[str], league_id: Optional[str], plat
                     row = cur.fetchone()
                     if row:
                         result["has_user_subscription"] = True
+                        _upk = ((row.get("plan_key") if isinstance(row, dict)
+                                 else row[3]) or "").strip().lower()
+                        if _upk:
+                            result["user_plan_key"] = _upk
                         if not result["expires_at"]:
                             result["expires_at"] = row["expires_at"].isoformat() if row["expires_at"] else None
                             result["billing_interval"] = row.get("billing_interval") or "year"
@@ -577,7 +741,9 @@ def get_subscription_info(user_id: Optional[str], league_id: Optional[str], plat
         elif has_league:
             result["subscription_type"] = "league"
         elif has_user:
-            result["subscription_type"] = "user"
+            # The real catalog plan when known (starter/all_pro/hall_of_fame);
+            # legacy rows read as "user".
+            result["subscription_type"] = result.get("user_plan_key") or "user"
         elif has_single:
             result["subscription_type"] = "single_league"
 
@@ -638,32 +804,41 @@ def create_user_subscription(
         stripe_subscription_id: Optional[str] = None,
         stripe_customer_id: Optional[str] = None,
         billing_interval: str = "year",
+        plan_key: str = "",
 ) -> bool:
-    """Create or update a user subscription."""
+    """Create or update a user subscription.
+
+    ``plan_key`` records the catalog plan ('starter' | 'all_pro' |
+    'hall_of_fame', or the grandfathered 'user'). Empty/NULL keeps the legacy
+    unlimited-personal semantics.
+    """
     billing_interval = (billing_interval or "year").strip().lower()
     if billing_interval not in ("month", "year"):
         billing_interval = "year"
+    plan_key = (plan_key or "").strip().lower() or None
     try:
         with get_conn() as conn:
             with conn.cursor() as cur:
                 _ensure_billing_interval(cur, "user_subscriptions")
+                _ensure_plan_key(cur)
                 cur.execute("""
                     INSERT INTO user_subscriptions (
                         user_id, platform, subscription_status,
                         stripe_subscription_id, stripe_customer_id, expires_at,
-                        billing_interval
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                        billing_interval, plan_key
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (user_id, platform) DO UPDATE SET
                         subscription_status = EXCLUDED.subscription_status,
                         stripe_subscription_id = EXCLUDED.stripe_subscription_id,
                         stripe_customer_id = EXCLUDED.stripe_customer_id,
                         expires_at = EXCLUDED.expires_at,
                         billing_interval = EXCLUDED.billing_interval,
+                        plan_key = COALESCE(EXCLUDED.plan_key, user_subscriptions.plan_key),
                         updated_at = NOW()
                 """, (
                     user_id, platform, 'active',
                     stripe_subscription_id, stripe_customer_id, expires_at,
-                    billing_interval
+                    billing_interval, plan_key,
                 ))
         return True
     except Exception as e:
@@ -751,6 +926,270 @@ def create_user_league_subscription(
         return False
 
 
+# ── PRO league slots (slot-capped plans: starter / all_pro) ───────────────────
+# A subscription row holds up to N selected league ids. Slots grant PRO only
+# for the selected leagues, and only while the owning subscription row is
+# active. The cap is enforced server-side on every write.
+
+
+def find_active_personal_plan(
+    user_keys: List[str],
+    platform: str = "sleeper",
+) -> Optional[Dict[str, Any]]:
+    """Return the caller's active personal subscription row, if any.
+
+    ``user_keys`` are the checkout identities to look up (e.g. viewer id,
+    ``acct:<id>``). Returns ``{"user_key", "plan_key", "expires_at",
+    "stripe_subscription_id"}`` or None. A NULL plan_key reads as the
+    grandfathered 'user' plan (unlimited personal PRO). Slot-capped plans are
+    preferred when several rows are active.
+    """
+    keys = [k for k in (user_keys or []) if k]
+    if not keys:
+        return None
+    platform = platform or "sleeper"
+    now = datetime.now(timezone.utc)
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                _ensure_plan_key(cur)
+                cur.execute("""
+                    SELECT user_id, plan_key, expires_at, stripe_subscription_id
+                    FROM user_subscriptions
+                    WHERE user_id = ANY(%s)
+                      AND platform = %s
+                      AND subscription_status = 'active'
+                      AND expires_at > %s
+                """, (keys, platform, now))
+                rows = cur.fetchall() or []
+    except Exception as e:
+        logger.error("[subscriptions] Error finding personal plan: %s", e)
+        return None
+    if not rows:
+        return None
+
+    def _rank(row) -> tuple:
+        pk = ((row.get("plan_key") if isinstance(row, dict) else row[1]) or "").strip().lower()
+        return (0 if pk in _SLOT_CAP_BY_PLAN else 1, pk)
+
+    def _as_dict(row) -> dict:
+        if isinstance(row, dict):
+            d = dict(row)
+        else:
+            d = {
+                "user_id": row[0], "plan_key": row[1],
+                "expires_at": row[2], "stripe_subscription_id": row[3],
+            }
+        pk = (d.get("plan_key") or "").strip().lower() or "user"
+        d["plan_key"] = pk
+        return d
+
+    best = min((_as_dict(r) for r in rows), key=_rank)
+    return {
+        "user_key": best.get("user_id"),
+        "plan_key": best.get("plan_key"),
+        "expires_at": best.get("expires_at"),
+        "stripe_subscription_id": best.get("stripe_subscription_id"),
+    }
+
+
+def get_pro_league_slots(
+    user_id: str,
+    platform: str = "sleeper",
+) -> List[str]:
+    """Return the league ids assigned to the user's PRO slots (active plan only)."""
+    user_id = (user_id or "").strip()
+    if not user_id:
+        return []
+    platform = platform or "sleeper"
+    now = datetime.now(timezone.utc)
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                _ensure_pro_league_slots_table(cur)
+                _ensure_plan_key(cur)
+                cur.execute("""
+                    SELECT pls.league_id
+                    FROM pro_league_slots pls
+                    JOIN user_subscriptions us
+                      ON us.user_id = pls.user_id
+                     AND us.platform = pls.platform
+                     AND us.subscription_status = 'active'
+                     AND us.expires_at > %s
+                     AND us.plan_key = ANY(%s)
+                    WHERE pls.user_id = %s
+                      AND pls.platform = %s
+                    ORDER BY pls.league_id
+                """, (now, list(_SLOT_CAP_BY_PLAN), user_id, platform))
+                return [r["league_id"] if isinstance(r, dict) else r[0]
+                        for r in (cur.fetchall() or [])]
+    except Exception as e:
+        logger.error("[subscriptions] Error reading PRO league slots: %s", e)
+        return []
+
+
+def set_pro_league_slots(
+    user_id: str,
+    platform: str,
+    league_ids: List[str],
+    stripe_subscription_id: Optional[str] = None,
+) -> List[str]:
+    """Replace the user's PRO league slot set. Enforces the plan cap.
+
+    Raises ValueError when the user has no active slot-capped plan, the cap
+    is exceeded, or a league id is blank. Slots for leagues outside the new
+    set are deleted.
+    """
+    user_id = (user_id or "").strip()
+    platform = (platform or "sleeper").strip() or "sleeper"
+    if not user_id:
+        raise ValueError("No user.")
+    plan = find_active_personal_plan([user_id], platform)
+    plan_key = (plan or {}).get("plan_key") or ""
+    cap = slot_cap_for_plan(plan_key)
+    if cap is None:
+        raise ValueError(
+            "League slots are only for Starter and All-Pro plans."
+            if plan else "No active PRO plan."
+        )
+    cleaned: List[str] = []
+    for lid in league_ids or []:
+        lid = str(lid or "").strip()
+        if not lid:
+            raise ValueError("League ids must not be blank.")
+        if lid not in cleaned:
+            cleaned.append(lid)
+    if len(cleaned) > cap:
+        raise ValueError(
+            f"Your plan covers {cap} league{'s' if cap != 1 else ''}."
+        )
+    now = datetime.now(timezone.utc)
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                _ensure_pro_league_slots_table(cur)
+                if cleaned:
+                    cur.execute("""
+                        INSERT INTO pro_league_slots
+                            (user_id, platform, league_id, stripe_subscription_id,
+                             created_at, updated_at)
+                        SELECT %s, %s, lid, %s, %s, %s
+                        FROM UNNEST(%s::text[]) AS lid
+                        ON CONFLICT (user_id, platform, league_id) DO UPDATE SET
+                            stripe_subscription_id = COALESCE(
+                                EXCLUDED.stripe_subscription_id,
+                                pro_league_slots.stripe_subscription_id),
+                            updated_at = NOW()
+                    """, (user_id, platform, stripe_subscription_id, now, now, cleaned))
+                    cur.execute("""
+                        DELETE FROM pro_league_slots
+                        WHERE user_id = %s AND platform = %s
+                          AND NOT (league_id = ANY(%s))
+                    """, (user_id, platform, cleaned))
+                else:
+                    cur.execute("""
+                        DELETE FROM pro_league_slots
+                        WHERE user_id = %s AND platform = %s
+                    """, (user_id, platform))
+        return cleaned
+    except ValueError:
+        raise
+    except Exception as e:
+        logger.error("[subscriptions] Error writing PRO league slots: %s", e)
+        raise ValueError("Could not save league slots.") from e
+
+
+def add_pro_league_slot(
+    user_id: str,
+    platform: str,
+    league_id: str,
+    stripe_subscription_id: Optional[str] = None,
+) -> bool:
+    """Add one league to the user's slots when the cap allows. Best-effort."""
+    user_id = (user_id or "").strip()
+    league_id = (league_id or "").strip()
+    if not user_id or not league_id:
+        return False
+    try:
+        current = get_pro_league_slots(user_id, platform)
+        if league_id in current:
+            return True
+        set_pro_league_slots(
+            user_id, platform, current + [league_id],
+            stripe_subscription_id=stripe_subscription_id,
+        )
+        return True
+    except ValueError as e:
+        logger.info("[subscriptions] slot seed skipped user=%s league=%s: %s",
+                   user_id, league_id, e)
+        return False
+    except Exception:
+        logger.warning("[subscriptions] slot seed failed", exc_info=True)
+        return False
+
+
+def _slot_row_active(cur, user_key: str, platform: str, league_id: str, now) -> bool:
+    """Cursor-level slot check: active slot-plan row covering league_id."""
+    cur.execute("""
+        SELECT 1
+        FROM pro_league_slots pls
+        JOIN user_subscriptions us
+          ON us.user_id = pls.user_id
+         AND us.platform = pls.platform
+         AND us.subscription_status = 'active'
+         AND us.expires_at > %s
+         AND us.plan_key = ANY(%s)
+        WHERE pls.user_id = %s
+          AND pls.platform = %s
+          AND pls.league_id = %s
+        LIMIT 1
+    """, (now, list(_SLOT_CAP_BY_PLAN), user_key, platform, league_id))
+    return bool(cur.fetchone())
+
+
+def has_pro_league_slot(
+    user_id: Optional[str],
+    league_id: Optional[str],
+    platform: str = "sleeper",
+    account_id: Optional[int] = None,
+) -> bool:
+    """True when the user holds an active slot-capped plan covering league_id."""
+    if not league_id or (not user_id and not account_id):
+        return False
+    platform = platform or "sleeper"
+    keys = []
+    if user_id:
+        keys.append(user_id)
+    if account_id:
+        keys.extend(_account_user_keys(int(account_id)))
+    if not keys:
+        return False
+    now = datetime.now(timezone.utc)
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                _ensure_pro_league_slots_table(cur)
+                _ensure_plan_key(cur)
+                cur.execute("""
+                    SELECT 1
+                    FROM pro_league_slots pls
+                    JOIN user_subscriptions us
+                      ON us.user_id = pls.user_id
+                     AND us.platform = pls.platform
+                     AND us.subscription_status = 'active'
+                     AND us.expires_at > %s
+                     AND us.plan_key = ANY(%s)
+                    WHERE pls.user_id = ANY(%s)
+                      AND pls.platform = %s
+                      AND pls.league_id = %s
+                    LIMIT 1
+                """, (now, list(_SLOT_CAP_BY_PLAN), keys, platform, league_id))
+                return bool(cur.fetchone())
+    except Exception as e:
+        logger.error("[subscriptions] Error checking PRO league slot: %s", e)
+        return False
+
+
 def cancel_subscription(subscription_id: str, subscription_type: str = "league") -> bool:
     """Cancel a subscription (set status to 'canceled')."""
     try:
@@ -780,12 +1219,16 @@ def cancel_subscription(subscription_id: str, subscription_type: str = "league")
 # cancel_at_period_end, current period end), so no extra Stripe API calls.
 
 # Plan -> entitlement tables that plan owns. combo owns two rows (shared league
-# PRO plus personal user PRO); every other plan owns exactly one.
+# PRO plus personal user PRO); the new catalog plans and every other plan own
+# exactly one. Grandfathered plans keep working through renewals and webhooks.
 _PLAN_LIFECYCLE_TABLES = {
     "league": ("league_subscriptions",),
     "user": ("user_subscriptions",),
     "single_league": ("user_league_subscriptions",),
     "combo": ("league_subscriptions", "user_subscriptions"),
+    "starter": ("user_subscriptions",),
+    "all_pro": ("user_subscriptions",),
+    "hall_of_fame": ("user_subscriptions",),
 }
 
 # Stripe statuses that keep PRO access working. past_due is deliberately here:
@@ -815,6 +1258,7 @@ def _grant_lifecycle_table(
     period_end,
     interval: str,
     sub_id: str,
+    plan_key: str = "",
 ) -> bool:
     """Write the missing entitlement row for a plan upgrade.
 
@@ -871,6 +1315,7 @@ def _grant_lifecycle_table(
         return bool(create_user_subscription(
             user_id, period_end, platform=platform,
             stripe_subscription_id=sub_id, billing_interval=interval,
+            plan_key=plan_key,
         ))
     if table == "user_league_subscriptions":
         if not user_id or not league_id:
@@ -912,6 +1357,7 @@ def apply_subscription_lifecycle(
     user_id: str = "",
     league_id: str = "",
     platform: str = "sleeper",
+    plan_key: str = "",
 ) -> dict:
     """Reconcile entitlement rows with a subscription lifecycle webhook event.
 
@@ -952,6 +1398,10 @@ def apply_subscription_lifecycle(
     platform = (platform or "sleeper").strip() or "sleeper"
     user_id = (user_id or "").strip()
     league_id = (league_id or "").strip()
+    # plan_key rides along for user_subscriptions rows so slot-capped plans
+    # keep their cap through webhook-driven grants. Defaults to the plan when
+    # the caller did not pass one explicitly.
+    plan_key = (plan_key or plan or "").strip().lower()
 
     now = datetime.now(timezone.utc)
     period_end = expires_at if isinstance(expires_at, datetime) else None
@@ -978,6 +1428,7 @@ def apply_subscription_lifecycle(
             with conn.cursor() as cur:
                 for table in _BILLING_INTERVAL_TABLES:
                     _ensure_billing_interval(cur, table)
+                _ensure_plan_key(cur)
                 existing = set()
                 for table in _BILLING_INTERVAL_TABLES:
                     cur.execute(
@@ -1001,13 +1452,26 @@ def apply_subscription_lifecycle(
                         summary["canceled"].append(table)
                     elif keep_until_period_end or status not in _REVOKED_STATUSES:
                         if keep_until_period_end or status in _ACTIVE_LIKE_STATUSES:
-                            cur.execute(
-                                f"UPDATE {table} SET subscription_status = 'active',"
-                                " expires_at = %s, billing_interval = %s,"
-                                " updated_at = NOW()"
-                                " WHERE stripe_subscription_id = %s",
-                                (period_end, interval, sub_id),
-                            )
+                            if table == "user_subscriptions" and plan_key:
+                                # Plan changes (e.g. starter -> all_pro) land
+                                # here: sync plan_key so slot caps and
+                                # entitlement checks follow the new plan.
+                                cur.execute(
+                                    "UPDATE user_subscriptions"
+                                    " SET subscription_status = 'active',"
+                                    " expires_at = %s, billing_interval = %s,"
+                                    " plan_key = %s, updated_at = NOW()"
+                                    " WHERE stripe_subscription_id = %s",
+                                    (period_end, interval, plan_key, sub_id),
+                                )
+                            else:
+                                cur.execute(
+                                    f"UPDATE {table} SET subscription_status = 'active',"
+                                    " expires_at = %s, billing_interval = %s,"
+                                    " updated_at = NOW()"
+                                    " WHERE stripe_subscription_id = %s",
+                                    (period_end, interval, sub_id),
+                                )
                         else:
                             # Unknown status (e.g. incomplete, paused): sync the
                             # clock but do not flip access either way.
@@ -1034,6 +1498,7 @@ def apply_subscription_lifecycle(
                             cur, table, user_id=user_id, league_id=league_id,
                             platform=platform, period_end=period_end,
                             interval=interval, sub_id=sub_id,
+                            plan_key=plan_key,
                         ):
                             summary["granted"].append(table)
     except Exception:
@@ -1046,7 +1511,7 @@ def apply_subscription_lifecycle(
 #   PRO_TRIAL_DAYS          trial length, days (default 7; env PRO_TRIAL_DAYS)
 #   PRO_TRIAL_REQUIRE_CARD  whether starting a trial needs a payment method
 #                           (default False: no-card, one-click signup)
-#   Trial scope is FULL PRO: a trial grants everything a personal "user" plan
+#   Trial scope is FULL PRO: a trial grants everything a Hall of Fame plan
 #   grants (every PRO feature, all of the holder's leagues).
 #   One trial per user ever: enforced by UNIQUE(user_key) on pro_trials.
 #   Re-claim via a brand-new Google account is out of scope.

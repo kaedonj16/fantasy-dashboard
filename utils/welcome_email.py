@@ -22,6 +22,10 @@ _PLAN_LABELS = {
     "user": "Personal PRO",
     "league": "League PRO",
     "combo": "League + Personal PRO",
+    # Current catalog.
+    "starter": "Starter PRO",
+    "all_pro": "All-Pro PRO",
+    "hall_of_fame": "Hall of Fame PRO",
 }
 
 
@@ -275,6 +279,18 @@ def build_pro_welcome(
         trade_intel = breakouts = draft = weekly = teams = dashboard = dash
 
     plan_blurb = {
+        "starter": (
+            "Starter PRO unlocks premium tools for the one league you pick. "
+            "You can change your pick anytime from your PRO settings."
+        ),
+        "all_pro": (
+            "All-Pro PRO unlocks premium tools for up to 5 leagues you pick. "
+            "You can change your picks anytime from your PRO settings."
+        ),
+        "hall_of_fame": (
+            "Hall of Fame PRO follows you across every league on your Google account, "
+            "ideal if you manage multiple teams."
+        ),
         "single_league": (
             "One League PRO unlocks premium tools for the league you chose at checkout. "
             "Other leagues stay on the free tier unless you upgrade."
@@ -325,7 +341,7 @@ def build_pro_welcome(
             teams,
         ),
     ]
-    if plan_key in ("user", "combo"):
+    if plan_key in ("hall_of_fame", "user", "combo"):
         feats.append(
             (
                 "Cross-league This Week's Moves",

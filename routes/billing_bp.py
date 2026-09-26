@@ -17,13 +17,19 @@ from datetime import datetime, timedelta, timezone
 from flask import Blueprint, jsonify, request, session
 
 from dashboard_services.subscriptions import (
+    add_pro_league_slot,
     apply_subscription_lifecycle,
     create_league_subscription,
     create_user_league_subscription,
     create_user_subscription,
+    find_active_personal_plan,
+    get_pro_league_slots,
+    has_any_user_league_subscription,
     has_premium_access,
     has_premium_for_viewer,
     has_user_league_subscription,
+    set_pro_league_slots,
+    slot_cap_for_plan,
 )
 
 billing_bp = Blueprint("billing", __name__)
@@ -98,23 +104,48 @@ def _metadata_dict(obj) -> dict:
 
 
 def _product_plan_map() -> dict:
-    return {
+    mapping = {
         _STRIPE_LEAGUE_PRODUCT: "league",
         _STRIPE_USER_PRODUCT: "user",
         _STRIPE_COMBO_PRODUCT: "combo",
         _STRIPE_SINGLE_LEAGUE_PRODUCT: "single_league",
     }
+    # New-catalog products (env-configured). Lets webhook plan inference work
+    # for ad-hoc price_data checkouts as well as dashboard Price IDs.
+    for product_id, plan in (
+        (_STRIPE_PRODUCT_STARTER, "starter"),
+        (_STRIPE_PRODUCT_ALL_PRO, "all_pro"),
+        (_STRIPE_PRODUCT_HALL_OF_FAME, "hall_of_fame"),
+    ):
+        if product_id:
+            mapping[product_id] = plan
+    return mapping
 
 
 def _plan_from_subscription(sub) -> str:
-    """Infer plan from the Stripe product on a subscription's items."""
+    """Infer plan from the Stripe product or price on a subscription's items.
+
+    Product inference covers ad-hoc price_data checkouts and legacy product
+    env vars. Price-ID inference covers dashboard catalog Prices created from
+    the six new env vars, where the Stripe product may not be env-configured.
+    """
     if not sub:
         return ""
     items = _stripe_field(sub, "items")
     data = _stripe_field(items, "data") or []
     product_map = _product_plan_map()
+    # Map configured Stripe Price ID values (not env var names) to plans.
+    price_map = {}
+    for plan in _STRIPE_PRICES:
+        for price_id in (_annual_price_id(plan), _monthly_price_id(plan)):
+            if price_id:
+                price_map[price_id] = plan
     for item in data:
         price = _stripe_field(item, "price") or {}
+        price_id = _stripe_id(price)
+        plan = price_map.get(price_id)
+        if plan:
+            return plan
         product = _stripe_field(price, "product")
         product_id = _stripe_id(product)
         plan = product_map.get(product_id)
@@ -210,36 +241,13 @@ def _apply_plan_grant(
         return
 
     granted = False
-    if plan in ("league", "combo") and league_id:
-        ok = create_league_subscription(
-            league_id, user_id or "", expires_at,
-            stripe_subscription_id=sub_id,
-            stripe_customer_id=cust_id,
-            platform=platform,
-            billing_interval=interval,
-        )
-        granted = granted or bool(ok)
-        logger.info(
-            "[stripe] %s league subscription %s for league=%s user=%s expires=%s",
-            source, "created" if ok else "FAILED", league_id, user_id, expires_at,
-        )
-    if plan in ("user", "combo") and user_id:
-        ok = create_user_subscription(
-            user_id, expires_at,
-            stripe_subscription_id=sub_id,
-            stripe_customer_id=cust_id,
-            platform=platform,
-            billing_interval=interval,
-        )
-        granted = granted or bool(ok)
-        logger.info(
-            "[stripe] %s user subscription %s for user=%s expires=%s",
-            source, "created" if ok else "FAILED", user_id, expires_at,
-        )
-    if plan == "single_league":
-        if user_id and league_id:
-            ok = create_user_league_subscription(
-                user_id, league_id, expires_at,
+    handled = False
+    if plan in _LEGACY_PRICES:
+        # Grandfathered plans: entitlement writes unchanged.
+        handled = True
+        if plan in ("league", "combo") and league_id:
+            ok = create_league_subscription(
+                league_id, user_id or "", expires_at,
                 stripe_subscription_id=sub_id,
                 stripe_customer_id=cust_id,
                 platform=platform,
@@ -247,21 +255,71 @@ def _apply_plan_grant(
             )
             granted = granted or bool(ok)
             logger.info(
-                "[stripe] %s single-league subscription %s for user=%s league=%s expires=%s",
-                source, "created" if ok else "FAILED", user_id, league_id, expires_at,
+                "[stripe] %s league subscription %s for league=%s user=%s expires=%s",
+                source, "created" if ok else "FAILED", league_id, user_id, expires_at,
             )
-        else:
-            logger.warning(
-                "[stripe] %s single_league grant skipped: user_id=%r league_id=%r",
-                source, user_id, league_id,
+        if plan in ("user", "combo") and user_id:
+            ok = create_user_subscription(
+                user_id, expires_at,
+                stripe_subscription_id=sub_id,
+                stripe_customer_id=cust_id,
+                platform=platform,
+                billing_interval=interval,
+                plan_key=plan,
             )
-    elif plan not in ("league", "user", "combo"):
+            granted = granted or bool(ok)
+            logger.info(
+                "[stripe] %s user subscription %s for user=%s expires=%s",
+                source, "created" if ok else "FAILED", user_id, expires_at,
+            )
+        if plan == "single_league":
+            if user_id and league_id:
+                ok = create_user_league_subscription(
+                    user_id, league_id, expires_at,
+                    stripe_subscription_id=sub_id,
+                    stripe_customer_id=cust_id,
+                    platform=platform,
+                    billing_interval=interval,
+                )
+                granted = granted or bool(ok)
+                logger.info(
+                    "[stripe] %s single-league subscription %s for user=%s league=%s expires=%s",
+                    source, "created" if ok else "FAILED", user_id, league_id, expires_at,
+                )
+            else:
+                logger.warning(
+                    "[stripe] %s single_league grant skipped: user_id=%r league_id=%r",
+                    source, user_id, league_id,
+                )
+    elif plan in _STRIPE_PRICES and user_id:
+        handled = True
+        ok = create_user_subscription(
+            user_id, expires_at,
+            stripe_subscription_id=sub_id,
+            stripe_customer_id=cust_id,
+            platform=platform,
+            billing_interval=interval,
+            plan_key=plan,
+        )
+        granted = granted or bool(ok)
+        logger.info(
+            "[stripe] %s %s subscription %s for user=%s expires=%s",
+            source, plan, "created" if ok else "FAILED", user_id, expires_at,
+        )
+        # Seed the first slot when checkout carried a league (e.g. bought from
+        # a league page). The buyer can change slots anytime via the API.
+        if ok and slot_cap_for_plan(plan) and league_id:
+            add_pro_league_slot(
+                user_id, platform, league_id,
+                stripe_subscription_id=sub_id,
+            )
+    if not handled:
         logger.warning(
             "[stripe] %s unhandled plan=%s league=%s user=%s",
             source, plan, league_id, user_id,
         )
 
-    if granted and plan in ("league", "user", "combo", "single_league"):
+    if granted and plan in _KNOWN_PLANS:
         try:
             _maybe_send_pro_welcome(
                 plan=plan,
@@ -314,7 +372,39 @@ def _maybe_send_pro_welcome(
     )
 
 
+_STRIPE_PRODUCT_STARTER = os.environ.get("STRIPE_PRODUCT_STARTER", "").strip()
+_STRIPE_PRODUCT_ALL_PRO = os.environ.get("STRIPE_PRODUCT_ALL_PRO", "").strip()
+_STRIPE_PRODUCT_HALL_OF_FAME = os.environ.get("STRIPE_PRODUCT_HALL_OF_FAME", "").strip()
+
+
+# ── Plan catalog ──────────────────────────────────────────────────────────────
+# Purchasable plans. Amounts are the ad-hoc fallback used when no dashboard
+# Price ID is configured (see _ANNUAL_PRICE_ENV / _MONTHLY_PRICE_ENV below);
+# a configured Price ID always wins.
 _STRIPE_PRICES = {
+    "starter": {
+        "unit_amount": 1000,  # $10/year
+        "product": _STRIPE_PRODUCT_STARTER,
+        "product_name": "BR Fantasy Starter PRO",
+    },
+    "all_pro": {
+        "unit_amount": 3000,  # $30/year
+        "product": _STRIPE_PRODUCT_ALL_PRO,
+        "product_name": "BR Fantasy All-Pro PRO",
+    },
+    "hall_of_fame": {
+        "unit_amount": 5000,  # $50/year
+        "product": _STRIPE_PRODUCT_HALL_OF_FAME,
+        "product_name": "BR Fantasy Hall of Fame PRO",
+    },
+}
+
+# Retired from sale but GRANDFATHERED: existing subscribers keep renewing and
+# keep their entitlements. Used ONLY for grandfathered renewals,
+# checkout-session resumption (sessions staged before the cutover), webhooks,
+# and entitlement checks. New buyers can never purchase these keys: checkout
+# validates against _STRIPE_PRICES only.
+_LEGACY_PRICES = {
     "league": {"unit_amount": 3500, "product": _STRIPE_LEAGUE_PRODUCT},
     "user":   {"unit_amount": 2000, "product": _STRIPE_USER_PRODUCT},
     "combo":  {"unit_amount": 4500, "product": _STRIPE_COMBO_PRODUCT},
@@ -325,27 +415,60 @@ _STRIPE_PRICES = {
     },
 }
 
+# Every plan key the backend will ever honor in webhooks, grants, and
+# entitlement checks (new + grandfathered).
+_KNOWN_PLANS = frozenset(_STRIPE_PRICES) | frozenset(_LEGACY_PRICES)
+
+# League-slot caps for the purchasable plans. None = unlimited
+# (hall_of_fame is PRO everywhere, same as the grandfathered user plan).
+# Mirrored in dashboard_services/subscriptions.py as _SLOT_CAP_BY_PLAN.
+_PLAN_LEAGUE_CAP = {
+    "starter": 1,
+    "all_pro": 5,
+    "hall_of_fame": None,
+}
+
 # Dashboard-created Stripe Price IDs. When the env var for a plan + interval
 # is set, checkout uses that Price ID; when unset, checkout falls back to
 # ad-hoc price_data with the code defaults, so nothing breaks before the
 # dashboard Prices are wired up. An env-provided Price ID always wins.
 _ANNUAL_PRICE_ENV = {
-    "league": "STRIPE_PRICE_LEAGUE_ANNUAL",
-    "user": "STRIPE_PRICE_USER_ANNUAL",
-    "combo": "STRIPE_PRICE_COMBO_ANNUAL",
-    "single_league": "STRIPE_PRICE_SINGLE_LEAGUE_ANNUAL",
+    "starter": "STRIPE_PRICE_STARTER_ANNUAL",
+    "all_pro": "STRIPE_PRICE_ALL_PRO_ANNUAL",
+    "hall_of_fame": "STRIPE_PRICE_HALL_OF_FAME_ANNUAL",
 }
 
 # Monthly billing defaults (unit_amount, cents). ADJUSTABLE: edit here, or
 # create monthly Prices in the Stripe Dashboard and point the env vars below
 # at them -- an env-provided Price ID always wins over these defaults.
 _MONTHLY_DEFAULT_UNIT_AMOUNTS = {
+    "starter": 149,       # $1.49/mo
+    "all_pro": 449,       # $4.49/mo
+    "hall_of_fame": 749,  # $7.49/mo
+}
+_MONTHLY_PRICE_ENV = {
+    "starter": "STRIPE_PRICE_STARTER_MONTHLY",
+    "all_pro": "STRIPE_PRICE_ALL_PRO_MONTHLY",
+    "hall_of_fame": "STRIPE_PRICE_HALL_OF_FAME_MONTHLY",
+}
+
+# Legacy Price ID env vars + monthly defaults. Kept only so checkout sessions
+# staged before the cutover (resume flow) keep working if Kaedon created
+# dashboard Prices for the old catalog. The old monthly Price IDs
+# ($2.99/$4.99/$5.99) never need creating now.
+_LEGACY_ANNUAL_PRICE_ENV = {
+    "league": "STRIPE_PRICE_LEAGUE_ANNUAL",
+    "user": "STRIPE_PRICE_USER_ANNUAL",
+    "combo": "STRIPE_PRICE_COMBO_ANNUAL",
+    "single_league": "STRIPE_PRICE_SINGLE_LEAGUE_ANNUAL",
+}
+_LEGACY_MONTHLY_DEFAULT_UNIT_AMOUNTS = {
     "league": 499,         # $4.99/mo
     "user": 299,           # $2.99/mo
     "combo": 599,          # $5.99/mo
     "single_league": 149,  # $1.49/mo
 }
-_MONTHLY_PRICE_ENV = {
+_LEGACY_MONTHLY_PRICE_ENV = {
     "league": "STRIPE_PRICE_LEAGUE_MONTHLY",
     "user": "STRIPE_PRICE_USER_MONTHLY",
     "combo": "STRIPE_PRICE_COMBO_MONTHLY",
@@ -361,16 +484,41 @@ def _normalize_interval(value) -> str:
     return interval if interval in _BILLING_INTERVALS else "year"
 
 
+def _price_env_name(plan: str, interval: str) -> str:
+    """Env var holding the dashboard Price ID for a plan + interval.
+
+    New-catalog vars first, legacy vars second (resume flow for sessions
+    staged before the cutover). Empty when the plan is unknown.
+    """
+    if _normalize_interval(interval) == "month":
+        return _MONTHLY_PRICE_ENV.get(plan, "") or _LEGACY_MONTHLY_PRICE_ENV.get(plan, "")
+    return _ANNUAL_PRICE_ENV.get(plan, "") or _LEGACY_ANNUAL_PRICE_ENV.get(plan, "")
+
+
 def _annual_price_id(plan: str) -> str:
     """Stripe Price ID for the annual tier, from env (empty when unset)."""
-    env_name = _ANNUAL_PRICE_ENV.get(plan, "")
+    env_name = _ANNUAL_PRICE_ENV.get(plan, "") or _LEGACY_ANNUAL_PRICE_ENV.get(plan, "")
     return os.environ.get(env_name, "").strip() if env_name else ""
 
 
 def _monthly_price_id(plan: str) -> str:
     """Stripe Price ID for the monthly tier, from env (empty when unset)."""
-    env_name = _MONTHLY_PRICE_ENV.get(plan, "")
+    env_name = _MONTHLY_PRICE_ENV.get(plan, "") or _LEGACY_MONTHLY_PRICE_ENV.get(plan, "")
     return os.environ.get(env_name, "").strip() if env_name else ""
+
+
+def _plan_price_spec(plan: str) -> dict:
+    """Price spec for any known plan (new catalog first, legacy second)."""
+    spec = _STRIPE_PRICES.get(plan) or _LEGACY_PRICES.get(plan)
+    if not spec:
+        raise KeyError(f"unknown plan: {plan}")
+    return spec
+
+
+def _monthly_default_amount(plan: str) -> int:
+    return _MONTHLY_DEFAULT_UNIT_AMOUNTS.get(
+        plan, _LEGACY_MONTHLY_DEFAULT_UNIT_AMOUNTS.get(plan, 0)
+    )
 
 
 def _checkout_line_item(plan: str, interval: str = "year") -> dict:
@@ -379,13 +527,13 @@ def _checkout_line_item(plan: str, interval: str = "year") -> dict:
     A dashboard-created Price ID (env) always wins over ad-hoc price_data.
     Annual falls back to the existing ad-hoc price_data with the annual
     defaults above; monthly falls back to ad-hoc price_data with the monthly
-    defaults.
+    defaults. Works for the new catalog and (resume flow only) legacy plans.
     """
     interval = _normalize_interval(interval)
-    spec = _STRIPE_PRICES[plan]
+    spec = _plan_price_spec(plan)
     if interval == "month":
         price_id = _monthly_price_id(plan)
-        unit_amount = _MONTHLY_DEFAULT_UNIT_AMOUNTS[plan]
+        unit_amount = _monthly_default_amount(plan)
     else:
         price_id = _annual_price_id(plan)
         unit_amount = spec["unit_amount"]
@@ -407,13 +555,21 @@ def _checkout_line_item(plan: str, interval: str = "year") -> dict:
 
 def _annual_savings_pct(plan: str) -> int:
     """Whole-percent saved by annual vs 12x the monthly default."""
-    annual = _STRIPE_PRICES[plan]["unit_amount"]
-    monthly_equiv = 12 * _MONTHLY_DEFAULT_UNIT_AMOUNTS[plan]
+    annual = _plan_price_spec(plan)["unit_amount"]
+    monthly_equiv = 12 * _monthly_default_amount(plan)
     if monthly_equiv <= annual:
         return 0
     return round(100 * (monthly_equiv - annual) / monthly_equiv)
-_LEAGUE_REQUIRED_PLANS = frozenset({"league", "combo", "single_league"})
-_MEMBERSHIP_REQUIRED_PLANS = frozenset({"league", "combo", "single_league"})
+# No purchasable plan requires a league at checkout: starter/all_pro buyers
+# pick their slot league(s) after purchase (a league_id passed at checkout
+# just seeds the first slot), and hall_of_fame is PRO everywhere.
+_LEAGUE_REQUIRED_PLANS = frozenset()
+_MEMBERSHIP_REQUIRED_PLANS = frozenset()
+
+# Grandfathered plans keep their old checkout-time requirements in the
+# resume flow (sessions staged before the cutover).
+_LEGACY_LEAGUE_REQUIRED_PLANS = frozenset({"league", "combo", "single_league"})
+_LEGACY_MEMBERSHIP_REQUIRED_PLANS = frozenset({"league", "combo", "single_league"})
 
 _SUPPORTED_PLATFORMS = {"sleeper", "espn", "yahoo", "mfl", "fleaflicker"}
 
@@ -452,7 +608,11 @@ def pending_checkout_resume_path() -> str | None:
 
 
 def _normalize_pending_checkout(data: dict) -> tuple[dict | None, str | None]:
-    """Validate a home PRO signup payload. Returns (pending, error)."""
+    """Validate a home PRO signup payload. Returns (pending, error).
+
+    Only the current catalog is stagable: legacy keys can never be purchased
+    by new buyers (grandfathered sessions resume via /pro/resume-checkout).
+    """
     plan = str((data or {}).get("plan") or "").strip()
     if plan not in _STRIPE_PRICES:
         return None, "Pick a plan to continue."
@@ -539,15 +699,15 @@ def _try_grant_from_stripe_success() -> None:
                 _subscription_period_end(sub)
                 if sub else datetime.now(timezone.utc) + timedelta(days=366)
             )
-            if plan not in ("league", "user", "combo", "single_league"):
+            if plan not in _KNOWN_PLANS:
                 plan = _plan_from_subscription(sub)
         except Exception:
             expires_at = datetime.now(timezone.utc) + timedelta(days=366)
             sub = None
 
-        if plan not in ("league", "user", "combo", "single_league"):
+        if plan not in _KNOWN_PLANS:
             return
-        if plan == "user" and not user_id:
+        if plan in ("user", "hall_of_fame", "starter", "all_pro") and not user_id:
             return
         if plan in ("league", "single_league") and not league_id:
             return
@@ -610,6 +770,10 @@ _FREE_FEATURES = [
 
 
 _MANAGE_PLAN_LABELS = {
+    "starter": "Starter PRO",
+    "all_pro": "All-Pro PRO",
+    "hall_of_fame": "Hall of Fame PRO",
+    # Grandfathered labels for existing subscribers.
     "user": "Personal PRO",
     "single_league": "One League PRO",
     "league": "League PRO",
@@ -656,7 +820,8 @@ def _pricing_manage_card() -> str:
         return str(value or "")
 
     rows = []
-    for sub in subs:
+    slot_blocks = []
+    for i, sub in enumerate(subs):
         plan = str(sub.get("plan") or "")
         label = _MANAGE_PLAN_LABELS.get(plan, "PRO")
         league = html.escape(str(sub.get("league_id") or ""), quote=True)
@@ -675,6 +840,27 @@ def _pricing_manage_card() -> str:
                     onclick="brOpenCancelModal('{sub_id}', '{renew}')">Cancel PRO</button>
           </div>
         </div>""")
+        # Slot-capped plans (Starter / All-Pro): let the buyer pick which
+        # leagues get PRO, up to the plan cap.
+        cap = slot_cap_for_plan(plan)
+        if cap:
+            block_id = f"brSlots{i}"
+            plat = html.escape(str(sub.get("platform") or "sleeper"), quote=True)
+            slot_blocks.append(f"""
+        <div class="br-slots" id="{block_id}" data-platform="{plat}"
+             style="padding:14px 0 6px;border-top:1px solid var(--border);">
+          <div style="font-weight:700;font-size:15px;">Your PRO leagues</div>
+          <p style="margin:4px 0 10px;font-size:13px;color:var(--text-muted);">
+            {html.escape(label, quote=False)} covers PRO for you in {cap}
+            league{'s' if cap != 1 else ''}. Pick which ones below. You can
+            change this anytime.</p>
+          <div class="br-slots-list" style="display:flex;flex-direction:column;gap:8px;"></div>
+          <div style="display:flex;gap:10px;align-items:center;margin-top:12px;flex-wrap:wrap;">
+            <button type="button" class="btn btn-primary"
+                    onclick="brSaveProLeagues('{block_id}')">Save leagues</button>
+            <span class="br-slots-note" style="font-size:13px;color:var(--text-muted);"></span>
+          </div>
+        </div>""")
 
     reason_radios = "".join(
         f"""<label style="display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border:1px solid var(--border);border-radius:10px;cursor:pointer;font-size:14px;">
@@ -690,6 +876,7 @@ def _pricing_manage_card() -> str:
           <h2 style="margin:0 0 4px;font-size:20px;">Your PRO</h2>
           <p style="margin:0 0 6px;font-size:14px;color:var(--text-muted);">Update your card, pause, or cancel. No phone calls, no dark patterns.</p>
           {''.join(rows)}
+          {''.join(slot_blocks)}
           <div id="brBillingMsg" style="display:none;margin-top:12px;font-size:14px;"></div>
         </div>
       </div>
@@ -828,6 +1015,94 @@ def _pricing_manage_card() -> str:
       if (modal) modal.addEventListener('click', function(e) {{
         if (e.target === modal) window.brCloseCancelModal();
       }});
+
+      // PRO league slots (Starter / All-Pro): pick which leagues get PRO.
+      window.brSaveProLeagues = function(blockId) {{
+        var block = document.getElementById(blockId);
+        if (!block) return;
+        var note = block.querySelector('.br-slots-note');
+        var ids = Array.prototype.map.call(
+          block.querySelectorAll('input.br-slot-check:checked'),
+          function(c) {{ return c.value; }}
+        );
+        var plat = block.getAttribute('data-platform') || 'sleeper';
+        note.textContent = 'Saving...';
+        fetch('/api/billing/pro-leagues?platform=' + encodeURIComponent(plat), {{
+          method: 'POST', headers: {{'Content-Type': 'application/json'}},
+          body: JSON.stringify({{league_ids: ids}})
+        }}).then(function(r) {{ return r.json().then(function(d) {{ return {{ok: r.ok, d: d}}; }}); }}).then(function(res) {{
+          if (res.ok) {{
+            var n = (res.d.league_ids || []).length;
+            note.textContent = 'Saved. PRO applies in ' + n + ' league' + (n === 1 ? '' : 's') + '.';
+          }} else {{
+            note.textContent = (res.d && res.d.error) || 'Could not save. Please try again.';
+          }}
+        }}).catch(function() {{
+          note.textContent = 'Could not save. Please try again.';
+        }});
+      }};
+      function brSlotsEnforceCap(block, cap) {{
+        var list = block.querySelector('.br-slots-list');
+        var note = block.querySelector('.br-slots-note');
+        var checked = list.querySelectorAll('input.br-slot-check:checked').length;
+        Array.prototype.forEach.call(
+          list.querySelectorAll('input.br-slot-check:not(:checked)'),
+          function(c) {{ c.disabled = cap > 0 && checked >= cap; }}
+        );
+        note.textContent = checked + ' of ' + cap + ' selected.';
+      }}
+      function brSlotsInitOne(block) {{
+        if (block.dataset.brSlotsInit) return;
+        block.dataset.brSlotsInit = '1';
+        var plat = block.getAttribute('data-platform') || 'sleeper';
+        var list = block.querySelector('.br-slots-list');
+        var note = block.querySelector('.br-slots-note');
+        Promise.all([
+          fetch('/api/billing/pro-leagues?platform=' + encodeURIComponent(plat))
+            .then(function(r) {{ return r.json(); }}),
+          fetch('/api/my-leagues').then(function(r) {{ return r.json(); }})
+            .catch(function() {{ return {{leagues: []}}; }})
+        ]).then(function(parts) {{
+          var info = parts[0] || {{}};
+          if (info.error) {{
+            note.textContent = info.error;
+            return;
+          }}
+          var cap = info.cap || 0;
+          var saved = info.league_ids || [];
+          var leagues = ((parts[1] || {{}}).leagues || [])
+            .filter(function(l) {{ return (l.platform || 'sleeper') === plat && l.league_id; }});
+          var seen = {{}};
+          list.innerHTML = '';
+          leagues.forEach(function(l) {{
+            if (seen[l.league_id]) return;
+            seen[l.league_id] = 1;
+            var label = document.createElement('label');
+            label.style.cssText = 'display:flex;gap:10px;align-items:center;padding:10px 12px;border:1px solid var(--border);border-radius:10px;cursor:pointer;font-size:14px;';
+            var cb = document.createElement('input');
+            cb.type = 'checkbox';
+            cb.className = 'br-slot-check';
+            cb.value = l.league_id;
+            if (saved.indexOf(l.league_id) !== -1) cb.checked = true;
+            cb.addEventListener('change', function() {{ brSlotsEnforceCap(block, cap); }});
+            label.appendChild(cb);
+            var sp = document.createElement('span');
+            sp.textContent = l.label || l.name || l.league_id;
+            label.appendChild(sp);
+            list.appendChild(label);
+          }});
+          if (!leagues.length) {{
+            list.innerHTML = '<p style="font-size:13px;color:var(--text-muted);margin:0;">No leagues found on this platform yet. Connect a league first.</p>';
+          }}
+          brSlotsEnforceCap(block, cap);
+          if (!saved.length) {{
+            note.textContent = 'No leagues picked yet. PRO is not active anywhere until you save at least one.';
+          }}
+        }}).catch(function() {{
+          list.innerHTML = '<p style="font-size:13px;color:var(--text-muted);margin:0;">Could not load your leagues. Please refresh.</p>';
+        }});
+      }}
+      Array.prototype.forEach.call(document.querySelectorAll('.br-slots'), brSlotsInitOne);
     }})();
     </script>
     """
@@ -1066,12 +1341,11 @@ def _pricing_body(league_id: str | None = None, platform: str = "sleeper") -> st
     </script>
     """
 
-    selected_plan = plan if plan in {"user", "single_league", "league", "combo"} else ""
+    selected_plan = plan if plan in {"starter", "all_pro", "hall_of_fame"} else ""
     plans = [
-        ("user", "Personal", "$20/year", "$2.99/mo", "PRO for you across all your leagues", "Choose Personal", True),
-        ("single_league", "Individual: One League", "$10/year", "$1.49/mo", "PRO for you in one selected league. Your league mates are not upgraded.", "Choose one league", False),
-        ("league", "Entire League", "$35/year", "$4.99/mo", "PRO for every manager in one selected league", "Upgrade a league", False),
-        ("combo", "League + Personal", "$45/year", "$5.99/mo", "PRO for every manager in one selected league, plus you across all your leagues. Other managers’ additional leagues are not upgraded.", "Choose League + Personal", False),
+        ("starter", "Starter", "$10/year", "$1.49/mo", "PRO for you in 1 league of your choice. Pick it after checkout and change it anytime.", "Choose Starter", False),
+        ("all_pro", "All-Pro", "$30/year", "$4.49/mo", "PRO for you in up to 5 leagues. Pick them after checkout and change them anytime.", "Choose All-Pro", True),
+        ("hall_of_fame", "Hall of Fame", "$50/year", "$7.49/mo", "PRO for you in every league you play. Your league mates are not upgraded.", "Choose Hall of Fame", False),
     ]
     plan_cards = "".join(
         f'''<article class="pricing-option{' featured' if recommended else ''}{' is-selected' if selected_plan == key else ''}" data-plan-card="{key}">
@@ -1196,10 +1470,10 @@ def _pricing_body(league_id: str | None = None, platform: str = "sleeper") -> st
       {trial_section}
 
       <section class="pricing-section pricing-plans" aria-labelledby="pricing-plans-title">
-        <div class="pricing-section-heading"><h2 id="pricing-plans-title">Choose who gets PRO</h2><p>Billed monthly or annually. Annual billing saves up to 44%.</p></div>
+        <div class="pricing-section-heading"><h2 id="pricing-plans-title">Choose your PRO plan</h2><p>Billed monthly or annually. Annual billing saves 44%.</p></div>
         <div class="billing-toggle" role="group" aria-label="Billing interval">
           <button type="button" class="billing-toggle-btn" data-billing-interval="month" aria-pressed="false">Monthly</button>
-          <button type="button" class="billing-toggle-btn is-active" data-billing-interval="year" aria-pressed="true">Annual<span class="billing-toggle-save">save up to 44%</span></button>
+          <button type="button" class="billing-toggle-btn is-active" data-billing-interval="year" aria-pressed="true">Annual<span class="billing-toggle-save">save 44%</span></button>
         </div>
         <div class="pricing-plan-grid" data-billing="year">{plan_cards}</div>
         <aside class="pricing-proof" aria-label="What managers say">
@@ -1239,7 +1513,7 @@ def _pricing_body(league_id: str | None = None, platform: str = "sleeper") -> st
         <div class="pricing-benefit-groups">
           <article><i class="fa-solid fa-handshake" aria-hidden="true"></i><h3>Trade decisions</h3><p>Roster-based suggestions, Trade Intel, AI trade analysis and counters, and playoff-impact simulations.</p></article>
           <article><i class="fa-solid fa-fire" aria-hidden="true"></i><h3>Player discovery</h3><p>Breakout Engine opportunity signals, historical peers, and confidence-adjusted projections.</p></article>
-          <article><i class="fa-solid fa-calendar-week" aria-hidden="true"></i><h3>Weekly guidance</h3><p>Front Office Report, the premium AI weekly recap storyline, and cross-league “This week’s moves.” The cross-league digest requires Personal or League + Personal coverage across your leagues.</p></article>
+          <article><i class="fa-solid fa-calendar-week" aria-hidden="true"></i><h3>Weekly guidance</h3><p>Front Office Report, the premium AI weekly recap storyline, and cross-league “This week’s moves.” The cross-league digest requires Hall of Fame coverage across your leagues.</p></article>
           <article><i class="fa-solid fa-clipboard-list" aria-hidden="true"></i><h3>Draft tools</h3><p>Custom Draft Board, Trend Scout, and Draft Deep Dive.</p></article>
         </div>
       </section>
@@ -1261,14 +1535,13 @@ def _pricing_body(league_id: str | None = None, platform: str = "sleeper") -> st
 
       <section class="pricing-section pricing-faq" aria-labelledby="faq-title">
         <div class="pricing-section-heading"><h2 id="faq-title">Plan coverage FAQ</h2></div>
-        <details><summary>Does Individual: One League cover my league mates?</summary><p>No. It gives only you PRO in one selected league.</p></details>
-        <details><summary>What does Entire League cover?</summary><p>Every manager gets PRO in one selected league. It does not give each manager PRO in their other leagues.</p></details>
-        <details><summary>Does League + Personal cover everyone everywhere?</summary><p>No. Everyone gets PRO in the selected league; only the buyer gets PRO across all of their own leagues.</p></details>
+        <details><summary>How do Starter and All-Pro league slots work?</summary><p>After checkout you pick which leagues get PRO: 1 league on Starter, up to 5 on All-Pro. You can change your picks anytime from your PRO settings, and PRO applies only to you in those leagues.</p></details>
+        <details><summary>Does Hall of Fame cover my league mates?</summary><p>No. Hall of Fame gives only you PRO in every league you play. Your league mates need their own plan.</p></details>
         <details><summary>How does monthly billing work?</summary><p>Choose Monthly above any plan. You are billed each month instead of once a year, and you can switch intervals or cancel from the manage-subscription link after checkout. Interval changes use Stripe's default proration.</p></details>
         <details><summary>Is the whole Weekly Recap premium?</summary><p>No. The AI-written storyline is premium; the recap’s other available sections remain free.</p></details>
-        <details><summary>How does PRO billing work?</summary><p>PRO is billed once a year. Your subscription renews automatically each year at the then-current price until you cancel.</p></details>
-        <details><summary>How do I cancel?</summary><p>Cancel anytime through the subscription management link in your account. Your PRO access continues until the end of the current annual term.</p></details>
-        <details><summary>Can I get a refund?</summary><p>Annual charges are non-refundable except as required by law. Canceling stops future renewals but does not refund the current term.</p></details>
+        <details><summary>How does PRO billing work?</summary><p>PRO renews automatically at the then-current price until you cancel. Annual plans bill once a year; monthly plans bill each month.</p></details>
+        <details><summary>How do I cancel?</summary><p>Cancel anytime through the subscription management link in your account. Your PRO access continues until the end of the current billing term.</p></details>
+        <details><summary>Can I get a refund?</summary><p>Charges are non-refundable except as required by law. Canceling stops future renewals but does not refund the current term.</p></details>
       </section>
     </main>
     """
@@ -1440,13 +1713,13 @@ def resume_pro_checkout():
         season = int(pending.get("season") or datetime.now().year)
     except (TypeError, ValueError):
         season = datetime.now().year
-    if plan not in _STRIPE_PRICES or platform not in _SUPPORTED_PLATFORMS:
+    if plan not in _KNOWN_PLANS or platform not in _SUPPORTED_PLATFORMS:
         session.pop("pending_checkout", None)
         return redirect("/pricing")
-    if plan in _LEAGUE_REQUIRED_PLANS and not league_id:
+    if plan in _LEGACY_LEAGUE_REQUIRED_PLANS and not league_id:
         return redirect("/pricing")
 
-    if plan in _MEMBERSHIP_REQUIRED_PLANS and league_id:
+    if plan in _LEGACY_MEMBERSHIP_REQUIRED_PLANS and league_id:
         from dashboard_services.subscriptions import viewer_is_league_member
         member_id = session.get("viewer_user_id") or session.get("viewer_username")
         if not viewer_is_league_member(member_id, league_id, platform, season):
@@ -1463,7 +1736,9 @@ def resume_pro_checkout():
         "season": season,
         "return_url": return_url,
     }
-    url, error = _stripe_checkout_url(user_id, payload)
+    url, error = _stripe_checkout_url(
+        user_id, payload, _allow_legacy=plan in _LEGACY_PRICES,
+    )
     if url:
         session.pop("pending_checkout", None)
         return redirect(url)
@@ -1520,8 +1795,13 @@ def _with_trial_flag(url: str, flag: str) -> str:
     return f"{url}{sep}trial={flag}"
 
 
-def _stripe_checkout_url(user_id: str, payload: dict) -> tuple[str | None, str | None]:
-    """Create a Stripe Checkout session. Returns (url, error)."""
+def _stripe_checkout_url(user_id: str, payload: dict, _allow_legacy: bool = False) -> tuple[str | None, str | None]:
+    """Create a Stripe Checkout session. Returns (url, error).
+
+    Only the current catalog is purchasable. Legacy plans are rejected
+    unless ``_allow_legacy`` is set (the resume flow for sessions staged
+    before the cutover); the flag is internal to this module.
+    """
     plan = str(payload.get("plan") or "").strip()
     league_id = str(payload.get("league_id") or "").strip()
     platform = _request_platform(payload)
@@ -1530,7 +1810,7 @@ def _stripe_checkout_url(user_id: str, payload: dict) -> tuple[str | None, str |
     except (TypeError, ValueError):
         return None, "Invalid season"
     return_url = str(payload.get("return_url") or "").strip()
-    if plan not in _STRIPE_PRICES:
+    if plan not in _STRIPE_PRICES and not (_allow_legacy and plan in _LEGACY_PRICES):
         return None, "Invalid plan"
     if platform not in _SUPPORTED_PLATFORMS:
         return None, "Invalid platform"
@@ -1615,41 +1895,43 @@ def create_checkout_session():
                 "error": "You must be a member of this league to purchase a league plan."
             }), 403
 
+    # A hall_of_fame purchase is redundant only when the buyer already has
+    # unlimited personal PRO (grandfathered user plan or hall_of_fame).
+    # Slot-plan holders CAN upgrade to hall_of_fame (the grant upserts their
+    # row, same as the old single_league -> user upgrade path).
+    # starter/all_pro are redundant when any personal row is active (stacking
+    # two personal subscriptions would double-bill) or when a grandfathered
+    # single-league row already covers one league.
     username = session.get("viewer_username")
     stable_id = session.get("viewer_user_id")
     account_id = session.get("account_id")
-    has_league = bool(league_id and has_premium_access(None, league_id, platform))
-    has_user = bool(
-        (stable_id and has_premium_access(stable_id, None, platform))
-        or (username and has_premium_access(username, None, platform))
-        or (account_id and has_premium_access(None, None, platform, account_id=account_id))
+    _identity_keys = [k for k in dict.fromkeys([
+        user_id,
+        f"acct:{account_id}" if account_id else "",
+        str(account_id) if account_id else "",
+        stable_id or "",
+        username or "",
+    ]) if k]
+    _personal = find_active_personal_plan(_identity_keys, platform)
+    _personal_plan = (_personal or {}).get("plan_key")
+    _has_personal_unlimited = _personal_plan in ("user", "hall_of_fame")
+    _has_personal_any = _personal_plan is not None
+    _has_legacy_single_any = has_any_user_league_subscription(
+        user_id, platform, account_id=account_id, user_keys=_identity_keys,
     )
-    has_single = bool(
-        league_id and (
-            (stable_id and has_user_league_subscription(stable_id, league_id, platform))
-            or (username and has_user_league_subscription(username, league_id, platform))
-            or (account_id and has_user_league_subscription(
-                None, league_id, platform, account_id=account_id,
-            ))
-            or (user_id and has_user_league_subscription(user_id, league_id, platform))
-        )
+    duplicate = (
+        (plan == "hall_of_fame" and _has_personal_unlimited)
+        or (plan in ("starter", "all_pro")
+            and (_has_personal_any or _has_legacy_single_any))
     )
-    # A combo is its own Stripe subscription, not an in-place upgrade. Starting
-    # one while either component is active would double-bill the customer.
-    # Single-league is redundant when a full personal or shared league plan
-    # already covers this room.
-    duplicate = ((plan == "league" and has_league)
-                 or (plan == "user" and has_user)
-                 or (plan == "combo" and (has_league or has_user))
-                 or (plan == "single_league" and (has_single or has_user or has_league)))
-    logger.info("[checkout] Existing components league=%s user=%s single=%s",
-                has_league, has_user, has_single)
+    logger.info("[checkout] Existing personal plan=%s legacy_single=%s",
+                _personal_plan, _has_legacy_single_any)
     if duplicate:
         return jsonify({"error": "You already have this premium subscription."}), 400
 
-    price_spec = _STRIPE_PRICES[plan]
-    base_url   = request.host_url.rstrip("/")
+    line_item = _checkout_line_item(plan, interval)
 
+    base_url   = request.host_url.rstrip("/")
     return_url = _safe_local_url(return_url, "")
 
     success_url = base_url + "/pricing?success=1&session_id={CHECKOUT_SESSION_ID}"
@@ -1706,7 +1988,7 @@ def _handle_subscription_lifecycle_event(s, etype: str) -> None:
         expires_at = datetime.now(timezone.utc) + timedelta(days=32)
     meta = _metadata_dict(s)
     plan = (meta.get("plan") or "").strip()
-    if plan not in ("league", "user", "combo", "single_league"):
+    if plan not in _KNOWN_PLANS:
         plan = _plan_from_subscription(s)
     interval = _normalize_interval(
         _interval_from_subscription(s) or meta.get("interval") or "year"
@@ -1729,6 +2011,7 @@ def _handle_subscription_lifecycle_event(s, etype: str) -> None:
             user_id=user_id,
             league_id=league_id,
             platform=platform,
+            plan_key=plan,
         )
     except Exception:
         logger.exception("[stripe] %s lifecycle sync failed sub=%s", etype, sub_id)
@@ -1825,7 +2108,7 @@ def stripe_webhook():
                 expires_at = _subscription_period_end(sub)
             except Exception:
                 expires_at = datetime.now(timezone.utc) + timedelta(days=32)
-            if plan not in ("league", "user", "combo", "single_league"):
+            if plan not in _KNOWN_PLANS:
                 plan = _plan_from_subscription(sub)
         else:
             sub_id    = _stripe_id(_stripe_field(s, "subscription"))
@@ -1835,7 +2118,7 @@ def stripe_webhook():
                 expires_at = _subscription_period_end(sub) if sub else (
                     datetime.now(timezone.utc) + timedelta(days=32)
                 )
-                if plan not in ("league", "user", "combo", "single_league"):
+                if plan not in _KNOWN_PLANS:
                     plan = _plan_from_subscription(sub)
             except Exception:
                 expires_at = datetime.now(timezone.utc) + timedelta(days=32)
@@ -2002,6 +2285,113 @@ def api_subscription_status():
     except Exception:
         logger.exception("[api_subscription_status] Error")
         return jsonify({"has_premium": False, "subscription_type": None, "error": "Internal error"}), 500
+
+
+# ── PRO league slots ──────────────────────────────────────────────────────────
+# Slot-capped plans (starter: 1 league, all_pro: 5 leagues) let the buyer pick
+# which leagues get PRO. These endpoints manage that selection; the cap is
+# enforced server-side and every league must belong to the buyer.
+
+
+def _slot_platform() -> str:
+    platform = _request_platform()
+    return platform if platform in _SUPPORTED_PLATFORMS else "sleeper"
+
+
+def _slot_checkout_keys(user_id: str) -> list:
+    """Checkout identities to look up: the checkout id plus Google account keys."""
+    keys = [user_id]
+    acct = session.get("account_id")
+    if acct:
+        for key in (f"acct:{acct}", str(acct)):
+            if key not in keys:
+                keys.append(key)
+    for key in (session.get("viewer_user_id"), session.get("viewer_username")):
+        if key and key not in keys:
+            keys.append(key)
+    return keys
+
+
+@billing_bp.route("/api/billing/pro-leagues", methods=["GET"])
+def api_pro_leagues_get():
+    """Return the buyer's selected PRO leagues and the plan's slot cap.
+
+    {"plan": "all_pro", "cap": 5, "league_ids": [...]}.
+    For unlimited plans (hall_of_fame, grandfathered user) cap is null and
+    league_ids is empty: slots are not needed.
+    """
+    user_id = _checkout_user_id()
+    if not user_id:
+        return jsonify({"error": "Sign in with Google to manage PRO leagues."}), 401
+    platform = _slot_platform()
+    plan = find_active_personal_plan(_slot_checkout_keys(user_id), platform)
+    if not plan:
+        return jsonify({"error": "No active PRO plan."}), 404
+    plan_key = plan.get("plan_key") or ""
+    cap = slot_cap_for_plan(plan_key)
+    league_ids = get_pro_league_slots(plan["user_key"], platform) if cap else []
+    return jsonify({"plan": plan_key, "cap": cap, "league_ids": league_ids})
+
+
+@billing_bp.route("/api/billing/pro-leagues", methods=["POST"])
+def api_pro_leagues_set():
+    """Replace the buyer's selected PRO leagues.
+
+    Body: {"league_ids": ["id1", "id2"]}. The plan cap is enforced server-side
+    and every league must belong to the buyer, otherwise 400.
+    """
+    user_id = _checkout_user_id()
+    if not user_id:
+        return jsonify({"error": "Sign in with Google to manage PRO leagues."}), 401
+    data = request.get_json(silent=True) or {}
+    league_ids = data.get("league_ids")
+    if not isinstance(league_ids, list):
+        return jsonify({"error": "league_ids must be a list."}), 400
+    platform = _slot_platform()
+    plan = find_active_personal_plan(_slot_checkout_keys(user_id), platform)
+    if not plan:
+        return jsonify({"error": "No active PRO plan."}), 404
+    plan_key = plan.get("plan_key") or ""
+    cap = slot_cap_for_plan(plan_key)
+    if not cap:
+        return jsonify({
+            "error": "Your plan covers every league. League slots are not needed.",
+        }), 400
+    cleaned = []
+    for lid in league_ids:
+        lid = str(lid or "").strip()
+        if not lid:
+            return jsonify({"error": "League ids must not be blank."}), 400
+        if lid not in cleaned:
+            cleaned.append(lid)
+    if len(cleaned) > cap:
+        return jsonify({
+            "error": f"Your plan covers {cap} league{'s' if cap != 1 else ''}.",
+        }), 400
+    # Every league must belong to the buyer (fail closed).
+    from dashboard_services.subscriptions import viewer_is_league_member
+    try:
+        season = int(session.get("last_season") or datetime.now().year)
+    except (TypeError, ValueError):
+        season = datetime.now().year
+    member_id = session.get("viewer_user_id") or session.get("viewer_username")
+    not_member = [
+        lid for lid in cleaned
+        if not viewer_is_league_member(member_id, lid, platform, season)
+    ]
+    if not_member:
+        return jsonify({"error": "One or more leagues is not on your account."}), 400
+    try:
+        saved = set_pro_league_slots(
+            plan["user_key"], platform, cleaned,
+            stripe_subscription_id=plan.get("stripe_subscription_id"),
+        )
+    except ValueError:
+        # Safety net only: every validation above already ran. Log the detail,
+        # return a generic message (site audit: billing never leaks str(e)).
+        logger.exception("[pro-leagues] slot save failed")
+        return jsonify({"error": "Could not save your league selection. Please try again."}), 400
+    return jsonify({"ok": True, "plan": plan_key, "cap": cap, "league_ids": saved})
 
 
 # ── Stripe Customer Portal ────────────────────────────────────────────────────
@@ -2303,33 +2693,26 @@ def pro_winback():
         logger.warning("[winback] WINBACK_COUPON_ID not set")
         return redirect("/pricing?winback=unavailable")
 
-    price_spec = _STRIPE_PRICES["user"]
+    # Win-back sells the current all-leagues plan (hall_of_fame, the
+    # successor to the retired Personal plan) with the configured coupon.
+    line_item = _checkout_line_item("hall_of_fame", "year")
     base_url = request.host_url.rstrip("/")
-    price_data = {
-        "currency": "usd",
-        "unit_amount": price_spec["unit_amount"],
-        "recurring": {"interval": "year"},
-    }
-    if price_spec.get("product"):
-        price_data["product"] = price_spec["product"]
-    else:
-        price_data["product_data"] = {"name": price_spec.get("product_name") or "BR Fantasy PRO"}
     try:
         checkout = _stripe().checkout.Session.create(
             mode="subscription",
-            line_items=[{"price_data": price_data, "quantity": 1}],
+            line_items=[line_item],
             discounts=[{"coupon": coupon}],
             success_url=base_url + "/pricing?success=1&session_id={CHECKOUT_SESSION_ID}&winback=1",
             cancel_url=base_url + "/pricing?canceled=1",
             metadata={
-                "plan": "user",
+                "plan": "hall_of_fame",
                 "user_id": f"acct:{account_id}",
                 "account_id": str(account_id),
                 "winback": "1",
             },
             subscription_data={
                 "metadata": {
-                    "plan": "user",
+                    "plan": "hall_of_fame",
                     "user_id": f"acct:{account_id}",
                     "account_id": str(account_id),
                     "winback": "1",

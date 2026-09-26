@@ -1,9 +1,9 @@
 """Stripe Price ID selection for checkout: env Price ID vs ad-hoc fallback.
 
-Covers all eight prices (four plans x annual/monthly):
+Covers all six prices (three plans x annual/monthly):
 - env var set    -> checkout line item uses {"price": <id>, "quantity": 1}
 - env var unset  -> checkout line item uses ad-hoc price_data with the code
-                    defaults ($10/$20/$35/$45 annual, $1.49/$2.99/$4.99/$5.99 monthly)
+                    defaults ($10/$30/$50 annual, $1.49/$4.49/$7.49 monthly)
 - whitespace env -> treated as unset (falls back)
 Also verifies the checkout session builder passes the chosen line item
 through while keeping success/cancel URLs and metadata unchanged.
@@ -28,27 +28,25 @@ def _clear_price_env(monkeypatch):
 
 def test_annual_price_env_names():
     assert billing._ANNUAL_PRICE_ENV == {
-        "league": "STRIPE_PRICE_LEAGUE_ANNUAL",
-        "user": "STRIPE_PRICE_USER_ANNUAL",
-        "combo": "STRIPE_PRICE_COMBO_ANNUAL",
-        "single_league": "STRIPE_PRICE_SINGLE_LEAGUE_ANNUAL",
+        "starter": "STRIPE_PRICE_STARTER_ANNUAL",
+        "all_pro": "STRIPE_PRICE_ALL_PRO_ANNUAL",
+        "hall_of_fame": "STRIPE_PRICE_HALL_OF_FAME_ANNUAL",
     }
 
 
 def test_monthly_price_env_names_match_monthly_plans():
     assert billing._MONTHLY_PRICE_ENV == {
-        "league": "STRIPE_PRICE_LEAGUE_MONTHLY",
-        "user": "STRIPE_PRICE_USER_MONTHLY",
-        "combo": "STRIPE_PRICE_COMBO_MONTHLY",
-        "single_league": "STRIPE_PRICE_SINGLE_LEAGUE_MONTHLY",
+        "starter": "STRIPE_PRICE_STARTER_MONTHLY",
+        "all_pro": "STRIPE_PRICE_ALL_PRO_MONTHLY",
+        "hall_of_fame": "STRIPE_PRICE_HALL_OF_FAME_MONTHLY",
     }
 
 
 def test_price_id_helpers_read_env(monkeypatch):
-    monkeypatch.setenv("STRIPE_PRICE_LEAGUE_ANNUAL", "price_annual_league_123")
-    monkeypatch.setenv("STRIPE_PRICE_USER_MONTHLY", "price_monthly_user_456")
-    assert billing._annual_price_id("league") == "price_annual_league_123"
-    assert billing._monthly_price_id("user") == "price_monthly_user_456"
+    monkeypatch.setenv("STRIPE_PRICE_STARTER_ANNUAL", "price_annual_starter_123")
+    monkeypatch.setenv("STRIPE_PRICE_ALL_PRO_MONTHLY", "price_monthly_all_pro_456")
+    assert billing._annual_price_id("starter") == "price_annual_starter_123"
+    assert billing._monthly_price_id("all_pro") == "price_monthly_all_pro_456"
 
 
 def test_price_id_helpers_empty_when_unset(monkeypatch):
@@ -65,9 +63,9 @@ def test_price_id_helpers_empty_when_unset(monkeypatch):
 
 def test_line_item_annual_prefers_env_price_id(monkeypatch):
     _clear_price_env(monkeypatch)
-    monkeypatch.setenv("STRIPE_PRICE_USER_ANNUAL", "price_annual_user_abc")
-    item = billing._checkout_line_item("user", "year")
-    assert item == {"price": "price_annual_user_abc", "quantity": 1}
+    monkeypatch.setenv("STRIPE_PRICE_ALL_PRO_ANNUAL", "price_annual_all_pro_abc")
+    item = billing._checkout_line_item("all_pro", "year")
+    assert item == {"price": "price_annual_all_pro_abc", "quantity": 1}
 
 
 def test_line_item_annual_env_wins_for_all_plans(monkeypatch):
@@ -81,11 +79,14 @@ def test_line_item_annual_env_wins_for_all_plans(monkeypatch):
 
 def test_line_item_annual_fallback_uses_code_defaults(monkeypatch):
     _clear_price_env(monkeypatch)
+    # Product env vars bind into _STRIPE_PRICES at import time; patch the specs.
+    monkeypatch.setitem(billing._STRIPE_PRICES["starter"], "product", "prod_starter_x")
+    monkeypatch.setitem(billing._STRIPE_PRICES["all_pro"], "product", "prod_all_pro_x")
+    monkeypatch.setitem(billing._STRIPE_PRICES["hall_of_fame"], "product", "prod_hall_of_fame_x")
     expected = {
-        "league": (3500, billing._STRIPE_LEAGUE_PRODUCT),
-        "user": (2000, billing._STRIPE_USER_PRODUCT),
-        "combo": (4500, billing._STRIPE_COMBO_PRODUCT),
-        "single_league": (1000, billing._STRIPE_SINGLE_LEAGUE_PRODUCT),
+        "starter": (1000, "prod_starter_x"),
+        "all_pro": (3000, "prod_all_pro_x"),
+        "hall_of_fame": (5000, "prod_hall_of_fame_x"),
     }
     for plan, (amount, product) in expected.items():
         item = billing._checkout_line_item(plan, "year")
@@ -99,28 +100,36 @@ def test_line_item_annual_fallback_uses_code_defaults(monkeypatch):
 
 def test_line_item_annual_whitespace_env_falls_back(monkeypatch):
     _clear_price_env(monkeypatch)
-    monkeypatch.setenv("STRIPE_PRICE_COMBO_ANNUAL", "   ")
-    item = billing._checkout_line_item("combo", "year")
+    monkeypatch.setenv("STRIPE_PRICE_HALL_OF_FAME_ANNUAL", "   ")
+    item = billing._checkout_line_item("hall_of_fame", "year")
     assert "price" not in item
-    assert item["price_data"]["unit_amount"] == 4500
+    assert item["price_data"]["unit_amount"] == 5000
 
 
 # ── Monthly line items ────────────────────────────────────────────────────────
 
 def test_line_item_monthly_prefers_env_price_id(monkeypatch):
     _clear_price_env(monkeypatch)
-    monkeypatch.setenv("STRIPE_PRICE_COMBO_MONTHLY", "price_monthly_combo_123")
-    item = billing._checkout_line_item("combo", "month")
-    assert item == {"price": "price_monthly_combo_123", "quantity": 1}
+    monkeypatch.setenv("STRIPE_PRICE_STARTER_MONTHLY", "price_monthly_starter_123")
+    item = billing._checkout_line_item("starter", "month")
+    assert item == {"price": "price_monthly_starter_123", "quantity": 1}
 
 
 def test_line_item_monthly_fallback_uses_monthly_defaults(monkeypatch):
     _clear_price_env(monkeypatch)
+    # Product env vars bind into _STRIPE_PRICES at import time; patch the specs.
+    monkeypatch.setitem(billing._STRIPE_PRICES["starter"], "product", "prod_starter_x")
+    monkeypatch.setitem(billing._STRIPE_PRICES["all_pro"], "product", "prod_all_pro_x")
+    monkeypatch.setitem(billing._STRIPE_PRICES["hall_of_fame"], "product", "prod_hall_of_fame_x")
     expected = {
-        "league": 499,          # $4.99/mo
-        "user": 299,            # $2.99/mo
-        "combo": 599,           # $5.99/mo
-        "single_league": 149,   # $1.49/mo
+        "starter": 149,      # $1.49/mo
+        "all_pro": 449,      # $4.49/mo
+        "hall_of_fame": 749,  # $7.49/mo
+    }
+    products = {
+        "starter": "prod_starter_x",
+        "all_pro": "prod_all_pro_x",
+        "hall_of_fame": "prod_hall_of_fame_x",
     }
     for plan, amount in expected.items():
         item = billing._checkout_line_item(plan, "month")
@@ -129,21 +138,18 @@ def test_line_item_monthly_fallback_uses_monthly_defaults(monkeypatch):
         assert item["price_data"]["currency"] == "usd"
         assert item["price_data"]["unit_amount"] == amount
         assert item["price_data"]["recurring"] == {"interval": "month"}
-        assert (
-            item["price_data"]["product"]
-            == billing._STRIPE_PRICES[plan]["product"]
-        )
+        assert item["price_data"]["product"] == products[plan]
 
 
 def test_line_item_interval_defaults_to_year(monkeypatch):
     _clear_price_env(monkeypatch)
-    assert billing._checkout_line_item("user")["price_data"]["recurring"] == {
+    assert billing._checkout_line_item("starter")["price_data"]["recurring"] == {
         "interval": "year"
     }
-    assert billing._checkout_line_item("user", "bogus")["price_data"][
+    assert billing._checkout_line_item("starter", "bogus")["price_data"][
         "recurring"
     ] == {"interval": "year"}
-    assert billing._checkout_line_item("user", "MONTH")["price_data"][
+    assert billing._checkout_line_item("starter", "MONTH")["price_data"][
         "recurring"
     ] == {"interval": "month"}
 
@@ -164,18 +170,18 @@ def test_checkout_url_uses_env_price_id(monkeypatch):
     from flask import Flask
 
     _clear_price_env(monkeypatch)
-    monkeypatch.setenv("STRIPE_PRICE_LEAGUE_ANNUAL", "price_annual_league_123")
+    monkeypatch.setenv("STRIPE_PRICE_STARTER_ANNUAL", "price_annual_starter_123")
     captured = {}
     monkeypatch.setattr(billing, "_stripe", lambda: _fake_stripe(captured))
     tiny = Flask(__name__)
     with tiny.test_request_context("https://example.com/pricing"):
         url, err = billing._stripe_checkout_url(
-            "acct:1", {"plan": "league", "platform": "sleeper", "season": 2026}
+            "acct:1", {"plan": "starter", "platform": "sleeper", "season": 2026}
         )
     assert err is None
     assert url == "https://checkout.stripe.test/s/123"
     assert captured["line_items"] == [
-        {"price": "price_annual_league_123", "quantity": 1}
+        {"price": "price_annual_starter_123", "quantity": 1}
     ]
     assert captured["mode"] == "subscription"
 
@@ -184,6 +190,7 @@ def test_checkout_url_fallback_keeps_urls_and_metadata(monkeypatch):
     from flask import Flask
 
     _clear_price_env(monkeypatch)
+    monkeypatch.setitem(billing._STRIPE_PRICES["hall_of_fame"], "product", "prod_hall_of_fame_x")
     captured = {}
     monkeypatch.setattr(billing, "_stripe", lambda: _fake_stripe(captured))
     tiny = Flask(__name__)
@@ -191,7 +198,7 @@ def test_checkout_url_fallback_keeps_urls_and_metadata(monkeypatch):
         _url, err = billing._stripe_checkout_url(
             "acct:1",
             {
-                "plan": "user",
+                "plan": "hall_of_fame",
                 "platform": "sleeper",
                 "season": 2026,
                 "league_id": "123",
@@ -200,9 +207,9 @@ def test_checkout_url_fallback_keeps_urls_and_metadata(monkeypatch):
     assert err is None
     line = captured["line_items"][0]
     assert "price" not in line
-    assert line["price_data"]["unit_amount"] == 2000
+    assert line["price_data"]["unit_amount"] == 5000
     assert line["price_data"]["recurring"] == {"interval": "year"}
-    assert line["price_data"]["product"] == billing._STRIPE_USER_PRODUCT
+    assert line["price_data"]["product"] == "prod_hall_of_fame_x"
     assert captured["success_url"].startswith(
         "https://example.com/pricing?success=1&session_id="
     )
@@ -212,7 +219,7 @@ def test_checkout_url_fallback_keeps_urls_and_metadata(monkeypatch):
         == "https://example.com/sleeper/2026/123/pricing?canceled=1"
     )
     assert captured["metadata"] == {
-        "plan": "user",
+        "plan": "hall_of_fame",
         "user_id": "acct:1",
         "league_id": "123",
         "platform": "sleeper",

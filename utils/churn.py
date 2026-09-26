@@ -339,8 +339,9 @@ def stripe_sub_is_past_due(subscription_id: str) -> Optional[bool]:
 def find_trials_due() -> list[dict]:
     """Trials expiring within the reminder window.
 
-    Reads the ``pro_trials`` table when the free-trial workstream creates it
-    (expected columns: account_id, trial_ends_at, plan). Returns [] until then.
+    Reads the ``pro_trials`` table (expected columns: account_id,
+    trial_ends_at). Trials grant full PRO (Hall of Fame-equivalent), so the
+    reminder labels them that way. Returns [] until the table exists.
     """
     try:
         from dashboard_services.db import get_conn
@@ -352,7 +353,7 @@ def find_trials_due() -> list[dict]:
             if not exists:
                 return []
             rows = conn.execute(
-                """SELECT account_id, trial_ends_at, plan
+                """SELECT account_id, trial_ends_at
                    FROM pro_trials
                    WHERE trial_ends_at > now()
                      AND trial_ends_at <= now() + (%s || ' days')::interval""",
@@ -368,6 +369,7 @@ def find_trials_due() -> list[dict]:
                     days_left = (ends - _now()).total_seconds() / 86400
                 except Exception:
                     continue
+                d["plan"] = "hall_of_fame"
                 d["days_left"] = days_left
                 out.append(d)
             return out
@@ -495,7 +497,7 @@ def active_subscriptions_for_user(user_id: str) -> list[dict]:
     """Active subscription rows owned by a checkout identity.
 
     Returns dicts with table, stripe_subscription_id, plan, expires_at,
-    league_id. Used by the pricing manage card and the cancel endpoints.
+    league_id, platform. Used by the pricing manage card and the cancel endpoints.
     """
     uid = (user_id or "").strip()
     if not uid:
@@ -508,14 +510,17 @@ def active_subscriptions_for_user(user_id: str) -> list[dict]:
         with get_conn() as conn:
             cur = conn.cursor() if hasattr(conn, "cursor") else conn
             specs = (
-                ("user_subscriptions", "user_id", "user", "user_id"),
-                ("league_subscriptions", "subscriber_user_id", "league", "league_id"),
-                ("user_league_subscriptions", "user_id", "single_league", "league_id"),
+                ("user_subscriptions", "user_id", "plan_key", "user_id"),
+                ("league_subscriptions", "subscriber_user_id", None, "league_id"),
+                ("user_league_subscriptions", "user_id", None, "league_id"),
             )
-            for table, user_col, plan, league_col in specs:
+            # plan_key may not exist on databases created before migration 039.
+            _have_plan_key = True
+            for table, user_col, key_col, league_col in specs:
                 try:
+                    sel = ", plan_key" if key_col else ""
                     rows = cur.execute(
-                        f"""SELECT stripe_subscription_id, expires_at, {league_col}
+                        f"""SELECT stripe_subscription_id, expires_at, {league_col}{sel}, platform
                             FROM {table}
                             WHERE {user_col} = %s
                               AND subscription_status = 'active'
@@ -523,17 +528,38 @@ def active_subscriptions_for_user(user_id: str) -> list[dict]:
                         (uid, now),
                     ).fetchall()
                 except Exception:
-                    continue
+                    if key_col and _have_plan_key:
+                        # plan_key column missing (pre-039 DB): retry without it.
+                        _have_plan_key = False
+                        try:
+                            rows = cur.execute(
+                                f"""SELECT stripe_subscription_id, expires_at, {league_col}, platform
+                                    FROM {table}
+                                    WHERE {user_col} = %s
+                                      AND subscription_status = 'active'
+                                      AND expires_at > %s""",
+                                (uid, now),
+                            ).fetchall()
+                        except Exception:
+                            continue
+                    else:
+                        continue
                 for r in rows or []:
                     d = _row_to_dict(r)
                     if not d.get("stripe_subscription_id"):
                         continue
+                    if key_col == "plan_key":
+                        plan = (d.get("plan_key") or "").strip().lower() or "user"
+                    else:
+                        plan = {"league_subscriptions": "league",
+                                "user_league_subscriptions": "single_league"}[table]
                     out.append({
                         "table": table,
                         "stripe_subscription_id": d["stripe_subscription_id"],
                         "plan": plan,
                         "expires_at": d.get("expires_at"),
                         "league_id": d.get("league_id") or "",
+                        "platform": (d.get("platform") or "sleeper").strip().lower() or "sleeper",
                     })
     except Exception:
         logger.debug("[churn] active_subscriptions_for_user failed", exc_info=True)

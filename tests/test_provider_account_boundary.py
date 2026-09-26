@@ -187,6 +187,8 @@ def test_pre_google_link_stages_provider_context_without_authenticating_account(
 
 
 def test_pending_link_with_checkout_plan_returns_pricing_next():
+    # Legacy plans are grandfathered, not purchasable: a legacy checkout_plan
+    # is dropped at the new-purchase entry, while current plans flow through.
     app = flask.Flask(__name__)
     app.secret_key = "test"
     app.register_blueprint(link_bp)
@@ -197,18 +199,59 @@ def test_pending_link_with_checkout_plan_returns_pricing_next():
             "checkout_plan": "single_league",
         })
         with client.session_transaction() as session:
-            assert session["pending_link"]["checkout_plan"] == "single_league"
+            assert "checkout_plan" not in session["pending_link"]
             assert session["pending_link"]["platform"] == "espn"
 
     from urllib.parse import unquote
     assert response.status_code == 200
     auth_url = unquote(response.json["auth_url"])
+    # A dropped legacy plan behaves like no checkout plan at all (pre-039
+    # behavior for plans outside the purchasable set).
+    assert auth_url == "/auth/google?next=/"
+    assert "plan=" not in auth_url
+
+    with app.test_client() as client:
+        response = client.post("/api/link/pending", json={
+            "platform": "espn", "league_id": "555", "season": 2026,
+            "checkout_plan": "starter",
+        })
+        with client.session_transaction() as session:
+            assert session["pending_link"]["checkout_plan"] == "starter"
+
+    auth_url = unquote(response.json["auth_url"])
     assert "checkout=1" in auth_url
-    assert "plan=single_league" in auth_url
+    assert "plan=starter" in auth_url
     assert "/espn/2026/555/pricing" in auth_url
 
 
 def test_google_callback_checkout_plan_lands_on_pricing(monkeypatch):
+    attached = []
+    _stub_google_callback(monkeypatch, attached)
+    app = flask.Flask(__name__)
+    app.secret_key = "test"
+    app.register_blueprint(google_auth_bp)
+
+    with app.test_client() as client:
+        with client.session_transaction() as session:
+            session["google_oauth_state"] = "state"
+            session["google_oauth_nonce"] = "nonce"
+            session["google_pkce_verifier"] = "verifier"
+            session["google_oauth_next"] = "/"
+            session["pending_link"] = {
+                "platform": "espn", "league_id": "555", "season": 2026,
+                "checkout_plan": "starter",
+            }
+        response = client.get("/auth/google/callback?code=code&state=state")
+
+    assert response.status_code == 302
+    loc = response.headers["Location"]
+    assert loc.endswith("/espn/2026/555/pricing?plan=starter&checkout=1") or \
+        "/espn/2026/555/pricing?plan=starter&checkout=1" in loc
+
+
+def test_google_callback_drops_legacy_checkout_plan(monkeypatch):
+    # A legacy plan staged in pending_link is not forwarded to pricing: new
+    # buyers cannot purchase grandfathered plans.
     attached = []
     _stub_google_callback(monkeypatch, attached)
     app = flask.Flask(__name__)
@@ -229,8 +272,10 @@ def test_google_callback_checkout_plan_lands_on_pricing(monkeypatch):
 
     assert response.status_code == 302
     loc = response.headers["Location"]
-    assert loc.endswith("/espn/2026/555/pricing?plan=single_league&checkout=1") or \
-        "/espn/2026/555/pricing?plan=single_league&checkout=1" in loc
+    # No checkout intent left: the normal pending-link destination (the league
+    # dashboard), with no plan carried over.
+    assert "plan=single_league" not in loc
+    assert loc.endswith("/espn/2026/555/dashboard")
 
 
 def test_explicit_unlink_requires_google_and_removes_only_requested_membership(monkeypatch):

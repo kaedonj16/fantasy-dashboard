@@ -90,82 +90,83 @@ def test_normalize_interval():
 
 
 def test_annual_savings_pct_matches_spec():
-    # league: $35/yr vs 12x$4.99=$59.88 -> 42%; user: $20 vs $35.88 -> 44%;
-    # combo: $45 vs $71.88 -> 37%; single: $10 vs $17.88 -> 44%.
-    assert billing._annual_savings_pct("league") == 42
-    assert billing._annual_savings_pct("user") == 44
-    assert billing._annual_savings_pct("combo") == 37
-    assert billing._annual_savings_pct("single_league") == 44
+    # All three plans are priced so annual saves 44%:
+    # starter $10 vs 12x$1.49=$17.88; all_pro $30 vs $53.88; hall_of_fame $50 vs $89.88.
+    assert billing._annual_savings_pct("starter") == 44
+    assert billing._annual_savings_pct("all_pro") == 44
+    assert billing._annual_savings_pct("hall_of_fame") == 44
 
 
 def test_monthly_defaults_match_spec_cents():
     assert billing._MONTHLY_DEFAULT_UNIT_AMOUNTS == {
-        "league": 499,
-        "user": 299,
-        "combo": 599,
-        "single_league": 149,
+        "starter": 149,
+        "all_pro": 449,
+        "hall_of_fame": 749,
     }
 
 
 def test_monthly_price_env_names():
     assert billing._MONTHLY_PRICE_ENV == {
-        "league": "STRIPE_PRICE_LEAGUE_MONTHLY",
-        "user": "STRIPE_PRICE_USER_MONTHLY",
-        "combo": "STRIPE_PRICE_COMBO_MONTHLY",
-        "single_league": "STRIPE_PRICE_SINGLE_LEAGUE_MONTHLY",
+        "starter": "STRIPE_PRICE_STARTER_MONTHLY",
+        "all_pro": "STRIPE_PRICE_ALL_PRO_MONTHLY",
+        "hall_of_fame": "STRIPE_PRICE_HALL_OF_FAME_MONTHLY",
     }
 
 
-def test_line_item_annual_unchanged():
-    item = billing._checkout_line_item("league", "year")
+def test_line_item_annual_unchanged(monkeypatch):
+    monkeypatch.setitem(billing._STRIPE_PRICES["starter"], "product", "prod_starter_x")
+    item = billing._checkout_line_item("starter", "year")
     assert item["quantity"] == 1
-    assert item["price_data"]["unit_amount"] == 3500
+    assert item["price_data"]["unit_amount"] == 1000
     assert item["price_data"]["recurring"] == {"interval": "year"}
-    assert item["price_data"]["product"] == billing._STRIPE_LEAGUE_PRODUCT
+    assert item["price_data"]["product"] == "prod_starter_x"
     assert "price" not in item
 
 
 def test_line_item_monthly_fallback_uses_default_amount(monkeypatch):
     for plan in billing._MONTHLY_PRICE_ENV:
         monkeypatch.delenv(billing._MONTHLY_PRICE_ENV[plan], raising=False)
-    item = billing._checkout_line_item("user", "month")
+    monkeypatch.setitem(billing._STRIPE_PRICES["all_pro"], "product", "prod_all_pro_x")
+    item = billing._checkout_line_item("all_pro", "month")
     assert item["quantity"] == 1
-    assert item["price_data"]["unit_amount"] == 299
+    assert item["price_data"]["unit_amount"] == 449
     assert item["price_data"]["recurring"] == {"interval": "month"}
-    assert item["price_data"]["product"] == billing._STRIPE_USER_PRODUCT
+    assert item["price_data"]["product"] == "prod_all_pro_x"
     assert "price" not in item
 
 
 def test_line_item_monthly_prefers_env_price_id(monkeypatch):
-    monkeypatch.setenv("STRIPE_PRICE_COMBO_MONTHLY", "price_monthly_combo_123")
-    item = billing._checkout_line_item("combo", "month")
-    assert item == {"price": "price_monthly_combo_123", "quantity": 1}
+    monkeypatch.setenv("STRIPE_PRICE_HALL_OF_FAME_MONTHLY", "price_monthly_hof_123")
+    item = billing._checkout_line_item("hall_of_fame", "month")
+    assert item == {"price": "price_monthly_hof_123", "quantity": 1}
 
 
-def test_line_item_monthly_single_league_product_data_fallback(monkeypatch):
-    monkeypatch.delenv("STRIPE_PRICE_SINGLE_LEAGUE_MONTHLY", raising=False)
-    item = billing._checkout_line_item("single_league", "month")
-    assert item["price_data"]["unit_amount"] == 149
+def test_line_item_monthly_hall_of_fame_product_data_fallback(monkeypatch):
+    monkeypatch.delenv("STRIPE_PRICE_HALL_OF_FAME_MONTHLY", raising=False)
+    monkeypatch.setitem(billing._STRIPE_PRICES["hall_of_fame"], "product", "prod_hof_x")
+    item = billing._checkout_line_item("hall_of_fame", "month")
+    assert item["price_data"]["unit_amount"] == 749
     assert item["price_data"]["recurring"] == {"interval": "month"}
-    assert item["price_data"]["product"] == billing._STRIPE_SINGLE_LEAGUE_PRODUCT
+    assert item["price_data"]["product"] == "prod_hof_x"
 
 
 def test_checkout_metadata_carries_interval(offline_client):
     import app as app_module
 
     with app_module.app.test_request_context("/"):
-        meta = billing._checkout_metadata("league", "u1", "lg1", "sleeper", 2026, "month")
+        meta = billing._checkout_metadata("starter", "u1", "lg1", "sleeper", 2026, "month")
         assert meta["interval"] == "month"
-        assert meta["plan"] == "league"
-        meta2 = billing._checkout_metadata("user", "u1", "", "sleeper", 2026)
+        assert meta["plan"] == "starter"
+        meta2 = billing._checkout_metadata("hall_of_fame", "u1", "", "sleeper", 2026)
         assert meta2["interval"] == "year"
 
 
-def test_interval_from_subscription_reads_price():
+def test_interval_from_subscription_reads_price(monkeypatch):
+    monkeypatch.setattr(billing, "_STRIPE_PRODUCT_STARTER", "prod_starter_test")
     sub = {
         "items": {"data": [{
             "price": {
-                "product": billing._STRIPE_LEAGUE_PRODUCT,
+                "product": "prod_starter_test",
                 "recurring": {"interval": "month"},
             },
         }]},
@@ -199,9 +200,11 @@ def test_create_user_subscription_stores_interval(monkeypatch):
     monkeypatch.setattr(subscriptions, "get_conn", lambda: _Conn(cursor))
     assert subscriptions.create_user_subscription(
         "u1", datetime.now(timezone.utc), billing_interval="month",
+        plan_key="all_pro",
     ) is True
     insert = [p for sql, p in cursor.queries if "INSERT INTO user_subscriptions" in sql][0]
-    assert insert[-1] == "month"
+    assert insert[-2] == "month"
+    assert insert[-1] == "all_pro"
 
 
 def test_create_user_league_subscription_stores_interval(monkeypatch):
@@ -221,7 +224,7 @@ def test_create_functions_normalize_bad_interval(monkeypatch):
         "u1", datetime.now(timezone.utc), billing_interval="lifetime",
     ) is True
     insert = [p for sql, p in cursor.queries if "INSERT INTO user_subscriptions" in sql][0]
-    assert insert[-1] == "year"
+    assert insert[-2] == "year"
 
 
 def test_get_subscription_info_returns_billing_interval(monkeypatch):
@@ -229,12 +232,15 @@ def test_get_subscription_info_returns_billing_interval(monkeypatch):
         "expires_at": datetime.now(timezone.utc),
         "stripe_customer_id": "cus_1",
         "billing_interval": "month",
+        "plan_key": "starter",
     }
     cursor = _Cursor(rows=[dict(row)])
     monkeypatch.setattr(subscriptions, "get_conn", lambda: _Conn(cursor))
     info = subscriptions.get_subscription_info("u1", None, "sleeper")
     assert info["has_user_subscription"] is True
     assert info["billing_interval"] == "month"
+    assert info["user_plan_key"] == "starter"
+    assert info["subscription_type"] == "starter"
 
 
 def test_get_subscription_info_defaults_interval_year(monkeypatch):
@@ -249,19 +255,15 @@ def test_get_subscription_info_defaults_interval_year(monkeypatch):
 def test_webhook_monthly_grant_writes_interval(offline_client, monkeypatch):
     captured = {}
 
-    def fake_create(league_id, user_id, expires_at, **kwargs):
+    def fake_create(user_id, expires_at, **kwargs):
         captured.update(kwargs)
         return True
 
-    monkeypatch.setattr(billing, "create_league_subscription", fake_create)
-    monkeypatch.setattr(
-        billing, "create_user_subscription",
-        lambda *a, **k: (_ for _ in ()).throw(AssertionError()),
-    )
+    monkeypatch.setattr(billing, "create_user_subscription", fake_create)
 
     session = SimpleNamespace(
         metadata=_Meta(
-            plan="league", user_id="u1", league_id="lg1",
+            plan="starter", user_id="u1", league_id="",
             platform="sleeper", interval="month",
         ),
         subscription="sub_m",
@@ -287,16 +289,17 @@ def test_webhook_interval_prefers_stripe_price_over_metadata(offline_client, mon
         return True
 
     monkeypatch.setattr(billing, "create_user_subscription", fake_create)
+    monkeypatch.setattr(billing, "_STRIPE_PRODUCT_HALL_OF_FAME", "prod_hof_test")
 
     session = SimpleNamespace(
-        metadata=_Meta(plan="user", user_id="u1", platform="sleeper", interval="year"),
+        metadata=_Meta(plan="hall_of_fame", user_id="u1", platform="sleeper", interval="year"),
         subscription="sub_p",
         customer="cus_p",
     )
     sub = {
         "items": {"data": [{
             "price": {
-                "product": billing._STRIPE_USER_PRODUCT,
+                "product": "prod_hof_test",
                 "recurring": {"interval": "month"},
             },
         }]},
@@ -325,11 +328,12 @@ def test_invoice_paid_syncs_billing_interval(offline_client, monkeypatch):
 
     import dashboard_services.db as db
     monkeypatch.setattr(db, "get_conn", lambda: _Conn(cursor))
+    monkeypatch.setattr(billing, "_STRIPE_PRODUCT_HALL_OF_FAME", "prod_hof_test")
 
     sub = {
         "items": {"data": [{
             "price": {
-                "product": billing._STRIPE_USER_PRODUCT,
+                "product": "prod_hof_test",
                 "recurring": {"interval": "month"},
             },
         }]},
@@ -373,13 +377,13 @@ def test_pricing_page_has_billing_toggle(offline_client):
 
 def test_pricing_page_shows_monthly_prices_and_savings(offline_client):
     html = offline_client.get("/pricing").get_data(as_text=True)
-    for price in ("$4.99<span>/mo</span>", "$2.99<span>/mo</span>",
-                  "$5.99<span>/mo</span>", "$1.49<span>/mo</span>"):
+    for price in ("$1.49<span>/mo</span>", "$4.49<span>/mo</span>",
+                  "$7.49<span>/mo</span>"):
         assert price in html
-    for annual, pct in (("$35<span>/year</span>", 42), ("$20<span>/year</span>", 44),
-                        ("$45<span>/year</span>", 37), ("$10<span>/year</span>", 44)):
+    for annual in ("$10<span>/year</span>", "$30<span>/year</span>",
+                   "$50<span>/year</span>"):
         assert annual in html
-        assert f"Save {pct}% with annual billing" in html
+        assert "Save 44% with annual billing" in html
 
 
 def test_pricing_page_copy_no_longer_annual_only():
