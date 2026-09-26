@@ -75,6 +75,22 @@ def _init_push_table():
             except Exception:
                 logger.debug("suppressed exception", exc_info=True)
             conn.commit()
+            # Per-league opt-outs: toggling a league off in notification settings
+            # records (endpoint, league_id) here so the auto-enroll backfill
+            # (bulk subscribe on page load) doesn't resurrect it. Toggling the
+            # league back on clears the row.
+            try:
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS push_league_optouts (
+                        endpoint   TEXT NOT NULL,
+                        league_id  TEXT NOT NULL,
+                        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                        PRIMARY KEY (endpoint, league_id)
+                    )
+                """)
+                conn.commit()
+            except Exception:
+                logger.debug("suppressed exception", exc_info=True)
             # Multi-league support: a device (endpoint) can subscribe to several
             # leagues -- one row per (endpoint, league_id). Replace the old
             # endpoint-unique constraint with a composite unique index. All
@@ -168,7 +184,8 @@ def api_push_subscribe():
     # Accept either a single league_id or a league_ids[] array (register the
     # device for every league at once -- the default-to-all subscribe path).
     raw_leagues = data.get("league_ids")
-    if not isinstance(raw_leagues, list) or not raw_leagues:
+    is_bulk = isinstance(raw_leagues, list) and bool(raw_leagues)
+    if not is_bulk:
         raw_leagues = [data.get("league_id")]
     leagues = list(dict.fromkeys((str(l).strip() if l else "") for l in raw_leagues))
     if not (endpoint and p256dh and auth):
@@ -177,6 +194,26 @@ def api_push_subscribe():
     try:
         from dashboard_services.db import get_conn
         with get_conn() as conn:
+            if is_bulk:
+                # Auto-enroll backfill: skip leagues this device explicitly
+                # opted out of so a settings toggle-off stays off.
+                opted = {
+                    r["league_id"]
+                    for r in conn.execute(
+                        "SELECT league_id FROM push_league_optouts WHERE endpoint = %s",
+                        (endpoint,),
+                    ).fetchall()
+                }
+                leagues = [lid for lid in leagues if lid not in opted]
+            else:
+                # Explicit single-league subscribe (settings toggle-on):
+                # clear any prior opt-out for these leagues.
+                for lid in leagues:
+                    if lid:
+                        conn.execute(
+                            "DELETE FROM push_league_optouts WHERE endpoint = %s AND league_id = %s",
+                            (endpoint, lid),
+                        )
             for lid in leagues:
                 conn.execute(
                     """
@@ -226,6 +263,14 @@ def api_push_unsubscribe():
             if league_id:
                 conn.execute(
                     "DELETE FROM push_subscriptions WHERE endpoint = %s AND league_id = %s",
+                    (endpoint, league_id),
+                )
+                # Remember the opt-out so the auto-enroll backfill doesn't
+                # re-subscribe this league on the next page load.
+                conn.execute(
+                    """INSERT INTO push_league_optouts (endpoint, league_id)
+                       VALUES (%s, %s)
+                       ON CONFLICT (endpoint, league_id) DO NOTHING""",
                     (endpoint, league_id),
                 )
             else:
