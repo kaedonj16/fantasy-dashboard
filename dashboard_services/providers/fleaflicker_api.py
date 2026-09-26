@@ -34,6 +34,11 @@ TIMEOUT = (5, 20)
 OPTIONAL_TIMEOUT = (3, 6)
 _FAIL_TTL = 30
 _OPTIONAL_FAIL_TTL = 30
+# Transient Fleaflicker blips (dropped connection, read timeout, brief 5xx)
+# used to 503 a league page on the first failure. One quick retry absorbs
+# the blip; a genuine outage still fails fast through the normal path.
+_TRANSIENT_RETRY_ATTEMPTS = 2
+_TRANSIENT_RETRY_SLEEP = 0.75
 _OPTIONAL_METHODS = frozenset({
     "FetchLeagueDraftBoard",
     "FetchTeamPicks",
@@ -502,22 +507,38 @@ def _pick_canonical(
 
 def _request_get(url: str, **kwargs):
     import requests
-    try:
-        return requests.get(url, **kwargs)
-    except (requests.Timeout, requests.ConnectionError) as exc:
-        raise ProviderUnavailableError("Fleaflicker is temporarily unavailable.") from exc
-    except requests.RequestException as exc:
-        raise ProviderUnavailableError("Fleaflicker returned an invalid response.") from exc
+    for attempt in range(_TRANSIENT_RETRY_ATTEMPTS):
+        try:
+            return requests.get(url, **kwargs)
+        except (requests.Timeout, requests.ConnectionError) as exc:
+            if attempt + 1 >= _TRANSIENT_RETRY_ATTEMPTS:
+                raise ProviderUnavailableError("Fleaflicker is temporarily unavailable.") from exc
+            logger.debug(
+                "Fleaflicker GET %s on attempt %d; retrying",
+                type(exc).__name__, attempt + 1,
+            )
+            time.sleep(_TRANSIENT_RETRY_SLEEP)
+        except requests.RequestException as exc:
+            raise ProviderUnavailableError("Fleaflicker returned an invalid response.") from exc
+    raise ProviderUnavailableError("Fleaflicker is temporarily unavailable.")
 
 
 def _request_post(url: str, **kwargs):
     import requests
-    try:
-        return requests.post(url, **kwargs)
-    except (requests.Timeout, requests.ConnectionError) as exc:
-        raise ProviderUnavailableError("Fleaflicker is temporarily unavailable.") from exc
-    except requests.RequestException as exc:
-        raise ProviderUnavailableError("Fleaflicker returned an invalid response.") from exc
+    for attempt in range(_TRANSIENT_RETRY_ATTEMPTS):
+        try:
+            return requests.post(url, **kwargs)
+        except (requests.Timeout, requests.ConnectionError) as exc:
+            if attempt + 1 >= _TRANSIENT_RETRY_ATTEMPTS:
+                raise ProviderUnavailableError("Fleaflicker is temporarily unavailable.") from exc
+            logger.debug(
+                "Fleaflicker POST %s on attempt %d; retrying",
+                type(exc).__name__, attempt + 1,
+            )
+            time.sleep(_TRANSIENT_RETRY_SLEEP)
+        except requests.RequestException as exc:
+            raise ProviderUnavailableError("Fleaflicker returned an invalid response.") from exc
+    raise ProviderUnavailableError("Fleaflicker is temporarily unavailable.")
 
 
 def _raise_for_status(response) -> None:
@@ -848,12 +869,21 @@ class FleaflickerProvider(ProviderAdapter):
             if auth:
                 headers["Authorization"] = auth
             try:
-                response = _request_get(
-                    f"{BASE_URL}/{method}",
-                    params=query,
-                    timeout=OPTIONAL_TIMEOUT if optional else TIMEOUT,
-                    headers=headers,
-                )
+                response = None
+                for attempt in range(_TRANSIENT_RETRY_ATTEMPTS):
+                    response = _request_get(
+                        f"{BASE_URL}/{method}",
+                        params=query,
+                        timeout=OPTIONAL_TIMEOUT if optional else TIMEOUT,
+                        headers=headers,
+                    )
+                    if response.status_code < 500 or attempt + 1 >= _TRANSIENT_RETRY_ATTEMPTS:
+                        break
+                    logger.debug(
+                        "Fleaflicker HTTP %s on attempt %d method=%s; retrying",
+                        response.status_code, attempt + 1, method,
+                    )
+                    time.sleep(_TRANSIENT_RETRY_SLEEP)
                 if response.status_code >= 400:
                     _classify_http_error(response, method, league_id)
                 if _response_looks_like_html(response):

@@ -1503,3 +1503,89 @@ def test_get_transactions_returns_empty_on_outage_without_raising(mock_get):
     assert provider.get_transactions("92916", 2025, 1) == []
     tx_calls = [c for c in mock_get.call_args_list if "FetchLeagueTransactions" in c.args[0]]
     assert len(tx_calls) == 1
+
+
+def test_request_get_retries_timeout_then_succeeds(monkeypatch):
+    """A single transient timeout is retried; the blip does not surface."""
+    import requests
+    import dashboard_services.providers.fleaflicker_api as flea
+    monkeypatch.setattr(flea, "_TRANSIENT_RETRY_SLEEP", 0)
+    calls = {"n": 0}
+
+    def fake_get(url, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise requests.Timeout("timed out")
+        return response({"ok": True})
+
+    monkeypatch.setattr(requests, "get", fake_get)
+    result = flea._request_get("https://www.fleaflicker.com/api/FetchLeagueStandings")
+    assert result.json() == {"ok": True}
+    assert calls["n"] == 2
+
+
+def test_request_get_raises_after_retry_exhausted(monkeypatch):
+    """A genuine outage still fails fast after the retry budget is spent."""
+    import requests
+    import dashboard_services.providers.fleaflicker_api as flea
+    monkeypatch.setattr(flea, "_TRANSIENT_RETRY_SLEEP", 0)
+    calls = {"n": 0}
+
+    def fake_get(url, **kwargs):
+        calls["n"] += 1
+        raise requests.ConnectionError("dropped")
+
+    monkeypatch.setattr(requests, "get", fake_get)
+    with pytest.raises(ProviderUnavailableError, match="temporarily unavailable"):
+        flea._request_get("https://www.fleaflicker.com/api/FetchLeagueStandings")
+    assert calls["n"] == 2
+
+
+def test_request_get_does_not_retry_non_transient_error(monkeypatch):
+    """Non-transient request errors surface immediately without a retry."""
+    import requests
+    import dashboard_services.providers.fleaflicker_api as flea
+    calls = {"n": 0}
+
+    def fake_get(url, **kwargs):
+        calls["n"] += 1
+        raise requests.TooManyRedirects("redirect loop")
+
+    monkeypatch.setattr(requests, "get", fake_get)
+    with pytest.raises(ProviderUnavailableError, match="invalid response"):
+        flea._request_get("https://www.fleaflicker.com/api/FetchLeagueStandings")
+    assert calls["n"] == 1
+
+
+@patch("dashboard_services.providers.fleaflicker_api._request_get")
+def test_call_retries_server_error_then_succeeds(mock_get, monkeypatch):
+    """A brief upstream 500 is retried once instead of 503ing the page."""
+    import dashboard_services.providers.fleaflicker_api as flea
+    monkeypatch.setattr(flea, "_TRANSIENT_RETRY_SLEEP", 0)
+    mock_get.side_effect = [
+        response({"error": "boom"}, status=500),
+        response({"league": {"id": 14153, "name": "Dynasty", "size": 2}, "divisions": []}),
+    ]
+    out = FleaflickerProvider()._call("FetchLeagueStandings", "14153", 2026)
+    assert mock_get.call_count == 2
+    assert out["league"]["name"] == "Dynasty"
+
+
+@patch("dashboard_services.providers.fleaflicker_api._request_get")
+def test_call_raises_after_server_error_retry_exhausted(mock_get, monkeypatch):
+    import dashboard_services.providers.fleaflicker_api as flea
+    monkeypatch.setattr(flea, "_TRANSIENT_RETRY_SLEEP", 0)
+    mock_get.return_value = response({"error": "boom"}, status=500)
+    with pytest.raises(ProviderUnavailableError, match="temporarily unavailable"):
+        FleaflickerProvider()._call("FetchLeagueStandings", "14153", 2026)
+    assert mock_get.call_count == 2
+
+
+@patch("dashboard_services.providers.fleaflicker_api._request_get")
+def test_call_does_not_retry_not_found(mock_get):
+    """Client errors (404) are not retried: retrying cannot help."""
+    from dashboard_services.providers.base import LeagueNotFoundError
+    mock_get.return_value = response({"error": "not found"}, status=404)
+    with pytest.raises(LeagueNotFoundError):
+        FleaflickerProvider()._call("FetchLeagueStandings", "14153", 2026)
+    assert mock_get.call_count == 1
