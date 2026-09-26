@@ -249,7 +249,9 @@ def test_free_page_locks_pro_presets_and_strips_pro_metrics():
     assert 'data-preset="key_metrics" data-locked="0"' in html
     assert 'data-preset="start_sit" data-locked="0"' in html
     assert 'data-preset="ceiling_dfs" data-locked="0"' in html
-    assert "🔒" in html
+    # Locked presets carry the gold lock icon (theme-colored SVG, no emoji).
+    assert "🔒" not in html
+    assert "am-lock-ico" in html
     # PRO metrics are not offered in the free picker; expected_ppr_per_game
     # (the free default view's anchor) and boom/bust rates (already visible
     # on the Start / Sit compare table) are.

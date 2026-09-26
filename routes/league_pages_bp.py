@@ -209,7 +209,8 @@ def page_advanced_metrics(platform: str = None, season: int = None, league_id: s
         league_id, platform or "sleeper", season,
     )
     body = build_advanced_metrics_body(
-        has_premium, LEADERBOARD_METRICS, league_id, season, platform
+        has_premium, LEADERBOARD_METRICS, league_id, season, platform,
+        is_guest=not session.get("viewer_username"),
     )
     # When a shared graph link is opened (?graph=1&gx=&gy=...), give it a rich
     # social preview whose image is a server-rendered screenshot of that graph.
