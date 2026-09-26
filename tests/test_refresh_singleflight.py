@@ -68,7 +68,7 @@ def test_postgres_contention_never_falls_back_to_a_second_lock_domain(monkeypatc
 def test_dashboard_cache_limit_and_lock_registry_are_conservative():
     import app
     assert app.DASHBOARD_CACHE_MAX >= 1
-    assert app.DASHBOARD_CACHE_MAX == 24
+    assert app.DASHBOARD_CACHE_MAX == 8
     assert app._CTX_LOCKS_MAX >= app.DASHBOARD_CACHE_MAX
 
 
