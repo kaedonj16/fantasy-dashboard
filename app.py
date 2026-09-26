@@ -11346,7 +11346,56 @@ def _render_weekly_highlights(
 
 # build_weekly_hub_body lives in dashboard_services/pages/weekly_hub_page.py
 
+# Memo for build_projections_by_week below. Flattening 18 weeks of raw
+# projection files through the league's scoring math is pure CPU (~1s) and the
+# result is fully determined by (season, weeks, scoring settings, file
+# contents), so recomputing it on every dashboard/weekly-hub/start-sit/trade
+# page load is pure waste. Keyed by (season, weeks, scoring fingerprint);
+# entries invalidate when the projection files get newer (daily cron rewrite).
+# The returned bundles are SHARED -- callers must treat them as read-only
+# (sharing also means several cached league contexts with the same scoring no
+# longer each retain their own copy).
+_PROJ_BY_WEEK_MEMO: dict = {}
+_PROJ_BY_WEEK_MEMO_MAX = 8
+_PROJ_BY_WEEK_MEMO_LOCK = threading.RLock()
+
+
+def _proj_files_newest_mtime(season: int) -> float:
+    from utils.utils import CACHE_DIR as _cd
+    try:
+        pattern = os.path.join(str(_cd), "projections", f"projections_s{int(season)}_w*.json")
+        return max((os.path.getmtime(p) for p in glob.glob(pattern)), default=0.0)
+    except Exception:
+        return 0.0
+
+
 def build_projections_by_week(season: int, weeks: int, raw_scoring_settings: dict = None):
+    """Flattened per-week projections, memoized per (season, weeks, scoring).
+
+    Thin wrapper around _build_projections_by_week_uncached; see the
+    _PROJ_BY_WEEK_MEMO comment for the invalidation contract. The result is
+    shared between callers: treat it as read-only.
+    """
+    key = (int(season), int(weeks), _ss_scoring_sig(raw_scoring_settings))
+    newest = _proj_files_newest_mtime(season)
+    with _PROJ_BY_WEEK_MEMO_LOCK:
+        hit = _PROJ_BY_WEEK_MEMO.get(key)
+        if hit is not None and hit[0] >= newest:
+            _PROJ_BY_WEEK_MEMO[key] = _PROJ_BY_WEEK_MEMO.pop(key)  # LRU refresh
+            return hit[1]
+    bundles = _build_projections_by_week_uncached(season, weeks, raw_scoring_settings)
+    # Re-stat AFTER the build: load_week_projection may have fetched and written
+    # missing weekly files mid-call, so the pre-build newest would immediately
+    # (and forever) invalidate the entry we are about to store.
+    newest = _proj_files_newest_mtime(season)
+    with _PROJ_BY_WEEK_MEMO_LOCK:
+        _PROJ_BY_WEEK_MEMO[key] = (newest, bundles)
+        while len(_PROJ_BY_WEEK_MEMO) > _PROJ_BY_WEEK_MEMO_MAX:
+            _PROJ_BY_WEEK_MEMO.pop(next(iter(_PROJ_BY_WEEK_MEMO)))
+    return bundles
+
+
+def _build_projections_by_week_uncached(season: int, weeks: int, raw_scoring_settings: dict = None):
     from statistics import median
     from utils.fantasy_scoring import projection_points
     _players_for_proj = load_players_index() or {}
