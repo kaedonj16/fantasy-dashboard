@@ -41977,7 +41977,6 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
 .home-hero-editorial a { color: var(--accent); }
 .home-platform-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 20px; }
 .home-platform-chip { font-size: 12.5px; font-weight: 700; border: 1px solid var(--border); background: var(--card); border-radius: 8px; padding: 6px 12px; color: var(--text-muted); }
-.home-card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 22px; box-shadow: 0 18px 44px rgba(2,6,23,0.20); }
 .home-card-title { font-size: 20px; font-weight: 800; margin: 0 0 6px; }
 .home-account-lead { font-size: 13.5px; color: var(--text-muted); display: block; margin-bottom: 14px; }
 @media (max-width: 768px) { .home-hero { grid-template-columns: 1fr; padding-top: 44px; } }
@@ -42087,7 +42086,7 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
 .wv-cx-benchline { display: flex; align-items: center; gap: 10px; padding: 2px 14px; color: var(--text-subtle); font-size: 10.5px; font-weight: 700; letter-spacing: 1.5px; }
 .wv-cx-benchline::before, .wv-cx-benchline::after { content: ""; flex: 1; border-top: 1.5px dashed var(--border); }
 /* Wrapped: .wrapped-* slides from dashboard_services/pages/history_page.py */
-.wrapped-deck { --wa: #a78bfa; background: radial-gradient(110% 60% at 18% 30%, rgba(124, 58, 237, .32) 0%, transparent 65%), linear-gradient(168deg, #221247 0%, #120b26 55%, #07060c 100%); border: none; overflow: hidden; min-height: 260px; }
+.wrapped-deck { --wa: #a78bfa; background: radial-gradient(110% 60% at 18% 30%, rgba(124, 58, 237, .32) 0%, transparent 65%), linear-gradient(168deg, #221247 0%, #120b26 55%, #07060c 100%); border: none; border-radius: 18px; overflow: hidden; min-height: 260px; }
 .wrapped-kicker { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
 .wrapped-kicker-rule { width: 26px; height: 3px; border-radius: 2px; background: var(--wa); }
 .wrapped-kicker-txt { font-size: 13px; font-weight: 800; letter-spacing: .22em; text-transform: uppercase; color: var(--wa); }
@@ -42143,6 +42142,18 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
 .faq-item { border-bottom: 1px solid var(--border); padding: 18px 4px; }
 .faq-item h4 { margin: 0 0 8px; font-size: 16px; }
 .faq-item p { margin: 0; font-size: 14.5px; color: var(--text-muted); line-height: 1.6; }
+/* Home FAQ cards (scoped: other pages reuse unscoped .faq-item) */
+.faq .faq-item { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 20px 22px; margin: 0 0 12px; }
+.faq .faq-item:last-of-type { margin-bottom: 0; }
+.faq .faq-item:hover { border-color: var(--text-muted); }
+.faq .faq-item[open] { border-color: var(--accent); }
+.faq .faq-item summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; cursor: pointer; list-style: none; }
+.faq .faq-item summary::-webkit-details-marker { display: none; }
+.faq .faq-item summary h4 { margin: 0; font-size: 16px; font-weight: 700; }
+.faq .faq-item .faq-plus { flex-shrink: 0; width: 28px; height: 28px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: var(--card-soft); border: 1px solid var(--border); font-size: 18px; line-height: 1; transition: transform .2s ease; }
+.faq .faq-item[open] .faq-plus { transform: rotate(45deg); }
+.faq .faq-item p { margin: 0; font-size: 15px; color: var(--text-muted); line-height: 1.6; }
+.faq .faq-item[open] p { padding-top: 10px; }
 /* Final CTA */
 .final-cta { max-width: 1060px; margin: 0 auto 80px; padding: 0 20px; }
 .final-cta-inner { background: var(--accent-soft); border: 1px solid var(--border); border-radius: 20px; padding: 48px 32px; text-align: center; }

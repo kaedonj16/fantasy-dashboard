@@ -841,15 +841,25 @@ def _pricing_manage_card() -> str:
           </div>
         </div>""")
         # Slot-capped plans (Starter / All-Pro): let the buyer pick which
-        # leagues get PRO, up to the plan cap.
+        # leagues get PRO, up to the plan cap. Hall of Fame is unlimited, so
+        # it gets a short note instead of a picker.
         cap = slot_cap_for_plan(plan)
-        if cap:
+        if plan == "hall_of_fame":
+            slot_blocks.append("""
+        <div class="br-slots-static" style="padding:14px 0 6px;border-top:1px solid var(--border);">
+          <div style="font-weight:700;font-size:15px;">Your PRO leagues</div>
+          <p style="margin:4px 0 0;font-size:13px;color:var(--text-muted);">Hall of Fame covers unlimited leagues. Nothing to manage here.</p>
+        </div>""")
+        elif cap:
             block_id = f"brSlots{i}"
             plat = html.escape(str(sub.get("platform") or "sleeper"), quote=True)
             slot_blocks.append(f"""
         <div class="br-slots" id="{block_id}" data-platform="{plat}"
              style="padding:14px 0 6px;border-top:1px solid var(--border);">
-          <div style="font-weight:700;font-size:15px;">Your PRO leagues</div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:baseline;justify-content:space-between;">
+            <div style="font-weight:700;font-size:15px;">Your PRO leagues</div>
+            <span class="br-slots-count" style="font-size:13px;color:var(--text-muted);">Loading slots&hellip;</span>
+          </div>
           <p style="margin:4px 0 10px;font-size:13px;color:var(--text-muted);">
             {html.escape(label, quote=False)} covers PRO for you in {cap}
             league{'s' if cap != 1 else ''}. Pick which ones below. You can
@@ -1044,12 +1054,28 @@ def _pricing_manage_card() -> str:
       function brSlotsEnforceCap(block, cap) {{
         var list = block.querySelector('.br-slots-list');
         var note = block.querySelector('.br-slots-note');
+        var countEl = block.querySelector('.br-slots-count');
         var checked = list.querySelectorAll('input.br-slot-check:checked').length;
         Array.prototype.forEach.call(
           list.querySelectorAll('input.br-slot-check:not(:checked)'),
           function(c) {{ c.disabled = cap > 0 && checked >= cap; }}
         );
-        note.textContent = checked + ' of ' + cap + ' selected.';
+        // Persistent "N of M slots used" count; the note stays free for the
+        // first-run nudge, save confirmations, and error messages.
+        if (countEl) countEl.textContent = checked + ' of ' + cap + ' slots used';
+        if (note) {{
+          if (cap > 0 && checked >= cap) {{
+            note.setAttribute('data-cap-msg', '1');
+            note.textContent = 'Your plan covers up to ' + cap +
+              (cap === 1 ? ' league.' : ' leagues.') +
+              ' Uncheck a league to free a slot first.';
+          }} else if (note.getAttribute('data-cap-msg')) {{
+            note.removeAttribute('data-cap-msg');
+            note.textContent = checked === 0
+              ? 'No leagues picked yet. PRO is not active anywhere until you save at least one.'
+              : '';
+          }}
+        }}
       }}
       function brSlotsInitOne(block) {{
         if (block.dataset.brSlotsInit) return;
@@ -1073,25 +1099,37 @@ def _pricing_manage_card() -> str:
           var leagues = ((parts[1] || {{}}).leagues || [])
             .filter(function(l) {{ return (l.platform || 'sleeper') === plat && l.league_id; }});
           var seen = {{}};
+          var rows = 0;
           list.innerHTML = '';
-          leagues.forEach(function(l) {{
-            if (seen[l.league_id]) return;
-            seen[l.league_id] = 1;
+          function addSlotRow(id, labelText, isChecked) {{
+            if (!id || seen[id]) return;
+            seen[id] = 1;
+            rows++;
             var label = document.createElement('label');
             label.style.cssText = 'display:flex;gap:10px;align-items:center;padding:10px 12px;border:1px solid var(--border);border-radius:10px;cursor:pointer;font-size:14px;';
             var cb = document.createElement('input');
             cb.type = 'checkbox';
             cb.className = 'br-slot-check';
-            cb.value = l.league_id;
-            if (saved.indexOf(l.league_id) !== -1) cb.checked = true;
+            cb.value = id;
+            cb.checked = !!isChecked;
             cb.addEventListener('change', function() {{ brSlotsEnforceCap(block, cap); }});
             label.appendChild(cb);
             var sp = document.createElement('span');
-            sp.textContent = l.label || l.name || l.league_id;
+            sp.textContent = labelText;
             label.appendChild(sp);
             list.appendChild(label);
+          }}
+          leagues.forEach(function(l) {{
+            addSlotRow(l.league_id, l.label || l.name || l.league_id,
+              saved.indexOf(l.league_id) !== -1);
           }});
-          if (!leagues.length) {{
+          // Saved slot leagues that are no longer in the league list stay
+          // visible (and checked) so the buyer can uncheck them to free slots.
+          (saved || []).forEach(function(id) {{
+            id = String(id || '').trim();
+            addSlotRow(id, 'League ' + id + ' (not in your saved leagues)', true);
+          }});
+          if (!rows) {{
             list.innerHTML = '<p style="font-size:13px;color:var(--text-muted);margin:0;">No leagues found on this platform yet. Connect a league first.</p>';
           }}
           brSlotsEnforceCap(block, cap);
@@ -1347,9 +1385,18 @@ def _pricing_body(league_id: str | None = None, platform: str = "sleeper") -> st
         ("all_pro", "All-Pro", "$30/year", "$4.49/mo", "PRO for you in up to 5 leagues. Pick them after checkout and change them anytime.", "Choose All-Pro", True),
         ("hall_of_fame", "Hall of Fame", "$50/year", "$7.49/mo", "PRO for you in every league you play. Your league mates are not upgraded.", "Choose Hall of Fame", False),
     ]
+
+    def _plan_leagues_label(plan_key: str) -> str:
+        """League-count line under the plan name (from the backend slot cap)."""
+        cap = slot_cap_for_plan(plan_key)
+        if not cap:
+            return "Unlimited leagues"
+        return f"{cap} league{'s' if cap != 1 else ''}"
+
     plan_cards = "".join(
         f'''<article class="pricing-option{' featured' if recommended else ''}{' is-selected' if selected_plan == key else ''}" data-plan-card="{key}">
           <div class="pricing-header"><h3>{name}</h3>{'<span class="pricing-badge">Recommended</span>' if recommended else ''}</div>
+          <p class="pricing-leagues">{_plan_leagues_label(key)}</p>
           <div class="pricing-price">
             <span class="pp-price pp-annual">{annual_price.replace('/year', '<span>/year</span>')}</span>
             <span class="pp-price pp-monthly">{monthly_price.replace('/mo', '<span>/mo</span>')}</span>

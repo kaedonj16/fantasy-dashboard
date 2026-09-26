@@ -45,7 +45,7 @@ def test_home_pro_styles_live_in_dashboard_and_landing_css():
         assert ".home-pro-open-btn" in css
         assert ".home-proof {" not in css
     paywall_css = (ROOT / "static" / "paywall.css").read_text(encoding="utf-8")
-    assert ".paywall-modal .home-pro-fields[hidden]" in paywall_css
+    assert ".paywall-modal .home-pro-step" in paywall_css
 
 
 def test_home_pro_js_opens_modal_then_stages_google():
@@ -55,12 +55,16 @@ def test_home_pro_js_opens_modal_then_stages_google():
     plans = PAYWALL_JS[PAYWALL_JS.index('const BR_PRO_PLANS'):PAYWALL_JS.index('function proPlanCards')]
     for key in ('starter', 'all_pro', 'hall_of_fame'):
         assert f"key: '{key}'" in plans
-    assert 'id="homeProGoogle" class="google-continue-btn"' in source
-    assert "fetch('/api/pro-signup/pending'" in source
-    assert "/auth/google?intent=onboarding&next=/pro/resume-checkout" in source
-    assert "/api/sleeper-user-leagues?username=" in source
-    assert "_initiatePurchaseWithLeague" in source
-    assert "checkoutBtn.hidden = !window._hasAccount" in source
+    for old_key in ('user', 'single_league', 'league', 'combo'):
+        assert f"key: '{old_key}'" not in plans
+    # No plan needs a league at checkout: the wizard has no league step and
+    # plan selection goes straight to the Google sign-in / checkout flow.
+    assert "homeProStepLeague" not in source
+    assert "BR_LEAGUE_PLANS" not in source
+    assert "initiatePurchase(selectedPlan, btn)" in source
+    assert "_startGoogleSubscribe(selectedPlan, btn)" in source
+    assert "fetch('/api/pro-signup/pending'" in PAYWALL_JS
+    assert "/auth/google?intent=onboarding&next=/pro/resume-checkout" in PAYWALL_JS
     assert "fetch('/api/identify'" not in source
     assert "data-home-pro-open" in PAYWALL_JS[PAYWALL_JS.index("function initHomeProSignup"):]
 
