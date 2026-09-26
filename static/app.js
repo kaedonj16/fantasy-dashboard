@@ -7382,6 +7382,9 @@ window.initTradePage = function initTradePage(root = document) {
     const tabs = root.querySelectorAll(".otc-main-tab");
 
     let suggTargetsLoaded = false;
+    let suggTargetsLoading = false;  // dedupes overlapping initial loads
+    let _lastTopChips = [];  // last top-chips payload, for untouchable re-render
+    let _topChipsCollapsed = false;  // strip hides once a player is picked
     let suggCurrentPlayerId = null;
     let _fetchAbortCtrl = null;  // cancels in-flight fetchPackages requests
     let _untouchableIds   = new Set(JSON.parse(localStorage.getItem('ti-untouchable') || '[]'));
@@ -7662,9 +7665,9 @@ window.initTradePage = function initTradePage(root = document) {
       // always-on desktop sidebar across a resize.
       const otcLayout = root.querySelector(".otc-layout");
       if (otcLayout) otcLayout.classList.toggle("otc-show-insights", name === "insights");
-      if (name === "suggestions" && !suggTargetsLoaded) {
-        loadSuggTargets();
-      }
+      // NOTE: sub-tab data loads are driven by _setSuggSubtab (page-load
+      // restore, sub-tab clicks, context changes) - no eager fetch here.
+      // Firing a second concurrent heavy request is what made the hub slow.
       // Sync URL so refreshing/sharing lands on the same tab
       const url = new URL(window.location.href);
       if (name === "suggestions") {
@@ -7793,6 +7796,7 @@ window.initTradePage = function initTradePage(root = document) {
 
     playerInput.addEventListener("input", () => {
       const q = playerInput.value.trim().toLowerCase();
+      if (!q.length) _setTopChipsCollapsed(false);  // cleared: bring the chips back
       if (q.length < 2) { playerDropdown.style.display = "none"; return; }
       const matches = allPlayers.filter(p =>
         (["QB","RB","WR","TE"].includes(p.position) || p.position === "PICK") &&
@@ -7806,7 +7810,21 @@ window.initTradePage = function initTradePage(root = document) {
       if (!item) return;
       playerInput.value = item.querySelector(".otc-sugg-dropdown-name").textContent;
       playerDropdown.style.display = "none";
+      _setTopChipsCollapsed(true);
       runSearchForCurrent(item.dataset.id, item.dataset.name);
+    });
+
+    // Top trade chips behave exactly like picking the player from the search
+    // dropdown: fill the input, then run the current Build around / Find
+    // returns search for them.
+    const topChipsBox = root.querySelector("#otcTopChips");
+    if (topChipsBox) topChipsBox.addEventListener("click", e => {
+      const chip = e.target.closest(".otc-top-chip");
+      if (!chip) return;
+      playerInput.value = chip.dataset.name;
+      playerDropdown.style.display = "none";
+      _setTopChipsCollapsed(true);
+      runSearchForCurrent(chip.dataset.id, chip.dataset.name);
     });
 
     document.addEventListener("click", e => {
@@ -7829,6 +7847,7 @@ window.initTradePage = function initTradePage(root = document) {
       }
       _saveUntouchable();
       _renderUntouchableBar();
+      _renderTopChips(_lastTopChips);
       window._refetchTradeIntel();
     };
     localStorage.removeItem('ti-untouchable-names'); // migrated to ti-untouchable-info
@@ -8648,11 +8667,48 @@ window.initTradePage = function initTradePage(root = document) {
     }
 
     // ── Suggestions-tab Trade Targets (different from sidebar) ───
+    // Show or hide the chips strip. Expanding is a no-op when there is
+    // nothing to show (no data yet, or every chip is untouchable).
+    function _setTopChipsCollapsed(collapsed) {
+      _topChipsCollapsed = collapsed;
+      const wrap = root.querySelector("#otcTopChipsWrap");
+      if (!wrap) return;
+      if (collapsed) { wrap.style.display = "none"; return; }
+      const visible = _lastTopChips.filter(c => !_untouchableIds.has(String(c.player_id)));
+      wrap.style.display = visible.length ? "" : "none";
+    }
+
+    // ── Top trade chips (Targets tab, under the search bar) ───────────────────
+    // The viewer's most valuable players, one tap to build around them.
+    // Untouchable players are filtered out so the chips agree with the
+    // excluded-from-suggestions bar. The strip collapses once a player is
+    // picked and comes back when the search box is cleared.
+    function _renderTopChips(chips) {
+      _lastTopChips = Array.isArray(chips) ? chips : [];
+      const wrap = root.querySelector("#otcTopChipsWrap");
+      const box  = root.querySelector("#otcTopChips");
+      if (!wrap || !box) return;
+      const visible = _lastTopChips.filter(c => !_untouchableIds.has(String(c.player_id)));
+      if (!visible.length || _topChipsCollapsed) { wrap.style.display = "none"; return; }
+      wrap.style.display = "";
+      const esc = s => (s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
+      box.innerHTML = visible.map(c => {
+        const col = (POS_COLORS || {})[c.position] || "var(--accent)";
+        const posLabel = [c.position, c.pos_rank_label].filter(Boolean).join(" ");
+        return `<button class="otc-top-chip" data-id="${esc(String(c.player_id))}" data-name="${esc(c.name)}" title="Build around ${esc(c.name)}">` +
+          `<span class="otc-top-chip-pos" style="color:${col}">${esc(posLabel)}</span>` +
+          `<span class="otc-top-chip-name">${esc(c.name)}</span>` +
+          `<span class="otc-top-chip-team">${esc(c.team)}</span></button>`;
+      }).join("");
+    }
+
     async function loadSuggTargets() {
       // Skip if Suggestions sub-tab is active - strategy loader handles that.
       // Reads localStorage (not _activeSubtab) because this can run during
       // init before the in-memory value is declared.
       if (_hubStoredSubtab() === "suggestions") return;
+
+      if (suggTargetsLoading) return;
 
       const container = root.querySelector("#otcSuggTargetsBody");
       if (!container) return;
@@ -8700,6 +8756,7 @@ window.initTradePage = function initTradePage(root = document) {
 
       window.brLoadingState(container, { rows: 3, compact: true, message: 'Loading targets' });
 
+      suggTargetsLoading = true;
       try {
         const res = await fetch(
           `/api/trade-targets?platform=${encodeURIComponent(platform)}&league_id=${encodeURIComponent(leagueId)}` +
@@ -8716,6 +8773,8 @@ window.initTradePage = function initTradePage(root = document) {
         if (!res.ok) throw new Error("Failed");
         const data = await res.json();
         suggTargetsLoaded = true;  // only mark done after a successful response
+        _topChipsCollapsed = false;  // fresh targets load: show the strip again
+        _renderTopChips(data.top_chips || []);
 
         const grouped     = data.by_position || {};
         const allGrouped  = data.all_positions || {};
@@ -8779,6 +8838,8 @@ window.initTradePage = function initTradePage(root = document) {
         // Click handling is delegated once via bindSuggTargetsClick() below.
       } catch (e) {
         window.brErrorState(container, 'Could not load targets.', () => { suggTargetsLoaded = false; loadSuggTargets(); }, { compact: true });
+      } finally {
+        suggTargetsLoading = false;
       }
     }
 
@@ -8911,6 +8972,12 @@ window.initTradePage = function initTradePage(root = document) {
     // only the newest response for the still-selected archetype is allowed to render.
     let _strategyReqSeq   = 0;
     let _strategyAbortCtrl = null;
+    // Per-archetype memory cache: revisiting a chip (or the tab) re-renders
+    // instantly instead of re-running the server pipeline. Keyed by the full
+    // request context, so a league/season/team/untouchable change always
+    // misses and refetches. Cleared on context change below.
+    let _strategyCache   = {};
+    let _strategyInflight = {};
 
     function _setSuggSubtab(tab) {
       _activeSubtab = tab;
@@ -8996,6 +9063,7 @@ window.initTradePage = function initTradePage(root = document) {
     // Re-wire context change on league/season switch
     function _onContextChangePatch() {
       suggTargetsLoaded = false;
+      _strategyCache = {};
       if (suggTab.style.display !== "none") {
         if (_activeSubtab === "suggestions" && _activeArchetype) {
           loadStrategyView(_activeArchetype);
@@ -9058,6 +9126,21 @@ window.initTradePage = function initTradePage(root = document) {
       const platform   = pathParts[0] || "sleeper";
       const leagueType = getLeagueType();
       const leagueSize = getLeagueSize();
+      const _untouchableStr = [..._untouchableIds].filter(Boolean).join(",");
+
+      // Serve repeat views from memory: same archetype + same context renders
+      // instantly with no fetch and no shimmer flash.
+      const _sCacheKey = [archetype, platform, leagueId, season, viewerRosterId, leagueType, leagueSize, _untouchableStr].join("|");
+      const _sCached = _strategyCache[_sCacheKey];
+      if (_sCached) {
+        ++_strategyReqSeq;
+        if (_strategyAbortCtrl) { try { _strategyAbortCtrl.abort(); } catch (_) {} }
+        _strategyAbortCtrl = null;
+        if (strategySpinner) strategySpinner.style.display = "none";
+        _renderStrategyResult(_sCached.data, _sCached.playoffPct, archetype);
+        return;
+      }
+      if (_strategyInflight[_sCacheKey]) return;
 
       // Loading skeleton + spinner
       const strategySpinner = root.querySelector("#otcStrategySpinner");
@@ -9081,7 +9164,6 @@ window.initTradePage = function initTradePage(root = document) {
       if (strategyCardsHead) strategyCardsHead.style.display = "none";
 
       try {
-        const _untouchableStr = [..._untouchableIds].filter(Boolean).join(",");
         const url =
           `/api/trade-intel/archetype-suggestions` +
           `?archetype=${encodeURIComponent(archetype)}` +
@@ -9093,6 +9175,7 @@ window.initTradePage = function initTradePage(root = document) {
           `&league_size=${encodeURIComponent(leagueSize)}` +
           (_untouchableStr ? `&untouchable_ids=${encodeURIComponent(_untouchableStr)}` : "");
 
+        _strategyInflight[_sCacheKey] = true;
         const res = await fetch(url, { cache: "no-store", signal: _ctrl.signal });
         if (_isStale()) return;  // a newer selection superseded this one
         if (strategySpinner) strategySpinner.style.display = "none";
@@ -9110,47 +9193,16 @@ window.initTradePage = function initTradePage(root = document) {
 
         const raw  = await res.json();
         if (_isStale()) return;  // response came back after the user moved on
+        delete _strategyInflight[_sCacheKey];
         const data = raw.suggestions ?? (Array.isArray(raw) ? raw : []);
-        _currentPlayoffPct = raw.current_playoff_pct ?? null;
-        _strategyData   = data;
-        _strategyFilter = null;
-        _strategyPage   = 0;
-        if (strategyClearBtn) strategyClearBtn.style.display = "none";
-
-        // Show / update current playoff odds inline badge
-        const poBadge = root.querySelector("#otcCurrentPOBadge");
-        if (poBadge) {
-          if (_currentPlayoffPct !== null) {
-            poBadge.textContent = "PO " + _currentPlayoffPct.toFixed(1) + "%";
-            poBadge.style.display = "";
-          } else {
-            poBadge.style.display = "none";
-          }
-        }
-
-        // Update impact-table hint to match archetype direction
-        if (impactHint) {
-          const isSell = archetype === "distribute" || archetype === "rebuilding";
-          impactHint.textContent = isSell ? "Win % cost if traded away" : "Win % if acquired";
-          impactHint.title = "wk is typical remaining-week win chance. po is simulated playoff-make odds. They can move in opposite directions: playoffs depend on the rest of the season, schedule, and ceiling -- not just average weekly scoring.";
-        }
-
-        if (!_strategyData.length) {
-          window.brEmptyState(strategyImpact, {
-            icon: 'search',
-            title: 'No suggestions',
-            message: 'No packages matched this strategy for your roster.',
-            compact: true
-          });
-          strategyCards.innerHTML  = "";
-          return;
-        }
-
-        _renderImpactTable(_strategyData);
-        _renderStrategyCards(_strategyData, null);
-        if (strategyCardsHead) strategyCardsHead.style.display = "";
+        const _poPct = raw.current_playoff_pct ?? null;
+        // Cache only real results: a transient empty (cold league context)
+        // must not mask the retry on the next visit.
+        if (data.length) _strategyCache[_sCacheKey] = { data: data, playoffPct: _poPct };
+        _renderStrategyResult(data, _poPct, archetype);
 
       } catch (err) {
+        delete _strategyInflight[_sCacheKey];
         // A superseded request was aborted on purpose - ignore it and leave the
         // newer load to own the view.
         if (err && err.name === "AbortError") return;
@@ -9159,6 +9211,50 @@ window.initTradePage = function initTradePage(root = document) {
         window.brErrorState(strategyImpact, 'Could not load strategy.', () => loadStrategyView(archetype), { compact: true });
         console.error("[strategy]", err);
       }
+    }
+
+    // Render a strategy result (fresh fetch or memory cache) into the impact
+    // table + cards. Shared so cache hits paint identically to fetches.
+    function _renderStrategyResult(data, playoffPct, archetype) {
+      _currentPlayoffPct = playoffPct;
+      _strategyData   = data;
+      _strategyFilter = null;
+      _strategyPage   = 0;
+      if (strategyClearBtn) strategyClearBtn.style.display = "none";
+
+      // Show / update current playoff odds inline badge
+      const poBadge = root.querySelector("#otcCurrentPOBadge");
+      if (poBadge) {
+        if (_currentPlayoffPct !== null) {
+          poBadge.textContent = "PO " + _currentPlayoffPct.toFixed(1) + "%";
+          poBadge.style.display = "";
+        } else {
+          poBadge.style.display = "none";
+        }
+      }
+
+      // Update impact-table hint to match archetype direction
+      const _riHint = root.querySelector("#otcStrategyImpactHint");
+      if (_riHint) {
+        const isSell = archetype === "distribute" || archetype === "rebuilding";
+        _riHint.textContent = isSell ? "Win % cost if traded away" : "Win % if acquired";
+        _riHint.title = "wk is typical remaining-week win chance. po is simulated playoff-make odds. They can move in opposite directions: playoffs depend on the rest of the season, schedule, and ceiling -- not just average weekly scoring.";
+      }
+
+      if (!_strategyData.length) {
+        window.brEmptyState(strategyImpact, {
+          icon: 'search',
+          title: 'No suggestions',
+          message: 'No packages matched this strategy for your roster.',
+          compact: true
+        });
+        strategyCards.innerHTML  = "";
+        return;
+      }
+
+      _renderImpactTable(_strategyData);
+      _renderStrategyCards(_strategyData, null);
+      if (strategyCardsHead) strategyCardsHead.style.display = "";
     }
 
     // ── Strategy: player impact table ─────────────────────────────────────────
@@ -20340,7 +20436,6 @@ window.showSubWelcome = function (opts) {
     { label: 'Trade Hub', desc: 'Archetype packages with playoff-odds impact', href: base + '/trade?tab=suggestions' },
     { label: 'Playoff Impact', desc: 'Simulate how a deal shifts your odds before you send it', href: base + '/trade' },
     { label: 'Front Office Report', desc: 'AI roster briefing personalized to your team', href: base + '/dashboard' },
-    { label: 'Trade Intel', desc: 'Market values, momentum, and real trade frequency', href: base + '/trade-intel' },
     { label: 'Breakout Engine', desc: 'Opportunity projections and breakout candidates', href: base + '/breakouts' },
   ];
 
@@ -20597,10 +20692,10 @@ window.showSubWelcome = function (opts) {
       interactive: true,
     }, _navDropStep('tradesNavDropdown')),
     {
-      page: 'trade-intel', selector: '.card, .page-shell, .ti-root, main',
-      title: 'Trade Intel',
-      body: 'Live market values, momentum, and real trade frequency for your roster.',
-      navigate: 'trade-intel',
+      page: 'trade', selector: '.card, .page-shell, main',
+      title: 'Market Intel',
+      body: 'Live market values, momentum, and real trade frequency now live in the Trade Hub under the Market Intel tab.',
+      navigate: 'trade',
     },
     {
       page: 'breakouts', selector: '.card, .page-shell, .breakouts-root, main',
@@ -20630,14 +20725,14 @@ window.showSubWelcome = function (opts) {
     {
       page: 'dashboard', selector: '#brMoreTab',
       title: 'More → PRO tools',
-      body: 'Open More for Trade Intel, Breakouts, Front Office, and the rest of PRO.',
+      body: 'Open More for Breakouts, Front Office, and the rest of PRO.',
       interactive: true,
     },
     {
-      page: 'trade-intel', selector: '.card, .page-shell, .ti-root, main',
-      title: 'Trade Intel',
-      body: 'Market values and real trade frequency for players on your roster.',
-      navigate: 'trade-intel',
+      page: 'trade', selector: '.card, .page-shell, main',
+      title: 'Market Intel',
+      body: 'Market values and real trade frequency for players on your roster, now a tab in the Trade Hub.',
+      navigate: 'trade',
     },
     {
       page: 'dashboard', selector: null,

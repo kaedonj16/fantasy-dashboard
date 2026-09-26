@@ -10,7 +10,7 @@ import logging
 from datetime import datetime
 from typing import Optional
 
-from flask import Blueprint, session
+from flask import Blueprint, redirect, session
 
 from dashboard_services.subscriptions import has_premium_access, has_premium_for_viewer
 
@@ -297,220 +297,19 @@ def page_trade(platform: Optional[str] = None, season: Optional[int] = None,
 
 # ── Trade Intelligence ─────────────────────────────────────────────────────────
 
-from dashboard_services.pages.trade_intel_page import (
-    _TI_SOURCE_NOTE,
-    build_trade_intel_body,
-)
+from dashboard_services.pages.trade_intel_page import _TI_SOURCE_NOTE
 
 
 @trade_bp.route("/<platform>/<int:season>/<league_id>/trade-intel")
 def page_trade_intel(platform: str, season: int, league_id: str):
-    from app import render_page
-    user_id = session.get("viewer_username")
-    has_premium = has_premium_for_viewer(user_id, session.get("viewer_user_id"), league_id, platform, season)
-
-    if not has_premium:
-        teaser_html = """
-    <style>
-      .ti-teaser-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:12px; }
-      .ti-teaser-card { border:1px solid var(--border); border-radius:12px; padding:14px; background:var(--card); }
-      .ti-teaser-blur { filter:blur(5px); user-select:none; pointer-events:none; }
-      .ti-teaser-redact { display:inline-block; background:var(--border); border-radius:4px; height:1em; vertical-align:middle; }
-      .ti-teaser-tabs { display:flex; gap:4px; padding:4px; background:var(--bg-alt,rgba(0,0,0,.05)); border-radius:10px; width:fit-content; }
-      .ti-teaser-tab { padding:6px 16px; border-radius:7px; border:none; font-size:13px; font-weight:600; cursor:default; background:transparent; color:var(--text-muted); }
-      .ti-teaser-tab.active { background:var(--card); color:var(--text); box-shadow:0 1px 4px rgba(0,0,0,.1); }
-      .ti-teaser-pos { display:flex; gap:6px; }
-      .ti-teaser-pos span { padding:4px 12px; border-radius:8px; border:1px solid var(--border); font-size:12px; font-weight:600; color:var(--text-muted); background:var(--card); }
-      .ti-teaser-pos span.active { border-color:var(--accent,#2563eb); color:var(--accent,#2563eb); }
-    </style>
-    <div class="card central" style="max-width:960px;">
-      <div class="card-header" style="border-bottom:1px solid var(--border);padding-bottom:16px;margin-bottom:0;">
-        <h2 style="margin:0 0 4px;font-size:20px;">Trade Intelligence</h2>
-        <div style="font-size:13px;color:var(--text-muted);">
-          Actionable insights from thousands of real dynasty trades. """ + _TI_SOURCE_NOTE + """
-        </div>
-      </div>
-      <div class="card-body" style="padding-top:20px;">
-
-        <!-- Non-functional tab + filter bar (shows the layout) -->
-        <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:20px;">
-          <div class="ti-teaser-tabs">
-            <button class="ti-teaser-tab active"><i class="fa-solid fa-fire"></i> Trending</button>
-            <button class="ti-teaser-tab"><i class="fa-solid fa-arrow-trend-down"></i> Buy Low</button>
-            <button class="ti-teaser-tab"><i class="fa-solid fa-arrow-trend-up"></i> Sell High</button>
-          </div>
-          <div class="ti-teaser-pos">
-            <span class="active">All</span>
-            <span>QB</span><span>RB</span><span>WR</span><span>TE</span>
-          </div>
-        </div>
-
-        <!-- Blurred card grid with paywall overlay -->
-        <div style="position:relative;">
-          <div class="ti-teaser-blur ti-teaser-grid" aria-hidden="true">
-            <!-- Card 1 -->
-            <div class="ti-teaser-card">
-              <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">
-                <div>
-                  <div style="font-weight:700;font-size:14px;"><span class="ti-teaser-redact" style="width:110px;"></span></div>
-                  <div style="font-size:11px;color:var(--text-muted);margin-top:3px;"><span class="ti-teaser-redact" style="width:60px;"></span></div>
-                </div>
-                <div style="padding:3px 8px;border-radius:8px;background:#3b82f620;color:#3b82f6;font-size:11px;font-weight:700;">847 trades</div>
-              </div>
-              <div style="height:1px;background:var(--border);margin-bottom:10px;"></div>
-              <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px;"><span style="color:var(--text-muted);">Market</span><span class="ti-teaser-redact" style="width:36px;"></span></div>
-              <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px;"><span style="color:var(--text-muted);">BR Model</span><span class="ti-teaser-redact" style="width:36px;"></span></div>
-              <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px;"><span style="color:var(--text-muted);">Delta</span><span class="ti-teaser-redact" style="width:28px;"></span></div>
-              <div style="display:flex;justify-content:space-between;font-size:12px;"><span style="color:var(--text-muted);">Trades 7d/30d</span><span class="ti-teaser-redact" style="width:40px;"></span></div>
-              <div style="margin-top:8px;font-size:11px;color:#10b981;font-weight:600;">▲ Rising</div>
-            </div>
-            <!-- Card 2 -->
-            <div class="ti-teaser-card">
-              <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">
-                <div>
-                  <div style="font-weight:700;font-size:14px;"><span class="ti-teaser-redact" style="width:90px;"></span></div>
-                  <div style="font-size:11px;color:var(--text-muted);margin-top:3px;"><span class="ti-teaser-redact" style="width:55px;"></span></div>
-                </div>
-                <div style="padding:3px 8px;border-radius:8px;background:#3b82f620;color:#3b82f6;font-size:11px;font-weight:700;">623 trades</div>
-              </div>
-              <div style="height:1px;background:var(--border);margin-bottom:10px;"></div>
-              <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px;"><span style="color:var(--text-muted);">Market</span><span class="ti-teaser-redact" style="width:36px;"></span></div>
-              <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px;"><span style="color:var(--text-muted);">BR Model</span><span class="ti-teaser-redact" style="width:36px;"></span></div>
-              <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px;"><span style="color:var(--text-muted);">Delta</span><span class="ti-teaser-redact" style="width:28px;"></span></div>
-              <div style="display:flex;justify-content:space-between;font-size:12px;"><span style="color:var(--text-muted);">Trades 7d/30d</span><span class="ti-teaser-redact" style="width:40px;"></span></div>
-              <div style="margin-top:8px;font-size:11px;color:#10b981;font-weight:600;">▲ Rising</div>
-            </div>
-            <!-- Card 3 -->
-            <div class="ti-teaser-card">
-              <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">
-                <div>
-                  <div style="font-weight:700;font-size:14px;"><span class="ti-teaser-redact" style="width:100px;"></span></div>
-                  <div style="font-size:11px;color:var(--text-muted);margin-top:3px;"><span class="ti-teaser-redact" style="width:50px;"></span></div>
-                </div>
-                <div style="padding:3px 8px;border-radius:8px;background:#3b82f620;color:#3b82f6;font-size:11px;font-weight:700;">512 trades</div>
-              </div>
-              <div style="height:1px;background:var(--border);margin-bottom:10px;"></div>
-              <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px;"><span style="color:var(--text-muted);">Market</span><span class="ti-teaser-redact" style="width:36px;"></span></div>
-              <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px;"><span style="color:var(--text-muted);">BR Model</span><span class="ti-teaser-redact" style="width:36px;"></span></div>
-              <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px;"><span style="color:var(--text-muted);">Delta</span><span class="ti-teaser-redact" style="width:28px;"></span></div>
-              <div style="display:flex;justify-content:space-between;font-size:12px;"><span style="color:var(--text-muted);">Trades 7d/30d</span><span class="ti-teaser-redact" style="width:40px;"></span></div>
-              <div style="margin-top:8px;font-size:11px;color:#ef4444;font-weight:600;">▼ Falling</div>
-            </div>
-            <!-- Card 4 -->
-            <div class="ti-teaser-card">
-              <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">
-                <div>
-                  <div style="font-weight:700;font-size:14px;"><span class="ti-teaser-redact" style="width:95px;"></span></div>
-                  <div style="font-size:11px;color:var(--text-muted);margin-top:3px;"><span class="ti-teaser-redact" style="width:58px;"></span></div>
-                </div>
-                <div style="padding:3px 8px;border-radius:8px;background:#3b82f620;color:#3b82f6;font-size:11px;font-weight:700;">389 trades</div>
-              </div>
-              <div style="height:1px;background:var(--border);margin-bottom:10px;"></div>
-              <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px;"><span style="color:var(--text-muted);">Market</span><span class="ti-teaser-redact" style="width:36px;"></span></div>
-              <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px;"><span style="color:var(--text-muted);">BR Model</span><span class="ti-teaser-redact" style="width:36px;"></span></div>
-              <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px;"><span style="color:var(--text-muted);">Delta</span><span class="ti-teaser-redact" style="width:28px;"></span></div>
-              <div style="display:flex;justify-content:space-between;font-size:12px;"><span style="color:var(--text-muted);">Trades 7d/30d</span><span class="ti-teaser-redact" style="width:40px;"></span></div>
-            </div>
-            <!-- Card 5 -->
-            <div class="ti-teaser-card">
-              <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">
-                <div>
-                  <div style="font-weight:700;font-size:14px;"><span class="ti-teaser-redact" style="width:115px;"></span></div>
-                  <div style="font-size:11px;color:var(--text-muted);margin-top:3px;"><span class="ti-teaser-redact" style="width:52px;"></span></div>
-                </div>
-                <div style="padding:3px 8px;border-radius:8px;background:#3b82f620;color:#3b82f6;font-size:11px;font-weight:700;">274 trades</div>
-              </div>
-              <div style="height:1px;background:var(--border);margin-bottom:10px;"></div>
-              <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px;"><span style="color:var(--text-muted);">Market</span><span class="ti-teaser-redact" style="width:36px;"></span></div>
-              <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px;"><span style="color:var(--text-muted);">BR Model</span><span class="ti-teaser-redact" style="width:36px;"></span></div>
-              <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px;"><span style="color:var(--text-muted);">Delta</span><span class="ti-teaser-redact" style="width:28px;"></span></div>
-              <div style="display:flex;justify-content:space-between;font-size:12px;"><span style="color:var(--text-muted);">Trades 7d/30d</span><span class="ti-teaser-redact" style="width:40px;"></span></div>
-              <div style="margin-top:8px;font-size:11px;color:#10b981;font-weight:600;">▲ Rising</div>
-            </div>
-            <!-- Card 6 -->
-            <div class="ti-teaser-card">
-              <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">
-                <div>
-                  <div style="font-weight:700;font-size:14px;"><span class="ti-teaser-redact" style="width:88px;"></span></div>
-                  <div style="font-size:11px;color:var(--text-muted);margin-top:3px;"><span class="ti-teaser-redact" style="width:62px;"></span></div>
-                </div>
-                <div style="padding:3px 8px;border-radius:8px;background:#3b82f620;color:#3b82f6;font-size:11px;font-weight:700;">198 trades</div>
-              </div>
-              <div style="height:1px;background:var(--border);margin-bottom:10px;"></div>
-              <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px;"><span style="color:var(--text-muted);">Market</span><span class="ti-teaser-redact" style="width:36px;"></span></div>
-              <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px;"><span style="color:var(--text-muted);">BR Model</span><span class="ti-teaser-redact" style="width:36px;"></span></div>
-              <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px;"><span style="color:var(--text-muted);">Delta</span><span class="ti-teaser-redact" style="width:28px;"></span></div>
-              <div style="display:flex;justify-content:space-between;font-size:12px;"><span style="color:var(--text-muted);">Trades 7d/30d</span><span class="ti-teaser-redact" style="width:40px;"></span></div>
-              <div style="margin-top:8px;font-size:11px;color:#ef4444;font-weight:600;">▼ Falling</div>
-            </div>
-          </div>
-
-          <!-- Overlay CTA -->
-          <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:linear-gradient(to bottom,transparent 0%,var(--bg,#f8f9fa) 60%);padding:24px;text-align:center;">
-            <div style="background:var(--card);border:1px solid var(--border);border-radius:16px;padding:28px 32px;max-width:380px;box-shadow:0 8px 32px rgba(0,0,0,.12);">
-              <div style="font-size:28px;margin-bottom:12px;"><i class="fa-solid fa-chart-line" style="background:linear-gradient(135deg,#122d4b,#2563eb);-webkit-background-clip:text;-webkit-text-fill-color:transparent;"></i></div>
-              <div style="font-weight:800;font-size:18px;margin-bottom:8px;">Unlock Trade Intelligence</div>
-              <div style="font-size:13px;color:var(--text-muted);margin-bottom:20px;line-height:1.55;">
-                See which players are trending up in real trades, who to buy low before the market catches on, and who to sell before value drops.
-              </div>
-              <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:20px;text-align:left;">
-                <div style="font-size:12px;display:flex;gap:8px;align-items:center;"><span style="color:#10b981;font-size:14px;">✓</span> Live trending players from real dynasty trades</div>
-                <div style="font-size:12px;display:flex;gap:8px;align-items:center;"><span style="color:#10b981;font-size:14px;">✓</span> Buy-low targets with market vs. model delta</div>
-                <div style="font-size:12px;display:flex;gap:8px;align-items:center;"><span style="color:#10b981;font-size:14px;">✓</span> Sell-high candidates before the market adjusts</div>
-                <div style="font-size:12px;display:flex;gap:8px;align-items:center;"><span style="color:#10b981;font-size:14px;">✓</span> Actual trade history for any player</div>
-              </div>
-              <button onclick="if(window.showPaywall)showPaywall('trade-history')"
-                style="width:100%;padding:12px 28px;border-radius:9px;border:none;background:linear-gradient(135deg,#122d4b,#2563eb);color:white;font-size:15px;font-weight:700;cursor:pointer;letter-spacing:.02em;">
-                Upgrade to PRO &rarr;
-              </button>
-            </div>
-          </div>
-        </div>
-
-      </div>
-    </div>
-    """
-        return render_page("Trade Intelligence", league_id, "trade-intel", teaser_html, platform, season)
-
-    _ti_sf = False
-    _ti_lt = "1qb"
-    _ti_sz = 10
-    if league_id:
-        try:
-            from app import get_league_ctx_from_cache
-            _ti_ctx = get_league_ctx_from_cache(platform, league_id, season)
-            _ti_rp = _ti_ctx.get("roster_positions") or []
-            from utils.lineup_slots import is_superflex_lineup
-            _ti_sf = is_superflex_lineup(_ti_rp)
-            _ti_lt = "sf" if _ti_sf else "1qb"
-            _ti_sz = len(_ti_ctx.get("rosters") or []) or 10
-        except Exception:
-            logger.warning("trade_bp: failed to load league context for trade intel page", exc_info=True)
-    body_html = build_trade_intel_body(
-        platform=platform,
-        season=season,
-        league_id=league_id,
-        has_premium=has_premium,
-        league_type=_ti_lt,
-        league_size=_ti_sz,
-    )
-    return render_page(
-        "Fantasy Football Trade Values & Market Trends - Trade Intelligence | BR Fantasy",
-        league_id, "trade-intel", body_html, platform, season,
-        description=(
-            "Live fantasy football trade values and market trends from thousands of real "
-            "Sleeper dynasty trades. Spot buy-low and sell-high players with daily-updated "
-            "values. ESPN, Yahoo, and MFL rosters still get the same values."
-        ),
-    )
+    """Trade Intel now lives in the Trade Hub (Market Intel tab)."""
+    return redirect(f"/{platform}/{season}/{league_id}/trade?tab=suggestions", code=302)
 
 
 @trade_bp.route("/trade-intel")
 def page_trade_intel_guest():
-    from app import get_nfl_state
-    nfl_state = get_nfl_state() or {}
-    current_season = int(nfl_state.get("season") or datetime.now().year)
-    return page_trade_intel(platform="sleeper", season=current_season, league_id=None)
+    """Trade Intel now lives in the Trade Hub (Market Intel tab)."""
+    return redirect("/trade?tab=suggestions", code=302)
 
 
 # ── Trade Database ─────────────────────────────────────────────────────────────

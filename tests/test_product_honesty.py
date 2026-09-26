@@ -4,7 +4,8 @@ These are source-level contracts so they run in the lightweight CI job (no
 Flask/pandas). They lock the settled product rules:
 
 - Home still lists Yahoo/MFL, with capability labels.
-- Nav shows Trade Intel and Redzone on every platform (mix: hide dead ends only).
+- Nav hides the standalone Trade Intel page everywhere (it lives in the Trade
+  Hub now); Redzone still shows on every platform.
 - Live cheat-sheet sync is free; custom board edits stay PRO.
 - Paywall copy matches shipped PRO features.
 - Playoff Impact and offseason breakouts are server-gated.
@@ -23,6 +24,8 @@ DRAFT_JS = (ROOT / "static" / "draft_room.js").read_text(encoding="utf-8")
 BREAKOUT_BP = (ROOT / "routes" / "breakout_api_bp2.py").read_text(encoding="utf-8")
 TRADE_BP = (ROOT / "routes" / "trade_bp.py").read_text(encoding="utf-8")
 TRADE_INTEL_PAGE = (ROOT / "dashboard_services" / "pages" / "trade_intel_page.py").read_text(encoding="utf-8")
+TRADE_PAGE = (ROOT / "dashboard_services" / "pages" / "trade_calculator_page.py").read_text(encoding="utf-8")
+APP_JS = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
 
 
 def test_home_platform_chips_label_yahoo_and_mfl():
@@ -94,13 +97,21 @@ def test_plan_cards_keep_original_keys_and_annual_prices():
     assert "initiatePurchase('${plan.key}', this)" in PAYWALL_JS
 
 
-def test_nav_shows_trade_intel_and_redzone_on_every_platform():
+def test_nav_hides_trade_intel_everywhere():
+    # Trade Intel lives in the Trade Hub now: no standalone nav entry anywhere
+    # (mobile More sheet, desktop Trades dropdowns, guest nav).
+    assert '_sl("trade-intel", "Trade Intel", pro=True)' not in APP_PY
+    assert '_gl("/trade-intel", "Trade Intel", "trade-intel", pro=True)' not in APP_PY
+    assert '"/trade-intel", "trade-intel"' not in APP_PY
+    assert '"trade-intel"' not in APP_PY
     assert '_sl("redzone", "Redzone")' in APP_PY
     assert 'if platform == "sleeper" and not offseason' not in APP_PY
-    assert '_sl("trade-intel", "Trade Intel", pro=True)' in APP_PY
     assert "Trade Intel uses Sleeper trade data - not applicable for ESPN" not in APP_PY
     assert 'if platform == "sleeper":\n                _weekly_items.append((_rz_label' not in APP_PY
     assert '_weekly_items.append((_rz_label, "page_redzone", "redzone", False))' in APP_PY
+    # The standalone page is gone: both routes redirect into the Trade Hub.
+    assert 'return redirect(f"/{platform}/{season}/{league_id}/trade?tab=suggestions", code=302)' in TRADE_BP
+    assert 'return redirect("/trade?tab=suggestions", code=302)' in TRADE_BP
 
 
 def test_trade_intel_explains_sleeper_source():
@@ -326,3 +337,30 @@ def test_league_bulletins_are_off_for_all_platforms():
     dash = (ROOT / "dashboard_services" / "pages" / "dashboard_page.py").read_text(encoding="utf-8")
     assert 'id="leagueBulletinsContainer"' not in dash
     assert "League Bulletins" not in dash
+
+
+def test_trade_targets_returns_top_chips():
+    # Targets tab chips: the viewer's most valuable players for one-tap
+    # build-around. Ranked by model value, QB/RB/WR/TE only, top 6.
+    body = APP_PY[APP_PY.index("def api_trade_targets"):]
+    next_route = body.find("@app.route", 1)
+    if next_route != -1:
+        body = body[:next_route]
+    assert "top_chips = sorted(" in body
+    assert '"top_chips": top_chips' in body
+    assert ")[:6]" in body
+
+
+def test_targets_tab_has_top_chips_strip():
+    assert 'id="otcTopChipsWrap"' in TRADE_PAGE
+    assert 'id="otcTopChips"' in TRADE_PAGE
+    assert "Your top trade chips" in TRADE_PAGE
+    # Rendered + wired in the hub JS: untouchables filtered, chip tap runs
+    # the same search as the player dropdown. The strip collapses once a
+    # player is picked and returns when the search box is cleared.
+    assert "function _renderTopChips(chips)" in APP_JS
+    assert "function _setTopChipsCollapsed(collapsed)" in APP_JS
+    assert "_untouchableIds.has(String(c.player_id))" in APP_JS
+    assert 'runSearchForCurrent(chip.dataset.id, chip.dataset.name)' in APP_JS
+    assert "_setTopChipsCollapsed(true)" in APP_JS
+    assert 'if (!q.length) _setTopChipsCollapsed(false);' in APP_JS

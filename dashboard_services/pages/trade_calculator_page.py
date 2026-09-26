@@ -1070,6 +1070,10 @@ def build_trade_calculator_body(
                       <div id="suggPlayerDropdown" class="otc-sugg-player-dropdown" style="display:none;"></div>
                     </div>
                   </div>
+                  <div id="otcTopChipsWrap" style="display:none;">
+                    <div class="otc-top-chips-label">Your top trade chips</div>
+                    <div id="otcTopChips" class="otc-top-chips"></div>
+                  </div>
                   <div id="suggResultsMeta" class="otc-sugg-meta" style="display:none;"></div>
                   <div id="suggResultsList" class="otc-sugg-list"></div>
                 </div>
