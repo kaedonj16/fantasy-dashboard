@@ -82,7 +82,7 @@ def test_no_invented_user_counts_in_new_proof():
 def test_no_em_dashes_in_new_copy():
     for snippet in (
         "THATS ACTUALLY SO SICK BRO",
-        "From $5 a year.",
+        "From $10 a year.",
         "Only the AI storyline is PRO",
         "Claim your team",
         "Sign in with Google",
@@ -135,7 +135,7 @@ def test_zero_league_signin_drops_into_claim_flow():
 def test_pricing_copy_matches_pricing_page():
     home = APP_PY[APP_PY.index('FORM_BODY = """'):]
     assert "Less than $1 a month" not in home
-    assert "From $5 a year." in home
+    assert "From $10 a year." in home
 
 
 def test_weekly_recap_copy_scopes_pro_to_storyline():
