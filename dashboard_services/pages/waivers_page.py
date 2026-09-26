@@ -1386,7 +1386,15 @@ function wvVerdictReasons(a, b, wi) {{
     ['avail',   'fewer injury concerns'],
   ];
   mult.forEach(f => {{
-    const mw = fw[f[0]] != null ? fw[f[0]] : 1, ml = fl[f[0]] != null ? fl[f[0]] : 1;
+    let mw = fw[f[0]] != null ? fw[f[0]] : 1, ml = fl[f[0]] != null ? fl[f[0]] : 1;
+    if (f[0] === 'vegas') {{
+      // The score factor is a position-adjusted multiplier, but this reason
+      // names the higher *team total*: compare implied totals directly. A
+      // milder RB haircut can otherwise outrank a genuinely higher WR total.
+      const tw = (wi === 0 ? a : b).implied_total, tl = (wi === 0 ? b : a).implied_total;
+      if (tw == null || tl == null) return;
+      mw = tw; ml = tl;
+    }}
     if (mw > ml + 1e-9) cand.push({{ imp: ml > 0 ? mw / ml : 2, txt: f[1] }});
   }});
   cand.sort((x, y) => y.imp - x.imp);
