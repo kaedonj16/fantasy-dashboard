@@ -503,7 +503,10 @@ document.body.scrollTop = 0;
       var opt=sel.options[sel.selectedIndex]; valueEl.textContent=opt?opt.textContent.trim():'';
       trigger.disabled=!!sel.disabled; trigger.setAttribute('aria-disabled',sel.disabled?'true':'false');
       if(sel.required) trigger.setAttribute('aria-required','true'); else trigger.removeAttribute('aria-required');
-      var bad=!sel.disabled && !sel.checkValidity(); trigger.setAttribute('aria-invalid',bad?'true':'false'); wrap.classList.toggle('is-invalid',bad);
+      // NOTE: use validity.valid, NOT checkValidity(). checkValidity() synchronously
+      // fires an 'invalid' event when the select is invalid, and the 'invalid'
+      // handler below calls sync() -> infinite recursion -> stack overflow.
+      var bad=!sel.disabled && !(sel.validity && sel.validity.valid); trigger.setAttribute('aria-invalid',bad?'true':'false'); wrap.classList.toggle('is-invalid',bad);
       if(!bad){error.hidden=true;error.textContent='';trigger.removeAttribute('aria-describedby');}
       var label=labelText(sel); trigger.setAttribute('aria-label',label+(valueEl.textContent?': '+valueEl.textContent:''));
       Array.from(list.querySelectorAll('[role=option]')).forEach(function(el){ var on=el.dataset.value===sel.value; el.classList.toggle('is-selected',on); el.setAttribute('aria-selected',on?'true':'false'); });
@@ -14429,6 +14432,29 @@ window.brDefImgOnError = function (img, hideFn) {
   else img.style.visibility = 'hidden';
 };
 
+// Give a click-only trigger the semantics/affordances a keyboard and screen
+// reader need: focusable, announced as a button, and labeled. Idempotent.
+// Defined before the @public-js:core-end marker so the generated public.js
+// bundle picks it up too (initPageRoot and other public-bundle code call it).
+function _makeKeyboardActionable(el, label) {
+  if (!el || el.tagName === 'A' || el.tagName === 'BUTTON') return;
+  if (!el.hasAttribute('tabindex')) el.setAttribute('tabindex', '0');
+  if (!el.hasAttribute('role')) el.setAttribute('role', 'button');
+  if (label && !el.hasAttribute('aria-label')) el.setAttribute('aria-label', label);
+}
+
+// Normalize every click-only modal trigger in a freshly rendered root so
+// soft-navigated pages (innerHTML swaps) stay keyboard-accessible. Cheap,
+// idempotent, and safe to re-run on each page swap.
+function normalizeClickableAccessibility(root = document) {
+  (root.querySelectorAll ? root : document).querySelectorAll(
+    '.player-clickable, .team-clickable'
+  ).forEach(function (el) {
+    const nm = el.dataset ? (el.dataset.playerName || el.dataset.teamName) : '';
+    _makeKeyboardActionable(el, nm ? ('Open ' + nm) : null);
+  });
+}
+
 // @public-js:core-end  (everything below is app/feature code; excluded from public.js)
 
 // R06.3 -- one in-app toast near lineup lock when starters need attention.
@@ -18589,27 +18615,6 @@ function initGlobalPlayerModals() {
     if (!trigger) return;
     e.preventDefault();
     trigger.click();
-  });
-}
-
-// Give a click-only trigger the semantics/affordances a keyboard and screen
-// reader need: focusable, announced as a button, and labeled. Idempotent.
-function _makeKeyboardActionable(el, label) {
-  if (!el || el.tagName === 'A' || el.tagName === 'BUTTON') return;
-  if (!el.hasAttribute('tabindex')) el.setAttribute('tabindex', '0');
-  if (!el.hasAttribute('role')) el.setAttribute('role', 'button');
-  if (label && !el.hasAttribute('aria-label')) el.setAttribute('aria-label', label);
-}
-
-// Normalize every click-only modal trigger in a freshly rendered root so
-// soft-navigated pages (innerHTML swaps) stay keyboard-accessible. Cheap,
-// idempotent, and safe to re-run on each page swap.
-function normalizeClickableAccessibility(root = document) {
-  (root.querySelectorAll ? root : document).querySelectorAll(
-    '.player-clickable, .team-clickable'
-  ).forEach(function (el) {
-    const nm = el.dataset ? (el.dataset.playerName || el.dataset.teamName) : '';
-    _makeKeyboardActionable(el, nm ? ('Open ' + nm) : null);
   });
 }
 
