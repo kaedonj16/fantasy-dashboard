@@ -958,7 +958,15 @@ function wvLoadBigGames() {{
     }});
 }}
 
+// Attempts for the current Start/Sit load. Reset by wvLoadStartSit; the
+// manual "Try again" button re-enters through wvLoadStartSit.
+var wvStartSitAttempts = 0;
 function wvLoadStartSit() {{
+  wvStartSitAttempts = 0;
+  wvFetchStartSit();
+}}
+function wvFetchStartSit() {{
+  wvStartSitAttempts++;
   window.brLoadingState('wvStartSit', {{ rows: 3, compact: true, message: 'Loading lineup' }});
   // Abort if the backend hangs (e.g. slow league-context fetch) so the panel
   // falls through to the error state with a retry instead of skeletons forever.
@@ -1004,6 +1012,15 @@ function wvLoadStartSit() {{
         return;
       }}
       if (!ok || state === 'temporarily_unavailable') {{
+        // Transient: the league-context build was still in flight (slow cold
+        // start, e.g. Fleaflicker) or the provider blinked. The backend marks
+        // this retryable, so retry quietly a couple of times before surfacing
+        // the error card. Skeletons stay up between attempts.
+        var retryable = (state === 'temporarily_unavailable') || d.retryable === true;
+        if (retryable && wvStartSitAttempts < 3) {{
+          setTimeout(wvFetchStartSit, 4000);
+          return;
+        }}
         window.brErrorState('wvStartSit', d.message || 'Unable to load lineup data.', wvLoadStartSit);
         return;
       }}

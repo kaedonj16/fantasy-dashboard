@@ -49,3 +49,19 @@ def test_waivers_init_runs_without_domcontentloaded():
     assert guard_at != -1
     for m in re.finditer(r"addEventListener\('DOMContentLoaded', wvLoad\)", js):
         assert m.start() > guard_at, "unguarded DOMContentLoaded init of wvLoad"
+
+
+def test_start_sit_retries_retryable_503_before_error_card():
+    """The retryable 503 (league-context build still in flight on a slow cold
+    start, e.g. Fleaflicker) must auto-retry quietly before brErrorState shows
+    the "Couldn't load" card. Regression for the Fleaflicker Start/Sit 503."""
+    js = _inline_script()
+    assert "function wvFetchStartSit()" in js
+    # Attempts are bounded so a hard-down backend still reaches the error card.
+    assert re.search(r"wvStartSitAttempts\s*<\s*3", js), "auto-retry attempts must be bounded"
+    assert "setTimeout(wvFetchStartSit" in js, "retryable 503 must schedule another attempt"
+    # Only the retryable state retries; the error card remains the terminal state.
+    assert "brErrorState('wvStartSit'" in js
+    # Manual "Try again" resets the attempt budget via wvLoadStartSit.
+    assert re.search(r"function wvLoadStartSit\(\) \{\{\s*wvStartSitAttempts = 0;", js) or \
+        "wvStartSitAttempts = 0" in js
