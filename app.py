@@ -14841,6 +14841,10 @@ def _redzone_user_stream_response(platform, season, league_id, week):
     response = Response(stream_with_context(_gen()), mimetype="application/x-ndjson")
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     response.headers["Pragma"] = "no-cache"
+    # Disable proxy buffering so the NDJSON stream flushes to the client
+    # after each league instead of buffering the full ~1MB payload. Without
+    # this, mobile clients time out waiting for the first byte.
+    response.headers["X-Accel-Buffering"] = "no"
     return response
 
 
