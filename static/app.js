@@ -5283,9 +5283,21 @@ window.initTradePage = function initTradePage(root = document) {
 
       if (aIds.length === 0 && bIds.length === 0) return false;
 
+      // Player data failed to load (e.g. /api/league-players errored): the
+      // URL names a trade but there is nothing to match against. Report
+      // "pending" so the caller retries the fetch instead of rendering an
+      // empty trade and claiming success.
+      if (allPlayers.length === 0) return "pending";
+
       // Load players from allPlayers
       state.sideAPlayers = aIds.map(id => allPlayers.find(p => p.id === id)).filter(Boolean);
       state.sideBPlayers = bIds.map(id => allPlayers.find(p => p.id === id)).filter(Boolean);
+
+      const unmatched = aIds.length + bIds.length
+        - state.sideAPlayers.length - state.sideBPlayers.length;
+      if (unmatched > 0) {
+        console.warn("[Trade Calc] URL trade ids did not match any loaded player:", unmatched);
+      }
 
       // Load picks
       state.sideAPicks = apIds.map(id => ({ id, display: formatPickId(id) }));
@@ -10727,16 +10739,36 @@ window.initTradePage = function initTradePage(root = document) {
       } catch (_) {}
     })();
 
-    // Try to load trade from URL first, otherwise load from localStorage
-    const loadedFromURL = loadTradeFromURL();
-    if (!loadedFromURL) {
-      loadState();
-    }
+    // Try to load trade from URL first, otherwise load from localStorage.
+    // A "pending" result means the URL names a trade but player data failed
+    // to load: retry the fetch once before giving up, so a transient
+    // /api/league-players error does not leave both sides silently empty.
+    const applyInitialTrade = () => {
+      const loadedFromURL = loadTradeFromURL();
+      if (loadedFromURL === "pending") return false;
+      if (!loadedFromURL) {
+        loadState();
+      }
+      updateAnalyzeButtonState();
+      syncEmptyState("A");
+      syncEmptyState("B");
+      recomputeTrade();
+      return true;
+    };
 
-    updateAnalyzeButtonState();
-    syncEmptyState("A");
-    syncEmptyState("B");
-    recomputeTrade();
+    if (!applyInitialTrade()) {
+      ensurePlayersLoaded().then(() => {
+        if (!applyInitialTrade()) {
+          // Player data still unavailable: fall back to saved state; the
+          // fetch error is already surfaced in the error box.
+          loadState();
+          updateAnalyzeButtonState();
+          syncEmptyState("A");
+          syncEmptyState("B");
+          recomputeTrade();
+        }
+      });
+    }
 
     // Targets tab loads lazily when opened - no eager fetch needed
   });
