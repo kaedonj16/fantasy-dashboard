@@ -349,6 +349,45 @@ services:
     maxmemoryPolicy: allkeys-lru
     ipAllowList: []  # internal Render network only
 
+  # Discord bot for the fantasy league: slash-command polls, welcome messages,
+  # invite leaderboard, and weekly data-driven auto-polls from the site.
+  # Code lives in discord-bot/. Fill DISCORD_TOKEN and the channel IDs in the
+  # Render dashboard (sync: false below); the bot falls back to the server's
+  # system channel when a channel ID is left unset.
+  - type: worker
+    name: fantasy-discord-bot
+    runtime: python
+    plan: starter
+    buildCommand: pip install --no-cache-dir -r discord-bot/requirements.txt
+    startCommand: python discord-bot/bot.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: DISCORD_TOKEN
+        sync: false
+      - key: GUILD_ID
+        sync: false
+      - key: WELCOME_CHANNEL_ID
+        sync: false
+      - key: ANNOUNCE_CHANNEL_ID
+        sync: false
+      - key: LEADERBOARD_CHANNEL_ID
+        sync: false
+      - key: RULES_CHANNEL_ID
+        sync: false
+      - key: POLLS_CHANNEL_ID
+        sync: false
+      - key: SEASON_WEEK1
+        value: "2026-09-10"
+      - key: SITE_BASE_URL
+        value: https://www.brfantasyfootball.com
+      - key: FANTASY_PLATFORM
+        value: sleeper
+      - key: FANTASY_LEAGUE_ID
+        value: "1312067280816832512"
+      - key: FANTASY_SEASON
+        value: "2026"
+
 databases:
   - name: brfantasy-db
     databaseName: brfantasy
