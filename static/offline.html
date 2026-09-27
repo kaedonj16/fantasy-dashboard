@@ -126,10 +126,25 @@
         if (retryBtn) retryBtn.textContent = online ? 'Retry now' : 'Try again';
         return online;
       }
+      var retryCount = 0;
+      var maxAutoRetries = 8;
       function scheduleRetry(online) {
         if (retryTimer) clearTimeout(retryTimer);
         if (!online) return;
-        retryTimer = setTimeout(function () { location.reload(); }, 2500);
+        // Probe the server before reloading: only reload when it actually
+        // responds, instead of blindly looping. After maxAutoRetries, stop
+        // auto-retrying and leave the manual Retry button.
+        retryTimer = setTimeout(function () {
+          retryCount++;
+          fetch('/healthz/version', { cache: 'no-store', credentials: 'omit' })
+            .then(function (r) {
+              if (r.ok) location.reload();
+              else if (retryCount < maxAutoRetries) scheduleRetry(true);
+            })
+            .catch(function () {
+              if (retryCount < maxAutoRetries) scheduleRetry(true);
+            });
+        }, 2500);
       }
       scheduleRetry(paintCopy());
       window.addEventListener('online', function () {
