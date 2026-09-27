@@ -3,9 +3,11 @@
 
 def test_account_portfolio_renders_complete_cross_league_data(offline_client, monkeypatch):
     import routes.user_pages_bp as pages
+    from datetime import datetime, timezone
 
     seen = {}
-    monkeypatch.setattr(pages, "get_nfl_state", lambda: {"season": 2026})
+    monkeypatch.setattr(pages, "get_nfl_state", lambda: {"season": 2026, "week": 3})
+    monkeypatch.setattr(pages, "_games_scheduled_today", lambda season, week: False)
     def resolve(viewer_user_id, account_id, current_season, *, enrich_live=True):
         seen["kwargs"] = {"enrich_live": enrich_live}
         return ([{
@@ -17,23 +19,24 @@ def test_account_portfolio_renders_complete_cross_league_data(offline_client, mo
         "dashboard_services.accounts.schedule_account_league_reconciliation",
         lambda *a, **k: None,
     )
-    monkeypatch.setattr(pages, "get_league_ctx_from_cache", lambda *a, **k: {
-        "league": {"name": "Fast League"},
-        "rosters": [{"roster_id": 9, "owner_id": "u1",
-                     "players": ["p1", "p2", "p3", "p4", "p5"]}],
-        "users": [{"user_id": "u1", "display_name": "My Team"}],
-        "players_index": {"p1": {"name": "Player One", "pos": "WR", "team": "BUF"}},
-        "total_rosters": 1, "roster_positions": ["QB", "RB", "WR", "TE"],
-        "latest_draft": {"status": "complete"},
+    # Account users are served from the Postgres summary cache
+    # (stale-while-revalidate); the inline context computation is bypassed.
+    monkeypatch.setattr(pages, "get_cached_summary", lambda *a: {
+        "platform": "sleeper", "league_id": "L1", "season": 2026,
+        "name": "Fast League", "state": "ready",
+        "wins": 7, "losses": 4, "ties": 0, "record": "7-4", "rank": 2,
+        "total_teams": 12, "pf": 1234.5,
+        "streak": ["W", "L", "W"],
+        "pos_user_rank": {"QB": 3, "RB": 5, "WR": 2, "TE": 8},
+        "pos_user_pctile": {"QB": 70.0, "RB": 55.0, "WR": 85.0, "TE": 30.0},
+        "all_players": {
+            "p1": {"name": "Player One", "position": "WR", "value": 321.0,
+                   "pos_rank": "WR12", "nfl_team": "BUF"},
+        },
+        "total_value": 321.0, "offseason": False, "urgency": 2.8,
+        "team_name": "My Team",
+        "generated_at": datetime.now(timezone.utc).isoformat(),
     })
-    monkeypatch.setattr("dashboard_services.accounts.resolve_account_viewer_for_league",
-                        lambda *a, **k: {"viewer_roster_id": "9"})
-    monkeypatch.setattr("dashboard_services.ai.context_builders.league_format_value_lookup",
-                        lambda ctx, _cache=None: {"p1": {"name": "Player One", "position": "WR",
-                                              "team": "BUF", "value": 321,
-                                              "pos_rank_label": "WR12"}})
-    monkeypatch.setattr("dashboard_services.ai.context_builders.portfolio_record_and_rank",
-                        lambda *a: (7, 4, 0, 1234.5, 2))
     with offline_client.session_transaction() as sess:
         sess["account_id"] = 7
         sess["account_email"] = "a@example.com"
@@ -144,13 +147,15 @@ def test_fast_shell_renders_all_cards_in_durable_order(offline_client, monkeypat
 
 
 def test_cold_league_renders_hydratable_shell_not_a_blocking_build(offline_client, monkeypatch):
-    """A league whose context is not cached must render a hydratable 'loading'
-    shell -- the client summary/matchup loaders fill it -- instead of triggering a
-    cold synchronous build inline. That inline build pinned a worker for ~80s on a
-    multi-league portfolio and starved the page's own summary/refresh XHRs.
+    """A league with no cached summary must render a hydratable 'loading'
+    shell -- the client /api/portfolio/card loader fills it -- instead of
+    triggering a cold synchronous build inline. That inline build pinned a
+    worker for ~80s on a multi-league portfolio and starved the page's own
+    summary/refresh XHRs.
     """
     import routes.user_pages_bp as pages
-    monkeypatch.setattr(pages, "get_nfl_state", lambda: {"season": 2026})
+    monkeypatch.setattr(pages, "get_nfl_state", lambda: {"season": 2026, "week": 3})
+    monkeypatch.setattr(pages, "_games_scheduled_today", lambda season, week: False)
     monkeypatch.setattr(
         "dashboard_services.accounts.resolve_my_leagues",
         lambda *a, **k: ([{"league_id": "L1", "platform": "sleeper",
@@ -158,19 +163,23 @@ def test_cold_league_renders_hydratable_shell_not_a_blocking_build(offline_clien
     )
     monkeypatch.setattr("dashboard_services.accounts.schedule_account_league_reconciliation",
                         lambda *a, **k: None)
-    calls = {}
-
-    def loader(platform, league_id, season, *, allow_build=True):
-        calls["allow_build"] = allow_build
-        return {}  # cold: nothing cached
-
-    monkeypatch.setattr(pages, "get_league_ctx_from_cache", loader)
+    # Cold cache: no summary row.
+    monkeypatch.setattr(pages, "get_cached_summary", lambda *a: None)
+    # The page render must not touch the league context at all on a cold
+    # cache; the background refresh (kicked below) warms it separately.
+    def _no_ctx(*a, **k):
+        raise AssertionError("page must not read league context on a cold cache")
+    monkeypatch.setattr(pages, "get_league_ctx_from_cache", _no_ctx)
+    kicked = []
+    monkeypatch.setattr(pages, "_kick_summary_refresh",
+                        lambda account_id, membership: kicked.append(
+                            (account_id, str(membership.get("league_id")))))
     with offline_client.session_transaction() as sess:
         sess["account_id"] = 11
     response = offline_client.get("/portfolio")
     assert response.status_code == 200
-    # The page render only reads cache; it never asks to build inline.
-    assert calls["allow_build"] is False
+    # A background refresh is kicked for the cold league.
+    assert kicked == [(11, "L1")]
     # The cold league is a hydratable card the client loaders will fill.
     assert b"data-lg-key='sleeper:L1'" in response.data
     assert b"data-summary-card" in response.data

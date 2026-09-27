@@ -17,12 +17,14 @@ from __future__ import annotations
 
 import html
 import logging
-import os
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
 from flask import Blueprint, g, jsonify, redirect, request, session, url_for
+
+from dashboard_services.portfolio_summary import get_cached_summary
 
 logger = logging.getLogger(__name__)
 
@@ -94,6 +96,80 @@ def build_portfolio_body(*args, **kwargs):
 def build_projections_by_week(*args, **kwargs):
     from app import build_projections_by_week as _fn
     return _fn(*args, **kwargs)
+
+def _games_scheduled_today(*args, **kwargs):
+    from app import _games_scheduled_today as _fn
+    return _fn(*args, **kwargs)
+
+
+# ── Portfolio summary stale-while-revalidate ─────────────────────────────────
+# /portfolio used to recompute every league's summary inline on each page load
+# (value lookups, positional rankings, streaks). On NFL game days that pinned
+# workers and the page "took forever to load". Summaries are now served from
+# the Postgres portfolio_summary_cache (populated by /api/portfolio/summary
+# and /api/portfolio/card via build_league_summary); a miss or stale entry
+# renders a hydratable shell and kicks a bounded background refresh instead of
+# blocking the render.
+
+_PORTFOLIO_SWR_GAME_DAY_TTL_S = 15 * 60
+_PORTFOLIO_SWR_TTL_S = 60 * 60
+
+_refresh_pool = None
+_refresh_pool_lock = threading.Lock()
+
+
+def _portfolio_refresh_pool():
+    global _refresh_pool
+    with _refresh_pool_lock:
+        if _refresh_pool is None:
+            _refresh_pool = ThreadPoolExecutor(
+                max_workers=3, thread_name_prefix="pf-refresh")
+        return _refresh_pool
+
+
+def _kick_summary_refresh(account_id, membership):
+    """Rebuild one league's cached portfolio summary without blocking the page.
+
+    Fire-and-forget: failures are swallowed so a broken provider can never
+    take down /portfolio. A cold league context also kicks its own background
+    warm inside get_league_ctx_from_cache, so the next attempt has data.
+    """
+    try:
+        pool = _portfolio_refresh_pool()
+    except Exception:
+        logger.debug("portfolio refresh pool unavailable", exc_info=True)
+        return
+    lid = str((membership or {}).get("league_id") or "")
+
+    def _run():
+        try:
+            from dashboard_services.portfolio_summary import build_league_summary
+            build_league_summary(
+                account_id, dict(membership or {}),
+                lambda p, i, s: get_league_ctx_from_cache(p, i, s, allow_build=False),
+            )
+        except Exception:
+            logger.debug("portfolio background refresh failed league=%s", lid,
+                         exc_info=True)
+
+    try:
+        pool.submit(_run)
+    except Exception:
+        logger.debug("portfolio refresh submit failed league=%s", lid, exc_info=True)
+
+
+def _cached_summary_fresh(cached, ttl_s):
+    """True when the cached summary was generated within the TTL window."""
+    if not isinstance(cached, dict):
+        return False
+    try:
+        gen = datetime.fromisoformat(str(cached.get("generated_at") or ""))
+    except (TypeError, ValueError):
+        return False
+    if gen.tzinfo is None:
+        gen = gen.replace(tzinfo=timezone.utc)
+    age_s = (datetime.now(timezone.utc) - gen).total_seconds()
+    return 0 <= age_s <= ttl_s
 
 
 @user_pages_bp.route("/portfolio")
@@ -351,33 +427,71 @@ def page_portfolio():
             "is_favorite": bool(lg.get("is_favorite")),
         }
 
-    # Each league summary reads the cached context only (allow_build=False): a cold
-    # league renders a hydratable shell and warms in the background instead of
-    # blocking the page render, so a multi-league cold load no longer waits ~80s on
-    # the sum of every provider fetch. The small thread pool still fans out the
-    # cache reads (cheap, but a stale-signature freshness check can touch a
-    # provider), and nothing here uses request-local state -- account_id was
-    # captured above and get_viewer_session_for_league no-ops without a request
-    # context. Order does not matter: results are sorted by name just below.
-    #
-    # Per-request memoization for league_format_value_lookup: the value table
-    # walk depends only on league type settings, not the viewer, so leagues
-    # with identical settings share one computation instead of each re-walking
-    # thousands of rows. Dict get/set are atomic under the GIL; the worst case
-    # of a race is a duplicate computation, never incorrect data.
-    _value_lookup_cache: dict = {}
-    leagues_data = []
-    if league_inputs:
+    # Stale-while-revalidate: serve each league's card from the Postgres
+    # portfolio summary cache when fresh -- 15 minutes on game days (scores
+    # move fast), 1 hour otherwise. A miss or stale entry renders a hydratable
+    # shell (the client fills it via /api/portfolio/card) and kicks a bounded
+    # background refresh, so the page never blocks on summary computation.
+    # Sleeper-only sessions have no account_id (and therefore no cache); they
+    # keep the inline _league_summary path.
+    week = int(nfl_state.get("week") or 0)
+    try:
+        _game_day = bool(_games_scheduled_today(season, week))
+    except Exception:
+        logger.debug("portfolio game-day check failed", exc_info=True)
+        _game_day = False
+    _swr_ttl_s = _PORTFOLIO_SWR_GAME_DAY_TTL_S if _game_day else _PORTFOLIO_SWR_TTL_S
+
+    def _league_card(lg):
+        if not account_id:
+            return _league_summary(lg)
+        lid = str(lg.get("league_id") or "")
+        if not lid:
+            return None
+        lg_platform = (lg.get("platform") or "sleeper").lower()
+        lg_season = int(lg.get("season") or season)
+        is_fav = bool(lg.get("is_favorite"))
+
+        def _shell():
+            return {"league_id": lid, "name": lg.get("name") or "Unknown",
+                    "platform": lg_platform, "season": lg_season,
+                    "loading": True, "is_favorite": is_fav}
+
         try:
-            configured = max(1, int(os.getenv("PORTFOLIO_SUMMARY_CONCURRENCY", "2")))
-        except (TypeError, ValueError):
-            configured = 2
-        max_workers = min(configured, 2, len(league_inputs))
-        if max_workers <= 1:
-            leagues_data = [r for r in map(_league_summary, league_inputs) if r]
-        else:
-            with ThreadPoolExecutor(max_workers=max_workers) as pool:
-                leagues_data = [r for r in pool.map(_league_summary, league_inputs) if r]
+            cached = get_cached_summary(account_id, lg_platform, lid, lg_season)
+        except Exception:
+            logger.debug("portfolio summary cache read failed league=%s", lid,
+                         exc_info=True)
+            cached = None
+        if _cached_summary_fresh(cached, _swr_ttl_s):
+            state = cached.get("state")
+            base = {"league_id": lid,
+                    "name": cached.get("name") or lg.get("name") or "Unknown",
+                    "platform": lg_platform, "season": lg_season,
+                    "is_favorite": is_fav}
+            if state == "team_not_linked":
+                return {**base, "pending": True, "predraft": False,
+                        "reason": "Team not linked yet"}
+            if state == "reconnect_required":
+                return {**base, "error": True}
+            # "ready" / "partial" (or legacy entries without a state): full
+            # card. pos_user_vals / pos_league_avgs only feed the archetype
+            # badge, which degrades to "Balanced" when absent.
+            card = dict(cached)
+            card.update(base)
+            card.setdefault("pos_user_vals", {})
+            card.setdefault("pos_league_avgs", {})
+            return card
+        # Cache miss or stale: shell now, refresh in the background.
+        _kick_summary_refresh(account_id, lg)
+        return _shell()
+
+    # Per-request memoization for league_format_value_lookup, used by the
+    # Sleeper-only _league_summary fallback below: the value table walk
+    # depends only on league type settings, not the viewer.
+    _value_lookup_cache: dict = {}
+    leagues_data = [_league_card(lg) for lg in (league_inputs or [])]
+    leagues_data = [r for r in leagues_data if r]
     leagues_data.sort(key=lambda x: (not x.get("is_favorite", False), x.get("name", "")))
 
     valid_leagues = [lg for lg in leagues_data
