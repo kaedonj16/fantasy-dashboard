@@ -87,12 +87,19 @@ def test_checkout_requires_league_membership_for_league_plans():
 def test_refresh_league_requires_viewing_member_or_secret():
     fn = ADMIN[ADMIN.index("def api_refresh_league"):]
     fn = fn[: fn.index("def api_flush_value_cache")]
-    assert "last_league_id" in fn
-    assert "viewer_is_league_member" in fn
-    assert "hmac.compare_digest" in fn
     assert "forbidden" in fn
     # Switching leagues expires peer-relative draft grades for that room.
     assert "_DRAFT_GRADES_CACHE" in fn
+    # The route delegates the auth decision to _refresh_league_authorized;
+    # lock the contract there: viewing, verified membership (session or
+    # account-linked), or ops secret.
+    auth = ADMIN[ADMIN.index("def _refresh_league_authorized"):]
+    auth = auth[: auth.index("def api_refresh_league")]
+    assert "last_league_id" in auth
+    assert "viewer_is_league_member" in auth
+    assert "list_account_platform_ids" in auth
+    assert "list_user_leagues" in auth
+    assert "hmac.compare_digest" in auth
 
 
 def test_cron_admin_secrets_use_compare_digest():

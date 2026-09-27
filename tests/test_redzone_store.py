@@ -19,6 +19,36 @@ class _FakeCursor:
         return self._rows[0] if self._rows else None
 
 
+class _FakeStoreCursor:
+    """Stand-in for a psycopg3 cursor.
+
+    Real psycopg3 Connections have no ``executemany`` -- it lives on the
+    cursor. The fake mirrors that so a regression to ``conn.executemany``
+    fails here exactly as it does in production.
+    """
+
+    def __init__(self, conn):
+        self._conn = conn
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def executemany(self, sql, rows):
+        return self._conn._do_executemany(sql, rows)
+
+    def execute(self, sql, params=None):
+        return self._conn.execute(sql, params)
+
+    def fetchall(self):
+        raise AssertionError("cursor.fetchall without execute")
+
+    def fetchone(self):
+        raise AssertionError("cursor.fetchone without execute")
+
+
 class _FakeStoreConn:
     """In-memory stand-in for the redzone_plays / app_state tables.
 
@@ -40,7 +70,10 @@ class _FakeStoreConn:
     def commit(self):
         pass
 
-    def executemany(self, sql, rows):
+    def cursor(self):
+        return _FakeStoreCursor(self)
+
+    def _do_executemany(self, sql, rows):
         up = " ".join(sql.split()).upper()
         assert up.startswith("INSERT INTO REDZONE_PLAYS"), sql[:60]
         for season, game_id, play_id, seq, is_td, payload_json in rows:
@@ -73,7 +106,7 @@ class _FakeStoreConn:
         if up.startswith("CREATE TABLE") or up.startswith("CREATE INDEX"):
             return _FakeCursor([])
         if up.startswith("INSERT INTO REDZONE_PLAYS"):
-            self.executemany(sql, [params])
+            self._do_executemany(sql, [params])
             return _FakeCursor([])
         if up.startswith("INSERT INTO APP_STATE"):
             self.state[str(params[0])] = str(params[1])
