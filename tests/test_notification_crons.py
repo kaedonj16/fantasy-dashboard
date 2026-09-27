@@ -113,3 +113,54 @@ def test_trigger_nonzero_on_http_error(monkeypatch):
 
     monkeypatch.setattr(mod.urllib.request, "urlopen", _urlopen)
     assert mod.trigger("hourly", app_url="https://example.test", secret="x") == 1
+
+
+def test_run_hourly_returns_sent_counts(monkeypatch):
+    import utils.push_notifications as pn
+
+    monkeypatch.setattr(pn, "notify_lineup_lock", lambda: 3)
+    monkeypatch.setattr(pn, "notify_close_game", lambda: 0)
+    monkeypatch.setattr(pn, "notify_transaction_drops", lambda: 2)
+    monkeypatch.setattr(pn, "notify_injury_alert", lambda: None)
+    monkeypatch.setattr(pn, "_flush_digest", lambda: 4)
+
+    counts = pn.run_hourly()
+    assert counts == {
+        "lineup_lock": 3,
+        "close_game": 0,
+        "transaction_drops": 2,
+        "injury_alert": 0,
+        "digest": 4,
+        "total": 9,
+    }
+
+
+def test_trigger_logs_sent_count(monkeypatch, capsys):
+    import json as _json
+
+    mod = _load_trigger()
+
+    class _Resp:
+        status = 200
+
+        def read(self):
+            return _json.dumps({
+                "ok": True, "sent": 7,
+                "breakdown": {"lineup_lock": 3, "close_game": 0,
+                              "transaction_drops": 0, "injury_alert": 0,
+                              "digest": 4, "total": 7},
+            }).encode()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    monkeypatch.setattr(mod.urllib.request, "urlopen",
+                        lambda req, timeout=0: _Resp())
+    assert mod.trigger("hourly", app_url="https://example.test", secret="x") == 0
+    out = capsys.readouterr().out
+    assert "[notify-cron] hourly: HTTP 200 sent=7" in out
+    assert "lineup_lock=3" in out
+    assert "digest=4" in out

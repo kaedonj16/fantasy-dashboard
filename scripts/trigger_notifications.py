@@ -55,8 +55,19 @@ def trigger(kind: str, app_url: str | None = None, secret: str | None = None,
     wait = timeout if timeout is not None else DEFAULT_TIMEOUT[kind]
     try:
         with urllib.request.urlopen(req, timeout=wait) as resp:
-            payload = resp.read()[:800]
-            print(f"[notify-cron] {kind}: HTTP {resp.status} {payload!r}")
+            raw = resp.read()
+            try:
+                data = json.loads(raw)
+            except Exception:
+                data = None
+            if isinstance(data, dict) and "sent" in data:
+                bd = data.get("breakdown") or {}
+                parts = ", ".join(f"{k}={v}" for k, v in bd.items()
+                                  if k != "total")
+                detail = f"sent={data['sent']}" + (f" ({parts})" if parts else "")
+            else:
+                detail = f"{raw[:800]!r}"
+            print(f"[notify-cron] {kind}: HTTP {resp.status} {detail}")
             return 0 if 200 <= getattr(resp, "status", 0) < 300 else 1
     except urllib.error.HTTPError as exc:
         print(f"[notify-cron] {kind} failed: HTTP {exc.code} {exc.read()[:800]!r}")
