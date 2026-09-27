@@ -205,6 +205,24 @@ def api_push_subscribe():
                     ).fetchall()
                 }
                 leagues = [lid for lid in leagues if lid not in opted]
+                # Bulk subscribe doesn't send per-league owner_ids. Resolve them
+                # from the account's team_ids: for fleaflicker/espn/yahoo/mfl the
+                # roster owner_id IS the team_id, so TD notifier matching works.
+                # (Sleeper uses user_id, not team_id, so it keeps the session's
+                # viewer_user_id which is correct when subscribing from a
+                # Sleeper league page.)
+                team_ids = {}
+                if account_key and platform != "sleeper":
+                    try:
+                        for r in conn.execute(
+                            "SELECT league_id, team_id FROM user_leagues "
+                            "WHERE account_id = %s AND platform = %s AND team_id IS NOT NULL",
+                            (account_key, platform),
+                        ).fetchall():
+                            if r["league_id"] and r["team_id"]:
+                                team_ids[str(r["league_id"])] = str(r["team_id"])
+                    except Exception:
+                        pass
             else:
                 # Explicit single-league subscribe (settings toggle-on):
                 # clear any prior opt-out for these leagues.
@@ -215,6 +233,9 @@ def api_push_subscribe():
                             (endpoint, lid),
                         )
             for lid in leagues:
+                # Prefer the resolved team_id for non-Sleeper bulk subscribes;
+                # fall back to the session's viewer_user_id (single-league path).
+                lid_owner = team_ids.get(str(lid)) if is_bulk else None
                 conn.execute(
                     """
                     INSERT INTO push_subscriptions (endpoint, p256dh, auth, league_id, platform, owner_id, account_key)
@@ -226,7 +247,7 @@ def api_push_subscribe():
                             owner_id  = COALESCE(EXCLUDED.owner_id,  push_subscriptions.owner_id),
                             account_key = COALESCE(EXCLUDED.account_key, push_subscriptions.account_key)
                     """,
-                    (endpoint, p256dh, auth, lid, platform, owner_id, account_key),
+                    (endpoint, p256dh, auth, lid, platform, lid_owner or owner_id, account_key),
                 )
             # Keep notification-type prefs consistent across all of this device's
             # league rows (prefs are a device-level choice, not per-league).
