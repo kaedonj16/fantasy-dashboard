@@ -89,8 +89,10 @@ def upsert_plays(season: int, game_id: str, plays: list[dict]) -> int:
     try:
         with get_conn() as conn:
             _ensure_table(conn)
-            conn.executemany(
-                """INSERT INTO redzone_plays
+            # psycopg3 Connections have no executemany; it lives on Cursor.
+            with conn.cursor() as cur:
+                cur.executemany(
+                    """INSERT INTO redzone_plays
                        (season, game_id, play_id, seq, is_td, payload)
                    VALUES (%s, %s, %s, %s, %s, %s::jsonb)
                    ON CONFLICT (season, game_id, play_id) DO UPDATE SET
@@ -103,8 +105,8 @@ def upsert_plays(season: int, game_id: str, plays: list[dict]) -> int:
                        observed_at = CASE
                            WHEN redzone_plays.payload IS DISTINCT FROM EXCLUDED.payload
                            THEN NOW() ELSE redzone_plays.observed_at END""",
-                rows,
-            )
+                    rows,
+                )
             conn.commit()
         return len(rows)
     except Exception as exc:

@@ -89,15 +89,78 @@ def api_prewarm_league():
     return jsonify({"ok": True, "cached": False})
 
 
+def _refresh_league_authorized(
+    *,
+    platform: str,
+    season: int,
+    league_id: str,
+    provided_secret: str,
+    last_league_id: str,
+    member_id,
+    account_id,
+) -> bool:
+    """Pure auth decision for /api/refresh-league (session values passed in).
+
+    Order: CRON_SECRET ops bypass, then "currently viewing this league", then
+    verified league membership via the session's platform identity, then via
+    the Google account: the league itself linked to the account, or a linked
+    platform identity that is a verified member. (The session only carries a
+    Sleeper identity after the explicit username flow, so Google-signed-in
+    callers would otherwise be rejected despite the league being theirs.)
+    """
+    secret = os.environ.get("CRON_SECRET", "")
+    if secret and provided_secret and hmac.compare_digest(provided_secret, secret):
+        return True
+    if str(last_league_id or "") == str(league_id):
+        return True
+    from dashboard_services.subscriptions import viewer_is_league_member
+
+    if member_id and viewer_is_league_member(member_id, league_id, platform, season):
+        return True
+    if account_id:
+        try:
+            from dashboard_services.accounts import (
+                list_account_platform_ids,
+                list_user_leagues,
+            )
+
+            plat = (platform or "").strip().lower()
+            # The league itself linked to this Google account.
+            try:
+                season_i = int(season) if season not in (None, "") else None
+            except (TypeError, ValueError):
+                season_i = None
+            for lg in list_user_leagues(int(account_id)):
+                if str(lg.get("platform") or "").lower() != plat:
+                    continue
+                if str(lg.get("league_id")) != str(league_id):
+                    continue
+                lg_season = lg.get("season")
+                if season_i is None or lg_season in (None, "") or int(lg_season) == season_i:
+                    return True
+            # A linked platform identity that is a verified member (Sleeper).
+            if plat == "sleeper":
+                for pid in list_account_platform_ids(int(account_id), "sleeper"):
+                    if viewer_is_league_member(pid, league_id, platform, season):
+                        return True
+        except Exception:
+            logger.warning(
+                "[refresh-league] account identity fallback failed", exc_info=True
+            )
+    return False
+
+
 @admin_api_bp.route("/api/refresh-league", methods=["POST"])
 @limiter.limit("4 per minute")
 def api_refresh_league():
     """Force-expire a league context so the next request rebuilds it from source.
 
     Allowed when:
+      - the request includes a valid ``CRON_SECRET`` (ops / automation), or
       - the caller is currently viewing this league (``last_league_id`` match), or
       - the caller is a verified member of the league, or
-      - the request includes a valid ``CRON_SECRET`` (ops / automation).
+      - the caller's Google account has this league linked, or a linked
+        platform identity that is a verified member (Sleeper).
     """
     payload = request.get_json(silent=True) or {}
     platform = (payload.get("platform") or "sleeper").strip().lower()
@@ -109,17 +172,16 @@ def api_refresh_league():
     if not league_id:
         return jsonify({"error": "league_id required"}), 400
 
-    secret = os.environ.get("CRON_SECRET", "")
-    provided = str(payload.get("secret") or "")
-    ops_ok = bool(secret and provided and hmac.compare_digest(provided, secret))
-    if not ops_ok:
-        last = str(session.get("last_league_id") or "")
-        viewing = last == str(league_id)
-        if not viewing:
-            from dashboard_services.subscriptions import viewer_is_league_member
-            member_id = session.get("viewer_user_id") or session.get("viewer_username")
-            if not viewer_is_league_member(member_id, league_id, platform, season):
-                return jsonify({"error": "forbidden"}), 403
+    if not _refresh_league_authorized(
+        platform=platform,
+        season=season,
+        league_id=league_id,
+        provided_secret=str(payload.get("secret") or ""),
+        last_league_id=str(session.get("last_league_id") or ""),
+        member_id=session.get("viewer_user_id") or session.get("viewer_username"),
+        account_id=session.get("account_id"),
+    ):
+        return jsonify({"error": "forbidden"}), 403
 
     key = _cache_key(platform, season, league_id)
     if key in DASHBOARD_CACHE:
