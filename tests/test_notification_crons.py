@@ -164,3 +164,98 @@ def test_trigger_logs_sent_count(monkeypatch, capsys):
     assert "[notify-cron] hourly: HTTP 200 sent=7" in out
     assert "lineup_lock=3" in out
     assert "digest=4" in out
+
+
+def _stub_module(name, **attrs):
+    import types
+    mod = types.ModuleType(name)
+    for k, v in attrs.items():
+        setattr(mod, k, v)
+    return mod
+
+
+def test_run_redzone_td_poll_no_live_games(monkeypatch):
+    import sys
+
+    import utils.push_notifications as pn
+
+    fake_api = _stub_module(
+        "dashboard_services.api",
+        get_nfl_state=lambda: {"season": 2026, "week": 4},
+        get_nfl_scores_for_date=lambda *a, **k: {
+            "g1": {"gameID": "g1", "gameStatusCode": "0"},
+        },
+    )
+    monkeypatch.setitem(sys.modules, "dashboard_services.api", fake_api)
+
+    assert pn.run_redzone_td_poll() == {"games": 0, "leagues": 0, "sent": 0}
+
+
+def test_run_redzone_td_poll_sends_and_flushes_digest(monkeypatch):
+    import sys
+
+    import utils.push_notifications as pn
+    import dashboard_services.platform_api as papi
+
+    fake_api = _stub_module(
+        "dashboard_services.api",
+        get_nfl_state=lambda: {"season": 2026, "week": 4},
+        get_nfl_scores_for_date=lambda *a, **k: {
+            "g1": {"gameID": "g1", "gameStatusCode": "1"},
+        },
+    )
+    monkeypatch.setitem(sys.modules, "dashboard_services.api", fake_api)
+    monkeypatch.setattr(papi, "get_rosters", lambda *a, **k: [{"roster_id": 1}])
+    monkeypatch.setattr(pn, "_get_subscribed_leagues", lambda: [("L1", "sleeper")])
+
+    calls = {}
+
+    def fake_collect(platform, league_id, season, week):
+        calls["collect"] = (platform, league_id, season, week)
+        return {"pbp_by_game": {"g1": [{"is_td": True}]},
+                "player_info": {}, "scoring": {}}
+
+    monkeypatch.setitem(sys.modules, "app",
+                        _stub_module("app", _redzone_collect=fake_collect))
+    monkeypatch.setattr(pn, "notify_redzone_scores", lambda *a, **k: 2)
+    monkeypatch.setattr(pn, "_flush_digest", lambda: 1)
+
+    assert pn.run_redzone_td_poll() == {"games": 1, "leagues": 1, "sent": 3}
+    assert calls["collect"] == ("sleeper", "L1", 2026, 4)
+
+
+def test_trigger_redzone_logs_sent_count(monkeypatch, capsys):
+    import json as _json
+
+    mod = _load_trigger()
+
+    class _Resp:
+        status = 200
+
+        def read(self):
+            return _json.dumps({
+                "ok": True, "sent": 3,
+                "breakdown": {"games": 5, "leagues": 2, "sent": 3},
+            }).encode()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    monkeypatch.setattr(mod.urllib.request, "urlopen",
+                        lambda req, timeout=0: _Resp())
+    assert mod.trigger("redzone", app_url="https://example.test", secret="x") == 0
+    out = capsys.readouterr().out
+    assert "[notify-cron] redzone: HTTP 200 sent=3" in out
+    assert "games=5" in out
+
+
+def test_redzone_poller_cron_service_registered():
+    rz = RENDER.split("name: redzone-td-poller", 1)[1].split("- type: cron", 1)[0]
+    assert 'schedule: "* * * * *"' in rz
+    assert "python scripts/trigger_notifications.py redzone" in rz
+    assert "key: APP_URL" in rz
+    assert "key: CRON_SECRET" in rz
+    assert "value: America/New_York" in rz
