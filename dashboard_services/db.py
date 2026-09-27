@@ -116,6 +116,22 @@ def _configure_pooled_conn(conn: psycopg.Connection) -> None:
             logger.debug("suppressed exception", exc_info=True)
 
 
+def _check_pooled_conn(conn: psycopg.Connection) -> None:
+    """psycopg_pool ``check`` hook: runs on every checkout, must RAISE (not
+    return False) for the pool to discard the connection and try another.
+
+    Without this, a pooled connection the server already closed (Postgres
+    restarts, idle timeouts, network blips) is handed out and the first
+    query dies with ``OperationalError: SSL error: unexpected eof`` -- the
+    exact 500 seen on /auth/google/callback 2026-09-26.
+    """
+    if not is_connection_healthy(conn):
+        # psycopg is always installed when the pool exists; guard anyway so
+        # the hook never fails with AttributeError in odd import orders.
+        err = psycopg.OperationalError if psycopg is not None else RuntimeError
+        raise err("pooled connection failed checkout health check")
+
+
 def _get_pool():
     """Lazily build a process-local connection pool, fork-safe under gunicorn
     ``--preload``: a pool created in the master before fork must never be shared
@@ -136,6 +152,7 @@ def _get_pool():
             max_size=max(2, max_size),
             kwargs={"row_factory": dict_row},
             configure=_configure_pooled_conn,
+            check=_check_pooled_conn,
             timeout=30.0,
             max_idle=300.0,
             name=f"brfantasy-{pid}",

@@ -18,11 +18,17 @@ from __future__ import annotations
 import json
 import logging
 import os
+import time
 import base64
 import hashlib
 import secrets
 import threading
 from typing import Optional
+
+try:
+    from psycopg import OperationalError
+except Exception:  # pragma: no cover - driver missing (pure test / CI base env)
+    OperationalError = Exception  # type: ignore
 
 logger = logging.getLogger(__name__)
 
@@ -587,9 +593,33 @@ def upsert_google_account(
 
     Returns ``(account_id, created)``. ``created`` is True only when a new
     ``accounts`` row was inserted (true first-time signup).
+
+    Retries once on OperationalError: the checkout health check (see
+    ``dashboard_services.db._check_pooled_conn``) catches stale pooled
+    connections, but a connection can still die mid-query (server restart,
+    network blip). The upsert is idempotent -- a dead connection's
+    transaction is rolled back -- so one retry is safe and turns a transient
+    DB blip into a successful sign-in instead of a 500 on the OAuth callback.
     """
     if not google_sub:
         return None, False
+    last_err: Exception | None = None
+    for attempt in range(2):
+        try:
+            return _upsert_google_account_once(google_sub, email, first_name)
+        except OperationalError as e:
+            last_err = e
+            logger.warning(
+                "[accounts] upsert_google_account OperationalError (attempt %d/2): %s",
+                attempt + 1, e,
+            )
+            time.sleep(1)
+    raise last_err  # type: ignore[misc]
+
+
+def _upsert_google_account_once(
+    google_sub: str, email: Optional[str], first_name: Optional[str] = None,
+) -> tuple[Optional[int], bool]:
     google_sub = str(google_sub).strip()
     email = (str(email).strip().lower() or None) if email else None
     first_name = (str(first_name).strip() or None) if first_name else None
