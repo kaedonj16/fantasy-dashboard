@@ -13341,6 +13341,31 @@ _RZ_LIVE_CACHE_TTL = 12.0
 _RZ_SCOREBOARD_TIMEOUT = 12
 
 
+def _start_redzone_store() -> None:
+    """Start the server-side play-store poller (daemon thread).
+
+    One 15s upstream PBP fetch per live game, shared by every viewer via the
+    ``redzone_plays`` table -- replaces N viewers x M workers of duplicate
+    ESPN/Tank01 polling. The advisory lock in utils.redzone_store elects a
+    single leader across gunicorn workers. Skipped under pytest so CI never
+    spawns network/DB threads at import time.
+    """
+    import sys as _sys
+
+    if "pytest" in _sys.modules:
+        return
+    try:
+        from utils.redzone_store import start_redzone_store_thread
+
+        start_redzone_store_thread()
+        logger.info("[redzone-store] poller thread started")
+    except Exception:
+        logger.warning("[redzone-store] poller thread failed to start", exc_info=True)
+
+
+_start_redzone_store()
+
+
 def _redzone_boxscore(
     game_id: str, *, play_by_play: bool = False, ttl: float | None = None
 ) -> dict:
@@ -14015,6 +14040,17 @@ def _redzone_collect(platform, league_id, season, week):
             games_to_pids.setdefault(gid, []).append(pid)
 
     pbp_by_game: dict = {}
+    # Server-side play store: one upstream PBP fetch per game per 15s (by the
+    # elected poller thread) instead of per viewer per worker. Bulk-read here;
+    # games missing from the store fall through to the live-fetch path below.
+    store_plays: dict = {}
+    if games_to_pids:
+        try:
+            from utils.redzone_store import get_plays as _rz_store_get_plays
+
+            store_plays = _rz_store_get_plays(season, list(games_to_pids.keys()))
+        except Exception:
+            logger.debug("[redzone] play store read failed", exc_info=True)
     for gid, pids in games_to_pids.items():
         # Live AND final games get play-by-play. Skipping PBP on finals left the
         # client with only players_points deltas ("Scored 13.5 pts") after the
@@ -14026,23 +14062,32 @@ def _redzone_collect(platform, league_id, season, week):
         live = "1" in codes
         final = "2" in codes
         want_pbp = live or final
+        store_hit = want_pbp and bool(store_plays.get(gid))
         # Final PBP is stable; cache longer to avoid re-hitting Tank01 every poll.
+        # With a store hit we only need the plain boxscore (stat lines) -- the
+        # Tank01 experimental PBP payload is skipped entirely.
         box = _redzone_boxscore(
             gid,
-            play_by_play=want_pbp,
+            play_by_play=(want_pbp and not store_hit),
             ttl=(None if live else 300.0) if want_pbp else None,
         )
         # Tank01's playByPlay response is experimental and sometimes returns PBP
         # without aggregate playerStats (or an empty body). Merge a plain
         # boxscore for scoreboard totals only -- Plays never invents boxscore /
         # "Scored X pts" fiction from that merge (client is PBP-lines-only for
-        # live/final).
-        if want_pbp and not (box.get("playerStats") or box.get("allPlayByPlay")
-                             or box.get("allPlaybyPlay") or box.get("playByPlay")):
+        # live/final). Skipped on a store hit: the box above was already
+        # fetched plain (stat lines only), so this would just re-fetch the
+        # identical payload; PBP comes from the store below.
+        if (not store_hit and want_pbp
+                and not (box.get("playerStats") or box.get("allPlayByPlay")
+                         or box.get("allPlaybyPlay") or box.get("playByPlay"))):
             plain = _redzone_boxscore(gid, play_by_play=False)
             if plain:
                 box = plain
-        elif want_pbp and box and not box.get("playerStats"):
+        elif not store_hit and want_pbp and box and not box.get("playerStats"):
+            # Skipped on a store hit: the box above was already fetched plain,
+            # so re-fetching it here would just return the identical payload;
+            # PBP comes from the store below, not from a boxscore merge.
             plain = _redzone_boxscore(gid, play_by_play=False)
             if plain.get("playerStats"):
                 merged = dict(plain)
@@ -14138,7 +14183,12 @@ def _redzone_collect(platform, league_id, season, week):
                     if ps:
                         pi["stat_line"] = _rz_stat_line_from_ps(ps)
 
-        if want_pbp and box:
+        if store_hit:
+            # Play store hit: pid-resolved plays from the elected poller. The
+            # boxscore above was fetched plain (stat lines only); no upstream
+            # PBP fetch is needed on this page load or poll.
+            pbp_by_game[gid] = store_plays[gid]
+        elif want_pbp and box:
             try:
                 # Build game_context for opponent team resolution
                 game_context = {}

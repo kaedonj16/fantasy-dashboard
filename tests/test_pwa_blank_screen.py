@@ -54,8 +54,10 @@ def test_navigation_fallback_chain():
     assert "cache.match(OFFLINE_URL)" in SW
     assert "cache.match('/')" in SW
     body = _handle_navigate()
-    assert "navigationFallback(cache, null)" in body
-    assert "if (cached) {" in body
+    # Cache is the last resort (may be null); RedZone skips the immediate
+    # stale paint but still falls back to it before home/offline.
+    assert "navigationFallback(cache, cached)" in body
+    assert "if (cached && !rzNav) {" in body
     assert "if (networkError) return networkError;" in body
     assert "notifyNavFresh(request, networkFetch)" in body
     # Uncached timeout must wait for grace / in-flight fetch before offline.
@@ -180,3 +182,17 @@ async function handleNavigate({ networkFetch, cached, offline }) {
             fh.write(harness)
         res = subprocess.run(["node", fp], capture_output=True, text=True, timeout=5)
     assert res.returncode == 0, res.stderr or res.stdout
+
+
+def test_redzone_nav_skips_stale_shell_on_timeout():
+    """RedZone embeds live plays in the HTML; its cached shell must not win
+    on a mere 3.5s timeout. It gets a longer network head start, a short
+    grace, and only then falls back to cache as a last resort."""
+    body = _handle_navigate()
+    assert "NAV_RZ_TIMEOUT_MS" in SW
+    assert "NAV_RZ_GRACE_MS" in SW
+    assert "rzNav" in body
+    # Stale shell is skipped on timeout for RedZone navigations...
+    assert "if (cached && !rzNav)" in body
+    # ...but the cache remains the last resort before home/offline shells.
+    assert "return navigationFallback(cache, cached);" in body

@@ -519,7 +519,7 @@ def test_scoring_honors_distance_fg_and_te_premium():
 def test_app_wires_pbp_into_collect_and_demo():
     app = (_ROOT / "app.py").read_text(encoding="utf-8")
     assert "extract_pbp_plays as _rz_extract_pbp_plays" in app
-    assert 'play_by_play=want_pbp' in app or "play_by_play=want_pbp" in app
+    assert 'play_by_play=(want_pbp and not store_hit)' in app
     assert '"pbp_by_game": pbp_by_game' in app
     assert "Try Redzone Demo" in app
     api = (_ROOT / "dashboard_services" / "api.py").read_text(encoding="utf-8")

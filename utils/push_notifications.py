@@ -652,67 +652,121 @@ def notify_redzone_scores(league_id, platform, pbp_by_game, player_info,
     return sent
 
 
-def run_redzone_td_poll():
-    """Server-side poller for RedZone touchdown pushes. Called every minute by
-    the redzone-td-poller cron during game windows; exits fast when no NFL
-    game is live.
+def _redzone_td_check():
+    """Check the play store for newly-observed TDs and push to subscribed leagues.
 
-    Reuses the exact client-driven pipeline (_redzone_collect +
-    notify_redzone_scores, with its atomic per-play-per-owner dedupe), so
-    alerts fire even when nobody has the RedZone page open. Digest opt-ins
-    are flushed here too, otherwise their TD alerts would sit buffered until
-    the next hourly run.
+    Reads TD plays the elected store poller upserted since the last watermark
+    -- no upstream PBP, no per-league _redzone_collect. Called inline by the
+    store thread (~15s alerts) and by the 1-min cron (backstop). Replays are
+    safe: the atomic per-play-per-owner claims dedupe them. The watermark
+    advances to the max observed play timestamp (never wall-clock now), so a
+    play stored mid-check can't be skipped.
 
-    Returns {"games": live_games, "leagues": leagues_checked, "sent": pushes}.
+    Returns {"games": td_games, "leagues": leagues_checked, "sent": pushes}.
     """
     result = {"games": 0, "leagues": 0, "sent": 0}
     try:
+        import time as _time
         from datetime import date as _date
-        from dashboard_services.api import get_nfl_state, get_nfl_scores_for_date
-        from dashboard_services.platform_api import get_rosters as _get_rosters
-        from app import _redzone_collect
+
+        from dashboard_services.api import get_nfl_state
+        from utils.redzone_store import (
+            get_td_plays_since as _td_since,
+            get_watermark as _get_wm,
+            set_watermark as _set_wm,
+        )
 
         state = get_nfl_state() or {}
-        season = state.get("season") or _date.today().year
-        week = state.get("week") or 1
+        season = int(state.get("season") or _date.today().year)
+        week = int(state.get("week") or 1)
 
-        scores = get_nfl_scores_for_date(_date.today().strftime("%Y%m%d")) or {}
-        live_gids = [
-            str(g.get("gameID") or gid)
-            for gid, g in scores.items()
-            if isinstance(g, dict) and str(g.get("gameStatusCode")) == "1"
-        ]
-        if not live_gids:
+        since = _get_wm()
+        if not since:
+            # Cold start: don't replay the whole stored week as "new" TDs.
+            _set_wm(_time.time())
             return result
-        result["games"] = len(live_gids)
+
+        td_plays = _td_since(season, since)
+        if not td_plays:
+            return result
+        max_ts = max(ts for _, _, ts in td_plays)
+
+        pbp_by_game: dict = {}
+        for gid, play, _ts in td_plays:
+            pbp_by_game.setdefault(gid, []).append(play)
+        result["games"] = len(pbp_by_game)
 
         leagues = _get_subscribed_leagues()
         if not leagues:
+            _set_wm(max_ts)
             return result
+
+        # Heavier per-league imports only needed once we know there's work.
+        from dashboard_services.api import (
+            get_nfl_players,
+            get_normalized_scoring_settings as _get_scoring_settings,
+        )
+        from dashboard_services.platform_api import (
+            get_rosters as _get_rosters,
+            sync_league_globals as _sync_league_globals,
+        )
+        from utils.league_scoring import normalize_league_scoring as _norm_scoring
+
+        nfl_players = get_nfl_players() or {}
+        player_info = {
+            str(pid): {
+                "name": (p.get("full_name") if isinstance(p, dict) else "") or "",
+                "pos": (p.get("position") if isinstance(p, dict) else "") or "",
+            }
+            for pid, p in nfl_players.items()
+        }
 
         sent = 0
         for league_id, platform in leagues:
             try:
-                pieces = _redzone_collect(platform, league_id, int(season), int(week))
-                pbp_by_game = pieces.get("pbp_by_game") or {}
-                if not any(pbp_by_game.values()):
-                    continue
-                rosters = _get_rosters(platform, league_id, int(season)) or []
+                try:
+                    _sync_league_globals(platform, league_id, season)
+                except Exception:
+                    pass
+                scoring = _norm_scoring(
+                    platform,
+                    _get_scoring_settings(platform) or {},
+                    league_id=league_id,
+                    season=season,
+                )
+                rosters = _get_rosters(platform, league_id, season) or []
                 sent += notify_redzone_scores(
-                    league_id, platform, pbp_by_game,
-                    pieces.get("player_info") or {}, rosters,
-                    pieces.get("scoring") or {},
-                    season=int(season), week=int(week),
+                    league_id, platform, pbp_by_game, player_info, rosters,
+                    scoring, season=season, week=week,
                 ) or 0
                 result["leagues"] += 1
             except Exception as le:
                 logger.warning("[redzone-poll] league %s failed: %s", league_id, le)
-        # Deliver digest-buffered TD alerts immediately; without this they
-        # would wait for the next hourly flush.
-        sent += _flush_digest() or 0
+        _set_wm(max_ts)
         result["sent"] = sent
     except Exception as exc:
         logger.warning("[redzone-poll] failed: %s", exc)
+    return result
+
+
+def run_redzone_td_poll():
+    """Server-side poller for RedZone touchdown pushes. Called every minute by
+    the redzone-td-poller cron during game windows.
+
+    DB-backed: reads newly-stored TD plays (no upstream PBP, no per-league
+    page collect) and fans out to subscribed leagues via notify_redzone_scores,
+    with its atomic per-play-per-owner dedupe. The store thread also calls
+    _redzone_td_check inline every ~15s for near-instant alerts; this cron is
+    the backstop and flushes digest opt-ins (otherwise their TD alerts would
+    sit buffered until the next hourly run).
+
+    Returns {"games": td_games, "leagues": leagues_checked, "sent": pushes}.
+    """
+    result = _redzone_td_check()
+    try:
+        result["sent"] += _flush_digest() or 0
+    except Exception as exc:
+        logger.warning("[redzone-poll] digest flush failed: %s", exc)
     return result
 
 
@@ -758,43 +812,55 @@ def _league_display_name(platform, league_id, season):
 
 # ── Notification 1: Lineup lock (60 min before first kickoff) ─────────────────
 
-def notify_lineup_lock():
-    """Push to all subscribers 60 minutes before the first game of the week."""
+def _lineup_lock_base():
+    """Return (games, season, week) or None when there is nothing to do."""
+    from dashboard_services.api import get_nfl_state
+    from utils.utils import load_week_schedule
+
+    state = get_nfl_state() or {}
+    season = state.get("season")
+    week = state.get("week")
+    if not season or not week or state.get("season_type") not in ("reg", "post"):
+        return None
+    games = load_week_schedule(season, week) or []
+    if not games:
+        return None
+    return games, season, week
+
+
+def _lineup_lock_epochs(games):
+    """Coerce gameTime_epoch values (seconds, may arrive as str) to floats."""
+    epochs = []
+    for g in games:
+        try:
+            epochs.append(float(g.get("gameTime_epoch")))
+        except (TypeError, ValueError):
+            continue
+    return epochs
+
+
+def _in_lineup_lock_window(kickoff_epoch):
+    """True when kickoff is 40-100 min out, so an hourly check lands inside."""
+    # gameTime_epoch is seconds (nfl_game_data._iso_epoch); every other
+    # consumer uses fromtimestamp() directly, so no /1000 here.
+    kickoff = datetime.fromtimestamp(kickoff_epoch, tz=timezone.utc)
+    now = datetime.now(tz=timezone.utc)
+    mins = (kickoff - now).total_seconds() / 60
+    return 40 <= mins <= 100
+
+
+def _lineup_lock_send(games, season, week, *, dedupe_key, tag,
+                      kickoff_line, soon_line, log_label):
+    """Shared per-league send for the lineup-lock reminders.
+
+    Owners with hard lineup problems or a material bench upgrade get a
+    specific push; clean lineups are skipped (R06.2).
+    """
+    from dashboard_services.db import get_conn
+
     try:
-        from dashboard_services.api import get_nfl_state
-        from utils.utils import load_week_schedule
-        from dashboard_services.db import get_conn
-
-        state = get_nfl_state() or {}
-        season = state.get("season")
-        week   = state.get("week")
-        if not season or not week or state.get("season_type") not in ("reg", "post"):
-            return
-
-        games = load_week_schedule(season, week) or []
-        # gameTime_epoch arrives as a string from the JSON schedule cache;
-        # coerce to float so the min()/1000 arithmetic below cannot TypeError.
-        epochs = []
-        for g in games:
-            try:
-                epochs.append(float(g.get("gameTime_epoch")))
-            except (TypeError, ValueError):
-                continue
-        if not epochs:
-            return
-
-        # gameTime_epoch is seconds (nfl_game_data._iso_epoch); every other
-        # consumer uses fromtimestamp() directly, so no /1000 here.
-        kickoff = datetime.fromtimestamp(min(epochs), tz=timezone.utc)
-        now     = datetime.now(tz=timezone.utc)
-        mins    = (kickoff - now).total_seconds() / 60
-        # 60-min-wide window so an hourly check always lands inside it; the
-        # once-per-week dedup below guarantees we still only send a single push.
-        if not (40 <= mins <= 100):
-            return
-
         with get_conn() as conn:
-            if _app_state_get(conn, "lineup_lock_week") == f"{season}-{week}":
+            if _app_state_get(conn, dedupe_key) == f"{season}-{week}":
                 return
 
         # Send per league so each subscriber gets a link into their own league's
@@ -830,7 +896,6 @@ def notify_lineup_lock():
         nfl_players = None
         sent = 0
         for league_id, platform in _get_subscribed_leagues():
-            tag = f"lineup-lock-{season}-{week}"
             league_name = _league_display_name(platform, league_id, season)
 
             issue_summary_by_owner: dict = {}
@@ -922,7 +987,7 @@ def notify_lineup_lock():
                 elif oid in bench_summary_by_owner:
                     bench_by_owner.setdefault(oid, []).append(r)
             for oid, orows in flagged_by_owner.items():
-                body = f"Week {week} kicks off in about an hour. {issue_summary_by_owner[oid]}."
+                body = f"{kickoff_line} {issue_summary_by_owner[oid]}."
                 swap_line = bench_summary_by_owner.get(oid)
                 if swap_line:
                     body = f"{body} {swap_line}."
@@ -934,7 +999,7 @@ def notify_lineup_lock():
                     notif_type="lineup_lock", league_id=league_id, platform=platform,
                 )
             for oid, orows in bench_by_owner.items():
-                body = f"Week {week} kicks off soon. {bench_summary_by_owner[oid]}."
+                body = f"{soon_line} {bench_summary_by_owner[oid]}."
                 if league_name:
                     body = f"{body} Check your lineup in {league_name}."
                 sent += _send_with_digest(
@@ -942,14 +1007,69 @@ def notify_lineup_lock():
                     "Points on your bench", body, fix_url, tag,
                     notif_type="lineup_lock", league_id=league_id, platform=platform,
                 )
-        logger.info("[notify] lineup_lock week %s sent %d", week, sent)
+        logger.info("[notify] lineup_lock %s week %s sent %d", log_label, week, sent)
 
         with get_conn() as conn:
-            _app_state_set(conn, "lineup_lock_week", f"{season}-{week}")
+            _app_state_set(conn, dedupe_key, f"{season}-{week}")
             conn.commit()
         return sent
     except Exception as exc:
+        logger.warning("[notify] lineup_lock send failed: %s", exc)
+
+
+def notify_lineup_lock():
+    """Push to all subscribers 60 minutes before the first game of the week."""
+    try:
+        base = _lineup_lock_base()
+        if not base:
+            return
+        games, season, week = base
+        epochs = _lineup_lock_epochs(games)
+        if not epochs or not _in_lineup_lock_window(min(epochs)):
+            return
+        return _lineup_lock_send(
+            games, season, week,
+            dedupe_key="lineup_lock_week",
+            tag=f"lineup-lock-{season}-{week}",
+            kickoff_line=f"Week {week} kicks off in about an hour.",
+            soon_line=f"Week {week} kicks off soon.",
+            log_label="thu",
+        )
+    except Exception as exc:
         logger.warning("[notify] lineup_lock failed: %s", exc)
+
+
+def notify_lineup_lock_sunday():
+    """Second lineup reminder ~60 min before the first Sunday kickoff.
+
+    Thursday's alert covers the week's first game, but most lineups lock
+    Sunday, so this fires once per week ahead of the early Sunday window
+    (including 9:30 AM ET London games).
+    """
+    try:
+        from zoneinfo import ZoneInfo
+
+        base = _lineup_lock_base()
+        if not base:
+            return
+        games, season, week = base
+        et = ZoneInfo("America/New_York")
+        epochs = [
+            ep for ep in _lineup_lock_epochs(games)
+            if datetime.fromtimestamp(ep, tz=et).weekday() == 6  # Sunday
+        ]
+        if not epochs or not _in_lineup_lock_window(min(epochs)):
+            return
+        return _lineup_lock_send(
+            games, season, week,
+            dedupe_key="lineup_lock_sunday",
+            tag=f"lineup-lock-sunday-{season}-{week}",
+            kickoff_line=f"Sunday's Week {week} games kick off in about an hour.",
+            soon_line=f"Sunday's Week {week} games kick off soon.",
+            log_label="sun",
+        )
+    except Exception as exc:
+        logger.warning("[notify] lineup_lock_sunday failed: %s", exc)
 
 
 # ── Notification 2: Value drops on rostered players ───────────────────────────
@@ -2097,6 +2217,7 @@ def run_hourly():
     """
     counts = {
         "lineup_lock": notify_lineup_lock() or 0,
+        "lineup_lock_sunday": notify_lineup_lock_sunday() or 0,
         "close_game": notify_close_game() or 0,
         "transaction_drops": notify_transaction_drops() or 0,
         "injury_alert": notify_injury_alert() or 0,
