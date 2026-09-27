@@ -20,6 +20,7 @@ import requests
 log = logging.getLogger(__name__)
 
 SCOREBOARD_URL = "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard"
+CDN_SCOREBOARD_URL = "https://cdn.espn.com/core/nfl/scoreboard"
 SUMMARY_URL = "https://site.web.api.espn.com/apis/site/v2/sports/football/nfl/summary"
 CDN_SUMMARY_URL = "https://cdn.espn.com/core/nfl/playbyplay"
 UA = "BRFantasy/1.0 (+https://brfantasyfootball.com)"
@@ -166,7 +167,7 @@ def _single_flight(key: str, fetch, ttl: float) -> tuple[dict, bool]:
 
 def fetch_scoreboard(*, dates: str = "", season: int | str = "", week: int | str = "",
                      season_type: int | str = "", ttl: float = 30, timeout: float = 10) -> tuple[dict, bool]:
-    params: dict[str, str] = {}
+    params: dict[str, str] = {"xhr": "1"}
     if dates:
         params["dates"] = str(dates)
     if season:
@@ -175,8 +176,26 @@ def fetch_scoreboard(*, dates: str = "", season: int | str = "", week: int | str
         params["week"] = str(week)
     if season_type:
         params["seasontype"] = str(season_type)
-    key = "scoreboard:" + ":".join(f"{k}={v}" for k, v in sorted(params.items()))
-    return _single_flight(key, lambda: _request_json(SCOREBOARD_URL, params=params, timeout=timeout), ttl)
+    # The xhr param is constant; exclude it from the cache key so the key
+    # format matches what scoreboard_for_date uses for _last_good lookups.
+    key = "scoreboard:" + ":".join(
+        f"{k}={v}" for k, v in sorted(params.items()) if k != "xhr"
+    )
+
+    def _load():
+        # site.api.espn.com 403s server-side requests (bot protection); the
+        # CDN scoreboard serves the same payload and accepts the same params.
+        try:
+            return _request_json(CDN_SCOREBOARD_URL, params=params, timeout=timeout)
+        except Exception as exc:
+            # A 403 from the CDN means the API endpoint is blocked too; do not
+            # double the calls. Fall back only for transient errors.
+            if _failure_kind(exc) == "forbidden":
+                raise
+            log.warning("CDN scoreboard failed, trying API endpoint", exc_info=True)
+            return _request_json(SCOREBOARD_URL, params=params, timeout=timeout)
+
+    return _single_flight(key, _load, ttl)
 
 
 def fetch_summary(event_id: str, *, ttl: float = 15, timeout: float = 12) -> tuple[dict, bool]:

@@ -26,6 +26,10 @@ _TEAM_SCHEDULE_TTL = 300.0
 _BOX_PAYLOAD_CACHE: dict[tuple[str, str, str], tuple[float, dict]] = {}
 _BOX_PAYLOAD_TTL_LIVE = 20.0
 _BOX_PAYLOAD_TTL_FINAL = 600.0
+# "Not started" payloads get a short TTL: an empty fetch can mean a transient
+# upstream failure, not a pre-kickoff game, and caching that for 10 minutes
+# shows "game hasn't started" long after kickoff.
+_BOX_PAYLOAD_TTL_SCHEDULED = 45.0
 
 _POST_WEEK_LABELS = {
     1: "Wild Card",
@@ -953,10 +957,19 @@ def get_shaped_boxscore(
         from dashboard_services.api import fetch_tank_boxscore
         return fetch_tank_boxscore(game_id) or {}
 
-    # Peek cache; for live games use short TTL.
+    # Peek cache; for live games use short TTL. Scheduled ("not started")
+    # payloads use their own short TTL so a transient fetch failure does not
+    # masquerade as a pre-kickoff game for 10 minutes.
     if hit and now - hit[0] < _BOX_PAYLOAD_TTL_FINAL:
         cached = hit[1]
-        if cached.get("status") != "live" or now - hit[0] < _BOX_PAYLOAD_TTL_LIVE:
+        cstatus = cached.get("status")
+        if cstatus == "live":
+            if now - hit[0] < _BOX_PAYLOAD_TTL_LIVE:
+                return cached
+        elif cstatus == "scheduled":
+            if now - hit[0] < _BOX_PAYLOAD_TTL_SCHEDULED:
+                return cached
+        else:
             return cached
 
     box = _fetch()
