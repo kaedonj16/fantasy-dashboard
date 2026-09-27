@@ -662,9 +662,13 @@ def extract_sleeper_pbp_plays(
         stat_by_pid = _stat_lines_by_pid(text, abbrev_idx)
         # Strip parenthetical tackle credits before resolving mentions so a
         # defender who only made the stop never headlines the play (see
-        # _text_without_credits).
+        # _text_without_credits). Also strip the two-point conversion / PAT
+        # portion: a player mentioned only there (e.g. the 2PT target on an
+        # incomplete attempt) must not inherit the TD flag.
+        from utils.redzone_pbp import _two_point_segments
+        _td_text, _ = _two_point_segments(text)
         pids = pids_mentioned_in_text(
-            _text_without_credits(text), full_index=full_idx, abbrev_index=abbrev_idx
+            _text_without_credits(_td_text), full_index=full_idx, abbrev_index=abbrev_idx
         )
         # Explicit player fields if Sleeper starts shipping them.
         for key in ("player_id", "pid", "sleeper_id"):
@@ -1066,9 +1070,12 @@ def extract_espn_pbp_plays(
             # Resolve mentioned players from the action clause only -- never the
             # parenthetical tackle credit -- so a defender who merely made the
             # stop does not become a standalone card headlining the ball
-            # carrier's run.
+            # carrier's run. Also strip the two-point conversion / PAT portion:
+            # a player mentioned only there must not inherit the TD flag.
+            from utils.redzone_pbp import _two_point_segments
+            _td_text, _ = _two_point_segments(text)
             pids = pids_mentioned_in_text(
-                _text_without_credits(text),
+                _text_without_credits(_td_text),
                 full_index=full_idx,
                 abbrev_index=abbrev_idx,
                 team=drive_team,
