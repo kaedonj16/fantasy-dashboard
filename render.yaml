@@ -228,6 +228,29 @@ services:
         sync: false
 
   - type: cron
+    name: redzone-td-poller
+    runtime: python
+    # Server-side RedZone TD poll: fires push alerts even when nobody has the
+    # RedZone page open. Hits the web service so VAPID keys stay on the app.
+    # No pip install — trigger_notifications.py is stdlib urllib only. The
+    # endpoint fast-exits when no NFL game is live, so idle runs cost ~1s.
+    schedule: "* * * * *"
+    plan: starter
+    buildCommand: python -c "print('redzone-td-poller - no Python deps')"
+    startCommand: python scripts/trigger_notifications.py redzone
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: TZ
+        value: America/New_York
+      - key: PYTHON_ENV
+        value: production
+      - key: APP_URL
+        sync: false
+      - key: CRON_SECRET
+        sync: false
+
+  - type: cron
     name: hourly-notifications
     runtime: python
     # Hits the web service so VAPID keys stay on the app. No pip install —

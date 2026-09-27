@@ -442,7 +442,8 @@ def api_cron_notifications():
     """Cron hook for push notifications and the weekly email digest.
 
     Pass type='hourly' (lineup lock / close games / drops / injuries),
-    type='daily', or type='weekly'. Auth is X-Admin-Secret or CRON_SECRET
+    type='daily', type='redzone' (server-side TD poll), or type='weekly'.
+    Auth is X-Admin-Secret or CRON_SECRET
     (header X-Cron-Secret or JSON ``secret``, same as /api/flush-value-cache).
     """
     data = request.get_json(silent=True) or {}
@@ -450,9 +451,15 @@ def api_cron_notifications():
         return jsonify({"error": "Forbidden"}), 403
     kind = str(data.get("type") or request.args.get("type") or "hourly").strip().lower()
     try:
-        from utils.push_notifications import run_hourly, run_all_daily
+        from utils.push_notifications import (
+            run_hourly, run_all_daily, run_redzone_td_poll,
+        )
         if kind == "daily":
             run_all_daily()
+        elif kind == "redzone":
+            summary = run_redzone_td_poll()
+            return jsonify({"ok": True, "sent": summary["sent"],
+                            "breakdown": summary})
         elif kind == "weekly":
             # Weekly email digest. Call once a week (e.g. Tuesday morning). Safe to
             # call more often -- it de-dupes per account per ISO week.

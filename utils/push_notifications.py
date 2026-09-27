@@ -652,6 +652,70 @@ def notify_redzone_scores(league_id, platform, pbp_by_game, player_info,
     return sent
 
 
+def run_redzone_td_poll():
+    """Server-side poller for RedZone touchdown pushes. Called every minute by
+    the redzone-td-poller cron during game windows; exits fast when no NFL
+    game is live.
+
+    Reuses the exact client-driven pipeline (_redzone_collect +
+    notify_redzone_scores, with its atomic per-play-per-owner dedupe), so
+    alerts fire even when nobody has the RedZone page open. Digest opt-ins
+    are flushed here too, otherwise their TD alerts would sit buffered until
+    the next hourly run.
+
+    Returns {"games": live_games, "leagues": leagues_checked, "sent": pushes}.
+    """
+    result = {"games": 0, "leagues": 0, "sent": 0}
+    try:
+        from datetime import date as _date
+        from dashboard_services.api import get_nfl_state, get_nfl_scores_for_date
+        from dashboard_services.platform_api import get_rosters as _get_rosters
+        from app import _redzone_collect
+
+        state = get_nfl_state() or {}
+        season = state.get("season") or _date.today().year
+        week = state.get("week") or 1
+
+        scores = get_nfl_scores_for_date(_date.today().strftime("%Y%m%d")) or {}
+        live_gids = [
+            str(g.get("gameID") or gid)
+            for gid, g in scores.items()
+            if isinstance(g, dict) and str(g.get("gameStatusCode")) == "1"
+        ]
+        if not live_gids:
+            return result
+        result["games"] = len(live_gids)
+
+        leagues = _get_subscribed_leagues()
+        if not leagues:
+            return result
+
+        sent = 0
+        for league_id, platform in leagues:
+            try:
+                pieces = _redzone_collect(platform, league_id, int(season), int(week))
+                pbp_by_game = pieces.get("pbp_by_game") or {}
+                if not any(pbp_by_game.values()):
+                    continue
+                rosters = _get_rosters(platform, league_id, int(season)) or []
+                sent += notify_redzone_scores(
+                    league_id, platform, pbp_by_game,
+                    pieces.get("player_info") or {}, rosters,
+                    pieces.get("scoring") or {},
+                    season=int(season), week=int(week),
+                ) or 0
+                result["leagues"] += 1
+            except Exception as le:
+                logger.warning("[redzone-poll] league %s failed: %s", league_id, le)
+        # Deliver digest-buffered TD alerts immediately; without this they
+        # would wait for the next hourly flush.
+        sent += _flush_digest() or 0
+        result["sent"] = sent
+    except Exception as exc:
+        logger.warning("[redzone-poll] failed: %s", exc)
+    return result
+
+
 def _get_subscribed_leagues():
     """Return [(league_id, platform)] for all leagues with active subscribers."""
     try:
