@@ -1,0 +1,266 @@
+"""Server-side RedZone play store: upsert idempotency, watermark TD reads, prune."""
+from __future__ import annotations
+
+import json
+
+import pytest
+
+import utils.redzone_store as rs
+
+
+class _FakeCursor:
+    def __init__(self, rows):
+        self._rows = rows
+
+    def fetchall(self):
+        return self._rows
+
+    def fetchone(self):
+        return self._rows[0] if self._rows else None
+
+
+class _FakeStoreConn:
+    """In-memory stand-in for the redzone_plays / app_state tables.
+
+    now is a one-element list holding the fake clock (epoch seconds); tests
+    advance it to prove observed_at only moves on real play changes.
+    """
+
+    def __init__(self, now):
+        self.now = now
+        self.plays = {}  # (season, game_id, play_id) -> row dict
+        self.state = {}
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def commit(self):
+        pass
+
+    def executemany(self, sql, rows):
+        up = " ".join(sql.split()).upper()
+        assert up.startswith("INSERT INTO REDZONE_PLAYS"), sql[:60]
+        for season, game_id, play_id, seq, is_td, payload_json in rows:
+            key = (int(season), str(game_id), str(play_id))
+            existing = self.plays.get(key)
+            if existing is None:
+                self.plays[key] = {
+                    "season": int(season),
+                    "game_id": str(game_id),
+                    "play_id": str(play_id),
+                    "seq": int(seq),
+                    "is_td": bool(is_td),
+                    "payload": payload_json,
+                    "observed_at": self.now[0],
+                }
+            elif existing["payload"] != payload_json:
+                # Mirrors the ON CONFLICT ... IS DISTINCT FROM bump.
+                existing.update(
+                    seq=int(seq),
+                    is_td=bool(is_td),
+                    payload=payload_json,
+                    observed_at=self.now[0],
+                )
+            # identical re-upsert: observed_at untouched
+        return _FakeCursor([])
+
+    def execute(self, sql, params=None):
+        up = " ".join(sql.split()).upper()
+        params = params or ()
+        if up.startswith("CREATE TABLE") or up.startswith("CREATE INDEX"):
+            return _FakeCursor([])
+        if up.startswith("INSERT INTO REDZONE_PLAYS"):
+            self.executemany(sql, [params])
+            return _FakeCursor([])
+        if up.startswith("INSERT INTO APP_STATE"):
+            self.state[str(params[0])] = str(params[1])
+            return _FakeCursor([])
+        if up.startswith("SELECT VALUE FROM APP_STATE"):
+            val = self.state.get(str(params[0]))
+            return _FakeCursor([{"value": val}] if val is not None else [])
+        if "FROM REDZONE_PLAYS" in up and "WHERE SEASON = %S AND GAME_ID = ANY" in up:
+            season, gids = int(params[0]), {str(g) for g in params[1]}
+            rows = [
+                {"game_id": r["game_id"], "payload": json.loads(r["payload"])}
+                for r in self.plays.values()
+                if r["season"] == season and r["game_id"] in gids
+            ]
+            rows.sort(key=lambda r: (r["game_id"], 0))
+            # order by seq within game
+            by_game = {}
+            for r in rows:
+                by_game.setdefault(r["game_id"], []).append(r)
+            ordered = []
+            for gid in sorted(by_game):
+                key_rows = [x for x in self.plays.values()
+                            if x["season"] == season and x["game_id"] == gid]
+                key_rows.sort(key=lambda x: x["seq"])
+                ordered.extend(
+                    {"game_id": gid, "payload": json.loads(x["payload"])}
+                    for x in key_rows
+                )
+            return _FakeCursor(ordered)
+        if "FROM REDZONE_PLAYS" in up and "IS_TD" in up and "OBSERVED_AT > TO_TIMESTAMP" in up:
+            season, since = int(params[0]), float(params[1])
+            rows = [
+                {"game_id": r["game_id"], "payload": json.loads(r["payload"]),
+                 "ts": r["observed_at"]}
+                for r in self.plays.values()
+                if r["season"] == season and r["is_td"] and r["observed_at"] > since
+            ]
+            rows.sort(key=lambda r: r["ts"])
+            return _FakeCursor(rows)
+        if up.startswith("DELETE FROM REDZONE_PLAYS"):
+            cutoff = self.now[0] - int(params[0]) * 86400
+            doomed = [k for k, r in self.plays.items() if r["observed_at"] < cutoff]
+            for k in doomed:
+                del self.plays[k]
+            return _FakeCursor([{"1": 1}] * len(doomed))
+        raise AssertionError("unexpected store SQL: %s" % sql[:80])
+
+
+@pytest.fixture()
+def store_db(monkeypatch):
+    import dashboard_services.db as db
+
+    now = [1_700_000_000.0]
+    conn = _FakeStoreConn(now)
+    monkeypatch.setattr(db, "get_conn", lambda *a, **k: conn)
+    return conn, now
+
+
+def _play(play_id, seq, is_td=False, text="run"):
+    return {
+        "play_id": play_id, "seq": seq, "game_id": "20260927_KC@BUF",
+        "quarter": "1", "clock": "10:00", "down": "1", "distance": "10",
+        "play_text": text, "stat_line": {}, "is_td": is_td,
+    }
+
+
+def test_upsert_and_get_plays_ordered(store_db):
+    conn, _now = store_db
+    plays = [_play("p3", 3), _play("p1", 1), _play("p2", 2)]
+    assert rs.upsert_plays(2026, "20260927_KC@BUF", plays) == 3
+    got = rs.get_plays(2026, ["20260927_KC@BUF"])
+    assert [p["play_id"] for p in got["20260927_KC@BUF"]] == ["p1", "p2", "p3"]
+
+
+def test_upsert_idempotent_keeps_observed_at(store_db):
+    conn, now = store_db
+    rs.upsert_plays(2026, "g", [_play("p1", 1)])
+    first = conn.plays[(2026, "g", "p1")]["observed_at"]
+    now[0] += 3600  # an hour of polls later
+    rs.upsert_plays(2026, "g", [_play("p1", 1)])
+    assert conn.plays[(2026, "g", "p1")]["observed_at"] == first
+
+
+def test_upsert_revision_bumps_observed_at(store_db):
+    conn, now = store_db
+    rs.upsert_plays(2026, "g", [_play("p1", 1, text="run")])
+    first = conn.plays[(2026, "g", "p1")]["observed_at"]
+    now[0] += 3600
+    rs.upsert_plays(2026, "g", [_play("p1", 1, text="run, scoring changed")])
+    assert conn.plays[(2026, "g", "p1")]["observed_at"] > first
+
+
+def test_td_since_watermark_semantics(store_db):
+    _conn, now = store_db
+    rs.upsert_plays(2026, "g", [_play("td1", 1, is_td=True)])
+    now[0] += 100
+    rs.upsert_plays(2026, "g", [_play("td2", 2, is_td=True)])
+    now[0] += 100
+    rs.upsert_plays(2026, "g", [_play("run1", 3, is_td=False)])
+
+    tds = rs.get_td_plays_since(2026, 1_700_000_000.0 + 50)
+    assert [(g, p["play_id"]) for g, p, _ts in tds] == [("g", "td2")]
+    assert tds[0][2] == pytest.approx(1_700_000_100.0)
+
+
+def test_watermark_roundtrip(store_db):
+    assert rs.get_watermark() == 0.0
+    rs.set_watermark(1234.5)
+    assert rs.get_watermark() == pytest.approx(1234.5)
+
+
+def test_prune_removes_only_old(store_db):
+    conn, now = store_db
+    rs.upsert_plays(2026, "g", [_play("old", 1)])
+    now[0] += 8 * 86400
+    rs.upsert_plays(2026, "g", [_play("new", 2)])
+    assert rs.prune_plays(retention_days=7) == 1
+    assert set(conn.plays) == {(2026, "g", "new")}
+
+
+def test_get_plays_unknown_game_absent(store_db):
+    assert rs.get_plays(2026, ["nope"]) == {}
+
+
+def test_poll_once_skips_unseen_finals(monkeypatch):
+    import sys
+    import types
+
+    monkeypatch.setattr(rs, "discover_live_games", lambda: [
+        {"game_id": "live1", "live": True, "final": False},
+        {"game_id": "final_seen", "live": False, "final": True},
+        {"game_id": "final_new", "live": False, "final": True},
+    ])
+    monkeypatch.setattr(rs, "get_plays", lambda season, gids: {"final_seen": []})
+
+    fetched = []
+
+    def fake_pbp(gid, **kw):
+        fetched.append((gid, kw.get("live"), kw.get("final")))
+        return [{"play_id": "p1", "seq": 1, "is_td": False}]
+
+    fake_alt = types.ModuleType("utils.redzone_alt_pbp")
+    fake_alt.fetch_alt_pbp_plays = fake_pbp
+    fake_alt.parse_tank_game_id = lambda gid: ("20260927", "KC", "BUF")
+    monkeypatch.setitem(sys.modules, "utils.redzone_alt_pbp", fake_alt)
+
+    fake_api = types.ModuleType("dashboard_services.api")
+    fake_api.get_nfl_state = lambda: {"season": 2026, "week": 4}
+    fake_api.get_nfl_players = lambda: {}
+    monkeypatch.setitem(sys.modules, "dashboard_services.api", fake_api)
+
+    monkeypatch.setattr(rs, "_build_name_maps", lambda *a: ({}, {}))
+    upserted = []
+    monkeypatch.setattr(rs, "upsert_plays",
+                        lambda season, gid, plays: upserted.append(gid) or len(plays))
+
+    stats = rs.poll_once()
+    # live game + already-stored final are re-polled; unseen final is skipped
+    assert stats["games"] == 2
+    assert sorted(upserted) == ["final_seen", "live1"]
+    assert [f[0] for f in fetched] == ["live1", "final_seen"]
+
+
+def test_ensure_table_runs_once_per_process():
+    import utils.redzone_store as rs
+    from types import SimpleNamespace
+
+    rs._ENSURED_TABLES.clear()
+    calls = []
+
+    class _Conn:
+        info = None
+
+        def execute(self, sql, params=None):
+            calls.append(" ".join(sql.split())[:12].upper())
+
+    rs._ensure_table(_Conn())
+    first_run = list(calls)
+    assert len(first_run) == 1 + len(rs._INDEX_DDL)
+    assert first_run[0] == "CREATE TABLE"
+
+    # Second call on the same database: no DDL.
+    rs._ensure_table(_Conn())
+    assert calls == first_run
+
+    # A different database still gets its DDL.
+    other = _Conn()
+    other.info = SimpleNamespace(dbname="otherdb")
+    rs._ensure_table(other)
+    assert len(calls) == 2 * len(first_run)

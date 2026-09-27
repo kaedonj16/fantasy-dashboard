@@ -13,6 +13,13 @@ const NAV_TIMEOUT_MS = 3500;
 // Explicit Refresh (bypass-cache / reload) skips the stale shell preference
 // but still must not hang forever on a stuck fetch.
 const NAV_REFRESH_TIMEOUT_MS = 20000;
+// RedZone embeds live plays in the HTML (window.__rz__). Painting its cached
+// shell after NAV_TIMEOUT_MS shows last session's plays, so RedZone
+// navigations give the network a longer head start and don't prefer the
+// stale shell on a mere timeout: a short grace waits the network out first,
+// and the cache is only the last resort before the home/offline shells.
+const NAV_RZ_TIMEOUT_MS = 8000;
+const NAV_RZ_GRACE_MS = 7000;
 // When there is nothing cached to paint after NAV_TIMEOUT_MS, keep waiting for
 // the in-flight fetch up to this ceiling before showing the offline shell.
 // Serving "You're offline" at 3.5s while the user is online (Render cold start,
@@ -196,6 +203,13 @@ async function handleNavigate(request) {
   const cache = await caches.open(CACHE_NAME);
   const cached = await cache.match(request);
   const skipStaleShell = forceNetworkNav(request);
+  // The RedZone page (/<platform>/<season>/<league>/redzone) embeds that
+  // visit's plays in the HTML. Its cached shell is actively misleading, so
+  // it gets the network-first treatment below.
+  let rzNav = false;
+  try {
+    rzNav = new URL(request.url).pathname.includes('/redzone');
+  } catch (_) {}
 
   // Kick off the network request. Normalize redirects and only treat OK
   // responses as usable wins -- a fast 502 must not beat a good cached shell.
@@ -220,7 +234,9 @@ async function handleNavigate(request) {
   // The previous "await network forever when uncached" path is what left PWA
   // cold launches stuck on a blank white screen when the origin was slow,
   // sleeping, or the fetch never settled (common on mobile / iOS standalone).
-  const waitMs = skipStaleShell ? NAV_REFRESH_TIMEOUT_MS : NAV_TIMEOUT_MS;
+  // RedZone gets a longer head start: its cached shell holds stale plays.
+  const waitMs = skipStaleShell ? NAV_REFRESH_TIMEOUT_MS
+    : rzNav ? NAV_RZ_TIMEOUT_MS : NAV_TIMEOUT_MS;
   const timeout = new Promise(resolve => setTimeout(() => resolve(null), waitMs));
   const winner = await Promise.race([networkFetch, timeout]);
 
@@ -234,22 +250,26 @@ async function handleNavigate(request) {
   // route isn't painted as "You're offline"), then wait for the in-flight
   // fetch (uncached grace) before the home / offline shells. Keep the
   // fetch alive so a late success can nudge a reload when we did paint
-  // a cached shell.
-  if (cached) {
+  // a cached shell. RedZone skips the immediate cached paint on a mere
+  // timeout -- stale plays are worse than a short wait -- but keeps the
+  // cache as the last resort before the home / offline shells.
+  if (cached && !rzNav) {
     notifyNavFresh(request, networkFetch);
     return cached;
   }
   if (networkError) return networkError;
 
-  // No cached paint available. Do NOT jump to offline.html yet -- that is what
-  // showed "You're offline" during slow-but-online loads. Wait for the network
-  // (or a longer grace) first.
-  const grace = new Promise(resolve => setTimeout(() => resolve(null), NAV_UNCACHED_GRACE_MS));
+  // No cached paint available (or RedZone, holding out for fresh data). Do
+  // NOT jump to offline.html yet -- that is what showed "You're offline"
+  // during slow-but-online loads. Wait for the network (or a longer grace)
+  // first.
+  const graceMs = rzNav ? NAV_RZ_GRACE_MS : NAV_UNCACHED_GRACE_MS;
+  const grace = new Promise(resolve => setTimeout(() => resolve(null), graceMs));
   const late = await Promise.race([networkFetch, grace]);
   if (late) return late;
   if (networkError) return networkError;
   notifyNavFresh(request, networkFetch);
-  return navigationFallback(cache, null);
+  return navigationFallback(cache, cached);
 }
 
 // ── Push notifications ─────────────────────────────────────────────────────────
