@@ -1,6 +1,8 @@
 import threading
 import time
 
+import requests
+
 from dashboard_services import nfl_game_data as nfl
 
 
@@ -253,3 +255,51 @@ def test_summary_parser_still_works_with_labels_only():
     wr = result["playerStats"]["4701936"]
     assert wr["Receiving"] == {"receptions": 5, "targets": 12,
                               "recYds": 100, "recTD": 1}
+
+
+def test_scoreboard_uses_cdn_endpoint(monkeypatch):
+    """The scoreboard fetches from the CDN (site.api.espn.com 403s servers)."""
+    nfl._cache.clear(); nfl._last_good.clear(); nfl._locks.clear(); nfl._failures.clear()
+    calls = []
+    def fake_request_json(url, *, params, timeout):
+        calls.append((url, params))
+        return {"events": []}
+    monkeypatch.setattr(nfl, "_request_json", fake_request_json)
+    nfl.fetch_scoreboard(dates="20260927")
+    assert len(calls) == 1
+    url, params = calls[0]
+    assert "cdn.espn.com" in url
+    assert params.get("xhr") == "1"
+    assert params.get("dates") == "20260927"
+
+
+def test_scoreboard_cdn_403_does_not_retry_api(monkeypatch):
+    """A CDN 403 means the API is blocked too; do not double the calls."""
+    nfl._cache.clear(); nfl._last_good.clear(); nfl._locks.clear(); nfl._failures.clear()
+    calls = []
+    def fake_request_json(url, *, params, timeout):
+        calls.append(url)
+        err = requests.HTTPError("forbidden")
+        err.response = type("R", (), {"status_code": 403, "headers": {}})()
+        raise err
+    monkeypatch.setattr(nfl, "_request_json", fake_request_json)
+    monkeypatch.setattr(nfl, "_nflverse_games_rows", lambda: [])
+    nfl.fetch_scoreboard(dates="20260927")
+    assert len(calls) == 1
+    assert "cdn.espn.com" in calls[0]
+
+
+def test_scoreboard_cdn_transport_error_falls_back_to_api(monkeypatch):
+    """Transient CDN errors (timeout/5xx) fall back to the API endpoint."""
+    nfl._cache.clear(); nfl._last_good.clear(); nfl._locks.clear(); nfl._failures.clear()
+    calls = []
+    def fake_request_json(url, *, params, timeout):
+        calls.append(url)
+        if "cdn.espn.com" in url:
+            raise requests.Timeout("boom")
+        return {"events": []}
+    monkeypatch.setattr(nfl, "_request_json", fake_request_json)
+    nfl.fetch_scoreboard(dates="20260927")
+    assert len(calls) == 2
+    assert "cdn.espn.com" in calls[0]
+    assert "site.api.espn.com" in calls[1]
