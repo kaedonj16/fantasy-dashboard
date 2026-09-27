@@ -883,6 +883,7 @@ def notify_lineup_lock():
         with get_conn() as conn:
             _app_state_set(conn, "lineup_lock_week", f"{season}-{week}")
             conn.commit()
+        return sent
     except Exception as exc:
         logger.warning("[notify] lineup_lock failed: %s", exc)
 
@@ -1573,6 +1574,7 @@ def notify_close_game():
         if not ((wd == 0 and hr >= 22) or (wd == 1 and hr < 4)):
             return
 
+        sent = 0
         state_key = f"close_game_notified_{season}_{week}"
         with get_conn() as conn:
             raw = _app_state_get(conn, state_key) or ""
@@ -1631,7 +1633,7 @@ def notify_close_game():
                             body = f"You're up {gap} pts over {opp_name}{mnf_league}. Hold on tonight."
                         else:
                             body = f"You're down {gap} pts to {opp_name}{mnf_league}. You can still take this."
-                        _broadcast_owner(
+                        sent += _broadcast_owner(
                             league_id, owner_id,
                             title="Close matchup tonight",
                             body=body,
@@ -1648,6 +1650,7 @@ def notify_close_game():
             with get_conn() as conn:
                 _app_state_set(conn, state_key, ",".join(list(notified_ids)[-500:]))
                 conn.commit()
+        return sent
     except Exception as exc:
         logger.warning("[notify] close_game failed: %s", exc)
 
@@ -1681,6 +1684,7 @@ def notify_transaction_drops():
             raw = _app_state_get(conn, state_key) or ""
         notified_txns = set(raw.split(",")) if raw else set()
         new_txns = set()
+        sent = 0
 
         for league_id, platform in leagues:
             try:
@@ -1707,7 +1711,7 @@ def notify_transaction_drops():
                     pos_str = f" ({pos})" if pos else ""
                     league_name = _league_display_name(platform, league_id, season)
                     drop_title = f"Big drop in {league_name}" if league_name else "Big drop in your league"
-                    _broadcast_league(
+                    sent += _broadcast_league(
                         league_id,
                         title=drop_title,
                         body=f"{name}{pos_str} was just dropped. Act fast on waivers.",
@@ -1724,6 +1728,7 @@ def notify_transaction_drops():
             with get_conn() as conn:
                 _app_state_set(conn, state_key, ",".join(list(notified_txns)[-500:]))
                 conn.commit()
+        return sent
     except Exception as exc:
         logger.warning("[notify] transaction_drops failed: %s", exc)
 
@@ -1760,6 +1765,7 @@ def notify_injury_alert():
         if not leagues:
             return
 
+        sent = 0
         for league_id, platform in leagues:
             if platform != "sleeper":
                 continue
@@ -1783,7 +1789,7 @@ def notify_injury_alert():
                             continue
                         name = player.get("full_name") or player.get("last_name") or "A starter"
                         pos  = player.get("position") or ""
-                        _broadcast_owner(
+                        sent += _broadcast_owner(
                             league_id, owner_id,
                             title="Starter injury alert",
                             body=(
@@ -1803,6 +1809,7 @@ def notify_injury_alert():
             with get_conn() as conn:
                 _app_state_set(conn, state_key, ",".join(list(already)[-1000:]))
                 conn.commit()
+        return sent
     except Exception as exc:
         logger.warning("[notify] injury_alert failed: %s", exc)
 
@@ -2020,10 +2027,17 @@ def run_all_daily():
 
 
 def run_hourly():
-    """Run time-sensitive checks. Call from a cron endpoint every hour."""
-    notify_lineup_lock()
-    notify_close_game()
-    notify_transaction_drops()
-    notify_injury_alert()
+    """Run time-sensitive checks. Call from a cron endpoint every hour.
+
+    Returns a dict of push counts per check plus the digest flush and total.
+    """
+    counts = {
+        "lineup_lock": notify_lineup_lock() or 0,
+        "close_game": notify_close_game() or 0,
+        "transaction_drops": notify_transaction_drops() or 0,
+        "injury_alert": notify_injury_alert() or 0,
+    }
     # One combined push per digest opt-in device for everything buffered above.
-    _flush_digest()
+    counts["digest"] = _flush_digest() or 0
+    counts["total"] = sum(counts.values())
+    return counts

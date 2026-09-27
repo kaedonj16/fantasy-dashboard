@@ -473,7 +473,9 @@ def api_cron_notifications():
             summary = send_weekly_digests(account_id=account_id, email=email, force=force)
             return jsonify({"ok": True, "weekly_email": summary})
         else:
-            run_hourly()
+            summary = run_hourly()
+            return jsonify({"ok": True, "sent": summary["total"],
+                            "breakdown": summary})
     except Exception as exc:
         logger.warning("[cron/notifications] failed: %s", exc)
         return jsonify({"ok": False, "error": str(exc)}), 500
