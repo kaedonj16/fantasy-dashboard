@@ -19358,6 +19358,31 @@ def api_gm_memo():
             "verdict": report.get("verdict"),
             "cached": bool(report.get("cached")),
         })
+    except (ProviderUnavailableError, ESPNUnavailable) as e:
+        # Platform outages (e.g. the Fleaflicker API erroring) are not app
+        # bugs: surface them as 503 with the platform message instead of a
+        # 500 "Internal error" so the UI can show a retry-able notice.
+        logger.warning("[api-gm-memo] provider unavailable: %s", e)
+        return jsonify({
+            "success": False,
+            "error": _provider_error_message(
+                e, "The fantasy platform is temporarily unavailable. Please try again in a bit."
+            ),
+        }), 503
+    except (ProviderAuthenticationError, ESPNAccessDenied) as e:
+        logger.warning("[api-gm-memo] provider auth failed: %s", e)
+        return jsonify({
+            "success": False,
+            "error": _provider_error_message(
+                e, "This league is private or requires authentication."
+            ),
+        }), 403
+    except (LeagueNotFoundError, ESPNInvalidLeague) as e:
+        logger.warning("[api-gm-memo] league not found: %s", e)
+        return jsonify({
+            "success": False,
+            "error": _provider_error_message(e, "No league was found for that ID and season."),
+        }), 404
     except Exception as e:
         logger.exception("[api-gm-memo] Error: %s", e)
         return jsonify({
