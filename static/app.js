@@ -22536,8 +22536,13 @@ window._rzStubPbpEvents = function(pid, state) {
   function stateNote(slot, text, kind) {
     var note = slot.querySelector('[data-matchup-state]');
     if (!note) { note = document.createElement('div'); note.setAttribute('data-matchup-state', ''); slot.appendChild(note); }
+    // Stamp when this text first appeared so a transient note can't get stuck:
+    // the pending branch below drops "Updating matchup…" if the backend stays
+    // cold far longer than any warm should take.
+    if (note.textContent !== text || !note.dataset.noteSince) note.dataset.noteSince = String(Date.now());
     note.className = 'pf-live-unavailable pf-live-state-' + kind;
     note.textContent = text;
+    return note;
   }
   function posTier(rank, total) {
     var r = Number(rank), n = Number(total);
@@ -22670,7 +22675,14 @@ window._rzStubPbpEvents = function(pid, state) {
     if (!slot || !data) return false;
     if (data.pending) {
       slot.hidden = false; slot.setAttribute('aria-busy', 'true');
-      if (slot.dataset.matchupGood === 'true') stateNote(slot, 'Updating matchup…', 'stale');
+      if (slot.dataset.matchupGood === 'true') {
+        var note = stateNote(slot, 'Updating matchup…', 'stale');
+        // The retry loop re-renders on every poll, so a healthy refresh clears
+        // this via the success path below. If the backend stays cold (cache
+        // churn after worker recycles), the note would sit next to populated
+        // scores forever; drop it after ~90s and let last good stand alone.
+        if (Date.now() - Number(note.dataset.noteSince || 0) > 90000) note.remove();
+      }
       return false;
     }
     if (data.failed || data.state === 'error' || data.state === 'unavailable' && data.applicable !== false) {
@@ -22702,6 +22714,13 @@ window._rzStubPbpEvents = function(pid, state) {
     if (!slot || slot._lsWired) return;
     slot._lsWired = true;
     slot.addEventListener('click', function(e) {
+      var retryBtn = e.target.closest('[data-ls-retry]');
+      if (retryBtn && slot.contains(retryBtn)) {
+        e.preventDefault();
+        slot._lsLoading = false;
+        _lsLoad(slot);
+        return;
+      }
       var tab = e.target.closest('[data-ls-tab]');
       if (!tab || !slot.contains(tab)) return;
       e.preventDefault();
