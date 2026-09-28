@@ -146,6 +146,7 @@ from utils.utils import (
     read_json_cached,
     load_players_index,
     load_teams_index,
+    load_usage_table,
     load_week_projection,
     load_week_schedule,
     streak_class,
@@ -2987,6 +2988,55 @@ def get_players_index_global():
             if _PLAYERS_INDEX_GLOBAL is None:
                 _PLAYERS_INDEX_GLOBAL = load_players_index()
     return _PLAYERS_INDEX_GLOBAL
+
+
+_USAGE_TABLE_GLOBAL = None
+_USAGE_TABLE_GLOBAL_TS = 0
+_USAGE_TABLE_GLOBAL_TTL = 6 * 3600
+_usage_table_lock = threading.Lock()
+
+
+def get_usage_table_global():
+    """Usage table for depth charts, preferring the daily JSON file.
+
+    The daily cron writes data/usage_table.json in its own container, which
+    the web service cannot see (no shared disk). When the file is missing,
+    build the usage map in-memory from Sleeper so carry/touch shares still
+    populate instead of falling back to stale embedded index usage.
+    """
+    global _USAGE_TABLE_GLOBAL, _USAGE_TABLE_GLOBAL_TS
+    now = time.time()
+    if _USAGE_TABLE_GLOBAL is not None and now - _USAGE_TABLE_GLOBAL_TS < _USAGE_TABLE_GLOBAL_TTL:
+        return _USAGE_TABLE_GLOBAL
+    with _usage_table_lock:
+        now = time.time()
+        if _USAGE_TABLE_GLOBAL is not None and now - _USAGE_TABLE_GLOBAL_TS < _USAGE_TABLE_GLOBAL_TTL:
+            return _USAGE_TABLE_GLOBAL
+        table = None
+        try:
+            table = load_usage_table()
+        except Exception:
+            table = None
+        if not table:
+            try:
+                from data_building.external_data.sleeper_usage import (
+                    build_usage_map_for_season,
+                )
+                from dashboard_services.api import get_nfl_state
+
+                nfl_state = get_nfl_state() or {}
+                season = int(nfl_state.get("season") or datetime.now().year)
+                week = int(nfl_state.get("week") or 1)
+                weeks = range(1, min(max(week, 1), 18) + 1)
+                built = build_usage_map_for_season(season, weeks)
+                if built:
+                    table = built
+            except Exception:
+                logger.warning("in-memory usage table build failed", exc_info=True)
+        if table:
+            _USAGE_TABLE_GLOBAL = table
+            _USAGE_TABLE_GLOBAL_TS = time.time()
+        return _USAGE_TABLE_GLOBAL or {}
 
 
 # Per-position "elite starter" projection anchors, one set per (season, week,
@@ -24941,7 +24991,7 @@ def api_player_team(player_id: str):
         except Exception:
             logger.debug("get_players_global failed for team tab", exc_info=True)
 
-        usage_table = load_usage_table()
+        usage_table = get_usage_table_global()
         # Snap counts only exist for completed seasons; for in-progress or
         # projection seasons fall back to the latest actual CSV year so
         # depth-chart snap % still populates.
@@ -25350,7 +25400,7 @@ def api_nfl_team_details():
         players_index = get_players_index_global() or {}
         full_players = get_players_global() or {}
         usage_index = load_relevant_index() or players_index
-        usage_table = load_usage_table()
+        usage_table = get_usage_table_global()
         try:
             usage_season = int((get_nfl_state() or {}).get("season") or season)
         except Exception:
