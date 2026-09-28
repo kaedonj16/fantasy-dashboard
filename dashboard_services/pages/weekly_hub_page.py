@@ -220,6 +220,22 @@ def build_weekly_hub_body(ctx: dict) -> str:
     )
     from utils.standings_divisions import division_records_for_ctx
     _hub_div_records = division_records_for_ctx(ctx)
+    # RedZone Moments launcher: rendered under the win-probability bar of the
+    # viewer's own matchup slide (not at the top of the tab). The client
+    # fetches /api/redzone/moments and reveals it when moments exist.
+    # The API serves the current NFL week, so only render when the hub is
+    # showing the current week.
+    _rzm_hub_html = ""
+    if _show_matchup_preview and not offseason_mode and default_week == current_week:
+        _rzm_hub_html = redzone_moments_hub_html(platform, league_id, season)
+    def _rzm_html_for_matchup(m):
+        if not _rzm_hub_html or not _hub_vid:
+            return ""
+        _rids = (
+            str((m.get("left") or {}).get("roster_id", "")),
+            str((m.get("right") or {}).get("roster_id", "")),
+        )
+        return _rzm_hub_html if str(_hub_vid) in _rids else ""
     slides = [
         render_matchup_slide(
             season,
@@ -239,6 +255,7 @@ def build_weekly_hub_body(ctx: dict) -> str:
             roster_positions=ctx.get("roster_positions") or [],
             div_records=_hub_div_records,
             league_id=_gotw_lid,
+            rzm_hub_html=_rzm_html_for_matchup(m),
         )
         for m, is_gotw in zip(default_matchups, _gotw_flags)
     ]
@@ -368,13 +385,9 @@ def build_weekly_hub_body(ctx: dict) -> str:
     _wk_scorers_cls = "tab-btn" if _show_matchup_preview else "tab-btn active"
     _wk_matchups_panel = ""
     if _show_matchup_preview:
-        _rzm_hub_html = ""
-        if not offseason_mode:
-            _rzm_hub_html = redzone_moments_hub_html(platform, league_id, season)
         _wk_matchups_panel = f"""
             <div class="tab-panel active" data-tab="matchups">
               <div class="matchups-shell">
-                {_rzm_hub_html}
                 <div id="weeklyMatchupsContainer">
                   {matchup_html}
                 </div>

@@ -29,6 +29,47 @@ def test_launcher_markup_escapes_attributes():
     assert 'sleeper&quot;x' in html
 
 
+def _render_slide(rzm_hub_html=""):
+    import dashboard_services.matchups as mmod
+    matchup = {
+        "left": {
+            "name": "Team A", "roster_id": "1", "record": "0-0", "username": "a",
+            "avatar": "", "pts_total": 100.0,
+            "starters": [{"pid": "11564", "name": "Drake Maye", "pos": "QB", "nfl": "NE", "pts": 20.0}],
+        },
+        "right": {
+            "name": "Team B", "roster_id": "2", "record": "0-0", "username": "b",
+            "avatar": "", "pts_total": 90.0,
+            "starters": [{"pid": "4984", "name": "Josh Allen", "pos": "QB", "nfl": "BUF", "pts": 18.0}],
+        },
+    }
+    return mmod.render_matchup_slide(
+        "2026", matchup, w=3, proj_week=3,
+        status_by_pid={},
+        projections={},
+        players={"11564": {"name": "Drake Maye"}, "4984": {"name": "Josh Allen"}},
+        teams={},
+        team_game_lookup={},
+        rzm_hub_html=rzm_hub_html,
+    )
+
+
+def test_slide_includes_rzm_hub_html_under_win_bar():
+    launcher = redzone_moments_hub_html("sleeper", "123", 2026)
+    html = _render_slide(rzm_hub_html=launcher)
+    assert 'data-rzm-hub' in html
+    # Launcher sits after the header/win-bar zone and before the starter rows.
+    head_end = html.index("m-head")
+    body_start = html.index("m-body")
+    launcher_pos = html.index("data-rzm-hub")
+    assert head_end < launcher_pos < body_start
+
+
+def test_slide_omits_rzm_hub_html_by_default():
+    html = _render_slide()
+    assert 'data-rzm-hub' not in html
+
+
 def test_launcher_uses_shared_rzm_row_classes():
     # Same classes as the portfolio card row so the design stays identical.
     html = redzone_moments_hub_html("sleeper", "1", 2026)

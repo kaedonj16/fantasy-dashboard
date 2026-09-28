@@ -231,16 +231,18 @@ def test_get_plays_unknown_game_absent(store_db):
     assert rs.get_plays(2026, ["nope"]) == {}
 
 
-def test_poll_once_skips_unseen_finals(monkeypatch):
+def test_poll_once_backfills_recent_unseen_finals(monkeypatch):
     import sys
     import types
 
+    # Tank01 game ids carry the date: backfill window is 3 days.
     monkeypatch.setattr(rs, "discover_live_games", lambda: [
-        {"game_id": "live1", "live": True, "final": False},
-        {"game_id": "final_seen", "live": False, "final": True},
-        {"game_id": "final_new", "live": False, "final": True},
+        {"game_id": "20260928_KC@BUF", "live": True, "final": False},
+        {"game_id": "20260927_NE@MIA", "live": False, "final": True},
+        {"game_id": "20260927_SF@ARI", "live": False, "final": True},
+        {"game_id": "20260920_DAL@PHI", "live": False, "final": True},
     ])
-    monkeypatch.setattr(rs, "get_plays", lambda season, gids: {"final_seen": []})
+    monkeypatch.setattr(rs, "get_plays", lambda season, gids: {"20260927_NE@MIA": []})
 
     fetched = []
 
@@ -248,9 +250,13 @@ def test_poll_once_skips_unseen_finals(monkeypatch):
         fetched.append((gid, kw.get("live"), kw.get("final")))
         return [{"play_id": "p1", "seq": 1, "is_td": False}]
 
+    def fake_parse(gid):
+        date_part = gid.split("_", 1)[0] if "_" in gid else ""
+        return (date_part, "KC", "BUF")
+
     fake_alt = types.ModuleType("utils.redzone_alt_pbp")
     fake_alt.fetch_alt_pbp_plays = fake_pbp
-    fake_alt.parse_tank_game_id = lambda gid: ("20260927", "KC", "BUF")
+    fake_alt.parse_tank_game_id = fake_parse
     monkeypatch.setitem(sys.modules, "utils.redzone_alt_pbp", fake_alt)
 
     fake_api = types.ModuleType("dashboard_services.api")
@@ -264,10 +270,10 @@ def test_poll_once_skips_unseen_finals(monkeypatch):
                         lambda season, gid, plays: upserted.append(gid) or len(plays))
 
     stats = rs.poll_once()
-    # live game + already-stored final are re-polled; unseen final is skipped
-    assert stats["games"] == 2
-    assert sorted(upserted) == ["final_seen", "live1"]
-    assert [f[0] for f in fetched] == ["live1", "final_seen"]
+    # live + seen final re-polled; recent unseen final backfilled; old unseen final skipped
+    assert stats["games"] == 3
+    assert sorted(upserted) == ["20260927_NE@MIA", "20260927_SF@ARI", "20260928_KC@BUF"]
+    assert [f[0] for f in fetched] == ["20260928_KC@BUF", "20260927_NE@MIA", "20260927_SF@ARI"]
 
 
 def test_ensure_table_runs_once_per_process():

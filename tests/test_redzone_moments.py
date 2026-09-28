@@ -12,6 +12,15 @@ def _classify(play):
     """Mirror of the classification logic in api_redzone_moments."""
     stat = play.get("stat_line") or {}
     is_td = bool(play.get("is_td"))
+    if not is_td:
+        # Fallback: stat-line TD keys are ground truth when the stored flag missed.
+        try:
+            is_td = any(
+                float(stat.get(k) or 0) > 0
+                for k in ("rec_td", "rush_td", "pass_td", "def_td")
+            )
+        except (TypeError, ValueError):
+            is_td = False
     yards = max(
         int(stat.get("pass_yds") or 0),
         int(stat.get("rush_yds") or 0),
@@ -66,6 +75,22 @@ def test_classify_td_beats_turnover():
     # A pick-six is both a TD and a turnover; TD wins.
     play = {"is_td": True, "stat_line": {"def_int": 1}, "play_text": "Intercepted, returned for TD"}
     assert _classify(play) == "td"
+
+
+def test_classify_td_fallback_from_stat_line():
+    # The stored is_td flag missed, but the stat line shows a TD.
+    play = {"is_td": False, "stat_line": {"pass_yds": 25, "pass_td": 1}, "play_text": "Pass complete for 25 yards"}
+    assert _classify(play) == "td"
+    play = {"is_td": False, "stat_line": {"rush_yds": 3, "rush_td": 1}, "play_text": "Run for 3 yards"}
+    assert _classify(play) == "td"
+    play = {"is_td": 0, "stat_line": {"rec_td": 2}, "play_text": "Catch"}
+    assert _classify(play) == "td"
+
+
+def test_classify_no_false_td_from_stat_line():
+    # Zero TD keys: not a TD.
+    play = {"is_td": False, "stat_line": {"pass_yds": 25, "pass_td": 0}, "play_text": "Pass complete"}
+    assert _classify(play) is None
 
 
 class _FakeCursor:

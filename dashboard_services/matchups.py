@@ -1520,6 +1520,7 @@ def render_matchup_slide(
         roster_positions: Optional[List[str]] = None,
         div_records: dict = None,
         league_id: Optional[str] = None,
+        rzm_hub_html: str = "",
 ) -> str:
     """One slide with rows like:
        [Left Name] [Left Pts/Proj] [Right Pts/Proj] [Right Name]
@@ -2372,6 +2373,7 @@ def render_matchup_slide(
         {h2h_html}
       </div>
       {win_bar_html}
+      {rzm_hub_html}
       {drama_html}
       {moments_mount}
       {body_html}
