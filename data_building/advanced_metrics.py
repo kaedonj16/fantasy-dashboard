@@ -1375,6 +1375,44 @@ def load_matchup_ease(season: int) -> Dict[str, Dict[str, float]]:
         return {}
 
 
+# Season-cumulative counters in player_advanced_metrics. Every snapshot build
+# recomputes these from weeks 1..completed_week, so within a season they never
+# legitimately shrink; a partial build must not overwrite them with smaller
+# values (see save_metrics_snapshot).
+_MONOTONIC_SNAPSHOT_COUNTERS = (
+    "games", "total_targets", "total_receptions",
+    "total_carries", "total_touches", "total_pass_att",
+)
+
+
+def _clamp_monotonic_counters(
+        metrics: Dict[str, Any],
+        prev: Optional[Dict[str, Any]],
+) -> None:
+    """Clamp season-cumulative counters to the player's latest season values.
+
+    Mutates ``metrics`` in place: for each counter, keeps the larger of this
+    build's value and the player's latest stored value for the season. A None
+    on either side yields to the other side; None/None stays None. Guards the
+    snapshot presets' G / carries / targets / receptions / attempts columns
+    against a partial build silently shrinking them.
+    """
+    if not prev:
+        return
+    for col in _MONOTONIC_SNAPSHOT_COUNTERS:
+        new_v = metrics.get(col)
+        old_v = prev.get(col)
+        if new_v is None:
+            if old_v is not None:
+                metrics[col] = old_v
+        elif old_v is not None:
+            try:
+                if old_v > new_v:
+                    metrics[col] = old_v
+            except TypeError:
+                pass
+
+
 def save_metrics_snapshot(metrics_list: List[Dict[str, Any]], as_of_date: str, season: Optional[int] = None, *, return_counts: bool = False):
     """
     Save calculated metrics to database for a specific date.
@@ -1393,9 +1431,34 @@ def save_metrics_snapshot(metrics_list: List[Dict[str, Any]], as_of_date: str, s
 
     inserted = updated = 0
     with get_conn() as conn:
+        # Season-cumulative counters (games, volume totals) are recomputed from
+        # scratch on every build from weeks 1..completed_week, and the
+        # leaderboard reads each player's LATEST snapshot row. A partial build
+        # (e.g. a transient empty week payload from the stats feed) would
+        # otherwise overwrite these counters with smaller values and shrink
+        # the G / carries / targets columns on every snapshot preset until the
+        # next full build. Clamp each counter to the player's latest season
+        # value: within a season these never legitimately shrink.
+        prev_counters: Dict[str, Dict[str, Any]] = {}
+        try:
+            for r in conn.execute(
+                "SELECT DISTINCT ON (player_id) player_id, games, total_targets,"
+                " total_receptions, total_carries, total_touches, total_pass_att"
+                " FROM player_advanced_metrics WHERE season = %s"
+                " ORDER BY player_id, as_of_date DESC",
+                (season,),
+            ).fetchall():
+                prev_counters[str(r["player_id"])] = {
+                    c: r[c] for c in _MONOTONIC_SNAPSHOT_COUNTERS
+                }
+        except Exception:
+            logger.debug("monotonic counter guard unavailable; continuing",
+                         exc_info=True)
         for metrics in metrics_list:
             pos = (metrics.get("position") or "").upper()
             route_partic = metrics.get("snap_share") if pos in ("WR", "TE") else None
+            _clamp_monotonic_counters(
+                metrics, prev_counters.get(str(metrics.get("player_id"))))
 
             # Count insert/update outcomes for aggregate build diagnostics. The
             # existing UNIQUE(player_id, as_of_date) is safe because every daily
