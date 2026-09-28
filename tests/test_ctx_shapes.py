@@ -28,4 +28,8 @@ def test_pipeline_records_skipped_and_wls_errors():
 
 def test_notification_cron_does_not_lie_on_failure():
     push = (ROOT / "routes" / "push_bp.py").read_text(encoding="utf-8")
-    assert 'return jsonify({"ok": False, "error": str(exc)}), 500' in push
+    # The endpoint is async (202 + background thread with overlap guard), so it
+    # cannot return a 500 for work that has not run yet. Failures must instead
+    # be surfaced by the background worker's log line, never swallowed.
+    assert "[cron/notifications] failed:" in push
+    assert "def _run_cron_notifications" in push

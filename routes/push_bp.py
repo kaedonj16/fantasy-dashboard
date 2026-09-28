@@ -466,11 +466,54 @@ def api_cron_notifications():
     type='daily', type='redzone' (server-side TD poll), or type='weekly'.
     Auth is X-Admin-Secret or CRON_SECRET
     (header X-Cron-Secret or JSON ``secret``, same as /api/flush-value-cache).
+
+    The work runs on a background daemon thread; this endpoint only
+    authenticates, parses params, and dispatches, then returns 202. A
+    non-blocking overlap guard skips the run when the previous one is still
+    in progress, so per-minute cron hits can never pile up and exhaust the
+    gunicorn request threads.
     """
     data = request.get_json(silent=True) or {}
     if not _notifications_cron_authorized(data):
         return jsonify({"error": "Forbidden"}), 403
     kind = str(data.get("type") or request.args.get("type") or "hourly").strip().lower()
+    # Weekly email digest params. Parsed here (request thread) because the
+    # background worker must not touch the Flask request context.
+    raw_aid = data.get("account_id") if data.get("account_id") not in (None, "") else request.args.get("account_id")
+    account_id = None
+    try:
+        if raw_aid not in (None, ""):
+            account_id = int(raw_aid)
+    except (TypeError, ValueError):
+        account_id = None
+    email = str(data.get("email") or request.args.get("email") or "").strip() or None
+    force_raw = data.get("force") if "force" in data else request.args.get("force")
+    force = str(force_raw or "").strip().lower() in ("1", "true", "yes", "on")
+    if not _cron_notifications_lock.acquire(blocking=False):
+        logger.info("[cron/notifications] skipped, previous run still in progress")
+        return jsonify({"ok": True, "skipped": "already_running"}), 202
+    threading.Thread(
+        target=_run_cron_notifications,
+        kwargs={"kind": kind, "account_id": account_id,
+                "email": email, "force": force},
+        daemon=True,
+    ).start()
+    return jsonify({"ok": True, "queued": True}), 202
+
+
+# Overlap guard for /api/cron/notifications. Created unlocked at module import;
+# under gunicorn --preload the unlocked state forks cleanly into each worker,
+# so every worker guards its own runs. Never create threads at import time.
+_cron_notifications_lock = threading.Lock()
+
+
+def _run_cron_notifications(kind, account_id=None, email=None, force=False):
+    """Background worker for /api/cron/notifications. Never raises.
+
+    Runs the notification job for ``kind``, then releases the overlap guard.
+    All exceptions are caught and logged; a background failure must never
+    affect the web worker that dispatched it.
+    """
     try:
         from utils.push_notifications import (
             run_hourly, run_all_daily, run_redzone_td_poll,
@@ -478,36 +521,18 @@ def api_cron_notifications():
         if kind == "daily":
             run_all_daily()
         elif kind == "redzone":
-            summary = run_redzone_td_poll()
-            return jsonify({"ok": True, "sent": summary["sent"],
-                            "breakdown": summary})
+            run_redzone_td_poll()
         elif kind == "weekly":
-            # Weekly email digest. Call once a week (e.g. Tuesday morning). Safe to
-            # call more often -- it de-dupes per account per ISO week.
-            # Optional one-person test: JSON/query account_id or email, plus force=1
-            # to bypass this week's dedupe. Do not omit those if you only want a
-            # self-send -- a bare type=weekly still fans out to everyone.
+            # Weekly email digest. Safe to call more often -- it de-dupes per
+            # account per ISO week.
             from utils.weekly_email import send_weekly_digests
-            raw_aid = data.get("account_id") if data.get("account_id") not in (None, "") else request.args.get("account_id")
-            account_id = None
-            try:
-                if raw_aid not in (None, ""):
-                    account_id = int(raw_aid)
-            except (TypeError, ValueError):
-                account_id = None
-            email = str(data.get("email") or request.args.get("email") or "").strip() or None
-            force_raw = data.get("force") if "force" in data else request.args.get("force")
-            force = str(force_raw or "").strip().lower() in ("1", "true", "yes", "on")
-            summary = send_weekly_digests(account_id=account_id, email=email, force=force)
-            return jsonify({"ok": True, "weekly_email": summary})
+            send_weekly_digests(account_id=account_id, email=email, force=force)
         else:
-            summary = run_hourly()
-            return jsonify({"ok": True, "sent": summary["total"],
-                            "breakdown": summary})
+            run_hourly()
     except Exception as exc:
         logger.warning("[cron/notifications] failed: %s", exc)
-        return jsonify({"ok": False, "error": str(exc)}), 500
-    return jsonify({"ok": True})
+    finally:
+        _cron_notifications_lock.release()
 
 
 # Broadcast links are authored as app-relative paths that may be league-scoped
