@@ -15,6 +15,9 @@ def test_league_player_payload_includes_modal_headshot():
 def test_nav_search_uses_canonical_espn_headshot():
     source = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
     nav_search = source.split("// ── Nav-wide player search", 1)[1]
+    # Bound to this section only (next top-level `// ──` marker): later
+    # sections such as RedZone Moments legitimately use other thumbnails.
+    nav_search = nav_search.split("\n// ──", 1)[0]
 
     assert "headshot: String(p.espnHeadshot || '')" in nav_search
     assert "_hiResHeadshot(p.headshot, 80)" in nav_search
