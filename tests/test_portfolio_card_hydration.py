@@ -46,13 +46,15 @@ def test_card_rejects_unlinked_league(offline_client, monkeypatch):
     assert response.status_code == 403
 
 
-def test_client_has_one_bounded_queue_and_stable_matchup_failure():
+def test_client_has_one_bounded_card_queue():
     source = (ROOT / "static" / "app.js").read_text()
     assert "var MAX_REQUESTS = 2" in source
     assert "/api/portfolio/card?" in source
-    assert "Matchup temporarily unavailable" in source
     assert "RETRY_DELAYS = [3000, 6000, 10000, 15000, 25000]" in source
     assert "owner.active < MAX_REQUESTS" in source
+    # The portfolio card queue hydrates summaries only; the matchup band was
+    # removed from portfolio cards.
+    assert "Matchup temporarily unavailable" not in source
 
 
 def test_my_leagues_loader_is_single_flight_and_force_invalidates():
@@ -75,10 +77,11 @@ def test_hydration_liveness_guard_matches_rendered_grid():
 
 def test_live_polling_reuses_card_queue_after_initial_hydration():
     source = (ROOT / "static" / "app.js").read_text()
-    assert "slot._isLive = data.status === 'in'" in source
-    # Poller picks up live cards AND never-hydrated visible cards
-    assert "if (slot && slot._isLive) { schedule(owner, card); return; }" in source
-    assert "if (!summaryGood || !matchupGood) schedule(owner, card)" in source
+    # Poller picks up never-hydrated visible cards (summary only; the matchup
+    # band no longer exists on portfolio cards).
+    assert "if (card.dataset.summaryGood !== 'true') schedule(owner, card);" in source
+    assert "slot._isLive" not in source
+    assert "matchupGood" not in source
     assert "if (!document.hidden) pump(owner)" in source
     assert "window.__pfQueueCard" in source
 

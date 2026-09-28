@@ -29,7 +29,7 @@ def test_progressive_hydration_keeps_streak_slot_and_resets_manual_retry():
     source = (Path(__file__).resolve().parents[1] / "static" / "app.js").read_text()
     # render() replaces the stats container, so its replacement must recreate
     # the streak target before the section patch runs.
-    render = source[source.index("function renderSummary(card, data)"):source.index("function matchupHtml(data)")]
+    render = source[source.index("function renderSummary(card, data)"):source.index("function updateAggregateRecord()")]
     assert "data.streak" in render
     assert "schedule(owner, button.closest('.pf-lg-card'), 0, true)" in source
 
@@ -43,7 +43,7 @@ def test_render_summary_reapplies_server_side_styling_after_async_refresh():
     from pathlib import Path
 
     source = (Path(__file__).resolve().parents[1] / "static" / "app.js").read_text()
-    render = source[source.index("function renderSummary(card, data)"):source.index("function matchupHtml(data)")]
+    render = source[source.index("function renderSummary(card, data)"):source.index("function updateAggregateRecord()")]
     assert "color-win" in render and "color-loss" in render
     assert "pf-lg-v--weak" in render
     assert "pf-lg-stat--streak" in render
@@ -66,7 +66,7 @@ def test_render_summary_rebuilds_position_strength_strip():
     assert "pf-lg-strength" in strength
     assert "pf-strbar" in strength
     assert "pf-pos-chip q-" in strength
-    render = source[source.index("function renderSummary(card, data)"):source.index("function matchupHtml(data)")]
+    render = source[source.index("function renderSummary(card, data)"):source.index("function updateAggregateRecord()")]
     assert "renderStrength(card, data, totalN)" in render
 
 
