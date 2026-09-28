@@ -22520,12 +22520,13 @@ window._rzStubPbpEvents = function(pid, state) {
 window.brRzm = (function () {
   'use strict';
   var _cache = {};
-  function fetchMoments(platform, leagueId, season) {
-    var key = platform + '|' + leagueId + '|' + season;
+  function fetchMoments(platform, leagueId, season, week) {
+    var key = platform + '|' + leagueId + '|' + season + '|' + (week || '');
     if (_cache[key]) return Promise.resolve(_cache[key]);
     var url = '/api/redzone/moments?platform=' + encodeURIComponent(platform)
       + '&league_id=' + encodeURIComponent(leagueId)
-      + '&season=' + encodeURIComponent(season || '');
+      + '&season=' + encodeURIComponent(season || '')
+      + (week ? '&week=' + encodeURIComponent(week) : '');
     var fetcher = window.brFetchWithTimeout || window.fetch;
     return fetcher(url, { cache: 'no-store', credentials: 'same-origin' }, 15000)
       .then(function (r) { return r.json().catch(function () { return {}; }); })
@@ -23096,8 +23097,9 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
     var platform = launcher.getAttribute('data-platform') || '';
     var leagueId = launcher.getAttribute('data-league-id') || '';
     var season = launcher.getAttribute('data-season') || '';
+    var week = launcher.getAttribute('data-week') || '';
     if (!platform || !leagueId || !window.brRzm) return;
-    window.brRzm.fetchMoments(platform, leagueId, season).then(function (body) {
+    window.brRzm.fetchMoments(platform, leagueId, season, week).then(function (body) {
       var plays = (body && body.plays) || [];
       if (!plays.length || !launcher.isConnected) return;
       launcher._rzmPayload = body;
