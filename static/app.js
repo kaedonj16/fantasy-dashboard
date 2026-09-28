@@ -23081,6 +23081,31 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
         : 'League scores unavailable.';
       view.innerHTML = '<div class="ls-empty">' + escapeHtml(msg) + ' <button type="button" data-ls-retry>Retry</button></div>';
     }
+    // The carousel already computed these numbers: use the embedded payload
+    // when available instead of a separate (slow) API fetch.
+    function embeddedData() {
+      try {
+        // Week-change API stashes its payload here.
+        var byWeek = window._lsEmbeddedByWeek || {};
+        if (week && byWeek[String(week)] && byWeek[String(week)].matchups) {
+          return byWeek[String(week)];
+        }
+        // Initial page render embeds the default week's payload.
+        var el = document.getElementById('ls-embedded-data');
+        if (el && !el._lsConsumed) {
+          var parsed = JSON.parse(el.textContent || '{}');
+          if (parsed && parsed.matchups && String(parsed.week || '') === String(week || '')) {
+            return parsed;
+          }
+        }
+      } catch (e) { /* fall through to fetch */ }
+      return null;
+    }
+    var embedded = embeddedData();
+    if (embedded) {
+      done(embedded);
+      return;
+    }
     if (_lsCache[key] && (Date.now() - _lsCache[key].t) < 60000) {
       done(_lsCache[key].d);
       return;

@@ -2379,3 +2379,72 @@ def render_matchup_slide(
       {body_html}
     </div>
     """
+
+
+def build_league_scores_list(matchups, viewer_rid, status_by_pid, proj_map, frac_lookup=None):
+    """Build the League Scores payload from already-computed matchup data.
+
+    The Weekly Hub carousel and the League Scores tab show the same numbers
+    (live scores, projections, win probability). This reuses the carousel's
+    inputs so the tab can render instantly from embedded data instead of
+    making a separate /api/matchup/league-scores fetch that recomputes
+    everything.
+    """
+    def _side(team):
+        actual, proj = team_live_totals(
+            team, status_by_pid, proj_map, frac_lookup=frac_lookup,
+        )
+        return {
+            "name": team.get("name") or "",
+            "avatar": team.get("avatar") or "",
+            "roster_id": str(team.get("roster_id") or ""),
+            "score": round(float(actual or 0.0), 1),
+            "proj": round(float(proj or 0.0), 1),
+        }
+
+    def _status_label(pids):
+        seen = [
+            status_by_pid.get(p) or status_by_pid.get(str(p)) or STATUS_NOT_STARTED
+            for p in pids if p is not None
+        ]
+        if not seen:
+            return "pre"
+        if all(s == STATUS_FINAL for s in seen):
+            return "final"
+        if any(s in (STATUS_IN_PROGRESS, STATUS_FINAL) for s in seen):
+            return "in"
+        return "pre"
+
+    out = []
+    for m in matchups or []:
+        left = m.get("left") or {}
+        right = m.get("right") or {}
+        left_side = _side(left)
+        right_side = _side(right) if right.get("roster_id") else None
+        win_prob = None
+        if right_side:
+            try:
+                win_prob = round(compute_win_prob(
+                    left, right, status_by_pid, proj_map, frac_lookup=frac_lookup,
+                ) * 100.0, 1)
+            except Exception:
+                win_prob = None
+        pids = [p.get("pid") for p in (left.get("starters") or [])]
+        if right_side:
+            pids += [p.get("pid") for p in (right.get("starters") or [])]
+        is_you = (str(left.get("roster_id") or "") == str(viewer_rid or "")
+                  or str(right.get("roster_id") or "") == str(viewer_rid or ""))
+        out.append({
+            "left": left_side,
+            "right": right_side,
+            "win_prob": win_prob,
+            "status": _status_label(pids),
+            "is_you": is_you,
+        })
+
+    # Viewer's matchup first, then by total points descending.
+    out.sort(key=lambda x: (
+        0 if x["is_you"] else 1,
+        -((x["left"]["score"] or 0) + ((x["right"] or {}).get("score") or 0)),
+    ))
+    return out
