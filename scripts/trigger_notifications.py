@@ -29,7 +29,7 @@ def trigger(kind: str, app_url: str | None = None, secret: str | None = None,
         print(f"[notify-cron] unknown type {kind!r}; expected {sorted(ALLOWED)}")
         return 2
 
-    app_url = (app_url if app_url is not None else os.environ.get("APP_URL", "")).rstrip("/")
+    app_url = (app_url if app_url is not None else os.environ.get("APP_URL", "")).strip().rstrip("/")
     secret = secret if secret is not None else os.environ.get("CRON_SECRET", "")
     if not app_url or not secret:
         print("[notify-cron] skipped — APP_URL or CRON_SECRET not set")
