@@ -11,28 +11,56 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def redzone_moments_hub_html(platform: str, league_id: str, season) -> str:
+    """RedZone Moments launcher row for the weekly hub (matchup page).
+
+    Rendered hidden; the client fetches /api/redzone/moments and reveals it
+    only when the viewer's matchup has moments. Uses the same rzm-row markup
+    and modal as the portfolio cards.
+    """
+    import html as _html
+
+    return (
+        '<div class="rzm-row rzm-hub-launcher" data-rzm-hub'
+        f' data-platform="{_html.escape(str(platform), quote=True)}"'
+        f' data-league-id="{_html.escape(str(league_id), quote=True)}"'
+        f' data-season="{_html.escape(str(season), quote=True)}" hidden>'
+        '<button type="button" class="rzm-row-btn" data-rzm-hub-open>'
+        '<span class="rzm-row-accent"></span>'
+        '<span class="rzm-row-title">RedZone Moments</span>'
+        '<span class="rzm-row-count" data-rzm-hub-count></span>'
+        '<span class="rzm-row-chevron" aria-hidden="true">›</span>'
+        "</button></div>"
+    )
+
+
 def build_weekly_hub_body(ctx: dict) -> str:
     import json
+
     import pandas as pd
+
+    from app import (
+        _compute_fpts_against,
+        _games_live_or_imminent,
+        _games_scheduled_today,
+        _league_is_redraft,
+        _render_weekly_highlights,
+        _scoring_format_from_settings,
+        build_optimal_body,
+        render_weekly_top_scorers_for_week,
+    )
     from dashboard_services.matchups import (
         gotw_identity_for_context,
         matchup_gotw_flags,
         render_matchup_carousel_weeks,
         render_matchup_slide,
     )
-    from dashboard_services.pages.scout_page import build_scout_body, platform_sign_in_hint
-    from app import (  # noqa: E402  (lazy: avoids a circular import at module load)
-        _compute_fpts_against,
-        _scoring_format_from_settings,
-        _games_scheduled_today,
-        _games_live_or_imminent,
-        _render_weekly_highlights,
-        _league_is_redraft,
-        build_optimal_body,
-        render_weekly_top_scorers_for_week,
+    from dashboard_services.pages.history_page import weekly_wrapped_launcher_html
+    from dashboard_services.pages.scout_page import (
+        build_scout_body,
+        platform_sign_in_hint,
     )
     from utils.league_payload import show_matchup_preview as _show_matchup_preview_for
-    from dashboard_services.pages.history_page import weekly_wrapped_launcher_html
     league_id = ctx["league_id"]
     platform = ctx["platform"]
     season = ctx["season"]  # viewed season
@@ -118,11 +146,13 @@ def build_weekly_hub_body(ctx: dict) -> str:
     if (_gotw_selection is None and _show_matchup_preview and default_matchups
             and last_final_week >= 1 and default_week == last_final_week + 1):
         try:
-            from dashboard_services.ai.weekly_recap import (
-                build_weekly_recap_payload, _gotw_cache_key,
-                get_cached_gotw_selection, save_cached_ai_text,
-            )
             from app import _build_next_week_ctx
+            from dashboard_services.ai.weekly_recap import (
+                _gotw_cache_key,
+                build_weekly_recap_payload,
+                get_cached_gotw_selection,
+                save_cached_ai_text,
+            )
             _team_by_rid = {str(rid): name for rid, name in (roster_map or {}).items()}
             _playoff_start = int((_league_for_preview.get("settings") or {}).get("playoff_week_start") or 14)
             _nctx = _build_next_week_ctx(
@@ -338,9 +368,13 @@ def build_weekly_hub_body(ctx: dict) -> str:
     _wk_scorers_cls = "tab-btn" if _show_matchup_preview else "tab-btn active"
     _wk_matchups_panel = ""
     if _show_matchup_preview:
+        _rzm_hub_html = ""
+        if not offseason_mode:
+            _rzm_hub_html = redzone_moments_hub_html(platform, league_id, season)
         _wk_matchups_panel = f"""
             <div class="tab-panel active" data-tab="matchups">
               <div class="matchups-shell">
+                {_rzm_hub_html}
                 <div id="weeklyMatchupsContainer">
                   {matchup_html}
                 </div>
