@@ -10,7 +10,8 @@ Regression guard for the log-observed failures:
 
 The fix: ``get_league_ctx_from_cache`` grows an ``allow_build=False`` mode that
 serves last-known-good or nothing and warms the cache in the background; the two
-readers use it; the matchup client re-polls a ``pending`` league until warm.
+readers use it. Portfolio cards no longer render a matchup band at all, so the
+45s poller keys refresh off summary hydration instead of matchup slots.
 """
 
 from pathlib import Path
@@ -54,10 +55,13 @@ def test_portfolio_actions_skips_cold_leagues():
     assert "if not lctx:" in fn
 
 
-def test_matchup_client_repolls_pending_slots():
+def test_portfolio_cards_have_no_matchup_client():
     source = (ROOT / "static" / "app.js").read_text()
-    # The live-matchup loader re-polls a pending league with backoff and keeps the
-    # skeleton visible meanwhile instead of hiding the card.
-    assert "if (data.pending)" in source
-    assert "if (result.pending)" in source
-    assert "RETRY_DELAYS[card._pfAttempts - 1]" in source
+    # The matchup band was removed from portfolio cards: no matchup renderer,
+    # no live-matchup slot, and no matchup-slot repolling. The 45s poller keys
+    # refresh off summary hydration instead, so cards never refetch forever
+    # for a missing matchup.
+    assert "renderMatchup" not in source
+    assert "matchupHtml" not in source
+    assert "data-lg-live" not in source
+    assert "if (card.dataset.summaryGood !== 'true') schedule(owner, card)" in source

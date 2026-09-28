@@ -22528,22 +22528,6 @@ window._rzStubPbpEvents = function(pid, state) {
     return [card.dataset.platform || '', card.dataset.leagueId || '', card.dataset.season || ''].join(':');
   }
   function displayed(card) { return card.isConnected && card.style.display !== 'none'; }
-  function number(value, digits) {
-    var n = Number(value);
-    if (!Number.isFinite(n)) return '-';
-    return n.toFixed(digits == null ? 1 : digits);
-  }
-  function stateNote(slot, text, kind) {
-    var note = slot.querySelector('[data-matchup-state]');
-    if (!note) { note = document.createElement('div'); note.setAttribute('data-matchup-state', ''); slot.appendChild(note); }
-    // Stamp when this text first appeared so a transient note can't get stuck:
-    // the pending branch below drops "Updating matchup…" if the backend stays
-    // cold far longer than any warm should take.
-    if (note.textContent !== text || !note.dataset.noteSince) note.dataset.noteSince = String(Date.now());
-    note.className = 'pf-live-unavailable pf-live-state-' + kind;
-    note.textContent = text;
-    return note;
-  }
   function posTier(rank, total) {
     var r = Number(rank), n = Number(total);
     if (!Number.isFinite(r) || !Number.isFinite(n) || n <= 1 || r <= 0) return 'mid';
@@ -22649,320 +22633,6 @@ window._rzStubPbpEvents = function(pid, state) {
     if (wins > losses) agg.classList.add('color-win');
     else if (losses > wins) agg.classList.add('color-loss');
   }
-  function matchupHtml(data) {
-    var you = data.you, opp = data.opp, status = data.status || 'pre';
-    // League Scores tab toggle: My Matchup | League Scores
-    var tabs = '<div class="ls-tabs" data-ls-tabs><button type="button" class="ls-tab is-active" data-ls-tab="matchup">My Matchup</button><button type="button" class="ls-tab" data-ls-tab="league">League Scores</button></div>';
-    var label = status === 'in' ? 'Live · Wk ' + escapeHtml(data.week) : (status === 'final' ? 'Final · Wk ' + escapeHtml(data.week) : 'Wk ' + escapeHtml(data.week));
-    function side(team, name, opposite) {
-      return '<div class="pf-live-side' + (opposite ? ' opp' : '') + '"><div class="pf-live-lbl">' + escapeHtml(name) + '</div><div class="pf-live-score">' + (team ? number(team.score, status === 'final' ? 2 : 1) : '-') + '</div>' + (team && status !== 'final' ? '<div class="pf-live-proj">proj ' + number(team.proj, 1) + '</div>' : '') + '</div>';
-    }
-    var extra = '';
-    if (status === 'final' && opp) {
-      var result = data.result || 'T', margin = number(data.margin, 2);
-      extra = '<div class="pf-live-result">' + escapeHtml(result === 'W' ? 'WON BY ' + margin : (result === 'L' ? 'LOST BY ' + margin : 'TIED')) + '</div>';
-    } else if (opp && data.win_prob != null) {
-      var chance = Math.max(0, Math.min(100, Math.round(Number(data.win_prob))));
-      extra = '<div class="pf-live-wp" title="Win probability"><div class="pf-live-wp-track"><div class="pf-live-wp-fill" style="width:' + chance + '%"></div></div><div class="pf-live-wp-lbls"><span>' + chance + '% to win</span><span>' + (100 - chance) + '%</span></div></div>';
-    }
-    // RedZone Moments row: populated async by renderMatchup via /api/redzone/moments.
-    extra += '<div class="rzm-row" data-rzm-row hidden><button type="button" class="rzm-row-btn" data-rzm-open><span class="rzm-row-accent"></span><span class="rzm-row-title">RedZone Moments</span><span class="rzm-row-count" data-rzm-count></span><span class="rzm-row-chevron" aria-hidden="true">›</span></button></div>';
-    var matchupView = '<div class="ls-view" data-ls-view="matchup"><div class="pf-live-status' + (status === 'in' ? ' is-live' : '') + '"><span class="pf-live-dot"></span>' + label + '</div><div class="pf-live-grid">' + side(you, 'You', false) + side(opp, opp ? (opp.name || 'Opp') : 'Bye', true) + '</div>' + extra + '</div>';
-    var leagueView = '<div class="ls-view" data-ls-view="league" hidden><div class="ls-loading">Loading league scores...</div></div>';
-    return tabs + matchupView + leagueView;
-  }
-  function renderMatchup(slot, data) {
-    if (!slot || !data) return false;
-    if (data.pending) {
-      slot.hidden = false; slot.setAttribute('aria-busy', 'true');
-      if (slot.dataset.matchupGood === 'true') {
-        var note = stateNote(slot, 'Updating matchup…', 'stale');
-        // The retry loop re-renders on every poll, so a healthy refresh clears
-        // this via the success path below. If the backend stays cold (cache
-        // churn after worker recycles), the note would sit next to populated
-        // scores forever; drop it after ~90s and let last good stand alone.
-        if (Date.now() - Number(note.dataset.noteSince || 0) > 90000) note.remove();
-      }
-      return false;
-    }
-    if (data.failed || data.state === 'error' || data.state === 'unavailable' && data.applicable !== false) {
-      slot.hidden = false; slot.removeAttribute('aria-busy');
-      if (slot.dataset.matchupGood === 'true') stateNote(slot, data.message || 'Matchup update failed · showing last score', 'stale');
-      else slot.innerHTML = '<div class="pf-live-unavailable">' + escapeHtml(data.message || 'Matchup temporarily unavailable') + ' <button type="button" data-matchup-retry>Retry</button></div>';
-      return false;
-    }
-    if (data.applicable === false) {
-      slot.hidden = true; slot.removeAttribute('aria-busy'); slot.dataset.matchupGood = 'false';
-      return true;
-    }
-    if (!data.live || !data.you) {
-      slot.hidden = false; slot.removeAttribute('aria-busy');
-      if (slot.dataset.matchupGood === 'true') stateNote(slot, 'Matchup response incomplete · showing last score', 'stale');
-      return false;
-    }
-    slot.innerHTML = matchupHtml(data); slot.hidden = false; slot.removeAttribute('aria-busy');
-    slot.dataset.matchupGood = 'true'; slot._isLive = data.status === 'in';
-    _rzmMaybeLoad(slot);
-    _lsWireTabs(slot);
-    return true;
-  }
-  // ── League Scores ────────────────────────────────────────────────────────
-  // Tab toggle on the matchup card: My Matchup | League Scores.
-  // Fetches /api/matchup/league-scores and renders all league matchups.
-  var _lsCache = {};
-  function _lsWireTabs(slot) {
-    if (!slot || slot._lsWired) return;
-    slot._lsWired = true;
-    slot.addEventListener('click', function(e) {
-      var retryBtn = e.target.closest('[data-ls-retry]');
-      if (retryBtn && slot.contains(retryBtn)) {
-        e.preventDefault();
-        slot._lsLoading = false;
-        _lsLoad(slot);
-        return;
-      }
-      var tab = e.target.closest('[data-ls-tab]');
-      if (!tab || !slot.contains(tab)) return;
-      e.preventDefault();
-      var view = tab.getAttribute('data-ls-tab');
-      var tabs = slot.querySelectorAll('[data-ls-tab]');
-      for (var i = 0; i < tabs.length; i++) {
-        tabs[i].classList.toggle('is-active', tabs[i] === tab);
-      }
-      var views = slot.querySelectorAll('[data-ls-view]');
-      for (var j = 0; j < views.length; j++) {
-        views[j].hidden = views[j].getAttribute('data-ls-view') !== view;
-      }
-      if (view === 'league') _lsLoad(slot);
-    });
-  }
-  function _lsLoad(slot) {
-    if (!slot || slot._lsLoading) return;
-    var view = slot.querySelector('[data-ls-view="league"]');
-    if (!view || view.dataset.lsLoaded === 'true') return;
-    var card = slot.closest('[data-summary-card]');
-    if (!card) return;
-    var platform = card.dataset.platform, leagueId = card.dataset.leagueId, season = card.dataset.season;
-    if (!platform || !leagueId) return;
-    var key = platform + ':' + leagueId + ':' + season;
-    slot._lsLoading = true;
-    function render(matchups, week) {
-      slot._lsLoading = false;
-      if (!view.isConnected) return;
-      if (!matchups || !matchups.length) {
-        view.innerHTML = '<div class="ls-empty">No matchups found for Week ' + escapeHtml(week) + '.</div>';
-        return;
-      }
-      var html = '<div class="ls-list">';
-      matchups.forEach(function(m) {
-        var left = m.left || {}, right = m.right;
-        var statusLabel = m.status === 'in' ? 'Live' : (m.status === 'final' ? 'Final' : 'Wk ' + escapeHtml(week));
-        var wp = m.win_prob != null ? Math.max(0, Math.min(100, Math.round(Number(m.win_prob)))) : null;
-        html += '<div class="ls-card' + (m.is_you ? ' is-you' : '') + '">';
-        html += '<div class="ls-card-head"><span class="ls-status' + (m.status === 'in' ? ' is-live' : '') + '">' + escapeHtml(statusLabel) + '</span>' + (m.is_you ? '<span class="ls-you-badge">Your matchup</span>' : '') + '</div>';
-        html += '<div class="ls-teams">';
-        html += '<div class="ls-team"><span class="ls-team-name">' + escapeHtml(left.name || 'TBD') + '</span><span class="ls-team-score">' + number(left.score, 1) + '</span><span class="ls-team-proj">proj ' + number(left.proj, 1) + '</span></div>';
-        if (right) {
-          html += '<div class="ls-team"><span class="ls-team-name">' + escapeHtml(right.name || 'TBD') + '</span><span class="ls-team-score">' + number(right.score, 1) + '</span><span class="ls-team-proj">proj ' + number(right.proj, 1) + '</span></div>';
-        } else {
-          html += '<div class="ls-team"><span class="ls-team-name">Bye</span></div>';
-        }
-        html += '</div>';
-        if (wp != null && right) {
-          html += '<div class="pf-live-wp"><div class="pf-live-wp-track"><div class="pf-live-wp-fill" style="width:' + wp + '%"></div></div><div class="pf-live-wp-lbls"><span>' + wp + '%</span><span>' + (100 - wp) + '%</span></div></div>';
-        }
-        html += '</div>';
-      });
-      html += '</div>';
-      view.innerHTML = html;
-      view.dataset.lsLoaded = 'true';
-    }
-    if (_lsCache[key] && (Date.now() - _lsCache[key].t) < 60000) {
-      var c = _lsCache[key].d;
-      render(c.matchups, c.week);
-      return;
-    }
-    var url = '/api/matchup/league-scores?platform=' + encodeURIComponent(platform) + '&league_id=' + encodeURIComponent(leagueId) + '&season=' + encodeURIComponent(season || '');
-    fetch(url, {credentials: 'same-origin'})
-      .then(function(r) { return r.json(); })
-      .then(function(d) {
-        if (d && d.matchups) _lsCache[key] = {t: Date.now(), d: d};
-        render(d ? d.matchups : [], d ? d.week : '');
-      })
-      .catch(function() {
-        slot._lsLoading = false;
-        if (view.isConnected) view.innerHTML = '<div class="ls-empty">League scores unavailable. <button type="button" data-ls-retry>Retry</button></div>';
-      });
-  }
-
-  // ── RedZone Moments ──────────────────────────────────────────────────────
-  // Fetches /api/redzone/moments for the card's league and wires the row +
-  // modal. The row lives under the win probability bar in matchupHtml.
-  var _rzmCache = {};
-  function _rzmMaybeLoad(slot) {
-    if (!slot || slot._rzmLoading) return;
-    var row = slot.querySelector('[data-rzm-row]');
-    if (!row) return;
-    var card = slot.closest('[data-summary-card]');
-    if (!card) return;
-    var platform = card.dataset.platform, leagueId = card.dataset.leagueId, season = card.dataset.season;
-    if (!platform || !leagueId) return;
-    var key = platform + '|' + leagueId + '|' + season;
-    slot._rzmLoading = true;
-    function _apply(payload) {
-      slot._rzmLoading = false;
-      if (!slot.isConnected) return;
-      var plays = (payload && payload.plays) || [];
-      var tdCount = (payload && payload.td_count) || 0;
-      if (!plays.length) return;
-      slot._rzmData = payload;
-      var countEl = row.querySelector('[data-rzm-count]');
-      if (countEl) countEl.textContent = tdCount + (tdCount === 1 ? ' touchdown' : ' touchdowns');
-      row.hidden = false;
-    }
-    if (_rzmCache[key]) { _apply(_rzmCache[key]); return; }
-    var url = '/api/redzone/moments?platform=' + encodeURIComponent(platform) + '&league_id=' + encodeURIComponent(leagueId) + '&season=' + encodeURIComponent(season || '');
-    var fetcher = window.brFetchWithTimeout || window.fetch;
-    fetcher(url, { cache: 'no-store', credentials: 'same-origin' }, 15000).then(function (r) {
-      return r.json().catch(function () { return {}; });
-    }).then(function (body) {
-      _rzmCache[key] = body;
-      _apply(body);
-    }).catch(function () {
-      slot._rzmLoading = false;
-    });
-  }
-  function _rzmKindLabel(kind) {
-    if (kind === 'td') return 'TD';
-    if (kind === 'big_gain') return 'BIG PLAY';
-    return 'TURNOVER';
-  }
-  function _rzmInitials(name) {
-    var parts = String(name || '').trim().split(/\s+/).filter(Boolean);
-    if (!parts.length) return '?';
-    return (parts[0].charAt(0) + (parts.length > 1 ? parts[parts.length - 1].charAt(0) : '')).toUpperCase();
-  }
-  function _rzmHeadshotUrl(play) {
-    var pid = play.pid != null ? String(play.pid) : '';
-    if (!pid) return '';
-    if (window.brPlayerThumbUrl) {
-      // Handles DEF/DST (team crest) and normal players via the shared helper.
-      return window.brPlayerThumbUrl({ pos: play.pos, pid: pid, team: play.team }) || '';
-    }
-    return 'https://sleepercdn.com/content/nfl/players/thumb/' + encodeURIComponent(pid) + '.jpg';
-  }
-  function _rzmPlayHtml(play) {
-    var kindCls = play.kind === 'td' ? 'is-td' : (play.kind === 'turnover' ? 'is-to' : 'is-big');
-    var meta = [];
-    if (play.quarter) meta.push('Q' + play.quarter);
-    if (play.clock) meta.push(play.clock);
-    if (play.down) meta.push(play.down + (play.distance ? ' & ' + play.distance : ''));
-    if (play.yard_line) meta.push(play.yard_line);
-    var yds = play.yards ? play.yards + ' yds' : '';
-    var hsUrl = _rzmHeadshotUrl(play);
-    var avatarHtml = '<span class="rzm-play-avatar" data-init="' + escapeHtml(_rzmInitials(play.name)) + '">'
-      + (hsUrl ? '<img class="rzm-play-headshot" src="' + escapeHtml(hsUrl) + '" alt="" loading="lazy" decoding="async" onerror="this.parentNode.classList.add(\'img-err\')">' : '')
-      + '</span>';
-    var side = play.side === 'you' ? 'YOU' : 'OPP';
-    var sideCls = play.side === 'you' ? 'is-you' : 'is-opp';
-    return '<button type="button" class="rzm-play ' + kindCls + '" data-rzm-play data-game-id="' + escapeHtml(play.game_id || '') + '" data-play-id="' + escapeHtml(play.play_id || '') + '">'
-      + '<span class="rzm-play-accent"></span>'
-      + avatarHtml
-      + '<span class="rzm-play-main">'
-      + '<span class="rzm-play-head"><span class="rzm-play-name">' + escapeHtml(play.name || 'Unknown') + (play.pos ? ' <span class="rzm-play-pos">' + escapeHtml(play.pos) + '</span>' : '') + '</span>'
-      + '<span class="rzm-play-tags"><span class="rzm-play-kind">' + _rzmKindLabel(play.kind) + '</span><span class="rzm-play-side ' + sideCls + '">' + side + '</span></span></span>'
-      + '<span class="rzm-play-text">' + escapeHtml(play.play_text || '') + '</span>'
-      + '<span class="rzm-play-meta">' + escapeHtml(meta.join(' · ')) + (yds ? (meta.length ? ' · ' : '') + escapeHtml(yds) : '') + '</span></span>'
-      + '</button>';
-  }
-  function _rzmOpenModal(slot) {
-    var payload = slot && slot._rzmData;
-    if (!payload || !(payload.plays || []).length) return;
-    _rzmCloseModal();
-    var teams = payload.teams || {};
-    var overlay = document.createElement('div');
-    overlay.className = 'rzm-modal-overlay';
-    overlay.id = 'rzmModalOverlay';
-    var playsHtml = payload.plays.map(_rzmPlayHtml).join('');
-    overlay.innerHTML =
-      '<div class="rzm-modal" role="dialog" aria-modal="true" aria-label="RedZone Moments">'
-      + '<div class="rzm-modal-head"><span class="rzm-modal-accent"></span><div class="rzm-modal-title">RedZone Moments</div>'
-      + '<button type="button" class="rzm-modal-close" data-rzm-close aria-label="Close">✕</button></div>'
-      + '<div class="rzm-filters" role="tablist">'
-      + '<button type="button" class="rzm-filter is-active" data-rzm-filter="all">All</button>'
-      + '<button type="button" class="rzm-filter" data-rzm-filter="you">' + escapeHtml(teams.you || 'You') + '</button>'
-      + '<button type="button" class="rzm-filter" data-rzm-filter="opp">' + escapeHtml(teams.opp || 'Opp') + '</button>'
-      + '</div>'
-      + '<div class="rzm-modal-body" data-rzm-list>' + playsHtml + '</div>'
-      + '</div>';
-    overlay._rzmPlays = payload.plays;
-    var srcCard = slot ? slot.closest('[data-summary-card]') : null;
-    if (srcCard) {
-      overlay._rzmCtx = {
-        platform: srcCard.dataset.platform || '',
-        leagueId: srcCard.dataset.leagueId || '',
-        season: srcCard.dataset.season || ''
-      };
-    }
-    document.body.appendChild(overlay);
-    document.body.style.overflow = 'hidden';
-  }
-  function _rzmCloseModal() {
-    var el = document.getElementById('rzmModalOverlay');
-    if (el) el.remove();
-    if (!document.querySelector('.for-modal-overlay')) document.body.style.overflow = '';
-  }
-  function _rzmApplyFilter(overlay, filter) {
-    var list = overlay.querySelector('[data-rzm-list]');
-    if (!list) return;
-    var plays = (overlay._rzmPlays || []).filter(function (p) {
-      return filter === 'all' || p.side === filter;
-    });
-    list.innerHTML = plays.length ? plays.map(_rzmPlayHtml).join('') : '<div class="rzm-empty">No moments for this filter.</div>';
-    var btns = overlay.querySelectorAll('[data-rzm-filter]');
-    for (var i = 0; i < btns.length; i++) {
-      btns[i].classList.toggle('is-active', btns[i].getAttribute('data-rzm-filter') === filter);
-    }
-  }
-  document.addEventListener('click', function (ev) {
-    var openBtn = ev.target.closest('[data-rzm-open]');
-    if (openBtn) {
-      var slot = openBtn.closest('[data-lg-live]');
-      _rzmOpenModal(slot);
-      return;
-    }
-    var overlay = document.getElementById('rzmModalOverlay');
-    if (!overlay) return;
-    if (ev.target.closest('[data-rzm-close]') || ev.target === overlay) {
-      _rzmCloseModal();
-      return;
-    }
-    var filterBtn = ev.target.closest('[data-rzm-filter]');
-    if (filterBtn) {
-      _rzmApplyFilter(overlay, filterBtn.getAttribute('data-rzm-filter'));
-      return;
-    }
-    var playBtn = ev.target.closest('[data-rzm-play]');
-    if (playBtn) {
-      var gid = playBtn.getAttribute('data-game-id') || '';
-      var playId = playBtn.getAttribute('data-play-id') || '';
-      var ctx = overlay._rzmCtx || {};
-      _rzmCloseModal();
-      // Jump to the play in the RedZone feed (league-scoped URL).
-      var url = '/redzone';
-      if (ctx.platform && ctx.leagueId) {
-        url = '/' + ctx.platform + '/' + (ctx.season || '') + '/' + ctx.leagueId + '/redzone';
-      }
-      var qs = [];
-      if (gid) qs.push('game=' + encodeURIComponent(gid));
-      if (playId) qs.push('play=' + encodeURIComponent(playId));
-      if (qs.length) url += '?' + qs.join('&');
-      window.location.href = url;
-    }
-  });
-  document.addEventListener('keydown', function (ev) {
-    if (ev.key === 'Escape') _rzmCloseModal();
-  });
 
   function destroy(owner) {
     if (!owner || owner.dead) return;
@@ -22995,11 +22665,9 @@ window._rzStubPbpEvents = function(pid, state) {
     owner.timers.add(timer);
   }
   function applyCard(owner, card, payload) {
-    if (!owner.alive() || !card.isConnected) return { summary: false, matchup: false, pending: false };
+    if (!owner.alive() || !card.isConnected) return { summary: false, pending: false };
     var summaryOK = payload.summary ? renderSummary(card, payload.summary) : false;
-    var slot = card.querySelector('[data-lg-live]');
-    var matchupOK = slot ? renderMatchup(slot, payload.matchup || (payload.pending ? { pending: true } : { failed: true })) : true;
-    return { summary: summaryOK, matchup: matchupOK, pending: !!(payload.pending || payload.matchup && payload.matchup.pending) };
+    return { summary: summaryOK, pending: !!payload.pending };
   }
   function requestCard(owner, item) {
     var card = item.card, key = identity(card), signal = owner.controller && owner.controller.signal;
@@ -23035,7 +22703,7 @@ window._rzStubPbpEvents = function(pid, state) {
       }
       var payload = error.payload || { state: 'error', message: error.message };
       if (payload.state === 'unavailable' && /sign in/i.test(payload.message || '')) payload.message = 'Session expired. Sign in again.';
-      applyCard(owner, card, { summary: payload, matchup: { failed: true, message: payload.message } });
+      applyCard(owner, card, { summary: payload });
       if (item.tracker) item.tracker({ summary: false, matchup: false, pending: false });
       card._pfAttempts = (card._pfAttempts || 0) + 1;
       if (card._pfAttempts <= RETRY_DELAYS.length) schedule(owner, card, RETRY_DELAYS[card._pfAttempts - 1]);
@@ -23069,13 +22737,9 @@ window._rzStubPbpEvents = function(pid, state) {
     owner.pollTimer = setInterval(function () {
       if (!owner.alive() || document.hidden) return;
       owner.cards(true).forEach(function (card) {
-        var slot = card.querySelector('[data-lg-live]');
-        if (slot && slot._isLive) { schedule(owner, card); return; }
-        // Also pick up visible cards that never hydrated (e.g. page-2 cards
+        // Pick up visible cards that never hydrated (e.g. page-2 cards
         // whose retries exhausted while contexts were warming).
-        var summaryGood = card.dataset.summaryGood === 'true';
-        var matchupGood = slot && slot.dataset.matchupGood === 'true';
-        if (!summaryGood || !matchupGood) schedule(owner, card);
+        if (card.dataset.summaryGood !== 'true') schedule(owner, card);
       });
     }, 45000);
   }
@@ -23117,7 +22781,7 @@ window._rzStubPbpEvents = function(pid, state) {
       return new Promise(function (resolve) {
         var remaining = cards.length;
         cards.forEach(function (card) { schedule(owner, card, 0, true, function (result) {
-          if (result.summary && result.matchup && !result.pending) successes++; else { if (result.pending) pending++; failures++; }
+          if (result.summary && !result.pending) successes++; else { if (result.pending) pending++; failures++; }
           if (!--remaining) resolve();
         }); });
       });
@@ -23133,10 +22797,9 @@ window._rzStubPbpEvents = function(pid, state) {
     owner.refresh = refresh;
     window.brRefreshCurrentPage = refresh;
     window.__pfRenderSummary = renderSummary;
-    window.__pfRenderMatchup = renderMatchup;
     window.__pfQueueCard = function (card) { schedule(owner, card, 0, true); };
     document.addEventListener('click', function (event) {
-      var button = event.target.closest && event.target.closest('[data-summary-retry],[data-matchup-retry]');
+      var button = event.target.closest && event.target.closest('[data-summary-retry]');
       if (!button || !owner.alive() || !owner.root.contains(button)) return;
       button.hidden = true; schedule(owner, button.closest('.pf-lg-card'), 0, true);
     }, owner.controller ? { signal: owner.controller.signal } : false);
@@ -23150,5 +22813,5 @@ window._rzStubPbpEvents = function(pid, state) {
     var owner = createOwner(root); current = owner; bind(owner); startPolling(owner); startCountdown(owner);
     owner.cards(false).forEach(function (card) { schedule(owner, card); });
   };
-  window.__brPortfolioCardsTest = { renderSummary: renderSummary, renderMatchup: renderMatchup, identity: identity };
+  window.__brPortfolioCardsTest = { renderSummary: renderSummary, identity: identity };
 })();

@@ -84,59 +84,36 @@ def test_matchup_status_label():
     assert _matchup_status_label({"7": STATUS_FINAL}, [7]) == "final"
 
 
-def test_portfolio_card_has_live_slot_and_hydration():
+def test_portfolio_card_has_no_matchup_block():
+    # Per-league previews no longer show the matchup band: no My Matchup /
+    # League Scores tabs, no score block, no RedZone Moments row. Those live
+    # only on the league dashboard's matchup section now.
     source = (ROOT / "app.py").read_text()
     fn = source.split("def build_portfolio_body")[1].split("\ndef ")[0]
-    # A per-league slot on valid cards carrying the fetch keys; starts as a
-    # content-shaped skeleton so scores don't pop in empty.
-    assert "data-lg-live" in fn
-    assert "data-platform=" in fn
-    assert "data-league-id=" in fn
-    assert "pf-lg-live" in fn
-    assert "aria-busy='true'" in fn
-    assert "pf-live-skel" in fn
-    assert "skeleton pf-live-skel-score" in fn
-    # The slot sets display:flex, so it needs an explicit [hidden] rule to beat
-    # it — hide after fetch when scores aren't live for the week.
-    assert ".pf-lg-live[hidden]{display:none;}" in fn
-    # Win-probability bar is rendered (hidden at final / bye inside wpBar).
-    assert "pf-live-wp" in fn
+    assert "data-lg-live" not in fn
+    assert "pf-lg-live" not in fn
+    assert "pf-live-skel" not in fn
+    assert "pf-live-wp" not in fn
     client = (ROOT / "static" / "app.js").read_text()
-    assert "data.win_prob" in client
-    # Client hydration hits the endpoint, caps concurrency, refreshes live games.
+    assert "function matchupHtml" not in client
+    assert "function renderMatchup" not in client
+    assert "data-rzm-row" not in client
+    assert "ls-tabs" not in client
+    # NOTE: the .rzm-row/.ls-tabs CSS stays in dashboard.css on purpose: the
+    # Weekly Hub matchup page reuses it for its own RedZone Moments row/modal.
+    # The summary hydration path is untouched: cards still carry fetch keys and
+    # hydrate record/standing/streak from /api/portfolio/card.
+    assert "data-summary-card" in fn
     assert "/api/portfolio/card" in client
     assert "document.hidden" in client
-    assert "removeAttribute('aria-busy')" in client
-    # Offseason cards do not get a live slot (odds/scores are meaningless there).
-    live_block = fn.split("_lg_season_live")[1].split("league_rows +=")[0]
-    assert 'lg.get("offseason")' in live_block
 
 
 def test_live_slot_not_on_pending_or_error_cards():
+    # Vacuous now that the live slot is gone everywhere: no branch of the card
+    # renderer may emit matchup markup.
     source = (ROOT / "app.py").read_text()
     fn = source.split("def build_portfolio_body")[1].split("\ndef ")[0]
-    # The slot markup is emitted once, right before the valid-card markup, so
-    # pending and error branches (which `continue` earlier) never render it.
-    # (The JS querySelectorAll also references the attribute, hence the exact
-    # "data-lg-live aria-busy" match here rather than a bare attribute count.)
-    assert fn.count("data-lg-live aria-busy='true'") == 1
-
-
-def test_final_matchup_card_tuesday_shows_won_by_margin():
-    source = (ROOT / "app.py").read_text()
-    fn = source.split("def build_portfolio_body")[1].split("\ndef ")[0]
-    live_fn = (ROOT / "static" / "app.js").read_text().split("function matchupHtml(data)")[1].split("function renderMatchup")[0]
-    # Final scores do not show projections and show W/L/margin.
-    assert "WON BY" in live_fn
-    assert "LOST BY" in live_fn
-    assert "TIED" in live_fn
-    assert "data.result" in live_fn
-    assert "data.margin" in live_fn
-    assert "number(team.score, status === 'final' ? 2 : 1)" in live_fn
-    assert '.pf-live-result{' in fn
-    assert 'class=\\"pf-live-result\\" style=' not in live_fn
-    # The status header uses a plain "FINAL" label only when a result is present.
-    assert "'Final · Wk '" in live_fn
+    assert fn.count("data-lg-live") == 0
 
 
 def test_matchup_endpoint_fantasy_final_exposes_result_and_margin():
