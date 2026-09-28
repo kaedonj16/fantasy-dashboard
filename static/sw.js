@@ -138,6 +138,10 @@ self.addEventListener('message', event => {
     bypassNavUrls.add(navKey(d.url));
     if (event.ports && event.ports[0]) event.ports[0].postMessage({ ok: true });
   }
+  // Tap-to-update prompt: the user tapped, so let the waiting worker activate.
+  if (d.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
 });
 
 function forceNetworkNav(request) {

@@ -39213,18 +39213,30 @@ a, button, [role="button"], [role="tab"], summary, label,
     z-index: var(--z-toast);
     display: inline-flex;
     align-items: center;
-    gap: 10px;
-    font: inherit;
+    gap: 2px;
     font-size: 13px;
     font-weight: 700;
     color: var(--on-accent);
     background: var(--accent);
     border: 0;
     border-radius: 12px;
-    padding: 11px 18px;
+    padding: 6px 6px 6px 16px;
     box-shadow: 0 8px 24px rgba(0, 0, 0, .28);
-    cursor: pointer;
     animation: brUpdateIn .28s ease both;
+}
+
+.br-update-main {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    font: inherit;
+    font-weight: inherit;
+    color: inherit;
+    background: none;
+    border: 0;
+    padding: 5px 10px 5px 0;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
 }
 
 .br-update-banner .br-update-cta {
@@ -39232,6 +39244,29 @@ a, button, [role="button"], [role="tab"], summary, label,
     opacity: .82;
     border-left: 1px solid rgba(255, 255, 255, .35);
     padding-left: 10px;
+}
+
+.br-update-dismiss {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    font-size: 17px;
+    line-height: 1;
+    font-weight: 400;
+    color: inherit;
+    opacity: .65;
+    background: none;
+    border: 0;
+    border-radius: 8px;
+    padding: 0;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.br-update-dismiss:hover {
+    opacity: 1;
 }
 
 @keyframes brUpdateIn {
