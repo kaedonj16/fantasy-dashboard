@@ -3819,8 +3819,10 @@ def get_player_value_metrics(
     """VORP/WAR plus position-relative ranks for a single player.
 
     Reuses the same replacement-level math as the leaderboard so the numbers
-    match exactly. Returns {"metrics": {vorp, war}, "ranks": {vorp, war}} with
-    values omitted when the player has no season points. Empty dict on no data.
+    match exactly. Returns {"metrics": {vorp, war}, "ranks": {vorp, war},
+    "bounds": {vorp: [min, max], war: [min, max]}} with values omitted when
+    the player has no season points. Bounds are position-relative leader
+    ranges for bar scaling. Empty dict on no data.
     """
     pid = str(player_id)
     _season, recs = _value_table(season, num_teams)
@@ -3829,9 +3831,24 @@ def get_player_value_metrics(
     rec = next((r for r in recs if r["player_id"] == pid), None)
     if rec is None:
         return {}
+    # Position-leader bounds so the modal can scale VORP/WAR bars by the
+    # current season leader instead of a fixed end-of-season ceiling. Uses the
+    # same league-aware value table as the metrics themselves (no extra query).
+    _vbounds: Dict[str, list] = {}
+    _pos = rec.get("position")
+    if _pos:
+        _pvorp = [r["vorp"] for r in recs
+                  if r.get("position") == _pos and r.get("vorp") is not None]
+        _pwar = [r["war"] for r in recs
+                 if r.get("position") == _pos and r.get("war") is not None]
+        if _pvorp:
+            _vbounds["vorp"] = [min(_pvorp), max(_pvorp)]
+        if _pwar:
+            _vbounds["war"] = [min(_pwar), max(_pwar)]
     return {
         "metrics": {"vorp": rec["vorp"], "war": rec["war"]},
         "ranks": {"vorp": rec.get("vorp_rank"), "war": rec.get("war_rank")},
+        "bounds": _vbounds,
     }
 
 
@@ -4160,6 +4177,11 @@ _PER_GAME_BOUNDS = {
     "ppr_pts_per_game": "ppr_pts",
 }
 
+# Season-total xFP columns that are not leaderboard metrics (no ranks UI) but
+# still need position bounds so the player modal can scale their bars by the
+# current season leader instead of a fixed end-of-season ceiling.
+_BOUNDS_ONLY_METRICS = ("expected_ppr", "ppr_over_expected")
+
 
 def _compute_position_bounds(srows: List[dict], games_min: int = 4) -> Dict[str, list]:
     """Per-metric bounds across the same games-qualified rank population.
@@ -4197,9 +4219,10 @@ def _compute_position_bounds(srows: List[dict], games_min: int = 4) -> Dict[str,
                     continue
             except (TypeError, ValueError):
                 logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
-        # Stored metric columns that are also rankable/leaderboard metrics.
+        # Stored metric columns that are also rankable/leaderboard metrics,
+        # plus season-total xFP columns that only need bounds for bar scaling.
         for col, val in r.items():
-            if col in LEADERBOARD_METRICS:
+            if col in LEADERBOARD_METRICS or col in _BOUNDS_ONLY_METRICS:
                 _bnd(col, val)
         # Per-game derived metrics.
         try:

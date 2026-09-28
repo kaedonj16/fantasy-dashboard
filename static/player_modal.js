@@ -5381,16 +5381,17 @@ function buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive, counts, b
   }
 
   // ── Bar fill model -- four shapes, each matched to what the metric means ────
-  //  • SCORE  -- designed 0→ceiling scale; value ÷ ceiling (grades, ratings,
-  //             VORP/WAR). Magnitude shows; below-replacement floors near empty.
+  //  • SCORE  -- designed 0→ceiling scale; value ÷ ceiling (grades, ratings).
   //  • MINMAX -- wide-range value that can go negative (EPA totals); map the
   //             position's [min,max] onto the bar so a big lead AND negatives
   //             both render (lowest, often negative, sits at the floor).
   //  • RANK   -- compressed efficiency rates that bunch near the top; percentile
   //             within position so a mid-pack player reads mid-pack.
-  //  • LEADER -- non-negative volume; value ÷ position leader (½ leader = ½ bar).
+  //  • LEADER -- season totals (incl. Expected FP, FP Over Exp, VORP, WAR);
+  //             value ÷ current position leader (½ leader = ½ bar). The leader
+  //             fills 100%; negatives floor near empty.
   const _SCORE_CEIL = { role_score: 100, grades_offense: 100, pff_passing_grade: 100,
-    pff_rushing_grade: 100, nfl_passer_rating: 158.3, vorp: 150, war: 6 };
+    pff_rushing_grade: 100, nfl_passer_rating: 158.3 };
   const _MINMAX_KEYS = new Set(['passing_epa', 'rushing_epa', 'receiving_epa']);
   const _RATE_KEYS = new Set(['avoided_tackles_pg', 'explosive_runs_pg']);  // per-carry rates → rank
   function _rankFill(key) {
