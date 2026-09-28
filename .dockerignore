@@ -1,0 +1,15 @@
+# Keep caches, local databases, and dev artifacts out of the image.
+.git
+cache/
+data/
+*.db
+*.sqlite3
+__pycache__/
+*.pyc
+.venv/
+venv/
+node_modules/
+.env
+.env.*
+*.log
+brag-output/
