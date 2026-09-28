@@ -31954,7 +31954,6 @@ def build_portfolio_body(
                 f"<div class='pf-lg-stats' data-summary-stats><span class='pf-lg-stat'><span class='pf-lg-v'>-</span><span class='pf-lg-l'>Record loading</span></span>"
                 f"<span class='pf-lg-stat'><span class='pf-lg-v'>-</span><span class='pf-lg-l'>Standing loading</span></span>"
                 f"<span class='pf-lg-stat'><span class='pf-lg-v' data-summary-streak>...</span><span class='pf-lg-l'>Streak loading</span></span></div>"
-                f"<div class='pf-pos-chips' data-summary-positions>QB ... &nbsp; RB ... &nbsp; WR ... &nbsp; TE ...</div>"
                 f"<div class='pf-lg-foot'><span class='pf-lg-l' data-summary-updated>Updated {_updated}</span>"
                 f"<button type='button' data-summary-retry hidden>Retry</button><a href='{href}' class='pf-lg-open'>Open &rarr;</a></div></div>"
             )
