@@ -22655,6 +22655,8 @@ window._rzStubPbpEvents = function(pid, state) {
       var chance = Math.max(0, Math.min(100, Math.round(Number(data.win_prob))));
       extra = '<div class="pf-live-wp" title="Win probability"><div class="pf-live-wp-track"><div class="pf-live-wp-fill" style="width:' + chance + '%"></div></div><div class="pf-live-wp-lbls"><span>' + chance + '% to win</span><span>' + (100 - chance) + '%</span></div></div>';
     }
+    // RedZone Moments row: populated async by renderMatchup via /api/redzone/moments.
+    extra += '<div class="rzm-row" data-rzm-row hidden><button type="button" class="rzm-row-btn" data-rzm-open><span class="rzm-row-accent"></span><span class="rzm-row-title">RedZone Moments</span><span class="rzm-row-count" data-rzm-count></span><span class="rzm-row-chevron" aria-hidden="true">›</span></button></div>';
     return '<div class="pf-live-status' + (status === 'in' ? ' is-live' : '') + '"><span class="pf-live-dot"></span>' + label + '</div><div class="pf-live-grid">' + side(you, 'You', false) + side(opp, opp ? (opp.name || 'Opp') : 'Bye', true) + '</div>' + extra;
   }
   function renderMatchup(slot, data) {
@@ -22681,8 +22683,156 @@ window._rzStubPbpEvents = function(pid, state) {
     }
     slot.innerHTML = matchupHtml(data); slot.hidden = false; slot.removeAttribute('aria-busy');
     slot.dataset.matchupGood = 'true'; slot._isLive = data.status === 'in';
+    _rzmMaybeLoad(slot);
     return true;
   }
+  // ── RedZone Moments ──────────────────────────────────────────────────────
+  // Fetches /api/redzone/moments for the card's league and wires the row +
+  // modal. The row lives under the win probability bar in matchupHtml.
+  var _rzmCache = {};
+  function _rzmMaybeLoad(slot) {
+    if (!slot || slot._rzmLoading) return;
+    var row = slot.querySelector('[data-rzm-row]');
+    if (!row) return;
+    var card = slot.closest('[data-summary-card]');
+    if (!card) return;
+    var platform = card.dataset.platform, leagueId = card.dataset.leagueId, season = card.dataset.season;
+    if (!platform || !leagueId) return;
+    var key = platform + '|' + leagueId + '|' + season;
+    slot._rzmLoading = true;
+    function _apply(payload) {
+      slot._rzmLoading = false;
+      if (!slot.isConnected) return;
+      var plays = (payload && payload.plays) || [];
+      var tdCount = (payload && payload.td_count) || 0;
+      if (!plays.length) return;
+      slot._rzmData = payload;
+      var countEl = row.querySelector('[data-rzm-count]');
+      if (countEl) countEl.textContent = tdCount + (tdCount === 1 ? ' touchdown' : ' touchdowns');
+      row.hidden = false;
+    }
+    if (_rzmCache[key]) { _apply(_rzmCache[key]); return; }
+    var url = '/api/redzone/moments?platform=' + encodeURIComponent(platform) + '&league_id=' + encodeURIComponent(leagueId) + '&season=' + encodeURIComponent(season || '');
+    var fetcher = window.brFetchWithTimeout || window.fetch;
+    fetcher(url, { cache: 'no-store', credentials: 'same-origin' }, 15000).then(function (r) {
+      return r.json().catch(function () { return {}; });
+    }).then(function (body) {
+      _rzmCache[key] = body;
+      _apply(body);
+    }).catch(function () {
+      slot._rzmLoading = false;
+    });
+  }
+  function _rzmKindLabel(kind) {
+    if (kind === 'td') return 'TD';
+    if (kind === 'big_gain') return 'BIG PLAY';
+    return 'TURNOVER';
+  }
+  function _rzmPlayHtml(play) {
+    var kindCls = play.kind === 'td' ? 'is-td' : (play.kind === 'turnover' ? 'is-to' : 'is-big');
+    var meta = [];
+    if (play.quarter) meta.push('Q' + play.quarter);
+    if (play.clock) meta.push(play.clock);
+    if (play.down) meta.push(play.down + (play.distance ? ' & ' + play.distance : ''));
+    if (play.yard_line) meta.push(play.yard_line);
+    var yds = play.yards ? play.yards + ' yds' : '';
+    return '<button type="button" class="rzm-play ' + kindCls + '" data-rzm-play data-game-id="' + escapeHtml(play.game_id || '') + '" data-play-id="' + escapeHtml(play.play_id || '') + '">'
+      + '<span class="rzm-play-accent"></span>'
+      + '<span class="rzm-play-kind">' + _rzmKindLabel(play.kind) + '</span>'
+      + '<span class="rzm-play-main"><span class="rzm-play-name">' + escapeHtml(play.name || 'Unknown') + (play.pos ? ' <span class="rzm-play-pos">' + escapeHtml(play.pos) + '</span>' : '') + '</span>'
+      + '<span class="rzm-play-text">' + escapeHtml(play.play_text || '') + '</span>'
+      + '<span class="rzm-play-meta">' + escapeHtml(meta.join(' · ')) + (yds ? (meta.length ? ' · ' : '') + escapeHtml(yds) : '') + '</span></span>'
+      + '<span class="rzm-play-side">' + escapeHtml(play.side === 'you' ? 'YOU' : 'OPP') + '</span>'
+      + '</button>';
+  }
+  function _rzmOpenModal(slot) {
+    var payload = slot && slot._rzmData;
+    if (!payload || !(payload.plays || []).length) return;
+    _rzmCloseModal();
+    var teams = payload.teams || {};
+    var overlay = document.createElement('div');
+    overlay.className = 'rzm-modal-overlay';
+    overlay.id = 'rzmModalOverlay';
+    var playsHtml = payload.plays.map(_rzmPlayHtml).join('');
+    overlay.innerHTML =
+      '<div class="rzm-modal" role="dialog" aria-modal="true" aria-label="RedZone Moments">'
+      + '<div class="rzm-modal-head"><span class="rzm-modal-accent"></span><div class="rzm-modal-title">RedZone Moments</div>'
+      + '<button type="button" class="rzm-modal-close" data-rzm-close aria-label="Close">✕</button></div>'
+      + '<div class="rzm-filters" role="tablist">'
+      + '<button type="button" class="rzm-filter is-active" data-rzm-filter="all">All</button>'
+      + '<button type="button" class="rzm-filter" data-rzm-filter="you">' + escapeHtml(teams.you || 'You') + '</button>'
+      + '<button type="button" class="rzm-filter" data-rzm-filter="opp">' + escapeHtml(teams.opp || 'Opp') + '</button>'
+      + '</div>'
+      + '<div class="rzm-modal-body" data-rzm-list>' + playsHtml + '</div>'
+      + '</div>';
+    overlay._rzmPlays = payload.plays;
+    var srcCard = slot ? slot.closest('[data-summary-card]') : null;
+    if (srcCard) {
+      overlay._rzmCtx = {
+        platform: srcCard.dataset.platform || '',
+        leagueId: srcCard.dataset.leagueId || '',
+        season: srcCard.dataset.season || ''
+      };
+    }
+    document.body.appendChild(overlay);
+    document.body.style.overflow = 'hidden';
+  }
+  function _rzmCloseModal() {
+    var el = document.getElementById('rzmModalOverlay');
+    if (el) el.remove();
+    if (!document.querySelector('.for-modal-overlay')) document.body.style.overflow = '';
+  }
+  function _rzmApplyFilter(overlay, filter) {
+    var list = overlay.querySelector('[data-rzm-list]');
+    if (!list) return;
+    var plays = (overlay._rzmPlays || []).filter(function (p) {
+      return filter === 'all' || p.side === filter;
+    });
+    list.innerHTML = plays.length ? plays.map(_rzmPlayHtml).join('') : '<div class="rzm-empty">No moments for this filter.</div>';
+    var btns = overlay.querySelectorAll('[data-rzm-filter]');
+    for (var i = 0; i < btns.length; i++) {
+      btns[i].classList.toggle('is-active', btns[i].getAttribute('data-rzm-filter') === filter);
+    }
+  }
+  document.addEventListener('click', function (ev) {
+    var openBtn = ev.target.closest('[data-rzm-open]');
+    if (openBtn) {
+      var slot = openBtn.closest('[data-lg-live]');
+      _rzmOpenModal(slot);
+      return;
+    }
+    var overlay = document.getElementById('rzmModalOverlay');
+    if (!overlay) return;
+    if (ev.target.closest('[data-rzm-close]') || ev.target === overlay) {
+      _rzmCloseModal();
+      return;
+    }
+    var filterBtn = ev.target.closest('[data-rzm-filter]');
+    if (filterBtn) {
+      _rzmApplyFilter(overlay, filterBtn.getAttribute('data-rzm-filter'));
+      return;
+    }
+    var playBtn = ev.target.closest('[data-rzm-play]');
+    if (playBtn) {
+      var gid = playBtn.getAttribute('data-game-id') || '';
+      var playId = playBtn.getAttribute('data-play-id') || '';
+      var ctx = overlay._rzmCtx || {};
+      _rzmCloseModal();
+      // Jump to the play in the RedZone feed (league-scoped URL).
+      var url = '/redzone';
+      if (ctx.platform && ctx.leagueId) {
+        url = '/' + ctx.platform + '/' + (ctx.season || '') + '/' + ctx.leagueId + '/redzone';
+      }
+      var qs = [];
+      if (gid) qs.push('game=' + encodeURIComponent(gid));
+      if (playId) qs.push('play=' + encodeURIComponent(playId));
+      if (qs.length) url += '?' + qs.join('&');
+      window.location.href = url;
+    }
+  });
+  document.addEventListener('keydown', function (ev) {
+    if (ev.key === 'Escape') _rzmCloseModal();
+  });
 
   function destroy(owner) {
     if (!owner || owner.dead) return;

@@ -42397,3 +42397,82 @@ table.rz-bs-table thead th:first-child {
     font-weight: 600;
     color: var(--text-muted);
 }
+
+/* ── RedZone Moments (matchup page) ─────────────────────────────────────────
+   Compact row under the win probability bar; opens a RedZone-styled modal. */
+.rzm-row { margin-top: 10px; }
+.rzm-row-btn {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+  padding: 10px 14px 10px 0; cursor: pointer; text-align: left;
+  color: var(--text); font: inherit; position: relative; overflow: hidden;
+}
+.rzm-row-btn:hover { background: var(--rz-red-soft); }
+.rzm-row-accent { align-self: stretch; width: 4px; background: var(--rz-red); border-radius: 0 2px 2px 0; flex: none; }
+.rzm-row-title { font-weight: 700; font-size: 14px; color: var(--rz-red); }
+.rzm-row-count { font-size: 13px; color: var(--text-muted); }
+.rzm-row-chevron { margin-left: auto; color: var(--rz-red); font-size: 20px; font-weight: 700; line-height: 1; }
+
+/* Modal */
+.rzm-modal-overlay {
+  position: fixed; inset: 0; z-index: var(--z-modal);
+  background: rgba(2, 6, 23, 0.88);
+  display: flex; align-items: flex-end; justify-content: center;
+}
+@media (min-width: 640px) {
+  .rzm-modal-overlay { align-items: center; padding: 24px; }
+}
+.rzm-modal {
+  background: var(--rz-card); border: 1px solid var(--rz-border);
+  border-radius: 16px 16px 0 0; width: 100%; max-width: 640px;
+  max-height: 88vh; display: flex; flex-direction: column; overflow: hidden;
+}
+@media (min-width: 640px) { .rzm-modal { border-radius: 16px; } }
+.rzm-modal-head {
+  display: flex; align-items: center; gap: 10px;
+  padding: 14px 16px 14px 0; border-bottom: 1px solid var(--rz-border);
+  position: relative; overflow: hidden; flex: none;
+}
+.rzm-modal-accent { align-self: stretch; width: 4px; background: var(--rz-red); border-radius: 0 2px 2px 0; flex: none; }
+.rzm-modal-title { font-size: 17px; font-weight: 800; color: var(--rz-red); }
+.rzm-modal-close {
+  margin-left: auto; background: none; border: none; cursor: pointer;
+  color: var(--text-muted); font-size: 18px; padding: 6px 10px; border-radius: 8px;
+}
+.rzm-modal-close:hover { background: var(--rz-hover); color: var(--text); }
+.rzm-filters { display: flex; gap: 8px; padding: 12px 16px; flex: none; border-bottom: 1px solid var(--rz-border); }
+.rzm-filter {
+  border: 1px solid var(--rz-border); background: var(--rz-surface);
+  color: var(--rz-muted); font: inherit; font-size: 13px; font-weight: 600;
+  padding: 7px 16px; border-radius: 20px; cursor: pointer;
+}
+.rzm-filter:hover { border-color: var(--rz-red); color: var(--rz-text); }
+.rzm-filter.is-active { background: var(--rz-red); border-color: var(--rz-red); color: #fff; }
+.rzm-modal-body { overflow-y: auto; padding: 12px 16px 20px; -webkit-overflow-scrolling: touch; }
+.rzm-empty { text-align: center; color: var(--rz-muted); padding: 32px 16px; font-size: 14px; }
+
+/* Play cards (RedZone feed style) */
+.rzm-play {
+  display: flex; align-items: stretch; gap: 10px; width: 100%;
+  background: var(--rz-row); border: 1px solid var(--rz-border); border-radius: 10px;
+  padding: 10px 12px 10px 0; margin-bottom: 8px; cursor: pointer; text-align: left;
+  color: var(--rz-text); font: inherit; position: relative; overflow: hidden;
+}
+.rzm-play:hover { border-color: var(--rz-red); }
+.rzm-play-accent { width: 4px; flex: none; border-radius: 0 2px 2px 0; background: var(--rz-border); }
+.rzm-play.is-td .rzm-play-accent { background: var(--rz-red); }
+.rzm-play.is-big .rzm-play-accent { background: var(--accent); }
+.rzm-play.is-to .rzm-play-accent { background: var(--warning); }
+.rzm-play-kind {
+  flex: none; align-self: flex-start; font-size: 10px; font-weight: 800;
+  letter-spacing: 0.06em; padding: 3px 8px; border-radius: 6px; margin-top: 2px;
+  background: var(--rz-surface); color: var(--rz-muted);
+}
+.rzm-play.is-td .rzm-play-kind { background: var(--rz-red); color: #fff; }
+.rzm-play.is-to .rzm-play-kind { background: var(--warning); color: #000; }
+.rzm-play-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.rzm-play-name { font-weight: 700; font-size: 14px; color: var(--rz-text); }
+.rzm-play-pos { font-weight: 600; font-size: 11px; color: var(--rz-muted); }
+.rzm-play-text { font-size: 13px; color: var(--rz-muted); line-height: 1.4; }
+.rzm-play-meta { font-size: 11px; color: var(--text-subtle); }
+.rzm-play-side { flex: none; align-self: flex-start; font-size: 10px; font-weight: 800; color: var(--rz-muted); margin-top: 4px; }

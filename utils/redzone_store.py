@@ -190,6 +190,54 @@ def get_td_plays_since(season: int, since_ts: float) -> list[tuple[str, dict, fl
     return out
 
 
+def get_plays_for_pids(season: int, pids: list[str], days: int = 5) -> list[dict]:
+    """Plays from the last ``days`` involving any of ``pids``.
+
+    Returns play payload dicts (with game_id attached) ordered by observed_at
+    descending. Used by RedZone Moments to surface a matchup's big plays.
+    """
+    from dashboard_services.db import get_conn
+
+    pid_list = [str(p) for p in (pids or []) if p]
+    if not pid_list:
+        return []
+    try:
+        with get_conn() as conn:
+            _ensure_table(conn)
+            rows = conn.execute(
+                """SELECT game_id, payload,
+                          EXTRACT(EPOCH FROM observed_at) AS ts
+                   FROM redzone_plays
+                   WHERE season = %s
+                     AND observed_at >= NOW() - (%s || ' days')::INTERVAL
+                     AND payload->>'pid' = ANY(%s)
+                   ORDER BY observed_at DESC""",
+                (int(season), str(int(days)), pid_list),
+            ).fetchall()
+    except Exception as exc:
+        logger.warning("[redzone-store] plays-for-pids failed: %s", exc)
+        return []
+    out = []
+    for r in rows:
+        gid = r["game_id"] if isinstance(r, dict) else r[0]
+        payload = r["payload"] if isinstance(r, dict) else r[1]
+        ts = r["ts"] if isinstance(r, dict) else r[2]
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload)
+            except Exception:
+                continue
+        if isinstance(payload, dict):
+            try:
+                ts = float(ts or 0)
+            except Exception:
+                ts = 0.0
+            payload = dict(payload)
+            payload["_observed_ts"] = ts
+            out.append(payload)
+    return out
+
+
 def get_watermark() -> float:
     from dashboard_services.db import get_conn
 
