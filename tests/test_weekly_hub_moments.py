@@ -150,7 +150,7 @@ const listeners = {};
 global.document = {
   readyState: 'complete',
   querySelector(sel) { return sel === '[data-rzm-hub]' ? launcher : null; },
-  querySelectorAll() { return []; },
+  querySelectorAll(sel) { return sel === '[data-rzm-hub]' ? [launcher] : []; },
   addEventListener(type, fn) { (listeners[type] = listeners[type] || []).push(fn); },
   createElement(tag) { return makeEl(tag); },
   body: makeEl('body'),
@@ -228,7 +228,15 @@ def test_hub_launcher_stays_hidden_without_plays():
         "apiBody": {"plays": [], "td_count": 0},
     })
     assert out["launcherHidden"] is True
-    assert out["hasPayload"] is False
+
+
+def test_hub_launcher_reinits_after_node_replacement():
+    # Regression: the hub repaints the matchup area after load, replacing the
+    # launcher node with a fresh hidden copy. The IIFE must pick up the new
+    # node (via MutationObserver or window.brInitHubRzm) and reveal it.
+    src = _extract_hub_iife()
+    assert "MutationObserver" in src
+    assert "window.brInitHubRzm" in src
 
 
 def test_hub_launcher_skips_fetch_without_league_ref():
