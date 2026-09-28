@@ -1549,6 +1549,189 @@ def api_portfolio_matchup():
     })
 
 
+@user_pages_bp.route("/api/redzone/moments")
+def api_redzone_moments():
+    """RedZone Moments: big plays from the viewer's current fantasy matchup.
+
+    Returns TDs, 40+ yard gains, and turnovers involving players on either
+    roster in the viewer's matchup, sourced from the RedZone play store.
+    Powers the "RedZone Moments" row under the matchup win probability bar.
+    """
+    from flask import jsonify, request, session, g
+
+    viewer_username = session.get("viewer_username")
+    viewer_user_id = session.get("viewer_user_id")
+    if (not viewer_username or not viewer_user_id) and not session.get("account_id"):
+        return jsonify({"plays": [], "teams": {}})
+
+    platform = (request.args.get("platform") or "sleeper").strip().lower()
+    league_id = (request.args.get("league_id") or "").strip()
+    if not league_id:
+        return jsonify({"plays": [], "teams": {}})
+
+    account_id = session.get("account_id")
+    if account_id and not getattr(g, "portfolio_membership_authorized", False):
+        try:
+            requested_season = int(request.args.get("season") or 0)
+        except (TypeError, ValueError):
+            requested_season = 0
+        from dashboard_services.accounts import resolve_account_leagues
+        allowed = resolve_account_leagues(account_id, current_season=requested_season)
+        if not any(str(lg.get("league_id") or "") == league_id
+                   and str(lg.get("platform") or "sleeper").lower() == platform
+                   and int(lg.get("season") or 0) == requested_season for lg in allowed):
+            return jsonify({"plays": [], "teams": {}}), 403
+
+    nfl_state = get_nfl_state() or {}
+    if str(nfl_state.get("season_type") or "").lower() not in ("reg", "regular", "post"):
+        return jsonify({"plays": [], "teams": {}})
+    try:
+        from datetime import datetime
+        default_season = int(nfl_state.get("season") or datetime.now().year)
+        season = int(request.args.get("season") or default_season)
+        week = int(nfl_state.get("week") or nfl_state.get("leg") or 0)
+    except (TypeError, ValueError):
+        return jsonify({"plays": [], "teams": {}})
+    if week < 1:
+        return jsonify({"plays": [], "teams": {}})
+
+    try:
+        ctx = getattr(g, "portfolio_card_ctx", None)
+        if ctx is None:
+            ctx = get_league_ctx_from_cache(platform, league_id, season, allow_build=False)
+    except Exception:
+        logger.debug("[redzone-moments] ctx load failed", exc_info=True)
+        return jsonify({"plays": [], "teams": {}})
+    if not ctx or ctx.get("offseason_mode"):
+        return jsonify({"plays": [], "teams": {}})
+
+    viewer_rid = ""
+    if account_id:
+        try:
+            from dashboard_services.accounts import resolve_account_viewer_for_league
+            _av = resolve_account_viewer_for_league(
+                int(account_id), platform, league_id, season,
+                ctx.get("users") or [], ctx.get("rosters") or [],
+            )
+            viewer_rid = str((_av or {}).get("viewer_roster_id") or "")
+        except Exception:
+            logger.debug("[redzone-moments] account viewer resolve failed", exc_info=True)
+    if not viewer_rid:
+        viewer_rid = str((ctx.get("viewer") or {}).get("viewer_roster_id") or "")
+    if not viewer_rid:
+        return jsonify({"plays": [], "teams": {}})
+
+    resolved_league_id = ctx.get("resolved_league_id") or league_id
+    try:
+        matchups, status_by_pid, proj_map = _build_live_matchups(
+            platform, resolved_league_id, season, week, ctx,
+        )
+    except Exception:
+        logger.debug("[redzone-moments] live build failed", exc_info=True)
+        return jsonify({"plays": [], "teams": {}})
+
+    you = opp = None
+    for m in matchups:
+        left = m.get("left") or {}
+        right = m.get("right") or {}
+        if str(left.get("roster_id") or "") == viewer_rid:
+            you, opp = left, right
+            break
+        if str(right.get("roster_id") or "") == viewer_rid:
+            you, opp = right, left
+            break
+    if not you:
+        return jsonify({"plays": [], "teams": {}})
+
+    # Collect starter PIDs for both teams, tagged by side.
+    pid_to_side = {}
+    for p in (you.get("starters") or []):
+        pid = p.get("pid")
+        if pid:
+            pid_to_side[str(pid)] = "you"
+    if opp:
+        for p in (opp.get("starters") or []):
+            pid = p.get("pid")
+            if pid:
+                pid_to_side[str(pid)] = "opp"
+    if not pid_to_side:
+        return jsonify({"plays": [], "teams": {}})
+
+    from utils.redzone_store import get_plays_for_pids
+    raw_plays = get_plays_for_pids(season, list(pid_to_side.keys()))
+
+    # Player name lookup from the matchup data.
+    pid_to_name = {}
+    pid_to_pos = {}
+    for team in (you, opp):
+        if not team:
+            continue
+        for p in (team.get("starters") or []):
+            pid = str(p.get("pid") or "")
+            if pid:
+                pid_to_name[pid] = p.get("name") or p.get("full_name") or ""
+                pid_to_pos[pid] = p.get("pos") or ""
+
+    moments = []
+    for play in raw_plays:
+        pid = str(play.get("pid") or "")
+        if not pid or pid not in pid_to_side:
+            continue
+        stat = play.get("stat_line") or {}
+        is_td = bool(play.get("is_td"))
+        yards = max(
+            int(stat.get("pass_yds") or 0),
+            int(stat.get("rush_yds") or 0),
+            int(stat.get("rec_yds") or 0),
+        )
+        text_low = str(play.get("play_text") or "").lower()
+        is_turnover = (
+            int(stat.get("int") or 0) > 0
+            or int(stat.get("def_int") or 0) > 0
+            or "intercepted" in text_low
+            or "fumble" in text_low
+        )
+        is_big_gain = yards >= 40
+        if not (is_td or is_big_gain or is_turnover):
+            continue
+        kind = "td" if is_td else ("turnover" if is_turnover else "big_gain")
+        moments.append({
+            "play_id": play.get("play_id") or "",
+            "game_id": play.get("game_id") or "",
+            "kind": kind,
+            "is_td": is_td,
+            "pid": pid,
+            "name": pid_to_name.get(pid) or play.get("name") or "",
+            "pos": pid_to_pos.get(pid) or "",
+            "team": play.get("team") or "",
+            "side": pid_to_side.get(pid) or "",
+            "play_text": play.get("play_text") or "",
+            "yards": yards,
+            "stat_line": stat,
+            "quarter": play.get("quarter") or "",
+            "clock": play.get("clock") or "",
+            "down": play.get("down") or "",
+            "distance": play.get("distance") or "",
+            "yard_line": play.get("yard_line") or "",
+            "seq": play.get("seq") or 0,
+            "observed_ts": play.get("_observed_ts") or 0,
+        })
+
+    # Sort: TDs first, then big gains, then turnovers; newest first within kind.
+    kind_order = {"td": 0, "big_gain": 1, "turnover": 2}
+    moments.sort(key=lambda m: (kind_order.get(m["kind"], 3), -(m.get("observed_ts") or 0)))
+
+    td_count = sum(1 for m in moments if m["kind"] == "td")
+    return jsonify({
+        "plays": moments,
+        "td_count": td_count,
+        "teams": {
+            "you": you.get("name") or "You",
+            "opp": (opp or {}).get("name") or "Opp",
+        },
+    })
+
+
 @user_pages_bp.route("/watchlist")
 def page_watchlist():
     body = build_watchlist_page_body()
