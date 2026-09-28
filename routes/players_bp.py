@@ -574,6 +574,14 @@ def api_player_metric_ranks(player_id: str):
                     for _rk, _rv in _vr.items():
                         if _rv is not None:
                             result["ranks"][_rk] = _rv
+                # VORP/WAR position-leader bounds for leader-relative bar
+                # scaling in the modal (same league-aware table, no new query).
+                _vb = _vm.get("bounds") or {}
+                if _vb and isinstance(result, dict):
+                    result.setdefault("bounds", {})
+                    for _bk, _bv in _vb.items():
+                        if _bv is not None:
+                            result["bounds"][_bk] = _bv
             except Exception:
                 logger.debug("[player-metric-ranks] value ranks unavailable", exc_info=True)
         # Don't leak ranks for premium (PFF) metrics on the public site.
