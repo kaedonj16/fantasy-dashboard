@@ -1846,6 +1846,18 @@ def api_redzone_moments():
             continue
         stat = play.get("stat_line") or {}
         is_td = bool(play.get("is_td"))
+        if not is_td:
+            # Fallback: the store's is_td flag is set by the PBP attribution
+            # pass and can miss when play-level TD detection fails. The
+            # per-player stat line is ground truth: a TD in the stat line
+            # means this player scored on this play.
+            try:
+                is_td = any(
+                    float(stat.get(k) or 0) > 0
+                    for k in ("rec_td", "rush_td", "pass_td", "def_td")
+                )
+            except (TypeError, ValueError):
+                is_td = False
         yards = max(
             int(stat.get("pass_yds") or 0),
             int(stat.get("rush_yds") or 0),

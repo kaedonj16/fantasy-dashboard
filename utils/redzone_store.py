@@ -393,13 +393,32 @@ def poll_once() -> dict:
         return stats
 
     # Finals already in the store keep polling for closing-drive catch-up
-    # (fetch_alt_pbp_plays force-refreshes until ESPN reports complete);
-    # finals never seen are skipped -- nothing new to learn.
+    # (fetch_alt_pbp_plays force-refreshes until ESPN reports complete).
+    # Finals never seen are normally skipped -- nothing new to learn -- but a
+    # recent final may have gone final while the poller was down (deploy,
+    # outage). Self-heal: backfill unseen finals from the last 3 days so a
+    # poller gap can't permanently lose a game's plays (and its TDs).
     live = [g for g in games if g["live"]]
     finals = [g for g in games if g["final"]]
     if finals:
         known = set(get_plays(season, [g["game_id"] for g in finals]).keys())
-        finals = [g for g in finals if g["game_id"] in known]
+        try:
+            from datetime import datetime, timedelta, timezone
+            _cutoff = (datetime.now(timezone.utc) - timedelta(days=3)).strftime("%Y%m%d")
+        except Exception:
+            _cutoff = ""
+        def _is_recent_unseen(gid: str) -> bool:
+            if not _cutoff:
+                return False
+            try:
+                _date_part = parse_tank_game_id(gid)[0]
+            except Exception:
+                return False
+            return bool(_date_part) and _date_part >= _cutoff
+        finals = [
+            g for g in finals
+            if g["game_id"] in known or _is_recent_unseen(g["game_id"])
+        ]
 
     nfl_players = get_nfl_players() or {}
     for g in live + finals:
