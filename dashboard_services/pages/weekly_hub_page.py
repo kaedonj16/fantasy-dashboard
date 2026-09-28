@@ -382,6 +382,28 @@ def build_weekly_hub_body(ctx: dict) -> str:
     )
     _wk_scorers_cls = "tab-btn" if _show_matchup_preview else "tab-btn active"
     _wk_matchups_panel = ""
+    # League Scores data, embedded so the tab renders instantly from the
+    # carousel's already-computed numbers instead of a separate API fetch.
+    _ls_embedded_json = ""
+    if _show_matchup_preview and default_matchups:
+        try:
+            from dashboard_services.matchups import (
+                build_league_scores_list, make_frac_lookup,
+            )
+            _ls_frac = make_frac_lookup(team_game_lookup or {})
+            _ls_statuses = (statuses.get(default_week) or {}).get("statuses", {}) or {}
+            _ls_payload = build_league_scores_list(
+                default_matchups, _hub_vid, _ls_statuses, proj_by_week,
+                frac_lookup=_ls_frac,
+            )
+            _ls_embedded_json = (
+                '<script type="application/json" id="ls-embedded-data">'
+                + json.dumps({"matchups": _ls_payload, "week": int(default_week)})
+                + "</script>"
+            )
+        except Exception:
+            logger.debug("weekly: league-scores embed failed", exc_info=True)
+            _ls_embedded_json = ""
     if _show_matchup_preview:
         _ls_tabs_html = (
             f'<div class="ls-tabs" data-ls-tabs data-platform="{_html.escape(str(platform), quote=True)}"'
@@ -399,6 +421,7 @@ def build_weekly_hub_body(ctx: dict) -> str:
             <div class="tab-panel active" data-tab="matchups">
               <div class="matchups-shell">
                 {_ls_tabs_html}
+                {_ls_embedded_json}
                 <div id="weeklyMatchupsContainer">
                   {matchup_html}
                 </div>
@@ -560,6 +583,20 @@ def build_weekly_hub_body(ctx: dict) -> str:
             window.initPageRoot(matchupsContainer);
           }}
           if (window.brInitMoments) window.brInitMoments(matchupsContainer);
+
+          // League Scores: stash the payload that rode along with this week's
+          // carousel data, and point the tabs at the new week, so the tab
+          // renders instantly without a separate fetch.
+          if (data.league_scores && data.league_scores.matchups) {{
+            window._lsEmbeddedByWeek = window._lsEmbeddedByWeek || {{}};
+            window._lsEmbeddedByWeek[String(data.league_scores.week || w)] = data.league_scores;
+          }}
+          var lsTabs = document.querySelector('[data-ls-tabs]');
+          if (lsTabs) {{
+            lsTabs.setAttribute('data-week', String(w));
+            var lsView = document.querySelector('[data-ls-view="league"]');
+            if (lsView) delete lsView.dataset.lsLoaded;
+          }}
         }}
 
         // Weekly Wrapped follows the week selector: re-point the launcher at

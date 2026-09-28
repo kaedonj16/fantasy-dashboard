@@ -376,7 +376,7 @@ def test_strategy_cards_are_decluttered():
     body = body[:end] if end != -1 else body
     assert "otc-rt-fit" not in body
     assert "acptHtml" not in body
-    assert "&middot; ${acpt}% accept" in body
+    assert "&nbsp;&middot;&nbsp;${acpt}% accept" in body
     assert "${gradeHtml}${wpdHtml}${podHtml}" in body
 
 

@@ -9473,15 +9473,15 @@ window.initTradePage = function initTradePage(root = document) {
             : { label: "Slight overpay",color: "#f59e0b" };
         }
         const acpt = t.acceptance_pct != null ? Math.round(t.acceptance_pct) : null;
-        const gradeHtml = `<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;background:${gradeInfo.color}15;border:1px solid ${gradeInfo.color}30;color:${gradeInfo.color};white-space:nowrap;">${gradeInfo.label}${acpt != null ? ` &middot; ${acpt}% accept` : ""}</span>`;
+        const gradeHtml = `<span style="font-size:10px;font-weight:700;padding:3px 8px;border-radius:10px;background:${gradeInfo.color}15;border:1px solid ${gradeInfo.color}30;color:${gradeInfo.color};white-space:nowrap;">${gradeInfo.label}${acpt != null ? `&nbsp;&middot;&nbsp;${acpt}% accept` : ""}</span>`;
 
         // Win % + playoff odds - always prefer net_* fields (full trade swap effect)
         const wpd = (t.net_win_prob_delta ?? t.win_prob_delta) || 0;
         const pod = (t.net_playoff_odds_delta ?? t.playoff_odds_delta) || 0;
-        const wpdCol = wpd >= 0 ? "var(--win)" : "#ef4444";
+        const wpdCol = wpd >= 0 ? "#16a34a" : "#ef4444";
         const podCol = pod >= 0 ? "#6366f1" : "#ef4444";
-        const wpdHtml = `<span title="Change in typical remaining-week win chance for this full trade (what you send and receive)." style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:10px;background:${wpdCol}15;border:1px solid ${wpdCol}30;color:${wpdCol};white-space:nowrap;">${(wpd >= 0 ? "+" : "") + (wpd * 100).toFixed(1)}% wk</span>`;
-        const podHtml = `<span title="Change in simulated playoff-make odds for this full trade. Playoffs can rise even when weekly win % dips because they depend on the rest of the season, schedule, and ceiling." style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:10px;background:${podCol}15;border:1px solid ${podCol}30;color:${podCol};white-space:nowrap;">${(pod >= 0 ? "+" : "") + (pod * 100).toFixed(1)}% po</span>`;
+        const wpdHtml = `<span title="Change in typical remaining-week win chance for this full trade (what you send and receive)." style="font-size:10px;font-weight:700;padding:3px 8px;border-radius:10px;background:${wpdCol}15;border:1px solid ${wpdCol}30;color:${wpdCol};white-space:nowrap;">${(wpd >= 0 ? "+" : "") + (wpd * 100).toFixed(1)}% wk</span>`;
+        const podHtml = `<span title="Change in simulated playoff-make odds for this full trade. Playoffs can rise even when weekly win % dips because they depend on the rest of the season, schedule, and ceiling." style="font-size:10px;font-weight:700;padding:3px 8px;border-radius:10px;background:${podCol}15;border:1px solid ${podCol}30;color:${podCol};white-space:nowrap;">${(pod >= 0 ? "+" : "") + (pod * 100).toFixed(1)}% po</span>`;
 
         // Partner
         const pAColor = archColor[t.partner_arch || ""] || "var(--text-muted)";
@@ -23080,6 +23080,31 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
         ? 'Sign in to see league scores.'
         : 'League scores unavailable.';
       view.innerHTML = '<div class="ls-empty">' + escapeHtml(msg) + ' <button type="button" data-ls-retry>Retry</button></div>';
+    }
+    // The carousel already computed these numbers: use the embedded payload
+    // when available instead of a separate (slow) API fetch.
+    function embeddedData() {
+      try {
+        // Week-change API stashes its payload here.
+        var byWeek = window._lsEmbeddedByWeek || {};
+        if (week && byWeek[String(week)] && byWeek[String(week)].matchups) {
+          return byWeek[String(week)];
+        }
+        // Initial page render embeds the default week's payload.
+        var el = document.getElementById('ls-embedded-data');
+        if (el && !el._lsConsumed) {
+          var parsed = JSON.parse(el.textContent || '{}');
+          if (parsed && parsed.matchups && String(parsed.week || '') === String(week || '')) {
+            return parsed;
+          }
+        }
+      } catch (e) { /* fall through to fetch */ }
+      return null;
+    }
+    var embedded = embeddedData();
+    if (embedded) {
+      done(embedded);
+      return;
     }
     if (_lsCache[key] && (Date.now() - _lsCache[key].t) < 60000) {
       done(_lsCache[key].d);
