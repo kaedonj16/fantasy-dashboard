@@ -216,7 +216,10 @@ def build_league_summary(account_id, membership, context_loader):
         _cache_stale=bool(ctx.get("_cache_stale")),
         partial=result["state"] == "partial",
     )
-    _store_persistent(cache_key(account_id, platform, league_id, season), result)
+    # Don't cache partial summaries: a transient record failure would otherwise
+    # persist in the cache and keep serving a record-less card with no retry.
+    if result["state"] == "ready":
+        _store_persistent(cache_key(account_id, platform, league_id, season), result)
     logger.info("[portfolio] league=%s provider=%s core=%s record=%s streak=%s position_rank=%s total_ms=%d",
                 league_id, platform, sections["core"]["status"], sections["record"]["status"],
                 sections["streak"]["status"], sections["position_rankings"]["status"],

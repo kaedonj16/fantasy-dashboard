@@ -22576,7 +22576,10 @@ window._rzStubPbpEvents = function(pid, state) {
     if (!stats) return false;
     var retry = card.querySelector('[data-summary-retry]');
     var updated = card.querySelector('[data-summary-updated]');
-    if (data.state === 'ready' || data.state === 'partial' || data.record != null) {
+    // A partial summary with no record is not a success: the record section
+    // failed transiently and should be retried, not rendered as '-'.
+    var _recordMissing = data.record == null && data.state !== 'ready';
+    if ((data.state === 'ready' || data.state === 'partial' || data.record != null) && !_recordMissing) {
       var rank = data.rank == null ? '-' : data.rank;
       var teams = data.total_teams == null ? '-' : data.total_teams;
       var wins = Number(data.wins), losses = Number(data.losses);
@@ -22969,12 +22972,27 @@ window._rzStubPbpEvents = function(pid, state) {
       if (!owner.alive()) return;
       var result = applyCard(owner, card, body);
       if (item.tracker) item.tracker(result);
+      // Retry on pending OR on a failed summary (e.g. partial with missing
+      // record). A failed summary is transient and should not be treated as
+      // a successful hydration.
+      // Note: pending-due-to-warming does not consume the retry budget;
+      // warming is expected on game day, not a failure. Use the server's
+      // suggested retry delay.
       if (result.pending) {
+        schedule(owner, card, Math.max(body.retry_after_ms || 0, 3000));
+      } else if (!result.summary) {
         card._pfAttempts = (card._pfAttempts || 0) + 1;
-        if (card._pfAttempts <= RETRY_DELAYS.length) schedule(owner, card, Math.max(body.retry_after_ms || 0, RETRY_DELAYS[card._pfAttempts - 1]));
+        if (card._pfAttempts <= RETRY_DELAYS.length) schedule(owner, card, RETRY_DELAYS[card._pfAttempts - 1]);
       } else card._pfAttempts = 0;
     }).catch(function (error) {
-      if (!owner.alive() || error && error.name === 'AbortError') return;
+      if (!owner.alive()) return;
+      // A timeout (AbortError) is transient, especially on game day. Schedule
+      // a retry instead of silently giving up.
+      if (error && error.name === 'AbortError') {
+        card._pfAttempts = (card._pfAttempts || 0) + 1;
+        if (card._pfAttempts <= RETRY_DELAYS.length) schedule(owner, card, RETRY_DELAYS[card._pfAttempts - 1]);
+        return;
+      }
       var payload = error.payload || { state: 'error', message: error.message };
       if (payload.state === 'unavailable' && /sign in/i.test(payload.message || '')) payload.message = 'Session expired. Sign in again.';
       applyCard(owner, card, { summary: payload, matchup: { failed: true, message: payload.message } });
@@ -23010,7 +23028,15 @@ window._rzStubPbpEvents = function(pid, state) {
     if (owner.pollTimer) clearInterval(owner.pollTimer);
     owner.pollTimer = setInterval(function () {
       if (!owner.alive() || document.hidden) return;
-      owner.cards(true).forEach(function (card) { var slot = card.querySelector('[data-lg-live]'); if (slot && slot._isLive) schedule(owner, card); });
+      owner.cards(true).forEach(function (card) {
+        var slot = card.querySelector('[data-lg-live]');
+        if (slot && slot._isLive) { schedule(owner, card); return; }
+        // Also pick up visible cards that never hydrated (e.g. page-2 cards
+        // whose retries exhausted while contexts were warming).
+        var summaryGood = card.dataset.summaryGood === 'true';
+        var matchupGood = slot && slot.dataset.matchupGood === 'true';
+        if (!summaryGood || !matchupGood) schedule(owner, card);
+      });
     }, 45000);
   }
   function replaceGeneration(oldOwner) {
