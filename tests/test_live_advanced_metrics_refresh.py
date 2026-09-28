@@ -275,11 +275,15 @@ def _set_weekday(monkeypatch, live, weekday):
     monkeypatch.setattr(live, "datetime", _FakeDateTime)
 
 
-def test_nflverse_runs_inside_tue_wed_window(monkeypatch, tmp_path):
-    live, builds = _patch_script(monkeypatch, tmp_path, finished=("g1",))
-    _set_weekday(monkeypatch, live, 1)  # Tuesday
-    assert live.main([]) == 0
-    assert builds.get("nflverse") == 1
+def test_nflverse_runs_inside_mon_wed_window(monkeypatch, tmp_path):
+    # nflverse PBP (which feeds xFP) publishes Monday morning; NGS/FTN follow
+    # Tue-Wed. The live pull must run on all three days. (Fresh harness per
+    # weekday so the hourly throttle starts empty each time.)
+    for weekday in (0, 1, 2):  # Mon, Tue, Wed
+        live, builds = _patch_script(monkeypatch, tmp_path, finished=("g1",))
+        _set_weekday(monkeypatch, live, weekday)
+        assert live.main([]) == 0
+        assert builds.get("nflverse") == 1
 
 
 def test_nflverse_skipped_outside_window(monkeypatch, tmp_path):
@@ -294,6 +298,81 @@ def test_nflverse_force_overrides_window(monkeypatch, tmp_path):
     _set_weekday(monkeypatch, live, 6)  # Sunday
     assert live.main(["--force"]) == 0
     assert builds.get("nflverse") == 1
+
+
+def test_refresh_nflverse_weekly_passes_xfp_through(monkeypatch):
+    # Regression: the live cron called upsert_weekly_season without the xFP
+    # map, so player_weekly_advanced_metrics.expected_ppr froze at the last
+    # manual sync and Key Metrics (primary expected_ppr_per_game, read from
+    # that table) showed fewer games than snapshot-based presets like RB Set.
+    # The xFP weekly map must ride the same upsert.
+    import sys
+    import types
+    import scripts.refresh_live_advanced_metrics as live
+
+    seen = {}
+
+    fake_ep = types.ModuleType("data_building.external_data.expected_points")
+    fake_ep.build_expected_points_both = lambda season: (
+        {"p1": {"expected_ppr_per_game": 15.0}},
+        {("p1", 3): {"expected_ppr": 14.5, "ppr_over_expected": 2.0}},
+    )
+    fake_am = types.ModuleType("data_building.advanced_metrics")
+    fake_am.init_advanced_metrics_db = lambda: None
+    fake_sync = types.ModuleType("scripts.sync_nflverse_metrics")
+
+    def fake_upsert(season, players_index, xfp_by_pw=None):
+        seen["season"] = season
+        seen["xfp_by_pw"] = xfp_by_pw
+        return 42
+
+    fake_sync.upsert_weekly_season = fake_upsert
+
+    # Scoped stubs: monkeypatch undoes them after the test so no other test
+    # module sees these fake packages.
+    monkeypatch.setitem(
+        sys.modules, "data_building.external_data.expected_points", fake_ep)
+    monkeypatch.setitem(sys.modules, "data_building.advanced_metrics", fake_am)
+    monkeypatch.setitem(sys.modules, "scripts.sync_nflverse_metrics", fake_sync)
+
+    assert live._refresh_nflverse_weekly(2026, {}) == 42
+    assert seen["season"] == 2026
+    assert seen["xfp_by_pw"] == {
+        ("p1", 3): {"expected_ppr": 14.5, "ppr_over_expected": 2.0}}
+
+
+def test_refresh_nflverse_weekly_survives_xfp_failure(monkeypatch):
+    # An xFP build failure must not take down the NGS/FTN/EPA weekly upsert;
+    # it degrades to the old behavior (no xFP columns this run).
+    import sys
+    import types
+    import scripts.refresh_live_advanced_metrics as live
+
+    seen = {}
+
+    fake_ep = types.ModuleType("data_building.external_data.expected_points")
+
+    def _boom(season):
+        raise RuntimeError("pbp unavailable")
+
+    fake_ep.build_expected_points_both = _boom
+    fake_am = types.ModuleType("data_building.advanced_metrics")
+    fake_am.init_advanced_metrics_db = lambda: None
+    fake_sync = types.ModuleType("scripts.sync_nflverse_metrics")
+
+    def fake_upsert(season, players_index, xfp_by_pw=None):
+        seen["xfp_by_pw"] = xfp_by_pw
+        return 7
+
+    fake_sync.upsert_weekly_season = fake_upsert
+
+    monkeypatch.setitem(
+        sys.modules, "data_building.external_data.expected_points", fake_ep)
+    monkeypatch.setitem(sys.modules, "data_building.advanced_metrics", fake_am)
+    monkeypatch.setitem(sys.modules, "scripts.sync_nflverse_metrics", fake_sync)
+
+    assert live._refresh_nflverse_weekly(2026, {}) == 7
+    assert seen["xfp_by_pw"] == {}
 
 
 def test_state_file_fallback_roundtrip(monkeypatch, tmp_path):

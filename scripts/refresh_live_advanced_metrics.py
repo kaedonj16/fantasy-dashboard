@@ -23,10 +23,11 @@ What it does each run:
      uses, so the two never conflict.
   4. Best-effort: refresh the per-week nflverse metrics so the provider-sourced
      columns (NGS / FTN / EPA) fill in as soon as nflverse publishes them, rather
-     than waiting for the single daily run. nflverse publishes a completed week's
-     data on the Tue–Wed after the games, so this pull is gated to those weekdays
-     and throttled to hourly within them — no all-week download storm — and any
-     provider outage is a no-op that never erases the last good data.
+     than waiting for the single daily run. nflverse's play-by-play (which feeds
+     the xFP columns behind Key Metrics) publishes Monday morning; NGS / FTN
+     follow Tue-Wed, so this pull is gated to Mon-Wed and throttled to hourly
+     within them — no all-week download storm — and any provider outage is a
+     no-op that never erases the last good data.
 
 Designed to be safe to run on any schedule: on a non-game day, or when nothing
 has finished since the last run, it does almost nothing.
@@ -70,11 +71,14 @@ _STATE_DB_KEY = "refresh_live_advanced_metrics"
 # lags the games by design; hammering it every few minutes buys nothing.
 NFLVERSE_THROTTLE_SEC = 60 * 60
 
-# nflverse publishes a completed week's NGS / FTN / play-by-play data on the
-# Tuesday–Wednesday after the games. Outside that window a pull just re-downloads
-# unchanged parquet, so gate it to those weekdays (local time; the cron runs with
-# TZ=America/New_York). Monday=0 .. Sunday=6, so Tue=1, Wed=2. --force overrides.
-NFLVERSE_PUBLISH_WEEKDAYS = frozenset({1, 2})
+# nflverse's play-by-play (which feeds the xFP columns behind Key Metrics) is
+# published on Monday morning after the weekend slate; the NGS / FTN weekly
+# files follow on Tuesday-Wednesday. The weekly upsert COALESCE-merges per
+# column, so a Monday pull that lands before the NGS files publish only fills
+# in the PBP-derived columns and never clobbers anything. Gate the pull to
+# Mon-Wed (local time; the cron runs with TZ=America/New_York).
+# Monday=0 .. Sunday=6. --force overrides.
+NFLVERSE_PUBLISH_WEEKDAYS = frozenset({0, 1, 2})
 
 
 def _ensure_state_table(conn) -> None:
@@ -171,9 +175,21 @@ def _refresh_nflverse_weekly(season: int, players_index: dict) -> int:
     """Best-effort per-week nflverse upsert. Returns rows written (0 on failure)."""
     try:
         from data_building.advanced_metrics import init_advanced_metrics_db
+        from data_building.external_data.expected_points import (
+            build_expected_points_both,
+        )
         from scripts.sync_nflverse_metrics import upsert_weekly_season
         init_advanced_metrics_db()
-        return upsert_weekly_season(season, players_index)
+        # xFP rides the same weekly upsert as the NGS/FTN/EPA columns: the Key
+        # Metrics leaderboard reads expected_ppr_per_game from this table, so
+        # without these columns the preset's games-played freezes at the last
+        # manual sync while the snapshot keeps counting new games.
+        try:
+            _, xfp_weekly = build_expected_points_both(season)
+        except Exception as e:
+            print(f"[live-adv] xFP weekly build failed (non-fatal): {e}")
+            xfp_weekly = {}
+        return upsert_weekly_season(season, players_index, xfp_by_pw=xfp_weekly)
     except Exception as e:
         import traceback
         print(f"[live-adv] nflverse weekly refresh failed (non-fatal): {e}")
@@ -222,7 +238,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     # When that week has no finals yet (completed_week < current_week), the daily
     # cron's baseline already covers every fully-finished week, so the snapshot
     # rebuild has nothing to add — but the throttled nflverse pull below still
-    # runs so provider columns fill in on the Tue/Wed after a week completes.
+    # runs so provider columns fill in on the Mon-Wed after a week completes.
     in_progress_finals = completed_week == current_week
     should_build = args.force or (
         in_progress_finals and (finished_key != last_key or not already_built_today))
@@ -264,7 +280,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         did_work = True
 
     # Provider (nflverse) refresh so NGS/FTN/EPA columns fill in ASAP once
-    # nflverse publishes. Gated to the Tue–Wed publish window (outside it a pull
+    # nflverse publishes. Gated to the Mon-Wed publish window (outside it a pull
     # just re-downloads unchanged parquet) and throttled to hourly within it, so
     # it picks up the data as it lands without an all-week download storm.
     if not args.no_nflverse:
@@ -273,7 +289,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         last_nflverse = float(state.get("last_nflverse_ts") or 0)
         throttle_elapsed = (time.time() - last_nflverse) >= NFLVERSE_THROTTLE_SEC
         if not (args.force or in_publish_window):
-            print("[live-adv] nflverse refresh skipped — outside the Tue–Wed "
+            print("[live-adv] nflverse refresh skipped — outside the Mon-Wed "
                   "publish window (use --force to override).")
         elif args.force or throttle_elapsed:
             players_index = load_players_index() or {}

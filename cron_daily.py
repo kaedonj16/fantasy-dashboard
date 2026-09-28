@@ -488,6 +488,7 @@ from dotenv import load_dotenv; load_dotenv()
 from datetime import datetime
 from dashboard_services.api import get_nfl_state
 from data_building.advanced_metrics import init_advanced_metrics_db
+from data_building.external_data.expected_points import build_expected_points_both
 from scripts.sync_nflverse_metrics import upsert_weekly_season
 from utils.utils import load_players_index
 
@@ -499,7 +500,17 @@ target_season = current_season - 1 if is_offseason else current_season
 
 init_advanced_metrics_db()
 players_index = load_players_index() or {}
-wn = upsert_weekly_season(target_season, players_index)
+# Expected Fantasy Points ride the same weekly upsert as the NGS/FTN/EPA
+# columns: the Key Metrics leaderboard reads expected_ppr_per_game from this
+# table, so without these columns the preset's games-played freezes at the last
+# manual sync while the snapshot keeps counting new games.
+try:
+    _xfp_season, xfp_weekly = build_expected_points_both(target_season)
+    print(f"[cron] xFP weekly: {len(xfp_weekly)} player-weeks for season {target_season}")
+except Exception as _e:
+    print(f"[cron] xFP weekly build failed (non-fatal): {_e}")
+    xfp_weekly = {}
+wn = upsert_weekly_season(target_season, players_index, xfp_by_pw=xfp_weekly)
 print(f"[cron] nflverse weekly metrics: {wn} player-weeks for season {target_season}")
 """, "sync_nflverse_weekly_metrics")
 

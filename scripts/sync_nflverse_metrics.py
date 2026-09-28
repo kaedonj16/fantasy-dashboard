@@ -114,6 +114,19 @@ def upsert_season(season: int, players_index: dict, purge_pff: bool = True,
         # A provider outage must never erase the last successful snapshot.
         return 0
 
+    if xfp_by_pid is None:
+        # Every writer of this table must feed the xFP columns: a caller that
+        # forgets them leaves the snapshot xFP frozen at the last manual sync
+        # (the same class of bug as the Key Metrics GP freeze on the weekly
+        # table). Best-effort; a failed build degrades to {} and the COALESCE
+        # merge below preserves existing values.
+        try:
+            xfp_by_pid = build_expected_points_both(season)[0]
+            print(f"  xFP season: {len(xfp_by_pid)} players for {season}")
+        except Exception as e:
+            print(f"  [warn] xFP season build failed (non-fatal): {e}")
+            xfp_by_pid = {}
+
     # Merge in xFP columns (union of players: a player with opportunities but no
     # NGS/FTN/EPA row still gets an xFP-only entry).
     for pid, cols in (xfp_by_pid or {}).items():
@@ -173,6 +186,18 @@ def upsert_weekly_season(season: int, players_index: dict,
     caller; its per-week totals are merged into the matching player-week rows.
     """
     by_pw = build_nflverse_weekly_metrics_for_season(season)
+    if xfp_by_pw is None:
+        # Same guarantee as upsert_season: every writer of this table must
+        # feed the xFP columns, or the Key Metrics GP (weeks with non-null
+        # expected_ppr) freezes at the last manual sync. Best-effort; a
+        # failed build degrades to {} and the COALESCE merge below preserves
+        # existing values. An explicitly-passed {} is respected as-is.
+        try:
+            xfp_by_pw = build_expected_points_both(season)[1]
+            print(f"  xFP weekly: {len(xfp_by_pw)} player-weeks for {season}")
+        except Exception as e:
+            print(f"  [warn] xFP weekly build failed (non-fatal): {e}")
+            xfp_by_pw = {}
     for key, cols in (xfp_by_pw or {}).items():
         if cols:
             by_pw.setdefault(key, {}).update(cols)
