@@ -22978,13 +22978,18 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
 /* Weekly hub: League Scores tab (My Matchup | League Scores).
    Toggles between the viewer's matchup carousel and a Sleeper-style list of
    all league matchups for the week. Fetches /api/matchup/league-scores with a
-   60s cache. The viewer's matchup is highlighted and sorted first by the API. */
+   60s cache. The viewer's matchup is highlighted and sorted first by the API.
+   Tab clicks use document-level delegation so soft-nav page swaps (which
+   replace #page-root without firing DOMContentLoaded) never orphan the
+   handler. */
 (function () {
   'use strict';
   var _lsCache = {};
+  var _lsWired = false;
   function _lsRenderList(view, matchups, week) {
     if (!matchups || !matchups.length) {
-      view.innerHTML = '<div class="ls-empty">No matchups found for Week ' + escapeHtml(String(week)) + '.</div>';
+      view.innerHTML = '<div class="ls-empty">No matchups found for Week ' + escapeHtml(String(week)) + '.'
+        + ' <button type="button" data-ls-retry>Retry</button></div>';
       return;
     }
     var html = '<div class="ls-list">';
@@ -23024,9 +23029,19 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
     view.innerHTML = html;
     view.dataset.lsLoaded = 'true';
   }
+  function _lsShellOf(node) {
+    return node ? node.closest('.matchups-shell') : null;
+  }
+  function _lsViews(tabs) {
+    var shell = _lsShellOf(tabs);
+    return {
+      matchupView: shell ? shell.querySelector('#weeklyMatchupsContainer') : null,
+      leagueView: shell ? shell.querySelector('[data-ls-view="league"]') : null
+    };
+  }
   function _lsLoad(tabs) {
-    var shell = tabs.closest('.matchups-shell');
-    var view = shell ? shell.querySelector('[data-ls-view="league"]') : null;
+    var views = _lsViews(tabs);
+    var view = views.leagueView;
     if (!view || view.dataset.lsLoaded === 'true' || tabs._lsLoading) return;
     var platform = tabs.getAttribute('data-platform') || '';
     var leagueId = tabs.getAttribute('data-league-id') || '';
@@ -23035,59 +23050,81 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
     if (!platform || !leagueId) return;
     var key = platform + ':' + leagueId + ':' + season + ':' + week;
     tabs._lsLoading = true;
-    function done(matchups, week) {
+    function done(d) {
       tabs._lsLoading = false;
       if (!view.isConnected) return;
-      _lsRenderList(view, matchups, week);
+      // Cold server cache: the API is still building league context.
+      // Keep the loading state and retry instead of showing "no matchups".
+      if (d && d.pending) {
+        view.innerHTML = '<div class="ls-loading">Loading league scores...</div>';
+        setTimeout(function () { delete tabs._lsLoading; _lsLoad(tabs); }, 3000);
+        return;
+      }
+      if (d && d.state === 'error') {
+        view.innerHTML = '<div class="ls-empty">' + escapeHtml(d.message || 'League scores temporarily unavailable.')
+          + ' <button type="button" data-ls-retry>Retry</button></div>';
+        return;
+      }
+      var matchups = (d && d.matchups) || [];
+      // Only lock in the loaded state (and cache) when we got real data;
+      // empty/error responses stay retryable.
+      if (matchups.length) {
+        _lsCache[key] = { t: Date.now(), d: d };
+      }
+      _lsRenderList(view, matchups, (d && d.week) || week);
     }
-    function fail() {
+    function fail(status) {
       tabs._lsLoading = false;
-      if (view.isConnected) view.innerHTML = '<div class="ls-empty">League scores unavailable. <button type="button" data-ls-retry>Retry</button></div>';
+      if (!view.isConnected) return;
+      var msg = status === 401
+        ? 'Sign in to see league scores.'
+        : 'League scores unavailable.';
+      view.innerHTML = '<div class="ls-empty">' + escapeHtml(msg) + ' <button type="button" data-ls-retry>Retry</button></div>';
     }
     if (_lsCache[key] && (Date.now() - _lsCache[key].t) < 60000) {
-      var c = _lsCache[key].d;
-      done(c.matchups, c.week);
+      done(_lsCache[key].d);
       return;
     }
     var url = '/api/matchup/league-scores?platform=' + encodeURIComponent(platform) + '&league_id=' + encodeURIComponent(leagueId) + '&season=' + encodeURIComponent(season) + (week ? '&week=' + encodeURIComponent(week) : '');
     fetch(url, { credentials: 'same-origin' })
-      .then(function (r) { return r.json(); })
-      .then(function (d) {
-        if (d && d.matchups) _lsCache[key] = { t: Date.now(), d: d };
-        done(d ? d.matchups : [], d ? d.week : '');
+      .then(function (r) {
+        if (r.status === 401) { fail(401); return null; }
+        return r.json();
       })
-      .catch(fail);
+      .then(function (d) { if (d) done(d); })
+      .catch(function () { fail(0); });
   }
   function _lsWire() {
-    var tabs = document.querySelector('[data-ls-tabs]');
-    if (!tabs || tabs._lsWired) return;
-    tabs._lsWired = true;
-    tabs.addEventListener('click', function (e) {
-      var tab = e.target.closest('[data-ls-tab]');
-      if (!tab || !tabs.contains(tab)) return;
-      e.preventDefault();
-      var which = tab.getAttribute('data-ls-tab');
-      var all = tabs.querySelectorAll('[data-ls-tab]');
-      for (var i = 0; i < all.length; i++) all[i].classList.toggle('is-active', all[i] === tab);
-      var shell = tabs.closest('.matchups-shell');
-      var matchupView = shell ? shell.querySelector('#weeklyMatchupsContainer') : null;
-      var leagueView = shell ? shell.querySelector('[data-ls-view="league"]') : null;
-      if (matchupView) matchupView.hidden = which !== 'matchup';
-      if (leagueView) leagueView.hidden = which !== 'league';
-      if (which === 'league') _lsLoad(tabs);
-    });
-    // Retry button inside the league view.
+    if (_lsWired) return;
+    _lsWired = true;
+    // Document-level delegation: the [data-ls-tabs] node is replaced on
+    // soft-nav page swaps, but document persists.
     document.addEventListener('click', function (e) {
-      var retry = e.target.closest('[data-ls-retry]');
-      if (!retry) return;
-      var shell = retry.closest('.matchups-shell');
-      var view = shell ? shell.querySelector('[data-ls-view="league"]') : null;
-      if (view) {
-        delete view.dataset.lsLoaded;
-        view.innerHTML = '<div class="ls-loading">Loading league scores...</div>';
+      var tab = e.target && e.target.closest ? e.target.closest('[data-ls-tab]') : null;
+      if (tab) {
+        var tabs = tab.closest('[data-ls-tabs]');
+        if (!tabs) return;
+        e.preventDefault();
+        var which = tab.getAttribute('data-ls-tab');
+        var all = tabs.querySelectorAll('[data-ls-tab]');
+        for (var i = 0; i < all.length; i++) all[i].classList.toggle('is-active', all[i] === tab);
+        var views = _lsViews(tabs);
+        if (views.matchupView) views.matchupView.hidden = which !== 'matchup';
+        if (views.leagueView) views.leagueView.hidden = which !== 'league';
+        if (which === 'league') _lsLoad(tabs);
+        return;
       }
-      delete tabs._lsLoading;
-      _lsLoad(tabs);
+      var retry = e.target && e.target.closest ? e.target.closest('[data-ls-retry]') : null;
+      if (retry) {
+        var shell = _lsShellOf(retry);
+        var tabsEl = shell ? shell.querySelector('[data-ls-tabs]') : null;
+        var view = shell ? shell.querySelector('[data-ls-view="league"]') : null;
+        if (view) {
+          delete view.dataset.lsLoaded;
+          view.innerHTML = '<div class="ls-loading">Loading league scores...</div>';
+        }
+        if (tabsEl) { delete tabsEl._lsLoading; _lsLoad(tabsEl); }
+      }
     });
   }
   if (document.readyState === 'loading') {

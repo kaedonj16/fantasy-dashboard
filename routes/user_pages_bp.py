@@ -1562,7 +1562,7 @@ def api_matchup_league_scores():
     viewer_username = session.get("viewer_username")
     viewer_user_id = session.get("viewer_user_id")
     if (not viewer_username or not viewer_user_id) and not session.get("account_id"):
-        return jsonify({"matchups": [], "week": 0})
+        return jsonify({"matchups": [], "week": 0, "state": "error", "message": "Sign in to see league scores."}), 401
 
     platform = (request.args.get("platform") or "sleeper").strip().lower()
     league_id = (request.args.get("league_id") or "").strip()

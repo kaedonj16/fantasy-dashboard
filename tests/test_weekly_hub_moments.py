@@ -422,3 +422,28 @@ def test_shared_namespace_exposed():
     assert "window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(payload, ctx); };" in src
     # Portfolio card row fetch delegates to the shared namespace.
     assert "window.brRzm.fetchMoments(platform, leagueId, season, week)" in src
+
+
+def test_weekly_week_api_includes_rzm_launcher():
+    """Regression: /api/weekly-week must pass rzm_hub_html to
+    render_matchup_slide, or the launcher vanishes when she switches weeks."""
+    src = open(os.path.join(_ROOT, "app.py"), encoding="utf-8").read()
+    # Find the api_weekly_week function body.
+    start = src.index("def api_weekly_week():")
+    # The next top-level def (or end of file) bounds it.
+    nxt = src.find("\n@app.route(", start + 10)
+    nxt2 = src.find("\ndef ", start + 10)
+    end = min(x for x in (nxt, nxt2) if x != -1)
+    body = src[start:end]
+    assert "rzm_hub_html=_api_rzm_for_matchup(m)" in body
+    assert "redzone_moments_hub_html" in body
+
+
+def test_launcher_includes_week_attribute():
+    """The launcher must carry the displayed week so the API can fetch
+    moments for the viewed week, not just the current NFL week."""
+    html = redzone_moments_hub_html("sleeper", "123456789", 2026, week=3)
+    assert 'data-week="3"' in html
+    # Week is optional for backward compatibility.
+    html2 = redzone_moments_hub_html("sleeper", "123456789", 2026)
+    assert "data-rzm-hub" in html2

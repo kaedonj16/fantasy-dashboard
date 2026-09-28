@@ -87,6 +87,7 @@ function makeEl(tag, attrs) {
     },
     closest(sel) {
       if (sel === '.matchups-shell') return global.__shell;
+      if (sel === '[data-ls-tabs]') return global.__tabs;
       if (sel === '[data-ls-tab]') return null;
       return null;
     },
@@ -129,6 +130,7 @@ global.document = {
     return null;
   },
   addEventListener(type, fn) { (docListeners[type] = docListeners[type] || []).push(fn); },
+  _fire(type, ev) { (docListeners[type] || []).forEach((fn) => fn(ev)); },
   createElement(tag) { return makeEl(tag); },
   body: makeEl('body'),
 };
@@ -141,7 +143,7 @@ global.fetch = (url) => {
 
 eval(iifeSrc);
 
-// Simulate clicking the League Scores tab.
+// Simulate clicking the League Scores tab (document-level delegation).
 const clickEvent = {
   target: {
     closest(sel) {
@@ -151,7 +153,7 @@ const clickEvent = {
   },
   preventDefault() {},
 };
-tabs._fire('click', clickEvent);
+global.document._fire('click', clickEvent);
 
 setTimeout(() => {
   console.log(JSON.stringify({
@@ -163,6 +165,7 @@ setTimeout(() => {
     leagueHtml: leagueView.innerHTML,
     lsLoaded: leagueView.dataset.lsLoaded,
   }));
+  process.exit(0);
 }, 100);
 """
 
@@ -220,6 +223,8 @@ def test_ls_tab_empty_state():
         "apiBody": {"matchups": [], "week": 3},
     })
     assert "No matchups found" in out["leagueHtml"]
+    # Empty state must offer a retry (it used to be a dead end).
+    assert "data-ls-retry" in out["leagueHtml"]
 
 
 def test_ls_win_prob_uses_styled_win_bar():
@@ -240,7 +245,41 @@ def test_ls_win_prob_uses_styled_win_bar():
     html = out["leagueHtml"]
     assert "pf-live-wp" not in html
     assert "m-win-bar" in html
+    assert "m-wp-pct" in html
     assert "m-wp-track" in html
     assert "linear-gradient" in html
     assert "66%" in html  # rounded left win prob
     assert "34%" in html  # right win prob
+
+
+def test_ls_tab_pending_state_stays_loading():
+    """Cold server cache (pending:true) must not render 'No matchups found'."""
+    out = _run_harness({
+        "platform": "sleeper", "leagueId": "123", "season": "2026",
+        "apiBody": {"matchups": [], "week": 3, "pending": True},
+    })
+    assert "No matchups found" not in out["leagueHtml"]
+    assert "Loading league scores" in out["leagueHtml"]
+    # Pending must not lock the loaded flag, or it can never recover.
+    assert out.get("lsLoaded") != "true"
+
+
+def test_ls_tab_error_state_has_retry():
+    out = _run_harness({
+        "platform": "sleeper", "leagueId": "123", "season": "2026",
+        "apiBody": {"matchups": [], "week": 3, "state": "error",
+                    "message": "League scores temporarily unavailable"},
+    })
+    assert "No matchups found" not in out["leagueHtml"]
+    assert "temporarily unavailable" in out["leagueHtml"]
+    assert "data-ls-retry" in out["leagueHtml"]
+
+
+def test_ls_click_survives_node_replacement():
+    """Document-level delegation: clicking still works when the tabs node is a
+    fresh replacement (soft-nav page swap), which used to orphan the handler."""
+    src = open(os.path.join(_ROOT, "static", "app.js"), encoding="utf-8").read()
+    assert "document.addEventListener('click'" in src
+    # The old per-node wiring pattern must be gone.
+    assert "tabs._lsWired" not in src
+    assert "tabs.addEventListener('click'" not in src
