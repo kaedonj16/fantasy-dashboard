@@ -696,26 +696,177 @@ window.brHaptic = function (pattern) {
 };
 
 /**
- * PWA update prompt. The service worker skipWaiting()s, so a new version takes
- * control on its own; this just tells a long-lived session so the user can
- * reload for the latest instead of running stale assets until they happen to
- * relaunch. Keyed off controllerchange, guarded so the first-load claim (when
- * there was no controller yet) doesn't fire a spurious prompt.
+ * Tap-to-update prompt. Detects when the server is serving a newer deploy than
+ * the bundle this page is running (our ?v= hash vs /healthz/version), and when
+ * a service worker update is waiting. Shows one dismissible toast per new
+ * version; tapping it (not the X) swaps in the update with a cache-bypassing
+ * reload. Never reloads on its own and never blocks the UI.
+ *
+ * Checks run on load, when the app returns to the foreground, when the browser
+ * comes back online, and every 30 minutes while visible. The service worker
+ * skipWaiting()s, so a new worker takes control on its own; the version check
+ * is what notices our HTML/JS is stale, which controllerchange alone misses
+ * (e.g. the worker updated before this page loaded).
  */
-(function initSwUpdatePrompt() {
+(function initUpdatePrompt() {
   if (!('serviceWorker' in navigator)) return;
+
+  var VERSION_URL = '/healthz/version';
+  var CHECK_INTERVAL_MS = 30 * 60 * 1000;
+  var MIN_RECHECK_MS = 5 * 60 * 1000;
+
+  var lastCheck = 0;
+  var promptedFor = '';    // server version we've already shown the prompt for
+  var dismissedFor = '';   // server version the user dismissed
+  var waitingSw = null;    // worker waiting for our tap to activate
   var hadController = !!navigator.serviceWorker.controller;
-  var shown = false;
+  var timer = null;
+
+  // The ?v= hash on our own <script> URL identifies the running bundle.
+  function myBundleHash() {
+    try {
+      var src = (document.currentScript && document.currentScript.src) || '';
+      var m = src.match(/[?&]v=([A-Za-z0-9]+)/);
+      return m ? m[1] : '';
+    } catch (_) { return ''; }
+  }
+
+  function showPrompt(serverVersion) {
+    if (!serverVersion || promptedFor === serverVersion || dismissedFor === serverVersion) return;
+    if (document.querySelector('.br-update-banner')) return;
+    promptedFor = serverVersion;
+
+    var wrap = document.createElement('div');
+    wrap.className = 'br-update-banner';
+    wrap.setAttribute('role', 'status');
+
+    var main = document.createElement('button');
+    main.type = 'button';
+    main.className = 'br-update-main';
+    main.innerHTML = '<span>New version available</span><span class="br-update-cta">Tap to update</span>';
+    main.addEventListener('click', applyUpdate);
+
+    var dismiss = document.createElement('button');
+    dismiss.type = 'button';
+    dismiss.className = 'br-update-dismiss';
+    dismiss.setAttribute('aria-label', 'Dismiss update notification');
+    dismiss.textContent = '\u00d7';
+    dismiss.addEventListener('click', function (e) {
+      e.stopPropagation();
+      dismissedFor = promptedFor;
+      if (wrap.parentNode) wrap.parentNode.removeChild(wrap);
+    });
+
+    wrap.appendChild(main);
+    wrap.appendChild(dismiss);
+    document.body.appendChild(wrap);
+  }
+
+  function applyUpdate() {
+    // A worker is waiting for our tap: let it activate, then the
+    // controllerchange handler below reloads. Otherwise bypass the HTTP cache
+    // so the reload fetches the new HTML instead of the stale shell.
+    if (waitingSw) {
+      try { waitingSw.postMessage({ type: 'SKIP_WAITING' }); return; }
+      catch (_) {}
+    }
+    bypassReload();
+  }
+
+  function bypassReload() {
+    try {
+      if (navigator.serviceWorker.controller) {
+        var channel = new MessageChannel();
+        var answered = false;
+        channel.port1.onmessage = function () {
+          if (answered) return;
+          answered = true;
+          location.reload();
+        };
+        navigator.serviceWorker.controller.postMessage(
+          { type: 'bypass-cache', url: location.href }, [channel.port2]);
+        setTimeout(function () {
+          if (!answered) { answered = true; location.reload(); }
+        }, 800);
+        return;
+      }
+    } catch (_) {}
+    location.reload();
+  }
+
+  function checkVersion() {
+    var now = Date.now();
+    if (now - lastCheck < MIN_RECHECK_MS) return;
+    lastCheck = now;
+    var mine = myBundleHash();
+    if (!mine) return;
+    fetch(VERSION_URL, { cache: 'no-store', credentials: 'omit' })
+      .then(function (r) { return (r && r.ok) ? r.json() : null; })
+      .then(function (data) {
+        if (!data || !data.app_js) return;
+        if (data.app_js !== mine) showPrompt(data.git_sha || data.app_js);
+      })
+      .catch(function () {});
+  }
+
+  function trackWorker(worker) {
+    if (!worker) return;
+    if (worker.state === 'installed') { waitingSw = worker; checkVersion(); return; }
+    worker.addEventListener('statechange', function () {
+      if (worker.state === 'installed') { waitingSw = worker; checkVersion(); }
+    });
+  }
+
   navigator.serviceWorker.addEventListener('controllerchange', function () {
-    if (!hadController || shown) return;   // initial claim, not an update
-    shown = true;
-    var b = document.createElement('button');
-    b.type = 'button';
-    b.className = 'br-update-banner';
-    b.innerHTML = '<span>New version ready</span><span class="br-update-cta">Tap to refresh</span>';
-    b.addEventListener('click', function () { window.location.reload(); });
-    document.body.appendChild(b);
+    if (waitingSw) {
+      // We tapped "update" and the worker just took over: load the new page.
+      waitingSw = null;
+      bypassReload();
+      return;
+    }
+    if (!hadController) { hadController = true; return; }  // first claim, not an update
+    checkVersion();
   });
+
+  function armRegistration(reg) {
+    if (!reg) return;
+    if (reg.waiting) { waitingSw = reg.waiting; }
+    reg.addEventListener('updatefound', function () { trackWorker(reg.installing); });
+    // Proactively ask for worker updates; the browser also checks on navigation.
+    try { reg.update(); } catch (_) {}
+    checkVersion();
+  }
+
+  if (navigator.serviceWorker.getRegistration) {
+    navigator.serviceWorker.getRegistration().then(armRegistration).catch(function () {});
+  }
+  // Also cover the race where getRegistration resolves before a waiting worker
+  // is set; ready resolves once there's an active worker.
+  if (navigator.serviceWorker.ready) {
+    navigator.serviceWorker.ready.then(armRegistration).catch(function () {});
+  }
+
+  function recheckSoon() {
+    // Foreground / reconnect: re-check, throttled by checkVersion itself.
+    checkVersion();
+    if (navigator.serviceWorker.getRegistration) {
+      navigator.serviceWorker.getRegistration().then(function (reg) {
+        if (reg) { try { reg.update(); } catch (_) {} }
+      }).catch(function () {});
+    }
+  }
+
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'visible') recheckSoon();
+  });
+  window.addEventListener('online', recheckSoon);
+  window.addEventListener('focus', recheckSoon);
+
+  timer = setInterval(function () {
+    if (document.visibilityState === 'visible') recheckSoon();
+  }, CHECK_INTERVAL_MS);
+  // Don't keep the process alive for this in non-browser runtimes.
+  if (timer && typeof timer.unref === 'function') { try { timer.unref(); } catch (_) {} }
 })();
 
 /**
