@@ -18532,6 +18532,25 @@ def api_weekly_week():
     )
 
     _api_vid = str((ctx.get("viewer") or {}).get("viewer_roster_id") or "")
+    # RedZone Moments launcher for the viewer's matchup slide. The week-change
+    # fetch replaces #weeklyMatchupsContainer, so the launcher must be included
+    # here too (not just on the initial page render), or it vanishes when she
+    # switches weeks.
+    _api_rzm_html = ""
+    try:
+        from dashboard_services.pages.weekly_hub_page import redzone_moments_hub_html
+        if not ctx.get("offseason_mode"):
+            _api_rzm_html = redzone_moments_hub_html(platform, league_id, season, week)
+    except Exception:
+        _api_rzm_html = ""
+    def _api_rzm_for_matchup(m):
+        if not _api_rzm_html or not _api_vid:
+            return ""
+        _rids = (
+            str((m.get("left") or {}).get("roster_id", "")),
+            str((m.get("right") or {}).get("roster_id", "")),
+        )
+        return _api_rzm_html if str(_api_vid) in _rids else ""
     matchups = sorted(
         matchups_by_week.get(week, []) or [],
         key=lambda m: 0 if _api_vid and _api_vid in (str((m.get("left") or {}).get("roster_id", "")),
@@ -18593,6 +18612,7 @@ def api_weekly_week():
             is_gotw=is_gotw,
             gotw_selection=_api_gotw,
             league_id=ctx.get("resolved_league_id") or league_id,
+            rzm_hub_html=_api_rzm_for_matchup(m),
         )
         for m, is_gotw in zip(matchups, _api_gotw_flags)
     ]
