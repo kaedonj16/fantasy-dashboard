@@ -42472,26 +42472,47 @@ table.rz-bs-table thead th:first-child {
 
 /* Play cards (RedZone feed style) */
 .rzm-play {
-  display: flex; align-items: stretch; gap: 10px; width: 100%;
-  background: var(--rz-row); border: 1px solid var(--rz-border); border-radius: 10px;
-  padding: 10px 12px 10px 0; margin-bottom: 8px; cursor: pointer; text-align: left;
+  display: flex; align-items: flex-start; gap: 12px; width: 100%;
+  background: var(--rz-row); border: 1px solid var(--rz-border); border-radius: 12px;
+  padding: 12px 14px 12px 0; margin-bottom: 10px; cursor: pointer; text-align: left;
   color: var(--rz-text); font: inherit; position: relative; overflow: hidden;
 }
 .rzm-play:hover { border-color: var(--rz-red); }
-.rzm-play-accent { width: 4px; flex: none; border-radius: 0 2px 2px 0; background: var(--rz-border); }
+.rzm-play-accent { width: 4px; flex: none; align-self: stretch; border-radius: 0 2px 2px 0; background: var(--rz-border); }
 .rzm-play.is-td .rzm-play-accent { background: var(--rz-red); }
 .rzm-play.is-big .rzm-play-accent { background: var(--accent); }
 .rzm-play.is-to .rzm-play-accent { background: var(--warning); }
+/* Headshot avatar with initials fallback (mirrors .rz-event-avatar) */
+.rzm-play-avatar {
+  width: 48px; height: 48px; border-radius: 12px; overflow: hidden; flex: none;
+  background: var(--rz-surface); position: relative; margin-top: 1px;
+  box-shadow: inset 0 0 0 1px var(--rz-border);
+}
+.rzm-play-headshot { width: 100%; height: 100%; object-fit: cover; object-position: top center; display: block; }
+.rzm-play-avatar.img-err .rzm-play-headshot { opacity: 0; position: absolute; }
+.rzm-play-avatar.img-err::after {
+  content: attr(data-init); position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 15px; font-weight: 900; letter-spacing: .02em; color: var(--rz-muted);
+}
+.rzm-play-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.rzm-play-head { display: flex; align-items: center; gap: 8px; }
+.rzm-play-name { flex: 1; min-width: 0; font-weight: 700; font-size: 14px; color: var(--rz-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rzm-play-pos { font-weight: 600; font-size: 11px; color: var(--rz-muted); }
+.rzm-play-tags { flex: none; display: flex; align-items: center; gap: 6px; }
 .rzm-play-kind {
-  flex: none; align-self: flex-start; font-size: 10px; font-weight: 800;
-  letter-spacing: 0.06em; padding: 3px 8px; border-radius: 6px; margin-top: 2px;
+  font-size: 10px; font-weight: 800; letter-spacing: 0.06em;
+  padding: 3px 8px; border-radius: 6px;
   background: var(--rz-surface); color: var(--rz-muted);
 }
 .rzm-play.is-td .rzm-play-kind { background: var(--rz-red); color: #fff; }
+.rzm-play.is-big .rzm-play-kind { background: var(--accent); color: #fff; }
 .rzm-play.is-to .rzm-play-kind { background: var(--warning); color: #000; }
-.rzm-play-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.rzm-play-name { font-weight: 700; font-size: 14px; color: var(--rz-text); }
-.rzm-play-pos { font-weight: 600; font-size: 11px; color: var(--rz-muted); }
-.rzm-play-text { font-size: 13px; color: var(--rz-muted); line-height: 1.4; }
+.rzm-play-side {
+  font-size: 10px; font-weight: 800; letter-spacing: 0.04em;
+  padding: 3px 8px; border-radius: 6px;
+  background: var(--rz-surface); color: var(--rz-muted);
+}
+.rzm-play-side.is-you { background: var(--accent-soft); color: var(--accent); }
+.rzm-play-text { font-size: 13px; color: var(--rz-muted); line-height: 1.45; }
 .rzm-play-meta { font-size: 11px; color: var(--text-subtle); }
-.rzm-play-side { flex: none; align-self: flex-start; font-size: 10px; font-weight: 800; color: var(--rz-muted); margin-top: 4px; }

@@ -22818,6 +22818,20 @@ window._rzStubPbpEvents = function(pid, state) {
     if (kind === 'big_gain') return 'BIG PLAY';
     return 'TURNOVER';
   }
+  function _rzmInitials(name) {
+    var parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+    if (!parts.length) return '?';
+    return (parts[0].charAt(0) + (parts.length > 1 ? parts[parts.length - 1].charAt(0) : '')).toUpperCase();
+  }
+  function _rzmHeadshotUrl(play) {
+    var pid = play.pid != null ? String(play.pid) : '';
+    if (!pid) return '';
+    if (window.brPlayerThumbUrl) {
+      // Handles DEF/DST (team crest) and normal players via the shared helper.
+      return window.brPlayerThumbUrl({ pos: play.pos, pid: pid, team: play.team }) || '';
+    }
+    return 'https://sleepercdn.com/content/nfl/players/thumb/' + encodeURIComponent(pid) + '.jpg';
+  }
   function _rzmPlayHtml(play) {
     var kindCls = play.kind === 'td' ? 'is-td' : (play.kind === 'turnover' ? 'is-to' : 'is-big');
     var meta = [];
@@ -22826,13 +22840,20 @@ window._rzStubPbpEvents = function(pid, state) {
     if (play.down) meta.push(play.down + (play.distance ? ' & ' + play.distance : ''));
     if (play.yard_line) meta.push(play.yard_line);
     var yds = play.yards ? play.yards + ' yds' : '';
+    var hsUrl = _rzmHeadshotUrl(play);
+    var avatarHtml = '<span class="rzm-play-avatar" data-init="' + escapeHtml(_rzmInitials(play.name)) + '">'
+      + (hsUrl ? '<img class="rzm-play-headshot" src="' + escapeHtml(hsUrl) + '" alt="" loading="lazy" decoding="async" onerror="this.parentNode.classList.add(\'img-err\')">' : '')
+      + '</span>';
+    var side = play.side === 'you' ? 'YOU' : 'OPP';
+    var sideCls = play.side === 'you' ? 'is-you' : 'is-opp';
     return '<button type="button" class="rzm-play ' + kindCls + '" data-rzm-play data-game-id="' + escapeHtml(play.game_id || '') + '" data-play-id="' + escapeHtml(play.play_id || '') + '">'
       + '<span class="rzm-play-accent"></span>'
-      + '<span class="rzm-play-kind">' + _rzmKindLabel(play.kind) + '</span>'
-      + '<span class="rzm-play-main"><span class="rzm-play-name">' + escapeHtml(play.name || 'Unknown') + (play.pos ? ' <span class="rzm-play-pos">' + escapeHtml(play.pos) + '</span>' : '') + '</span>'
+      + avatarHtml
+      + '<span class="rzm-play-main">'
+      + '<span class="rzm-play-head"><span class="rzm-play-name">' + escapeHtml(play.name || 'Unknown') + (play.pos ? ' <span class="rzm-play-pos">' + escapeHtml(play.pos) + '</span>' : '') + '</span>'
+      + '<span class="rzm-play-tags"><span class="rzm-play-kind">' + _rzmKindLabel(play.kind) + '</span><span class="rzm-play-side ' + sideCls + '">' + side + '</span></span></span>'
       + '<span class="rzm-play-text">' + escapeHtml(play.play_text || '') + '</span>'
       + '<span class="rzm-play-meta">' + escapeHtml(meta.join(' · ')) + (yds ? (meta.length ? ' · ' : '') + escapeHtml(yds) : '') + '</span></span>'
-      + '<span class="rzm-play-side">' + escapeHtml(play.side === 'you' ? 'YOU' : 'OPP') + '</span>'
       + '</button>';
   }
   function _rzmOpenModal(slot) {
