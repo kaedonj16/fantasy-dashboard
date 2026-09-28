@@ -22643,6 +22643,8 @@ window._rzStubPbpEvents = function(pid, state) {
   }
   function matchupHtml(data) {
     var you = data.you, opp = data.opp, status = data.status || 'pre';
+    // League Scores tab toggle: My Matchup | League Scores
+    var tabs = '<div class="ls-tabs" data-ls-tabs><button type="button" class="ls-tab is-active" data-ls-tab="matchup">My Matchup</button><button type="button" class="ls-tab" data-ls-tab="league">League Scores</button></div>';
     var label = status === 'in' ? 'Live · Wk ' + escapeHtml(data.week) : (status === 'final' ? 'Final · Wk ' + escapeHtml(data.week) : 'Wk ' + escapeHtml(data.week));
     function side(team, name, opposite) {
       return '<div class="pf-live-side' + (opposite ? ' opp' : '') + '"><div class="pf-live-lbl">' + escapeHtml(name) + '</div><div class="pf-live-score">' + (team ? number(team.score, status === 'final' ? 2 : 1) : '-') + '</div>' + (team && status !== 'final' ? '<div class="pf-live-proj">proj ' + number(team.proj, 1) + '</div>' : '') + '</div>';
@@ -22657,7 +22659,9 @@ window._rzStubPbpEvents = function(pid, state) {
     }
     // RedZone Moments row: populated async by renderMatchup via /api/redzone/moments.
     extra += '<div class="rzm-row" data-rzm-row hidden><button type="button" class="rzm-row-btn" data-rzm-open><span class="rzm-row-accent"></span><span class="rzm-row-title">RedZone Moments</span><span class="rzm-row-count" data-rzm-count></span><span class="rzm-row-chevron" aria-hidden="true">›</span></button></div>';
-    return '<div class="pf-live-status' + (status === 'in' ? ' is-live' : '') + '"><span class="pf-live-dot"></span>' + label + '</div><div class="pf-live-grid">' + side(you, 'You', false) + side(opp, opp ? (opp.name || 'Opp') : 'Bye', true) + '</div>' + extra;
+    var matchupView = '<div class="ls-view" data-ls-view="matchup"><div class="pf-live-status' + (status === 'in' ? ' is-live' : '') + '"><span class="pf-live-dot"></span>' + label + '</div><div class="pf-live-grid">' + side(you, 'You', false) + side(opp, opp ? (opp.name || 'Opp') : 'Bye', true) + '</div>' + extra + '</div>';
+    var leagueView = '<div class="ls-view" data-ls-view="league" hidden><div class="ls-loading">Loading league scores...</div></div>';
+    return tabs + matchupView + leagueView;
   }
   function renderMatchup(slot, data) {
     if (!slot || !data) return false;
@@ -22684,8 +22688,91 @@ window._rzStubPbpEvents = function(pid, state) {
     slot.innerHTML = matchupHtml(data); slot.hidden = false; slot.removeAttribute('aria-busy');
     slot.dataset.matchupGood = 'true'; slot._isLive = data.status === 'in';
     _rzmMaybeLoad(slot);
+    _lsWireTabs(slot);
     return true;
   }
+  // ── League Scores ────────────────────────────────────────────────────────
+  // Tab toggle on the matchup card: My Matchup | League Scores.
+  // Fetches /api/matchup/league-scores and renders all league matchups.
+  var _lsCache = {};
+  function _lsWireTabs(slot) {
+    if (!slot || slot._lsWired) return;
+    slot._lsWired = true;
+    slot.addEventListener('click', function(e) {
+      var tab = e.target.closest('[data-ls-tab]');
+      if (!tab || !slot.contains(tab)) return;
+      e.preventDefault();
+      var view = tab.getAttribute('data-ls-tab');
+      var tabs = slot.querySelectorAll('[data-ls-tab]');
+      for (var i = 0; i < tabs.length; i++) {
+        tabs[i].classList.toggle('is-active', tabs[i] === tab);
+      }
+      var views = slot.querySelectorAll('[data-ls-view]');
+      for (var j = 0; j < views.length; j++) {
+        views[j].hidden = views[j].getAttribute('data-ls-view') !== view;
+      }
+      if (view === 'league') _lsLoad(slot);
+    });
+  }
+  function _lsLoad(slot) {
+    if (!slot || slot._lsLoading) return;
+    var view = slot.querySelector('[data-ls-view="league"]');
+    if (!view || view.dataset.lsLoaded === 'true') return;
+    var card = slot.closest('[data-summary-card]');
+    if (!card) return;
+    var platform = card.dataset.platform, leagueId = card.dataset.leagueId, season = card.dataset.season;
+    if (!platform || !leagueId) return;
+    var key = platform + ':' + leagueId + ':' + season;
+    slot._lsLoading = true;
+    function render(matchups, week) {
+      slot._lsLoading = false;
+      if (!view.isConnected) return;
+      if (!matchups || !matchups.length) {
+        view.innerHTML = '<div class="ls-empty">No matchups found for Week ' + escapeHtml(week) + '.</div>';
+        return;
+      }
+      var html = '<div class="ls-list">';
+      matchups.forEach(function(m) {
+        var left = m.left || {}, right = m.right;
+        var statusLabel = m.status === 'in' ? 'Live' : (m.status === 'final' ? 'Final' : 'Wk ' + escapeHtml(week));
+        var wp = m.win_prob != null ? Math.max(0, Math.min(100, Math.round(Number(m.win_prob)))) : null;
+        html += '<div class="ls-card' + (m.is_you ? ' is-you' : '') + '">';
+        html += '<div class="ls-card-head"><span class="ls-status' + (m.status === 'in' ? ' is-live' : '') + '">' + escapeHtml(statusLabel) + '</span>' + (m.is_you ? '<span class="ls-you-badge">Your matchup</span>' : '') + '</div>';
+        html += '<div class="ls-teams">';
+        html += '<div class="ls-team"><span class="ls-team-name">' + escapeHtml(left.name || 'TBD') + '</span><span class="ls-team-score">' + number(left.score, 1) + '</span><span class="ls-team-proj">proj ' + number(left.proj, 1) + '</span></div>';
+        if (right) {
+          html += '<div class="ls-team"><span class="ls-team-name">' + escapeHtml(right.name || 'TBD') + '</span><span class="ls-team-score">' + number(right.score, 1) + '</span><span class="ls-team-proj">proj ' + number(right.proj, 1) + '</span></div>';
+        } else {
+          html += '<div class="ls-team"><span class="ls-team-name">Bye</span></div>';
+        }
+        html += '</div>';
+        if (wp != null && right) {
+          html += '<div class="pf-live-wp"><div class="pf-live-wp-track"><div class="pf-live-wp-fill" style="width:' + wp + '%"></div></div><div class="pf-live-wp-lbls"><span>' + wp + '%</span><span>' + (100 - wp) + '%</span></div></div>';
+        }
+        html += '</div>';
+      });
+      html += '</div>';
+      view.innerHTML = html;
+      view.dataset.lsLoaded = 'true';
+    }
+    if (_lsCache[key] && (Date.now() - _lsCache[key].t) < 60000) {
+      var c = _lsCache[key].d;
+      render(c.matchups, c.week);
+      return;
+    }
+    var url = '/api/matchup/league-scores?platform=' + encodeURIComponent(platform) + '&league_id=' + encodeURIComponent(leagueId) + '&season=' + encodeURIComponent(season || '');
+    fetch(url, {credentials: 'same-origin'})
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        if (d && d.matchups) _lsCache[key] = {t: Date.now(), d: d};
+        render(d ? d.matchups : [], d ? d.week : '');
+      })
+      .catch(function() {
+        slot._lsLoading = false;
+        if (view.isConnected) view.innerHTML = '<div class="ls-empty">League scores unavailable. <button type="button" data-ls-retry>Retry</button></div>';
+      });
+  }
+
   // ── RedZone Moments ──────────────────────────────────────────────────────
   // Fetches /api/redzone/moments for the card's league and wires the row +
   // modal. The row lives under the win probability bar in matchupHtml.
