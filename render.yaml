@@ -319,6 +319,30 @@ services:
         value: production
 
   - type: cron
+    name: redzone-store-poll
+    runtime: python
+    # Owns RedZone play-store polling (moved out of the gunicorn master, where
+    # --preload deploys silently orphaned the in-app thread and froze game
+    # data). One poll_once() per run; the Postgres advisory lock skips the run
+    # cleanly if a previous poll is still going. No APP_URL/CRON_SECRET: this
+    # talks to Postgres directly, never the web service.
+    schedule: "* * * * *"
+    plan: starter
+    buildCommand: pip install --no-cache-dir -r requirements.txt
+    startCommand: python scripts/redzone_poll.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: DATABASE_URL
+        fromDatabase:
+          name: brfantasy-db
+          property: connectionString
+      - key: TZ
+        value: America/New_York
+      - key: PYTHON_ENV
+        value: production
+
+  - type: cron
     name: trade-recrawl
     runtime: python
     # Every 4 hours. Grows the league pool (discovery) AND re-crawls known

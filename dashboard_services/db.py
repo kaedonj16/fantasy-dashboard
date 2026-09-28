@@ -145,7 +145,11 @@ def _get_pool():
             return _pool
         # New process: build a fresh pool bound to this pid. Abandon (do NOT
         # close) any inherited pool -- closing would disturb the parent's sockets.
-        max_size = int(os.getenv("DB_POOL_MAX", str(int(os.getenv("WEB_THREADS", "2")) + 2)))
+        # Sized for WEB_THREADS request threads per gunicorn worker, plus
+        # headroom for background threads (notification cron, portfolio
+        # refresh). The pool is per worker process: 2 workers x 8 = 16 max
+        # connections total, well within the Postgres plan limit.
+        max_size = int(os.getenv("DB_POOL_MAX", str(int(os.getenv("WEB_THREADS", "4")) + 4)))
         _pool = ConnectionPool(
             get_database_url(),
             min_size=1,
