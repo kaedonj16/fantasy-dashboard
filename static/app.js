@@ -23002,7 +23002,20 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
       }
       html += '</div>';
       if (wp != null && right) {
-        html += '<div class="pf-live-wp"><div class="pf-live-wp-track"><div class="pf-live-wp-fill" style="width:' + wp + '%"></div></div><div class="pf-live-wp-lbls"><span>' + wp + '%</span><span>' + (100 - wp) + '%</span></div></div>';
+        var lp = wp, rp = 100 - wp;
+        var lLeading = lp >= rp;
+        var winGreen = '#22c55e', loseFade = 'rgba(148,163,184,0.35)';
+        var lBar = lLeading ? winGreen : loseFade;
+        var rBar = lLeading ? loseFade : winGreen;
+        var trackBg = 'linear-gradient(to right,' + lBar + ' ' + lp + '%,' + rBar + ' ' + lp + '%)';
+        var lCol = lLeading ? winGreen : 'var(--text-muted)';
+        var rCol = lLeading ? 'var(--text-muted)' : winGreen;
+        var lName = String(left.name || 'left team').replace(/"/g, '');
+        var rName = String(right.name || 'right team').replace(/"/g, '');
+        html += '<div class="m-win-bar" role="img" aria-label="Win probability: ' + escapeHtml(lName) + ' ' + lp + ' percent, ' + escapeHtml(rName) + ' ' + rp + ' percent">'
+          + '<span class="m-wp-pct" style="color:' + lCol + ';">' + lp + '%</span>'
+          + '<div class="m-wp-track" style="background:' + trackBg + ';"></div>'
+          + '<span class="m-wp-pct" style="color:' + rCol + ';text-align:right;">' + rp + '%</span></div>';
       }
       html += '</div>';
     });

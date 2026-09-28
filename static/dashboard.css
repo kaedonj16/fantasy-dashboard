@@ -42419,6 +42419,9 @@ table.rz-bs-table thead th:first-child {
 .ls-team-name { flex: 1; font-size: 13px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ls-team-score { font-size: 16px; font-weight: 700; color: var(--text); }
 .ls-team-proj { font-size: 11px; color: var(--text-subtle); }
+/* Win-prob bar inside League Scores cards: reuse the matchup .m-win-bar
+   pattern but fit the card's tighter padding (no double inset). */
+.ls-card .m-win-bar { padding: 2px 0 4px; }
 
 .rzm-row-btn {
   display: flex; align-items: center; gap: 10px; width: 100%;

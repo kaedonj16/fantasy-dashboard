@@ -220,3 +220,27 @@ def test_ls_tab_empty_state():
         "apiBody": {"matchups": [], "week": 3},
     })
     assert "No matchups found" in out["leagueHtml"]
+
+
+def test_ls_win_prob_uses_styled_win_bar():
+    # Regression: the win-probability row must use the styled m-win-bar
+    # pattern (shared with My Matchup), not the unstyled pf-live-wp markup
+    # that rendered as bare "100%0%" text.
+    out = _run_harness({
+        "platform": "sleeper", "leagueId": "123", "season": "2026",
+        "apiBody": {
+            "matchups": [
+                {"left": {"name": "You", "score": 100.5, "proj": 110.2},
+                 "right": {"name": "Opp", "score": 95.3, "proj": 105.1},
+                 "win_prob": 65.5, "status": "in", "is_you": True},
+            ],
+            "week": 3,
+        },
+    })
+    html = out["leagueHtml"]
+    assert "pf-live-wp" not in html
+    assert "m-win-bar" in html
+    assert "m-wp-track" in html
+    assert "linear-gradient" in html
+    assert "66%" in html  # rounded left win prob
+    assert "34%" in html  # right win prob
