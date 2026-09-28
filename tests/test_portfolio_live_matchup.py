@@ -98,7 +98,9 @@ def test_portfolio_card_has_no_matchup_block():
     assert "function matchupHtml" not in client
     assert "function renderMatchup" not in client
     assert "data-rzm-row" not in client
-    assert "ls-tabs" not in client
+    # NOTE: "ls-tabs" is intentionally present in app.js: the Weekly Hub's
+    # My Matchup | League Scores toggle reuses the .ls-tabs styles. The
+    # portfolio's LS tabs were rendered by matchupHtml (asserted absent above).
     # NOTE: the .rzm-row/.ls-tabs CSS stays in dashboard.css on purpose: the
     # Weekly Hub matchup page reuses it for its own RedZone Moments row/modal.
     # The summary hydration path is untouched: cards still carry fetch keys and

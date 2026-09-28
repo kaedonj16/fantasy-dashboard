@@ -22974,6 +22974,116 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
   window.__brPortfolioCardsTest = { renderSummary: renderSummary, identity: identity };
 })();
 
+/* Weekly hub: League Scores tab (My Matchup | League Scores).
+   Toggles between the viewer's matchup carousel and a Sleeper-style list of
+   all league matchups for the week. Fetches /api/matchup/league-scores with a
+   60s cache. The viewer's matchup is highlighted and sorted first by the API. */
+(function () {
+  'use strict';
+  var _lsCache = {};
+  function _lsRenderList(view, matchups, week) {
+    if (!matchups || !matchups.length) {
+      view.innerHTML = '<div class="ls-empty">No matchups found for Week ' + escapeHtml(String(week)) + '.</div>';
+      return;
+    }
+    var html = '<div class="ls-list">';
+    matchups.forEach(function (m) {
+      var left = m.left || {}, right = m.right;
+      var statusLabel = m.status === 'in' ? 'Live' : (m.status === 'final' ? 'Final' : 'Wk ' + escapeHtml(String(week)));
+      var wp = m.win_prob != null ? Math.max(0, Math.min(100, Math.round(Number(m.win_prob)))) : null;
+      html += '<div class="ls-card' + (m.is_you ? ' is-you' : '') + '">';
+      html += '<div class="ls-card-head"><span class="ls-status' + (m.status === 'in' ? ' is-live' : '') + '">' + escapeHtml(statusLabel) + '</span>' + (m.is_you ? '<span class="ls-you-badge">Your matchup</span>' : '') + '</div>';
+      html += '<div class="ls-teams">';
+      html += '<div class="ls-team"><span class="ls-team-name">' + escapeHtml(left.name || 'TBD') + '</span><span class="ls-team-score">' + Number(left.score || 0).toFixed(1) + '</span><span class="ls-team-proj">proj ' + Number(left.proj || 0).toFixed(1) + '</span></div>';
+      if (right) {
+        html += '<div class="ls-team"><span class="ls-team-name">' + escapeHtml(right.name || 'TBD') + '</span><span class="ls-team-score">' + Number(right.score || 0).toFixed(1) + '</span><span class="ls-team-proj">proj ' + Number(right.proj || 0).toFixed(1) + '</span></div>';
+      } else {
+        html += '<div class="ls-team"><span class="ls-team-name">Bye</span></div>';
+      }
+      html += '</div>';
+      if (wp != null && right) {
+        html += '<div class="pf-live-wp"><div class="pf-live-wp-track"><div class="pf-live-wp-fill" style="width:' + wp + '%"></div></div><div class="pf-live-wp-lbls"><span>' + wp + '%</span><span>' + (100 - wp) + '%</span></div></div>';
+      }
+      html += '</div>';
+    });
+    html += '</div>';
+    view.innerHTML = html;
+    view.dataset.lsLoaded = 'true';
+  }
+  function _lsLoad(tabs) {
+    var shell = tabs.closest('.matchups-shell');
+    var view = shell ? shell.querySelector('[data-ls-view="league"]') : null;
+    if (!view || view.dataset.lsLoaded === 'true' || tabs._lsLoading) return;
+    var platform = tabs.getAttribute('data-platform') || '';
+    var leagueId = tabs.getAttribute('data-league-id') || '';
+    var season = tabs.getAttribute('data-season') || '';
+    var week = tabs.getAttribute('data-week') || '';
+    if (!platform || !leagueId) return;
+    var key = platform + ':' + leagueId + ':' + season + ':' + week;
+    tabs._lsLoading = true;
+    function done(matchups, week) {
+      tabs._lsLoading = false;
+      if (!view.isConnected) return;
+      _lsRenderList(view, matchups, week);
+    }
+    function fail() {
+      tabs._lsLoading = false;
+      if (view.isConnected) view.innerHTML = '<div class="ls-empty">League scores unavailable. <button type="button" data-ls-retry>Retry</button></div>';
+    }
+    if (_lsCache[key] && (Date.now() - _lsCache[key].t) < 60000) {
+      var c = _lsCache[key].d;
+      done(c.matchups, c.week);
+      return;
+    }
+    var url = '/api/matchup/league-scores?platform=' + encodeURIComponent(platform) + '&league_id=' + encodeURIComponent(leagueId) + '&season=' + encodeURIComponent(season) + (week ? '&week=' + encodeURIComponent(week) : '');
+    fetch(url, { credentials: 'same-origin' })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d && d.matchups) _lsCache[key] = { t: Date.now(), d: d };
+        done(d ? d.matchups : [], d ? d.week : '');
+      })
+      .catch(fail);
+  }
+  function _lsWire() {
+    var tabs = document.querySelector('[data-ls-tabs]');
+    if (!tabs || tabs._lsWired) return;
+    tabs._lsWired = true;
+    tabs.addEventListener('click', function (e) {
+      var tab = e.target.closest('[data-ls-tab]');
+      if (!tab || !tabs.contains(tab)) return;
+      e.preventDefault();
+      var which = tab.getAttribute('data-ls-tab');
+      var all = tabs.querySelectorAll('[data-ls-tab]');
+      for (var i = 0; i < all.length; i++) all[i].classList.toggle('is-active', all[i] === tab);
+      var shell = tabs.closest('.matchups-shell');
+      var matchupView = shell ? shell.querySelector('#weeklyMatchupsContainer') : null;
+      var leagueView = shell ? shell.querySelector('[data-ls-view="league"]') : null;
+      if (matchupView) matchupView.hidden = which !== 'matchup';
+      if (leagueView) leagueView.hidden = which !== 'league';
+      if (which === 'league') _lsLoad(tabs);
+    });
+    // Retry button inside the league view.
+    document.addEventListener('click', function (e) {
+      var retry = e.target.closest('[data-ls-retry]');
+      if (!retry) return;
+      var shell = retry.closest('.matchups-shell');
+      var view = shell ? shell.querySelector('[data-ls-view="league"]') : null;
+      if (view) {
+        delete view.dataset.lsLoaded;
+        view.innerHTML = '<div class="ls-loading">Loading league scores...</div>';
+      }
+      delete tabs._lsLoading;
+      _lsLoad(tabs);
+    });
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', _lsWire);
+  } else {
+    _lsWire();
+  }
+  window.brInitLeagueScores = _lsWire;
+})();
+
 /* Weekly hub: RedZone Moments launcher (the matchup page's moments row).
    Fetches /api/redzone/moments for the page's league via the shared
    window.brRzm namespace and reveals the row when the viewer's matchup has
