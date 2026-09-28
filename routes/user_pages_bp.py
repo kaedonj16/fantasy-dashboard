@@ -1455,7 +1455,7 @@ def api_portfolio_matchup():
         from dashboard_services.api import (
             get_nfl_scores_for_date, build_team_game_lookup,
         )
-        _scores_body = get_nfl_scores_for_date(_date.today().strftime("%Y%m%d"))
+        _scores_body = get_nfl_scores_for_date(_date.today().strftime("%Y%m%d"), timeout=5)
         _team_game_lookup = build_team_game_lookup(_scores_body) if _scores_body else {}
     except Exception:
         logger.debug("[portfolio-matchup] live scores load failed", exc_info=True)
