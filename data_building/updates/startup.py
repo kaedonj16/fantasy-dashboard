@@ -142,7 +142,10 @@ def main():
         "--worker-class", "gthread",
         "--timeout", "120",
         "--keep-alive", "5",
-        "--max-requests", "10000",
+        # Recycle workers often: caps how long per-request memory
+        # accumulation can grow before the worker is replaced. The 2GB
+        # Render box OOM-crashed when this was raised to 10000.
+        "--max-requests", "1000",
         "--max-requests-jitter", "1000",
         "--preload",
         "--access-logfile", "-",

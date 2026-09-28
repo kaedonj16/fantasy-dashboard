@@ -79,10 +79,12 @@ def test_cron_uses_db_markers_for_both_backfills():
 
 # ── P2: gunicorn recycle threshold ────────────────────────────────────────────
 
-def test_gunicorn_max_requests_raised():
+def test_gunicorn_max_requests_restores_frequent_recycling():
+    # Frequent recycling caps per-request memory accumulation on the 2GB box;
+    # the 10000 value correlated with OOM crashes and was reverted.
     src = (ROOT / "data_building" / "updates" / "startup.py").read_text(encoding="utf-8")
-    assert '"--max-requests", "10000"' in src
-    assert '"--max-requests", "1000"' not in src
+    assert '"--max-requests", "1000"' in src
+    assert '"--max-requests", "10000"' not in src
 
 
 # ── P3: /api/league-players ETag caching ──────────────────────────────────────

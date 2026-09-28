@@ -34,6 +34,7 @@ def stubbed_loaders(monkeypatch):
     monkeypatch.setattr(sw, "_load_model_value_table", _rec("value_table"))
     monkeypatch.setattr(sw, "_warm_recent_leagues", _rec("recent_leagues"))
     monkeypatch.setattr(sw, "_ENABLED", True)
+    monkeypatch.setattr(sw, "_WARM_LEAGUE_CONTEXTS", True)
     return calls
 
 
@@ -75,6 +76,22 @@ def test_disabled_warmup_is_noop(stubbed_loaders, monkeypatch):
     sw.warm_shared_caches()
     assert stubbed_loaders == []
     assert sw.warm_shared_caches_async() is None
+
+
+def test_league_context_warming_disabled_by_default(stubbed_loaders, monkeypatch):
+    # OOM safety: league contexts are large; the step stays off unless
+    # WARM_LEAGUE_CONTEXTS=1. Shared caches must still warm.
+    monkeypatch.setattr(sw, "_WARM_LEAGUE_CONTEXTS", False)
+    sw.warm_shared_caches()
+    names = _names(stubbed_loaders)
+    assert "recent_leagues" not in names
+    assert names == [
+        "players_index",
+        "nfl_players",
+        "projections",
+        "usage_trends",
+        "value_table",
+    ]
 
 
 def test_warmup_async_spawns_daemon_thread(stubbed_loaders):
