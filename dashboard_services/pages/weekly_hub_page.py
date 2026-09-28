@@ -6,6 +6,7 @@ Flask monolith. Helpers that still live in app.py are lazy-imported inside
 """
 from __future__ import annotations
 
+import html as _html
 import logging
 
 logger = logging.getLogger(__name__)
@@ -18,8 +19,6 @@ def redzone_moments_hub_html(platform: str, league_id: str, season) -> str:
     only when the viewer's matchup has moments. Uses the same rzm-row markup
     and modal as the portfolio cards.
     """
-    import html as _html
-
     return (
         '<div class="rzm-row rzm-hub-launcher" data-rzm-hub'
         f' data-platform="{_html.escape(str(platform), quote=True)}"'
@@ -385,9 +384,22 @@ def build_weekly_hub_body(ctx: dict) -> str:
     _wk_scorers_cls = "tab-btn" if _show_matchup_preview else "tab-btn active"
     _wk_matchups_panel = ""
     if _show_matchup_preview:
+        _ls_tabs_html = (
+            f'<div class="ls-tabs" data-ls-tabs data-platform="{_html.escape(str(platform), quote=True)}"'
+            f' data-league-id="{_html.escape(str(league_id), quote=True)}"'
+            f' data-season="{_html.escape(str(season), quote=True)}"'
+            f' data-week="{int(default_week)}">'
+            '<button type="button" class="ls-tab is-active" data-ls-tab="matchup">My Matchup</button>'
+            '<button type="button" class="ls-tab" data-ls-tab="league">League Scores</button>'
+            "</div>"
+            '<div class="ls-view" data-ls-view="league" hidden>'
+            '<div class="ls-loading">Loading league scores...</div>'
+            "</div>"
+        )
         _wk_matchups_panel = f"""
             <div class="tab-panel active" data-tab="matchups">
               <div class="matchups-shell">
+                {_ls_tabs_html}
                 <div id="weeklyMatchupsContainer">
                   {matchup_html}
                 </div>

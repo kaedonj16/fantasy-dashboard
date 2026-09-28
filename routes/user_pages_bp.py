@@ -1589,7 +1589,7 @@ def api_matchup_league_scores():
     try:
         default_season = int(nfl_state.get("season") or datetime.now().year)
         season = int(request.args.get("season") or default_season)
-        week = int(nfl_state.get("week") or nfl_state.get("leg") or 0)
+        week = int(request.args.get("week") or nfl_state.get("week") or nfl_state.get("leg") or 0)
     except (TypeError, ValueError):
         return jsonify({"matchups": [], "week": 0})
     if week < 1:
