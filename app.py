@@ -548,6 +548,16 @@ app = Flask(
     static_url_path="/static"  # URL base for static files
 )
 
+
+@app.route("/sw.js")
+def service_worker():
+    """Serve the service worker at the root path (required for PWA scope).
+
+    The app registers '/sw.js' but the file lives in static/. Without this
+    route, the SW 404s and installed PWAs never receive updates.
+    """
+    return app.send_static_file("sw.js")
+
 # Behind Render's TLS-terminating proxy, Flask otherwise sees plain http and
 # builds http:// URLs (request.host_url/base_url) - which made the sitemap
 # submit http URLs that all 301 to https ("Page with redirect" in Search
