@@ -50,6 +50,19 @@ def _db_already_initialized() -> bool:
         return False
 
 
+def resolve_gunicorn_config():
+    """Return (port, workers, threads) for the gunicorn command.
+
+    Threads default to 4 (was 2): threads share a worker's address space,
+    so this doubles concurrent request capacity from 4 to 8 with no
+    meaningful memory increase. Override with WEB_THREADS / WEB_WORKERS.
+    """
+    port = int(os.environ.get('PORT', 5000))
+    workers = int(os.environ.get('WEB_WORKERS', 2))
+    threads = int(os.environ.get('WEB_THREADS', 4))
+    return port, workers, threads
+
+
 def main():
     # Line-buffer stdout/stderr so Render logs show startup progress live.
     # A hang before the port bind is otherwise invisible: block-buffered
@@ -111,9 +124,7 @@ def main():
             "skipping deploy-time ADP refresh"
         )
 
-    port = int(os.environ.get('PORT', 5000))
-    workers = int(os.environ.get('WEB_WORKERS', 2))
-    threads = int(os.environ.get('WEB_THREADS', 2))
+    port, workers, threads = resolve_gunicorn_config()
 
     print(f"\nStarting gunicorn on port {port} ({workers} workers x {threads} threads)")
     print(format_memory_snapshot("before gunicorn exec"))

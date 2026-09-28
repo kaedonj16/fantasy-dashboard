@@ -13359,10 +13359,21 @@ def _start_redzone_store() -> None:
     ESPN/Tank01 polling. The advisory lock in utils.redzone_store elects a
     single leader across gunicorn workers. Skipped under pytest so CI never
     spawns network/DB threads at import time.
+
+    Polling moved to the ``redzone-store-poll`` Render cron
+    (scripts/redzone_poll.py): under gunicorn ``--preload`` this thread ran
+    once in the master process, so deploys silently orphaned it and RedZone
+    data froze. Off by default; set REDZONE_STORE_THREAD=1 to re-enable the
+    in-app thread (e.g. local dev without the cron).
     """
     import sys as _sys
 
     if "pytest" in _sys.modules:
+        return
+    if os.environ.get("REDZONE_STORE_THREAD", "").strip().lower() not in (
+        "1", "true", "yes",
+    ):
+        logger.info("[redzone-store] in-app poller disabled; cron owns polling")
         return
     try:
         from utils.redzone_store import start_redzone_store_thread
