@@ -22980,9 +22980,7 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
    moments. The modal open/close/filter handlers live in window.brRzm. */
 (function () {
   'use strict';
-  function initHubRzm() {
-    if (typeof document.querySelector !== 'function') return;
-    var launcher = document.querySelector('[data-rzm-hub]');
+  function initOneLauncher(launcher) {
     if (!launcher || launcher._rzmInit) return;
     launcher._rzmInit = true;
     var platform = launcher.getAttribute('data-platform') || '';
@@ -22999,10 +22997,33 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
       launcher.hidden = false;
     }).catch(function () {});
   }
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initHubRzm);
-  } else {
-    initHubRzm();
+  function initHubRzm(root) {
+    if (typeof document.querySelector !== 'function') return;
+    (root || document).querySelectorAll('[data-rzm-hub]').forEach(initOneLauncher);
   }
-  window.brInitHubRzm = initHubRzm;
+  function start() {
+    initHubRzm(document);
+    // The hub repaints the matchup area after load (responsive layout moves,
+    // tab switches). If the launcher node is replaced, the fresh copy starts
+    // hidden; pick it up and reveal it again.
+    if ('MutationObserver' in window && document.body) {
+      new MutationObserver(function (mutations) {
+        for (var i = 0; i < mutations.length; i++) {
+          var added = mutations[i].addedNodes;
+          for (var j = 0; j < added.length; j++) {
+            var node = added[j];
+            if (node.nodeType !== 1) continue;
+            if (node.hasAttribute && node.hasAttribute('data-rzm-hub')) initOneLauncher(node);
+            if (node.querySelectorAll) initHubRzm(node);
+          }
+        }
+      }).observe(document.body, { childList: true, subtree: true });
+    }
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', start);
+  } else {
+    start();
+  }
+  window.brInitHubRzm = function () { initHubRzm(document); };
 })();
