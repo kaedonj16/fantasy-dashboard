@@ -22511,6 +22511,164 @@ window._rzStubPbpEvents = function(pid, state) {
   }, 20000);
 }());
 
+/* ── Shared RedZone Moments (portfolio cards + weekly hub) ───────────────────
+   The moments modal machinery is shared so the weekly hub (matchup page) can
+   offer the same moments without depending on portfolio markup. fetchMoments
+   caches per league; openModal/closeModal drive the modal; the document
+   handlers wire [data-rzm-hub-open] (weekly-hub launcher), the modal
+   filters, play deep-links, and Escape. */
+window.brRzm = (function () {
+  'use strict';
+  var _cache = {};
+  function fetchMoments(platform, leagueId, season) {
+    var key = platform + '|' + leagueId + '|' + season;
+    if (_cache[key]) return Promise.resolve(_cache[key]);
+    var url = '/api/redzone/moments?platform=' + encodeURIComponent(platform)
+      + '&league_id=' + encodeURIComponent(leagueId)
+      + '&season=' + encodeURIComponent(season || '');
+    var fetcher = window.brFetchWithTimeout || window.fetch;
+    return fetcher(url, { cache: 'no-store', credentials: 'same-origin' }, 15000)
+      .then(function (r) { return r.json().catch(function () { return {}; }); })
+      .then(function (body) { _cache[key] = body || {}; return _cache[key]; });
+  }
+  function kindLabel(kind) {
+    if (kind === 'td') return 'TD';
+    if (kind === 'big_gain') return 'BIG PLAY';
+    return 'TURNOVER';
+  }
+  function initials(name) {
+    var parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+    if (!parts.length) return '?';
+    return (parts[0].charAt(0) + (parts.length > 1 ? parts[parts.length - 1].charAt(0) : '')).toUpperCase();
+  }
+  function headshotUrl(play) {
+    var pid = play.pid != null ? String(play.pid) : '';
+    if (!pid) return '';
+    if (window.brPlayerThumbUrl) {
+      // Handles DEF/DST (team crest) and normal players via the shared helper.
+      return window.brPlayerThumbUrl({ pos: play.pos, pid: pid, team: play.team }) || '';
+    }
+    return 'https://sleepercdn.com/content/nfl/players/thumb/' + encodeURIComponent(pid) + '.jpg';
+  }
+  function playHtml(play) {
+    var kindCls = play.kind === 'td' ? 'is-td' : (play.kind === 'turnover' ? 'is-to' : 'is-big');
+    var meta = [];
+    if (play.quarter) meta.push('Q' + play.quarter);
+    if (play.clock) meta.push(play.clock);
+    if (play.down) meta.push(play.down + (play.distance ? ' & ' + play.distance : ''));
+    if (play.yard_line) meta.push(play.yard_line);
+    var yds = play.yards ? play.yards + ' yds' : '';
+    var hsUrl = headshotUrl(play);
+    var avatarHtml = '<span class="rzm-play-avatar" data-init="' + escapeHtml(initials(play.name)) + '">'
+      + (hsUrl ? '<img class="rzm-play-headshot" src="' + escapeHtml(hsUrl) + '" alt="" loading="lazy" decoding="async" onerror="this.parentNode.classList.add(\'img-err\')">' : '')
+      + '</span>';
+    var side = play.side === 'you' ? 'YOU' : 'OPP';
+    var sideCls = play.side === 'you' ? 'is-you' : 'is-opp';
+    return '<button type="button" class="rzm-play ' + kindCls + '" data-rzm-play data-game-id="' + escapeHtml(play.game_id || '') + '" data-play-id="' + escapeHtml(play.play_id || '') + '">'
+      + '<span class="rzm-play-accent"></span>'
+      + avatarHtml
+      + '<span class="rzm-play-main">'
+      + '<span class="rzm-play-head"><span class="rzm-play-name">' + escapeHtml(play.name || 'Unknown') + (play.pos ? ' <span class="rzm-play-pos">' + escapeHtml(play.pos) + '</span>' : '') + '</span>'
+      + '<span class="rzm-play-tags"><span class="rzm-play-kind">' + kindLabel(play.kind) + '</span><span class="rzm-play-side ' + sideCls + '">' + side + '</span></span></span>'
+      + '<span class="rzm-play-text">' + escapeHtml(play.play_text || '') + '</span>'
+      + '<span class="rzm-play-meta">' + escapeHtml(meta.join(' · ')) + (yds ? (meta.length ? ' · ' : '') + escapeHtml(yds) : '') + '</span></span>'
+      + '</button>';
+  }
+  function openModal(payload, ctx) {
+    if (!payload || !(payload.plays || []).length) return;
+    closeModal();
+    var teams = payload.teams || {};
+    var overlay = document.createElement('div');
+    overlay.className = 'rzm-modal-overlay';
+    overlay.id = 'rzmModalOverlay';
+    var playsHtml = payload.plays.map(playHtml).join('');
+    overlay.innerHTML =
+      '<div class="rzm-modal" role="dialog" aria-modal="true" aria-label="RedZone Moments">'
+      + '<div class="rzm-modal-head"><span class="rzm-modal-accent"></span><div class="rzm-modal-title">RedZone Moments</div>'
+      + '<button type="button" class="rzm-modal-close" data-rzm-close aria-label="Close">✕</button></div>'
+      + '<div class="rzm-filters" role="tablist">'
+      + '<button type="button" class="rzm-filter is-active" data-rzm-filter="all">All</button>'
+      + '<button type="button" class="rzm-filter" data-rzm-filter="you">' + escapeHtml(teams.you || 'You') + '</button>'
+      + '<button type="button" class="rzm-filter" data-rzm-filter="opp">' + escapeHtml(teams.opp || 'Opp') + '</button>'
+      + '</div>'
+      + '<div class="rzm-modal-body" data-rzm-list>' + playsHtml + '</div>'
+      + '</div>';
+    overlay._rzmPlays = payload.plays;
+    overlay._rzmCtx = ctx || {};
+    document.body.appendChild(overlay);
+    document.body.style.overflow = 'hidden';
+  }
+  function closeModal() {
+    var el = document.getElementById('rzmModalOverlay');
+    if (el) el.remove();
+    if (!document.querySelector('.for-modal-overlay')) document.body.style.overflow = '';
+  }
+  function applyFilter(overlay, filter) {
+    var list = overlay.querySelector('[data-rzm-list]');
+    if (!list) return;
+    var plays = (overlay._rzmPlays || []).filter(function (p) {
+      return filter === 'all' || p.side === filter;
+    });
+    list.innerHTML = plays.length ? plays.map(playHtml).join('') : '<div class="rzm-empty">No moments for this filter.</div>';
+    var btns = overlay.querySelectorAll('[data-rzm-filter]');
+    for (var i = 0; i < btns.length; i++) {
+      btns[i].classList.toggle('is-active', btns[i].getAttribute('data-rzm-filter') === filter);
+    }
+  }
+  document.addEventListener('click', function (ev) {
+    var hubBtn = ev.target.closest('[data-rzm-hub-open]');
+    if (hubBtn) {
+      var launcher = hubBtn.closest('[data-rzm-hub]');
+      if (launcher && launcher._rzmPayload) {
+        openModal(launcher._rzmPayload, {
+          platform: launcher.getAttribute('data-platform') || '',
+          leagueId: launcher.getAttribute('data-league-id') || '',
+          season: launcher.getAttribute('data-season') || ''
+        });
+      }
+      return;
+    }
+    var overlay = document.getElementById('rzmModalOverlay');
+    if (!overlay) return;
+    if (ev.target.closest('[data-rzm-close]') || ev.target === overlay) {
+      closeModal();
+      return;
+    }
+    var filterBtn = ev.target.closest('[data-rzm-filter]');
+    if (filterBtn) {
+      applyFilter(overlay, filterBtn.getAttribute('data-rzm-filter'));
+      return;
+    }
+    var playBtn = ev.target.closest('[data-rzm-play]');
+    if (playBtn) {
+      var gid = playBtn.getAttribute('data-game-id') || '';
+      var playId = playBtn.getAttribute('data-play-id') || '';
+      var ctx = overlay._rzmCtx || {};
+      closeModal();
+      // Jump to the play in the RedZone feed (league-scoped URL).
+      var url = '/redzone';
+      if (ctx.platform && ctx.leagueId) {
+        url = '/' + ctx.platform + '/' + (ctx.season || '') + '/' + ctx.leagueId + '/redzone';
+      }
+      var qs = [];
+      if (gid) qs.push('game=' + encodeURIComponent(gid));
+      if (playId) qs.push('play=' + encodeURIComponent(playId));
+      if (qs.length) url += '?' + qs.join('&');
+      window.location.href = url;
+    }
+  });
+  document.addEventListener('keydown', function (ev) {
+    if (ev.key === 'Escape') closeModal();
+  });
+  return {
+    fetchMoments: fetchMoments,
+    openModal: openModal,
+    closeModal: closeModal
+  };
+})();
+// Back-compat alias for the weekly-hub launcher.
+window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(payload, ctx); };
+
 /* Portfolio cards: one generation owns requests, retries, polling and listeners. */
 (function () {
   'use strict';
@@ -22814,4 +22972,37 @@ window._rzStubPbpEvents = function(pid, state) {
     owner.cards(false).forEach(function (card) { schedule(owner, card); });
   };
   window.__brPortfolioCardsTest = { renderSummary: renderSummary, identity: identity };
+})();
+
+/* Weekly hub: RedZone Moments launcher (the matchup page's moments row).
+   Fetches /api/redzone/moments for the page's league via the shared
+   window.brRzm namespace and reveals the row when the viewer's matchup has
+   moments. The modal open/close/filter handlers live in window.brRzm. */
+(function () {
+  'use strict';
+  function initHubRzm() {
+    if (typeof document.querySelector !== 'function') return;
+    var launcher = document.querySelector('[data-rzm-hub]');
+    if (!launcher || launcher._rzmInit) return;
+    launcher._rzmInit = true;
+    var platform = launcher.getAttribute('data-platform') || '';
+    var leagueId = launcher.getAttribute('data-league-id') || '';
+    var season = launcher.getAttribute('data-season') || '';
+    if (!platform || !leagueId || !window.brRzm) return;
+    window.brRzm.fetchMoments(platform, leagueId, season).then(function (body) {
+      var plays = (body && body.plays) || [];
+      if (!plays.length || !launcher.isConnected) return;
+      launcher._rzmPayload = body;
+      var countEl = launcher.querySelector('[data-rzm-hub-count]');
+      var tdCount = (body && body.td_count) || 0;
+      if (countEl) countEl.textContent = tdCount + (tdCount === 1 ? ' touchdown' : ' touchdowns');
+      launcher.hidden = false;
+    }).catch(function () {});
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initHubRzm);
+  } else {
+    initHubRzm();
+  }
+  window.brInitHubRzm = initHubRzm;
 })();
