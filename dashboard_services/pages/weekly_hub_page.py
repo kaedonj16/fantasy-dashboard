@@ -12,18 +12,19 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def redzone_moments_hub_html(platform: str, league_id: str, season) -> str:
+def redzone_moments_hub_html(platform: str, league_id: str, season, week=None) -> str:
     """RedZone Moments launcher row for the weekly hub (matchup page).
 
     Rendered hidden; the client fetches /api/redzone/moments and reveals it
     only when the viewer's matchup has moments. Uses the same rzm-row markup
     and modal as the portfolio cards.
     """
+    week_attr = f' data-week="{_html.escape(str(week), quote=True)}"' if week else ""
     return (
         '<div class="rzm-row rzm-hub-launcher" data-rzm-hub'
         f' data-platform="{_html.escape(str(platform), quote=True)}"'
         f' data-league-id="{_html.escape(str(league_id), quote=True)}"'
-        f' data-season="{_html.escape(str(season), quote=True)}" hidden>'
+        f' data-season="{_html.escape(str(season), quote=True)}"{week_attr} hidden>'
         '<button type="button" class="rzm-row-btn" data-rzm-hub-open>'
         '<span class="rzm-row-accent"></span>'
         '<span class="rzm-row-title">RedZone Moments</span>'
@@ -222,11 +223,9 @@ def build_weekly_hub_body(ctx: dict) -> str:
     # RedZone Moments launcher: rendered under the win-probability bar of the
     # viewer's own matchup slide (not at the top of the tab). The client
     # fetches /api/redzone/moments and reveals it when moments exist.
-    # The API serves the current NFL week, so only render when the hub is
-    # showing the current week.
     _rzm_hub_html = ""
-    if _show_matchup_preview and not offseason_mode and default_week == current_week:
-        _rzm_hub_html = redzone_moments_hub_html(platform, league_id, season)
+    if _show_matchup_preview and not offseason_mode:
+        _rzm_hub_html = redzone_moments_hub_html(platform, league_id, season, default_week)
     def _rzm_html_for_matchup(m):
         if not _rzm_hub_html or not _hub_vid:
             return ""

@@ -161,8 +161,8 @@ global.escapeHtml = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) =>
   { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 // The hub launcher talks to the shared namespace; stub its fetch.
 global.brRzm = {
-  fetchMoments(platform, leagueId, season) {
-    fetchCalls.push({ platform, leagueId, season });
+  fetchMoments(platform, leagueId, season, week) {
+    fetchCalls.push({ platform, leagueId, season, week });
     return Promise.resolve(scenario.apiBody);
   },
 };
@@ -201,7 +201,7 @@ def test_hub_launcher_fetches_moments_for_league():
         "platform": "sleeper", "leagueId": "12345", "season": "2026",
         "apiBody": {"plays": [], "td_count": 0},
     })
-    assert out["fetchCalls"] == [{"platform": "sleeper", "leagueId": "12345", "season": "2026"}]
+    assert out["fetchCalls"] == [{"platform": "sleeper", "leagueId": "12345", "season": "2026", "week": ""}]
 
 
 def test_hub_launcher_shows_row_with_td_count():
@@ -421,4 +421,4 @@ def test_shared_namespace_exposed():
     assert "window.brRzm = (function () {" in src
     assert "window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(payload, ctx); };" in src
     # Portfolio card row fetch delegates to the shared namespace.
-    assert "window.brRzm.fetchMoments(platform, leagueId, season)" in src
+    assert "window.brRzm.fetchMoments(platform, leagueId, season, week)" in src
