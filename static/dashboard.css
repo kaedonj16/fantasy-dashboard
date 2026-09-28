@@ -6575,7 +6575,12 @@ strong + .player-badge,
     color: var(--text);
     overflow: hidden;
     text-overflow: ellipsis;
-    white-space: nowrap;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    line-height: 1.3;
+    min-width: 0;
+    flex: 1;
 }
 
 .otc-rt-footer {
@@ -6586,6 +6591,29 @@ strong + .player-badge,
     padding: 8px 14px;
     border-top: 1px solid var(--border);
     background: var(--row);
+}
+
+.th-why {
+    padding: 10px 14px;
+    border-top: 1px dashed var(--border);
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--text-muted);
+}
+
+.th-why-lbl {
+    display: block;
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--text);
+    margin-bottom: 4px;
+}
+
+.th-why-stacked {
+    padding: 8px 0;
+    border-top: none;
 }
 
 .otc-rt-count {
@@ -6681,10 +6709,18 @@ strong + .player-badge,
         gap: 6px;
     }
 
-    .otc-rt-footer .otc-sugg-pkg-load-btn {
+    .otc-rt-footer > div:last-child {
+        display: flex;
+        gap: 6px;
         width: 100%;
+    }
+
+    .otc-rt-footer .otc-sugg-pkg-load-btn,
+    .otc-rt-footer .th-chip-btn {
+        flex: 1;
         text-align: center;
-        padding: 7px 0;
+        padding: 8px 0;
+        font-size: 13px;
     }
 
     /* Strategy chips: 4 across is too tight at 600px - keep 4 but shrink */
