@@ -105,6 +105,7 @@ const tabs = makeEl('div', {
   'data-platform': scenario.platform || 'sleeper',
   'data-league-id': scenario.leagueId || '123',
   'data-season': scenario.season || '2026',
+  'data-week': scenario.week || '3',
 });
 const tabMatchup = makeEl('button');
 tabMatchup.setAttribute('data-ls-tab', 'matchup');
@@ -127,6 +128,12 @@ global.document = {
   readyState: 'complete',
   querySelector(sel) {
     if (sel === '[data-ls-tabs]') return tabs;
+    return null;
+  },
+  getElementById(id) {
+    if (id === 'ls-embedded-data' && scenario.embeddedData) {
+      return { textContent: JSON.stringify(scenario.embeddedData), _lsConsumed: false };
+    }
     return null;
   },
   addEventListener(type, fn) { (docListeners[type] = docListeners[type] || []).push(fn); },
@@ -283,3 +290,37 @@ def test_ls_click_survives_node_replacement():
     # The old per-node wiring pattern must be gone.
     assert "tabs._lsWired" not in src
     assert "tabs.addEventListener('click'" not in src
+
+
+def test_ls_uses_embedded_data_without_fetch():
+    """The carousel's numbers are embedded in the page: the tab must render
+    from them instantly instead of making a separate (slow) API fetch."""
+    embedded = {
+        "matchups": [
+            {"left": {"name": "You", "score": 100.5, "proj": 110.2},
+             "right": {"name": "Opp", "score": 95.3, "proj": 105.1},
+             "win_prob": 65.5, "status": "in", "is_you": True},
+        ],
+        "week": 3,
+    }
+    out = _run_harness({
+        "platform": "sleeper", "leagueId": "123", "season": "2026", "week": "3",
+        "embeddedData": embedded,
+        "apiBody": {"matchups": [], "week": 3},  # must not be fetched
+    })
+    assert out["fetchCalls"] == []
+    html = out["leagueHtml"]
+    assert "Your matchup" in html
+    assert "100.5" in html
+    assert "m-win-bar" in html
+    assert out.get("lsLoaded") == "true"
+
+
+def test_ls_embedded_data_week_mismatch_falls_back_to_fetch():
+    """Embedded data for a different week must not be used; fall back to fetch."""
+    out = _run_harness({
+        "platform": "sleeper", "leagueId": "123", "season": "2026", "week": "3",
+        "embeddedData": {"matchups": [], "week": 2},
+        "apiBody": {"matchups": [], "week": 3},
+    })
+    assert len(out["fetchCalls"]) == 1
