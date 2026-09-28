@@ -16,6 +16,11 @@ Warming is best-effort and fail-soft: each step is isolated, exceptions are
 logged and swallowed, and the whole pass never raises.
 
 Disable with ``STARTUP_WARMUP_ENABLED=0``.
+
+League-context warming (the ``recent_leagues`` step) is disabled by default:
+each warmed context is large and the per-worker warmup was a major
+contributor to OOM crashes on the 2GB Render box. Re-enable with
+``WARM_LEAGUE_CONTEXTS=1`` if memory headroom improves.
 """
 from __future__ import annotations
 
@@ -29,6 +34,12 @@ logger = logging.getLogger(__name__)
 _ENABLED = os.environ.get("STARTUP_WARMUP_ENABLED", "1").lower() not in {
     "0", "false", "no", "off",
 }
+
+# League-context warming is off by default (OOM safety on the 2GB box);
+# set WARM_LEAGUE_CONTEXTS=1 to re-enable it.
+_WARM_LEAGUE_CONTEXTS = os.environ.get(
+    "WARM_LEAGUE_CONTEXTS", ""
+).strip().lower() in {"1", "true", "yes"}
 
 _warmup_thread: threading.Thread | None = None
 
@@ -149,15 +160,22 @@ def warm_shared_caches() -> None:
         from data_building.weekly_metrics import get_usage_trends
         get_usage_trends(season)
 
-    for name, fn in (
+    steps = [
         ("nfl_state", _nfl_state),
         ("players_index", _players_index),
         ("nfl_players", _nfl_players),
         ("season_projections", _season_projections),
         ("usage_trends", _usage_trends),
         ("model_value_table", _load_model_value_table),
-        ("recent_leagues", _warm_recent_leagues),
-    ):
+    ]
+    if _WARM_LEAGUE_CONTEXTS:
+        steps.append(("recent_leagues", _warm_recent_leagues))
+    else:
+        logger.info(
+            "[startup-warmup] league-context warming disabled; "
+            "set WARM_LEAGUE_CONTEXTS=1 to re-enable"
+        )
+    for name, fn in steps:
         _step(name, fn)
 
 
