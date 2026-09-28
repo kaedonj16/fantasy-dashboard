@@ -1549,6 +1549,173 @@ def api_portfolio_matchup():
     })
 
 
+@user_pages_bp.route("/api/matchup/league-scores")
+def api_matchup_league_scores():
+    """League Scores: all matchups in the league for the current week.
+
+    Returns every matchup with live scores, projected totals, win probability,
+    and game status. The viewer's own matchup is flagged with is_you=True.
+    Powers the "League Scores" tab on the matchup page.
+    """
+    from flask import jsonify
+
+    viewer_username = session.get("viewer_username")
+    viewer_user_id = session.get("viewer_user_id")
+    if (not viewer_username or not viewer_user_id) and not session.get("account_id"):
+        return jsonify({"matchups": [], "week": 0})
+
+    platform = (request.args.get("platform") or "sleeper").strip().lower()
+    league_id = (request.args.get("league_id") or "").strip()
+    if not league_id:
+        return jsonify({"matchups": [], "week": 0})
+
+    account_id = session.get("account_id")
+    if account_id and not getattr(g, "portfolio_membership_authorized", False):
+        try:
+            requested_season = int(request.args.get("season") or 0)
+        except (TypeError, ValueError):
+            requested_season = 0
+        from dashboard_services.accounts import resolve_account_leagues
+        allowed = resolve_account_leagues(account_id, current_season=requested_season)
+        if not any(str(lg.get("league_id") or "") == league_id
+                   and str(lg.get("platform") or "sleeper").lower() == platform
+                   and int(lg.get("season") or 0) == requested_season for lg in allowed):
+            logger.info("[league-scores] dropped unauthorized account=%s platform=%s league=%s", account_id, platform, league_id)
+            return jsonify({"matchups": [], "week": 0}), 403
+
+    nfl_state = get_nfl_state() or {}
+    if str(nfl_state.get("season_type") or "").lower() not in ("reg", "regular", "post"):
+        return jsonify({"matchups": [], "week": 0, "applicable": False, "reason": "season_type"})
+    try:
+        default_season = int(nfl_state.get("season") or datetime.now().year)
+        season = int(request.args.get("season") or default_season)
+        week = int(nfl_state.get("week") or nfl_state.get("leg") or 0)
+    except (TypeError, ValueError):
+        return jsonify({"matchups": [], "week": 0})
+    if week < 1:
+        return jsonify({"matchups": [], "week": 0, "applicable": False, "reason": "week"})
+
+    try:
+        ctx = getattr(g, "portfolio_card_ctx", None)
+        if ctx is None:
+            ctx = get_league_ctx_from_cache(platform, league_id, season, allow_build=False)
+    except Exception:
+        logger.debug("[league-scores] ctx load failed", exc_info=True)
+        return jsonify({"matchups": [], "week": week, "state": "error", "message": "League scores temporarily unavailable"})
+    if not ctx:
+        return jsonify({"matchups": [], "week": week, "state": "pending", "pending": True, "retry_after_ms": 3000})
+    if ctx.get("offseason_mode"):
+        return jsonify({"matchups": [], "week": week, "applicable": False, "reason": "offseason"})
+
+    # Resolve the viewer's roster so we can flag their matchup.
+    viewer_rid = ""
+    if account_id:
+        try:
+            from dashboard_services.accounts import resolve_account_viewer_for_league
+            _av = resolve_account_viewer_for_league(
+                int(account_id), platform, league_id, season,
+                ctx.get("users") or [], ctx.get("rosters") or [],
+            )
+            viewer_rid = str((_av or {}).get("viewer_roster_id") or "")
+        except Exception:
+            logger.debug("[league-scores] account viewer resolve failed", exc_info=True)
+    if not viewer_rid:
+        viewer_rid = str((ctx.get("viewer") or {}).get("viewer_roster_id") or "")
+
+    resolved_league_id = ctx.get("resolved_league_id") or league_id
+    try:
+        matchups, status_by_pid, proj_map = _build_live_matchups(
+            platform, resolved_league_id, season, week, ctx,
+        )
+    except Exception:
+        logger.debug("[league-scores] live build failed", exc_info=True)
+        return jsonify({"matchups": [], "week": week, "state": "error", "message": "League scores temporarily unavailable", "reason": "build_failed"})
+
+    from dashboard_services.matchups import (
+        _proj_value_for_pid, compute_win_prob, team_live_totals, make_frac_lookup,
+    )
+    try:
+        from datetime import date as _date
+        from dashboard_services.api import (
+            get_nfl_scores_for_date, build_team_game_lookup,
+        )
+        _scores_body = get_nfl_scores_for_date(_date.today().strftime("%Y%m%d"), timeout=5)
+        _team_game_lookup = build_team_game_lookup(_scores_body) if _scores_body else {}
+    except Exception:
+        logger.debug("[league-scores] live scores load failed", exc_info=True)
+        _team_game_lookup = {}
+    _frac_lookup = make_frac_lookup(_team_game_lookup)
+
+    scoring_settings = ctx.get("raw_scoring_settings") or {}
+    try:
+        from utils.utils import load_week_projection
+        raw_week_map = load_week_projection(int(season), int(week)) or {}
+    except Exception:
+        raw_week_map = {}
+    if raw_week_map:
+        proj_map = dict(proj_map)
+        for m in matchups:
+            for _team in ((m.get("left") or {}), (m.get("right") or {})):
+                for _p in ((_team or {}).get("starters") or []):
+                    _pid = _p.get("pid")
+                    if _pid is None or str(_pid) in proj_map or _pid in proj_map:
+                        continue
+                    _val = _proj_value_for_pid(
+                        proj_map, _pid, raw_week_map=raw_week_map,
+                        scoring_settings=scoring_settings, pos=_p.get("pos") or "",
+                    )
+                    if _val:
+                        proj_map[str(_pid)] = _val
+
+    def _side(team):
+        actual, proj = team_live_totals(
+            team, status_by_pid, proj_map, frac_lookup=_frac_lookup,
+        )
+        return {
+            "name": team.get("name") or "",
+            "avatar": team.get("avatar") or "",
+            "roster_id": str(team.get("roster_id") or ""),
+            "score": round(float(actual or 0.0), 1),
+            "proj": round(float(proj or 0.0), 1),
+        }
+
+    out = []
+    for m in matchups:
+        left = m.get("left") or {}
+        right = m.get("right") or {}
+        left_side = _side(left)
+        right_side = _side(right) if right.get("roster_id") else None
+        win_prob = None
+        if right_side:
+            try:
+                win_prob = round(compute_win_prob(
+                    left, right, status_by_pid, proj_map, frac_lookup=_frac_lookup,
+                ) * 100.0, 1)
+            except Exception:
+                logger.debug("[league-scores] win prob failed", exc_info=True)
+        pids = [p.get("pid") for p in (left.get("starters") or [])]
+        if right_side:
+            pids += [p.get("pid") for p in (right.get("starters") or [])]
+        status = _matchup_status_label(status_by_pid, pids)
+        is_you = (str(left.get("roster_id") or "") == viewer_rid
+                  or str(right.get("roster_id") or "") == viewer_rid)
+        out.append({
+            "left": left_side,
+            "right": right_side,
+            "win_prob": win_prob,
+            "status": status,
+            "is_you": is_you,
+        })
+
+    # Sort the viewer's matchup first, then by total points descending.
+    out.sort(key=lambda x: (
+        0 if x["is_you"] else 1,
+        -((x["left"]["score"] or 0) + ((x["right"] or {}).get("score") or 0)),
+    ))
+
+    return jsonify({"matchups": out, "week": week, "count": len(out)})
+
+
 @user_pages_bp.route("/api/redzone/moments")
 def api_redzone_moments():
     """RedZone Moments: big plays from the viewer's current fantasy matchup.

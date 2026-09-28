@@ -42401,6 +42401,25 @@ table.rz-bs-table thead th:first-child {
 /* ── RedZone Moments (matchup page) ─────────────────────────────────────────
    Compact row under the win probability bar; opens a RedZone-styled modal. */
 .rzm-row { margin-top: 10px; }
+/* ── League Scores tab ─────────────────────────────────────────────────── */
+.ls-tabs { display: flex; gap: 4px; margin-bottom: 10px; background: var(--card-soft); border-radius: 8px; padding: 3px; }
+.ls-tab { flex: 1; border: 0; background: transparent; color: var(--text-muted); font-size: 13px; font-weight: 600; padding: 7px 10px; border-radius: 6px; cursor: pointer; }
+.ls-tab.is-active { background: var(--card); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,.25); }
+.ls-view[hidden] { display: none; }
+.ls-loading, .ls-empty { text-align: center; color: var(--text-subtle); font-size: 13px; padding: 18px 8px; }
+.ls-list { display: flex; flex-direction: column; gap: 8px; }
+.ls-card { background: var(--card-soft); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
+.ls-card.is-you { border-color: var(--accent); }
+.ls-card-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.ls-status { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--text-subtle); }
+.ls-status.is-live { color: var(--loss); }
+.ls-you-badge { font-size: 11px; font-weight: 700; color: var(--accent); background: var(--accent-soft); border-radius: 4px; padding: 2px 6px; }
+.ls-teams { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+.ls-team { display: flex; align-items: baseline; gap: 8px; }
+.ls-team-name { flex: 1; font-size: 13px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ls-team-score { font-size: 16px; font-weight: 700; color: var(--text); }
+.ls-team-proj { font-size: 11px; color: var(--text-subtle); }
+
 .rzm-row-btn {
   display: flex; align-items: center; gap: 10px; width: 100%;
   background: var(--card); border: 1px solid var(--border); border-radius: 10px;
