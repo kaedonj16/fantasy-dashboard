@@ -133,7 +133,13 @@ def test_payload_shape(lab_mocks):
 
     opp = data["opponent"]
     assert opp["name"] == "Pittsburgh Pilots"
-    assert opp["mean"] == pytest.approx(35.0)
+    # Opponent mean is net of the expected in-game injury loss (the browser
+    # applies injury draws to your side only; see injury_adj below).
+    from data_building.injury_rates import expected_injury_loss_per_week
+    adj = (expected_injury_loss_per_week(20.0, "QB")
+           + expected_injury_loss_per_week(15.0, "RB"))
+    assert opp["mean"] == pytest.approx(round(35.0 - round(adj, 1), 1))
+    assert opp["injury_adj"] == pytest.approx(round(adj, 1))
     assert opp["std"] > 0
     assert data["corr"] == {}
 
@@ -204,7 +210,10 @@ def test_opponent_not_missing_when_resolved(lab_mocks):
     opp = data["opponent"]
     assert opp["missing"] is False
     assert opp["name"] == "Pittsburgh Pilots"
-    assert opp["mean"] == pytest.approx(35.0)
+    from data_building.injury_rates import expected_injury_loss_per_week
+    adj = (expected_injury_loss_per_week(20.0, "QB")
+           + expected_injury_loss_per_week(15.0, "RB"))
+    assert opp["mean"] == pytest.approx(round(35.0 - round(adj, 1), 1))
 
 
 def test_matchups_fetched_exactly_once(lab_mocks, monkeypatch):

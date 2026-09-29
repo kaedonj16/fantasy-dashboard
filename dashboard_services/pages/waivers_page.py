@@ -676,6 +676,26 @@ var wvLabUpside = false;
 var wvLabLoading = false;
 var WV_LAB_SIMS = 2000;
 
+// In-game injury model for the Lab (single game). Per-position onset rates
+// are read from the payload (wvLabData.injury_onset), which comes from the
+// same research-backed table as the season engine
+// (data_building/injury_rates.py); the fallback below mirrors those values.
+// On injury the player leaves the game and the fantasy team starts its best
+// eligible bench player instead — a waiver-wire replacement at
+// WV_LAB_INJURY_REPLACEMENT of the starter's output when the bench is empty.
+// Never a zero: taking a zero for an in-game injury would understate every
+// lineup's floor. The injury draws live in the shared base (see
+// wvLabBuildBase) so swap comparisons keep their common random numbers.
+var wvLabInjuryOnset = null;   // pos -> per-game new-injury probability
+var WV_LAB_INJURY_ONSET_FALLBACK = {{QB: 0.0455, RB: 0.0568, WR: 0.0504, TE: 0.0605, K: 0.0038, DEF: 0}};
+var WV_LAB_INJURY_REPLACEMENT = 0.45;
+
+function wvLabInjuryOnsetFor(pos) {{
+  var t = wvLabInjuryOnset || WV_LAB_INJURY_ONSET_FALLBACK;
+  var r = t[String(pos || '').toUpperCase()];
+  return (r == null || !(r >= 0)) ? 0 : r;
+}}
+
 function wvSetSsMode(mode) {{
   wvLabMode = mode;
   var adv = document.getElementById('wvSsModeAdvise');
@@ -714,18 +734,33 @@ function wvLabBuildBase(pids, nSims, seed) {{
   var rand = wvLabRng(seed);
   var base = {{}};
   for (var k = 0; k < pids.length; k++) {{
-    var u0 = new Float64Array(nSims), u1 = new Float64Array(nSims), dud = new Float64Array(nSims);
+    var u0 = new Float64Array(nSims), u1 = new Float64Array(nSims), dud = new Float64Array(nSims), inj = new Float64Array(nSims);
     for (var s = 0; s < nSims; s++) {{
-      var a = rand() + 1e-12, b = rand(), e = rand();
+      var a = rand() + 1e-12, b = rand(), e = rand(), g = rand();
       var r = Math.sqrt(-2 * Math.log(a));
       var ang = 2 * Math.PI * b;
       u0[s] = r * Math.cos(ang);
       u1[s] = r * Math.sin(ang);
       dud[s] = e;
+      inj[s] = g;
     }}
-    base[pids[k]] = {{ u0: u0, u1: u1, dud: dud }};
+    base[pids[k]] = {{ u0: u0, u1: u1, dud: dud, inj: inj }};
   }}
   return base;
+}}
+
+// One player's scoring draw for one sim: skew-normal margin, or the dud
+// mixture (a lost week) when the dud uniform falls under the player's
+// dud_risk. Pure function of the shared uniforms — used for starters and
+// for injury replacements alike.
+function wvLabDrawPlayer(sp, dud, dudU, c0, c1) {{
+  var x;
+  if (dudU < dud) {{
+    x = sp.xi * 0.25 + sp.omega * 0.3 * c1;  // dud mixture: lost week
+  }} else {{
+    x = sp.xi + sp.omega * (sp.delta * Math.abs(c0) + sp.w2 * c1);
+  }}
+  return Math.max(0, x);
 }}
 
 function wvLabCholesky(mat) {{
@@ -740,6 +775,28 @@ function wvLabCholesky(mat) {{
     }}
   }}
   return L;
+}}
+
+// Best eligible bench player for an in-game injury replacement: the highest
+// projected option in the slot's bench list (the payload builds bench lists
+// per-slot, so every entry is eligible for the slot it sits under). Returns
+// null when the bench is empty, in which case the evaluate loop falls back
+// to a waiver-wire replacement draw.
+function wvLabBestRepl(entry) {{
+  var bench = (entry && entry.bench) || [], best = null, bi;
+  for (bi = 0; bi < bench.length; bi++) {{
+    var b = bench[bi];
+    if (!b || !b.player_id || !wvLabBase || !wvLabBase[b.player_id]) continue;
+    var pm = (b.profile && b.profile.mean) || 0;
+    if (!best || pm > best.mean) best = {{ pid: b.player_id, mean: pm, pf: b.profile || {{}} }};
+  }}
+  if (!best) return null;
+  var pf = best.pf;
+  return {{
+    pid: best.pid,
+    sp: wvLabSkewParams(pf.mean || 0, pf.std || 8, pf.skew_alpha == null ? 2 : pf.skew_alpha),
+    dud: pf.dud_risk || 0
+  }};
 }}
 
 // Evaluate one lineup on the common random numbers. Returns
@@ -766,7 +823,9 @@ function wvLabEvaluate(lineup) {{
     var pf = lineup[i].profile || {{}};
     params.push({{
       sp: wvLabSkewParams(pf.mean || 0, pf.std || 8, pf.skew_alpha == null ? 2 : pf.skew_alpha),
-      dud: pf.dud_risk || 0
+      dud: pf.dud_risk || 0,
+      onset: wvLabInjuryOnsetFor(lineup[i].pos),
+      repl: wvLabBestRepl(lineup[i])
     }});
   }}
   var totals = new Float64Array(n);
@@ -778,13 +837,22 @@ function wvLabEvaluate(lineup) {{
         c0 += L[i][j] * wvLabBase[pids[j]].u0[s];
         c1 += L[i][j] * wvLabBase[pids[j]].u1[s];
       }}
-      var pr = params[i], x;
-      if (wvLabBase[pids[i]].dud[s] < pr.dud) {{
-        x = pr.sp.xi * 0.25 + pr.sp.omega * 0.3 * c1;  // dud mixture: lost week
+      var pr = params[i], x, bu = wvLabBase[pids[i]];
+      if (pr.onset > 0 && bu.inj[s] < pr.onset) {{
+        // In-game injury: the starter leaves and the team starts someone
+        // else. Best eligible bench player takes the slot (drawn off their
+        // own shared uniforms); with an empty bench, a waiver-wire
+        // replacement at ~45% of the starter's output. Never a zero.
+        if (pr.repl) {{
+          var rp = pr.repl, ru = wvLabBase[rp.pid];
+          x = wvLabDrawPlayer(rp.sp, rp.dud, ru.dud[s], ru.u0[s], ru.u1[s]);
+        }} else {{
+          x = wvLabDrawPlayer(pr.sp, pr.dud, bu.dud[s], c0, c1) * WV_LAB_INJURY_REPLACEMENT;
+        }}
       }} else {{
-        x = pr.sp.xi + pr.sp.omega * (pr.sp.delta * Math.abs(c0) + pr.sp.w2 * c1);
+        x = wvLabDrawPlayer(pr.sp, pr.dud, bu.dud[s], c0, c1);
       }}
-      tot += Math.max(0, x);
+      tot += x;
     }}
     totals[s] = tot;
   }}
@@ -861,6 +929,10 @@ function wvLoadLab() {{
       return;
     }}
     wvLabData = data;
+    // Per-position injury onset rates ship in the payload (single table in
+    // data_building/injury_rates.py); the JS fallback covers re-executed
+    // scripts that never went through wvLoadLab (e.g. node harnesses).
+    wvLabInjuryOnset = (data && data.injury_onset) || null;
     // Deep copy: the working lineup mutates on swaps, the payload stays pristine.
     wvLabLineup = JSON.parse(JSON.stringify(data.you.lineup));
     var pids = [];

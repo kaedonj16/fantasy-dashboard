@@ -139,27 +139,20 @@ def _consume_eligible(pool, n, eligible):
             rest.append(row)
     return taken, rest
 
-# Per-week injury hazard: the probability that a given starter misses that
-# week's game. When a starter is out, a bench player replaces them at a
-# fraction of their output, so the team loses (1 - _INJURY_REPLACEMENT) of the
-# starter's projected PPG for that week. Rates are per-game "miss next game"
-# approximations from empirical NFL availability by position (RBs miss the most,
-# QBs the least). This injects realistic week-to-week downside that the smooth
-# scoring distribution alone doesn't capture.
-_INJURY_HAZARD: dict[str, float] = {
-    "QB": 0.03, "RB": 0.07, "WR": 0.05, "TE": 0.05, "K": 0.01, "DEF": 0.0,
-}
-_INJURY_HAZARD_DEFAULT = 0.05
-_INJURY_REPLACEMENT    = 0.45   # replacement plays at ~45% of the starter's PPG
+# Random future-injury rates live in data_building/injury_rates.py (single
+# source of truth shared with the Lineup Lab). Always read them through the
+# module (not copied imports) so override_injury_rates() takes effect.
+from data_building import injury_rates as _inj
 
-# Injuries last multiple weeks, not one. When a starter goes down we sample a
-# duration (in weeks) from this distribution; while out, the substitution loss
-# applies every week. The per-week ONSET rate is the position hazard divided by
-# the mean duration, so the total expected games missed stays ≈ the hazard while
-# the misses now cluster into realistic multi-week absences.
-_INJURY_DURATION_CHOICES = (1, 2, 3, 4, 6, 8)
-_INJURY_DURATION_PROBS   = (0.50, 0.20, 0.12, 0.08, 0.06, 0.04)
-_INJURY_MEAN_DURATION    = sum(c * p for c, p in zip(_INJURY_DURATION_CHOICES, _INJURY_DURATION_PROBS))
+# Re-exported for backward compatibility; prefer _inj.<name> in new code.
+_INJURY_HAZARD = _inj._INJURY_HAZARD
+_INJURY_HAZARD_DEFAULT = _inj._INJURY_HAZARD_DEFAULT
+_INJURY_REPLACEMENT = _inj._INJURY_REPLACEMENT
+_INJURY_DURATION_CHOICES = _inj._INJURY_DURATION_CHOICES
+_INJURY_DURATION_PROBS = _inj._INJURY_DURATION_PROBS
+_INJURY_MEAN_DURATION = _inj._INJURY_MEAN_DURATION
+injury_onset_rate = _inj.injury_onset_rate
+override_injury_rates = _inj.override_injury_rates
 
 # Fantasy matchups occasionally tie (identical rounded scores). Treat scores
 # within this margin as a tie worth half a win to each side.
@@ -1150,6 +1143,10 @@ def _lineup_with_replacements(
             repl = _best_bench(set(slot_eligible_positions(slot_type)))
         else:
             repl = _best_bench({slot_type})
+        if repl <= 0:
+            # No eligible bench player on the roster: the team would sign a
+            # waiver-wire replacement, not take a zero (see _INJURY_REPLACEMENT).
+            repl = _inj._INJURY_REPLACEMENT * ppg
         starters.append((pos, ppg, pid))
         replacements.append(repl)
 
@@ -1211,7 +1208,7 @@ def _team_week_profile(
         dtype=np.float32,
     )
     haz = np.array(
-        [_INJURY_HAZARD.get(str(pos).upper(), _INJURY_HAZARD_DEFAULT) for pos, _, _ in starters],
+        [_inj._INJURY_HAZARD.get(str(pos).upper(), _inj._INJURY_HAZARD_DEFAULT) for pos, _, _ in starters],
         dtype=np.float32,
     )
     if rid is not None and logger.isEnabledFor(logging.DEBUG):
@@ -1958,7 +1955,7 @@ def _sample_injury_duration(rng: "np.random.Generator", shape) -> "np.ndarray":
     u = rng.random(shape, dtype=np.float32)
     dur = np.ones(shape, dtype=np.int16)
     thresh = 0.0
-    for choice, prob in zip(_INJURY_DURATION_CHOICES, _INJURY_DURATION_PROBS):
+    for choice, prob in zip(_inj._INJURY_DURATION_CHOICES, _inj._INJURY_DURATION_PROBS):
         dur[u >= thresh] = choice
         thresh += prob
     return dur
@@ -2062,7 +2059,7 @@ def _score_one_team(
             mean, std = float(p["mean"]), float(p["std"])
             lost = p["lost"]
             haz = p["haz"]
-            onset = haz / np.float32(_INJURY_MEAN_DURATION) if haz.shape[0] else haz
+            onset = haz / np.float32(_inj._INJURY_MEAN_DURATION) if haz.shape[0] else haz
         else:
             mean, std, lost, onset = fb_avg, fb_std, None, None
         sa = _sample_scores(rng, mean, std, n_sims)
