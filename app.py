@@ -19326,7 +19326,9 @@ def _sleeper_stats_by_week(player_id: str, season_year: int) -> dict:
     rookie has not played merely because the derived usage_rows snapshot lags.
 
     Backed by the shared per-(season, week) index above: each week file is
-    parsed once per worker instead of re-parsed on every call.
+    parsed once per worker instead of re-parsed on every call. The per-week
+    index loads run in a small thread pool so a cold worker warms a season's
+    weeks concurrently instead of parsing ~18 JSON files one by one.
     """
     _ensure_sleeper_week_files(season_year)
     pid = str(player_id)
@@ -19335,16 +19337,28 @@ def _sleeper_stats_by_week(player_id: str, season_year: int) -> dict:
     pattern = os.path.join(
         CACHE_DIR, "sleeper_stats", f"sleeper_stats_s{season}_w*.json"
     )
+    weeks: list = []
     for path in glob.glob(pattern):
         match = re.match(r"sleeper_stats_s\d+_w(\d+)", os.path.basename(path))
         if not match:
             continue
-        rows = _week_stat_index_rows(season, int(match.group(1)))
+        weeks.append(int(match.group(1)))
+    # _week_stat_index_rows never raises and is parse-once per worker
+    # (mtime-guarded, lock-protected), so on a warm worker this is just cheap
+    # cache hits through the pool.
+    import concurrent.futures as _wk_futures
+    with _wk_futures.ThreadPoolExecutor(
+        max_workers=min(4, len(weeks) or 1), thread_name_prefix="gamelog-wkstat"
+    ) as _wk_pool:
+        rows_by_week = list(
+            _wk_pool.map(lambda w: _week_stat_index_rows(season, w), weeks)
+        )
+    for week, rows in zip(weeks, rows_by_week):
         if pid in rows:
             stored = rows[pid]
             if stored is None:
                 # Present-but-all-zero row: a genuine 0.0 game, not DNP.
-                out[int(match.group(1))] = {k: 0 for k in _GAMELOG_STAT_KEYS}
+                out[week] = {k: 0 for k in _GAMELOG_STAT_KEYS}
             else:
                 # Zero-fill the display keys the endpoint's _stats_dict picks
                 # (old full-row parse surfaced them as explicit zeros), then
@@ -19352,7 +19366,7 @@ def _sleeper_stats_by_week(player_id: str, season_year: int) -> dict:
                 # same values the pre-index parse did for custom scoring.
                 merged = {k: 0 for k in _GAMELOG_STAT_KEYS}
                 merged.update(stored)
-                out[int(match.group(1))] = merged
+                out[week] = merged
     return out
 
 
@@ -24172,6 +24186,26 @@ def _game_log_proj_from_week(upcoming, cur_season, cur_week, season_type) -> int
     return 1
 
 
+def _load_schedule_week_file(schedule_file: str):
+    """Parse one schedule week file into (week_num, games) or None.
+
+    Extracted from the game-log route's old inline loop so the per-season
+    schedule parse can run in a thread pool. Semantics match the inline
+    version exactly: only a JSON list counts as games; a missing, unreadable,
+    or non-list file is skipped (None).
+    """
+    try:
+        fn = os.path.basename(schedule_file)
+        week_num = int(fn.split('_w')[1].split('_')[0].split('.')[0])
+        with open(schedule_file) as f:
+            games = json.load(f)
+        if isinstance(games, list):
+            return (week_num, games)
+    except Exception:
+        pass
+    return None
+
+
 def _prefetch_week_projections(season: int) -> None:
     """Warm all 18 weekly projection files in parallel via the shared memo.
 
@@ -24263,17 +24297,22 @@ def api_player_game_logs(player_id: str):
             game_logs = []
             _team_counts: dict = {}
 
+            # Parse the season's schedule week files in parallel (small files,
+            # but ~18 per season). Sorted input plus pool.map's order
+            # preservation keeps the first-file-wins week dedup deterministic.
+            import concurrent.futures as _sched_futures
             schedule_by_week: dict = {}
-            for schedule_file in glob.glob(os.path.join("cache", "schedule", f"schedule_s{season_year}_w*.json")):
-                try:
-                    fn = os.path.basename(schedule_file)
-                    week_num = int(fn.split('_w')[1].split('_')[0].split('.')[0])
-                    with open(schedule_file) as f:
-                        games = json.load(f)
-                    if isinstance(games, list) and week_num not in schedule_by_week:
-                        schedule_by_week[week_num] = games
-                except Exception:
-                    continue
+            _sched_files = sorted(glob.glob(os.path.join("cache", "schedule", f"schedule_s{season_year}_w*.json")))
+            with _sched_futures.ThreadPoolExecutor(
+                max_workers=min(4, len(_sched_files) or 1),
+                thread_name_prefix="gamelog-sched",
+            ) as _sched_pool:
+                for _parsed in _sched_pool.map(_load_schedule_week_file, _sched_files):
+                    if _parsed is None:
+                        continue
+                    _wk_num, _games = _parsed
+                    if _wk_num not in schedule_by_week:
+                        schedule_by_week[_wk_num] = _games
 
             player_stats_by_week = _sleeper_stats_by_week(player_id, season_year)
             if not player_stats_by_week:
