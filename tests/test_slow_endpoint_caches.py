@@ -160,3 +160,23 @@ def test_prefetch_never_raises(monkeypatch):
 
     monkeypatch.setattr(uu, "load_week_projection", boom)
     appmod._prefetch_week_projections(2026)  # must not raise
+
+
+def test_game_logs_route_maps_to_api_player_game_logs():
+    """The /api/player-game-logs/<player_id> route must serve api_player_game_logs.
+
+    Regression: inserting _prefetch_week_projections between the
+    @app.route("/api/player-game-logs/<player_id>") decorator and
+    api_player_game_logs re-pointed the route at the helper. Flask then called
+    it with player_id=... and every game-log request 500'd with
+    "got an unexpected keyword argument 'player_id'".
+    """
+    rules = [
+        r for r in appmod.app.url_map.iter_rules()
+        if str(r) == "/api/player-game-logs/<player_id>"
+    ]
+    assert len(rules) == 1, "expected exactly one game-logs route"
+    view = appmod.app.view_functions[rules[0].endpoint]
+    assert view.__name__ == "api_player_game_logs", (
+        f"route serves {view.__name__}, expected api_player_game_logs"
+    )
