@@ -4780,6 +4780,7 @@ function buildWeeklyTrendRows(weeks, position) {
   }
   var computedRows = '';
   var volumeRows = '';
+  var shareRow = '';
   if (pos === 'RB') {
     volumeRows += rowFor('Carries', 'carries', '#f97316');
     volumeRows += rowFor('Rush Yds', 'rush_yards', '#fb923c');
@@ -4794,6 +4795,7 @@ function buildWeeklyTrendRows(weeks, position) {
     computedRows += rowForComputed('Catch %', function(w) {
       var tgt = Number(w.targets || 0); return tgt > 0 ? Number(w.receptions || 0) / tgt * 100 : 0;
     }, '#14b8a6', '%');
+    shareRow = rowFor('Carry %', 'carry_share', '#fdba74', '%');
   } else if (pos === 'WR' || pos === 'TE') {
     volumeRows += rowFor('Receptions', 'receptions', '#10b981');
     volumeRows += rowFor('Rec Yds', 'rec_yards', '#34d399');
@@ -4807,12 +4809,18 @@ function buildWeeklyTrendRows(weeks, position) {
     computedRows += rowForComputed('Catch %', function(w) {
       var tgt = Number(w.targets || 0); return tgt > 0 ? Number(w.receptions || 0) / tgt * 100 : 0;
     }, '#14b8a6', '%');
+    shareRow = rowFor('Tgt Share %', 'target_share', '#fbbf24', '%');
   }
+  var rzRow = rowForComputed('RZ Touches', function(w) {
+    return Number(w.rz_targets || 0) + Number(w.rz_carries || 0);
+  }, '#ef4444');
   return '<div class="pm-wt-grid">'
     + rowFor('Snap %', 'snap_pct', '#3b82f6', '%')
     + rowFor('Targets', 'targets', '#f59e0b')
     + rowFor('Touches', 'touches', '#22c55e')
+    + shareRow
     + volumeRows
+    + rzRow
     + computedRows
     + rowFor('PPR Pts', 'ppr_pts', '#8b5cf6')
     + '</div>'
