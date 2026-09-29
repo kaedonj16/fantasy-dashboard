@@ -626,3 +626,32 @@ def test_profile_graphs_section_below_depth_chart_and_collapsible():
 def test_defense_vs_position_cells_are_separate_cards():
     # Each position reads as its own card, not a continuous column of numbers.
     assert ".nt-def4cell{{text-align:center;min-width:0;background:var(--card-soft);" in PAGE_SRC
+
+
+def test_graphs_section_uses_two_column_grid():
+    # Two charts per row on desktop, one per row on phones (700px breakpoint,
+    # same convention as .nt-psec grids elsewhere on the page).
+    assert '<div class="nt-graphs-grid">' in PAGE_SRC
+    assert ".nt-graphs-grid{{display:grid;grid-template-columns:1fr 1fr;" in PAGE_SRC
+    assert "@media(max-width:700px){{.nt-graphs-grid{{grid-template-columns:1fr}}}}" in PAGE_SRC
+    # Grid children must not keep their stacked margin, or rows double-space.
+    assert ".nt-graphs-grid>.nt-psec{{margin-bottom:0}}" in PAGE_SRC
+
+
+def test_scatter_plots_render_team_logos_with_emphasis():
+    # All four league scatter plots draw team logos as marks; the selected
+    # team is larger and full-color while the rest are greyed out, and it is
+    # drawn last (on top). No ring around the selected team.
+    assert ''''<image href="'+esc(p.logo)+'"''' in PAGE_SRC
+    assert "var sz=me?26:18" in PAGE_SRC
+    assert 'stroke-width="2.5"' not in PAGE_SRC
+    assert "if(p.abbr!==t.team) dot(p);" in PAGE_SRC
+    assert "if(p.abbr===t.team) dot(p);" in PAGE_SRC
+    # Every scatter point builder passes its team logo through.
+    assert "logo:x.logo" in PAGE_SRC
+    assert "logo:logoByAbbr[ab]" in PAGE_SRC
+    # Dots remain as the fallback when a logo URL is missing.
+    assert "fallback when a logo URL is missing" in PAGE_SRC
+    # Non-selected logos are greyed out via CSS so the selected team pops.
+    assert ".nt-mark-dim{{filter:grayscale(1);opacity:.55}}" in PAGE_SRC
+    assert '''class="nt-mark-dim"''' in PAGE_SRC
