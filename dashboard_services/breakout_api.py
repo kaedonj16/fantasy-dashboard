@@ -678,6 +678,31 @@ def _weekly_history_exists(season: int) -> bool:
         return False
 
 
+# Sentinel returned by _parse_breakout_week for an unrecognized week value.
+_BREAKOUT_WEEK_INVALID = object()
+
+
+def _parse_breakout_week(week: Optional[object]):
+    """Normalize the week selector's value.
+
+    Returns "preseason", an int week, None when no week was requested, or
+    _BREAKOUT_WEEK_INVALID for an unrecognized value (callers must report
+    data_available=False rather than silently serving a different week).
+    """
+    if week is None:
+        return None
+    raw = str(week).strip().lower()
+    if not raw or raw == "latest":
+        return None
+    if raw in ("preseason", "pre", "0"):
+        return "preseason"
+    try:
+        week_int = int(raw)
+    except (TypeError, ValueError):
+        return _BREAKOUT_WEEK_INVALID
+    return week_int if week_int > 0 else _BREAKOUT_WEEK_INVALID
+
+
 def _weekly_usage_comparison(evidence: Dict) -> List[Dict]:
     """Compact baseline->recent usage rows for the UI, only for signals that had
     data. Preserves None (unknown) rather than showing a fake 0."""
@@ -795,16 +820,42 @@ def _weekly_row_to_candidate(row: Dict) -> Dict:
 
 
 def get_weekly_breakout_candidates(season: int, min_score: float = 0.0,
-                                   limit: Optional[int] = None) -> Dict:
-    """In-season board served from the weekly engine."""
+                                   limit: Optional[int] = None,
+                                   as_of_week: Optional[int] = None) -> Dict:
+    """In-season board served from the weekly engine.
+
+    When as_of_week is given, serves that exact snapshot (historical view).
+    A missing snapshot is reported honestly via data_available=False instead
+    of silently falling back to the latest week (which would mislabel history).
+    """
     from data_building.breakout_engine.weekly_store import load_weekly_candidates
     from data_building.breakout_engine.weekly_breakout import (
         WATCHLIST_MIN_SCORE, INITIAL_ROLE_DISCOVERY_MIN,
     )
 
     payload = load_weekly_candidates(
-        season, min_score=max(min_score, WATCHLIST_MIN_SCORE), limit=None
+        season, as_of_week=as_of_week,
+        min_score=max(min_score, WATCHLIST_MIN_SCORE), limit=None
     )
+    # Explicit False only: the real store always sets data_available, and
+    # callers that build partial payloads should not be treated as unavailable.
+    if payload.get("data_available") is False:
+        week_note = (f" No completed breakout snapshot for Week {as_of_week}."
+                     if as_of_week is not None
+                     else " No completed weekly breakout snapshot.")
+        return {
+            "season": season,
+            "candidates": [],
+            "count": 0,
+            "as_of_week": as_of_week,
+            "as_of_date": None,
+            "mode": "weekly",
+            "weekly": True,
+            "data_available": False,
+            "data_status": payload.get("data_status", "unavailable"),
+            "reason": ("The breakout engine has not published a snapshot"
+                       " for this week." + week_note),
+        }
     rows = payload.get("candidates", [])
     candidates = [_weekly_row_to_candidate(r) for r in rows]
     candidates = [candidate for candidate in candidates
@@ -903,7 +954,8 @@ def get_weekly_breakout_detail(player_id: str, season: int) -> Dict:
 
 
 def get_breakout_candidates(season: Optional[int] = None, min_score: float = 0.0,
-                            limit: Optional[int] = None) -> Dict:
+                            limit: Optional[int] = None,
+                            week: Optional[object] = None) -> Dict:
     """
     Get all breakout candidates for a season.
 
@@ -914,6 +966,11 @@ def get_breakout_candidates(season: Optional[int] = None, min_score: float = 0.0
             displayed list to a tight set of genuine breakouts (~8-15) even when
             many players clear the score floor, and is robust to score-scale
             shifts between runs (a fixed floor is not).
+        week: Optional week selector override. "preseason" (or "0") forces the
+            offseason opportunity board; an int forces the weekly snapshot for
+            that exact week (missing snapshots report data_available=False
+            rather than silently falling back to the latest). None keeps the
+            current default behavior.
 
     Returns:
         {
@@ -929,13 +986,30 @@ def get_breakout_candidates(season: Optional[int] = None, min_score: float = 0.0
         nfl_state = get_nfl_state() or {}
         season = int(nfl_state.get('season', 2026))
 
+    week_mode = _parse_breakout_week(week)
+    if week_mode is _BREAKOUT_WEEK_INVALID:
+        return {
+            "season": season, "candidates": [], "count": 0,
+            "mode": "weekly", "weekly": True,
+            "data_available": False, "data_status": "invalid_week",
+            "reason": f"Unknown breakout week '{week}'. Choose a listed week.",
+        }
+    if isinstance(week_mode, int):
+        # Explicit historical snapshot: never fall back to latest (that would
+        # mislabel a different week's predictions as this week's).
+        return get_weekly_breakout_candidates(
+            season, min_score=min_score, limit=limit, as_of_week=week_mode)
+    force_preseason = week_mode == "preseason"
+
     # In-season: serve the weekly usage engine's board when it has a snapshot.
-    if _weekly_breakout_available(season):
+    # Skipped when the caller explicitly asked for the preseason (offseason)
+    # board; "preseason" means the offseason predictions, not the current week.
+    if not force_preseason and _weekly_breakout_available(season):
         return get_weekly_breakout_candidates(season, min_score=min_score, limit=limit)
 
     # Weekly history exists but no row is compatible with the current scorer.
     # Never disguise that deployment state as an offseason board.
-    if _weekly_history_exists(season):
+    if not force_preseason and _weekly_history_exists(season):
         from data_building.breakout_engine.weekly_breakout import SCORING_VERSION
         return {"season": season, "candidates": [], "count": 0,
                 "mode": "weekly", "weekly": True, "data_available": False,
@@ -1068,6 +1142,7 @@ def get_breakout_board_candidates(
     requested_season: Optional[int] = None,
     min_score: float = BREAKOUT_BOARD_MIN_SCORE,
     limit: Optional[int] = BREAKOUT_BOARD_LIMIT,
+    week: Optional[object] = None,
 ) -> Dict:
     """Return the authoritative candidate set rendered by the main board.
 
@@ -1075,9 +1150,49 @@ def get_breakout_board_candidates(
     does not change board membership.  Season resolution, weekly/offseason
     selection, classifications, exclusions, ranking, and the top-N cap all flow
     through the same candidate pipeline used by the page endpoint.
+
+    ``week`` forwards the week selector value ("preseason", an int week, or
+    None) into the candidate pipeline.
     """
     season = _resolve_bo_season(requested_season)
-    return get_breakout_candidates(season, min_score=min_score, limit=limit)
+    # Only forward week when set, so the default call shape stays identical to
+    # the old pipeline (existing mocks and callers keep working untouched).
+    extra = {"week": week} if week is not None else {}
+    return get_breakout_candidates(season, min_score=min_score, limit=limit, **extra)
+
+
+def list_breakout_weeks(requested_season: Optional[int] = None) -> Dict:
+    """Ordered week options for the breakout week selector.
+
+    Always includes "Preseason" (the offseason opportunity board), followed by
+    one entry per completed weekly snapshot for the season, oldest first.
+    """
+    season = _resolve_bo_season(requested_season)
+    completed = []
+    if season:
+        try:
+            from data_building.breakout_engine.weekly_store import list_completed_weeks
+            completed = list_completed_weeks(season)
+        except Exception:
+            logger.debug("list_breakout_weeks: weekly lookup failed", exc_info=True)
+    weeks = [{"value": "preseason", "label": "Preseason"}]
+    for row in completed:
+        weeks.append({
+            "value": row["as_of_week"],
+            "label": f"Week {row['as_of_week']}",
+            "as_of_date": row.get("as_of_date"),
+        })
+    latest_week = completed[-1]["as_of_week"] if completed else "preseason"
+    try:
+        preseason_available = bool(opportunity_data_ready(season)) if season else False
+    except Exception:
+        preseason_available = False
+    return {
+        "season": season,
+        "weeks": weeks,
+        "latest_week": latest_week,
+        "preseason_available": preseason_available,
+    }
 
 
 def breakout_board_membership(
@@ -1644,18 +1759,30 @@ def candidates():
     limit = request.args.get('limit', default=BREAKOUT_BOARD_LIMIT, type=int)
     league_id = request.args.get('league_id')
     platform = request.args.get('platform', 'sleeper')
+    week = request.args.get('week')
     has_premium = has_premium_for_viewer(
         session.get('viewer_username'), session.get('viewer_user_id'),
         league_id, platform, requested_season,
     )
     if not has_premium:
-        all_result = get_breakout_board_candidates(requested_season, min_score, limit)
+        all_result = get_breakout_board_candidates(requested_season, min_score, limit, week=week)
         all_cands = all_result.get('candidates', [])
         preview = dict(all_result)
         preview['candidates'] = all_cands[:3]
         preview['locked_count'] = max(0, len(all_cands) - 3)
         return jsonify(preview)
-    return jsonify(get_breakout_board_candidates(requested_season, min_score, limit or None))
+    return jsonify(get_breakout_board_candidates(requested_season, min_score, limit or None, week=week))
+
+
+@breakout_bp.route('/weeks')
+def weeks():
+    """Week options for the breakout week selector.
+
+    Always includes "preseason" (the offseason opportunity board), plus one
+    entry per completed weekly snapshot for the season.
+    """
+    requested_season = request.args.get('season', type=int)
+    return jsonify(list_breakout_weeks(requested_season))
 
 
 @breakout_bp.route('/candidates/<position>')

@@ -382,6 +382,37 @@ def has_any_weekly_snapshot(season: int) -> bool:
     return bool(row)
 
 
+def list_completed_weeks(season: int) -> List[Dict[str, Any]]:
+    """Completed weekly snapshots for a season, oldest first.
+
+    Uses the same completion criteria as :func:`latest_scored_week` so only
+    weeks the reader can actually serve are advertised (e.g. for a week
+    selector showing each week's predicted breakouts).
+    """
+    from data_building.breakout_engine.weekly_breakout import SCORING_VERSION
+    init_weekly_breakout_db()
+    with get_conn() as conn:
+        rows = conn.execute(
+            f"SELECT r.as_of_week AS w, r.as_of_date AS d FROM {WEEKLY_RUNS_TABLE} r "
+            f"WHERE r.season = %s AND r.scoring_version = %s "
+            f"AND r.status='completed' AND r.completed_at IS NOT NULL "
+            f"AND r.expected_row_count > 0 "
+            f"AND r.inserted_row_count = r.expected_row_count "
+            f"AND (SELECT COUNT(*) FROM {WEEKLY_SCORES_TABLE} s "
+            f"     WHERE s.run_id=r.id) = r.inserted_row_count "
+            f"ORDER BY r.as_of_week ASC",
+            (int(season), SCORING_VERSION),
+        ).fetchall()
+    out = []
+    for row in rows:
+        d = row.get("d")
+        out.append({
+            "as_of_week": int(row.get("w")),
+            "as_of_date": d.isoformat() if hasattr(d, "isoformat") else d,
+        })
+    return out
+
+
 def load_previous_week_scores(season: int, before_week: int) -> Dict[str, Dict[str, Any]]:
     """Latest compatible score per player before a new snapshot (lifecycle input)."""
     from data_building.breakout_engine.weekly_breakout import SCORING_VERSION
