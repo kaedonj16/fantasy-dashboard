@@ -21,11 +21,13 @@ try:
     import psycopg
     from psycopg.rows import dict_row
     from psycopg.types.json import set_json_dumps
+    from psycopg.pq import TransactionStatus
     _PSYCOPG_AVAILABLE = True
 except Exception:  # pragma: no cover - driver missing (pure test / CI base env)
     psycopg = None  # type: ignore
     dict_row = None  # type: ignore
     set_json_dumps = None  # type: ignore
+    TransactionStatus = None  # type: ignore
     _PSYCOPG_AVAILABLE = False
 
 # Connection pooling. A fresh psycopg.connect() per call pays TCP+TLS+auth +
@@ -201,6 +203,24 @@ def _get_conn_direct(autocommit: bool, retries: int) -> Iterator[psycopg.Connect
         conn.close()
 
 
+def _discard_stray_transaction(conn) -> None:
+    """Roll back a stray open transaction on a recycled pooled connection.
+
+    A previous borrower can leave a transaction open (killed mid-transaction,
+    a commit that failed inside the pool exit, ...). psycopg refuses to change
+    ``autocommit`` while the connection is INTRANS, so a single poisoned
+    connection would otherwise fail every checkout that draws it. Clearing it
+    here keeps one bad checkout from poisoning the whole pool.
+    """
+    if TransactionStatus is None:
+        return
+    try:
+        if conn.info.transaction_status != TransactionStatus.IDLE:
+            conn.rollback()
+    except Exception:
+        logger.debug("suppressed exception", exc_info=True)
+
+
 @contextmanager
 def get_conn(autocommit: bool = False, retries: int = 3) -> Iterator[psycopg.Connection]:
     if not _POOL_AVAILABLE:
@@ -210,42 +230,34 @@ def get_conn(autocommit: bool = False, retries: int = 3) -> Iterator[psycopg.Con
 
     # Acquire a pooled connection (with retry/backoff on connect/timeout).
     last_err: Exception = RuntimeError("get_conn: no attempts made")
-    cm = None
-    conn = None
+    pool = _get_pool()
     for attempt in range(retries):
         try:
-            cm = _get_pool().connection()
-            conn = cm.__enter__()
-            break
+            # Nest the pool's context manager (instead of driving
+            # __enter__/__exit__ by hand) so the checkout is always returned
+            # -- rolled back on error -- even if flipping autocommit below
+            # raises. Previously a failed flip skipped the pool exit, leaving
+            # the INTRANS connection to be recycled into the next checkout.
+            with pool.connection() as conn:
+                # The pool default is autocommit=False; flip per-checkout when
+                # requested and restore before returning the connection so the
+                # next borrower sees default.
+                set_ac = bool(autocommit) and not conn.autocommit
+                if set_ac:
+                    _discard_stray_transaction(conn)
+                    conn.autocommit = True
+                try:
+                    yield conn
+                finally:
+                    if set_ac:
+                        _discard_stray_transaction(conn)
+                        try:
+                            conn.autocommit = False
+                        except Exception:
+                            logger.debug("suppressed exception", exc_info=True)
+            return
         except (psycopg.OperationalError, PoolTimeout) as e:  # type: ignore
             last_err = e
-            cm = None
             if attempt < retries - 1:
                 time.sleep(2 ** attempt)
-    if conn is None or cm is None:
-        raise last_err
-
-    # The pool default is autocommit=False; flip per-checkout when requested and
-    # restore before returning the connection so the next borrower sees default.
-    set_ac = bool(autocommit) and not conn.autocommit
-    if set_ac:
-        conn.autocommit = True
-    try:
-        yield conn
-    except BaseException as e:
-        if set_ac:
-            try:
-                conn.autocommit = False
-            except Exception:
-                logger.debug("suppressed exception", exc_info=True)
-        # pool.connection().__exit__ rolls back (non-autocommit) and returns it.
-        cm.__exit__(type(e), e, e.__traceback__)
-        raise
-    else:
-        if set_ac:
-            try:
-                conn.autocommit = False
-            except Exception:
-                logger.debug("suppressed exception", exc_info=True)
-        # pool.connection().__exit__ commits (non-autocommit) and returns it.
-        cm.__exit__(None, None, None)
+    raise last_err
