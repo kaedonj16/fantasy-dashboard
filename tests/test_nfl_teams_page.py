@@ -600,3 +600,29 @@ def test_profile_charts_use_existing_payloads():
     assert "t.ranks" in PAGE_SRC
     assert "DATA.teams" in PAGE_SRC
     assert "x.oline" in PAGE_SRC or ".oline" in PAGE_SRC
+
+
+# ── Profile section order: graphs below depth chart, collapsible ──────────────
+
+def test_profile_graphs_section_below_depth_chart_and_collapsible():
+    # Graphs move out of the top grid into one collapsible section below the
+    # depth chart; the schedule is collapsible too.
+    depth_i = PAGE_SRC.index("<h3>Depth chart / competition</h3>")
+    graphs_i = PAGE_SRC.index("<h3>Graphs</h3>")
+    sched_i = PAGE_SRC.index("<h3>Schedule</h3>")
+    assert depth_i < graphs_i < sched_i
+    # Both sections render as native details/summary (no JS wiring needed).
+    assert '<details class=\"nt-psec nt-collapse\" open><summary><h3>Graphs</h3>' in PAGE_SRC
+    assert '<details class=\"nt-psec nt-collapse\" open><summary><h3>Schedule</h3>' in PAGE_SRC
+    assert "details.nt-collapse" in PAGE_SRC
+    # All six charts moved into the Graphs section: home/away, fingerprint,
+    # and the four league scatter plots.
+    graphs_block = PAGE_SRC[graphs_i:sched_i]
+    for marker in ["splitsSVG(d,t)", "fingerprintSection(t)", "olineScatterSVG(t)",
+                   "pressureScatterSVG(t)", "identityScatterSVG(t)", "softSpotsSVG(t)"]:
+        assert marker in graphs_block, marker
+
+
+def test_defense_vs_position_cells_are_separate_cards():
+    # Each position reads as its own card, not a continuous column of numbers.
+    assert ".nt-def4cell{{text-align:center;min-width:0;background:var(--card-soft);" in PAGE_SRC

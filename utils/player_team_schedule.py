@@ -232,6 +232,16 @@ def _enrich_from_scores(game: dict, team: str, score_by_date: dict) -> dict:
     )
     if not scored:
         return game
+    # Guard: never let the scoreboard rewrite the matchup. If the looked-up
+    # game does not involve the same two teams as the schedule game (e.g. a
+    # scoreboard that ignored its date parameter and returned another week's
+    # slate), skip enrichment instead of pasting the wrong opponent/score.
+    scored_pair = {_canon(scored.get("home") or ""), _canon(scored.get("away") or "")}
+    sched_pair = {_canon(game.get("home") or ""), _canon(game.get("away") or "")}
+    if "" in scored_pair or scored_pair != sched_pair:
+        logger.debug("scores enrich skipped for %s: matchup mismatch %s vs %s",
+                     gdate, sorted(sched_pair), sorted(scored_pair))
+        return game
     merged = dict(game)
     for k in (
         "gameID", "gameStatus", "gameStatusCode", "gameClock", "gameTime",
