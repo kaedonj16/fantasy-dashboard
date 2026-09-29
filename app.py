@@ -15578,21 +15578,13 @@ def page_breakouts(platform: str, season: int, league_id: str):
         {_bo_last_updated}
       </div>
       <div class="card-body">
-        <!-- Position Filter + Week Selector -->
-        <div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; margin-bottom: 16px;">
-          <div class="otc-day-filters breakout-filters">
-            <button class="otc-day-filter breakout-filter-btn active" data-position="ALL" onclick="filterBreakouts('ALL')">All Positions</button>
-            <button class="otc-day-filter breakout-filter-btn" data-position="QB" onclick="filterBreakouts('QB')">QB</button>
-            <button class="otc-day-filter breakout-filter-btn" data-position="RB" onclick="filterBreakouts('RB')">RB</button>
-            <button class="otc-day-filter breakout-filter-btn" data-position="WR" onclick="filterBreakouts('WR')">WR</button>
-            <button class="otc-day-filter breakout-filter-btn" data-position="TE" onclick="filterBreakouts('TE')">TE</button>
-          </div>
-          <label for="breakoutWeekSelect" style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-muted); font-weight: 600;">
-            Week:
-            <select id="breakoutWeekSelect" aria-label="Breakout week">
-              <option value="">Loading weeks...</option>
-            </select>
-          </label>
+        <!-- Position Filter -->
+        <div class="otc-day-filters breakout-filters">
+          <button class="otc-day-filter breakout-filter-btn active" data-position="ALL" onclick="filterBreakouts('ALL')">All Positions</button>
+          <button class="otc-day-filter breakout-filter-btn" data-position="QB" onclick="filterBreakouts('QB')">QB</button>
+          <button class="otc-day-filter breakout-filter-btn" data-position="RB" onclick="filterBreakouts('RB')">RB</button>
+          <button class="otc-day-filter breakout-filter-btn" data-position="WR" onclick="filterBreakouts('WR')">WR</button>
+          <button class="otc-day-filter breakout-filter-btn" data-position="TE" onclick="filterBreakouts('TE')">TE</button>
         </div>
 
         <!-- Loading State -->
@@ -15621,95 +15613,34 @@ def page_breakouts(platform: str, season: int, league_id: str):
       var currentPage = 1;
       var PAGE_SIZE = 12;
 
-      var currentWeek = 'latest';
-
-      // Fetch breakout candidates (using new BreakoutEngine API).
+      // Fetch breakout candidates on page load (using new BreakoutEngine API)
       // Server selects the engine-specific floor: weekly watchlist calibration
       // is intentionally different from the offseason 50-point board.
-      function _boCandidatesUrl(weekValue) {{
-        var url = '/api/breakout/candidates?season={bo_season}&limit=15&league_id={league_id}&platform={platform}';
-        if (weekValue && weekValue !== 'latest') {{
-          url += '&week=' + encodeURIComponent(weekValue);
-        }}
-        return url;
-      }}
-
-      function handleBreakoutResponse(data) {{
-        breakoutCandidates = (data && data.candidates) || [];
-        lockedCount = data.locked_count || 0;
-        document.getElementById('breakoutsLoading').style.display = 'none';
-        document.getElementById('breakoutsContainer').style.display = 'none';
-        document.getElementById('breakoutsEmpty').style.display = 'none';
-
-        if (data && data.data_available === false) {{
-          var emptyTitle = document.getElementById('breakoutsEmptyTitle');
-          var emptyDetail = document.getElementById('breakoutsEmptyDetail');
-          if (emptyTitle) emptyTitle.textContent = 'Breakout data is not ready';
-          if (emptyDetail) {{
-            emptyDetail.textContent = data.reason || 'Opportunity scores need roster-change data for this season. This page will fill in once that pipeline has run.';
-            emptyDetail.style.display = 'block';
-          }}
-          document.getElementById('breakoutsEmpty').style.display = 'block';
-        }} else if (breakoutCandidates.length === 0 && lockedCount === 0) {{
-          document.getElementById('breakoutsEmpty').style.display = 'block';
-        }} else {{
-          renderBreakouts();
-        }}
-      }}
-
-      function loadBreakouts(weekValue) {{
-        currentWeek = weekValue || 'latest';
-        currentPage = 1;
-        var loadingEl = document.getElementById('breakoutsLoading');
-        if (loadingEl) {{
-          loadingEl.style.display = 'block';
-          if (!loadingEl.querySelector('.loading-spinner')) {{
-            loadingEl.innerHTML = '<div class="loading-spinner"></div><div style="margin-top: 12px;">Loading breakout candidates...</div>';
-          }}
-        }}
-        document.getElementById('breakoutsContainer').style.display = 'none';
-        document.getElementById('breakoutsEmpty').style.display = 'none';
-        fetch(_boCandidatesUrl(currentWeek))
-          .then(res => res.json())
-          .then(handleBreakoutResponse)
-          .catch(err => {{
-            console.error('Error loading breakouts:', err);
-            document.getElementById('breakoutsLoading').innerHTML = '<div style="color: #ef4444;">Failed to load breakout candidates</div>';
-          }});
-      }}
-
-      function onBreakoutWeekChange() {{
-        var sel = document.getElementById('breakoutWeekSelect');
-        loadBreakouts(sel ? sel.value : 'latest');
-      }}
-
-      // Populate the week selector: Preseason (offseason board) plus every
-      // completed weekly snapshot. Defaults to the latest available week.
-      fetch('/api/breakout/weeks?season={bo_season}')
+      fetch('/api/breakout/candidates?season={bo_season}&limit=15&league_id={league_id}&platform={platform}')
         .then(res => res.json())
-        .then(function (data) {{
-          var sel = document.getElementById('breakoutWeekSelect');
-          if (sel && data && Array.isArray(data.weeks)) {{
-            sel.innerHTML = '';
-            data.weeks.forEach(function (w) {{
-              var opt = document.createElement('option');
-              opt.value = String(w.value);
-              opt.textContent = w.label;
-              sel.appendChild(opt);
-            }});
-            var latest = data.latest_week != null ? String(data.latest_week) : 'preseason';
-            sel.value = latest;
-            if (window.initCustomSelects) window.initCustomSelects(sel.closest('div') || document);
+        .then(data => {{
+          breakoutCandidates = (data && data.candidates) || [];
+          lockedCount = data.locked_count || 0;
+          document.getElementById('breakoutsLoading').style.display = 'none';
+
+          if (data && data.data_available === false) {{
+            var emptyTitle = document.getElementById('breakoutsEmptyTitle');
+            var emptyDetail = document.getElementById('breakoutsEmptyDetail');
+            if (emptyTitle) emptyTitle.textContent = 'Breakout data is not ready';
+            if (emptyDetail) {{
+              emptyDetail.textContent = data.reason || 'Opportunity scores need roster-change data for this season. This page will fill in once that pipeline has run.';
+              emptyDetail.style.display = 'block';
+            }}
+            document.getElementById('breakoutsEmpty').style.display = 'block';
+          }} else if (breakoutCandidates.length === 0 && lockedCount === 0) {{
+            document.getElementById('breakoutsEmpty').style.display = 'block';
+          }} else {{
+            renderBreakouts();
           }}
-          var initWeek = (sel && sel.value) ? sel.value : 'latest';
-          sel.addEventListener('change', onBreakoutWeekChange);
-          loadBreakouts(initWeek);
         }})
-        .catch(function (err) {{
-          console.error('Error loading breakout weeks:', err);
-          var sel = document.getElementById('breakoutWeekSelect');
-          if (sel) sel.addEventListener('change', onBreakoutWeekChange);
-          loadBreakouts('latest');
+        .catch(err => {{
+          console.error('Error loading breakouts:', err);
+          document.getElementById('breakoutsLoading').innerHTML = '<div style="color: #ef4444;">Failed to load breakout candidates</div>';
         }});
 
       function filterBreakouts(position) {{
@@ -31894,7 +31825,7 @@ def build_portfolio_body(
         f"</div>"
         f"<div class='pf-stat-bar'>"
         f"<div class='pf-stat'><div class='pf-stat-val' data-portfolio-league-count>{num_leagues}</div><div class='pf-stat-label'>Leagues</div></div>"
-        f"<div class='pf-stat'><div class='pf-stat-val {rec_cls}'>{rec_str}</div><div class='pf-stat-label'>Record</div></div>"
+        f"<div class='pf-stat'><div class='pf-stat-val {rec_cls}' data-portfolio-agg-record data-wins='{total_wins}' data-losses='{total_losses}' data-ties='{total_ties}'>{rec_str}</div><div class='pf-stat-label'>Record</div></div>"
         f"<div class='pf-stat'><div class='pf-stat-val'>{season}</div><div class='pf-stat-label'>Season</div></div>"
         f"</div>"
         f"</div>"
@@ -32223,6 +32154,7 @@ def build_portfolio_body(
 
         wins = lg.get("wins") or 0
         losses = lg.get("losses") or 0
+        ties = lg.get("ties") or 0
         rank = lg.get("rank") or "?"
         total = lg.get("total_teams") or "?"
         rec = lg.get("record") or f"{wins}-{losses}"
@@ -32304,7 +32236,7 @@ def build_portfolio_body(
         # Live matchup slot: hydrated client-side (see pfLiveScores below) only
         # in-season during game weeks. Starts as a content-shaped skeleton so the
         league_rows += (
-            f"<div class='pf-lg-card' data-summary-card data-lg-key='{plat}:{lid}' data-favorite='{'true' if lg.get('is_favorite') else 'false'}' data-platform='{html.escape(str(plat), quote=True)}' data-league-id='{html.escape(str(lid), quote=True)}' data-season='{card_season}'>"
+            f"<div class='pf-lg-card' data-summary-card data-lg-key='{plat}:{lid}' data-favorite='{'true' if lg.get('is_favorite') else 'false'}' data-platform='{html.escape(str(plat), quote=True)}' data-league-id='{html.escape(str(lid), quote=True)}' data-season='{card_season}' data-wins='{wins}' data-losses='{losses}' data-ties='{ties}'>"
             f"<div class='pf-lg-top'>"
             f"<span class='pf-lg-crest' style='background:{_crest_hue};'>{_ini}</span>"
             f"{_lg_id(name_link, plat, off_note, '', lg.get('team_name') or '')}"
