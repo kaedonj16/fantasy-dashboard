@@ -17,6 +17,11 @@ from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
+# Injury rates shared with the season sim (no numpy in this module's import
+# chain, so the lint shard stays happy).
+from data_building.injury_rates import expected_injury_loss_per_week as _inj_expected_injury_loss
+from data_building.injury_rates import injury_onset_rate as _inj_onset_rate
+
 # Mirror the serious-injury set from utils/waiver_score.py (PR #2075) without
 # importing the whole scoring module here.
 _SERIOUS_INJURY = frozenset(
@@ -464,12 +469,24 @@ def build_lineup_lab_payload(
     # ── Opponent team distribution ───────────────────────────────────────
     opp_mean = 0.0
     opp_std = 15.0
+    opp_injury_adj = 0.0
     if opp_starters:
         opp_profiles = {pid: _prof(pid) for pid in opp_starters}
         opp_mean = round(sum(_safe_float(p.get("mean")) for p in opp_profiles.values()), 1)
         opp_pairs = {(a, b): r for (a, b), r in pairs.items()
                      if a in opp_profiles and b in opp_profiles}
         opp_std = round(_team_std_from_profiles(opp_starters, opp_profiles, opp_pairs), 1)
+        # The browser applies per-player in-game injury draws to YOUR side only
+        # (the opponent ships as a team-level aggregate with no per-player
+        # draws). Haircut the opponent mean by the expected injury loss so the
+        # win probability stays centered — same rates as the season engine
+        # (data_building/injury_rates.py), replacement at the waiver-wire
+        # fallback since we have no visibility into their bench.
+        opp_injury_adj = round(sum(
+            _inj_expected_injury_loss(_safe_float(p.get("mean")), p.get("pos"))
+            for p in opp_profiles.values()
+        ), 1)
+        opp_mean = round(max(opp_mean - opp_injury_adj, 0.0), 1)
 
     corr_out = {}
     for (a, b), rho in pairs.items():
@@ -478,6 +495,13 @@ def build_lineup_lab_payload(
     return {
         "week": int(week),
         "n_sims": _N_SIMS,
+        # Per-position single-game injury onset rates, sourced from
+        # data_building/injury_rates.py (the same research-backed table as the
+        # season sim). The browser draws in-game injuries off these.
+        "injury_onset": {
+            pos: round(_inj_onset_rate(pos), 4)
+            for pos in ("QB", "RB", "WR", "TE", "K", "DEF")
+        },
         "you": {
             "roster_id": viewer_roster_id,
             "lineup": lineup,
@@ -488,6 +512,7 @@ def build_lineup_lab_payload(
             "mean": opp_mean,
             "std": opp_std,
             "missing": opp_missing,
+            "injury_adj": opp_injury_adj,
         },
         "corr": corr_out,
     }
