@@ -24,6 +24,7 @@ def email_shell(
     brand_mark_url: str = "",
     footer_kind: str = "weekly_digest",
     header_theme: str = "dark",
+    preheader: str = "",
 ) -> str:
     """Wrap email body in the BR Fantasy chrome.
 
@@ -38,7 +39,20 @@ def email_shell(
       - ``dark`` (default): navy header with the light distressed wordmark.
       - ``light``: white header with the full-color navy wordmark and no
         redundant kicker line (pair with light-mode logo assets).
+
+    ``preheader`` is hidden inbox preview text. It must be the first text in
+    the HTML body; zero-width padding keeps clients from pulling body copy
+    into the snippet.
     """
+    pre = (preheader or "").strip()
+    pre_html = ""
+    if pre:
+        pad = "&#8203;&nbsp;" * 40
+        pre_html = (
+            '<div style="display:none;max-height:0;overflow:hidden;opacity:0;'
+            'color:transparent;visibility:hidden;mso-hide:all;">'
+            f"{escape(pre, quote=False)}{pad}</div>"
+        )
     sub = escape(subtitle or "Your weekly fantasy digest", quote=False)
     base_logo = (logo_url or "").strip()
     mark = (brand_mark_url or "").strip()
@@ -127,6 +141,7 @@ def email_shell(
         )
     return f"""\
 <div style="background:{wrapper_bg};padding:28px 12px;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">
+  {pre_html}
   <div style="max-width:{MAX_WIDTH_PX}px;margin:0 auto;background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid {card_border};">
     <div style="background:{header_bg};padding:22px 24px 18px;">
       {logo_block}
@@ -371,6 +386,68 @@ def league_overview_card_html(
     }])
 
 
+def thursday_alert_html(items: Optional[list], *, compact: bool = False) -> str:
+    """Amber alert for starters playing Thursday night. Empty when no items.
+
+    Each item: {name, team, kickoff, league?}. ``compact`` renders a single
+    line for the multi-league overview instead of the full alert card.
+    """
+    rows = [it for it in (items or []) if isinstance(it, dict) and it.get("name")]
+    if not rows:
+        return ""
+    if compact:
+        names = ", ".join(
+            escape(str(it.get("name") or ""), quote=False) for it in rows[:3]
+        )
+        return (
+            '<p style="margin:0 0 8px;font-size:13px;color:#92400e;line-height:1.5;">'
+            f"<strong>Thursday night:</strong> set your lineup early, {names} "
+            "play Thursday.</p>"
+        )
+    parts = []
+    kickoffs = {str(it.get("kickoff") or "") for it in rows} - {""}
+    for it in rows[:4]:
+        nm = escape(str(it.get("name") or ""), quote=False)
+        tm = escape(str(it.get("team") or ""), quote=False)
+        lg = escape(str(it.get("league") or ""), quote=False)
+        label = f"{nm} ({tm})" if tm else nm
+        if lg:
+            label += f" [{lg}]"
+        if len(kickoffs) > 1 and it.get("kickoff"):
+            label += f" {escape(str(it.get('kickoff')), quote=False)}"
+        parts.append(label)
+    body = "Set your lineup before Thursday kickoff: " + ", ".join(parts)
+    if len(rows) > 4:
+        body += f", and {len(rows) - 4} more"
+    if len(kickoffs) == 1:
+        body += f". Kickoff {sorted(kickoffs)[0]}"
+    body += "."
+    return (
+        '<div style="margin:0 0 12px;padding:12px 14px;border-radius:12px;'
+        'background:#fffbeb;border:1px solid #fcd34d;">'
+        '<div style="font-size:11px;font-weight:800;color:#92400e;'
+        'text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px;">'
+        "Thursday night</div>"
+        f'<div style="font-size:14px;color:#78350f;line-height:1.5;">{body}</div>'
+        "</div>"
+    )
+
+
+def league_activity_html(bullets: Optional[list], *, href: str = "") -> str:
+    """Recent waiver/trade activity around the league. Empty when no bullets."""
+    clean = [str(b).strip() for b in (bullets or []) if str(b).strip()]
+    if not clean:
+        return ""
+    from utils.digest_actions import section_card
+    items = "".join(
+        f'<li style="margin:0 0 6px;font-size:14px;color:#0f172a;line-height:1.5;">'
+        f"{escape(b, quote=False)}</li>"
+        for b in clean[:4]
+    )
+    inner = f'<ul style="margin:4px 0 0;padding-left:18px;">{items}</ul>'
+    return section_card("Around your league", inner, href=href, cta="Open waivers →")
+
+
 def league_summary_html(
     *,
     league_name: str,
@@ -378,6 +455,7 @@ def league_summary_html(
     wins: int = 0,
     losses: int = 0,
     format_label: str = "",
+    stakes_line: str = "",
 ) -> str:
     lg = escape(league_name or "Your league", quote=False)
     games = int(wins or 0) + int(losses or 0)
@@ -394,9 +472,15 @@ def league_summary_html(
         )
         size = "16px"
     chip = format_chip_html(format_label)
+    stakes = ""
+    if (stakes_line or "").strip():
+        stakes = (
+            '<div style="font-size:13px;color:#475569;margin-top:3px;">'
+            f"{escape(stakes_line.strip(), quote=False)}</div>"
+        )
     return (
         f'<div style="margin:0 0 8px;font-size:{size};color:#0f172a;line-height:1.4;">'
-        f"{headline}{chip}</div>"
+        f"{headline}{chip}{stakes}</div>"
     )
 
 

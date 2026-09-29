@@ -22,8 +22,20 @@ import os
 import re
 from datetime import datetime, timezone
 from html import escape
+from zoneinfo import ZoneInfo
 
 logger = logging.getLogger(__name__)
+
+_ET = ZoneInfo("America/New_York")
+
+# Sleeper represents a starting defense with the bare team abbreviation, which
+# never appears in the player index. Used to recognize D/ST starter ids.
+NFL_TEAM_ABBRS = frozenset({
+    "ARI", "ATL", "BAL", "BUF", "CAR", "CHI", "CIN", "CLE", "DAL", "DEN",
+    "DET", "GB", "HOU", "IND", "JAX", "KC", "LV", "LAC", "LAR", "MIA",
+    "MIN", "NE", "NO", "NYG", "NYJ", "PHI", "PIT", "SF", "SEA", "TB",
+    "TEN", "WAS",
+})
 
 _STATE_PREFIX = "weekly_email_sent:"  # + account_id  -> value = ISO "YYYY-Www"
 # Cap connected leagues in one email so cron runtime and inbox length stay sane.
@@ -588,6 +600,7 @@ def choose_subject(
     waivers=None,
     my_risers=None,
     pidx=None,
+    thursday=None,
 ) -> str:
     """Most important actionable thing first; never spammy."""
     lg = (league_name or "Your league").strip() or "Your league"
@@ -597,6 +610,10 @@ def choose_subject(
     note = lineup_note or {}
     title = str(note.get("title") or "").lower()
     body = str(note.get("body") or "").strip()
+    # Red-alert subjects: the single most important thing in the box first.
+    # The Thursday deadline beats the other lineup alerts: it expires first.
+    if thursday:
+        return f"{lg}: Set your lineup before Thursday night"
     if "empty" in title:
         return f"{lg}: Fix your lineup before Sunday"
     if "injured" in title:
@@ -642,6 +659,278 @@ def choose_subject(
     if rank and (int(wins or 0) + int(losses or 0) > 0):
         return f"{lg}: #{int(rank)} · {int(wins or 0)}-{int(losses or 0)}"
     return f"{lg}: your weekly fantasy digest"
+
+
+def thursday_night_starters(
+    *,
+    starters: list,
+    pidx: dict | None,
+    season: int,
+    week: int,
+    games: list | None = None,
+) -> list[dict]:
+    """Starters whose NFL team plays Thursday night this week.
+
+    Returns [{player_id, name, team, kickoff}] with kickoff like
+    "8:15 PM ET". Empty when the schedule is unavailable or none of the
+    given starters plays Thursday. Kickoff weekday is evaluated in
+    America/New_York: a 8:15 PM ET kickoff is Friday 00:15 UTC, so a naive
+    UTC weekday check would miss it.
+    """
+    idx = pidx or {}
+    try:
+        wk = int(week)
+        sn = int(season)
+    except (TypeError, ValueError):
+        return []
+    if wk <= 0 or sn <= 0:
+        return []
+    if games is None:
+        try:
+            from dashboard_services.api import get_nfl_games_for_week_raw
+            from utils.utils import get_week_schedule_cached
+            games = get_week_schedule_cached(
+                season=sn, week=wk, fetch_fn=get_nfl_games_for_week_raw,
+            )
+        except Exception:
+            return []
+    kickoff_by_team: dict[str, str] = {}
+    for g in games or []:
+        if not isinstance(g, dict):
+            continue
+        iso = str(g.get("gameTime") or "")
+        try:
+            dt = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        local = dt.astimezone(_ET)
+        if local.weekday() != 3:  # Thursday
+            continue
+        label = local.strftime("%I:%M %p").lstrip("0") + " ET"
+        for side in (g.get("home"), g.get("away")):
+            abbr = str(side or "").strip().upper()
+            if abbr and abbr not in kickoff_by_team:
+                kickoff_by_team[abbr] = label
+    if not kickoff_by_team:
+        return []
+    out: list[dict] = []
+    for pid in starters or []:
+        sid = str(pid)
+        meta = idx.get(sid) or {}
+        team = str(meta.get("team") or "").strip().upper()
+        name = _player_name(sid, idx)
+        if not team and sid.upper() in NFL_TEAM_ABBRS:
+            team = sid.upper()
+            name = name or team
+        if team and team in kickoff_by_team and name:
+            out.append({
+                "player_id": sid,
+                "name": name,
+                "team": team,
+                "kickoff": kickoff_by_team[team],
+            })
+    return out
+
+
+def recent_league_activity(
+    *,
+    platform: str,
+    league_id: str,
+    week: int,
+    rosters: list | None,
+    users: list | None,
+    pidx: dict | None,
+    my_roster_id: str = "",
+    limit: int = 4,
+    transactions: list | None = None,
+) -> list[str]:
+    """Plain-text bullets for recent waiver/trade activity around the league.
+
+    Sleeper only; other platforms return []. Looks at the current and prior
+    week so a Tuesday-morning digest still sees last week's waiver run. The
+    recipient's own moves are skipped (noise). Never raises.
+    """
+    try:
+        if str(platform or "").strip().lower() != "sleeper":
+            return []
+        wk = int(week)
+    except (TypeError, ValueError):
+        return []
+    if wk <= 0:
+        return []
+    txns: list[dict] = []
+    try:
+        if transactions is None:
+            from dashboard_services.api import get_transactions
+            seen: set = set()
+            for w in (wk, wk - 1):
+                if w < 1:
+                    continue
+                for t in get_transactions(str(league_id), w) or []:
+                    if not isinstance(t, dict):
+                        continue
+                    tid = t.get("transaction_id")
+                    if tid and tid in seen:
+                        continue
+                    if tid:
+                        seen.add(tid)
+                    txns.append(t)
+        else:
+            txns = [t for t in transactions if isinstance(t, dict)]
+    except Exception:
+        return []
+    uid_name = {
+        str(u.get("user_id")): (u.get("display_name") or u.get("username") or "A manager")
+        for u in (users or [])
+    }
+    rid_name = {}
+    for r in rosters or []:
+        rid = str(r.get("roster_id"))
+        rid_name[rid] = uid_name.get(str(r.get("owner_id"))) or f"Team {rid}"
+    mine = str(my_roster_id or "")
+
+    def pname(pid: str) -> str:
+        return _player_name(str(pid), pidx or {}) or "a player"
+
+    bullets: list[str] = []
+    ordered = sorted(txns, key=lambda t: t.get("created") or 0, reverse=True)
+    for t in ordered:
+        if str(t.get("status") or "") != "complete":
+            continue
+        ttype = str(t.get("type") or "")
+        if ttype not in ("waiver", "free_agent", "trade"):
+            continue
+        adds = t.get("adds") or {}
+        involved = {str(x) for x in (t.get("roster_ids") or [])}
+        involved |= {str(v) for v in adds.values()}
+        if mine and involved and involved == {mine}:
+            continue  # own move
+        if ttype in ("waiver", "free_agent"):
+            verb = "picked up" if ttype == "waiver" else "added"
+            by_team: dict[str, list] = {}
+            for pid, rid in adds.items():
+                by_team.setdefault(str(rid), []).append(pid)
+            drops = t.get("drops") or {}
+            for rid, pids in by_team.items():
+                if mine and str(rid) == mine:
+                    continue
+                names = ", ".join(pname(p) for p in pids[:2])
+                dropped = [pname(p) for p, drid in drops.items()
+                           if str(drid) == str(rid)][:1]
+                tail = f" (dropped {dropped[0]})" if dropped else ""
+                bullets.append(f"{rid_name.get(str(rid), 'A manager')} {verb} {names}{tail}")
+        else:  # trade
+            by_team = {}
+            for pid, rid in adds.items():
+                by_team.setdefault(str(rid), []).append(pid)
+            parts = []
+            for rid, pids in by_team.items():
+                names = ", ".join(pname(p) for p in pids[:3])
+                parts.append(f"{rid_name.get(str(rid), 'A manager')} gets {names}")
+            picks = t.get("draft_picks") or []
+            if picks:
+                parts.append(f"plus {len(picks)} draft pick{'s' if len(picks) != 1 else ''}")
+            if parts:
+                bullets.append("Trade: " + "; ".join(parts))
+        if len(bullets) >= limit:
+            break
+    return bullets[:limit]
+
+
+def playoff_stakes_line(
+    *,
+    rank: int | None,
+    wins: int = 0,
+    rosters: list | None = None,
+    league: dict | None = None,
+    current_week: int = 0,
+) -> str:
+    """One-line playoff stakes for the league summary, or "" when unknown.
+
+    Uses league settings playoff_teams / playoff_week_start (Sleeper) and the
+    wins of every roster. Only during the regular season.
+    """
+    try:
+        settings = (league or {}).get("settings") or {}
+        pteams = int(settings.get("playoff_teams") or 0)
+        pstart = int(settings.get("playoff_week_start") or 0)
+        r = int(rank or 0)
+        my_w = int(wins or 0)
+        wk = int(current_week or 0)
+    except (TypeError, ValueError):
+        return ""
+    if not pteams or not r or not wk or not pstart or wk >= pstart:
+        return ""
+    rows = rosters or []
+    if len(rows) < pteams + 1:
+        return ""
+
+    def _w(rr) -> int:
+        try:
+            return int(((rr or {}).get("settings") or {}).get("wins") or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    ordered = sorted(rows, key=_w, reverse=True)
+    cutoff_wins = _w(ordered[pteams - 1])
+    next_wins = _w(ordered[pteams])
+    weeks_left = pstart - 1 - wk
+    wl = f" with {weeks_left} week{'s' if weeks_left != 1 else ''} to go" if weeks_left > 0 else ""
+    if r <= pteams:
+        if my_w > next_wins:
+            n = my_w - next_wins
+            return f"You hold a playoff spot, {n} game{'s' if n != 1 else ''} clear of the cut line{wl}."
+        if r == pteams:
+            return f"You hold the final playoff spot{wl}."
+        return f"You hold a playoff spot on the tiebreak{wl}."
+    diff = cutoff_wins - my_w
+    if diff <= 0:
+        return f"You're tied for the final playoff spot{wl}."
+    return f"You're {diff} game{'s' if diff != 1 else ''} back of the final playoff spot{wl}."
+
+
+def choose_preheader(snap: dict | None) -> str:
+    """Inbox preview text: the single most actionable line, plain text."""
+    s = snap or {}
+
+    def _clip(text: str, n: int = 110) -> str:
+        t = " ".join(str(text or "").split())
+        return t if len(t) <= n else t[: n - 1].rstrip() + "..."
+
+    note = s.get("lineup_note") or {}
+    title = str(note.get("title") or "").strip()
+    body = str(note.get("body") or "").strip()
+    if title or body:
+        joined = f"{title}: {body}" if title and body else (title or body)
+        return _clip(joined)
+    thursday = s.get("thursday") or []
+    if thursday:
+        names = ", ".join(str(i.get("name") or "") for i in thursday[:2] if i.get("name"))
+        tail = f" {names}" if names else ""
+        return f"Set your lineup before Thursday kickoff.{tail}"
+    matchup = s.get("matchup") or {}
+    opp = str(matchup.get("opponent_name") or "").strip()
+    if opp:
+        try:
+            wp = matchup.get("win_prob")
+            if wp is not None:
+                wpf = float(wp)
+                if wpf >= 0.55:
+                    return f"You're favored vs {opp} this week."
+                if wpf <= 0.45:
+                    return f"Tough one vs {opp} this week."
+            return f"Your matchup vs {opp} this week."
+        except (TypeError, ValueError):
+            return f"Your matchup vs {opp} this week."
+    waivers = s.get("waivers") or []
+    if waivers:
+        name = str((waivers[0] or {}).get("name") or "").strip()
+        if name:
+            return f"Top waiver target: {name}."
+    lg = str(s.get("league_name") or "").strip()
+    return f"Your weekly fantasy digest for {lg}." if lg else "Your weekly fantasy digest."
 
 
 def _digest_tags(fmt: dict, platform: str, season: int) -> list[str]:
@@ -831,6 +1120,37 @@ def _collect_league_digest(
         has_record, matchup, lineup_note, waivers, injury_item,
         my_risers, core, watch, trade,
     ])
+    thursday: list[dict] = []
+    try:
+        nfl_week = int((cache.nfl_state or {}).get("week") or 0)
+    except (TypeError, ValueError, AttributeError):
+        nfl_week = 0
+    if in_season(cache) and nfl_week > 0:
+        try:
+            starters = (mine.get("starters") or []) if isinstance(mine, dict) else []
+            if starters:
+                thursday = thursday_night_starters(
+                    starters=starters, pidx=pidx, season=int(season), week=nfl_week,
+                )
+        except Exception:
+            logger.debug("[weekly-email] thursday check failed", exc_info=True)
+    activity: list[str] = []
+    try:
+        activity = recent_league_activity(
+            platform=platform, league_id=str(league_id), week=nfl_week,
+            rosters=rosters, users=users, pidx=pidx,
+            my_roster_id=str(roster_id or ""),
+        )
+    except Exception:
+        logger.debug("[weekly-email] league activity failed", exc_info=True)
+    stakes = ""
+    try:
+        stakes = playoff_stakes_line(
+            rank=rank, wins=wins, rosters=rosters, league=league,
+            current_week=nfl_week,
+        )
+    except Exception:
+        logger.debug("[weekly-email] playoff stakes failed", exc_info=True)
     return {
         "platform": platform,
         "league_id": str(league_id),
@@ -858,6 +1178,9 @@ def _collect_league_digest(
         "show_assets": show_assets,
         "is_dynasty": is_dynasty,
         "season_on": in_season(cache),
+        "thursday": thursday,
+        "activity": activity,
+        "stakes": stakes,
         "dash_url": dash_url,
         "matchups_url": matchups_url,
         "waivers_url": waivers_url,
@@ -979,8 +1302,9 @@ def build_digest(platform: str, league_id: str, season: int, roster_id: str,
     """Assemble one recipient's single-league digest. Returns {subject, html, ...} or None."""
     from utils.digest_sections import (
         breakout_html, email_shell, greeting_html, injury_html,
-        league_summary_html, matchup_html, player_movement_html, roster_core_html,
-        start_sit_html, trade_insight_html, waiver_html,
+        league_activity_html, league_summary_html, matchup_html,
+        player_movement_html, roster_core_html, start_sit_html,
+        thursday_alert_html, trade_insight_html, waiver_html,
     )
     from utils.digest_actions import player_deep_link as _pdl
 
@@ -1009,6 +1333,9 @@ def build_digest(platform: str, league_id: str, season: int, roster_id: str,
     show_assets = snap["show_assets"]
     is_dynasty = snap["is_dynasty"]
     season_on = snap["season_on"]
+    thursday = snap.get("thursday") or []
+    activity = snap.get("activity") or []
+    stakes = snap.get("stakes") or ""
     dash_url = snap["dash_url"]
     plat = snap["platform"]
     lid = snap["league_id"]
@@ -1016,8 +1343,9 @@ def build_digest(platform: str, league_id: str, season: int, roster_id: str,
 
     summary = league_summary_html(
         league_name=league_name, rank=rank, wins=wins, losses=losses,
-        format_label=chip,
+        format_label=chip, stakes_line=stakes,
     )
+    thursday_block = thursday_alert_html(thursday)
     matchup_block = matchup_html(matchup, href=snap["matchups_url"]) if matchup else ""
     lineup_block = start_sit_html(lineup_note, href=snap["startsit_url"]) if lineup_note else ""
     waiver_block = waiver_html(
@@ -1025,6 +1353,7 @@ def build_digest(platform: str, league_id: str, season: int, roster_id: str,
         season=seas, league_id=lid,
     ) if waivers else (waiver_item or {}).get("html") or ""
     injury_block = injury_html(injury_item, href=snap["startsit_url"]) if injury_item else ""
+    activity_block = league_activity_html(activity, href=snap["waivers_url"]) if activity else ""
     movement_block = player_movement_html(
         my_risers=my_risers, my_fallers=my_fallers, lg_risers=lg_risers,
         base=_base_url(), platform=plat, season=seas, league_id=lid,
@@ -1040,16 +1369,19 @@ def build_digest(platform: str, league_id: str, season: int, roster_id: str,
     trade_block = trade_insight_html(trade, href=snap["trades_url"])
 
     # Format-aware order, shared components. Keepers keep players, so they get
-    # value sections; in-season they still lead with matchup/lineup.
+    # value sections; in-season they still lead with matchup/lineup. The
+    # Thursday alert always goes first: it is the most time-urgent item.
     if is_dynasty or (show_assets and not season_on):
         ordered = [
-            summary, movement_block, core_block, trade_block, breakout_block,
-            waiver_block, injury_block, lineup_block, matchup_block,
+            thursday_block, summary, movement_block, core_block, trade_block,
+            breakout_block, waiver_block, injury_block, activity_block,
+            lineup_block, matchup_block,
         ]
     else:
         ordered = [
-            summary, matchup_block, lineup_block, waiver_block, injury_block,
-            movement_block, core_block, trade_block, breakout_block,
+            thursday_block, summary, matchup_block, lineup_block, waiver_block,
+            injury_block, activity_block, movement_block, core_block,
+            trade_block, breakout_block,
         ]
     blocks = [b for b in ordered if b]
     if extra_html:
@@ -1065,12 +1397,13 @@ def build_digest(platform: str, league_id: str, season: int, roster_id: str,
 
     inner = greeting_html(first_name) + "".join(blocks)
     subtitle = league_name if league_name else "Your weekly fantasy digest"
-    html = email_shell(inner, subtitle=subtitle, dash_url=dash_url)
+    html = email_shell(inner, subtitle=subtitle, dash_url=dash_url,
+                       preheader=choose_preheader(snap))
 
     subject = choose_subject(
         league_name, fmt, rank=rank, wins=wins, losses=losses,
         lineup_note=lineup_note, matchup=matchup, waivers=waivers,
-        my_risers=my_risers, pidx=pidx_s,
+        my_risers=my_risers, pidx=pidx_s, thursday=thursday,
     )
     return {
         "subject": subject,
@@ -1164,9 +1497,27 @@ def build_multi_league_digest(
         moves = cross_league_digest_html(actions or [], base_url=_base_url(), limit=4)
     except Exception:
         moves = ""
+    thursday_line = ""
+    try:
+        from utils.digest_sections import thursday_alert_html
+        titems: list[dict] = []
+        for s in snapshots:
+            lg = str(s.get("league_name") or "")
+            for it in s.get("thursday") or []:
+                if it.get("name"):
+                    titems.append({**it, "league": lg})
+                if len(titems) >= 3:
+                    break
+            if len(titems) >= 3:
+                break
+        if titems:
+            thursday_line = thursday_alert_html(titems, compact=True)
+    except Exception:
+        thursday_line = ""
     inner = (
         greeting_html(first_name)
         + intro
+        + thursday_line
         + moves
         + heading("Your leagues")
         + leagues_snapshot_table_html(entries)
@@ -1177,6 +1528,7 @@ def build_multi_league_digest(
         subtitle="Your leagues this week",
         dash_url=f"{base}/portfolio",
         cta_label="Open your leagues →",
+        preheader=intro_txt,
     )
     tags = ["weekly-digest", "multi-league"]
     for snap in snapshots:
