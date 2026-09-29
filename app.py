@@ -19122,31 +19122,94 @@ def _ensure_sleeper_week_files(season_year: int) -> None:
         pass
 
 
+# ── Shared per-(season, week) stat index ─────────────────────────────────────────
+# The game-log route used to glob + fully parse every weekly stat file for
+# every season on each call (~180 files / ~90MB of JSON) just to extract one
+# player's rows. This index parses each (season, week) file once per worker
+# and keeps a compact per-player view: player_id -> 12-tuple of the stat keys
+# the game log needs, or None for a present-but-all-zero row (so a 0.0-point
+# game still renders as 0.0, not DNP). Entries are guarded by the file's
+# mtime, so a refetched week file is re-parsed on next access. Measured
+# ~38MB for all 10 seasons on disk, vs ~90MB of JSON parsed per request.
+# threading is imported at module top (gthread workers run 2 threads).
+_GAMELOG_STAT_KEYS = (
+    "pass_yd", "pass_td", "pass_int", "pass_att",
+    "rush_att", "rush_yd", "rush_td",
+    "rec", "rec_tgt", "rec_yd", "rec_td", "fum_lost",
+)
+_WEEK_STAT_INDEX: Dict[Tuple[int, int], Tuple[float, Dict[str, Optional[tuple]]]] = {}
+_WEEK_STAT_INDEX_LOCK = threading.Lock()
+
+
+def _week_stat_index_rows(season: int, week: int) -> Dict[str, Optional[tuple]]:
+    """Compact per-player stat rows for one (season, week), parsed at most once.
+
+    Returns {player_id: 12-tuple} for players with any stat and
+    {player_id: None} for players whose row exists but is all zeros.
+    A file whose mtime changed since the cached parse is re-parsed.
+    Never raises; a missing/unreadable file yields {}.
+    """
+    season = int(season)
+    week = int(week)
+    path = os.path.join(
+        CACHE_DIR, "sleeper_stats", f"sleeper_stats_s{season}_w{week}.json"
+    )
+    try:
+        mtime = os.path.getmtime(path)
+    except OSError:
+        return {}
+    key = (season, week)
+    hit = _WEEK_STAT_INDEX.get(key)
+    if hit is not None and hit[0] >= mtime:
+        return hit[1]
+    with _WEEK_STAT_INDEX_LOCK:
+        hit = _WEEK_STAT_INDEX.get(key)
+        if hit is not None and hit[0] >= mtime:
+            return hit[1]
+        rows: Dict[str, Optional[tuple]] = {}
+        try:
+            with open(path) as handle:
+                weekly = json.load(handle) or {}
+            for pid, s in weekly.items():
+                if not isinstance(s, dict):
+                    continue
+                vals = tuple((s.get(k) or 0) for k in _GAMELOG_STAT_KEYS)
+                rows[str(pid)] = vals if any(vals) else None
+        except Exception:
+            rows = {}
+        _WEEK_STAT_INDEX[key] = (mtime, rows)
+        return rows
+
+
 def _sleeper_stats_by_week(player_id: str, season_year: int) -> dict:
     """Return the player's real Sleeper stat lines for one season.
 
     This is deliberately the same cache family consumed by the game-log route.
     Keeping the small lookup here prevents player-details from deciding that a
     rookie has not played merely because the derived usage_rows snapshot lags.
+
+    Backed by the shared per-(season, week) index above: each week file is
+    parsed once per worker instead of re-parsed on every call.
     """
     _ensure_sleeper_week_files(season_year)
-    import glob as _glob, json as _json, os as _os, re as _re
-    out = {}
-    pattern = _os.path.join(
-        CACHE_DIR, "sleeper_stats", f"sleeper_stats_s{int(season_year)}_w*.json"
+    pid = str(player_id)
+    season = int(season_year)
+    out: dict = {}
+    pattern = os.path.join(
+        CACHE_DIR, "sleeper_stats", f"sleeper_stats_s{season}_w*.json"
     )
-    for path in _glob.glob(pattern):
-        match = _re.match(r"sleeper_stats_s\d+_w(\d+)", _os.path.basename(path))
+    for path in glob.glob(pattern):
+        match = re.match(r"sleeper_stats_s\d+_w(\d+)", os.path.basename(path))
         if not match:
             continue
-        try:
-            with open(path) as handle:
-                weekly = _json.load(handle) or {}
-            row = weekly.get(str(player_id)) or weekly.get(player_id)
-            if isinstance(row, dict):
-                out[int(match.group(1))] = row
-        except Exception:
-            continue
+        rows = _week_stat_index_rows(season, int(match.group(1)))
+        if pid in rows:
+            vals = rows[pid]
+            out[int(match.group(1))] = (
+                dict(zip(_GAMELOG_STAT_KEYS, vals))
+                if vals is not None
+                else {k: 0 for k in _GAMELOG_STAT_KEYS}
+            )
     return out
 
 
