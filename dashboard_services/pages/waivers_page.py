@@ -1651,10 +1651,59 @@ function wvSsMatchupChip(rank, total) {{
   return `<span class="wv-cx-chip mt${{tier}}">#${{rank}} ${{lbl}}</span>`;
 }}
 
+// Demotion reasons the start/sit score can dock a player for. The row only
+// ever chipped "low_total"; the rest were computed but never shown.
+var WV_DEMOTION_LABELS = {{
+  low_total: 'Low team total',
+  weather: 'Bad weather',
+  oline: 'Weak O-line',
+  low_play_volume: 'Slow pace',
+  volatile_role: 'Volatile role',
+}};
+
+// Short display labels for the multipliers behind one player's start/sit
+// score. Same factor set wvVerdictReasons names on the compare card, plus
+// the three it omits (oline, expected_plays, role).
+var WV_SS_FACTOR_LABELS = {{
+  floor: 'Floor',
+  form: 'Form',
+  usage: 'Usage',
+  vegas: 'Vegas',
+  weather: 'Weather',
+  avail: 'Availability',
+  oline: 'O-line',
+  expected_plays: 'Pace',
+  role: 'Role',
+}};
+
+// "WHY" line for the tap-to-expand evidence: the score factors that moved
+// this player most, as +/- percentages. Only meaningful moves (>=1%),
+// sorted by absolute impact, top 4.
+function wvSsWhyLine(p) {{
+  const f = p.score_factors || {{}};
+  const rows = [];
+  for (const key of Object.keys(WV_SS_FACTOR_LABELS)) {{
+    const m = Number(f[key]);
+    if (!isFinite(m)) continue;
+    const pct = (m - 1) * 100;
+    if (Math.abs(m - 1) < 0.01) continue;
+    rows.push({{
+      imp: Math.abs(m - 1),
+      txt: WV_SS_FACTOR_LABELS[key] + ' ' + (pct >= 0 ? '+' : '-') + Math.abs(pct).toFixed(0) + '%',
+    }});
+  }}
+  rows.sort((a, b) => b.imp - a.imp);
+  return rows.slice(0, 4).map(r => r.txt).join(' · ');
+}};
+
 // Evidence grid for one player: floor/ceiling, L4 PPG, Vegas, opp plays
 // faced, profile, injury. Only rows with data render.
 function wvSsEvidence(p) {{
   const ev = [];
+  const why = wvSsWhyLine(p);
+  if (why) {{
+    ev.push(`<div class="wv-cx-ev"><span class="k">WHY</span><span class="v">${{why}}</span></div>`);
+  }}
   const c = p.consistency;
   if (c && !c.small_sample && c.floor != null && c.ceiling != null) {{
     ev.push(`<div class="wv-cx-ev"><span class="k">FLOOR - CEIL</span><span class="v">${{c.floor}} - ${{c.ceiling}}</span></div>`);
@@ -1736,8 +1785,9 @@ function wvRenderStartSit() {{
       const escName = (p.name || '').replace(/'/g, "\\'");
       const matchup = p.opponent
         ? `${{p.opponent}} ${{wvSsMatchupChip(p.def_rank, p.def_total)}}` : '';
-      const demoteChip = (p.demotion === 'low_total')
-        ? '<span class="wv-cx-chip bad">Low team total</span>' : '';
+      const demoteLbl = WV_DEMOTION_LABELS[p.demotion];
+      const demoteChip = demoteLbl
+        ? '<span class="wv-cx-chip bad">' + demoteLbl + '</span>' : '';
       // Head-to-head win probability on the marginal call (server-flagged).
       const h2h = (isStart && p.close_call && p.close_call.win_prob != null)
         ? `<span class="wv-cx-h2h"><span class="bar"><i style="width:${{Math.round(p.close_call.win_prob * 100)}}%"></i></span><b>${{Math.round(p.close_call.win_prob * 100)}}%</b> to outscore ${{p.close_call.vs_name}}</span>`
