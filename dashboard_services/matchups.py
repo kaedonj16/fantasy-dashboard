@@ -1066,6 +1066,48 @@ def team_live_totals(
     return actual_total, live_proj_total
 
 
+# Per-position weekly sigma model for win probability: sigma = a * proj + b.
+# Fit 2026-09-29 from 2023-2025 cached game logs (774 player-seasons with
+# >=10 played games; fixed PPR-ish scoring; OLS of weekly std on mean ppg).
+# No cached true pre-game player projections exist (the dated 2025 projection
+# files are team-level scalars), so each player-season's mean PPG proxies the
+# projection level; the fit is conservative where that proxy is biased.
+# Fits were stable across >=10 and >=14 game cutoffs (RB/WR/TE R^2 0.56-0.71;
+# QB weekly std is nearly flat, R^2 ~0.1, hence the gentle slope). K/DEF keep
+# constant baselines (game-log scoring does not cover kicking/defense).
+# This supersedes the old flat 0.4 * proj here; the playoff sim's _POS_STD
+# baseline is steeper for RB/WR than current data supports.
+_WINPROB_SIGMA: dict[str, tuple[float, float]] = {
+    "QB": (0.10, 5.5),
+    "RB": (0.30, 3.0),
+    "WR": (0.36, 2.6),
+    "TE": (0.41, 1.8),
+    "K": (0.00, 4.0),
+    "DEF": (0.00, 5.5),
+}
+_WINPROB_SIGMA_DEFAULT = (0.36, 2.6)  # WR-like; most common flex/unknown
+_WINPROB_SIGMA_FLOOR = 2.0  # guardrail for degenerate tiny projections
+
+
+def _winprob_sigma_raw(pos: str, proj: float) -> float:
+    a, b = _WINPROB_SIGMA.get((pos or "").upper(), _WINPROB_SIGMA_DEFAULT)
+    return a * max(proj, 0.0) + b
+
+
+def _winprob_sigma(pos: str, proj: float) -> float:
+    return max(_winprob_sigma_raw(pos, proj), _WINPROB_SIGMA_FLOOR)
+
+
+# Coefficient of variation a team's remaining points are assumed to carry.
+# 0.20 from two empirical cuts of 2023-2025 cached game logs: (a) a direct
+# bootstrap of synthetic 7-man skill lineups (810 team-weeks, projection =
+# leave-one-out season mean) gives CV 0.214, 0.193 after adding K/DEF
+# analytically; (b) the fitted per-position sigmas plus empirical same-team
+# QB<->pass-catcher correlations (~0.11) imply CV 0.17-0.19 for
+# representative 9-starter lineups. Slightly conservative as a floor.
+TEAM_CV_FLOOR = 0.20
+
+
 def compute_win_prob(
         left: dict,
         right: dict,
@@ -1077,11 +1119,14 @@ def compute_win_prob(
     """
     Returns left team win probability (0.0–1.0) based on locked scores
     and projected remaining points modelled as normal distributions.
-    Variance per pending player: sigma = max(0.4 * projection, 4.0), and
-    each team's pending variance is floored at (TEAM_CV_FLOOR * remaining
-    projection)^2 so a full lineup's spread reflects real weekly team-score
-    dispersion (CV ~0.24) instead of the far tighter figure the independent
-    per-player sum produces.
+    Variance per pending player comes from the per-position sigma model
+    below (fit 2026-09-29 from 2023-2025 cached game logs: 774
+    player-seasons with >=10 played games, fixed PPR-ish scoring;
+    std = a * projection + b per position), and each team's pending
+    variance is floored at (TEAM_CV_FLOOR * remaining projection)^2 so a
+    full lineup's spread reflects real weekly team-score dispersion
+    instead of the far tighter figure the independent per-player sum
+    produces.
 
     ``frac_lookup(starter) -> Optional[float]`` supplies the fraction of that
     player's game left to play. When given, an in-progress player banks the
@@ -1091,11 +1136,6 @@ def compute_win_prob(
     current points, the prior behaviour.
     """
     from math import erf
-
-    # Coefficient of variation a team's remaining points are assumed to carry.
-    # ~0.24 matches observed weekly team-score dispersion; see the pending
-    # variance floor in _stats.
-    TEAM_CV_FLOOR = 0.24
 
     def _stats(team: dict):
         locked = 0.0
@@ -1115,6 +1155,7 @@ def compute_win_prob(
             if pid is not None and status == STATUS_NOT_STARTED:
                 status = status_by_pid.get(str(pid), status)
             proj = _proj_value_for_pid(proj_map, pid)
+            pos = p.get("pos") or ""
             if status == STATUS_FINAL:
                 locked += actual
             elif status == STATUS_IN_PROGRESS:
@@ -1124,15 +1165,19 @@ def compute_win_prob(
                 else:
                     # Bank the points scored; carry the sharpened remaining
                     # (pace-blended) projection as the pending, uncertain slice.
+                    # Sigma scales with the fraction of game left, so it
+                    # matches the pre-game model at frac=1 and shrinks to zero
+                    # at the final whistle, as before.
                     locked += actual
-                    final = live_final_from_frac(actual, proj, frac, p.get("pos") or "")
+                    final = live_final_from_frac(actual, proj, frac, pos)
                     remaining_proj = max(0.0, final - actual)
                     pend_proj += remaining_proj
-                    sigma = max(0.4 * remaining_proj, 4.0 * frac)
+                    sigma = max(_winprob_sigma_raw(pos, remaining_proj),
+                                _WINPROB_SIGMA_FLOOR) * frac
                     pend_var += sigma * sigma
             else:
                 pend_proj += proj
-                sigma = max(0.4 * proj, 4.0)
+                sigma = _winprob_sigma(pos, proj)
                 pend_var += sigma * sigma
         if pend_proj == 0.0 and locked == 0.0:
             try:
@@ -1140,17 +1185,18 @@ def compute_win_prob(
             except (TypeError, ValueError):
                 fallback = 0.0
             if fallback > 0:
+                # No starter rows: the total is a team-level figure, so model
+                # it with the empirical team CV directly (the per-player
+                # pseudo-player formula would imply CV ~0.36+, far above the
+                # observed ~0.20 team dispersion).
                 pend_proj = fallback
-                sigma = max(0.4 * fallback, 4.0)
-                pend_var = sigma * sigma
+                pend_var = (TEAM_CV_FLOOR * fallback) ** 2
         # Team-level variance floor. Summing independent per-player variances
-        # dilutes a full lineup's spread by ~1/sqrt(n starters): nine starters
-        # projected to 130 came out at sigma ~17 (CV ~0.13), when real weekly
-        # team scores run CV ~0.20-0.25. That undershoot pushed the win bar to
-        # 1%/99%. Floor the pending variance at (TEAM_CV_FLOOR * remaining
-        # projection)^2 so the distribution matches observed dispersion. It
-        # scales with what is left to play, so it fades to zero as games finish
-        # and near-final blowouts still read decisively.
+        # dilutes a full lineup's spread by ~1/sqrt(n starters); the floor
+        # keeps the pending distribution matched to observed team dispersion
+        # (see TEAM_CV_FLOOR). It scales with what is left to play, so it
+        # fades to zero as games finish and near-final blowouts still read
+        # decisively.
         floor_var = (TEAM_CV_FLOOR * pend_proj) ** 2
         if floor_var > pend_var:
             pend_var = floor_var
