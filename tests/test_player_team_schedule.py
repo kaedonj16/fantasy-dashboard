@@ -119,3 +119,29 @@ def test_shape_boxscore_missing_vs_zero():
     assert qb["cells"]["pass_yds"] == 0
     assert qb["cells"]["cmp_att"] == "0/0"
     assert qb["cells"]["rush_yds"] is None
+
+
+def test_enrich_from_scores_skips_matchup_mismatch():
+    """Regression: a scoreboard that ignored its date parameter once pasted
+    one week's final (LAC @ BUF) over every other week of BUF's schedule.
+    Enrichment must never rewrite the matchup."""
+    from utils.player_team_schedule import _enrich_from_scores
+    game = {"home": "HOU", "away": "BUF", "gameDate": "20260913"}
+    wrong_week = {"home": "BUF", "away": "LAC", "homePts": "24", "awayPts": "16",
+                  "gameStatus": "Final", "gameStatusCode": "2"}
+    score_by_date = {"20260913": {"BUF": wrong_week, "LAC": wrong_week}}
+    out = _enrich_from_scores(dict(game), "BUF", score_by_date)
+    assert out["home"] == "HOU" and out["away"] == "BUF"
+    assert "homePts" not in out and "awayPts" not in out
+
+
+def test_enrich_from_scores_merges_matching_matchup():
+    """The guard above must not block legitimate same-matchup enrichment."""
+    from utils.player_team_schedule import _enrich_from_scores
+    game = {"home": "HOU", "away": "BUF", "gameDate": "20260913"}
+    scored = {"home": "HOU", "away": "BUF", "homePts": "31", "awayPts": "36",
+              "gameStatus": "Final", "gameStatusCode": "2"}
+    score_by_date = {"20260913": {"BUF": scored}}
+    out = _enrich_from_scores(dict(game), "BUF", score_by_date)
+    assert (out["homePts"], out["awayPts"]) == ("31", "36")
+    assert out["gameStatus"] == "Final"

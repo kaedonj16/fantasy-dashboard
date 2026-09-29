@@ -142,12 +142,22 @@ table.nt-rank tbody tr.nt-sel td.nt-teamcol{{background:var(--accent-soft)}}
 details.nt-method{{border:1px solid var(--border);border-radius:8px;padding:10px 12px;font-size:13px}}
 details.nt-method summary{{cursor:pointer;font-weight:700;min-height:32px}}
 .nt-mrow{{display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--border);font-size:13px}}
-.nt-def4{{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:6px 0 10px}}
-.nt-def4cell{{text-align:center;min-width:0}}
+.nt-def4{{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:6px 0 10px}}
+/* Defense vs position: each position is its own card so the four groups read
+   as separate blocks instead of two continuous columns of numbers. */
+.nt-def4cell{{text-align:center;min-width:0;background:var(--card-soft);border:1px solid var(--border);border-radius:12px;padding:12px 8px 10px}}
 .nt-def4pos{{font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px;white-space:nowrap}}
 .nt-def4val{{font-size:17px;font-weight:800;font-variant-numeric:tabular-nums;line-height:1.2}}
 .nt-def4cell .nt-rbadge{{margin-top:4px}}
-@media(max-width:420px){{.nt-def4{{grid-template-columns:repeat(2,1fr);row-gap:12px}}}}
+@media(max-width:420px){{.nt-def4{{grid-template-columns:repeat(2,1fr)}}}}
+/* Collapsible page sections (Graphs, Schedule): native details/summary so no
+   JS wiring is needed and the open state survives re-renders of inner HTML. */
+details.nt-collapse{{margin-bottom:16px}}
+details.nt-collapse>summary{{list-style:none;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:44px}}
+details.nt-collapse>summary::-webkit-details-marker{{display:none}}
+details.nt-collapse>summary h3{{margin:0}}
+.nt-chev{{width:9px;height:9px;border-right:2px solid var(--text-muted);border-bottom:2px solid var(--text-muted);transform:rotate(-45deg);transition:transform .18s ease;flex:none;margin-right:6px}}
+details.nt-collapse[open]>summary .nt-chev{{transform:rotate(45deg)}}
 .nt-seg{{display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap}}
 .nt-seg button{{border:1px solid var(--border);background:var(--card);color:var(--text-muted);border-radius:8px;padding:8px 14px;font-size:13px;font-weight:700;cursor:pointer;min-height:40px;font-family:inherit}}
 .nt-seg button[aria-pressed="true"]{{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}}
@@ -848,14 +858,10 @@ function renderProfile(){{
     h+='<p class="nt-fine">Ratings are 0-100 unit scores from public play-by-play, not commercial blocker grades. O-line ratings use the '+ol.season+' season (latest available); all other metrics use the selected season.</p></details>';
   }}
   h+='</section>';
-  h+='<section class="nt-psec"><h3>Home vs away</h3>'+splitsSVG(d,t)+'</section>';
-  h+=fingerprintSection(t);
   h+='</div>';
-  h+='<section class="nt-psec"><h3>Pass block vs run block</h3>'+olineScatterSVG(t)+'<p class="nt-fine">Every dot is an NFL team, the highlighted dot is this team. O-line grades use the '+esc(String((DATA&&DATA.oline_season)||"latest"))+' season (latest available).</p></section>';
-  h+='<section class="nt-psec"><h3>Pressure vs sacks</h3>'+pressureScatterSVG(t)+'<p class="nt-fine">Every dot is an NFL team. Lower is better on both axes. Rates use the '+esc(String((DATA&&DATA.oline_season)||"latest"))+' season (latest available).</p></section>';
-  h+='<section class="nt-psec"><h3>Pass vs run identity</h3>'+identityScatterSVG(t)+'<p class="nt-fine">League percentile by rank, all teams. Higher is better on both axes.</p></section>';
-  h+='<section class="nt-psec"><h3>Defensive soft spots</h3>'+softSpotsSVG(t)+'<p class="nt-fine">Fantasy points allowed per game (PPR). Higher means a softer matchup. Only completed games count.</p></section>';
   h+=defenseSection();
+  /* Graphs live in one collapsible section below the depth chart so the
+     profile stats stay up top. */
   h+='<section class="nt-psec"><h3>Depth chart / competition</h3><div class="nt-seg" role="group" aria-label="Position room">';
   ["QB","RB","WR","TE"].forEach(function(p){{
     h+='<button type="button" data-room="'+p+'" aria-pressed="'+(state.room===p)+'">'+p+'</button>';
@@ -875,7 +881,15 @@ function renderProfile(){{
     h+='</tr>';
   }});
   h+='</tbody></table></div><p class="nt-fine">'+esc(d.roster_note||"Current roster")+ (d.usage_note?(" "+esc(d.usage_note)):"") +' Tap a player to open their card.</p></section>';
-  h+='<section class="nt-psec"><h3>Schedule</h3><div class="nt-sched">';
+  h+='<details class="nt-psec nt-collapse" open><summary><h3>Graphs</h3><span class="nt-chev" aria-hidden="true"></span></summary>';
+  h+='<section class="nt-psec"><h3>Home vs away</h3>'+splitsSVG(d,t)+'</section>';
+  h+=fingerprintSection(t);
+  h+='<section class="nt-psec"><h3>Pass block vs run block</h3>'+olineScatterSVG(t)+'<p class="nt-fine">Every dot is an NFL team, the highlighted dot is this team. O-line grades use the '+esc(String((DATA&&DATA.oline_season)||"latest"))+' season (latest available).</p></section>';
+  h+='<section class="nt-psec"><h3>Pressure vs sacks</h3>'+pressureScatterSVG(t)+'<p class="nt-fine">Every dot is an NFL team. Lower is better on both axes. Rates use the '+esc(String((DATA&&DATA.oline_season)||"latest"))+' season (latest available).</p></section>';
+  h+='<section class="nt-psec"><h3>Pass vs run identity</h3>'+identityScatterSVG(t)+'<p class="nt-fine">League percentile by rank, all teams. Higher is better on both axes.</p></section>';
+  h+='<section class="nt-psec"><h3>Defensive soft spots</h3>'+softSpotsSVG(t)+'<p class="nt-fine">Fantasy points allowed per game (PPR). Higher means a softer matchup. Only completed games count.</p></section>';
+  h+='</details>';
+  h+='<details class="nt-psec nt-collapse" open><summary><h3>Schedule</h3><span class="nt-chev" aria-hidden="true"></span></summary><div class="nt-sched">';
   (d.schedule||[]).forEach(function(g){{
     if(g.bye){{h+='<div class="nt-wrow nt-bye"><span class="nt-wk">'+esc(g.week_label||"")+'</span><span class="nt-opp">Bye week</span></div>';return;}}
     var key=state.team+"-"+g.week+"-"+(g.season_type||"reg");
@@ -892,7 +906,7 @@ function renderProfile(){{
       h+='<div class="nt-wrow nt-bye"><span class="nt-wk">'+esc(g.week_label||"")+'</span><span class="nt-opp">'+oppLogo+(g.is_home?"vs ":"at ")+esc(oppAbbr)+'</span><span class="nt-res">'+esc(g.kickoff||g.date_label||"")+'</span></div>';
     }}
   }});
-  h+='</div><p class="nt-fine">Completed scores, kickoff times, and byes reuse the shared NFL game-data service.</p></section>';
+  h+='</div><p class="nt-fine">Completed scores, kickoff times, and byes reuse the shared NFL game-data service.</p></details>';
   h+='</div></div>';
   el.innerHTML=h;
   wireBack();

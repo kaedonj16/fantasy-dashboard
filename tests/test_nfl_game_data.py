@@ -303,3 +303,70 @@ def test_scoreboard_cdn_transport_error_falls_back_to_api(monkeypatch):
     assert len(calls) == 2
     assert "cdn.espn.com" in calls[0]
     assert "site.api.espn.com" in calls[1]
+
+
+def _event_on(iso_date, home="BUF", away="LAC", home_score="24", away_score="16"):
+    ev = _event("post", True)
+    ev["date"] = iso_date
+    for comp in ev["competitions"][0]["competitors"]:
+        if comp["homeAway"] == "home":
+            comp["team"]["abbreviation"] = home
+            comp["score"] = home_score
+        else:
+            comp["team"]["abbreviation"] = away
+            comp["score"] = away_score
+    return ev
+
+
+def _clear_scoreboard_caches():
+    nfl._cache.clear(); nfl._last_good.clear(); nfl._locks.clear(); nfl._failures.clear()
+
+
+def test_scoreboard_for_date_discards_slate_outside_requested_date(monkeypatch):
+    """Regression: the CDN scoreboard ignores the dates parameter and returns
+    the current week's slate, which once pasted one week's final over every
+    other week (BUF showed "vs LAC W 24-16" for weeks 1-3)."""
+    _clear_scoreboard_caches()
+    monkeypatch.setattr(nfl, "_request_json",
+                        lambda *a, **k: {"events": [_event_on("2026-09-27T17:00Z")]})
+    monkeypatch.setattr(nfl, "_nflverse_games_rows", lambda: [])
+    result = nfl.scoreboard_for_date("20260913")
+    assert result == {}
+    assert result.availability == "available"
+    assert result.stale is False
+
+
+def test_scoreboard_for_date_wrong_date_slate_falls_back_to_nflverse(monkeypatch):
+    """A discarded wrong-date slate still falls back to the date-filtered
+    nflverse finals instead of returning nothing."""
+    _clear_scoreboard_caches()
+    monkeypatch.setattr(nfl, "_request_json",
+                        lambda *a, **k: {"events": [_event_on("2026-09-27T17:00Z")]})
+    monkeypatch.setattr(nfl, "_nflverse_games_rows", lambda: [_nflverse_row(
+        week="1", gameday="2026-09-13", away_team="BUF", away_score="36",
+        home_team="HOU", home_score="31", game_id="2026_01_BUF_HOU")])
+    result = nfl.scoreboard_for_date("20260913")
+    games = list(result.values())
+    assert len(games) == 1
+    assert (games[0]["away"], games[0]["home"]) == ("BUF", "HOU")
+    assert games[0]["source"] == "nflverse"
+
+
+def test_scoreboard_for_date_keeps_slate_covering_requested_date(monkeypatch):
+    """A slate that actually covers the requested date is used as-is."""
+    _clear_scoreboard_caches()
+    monkeypatch.setattr(nfl, "_request_json",
+                        lambda *a, **k: {"events": [_event_on("2026-09-13T17:00Z")]})
+    result = nfl.scoreboard_for_date("20260913")
+    games = list(result.values())
+    assert len(games) == 1
+    assert result.availability == "available"
+
+
+def test_scoreboard_covers_date_allows_utc_night_game_slop():
+    # SNF/MNF played Sep 13 local lands on Sep 14 in UTC; still a match.
+    assert nfl._scoreboard_covers_date([{"gameTime": "2026-09-14T00:20Z"}], "20260913") is True
+    assert nfl._scoreboard_covers_date([{"gameTime": "2026-09-13T17:00Z"}], "20260913") is True
+    assert nfl._scoreboard_covers_date([{"gameTime": "2026-09-27T17:00Z"}], "20260913") is False
+    assert nfl._scoreboard_covers_date([], "20260913") is False
+    assert nfl._scoreboard_covers_date([{"gameTime": ""}], "20260913") is False

@@ -277,7 +277,17 @@ def scoreboard_for_date(game_date: str, *, timeout: float = 10) -> dict[str, dic
     availability = "stale" if stale and usable_success else ("unavailable" if stale else "available")
     fetched_at = datetime.utcfromtimestamp(successful[0]).isoformat() + "Z" if usable_success else None
     games = {game["gameID"]: game for game in normalize_scoreboard(payload, stale=stale)}
-    if not games and availability == "unavailable":
+    date_mismatch = bool(games) and not _scoreboard_covers_date(games.values(), game_date)
+    if date_mismatch:
+        # The CDN scoreboard ignores the dates parameter and returns the
+        # current week's slate for any requested date. A wrong-date slate
+        # must never masquerade as the requested date (it once pasted one
+        # week's final over every other week in team schedules), so discard
+        # it and fall through to the date-filtered nflverse finals below.
+        log.warning("scoreboard_for_date(%s): ESPN returned %d games outside the requested date; discarding",
+                    game_date, len(games))
+        games = {}
+    if not games and (availability == "unavailable" or date_mismatch):
         # ESPN is refusing the scoreboard (403). Fall back to nflverse final
         # scores so finished weeks still show "Final 24-31 @ LV" instead of a
         # bare "Final". Stale-but-usable ESPN data above still wins when it
@@ -293,6 +303,29 @@ def scoreboard_for_date(game_date: str, *, timeout: float = 10) -> dict[str, dic
         games,
         availability=availability, stale=bool(stale and usable_success), fetched_at=fetched_at,
     )
+
+
+def _scoreboard_covers_date(games, game_date: str) -> bool:
+    """True when at least one game falls within a day of the requested YYYYMMDD.
+
+    ESPN event dates are UTC ISO strings while the requested date is the local
+    game date, so night games can land on the next UTC day (the same +/-1-day
+    slop find_event already uses when matching game IDs).
+    """
+    try:
+        want = datetime.strptime(str(game_date or ""), "%Y%m%d").date()
+    except ValueError:
+        return True
+    for game in games or []:
+        iso = str((game or {}).get("gameTime") or "")
+        day = iso[:10].replace("-", "") if len(iso) >= 10 else ""
+        try:
+            have = datetime.strptime(day, "%Y%m%d").date()
+        except ValueError:
+            continue
+        if abs((have - want).days) <= 1:
+            return True
+    return False
 
 
 def _nflverse_games_rows() -> list[dict]:
