@@ -29,7 +29,7 @@ from utils.waiver_score import (
     depth_analysis_for_player as _depth_analysis_for_player,
     faab_recommendation as _faab_recommendation,
     horizon_weights as _horizon_weights,
-    need_multiplier as _need_multiplier,
+    drop_seriously_hurt as _drop_seriously_hurt,    need_multiplier as _need_multiplier,
     positional_need_scores as _positional_need_scores,
     replacement_levels as _replacement_levels,
     roster_needs_drop as _roster_needs_drop,
@@ -37,6 +37,7 @@ from utils.waiver_score import (
     schedule_urgency as _schedule_urgency,
     strip_bye_weeks as _strip_bye_weeks,
     usage_ratio as _usage_ratio,
+    waiver_injury_note as _waiver_injury_note,
     waiver_pickup_score as _waiver_pickup_score,
     waiver_signal as _waiver_signal,
     weeks_out_from_projections as _weeks_out_from_projections,
@@ -740,6 +741,13 @@ def api_waiver_candidates():
     if position_filter and position_filter in {"QB", "RB", "WR", "TE"}:
         candidates = [c for c in candidates if c["position"] == position_filter]
 
+    # Injury rule: in redraft, a seriously hurt player (OUT / DOUBTFUL / IR /
+    # PUP / NFI / NA / SUS) is never a pickup recommendation, so drop them from
+    # the ranked list entirely. Dynasty keeps them with the injury flag below
+    # (an IR stash can be a real move there). self_status was joined above from
+    # the full players feed.
+    candidates = _drop_seriously_hurt(candidates, dynasty=_is_dynasty)
+
     result = []
     _shown = candidates[:30]
     # One bulk local read. SportsGameOdds ingestion is scheduled separately and
@@ -955,6 +963,30 @@ def api_waiver_candidates():
     except Exception:
         _adds_by_id = {}
 
+    # Injury flags for the shown rows: designation + body part from the full
+    # players feed, ESPN return timeline when known (cache warmed above).
+    try:
+        from dashboard_services.injury_return import weeks_out_for_player as _espn_wo_row
+    except Exception:
+        _espn_wo_row = None
+
+    def _injury_fields_wv(c):
+        pid = str(c.get("player_id") or "")
+        meta = _full_players_wv.get(pid) or {}
+        status = c.get("self_status") or meta.get("injury_status") or ""
+        body = meta.get("injury_body_part") or ""
+        weeks = None
+        if _espn_wo_row is not None:
+            try:
+                weeks = _espn_wo_row(pid)
+            except Exception:
+                weeks = None
+        return {
+            "injury_status": status or None,
+            "injury_body_part": body or None,
+            "injury_note": _waiver_injury_note(status, body, weeks),
+        }
+
     for c in _shown:
         try:
             sig_cls, sig_label = _waiver_signal(
@@ -1048,6 +1080,10 @@ def api_waiver_candidates():
                 "market_opportunity": _market_opp,
                 "rostered_pct": c.get("rostered_pct"),
                 "adds_48h": _adds_by_id.get(str(c["player_id"])),
+                # Injury flag: never present an injured player as a clean add.
+                # (Redraft already filtered serious designations out above;
+                # dynasty keeps them only with this flag.)
+                **_injury_fields_wv(c),
                 # Unexpected big game (completed week), when this player had one.
                 "big_game": (lambda d: {
                     "category": d.get("category"),
@@ -1462,6 +1498,14 @@ def api_waiver_big_games():
     except Exception:
         value_key, fallback_key = "value", "value"
 
+    # Full players feed for injury flags (the reduced players_index cache lacks
+    # injury_status). Fail open: no flags rather than no discoveries.
+    _bg_full = {}
+    try:
+        _bg_full = get_players_global() or {}
+    except Exception:
+        _bg_full = {}
+
     out = []
     for d in discoveries:
         pid = str(d.get("player_id") or "")
@@ -1479,6 +1523,12 @@ def api_waiver_big_games():
         # We know it's unrostered in this league; true "claimable now" (waiver vs
         # FA) needs provider transaction data we don't confirm here.
         d["availability"] = "unrostered"
+        # Injury flag so a hurt breakout never reads as a clean pickup.
+        _bg_fmeta = _bg_full.get(pid) or {}
+        _bg_inj = _bg_fmeta.get("injury_status") or meta.get("injury_status") or ""
+        _bg_body = _bg_fmeta.get("injury_body_part") or meta.get("injury_body_part") or ""
+        d["injury_status"] = _bg_inj or None
+        d["injury_note"] = _waiver_injury_note(_bg_inj, _bg_body)
         out.append(d)
 
     out = curate_big_game_discoveries(out, superflex=superflex, qb_need=qb_need)
@@ -1549,6 +1599,15 @@ def api_trending_adds():
     _tr_vf, _tr_vfb = _waiver_value_keys(ctx) if ctx else ("value", "value")
     _tr_rk = _waiver_rank_label_key(ctx) if ctx else "pos_rank_label"
 
+    # Full players feed for injury flags: the reduced players_index cache lacks
+    # injury_status, and a trending add must never render as a clean pickup
+    # when the player is hurt. Fail open (no flags) rather than 500ing.
+    _tr_full = {}
+    try:
+        _tr_full = get_players_global() or {}
+    except Exception:
+        _tr_full = {}
+
     out = []
     for row in trend:
         pid = str(row.get("player_id") or "")
@@ -1572,6 +1631,9 @@ def api_trending_adds():
             name = f"{(meta.get('team') or pid)} D/ST"
         else:
             name = val_row.get("name") or meta.get("name") or f"Player {pid}"
+        _tr_fmeta = _tr_full.get(pid) or {}
+        _tr_inj = _tr_fmeta.get("injury_status") or meta.get("injury_status") or ""
+        _tr_body = _tr_fmeta.get("injury_body_part") or meta.get("injury_body_part") or ""
         out.append({
             "player_id": pid,
             "name": name,
@@ -1580,6 +1642,9 @@ def api_trending_adds():
             "value": round(float(val_row.get(_tr_vf) or val_row.get(_tr_vfb) or val_row.get("value") or 0)),
             "pos_rank_label": val_row.get(_tr_rk) or val_row.get("pos_rank_label") or "",
             "adds": int(row.get("count") or 0),
+            # Injury flag so a hurt trending player never reads as a clean add.
+            "injury_status": _tr_inj or None,
+            "injury_note": _waiver_injury_note(_tr_inj, _tr_body),
         })
         if len(out) >= 12:
             break

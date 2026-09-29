@@ -1212,11 +1212,22 @@ def notify_waiver_candidates():
         value_tbl = load_model_value_table() or []
         notified_any = False
 
+        # Full players feed for the injury screen in pick_waiver_push_candidate:
+        # never recommend a pickup for a player who is OUT / on IR. Fail open
+        # (no screen) rather than failing the whole notification batch.
+        _push_players = None
+        try:
+            from app import get_players_global as _gpg_push
+            _push_players = _gpg_push() or None
+        except Exception:
+            _push_players = None
+
         for league_id, platform in leagues:
             try:
                 rosters  = get_rosters(platform, league_id, season) or []
                 rostered = {pid for r in rosters for pid in (r.get("players") or [])}
-                top = pick_waiver_push_candidate(value_tbl, rostered)
+                top = pick_waiver_push_candidate(value_tbl, rostered,
+                                                 players=_push_players)
                 if not top:
                     continue
                 title, body = waiver_push_copy(top)
