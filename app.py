@@ -25537,6 +25537,20 @@ def _spark_svg(values, width: int = 132, height: int = 36, up=None) -> str:
     )
 
 
+def _seed_series_for(df_weekly, owner) -> list:
+    """[(week, seed)] for one owner across finalized weeks.
+
+    Thin wrapper around the pure utils.seed_series.seed_series_for so the
+    computation stays unit-testable without importing the app. Best-effort:
+    any failure returns []."""
+    try:
+        from utils.seed_series import seed_series_for
+        return seed_series_for(df_weekly, owner)
+    except Exception:
+        logger.debug("[team-modal] seed series failed", exc_info=True)
+        return []
+
+
 def _luck_series_for(df_weekly, owner) -> list:
     """[(week, cumulative luck_delta)] for one owner across finalized weeks."""
     try:
@@ -26219,6 +26233,35 @@ def api_team_details(roster_id: str):
                                 "week": int(row["week"]),
                                 "points": round(float(row["points"]), 1)
                             })
+
+                    # Seed movement + score-vs-opponent for the charts tab.
+                    # Independent of the radar z-scores, so they are set on
+                    # graphs_data directly rather than in the team_row update.
+                    seed_movement = [
+                        {"week": w, "seed": s}
+                        for w, s in _seed_series_for(df_weekly, team_name)
+                    ]
+                    vs_opponent = []
+                    if not team_weekly.empty:
+                        for _, row in team_weekly.sort_values("week").iterrows():
+                            try:
+                                _opp = row.get("points_against")
+                                opp_f = round(float(_opp), 1) if _opp is not None and pd.notna(_opp) else None
+                            except (TypeError, ValueError):
+                                opp_f = None
+                            try:
+                                _w = row.get("win")
+                                w_f = float(_w) if _w is not None and pd.notna(_w) else None
+                            except (TypeError, ValueError):
+                                w_f = None
+                            vs_opponent.append({
+                                "week": int(row["week"]),
+                                "points": round(float(row["points"]), 1),
+                                "opp_points": opp_f,
+                                "win": w_f,
+                            })
+                    graphs_data["seed_movement"] = seed_movement
+                    graphs_data["vs_opponent"] = vs_opponent
 
                     # Get league average weekly scores
                     league_avg = df_weekly.groupby("week")["points"].mean().reset_index()
