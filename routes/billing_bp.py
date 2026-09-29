@@ -2009,6 +2009,15 @@ def create_checkout_session():
                 "metadata": _checkout_metadata(plan, user_id, league_id, platform, season, interval),
             },
         )
+        # Product analytics: checkout started (conversion does not imply payment).
+        from dashboard_services import analytics as _analytics
+        _analytics.track_event(
+            _analytics.EVENT_CHECKOUT_STARTED,
+            account_id=_analytics.account_id_from_session(),
+            session_id=_analytics.ensure_anon_session_id(),
+            path="/api/create-checkout-session",
+            props={"plan": plan, "interval": interval, "platform": platform},
+        )
         return jsonify({"url": checkout.url})
     except Exception:
         logger.exception("[stripe] checkout session error")
@@ -2069,6 +2078,15 @@ def _handle_subscription_lifecycle_event(s, etype: str) -> None:
         "[stripe] %s lifecycle sync sub=%s status=%s plan=%s interval=%s result=%s",
         etype, sub_id, status, plan or "-", interval, result,
     )
+    if etype == "customer.subscription.deleted" or status == "canceled":
+        # Product analytics: a PRO subscription ended.
+        from dashboard_services import analytics as _analytics
+        _analytics.track_event(
+            _analytics.EVENT_PRO_CANCELLED,
+            account_id=_analytics.account_id_from_subscriber_token(user_id),
+            path="/api/stripe-webhook",
+            props={"plan": plan, "stripe_event": etype, "status": status},
+        )
 
 
 def _handle_payment_failed(sub_id: str) -> None:
@@ -2184,6 +2202,14 @@ def stripe_webhook():
             account_id=str(meta.get("account_id") or ""),
             season=str(meta.get("season") or ""),
             interval=interval,
+        )
+        # Product analytics: a PRO subscription was created/confirmed.
+        from dashboard_services import analytics as _analytics
+        _analytics.track_event(
+            _analytics.EVENT_PRO_SUBSCRIBED,
+            account_id=_analytics.account_id_from_subscriber_token(user_id),
+            path="/api/stripe-webhook",
+            props={"plan": plan, "interval": interval, "stripe_event": etype},
         )
 
     elif etype == "invoice.paid":

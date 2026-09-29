@@ -836,6 +836,41 @@ def _perf_record(response):
 
 
 @app.after_request
+def _analytics_pageview(response):
+    """First-party product analytics: one pageview per HTML page render.
+
+    Logs GET requests that return a 200 HTML page. Skips static assets,
+    health checks, all /api/ traffic (API moments are tracked explicitly
+    via track_event at their call sites), /admin/ pages, and bots. Admin
+    sessions are never logged, so Kaedon's own usage stays out of the
+    stats. The analytics module never raises, so this cannot break or
+    slow the response.
+    """
+    try:
+        from dashboard_services import analytics as _analytics
+        from dashboard_services.admin_auth import is_admin
+
+        if is_admin():
+            return response
+        if _analytics.should_log_pageview(
+            request.method,
+            request.path,
+            response.content_type,
+            response.status_code,
+            request.headers.get("User-Agent", ""),
+        ):
+            _analytics.track_event(
+                _analytics.EVENT_PAGEVIEW,
+                account_id=_analytics.account_id_from_session(),
+                session_id=_analytics.ensure_anon_session_id(),
+                path=request.path,
+            )
+    except Exception:
+        logger.debug("[analytics] pageview hook failed", exc_info=True)
+    return response
+
+
+@app.after_request
 def _add_cache_headers(response):
     path = request.path
     if path.startswith("/static/"):
@@ -1219,6 +1254,11 @@ try:
 
     app.register_blueprint(admin_api_bp)
     logger.info("[admin-api-bp] registered")
+
+    from routes.analytics_bp import analytics_bp
+
+    app.register_blueprint(analytics_bp)
+    logger.info("[analytics-bp] registered")
 
     from routes.breakout_api_bp2 import breakout_api_bp2
 
@@ -19852,6 +19892,20 @@ def api_gm_memo():
         force_refresh = bool(payload.get("force"))
         report = get_front_office_report(ctx, viewer_roster_id, force_refresh=force_refresh)
 
+        # Product analytics: a front office report was generated.
+        from dashboard_services import analytics as _analytics
+        _analytics.track_event(
+            _analytics.EVENT_FRONT_OFFICE_GENERATED,
+            account_id=_analytics.account_id_from_session(),
+            session_id=_analytics.ensure_anon_session_id(),
+            path="/api/gm-memo",
+            props={
+                "platform": platform,
+                "league_id": league_id,
+                "cached": bool(report.get("cached")),
+            },
+        )
+
         return jsonify({
             "success": True,
             "card_html": report.get("card_html") or "",
@@ -20473,6 +20527,16 @@ def api_trade_eval():
             analysis_error = ""
     else:
         analysis_error = ""
+
+    # Product analytics: a completed trade evaluation.
+    from dashboard_services import analytics as _analytics
+    _analytics.track_event(
+        _analytics.EVENT_TRADE_EVALUATED,
+        account_id=_analytics.account_id_from_session(),
+        session_id=_analytics.ensure_anon_session_id(),
+        path="/api/trade-eval",
+        props={"platform": platform, "league_id": league_id, "scoring_type": scoring_type},
+    )
 
     return jsonify({
         "side_a": side_a,

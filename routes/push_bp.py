@@ -264,6 +264,15 @@ def api_push_subscribe():
     except Exception as exc:
         logger.warning("[push] subscribe error: %s", exc)
         return jsonify({"error": "Could not save subscription"}), 500
+    # Product analytics: a device subscribed to push notifications.
+    from dashboard_services import analytics as _analytics
+    _analytics.track_event(
+        _analytics.EVENT_PUSH_SUBSCRIBED,
+        account_id=_analytics.account_id_from_session(),
+        session_id=_analytics.ensure_anon_session_id(),
+        path="/api/push/subscribe",
+        props={"platform": platform, "leagues": len([l for l in leagues if l])},
+    )
     return jsonify({"ok": True})
 
 

@@ -187,6 +187,14 @@ def google_auth_callback():
     session["account_first_name"] = info.get("given_name") or ""
     session.permanent = True
 
+    # Product analytics: first Google sign-in counts as signup, else login.
+    from dashboard_services import analytics as _analytics
+    _analytics.track_event(
+        _analytics.EVENT_SIGNUP if account_created else _analytics.EVENT_LOGIN,
+        account_id=int(account_id),
+        path="/auth/google/callback",
+    )
+
     if account_created and email:
         try:
             from utils.welcome_email import send_signup_welcome
