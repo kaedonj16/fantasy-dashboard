@@ -372,14 +372,16 @@ window.showPaywall = function showPaywall(feature, opts) {
     <div class="paywall-overlay"></div>
     <div class="paywall-content">
       <div class="paywall-header">
-        <h2 id="paywallTitle"><i class="fa-solid fa-lock" aria-hidden="true"></i> Premium Feature</h2>
+        <div class="paywall-title-wrap">
+          <p class="paywall-eyebrow"><i class="fa-solid fa-lock" aria-hidden="true"></i> Premium Feature</p>
+          <h2 id="paywallTitle">${featureName}</h2>
+        </div>
         <button type="button" class="paywall-close" aria-label="Close">&times;</button>
       </div>
       <div class="paywall-body">
         <div class="paywall-icon"><i class="fa-solid fa-star" aria-hidden="true"></i></div>
-        <h3>${featureName}</h3>
         ${previewLine}
-        <p class="paywall-benefit">${featureBenefit}</p>
+        <p class="paywall-benefit paywall-lead">${featureBenefit}</p>
         <div class="paywall-pricing">${proPlanCards()}</div>
         <p class="paywall-auth-note"><i class="fa-brands fa-google" aria-hidden="true"></i> Google sign-in is required at checkout.</p>
         <details class="paywall-more"><summary>See other PRO tools</summary>
@@ -426,30 +428,33 @@ window.showPaywall = function showPaywall(feature, opts) {
 }
 
 /**
- * Prepend a one-click free-trial CTA to the paywall modal when the visitor
- * could still claim one. trial_available comes from /api/subscription-status
- * (signed in, never used the trial, not already PRO). Guests always see it:
- * the start endpoint routes them through Google sign-in first, then starts
- * the trial automatically.
+ * Insert a prominent free-trial CTA as the primary action in the paywall
+ * modal, ahead of the paid plan cards. trial_available comes from
+ * /api/subscription-status (signed in, never used the trial, not already
+ * PRO). Guests always see it: the start endpoint routes them through Google
+ * sign-in first, then starts the trial automatically.
  */
 function _maybeAddTrialCta(modal) {
   var body = modal && modal.querySelector('.paywall-body');
-  if (!body || body.querySelector('.paywall-trial-strip')) return;
+  if (!body || body.querySelector('.paywall-trial-primary')) return;
   var showForGuest = !window._hasAccount;
   getSubscriptionInfo().then(function (d) {
     if (!d || d.has_premium) return;
     if (!d.trial_available && !showForGuest) return;
-    var strip = document.createElement('div');
-    strip.className = 'paywall-trial-strip';
-    strip.innerHTML =
-      '<div class="paywall-trial-copy"><strong>New to PRO?</strong>' +
-      '<span>Start a 7-day free trial. No card required.</span></div>' +
-      '<button type="button" class="btn btn-primary paywall-trial-btn">Start free trial</button>';
-    strip.querySelector('.paywall-trial-btn').addEventListener('click', function () {
+    if (body.querySelector('.paywall-trial-primary')) return;
+    var pricing = body.querySelector('.paywall-pricing');
+    var wrap = document.createElement('div');
+    wrap.className = 'paywall-trial-primary';
+    wrap.innerHTML =
+      '<button type="button" class="btn btn-primary paywall-trial-big">Start 7-day free trial</button>' +
+      '<p class="paywall-trial-sub">Full PRO access. No card required.</p>' +
+      '<p class="paywall-or"><span>or choose a plan</span></p>';
+    wrap.querySelector('.paywall-trial-big').addEventListener('click', function () {
       var next = window.location.pathname + window.location.search;
       window.location.href = '/pro-trial/start?next=' + encodeURIComponent(next);
     });
-    body.insertBefore(strip, body.firstChild);
+    if (pricing) body.insertBefore(wrap, pricing);
+    else body.appendChild(wrap);
   }).catch(function () {});
 }
 

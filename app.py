@@ -2017,18 +2017,10 @@ FORM_BODY = """
     <h2 class="section-title">Managers talk</h2>
     <p class="section-lead">From the Blackedraw group chat.</p>
   </div>
-  <div class="quotes-grid">
+  <div class="quotes-grid quotes-single">
     <figure class="quote-card">
       <blockquote>THATS ACTUALLY SO SICK BRO</blockquote>
       <figcaption><strong>Jayden Waddell</strong>Pittsburgh Pilots, on the weekly recap</figcaption>
-    </figure>
-    <figure class="quote-card">
-      <blockquote>If you not already using Kaedon website.. you should, it's got start sit suggestions built into the site, trade suggestions, projections, etc.. outperformed all my projections in 3 leagues last week using it so highly recommend</blockquote>
-      <figcaption><strong>Blackedraw manager</strong>Name coming soon</figcaption>
-    </figure>
-    <figure class="quote-card">
-      <blockquote>Being able to see/do this is sick, can't wait to see what it looks like in season</blockquote>
-      <figcaption><strong>Blackedraw manager</strong>Name coming soon</figcaption>
     </figure>
   </div>
 </section>

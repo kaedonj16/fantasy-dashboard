@@ -42382,6 +42382,10 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
 .quote-card blockquote::before { content: "\201C"; display: block; font-size: 34px; line-height: 1; color: var(--accent); margin-bottom: 8px; }
 .quote-card figcaption { font-size: 13px; color: var(--text-muted); }
 .quote-card figcaption strong { color: var(--text); display: block; font-size: 13.5px; }
+/* Single-quote layout: one centered card instead of a sparse grid */
+.quotes-single { justify-content: center; overflow: visible; margin-left: 0; margin-right: 0; padding-left: 0; padding-right: 0; }
+.quotes-single .quote-card { flex: 0 1 560px; max-width: 560px; text-align: center; }
+.quotes-single .quote-card blockquote::before { margin-left: auto; margin-right: auto; }
 /* Wrapped auto-play deck */
 .hm-deck { position: relative; min-height: 220px; }
 .hm-slide { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; opacity: 0; transform: translateY(8px); transition: opacity 0.5s ease, transform 0.5s ease; pointer-events: none; }

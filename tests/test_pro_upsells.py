@@ -226,9 +226,9 @@ def test_showpaywall_headline_uses_metric_name_and_why():
       var presetHtml = kids2[kids2.length - 1].innerHTML;
       process.stdout.write(JSON.stringify({ metricHtml: metricHtml, presetHtml: presetHtml }));
     """)
-    assert "<h3>WOPR</h3>" in out["metricHtml"]
+    assert '<h2 id="paywallTitle">WOPR</h2>' in out["metricHtml"]
     assert "Target share plus air-yards share in one number." in out["metricHtml"]
-    assert "<h3>Buy Low / Sell High</h3>" in out["presetHtml"]
+    assert '<h2 id="paywallTitle">Buy Low / Sell High</h2>' in out["presetHtml"]
     assert "Find mispriced players before your league does." in out["presetHtml"]
 
 
