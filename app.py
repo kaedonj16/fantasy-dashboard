@@ -12671,7 +12671,8 @@ def _ss_qb_situation(team: "Optional[str]", depth_index: dict,
 
 def _startsit_compare_extras(pid, pos, team, season, week, scoring_settings, *,
                              proj_pts=None, on_bye=False, opponent="",
-                             home_team="", implied_total=None, weather=None):
+                             home_team="", implied_total=None, weather=None,
+                             absences=None):
     """Start/Sit compare fields the player-details response does not already
     carry, matched to what the Waivers start/sit compare shows: projected
     points, last-4-week form, blended consistency (floor/ceiling + boom/bust
@@ -12685,11 +12686,25 @@ def _startsit_compare_extras(pid, pos, team, season, week, scoring_settings, *,
     pos = (pos or "").upper()
     team = (team or "").upper()
     opponent = (opponent or "").upper()
+    home_team = (home_team or "").upper()
+    # Home/away for the Opponent and Venue rows. None on bye so the rows show
+    # BYE instead of guessing.
+    is_home = (home_team == team) if (home_team and team and not on_bye) else None
+    if opponent and not on_bye:
+        # Only prefix when home/away is actually known; otherwise show the
+        # bare abbreviation rather than guessing.
+        opponent_label = (f"vs {opponent}" if is_home is True
+                          else f"@ {opponent}" if is_home is False
+                          else opponent)
+    else:
+        opponent_label = None
     out = {
         "proj_pts": (round(float(proj_pts), 1) if proj_pts else None),
         "recent_ppg": None,
         "consistency": None,
         "opponent": opponent or None,
+        "opponent_label": opponent_label,
+        "is_home": is_home,
         "on_bye": bool(on_bye),
         "fpts_against": None,
         "def_rank": None,
@@ -12697,6 +12712,9 @@ def _startsit_compare_extras(pid, pos, team, season, week, scoring_settings, *,
         "implied_total": implied_total,
         "weather": weather or None,
         "game_env": None,
+        # Display-only absence notes (never scored). The caller builds these
+        # from the Sleeper players map; empty lists render nothing.
+        "absences": absences or {"teammates": [], "opponents": []},
     }
 
     # Last-4-week PPG scored with this league's settings (not hardcoded PPR).
@@ -13154,6 +13172,16 @@ def api_start_sit_options():
     except Exception:
         logger.debug("[start-sit] position anchors skipped", exc_info=True)
 
+    # ── Absence index (display-only teammate / opponent injury notes) ─────────
+    # One pass over the Sleeper players map; per-row lookups below are cheap.
+    # These notes never touch the score (see utils.start_sit_context).
+    _ss_absence_index: dict = {}
+    try:
+        from utils.start_sit_context import build_absence_index as _ss_abs_idx
+        _ss_absence_index = _ss_abs_idx(players_full) or {}
+    except Exception:
+        logger.debug("[start-sit] absence index skipped", exc_info=True)
+
     positions_out: dict = {pos: [] for pos in _ss_groups}
     for pid in player_ids:
         row = rows_by_id.get(pid) or {}
@@ -13202,9 +13230,18 @@ def api_start_sit_options():
         else:
             def_rank, def_total = None, 32
 
+        # Guard: the bundle path never assigns _wx_ss, so initialize it here;
+        # without this the row build below reads it unbound whenever every
+        # rostered player has a bundle.
+        _wx_ss = None
         if _bun is not None:
             _imp_ss = _bun.get("implied_total") if not on_bye else None
             _wx_kind = _bun.get("weather_kind") if not on_bye else None
+            # Bundles carry the weather tag label ("22 mph wind") so the row
+            # can show specifics without a live weather lookup.
+            _wx_label = _bun.get("weather_label") if not on_bye else None
+            if _wx_label:
+                _wx_ss = {"label": _wx_label, "kind": _wx_kind}
         else:
             _imp_ss = (game_conditions.get(team) or {}).get("implied_total") if not on_bye else None
             _wx_ss = (game_conditions.get(team) or {}).get("weather") if not on_bye else None
@@ -13213,6 +13250,17 @@ def api_start_sit_options():
         # Raw opponent play volume is display context, not itself a score input.
         _pv_ss = (_play_volume_context(team_play_volume, opponent, _tpv_nfl_avg)
                   if (opponent and not on_bye) else None)
+
+        # Teammate / opponent defensive absence notes. Display only: the
+        # scorer never sees these (Sleeper projections already price them in).
+        _abs_ss = {"teammates": [], "opponents": []}
+        if team and opponent and not on_bye:
+            try:
+                from utils.start_sit_context import absence_notes as _ss_abs_notes
+                _abs_ss = _ss_abs_notes(
+                    _ss_absence_index, team, opponent, exclude_pid=pid) or _abs_ss
+            except Exception:
+                logger.debug("[start-sit] absence notes skipped", exc_info=True)
 
         from utils.start_sit_context import expected_plays_context, role_confidence_from_trend
         if _bun is not None:
@@ -13319,6 +13367,8 @@ def api_start_sit_options():
             "oline": _ol_ss,
             # Raw display context; scoring receives only _pace_ss below.
             "play_volume": _pv_ss,
+            # Display-only injury context (teammate / opponent absences).
+            "absences": _abs_ss,
             "environment_debug": {
                 "play_volume_source": (_tpv_blob or {}).get("play_volume_source"),
                 "play_volume_generated_at": (_tpv_blob or {}).get("generated_at"),
@@ -23972,11 +24022,28 @@ def api_player_details(player_id: str):
                 # Without them the compare score ignored recent form, usage trend
                 # and consistency and collapsed to raw projection whenever Vegas
                 # and weather were absent.
+                # Display-only absence notes (teammate / opponent injuries).
+                # Built from the cached Sleeper players feed; never scored.
+                _ss_absences = {"teammates": [], "opponents": []}
+                if _ss_team and _ss_opp and not _ss_bye:
+                    try:
+                        from utils.start_sit_context import (
+                            absence_notes as _ss_abs_notes,
+                            build_absence_index as _ss_abs_idx,
+                        )
+                        _ss_absences = _ss_abs_notes(
+                            _ss_abs_idx(get_players_global() or {}),
+                            _ss_team, _ss_opp, exclude_pid=player_id,
+                        ) or _ss_absences
+                    except Exception:
+                        logger.debug("[api_player_details] absence notes skipped",
+                                     exc_info=True)
                 try:
                     _start_sit_payload = _startsit_compare_extras(
                         player_id, _ss_pos, _ss_team, season, _ss_week, scoring_settings,
                         proj_pts=_ss_proj, on_bye=_ss_bye, opponent=_ss_opp,
                         home_team=_ss_home, implied_total=_ss_imp, weather=_ss_wx,
+                        absences=_ss_absences,
                     )
                 except Exception:
                     logger.debug("[api_player_details] start_sit payload skipped", exc_info=True)
