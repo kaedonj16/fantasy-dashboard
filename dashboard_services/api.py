@@ -552,6 +552,26 @@ def get_matchups(league_id: str, week: int) -> List[dict]:
 
 
 _LAST_NFL_STATE: dict = {}
+_LAST_NFL_STATE_AT: str = ""
+
+
+def _stale_nfl_state(reason: str) -> dict:
+    """Return the last-known-good NFL state flagged as stale.
+
+    ``get_nfl_state()`` must never raise, so when the live fetch fails it
+    serves the last good value. That fallback is now honest: the returned
+    dict carries ``freshness.stale=True`` plus when the last good fetch
+    happened and why we fell back, so page renders can say so instead of
+    presenting a possibly-wrong week as current.
+    """
+    from utils.nfl_context import normalize_nfl_state
+    state = normalize_nfl_state(_LAST_NFL_STATE)
+    fresh = state.get("freshness")
+    if isinstance(fresh, dict):
+        fresh["stale"] = True
+        fresh["stale_reason"] = reason
+        fresh["last_good_at"] = _LAST_NFL_STATE_AT or None
+    return state
 
 
 @ttl_cache(ttl=900)
@@ -560,15 +580,20 @@ def get_nfl_state() -> dict:
     # raise when Sleeper is slow/down. NFL state (week/season type) changes at
     # most daily, so a 15-minute TTL is plenty and a short timeout keeps page
     # loads snappy. On failure, fall back to the last-known-good state so a
-    # Sleeper outage never takes the site down.
-    global _LAST_NFL_STATE
+    # Sleeper outage never takes the site down. The fallback is flagged stale
+    # (see _stale_nfl_state) so the UI can say the week may be outdated.
+    global _LAST_NFL_STATE, _LAST_NFL_STATE_AT
+    from datetime import datetime, timezone
     from utils.nfl_context import normalize_nfl_state
     try:
         state = fetch_json("/state/nfl", timeout=6, retries=2) or {}
     except Exception:
-        return normalize_nfl_state(_LAST_NFL_STATE)
+        return _stale_nfl_state("nfl state fetch failed")
     if state:
         _LAST_NFL_STATE = state
+        _LAST_NFL_STATE_AT = datetime.now(timezone.utc).isoformat()
+    elif _LAST_NFL_STATE:
+        return _stale_nfl_state("nfl state fetch returned empty")
     return normalize_nfl_state(state or _LAST_NFL_STATE)
 
 

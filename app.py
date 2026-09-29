@@ -2768,6 +2768,7 @@ def _provider_league_for_chrome(platform, league_id) -> dict:
 def _league_chrome_meta(platform, league_id, season, offseason_mode: bool = False) -> dict:
     """League name, format, and week for the persistent nav chip."""
     from utils.league_chrome import merge_chrome_sources
+    from utils.nfl_context import nfl_state_is_stale, nfl_state_last_good_at
     ctx = _peek_league_ctx(platform, league_id, season)
     nfl = get_nfl_state() or {}
     try:
@@ -2782,7 +2783,7 @@ def _league_chrome_meta(platform, league_id, season, offseason_mode: bool = Fals
     saved = ""
     if not (cache_name or (live or {}).get("name")):
         saved = _saved_league_chrome_name(platform, league_id)
-    return merge_chrome_sources(
+    meta = merge_chrome_sources(
         ctx=ctx,
         saved_name=saved,
         provider_league=live,
@@ -2790,6 +2791,11 @@ def _league_chrome_meta(platform, league_id, season, offseason_mode: bool = Fals
         season_type=str(nfl.get("season_type") or ""),
         offseason=bool(offseason_mode),
     )
+    # Surface NFL-week staleness on the nav chip: when get_nfl_state() fell
+    # back to last-good after a failed fetch, the week label may be outdated.
+    meta["nfl_week_stale"] = nfl_state_is_stale(nfl)
+    meta["nfl_week_as_of"] = nfl_state_last_good_at(nfl)
+    return meta
 
 
 def _render_league_chrome_chip(meta: dict, *, can_switch: bool) -> str:
@@ -2799,7 +2805,15 @@ def _render_league_chrome_chip(meta: dict, *, can_switch: bool) -> str:
     name = html.escape(str(meta.get("name") or "This league"))
     fmt = html.escape(str(meta.get("format") or ""))
     week = html.escape(str(meta.get("week_label") or ""))
-    week_html = f"<span class='br-ctx-week'>{week}</span>" if week else ""
+    stale_html = ""
+    if meta.get("nfl_week_stale"):
+        # Mirror the ScoreZone stale badge: a small amber honesty chip. The
+        # week label may be outdated because the live NFL state fetch failed.
+        stale_html = (
+            "<span class='br-ctx-stale' title='Week info may be stale. "
+            "Live NFL update unavailable.'>Stale</span>"
+        )
+    week_html = f"<span class='br-ctx-week'>{week}{stale_html}</span>" if week else ""
     fmt_html = f"<span class='br-ctx-format'>{fmt}</span>" if fmt else ""
     if can_switch:
         league_el = (
