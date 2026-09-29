@@ -27,7 +27,7 @@ def _pro_section() -> str:
 
 def test_tour_covers_five_tools_with_real_component_markup():
     region = _guest_region()
-    for tool in ("Matchup Board", "Redzone", "Start/Sit", "Wrapped", "Trade Strategy"):
+    for tool in ("Matchup Board", "ScoreZone", "Start/Sit", "Wrapped", "Trade Strategy"):
         assert tool in region
     # Real product class hooks, not generic placeholders.
     assert "mb-row" in region

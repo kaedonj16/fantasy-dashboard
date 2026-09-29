@@ -1,30 +1,30 @@
-"""Weekly hub RedZone Moments launcher: markup helper and client wiring."""
+"""Weekly hub ScoreZone Moments launcher: markup helper and client wiring."""
 from __future__ import annotations
 
 import json
 import os
 import subprocess
 
-from dashboard_services.pages.weekly_hub_page import redzone_moments_hub_html
+from dashboard_services.pages.weekly_hub_page import scorezone_moments_hub_html
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def test_launcher_markup_has_data_attributes():
-    html = redzone_moments_hub_html("sleeper", "123456789", 2026)
+    html = scorezone_moments_hub_html("sleeper", "123456789", 2026)
     assert 'data-rzm-hub' in html
     assert 'data-platform="sleeper"' in html
     assert 'data-league-id="123456789"' in html
     assert 'data-season="2026"' in html
     assert 'data-rzm-hub-open' in html
     assert 'data-rzm-hub-count' in html
-    assert 'RedZone Moments' in html
+    assert 'ScoreZone Moments' in html
     # Rendered hidden; the client reveals it only when moments exist.
     assert ' hidden>' in html or ' hidden' in html
 
 
 def test_launcher_markup_escapes_attributes():
-    html = redzone_moments_hub_html('sleeper"x', '1"><script>', 2026)
+    html = scorezone_moments_hub_html('sleeper"x', '1"><script>', 2026)
     assert '<script>' not in html
     assert 'sleeper&quot;x' in html
 
@@ -55,7 +55,7 @@ def _render_slide(rzm_hub_html=""):
 
 
 def test_slide_includes_rzm_hub_html_under_win_bar():
-    launcher = redzone_moments_hub_html("sleeper", "123", 2026)
+    launcher = scorezone_moments_hub_html("sleeper", "123", 2026)
     html = _render_slide(rzm_hub_html=launcher)
     assert 'data-rzm-hub' in html
     # Launcher sits after the header/win-bar zone and before the starter rows.
@@ -72,15 +72,15 @@ def test_slide_omits_rzm_hub_html_by_default():
 
 def test_launcher_uses_shared_rzm_row_classes():
     # Same classes as the portfolio card row so the design stays identical.
-    html = redzone_moments_hub_html("sleeper", "1", 2026)
+    html = scorezone_moments_hub_html("sleeper", "1", 2026)
     assert 'class="rzm-row' in html
     assert 'class="rzm-row-btn"' in html
 
 
 # ── Client wiring: drive the hub launcher IIFE in Node with a DOM shim ──
 
-_HUB_IIFE_START = "/* Weekly hub: RedZone Moments launcher"
-_SHARED_IIFE_START = "/* ── Shared RedZone Moments (portfolio cards + weekly hub)"
+_HUB_IIFE_START = "/* Weekly hub: ScoreZone Moments launcher"
+_SHARED_IIFE_START = "/* ── Shared ScoreZone Moments (portfolio cards + weekly hub)"
 _SHARED_IIFE_END = "window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(payload, ctx); };"
 
 
@@ -335,7 +335,7 @@ function fireClick(targetClosest) {
   out.modalOpened = !!modalOverlay;
   out.modalHasPlays = modalOverlay ? modalOverlay.innerHTML.includes('rzm-play') : false;
   out.modalCtx = modalOverlay ? modalOverlay._rzmCtx : null;
-  out.modalTitle = modalOverlay ? modalOverlay.innerHTML.includes('RedZone Moments') : false;
+  out.modalTitle = modalOverlay ? modalOverlay.innerHTML.includes('ScoreZone Moments') : false;
   out.modalHtml = modalOverlay ? modalOverlay.innerHTML : '';
 
   // Escape closes it.
@@ -381,7 +381,7 @@ def _payload():
 
 def test_shared_fetchMoments_url_and_cache():
     out = _run_shared_harness({"apiBody": {"plays": [], "td_count": 0}})
-    assert out["fetchUrl"] == "/api/redzone/moments?platform=sleeper&league_id=12345&season=2026"
+    assert out["fetchUrl"] == "/api/scorezone/moments?platform=sleeper&league_id=12345&season=2026"
     assert out["fetchCreds"] == "same-origin"
     # Second call for the same league hits the cache: one network fetch.
     assert out["fetchCount"] == 1
@@ -436,14 +436,14 @@ def test_weekly_week_api_includes_rzm_launcher():
     end = min(x for x in (nxt, nxt2) if x != -1)
     body = src[start:end]
     assert "rzm_hub_html=_api_rzm_for_matchup(m)" in body
-    assert "redzone_moments_hub_html" in body
+    assert "scorezone_moments_hub_html" in body
 
 
 def test_launcher_includes_week_attribute():
     """The launcher must carry the displayed week so the API can fetch
     moments for the viewed week, not just the current NFL week."""
-    html = redzone_moments_hub_html("sleeper", "123456789", 2026, week=3)
+    html = scorezone_moments_hub_html("sleeper", "123456789", 2026, week=3)
     assert 'data-week="3"' in html
     # Week is optional for backward compatibility.
-    html2 = redzone_moments_hub_html("sleeper", "123456789", 2026)
+    html2 = scorezone_moments_hub_html("sleeper", "123456789", 2026)
     assert "data-rzm-hub" in html2

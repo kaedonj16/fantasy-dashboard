@@ -193,7 +193,7 @@ DST_CANON = {
 
 # Provider payloads use city, full-franchise, and nickname strings in addition
 # to abbreviations.  Keep this shared rather than teaching individual features
-# (notably RedZone) one-off franchise exceptions.
+# (notably ScoreZone) one-off franchise exceptions.
 _NFL_FRANCHISES = {
     "ARI": ("Arizona", "Arizona Cardinals", "Cardinals"), "ATL": ("Atlanta", "Atlanta Falcons", "Falcons"),
     "BAL": ("Baltimore", "Baltimore Ravens", "Ravens"), "BUF": ("Buffalo", "Buffalo Bills", "Bills"),

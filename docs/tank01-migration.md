@@ -8,7 +8,7 @@ avoid breaking URLs and callers, but now adapt the shared ESPN NFL service.
 |---|---|
 | daily and weekly NFL scoreboard, status, clocks | ESPN NFL scoreboard |
 | live/final boxscore and player NFL statistics | ESPN NFL summary, parsed by labels |
-| RedZone plays | ESPN summary drives with the existing CDN fallback and play revision normalization |
+| ScoreZone plays | ESPN summary drives with the existing CDN fallback and play revision normalization |
 | Team-tab and player-modal boxscores | shared ESPN event summary cache |
 | Portfolio and Matchups progress | ESPN scoreboard through the compatibility adapter |
 | durable/historical schedules | existing nflverse caches; ESPN supplies current event IDs/state |
@@ -46,7 +46,7 @@ stat corrections can reconcile.
 3. Run a manual web health check and one manual daily-job run with the key
    absent, then inspect logs for `disabled.invalid` and `rapidapi` (expect none).
 4. Verify provider matchup totals against each connected fantasy platform and
-   expand a completed game's Team tab and RedZone feed.
+   expand a completed game's Team tab and ScoreZone feed.
 5. Only after those production checks, cancel the external subscription. Do not
    enable old Tank-specific maintenance scripts; use the Sleeper metadata and
    nflverse schedule refresh jobs instead.

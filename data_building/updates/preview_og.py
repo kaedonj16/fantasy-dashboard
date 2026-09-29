@@ -41,7 +41,7 @@ low_name,  low_pts  = "Pocket Protectors", 71.80
 matchups = [
     {"w": "Dynasty Kings",     "w_pts": 148.3, "l": "Gridiron Ghosts",   "l_pts": 85.9,  "margin": 62.4},
     {"w": "Blitz Brigade",     "w_pts": 131.7, "l": "Endzone Elite",     "l_pts": 104.2, "margin": 27.5},
-    {"w": "Redzone Rebels",    "w_pts": 119.8, "l": "Pocket Protectors", "l_pts": 71.8,  "margin": 48.0},
+    {"w": "ScoreZone Strikers",    "w_pts": 119.8, "l": "Pocket Protectors", "l_pts": 71.8,  "margin": 48.0},
     {"w": "Super Cena 09",     "w_pts": 112.4, "l": "09 Orton Fan Club", "l_pts": 98.1,  "margin": 14.3},
     {"w": "Thunderdome",       "w_pts": 108.9, "l": "Gridiron Ghosts",   "l_pts": 95.3,  "margin": 13.6},
 ]

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 def build_dashboard_body(ctx: dict) -> str:
     from app import (  # noqa: E402  (lazy: avoids a circular import at module load)
-        _redzone_cta_state,
+        _scorezone_cta_state,
         _render_do_next_waiver_card,
         _compute_fpts_against,
         _scoring_format_from_settings,
@@ -448,28 +448,28 @@ def build_dashboard_body(ctx: dict) -> str:
         <div class="os-action-queue os-tab-panel os-tab-active" id="os-jump-actions">{_action_inner}
         </div>"""
 
-    # Redzone CTA: a calm pregame banner within the hour before kickoff, then a
+    # ScoreZone CTA: a calm pregame banner within the hour before kickoff, then a
     # pulsing live banner once a game is in progress. Shown only in that window
     # (server-computed like the nav glow); nothing renders otherwise.
     _rz_cta_html = ""
     try:
-        _rz_cta_state = _redzone_cta_state(season, current_week)
+        _rz_cta_state = _scorezone_cta_state(season, current_week)
     except Exception:
-        logger.debug("dashboard redzone cta state failed", exc_info=True)
+        logger.debug("dashboard scorezone cta state failed", exc_info=True)
         _rz_cta_state = ""
     if _rz_cta_state:
         try:
             _rz_href = url_for(
-                "page_redzone", platform=platform, season=season, league_id=str(league_id)
+                "page_scorezone", platform=platform, season=season, league_id=str(league_id)
             )
         except Exception:
-            _rz_href = "./redzone"
+            _rz_href = "./scorezone"
         if _rz_cta_state == "live":
             _rz_msg = "NFL games are live right now, track your players in real time."
-            _rz_link = "Watch on Redzone"
+            _rz_link = "Watch on ScoreZone"
         else:  # pregame
             _rz_msg = "Kickoff is coming up. Get set to track your players live."
-            _rz_link = "Open Redzone"
+            _rz_link = "Open ScoreZone"
         _rz_cta_html = (
             f'<div class="weekly-rz-cta weekly-rz-cta-{_rz_cta_state}">'
             '<span class="weekly-rz-cta-dot"></span>'

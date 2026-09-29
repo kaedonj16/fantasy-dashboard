@@ -107,7 +107,7 @@ still shipped large **unminified** extras on every load:
 | `player_modal.js` | ~243 KB, deferred on every signed-in page | minified + **idle/lazy** (`__PLAYER_MODAL_JS`) |
 | `paywall.js` | ~60 KB unminified, every page | `paywall.min.js` |
 | `seo_lite.css` / `landing_lite.css` | unminified | minified at boot |
-| `rankings.js` / `redzone.js` / `teams.js` / `draft_room.js` | unminified | minified at boot |
+| `rankings.js` / `scorezone.js` / `teams.js` / `draft_room.js` | unminified | minified at boot |
 
 Deferred `app.js` / `paywall.js` also moved into `<head>` so the preload scanner
 finds them before the (often large) body HTML.

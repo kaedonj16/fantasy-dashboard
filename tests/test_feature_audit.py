@@ -59,8 +59,8 @@ def test_billing_accepts_mfl_and_account_id():
     assert 'acct:{account_id}' in SUBS
 
 
-def test_redzone_player_uses_nfl_index_on_every_platform():
-    api = APP_PY[APP_PY.index("def api_redzone_player"):]
+def test_scorezone_player_uses_nfl_index_on_every_platform():
+    api = APP_PY[APP_PY.index("def api_scorezone_player"):]
     api = api[: api.index("scoring = get_normalized_scoring_settings")]
     assert "nfl_players = get_nfl_players() or {}" in api
     assert 'get_nfl_players() if platform == "sleeper"' not in api
@@ -111,7 +111,7 @@ def test_update_banner_clears_mobile_dock():
     assert ".toast-container .toast {" in DASH_CSS
 
 
-def test_redzone_td_alert_history_clears_mobile_dock():
+def test_scorezone_td_alert_history_clears_mobile_dock():
     """TD Alert History is a bottom sheet; it must stack above .br-tabbar."""
     start = DASH_CSS.index(".rz-hist-overlay {")
     end = DASH_CSS.index(".rz-hist-panel {", start)

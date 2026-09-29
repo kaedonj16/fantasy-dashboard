@@ -1175,7 +1175,7 @@ def get_weekly_ai_recap_preview() -> tuple[str, str]:
                 "score": 2.31,
             },
             "also_watch": [
-                {"team_a": "Redzone Rebels", "team_b": "Endzone Elite",
+                {"team_a": "ScoreZone Strikers", "team_b": "Endzone Elite",
                  "why": "Dead heat on paper (51-49)"},
             ],
         },

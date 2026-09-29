@@ -42,8 +42,8 @@ def test_public_oline_team_column_sticky_css():
     assert "background:var(--card-soft)" in PUB_SRC.replace(" ", "")
 
 
-# ── Playoff odds / Draft Room Deep Dive / Redzone box-score ────────────────
-# The playoff-odds and redzone sticky CSS lives in static/dashboard.css
+# ── Playoff odds / Draft Room Deep Dive / ScoreZone box-score ────────────────
+# The playoff-odds and scorezone sticky CSS lives in static/dashboard.css
 # (merged from staging files). Draft-room CSS lives in draft_room_page.py.
 import re
 
@@ -112,7 +112,7 @@ def test_playoff_odds_markup_has_team_column():
     assert '<div class="po-wrap">' in js
 
 
-def test_redzone_boxscore_sticky_css():
+def test_scorezone_boxscore_sticky_css():
     css = DASHBOARD_CSS
     # Player header cell has no class; target first-child. Body uses .rz-bs-pname.
     assert "table.rz-bs-table thead th:first-child" in css
@@ -124,8 +124,8 @@ def test_redzone_boxscore_sticky_css():
     assert "999px" not in _STICKY_TAIL
 
 
-def test_redzone_boxscore_markup_has_player_cells():
-    raw = (ROOT / "static/redzone.js").read_text(encoding="utf-8")
+def test_scorezone_boxscore_markup_has_player_cells():
+    raw = (ROOT / "static/scorezone.js").read_text(encoding="utf-8")
     js = raw.replace('\\"', '"')
     assert '<td class="rz-bs-pname">' in js
     assert "rz-bs-tscroll" in js

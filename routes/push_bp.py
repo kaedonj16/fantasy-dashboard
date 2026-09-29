@@ -173,7 +173,7 @@ def api_push_subscribe():
     # actually reach this device. The signed-in Google account_id lives in a
     # different namespace and never equals a roster owner_id, so storing it here
     # silently dropped every owner-targeted notification (value drops, playoff
-    # odds, breakouts, matchup preview, standings, close game, injury, RedZone,
+    # odds, breakouts, matchup preview, standings, close game, injury, ScoreZone,
     # per-owner lineup lock). Prefer the session's resolved platform viewer id,
     # then the client-supplied owner_id (the settings-modal league toggle path).
     owner_id  = (str(session.get("viewer_user_id") or "").strip()
@@ -463,7 +463,7 @@ def api_cron_notifications():
     """Cron hook for push notifications and the weekly email digest.
 
     Pass type='hourly' (lineup lock / close games / drops / injuries),
-    type='daily', type='redzone' (server-side TD poll), or type='weekly'.
+    type='daily', type='scorezone' (server-side TD poll), or type='weekly'.
     Auth is X-Admin-Secret or CRON_SECRET
     (header X-Cron-Secret or JSON ``secret``, same as /api/flush-value-cache).
 
@@ -516,12 +516,12 @@ def _run_cron_notifications(kind, account_id=None, email=None, force=False):
     """
     try:
         from utils.push_notifications import (
-            run_hourly, run_all_daily, run_redzone_td_poll,
+            run_hourly, run_all_daily, run_scorezone_td_poll,
         )
         if kind == "daily":
             run_all_daily()
-        elif kind == "redzone":
-            run_redzone_td_poll()
+        elif kind == "scorezone":
+            run_scorezone_td_poll()
         elif kind == "weekly":
             # Weekly email digest. Safe to call more often -- it de-dupes per
             # account per ISO week.

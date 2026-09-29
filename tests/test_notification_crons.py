@@ -178,11 +178,11 @@ def _stub_module(name, **attrs):
     return mod
 
 
-def test_run_redzone_td_poll_no_new_tds(monkeypatch):
+def test_run_scorezone_td_poll_no_new_tds(monkeypatch):
     import sys
 
     import utils.push_notifications as pn
-    import utils.redzone_store as rs
+    import utils.scorezone_store as rs
 
     fake_api = _stub_module(
         "dashboard_services.api",
@@ -193,14 +193,14 @@ def test_run_redzone_td_poll_no_new_tds(monkeypatch):
     monkeypatch.setattr(rs, "get_watermark", lambda: 1000.0)
     monkeypatch.setattr(rs, "get_td_plays_since", lambda season, since: [])
 
-    assert pn.run_redzone_td_poll() == {"games": 0, "leagues": 0, "sent": 0}
+    assert pn.run_scorezone_td_poll() == {"games": 0, "leagues": 0, "sent": 0}
 
 
-def test_run_redzone_td_poll_cold_start_sets_watermark_without_sending(monkeypatch):
+def test_run_scorezone_td_poll_cold_start_sets_watermark_without_sending(monkeypatch):
     import sys
 
     import utils.push_notifications as pn
-    import utils.redzone_store as rs
+    import utils.scorezone_store as rs
 
     fake_api = _stub_module(
         "dashboard_services.api",
@@ -211,20 +211,20 @@ def test_run_redzone_td_poll_cold_start_sets_watermark_without_sending(monkeypat
     monkeypatch.setattr(rs, "get_watermark", lambda: 0.0)
     wm = {}
     monkeypatch.setattr(rs, "set_watermark", lambda ts: wm.setdefault("ts", ts))
-    monkeypatch.setattr(pn, "notify_redzone_scores",
+    monkeypatch.setattr(pn, "notify_scorezone_scores",
                         lambda *a, **k: (_ for _ in ()).throw(
                             AssertionError("must not notify on cold start")))
     monkeypatch.setattr(pn, "_flush_digest", lambda: 0)
 
-    assert pn.run_redzone_td_poll() == {"games": 0, "leagues": 0, "sent": 0}
+    assert pn.run_scorezone_td_poll() == {"games": 0, "leagues": 0, "sent": 0}
     assert wm["ts"] > 0
 
 
-def test_run_redzone_td_poll_sends_and_flushes_digest(monkeypatch):
+def test_run_scorezone_td_poll_sends_and_flushes_digest(monkeypatch):
     import sys
 
     import utils.push_notifications as pn
-    import utils.redzone_store as rs
+    import utils.scorezone_store as rs
     import dashboard_services.platform_api as papi
 
     fake_api = _stub_module(
@@ -255,10 +255,10 @@ def test_run_redzone_td_poll_sends_and_flushes_digest(monkeypatch):
                            rosters, scoring, kw)
         return 2
 
-    monkeypatch.setattr(pn, "notify_redzone_scores", fake_notify)
+    monkeypatch.setattr(pn, "notify_scorezone_scores", fake_notify)
     monkeypatch.setattr(pn, "_flush_digest", lambda: 1)
 
-    assert pn.run_redzone_td_poll() == {"games": 1, "leagues": 1, "sent": 3}
+    assert pn.run_scorezone_td_poll() == {"games": 1, "leagues": 1, "sent": 3}
     # watermark advances to the max observed play ts, not wall-clock now
     assert wm["ts"] == 1200.0
     lid, plat, pbp, pinfo, rosters, scoring, kw = calls["notify"]
@@ -270,7 +270,7 @@ def test_run_redzone_td_poll_sends_and_flushes_digest(monkeypatch):
     assert kw == {"season": 2026, "week": 4}
 
 
-def test_trigger_redzone_logs_sent_count(monkeypatch, capsys):
+def test_trigger_scorezone_logs_sent_count(monkeypatch, capsys):
     import json as _json
 
     mod = _load_trigger()
@@ -292,16 +292,16 @@ def test_trigger_redzone_logs_sent_count(monkeypatch, capsys):
 
     monkeypatch.setattr(mod.urllib.request, "urlopen",
                         lambda req, timeout=0: _Resp())
-    assert mod.trigger("redzone", app_url="https://example.test", secret="x") == 0
+    assert mod.trigger("scorezone", app_url="https://example.test", secret="x") == 0
     out = capsys.readouterr().out
-    assert "[notify-cron] redzone: HTTP 200 sent=3" in out
+    assert "[notify-cron] scorezone: HTTP 200 sent=3" in out
     assert "games=5" in out
 
 
-def test_redzone_poller_cron_service_registered():
-    rz = RENDER.split("name: redzone-td-poller", 1)[1].split("- type: cron", 1)[0]
+def test_scorezone_poller_cron_service_registered():
+    rz = RENDER.split("name: scorezone-td-poller", 1)[1].split("- type: cron", 1)[0]
     assert 'schedule: "* * * * *"' in rz
-    assert "python scripts/trigger_notifications.py redzone" in rz
+    assert "python scripts/trigger_notifications.py scorezone" in rz
     assert "key: APP_URL" in rz
     assert "key: CRON_SECRET" in rz
     assert "value: America/New_York" in rz

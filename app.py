@@ -618,7 +618,7 @@ def _ensure_public_js() -> str:
     (shared utils, nav/chrome, changelog, dark mode, custom selects, home lookup)
     PLUS any region wrapped in `@public-js:include-start/end` (small shared
     helpers defined further down, e.g. _advFetch). The heavy feature code below
-    the marker (player modal, advanced metrics, compare, redzone, trade calc
+    the marker (player modal, advanced metrics, compare, scorezone, trade calc
     internals) is excluded. Falls back to app.js on any problem so nothing breaks.
     """
     static_dir = Path(__file__).parent / "static"
@@ -772,7 +772,7 @@ _CSS_V = _static_hash(_CSS_FILE)
 
 # First-paint / per-page assets that used to ship unminified. Minify at boot
 # (same sidecar pattern as app.js / dashboard.css) so signed-in shells and
-# rankings / draft / redzone pages don't parse 200KB+ of comments and spaces.
+# rankings / draft / scorezone pages don't parse 200KB+ of comments and spaces.
 from utils.static_minify import served_name as _served_static  # noqa: E402
 
 
@@ -783,7 +783,7 @@ def _min_asset(name: str) -> tuple:
 _PLAYER_MODAL_JS_FILE, _PLAYER_MODAL_JS_V = _min_asset("player_modal.js")
 _PAYWALL_JS_FILE, _PAYWALL_JS_V = _min_asset("paywall.js")
 _PAYWALL_CSS_FILE, _PAYWALL_CSS_V = _min_asset("paywall.css")
-_REDZONE_JS_FILE, _REDZONE_JS_V = _min_asset("redzone.js")
+_SCOREZONE_JS_FILE, _SCOREZONE_JS_V = _min_asset("scorezone.js")
 _RANKINGS_JS_FILE, _RANKINGS_JS_V = _min_asset("rankings.js")
 _TEAMS_JS_FILE, _TEAMS_JS_V = _min_asset("teams.js")
 _SEO_LITE_CSS_FILE, _SEO_LITE_CSS_V = _min_asset("seo_lite.css")
@@ -1845,7 +1845,7 @@ FORM_BODY = """
 
     <div class="home-preview-block is-flip">
       <div class="home-preview-copy">
-        <span class="home-preview-eyebrow">Redzone</span>
+        <span class="home-preview-eyebrow">ScoreZone</span>
         <h3 class="home-preview-title">Every snap, one screen</h3>
         <p class="home-preview-desc">Live NFL scores, scoring plays, and your players' fantasy points as they happen. Tap any game for the full box score.</p>
       </div>
@@ -2150,7 +2150,7 @@ FORM_BODY = """
     <div class="how-step">
       <span class="how-num">3</span>
       <h4>Run your Sunday</h4>
-      <p>Matchups, Redzone, start/sit, and waivers, all wired to your league's real scoring.</p>
+      <p>Matchups, ScoreZone, start/sit, and waivers, all wired to your league's real scoring.</p>
     </div>
   </div>
 </section>
@@ -3211,8 +3211,8 @@ def get_available_history_seasons(platform: str, league_id: str, current_season:
 def _games_scheduled_today(season, week) -> bool:
     """True if the given week's schedule has any game dated today (local time).
 
-    Drives the LIVE/Redzone affordances (weekly LIVE badge, Redzone nav dot,
-    Redzone page polling) off the real schedule rather than a day-of-week guess.
+    Drives the LIVE/ScoreZone affordances (weekly LIVE badge, ScoreZone nav dot,
+    ScoreZone page polling) off the real schedule rather than a day-of-week guess.
     Past seasons never match today's date, so they resolve to False.
     """
     try:
@@ -3275,7 +3275,7 @@ def _games_live_or_imminent(season, week, *, lead_minutes=60) -> bool:
 
     "Live" is the kickoff → +4h window; "imminent" is the hour before kickoff
     (``lead_minutes``). Unlike :func:`_games_scheduled_today` (whole calendar
-    day, drives polling), this narrows to actual game action so the Redzone
+    day, drives polling), this narrows to actual game action so the ScoreZone
     nav glow only flashes when games are live or about to start. Missing/bad
     kickoff epochs are skipped; any failure resolves to False.
     """
@@ -3307,8 +3307,8 @@ def _games_live_or_imminent(season, week, *, lead_minutes=60) -> bool:
         return False
 
 
-def _redzone_cta_state(season, week, *, lead_minutes=60) -> str:
-    """Redzone CTA state for today's slate: ``'live'``, ``'pregame'`` or ``''``.
+def _scorezone_cta_state(season, week, *, lead_minutes=60) -> str:
+    """ScoreZone CTA state for today's slate: ``'live'``, ``'pregame'`` or ``''``.
 
     ``'live'``    - a game dated today is in progress (kickoff -> +4h).
     ``'pregame'`` - a game dated today kicks off within ``lead_minutes`` (the hour
@@ -3527,7 +3527,7 @@ _NAV_PAGE_META = {
     "recap": ("news", "league_pages.page_recap", ""),
     "scout": ("swords", "page_weekly", "?tab=scout"),
     "optimal": ("bars2", "page_weekly", "?tab=optimal"),
-    "redzone": ("pulse", "page_redzone", ""),
+    "scorezone": ("pulse", "page_scorezone", ""),
     "waivers": ("list", "league_pages.page_waivers", ""),
     "schedule": ("list", "page_schedule", ""),
     "trade": ("swap", "trade.page_trade", ""),
@@ -3550,7 +3550,7 @@ _DOCK_LABELS = {
     "dashboard": "Home", "players": "Rankings", "weekly": "Matchups", "teams": "Teams",
     "draft": "Draft", "keeper": "Keeper", "standings": "Standings", "activity": "Activity",
     "league_health": "Health", "recap": "Recap", "scout": "Scout", "optimal": "Lineup",
-    "redzone": "Redzone", "waivers": "Waivers", "schedule": "Schedule", "trade": "Trades",
+    "scorezone": "ScoreZone", "waivers": "Waivers", "schedule": "Schedule", "trade": "Trades",
     "trade-suggestions": "Trades", "trade-database": "Trades",
     "compare": "Compare", "top-movers": "Movers", "advanced-metrics": "Metrics",
     "nfl-teams": "Teams", "breakouts": "Breakouts", "prospects": "Prospects", "draft-history": "History",
@@ -3665,7 +3665,7 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
     offseason = _nfl_offseason_mode(nfl_state, season)
     draft_ended = has_draft_ended(league_id, platform, season)
 
-    # Mirror the desktop nav glow on mobile: the More tab and the Redzone sheet
+    # Mirror the desktop nav glow on mobile: the More tab and the ScoreZone sheet
     # row pulse only while a game is live or kicks off within the hour.
     rz_live = False
     if not offseason:
@@ -3783,17 +3783,17 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
         ]
         if not offseason:
             if rz_live:
-                _rz_icon, _rz_ep, _rz_suffix = _NAV_PAGE_META["redzone"]
-                _rz_on = " active" if active_norm == "redzone" else ""
-                _rz_aria = " aria-current='page'" if active_norm == "redzone" else ""
+                _rz_icon, _rz_ep, _rz_suffix = _NAV_PAGE_META["scorezone"]
+                _rz_on = " active" if active_norm == "scorezone" else ""
+                _rz_aria = " aria-current='page'" if active_norm == "scorezone" else ""
                 rows.append(
                     f"<a class='br-sheet-link rz-mnav-live{_rz_on}'{_rz_aria} "
                     f"href='{_href(_rz_ep, _rz_suffix)}'>"
-                    f"{_nav_icon(_rz_icon, size=20)}<span>Redzone</span>"
+                    f"{_nav_icon(_rz_icon, size=20)}<span>ScoreZone</span>"
                     "<span class='rz-mnav-dot' aria-hidden='true'></span></a>"
                 )
             else:
-                rows.append(_sl("redzone", "Redzone"))
+                rows.append(_sl("scorezone", "ScoreZone"))
         weekly_html = _sec("Weekly", rows)
 
     league_html = _sec("League", [
@@ -3858,7 +3858,7 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
 
     category_keys = {
         "Trades": {"trade", "trade-suggestions", "trade-database"},
-        "Weekly": {"weekly", "recap", "scout", "optimal", "waivers", "schedule", "redzone"},
+        "Weekly": {"weekly", "recap", "scout", "optimal", "waivers", "schedule", "scorezone"},
         "League": {"standings", "teams", "activity", "league_health"},
         "Players": {"players", "compare", "top-movers", "advanced-metrics", "nfl-teams", "breakouts", "prospects"},
         "Draft": {"draft", "draft-cheat-sheet", "keeper", "draft-history"},
@@ -3867,9 +3867,9 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
     def _category_row(label):
         slug = label.lower()
         current = active_norm in category_keys[label]
-        # Redzone lives in the Weekly section, so the Weekly root row pulses red
+        # ScoreZone lives in the Weekly section, so the Weekly root row pulses red
         # while a game is live/imminent -- same gate and keyframes as the More tab
-        # dot and the Redzone sheet row. Only Weekly pulses; other rows never do.
+        # dot and the ScoreZone sheet row. Only Weekly pulses; other rows never do.
         live = (label == "Weekly" and rz_live)
         live_cls = " rz-mnav-live" if live else ""
         if live:
@@ -3887,7 +3887,7 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
     # Every product section is reachable from the More root, Weekly and Trades
     # included. Both are dock destinations, but their extra tools live only in
     # these panels (Weekly: Recap, Scout, Lineup Efficiency, Waivers, Schedule,
-    # Redzone; Trades: Suggestions, Database, Intel), so without a root row the
+    # ScoreZone; Trades: Suggestions, Database, Intel), so without a root row the
     # user cannot reach them on mobile. Weekly only appears once its panel is
     # built (in season or after the draft); trades_html is always present.
     root_labels = (["Weekly"] if weekly_html else []) + ["Trades", "League", "Players", "Draft", "Stats"]
@@ -4899,8 +4899,8 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     _bo_new_badge = (
         " <span class='nav-new-badge'>NEW</span>" if _breakouts_are_new() else ""
     )
-    # Exposed for client code (e.g. the player-modal Redzone tab, which hides in
-    # the offseason). Uses the same condition that gates the Redzone nav item.
+    # Exposed for client code (e.g. the player-modal ScoreZone tab, which hides in
+    # the offseason). Uses the same condition that gates the ScoreZone nav item.
     season_active_flag = f"<script>window.__seasonActive={'false' if offseason_mode else 'true'};</script>"
 
     # Changelog bell (used in both home and league nav)
@@ -5159,8 +5159,8 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             (_waiver_label, "league_pages.page_waivers", "waivers", False),
             ("Schedule Assistant", "page_schedule", "schedule", False),
         ]
-        # Redzone lives inside the Weekly dropdown. The Weekly button glows and
-        # the Redzone item pulses with a live dot only while games are live or
+        # ScoreZone lives inside the Weekly dropdown. The Weekly button glows and
+        # the ScoreZone item pulses with a live dot only while games are live or
         # about to kick off (the hour before) -- not for the whole game day.
         # Only available during the active season.
         _rz_pulse = ""
@@ -5169,19 +5169,19 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             _rz_week = nfl_state.get("week") or nfl_state.get("display_week")
             _rz_live = _games_live_or_imminent(nfl_state.get("season") or season, _rz_week)
             _rz_label = (
-                "<span class='rz-nav-live'><span class='rz-nav-dot'></span>Redzone</span>"
-                if _rz_live else "Redzone"
+                "<span class='rz-nav-live'><span class='rz-nav-dot'></span>ScoreZone</span>"
+                if _rz_live else "ScoreZone"
             )
             # Player IDs are canonicalized onto the Tank01 boxscore feed, so
-            # Redzone works on Sleeper, ESPN, Yahoo, and MFL.
-            _weekly_items.append((_rz_label, "page_redzone", "redzone", False))
+            # ScoreZone works on Sleeper, ESPN, Yahoo, and MFL.
+            _weekly_items.append((_rz_label, "page_scorezone", "scorezone", False))
             # Demo stays discoverable without a header Demo pill.
-            _weekly_items.append(("Try Redzone Demo", "page_redzone", "redzone", False, "?demo=1"))
+            _weekly_items.append(("Try ScoreZone Demo", "page_scorezone", "scorezone", False, "?demo=1"))
             if _rz_live:
-                _rz_pulse = "nav-pill-redzone-live"
+                _rz_pulse = "nav-pill-scorezone-live"
         nav_pills.append(nav_pill_dropdown(
             "Weekly", _weekly_items,
-            ["weekly", "recap", "redzone", "scout", "optimal", "waivers", "schedule"],
+            ["weekly", "recap", "scorezone", "scout", "optimal", "waivers", "schedule"],
             "weeklyNavDropdown", btn_extra_cls=_rz_pulse,
         ))
     nav_pills.append(nav_pill_dropdown("League", [
@@ -13438,13 +13438,13 @@ def page_weekly(platform: str, season: int, league_id: str):
     return render_page("BR Fantasy Weekly Hub", league_id, "weekly", body, platform, season)
 
 
-# ─── BR Redzone ────────────────────────────────────────────────────────────────
+# ─── BR ScoreZone ────────────────────────────────────────────────────────────────
 
 _RZ_BOX_CACHE: dict = {}  # game_id -> (ts, boxscore)
 _RZ_BOX_TTL = 15.0
 _RZ_LIVE_CACHE_TTL = 12.0
 # Bound the scoreboard upstream wait on the live path. The client aborts a
-# Redzone poll after _RZ_FETCH_DEADLINE_MS (25s in static/redzone.js); the
+# ScoreZone poll after _RZ_FETCH_DEADLINE_MS (25s in static/scorezone.js); the
 # scoreboard fetch plus a couple of short box-score calls must fit inside that,
 # so the live path caps the scoreboard at 12s instead of the 20s default other
 # pages use. Aligning the two ends the old mismatch where the client gave up at
@@ -13452,43 +13452,43 @@ _RZ_LIVE_CACHE_TTL = 12.0
 _RZ_SCOREBOARD_TIMEOUT = 12
 
 
-def _start_redzone_store() -> None:
+def _start_scorezone_store() -> None:
     """Start the server-side play-store poller (daemon thread).
 
     One 15s upstream PBP fetch per live game, shared by every viewer via the
     ``redzone_plays`` table -- replaces N viewers x M workers of duplicate
-    ESPN/Tank01 polling. The advisory lock in utils.redzone_store elects a
+    ESPN/Tank01 polling. The advisory lock in utils.scorezone_store elects a
     single leader across gunicorn workers. Skipped under pytest so CI never
     spawns network/DB threads at import time.
 
-    Polling moved to the ``redzone-store-poll`` Render cron
-    (scripts/redzone_poll.py): under gunicorn ``--preload`` this thread ran
-    once in the master process, so deploys silently orphaned it and RedZone
-    data froze. Off by default; set REDZONE_STORE_THREAD=1 to re-enable the
+    Polling moved to the ``scorezone-store-poll`` Render cron
+    (scripts/scorezone_poll.py): under gunicorn ``--preload`` this thread ran
+    once in the master process, so deploys silently orphaned it and ScoreZone
+    data froze. Off by default; set SCOREZONE_STORE_THREAD=1 to re-enable the
     in-app thread (e.g. local dev without the cron).
     """
     import sys as _sys
 
     if "pytest" in _sys.modules:
         return
-    if os.environ.get("REDZONE_STORE_THREAD", "").strip().lower() not in (
+    if os.environ.get("SCOREZONE_STORE_THREAD", "").strip().lower() not in (
         "1", "true", "yes",
     ):
-        logger.info("[redzone-store] in-app poller disabled; cron owns polling")
+        logger.info("[scorezone-store] in-app poller disabled; cron owns polling")
         return
     try:
-        from utils.redzone_store import start_redzone_store_thread
+        from utils.scorezone_store import start_scorezone_store_thread
 
-        start_redzone_store_thread()
-        logger.info("[redzone-store] poller thread started")
+        start_scorezone_store_thread()
+        logger.info("[scorezone-store] poller thread started")
     except Exception:
-        logger.warning("[redzone-store] poller thread failed to start", exc_info=True)
+        logger.warning("[scorezone-store] poller thread failed to start", exc_info=True)
 
 
-_start_redzone_store()
+_start_scorezone_store()
 
 
-def _redzone_boxscore(
+def _scorezone_boxscore(
     game_id: str, *, play_by_play: bool = False, ttl: float | None = None
 ) -> dict:
     """Fetch the shared ESPN boxscore with a short UI-level TTL cache.
@@ -13555,18 +13555,18 @@ def _rz_get_projections(season: int, week: int, scoring: dict = None) -> dict:
     return data
 
 
-from utils.redzone_stats import (  # noqa: E402
+from utils.scorezone_stats import (  # noqa: E402
     rz_def_stat_line as _rz_def_stat_line,
     rz_safe_epoch as _rz_safe_epoch,
     rz_stat_line_from_ps as _rz_stat_line_from_ps,
     resolve_boxscore_player_stats as _rz_resolve_boxscore_player_stats,
 )
-from utils.redzone_pbp import (  # noqa: E402
+from utils.scorezone_pbp import (  # noqa: E402
     build_games_snapshot as _rz_build_games_snapshot,
     demo_play_text as _rz_demo_play_text,
     extract_pbp_plays as _rz_extract_pbp_plays,
 )
-from utils.redzone_alt_pbp import (  # noqa: E402
+from utils.scorezone_alt_pbp import (  # noqa: E402
     fetch_alt_pbp_plays as _rz_fetch_alt_pbp_plays,
     build_espn_team_game_lookup as _rz_espn_team_game,
 )
@@ -13579,9 +13579,9 @@ from utils.redzone_alt_pbp import (  # noqa: E402
 
 _RZ_DEMO_START = 150  # sim seconds the page-load snapshot is built at
 
-# The deterministic play-by-play simulation lives in utils/redzone_demo.py so
+# The deterministic play-by-play simulation lives in utils/scorezone_demo.py so
 # it can be unit-tested; re-exported here under the original names.
-from utils.redzone_demo import (  # noqa: E402
+from utils.scorezone_demo import (  # noqa: E402
     DEMO_GAME_SECONDS as _RZ_DEMO_GAME,
     DEMO_SCORING as _RZ_DEMO_SCORING,
     demo_fold as _rz_demo_fold,
@@ -13596,8 +13596,8 @@ _RZ_DEMO_KDEF = {
 }
 
 
-def _redzone_demo_data(t: float = _RZ_DEMO_START, scope: str = "league"):
-    """Time-parameterised live-game sample data for the Redzone demo.
+def _scorezone_demo_data(t: float = _RZ_DEMO_START, scope: str = "league"):
+    """Time-parameterised live-game sample data for the ScoreZone demo.
 
     scope="league": one league, all four teams.
     scope="user":   the viewer's team across three different leagues.
@@ -13978,17 +13978,17 @@ def _redzone_demo_data(t: float = _RZ_DEMO_START, scope: str = "league"):
 # Process-local set of canonical TD play keys already handed to the push
 # pipeline, so a live game's repeated polls don't spawn a background thread for
 # the same touchdown over and over. This is only an optimization: the AUTHORITATIVE
-# cross-worker dedupe is the atomic app_state claim inside notify_redzone_scores,
+# cross-worker dedupe is the atomic app_state claim inside notify_scorezone_scores,
 # which is what makes multiple gunicorn workers safe.
 _RZ_PUSH_SEEN_TD: set = set()
 
 
-def _redzone_trigger_scoring_push(platform, league_id, season, week,
+def _scorezone_trigger_scoring_push(platform, league_id, season, week,
                                   pbp_by_game, player_info, rosters, scoring):
-    """Off-thread, best-effort trigger for RedZone touchdown device pushes.
+    """Off-thread, best-effort trigger for ScoreZone touchdown device pushes.
 
     Only spawns work when a valid TD play has not yet been handled in THIS
-    process, then delegates to utils.push_notifications.notify_redzone_scores,
+    process, then delegates to utils.push_notifications.notify_scorezone_scores,
     which owner-targets and atomically dedupes across workers.
     """
     if not (pbp_by_game and rosters):
@@ -14015,19 +14015,19 @@ def _redzone_trigger_scoring_push(platform, league_id, season, week,
 
     def _run():
         try:
-            from utils.push_notifications import notify_redzone_scores
-            notify_redzone_scores(
+            from utils.push_notifications import notify_scorezone_scores
+            notify_scorezone_scores(
                 league_id, platform, pbp_by_game, player_info, rosters, scoring,
                 season=season, week=week,
             )
         except Exception:
-            logger.debug("[redzone] notify_redzone_scores failed", exc_info=True)
+            logger.debug("[scorezone] notify_scorezone_scores failed", exc_info=True)
 
     _threading.Thread(target=_run, daemon=True).start()
 
 
-def _redzone_collect(platform, league_id, season, week):
-    """Build the raw per-league Redzone pieces (no top-level wrapper)."""
+def _scorezone_collect(platform, league_id, season, week):
+    """Build the raw per-league ScoreZone pieces (no top-level wrapper)."""
     from dashboard_services.api import (
         get_nfl_scores_for_date, build_team_game_lookup,
         get_nfl_players, get_normalized_scoring_settings, get_league,
@@ -14044,7 +14044,7 @@ def _redzone_collect(platform, league_id, season, week):
     # Every provider canonicalizes its player ids to Sleeper ids in rosters /
     # matchups (ESPN canon_pid, Yahoo name+pos crosswalk, MFL _canonical_map),
     # so the Sleeper player feed resolves names/positions/teams for ALL
-    # platforms -- Redzone is no longer Sleeper-only.
+    # platforms -- ScoreZone is no longer Sleeper-only.
     nfl_players = get_nfl_players() or {}
     today_str = date.today().strftime("%Y%m%d")
     # Bounded upstream wait so the whole server response fits inside the client's
@@ -14060,7 +14060,7 @@ def _redzone_collect(platform, league_id, season, week):
         # settings rather than generic defaults. sync_league_globals routes
         # through the right provider for every platform (Sleeper included).
         sync_league_globals(platform, league_id, season)
-        # Re-stamp the provider result at the Redzone boundary.  PBP point
+        # Re-stamp the provider result at the ScoreZone boundary.  PBP point
         # deltas are calculated client-side from this payload, so it must carry
         # the same canonical `rec` (including explicit 0) contract as the rest
         # of the app rather than falling back to an incomplete provider shape.
@@ -14114,7 +14114,7 @@ def _redzone_collect(platform, league_id, season, week):
             espn_lookup = espn_lookup or {}
         except Exception:
             espn_lookup, espn_sb_status = {}, "failed"
-            logger.warning("[redzone] espn scoreboard fallback failed", exc_info=True)
+            logger.warning("[scorezone] espn scoreboard fallback failed", exc_info=True)
         for team in missing_teams:
             g = lookup_team_map(espn_lookup, team)
             if g:
@@ -14168,15 +14168,15 @@ def _redzone_collect(platform, league_id, season, week):
     store_plays: dict = {}
     if games_to_pids:
         try:
-            from utils.redzone_store import get_plays as _rz_store_get_plays
+            from utils.scorezone_store import get_plays as _rz_store_get_plays
 
             store_plays = _rz_store_get_plays(season, list(games_to_pids.keys()))
         except Exception:
-            logger.debug("[redzone] play store read failed", exc_info=True)
+            logger.debug("[scorezone] play store read failed", exc_info=True)
     for gid, pids in games_to_pids.items():
         # Live AND final games get play-by-play. Skipping PBP on finals left the
         # client with only players_points deltas ("Scored 13.5 pts") after the
-        # whistle -- the bulk cards users see when reopening Redzone post-game.
+        # whistle -- the bulk cards users see when reopening ScoreZone post-game.
         codes = {
             str((player_info.get(pid) or {}).get("game_code") or "")
             for pid in pids
@@ -14188,7 +14188,7 @@ def _redzone_collect(platform, league_id, season, week):
         # Final PBP is stable; cache longer to avoid re-hitting Tank01 every poll.
         # With a store hit we only need the plain boxscore (stat lines) -- the
         # Tank01 experimental PBP payload is skipped entirely.
-        box = _redzone_boxscore(
+        box = _scorezone_boxscore(
             gid,
             play_by_play=(want_pbp and not store_hit),
             ttl=(None if live else 300.0) if want_pbp else None,
@@ -14203,14 +14203,14 @@ def _redzone_collect(platform, league_id, season, week):
         if (not store_hit and want_pbp
                 and not (box.get("playerStats") or box.get("allPlayByPlay")
                          or box.get("allPlaybyPlay") or box.get("playByPlay"))):
-            plain = _redzone_boxscore(gid, play_by_play=False)
+            plain = _scorezone_boxscore(gid, play_by_play=False)
             if plain:
                 box = plain
         elif not store_hit and want_pbp and box and not box.get("playerStats"):
             # Skipped on a store hit: the box above was already fetched plain,
             # so re-fetching it here would just return the identical payload;
             # PBP comes from the store below, not from a boxscore merge.
-            plain = _redzone_boxscore(gid, play_by_play=False)
+            plain = _scorezone_boxscore(gid, play_by_play=False)
             if plain.get("playerStats"):
                 merged = dict(plain)
                 for k in ("allPlayByPlay", "allPlaybyPlay", "playByPlay", "plays"):
@@ -14253,7 +14253,7 @@ def _redzone_collect(platform, league_id, season, week):
                     }
         
         # Build name_to_pid from the FULL player index (already in player_meta_by_pid)
-        from utils.redzone_pbp import _normalize_name, _extract_first_initial_last
+        from utils.scorezone_pbp import _normalize_name, _extract_first_initial_last
         for pid, meta in player_meta_by_pid.items():
             full = meta.get("name", "").lower()
             if full:
@@ -14288,7 +14288,7 @@ def _redzone_collect(platform, league_id, season, week):
             if side and isinstance(tstats.get(side), dict):
                 pi["stat_line"] = _rz_def_stat_line(tstats[side])
             elif team:
-                logger.debug("[redzone] defense has no teamStats side team=%s game=%s", team, gid)
+                logger.debug("[scorezone] defense has no teamStats side team=%s game=%s", team, gid)
             if team:
                 team_to_def_pid[team] = pid
 
@@ -14365,13 +14365,13 @@ def _redzone_collect(platform, league_id, season, week):
                         plays = alt or []
                     except Exception:
                         logger.debug(
-                            "[redzone] alt pbp failed game=%s", gid, exc_info=True
+                            "[scorezone] alt pbp failed game=%s", gid, exc_info=True
                         )
                 # Always record the game key when we attempted PBP so the client
                 # can suppress bulk point dumps even if Tank01 returned no rows.
                 pbp_by_game[gid] = plays
             except Exception:
-                logger.debug("[redzone] pbp parse failed game=%s", gid, exc_info=True)
+                logger.debug("[scorezone] pbp parse failed game=%s", gid, exc_info=True)
                 pbp_by_game.setdefault(gid, [])
         elif want_pbp:
             # No usable Tank01 box at all -- ESPN remains primary, with
@@ -14390,7 +14390,7 @@ def _redzone_collect(platform, league_id, season, week):
                 )
                 pbp_by_game[gid] = alt or []
             except Exception:
-                logger.debug("[redzone] alt pbp failed game=%s", gid, exc_info=True)
+                logger.debug("[scorezone] alt pbp failed game=%s", gid, exc_info=True)
                 pbp_by_game.setdefault(gid, [])
 
     # Add unrostered players that appeared in PBP to player_info so frontend can display them
@@ -14445,16 +14445,16 @@ def _redzone_collect(platform, league_id, season, week):
     games = _rz_build_games_snapshot(player_info, pbp_by_game)
 
     # Best-effort device push for live touchdowns via the shared Web Push system
-    # (push_subscriptions / VAPID), so alerts reach the phone even with RedZone
+    # (push_subscriptions / VAPID), so alerts reach the phone even with ScoreZone
     # closed. Fired off-thread and deduped server-side per canonical play+owner,
     # so multiple polling clients/workers cannot double-send. Never blocks or
     # breaks the poll response.
     try:
-        _redzone_trigger_scoring_push(
+        _scorezone_trigger_scoring_push(
             platform, league_id, season, week, pbp_by_game, player_info, rosters, scoring
         )
     except Exception:
-        logger.debug("[redzone] scoring push trigger failed", exc_info=True)
+        logger.debug("[scorezone] scoring push trigger failed", exc_info=True)
 
     out = {
         "matchups": matchups_out,
@@ -14482,9 +14482,9 @@ def _redzone_collect(platform, league_id, season, week):
     return out
 
 
-# Short-TTL shared cache for the league-scope redzone collect. The collect is
+# Short-TTL shared cache for the league-scope scorezone collect. The collect is
 # viewer-independent (viewer_roster_id is stamped afterwards in
-# _redzone_fetch), so N viewers polling the same league share one collect per
+# _scorezone_fetch), so N viewers polling the same league share one collect per
 # TTL window instead of each paying the full per-game assembly. Entries are
 # (expires_ts, etag, collected_at, payload); callers must never mutate the
 # cached payload dict.
@@ -14508,8 +14508,8 @@ _RZ_COLLECT_WAIT_TIMEOUT = 90.0
 
 
 def _rz_collect_build(key, platform, league_id, season, week):
-    """Run _redzone_collect, cache it, return (payload, etag, collected_at)."""
-    d = _redzone_collect(platform, league_id, season, week)
+    """Run _scorezone_collect, cache it, return (payload, etag, collected_at)."""
+    d = _scorezone_collect(platform, league_id, season, week)
     collected_at = time.time()
     try:
         fp = json.dumps(d, sort_keys=True, default=str)
@@ -14525,7 +14525,7 @@ def _rz_collect_build(key, platform, league_id, season, week):
 def _rz_cached_collect(platform, league_id, season, week):
     """Return (payload, etag, collected_at) for the league-scope collect.
 
-    The etag is a content hash of the collect result, so api_redzone_data can
+    The etag is a content hash of the collect result, so api_scorezone_data can
     answer conditional polls with 304 without re-serializing the ~1MB body.
 
     Single-flight: while one thread builds the collect, concurrent polls for
@@ -14567,8 +14567,8 @@ def _rz_cached_collect(platform, league_id, season, week):
     return _rz_collect_build(key, platform, league_id, season, week)
 
 
-def _redzone_fetch(platform, league_id, season, week=None, scope="league"):
-    """Return live Redzone payload. scope='league' (all teams in this league)
+def _scorezone_fetch(platform, league_id, season, week=None, scope="league"):
+    """Return live ScoreZone payload. scope='league' (all teams in this league)
     or scope='user' (the viewer's team across all their leagues)."""
     from dashboard_services.api import get_nfl_state
     state = get_nfl_state() or {}
@@ -14579,11 +14579,11 @@ def _redzone_fetch(platform, league_id, season, week=None, scope="league"):
 
     if scope == "user":
         try:
-            d = _redzone_fetch_user(platform, league_id, season, week)
+            d = _scorezone_fetch_user(platform, league_id, season, week)
             d["games_today"] = gt
             return d
         except Exception as _e:
-            logger.warning("[redzone] user-scope fetch failed: %s", _e)
+            logger.warning("[scorezone] user-scope fetch failed: %s", _e)
             # Return an empty *user* payload (not league-scope). The client
             # rejects scope mismatches after the stale-poll guard, so falling
             # through to league collect left My Leagues hung on a skeleton.
@@ -14647,13 +14647,13 @@ def _redzone_fetch(platform, league_id, season, week=None, scope="league"):
     return d
 
 
-def _redzone_user_portfolio(season):
+def _scorezone_user_portfolio(season):
     """Resolve the viewer's My Leagues portfolio and account identities.
 
     Returns ``(portfolio, identities_by_platform, account_id, viewer_uid)``.
     Reads the Flask ``session``, so call it inside a request context. Raises
     ``ValueError`` when the viewer has no resolvable leagues (same contract the
-    aggregate relied on). Split out of ``_redzone_fetch_user`` so the aggregate
+    aggregate relied on). Split out of ``_scorezone_fetch_user`` so the aggregate
     and the streaming endpoint build the exact same portfolio.
 
     Signed-in Google accounts use the cross-platform portfolio (Sleeper, ESPN,
@@ -14662,7 +14662,7 @@ def _redzone_user_portfolio(season):
     even when only one was ever explicitly opened. A Sleeper-only session
     without an account still walks that viewer's Sleeper leagues.
     """
-    from utils.redzone_user import (
+    from utils.scorezone_user import (
         portfolio_from_account_leagues,
         portfolio_from_sleeper_leagues,
         MAX_USER_LEAGUES, owner_id_variants,
@@ -14678,7 +14678,7 @@ def _redzone_user_portfolio(season):
     #   2. Live Sleeper memberships for every Sleeper identity linked to the
     #      account (or the session viewer for a Sleeper-only login).
     # Without (2) a Google account that has only ever opened one league would
-    # show a single Redzone card even though it belongs to many Sleeper leagues,
+    # show a single ScoreZone card even though it belongs to many Sleeper leagues,
     # because the account resolver never auto-attaches undiscovered leagues.
     portfolio: list = []
     seen_keys: set = set()
@@ -14697,7 +14697,7 @@ def _redzone_user_portfolio(season):
             saved, _ = resolve_my_leagues(viewer_uid or None, int(account_id), season)
             _merge_leagues(portfolio_from_account_leagues(saved, season=season))
         except Exception:
-            logger.debug("[redzone] account portfolio load failed", exc_info=True)
+            logger.debug("[scorezone] account portfolio load failed", exc_info=True)
 
     # Sleeper identities to expand into their full membership list. Prefer the
     # account's linked identities; fall back to the session viewer only for a
@@ -14708,7 +14708,7 @@ def _redzone_user_portfolio(season):
             from dashboard_services.accounts import list_account_platform_ids
             sleeper_ids.extend(list_account_platform_ids(int(account_id), "sleeper") or [])
         except Exception:
-            logger.debug("[redzone] sleeper identity load failed", exc_info=True)
+            logger.debug("[scorezone] sleeper identity load failed", exc_info=True)
     if viewer_uid and str(session.get("viewer_platform") or "sleeper").lower() == "sleeper":
         sleeper_ids.append(viewer_uid)
     for sid in list(dict.fromkeys(str(s) for s in sleeper_ids if s)):
@@ -14717,7 +14717,7 @@ def _redzone_user_portfolio(season):
             sleeper_raw = get_sleeper_user_leagues(sid, season) or []
             _merge_leagues(portfolio_from_sleeper_leagues(sleeper_raw, season=season))
         except Exception:
-            logger.debug("[redzone] sleeper league list failed sid=%s", sid, exc_info=True)
+            logger.debug("[scorezone] sleeper league list failed sid=%s", sid, exc_info=True)
 
     if not portfolio:
         raise ValueError("user scope requires a signed-in viewer with at least one league")
@@ -14739,12 +14739,12 @@ def _redzone_user_portfolio(season):
                     flat.extend(owner_id_variants(pid))
                 identities_by_platform[plat_key] = flat
         except Exception:
-            logger.debug("[redzone] account identities load failed", exc_info=True)
+            logger.debug("[scorezone] account identities load failed", exc_info=True)
 
     return portfolio, identities_by_platform, account_id, viewer_uid
 
 
-def _redzone_user_league_slice(li, lg, season, week, account_id, viewer_uid,
+def _scorezone_user_league_slice(li, lg, season, week, account_id, viewer_uid,
                                identities_by_platform, default_platform="sleeper"):
     """Collect one portfolio league's viewer-matchup slice for My Leagues.
 
@@ -14754,7 +14754,7 @@ def _redzone_user_league_slice(li, lg, season, week, account_id, viewer_uid,
     the viewer's roster or matchup can't be resolved. Pure per-league work, no
     session reads, so it is safe to call while streaming.
     """
-    from utils.redzone_user import (
+    from utils.scorezone_user import (
         resolve_portfolio_viewer_roster, owner_id_variants,
     )
 
@@ -14765,10 +14765,10 @@ def _redzone_user_league_slice(li, lg, season, week, account_id, viewer_uid,
     if not lid:
         return None
     try:
-        d = _redzone_collect(lg_plat, lid, lg_season, week)
+        d = _scorezone_collect(lg_plat, lid, lg_season, week)
     except Exception:
         logger.debug(
-            "[redzone] collect failed platform=%s league=%s season=%s",
+            "[scorezone] collect failed platform=%s league=%s season=%s",
             lg_plat, lid, lg_season, exc_info=True,
         )
         return None
@@ -14792,7 +14792,7 @@ def _redzone_user_league_slice(li, lg, season, week, account_id, viewer_uid,
                 )
         except Exception:
             logger.debug(
-                "[redzone] account viewer resolve failed platform=%s league=%s",
+                "[scorezone] account viewer resolve failed platform=%s league=%s",
                 lg_plat, lid, exc_info=True,
             )
         # ESPN private leagues often store SWID on the connection even when
@@ -14867,14 +14867,14 @@ def _redzone_user_league_slice(li, lg, season, week, account_id, viewer_uid,
     }
 
 
-def _redzone_fetch_user(platform, league_id, season, week):
+def _scorezone_fetch_user(platform, league_id, season, week):
     """Aggregate the viewer's matchup across every league they belong to.
 
-    Thin consumer of ``_redzone_user_portfolio`` + ``_redzone_user_league_slice``
+    Thin consumer of ``_scorezone_user_portfolio`` + ``_scorezone_user_league_slice``
     (the same pieces the streaming endpoint uses one-league-at-a-time), so the
     all-at-once payload and the progressive stream stay byte-for-byte consistent.
     """
-    portfolio, identities_by_platform, account_id, viewer_uid = _redzone_user_portfolio(season)
+    portfolio, identities_by_platform, account_id, viewer_uid = _scorezone_user_portfolio(season)
 
     matchups, rosters, users, leagues = [], [], [], []
     player_info: dict = {}
@@ -14887,7 +14887,7 @@ def _redzone_fetch_user(platform, league_id, season, week):
     seen_users = set()
 
     for li, lg in enumerate(portfolio):
-        s = _redzone_user_league_slice(
+        s = _scorezone_user_league_slice(
             li, lg, season, week, account_id, viewer_uid,
             identities_by_platform, default_platform=platform,
         )
@@ -14937,20 +14937,28 @@ def _redzone_fetch_user(platform, league_id, season, week):
 
 
 @app.route("/<platform>/<int:season>/<league_id>/redzone")
-def page_redzone(platform: str, season: int, league_id: str):
+def page_redzone_legacy(platform: str, season: int, league_id: str):
+    # Legacy alias: the feature was renamed ScoreZone on 2026-09-29. Keep old
+    # links, bookmarks, and PWA shortcuts working with a permanent redirect.
+    qs = f"?{request.query_string.decode()}" if request.query_string else ""
+    return redirect(f"/{platform}/{season}/{league_id}/scorezone{qs}", code=301)
+
+
+@app.route("/<platform>/<int:season>/<league_id>/scorezone")
+def page_scorezone(platform: str, season: int, league_id: str):
     scope = "user" if request.args.get("scope") == "user" else "league"
-    # League-scope Redzone works on every platform: providers canonicalize their
+    # League-scope ScoreZone works on every platform: providers canonicalize their
     # player ids to Sleeper ids, so the live player feed + Tank01 stat lines
     # resolve regardless of provider. Cross-league "My Leagues" uses the signed-in
     # account portfolio (all platforms) or a Sleeper viewer, and falls back to
     # this league when neither identity is available.
     if request.args.get("demo") == "1":
-        data = _redzone_demo_data(scope=scope)
+        data = _scorezone_demo_data(scope=scope)
     else:
         try:
-            data = _redzone_fetch(platform, league_id, season, scope=scope)
+            data = _scorezone_fetch(platform, league_id, season, scope=scope)
         except Exception as _e:
-            logger.warning("[redzone] initial fetch failed: %s", _e)
+            logger.warning("[scorezone] initial fetch failed: %s", _e)
             data = {"matchups": [], "rosters": [], "users": [], "player_info": {},
                     "week": 1, "season": season, "viewer_roster_id": "", "scoring": {},
                     "platform": platform, "league_id": league_id, "updated_at": time.time()}
@@ -14958,15 +14966,15 @@ def page_redzone(platform: str, season: int, league_id: str):
     body = (
         '<div id="rz-root" class="rz-page"><div class="rz-boot-spinner">Loading...</div></div>'
         f'<script>window.__rz__={json.dumps(data)};</script>'
-        # The Redzone live module is split out of app.js so it only loads here.
+        # The ScoreZone live module is split out of app.js so it only loads here.
         # `defer` runs it after the page's blocking app.js, so the shared helpers
         # (openPlayerModal, window._rzBuildLiveHtml/_rzSyncTabLive) are defined.
-        f'<script src="/static/{_REDZONE_JS_FILE}?v={_REDZONE_JS_V}" defer></script>'
+        f'<script src="/static/{_SCOREZONE_JS_FILE}?v={_SCOREZONE_JS_V}" defer></script>'
     )
-    return render_page("BR Redzone", league_id, "redzone", body, platform, season)
+    return render_page("BR ScoreZone", league_id, "scorezone", body, platform, season)
 
 
-def _redzone_user_stream_response(platform, season, league_id, week):
+def _scorezone_user_stream_response(platform, season, league_id, week):
     """NDJSON stream of the viewer's My Leagues: a ``meta`` line naming every
     league, then one ``league`` line per league as it finishes collecting, so
     the client can paint each card the moment its data lands instead of waiting
@@ -14978,11 +14986,11 @@ def _redzone_user_stream_response(platform, season, league_id, week):
     _week = int((week or 0) or state.get("week") or 1)
     gt = _games_scheduled_today(_season, _week)
     try:
-        portfolio, identities, account_id, viewer_uid = _redzone_user_portfolio(_season)
+        portfolio, identities, account_id, viewer_uid = _scorezone_user_portfolio(_season)
     except Exception as _e:
-        logger.warning("[redzone] user-scope stream portfolio failed: %s", _e)
+        logger.warning("[scorezone] user-scope stream portfolio failed: %s", _e)
         # No portfolio → let the aggregate path fall through to league scope.
-        return jsonify(_redzone_fetch(platform, league_id, _season, week=week, scope="user"))
+        return jsonify(_scorezone_fetch(platform, league_id, _season, week=week, scope="user"))
 
     def _gen():
         meta = {
@@ -14998,12 +15006,12 @@ def _redzone_user_stream_response(platform, season, league_id, week):
         yield json.dumps(meta) + "\n"
         for li, lg in enumerate(portfolio):
             try:
-                s = _redzone_user_league_slice(
+                s = _scorezone_user_league_slice(
                     li, lg, _season, _week, account_id, viewer_uid,
                     identities, default_platform=platform,
                 )
             except Exception:
-                logger.debug("[redzone] stream slice failed idx=%s", li, exc_info=True)
+                logger.debug("[scorezone] stream slice failed idx=%s", li, exc_info=True)
                 s = None
             if not s:
                 yield json.dumps({"type": "league", "index": li, "empty": True}) + "\n"
@@ -15023,14 +15031,15 @@ def _redzone_user_stream_response(platform, season, league_id, week):
 
 
 @app.route("/api/<platform>/<int:season>/<league_id>/redzone-data")
-def api_redzone_data(platform: str, season: int, league_id: str):
+@app.route("/api/<platform>/<int:season>/<league_id>/scorezone-data")
+def api_scorezone_data(platform: str, season: int, league_id: str):
     scope = "user" if request.args.get("scope") == "user" else "league"
     if request.args.get("demo") == "1":
         try:
             _t = float(request.args.get("t", _RZ_DEMO_START))
         except (TypeError, ValueError):
             _t = _RZ_DEMO_START
-        response = jsonify(_redzone_demo_data(_t, scope=scope))
+        response = jsonify(_scorezone_demo_data(_t, scope=scope))
         response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
         return response
     week = request.args.get("week")
@@ -15038,11 +15047,11 @@ def api_redzone_data(platform: str, season: int, league_id: str):
     # &stream=1). Any failure inside the stream setup falls back to aggregate.
     if scope == "user" and request.args.get("stream") == "1":
         try:
-            return _redzone_user_stream_response(platform, season, league_id, week)
+            return _scorezone_user_stream_response(platform, season, league_id, week)
         except Exception as _e:
-            logger.warning("[redzone] user-scope stream failed, using aggregate: %s", _e)
+            logger.warning("[scorezone] user-scope stream failed, using aggregate: %s", _e)
     try:
-        data = _redzone_fetch(platform, league_id, season, week=week, scope=scope)
+        data = _scorezone_fetch(platform, league_id, season, week=week, scope=scope)
         # Conditional polls: when the client already holds this exact payload
         # (ETag = content hash of the shared collect + viewer id), answer 304
         # without re-serializing or re-sending the ~1MB body.
@@ -15062,12 +15071,13 @@ def api_redzone_data(platform: str, season: int, league_id: str):
         response.headers["Pragma"] = "no-cache"
         return response
     except Exception as _e:
-        logger.warning("[redzone] api fetch failed: %s", _e)
+        logger.warning("[scorezone] api fetch failed: %s", _e)
         return jsonify({"error": str(_e)}), 500
 
 
 @app.route("/api/<platform>/<int:season>/<league_id>/redzone-player")
-def api_redzone_player(platform: str, season: int, league_id: str):
+@app.route("/api/<platform>/<int:season>/<league_id>/scorezone-player")
+def api_scorezone_player(platform: str, season: int, league_id: str):
     """Return ESPN NFL detail for a player; provider fantasy points stay authoritative."""
     from dashboard_services.api import (
         get_nfl_players, fetch_tank_boxscore, get_normalized_scoring_settings,
@@ -15134,7 +15144,7 @@ def api_redzone_player(platform: str, season: int, league_id: str):
             "notice": "Fantasy-provider score remains authoritative; unavailable ESPN fields are omitted.",
         })
     except Exception as _e:
-        logger.warning("[redzone] player fetch %s: %s", pid, _e)
+        logger.warning("[scorezone] player fetch %s: %s", pid, _e)
         return jsonify({}), 500
 
 
@@ -15256,7 +15266,7 @@ def page_activity(platform: str, season: int, league_id: str):
 
 _TOUR_MOCK_TEAMS = [
     "Dynasty Kings", "Gridiron Ghosts", "Blitz Brigade",
-    "Redzone Rebels", "Endzone Elite", "Pocket Protectors",
+    "ScoreZone Strikers", "Endzone Elite", "Pocket Protectors",
 ]
 
 
@@ -18728,15 +18738,15 @@ def api_weekly_week():
     )
 
     _api_vid = str((ctx.get("viewer") or {}).get("viewer_roster_id") or "")
-    # RedZone Moments launcher for the viewer's matchup slide. The week-change
+    # ScoreZone Moments launcher for the viewer's matchup slide. The week-change
     # fetch replaces #weeklyMatchupsContainer, so the launcher must be included
     # here too (not just on the initial page render), or it vanishes when she
     # switches weeks.
     _api_rzm_html = ""
     try:
-        from dashboard_services.pages.weekly_hub_page import redzone_moments_hub_html
+        from dashboard_services.pages.weekly_hub_page import scorezone_moments_hub_html
         if not ctx.get("offseason_mode"):
-            _api_rzm_html = redzone_moments_hub_html(platform, league_id, season, week)
+            _api_rzm_html = scorezone_moments_hub_html(platform, league_id, season, week)
     except Exception:
         _api_rzm_html = ""
     def _api_rzm_for_matchup(m):
@@ -25540,10 +25550,10 @@ def api_player_team_boxscore():
         players_index = get_players_index_global() or load_relevant_index() or {}
         teams_index = _canonical_teams_index(load_teams_index() or {})
 
-        # Reuse the short-lived redzone boxscore cache so live polls share work.
+        # Reuse the short-lived scorezone boxscore cache so live polls share work.
         def _fetch(gid: str):
             try:
-                return _redzone_boxscore(gid) or {}
+                return _scorezone_boxscore(gid) or {}
             except Exception:
                 from dashboard_services.api import fetch_tank_boxscore
                 return fetch_tank_boxscore(gid) or {}

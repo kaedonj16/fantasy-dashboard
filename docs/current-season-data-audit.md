@@ -60,7 +60,7 @@ the max-week lookup now falls back to normalized NFL state instead.
 * Sleeper, ESPN, Yahoo, MFL and Fleaflicker league calls preserve league season.
   Yahoo discovers season game keys and keeps historical keys separate; its
   numeric map is only a documented emergency fallback.
-* RedZone uses current state, season/week schedules, league scoring and live
+* ScoreZone uses current state, season/week schedules, league scoring and live
   reconciliation. Historical identity/stat caches remain inputs to identity
   resolution rather than a source-season substitution.
 * Market/ADP snapshots and scheduled analytics carry season. Current queries

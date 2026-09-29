@@ -318,7 +318,7 @@ if (window.__FEATURES_JS || window.__PLAYER_MODAL_JS) {
 // on a slow network the service worker paints the last cached copy - both show
 // stale data. Reload when the page comes back to the foreground after sitting
 // idle, and listen for the service worker's "a fresh copy just landed" signal
-// right after a cached-shell launch. Live surfaces (draft room, Redzone) manage
+// right after a cached-shell launch. Live surfaces (draft room, ScoreZone) manage
 // their own freshness and are never yanked out from under the user.
 (function () {
   var STALE_MS = 10 * 60 * 1000;   // resume older than this -> reload
@@ -1264,7 +1264,7 @@ window.brHaptic = function (pattern) {
  * documents) - the same swap-and-initPageRoot mechanism the Refresh button uses.
  *
  * It only ever soft-navigates pages it can handle: if the target page pulls in
- * its own <script src> (Draft Room, Rankings, Graphs, Redzone, Trade), or
+ * its own <script src> (Draft Room, Rankings, Graphs, ScoreZone, Trade), or
  * anything unexpected happens, it falls back to a normal full navigation. So it
  * can never leave a page half-initialized - worst case is today's behavior.
  * Mobile only; desktop keeps normal navigation.
@@ -1637,7 +1637,7 @@ window.brHaptic = function (pattern) {
   };
 
   // Pages that can be swapped in place (script-free, or their page script is on
-  // the re-runnable allow-list). Everything else -- Draft, Keeper, Redzone,
+  // the re-runnable allow-list). Everything else -- Draft, Keeper, ScoreZone,
   // Prospects, Trade, Compare, Metrics -- loads its own scripts, so we let the
   // browser navigate to it natively (a single load) rather than fetch it here
   // only to bail to a full load anyway.
@@ -2641,7 +2641,7 @@ window._brPromoEligible = function () {
     if (!resp.ok) return false;
     var { publicKey } = await resp.json();
     // Reuse an existing PushSubscription for this device before creating a new
-    // one, so re-enabling from RedZone doesn't churn the subscription/endpoint.
+    // one, so re-enabling from ScoreZone doesn't churn the subscription/endpoint.
     var sub = await reg.pushManager.getSubscription();
     if (!sub) {
       sub = await reg.pushManager.subscribe({
@@ -2653,7 +2653,7 @@ window._brPromoEligible = function () {
     return true;
   }
 
-  // Shared "enable real device push" entry point for any feature (RedZone score
+  // Shared "enable real device push" entry point for any feature (ScoreZone score
   // alerts, etc.). Runs the FULL Web Push flow -- permission → service worker →
   // PushSubscription (create or reuse) → persist to push_subscriptions -- and
   // returns a status the caller can render. Notification permission alone is not
@@ -2695,7 +2695,7 @@ window._brPromoEligible = function () {
 
   var _NOTIF_TYPES = [
     { category: 'Your Team' },
-    { key: 'redzone_scores',    label: 'RedZone Score Alerts' },
+    { key: 'redzone_scores',    label: 'ScoreZone Score Alerts' },
     { key: 'lineup_lock',       label: 'Lineup Lock Reminders' },
     { key: 'injury',            label: 'Starter Injury Alerts' },
     { key: 'close_game',        label: 'Close Game Alerts' },
@@ -2723,7 +2723,7 @@ window._brPromoEligible = function () {
       types: [
         { key: 'lineup_lock', label: 'Lineup lock reminders' },
         { key: 'injury', label: 'Starter injury alerts' },
-        { key: 'redzone_scores', label: 'RedZone score alerts' },
+        { key: 'redzone_scores', label: 'ScoreZone score alerts' },
       ] },
     { id: 'matchups', label: 'Matchups live', blurb: 'Close games, matchup previews, standings moves',
       types: [
@@ -3134,7 +3134,7 @@ window._brPromoEligible = function () {
   }
 
   // ── Push re-prompt for users without notifications enabled ──────────────
-  // Shown at high-value moments (RedZone, or the weekly hub / matchup board on
+  // Shown at high-value moments (ScoreZone, or the weekly hub / matchup board on
   // game days), never on every page load. Caps: max once per day, max 4 total
   // shows before auto-quieting. "Don't show again" persists permanently:
   // localStorage for guests, /api/ui-prefs for signed-in users. Never shown
@@ -3190,12 +3190,12 @@ window._brPromoEligible = function () {
     var count = parseInt(_rpGet(RP_COUNT_KEY) || '0', 10) || 0;
     if (count >= RP_MAX_SHOWS) return false;              // auto-quiet after N total
     if (_rpGet(RP_LAST_KEY) === _rpToday()) return false; // max once per day
-    // High-value moments only: RedZone (live games) or the weekly hub, which
+    // High-value moments only: ScoreZone (live games) or the weekly hub, which
     // carries the matchup board, on NFL game days.
     var shell = document.querySelector('.page-shell');
     if (!shell) return false;
     var page = shell.getAttribute('data-page');
-    if (page === 'redzone') return true;
+    if (page === 'scorezone') return true;
     if (page === 'weekly') {
       var wd = new Date().getUTCDay(); // 0 = Sunday
       return wd === 0 || wd === 3 || wd === 4 || wd === 5 || wd === 6;
@@ -3287,7 +3287,7 @@ window._brPromoEligible = function () {
   setTimeout(_maybeShowReprompt, 20000);
 
   // Re-evaluate after soft-nav page swaps (e.g. dashboard -> weekly hub), which
-  // don't reload app.js. RedZone always does a full load, so it needs no hook.
+  // don't reload app.js. ScoreZone always does a full load, so it needs no hook.
   try {
     if (typeof window.brSwapPageRoot === 'function' && !window.brSwapPageRoot._pushRepromptWrapped) {
       (function (_origSwap) {
@@ -4138,7 +4138,7 @@ function showLoginGate(target, opts) {
   // When you land on a league page, it paints instantly from the cached snapshot
   // (the 12h server context) and then silently rebuilds from source and swaps the
   // fresh content in place -- no full-screen overlay, no reload, no manual
-  // "Refresh data" tap. This mirrors what the live surfaces (Redzone) and the
+  // "Refresh data" tap. This mirrors what the live surfaces (ScoreZone) and the
   // portfolio cards already do for themselves; it fills the gap for the plain
   // server-rendered league pages (standings, teams, weekly, dashboard, ...).
   //
@@ -14802,7 +14802,7 @@ function pmSlugify(name) {
 // ── DEF / player image helpers ───────────────────────────────────────────────
 // NFL defenses are keyed by team abbr (no Sleeper headshot). Prefer the locally
 // cached crest under /static/images/team_logos/, then ESPN CDN (WAS → wsh).
-// Shared by Redzone, Draft Room, and any page that paints player avatars.
+// Shared by ScoreZone, Draft Room, and any page that paints player avatars.
 window.brCanonNflTeam = function (t) {
   t = String(t || '').trim().toUpperCase();
   if (t === 'WSH') return 'WAS';
@@ -21830,7 +21830,7 @@ function setupFunAwardsGrid() {
     { label: 'Standings', keywords: ['standings', 'standing', 'record'], path: '/standings', icon: 'fa-list-ol', group: 'page' },
     { label: 'Weekly Recap', keywords: ['recap', 'weekly', 'week'], path: '/recap', icon: 'fa-newspaper', group: 'page' },
     { label: 'Schedule Assistant', keywords: ['schedule', 'assistant', 'sos'], path: '/schedule', icon: 'fa-calendar-days', group: 'page' },
-    { label: 'Redzone', keywords: ['redzone', 'red zone'], path: '/redzone', icon: 'fa-bullseye', group: 'page' },
+    { label: 'ScoreZone', keywords: ['scorezone', 'red zone'], path: '/scorezone', icon: 'fa-bullseye', group: 'page' },
     { label: 'Activity', keywords: ['activity', 'transactions', 'moves'], path: '/activity', icon: 'fa-clock-rotate-left', group: 'page' },
     { label: 'League Health', keywords: ['league', 'health'], path: '/league_health', icon: 'fa-heart-pulse', group: 'page' },
     { label: 'Awards', keywords: ['awards', 'award', 'trophy'], path: '/awards', icon: 'fa-trophy', group: 'page' },
@@ -22316,7 +22316,7 @@ function setupFunAwardsGrid() {
 })();
 
 
-// Kicker FG scoring, distance- and per-yard-aware (mirrors redzone.js _fgPts).
+// Kicker FG scoring, distance- and per-yard-aware (mirrors scorezone.js _fgPts).
 // A flat `fgm` rate is only one of several Sleeper FG schemes: leagues also
 // score by distance bucket (fgm_0_19..fgm_50p) or per yard (fgm_yds). Scoring
 // FGs at a flat `fgm` rate alone drops every point in those leagues.
@@ -22351,8 +22351,8 @@ function _rzFgPts(sl, s) {
   return pts;
 }
 
-// ── Redzone live player HTML (shared between Redzone page and player modal) ───
-// Shared NFL game board (Redzone page + site-wide player modal).
+// ── ScoreZone live player HTML (shared between ScoreZone page and player modal) ───
+// Shared NFL game board (ScoreZone page + site-wide player modal).
 window._rzNormalizeTeam = function(team) {
   var t = String(team || '').trim().toUpperCase();
   return ({ JAC:'JAX', WSH:'WAS', OAK:'LV', SD:'LAC', STL:'LAR' })[t] || t;
@@ -22440,7 +22440,7 @@ window._rzRenderGameBoard = function(game, options) {
 
 // Build a player's modal log from canonical grouped plays. A feed card has one
 // headline actor, but every participant keeps an independently scored
-// contribution. This is intentionally exported so redzone.js can pass its
+// contribution. This is intentionally exported so scorezone.js can pass its
 // uncapped, latest-revision play-group history rather than its display feed.
 window._rzPlayerLogEvents = function(pid, events) {
   var wanted = String(pid == null ? '' : pid), latest = {};
@@ -22626,7 +22626,7 @@ window._rzBuildLiveHtml = function(pid, state, feed) {
   var parts = window.location.pathname.split('/');
   var hasCtx = parts[1] && parts[2] && parts[3];
   var rzLink = (!document.getElementById('rz-root') && hasCtx)
-    ? '<div class="rz-pm-rzlink-row"><a href="/' + parts[1] + '/' + parts[2] + '/' + parts[3] + '/redzone" class="rz-pm-rzlink">Open Redzone →</a></div>'
+    ? '<div class="rz-pm-rzlink-row"><a href="/' + parts[1] + '/' + parts[2] + '/' + parts[3] + '/scorezone" class="rz-pm-rzlink">Open ScoreZone →</a></div>'
     : '';
   return '<div class="rz-pm-live" data-gs="' + gsType + '">' + rzLink + gameHdr + statBlock + logHtml + '</div>';
 };
@@ -22638,13 +22638,13 @@ window._rzSyncTabLive = function(panel) {
   if (btn) btn.classList.toggle('pm-rz-is-live', !!isLive);
 };
 
-// ── Off-Redzone-page player game log ─────────────────────────────────────────
-// The Redzone page feeds the modal a rich, grouped event history via
+// ── Off-ScoreZone-page player game log ─────────────────────────────────────────
+// The ScoreZone page feeds the modal a rich, grouped event history via
 // _modalPlayHistory(). Everywhere else the modal used to pass an empty feed, so
-// the Redzone tab's game log was ALWAYS "No plays recorded yet" even when the
-// player clearly had plays (e.g. a RB with carries). The redzone-data payload
+// the ScoreZone tab's game log was ALWAYS "No plays recorded yet" even when the
+// player clearly had plays (e.g. a RB with carries). The scorezone-data payload
 // the stub already fetches carries the raw pbp_by_game, so build a per-player
-// event list from it here. Player-id resolution mirrors redzone.js
+// event list from it here. Player-id resolution mirrors scorezone.js
 // _pidFromPlayName; per-play scoring mirrors the modal's stat block.
 window._rzScoringForPid = function(pid, state) {
   var sbl = state && state.scoring_by_league;
@@ -22711,8 +22711,8 @@ window._rzStubPbpEvents = function(pid, state) {
   return events;
 };
 
-// Default stub for non-Redzone pages: one-shot fetch, 30 s cache.
-// Overridden by the Redzone IIFE when #rz-root is present.
+// Default stub for non-ScoreZone pages: one-shot fetch, 30 s cache.
+// Overridden by the ScoreZone IIFE when #rz-root is present.
 (function() {
   var _cache = null, _cacheTs = 0, _fetching = false, _pending = [], _timer = null, _generation = 0;
   window.__rzGetPlayerLive = function(pid) {
@@ -22741,7 +22741,7 @@ window._rzStubPbpEvents = function(pid, state) {
       _fetching = true;
       var requestGeneration = ++_generation;
       var parts = window.location.pathname.split('/');
-      var url = '/api/' + parts[1] + '/' + parts[2] + '/' + parts[3] + '/redzone-data?scope=league&_cb=' + Date.now();
+      var url = '/api/' + parts[1] + '/' + parts[2] + '/' + parts[3] + '/scorezone-data?scope=league&_cb=' + Date.now();
       fetch(url)
         .then(function(r) { return r.ok ? r.json() : null; })
         .then(function(data) {
@@ -22759,15 +22759,15 @@ window._rzStubPbpEvents = function(pid, state) {
   };
 }());
 
-// ── BR Redzone ──────────────────────────────────────────────────────────────
-// Extracted to static/redzone.js (loaded only on the Redzone page). The
+// ── BR ScoreZone ──────────────────────────────────────────────────────────────
+// Extracted to static/scorezone.js (loaded only on the ScoreZone page). The
 // shared live helpers used by the player modal remain above this point.
 
 // ── Matchup board live widgets (drive bar + moments) ─────────────────────────
 // Fills the .mb-fld drive-bar mounts (and, when the payload carries a scoring
 // feed, the .mb-moments strip) emitted by render_matchup_slide. Reuses the
-// Redzone field-position helper so there is one field renderer, not two. Live
-// data comes from the same league-scope redzone-data payload the player modal
+// ScoreZone field-position helper so there is one field renderer, not two. Live
+// data comes from the same league-scope scorezone-data payload the player modal
 // already fetches; only the visible carousel slide is ever painted.
 (function () {
   var TEAM_COLORS = {ARI:'#97233F',ATL:'#A71930',BAL:'#241773',BUF:'#00338D',CAR:'#0085CA',CHI:'#0B162A',CIN:'#FB4F14',CLE:'#311D00',DAL:'#003594',DEN:'#FB4F14',DET:'#0076B6',GB:'#203731',HOU:'#03202F',IND:'#002C5F',JAX:'#006778',KC:'#E31837',LV:'#000000',LAC:'#0080C6',LAR:'#003594',MIA:'#008E97',MIN:'#4F2683',NE:'#002244',NO:'#D3BC8D',NYG:'#0B2265',NYJ:'#125740',PHI:'#004C54',PIT:'#FFB612',SF:'#AA0000',SEA:'#002244',TB:'#D50A0A',TEN:'#0C2340',WAS:'#5A1414'};
@@ -22784,7 +22784,7 @@ window._rzStubPbpEvents = function(pid, state) {
       _fetching = true;
       var parts = window.location.pathname.split('/');
       if (parts.length < 4) { _fetching = false; return _cache; }
-      var url = '/api/' + parts[1] + '/' + parts[2] + '/' + parts[3] + '/redzone-data?scope=league&_cb=' + Date.now();
+      var url = '/api/' + parts[1] + '/' + parts[2] + '/' + parts[3] + '/scorezone-data?scope=league&_cb=' + Date.now();
       fetch(url).then(function (r) { return r.ok ? r.json() : null; }).then(function (data) {
         _fetching = false;
         if (data) { _cache = data; _ts = Date.now(); }
@@ -22925,7 +22925,7 @@ window._rzStubPbpEvents = function(pid, state) {
   }, 20000);
 }());
 
-/* ── Shared RedZone Moments (portfolio cards + weekly hub) ───────────────────
+/* ── Shared ScoreZone Moments (portfolio cards + weekly hub) ───────────────────
    The moments modal machinery is shared so the weekly hub (matchup page) can
    offer the same moments without depending on portfolio markup. fetchMoments
    caches per league; openModal/closeModal drive the modal; the document
@@ -22937,7 +22937,7 @@ window.brRzm = (function () {
   function fetchMoments(platform, leagueId, season, week) {
     var key = platform + '|' + leagueId + '|' + season + '|' + (week || '');
     if (_cache[key]) return Promise.resolve(_cache[key]);
-    var url = '/api/redzone/moments?platform=' + encodeURIComponent(platform)
+    var url = '/api/scorezone/moments?platform=' + encodeURIComponent(platform)
       + '&league_id=' + encodeURIComponent(leagueId)
       + '&season=' + encodeURIComponent(season || '')
       + (week ? '&week=' + encodeURIComponent(week) : '');
@@ -22998,8 +22998,8 @@ window.brRzm = (function () {
     overlay.id = 'rzmModalOverlay';
     var playsHtml = payload.plays.map(playHtml).join('');
     overlay.innerHTML =
-      '<div class="rzm-modal" role="dialog" aria-modal="true" aria-label="RedZone Moments">'
-      + '<div class="rzm-modal-head"><span class="rzm-modal-accent"></span><div class="rzm-modal-title">RedZone Moments</div>'
+      '<div class="rzm-modal" role="dialog" aria-modal="true" aria-label="ScoreZone Moments">'
+      + '<div class="rzm-modal-head"><span class="rzm-modal-accent"></span><div class="rzm-modal-title">ScoreZone Moments</div>'
       + '<button type="button" class="rzm-modal-close" data-rzm-close aria-label="Close">✕</button></div>'
       + '<div class="rzm-filters" role="tablist">'
       + '<button type="button" class="rzm-filter is-active" data-rzm-filter="all">All</button>'
@@ -23060,10 +23060,10 @@ window.brRzm = (function () {
       var playId = playBtn.getAttribute('data-play-id') || '';
       var ctx = overlay._rzmCtx || {};
       closeModal();
-      // Jump to the play in the RedZone feed (league-scoped URL).
-      var url = '/redzone';
+      // Jump to the play in the ScoreZone feed (league-scoped URL).
+      var url = '/scorezone';
       if (ctx.platform && ctx.leagueId) {
-        url = '/' + ctx.platform + '/' + (ctx.season || '') + '/' + ctx.leagueId + '/redzone';
+        url = '/' + ctx.platform + '/' + (ctx.season || '') + '/' + ctx.leagueId + '/scorezone';
       }
       var qs = [];
       if (gid) qs.push('game=' + encodeURIComponent(gid));
@@ -23624,8 +23624,8 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
   window.brInitLeagueScores = _lsWire;
 })();
 
-/* Weekly hub: RedZone Moments launcher (the matchup page's moments row).
-   Fetches /api/redzone/moments for the page's league via the shared
+/* Weekly hub: ScoreZone Moments launcher (the matchup page's moments row).
+   Fetches /api/scorezone/moments for the page's league via the shared
    window.brRzm namespace and reveals the row when the viewer's matchup has
    moments. The modal open/close/filter handlers live in window.brRzm. */
 (function () {

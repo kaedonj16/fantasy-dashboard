@@ -186,7 +186,7 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
                     df_weekly.at[i, "roster_id"] = str(real_rids[i % len(real_rids)])
         else:
             team_names = ["Dynasty Kings", "Gridiron Ghosts", "Blitz Brigade",
-                          "Redzone Rebels", "Endzone Elite", "Pocket Protectors"]
+                          "ScoreZone Strikers", "Endzone Elite", "Pocket Protectors"]
             df_weekly = _build_recap_preview_df(team_names)
             roster_map = {str(i + 1): n for i, n in enumerate(team_names)}
 

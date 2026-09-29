@@ -3,8 +3,8 @@
 1. Gunicorn threads default to 4 (was 2): threads share a worker's address
    space, so this doubles concurrent request capacity (4 -> 8) with no
    meaningful memory increase. The DB pool default follows WEB_THREADS.
-2. RedZone polling moved out of the gunicorn master thread into the
-   ``redzone-store-poll`` Render cron (``scripts/redzone_poll.py``): one
+2. ScoreZone polling moved out of the gunicorn master thread into the
+   ``scorezone-store-poll`` Render cron (``scripts/scorezone_poll.py``): one
    ``poll_once()`` per run, with the same Postgres advisory lock skipping
    overlapping runs cleanly.
 """
@@ -48,13 +48,13 @@ def test_db_pool_default_keeps_pace_with_threads():
     assert 'os.getenv("WEB_THREADS", "4")' in src
 
 
-# --- Change 2: standalone redzone poll script ----------------------------------
+# --- Change 2: standalone scorezone poll script ----------------------------------
 
 
 def _load_poll_module():
-    path = Path("scripts/redzone_poll.py")
-    assert path.exists(), "scripts/redzone_poll.py missing"
-    spec = importlib.util.spec_from_file_location("redzone_poll_under_test", path)
+    path = Path("scripts/scorezone_poll.py")
+    assert path.exists(), "scripts/scorezone_poll.py missing"
+    spec = importlib.util.spec_from_file_location("scorezone_poll_under_test", path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
@@ -90,7 +90,7 @@ class _FakeConn:
 @pytest.fixture()
 def _poll_harness(monkeypatch):
     """Install fake psycopg + dummy DATABASE_URL; return (module, install_conn)."""
-    import utils.redzone_store as store_mod
+    import utils.scorezone_store as store_mod
 
     mod = _load_poll_module()
     conns: list[_FakeConn] = []
@@ -159,7 +159,7 @@ def test_poll_returns_one_and_unlocks_on_failure(monkeypatch, _poll_harness):
 
 def test_in_app_poller_defaults_to_off():
     src = Path("app.py").read_text()
-    assert "REDZONE_STORE_THREAD" in src
+    assert "SCOREZONE_STORE_THREAD" in src
     # The cron owns polling now; the import-time thread must not start
     # unless explicitly re-enabled.
-    assert 'os.environ.get("REDZONE_STORE_THREAD", "")' in src
+    assert 'os.environ.get("SCOREZONE_STORE_THREAD", "")' in src

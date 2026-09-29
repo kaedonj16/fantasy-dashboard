@@ -8,7 +8,7 @@ uses to flush caches).
 Usage:
     python scripts/trigger_notifications.py hourly
     python scripts/trigger_notifications.py weekly
-    python scripts/trigger_notifications.py redzone
+    python scripts/trigger_notifications.py scorezone
 """
 from __future__ import annotations
 
@@ -18,8 +18,8 @@ import sys
 import urllib.error
 import urllib.request
 
-ALLOWED = {"hourly", "daily", "weekly", "redzone"}
-DEFAULT_TIMEOUT = {"hourly": 120, "daily": 180, "weekly": 900, "redzone": 120}
+ALLOWED = {"hourly", "daily", "weekly", "scorezone"}
+DEFAULT_TIMEOUT = {"hourly": 120, "daily": 180, "weekly": 900, "scorezone": 120}
 
 
 def trigger(kind: str, app_url: str | None = None, secret: str | None = None,

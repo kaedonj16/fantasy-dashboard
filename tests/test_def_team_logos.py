@@ -36,8 +36,8 @@ def test_pinfo_for_pid_includes_def_logo():
     assert info.get("logo_local") == "/static/images/team_logos/SF.png"
 
 
-def test_redzone_and_app_js_use_team_logos_for_def():
-    rz = (ROOT / "static" / "redzone.js").read_text(encoding="utf-8")
+def test_scorezone_and_app_js_use_team_logos_for_def():
+    rz = (ROOT / "static" / "scorezone.js").read_text(encoding="utf-8")
     assert "brTeamLogoLocal" in rz or "/static/images/team_logos/" in rz
     assert "rz-team-logo" in rz
     assert "brDefImgOnError" in rz or "espncdn.com/i/teamlogos" in rz

@@ -41,7 +41,7 @@ def test_sw_skips_stale_shell_on_explicit_refresh():
     assert "request.cache === 'reload'" in SW
     assert "skipStaleShell" in SW
     # Explicit refresh waits longer for the network, but still races a timeout
-    # so a hung fetch cannot blank the PWA forever. RedZone gets its own
+    # so a hung fetch cannot blank the PWA forever. ScoreZone gets its own
     # longer head start (its cached shell holds stale plays).
     assert "NAV_REFRESH_TIMEOUT_MS" in SW
     assert "skipStaleShell ? NAV_REFRESH_TIMEOUT_MS" in SW
@@ -85,7 +85,7 @@ def test_nav_fresh_honors_user_refresh_on_warm_launch():
 def test_sw_late_network_notifies_after_explicit_refresh_fallback():
     block = SW[SW.index("async function handleNavigate") : SW.index("// ── Push notifications")]
     assert "notifyNavFresh(request, networkFetch)" in block
-    # RedZone skips the immediate stale paint but still falls back to cache
+    # ScoreZone skips the immediate stale paint but still falls back to cache
     # as a last resort, with the late-network nudge after it.
     assert "if (cached && !rzNav)" in block
     assert block.index("notifyNavFresh(request, networkFetch)") > block.index("if (cached && !rzNav)")

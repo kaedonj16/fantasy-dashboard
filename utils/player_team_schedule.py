@@ -1,7 +1,7 @@
 """NFL team schedule + box-score shaping for the player-modal Team tab.
 
 Reuses the on-disk week schedule caches (``load_week_schedule``), the ESPN
-scoreboard (``get_nfl_scores_for_date``), and box scores (shared redzone
+scoreboard (``get_nfl_scores_for_date``), and box scores (shared scorezone
 cache). Pure-ish helpers live here so the Team-tab route and
 lazy box-score endpoint stay thin and unit-testable without Flask.
 

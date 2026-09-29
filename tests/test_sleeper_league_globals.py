@@ -1,9 +1,9 @@
 """Regression: SleeperProvider.get_league_globals must publish scoring.
 
-Redzone loads a league's live scoring purely through ``sync_league_globals``,
+ScoreZone loads a league's live scoring purely through ``sync_league_globals``,
 which asks the provider for ``get_league_globals``. Sleeper used to return
 ``None`` there and lean on ``get_league`` having run elsewhere in the request
-to leave scoring in the request-scoped globals. Redzone never calls
+to leave scoring in the request-scoped globals. ScoreZone never calls
 ``get_league`` directly, so Sleeper leagues were scored with default settings.
 Every default rate matches common scoring EXCEPT ``rec`` (defaults to 0), so
 PPR receptions silently lost their point in the live feed.

@@ -166,7 +166,7 @@ waivers. Managers need stash / drop / IR guidance on the roster.
 
 ### R04 — Cross-league Front Office action digest
 **Origin:** brainstorm #4  
-**Why:** My Leagues / portfolio + Redzone “My Leagues” exist; Front Office is
+**Why:** My Leagues / portfolio + ScoreZone “My Leagues” exist; Front Office is
 per-league. Multi-league managers need one prioritized action list.
 
 | ID | Ticket | Scope | Acceptance |
@@ -178,7 +178,7 @@ per-league. Multi-league managers need one prioritized action list.
 
 **Depends on:** R05–R07 for richer actions (MVP can use existing waiver + lineup issues)  
 **Risk:** medium–high (latency across N leagues — cache aggressively)  
-**Key files:** portfolio / user pages, `utils/redzone_user.py` patterns, FO report services
+**Key files:** portfolio / user pages, `utils/scorezone_user.py` patterns, FO report services
 
 ---
 

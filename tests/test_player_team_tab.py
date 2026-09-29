@@ -413,7 +413,7 @@ def test_api_player_team_boxscore_future_and_final(flask_client, monkeypatch):
             },
         }
 
-    monkeypatch.setattr("app._redzone_boxscore", _fake_fetch)
+    monkeypatch.setattr("app._scorezone_boxscore", _fake_fetch)
     monkeypatch.setattr(
         "app.get_players_index_global",
         lambda: {

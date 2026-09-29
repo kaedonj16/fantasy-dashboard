@@ -2,7 +2,7 @@
 
 Covers: durable cron backfill markers (P1), gunicorn recycle threshold (P2),
 ETag caching on /api/league-players (P3), bounded caches + _PLAYERS_GLOBAL
-refresh (P4), missing DB indexes (P5), and redzone shared-collect + 304 polls
+refresh (P4), missing DB indexes (P5), and scorezone shared-collect + 304 polls
 (P8). Source-structure style: importing app.py is intentionally avoided.
 """
 from __future__ import annotations
@@ -13,7 +13,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 APP = (ROOT / "app.py").read_text(encoding="utf-8")
-RZJS = (ROOT / "static" / "redzone.js").read_text(encoding="utf-8")
+RZJS = (ROOT / "static" / "scorezone.js").read_text(encoding="utf-8")
 CRON = (ROOT / "cron_daily.py").read_text(encoding="utf-8")
 
 
@@ -73,7 +73,7 @@ def test_cron_uses_db_markers_for_both_backfills():
     assert "backfill:redzone_snapshots_v1" in CRON
     assert 'cache/.redzone_snapshots_v1.done' not in CRON
     assert ".weekly_metrics_perweek_team_v4.done" not in CRON
-    # Redzone repair still only marks done on a successful, available run.
+    # ScoreZone repair still only marks done on a successful, available run.
     assert 'if result["updated"] and not result["unavailable"]:' in CRON
 
 
@@ -139,9 +139,9 @@ def test_perf_indexes_exist():
     assert "push_subscriptions_league_owner_idx" in pbp
 
 
-# ── P8: redzone shared collect + conditional polls ────────────────────────────
+# ── P8: scorezone shared collect + conditional polls ────────────────────────────
 
-def test_redzone_shared_collect_cache():
+def test_scorezone_shared_collect_cache():
     assert "def _rz_cached_collect" in APP
     # TTL must exceed the ~60s collect build time or the cache can never hit.
     assert "_RZ_COLLECT_TTL = 60.0" in APP
@@ -154,12 +154,12 @@ def test_redzone_shared_collect_cache():
     assert '"updated_at": _rz_collected_at' in APP
 
 
-def test_redzone_api_answers_304():
+def test_scorezone_api_answers_304():
     assert 'request.headers.get("If-None-Match") == etag' in APP
     assert 'response.headers["ETag"] = etag' in APP
 
 
-def test_redzone_client_polls_conditionally():
+def test_scorezone_client_polls_conditionally():
     assert "_rzEtagByScope" in RZJS
     assert "If-None-Match" in RZJS
     assert "resp.status === 304" in RZJS

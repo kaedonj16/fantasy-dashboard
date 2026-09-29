@@ -671,7 +671,7 @@ def get_nfl_scores_for_date(game_date: str, timeout: int = 20) -> dict:
 
     game_date: 'YYYYMMDD' string, e.g. '20251204'
     timeout: upstream request budget in seconds. Ordinary pages keep the
-        generous 20s default; live surfaces (Redzone) pass a shorter value so
+        generous 20s default; live surfaces (ScoreZone) pass a shorter value so
         the whole server response stays inside the client's abort deadline
         rather than the client giving up on a request the server would answer.
     Returns: body dict from Tank01 (gameID -> gameDict)

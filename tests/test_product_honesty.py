@@ -5,7 +5,7 @@ Flask/pandas). They lock the settled product rules:
 
 - Home still lists Yahoo/MFL, with capability labels.
 - Nav hides the standalone Trade Intel page everywhere (it lives in the Trade
-  Hub now); Redzone still shows on every platform.
+  Hub now); ScoreZone still shows on every platform.
 - Live cheat-sheet sync is free; custom board edits stay PRO.
 - Paywall copy matches shipped PRO features.
 - Playoff Impact and offseason breakouts are server-gated.
@@ -106,11 +106,11 @@ def test_nav_hides_trade_intel_everywhere():
     assert '_gl("/trade-intel", "Trade Intel", "trade-intel", pro=True)' not in APP_PY
     assert '"/trade-intel", "trade-intel"' not in APP_PY
     assert '"trade-intel"' not in APP_PY
-    assert '_sl("redzone", "Redzone")' in APP_PY
+    assert '_sl("scorezone", "ScoreZone")' in APP_PY
     assert 'if platform == "sleeper" and not offseason' not in APP_PY
     assert "Trade Intel uses Sleeper trade data - not applicable for ESPN" not in APP_PY
     assert 'if platform == "sleeper":\n                _weekly_items.append((_rz_label' not in APP_PY
-    assert '_weekly_items.append((_rz_label, "page_redzone", "redzone", False))' in APP_PY
+    assert '_weekly_items.append((_rz_label, "page_scorezone", "scorezone", False))' in APP_PY
     # The standalone page is gone: both routes redirect into the Trade Hub.
     assert 'return redirect(f"/{platform}/{season}/{league_id}/trade?tab=suggestions", code=302)' in TRADE_BP
     assert 'return redirect("/trade?tab=suggestions", code=302)' in TRADE_BP
@@ -135,7 +135,7 @@ def test_paywall_lists_shipped_pro_features_only():
     calc = (ROOT / "dashboard_services" / "pages" / "trade_calculator_page.py").read_text(encoding="utf-8")
     assert "Sleeper dynasty comps" in calc
     assert "Market comps come from real Sleeper dynasty trades" in TRADE_INTEL_PAGE
-    rz = (ROOT / "static" / "redzone.js").read_text(encoding="utf-8")
+    rz = (ROOT / "static" / "scorezone.js").read_text(encoding="utf-8")
     assert "Tank01 box scores" in rz
     recap = (ROOT / "dashboard_services" / "pages" / "recap_page.py").read_text(encoding="utf-8")
     assert "recap-preview-watermark" in recap

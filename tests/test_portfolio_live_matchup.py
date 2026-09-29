@@ -86,7 +86,7 @@ def test_matchup_status_label():
 
 def test_portfolio_card_has_no_matchup_block():
     # Per-league previews no longer show the matchup band: no My Matchup /
-    # League Scores tabs, no score block, no RedZone Moments row. Those live
+    # League Scores tabs, no score block, no ScoreZone Moments row. Those live
     # only on the league dashboard's matchup section now.
     source = (ROOT / "app.py").read_text()
     fn = source.split("def build_portfolio_body")[1].split("\ndef ")[0]
@@ -102,7 +102,7 @@ def test_portfolio_card_has_no_matchup_block():
     # My Matchup | League Scores toggle reuses the .ls-tabs styles. The
     # portfolio's LS tabs were rendered by matchupHtml (asserted absent above).
     # NOTE: the .rzm-row/.ls-tabs CSS stays in dashboard.css on purpose: the
-    # Weekly Hub matchup page reuses it for its own RedZone Moments row/modal.
+    # Weekly Hub matchup page reuses it for its own ScoreZone Moments row/modal.
     # The summary hydration path is untouched: cards still carry fetch keys and
     # hydrate record/standing/streak from /api/portfolio/card.
     assert "data-summary-card" in fn

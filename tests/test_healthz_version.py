@@ -16,7 +16,7 @@ def test_healthz_version_returns_bundle_hashes(offline_client):
     assert r.headers.get("Cache-Control", "").startswith("no-store")
     body = r.get_json()
     assert isinstance(body, dict)
-    for key in ("app_js", "public_js", "rankings_js", "teams_js", "redzone_js", "css", "started_at"):
+    for key in ("app_js", "public_js", "rankings_js", "teams_js", "scorezone_js", "css", "started_at"):
         assert key in body, key
         assert body[key], key
     assert "git_sha" in body
