@@ -7,6 +7,11 @@ preset pills, single-row week range with a slimmer slider, Clear-all text
 link, collapsible field averages). The data table and all data logic are
 untouched, and the approved mobile rework keeps its behavior: desktop-only
 overrides stay inside min-width:601px.
+
+The command-bar rework (mock A) superseded the header and toolbar rows: the
+.am-head strip became .am-cmdbar, the old toolbar rows became the filter
+sheet, and the Filters toggle was removed. The toggle-chip, preset,
+week-range, clear-link, and field-average contracts below still hold.
 """
 import re
 
@@ -42,13 +47,18 @@ def _tag(html, el_id):
 
 
 def test_header_actions_are_icon_only_on_desktop():
+    # Command-bar rework: the three actions moved into the strip's overflow
+    # menu as icon + label rows (the labels aid the menu's scanability).
     html = _html()
     css = _desktop_css(html)
-    # Unguarded: mobile already hides these, so sharing the rule is safe.
-    assert ".am-head .am-legend-btn-label { display:none; }" in css
-    assert ".am-head .am-legend-btn { padding:8px; }" in css
+    assert ".am-more-menu .am-legend-btn { padding:10px 12px; }" in css
     for el_id in ("amGraphBtn", "amLegendBtn", "amExportBtn"):
-        assert 'title="' in _tag(html, el_id), f"#{el_id} needs a title for the icon-only state"
+        tag = _tag(html, el_id)
+        assert 'class="am-legend-btn"' in tag, f"#{el_id} must stay a legend button"
+        assert 'title="' in tag, f"#{el_id} needs a title"
+    # Each menu row keeps its label span for scanability.
+    assert html.count('class="am-legend-btn-label"') == 3
+    assert 'id="amMoreMenu"' in html
 
 
 def test_control_labels_removed_with_aria_names():
@@ -63,14 +73,23 @@ def test_control_labels_removed_with_aria_names():
 
 
 def test_row1_is_one_clean_row_on_desktop():
-    css = _desktop_min_width_block(_desktop_css(_html()))
-    assert "#amControls { align-items:center; }" in css
-    assert "#amControls > .am-ctrl:first-child { flex:0 1 250px; min-width:0; }" in css
-    assert ".am-ctrl-search { flex:1 1 200px; min-width:160px; }" in css
+    # Command-bar rework: the strip (title + actions) sits above a full-width
+    # metric picker; positions follow as one segmented control.
+    html = _html()
+    body = html.split("<style>")[0]
+    css = _desktop_min_width_block(_desktop_css(html))
+    assert ".am-cmdbar {" in css
+    assert "#amMetricBtn { width:100%; min-width:0; }" in css
+    assert 'id="amPositions"' in body
+    assert "am-segmented" in body
 
 
 def test_row2_has_solid_buttons_divider_and_no_custom_echo():
+    # Command-bar rework: the old second toolbar row (and its divider) became
+    # the filter sheet. The buttons keep their solid styling; the redundant
+    # "Custom" echo still hides.
     html = _html()
+    body = html.split("<style>")[0]
     css = _desktop_min_width_block(_desktop_css(html))
     for el_id in ("amAddStatBtn", "amAddFilterBtn", "amSaveSetBtn", "amDeleteSetBtn"):
         _tag(html, el_id)  # still present
@@ -78,10 +97,8 @@ def test_row2_has_solid_buttons_divider_and_no_custom_echo():
     assert "border:1px solid var(--border); border-radius:var(--radius-pill,8px);" in css
     # Boxy per --radius-pill: no new stadium pills introduced by the rework.
     assert "border-radius:999px" not in _desktop_css(html)
-    # Thin divider before the toggles; the redundant "Custom" echo hides.
-    assert 'class="am-ctl-divider"' in html
-    assert ".am-ctl-divider { display:none; }" in _desktop_css(html)
-    assert ".am-ctl-divider { display:block; width:1px; height:24px;" in css
+    # The old row divider is gone with the toolbar row.
+    assert 'class="am-ctl-divider"' not in body
     assert "#amActiveSet { display:none; }" in css
 
 
@@ -92,7 +109,6 @@ def test_view_options_are_toggle_chips_with_working_checkboxes():
                             ("amRosterToggleWrap", "amRosterToggle")):
         wrap = _tag(html, wrap_id)
         assert "am-toggle-chip" in wrap, f"#{wrap_id} must be a toggle chip"
-        assert "am-mobile-filter" in wrap, f"#{wrap_id} must keep collapsing on mobile"
         chk = _tag(html, chk_id)
         assert 'type="checkbox"' in chk, f"#{chk_id} checkbox must survive for existing JS"
         assert "am-toggle-input" in chk
@@ -102,6 +118,8 @@ def test_view_options_are_toggle_chips_with_working_checkboxes():
     assert ".am-toggle-chip .am-toggle-input:checked + .am-toggle-box {" in css
     assert "background:var(--accent,#2563eb);" in css
     assert ".am-toggle-chip .am-toggle-box { display:none; }" in css
+    # The old mobile-collapse class was the pre-sheet collapse mechanism.
+    assert "am-mobile-filter" not in html
 
 
 def test_decide_presets_have_no_label_but_keep_tagline():
