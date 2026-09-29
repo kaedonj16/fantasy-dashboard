@@ -6604,34 +6604,68 @@ from utils.league_payload import (  # noqa: E402
 )
 
 
+# ── Rookie rankings for league context ─────────────────────────────────────────
+# build_league_context() calls _load_rookie_rankings_for_ctx() at the end of
+# every cold build. The underlying data only changes at the NFL draft, but each
+# call was paying a draft-completion DB lookup + model-values table load/scan
+# + a 5-table rankings query. Cache it per worker, keyed by draft year, with a
+# 6h TTL: a cold league-context build drops that whole chain to a dict lookup.
+_ROOKIE_CTX_RANKINGS: tuple = (None, 0.0, [])  # (draft_year, filled_ts, rows)
+_ROOKIE_CTX_RANKINGS_TTL = 6 * 3600
+_ROOKIE_CTX_RANKINGS_LOCK = threading.Lock()
+
+
+def _fetch_rookie_rankings_for_ctx(draft_year) -> list[dict]:
+    """Uncached rookie-rankings load: draft-completion DB check + rankings query."""
+    from data_building.rookie_pipeline.pipeline import get_rookie_rankings_from_db, \
+        is_draft_complete
+    try:
+        from dashboard_services.db import get_conn as _get_conn
+        with _get_conn() as _dc:
+            _draft_done = is_draft_complete(draft_year, _dc)
+    except Exception:
+        _draft_done = is_draft_complete(draft_year)
+    rows = get_rookie_rankings_from_db(draft_year, filter_undrafted=_draft_done)
+    return [
+        {
+            "player_id": r.get("player_id", ""),
+            "name": r.get("name", ""),
+            "position": str(r.get("position") or "").upper(),
+            "overall_rank": int(r.get("overall_rank") or 999),
+            "value_1qb": float(r.get("rookie_value") or 0),
+            "value_sf": float(r.get("rookie_sf_value") or r.get("rookie_value") or 0),
+        }
+        for r in rows
+        if r.get("position") in ("QB", "RB", "WR", "TE")
+    ]
+
+
 def _load_rookie_rankings_for_ctx() -> list[dict]:
     """Load current draft class rookies sorted by overall_rank for pick projection."""
+    global _ROOKIE_CTX_RANKINGS
     try:
-        from data_building.rookie_pipeline.pipeline import get_rookie_rankings_from_db, get_active_rookie_class, \
-            is_draft_complete
+        from data_building.rookie_pipeline.pipeline import get_active_rookie_class
         draft_year = get_active_rookie_class()
+    except Exception:
+        draft_year = None
+    _cy, _ts, _rows = _ROOKIE_CTX_RANKINGS
+    now = time.time()
+    if _cy == draft_year and now - _ts < _ROOKIE_CTX_RANKINGS_TTL:
+        return [dict(r) for r in _rows]
+    with _ROOKIE_CTX_RANKINGS_LOCK:
+        _cy, _ts, _rows = _ROOKIE_CTX_RANKINGS
+        now = time.time()
+        if _cy == draft_year and now - _ts < _ROOKIE_CTX_RANKINGS_TTL:
+            return [dict(r) for r in _rows]
         try:
-            from dashboard_services.db import get_conn as _get_conn
-            with _get_conn() as _dc:
-                _draft_done = is_draft_complete(draft_year, _dc)
-        except Exception:
-            _draft_done = is_draft_complete(draft_year)
-        rows = get_rookie_rankings_from_db(draft_year, filter_undrafted=_draft_done)
-        return [
-            {
-                "player_id": r.get("player_id", ""),
-                "name": r.get("name", ""),
-                "position": str(r.get("position") or "").upper(),
-                "overall_rank": int(r.get("overall_rank") or 999),
-                "value_1qb": float(r.get("rookie_value") or 0),
-                "value_sf": float(r.get("rookie_sf_value") or r.get("rookie_value") or 0),
-            }
-            for r in rows
-            if r.get("position") in ("QB", "RB", "WR", "TE")
-        ]
-    except Exception as e:
-        logger.info(f"[rookie_rankings] skipped: {e}")
-        return []
+            rows = _fetch_rookie_rankings_for_ctx(draft_year)
+        except Exception as e:
+            logger.info(f"[rookie_rankings] skipped: {e}")
+            # Transient failure: serve the stale copy rather than an empty
+            # list when we have one for this draft year.
+            return [dict(r) for r in _rows] if _cy == draft_year else []
+        _ROOKIE_CTX_RANKINGS = (draft_year, now, rows)
+        return [dict(r) for r in rows]
 
 
 _CTX_TASK_WARN_TS: dict[tuple, float] = {}
@@ -24099,6 +24133,25 @@ def _game_log_proj_from_week(upcoming, cur_season, cur_week, season_type) -> int
 
 
 @app.route("/api/player-game-logs/<player_id>")
+def _prefetch_week_projections(season: int) -> None:
+    """Warm all 18 weekly projection files in parallel via the shared memo.
+
+    Cold post-deploy caches turn each missing projection week into a
+    sequential network fetch (up to 18 x 20s timeout) on the request thread.
+    The game-log loop below calls load_week_projection() week by week; warming
+    the memo first keeps that loop off the network. Never raises.
+    """
+    try:
+        from utils.utils import load_week_projection
+        import concurrent.futures as _cf
+        with _cf.ThreadPoolExecutor(max_workers=4,
+                                    thread_name_prefix="gamelog-proj") as _pool:
+            list(_pool.map(lambda _w: load_week_projection(season, _w),
+                           range(1, 19)))
+    except Exception:
+        logger.debug("[api_player_game_logs] proj prefetch failed", exc_info=True)
+
+
 def api_player_game_logs(player_id: str):
     """Game logs for the Stats tab -- lazy-loaded separately from player-details."""
     try:
@@ -24312,6 +24365,8 @@ def api_player_game_logs(player_id: str):
                 from utils.fantasy_scoring import projection_points as _proj_pts_fn
                 from statistics import median as _med_fn
                 _pos_gl = (player_meta.get("pos") or "").upper()
+
+                _prefetch_week_projections(_upcoming)
 
                 _proj_vals: dict = {}
                 for _w in range(1, 19):
