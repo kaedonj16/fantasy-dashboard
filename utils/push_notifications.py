@@ -741,7 +741,10 @@ def _redzone_td_check():
                 ) or 0
                 result["leagues"] += 1
             except Exception as le:
-                logger.warning("[redzone-poll] league %s failed: %s", league_id, le)
+                if _is_provider_not_found(le):
+                    _unlink_dead_league(league_id, platform)
+                else:
+                    logger.warning("[redzone-poll] league %s failed: %s", league_id, le)
         _set_wm(max_ts)
         result["sent"] = sent
     except Exception as exc:
@@ -783,6 +786,37 @@ def _get_subscribed_leagues():
         return [(r["league_id"], r["platform"]) for r in rows]
     except Exception:
         return []
+
+
+def _is_provider_not_found(exc):
+    """True when the provider says this league does not exist (HTTP 404)."""
+    resp = getattr(exc, "response", None)
+    if resp is not None and getattr(resp, "status_code", None) == 404:
+        return True
+    return "404" in str(exc)
+
+
+def _unlink_dead_league(league_id, platform):
+    """Drop push subscriptions for a league the provider 404s on.
+
+    League IDs are permanent on providers like Sleeper: a 404 means the
+    league was deleted (or the ID was never valid) and will not come back,
+    so keeping the subscriptions only produces per-poll warning noise.
+    """
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            conn.execute(
+                "DELETE FROM push_subscriptions WHERE league_id = %s "
+                "AND COALESCE(platform, 'sleeper') = %s",
+                (str(league_id), str(platform or "sleeper")),
+            )
+            conn.commit()
+        logger.warning("[redzone-poll] unlinked dead league %s (provider 404)",
+                       league_id)
+    except Exception as exc:
+        logger.warning("[redzone-poll] unlink dead league %s failed: %s",
+                       league_id, exc)
 
 
 _league_name_cache: dict = {}
