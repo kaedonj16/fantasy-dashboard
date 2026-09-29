@@ -32,6 +32,7 @@ fresh-DB initialization run.
 """
 from __future__ import annotations
 
+import datetime as _dt
 import json
 import logging
 import os
@@ -397,11 +398,15 @@ def funnel_last_30_days() -> Dict[str, int]:
         WHERE created_at >= now() - interval '30 days'
         {_exclusion_clause("id")}"""
     )
+    # Linked stage reads user_leagues, not the league_linked event: the event
+    # stream only exists from deploy day, while user_leagues has the full
+    # history (added_at was backfilled at migration time for older rows, so
+    # very old links may read as linked on the migration date; self-heals as
+    # the window moves past it).
     linked = _one(
         f"""
-        SELECT COUNT(DISTINCT account_id) FROM analytics_events
-        WHERE event = 'league_linked' AND account_id IS NOT NULL
-          AND created_at >= now() - interval '30 days'
+        SELECT COUNT(DISTINCT account_id) FROM user_leagues
+        WHERE added_at >= now() - interval '30 days'
         {_exclusion_clause()}
         """
     )
@@ -414,6 +419,51 @@ def funnel_last_30_days() -> Dict[str, int]:
         """
     )
     return {"visitors": visitors, "signups": signups, "linked": linked, "pro": pro}
+
+
+# ── Gap filling (continuous axes for the charts) ────────────────────────────
+
+def _utc_today() -> _dt.date:
+    return _dt.datetime.now(_dt.timezone.utc).date()
+
+
+def fill_daily_gaps(
+    rows: List[Dict[str, Any]],
+    date_key: str,
+    value_key: str,
+    days: int = 30,
+    today: Optional[_dt.date] = None,
+) -> List[tuple]:
+    """rows: [{date_key: 'YYYY-MM-DD', value_key: n}] -> [(label 'MM-DD', value)]
+    covering every day of the trailing `days`-day window, zeros filled."""
+    day = today or _utc_today()
+    by_date = {str(r[date_key]): r[value_key] for r in rows}
+    out = []
+    for i in range(days - 1, -1, -1):
+        d = day - _dt.timedelta(days=i)
+        iso = d.isoformat()
+        out.append((iso[5:], int(by_date.get(iso, 0))))
+    return out
+
+
+def fill_weekly_gaps(
+    rows: List[Dict[str, Any]],
+    date_key: str,
+    value_key: str,
+    weeks: int = 12,
+    today: Optional[_dt.date] = None,
+) -> List[tuple]:
+    """Same as fill_daily_gaps for Monday-anchored weeks (matches Postgres
+    date_trunc('week', ...))."""
+    day = today or _utc_today()
+    monday = day - _dt.timedelta(days=day.weekday())
+    by_date = {str(r[date_key]): r[value_key] for r in rows}
+    out = []
+    for i in range(weeks - 1, -1, -1):
+        d = monday - _dt.timedelta(weeks=i)
+        iso = d.isoformat()
+        out.append((iso[5:], int(by_date.get(iso, 0))))
+    return out
 
 
 def events_table_ready() -> bool:

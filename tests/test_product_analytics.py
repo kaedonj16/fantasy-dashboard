@@ -276,7 +276,7 @@ def test_funnel_counts_stages(monkeypatch):
         calls.append(sql)
         if "user_league_subscriptions" in sql:
             return [{"count": 3}]
-        if "league_linked" in sql:
+        if "FROM user_leagues" in sql:
             return [{"count": 11}]
         if "FROM accounts" in sql:
             return [{"count": 25}]
@@ -537,3 +537,71 @@ def test_track_event_logs_for_non_admin_session(monkeypatch, reset_tables_ready)
     with app.test_request_context("/"):
         analytics.track_event("pageview", account_id=5, path="/")
     assert any("INSERT INTO analytics_events" in w[0] for w in conn.writes)
+
+
+# ── Funnel: linked stage reads user_leagues ───────────────────────────────────
+
+def test_funnel_linked_reads_user_leagues_table(monkeypatch, reset_tables_ready):
+    conn = _FakeConn(fetchall_result=[])
+    _patch_conn(monkeypatch, conn)
+    analytics.funnel_last_30_days()
+    sql = " ".join(w[0] for w in conn.writes if "SELECT" in w[0])
+    assert "FROM user_leagues" in sql
+    assert "added_at" in sql
+
+
+# ── Gap filling ─────────────────────────────────────────────────────────────
+
+def test_fill_daily_gaps_zero_fills():
+    import datetime
+
+    rows = [{"date": "2026-09-27", "users": 5}, {"date": "2026-09-29", "users": 3}]
+    out = analytics.fill_daily_gaps(rows, "date", "users", 5, today=datetime.date(2026, 9, 29))
+    assert out == [("09-25", 0), ("09-26", 0), ("09-27", 5), ("09-28", 0), ("09-29", 3)]
+
+
+def test_fill_weekly_gaps_monday_anchored():
+    import datetime
+
+    assert datetime.date(2026, 9, 28).weekday() == 0  # the test Monday
+    rows = [{"week": "2026-09-28", "users": 7}]
+    out = analytics.fill_weekly_gaps(rows, "week", "users", 3, today=datetime.date(2026, 9, 30))
+    assert out == [("09-14", 0), ("09-21", 0), ("09-28", 7)]
+
+
+# ── Chart rendering ─────────────────────────────────────────────────────────
+
+def test_bars_svg_caps_single_bar_width():
+    import re
+
+    pytest.importorskip("flask")
+    from routes import analytics_bp as abp
+
+    svg = abp._bars_svg([("09-29", 12)])
+    widths = [float(w) for w in re.findall(r'<rect[^>]*width="([\d.]+)"', svg)]
+    assert widths and max(widths) <= 48.0
+
+
+def test_bars_svg_value_labels_skip_zeros():
+    pytest.importorskip("flask")
+    from routes import analytics_bp as abp
+
+    svg = abp._bars_svg([("09-28", 0), ("09-29", 12)])
+    assert 'class="vallab">12<' in svg
+    assert svg.count('class="vallab"') == 1
+
+
+def test_bars_svg_dense_series_labels_every_day_and_yticks():
+    import datetime
+
+    pytest.importorskip("flask")
+    from routes import analytics_bp as abp
+
+    rows = [{"date": "2026-09-29", "users": 3}]
+    pairs = analytics.fill_daily_gaps(rows, "date", "users", 30, today=datetime.date(2026, 9, 29))
+    svg = abp._bars_svg(pairs)
+    assert svg.count("rotate(-45") == 30
+    assert svg.count('class="ytick"') == 3
+    # sparse series keeps horizontal labels
+    svg2 = abp._bars_svg([("09-28", 0), ("09-29", 12)])
+    assert "rotate(-45" not in svg2
