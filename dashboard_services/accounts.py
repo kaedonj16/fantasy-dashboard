@@ -753,6 +753,24 @@ def add_user_league(
         )
         conn.commit()
 
+    # Product analytics: every explicit league link, from any flow (set-viewer,
+    # sign-in-league, Google pending-link attach). The funnel counts distinct
+    # accounts, so repeat upserts do not inflate it.
+    from dashboard_services import analytics as _analytics
+    try:
+        from flask import has_request_context, request
+
+        _link_path = request.path if has_request_context() else None
+    except Exception:
+        _link_path = None
+    _analytics.track_event(
+        _analytics.EVENT_LEAGUE_LINKED,
+        account_id=int(account_id),
+        session_id=_analytics.ensure_anon_session_id(),
+        path=_link_path,
+        props={"platform": platform, "league_id": str(league_id)},
+    )
+
 
 def remove_user_league(
     account_id: int, platform: str, league_id: str, season: Optional[int] = None

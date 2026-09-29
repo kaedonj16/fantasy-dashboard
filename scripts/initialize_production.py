@@ -37,6 +37,11 @@ def main():
         init_value_history_db()
         print("✅ Player value history database initialized")
 
+        # Step 3b: Initialize product analytics events table
+        from dashboard_services.analytics import init_analytics_tables
+        init_analytics_tables()
+        print("✅ Product analytics events table initialized")
+
         # Step 4: Create performance indexes
         from data_building.offseason_opportunity import create_performance_indexes
         from dashboard_services.db import get_conn

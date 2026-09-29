@@ -1097,6 +1097,15 @@ def api_waiver_candidates():
             continue
 
     _kd_flags = _waiver_uses_k_def(_rp_wv)
+    # Product analytics: waiver candidates were viewed.
+    from dashboard_services import analytics as _analytics
+    _analytics.track_event(
+        _analytics.EVENT_WAIVERS_VIEWED,
+        account_id=_analytics.account_id_from_session(),
+        session_id=_analytics.ensure_anon_session_id(),
+        path="/api/waiver-candidates",
+        props={"platform": platform, "league_id": league_id, "count": len(result)},
+    )
     return jsonify({"candidates": result, "total": len(result),
                     "faab_enabled": _faab_enabled,
                     # Drives the "link your team" banner: True only when ?rid=

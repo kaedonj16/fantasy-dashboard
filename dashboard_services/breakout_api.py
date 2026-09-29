@@ -1760,6 +1760,15 @@ def candidates():
     league_id = request.args.get('league_id')
     platform = request.args.get('platform', 'sleeper')
     week = request.args.get('week')
+    # Product analytics: breakout board viewed.
+    from dashboard_services import analytics as _analytics
+    _analytics.track_event(
+        _analytics.EVENT_BREAKOUT_VIEWED,
+        account_id=_analytics.account_id_from_session(),
+        session_id=_analytics.ensure_anon_session_id(),
+        path="/api/breakout/candidates",
+        props={"platform": platform, "season": requested_season, "week": week},
+    )
     has_premium = has_premium_for_viewer(
         session.get('viewer_username'), session.get('viewer_user_id'),
         league_id, platform, requested_season,
