@@ -944,6 +944,11 @@ notify_breakout_roster()
 print("[cron] Breakout roster notifications dispatched")
 """, "notify_breakout_roster")
 
+    # NOTE: the weekly "new breakout board" announcement is intentionally NOT
+    # here. It goes out Tuesdays around 12pm ET via the hourly notification
+    # cron (run_hourly -> notify_breakout_weekly), which gates on the
+    # weekday/hour itself.
+
     # ------------------------------------------------------------------ #
     # Step 6: Weekly rookie data (Sundays only, off/pre season)          #
     # ------------------------------------------------------------------ #

@@ -2710,6 +2710,7 @@ window._brPromoEligible = function () {
     { key: 'watchlist',         label: 'Watchlist Alerts' },
     { key: 'value_drops',       label: 'Value Drop Alerts' },
     { key: 'breakout_roster',   label: 'Breakout Player Alerts' },
+    { key: 'breakout_weekly',   label: 'New Breakout Board' },
     { key: 'playoff_odds',      label: 'Playoff Odds Updates' },
     { key: 'top_movers',        label: 'Weekly Top Movers' },
   ];
@@ -2741,6 +2742,7 @@ window._brPromoEligible = function () {
         { key: 'rival_trades', label: 'Rival trade alerts' },
         { key: 'value_drops', label: 'Value drop alerts' },
         { key: 'breakout_roster', label: 'Breakout player alerts' },
+        { key: 'breakout_weekly', label: 'New breakout board' },
         { key: 'playoff_odds', label: 'Playoff odds updates' },
       ] },
     { id: 'recaps', label: 'Recaps and watchlist', blurb: 'Weekly recaps and alerts on your starred players',
