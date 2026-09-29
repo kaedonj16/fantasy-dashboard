@@ -355,6 +355,121 @@ def _normalize_starter_slots(raw: list) -> list:
     return [None if s is None or str(s).strip() in ("", "0") else s for s in (raw or [])]
 
 
+def _canonical_slot_order(roster_positions) -> list:
+    """Canonical display order for lineup slots, bench/reserve slots dropped.
+
+    Some providers report slots in slot-id order rather than display order
+    (ESPN: QB, RB, RB, WR, WR, TE, DEF, K, BN.., IR, FLEX), which put the
+    FLEX chip on the wrong row and left a phantom IR slot shifting the
+    K/DEF rows. This stable-sorts the non-bench slots by canonical rank
+    (QB, RB, WR, TE, FLEX, K, DEF); providers that already report display
+    order (Sleeper, Yahoo) are unchanged because the sort is stable.
+    Self-contained: rank map lives inside the function so AST-extraction
+    tests can exec it standalone.
+    """
+    _rank = {
+        "QB": 0, "RB": 1, "WR": 2, "TE": 3,
+        "FLEX": 4, "RB/WR/TE": 4, "W/R/T": 4, "RB_WR": 4, "WR_TE": 4,
+        "SUPER_FLEX": 4, "SF": 4, "OP": 4,
+        "K": 5, "DEF": 6, "D/ST": 6, "DST": 6,
+    }
+    _skip = {"BN", "BE", "BENCH", "IR", "NA", "INACTIVE", "RESERVE", "ER", "RES"}
+    slots = [
+        str(s).upper()
+        for s in (roster_positions or [])
+        if str(s).upper() not in _skip
+    ]
+    return sorted(slots, key=lambda s: _rank.get(s, 99))
+
+
+def _realign_starters_to_slots(starters, slot_order) -> list:
+    """Realign a starter list to slot order by position eligibility.
+
+    ESPN omits empty lineup slots, so a team with an empty slot sends a
+    SHORTER starter list with no placeholder; pairing it by index shifts
+    every row below the gap (see _normalize_starter_slots, which only
+    preserves placeholders when the provider sends them). This walks the
+    canonical slot order and pops the first remaining starter whose
+    position is eligible for each slot; empty slots become None. Starters
+    whose position matches no slot are appended at the end (chip falls
+    back to the player's own position there). Lists that already cover
+    the slots (full or placeholder lists) pass through untouched.
+    Self-contained: eligibility map lives inside the function so
+    AST-extraction tests can exec it standalone.
+    """
+    starters = list(starters or [])
+    slots = list(slot_order or [])
+    real = [s for s in starters if s]
+    if len(real) >= len(slots):
+        return starters
+
+    def _norm(x):
+        return str(x or "").upper().replace(" ", "")
+
+    _flex_pos = {"RB", "WR", "TE"}
+    _def_pos = {"DEF", "D/ST", "DST"}
+
+    def _eligible(pos, slot):
+        p = _norm(pos)
+        s = _norm(slot)
+        if s == "QB":
+            return p == "QB"
+        if s == "RB":
+            return p == "RB"
+        if s == "WR":
+            return p == "WR"
+        if s == "TE":
+            return p == "TE"
+        if s in ("FLEX", "RB/WR/TE", "W/R/T", "RB_WR", "WR_TE"):
+            return p in _flex_pos
+        if s in ("SUPER_FLEX", "SF", "OP"):
+            return p in _flex_pos or p == "QB"
+        if s == "K":
+            return p == "K"
+        if s in _def_pos:
+            return p in _def_pos
+        return p == s and bool(p)
+
+    remaining = list(real)
+    out = []
+    for slot in slots:
+        hit = None
+        for s in remaining:
+            pos = s.get("pos") if isinstance(s, dict) else None
+            if _eligible(pos, slot):
+                hit = s
+                break
+        if hit is not None:
+            remaining.remove(hit)
+        out.append(hit)
+    out.extend(remaining)
+    return out
+
+
+def _slot_chip(slot: str, left_p: str, right_p: str) -> tuple:
+    """(css_class, label) for the centre-rail chip: the *lineup slot*.
+
+    FLEX and SUPER_FLEX rows read FLEX / SF even though the two players
+    in them are different positions; ordinary slots read QB/RB/WR/TE/K/
+    D/ST. Unknown or missing slot data falls back to a player's real
+    position (the old behaviour). Module-level (no closure state) so
+    tests can assert chip output directly.
+    """
+    s = (slot or "").upper()
+    if s == "FLEX":
+        return "FLEX", "FLEX"
+    if s == "SUPER_FLEX":
+        return "SF", "SF"
+    if s in ("QB", "RB", "WR", "TE", "K"):
+        return s, s
+    if s in ("DEF", "DST"):
+        return "DEF", "D/ST"
+    p = left_p or right_p or ""
+    if p in ("DEF", "DST"):
+        return "DEF", "D/ST"
+    return p, p
+
+
 def build_matchup_preview(
         league_id: str,
         week: int,
@@ -1539,9 +1654,11 @@ def render_matchup_slide(
        [Left Name] [Left Pts/Proj] [Right Pts/Proj] [Right Name]
 
     roster_positions: the league's lineup slots (e.g. QB/RB/WR/TE/FLEX/
-    SUPER_FLEX/K/DEF/BN). Provider starter lists follow the same order, so
-    row i pairs with the i-th non-bench slot and the centre chip names the
-    *slot* (FLEX/SF) instead of copying one player's position.
+    SUPER_FLEX/K/DEF/BN). Starter lists are realigned to the canonical
+    slot order by position eligibility before pairing, so providers that
+    report slots in slot-id order (ESPN) or omit empty slots still render
+    the right centre chip per row. Short/missing slot data falls back to
+    the old player-position chip for that row.
 
     viewer_roster_id: when the viewer's own team wins this (current, finalized)
     week, the slide plays the bigger "final whistle" takeover instead of the
@@ -2113,39 +2230,23 @@ def render_matchup_slide(
         )
         return f"<div class='mb-score'><span class='{a_cls}'>{actual_val:.1f}</span>{proj_line}</div>"
 
+    # Canonical slot order: some providers (ESPN) report slots in slot-id
+    # order, e.g. QB, RB, RB, WR, WR, TE, DEF, K, IR, FLEX, which mislabels
+    # the centre chips. Stable-sort to display order; bench/reserve slots
+    # are dropped.
+    _slot_order = _canonical_slot_order(roster_positions)
+    # Realign starter lists to the slot order by position eligibility.
+    # Providers that omit empty slots (ESPN) send shorter lists; pairing by
+    # index would shift every row below the gap. Local lists only: the
+    # m["left"]/m["right"] dicts keep their originals for win probability
+    # and team totals, which don't care about row order.
+    _left_starters = _realign_starters_to_slots(m["left"].get("starters", []), _slot_order)
+    _right_starters = _realign_starters_to_slots(m["right"].get("starters", []), _slot_order)
     _starter_pairs = () if compact else zip_longest(
-            m["left"].get("starters", []),
-            m["right"].get("starters", []),
+            _left_starters,
+            _right_starters,
             fillvalue=None,
     )
-    # Lineup slot order: provider starter lists follow roster_positions order,
-    # so row i pairs with the i-th non-bench slot. Short/missing slot data
-    # falls back to the old player-position chip for that row.
-    _slot_order = [
-        str(s).upper() for s in (roster_positions or []) if str(s).upper() != "BN"
-    ]
-
-    def _slot_chip(slot: str, left_p: str, right_p: str) -> tuple:
-        """(css_class, label) for the centre-rail chip: the *lineup slot*.
-
-        FLEX and SUPER_FLEX rows read FLEX / SF even though the two players
-        in them are different positions; ordinary slots read QB/RB/WR/TE/K/
-        D/ST. Unknown or missing slot data falls back to a player's real
-        position (the old behaviour).
-        """
-        s = (slot or "").upper()
-        if s == "FLEX":
-            return "FLEX", "FLEX"
-        if s == "SUPER_FLEX":
-            return "SF", "SF"
-        if s in ("QB", "RB", "WR", "TE", "K"):
-            return s, s
-        if s in ("DEF", "DST"):
-            return "DEF", "D/ST"
-        p = left_p or right_p or ""
-        if p in ("DEF", "DST"):
-            return "DEF", "D/ST"
-        return p, p
 
     for _row_idx, (L, R) in enumerate(_starter_pairs):
         (left_info, left_pos, left_actual, left_proj, left_is_bye,
