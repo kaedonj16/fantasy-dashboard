@@ -344,6 +344,17 @@ def _synthetic_week_matchups(rosters: List[dict], week: int) -> List[dict]:
     return synthetic_week_matchups(rosters, week)
 
 
+def _normalize_starter_slots(raw: list) -> list:
+    """Normalize a provider's starter-id list, preserving empty slots.
+
+    Empty slots (None, "", or Fleaflicker's "0") become None placeholders so
+    the list stays aligned with roster_positions order. Filtering them out
+    shifts every later player up a row, which misaligns the lineup-slot
+    badges on the matchup card.
+    """
+    return [None if s is None or str(s).strip() in ("", "0") else s for s in (raw or [])]
+
+
 def build_matchup_preview(
         league_id: str,
         week: int,
@@ -473,18 +484,20 @@ def build_matchup_preview(
 
     def _team_block_from_match_row(row: dict) -> dict:
         rid = str(row.get("roster_id"))
-        starters_raw = [s for s in (row.get("starters") or []) if s]
-        # Fleaflicker uses "0" for empty/unresolved boxscore slots. Those are
-        # placeholders, not real lineup data; exclude them from the historical
-        # check so unresolved boxscores don't masquerade as valid lineups.
-        real_starters = [s for s in starters_raw if str(s) != "0"]
+        # Keep empty slots as None placeholders so the list stays aligned with
+        # roster_positions order (see _normalize_starter_slots).
+        starters_raw = _normalize_starter_slots(row.get("starters"))
+        # Exclude the None placeholders (and any other non-player entries) from
+        # the historical check so unresolved boxscores don't masquerade as
+        # valid lineups.
+        real_starters = [s for s in starters_raw if s]
         # Keep whether the provider supplied a real weekly lineup before the
         # display-only current-roster fallback below. Historical consumers must
         # never mistake today's roster for the lineup started in an earlier week.
         lineup_is_historical = bool(real_starters) and not _starters_look_like_full_roster(
             real_starters, row.get("players") or []
         )
-        starter_set = {str(s) for s in starters_raw}
+        starter_set = {str(s) for s in starters_raw if s}
         all_players = [str(p) for p in (row.get("players") or []) if p]
         bench_raw = [p for p in all_players if p not in starter_set]
         pts_map = {str(k): v for k, v in (row.get("players_points") or {}).items()}
@@ -506,7 +519,7 @@ def build_matchup_preview(
             starters_raw, bench_raw = lineup_from_roster(roster)
             all_players = [str(p) for p in (roster.get("players") or []) if p] or all_players
 
-        s_infos: List[dict] = [_pinfo(str(pid), pts_map) for pid in starters_raw]
+        s_infos: List[dict] = [_pinfo(str(pid), pts_map) if pid else None for pid in starters_raw]
         b_infos: List[dict] = [_pinfo(str(pid), pts_map) for pid in bench_raw]
         pts_total = float(row["points"]) if isinstance(row.get("points"), (int, float)) else None
         proj_total = None
