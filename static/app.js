@@ -18092,6 +18092,51 @@ function _ssTableRow(label, cells, dir) {
   return '<tr><th class="ss-rowlbl">' + label + '</th>' + tds + '</tr>';
 }
 
+// Demotion chip labels, mirroring WV_DEMOTION_LABELS on the waivers page.
+// 'out' and 'questionable' are covered by the injury badge, so they render no
+// chip here. A weather demotion names the specific condition ("22 mph wind")
+// when the row carries a weather label.
+var _SS_DEMOTION_LABELS = {
+  low_total: 'Low team total',
+  weather: 'Bad weather',
+  oline: 'Weak O-line',
+  low_play_volume: 'Slow pace',
+  volatile_role: 'Volatile role'
+};
+function _ssDemoteChip(p) {
+  const st = (p && p.stats) || {};
+  const dem = st.start_score_demotion;
+  if (!dem || !_SS_DEMOTION_LABELS[dem]) return '';
+  const ssx = st.start_sit || {};
+  const lbl = (dem === 'weather' && ssx.weather && ssx.weather.label)
+    ? ssx.weather.label : _SS_DEMOTION_LABELS[dem];
+  return '<div class="ss-th-demote"><span class="ss-demote">' + _ssEsc(lbl) + '</span></div>';
+}
+// Compact per-player WHY line: the score factors that moved this player most,
+// as +/- percentages. Mirrors wvSsWhyLine on the waivers page; 'proj' is the
+// raw projection, not a multiplier, so it is excluded like there.
+function _ssWhyLine(p) {
+  const f = (p && p.stats && p.stats.start_score_factors) || {};
+  const labels = {floor: 'Floor', form: 'Form', usage: 'Usage', vegas: 'Vegas', weather: 'Weather', avail: 'Availability', oline: 'O-line', expected_plays: 'Pace', role: 'Role'};
+  const rows = [];
+  for (const key of Object.keys(labels)) {
+    const m = Number(f[key]);
+    if (!isFinite(m)) continue;
+    const pct = (m - 1) * 100;
+    if (Math.abs(m - 1) < 0.01) continue;
+    rows.push({imp: Math.abs(m - 1), txt: labels[key] + ' ' + (pct >= 0 ? '+' : '-') + Math.abs(pct).toFixed(0) + '%'});
+  }
+  rows.sort((a, b) => b.imp - a.imp);
+  return rows.slice(0, 3).map(r => r.txt).join(' · ');
+}
+// Joined display text for one absence list ('teammates' | 'opponents').
+function _ssAbsText(p, key) {
+  const x = (p && p.stats && p.stats.start_sit) || {};
+  const a = ((x.absences || {})[key]) || [];
+  const t = a.map(e => e && e.text).filter(Boolean);
+  return t.length ? t.join('; ') : null;
+}
+
 // Full Start/Sit tab body for N players (2 for compare/modal, 3 for the page).
 function _buildStartSitTabHTML(players) {
   players = (players || []).filter(Boolean);
@@ -18118,7 +18163,8 @@ function _buildStartSitTabHTML(players) {
 
   // Column header per player: name, then the start/sit score at the top of the
   // column (the 0-100 position-relative index, or the raw score when the index
-  // could not be built), replacing the separate hero cards.
+  // could not be built), replacing the separate hero cards. Demotion chips
+  // (e.g. the specific weather condition) sit under the score.
   const heads = players.map(function (p) {
     const st = s(p);
     const nm = _ssEsc(p.name || p.full_name || 'Player');
@@ -18132,7 +18178,7 @@ function _buildStartSitTabHTML(players) {
       const cap = hasPct ? 'index (0 to 100)' : 'score';
       scoreHtml = '<div class="ss-th-score">' + big + '</div><div class="ss-th-cap">' + cap + '</div>';
     }
-    return '<th class="ss-th"><div class="ss-th-name">' + nm + '</div>' + scoreHtml + '</th>';
+    return '<th class="ss-th"><div class="ss-th-name">' + nm + '</div>' + scoreHtml + _ssDemoteChip(p) + '</th>';
   }).join('');
 
   // Rows split into two groups: signals that actually feed the start/sit score,
@@ -18143,6 +18189,9 @@ function _buildStartSitTabHTML(players) {
   const section = (label) => '<tr class="ss-section"><td class="ss-section-cell" colspan="' + nCols + '">' + label + '</td></tr>';
 
   const rProj = _ssTableRow('Proj PPG', players.map(p => { const n = _ssNum(ss(p).proj_pts); return { num: n, html: n != null ? n : dash }; }), 'max');
+  // Compact WHY: the factors that moved each player's score most. Display
+  // only, drawn from the same score_factors the verdict uses.
+  const rWhy = _ssTableRow('WHY', players.map(p => { const w = _ssWhyLine(p); return { num: null, html: w ? '<span class="ss-why">' + _ssEsc(w) + '</span>' : dash }; }), null);
   const rL4 = _ssTableRow('L4 PPG', players.map(p => { const n = _ssNum(ss(p).recent_ppg) != null ? _ssNum(ss(p).recent_ppg) : _ssNum(s(p).ppg); return { num: n, html: n != null ? n : dash }; }), 'max');
   const rFloor = _ssTableRow('Floor&ndash;Ceil', players.map(p => { const c = cons(p); return { num: c ? _ssNum(c.floor) : null, html: c ? (c.floor + '&ndash;' + c.ceiling) : dash }; }), 'max');
   const rProfile = _ssTableRow('Profile', players.map(p => { const c = cons(p); return { num: null, html: _ssProfileChip(c) || dash }; }), null);
@@ -18154,16 +18203,31 @@ function _buildStartSitTabHTML(players) {
     return { num: _ssNum(ol.primary_value), html: Math.round(ol.primary_value) + ' ' + lbl + rk };
   }), 'max');
   const rVegas = _ssTableRow('Vegas total', players.map(p => { const n = _ssNum(ss(p).implied_total); return { num: n, html: n != null ? (n + ' implied') : dash }; }), 'max');
-  const rVenue = _ssTableRow('Venue', players.map(p => { const c = _ssVenueChip(ss(p)); return { num: null, html: c || dash }; }), null);
+  // Venue: home/away plus the specific weather (or the static dome/cold tag
+  // when there is no live weather signal). Display only.
+  const rVenue = _ssTableRow('Venue', players.map(p => {
+    const x = ss(p);
+    if (x.on_bye) return { num: null, html: 'BYE' };
+    const ha = x.is_home === true ? 'Home' : (x.is_home === false ? 'Away' : '');
+    const chip = _ssVenueChip(x);
+    const bits = [];
+    if (ha) bits.push(_ssEsc(ha));
+    if (chip) bits.push(chip);
+    return { num: null, html: bits.length ? bits.join(' · ') : dash };
+  }), null);
   const rValue = _ssTableRow('Value', players.map(p => { const n = _ssNum(isSf ? s(p).sf_value : s(p).value); return { num: n, html: n != null ? Math.round(n) : dash }; }), 'max');
-  const rOpp = _ssTableRow('Opponent', players.map(p => { const o = ss(p).opponent; return { num: null, html: o ? _ssEsc(o) : (ss(p).on_bye ? 'BYE' : dash) }; }), null);
+  const rOpp = _ssTableRow('Opponent', players.map(p => { const o = ss(p).opponent_label || ss(p).opponent; return { num: null, html: o ? _ssEsc(o) : (ss(p).on_bye ? 'BYE' : dash) }; }), null);
   const rDef = _ssTableRow('Def vs pos', players.map(p => { const f = _ssNum(ss(p).fpts_against); return { num: null, cls: _ssMuClass(ss(p).def_rank, ss(p).def_total), html: f != null ? (f + ' pts') : (ss(p).on_bye ? 'BYE' : dash) }; }), null);
   const rMatchup = _ssTableRow('Matchup', players.map(p => { const c = _ssMuChip(ss(p).def_rank, ss(p).def_total); return { num: null, html: c || dash }; }), null);
+  // Notable absences around each player's game. Display only; rows drop out
+  // entirely when neither player has anything notable.
+  const rTmAbs = _ssTableRow('Teammates out', players.map(p => { const t = _ssAbsText(p, 'teammates'); return { num: null, html: t ? _ssEsc(t) : dash }; }), null);
+  const rOppAbs = _ssTableRow('Opp defense out', players.map(p => { const t = _ssAbsText(p, 'opponents'); return { num: null, html: t ? _ssEsc(t) : dash }; }), null);
 
   // Empty rows return '' from _ssTableRow; drop them and skip a section header
   // whose whole group hid out, so a missing signal leaves no trace.
-  const scoreRows = [rProj, rL4, rFloor, rProfile, rBoom, rOline, rVegas, rVenue].filter(Boolean);
-  const ctxRows = [rValue, rOpp, rDef, rMatchup].filter(Boolean);
+  const scoreRows = [rWhy, rProj, rL4, rFloor, rProfile, rBoom, rOline, rVegas, rVenue].filter(Boolean);
+  const ctxRows = [rValue, rOpp, rDef, rMatchup, rTmAbs, rOppAbs].filter(Boolean);
   const rows = [
     scoreRows.length ? section('What drives the score') : '',
     scoreRows.join(''),
@@ -18220,6 +18284,9 @@ const _SS_TAB_CSS =
   + '.ss-env-cold{background:rgba(56,189,248,.16);color:#0369a1;}'
   + '.ss-env-wind{background:rgba(148,163,184,.20);color:#475569;}'
   + '.ss-env-precip,.ss-env-weather{background:rgba(59,130,246,.14);color:#1d4ed8;}'
+  + '.ss-th-demote{margin-top:6px;}'
+  + '.ss-demote{font-size:10px;font-weight:700;padding:2px 8px;border-radius:999px;display:inline-block;background:rgba(220,38,38,.12);color:var(--loss,#dc2626);}'
+  + '.ss-why{font-size:11px;font-weight:600;color:var(--muted);}'
   + '</style>';
 
 // Comparison body markup, shared by the player-modal compare view and the

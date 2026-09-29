@@ -2144,8 +2144,22 @@ function wvSsWhyLine(p) {{
   return rows.slice(0, 4).map(r => r.txt).join(' · ');
 }};
 
-// Evidence grid for one player: floor/ceiling, L4 PPG, Vegas, opp plays
-// faced, profile, injury. Only rows with data render.
+// "Home · 22 mph wind" style venue line: home/away decoded from the matchup
+// label ("vs X" = home, "@ X" = away), then the specific weather label when
+// the game has notable weather, else the static dome/cold venue tag.
+function wvSsVenueText(p) {{
+  if (!p || p.on_bye) return '';
+  const opp = p.opponent || '';
+  const ha = opp.indexOf('vs ') === 0 ? 'Home' : (opp.indexOf('@ ') === 0 ? 'Away' : '');
+  const wx = (p.weather && p.weather.label) || (p.game_env && p.game_env.label) || '';
+  const parts = [];
+  if (ha) parts.push(ha);
+  if (wx) parts.push(wx);
+  return parts.join(' · ');
+}}
+
+// Evidence grid for one player: floor/ceiling, L4 PPG, Vegas, venue, opp plays
+// faced, profile, injury, notable absences. Only rows with data render.
 function wvSsEvidence(p) {{
   const ev = [];
   const why = wvSsWhyLine(p);
@@ -2161,6 +2175,22 @@ function wvSsEvidence(p) {{
   }}
   if (p.implied_total != null) {{
     ev.push(`<div class="wv-cx-ev"><span class="k">VEGAS</span><span class="v">${{p.implied_total}} implied</span></div>`);
+  }}
+  // Venue: home/away from the matchup label plus specific weather when there
+  // is any ("vs X" = home, "@ X" = away). Display only.
+  const venueTxt = wvSsVenueText(p);
+  if (venueTxt) {{
+    ev.push(`<div class="wv-cx-ev"><span class="k">VENUE</span><span class="v">${{venueTxt}}</span></div>`);
+  }}
+  // Notable absences around this player's game. Display only: the score never
+  // sees these (Sleeper's projections already price teammate injuries in).
+  const absT = ((p.absences && p.absences.teammates) || []).map(a => a.text).filter(Boolean);
+  const absO = ((p.absences && p.absences.opponents) || []).map(a => a.text).filter(Boolean);
+  if (absT.length) {{
+    ev.push(`<div class="wv-cx-ev"><span class="k">TEAMMATES OUT</span><span class="v">${{absT.join('; ')}}</span></div>`);
+  }}
+  if (absO.length) {{
+    ev.push(`<div class="wv-cx-ev"><span class="k">OPP DEFENSE OUT</span><span class="v">${{absO.join('; ')}}</span></div>`);
   }}
   const pv = p.play_volume;
   if (pv && pv.plays_faced_pg != null) {{
@@ -2233,7 +2263,11 @@ function wvRenderStartSit() {{
       const escName = (p.name || '').replace(/'/g, "\\'");
       const matchup = p.opponent
         ? `${{p.opponent}} ${{wvSsMatchupChip(p.def_rank, p.def_total)}}` : '';
-      const demoteLbl = WV_DEMOTION_LABELS[p.demotion];
+      // Weather demotions name the specific condition ("22 mph wind") instead
+      // of the generic "Bad weather" chip when the row carries a label.
+      const demoteLbl = (p.demotion === 'weather' && p.weather && p.weather.label)
+        ? p.weather.label
+        : WV_DEMOTION_LABELS[p.demotion];
       const demoteChip = demoteLbl
         ? '<span class="wv-cx-chip bad">' + demoteLbl + '</span>' : '';
       // Head-to-head win probability on the marginal call (server-flagged).

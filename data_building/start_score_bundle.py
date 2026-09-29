@@ -447,6 +447,9 @@ def build_start_score_bundles(season: int = None, week: int = None) -> dict:
             implied_total = cond.get("implied_total")
             wx = cond.get("weather") or {}
             weather_kind = wx.get("kind") if isinstance(wx, dict) else None
+            # The tag label already carries the specifics ("22 mph wind");
+            # the bundle keeps it so rows can show it without a live lookup.
+            weather_label = wx.get("label") if isinstance(wx, dict) else None
             oline_index = _oline_index_for(season, oline_ratings, team, pos)
             pace = expected_plays_context(team_play_volume, team, opponent, tpv_nfl_avg) or {}
             role_conf = role_confidence_from_trend(ut)
@@ -496,6 +499,7 @@ def build_start_score_bundles(season: int = None, week: int = None) -> dict:
                     "usage_season_avg": ut.get("season_avg"),
                     "implied_total": implied_total,
                     "weather_kind": weather_kind,
+                    "weather_label": weather_label,
                     "oline_index": oline_index,
                     "expected_team_plays": pace.get("expected_team_plays"),
                     "league_average_plays": pace.get("league_average_plays"),
