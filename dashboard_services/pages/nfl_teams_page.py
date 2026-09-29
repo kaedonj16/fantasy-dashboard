@@ -905,8 +905,8 @@ function renderProfile(){{
   h+='<details class="nt-psec nt-collapse" open><summary><h3>Graphs</h3><span class="nt-chev" aria-hidden="true"></span></summary><div class="nt-graphs-grid">';
   h+='<section class="nt-psec"><h3>Home vs away</h3>'+splitsSVG(d,t)+'</section>';
   h+=fingerprintSection(t);
-  h+='<section class="nt-psec"><h3>Pass block vs run block</h3>'+olineScatterSVG(t)+'<p class="nt-fine">Every logo is an NFL team, the full-color logo is this team. O-line grades use the '+esc(String((DATA&&DATA.oline_season)||"latest"))+' season (latest available).</p></section>';
-  h+='<section class="nt-psec"><h3>Pressure vs sacks</h3>'+pressureScatterSVG(t)+'<p class="nt-fine">Every logo is an NFL team. Lower is better on both axes. Rates use the '+esc(String((DATA&&DATA.oline_season)||"latest"))+' season (latest available).</p></section>';
+  h+='<section class="nt-psec"><h3>Pass block vs run block</h3>'+olineScatterSVG(t)+'<p class="nt-fine">O-line grades use the '+esc(String((DATA&&DATA.oline_season)||"latest"))+' season (latest available).</p></section>';
+  h+='<section class="nt-psec"><h3>Pressure vs sacks</h3>'+pressureScatterSVG(t)+'<p class="nt-fine">Lower is better on both axes. Rates use the '+esc(String((DATA&&DATA.oline_season)||"latest"))+' season (latest available).</p></section>';
   h+='<section class="nt-psec"><h3>Pass vs run identity</h3>'+identityScatterSVG(t)+'<p class="nt-fine">League percentile by rank, all teams. Higher is better on both axes.</p></section>';
   h+='<section class="nt-psec"><h3>Defensive soft spots</h3>'+softSpotsSVG(t)+'<p class="nt-fine">Fantasy points allowed per game (PPR). Higher means a softer matchup. Only completed games count.</p></section>';
   h+='</div></details>';
