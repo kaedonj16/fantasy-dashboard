@@ -15,11 +15,19 @@ from __future__ import annotations
 import json
 import os
 import sys
+import time
 import urllib.error
 import urllib.request
 
 ALLOWED = {"hourly", "daily", "weekly", "scorezone"}
 DEFAULT_TIMEOUT = {"hourly": 120, "daily": 180, "weekly": 900, "scorezone": 120}
+
+# A 524 means Cloudflare gave up waiting on the app (usually saturated request
+# threads, not a slow endpoint: /api/cron/notifications answers 202 at once).
+# The weekly digest de-dupes per account per ISO week, so retrying it once
+# after a pause is safe: accounts already sent are skipped. Other kinds are
+# not retried here -- re-firing hourly pushes could double-notify.
+WEEKLY_524_RETRY_WAIT_SEC = 90
 
 
 def trigger(kind: str, app_url: str | None = None, secret: str | None = None,
@@ -54,28 +62,36 @@ def trigger(kind: str, app_url: str | None = None, secret: str | None = None,
         method="POST",
     )
     wait = timeout if timeout is not None else DEFAULT_TIMEOUT[kind]
-    try:
-        with urllib.request.urlopen(req, timeout=wait) as resp:
-            raw = resp.read()
-            try:
-                data = json.loads(raw)
-            except Exception:
-                data = None
-            if isinstance(data, dict) and "sent" in data:
-                bd = data.get("breakdown") or {}
-                parts = ", ".join(f"{k}={v}" for k, v in bd.items()
-                                  if k != "total")
-                detail = f"sent={data['sent']}" + (f" ({parts})" if parts else "")
-            else:
-                detail = f"{raw[:800]!r}"
-            print(f"[notify-cron] {kind}: HTTP {resp.status} {detail}")
-            return 0 if 200 <= getattr(resp, "status", 0) < 300 else 1
-    except urllib.error.HTTPError as exc:
-        print(f"[notify-cron] {kind} failed: HTTP {exc.code} {exc.read()[:800]!r}")
-        return 1
-    except Exception as exc:
-        print(f"[notify-cron] {kind} failed: {exc}")
-        return 1
+    attempts = 2 if kind == "weekly" else 1
+    for attempt in range(attempts):
+        try:
+            with urllib.request.urlopen(req, timeout=wait) as resp:
+                raw = resp.read()
+                try:
+                    data = json.loads(raw)
+                except Exception:
+                    data = None
+                if isinstance(data, dict) and "sent" in data:
+                    bd = data.get("breakdown") or {}
+                    parts = ", ".join(f"{k}={v}" for k, v in bd.items()
+                                      if k != "total")
+                    detail = f"sent={data['sent']}" + (f" ({parts})" if parts else "")
+                else:
+                    detail = f"{raw[:800]!r}"
+                print(f"[notify-cron] {kind}: HTTP {resp.status} {detail}")
+                return 0 if 200 <= getattr(resp, "status", 0) < 300 else 1
+        except urllib.error.HTTPError as exc:
+            print(f"[notify-cron] {kind} failed: HTTP {exc.code} {exc.read()[:800]!r}")
+            if exc.code == 524 and attempt + 1 < attempts:
+                print(f"[notify-cron] {kind}: retrying once in "
+                      f"{WEEKLY_524_RETRY_WAIT_SEC}s (send de-dupes per ISO week)")
+                time.sleep(WEEKLY_524_RETRY_WAIT_SEC)
+                continue
+            return 1
+        except Exception as exc:
+            print(f"[notify-cron] {kind} failed: {exc}")
+            return 1
+    return 1
 
 
 def main(argv: list[str] | None = None) -> int:
