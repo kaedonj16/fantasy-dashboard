@@ -36,7 +36,7 @@ import json
 import logging
 import os
 import uuid
-from typing import Any, Dict, FrozenSet, List, Optional, Sequence, Tuple
+from typing import Any, Dict, FrozenSet, List, Optional, Sequence
 
 logger = logging.getLogger(__name__)
 
@@ -261,8 +261,11 @@ def should_log_pageview(
 _IDENT = "COALESCE(account_id::text, 's:' || COALESCE(session_id, '-'))"
 
 
-def _fetchall(sql: str, args: Sequence[Any] = ()) -> List[Tuple]:
-    """Run a read query and return rows. Raises on DB failure (route catches)."""
+def _fetchall(sql: str, args: Sequence[Any] = ()) -> List[Dict[str, Any]]:
+    """Run a read query and return rows.
+
+    get_conn() uses psycopg's dict_row, so rows are dicts keyed by column
+    name, never tuples. Raises on DB failure (route catches)."""
     init_analytics_tables()
     from dashboard_services.db import get_conn
 
@@ -282,7 +285,7 @@ def dau_last_30_days() -> List[Dict[str, Any]]:
         GROUP BY 1 ORDER BY 1
         """
     )
-    return [{"date": str(r[0]), "users": int(r[1])} for r in rows]
+    return [{"date": str(r["d"]), "users": int(r["users"])} for r in rows]
 
 
 def wau_last_12_weeks() -> List[Dict[str, Any]]:
@@ -297,7 +300,7 @@ def wau_last_12_weeks() -> List[Dict[str, Any]]:
         GROUP BY 1 ORDER BY 1
         """
     )
-    return [{"week": str(r[0]), "users": int(r[1])} for r in rows]
+    return [{"week": str(r["w"]), "users": int(r["users"])} for r in rows]
 
 
 def signups_per_day() -> List[Dict[str, Any]]:
@@ -311,7 +314,7 @@ def signups_per_day() -> List[Dict[str, Any]]:
         GROUP BY 1 ORDER BY 1
         """
     )
-    return [{"date": str(r[0]), "signups": int(r[1])} for r in rows]
+    return [{"date": str(r["d"]), "signups": int(r["n"])} for r in rows]
 
 
 def feature_usage_by_week(weeks: int = 8) -> List[Dict[str, Any]]:
@@ -326,7 +329,7 @@ def feature_usage_by_week(weeks: int = 8) -> List[Dict[str, Any]]:
         """,
         (int(weeks),),
     )
-    return [{"week": str(r[0]), "event": str(r[1]), "count": int(r[2])} for r in rows]
+    return [{"week": str(r["w"]), "event": str(r["event"]), "count": int(r["n"])} for r in rows]
 
 
 def week_over_week_return() -> List[Dict[str, Any]]:
@@ -354,10 +357,10 @@ def week_over_week_return() -> List[Dict[str, Any]]:
     )
     out = []
     for r in rows:
-        active = int(r[1])
-        returned = int(r[2])
+        active = int(r["active"])
+        returned = int(r["returned"])
         out.append({
-            "week": str(r[0]),
+            "week": str(r["w"]),
             "active": active,
             "returned": returned,
             "rate": round(100.0 * returned / active, 1) if active else 0.0,
@@ -374,7 +377,9 @@ def funnel_last_30_days() -> Dict[str, int]:
     def _one(sql: str, args: Sequence[Any] = ()) -> int:
         try:
             rows = _fetchall(sql, args)
-            return int(rows[0][0]) if rows else 0
+            # get_conn() uses psycopg's dict_row: rows are dicts keyed by
+            # column name. COUNT(*) with no alias comes back as "count".
+            return int(rows[0]["count"]) if rows else 0
         except Exception:
             logger.debug("[analytics] funnel query failed", exc_info=True)
             return 0
@@ -415,6 +420,6 @@ def events_table_ready() -> bool:
     """Whether any events have been recorded yet (drives empty states)."""
     try:
         rows = _fetchall("SELECT COUNT(*) FROM analytics_events")
-        return int(rows[0][0]) > 0 if rows else False
+        return int(rows[0]["count"]) > 0 if rows else False
     except Exception:
         return False

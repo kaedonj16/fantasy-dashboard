@@ -186,7 +186,9 @@ def test_account_id_from_subscriber_token(token, expected):
 def test_dau_parses_rows(monkeypatch):
     import datetime
 
-    _patch_fetchall(monkeypatch, [(datetime.date(2026, 9, 28), 12), (datetime.date(2026, 9, 29), 34)])
+    # Rows mirror psycopg's dict_row (what get_conn() really returns):
+    # dicts keyed by column name, never tuples.
+    _patch_fetchall(monkeypatch, [{"d": datetime.date(2026, 9, 28), "users": 12}, {"d": datetime.date(2026, 9, 29), "users": 34}])
     out = analytics.dau_last_30_days()
     assert out == [
         {"date": "2026-09-28", "users": 12},
@@ -235,7 +237,7 @@ def test_feature_usage_parses_rows(monkeypatch):
 
     _patch_fetchall(
         monkeypatch,
-        [(datetime.date(2026, 9, 28), "trade_evaluated", 7)],
+        [{"w": datetime.date(2026, 9, 28), "event": "trade_evaluated", "n": 7}],
     )
     out = analytics.feature_usage_by_week(8)
     assert out == [{"week": "2026-09-28", "event": "trade_evaluated", "count": 7}]
@@ -246,7 +248,10 @@ def test_week_over_week_return_parses_rows(monkeypatch):
 
     _patch_fetchall(
         monkeypatch,
-        [(datetime.date(2026, 9, 21), 100, 40), (datetime.date(2026, 9, 28), 120, 60)],
+        [
+            {"w": datetime.date(2026, 9, 21), "active": 100, "returned": 40},
+            {"w": datetime.date(2026, 9, 28), "active": 120, "returned": 60},
+        ],
     )
     out = analytics.week_over_week_return()
     assert out == [
@@ -270,12 +275,12 @@ def test_funnel_counts_stages(monkeypatch):
     def fake_fetchall(sql, args=()):
         calls.append(sql)
         if "user_league_subscriptions" in sql:
-            return [(3,)]
+            return [{"count": 3}]
         if "league_linked" in sql:
-            return [(11,)]
+            return [{"count": 11}]
         if "FROM accounts" in sql:
-            return [(25,)]
-        return [(100,)]
+            return [{"count": 25}]
+        return [{"count": 100}]
 
     monkeypatch.setattr("dashboard_services.analytics._fetchall", fake_fetchall)
     out = analytics.funnel_last_30_days()
@@ -293,9 +298,9 @@ def test_funnel_survives_missing_tables(monkeypatch):
 
 
 def test_events_table_ready(monkeypatch):
-    _patch_fetchall(monkeypatch, [(0,)])
+    _patch_fetchall(monkeypatch, [{"count": 0}])
     assert analytics.events_table_ready() is False
-    _patch_fetchall(monkeypatch, [(5,)])
+    _patch_fetchall(monkeypatch, [{"count": 5}])
     assert analytics.events_table_ready() is True
 
 
