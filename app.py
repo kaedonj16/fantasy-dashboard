@@ -13432,6 +13432,62 @@ def api_start_sit_options():
     })
 
 
+@app.route("/api/lineup-lab")
+def api_lineup_lab():
+    """Lineup Lab payload: starters + eligible bench + opponent distribution.
+
+    Query params: platform, league_id, season, week (defaults to current).
+    Powers the Lab toggle on the Start/Sit tab; the browser runs the sims.
+    """
+    platform = (request.args.get("platform") or "sleeper").strip().lower()
+    league_id = (request.args.get("league_id") or "").strip()
+    season = int(request.args.get("season") or datetime.now().year)
+    week_arg = request.args.get("week") or ""
+
+    if not league_id:
+        return jsonify({"error": "league_id required"}), 400
+
+    if not _session_signed_in():
+        return jsonify({"state": "sign_in_required",
+                        "message": "Sign in to use the Lineup Lab."}), 401
+
+    try:
+        ctx = get_league_ctx_from_cache(platform, league_id, season)
+    except Exception:
+        logger.warning("lineup lab unavailable", exc_info=True)
+        return jsonify({"state": "temporarily_unavailable", "retryable": True,
+                        "message": "Lineup data is temporarily unavailable."}), 503
+
+    viewer = ctx.get("viewer") or {}
+    viewer_roster_id = viewer.get("viewer_roster_id")
+    if not viewer_roster_id:
+        return jsonify({"state": "team_not_linked",
+                        "message": "Select or link your team to use the Lineup Lab."}), 409
+
+    try:
+        week = int(week_arg) if week_arg else int(ctx.get("current_week") or 1)
+    except (TypeError, ValueError):
+        week = int(ctx.get("current_week") or 1)
+
+    try:
+        from data_building.lineup_lab import build_lineup_lab_payload
+        payload = build_lineup_lab_payload(
+            ctx=ctx,
+            league_id=league_id,
+            viewer_roster_id=viewer_roster_id,
+            season=season,
+            week=week,
+        )
+    except LookupError as e:
+        return jsonify({"state": "team_not_linked", "message": str(e)}), 409
+    except Exception:
+        logger.warning("lineup lab build failed", exc_info=True)
+        return jsonify({"state": "temporarily_unavailable", "retryable": True,
+                        "message": "Lineup Lab is temporarily unavailable."}), 503
+    payload["state"] = "loaded"
+    return jsonify(payload)
+
+
 @app.route("/<platform>/<int:season>/<league_id>/weekly")
 def page_weekly(platform: str, season: int, league_id: str):
     ctx = get_league_ctx_from_cache(platform, league_id, season)

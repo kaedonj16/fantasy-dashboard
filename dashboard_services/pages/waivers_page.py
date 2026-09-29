@@ -36,6 +36,59 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
   .wv-section { display: none; }
   .wv-section.wv-tab-active { display: block; }
 }
+/* Lineup Lab (Start/Sit tab) */
+.wv-ss-mode { display: inline-flex; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; margin: 0 0 12px; background: var(--card); }
+.wv-ss-mode button { border: none; background: none; color: var(--text-muted); font-size: 13px; font-weight: 700; padding: 8px 18px; cursor: pointer; }
+.wv-ss-mode button.on { background: var(--accent); color: #fff; }
+.wv-lab-hero { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 14px; margin-bottom: 12px; }
+.wv-lab-hero .lbl { font-size: 11px; font-weight: 800; letter-spacing: .06em; color: var(--text-muted); text-transform: uppercase; margin-bottom: 10px; }
+.wv-lab-winbar { display: flex; height: 34px; border-radius: 8px; overflow: hidden; font-weight: 800; font-size: 14px; }
+.wv-lab-winbar .you { background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; transition: width .3s; }
+.wv-lab-winbar .opp { background: #e5e7eb; color: #374151; display: flex; align-items: center; justify-content: center; transition: width .3s; }
+.wv-lab-dist { margin-top: 12px; }
+.wv-lab-trow { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.wv-lab-trow .who { width: 34px; font-size: 12px; font-weight: 700; color: var(--text-muted); }
+.wv-lab-trow .track { position: relative; flex: 1; height: 10px; background: #eef0f3; border-radius: 5px; }
+.wv-lab-trow .fill { position: absolute; top: 0; bottom: 0; border-radius: 5px; background: var(--accent); opacity: .55; }
+.wv-lab-trow .fill.o { background: #9ca3af; }
+.wv-lab-trow .tick { position: absolute; top: -2px; bottom: -2px; width: 2px; background: #111827; }
+.wv-lab-trow .nums { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+.wv-lab-trow .nums b { color: var(--text); }
+.wv-lab-scale { display: flex; justify-content: space-between; font-size: 10px; color: var(--text-muted); margin: 2px 0 0 42px; }
+.wv-lab-modes { display: flex; gap: 8px; margin-top: 12px; }
+.wv-lab-btn { flex: 1; border: 1px solid var(--border); background: var(--card); color: var(--text); border-radius: 10px; padding: 10px 0; font-size: 13px; font-weight: 700; cursor: pointer; }
+.wv-lab-btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.wv-lab-btn.on { outline: 2px solid var(--accent); outline-offset: -2px; }
+.wv-lab-slot { border-bottom: 1px solid var(--border); }
+.wv-lab-row { display: flex; align-items: center; gap: 10px; width: 100%; border: none; background: none; padding: 12px 4px; cursor: pointer; text-align: left; color: var(--text); }
+.wv-lab-pos { font-size: 11px; font-weight: 800; color: var(--text-muted); width: 44px; }
+.wv-lab-main { flex: 1; min-width: 0; }
+.wv-lab-name { font-size: 14px; font-weight: 700; }
+.wv-lab-sub { display: flex; align-items: center; gap: 8px; margin-top: 4px; font-size: 12px; color: var(--text-muted); }
+.wv-lab-range { position: relative; flex: 1; max-width: 180px; height: 8px; background: #eef0f3; border-radius: 4px; }
+.wv-lab-range .fill { position: absolute; top: 0; bottom: 0; background: var(--accent); opacity: .5; border-radius: 4px; }
+.wv-lab-range .dot { position: absolute; top: -2px; width: 3px; height: 12px; background: #111827; border-radius: 2px; }
+.wv-lab-tag { font-size: 10px; font-weight: 800; padding: 2px 7px; border-radius: 20px; background: #eef2ff; color: #4f46e5; }
+.wv-lab-tag.td { background: #fef3c7; color: #92400e; }
+.wv-lab-tag.q { background: #fee2e2; color: #991b1b; }
+.wv-lab-tag.boost, .wv-lab-tag.qb { background: #ecfdf5; color: #065f46; }
+.wv-lab-proj { text-align: right; }
+.wv-lab-proj .n { font-size: 16px; font-weight: 800; }
+.wv-lab-proj .l { font-size: 10px; color: var(--text-muted); font-weight: 700; }
+.wv-lab-chev { color: var(--text-muted); font-size: 18px; }
+.wv-lab-sheet { display: none; padding: 0 4px 12px 54px; }
+.wv-lab-slot.open .wv-lab-sheet { display: block; }
+.wv-lab-slot.open .wv-lab-chev { transform: rotate(90deg); display: inline-block; }
+.wv-lab-cap { font-size: 11px; color: var(--text-muted); font-weight: 700; margin-bottom: 6px; }
+.wv-lab-opt { display: block; width: 100%; text-align: left; border: 1px solid var(--border); background: var(--card); border-radius: 10px; padding: 10px 12px; margin-bottom: 6px; cursor: pointer; color: var(--text); }
+.wv-lab-opt.best { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.wv-lab-opt .l1 { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 13px; }
+.wv-lab-opt .dl { margin-left: auto; font-weight: 800; }
+.wv-lab-opt .dl.up { color: #059669; }
+.wv-lab-opt .dl.dn { color: #dc2626; }
+.wv-lab-opt .l2 { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 12px; color: var(--text-muted); }
+.wv-lab-fine { font-size: 12px; color: var(--text-muted); margin-top: 10px; }
+.wv-lab-skel { padding: 24px; text-align: center; color: var(--text-muted); font-size: 13px; }
 
 .wv-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
 /* Grid items default to min-width:auto, so a wide flex child (the horizontally
@@ -552,8 +605,15 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
     <!-- Right: Start/Sit -->
     <div class="wv-section" id="wvSectionStartSit"{startsit_section_hidden}>
       <div class="wv-section-title">Start/Sit Advisor</div>
+      <div class="wv-ss-mode" role="tablist" aria-label="Start/Sit mode">
+        <button type="button" id="wvSsModeAdvise" class="on" onclick="wvSetSsMode('advise')">Advise</button>
+        <button type="button" id="wvSsModeLab" onclick="wvSetSsMode('lab')">Lab</button>
+      </div>
       <!-- Compare panel (hidden until 2 players selected) -->
       <div id="wvComparePanel" style="display:none;scroll-margin-top:16px;"></div>
+      <div id="wvLab" hidden>
+        <div class="wv-lab-skel" id="wvLabBody">Loading the Lab...</div>
+      </div>
       <div id="wvStartSit">
         {wv_skel}
       </div>
@@ -580,6 +640,385 @@ var wvStartSitData = {{}};
 var wvCompare = [null, null]; // [playerA, playerB]
 var wvUsesK = false;   // league starts kickers (start-sit data or waiver-candidates)
 var wvUsesDef = false; // league starts team defenses (same two sources)
+
+// ── Lineup Lab (Start/Sit tab) ────────────────────────────────────────────
+// Client-side 2,000-sim Monte Carlo around the server's projections.
+// Common random numbers: one set of base draws per Lab load, so every swap
+// delta is signal, not noise. No API round-trip per swap.
+var wvLabMode = 'advise';
+var wvLabData = null;
+var wvLabLineup = null;   // working lineup: array of starter entries
+var wvLabBase = null;     // pid -> {{u0, u1, dud}} Float64Arrays (common random numbers)
+var wvLabOppDraws = null; // opponent team totals per sim
+var wvLabOppStats = null; // {{median, p10, p90}}
+var wvLabResult = null;   // last evaluate() output
+var wvLabUpside = false;
+var wvLabLoading = false;
+var WV_LAB_SIMS = 2000;
+
+function wvSetSsMode(mode) {{
+  wvLabMode = mode;
+  var adv = document.getElementById('wvSsModeAdvise');
+  var lab = document.getElementById('wvSsModeLab');
+  if (adv) adv.classList.toggle('on', mode === 'advise');
+  if (lab) lab.classList.toggle('on', mode === 'lab');
+  var ss = document.getElementById('wvStartSit');
+  if (ss) ss.hidden = (mode === 'lab');
+  var labEl = document.getElementById('wvLab');
+  if (labEl) labEl.hidden = (mode === 'advise');
+  if (mode === 'lab') {{
+    if (!wvLabData && !wvLabLoading) wvLoadLab();
+    else if (wvLabData) wvRenderLab();
+  }}
+}}
+
+// Seeded PRNG so a Lab session is reproducible while it is open.
+function wvLabRng(seed) {{
+  var a = seed >>> 0;
+  return function() {{
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    var t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  }};
+}}
+
+function wvLabSkewParams(mean, std, alpha) {{
+  var delta = alpha / Math.sqrt(1 + alpha * alpha);
+  var omega = std / Math.sqrt(Math.max(1e-6, 1 - 2 * delta * delta / Math.PI));
+  var xi = mean - omega * delta * Math.sqrt(2 / Math.PI);
+  return {{ delta: delta, omega: omega, xi: xi, w2: Math.sqrt(Math.max(0, 1 - delta * delta)) }};
+}}
+
+function wvLabBuildBase(pids, nSims, seed) {{
+  var rand = wvLabRng(seed);
+  var base = {{}};
+  for (var k = 0; k < pids.length; k++) {{
+    var u0 = new Float64Array(nSims), u1 = new Float64Array(nSims), dud = new Float64Array(nSims);
+    for (var s = 0; s < nSims; s++) {{
+      var a = rand() + 1e-12, b = rand(), e = rand();
+      var r = Math.sqrt(-2 * Math.log(a));
+      var ang = 2 * Math.PI * b;
+      u0[s] = r * Math.cos(ang);
+      u1[s] = r * Math.sin(ang);
+      dud[s] = e;
+    }}
+    base[pids[k]] = {{ u0: u0, u1: u1, dud: dud }};
+  }}
+  return base;
+}}
+
+function wvLabCholesky(mat) {{
+  var n = mat.length, L = [], i, j, k;
+  for (i = 0; i < n; i++) L.push(new Float64Array(n));
+  for (i = 0; i < n; i++) {{
+    for (j = 0; j <= i; j++) {{
+      var s = mat[i][j];
+      for (k = 0; k < j; k++) s -= L[i][k] * L[j][k];
+      if (i === j) L[i][j] = Math.sqrt(Math.max(s, 1e-9));
+      else L[i][j] = s / Math.max(L[j][j], 1e-9);
+    }}
+  }}
+  return L;
+}}
+
+// Evaluate one lineup on the common random numbers. Returns
+// {{winPct, median, p10, p90}}. Correlated via Gaussian copula (Cholesky).
+function wvLabEvaluate(lineup) {{
+  var n = WV_LAB_SIMS, m = lineup.length, i, j, s;
+  if (!m || !wvLabOppDraws) return {{ winPct: 0.5, median: 0, p10: 0, p90: 0 }};
+  var pids = [];
+  for (i = 0; i < m; i++) pids.push(lineup[i].player_id);
+  var mat = [];
+  for (i = 0; i < m; i++) {{
+    var row = [];
+    for (j = 0; j < m; j++) {{
+      if (i === j) {{ row.push(1); continue; }}
+      var a = pids[i], b = pids[j];
+      var key = a < b ? a + ':' + b : b + ':' + a;
+      row.push(wvLabData.corr[key] || 0);
+    }}
+    mat.push(row);
+  }}
+  var L = wvLabCholesky(mat);
+  var params = [];
+  for (i = 0; i < m; i++) {{
+    var pf = lineup[i].profile || {{}};
+    params.push({{
+      sp: wvLabSkewParams(pf.mean || 0, pf.std || 8, pf.skew_alpha == null ? 2 : pf.skew_alpha),
+      dud: pf.dud_risk || 0
+    }});
+  }}
+  var totals = new Float64Array(n);
+  for (s = 0; s < n; s++) {{
+    var tot = 0;
+    for (i = 0; i < m; i++) {{
+      var c0 = 0, c1 = 0;
+      for (j = 0; j <= i; j++) {{
+        c0 += L[i][j] * wvLabBase[pids[j]].u0[s];
+        c1 += L[i][j] * wvLabBase[pids[j]].u1[s];
+      }}
+      var pr = params[i], x;
+      if (wvLabBase[pids[i]].dud[s] < pr.dud) {{
+        x = pr.sp.xi * 0.25 + pr.sp.omega * 0.3 * c1;  // dud mixture: lost week
+      }} else {{
+        x = pr.sp.xi + pr.sp.omega * (pr.sp.delta * Math.abs(c0) + pr.sp.w2 * c1);
+      }}
+      tot += Math.max(0, x);
+    }}
+    totals[s] = tot;
+  }}
+  var wins = 0;
+  for (s = 0; s < n; s++) if (totals[s] > wvLabOppDraws[s]) wins++;
+  var sorted = Array.prototype.slice.call(totals).sort(function(a, b) {{ return a - b; }});
+  return {{
+    winPct: wins / n,
+    median: sorted[Math.floor(n / 2)],
+    p10: sorted[Math.floor(n * 0.1)],
+    p90: sorted[Math.floor(n * 0.9)]
+  }};
+}}
+
+function wvLoadLab() {{
+  wvLabLoading = true;
+  var body = document.getElementById('wvLabBody');
+  if (body) body.innerHTML = '<div class="wv-lab-skel">Simulating 2,000 lineups...</div>';
+  var week = (wvStartSitData && wvStartSitData.current_week) || '';
+  var url = '/api/lineup-lab?platform=' + encodeURIComponent(WV_PLATFORM)
+    + '&league_id=' + encodeURIComponent(WV_LEAGUE_ID)
+    + '&season=' + encodeURIComponent(WV_SEASON)
+    + (week ? '&week=' + encodeURIComponent(week) : '');
+  fetch(url).then(function(r) {{ return r.json(); }}).then(function(data) {{
+    wvLabLoading = false;
+    if (!data || data.state !== 'loaded' || !data.you || !data.you.lineup) {{
+      if (body) body.innerHTML = '<div class="wv-lab-skel">'
+        + ((data && data.message) || 'The Lab is unavailable right now.')
+        + ' <button type="button" class="wv-lab-btn" onclick="wvLabData=null;wvLoadLab()">Try again</button></div>';
+      return;
+    }}
+    wvLabData = data;
+    // Deep copy: the working lineup mutates on swaps, the payload stays pristine.
+    wvLabLineup = JSON.parse(JSON.stringify(data.you.lineup));
+    var pids = [];
+    wvLabLineup.forEach(function(e) {{
+      pids.push(e.player_id);
+      (e.bench || []).forEach(function(b) {{ if (pids.indexOf(b.player_id) < 0) pids.push(b.player_id); }});
+    }});
+    var seed = (Date.now() % 100000) | 0;
+    wvLabBase = wvLabBuildBase(pids, WV_LAB_SIMS, seed);
+    var opp = data.opponent || {{}};
+    if (opp.mean > 0) {{
+      var rand = wvLabRng(seed + 7);
+      var sp = wvLabSkewParams(opp.mean, opp.std || 15, 2.0);
+      wvLabOppDraws = new Float64Array(WV_LAB_SIMS);
+      var arr = [];
+      for (var s = 0; s < WV_LAB_SIMS; s++) {{
+        var a = rand() + 1e-12, b = rand();
+        var r = Math.sqrt(-2 * Math.log(a)), ang = 2 * Math.PI * b;
+        var x = Math.max(0, sp.xi + sp.omega * (sp.delta * Math.abs(r * Math.cos(ang)) + sp.w2 * r * Math.sin(ang)));
+        wvLabOppDraws[s] = x; arr.push(x);
+      }}
+      arr.sort(function(x, y) {{ return x - y; }});
+      wvLabOppStats = {{ median: arr[WV_LAB_SIMS >> 1], p10: arr[(WV_LAB_SIMS * 0.1) | 0], p90: arr[(WV_LAB_SIMS * 0.9) | 0] }};
+    }} else {{
+      wvLabOppDraws = null; wvLabOppStats = null;
+    }}
+    wvLabResult = wvLabEvaluate(wvLabLineup);
+    wvRenderLab();
+  }}).catch(function() {{
+    wvLabLoading = false;
+    if (body) body.innerHTML = '<div class="wv-lab-skel">The Lab is unavailable right now. '
+      + '<button type="button" class="wv-lab-btn" onclick="wvLabData=null;wvLoadLab()">Try again</button></div>';
+  }});
+}}
+
+function wvLabEsc(s) {{ return String(s == null ? '' : s).replace(/'/g, "\\'").replace(/</g, '&lt;'); }}
+
+function wvLabRangeBar(e) {{
+  var PMAX = 34;
+  function pct(x) {{ return Math.max(0, Math.min(100, x / PMAX * 100)); }}
+  var l = pct(e.floor || 0), r = pct(e.ceiling || 0), d = pct(e.proj || 0);
+  return '<span class="wv-lab-range"><span class="fill" style="left:' + l + '%;width:' + Math.max(0, r - l) + '%"></span>'
+    + '<span class="dot" style="left:' + d + '%"></span></span>'
+    + '<span>' + (e.floor || 0) + '-' + (e.ceiling || 0) + '</span>';
+}}
+
+function wvLabTags(e) {{
+  return (e.tags || []).map(function(t) {{
+    return '<span class="wv-lab-tag ' + wvLabEsc(t.kind) + '">' + wvLabEsc(t.label) + '</span>';
+  }}).join('');
+}}
+
+// Win% delta of swapping bench option b into slot si (common random numbers).
+function wvLabSwapDelta(si, b) {{
+  var trial = wvLabLineup.slice();
+  trial[si] = b;
+  return wvLabEvaluate(trial).winPct - wvLabResult.winPct;
+}}
+
+function wvLabRenderHero() {{
+  var opp = wvLabData.opponent || {{}};
+  var r = wvLabResult;
+  var winPct = Math.round(r.winPct * 100);
+  var oppName = wvLabEsc(opp.name || 'Opponent');
+  var lbl = 'Win probability · ' + WV_LAB_SIMS.toLocaleString() + ' sims · vs ' + oppName;
+  var tmin = Math.min(r.p10, wvLabOppStats ? wvLabOppStats.p10 : r.p10);
+  var tmax = Math.max(r.p90, wvLabOppStats ? wvLabOppStats.p90 : r.p90);
+  var pad = (tmax - tmin) * 0.08 || 10;
+  tmin -= pad; tmax += pad;
+  function band(p10, p90, med) {{
+    function pct(x) {{ return Math.max(0, Math.min(100, (x - tmin) / (tmax - tmin) * 100)); }}
+    return {{ l: pct(p10), w: Math.max(1, pct(p90) - pct(p10)), tick: pct(med) }};
+  }}
+  var yb = band(r.p10, r.p90, r.median);
+  var ob = wvLabOppStats ? band(wvLabOppStats.p10, wvLabOppStats.p90, wvLabOppStats.median) : null;
+  function ticks() {{
+    var out = [], n = 4, i;
+    for (i = 0; i <= n; i++) out.push('<span>' + Math.round(tmin + (tmax - tmin) * i / n) + '</span>');
+    return out.join('');
+  }}
+  return '<div class="wv-lab-hero">'
+    + '<div class="lbl">' + lbl + '</div>'
+    + '<div class="wv-lab-winbar"><div class="you" style="width:' + winPct + '%">' + winPct + '%</div>'
+    + '<div class="opp" style="width:' + (100 - winPct) + '%">' + (100 - winPct) + '%</div></div>'
+    + '<div class="wv-lab-dist">'
+    + '<div class="wv-lab-trow"><span class="who">You</span><div class="track">'
+    + '<div class="fill" style="left:' + yb.l + '%;width:' + yb.w + '%"></div>'
+    + '<div class="tick" style="left:calc(' + yb.tick + '% - 1px)"></div></div>'
+    + '<span class="nums"><b>' + r.median.toFixed(1) + '</b> · ' + Math.round(r.p10) + '-' + Math.round(r.p90) + '</span></div>'
+    + (ob ? '<div class="wv-lab-trow"><span class="who">Opp</span><div class="track">'
+      + '<div class="fill o" style="left:' + ob.l + '%;width:' + ob.w + '%"></div>'
+      + '<div class="tick" style="left:calc(' + ob.tick + '% - 1px)"></div></div>'
+      + '<span class="nums"><b>' + wvLabOppStats.median.toFixed(1) + '</b> · ' + Math.round(wvLabOppStats.p10) + '-' + Math.round(wvLabOppStats.p90) + '</span></div>' : '')
+    + '</div><div class="wv-lab-scale">' + ticks() + '</div>'
+    + '<div class="wv-lab-modes">'
+    + '<button type="button" class="wv-lab-btn' + (wvLabUpside ? ' on' : '') + '" onclick="wvLabToggleUpside()">'
+    + (wvLabUpside ? 'Chasing upside' : 'Chase upside') + '</button>'
+    + '<button type="button" class="wv-lab-btn primary" onclick="wvLabOptimize()">Optimize lineup</button>'
+    + '</div></div>';
+}}
+
+function wvLabRenderSlots() {{
+  var totalProj = 0, i;
+  for (i = 0; i < wvLabLineup.length; i++) totalProj += wvLabLineup[i].proj || 0;
+  return wvLabLineup.map(function(e, si) {{
+    var share = totalProj > 0 ? Math.round(100 * (e.proj || 0) / totalProj) : 0;
+    var bench = (e.bench || []).slice();
+    if (wvLabUpside) {{
+      bench.sort(function(a, b) {{ return ((b.ceiling || 0) - (b.proj || 0)) - ((a.ceiling || 0) - (a.proj || 0)); }});
+    }} else {{
+      bench.forEach(function(b) {{ b._d = wvLabSwapDelta(si, b); }});
+      bench.sort(function(a, b) {{ return b._d - a._d; }});
+    }}
+    var best = null;
+    if (!wvLabUpside) {{
+      for (i = 0; i < bench.length; i++) {{
+        if (bench[i]._d > 0 && (best === null || bench[i]._d > best)) best = bench[i]._d;
+      }}
+    }}
+    var sheet = '';
+    if (bench.length) {{
+      var cap = wvLabUpside ? 'sorted by ceiling' : 'bench · win% change';
+      sheet = '<div class="wv-lab-sheet"><div class="wv-lab-cap">' + cap + '</div>' + bench.map(function(b, bi) {{
+        var inner;
+        if (wvLabUpside) {{
+          inner = '<span class="dl">ceil ' + (b.ceiling || 0) + '</span>';
+        }} else {{
+          var d = Math.round(b._d * 100);
+          inner = '<span class="dl ' + (d >= 0 ? 'up' : 'dn') + '">' + (d >= 0 ? '+' : '') + d + '%</span>';
+        }}
+        var isBest = !wvLabUpside && best !== null && b._d === best;
+        return '<button type="button" class="wv-lab-opt' + (isBest ? ' best' : '') + '"'
+          + ' onclick="event.stopPropagation();wvLabSwap(' + si + ',' + wvLabLineup[si].bench.indexOf(b) + ')">'
+          + '<span class="l1"><span>' + wvLabEsc(b.name) + '</span>' + inner + '</span>'
+          + '<span class="l2"><span>' + (b.proj || 0).toFixed(1) + ' proj' + (b.matchup ? ' · ' + wvLabEsc(b.matchup) : '') + '</span>'
+          + wvLabRangeBar(b) + '</span></button>';
+      }}).join('') + '</div>';
+    }}
+    return '<div class="wv-lab-slot" data-si="' + si + '">'
+      + '<button type="button" class="wv-lab-row" onclick="wvLabToggleSlot(' + si + ')">'
+      + '<span class="wv-lab-pos">' + wvLabEsc(e.slot || e.pos) + '</span>'
+      + '<span class="wv-lab-main"><span class="wv-lab-name">' + wvLabEsc(e.name) + '</span>'
+      + '<span class="wv-lab-sub">' + wvLabRangeBar(e)
+      + '<span>' + share + '% share</span>'
+      + (e.matchup ? '<span>' + wvLabEsc(e.matchup) + '</span>' : '')
+      + wvLabTags(e) + '</span></span>'
+      + '<span class="wv-lab-proj"><span class="n">' + (e.proj || 0).toFixed(1) + '</span><br><span class="l">PROJ</span></span>'
+      + (bench.length ? '<span class="wv-lab-chev">›</span>' : '<span class="wv-lab-chev" style="visibility:hidden">›</span>')
+      + '</button>' + sheet + '</div>';
+  }}).join('');
+}}
+
+function wvRenderLab() {{
+  var body = document.getElementById('wvLabBody');
+  if (!body || !wvLabData) return;
+  var html = wvLabRenderHero()
+    + '<div class="wv-section-title" style="margin-top:4px">Your lineup</div>'
+    + '<div style="font-size:12px;color:var(--text-muted);margin:-6px 0 8px">tap a starter to swap</div>'
+    + wvLabRenderSlots()
+    + '<p class="wv-lab-fine">' + WV_LAB_SIMS.toLocaleString()
+    + ' simulations per lineup. Ranges centered on start/sit projections, spread from season game logs.</p>';
+  body.innerHTML = html;
+}}
+
+function wvLabToggleSlot(si) {{
+  var el = document.querySelector('.wv-lab-slot[data-si="' + si + '"]');
+  if (el) el.classList.toggle('open');
+}}
+
+function wvLabSwap(si, bi) {{
+  var slot = wvLabLineup[si];
+  var b = slot.bench[bi];
+  var d = Math.round((wvLabSwapDelta(si, b)) * 100);
+  slot.bench[bi] = {{
+    player_id: slot.player_id, name: slot.name, pos: slot.pos, slot: slot.slot,
+    proj: slot.proj, floor: slot.floor, ceiling: slot.ceiling,
+    matchup: slot.matchup, tags: slot.tags, profile: slot.profile, bench: []
+  }};
+  var nb = {{ player_id: b.player_id, name: b.name, pos: b.pos, slot: slot.slot,
+    proj: b.proj, floor: b.floor, ceiling: b.ceiling,
+    matchup: b.matchup, tags: b.tags, profile: b.profile }};
+  delete nb._d;
+  wvLabLineup[si] = nb;
+  nb.bench = slot.bench;
+  wvLabResult = wvLabEvaluate(wvLabLineup);
+  wvRenderLab();
+}}
+
+function wvLabToggleUpside() {{
+  wvLabUpside = !wvLabUpside;
+  wvRenderLab();
+}}
+
+function wvLabOptimize() {{
+  var applied = 0, guard = 0, si, bi;
+  while (guard++ < 12) {{
+    var best = null;
+    for (si = 0; si < wvLabLineup.length; si++) {{
+      var bench = wvLabLineup[si].bench || [];
+      for (bi = 0; bi < bench.length; bi++) {{
+        var d = wvLabSwapDelta(si, bench[bi]);
+        if (d > 0.001 && (!best || d > best.d)) best = {{ si: si, bi: bi, d: d }};
+      }}
+    }}
+    if (!best) break;
+    // apply without re-render until the end
+    var slot = wvLabLineup[best.si], b = slot.bench[best.bi];
+    slot.bench[best.bi] = {{
+      player_id: slot.player_id, name: slot.name, pos: slot.pos, slot: slot.slot,
+      proj: slot.proj, floor: slot.floor, ceiling: slot.ceiling,
+      matchup: slot.matchup, tags: slot.tags, profile: slot.profile, bench: []
+    }};
+    var nb = {{ player_id: b.player_id, name: b.name, pos: b.pos, slot: slot.slot,
+      proj: b.proj, floor: b.floor, ceiling: b.ceiling,
+      matchup: b.matchup, tags: b.tags, profile: b.profile, bench: slot.bench }};
+    wvLabLineup[best.si] = nb;
+    wvLabResult = wvLabEvaluate(wvLabLineup);  // re-baseline for the next pick
+    applied++;
+  }}
+  wvRenderLab();
+}}
+
 
 if (!window.__brctx) window.__brctx = {{}};
 if (!window.__brctx.leagueId) window.__brctx.leagueId = WV_LEAGUE_ID;

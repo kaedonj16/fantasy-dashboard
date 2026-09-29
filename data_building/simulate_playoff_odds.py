@@ -126,13 +126,17 @@ def _tally_starting_slots_or_default(roster_positions):
 
 
 def _consume_eligible(pool, n, eligible):
-    """Take up to ``n`` (pos, ppg) rows whose pos is in ``eligible``."""
+    """Take up to ``n`` rows whose pos is in ``eligible``.
+
+    Shape-agnostic: rows may be (pos, ppg) or (pos, ppg, pid); the whole row
+    is passed through untouched.
+    """
     taken, rest = [], []
-    for pos, ppg in pool:
-        if len(taken) < n and pos in eligible:
-            taken.append((pos, ppg))
+    for row in pool:
+        if len(taken) < n and row[0] in eligible:
+            taken.append(row)
         else:
-            rest.append((pos, ppg))
+            rest.append(row)
     return taken, rest
 
 # Per-week injury hazard: the probability that a given starter misses that
@@ -262,7 +266,15 @@ def _ctx_signature(ctx: dict, platform: str) -> str:
     # Include completed-game strength inputs so score/record corrections
     # invalidate the cache even when current_week hasn't advanced yet.
     team_stats_sig = _team_stats_signature(ctx.get("team_stats"))
-    return f"{platform}:{league_id}:{season}:{cw}:{h.hexdigest()}:{sched}:{team_stats_sig}"
+    # Include the player-distribution inputs (injury statuses, usage behind
+    # the shared profile model): a mid-week injury report changes team stds
+    # without changing any of the above.
+    try:
+        from data_building.player_distributions import profile_inputs_signature
+        prof_sig = profile_inputs_signature(season, cw)
+    except Exception:
+        prof_sig = "no-profiles"
+    return f"{platform}:{league_id}:{season}:{cw}:{h.hexdigest()}:{sched}:{team_stats_sig}:{prof_sig}"
 
 
 def _evict_sim_cache() -> None:
@@ -394,6 +406,7 @@ def _build_sim_state_impl(ctx: dict, platform: str = "sleeper") -> Optional[dict
     week_profiles = _compute_week_profiles(
         roster_pid_map, week_ppg_maps, pos_map, roster_positions,
         hist_avg_by_rid, hist_std_by_rid, strength_weights_by_rid,
+        season=season,
     )
 
     return {
@@ -859,6 +872,7 @@ def _build_ctx_week_profiles(
     return _compute_week_profiles(
         roster_pid_map, week_ppg_maps, pos_map, roster_positions,
         hist_avg_by_rid, hist_std_by_rid, strength_weights_by_rid,
+        season=season,
     )
 
 
@@ -871,10 +885,61 @@ def _player_std(pos: str, ppg: float) -> float:
     return m * ppg + b
 
 
-def _team_std_from_starters(starters: list[tuple[str, float]]) -> float:
-    """Estimate team weekly std dev from position-based player variance."""
-    variance = sum(_player_std(pos, ppg) ** 2 for pos, ppg in starters)
+def _team_std_from_starters(
+    starters: list,
+    profile_std_by_pid: Optional[dict] = None,
+) -> float:
+    """Estimate team weekly std dev from player-level variance.
+
+    When the shared player distribution model has a profile for a starter
+    (``profile_std_by_pid[pid]``), its std replaces the generic position
+    formula for that player — so a boom/bust WR widens his team's spread and
+    a steady floor RB narrows it. Starters may be (pos, ppg) or
+    (pos, ppg, pid); without a pid the position formula applies.
+    """
+    variance = 0.0
+    for row in starters:
+        pos = row[0]
+        ppg = row[1]
+        pid = row[2] if len(row) > 2 else ""
+        prof_std = (profile_std_by_pid or {}).get(str(pid)) if pid else None
+        std = prof_std if prof_std else _player_std(pos, ppg)
+        variance += std ** 2
     return max(math.sqrt(variance), _MIN_STD)
+
+
+def _profile_std_map(
+    pids: list,
+    ppg_map: dict,
+    pos_map: dict,
+    season: int,
+    week: int,
+) -> Optional[dict]:
+    """Build {pid: profile std} via the shared distribution model.
+
+    Never raises: any failure returns None and callers fall back to the
+    position formula. Uses the week's own PPG as each profile's mean.
+    """
+    try:
+        from data_building.player_distributions import build_profiles
+    except Exception:
+        return None
+    requests = []
+    for pid in pids:
+        pid = str(pid)
+        info = (ppg_map or {}).get(pid) or {}
+        pos = str(info.get("pos") or (pos_map or {}).get(pid) or "")
+        mean = float(info.get("ppg") or 0.0)
+        if pos and mean > 0:
+            requests.append({"player_id": pid, "pos": pos, "mean": mean})
+    if not requests:
+        return None
+    try:
+        profiles = build_profiles(requests, int(season), int(week))
+    except Exception:
+        logger.debug("playoff_odds: player profiles unavailable", exc_info=True)
+        return None
+    return {pid: p["std"] for pid, p in profiles.items() if p.get("std")}
 
 
 def _position_aware_lineup(
@@ -972,11 +1037,11 @@ def _lineup_with_replacements(
     ppg_map: dict,
     pos_map: dict,
     roster_positions: list,
-) -> tuple[float, list[tuple[str, float]], list[float]]:
+) -> tuple[float, list[tuple[str, float, str]], list[float]]:
     """Optimal lineup plus, for each starter, the best benched replacement.
 
     Returns (total, starters, replacements) where:
-      - starters       — [(pos, ppg), …] for each starting slot
+      - starters       — [(pos, ppg, pid), …] for each starting slot
       - replacements   — [replacement_ppg, …] aligned to starters: the projected
                          points of the best healthy rostered player eligible for
                          that slot if the starter is unavailable that week.
@@ -1005,7 +1070,9 @@ def _lineup_with_replacements(
                 _pos_totals[_p][1] += 1
     pos_fallback = {p: v[0] / v[1] for p, v in _pos_totals.items()}
 
-    by_pos: dict[str, list[float]] = {}
+    # Resolve each player to (pos, ppg, pid); pools carry the pid so the
+    # shared player distribution model can supply per-player stds.
+    by_pos: dict[str, list[tuple[float, str]]] = {}
     for pid in pids:
         info = ppg_map.get(str(pid))
         if info:
@@ -1017,48 +1084,49 @@ def _lineup_with_replacements(
             pos = pos_map.get(str(pid), "")
             ppg = pos_fallback.get(pos) or _ROOKIE_PPG.get(pos, _ROOKIE_PPG_DEFAULT)
         if pos:
-            by_pos.setdefault(pos, []).append(ppg)
+            by_pos.setdefault(pos, []).append((ppg, str(pid)))
     for pos in by_pos:
-        by_pos[pos].sort(reverse=True)
+        by_pos[pos].sort(key=lambda t: (-t[0], t[1]))
 
     used: dict[str, int] = {}
-    # Each starter recorded as (pos, ppg, slot_type) so we can find its replacement
-    starters_full: list[tuple[str, float, str]] = []
+    # Each starter recorded as (pos, ppg, slot_type, pid) so we can find its
+    # replacement and its distribution profile.
+    starters_full: list[tuple[str, float, str, str]] = []
 
     for slot_pos, count in fixed_slots.items():
         pool = by_pos.get(slot_pos, [])
         for _ in range(count):
             i = used.get(slot_pos, 0)
-            ppg = pool[i] if i < len(pool) else 0.0
-            starters_full.append((slot_pos, ppg, slot_pos))
+            ppg, pid = pool[i] if i < len(pool) else (0.0, "")
+            starters_full.append((slot_pos, ppg, slot_pos, pid))
             used[slot_pos] = i + 1
 
     leftover = sorted(
-        [(pos, ppg) for pos in _FLEX_ELIGIBLE
-         for ppg in by_pos.get(pos, [])[used.get(pos, 0):]],
-        key=lambda x: x[1], reverse=True,
+        [(pos, ppg, pid) for pos in _FLEX_ELIGIBLE
+         for ppg, pid in by_pos.get(pos, [])[used.get(pos, 0):]],
+        key=lambda x: -x[1],
     )
     for name in RESTRICTED_FLEX_SLOTS:
         taken, leftover = _consume_eligible(
             leftover, restricted.get(name, 0), slot_eligible_positions(name),
         )
-        for pos, ppg in taken:
-            starters_full.append((pos, ppg, name))
+        for pos, ppg, pid in taken:
+            starters_full.append((pos, ppg, name, pid))
             used[pos] = used.get(pos, 0) + 1
     taken, leftover = _consume_eligible(leftover, flex_slots, _FLEX_ELIGIBLE)
-    for pos, ppg in taken:
-        starters_full.append((pos, ppg, "FLEX"))
+    for pos, ppg, pid in taken:
+        starters_full.append((pos, ppg, "FLEX", pid))
         used[pos] = used.get(pos, 0) + 1
 
     sflex_pool = sorted(
-        [("QB", ppg) for ppg in by_pos.get("QB", [])[used.get("QB", 0):]]
+        [("QB", ppg, pid) for ppg, pid in by_pos.get("QB", [])[used.get("QB", 0):]]
         + leftover,
-        key=lambda x: x[1], reverse=True,
+        key=lambda x: -x[1],
     )
     for i in range(sflex_slots):
         if i < len(sflex_pool):
-            pos, ppg = sflex_pool[i]
-            starters_full.append((pos, ppg, "SFLEX"))
+            pos, ppg, pid = sflex_pool[i]
+            starters_full.append((pos, ppg, "SFLEX", pid))
             used[pos] = used.get(pos, 0) + 1
 
     # Best benched player per position (first beyond the starters already used)
@@ -1068,12 +1136,12 @@ def _lineup_with_replacements(
             pool = by_pos.get(p, [])
             i = used.get(p, 0)
             if i < len(pool):
-                best = max(best, pool[i])
+                best = max(best, pool[i][0])
         return best
 
-    starters: list[tuple[str, float]] = []
+    starters: list[tuple[str, float, str]] = []
     replacements: list[float] = []
-    for pos, ppg, slot_type in starters_full:
+    for pos, ppg, slot_type, pid in starters_full:
         if slot_type == "FLEX":
             repl = _best_bench(_FLEX_ELIGIBLE)
         elif slot_type == "SFLEX":
@@ -1082,10 +1150,10 @@ def _lineup_with_replacements(
             repl = _best_bench(set(slot_eligible_positions(slot_type)))
         else:
             repl = _best_bench({slot_type})
-        starters.append((pos, ppg))
+        starters.append((pos, ppg, pid))
         replacements.append(repl)
 
-    total = sum(ppg for _, ppg in starters)
+    total = sum(ppg for _, ppg, _ in starters)
     return total, starters, replacements
 
 
@@ -1099,6 +1167,7 @@ def _team_week_profile(
     projection_weight: float,
     rid: Optional[int] = None,
     games_played: Optional[int] = None,
+    profile_std_map: Optional[dict] = None,
 ) -> dict:
     """Build a single team's (mean, std, injury params) for one week.
 
@@ -1128,7 +1197,7 @@ def _team_week_profile(
     )
     mean = projection_weight * proj + actual_weight * hist_avg
 
-    projected_std = _team_std_from_starters(starters)
+    projected_std = _team_std_from_starters(starters, profile_std_map)
     projected_variance = projected_std ** 2
     historical_variance = (hist_std ** 2) if hist_std and hist_std > 0 else 0.0
     blended_variance = (
@@ -1138,11 +1207,11 @@ def _team_week_profile(
 
     scale = projection_weight
     lost = np.array(
-        [max(s_ppg - r_ppg, 0.0) * scale for (_, s_ppg), r_ppg in zip(starters, repls)],
+        [max(s_ppg - r_ppg, 0.0) * scale for (_, s_ppg, _), r_ppg in zip(starters, repls)],
         dtype=np.float32,
     )
     haz = np.array(
-        [_INJURY_HAZARD.get(str(pos).upper(), _INJURY_HAZARD_DEFAULT) for pos, _ in starters],
+        [_INJURY_HAZARD.get(str(pos).upper(), _INJURY_HAZARD_DEFAULT) for pos, _, _ in starters],
         dtype=np.float32,
     )
     if rid is not None and logger.isEnabledFor(logging.DEBUG):
@@ -1208,6 +1277,7 @@ def _compute_week_profiles(
     hist_avg_by_rid: dict[int, float],
     hist_std_by_rid: dict[int, float],
     strength_weights_by_rid: dict[int, dict],
+    season: int = 0,
 ) -> dict[int, dict]:
     """Per-week (mean, std, injury params) for every team.
 
@@ -1217,7 +1287,15 @@ def _compute_week_profiles(
     independently instead of sharing one league-wide scalar.
     """
     profiles: dict[int, dict] = {}
+    # Per-week player-profile std maps, built once per (season, week) and
+    # cached — every roster's _team_week_profile in the same week shares it.
+    profile_maps: dict[int, Optional[dict]] = {}
+    all_pids = sorted({str(p) for pids in roster_pid_map.values() for p in pids})
     for week, ppg_map in week_ppg_maps.items():
+        if week not in profile_maps:
+            profile_maps[week] = _profile_std_map(
+                all_pids, ppg_map, pos_map, season, week)
+        pmap = profile_maps[week]
         wp: dict[int, dict] = {}
         for rid, pids in roster_pid_map.items():
             w = strength_weights_by_rid.get(rid) or {}
@@ -1226,6 +1304,7 @@ def _compute_week_profiles(
                 hist_avg_by_rid.get(rid, 0.0), hist_std_by_rid.get(rid, 0.0),
                 float(w.get("projection_weight", 1.0)),
                 rid=rid, games_played=w.get("games_played"),
+                profile_std_map=pmap,
             )
         profiles[week] = wp
     return profiles
