@@ -20040,6 +20040,194 @@ img, svg, canvas {
     background-color: var(--row);
 }
 
+/* ── Game log season cards + advanced sectioned table ───────────────────── */
+/* The Averages/Totals segmented control in the Game Logs header. */
+.seg-light {
+    display: inline-flex;
+    background: var(--bg-alt);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-pill);
+    padding: 2px;
+    gap: 2px;
+}
+.seg-light span {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 4px 12px;
+    border-radius: var(--radius-pill);
+    color: var(--text-muted);
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+}
+.seg-light span.on {
+    background: var(--card);
+    color: var(--text);
+    box-shadow: var(--shadow-sm);
+}
+
+.season-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+/* A season-card reuses .game-log-year-section's frame; the header row now
+   carries the mini-stat strip, so it wraps instead of squeezing. */
+.season-card {
+    margin-bottom: 0;
+}
+.game-log-year-header.season-row {
+    flex-wrap: wrap;
+    row-gap: 8px;
+    column-gap: 12px;
+}
+.season-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+.season-team {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-muted);
+    background: var(--bg-alt);
+    border: 1px solid var(--border);
+    padding: 1px 7px;
+    border-radius: 6px;
+    letter-spacing: 0.02em;
+}
+
+/* Closed-season mini stat strip: label over value, tier-tinted like the table. */
+.mini-stats {
+    display: flex;
+    gap: 4px 12px;
+    flex-wrap: wrap;
+    align-items: center;
+}
+.ms {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: 36px;
+    line-height: 1.25;
+}
+.ms i {
+    font-style: normal;
+    font-size: 9px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+}
+.ms b {
+    font-size: 12.5px;
+    font-weight: 700;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+}
+
+/* Tier tints, shared by the mini strips and the advanced table. */
+.t-g { color: #22c55e; }
+.t-o { color: #f59e0b; }
+.t-r { color: #ef4444; }
+td.t-g, td.t-o, td.t-r { font-weight: 700; }
+/* The Pts cell's accent color is !important, so the tier override must be too. */
+.gl-adv td.game-log-table-pts.t-g { color: #22c55e !important; }
+.gl-adv td.game-log-table-pts.t-o { color: #f59e0b !important; }
+.gl-adv td.game-log-table-pts.t-r { color: #ef4444 !important; }
+
+/* Sectioned advanced table: group header row + column row, dividers between
+   sections, sticky date column for horizontal scrolling. */
+.table-wrap {
+    overflow-x: auto;
+    position: relative;
+}
+.gl-adv {
+    min-width: 640px;
+}
+.gl-adv thead tr.grp th {
+    padding: 8px 4px 2px;
+    border-bottom: none;
+}
+.gl-adv thead th.grp-h {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--text-muted);
+    text-align: center;
+    border-bottom: 1px solid var(--border);
+}
+.gl-adv thead tr.cols th {
+    padding: 3px 6px 8px;
+}
+.gl-adv td.sec-start,
+.gl-adv th.sec-start {
+    border-left: 1px solid var(--border);
+}
+.gl-adv th.sticky,
+.gl-adv td.sticky {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+}
+.gl-adv thead th.sticky {
+    background: var(--bg-alt);
+}
+.gl-adv tbody td.sticky,
+.gl-adv tfoot td.sticky {
+    background: var(--card);
+}
+.gl-adv tbody tr:hover td.sticky {
+    background: var(--bg-alt);
+}
+.gl-adv td.dash {
+    color: var(--text-muted);
+    opacity: 0.55;
+}
+.gl-dnp {
+    color: #9ca3af;
+    font-size: 11px;
+    font-weight: 600;
+}
+.gl-tfoot-note {
+    text-align: left;
+    font-size: 11px;
+    color: var(--text-muted);
+    padding-left: 8px;
+}
+.scroll-hint {
+    position: sticky;
+    float: right;
+    margin: -28px 10px 8px 0;
+    color: var(--text-muted);
+    opacity: 0.5;
+    font-size: 14px;
+    pointer-events: none;
+    line-height: 1;
+}
+
+/* Mobile: season rows stack the strip below the title instead of squeezing. */
+@media (max-width: 600px) {
+    .game-log-year-header.season-row {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .mini-stats {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 8px 4px;
+        width: 100%;
+    }
+    .ms {
+        min-width: 0;
+    }
+    .gl-adv {
+        min-width: 600px;
+    }
+}
+
 .game-log-proj-badge {
     font-size: 10px;
     font-weight: 700;

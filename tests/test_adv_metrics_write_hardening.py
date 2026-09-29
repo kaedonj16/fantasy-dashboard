@@ -127,7 +127,7 @@ def test_upsert_weekly_season_builds_xfp_when_caller_omits_it(monkeypatch):
     _patch_sync_db(monkeypatch, conn)
     monkeypatch.setattr(
         sync, "build_nflverse_weekly_metrics_for_season",
-        lambda season: {("1", 3): {"w_carries": 12}},
+        lambda season, **kwargs: {("1", 3): {"w_carries": 12}},
     )
     built = {}
 
@@ -153,7 +153,7 @@ def test_upsert_weekly_season_respects_explicit_empty_map(monkeypatch):
     _patch_sync_db(monkeypatch, conn)
     monkeypatch.setattr(
         sync, "build_nflverse_weekly_metrics_for_season",
-        lambda season: {("1", 3): {"w_carries": 12}},
+        lambda season, **kwargs: {("1", 3): {"w_carries": 12}},
     )
 
     def fake_build(season):  # pragma: no cover - must not run

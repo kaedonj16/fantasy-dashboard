@@ -17982,7 +17982,7 @@ function _cmpLoadGameLogs(pid, position, containerId) {
         window.brEmptyState(el, { icon: 'search', title: 'No game logs', message: 'No game-by-game data is available for this player yet.', compact: true });
         return;
       }
-      el.innerHTML = _buildStatsHTML(logsByYear, true, position || '');
+      el.innerHTML = _buildStatsHTML(logsByYear, true, position || '', data.season_teams || {});
     })
     .catch(() => {
       if (el.isConnected) window.brErrorState(el, 'Could not load game logs.', null, { compact: true });

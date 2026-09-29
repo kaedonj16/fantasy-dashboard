@@ -2796,6 +2796,10 @@ WEEKLY_ADV_METRIC_COLS: List[str] = [
     # sums them. See data_building/external_data/expected_points.py.
     "expected_ppr", "expected_half_ppr", "expected_standard",
     "ppr_over_expected", "half_ppr_over_expected", "standard_over_expected",
+    # Broken tackles (PFR charting, rushing + receiving combined) and weekly
+    # WOPR (1.5 * target share + 0.7 * air-yards share, Hermsmeyer weighting,
+    # same formula as the season snapshot). Feed the player game logs.
+    "broken_tackles", "wopr",
 ]
 # Volume weight columns used to weight rate metrics across a week range.
 WEEKLY_ADV_WEIGHT_COLS: List[str] = [

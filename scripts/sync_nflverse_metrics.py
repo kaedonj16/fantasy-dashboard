@@ -185,7 +185,12 @@ def upsert_weekly_season(season: int, players_index: dict,
     ({(sleeper_id, week): {expected_*, *_over_expected}}) built once by the
     caller; its per-week totals are merged into the matching player-week rows.
     """
-    by_pw = build_nflverse_weekly_metrics_for_season(season)
+    from utils.utils import canon_team
+    teams_by_pid = {
+        str(pid): (canon_team((meta or {}).get("team")) or "")
+        for pid, meta in (players_index or {}).items()
+    }
+    by_pw = build_nflverse_weekly_metrics_for_season(season, teams_by_pid=teams_by_pid)
     if xfp_by_pw is None:
         # Same guarantee as upsert_season: every writer of this table must
         # feed the xFP columns, or the Key Metrics GP (weeks with non-null
