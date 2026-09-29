@@ -92,6 +92,34 @@ def recent_streak(df_weekly, roster_id, limit=3):
     return out
 
 
+def last_finalized_week_result(df_weekly, roster_id):
+    """(week, 'W'/'L'/'T') for the most recently finalized week.
+
+    Returns (None, None) when there is no finalized week yet (e.g. week 1
+    before any games complete). The caller decides whether "last week" is
+    meaningful (it isn't during week 1).
+    """
+    if df_weekly is None or getattr(df_weekly, "empty", True):
+        return None, None
+    rows = df_weekly[df_weekly["roster_id"].astype(str) == str(roster_id)]
+    if "finalized" in rows.columns:
+        rows = rows[rows["finalized"] == True]
+    if getattr(rows, "empty", False) or "week" not in rows.columns:
+        return None, None
+    rows = rows.sort_values("week")
+    last = rows.iloc[-1]
+    try:
+        week = int(last["week"])
+    except (TypeError, ValueError):
+        return None, None
+    points = first_non_null(last, ("points", "pts", "PF"))
+    against = first_non_null(last, ("points_against", "opp_pts", "PA"))
+    if points is None or against is None:
+        return week, None
+    result = "W" if float(points) > float(against) else ("L" if float(points) < float(against) else "T")
+    return week, result
+
+
 def classify_failure(exc):
     text = f"{type(exc).__name__} {exc}".lower()
     if "timeout" in text:
@@ -153,6 +181,16 @@ def build_league_summary(account_id, membership, context_loader):
         sections["streak"] = {"status": "ready"}
     except Exception:
         sections["streak"] = {"status": "unavailable", "failure_category": "analytics_unavailable"}
+
+    # Last-week result for the portfolio "Last Week" aggregate stat. Same
+    # finalized-week source as the streak; (None, None) before week 1's games.
+    try:
+        _lw_week, _lw_result = last_finalized_week_result(ctx.get("df_weekly"), rid)
+        result["last_week"] = _lw_week
+        result["last_week_result"] = _lw_result
+    except Exception:
+        result["last_week"] = None
+        result["last_week_result"] = None
 
     result["pos_user_rank"] = {pos: None for pos in POSITIONS}
     values = {}
