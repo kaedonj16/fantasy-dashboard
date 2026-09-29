@@ -605,3 +605,65 @@ def test_bars_svg_dense_series_labels_every_day_and_yticks():
     # sparse series keeps horizontal labels
     svg2 = abp._bars_svg([("09-28", 0), ("09-29", 12)])
     assert "rotate(-45" not in svg2
+
+
+def test_analytics_page_shows_exclusion_status(monkeypatch):
+    flask = pytest.importorskip("flask")
+    from routes import analytics_bp as abp
+
+    monkeypatch.setenv("ADMIN_KEY", "k")
+    monkeypatch.setenv("ANALYTICS_EXCLUDE_ACCOUNT_IDS", "42")
+    analytics._EXCLUDED_ACCOUNT_IDS = None
+    monkeypatch.setattr(analytics, "dau_last_30_days", lambda: [])
+    monkeypatch.setattr(analytics, "wau_last_12_weeks", lambda: [])
+    monkeypatch.setattr(analytics, "signups_per_day", lambda: [])
+    monkeypatch.setattr(analytics, "feature_usage_by_week", lambda weeks: [])
+    monkeypatch.setattr(analytics, "week_over_week_return", lambda: [])
+    monkeypatch.setattr(
+        analytics, "funnel_last_30_days",
+        lambda: {"visitors": 0, "signups": 0, "linked": 0, "pro": 0},
+    )
+    monkeypatch.setattr(analytics, "events_table_ready", lambda: False)
+
+    app = flask.Flask(__name__)
+    app.secret_key = "test-secret"
+    app.register_blueprint(abp.analytics_bp)
+    client = app.test_client()
+    with client.session_transaction() as sess:
+        sess[abp.ADMIN_SESSION_KEY] = True
+    resp = client.get("/admin/analytics")
+    assert resp.status_code == 200
+    page = resp.get_data(as_text=True)
+    assert "Excluding account 42 from all numbers below." in page
+    assert "Admin session: your visits are not recorded." in page
+
+
+def test_analytics_page_hides_exclusion_status_when_unset(monkeypatch):
+    flask = pytest.importorskip("flask")
+    from routes import analytics_bp as abp
+
+    monkeypatch.setenv("ADMIN_KEY", "k")
+    monkeypatch.delenv("ANALYTICS_EXCLUDE_ACCOUNT_IDS", raising=False)
+    analytics._EXCLUDED_ACCOUNT_IDS = None
+    monkeypatch.setattr(analytics, "dau_last_30_days", lambda: [])
+    monkeypatch.setattr(analytics, "wau_last_12_weeks", lambda: [])
+    monkeypatch.setattr(analytics, "signups_per_day", lambda: [])
+    monkeypatch.setattr(analytics, "feature_usage_by_week", lambda weeks: [])
+    monkeypatch.setattr(analytics, "week_over_week_return", lambda: [])
+    monkeypatch.setattr(
+        analytics, "funnel_last_30_days",
+        lambda: {"visitors": 0, "signups": 0, "linked": 0, "pro": 0},
+    )
+    monkeypatch.setattr(analytics, "events_table_ready", lambda: False)
+
+    app = flask.Flask(__name__)
+    app.secret_key = "test-secret"
+    app.register_blueprint(abp.analytics_bp)
+    client = app.test_client()
+    with client.session_transaction() as sess:
+        sess[abp.ADMIN_SESSION_KEY] = True
+    resp = client.get("/admin/analytics")
+    assert resp.status_code == 200
+    page = resp.get_data(as_text=True)
+    assert "Excluding account" not in page
+    assert "Admin session: your visits are not recorded." in page

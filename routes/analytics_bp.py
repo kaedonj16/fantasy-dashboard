@@ -18,9 +18,10 @@ import html
 import logging
 from datetime import datetime, timezone
 
-from flask import Blueprint, Response, redirect, request
+from flask import Blueprint, Response, redirect, request, session
 
 from dashboard_services.admin_auth import (
+    ADMIN_SESSION_KEY,
     _configured_password,
     is_admin,
     mark_admin_session,
@@ -293,6 +294,22 @@ def admin_analytics():
         if not has_events else ""
     )
 
+    # Self-exclusion status: show what is filtering the numbers on this page.
+    status_bits = []
+    excluded_ids = sorted(_a.excluded_account_ids())
+    if excluded_ids:
+        status_bits.append(
+            "Excluding account%s %s from all numbers below."
+            % ("s" if len(excluded_ids) != 1 else "",
+               ", ".join(str(i) for i in excluded_ids))
+        )
+    if session.get(ADMIN_SESSION_KEY):
+        status_bits.append("Admin session: your visits are not recorded.")
+    status_html = (
+        '<p class="sub">%s</p>' % " ".join(html.escape(b) for b in status_bits)
+        if status_bits else ""
+    )
+
     body = "".join([
         _section("Daily active users", _bars_svg(dau_pairs),
                  "Distinct signed-in accounts plus anonymous browsers, last 30 days."),
@@ -354,11 +371,13 @@ def admin_analytics():
   <p class="sub">First-party usage stats. Generated %s.</p>
   %s
   %s
+  %s
 </div>
 </body>
 </html>""" % (
         html.escape(generated),
         ('<div class="notice">%s</div>' % html.escape(empty_note)) if empty_note else "",
+        status_html,
         body,
     )
     return Response(page, mimetype="text/html")
