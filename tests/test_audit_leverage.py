@@ -18,7 +18,8 @@ def test_seo_lists_yahoo_as_a_supported_platform():
 def test_player_details_returns_unified_start_score():
     app = (ROOT / "app.py").read_text(encoding="utf-8")
     details = app[app.index("def api_player_details"): app.index("def api_player_game_logs")]
-    assert "from utils.start_sit_score import compute_start_score" in details
+    assert "from utils.start_sit_score import" in details
+    assert "compute_start_score" in details
     assert '"start_score": _start_score' in details
     # Position-relative 0-100 index rides alongside the raw score.
     assert '"start_score_pct": _start_score_pct' in details

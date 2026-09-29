@@ -89,6 +89,26 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-lab-opt .l2 { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 12px; color: var(--text-muted); }
 .wv-lab-fine { font-size: 12px; color: var(--text-muted); margin-top: 10px; }
 .wv-lab-skel { padding: 24px; text-align: center; color: var(--text-muted); font-size: 13px; }
+/* Lab loading state: a structured skeleton mirroring the loaded layout (hero +
+   lineup rows) with a shimmer sweep, so the section animates while it loads and
+   the page does not jump when results arrive. */
+.wv-lab-loadmsg { text-align: center; color: var(--text-muted); font-size: 13px; margin: 2px 0 14px; }
+.wv-lab-dots span { display: inline-block; animation: wv-lab-blink 1.2s infinite; }
+.wv-lab-dots span:nth-child(2) { animation-delay: .2s; }
+.wv-lab-dots span:nth-child(3) { animation-delay: .4s; }
+@keyframes wv-lab-blink { 0%, 60%, 100% { opacity: .25; } 30% { opacity: 1; } }
+.wv-lab-sk-hero { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 14px; margin-bottom: 12px; }
+.wv-lab-sk-winbar { display: flex; height: 34px; border-radius: 8px; overflow: hidden; gap: 2px; }
+.wv-lab-sk-winbar .skeleton { flex: 1; border-radius: 0; }
+.wv-lab-sk-trow { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+.wv-lab-sk-modes { display: flex; gap: 8px; margin-top: 12px; }
+.wv-lab-sk-modes .skeleton { flex: 1; height: 38px; border-radius: 10px; }
+.wv-lab-sk-slot { display: flex; align-items: center; gap: 10px; padding: 12px 4px; border-bottom: 1px solid var(--border); }
+.wv-lab-sk-main { flex: 1; min-width: 0; }
+@media (prefers-reduced-motion: reduce) {
+  .wv-lab-dots span { animation: none; }
+  .wv-lab-loading .skeleton::after { animation: none; }
+}
 
 .wv-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
 /* Grid items default to min-width:auto, so a wide flex child (the horizontally
@@ -779,10 +799,46 @@ function wvLabEvaluate(lineup) {{
   }};
 }}
 
+// Structured loading skeleton for the Lab: mirrors the loaded layout (hero +
+// lineup rows) so the section animates while it loads and the page does not
+// repaint when results arrive.
+function wvLabSkeleton() {{
+  var i, rows = '';
+  for (i = 0; i < 9; i++) {{
+    rows += '<div class="wv-lab-sk-slot">'
+      + '<div class="skeleton" style="width:44px;height:12px;flex:none"></div>'
+      + '<div class="wv-lab-sk-main">'
+      + '<div class="skeleton skeleton-line w-40" style="margin:0 0 8px"></div>'
+      + '<div class="skeleton skeleton-line w-80" style="margin:0"></div>'
+      + '</div>'
+      + '<div class="skeleton" style="width:36px;height:22px;flex:none"></div>'
+      + '</div>';
+  }}
+  function trow() {{
+    return '<div class="wv-lab-sk-trow">'
+      + '<div class="skeleton" style="width:34px;height:12px;flex:none"></div>'
+      + '<div class="skeleton" style="flex:1;height:10px"></div>'
+      + '<div class="skeleton" style="width:64px;height:12px;flex:none"></div>'
+      + '</div>';
+  }}
+  return '<div class="wv-lab-loading">'
+    + '<div class="wv-lab-loadmsg">Simulating 2,000 lineups<span class="wv-lab-dots" aria-hidden="true"><span>.</span><span>.</span><span>.</span></span></div>'
+    + '<div class="wv-lab-sk-hero">'
+    + '<div class="skeleton skeleton-line w-60" style="margin:0 0 10px"></div>'
+    + '<div class="wv-lab-sk-winbar"><div class="skeleton"></div><div class="skeleton"></div></div>'
+    + trow() + trow()
+    + '<div class="wv-lab-sk-modes"><div class="skeleton"></div><div class="skeleton"></div></div>'
+    + '</div>'
+    + '<div class="wv-section-title" style="margin-top:4px">Your lineup</div>'
+    + '<div style="font-size:12px;color:var(--text-muted);margin:-6px 0 8px">tap a starter to swap</div>'
+    + rows
+    + '</div>';
+}}
+
 function wvLoadLab() {{
   wvLabLoading = true;
   var body = document.getElementById('wvLabBody');
-  if (body) body.innerHTML = '<div class="wv-lab-skel">Simulating 2,000 lineups...</div>';
+  if (body) body.innerHTML = wvLabSkeleton();
   var week = (wvStartSitData && wvStartSitData.current_week) || '';
   var url = '/api/lineup-lab?platform=' + encodeURIComponent(WV_PLATFORM)
     + '&league_id=' + encodeURIComponent(WV_LEAGUE_ID)

@@ -92,6 +92,26 @@ def _vegas_mult(implied_total: float, position: Optional[str]) -> float:
     return 1.0
 
 
+def bottom_teams_by_implied_total(game_conditions: dict, n: int = 8) -> set:
+    """Team abbreviations of the ``n`` teams with the lowest implied totals.
+
+    Pure rank-based rule behind the "Low team total" demotion chip. Teams with
+    no game (bye weeks have no ``game_conditions`` entry) or a missing/None
+    implied total are excluded from the ranking. Ties are broken by team
+    abbreviation so the result is deterministic. When fewer than ``n`` teams
+    have totals, every ranked team is returned.
+    """
+    ranked = []
+    for team, cond in (game_conditions or {}).items():
+        try:
+            total = float((cond or {}).get("implied_total"))
+        except (TypeError, ValueError):
+            continue
+        ranked.append((total, str(team)))
+    ranked.sort(key=lambda t: (t[0], t[1]))
+    return {team for _, team in ranked[:max(n, 0)]}
+
+
 def compute_start_score(
     proj_pts: float,
     *,
@@ -113,6 +133,7 @@ def compute_start_score(
     league_average_plays: Optional[float] = None,
     role_confidence: Optional[float] = None,
     defensive_injury_impact: Optional[float] = None,
+    low_total_team: bool = False,
 ) -> tuple[float, dict, Optional[str]]:
     """Return ``(score, score_factors, demotion)``.
 
@@ -128,6 +149,10 @@ def compute_start_score(
     reflect the opponent. Pass True only for matchup-neutral projection feeds.
     ``def_rank`` / ``def_total`` are still accepted so callers can pass them
     without branching; they only affect the score when ``apply_matchup`` is True.
+
+    ``low_total_team`` marks the player's team as one of the week's bottom-8
+    implied-total teams (see ``bottom_teams_by_implied_total``). It only gates
+    the "low_total" demotion label; the Vegas score multiplier is unchanged.
     """
     form = mu = usage = avail = vegas = floor = weather = oline = plays = role = def_inj = 1.0
     demotion = None
@@ -177,8 +202,11 @@ def compute_start_score(
             imp = None
         if imp is not None:
             vegas = _vegas_mult(imp, position)
-            if vegas < 1.0:
-                demotion = demotion or "low_total"
+    # Rank-based label only: the "Low team total" demotion fires for players on
+    # the week's bottom-8 implied-total teams, regardless of the absolute
+    # total. The vegas score multiplier above is untouched.
+    if low_total_team:
+        demotion = demotion or "low_total"
 
     if bust_rate is not None:
         try:
