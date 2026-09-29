@@ -121,7 +121,7 @@ def _stub_body_deps(monkeypatch):
             setattr(m, k, v)
         monkeypatch.setitem(sys.modules, name, m)
     monkeypatch.setattr(kp, "_adp_map", lambda is_sf, season, source="consensus": {"a": 1.0})
-    monkeypatch.setattr(kp, "_draft_context", lambda plat, lid, season: ({"a": 5}, 15))
+    monkeypatch.setattr(kp, "_draft_context", lambda plat, lid, season, picks_by_draft=None: ({"a": 5}, 15))
 
 
 _BODY_CTX = {"total_rosters": 10, "rosters": [{"roster_id": 1, "players": ["a"]}],
@@ -160,7 +160,7 @@ def _league_ctx_for_limits(monkeypatch):
         monkeypatch.setitem(sys.modules, name, m)
     monkeypatch.setattr(kp, "_adp_map",
                         lambda is_sf, season, source="consensus": {c: i + 1 for i, c in enumerate("abcdef")})
-    monkeypatch.setattr(kp, "_draft_context", lambda plat, lid, season: ({}, 15))
+    monkeypatch.setattr(kp, "_draft_context", lambda plat, lid, season, picks_by_draft=None: ({}, 15))
     return {"season": 2026, "total_rosters": 2,
             "rosters": [{"roster_id": 1, "players": ["a", "b", "c"]},
                         {"roster_id": 2, "players": ["d", "e", "f"]}],
@@ -216,7 +216,7 @@ def test_undrafted_cost_override_repricing(monkeypatch):
     undrafted default - the deepest round the league ever drafted. The keeper
     page's "Undrafted cost" now rides along so the user can reprice them."""
     ctx = _league_ctx_for_limits(monkeypatch)
-    monkeypatch.setattr(kp, "_draft_context", lambda plat, lid, season: ({}, 23))
+    monkeypatch.setattr(kp, "_draft_context", lambda plat, lid, season, picks_by_draft=None: ({}, 23))
     # one_per_round off here so this isolates the undrafted repricing (otherwise
     # the three undrafted keepers would bump to unique rounds).
     default = kp.compute_league_keepers(ctx, platform="sleeper", league_id="L",
@@ -233,7 +233,7 @@ def test_rules_override_is_bounded_to_real_rounds(monkeypatch):
     """Rules arrive from query params, so an absurd undrafted round must clamp
     into the league's actual draft depth rather than through it."""
     ctx = _league_ctx_for_limits(monkeypatch)
-    monkeypatch.setattr(kp, "_draft_context", lambda plat, lid, season: ({}, 20))
+    monkeypatch.setattr(kp, "_draft_context", lambda plat, lid, season, picks_by_draft=None: ({}, 20))
     out = kp.compute_league_keepers(ctx, platform="sleeper", league_id="L",
                                     viewer_roster_id="1", limit_override=3,
                                     rules_override={"undrafted_round": 999, "one_per_round": False})
@@ -245,7 +245,7 @@ def test_last_round_cost_override_ignores_drafted_rounds(monkeypatch):
     ctx = _league_ctx_for_limits(monkeypatch)
     # Player a was drafted R3; without last_round_cost that would be the cost.
     monkeypatch.setattr(kp, "_draft_context",
-                        lambda plat, lid, season: ({"a": 3, "b": 8, "c": 11}, 15))
+                        lambda plat, lid, season, picks_by_draft=None: ({"a": 3, "b": 8, "c": 11}, 15))
     flat = kp.compute_league_keepers(
         ctx, platform="sleeper", league_id="L",
         viewer_roster_id="1", limit_override=3,
@@ -522,7 +522,7 @@ def test_one_per_round_resolves_collisions_in_projection(monkeypatch):
     ctx = _league_ctx_for_limits(monkeypatch)
     # a & b both drafted R5 (a is the higher-value, so it holds R5); c at R9.
     monkeypatch.setattr(kp, "_draft_context",
-                        lambda plat, lid, season: ({"a": 5, "b": 5, "c": 9}, 15))
+                        lambda plat, lid, season, picks_by_draft=None: ({"a": 5, "b": 5, "c": 9}, 15))
 
     def _viewer_cost_rounds(rules_override):
         out = kp.compute_league_keepers(ctx, platform="sleeper", league_id="L",

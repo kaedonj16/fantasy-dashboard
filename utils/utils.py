@@ -449,7 +449,14 @@ def load_players_index() -> Optional[Dict]:
 
 
 def load_relevant_index() -> Optional[Dict]:
-    base = read_json(path_relevant_index())
+    """Returns the cached relevant-players index or None.
+
+    Uses the same mtime-guarded in-memory cache as load_players_index: the
+    player modal fires several endpoints per open and each one was re-reading
+    and re-parsing this ~586KB file from disk. The returned dict is shared --
+    callers must treat it as read-only.
+    """
+    base = read_json_cached(path_relevant_index())
     return _overlay_players_index(base, _RELEVANT_INDEX_MERGED)
 
 def load_usage_table() -> Optional[Dict]:
