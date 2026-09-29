@@ -1832,7 +1832,10 @@ def api_redzone_moments():
         return jsonify({"plays": [], "teams": {}})
 
     from utils.redzone_store import get_plays_for_pids
-    raw_plays = get_plays_for_pids(season, list(pid_to_side.keys()))
+    # Week-scoped: a future/unplayed week must not surface the previous
+    # week's plays (the store's recency window would otherwise do exactly
+    # that, e.g. Week 3 plays showing under a Week 4 matchup on Tuesday).
+    raw_plays = get_plays_for_pids(season, list(pid_to_side.keys()), week=week)
 
     # Player name lookup from the matchup data.
     pid_to_name = {}

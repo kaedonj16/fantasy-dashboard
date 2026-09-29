@@ -5,6 +5,8 @@ import json
 
 import pytest
 
+pytest.importorskip("flask")
+
 import utils.redzone_store as rs
 
 
@@ -166,3 +168,104 @@ def test_get_plays_for_pids_db_failure(monkeypatch):
     monkeypatch.setattr("dashboard_services.db.get_conn", _boom)
     monkeypatch.setattr(rs, "_ensure_table", lambda conn: None)
     assert rs.get_plays_for_pids(2026, ["123"]) == []
+
+
+class _WeekFakeConn(_FakeConn):
+    def _do_execute(self, sql, params):
+        assert "payload->>'pid' = ANY(%s)" in sql
+        self.captured_sql = sql
+        self.captured_params = params
+        return self
+
+
+def test_get_plays_for_pids_passes_week_to_sql(monkeypatch):
+    """The requested week must reach the store query, so a week-4 moments
+    request cannot return week-3 plays."""
+    fake = _WeekFakeConn([])
+    monkeypatch.setattr("dashboard_services.db.get_conn", lambda: fake)
+    monkeypatch.setattr(rs, "_ensure_table", lambda conn: None)
+
+    rs.get_plays_for_pids(2026, ["123"], week=4)
+    assert "AND week = %s" in fake.captured_sql
+    assert fake.captured_params[-1] == 4
+
+
+def test_get_plays_for_pids_without_week_omits_clause(monkeypatch):
+    """Other callers (e.g. the TD notifier) keep the legacy recency-only query."""
+    fake = _WeekFakeConn([])
+    monkeypatch.setattr("dashboard_services.db.get_conn", lambda: fake)
+    monkeypatch.setattr(rs, "_ensure_table", lambda conn: None)
+
+    rs.get_plays_for_pids(2026, ["123"])
+    assert "AND week = %s" not in fake.captured_sql
+    assert len(fake.captured_params) == 3
+
+
+def _call_moments_endpoint(monkeypatch, query):
+    """Invoke api_redzone_moments under a fake request; capture the store call."""
+    import routes.user_pages_bp as bp
+    from flask import Flask, session
+
+    captured = {}
+
+    def fake_get_plays(season, pids, **kwargs):
+        captured["season"] = season
+        captured["pids"] = list(pids)
+        captured["kwargs"] = kwargs
+        return [{
+            "pid": "123", "is_td": True, "play_id": "p1",
+            "game_id": "20260927_KC@BUF", "team": "KC", "name": "Test Player",
+            "quarter": "2", "play_text": "Pass complete TOUCHDOWN",
+            "stat_line": {"rec_td": 1, "rec_yds": 25},
+        }]
+
+    def fake_nfl_state(*a, **k):
+        return {"season_type": "reg", "season": 2026, "week": 4, "leg": 4}
+
+    def fake_ctx(*a, **k):
+        return {"viewer": {"viewer_roster_id": "1"}, "resolved_league_id": "L1"}
+
+    def fake_matchups(platform, league_id, season, week, ctx):
+        captured["matchup_week"] = week
+        you = {"roster_id": "1", "starters": [
+            {"pid": "123", "name": "Test Player", "pos": "WR"}]}
+        opp = {"roster_id": "2", "starters": [
+            {"pid": "456", "name": "Opp Player", "pos": "RB"}]}
+        return ([{"left": you, "right": opp}], {}, {})
+
+    monkeypatch.setattr(bp, "get_nfl_state", fake_nfl_state)
+    monkeypatch.setattr(bp, "get_league_ctx_from_cache", fake_ctx)
+    monkeypatch.setattr(bp, "_build_live_matchups", fake_matchups)
+    monkeypatch.setattr("utils.redzone_store.get_plays_for_pids", fake_get_plays)
+
+    app = Flask(__name__)
+    app.secret_key = "test"
+    with app.test_request_context("/api/redzone/moments?" + query):
+        session["viewer_username"] = "tester"
+        session["viewer_user_id"] = "u1"
+        resp = bp.api_redzone_moments()
+    return resp, captured
+
+
+def test_moments_endpoint_passes_requested_week_to_store(monkeypatch):
+    """Regression: /api/redzone/moments must scope the store query to the
+    requested week, not just the 5-day recency window."""
+    resp, captured = _call_moments_endpoint(
+        monkeypatch, "platform=sleeper&league_id=L1&season=2026&week=4")
+    assert captured["kwargs"].get("week") == 4
+    assert captured["season"] == 2026
+    assert set(captured["pids"]) == {"123", "456"}
+    body = resp.get_json()
+    assert len(body["plays"]) == 1
+    assert body["plays"][0]["kind"] == "td"
+
+
+def test_moments_endpoint_uses_requested_week_not_current_week(monkeypatch):
+    """A week-3 request while the NFL state says week 4 must query week 3;
+    otherwise the recency window serves last week's plays for this week."""
+    resp, captured = _call_moments_endpoint(
+        monkeypatch, "platform=sleeper&league_id=L1&season=2026&week=3")
+    assert captured["kwargs"].get("week") == 3
+    assert captured["matchup_week"] == 3
+    body = resp.get_json()
+    assert len(body["plays"]) == 1

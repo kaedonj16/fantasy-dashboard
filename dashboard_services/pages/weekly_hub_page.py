@@ -526,6 +526,24 @@ def build_weekly_hub_body(ctx: dict) -> str:
   var controller = null;
   var requestSeq = 0;
 
+  // Last week whose content rendered successfully. The selector is only
+  // "committed" to a new week once its fetch succeeds; on failure we roll
+  // the selector back so it can never disagree with the visible content.
+  var lastGoodWeek = String(sel.value || '');
+
+  function failWeekChange(w, mySeq) {{
+    if (mySeq !== requestSeq) return;
+    if (lastGoodWeek && sel.value !== lastGoodWeek) {{
+      sel.value = lastGoodWeek;
+    }}
+    if (window.showToast) {{
+      window.showToast(
+        'Could not load Week ' + w + '. Still showing Week ' + (lastGoodWeek || w) + '.',
+        'error'
+      );
+    }}
+  }}
+
   sel.addEventListener('change', function() {{
     var w = String(this.value || '');
     if (!w) return;
@@ -555,6 +573,7 @@ def build_weekly_hub_body(ctx: dict) -> str:
         if (mySeq !== requestSeq) return;
         if (!data || !data.ok) {{
           console.error('Failed to load week', w, data && data.error);
+          failWeekChange(w, mySeq);
           return;
         }}
 
@@ -608,10 +627,13 @@ def build_weekly_hub_body(ctx: dict) -> str:
           if (wbtn.__wrappedReset) wbtn.__wrappedReset();
           wbtn.style.display = (data.week_has_scores && data.wrapped_url) ? '' : 'none';
         }}
+
+        lastGoodWeek = w;
       }})
       .catch(function(err) {{
         if (err && err.name === 'AbortError') return;
         console.error('Error fetching week', w, err);
+        failWeekChange(w, mySeq);
       }})
       .finally(function() {{
         if (mySeq === requestSeq) hideLoading();

@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS redzone_plays (
     play_id     TEXT NOT NULL,
     seq         INTEGER NOT NULL DEFAULT 0,
     is_td       BOOLEAN NOT NULL DEFAULT FALSE,
+    week        INTEGER,
     payload     JSONB NOT NULL,
     observed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     PRIMARY KEY (season, game_id, play_id)
@@ -37,6 +38,8 @@ _INDEX_DDL = [
     "ON redzone_plays (season, observed_at) WHERE is_td",
     "CREATE INDEX IF NOT EXISTS idx_redzone_plays_observed "
     "ON redzone_plays (observed_at)",
+    "CREATE INDEX IF NOT EXISTS idx_redzone_plays_week "
+    "ON redzone_plays (season, week)",
 ]
 
 # Advisory-lock key electing the single store poller across gunicorn workers.
@@ -68,10 +71,11 @@ def _ensure_table(conn) -> None:
     _ENSURED_TABLES.add(key)
 
 
-def upsert_plays(season: int, game_id: str, plays: list[dict]) -> int:
+def upsert_plays(season: int, game_id: str, plays: list[dict], week: int | None = None) -> int:
     """Upsert one game's plays. Idempotent; revisions overwrite. Returns rows written."""
     from dashboard_services.db import get_conn
 
+    wk = int(week) if week is not None else None
     rows = [
         (
             int(season),
@@ -79,6 +83,7 @@ def upsert_plays(season: int, game_id: str, plays: list[dict]) -> int:
             str(p.get("play_id") or p.get("seq") or ""),
             int(p.get("seq") or 0),
             bool(p.get("is_td")),
+            wk,
             json.dumps(p),
         )
         for p in (plays or [])
@@ -93,11 +98,13 @@ def upsert_plays(season: int, game_id: str, plays: list[dict]) -> int:
             with conn.cursor() as cur:
                 cur.executemany(
                     """INSERT INTO redzone_plays
-                       (season, game_id, play_id, seq, is_td, payload)
-                   VALUES (%s, %s, %s, %s, %s, %s::jsonb)
+                       (season, game_id, play_id, seq, is_td, week, payload)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb)
                    ON CONFLICT (season, game_id, play_id) DO UPDATE SET
                        seq = EXCLUDED.seq,
                        is_td = EXCLUDED.is_td,
+                       -- Never let a week-less re-upsert wipe a stamped week.
+                       week = COALESCE(EXCLUDED.week, redzone_plays.week),
                        payload = EXCLUDED.payload,
                        -- Only re-stamp when the play actually changed (a
                        -- revision or a scoring flip). Unchanged re-upserts
@@ -190,8 +197,12 @@ def get_td_plays_since(season: int, since_ts: float) -> list[tuple[str, dict, fl
     return out
 
 
-def get_plays_for_pids(season: int, pids: list[str], days: int = 5) -> list[dict]:
+def get_plays_for_pids(season: int, pids: list[str], days: int = 5, week: int | None = None) -> list[dict]:
     """Plays from the last ``days`` involving any of ``pids``.
+
+    When ``week`` is given, only plays stamped for that NFL week are
+    returned (rows collected before week-stamping, i.e. week IS NULL, are
+    excluded). Omit it for the legacy recency-only behavior.
 
     Returns play payload dicts (with game_id attached) ordered by observed_at
     descending. Used by RedZone Moments to surface a matchup's big plays.
@@ -201,18 +212,23 @@ def get_plays_for_pids(season: int, pids: list[str], days: int = 5) -> list[dict
     pid_list = [str(p) for p in (pids or []) if p]
     if not pid_list:
         return []
+    week_clause = "AND week = %s" if week is not None else ""
+    params = [int(season), str(int(days)), pid_list]
+    if week is not None:
+        params.append(int(week))
     try:
         with get_conn() as conn:
             _ensure_table(conn)
             rows = conn.execute(
-                """SELECT game_id, payload,
+                f"""SELECT game_id, payload,
                           EXTRACT(EPOCH FROM observed_at) AS ts
                    FROM redzone_plays
                    WHERE season = %s
                      AND observed_at >= NOW() - (%s || ' days')::INTERVAL
                      AND payload->>'pid' = ANY(%s)
+                     {week_clause}
                    ORDER BY observed_at DESC""",
-                (int(season), str(int(days)), pid_list),
+                tuple(params),
             ).fetchall()
     except Exception as exc:
         logger.warning("[redzone-store] plays-for-pids failed: %s", exc)
@@ -287,10 +303,17 @@ def prune_plays(retention_days: int = 7) -> int:
         return 0
 
 
-def discover_live_games() -> list[dict]:
+def discover_live_games(current_week: int | None = None) -> list[dict]:
     """League-agnostic live/final game discovery via the ESPN scoreboard.
 
-    Returns [{game_id (Tank01 'YYYYMMDD_AWAY@HOME' form), live, final}].
+    Returns [{game_id (Tank01 'YYYYMMDD_AWAY@HOME' form), live, final, week}].
+
+    The scoreboard is fetched for the current NFL week AND the previous week
+    explicitly (``?week=N``). Relying on the unparameterized scoreboard alone
+    goes blind to last week's games the moment ESPN flips it forward, so
+    collection gaps from the previous week could never be backfilled. Each
+    game is tagged with the week it was discovered under, so the collector
+    stamps the correct week even when backfilling an older game.
     """
     from utils.redzone_alt_pbp import (
         _ESPN_SCOREBOARD,
@@ -298,32 +321,56 @@ def discover_live_games() -> list[dict]:
         extract_espn_scoreboard_lookup,
     )
 
-    try:
-        import requests
+    def _fetch(week: int | None) -> dict:
+        params = {"xhr": "1"}
+        if week:
+            params["week"] = str(week)
+        try:
+            import requests
 
-        resp = requests.get(
-            _ESPN_SCOREBOARD,
-            params={"xhr": "1"},
-            headers={"User-Agent": _UA, "Accept": "application/json"},
-            timeout=10,
-        )
-        if resp.status_code != 200:
-            return []
-        lookup = extract_espn_scoreboard_lookup(resp.json())
-    except Exception as exc:
-        logger.debug("[redzone-store] scoreboard discovery failed: %s", exc)
-        return []
+            resp = requests.get(
+                _ESPN_SCOREBOARD,
+                params=params,
+                headers={"User-Agent": _UA, "Accept": "application/json"},
+                timeout=10,
+            )
+            if resp.status_code != 200:
+                return {}
+            return extract_espn_scoreboard_lookup(resp.json())
+        except Exception as exc:
+            logger.debug("[redzone-store] scoreboard discovery failed: %s", exc)
+            return {}
+
+    # (scoreboard week to fetch, NFL week to tag). The explicit week param
+    # keeps working before and after ESPN flips its default scoreboard, and
+    # the tag tells the collector which week a backfilled game belongs to.
+    fetches: list[tuple[int | None, int | None]] = []
+    wk = int(current_week) if current_week else 0
+    if wk >= 1:
+        fetches.append((wk, wk))
+        if wk > 1:
+            fetches.append((wk - 1, wk - 1))
+    else:
+        # Week unknown (e.g. state fetch failed): legacy single fetch.
+        fetches.append((None, None))
+
     seen: dict[str, dict] = {}
-    for game in lookup.values():
-        if not isinstance(game, dict):
-            continue
-        gid = str(game.get("gameID") or "")
-        if not gid or gid in seen:
-            continue
-        code = str(game.get("gameStatusCode") or "")
-        if code not in ("1", "2"):
-            continue
-        seen[gid] = {"game_id": gid, "live": code == "1", "final": code == "2"}
+    for sb_week, tag in fetches:
+        for game in _fetch(sb_week).values():
+            if not isinstance(game, dict):
+                continue
+            gid = str(game.get("gameID") or "")
+            if not gid or gid in seen:
+                continue
+            code = str(game.get("gameStatusCode") or "")
+            if code not in ("1", "2"):
+                continue
+            seen[gid] = {
+                "game_id": gid,
+                "live": code == "1",
+                "final": code == "2",
+                "week": tag,
+            }
     return list(seen.values())
 
 
@@ -388,7 +435,7 @@ def poll_once() -> dict:
     if not season:
         return stats
 
-    games = discover_live_games()
+    games = discover_live_games(current_week=week)
     if not games:
         return stats
 
@@ -396,15 +443,16 @@ def poll_once() -> dict:
     # (fetch_alt_pbp_plays force-refreshes until ESPN reports complete).
     # Finals never seen are normally skipped -- nothing new to learn -- but a
     # recent final may have gone final while the poller was down (deploy,
-    # outage). Self-heal: backfill unseen finals from the last 3 days so a
-    # poller gap can't permanently lose a game's plays (and its TDs).
+    # outage). Self-heal: backfill unseen finals from the last 7 days so a
+    # poller gap can't permanently lose a game's plays (and its TDs). The
+    # window matches the play-prune horizon: anything older is pruned anyway.
     live = [g for g in games if g["live"]]
     finals = [g for g in games if g["final"]]
     if finals:
         known = set(get_plays(season, [g["game_id"] for g in finals]).keys())
         try:
             from datetime import datetime, timedelta, timezone
-            _cutoff = (datetime.now(timezone.utc) - timedelta(days=3)).strftime("%Y%m%d")
+            _cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).strftime("%Y%m%d")
         except Exception:
             _cutoff = ""
         def _is_recent_unseen(gid: str) -> bool:
@@ -444,7 +492,10 @@ def poll_once() -> dict:
         except Exception as exc:
             logger.debug("[redzone-store] pbp failed game=%s: %s", gid, exc)
             continue
-        n = upsert_plays(season, gid, plays)
+        # Stamp the game's own week, not the current NFL week: a backfilled
+        # previous-week final must not be stamped as this week, or the
+        # week-scoped moments query would serve last week's plays again.
+        n = upsert_plays(season, gid, plays, week=g.get("week") or week)
         stats["games"] += 1
         stats["plays"] += n
     return stats
