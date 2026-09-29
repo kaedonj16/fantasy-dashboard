@@ -175,3 +175,46 @@ def test_route_wired_in_app():
     # Auth failure shapes mirror /api/start-sit-options.
     assert "sign_in_required" in fn
     assert "team_not_linked" in fn
+
+
+def test_opponent_flagged_missing_when_matchups_fetch_fails(lab_mocks, monkeypatch):
+    def _boom(league_id, week):
+        raise RuntimeError("sleeper down")
+
+    monkeypatch.setattr(api_mod, "get_matchups", _boom)
+    data = _build(_ctx())
+    opp = data["opponent"]
+    assert opp["missing"] is True
+    assert opp["mean"] == 0
+    assert opp["name"] == "Opponent"
+    # Her side still builds via the optimal-by-projection fallback.
+    assert len(data["you"]["lineup"]) > 0
+
+
+def test_opponent_flagged_missing_when_opp_entry_absent(lab_mocks, monkeypatch):
+    mine_only = [m for m in _matchups("123", 4) if str(m.get("roster_id")) == "7"]
+    monkeypatch.setattr(api_mod, "get_matchups", lambda lid, wk: mine_only)
+    data = _build(_ctx())
+    assert data["opponent"]["missing"] is True
+    assert data["opponent"]["mean"] == 0
+
+
+def test_opponent_not_missing_when_resolved(lab_mocks):
+    data = _build(_ctx())
+    opp = data["opponent"]
+    assert opp["missing"] is False
+    assert opp["name"] == "Pittsburgh Pilots"
+    assert opp["mean"] == pytest.approx(35.0)
+
+
+def test_matchups_fetched_exactly_once(lab_mocks, monkeypatch):
+    # Hardening: one fetch reused for both sides, not two separate fetches.
+    calls = []
+
+    def _counting(league_id, week):
+        calls.append((league_id, week))
+        return _matchups(league_id, week)
+
+    monkeypatch.setattr(api_mod, "get_matchups", _counting)
+    _build(_ctx())
+    assert len(calls) == 1

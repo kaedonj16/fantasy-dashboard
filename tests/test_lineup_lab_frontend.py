@@ -171,3 +171,11 @@ console.log('LAB_ENGINE_OK winPct=' + res.winPct.toFixed(3) + ' delta=' + d1.toF
         os.unlink(path)
     assert out.returncode == 0, f"node harness failed: {out.stderr[-2000:]}"
     assert "LAB_ENGINE_OK" in out.stdout
+
+
+def test_lab_retry_card_when_opponent_missing(script):
+    # A payload whose opponent failed to load must render an explicit retry
+    # state, never the degenerate 50/50 hero.
+    assert "data.opponent && data.opponent.missing" in script
+    assert "no matchup to simulate" in script
+    assert 'onclick="wvLabData=null;wvLoadLab()">Try again' in script
