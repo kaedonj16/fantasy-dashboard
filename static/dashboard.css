@@ -2135,6 +2135,27 @@ html[data-theme="dark"] img[src*="discord-brands-solid.png"] {
     box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
+/* Honesty chip shown on the nav week label when get_nfl_state() fell back to
+   last-good after a failed fetch. Mirrors the ScoreZone .rz-stale-badge. */
+.br-ctx-stale {
+    display: inline-block;
+    margin-left: 6px;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: .04em;
+    color: #d97706;
+    background: rgba(245, 158, 11, .12);
+    border: 1px solid rgba(245, 158, 11, .3);
+    padding: 1px 6px;
+    border-radius: 12px;
+    vertical-align: 1px;
+}
+
+:root[data-theme="dark"] .br-ctx-stale {
+    background: rgba(245, 158, 11, .15);
+    border-color: rgba(245, 158, 11, .35);
+}
+
 .br-ctx-menu {
     position: absolute;
     top: calc(100% + 6px);

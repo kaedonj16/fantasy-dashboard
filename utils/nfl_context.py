@@ -64,6 +64,25 @@ def normalize_nfl_state(
     return raw
 
 
+def nfl_state_is_stale(state: Optional[Mapping[str, Any]]) -> bool:
+    """True when get_nfl_state() served a last-good fallback after a failed fetch.
+
+    Fresh successful fetches never set the flag; only the stale-fallback path
+    in dashboard_services.api does. Consumers (nav chrome, API payloads) can
+    branch on this instead of trusting the week blindly.
+    """
+    fresh = (state or {}).get("freshness")
+    return bool(isinstance(fresh, dict) and fresh.get("stale"))
+
+
+def nfl_state_last_good_at(state: Optional[Mapping[str, Any]]) -> Optional[str]:
+    """ISO timestamp of the last successful NFL state fetch, if the state is stale."""
+    fresh = (state or {}).get("freshness")
+    if isinstance(fresh, dict):
+        return fresh.get("last_good_at")
+    return None
+
+
 def season_cache_key(namespace: str, *, season: int, week: Optional[int] = None,
                      league_id: Optional[str] = None, scoring: Optional[str] = None,
                      provider: Optional[str] = None) -> str:
