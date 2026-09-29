@@ -15630,21 +15630,13 @@ def page_breakouts(platform: str, season: int, league_id: str):
         {_bo_last_updated}
       </div>
       <div class="card-body">
-        <!-- Position Filter + Week Selector -->
-        <div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; margin-bottom: 16px;">
-          <div class="otc-day-filters breakout-filters">
-            <button class="otc-day-filter breakout-filter-btn active" data-position="ALL" onclick="filterBreakouts('ALL')">All Positions</button>
-            <button class="otc-day-filter breakout-filter-btn" data-position="QB" onclick="filterBreakouts('QB')">QB</button>
-            <button class="otc-day-filter breakout-filter-btn" data-position="RB" onclick="filterBreakouts('RB')">RB</button>
-            <button class="otc-day-filter breakout-filter-btn" data-position="WR" onclick="filterBreakouts('WR')">WR</button>
-            <button class="otc-day-filter breakout-filter-btn" data-position="TE" onclick="filterBreakouts('TE')">TE</button>
-          </div>
-          <label for="breakoutWeekSelect" style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-muted); font-weight: 600;">
-            Week:
-            <select id="breakoutWeekSelect" aria-label="Breakout week">
-              <option value="">Loading weeks...</option>
-            </select>
-          </label>
+        <!-- Position Filter -->
+        <div class="otc-day-filters breakout-filters">
+          <button class="otc-day-filter breakout-filter-btn active" data-position="ALL" onclick="filterBreakouts('ALL')">All Positions</button>
+          <button class="otc-day-filter breakout-filter-btn" data-position="QB" onclick="filterBreakouts('QB')">QB</button>
+          <button class="otc-day-filter breakout-filter-btn" data-position="RB" onclick="filterBreakouts('RB')">RB</button>
+          <button class="otc-day-filter breakout-filter-btn" data-position="WR" onclick="filterBreakouts('WR')">WR</button>
+          <button class="otc-day-filter breakout-filter-btn" data-position="TE" onclick="filterBreakouts('TE')">TE</button>
         </div>
 
         <!-- Loading State -->
@@ -15673,95 +15665,34 @@ def page_breakouts(platform: str, season: int, league_id: str):
       var currentPage = 1;
       var PAGE_SIZE = 12;
 
-      var currentWeek = 'latest';
-
-      // Fetch breakout candidates (using new BreakoutEngine API).
+      // Fetch breakout candidates on page load (using new BreakoutEngine API)
       // Server selects the engine-specific floor: weekly watchlist calibration
       // is intentionally different from the offseason 50-point board.
-      function _boCandidatesUrl(weekValue) {{
-        var url = '/api/breakout/candidates?season={bo_season}&limit=15&league_id={league_id}&platform={platform}';
-        if (weekValue && weekValue !== 'latest') {{
-          url += '&week=' + encodeURIComponent(weekValue);
-        }}
-        return url;
-      }}
-
-      function handleBreakoutResponse(data) {{
-        breakoutCandidates = (data && data.candidates) || [];
-        lockedCount = data.locked_count || 0;
-        document.getElementById('breakoutsLoading').style.display = 'none';
-        document.getElementById('breakoutsContainer').style.display = 'none';
-        document.getElementById('breakoutsEmpty').style.display = 'none';
-
-        if (data && data.data_available === false) {{
-          var emptyTitle = document.getElementById('breakoutsEmptyTitle');
-          var emptyDetail = document.getElementById('breakoutsEmptyDetail');
-          if (emptyTitle) emptyTitle.textContent = 'Breakout data is not ready';
-          if (emptyDetail) {{
-            emptyDetail.textContent = data.reason || 'Opportunity scores need roster-change data for this season. This page will fill in once that pipeline has run.';
-            emptyDetail.style.display = 'block';
-          }}
-          document.getElementById('breakoutsEmpty').style.display = 'block';
-        }} else if (breakoutCandidates.length === 0 && lockedCount === 0) {{
-          document.getElementById('breakoutsEmpty').style.display = 'block';
-        }} else {{
-          renderBreakouts();
-        }}
-      }}
-
-      function loadBreakouts(weekValue) {{
-        currentWeek = weekValue || 'latest';
-        currentPage = 1;
-        var loadingEl = document.getElementById('breakoutsLoading');
-        if (loadingEl) {{
-          loadingEl.style.display = 'block';
-          if (!loadingEl.querySelector('.loading-spinner')) {{
-            loadingEl.innerHTML = '<div class="loading-spinner"></div><div style="margin-top: 12px;">Loading breakout candidates...</div>';
-          }}
-        }}
-        document.getElementById('breakoutsContainer').style.display = 'none';
-        document.getElementById('breakoutsEmpty').style.display = 'none';
-        fetch(_boCandidatesUrl(currentWeek))
-          .then(res => res.json())
-          .then(handleBreakoutResponse)
-          .catch(err => {{
-            console.error('Error loading breakouts:', err);
-            document.getElementById('breakoutsLoading').innerHTML = '<div style="color: #ef4444;">Failed to load breakout candidates</div>';
-          }});
-      }}
-
-      function onBreakoutWeekChange() {{
-        var sel = document.getElementById('breakoutWeekSelect');
-        loadBreakouts(sel ? sel.value : 'latest');
-      }}
-
-      // Populate the week selector: Preseason (offseason board) plus every
-      // completed weekly snapshot. Defaults to the latest available week.
-      fetch('/api/breakout/weeks?season={bo_season}')
+      fetch('/api/breakout/candidates?season={bo_season}&limit=15&league_id={league_id}&platform={platform}')
         .then(res => res.json())
-        .then(function (data) {{
-          var sel = document.getElementById('breakoutWeekSelect');
-          if (sel && data && Array.isArray(data.weeks)) {{
-            sel.innerHTML = '';
-            data.weeks.forEach(function (w) {{
-              var opt = document.createElement('option');
-              opt.value = String(w.value);
-              opt.textContent = w.label;
-              sel.appendChild(opt);
-            }});
-            var latest = data.latest_week != null ? String(data.latest_week) : 'preseason';
-            sel.value = latest;
-            if (window.initCustomSelects) window.initCustomSelects(sel.closest('div') || document);
+        .then(data => {{
+          breakoutCandidates = (data && data.candidates) || [];
+          lockedCount = data.locked_count || 0;
+          document.getElementById('breakoutsLoading').style.display = 'none';
+
+          if (data && data.data_available === false) {{
+            var emptyTitle = document.getElementById('breakoutsEmptyTitle');
+            var emptyDetail = document.getElementById('breakoutsEmptyDetail');
+            if (emptyTitle) emptyTitle.textContent = 'Breakout data is not ready';
+            if (emptyDetail) {{
+              emptyDetail.textContent = data.reason || 'Opportunity scores need roster-change data for this season. This page will fill in once that pipeline has run.';
+              emptyDetail.style.display = 'block';
+            }}
+            document.getElementById('breakoutsEmpty').style.display = 'block';
+          }} else if (breakoutCandidates.length === 0 && lockedCount === 0) {{
+            document.getElementById('breakoutsEmpty').style.display = 'block';
+          }} else {{
+            renderBreakouts();
           }}
-          var initWeek = (sel && sel.value) ? sel.value : 'latest';
-          sel.addEventListener('change', onBreakoutWeekChange);
-          loadBreakouts(initWeek);
         }})
-        .catch(function (err) {{
-          console.error('Error loading breakout weeks:', err);
-          var sel = document.getElementById('breakoutWeekSelect');
-          if (sel) sel.addEventListener('change', onBreakoutWeekChange);
-          loadBreakouts('latest');
+        .catch(err => {{
+          console.error('Error loading breakouts:', err);
+          document.getElementById('breakoutsLoading').innerHTML = '<div style="color: #ef4444;">Failed to load breakout candidates</div>';
         }});
 
       function filterBreakouts(position) {{
@@ -19195,26 +19126,32 @@ def _ensure_sleeper_week_files(season_year: int) -> None:
 # The game-log route used to glob + fully parse every weekly stat file for
 # every season on each call (~180 files / ~90MB of JSON) just to extract one
 # player's rows. This index parses each (season, week) file once per worker
-# and keeps a compact per-player view: player_id -> 12-tuple of the stat keys
-# the game log needs, or None for a present-but-all-zero row (so a 0.0-point
-# game still renders as 0.0, not DNP). Entries are guarded by the file's
-# mtime, so a refetched week file is re-parsed on next access. Measured
-# ~38MB for all 10 seasons on disk, vs ~90MB of JSON parsed per request.
+# and keeps a compact per-player view: player_id -> {stat_key: value} of the
+# row's NONZERO stats, or None for a present-but-all-zero row (so a 0.0-point
+# game still renders as 0.0, not DNP).
+#
+# The full key set is kept (not just the 12 display keys) because score_stats
+# scores any stat key the league's scoring settings name: truncating to the
+# display keys silently undercounts custom-scoring leagues (e.g. 1 pt per
+# completion, first downs, 2pt conversions, return yards, kicker scoring).
+# Entries are guarded by the file's mtime, so a refetched week file is
+# re-parsed on next access. Measured ~59MB for all 10 seasons in a worker,
+# vs ~90MB of JSON parsed per request.
 # threading is imported at module top (gthread workers run 2 threads).
 _GAMELOG_STAT_KEYS = (
     "pass_yd", "pass_td", "pass_int", "pass_att",
     "rush_att", "rush_yd", "rush_td",
     "rec", "rec_tgt", "rec_yd", "rec_td", "fum_lost",
 )
-_WEEK_STAT_INDEX: Dict[Tuple[int, int], Tuple[float, Dict[str, Optional[tuple]]]] = {}
+_WEEK_STAT_INDEX: Dict[Tuple[int, int], Tuple[float, Dict[str, Optional[dict]]]] = {}
 _WEEK_STAT_INDEX_LOCK = threading.Lock()
 
 
-def _week_stat_index_rows(season: int, week: int) -> Dict[str, Optional[tuple]]:
+def _week_stat_index_rows(season: int, week: int) -> Dict[str, Optional[dict]]:
     """Compact per-player stat rows for one (season, week), parsed at most once.
 
-    Returns {player_id: 12-tuple} for players with any stat and
-    {player_id: None} for players whose row exists but is all zeros.
+    Returns {player_id: {stat_key: nonzero value}} for players with any stat
+    and {player_id: None} for players whose row exists but is all zeros.
     A file whose mtime changed since the cached parse is re-parsed.
     Never raises; a missing/unreadable file yields {}.
     """
@@ -19235,15 +19172,19 @@ def _week_stat_index_rows(season: int, week: int) -> Dict[str, Optional[tuple]]:
         hit = _WEEK_STAT_INDEX.get(key)
         if hit is not None and hit[0] >= mtime:
             return hit[1]
-        rows: Dict[str, Optional[tuple]] = {}
+        rows: Dict[str, Optional[dict]] = {}
         try:
             with open(path) as handle:
                 weekly = json.load(handle) or {}
             for pid, s in weekly.items():
                 if not isinstance(s, dict):
                     continue
-                vals = tuple((s.get(k) or 0) for k in _GAMELOG_STAT_KEYS)
-                rows[str(pid)] = vals if any(vals) else None
+                # Keep every nonzero stat, not just the display keys: the
+                # game-log points calc (score_stats) scores any stat key the
+                # league's scoring settings name, so dropping the rest would
+                # silently undercount custom-scoring leagues.
+                nonzero = {k: v for k, v in s.items() if v}
+                rows[str(pid)] = nonzero if nonzero else None
         except Exception:
             rows = {}
         _WEEK_STAT_INDEX[key] = (mtime, rows)
@@ -19273,12 +19214,18 @@ def _sleeper_stats_by_week(player_id: str, season_year: int) -> dict:
             continue
         rows = _week_stat_index_rows(season, int(match.group(1)))
         if pid in rows:
-            vals = rows[pid]
-            out[int(match.group(1))] = (
-                dict(zip(_GAMELOG_STAT_KEYS, vals))
-                if vals is not None
-                else {k: 0 for k in _GAMELOG_STAT_KEYS}
-            )
+            stored = rows[pid]
+            if stored is None:
+                # Present-but-all-zero row: a genuine 0.0 game, not DNP.
+                out[int(match.group(1))] = {k: 0 for k in _GAMELOG_STAT_KEYS}
+            else:
+                # Zero-fill the display keys the endpoint's _stats_dict picks
+                # (old full-row parse surfaced them as explicit zeros), then
+                # overlay every stored nonzero stat so score_stats sees the
+                # same values the pre-index parse did for custom scoring.
+                merged = {k: 0 for k in _GAMELOG_STAT_KEYS}
+                merged.update(stored)
+                out[int(match.group(1))] = merged
     return out
 
 

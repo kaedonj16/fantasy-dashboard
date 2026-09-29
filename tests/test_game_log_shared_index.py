@@ -21,6 +21,7 @@ import pytest
 # these tests run in the full-dependency shard.
 pytest.importorskip("pandas")
 pytest.importorskip("flask")
+pytest.importorskip("openai")
 
 import app as appmod
 
@@ -34,6 +35,7 @@ STAT_KEYS = [
 
 W1 = {
     "101": {"pass_yd": 312, "pass_td": 3, "pass_int": 1, "pass_att": 38,
+            "pass_cmp": 38,
             "rush_att": 2, "rush_yd": 9, "rush_td": 0,
             "rec": 0, "rec_tgt": 0, "rec_yd": 0, "rec_td": 0, "fum_lost": 0,
             "extra_key_not_needed": "ignored"},
@@ -69,7 +71,7 @@ def week_files(tmp_path, monkeypatch):
 
 
 def _old_logic(player_id, season, cache_dir):
-    """The pre-index implementation, for parity comparison."""
+    """The pre-index implementation: full row dicts, one parse per call."""
     out = {}
     pattern = os.path.join(
         str(cache_dir), "sleeper_stats", f"sleeper_stats_s{int(season)}_w*.json"
@@ -82,17 +84,57 @@ def _old_logic(player_id, season, cache_dir):
             weekly = json.load(handle) or {}
         row = weekly.get(str(player_id)) or weekly.get(player_id)
         if isinstance(row, dict):
-            out[int(match.group(1))] = {k: row.get(k) for k in STAT_KEYS}
+            out[int(match.group(1))] = dict(row)
     return out
 
 
+def _norm(row):
+    """Normalize for comparison: missing and zero are the same stat."""
+    return {k: (v or 0) for k, v in row.items()}
+
+
 def test_parity_with_direct_parse(week_files):
-    """Indexed lookup returns exactly what the old per-request parse did."""
+    """Indexed lookup returns the same stat values the old per-request parse did.
+
+    The index stores nonzero stats only; the lookup zero-fills the display
+    keys, so normalize zeros-vs-missing before comparing.
+    """
     for season in (2023, 2024):
         for pid in ("101", "102", "103", "999"):
-            assert appmod._sleeper_stats_by_week(pid, season) == _old_logic(
-                pid, season, week_files.parent
-            )
+            new = appmod._sleeper_stats_by_week(pid, season)
+            old = _old_logic(pid, season, week_files.parent)
+            assert set(new) == set(old)
+            for week in old:
+                assert _norm(new[week]) == _norm(old[week])
+                # Every key the old row had is still visible (custom scoring).
+                assert set(old[week]) <= set(new[week]) | {
+                    k for k, v in old[week].items() if not v
+                }
+
+
+def test_custom_scoring_points_parity(week_files):
+    """score_stats sees identical values for custom-scoring leagues.
+
+    The index must not truncate to the display keys: score_stats scores any
+    stat key the league's settings name (pass_cmp, first downs, 2pt
+    conversions, return yards...). A 12-key truncation silently undercounted
+    these leagues (caught: 33.0 pts/game on a 1-pt-per-completion league).
+    """
+    from utils.fantasy_scoring import score_stats
+
+    scoring = {
+        "pass_yd": 0.04, "pass_td": 4.0, "pass_int": -2.0,
+        "rush_yd": 0.1, "rush_td": 6.0, "rec": 1.0,
+        "rec_yd": 0.1, "rec_td": 6.0, "fum_lost": -2.0,
+        "pass_cmp": 1.0, "pass_2pt": 2.0, "rush_2pt": 2.0,
+    }
+    new = appmod._sleeper_stats_by_week("101", 2024)
+    old = _old_logic("101", 2024, week_files.parent)
+    assert set(new) == {1, 2}
+    for week in (1, 2):
+        assert score_stats(new[week], scoring) == score_stats(old[week], scoring)
+    # And the truncation bug, directly: the stored row keeps pass_cmp.
+    assert new[1]["pass_cmp"] == 38
 
 
 def test_each_file_parsed_once_across_players(week_files, monkeypatch):
