@@ -444,7 +444,10 @@ def build_advanced_metrics_body(
       </div>
       <div class="card-body" style="padding-top:0;">
 
-        <!-- Primary metric: always visible, full width under the command strip. -->
+      <!-- Desktop pairs these controls into a two-column grid (.am-cmd-controls);
+           on mobile they keep their stacked full-width layout. -->
+      <div class="am-cmd-controls">
+        <!-- Primary metric: always visible, under the command strip. -->
         <div class="am-cmd-metric">
           <div class="am-metric-picker" id="amMetricPickerWrap">
             <button type="button" class="am-select am-metric-btn" id="amMetricBtn" aria-haspopup="listbox" aria-expanded="false" aria-label="Primary metric">
@@ -491,6 +494,7 @@ def build_advanced_metrics_body(
           </div>
           <div class="am-movers-groups" id="amMoversGroups"></div>
         </div>
+      </div><!-- /am-cmd-controls -->
 
 
         <div id="amCompareModal" class="am-legend-modal" style="display:none;"
@@ -1601,6 +1605,36 @@ def build_advanced_metrics_body(
           border-radius:14px; box-shadow:0 16px 48px rgba(0,0,0,.22);
         }
         .am-sheet-backdrop { background:transparent; }
+      }
+      @media (min-width:761px) {
+        /* Desktop control grid: pair the metric picker with the position
+           segmented control, keep the preset pills full width, and put the
+           context line next to the What Changed banner. Mobile keeps the
+           stacked full-width layout (no .am-cmd-controls styles below 761px). */
+        .am-cmd-controls {
+          display:grid;
+          grid-template-columns:minmax(280px, 340px) minmax(0, 1fr);
+          grid-template-areas:
+            "metric positions"
+            "pills pills"
+            "tagline tagline"
+            "context movers";
+          gap:10px 16px;
+          align-items:start;
+          margin:12px 0 10px;
+        }
+        .am-cmd-controls .am-cmd-metric,
+        .am-cmd-controls .am-positions.am-segmented,
+        .am-cmd-controls .am-decisions,
+        .am-cmd-controls .am-preset-tagline,
+        .am-cmd-controls .am-context-line,
+        .am-cmd-controls .am-movers { margin:0; min-width:0; }
+        .am-cmd-controls .am-cmd-metric { grid-area:metric; }
+        .am-cmd-controls .am-positions.am-segmented { grid-area:positions; align-self:center; }
+        .am-cmd-controls .am-decisions { grid-area:pills; }
+        .am-cmd-controls .am-preset-tagline { grid-area:tagline; }
+        .am-cmd-controls .am-context-line { grid-area:context; width:100%; align-self:center; }
+        .am-cmd-controls .am-movers { grid-area:movers; }
       }
     </style>
     """
