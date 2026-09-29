@@ -40,6 +40,8 @@ def _extract(mod_path: str, *names: str) -> dict:
 def _load_report_fns():
     chunks = _extract(
         "dashboard_services/ai/front_office_report.py",
+        "_inj_canonical",
+        "_inj_is_reportable",
         "_trade_deadline_info",
         "_urgent_needs",
         "_apply_urgency",

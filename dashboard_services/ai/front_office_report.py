@@ -433,8 +433,10 @@ def _trade_deadline_info(ctx: dict) -> dict | None:
 
 def _urgent_needs(ctx: dict, roster: dict, roster_rows: list[dict],
                   week: int | None) -> list[dict]:
-    """Starters who won't be available soon: serious injury, or a bye in the
-    next two weeks. These holes jump the queue for trade/waiver priority."""
+    """Starters who won't be available soon: serious injury, a QUESTIONABLE
+    tag (game-time call), or a bye in the next two weeks. Bench players with
+    serious injuries are included too, since "move to IR" is the action.
+    These holes jump the queue for trade/waiver priority."""
     try:
         from utils.lineup_issues import SERIOUS_INJURY_STATUSES
     except Exception:
@@ -455,18 +457,43 @@ def _urgent_needs(ctx: dict, roster: dict, roster_rows: list[dict],
         logger.debug("[front-office] bye lookup failed", exc_info=True)
     rows_by_id = {str(r.get("id")): r for r in roster_rows}
     urgent: list[dict] = []
+    starter_ids = {str(pid) for pid in roster.get("starters") or []}
+
+    def _injury_entry(row: dict, on_bench: bool) -> dict | None:
+        injury = str(row.get("injury") or "").strip().upper()
+        if not injury:
+            return None
+        canon = _inj_canonical(injury)
+        # Non-injury statuses (e.g. a healthy game-day "Inactive") never
+        # count as injuries.
+        if not _inj_is_reportable(canon):
+            return None
+        if canon in SERIOUS_INJURY_STATUSES:
+            detail = f"{row.get('name')} is {injury}"
+            if on_bench:
+                detail = f"{row.get('name')} ({row.get('position')}, bench) is {injury}"
+            return {
+                "position": row.get("position"),
+                "player": row.get("name"),
+                "reason": "injury",
+                "detail": detail,
+            }
+        if canon == "QUESTIONABLE" and not on_bench:
+            return {
+                "position": row.get("position"),
+                "player": row.get("name"),
+                "reason": "injury",
+                "detail": f"{row.get('name')} is QUESTIONABLE, game-time call",
+            }
+        return None
+
     for pid in roster.get("starters") or []:
         row = rows_by_id.get(str(pid))
         if not row:
             continue
-        injury = str(row.get("injury") or "").strip().upper()
-        if injury and injury in SERIOUS_INJURY_STATUSES:
-            urgent.append({
-                "position": row.get("position"),
-                "player": row.get("name"),
-                "reason": "injury",
-                "detail": f"{row.get('name')} is {injury}",
-            })
+        entry = _injury_entry(row, on_bench=False)
+        if entry:
+            urgent.append(entry)
             continue
         bye = bye_by_team.get(str(row.get("team") or "").strip().upper())
         if bye and week and bye in (week + 1, week + 2):
@@ -476,7 +503,276 @@ def _urgent_needs(ctx: dict, roster: dict, roster_rows: list[dict],
                 "reason": "bye",
                 "detail": f"{row.get('name')} on bye week {bye}",
             })
+    for pid in roster.get("players") or []:
+        if str(pid) in starter_ids:
+            continue
+        row = rows_by_id.get(str(pid))
+        if not row:
+            continue
+        entry = _injury_entry(row, on_bench=True)
+        if entry:
+            urgent.append(entry)
     return urgent
+
+
+# ── Injury helpers ──────────────────────────────────────────────────────────
+# Severity order for sorting: IR-like > OUT > DOUBTFUL > QUESTIONABLE.
+_INJ_SEVERITY = {
+    "IR": 0, "PUP": 0, "NFI": 0, "SUSP": 0, "SUS": 0,
+    "OUT": 1, "O": 1,
+    "DOUBTFUL": 2, "D": 2,
+    "QUESTIONABLE": 3, "Q": 3,
+}
+
+
+def _inj_canonical(status: str) -> str:
+    """Single-letter Sleeper codes -> canonical designation.
+
+    Self-contained (no module globals) so AST-extracted unit tests can exec
+    it standalone.
+    """
+    s = str(status or "").strip().upper()
+    return {"O": "OUT", "D": "DOUBTFUL", "Q": "QUESTIONABLE"}.get(s, s)
+
+
+# Canonical injury designations for the report. Mirrors
+# dashboard_services.injuries.INJURY_STATUSES (that module imports pandas, so
+# the tuple is inlined here and in _inj_is_reportable to keep this module
+# importable without pandas and exec-able by AST-extracted unit tests).
+_INJURY_DESIGNATIONS = (
+    "IR", "PUP", "NFI", "SUSP", "SUS", "OUT", "DOUBTFUL", "QUESTIONABLE",
+)
+
+
+def _inj_is_reportable(designation: str, body: str = "") -> bool:
+    """True when a designation/body pair belongs on the Injury Report.
+
+    Guards against non-injury statuses (e.g. a healthy game-day "Inactive")
+    being treated as injuries. Self-contained so AST-extracted unit tests
+    can exec it standalone.
+    """
+    if _inj_canonical(designation) in (
+        "IR", "PUP", "NFI", "SUSP", "SUS", "OUT", "DOUBTFUL", "QUESTIONABLE",
+    ):
+        return True
+    return bool(str(body or "").strip())
+
+
+def _inj_severity(status: str) -> int:
+    return _INJ_SEVERITY.get(str(status or "").strip().upper(), 9)
+
+
+def _fmt_weeks_out(weeks_out) -> str:
+    """'~3 wks', '~1 wk', 'this week', or '' when unknown."""
+    try:
+        w = float(weeks_out)
+    except (TypeError, ValueError):
+        return ""
+    if w <= 0.5:
+        return "this week"
+    return f"~{w:g} {'wk' if w == 1 else 'wks'}"
+
+
+def _injury_lookup(ctx: dict) -> dict[str, str]:
+    """player_id -> raw injury designation, from the Sleeper players index.
+
+    players_full first, then the lighter indexes; first non-empty wins.
+    """
+    lookup: dict[str, str] = {}
+    for src in (ctx.get("players") or {}, ctx.get("players_index") or {},
+                ctx.get("players_map") or {}):
+        if not isinstance(src, dict):
+            continue
+        for pid, info in src.items():
+            if not isinstance(info, dict):
+                continue
+            spid = str(pid)
+            if spid in lookup:
+                continue
+            raw = str(info.get("injury_status") or info.get("status") or "").strip().upper()
+            if raw and raw not in ("", "ACTIVE", "ACT"):
+                lookup[spid] = raw
+    return lookup
+
+
+def _injury_df_map(ctx: dict) -> dict[str, dict] | None:
+    """player_id -> {designation, body} from the league context's injury_df.
+
+    injury_df is built by build_injury_report() during league-context
+    construction from the same players snapshot the roster rows use, so it is
+    the canonical injury source. Duck-typed (no pandas import) so this module
+    stays importable in the pandas-free test env. Returns None when the frame
+    is missing or unreadable so callers can fall back to the players index.
+    """
+    df = ctx.get("injury_df")
+    if df is None:
+        return None
+    try:
+        if bool(getattr(df, "empty", False)):
+            return None
+        records = df.to_dict("records")
+    except Exception:
+        logger.debug("[front-office] injury_df read failed", exc_info=True)
+        return None
+    out: dict[str, dict] = {}
+    for rec in records or []:
+        if not isinstance(rec, dict):
+            continue
+        pid = str(rec.get("PlayerID") or "")
+        if not pid or pid in out:
+            continue
+        out[pid] = {
+            "designation": str(rec.get("Injury") or rec.get("Status") or "").strip(),
+            "body": str(rec.get("Body") or "").strip(),
+        }
+    return out
+
+
+def _roster_injury_map(ctx: dict) -> dict[str, dict]:
+    """player_id -> {designation, body} for every injured player.
+
+    Starts from the Sleeper players index scan, then overlays the context's
+    injury_df (build_injury_report(), the canonical source) where present so
+    its curated designations and body parts win. The merged map covers free
+    agents too, which the df (built with include_free_agents=False) omits.
+    """
+    players_full = ctx.get("players") or {}
+    out: dict[str, dict] = {}
+    for pid, designation in _injury_lookup(ctx).items():
+        info = players_full.get(pid) or {}
+        if not isinstance(info, dict):
+            info = {}
+        out[pid] = {
+            "designation": designation,
+            "body": str(info.get("injury_body_part") or "").strip(),
+        }
+    df_map = _injury_df_map(ctx)
+    if df_map:
+        out.update(df_map)
+    return out
+
+
+def _build_injury_rows(ctx: dict, roster_rows: list[dict]) -> list[dict]:
+    """Every rostered player with an injury designation, sorted by severity.
+
+    Designations and body parts come from _roster_injury_map (the context's
+    injury_df from build_injury_report() overlaid on the Sleeper players
+    index). Each row carries the ESPN-derived expected return and the roster
+    action from the shared injury_plan kernel. Pure data; renders even when
+    the AI is down.
+    """
+    try:
+        from dashboard_services.injury_return import (
+            injury_roster_verdict,
+            weeks_out_for_player,
+        )
+    except Exception:
+        logger.debug("[front-office] injury_return import failed", exc_info=True)
+        injury_roster_verdict = None
+        weeks_out_for_player = None
+    inj_map = _roster_injury_map(ctx)
+    rows_by_id = {str(r.get("id") or ""): r for r in roster_rows}
+    rows: list[dict] = []
+    for pid, info in inj_map.items():
+        r = rows_by_id.get(pid)
+        if r is None:
+            continue
+        designation = str(info.get("designation") or "").strip()
+        body = str(info.get("body") or "").strip()
+        if not _inj_is_reportable(designation, body):
+            continue
+        canon = _inj_canonical(designation)
+        # A row can be reportable via its body part alone (e.g. designation
+        # "Active" with a lingering body note); don't print a non-injury
+        # designation as the label in that case.
+        inj = canon if canon in _INJURY_DESIGNATIONS else ""
+        weeks_out = None
+        if weeks_out_for_player and pid:
+            try:
+                weeks_out = weeks_out_for_player(pid)
+            except Exception:
+                logger.debug("[front-office] weeks_out failed for %s", pid, exc_info=True)
+        action = ""
+        if injury_roster_verdict:
+            try:
+                verdict = injury_roster_verdict(
+                    status=inj,
+                    weeks_out=weeks_out,
+                    player_value=r.get("value"),
+                )
+                action = str(verdict.get("label") or "")
+            except Exception:
+                logger.debug("[front-office] injury verdict failed for %s", pid, exc_info=True)
+        return_label = _fmt_weeks_out(weeks_out)
+        rows.append({
+            "id": pid,
+            "name": r.get("name"),
+            "position": r.get("position"),
+            "team": r.get("team"),
+            "role": r.get("role"),
+            "injury": inj,
+            "body": body,
+            "weeks_out": weeks_out,
+            "return_label": f"out {return_label}" if return_label else "",
+            "action": action,
+        })
+    rows.sort(key=lambda r: (_inj_severity(r["injury"]), str(r.get("name") or "")))
+    return rows
+
+
+def _opponent_injuries(ctx: dict, this_week: dict | None) -> dict:
+    """This week's opponent: top 3 injured starters by severity.
+
+    Injury data comes from _roster_injury_map (the context's injury_df from
+    build_injury_report() overlaid on the Sleeper players index).
+    """
+    out = {"entries": [], "line": ""}
+    try:
+        opp_rid = str((this_week or {}).get("opponent_roster_id") or "")
+        if not opp_rid:
+            return out
+        roster = next(
+            (r for r in ctx.get("rosters") or []
+             if str(r.get("roster_id")) == opp_rid),
+            None,
+        )
+        if not roster:
+            return out
+        inj_map = _roster_injury_map(ctx)
+        players_index = ctx.get("players_index") or {}
+        players_map = ctx.get("players_map") or {}
+        entries = []
+        for pid in roster.get("starters") or []:
+            spid = str(pid)
+            info = inj_map.get(spid)
+            if not info:
+                continue
+            designation = str(info.get("designation") or "").strip()
+            body = str(info.get("body") or "").strip()
+            if not _inj_is_reportable(designation, body):
+                continue
+            canon = _inj_canonical(designation)
+            name = ""
+            for src in (players_index, players_map):
+                pinfo = (src or {}).get(spid) or {}
+                name = pinfo.get("full_name") or pinfo.get("name") or name
+                if name:
+                    break
+            entries.append({
+                "name": name or spid,
+                "injury": canon if canon in _INJURY_DESIGNATIONS else "",
+                "body": body,
+            })
+        entries.sort(key=lambda e: _inj_severity(e["injury"]))
+        entries = entries[:3]
+        out["entries"] = entries
+        out["line"] = ", ".join(
+            f"{e['name']} ({e['injury'] or e['body'] or 'injury'})"
+            for e in entries
+        )
+    except Exception:
+        logger.debug("[front-office] opponent injuries failed", exc_info=True)
+    return out
 
 
 def _apply_urgency(trade_targets: list[dict], waiver_targets: list[dict],
@@ -607,6 +903,25 @@ def build_front_office_data(ctx: dict, viewer_roster_id: str) -> dict | None:
     urgent_needs = _urgent_needs(ctx, roster, roster_rows, week)
     _apply_urgency(trade_targets, waiver_targets, urgent_needs)
     _annotate_waiver_alternatives(trade_targets, waiver_targets)
+    injury_rows = _build_injury_rows(ctx, roster_rows)
+    # Roster table shows the ESPN return estimate next to the injury pill.
+    wo_by_id = {r["id"]: r["weeks_out"] for r in injury_rows}
+    for r in roster_rows:
+        if r.get("injury"):
+            r["weeks_out"] = wo_by_id.get(r["id"])
+    # Injury pills on the players the report recommends acquiring. Gated on
+    # reportable designations so non-injury statuses never get a pill.
+    inj_map = _roster_injury_map(ctx)
+    for t in trade_targets:
+        for g in t.get("gets") or []:
+            info = inj_map.get(str(g.get("id")) or "") or {}
+            desig = str(info.get("designation") or "")
+            g["injury"] = desig if _inj_is_reportable(desig, info.get("body")) else ""
+    for w in waiver_targets:
+        info = inj_map.get(str(w.get("id")) or "") or {}
+        desig = str(info.get("designation") or "")
+        w["injury"] = desig if _inj_is_reportable(desig, info.get("body")) else ""
+    opponent_injuries = _opponent_injuries(ctx, this_week)
     data = {
         "team_name": team_ctx.get("team_name"),
         "record": team_ctx.get("record"),
@@ -632,6 +947,8 @@ def build_front_office_data(ctx: dict, viewer_roster_id: str) -> dict | None:
         "cut_candidates": cut_candidates,
         "drop_add_pairs": _drop_add_pairs(cut_candidates, waiver_targets),
         "urgent_needs": urgent_needs,
+        "injury_rows": injury_rows,
+        "opponent_injuries": opponent_injuries,
         "trade_deadline": _trade_deadline_info(ctx),
         "draft_grade": team_ctx.get("draft_grade"),
     }
@@ -675,6 +992,12 @@ def get_front_office_report(ctx: dict, viewer_roster_id: str, force_refresh: boo
         "record": data.get("record"),
         "grades": [(g["pos"], g["grade"], g["rank"]) for g in data.get("grades") or []],
         "top_values": [r["value"] for r in (data.get("roster_rows") or [])[:8]],
+        # Injury designations change on their own schedule; without this a
+        # status change would serve the 12h-cached report with stale injuries.
+        "injuries": sorted(
+            f"{r['id']}:{_inj_canonical(r.get('injury') or '')}"
+            for r in (data.get("roster_rows") or []) if r.get("injury")
+        ),
     }, CACHE_VERSION)
     if not force_refresh:
         cached = load_cached_ai_text(cache_key)
@@ -770,6 +1093,63 @@ def _fmt_trend(trend) -> str:
     return ""
 
 
+def _injury_section_html(rows: list[dict]) -> str:
+    """Full injury report section for the modal. Deterministic: renders from
+    computed data with no AI dependency."""
+    if not rows:
+        return (
+            "<div class='for-sec'><div class='for-sec-title'>Injury report</div>"
+            "<div class='for-muted'>No rostered players carry an injury designation.</div></div>"
+        )
+    items = []
+    for r in rows:
+        meta_bits = [p for p in (r.get("body"), r.get("return_label")) if p]
+        meta = (
+            f"<div class='for-inj-meta'>{html.escape(' · '.join(meta_bits))}</div>"
+            if meta_bits else ""
+        )
+        action = (
+            f"<div class='for-inj-action'>{html.escape(r['action'])}</div>"
+            if r.get("action") else ""
+        )
+        items.append(
+            "<li class='for-inj-row'>"
+            f"<div><span class='for-inj-name'>{html.escape(str(r.get('name') or ''))}</span> "
+            f"<span class='for-muted'>{html.escape(str(r.get('position') or ''))}"
+            f" · {html.escape(str(r.get('team') or ''))}</span> "
+            f"<span class='for-inj'>{html.escape(str(r.get('injury') or ''))}</span>{meta}</div>"
+            f"{action}</li>"
+        )
+    return (
+        "<div class='for-sec'><div class='for-sec-title'>Injury report</div>"
+        f"<ul class='for-inj-list'>{''.join(items)}</ul></div>"
+    )
+
+
+def _injury_card_html(rows: list[dict]) -> str:
+    """Compact injury summary for the Season Hub card."""
+    if not rows:
+        return ""
+    items = []
+    for r in rows[:3]:
+        meta = " · ".join(
+            p for p in (r.get("body"), r.get("return_label"), r.get("action")) if p
+        )
+        items.append(
+            "<li><strong>" + html.escape(str(r.get("name") or "")) + "</strong> "
+            f"<span class='for-inj'>{html.escape(str(r.get('injury') or ''))}</span>"
+            + (f" <span class='for-muted'>{html.escape(meta)}</span>" if meta else "")
+            + "</li>"
+        )
+    more = ""
+    if len(rows) > 3:
+        more = f"<li class='for-muted'>+{len(rows) - 3} more in the full report</li>"
+    return (
+        "<div class='for-card-inj'><span class='for-lbl'>Injuries</span>"
+        f"<ul>{''.join(items)}{more}</ul></div>"
+    )
+
+
 def render_front_office_card_html(data: dict, ai: dict) -> str:
     """Condensed summary for the Season Hub card."""
     verdict = ai.get("verdict")
@@ -810,12 +1190,14 @@ def render_front_office_card_html(data: dict, ai: dict) -> str:
         )
     stamp = _verdict_stamp(verdict, size="sm")
     verdict_block = f"<div class='for-card-verdict'>{stamp}<div class='for-card-headline'>{headline}</div></div>" if (stamp or headline) else ""
+    inj_html = _injury_card_html(data.get("injury_rows") or [])
     foot = f"{html.escape(team)}" if team else ""
     if week_lbl:
         foot = f"{foot} · {week_lbl}" if foot else week_lbl
     return f"""
     <div class='for-card-summary'>
       {verdict_block}
+      {inj_html}
       <ul class='for-keys'>{keys_html}</ul>
       {move_html}
       <button type='button' class='for-view-full' id='forViewFullBtn'>View full report →</button>
@@ -844,7 +1226,13 @@ def _roster_table_html(rows: list[dict]) -> str:
     body = []
     for r in rows:
         age = "" if r.get("age") in (None, "") else f"{float(r['age']):.1f}".rstrip("0").rstrip(".")
-        inj = f" <span class='for-inj'>{html.escape(r['injury'])}</span>" if r.get("injury") else ""
+        inj = ""
+        if r.get("injury"):
+            label = str(r["injury"])
+            wo = _fmt_weeks_out(r.get("weeks_out"))
+            if wo:
+                label = f"{label} · {wo}"
+            inj = f" <span class='for-inj'>{html.escape(label)}</span>"
         body.append(
             "<tr>"
             f"<td class='for-td-name'>{html.escape(r['name'])}{inj}</td>"
@@ -933,6 +1321,10 @@ def _trade_targets_html(targets: list[dict], trade_notes: dict) -> str:
     cards = []
     for t in targets:
         get = t["gets"][0]
+        get_inj = (
+            f" <span class='for-inj'>{html.escape(str(get['injury']))}</span>"
+            if get.get("injury") else ""
+        )
         give_names = ", ".join(
             f"{html.escape(g['name'])} ({html.escape(g['position'])})" for g in t["gives"]
         )
@@ -963,7 +1355,7 @@ def _trade_targets_html(targets: list[dict], trade_notes: dict) -> str:
             )
         cards.append(
             "<div class='for-target-card'>"
-            f"<div class='for-target-top'><div class='for-target-head'><strong>{html.escape(get['name'])}</strong> "
+            f"<div class='for-target-top'><div class='for-target-head'><strong>{html.escape(get['name'])}</strong>{get_inj} "
             f"<span class='for-muted'>{html.escape(get['position'])}"
             + (f" · age {get['age']}" if get.get("age") not in (None, "") else "")
             + f" · value {get['value']:g}</span></div>"
@@ -988,6 +1380,10 @@ def _waivers_cuts_html(data: dict, ai: dict) -> str:
     for w in data.get("waiver_targets") or []:
         note = html.escape(str(wnotes.get(w["id"]) or ""))
         rank = f" · {html.escape(w['pos_rank_label'])}" if w.get("pos_rank_label") else ""
+        w_inj = (
+            f" <span class='for-inj'>{html.escape(str(w['injury']))}</span>"
+            if w.get("injury") else ""
+        )
         note_html = f"<div class='for-pick-note'>{note}</div>" if note else ""
         urgent_html = ""
         if w.get("urgent"):
@@ -998,7 +1394,7 @@ def _waivers_cuts_html(data: dict, ai: dict) -> str:
         w_items.append(
             "<li class='for-pick'>"
             "<span class='for-pick-badge for-add'>+</span>"
-            f"<div class='for-pick-body'><strong>{html.escape(w['name'])}</strong> "
+            f"<div class='for-pick-body'><strong>{html.escape(w['name'])}</strong>{w_inj} "
             f"<span class='for-muted'>{html.escape(w['position'])}, {html.escape(w['team'])}{rank}</span>"
             f"{urgent_html}{note_html}</div></li>"
         )
@@ -1053,6 +1449,15 @@ def render_front_office_report_html(data: dict, ai: dict) -> str:
     targets_html = _trade_targets_html(data.get("trade_targets") or [], ai.get("trade_notes") or {})
     waivers_html = _waivers_cuts_html(data, ai)
     roster_html = _roster_table_html(data.get("roster_rows") or [])
+    injury_html = _injury_section_html(data.get("injury_rows") or [])
+
+    opp = data.get("opponent_injuries") or {}
+    opp_html = ""
+    if opp.get("entries"):
+        opp_html = (
+            "<div class='for-opp-inj'><span class='for-lbl-inline'>Opponent missing</span> "
+            f"{html.escape(str(opp.get('line') or ''))}</div>"
+        )
 
     alert_html = ""
     if gm_alert:
@@ -1073,6 +1478,8 @@ def render_front_office_report_html(data: dict, ai: dict) -> str:
           {chips_html}
         </div>
       </div>
+      {injury_html}
+      {opp_html}
       <h3 class='for-headline'>{headline}</h3>
       {posture_html}
       {changes_html}

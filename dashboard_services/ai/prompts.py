@@ -277,6 +277,7 @@ def build_front_office_prompt_payload(data: dict) -> dict:
             {
                 "target": _for_trade_target_label(t["gets"][0]),
                 "target_id": t["gets"][0]["id"],
+                "target_injury": (t["gets"][0].get("injury") or None),
                 "you_give": ", ".join(
                     f"{g.get('name')} ({g.get('position')}"
                     f"{', value ' + str(g['value']) if g.get('value') is not None else ''})"
@@ -295,6 +296,7 @@ def build_front_office_prompt_payload(data: dict) -> dict:
                 "name": w.get("name"), "id": w.get("id"), "pos": w.get("position"),
                 "team": w.get("team"), "value": w.get("value"),
                 "pos_rank": w.get("pos_rank_label") or None,
+                "injury": w.get("injury") or None,
                 "urgent_need": w.get("urgent_reason") or None,
             }
             for w in (data.get("waiver_targets") or [])
@@ -312,6 +314,20 @@ def build_front_office_prompt_payload(data: dict) -> dict:
         "urgent_needs": [
             {"position": u.get("position"), "detail": u.get("detail")}
             for u in (data.get("urgent_needs") or [])
+        ],
+        "injury_report": [
+            {
+                "name": r.get("name"), "pos": r.get("position"),
+                "team": r.get("team"), "injury": r.get("injury"),
+                "body": r.get("body") or None,
+                "expected_return": r.get("return_label") or None,
+                "action": r.get("action") or None,
+            }
+            for r in (data.get("injury_rows") or [])
+        ],
+        "opponent_injuries": [
+            {"name": e.get("name"), "injury": e.get("injury")}
+            for e in ((data.get("opponent_injuries") or {}).get("entries") or [])
         ],
         "trade_deadline": data.get("trade_deadline"),
     }
@@ -363,6 +379,13 @@ Return a JSON object with these fields:
   know. Lead with the first urgent_needs entry when present; otherwise lead
   with the trade deadline when trade_deadline.weeks_remaining is 3 or less
   ("Trade deadline in N weeks."). Name names and numbers.
+- injury_report lists every rostered player with an injury designation, with
+  the body part, expected return, and the computed roster action. Reference
+  it in the headline or gm_alert when it changes the picture (a starter out,
+  a stash-or-drop decision).
+- If a trade or waiver target carries an injury designation (target_injury /
+  injury), name the injury in its note and price the risk. Never recommend
+  acquiring a player who is OUT or on IR without flagging the injury first.
 
 {FRONT_OFFICE_REPORT_GROUND_RULES}
 
