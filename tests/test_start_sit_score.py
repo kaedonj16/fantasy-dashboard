@@ -1,5 +1,5 @@
 """Unit tests for the unified start/sit formula (no Flask)."""
-from utils.start_sit_score import compute_start_score, likely_range
+from utils.start_sit_score import bottom_teams_by_implied_total, compute_start_score, likely_range
 
 
 def test_bye_zeros_score():
@@ -62,7 +62,7 @@ def test_questionable_is_milder_than_other_soft_penalties():
 
 
 def test_low_implied_total_default_position():
-    score, factors, demotion = compute_start_score(10.0, implied_total=16)
+    score, factors, demotion = compute_start_score(10.0, implied_total=16, low_total_team=True)
     assert factors["vegas"] == 0.94
     assert demotion == "low_total"
     assert abs(score - 9.4) < 1e-9
@@ -129,6 +129,7 @@ def test_weather_and_vegas_stack():
         implied_total=15,
         weather_kind="precip",
         position="WR",
+        low_total_team=True,
     )
     assert factors["vegas"] == 0.92
     assert factors["weather"] == 0.95
@@ -162,3 +163,62 @@ def test_defensive_injury_is_small_quality_weighted_residual():
     impacted, factors, _ = compute_start_score(10, defensive_injury_impact=1.0)
     assert factors["def_injuries"] == 1.03
     assert impacted == base * 1.03
+
+
+def test_low_total_label_is_rank_based_not_threshold():
+    # Same low absolute total, but the team is NOT in the week's bottom 8:
+    # no "Low team total" label, while the vegas score multiplier still applies.
+    score, factors, demotion = compute_start_score(10.0, implied_total=16, low_total_team=False)
+    assert factors["vegas"] == 0.94
+    assert demotion != "low_total"
+    assert abs(score - 9.4) < 1e-9
+
+    # Omitted flag defaults to False: same behavior.
+    _, _, demotion2 = compute_start_score(10.0, implied_total=16)
+    assert demotion2 != "low_total"
+
+    # A bottom-8 team with a total ABOVE the old 20-point threshold still gets
+    # the label: rank, not absolute total.
+    _, _, demotion3 = compute_start_score(10.0, implied_total=21.5, low_total_team=True)
+    assert demotion3 == "low_total"
+
+
+def test_low_total_label_respects_first_dock_wins():
+    # Injury demotions keep priority over the rank-based low-total label.
+    _, _, demotion = compute_start_score(
+        10.0, implied_total=16, low_total_team=True, injury_status="OUT"
+    )
+    assert demotion == "out"
+    _, _, demotion_q = compute_start_score(
+        10.0, implied_total=16, low_total_team=True, injury_status="Q"
+    )
+    assert demotion_q == "questionable"
+
+
+def test_bottom_teams_by_implied_total():
+    conds = {
+        "KC": {"implied_total": 27.5},
+        "BUF": {"implied_total": 26.0},
+        "PHI": {"implied_total": 25.0},
+        "SF": {"implied_total": 24.0},
+        "DAL": {"implied_total": 23.0},
+        "BAL": {"implied_total": 22.0},
+        "DET": {"implied_total": 21.0},
+        "MIA": {"implied_total": 20.0},
+        "CIN": {"implied_total": 19.0},
+        "NYJ": {"implied_total": 17.5},
+        "CAR": {"implied_total": None},  # missing total: excluded
+        # Bye-week team: no entry at all, never ranked.
+    }
+    bottom = bottom_teams_by_implied_total(conds)
+    assert bottom == {"NYJ", "CIN", "MIA", "DET", "BAL", "DAL", "SF", "PHI"}
+    assert "CAR" not in bottom
+
+
+def test_bottom_teams_by_implied_total_fewer_than_n():
+    conds = {"KC": {"implied_total": 27.5}, "NYJ": {"implied_total": 17.5}}
+    assert bottom_teams_by_implied_total(conds) == {"KC", "NYJ"}
+    assert bottom_teams_by_implied_total({}) == set()
+    assert bottom_teams_by_implied_total(None) == set()
+    # Custom n is honored.
+    assert bottom_teams_by_implied_total(conds, n=1) == {"NYJ"}

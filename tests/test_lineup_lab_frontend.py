@@ -38,6 +38,24 @@ def test_lab_css_present(page):
     assert ".wv-lab-winbar" in page
 
 
+def test_lab_loading_skeleton_css(page):
+    # Animated loading state: staggered dots + structured shimmer skeleton.
+    assert "@keyframes wv-lab-blink" in page
+    assert ".wv-lab-dots" in page
+    assert ".wv-lab-sk-hero" in page
+    assert ".wv-lab-sk-winbar" in page
+    assert ".wv-lab-sk-trow" in page
+    assert ".wv-lab-sk-modes" in page
+    assert ".wv-lab-sk-slot" in page
+
+
+def test_lab_skeleton_used_while_loading(script):
+    assert "function wvLabSkeleton(" in script
+    assert "body.innerHTML = wvLabSkeleton()" in script
+    # The old bare-text loading state is gone from the load path.
+    assert "Simulating 2,000 lineups...</div>" not in script
+
+
 def test_lab_uses_two_thousand_sims(script):
     assert "var WV_LAB_SIMS = 2000" in script
 
@@ -77,6 +95,40 @@ def test_lab_no_top_level_lexical_declarations(script):
            if re.match(r"^(let|const|class)\s", ln)]
     lab_bad = [b for b in bad if "wvLab" in b or "WV_LAB" in b]
     assert not lab_bad, f"Lab top-level lexical declarations break reexec: {lab_bad[:5]}"
+
+
+def test_lab_skeleton_renders_structured_markup(script):
+    # The skeleton must mirror the loaded layout (hero + lineup rows) so the
+    # page does not repaint when results arrive. Render it under node.
+    pytest.importorskip("subprocess")
+    import subprocess, tempfile, os
+    start = script.index("function wvLabSkeleton(")
+    end = script.index("\nfunction wvLoadLab(", start)
+    js = script[start:end]
+    harness = js + """
+var html = wvLabSkeleton();
+var slots = (html.match(/wv-lab-sk-slot/g) || []).length;
+if (slots !== 9) throw new Error('expected 9 slot skeletons, got ' + slots);
+var need = ['wv-lab-sk-hero', 'wv-lab-sk-winbar', 'wv-lab-sk-trow',
+            'wv-lab-sk-modes', 'wv-lab-dots', 'wv-lab-loadmsg', 'Your lineup',
+            'skeleton'];
+for (var k = 0; k < need.length; k++) {
+  if (html.indexOf(need[k]) < 0) throw new Error('skeleton missing ' + need[k]);
+}
+var open = (html.match(/<div/g) || []).length;
+var close = (html.match(/<\\/div>/g) || []).length;
+if (open !== close) throw new Error('unbalanced divs: ' + open + ' vs ' + close);
+console.log('SKELETON_OK slots=' + slots);
+"""
+    with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False) as f:
+        f.write(harness)
+        path = f.name
+    try:
+        out = subprocess.run(["node", path], capture_output=True, text=True, timeout=30)
+    finally:
+        os.unlink(path)
+    assert out.returncode == 0, f"node skeleton harness failed: {out.stderr[-2000:]}"
+    assert "SKELETON_OK" in out.stdout
 
 
 def test_lab_engine_runs_in_node(script):

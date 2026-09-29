@@ -13009,6 +13009,12 @@ def api_start_sit_options():
         except Exception:
             logger.debug("suppressed exception", exc_info=True)
 
+    # Rank-based "Low team total" demotion: bottom-8 implied team totals for the
+    # week, computed once on the live fallback path. The bundle path carries
+    # the flag per bundle instead (game_conditions is empty there).
+    from utils.start_sit_score import bottom_teams_by_implied_total
+    _ss_low_total_teams = bottom_teams_by_implied_total(game_conditions) if not _ss_use_bundles else set()
+
     # ── Opponent play volume ("opp plays faced"): pace / possession context ──
     # Offensive plays each NFL defense faces per game, from open play-by-play.
     # Attached per player as DISPLAY CONTEXT. These raw values are not scored;
@@ -13255,6 +13261,7 @@ def api_start_sit_options():
             expected_team_plays=_pace_ss.get("expected_team_plays"),
             league_average_plays=_pace_ss.get("league_average_plays"),
             role_confidence=_role_conf_ss,
+            low_total_team=bool(_bun.get("low_total_team")) if _bun is not None else (team in _ss_low_total_teams),
         )
         _form = _factors["form"]
         _mu = _factors["matchup"]
@@ -23901,7 +23908,7 @@ def api_player_details(player_id: str):
         _start_demotion = None
         _start_sit_payload = None
         try:
-            from utils.start_sit_score import compute_start_score
+            from utils.start_sit_score import bottom_teams_by_implied_total, compute_start_score
             from dashboard_services.api import get_nfl_state as _ss_nfl_state
             _ss_state = _ss_nfl_state() or {}
             _ss_week = int(_ss_state.get("week") or 0)
@@ -23931,6 +23938,7 @@ def api_player_details(player_id: str):
             _ss_wx = None
             _ss_opp = ""
             _ss_home = ""
+            _ss_low_total_teams = set()
             # Best-effort Vegas/weather so Compare matches the Start/Sit page.
             if _ss_team and _ss_week and not _ss_bye:
                 try:
@@ -23949,7 +23957,9 @@ def api_player_details(player_id: str):
                             elif _ss_team == _a:
                                 _ss_opp, _ss_home = _h, _h
                     if _ss_games:
-                        _ss_cond = (_ss_bwc(int(season), int(_ss_week), _ss_games) or {}).get(_ss_team) or {}
+                        _ss_all_conds = _ss_bwc(int(season), int(_ss_week), _ss_games) or {}
+                        _ss_cond = _ss_all_conds.get(_ss_team) or {}
+                        _ss_low_total_teams = bottom_teams_by_implied_total(_ss_all_conds)
                         _ss_imp = _ss_cond.get("implied_total")
                         _ss_wx = _ss_cond.get("weather") or {}
                         if isinstance(_ss_wx, dict):
@@ -24005,6 +24015,7 @@ def api_player_details(player_id: str):
                     expected_team_plays=(_ssp.get("pace") or {}).get("expected_team_plays"),
                     league_average_plays=(_ssp.get("pace") or {}).get("league_average_plays"),
                     role_confidence=_ssp.get("role_confidence"),
+                    low_total_team=(_ss_team in _ss_low_total_teams),
                 )
                 _start_score = round(float(_ss_val), 2)
                 _start_factors = _ss_fac

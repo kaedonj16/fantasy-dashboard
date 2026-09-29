@@ -334,6 +334,7 @@ def build_start_score_bundles(season: int = None, week: int = None) -> dict:
     from utils.game_conditions import build_week_conditions
     from utils.league_scoring import stamp_scoring_aliases
     from utils.start_sit_context import expected_plays_context, role_confidence_from_trend
+    from utils.start_sit_score import bottom_teams_by_implied_total
     from utils.utils import load_players_index, load_week_projection, load_week_sched
 
     t0 = time.time()
@@ -372,6 +373,10 @@ def build_start_score_bundles(season: int = None, week: int = None) -> dict:
             game_conditions = build_week_conditions(season, week, week_games) if week_games else {}
         except Exception:
             game_conditions = {}
+        # Rank-based "Low team total" demotion: bottom-8 implied team totals,
+        # computed once per batch. Bye-week teams have no conditions entry and
+        # can never be in the set.
+        low_total_teams = bottom_teams_by_implied_total(game_conditions)
         try:
             _tpv_blob = load_team_play_volume(season) or {}
             team_play_volume = _tpv_blob.get("teams") or {}
@@ -495,6 +500,7 @@ def build_start_score_bundles(season: int = None, week: int = None) -> dict:
                     "usage_delta": ut.get("delta"),
                     "usage_season_avg": ut.get("season_avg"),
                     "implied_total": implied_total,
+                    "low_total_team": team in low_total_teams,
                     "weather_kind": weather_kind,
                     "oline_index": oline_index,
                     "expected_team_plays": pace.get("expected_team_plays"),
