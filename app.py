@@ -24148,7 +24148,6 @@ def _game_log_proj_from_week(upcoming, cur_season, cur_week, season_type) -> int
     return 1
 
 
-@app.route("/api/player-game-logs/<player_id>")
 def _prefetch_week_projections(season: int) -> None:
     """Warm all 18 weekly projection files in parallel via the shared memo.
 
@@ -24168,6 +24167,7 @@ def _prefetch_week_projections(season: int) -> None:
         logger.debug("[api_player_game_logs] proj prefetch failed", exc_info=True)
 
 
+@app.route("/api/player-game-logs/<player_id>")
 def api_player_game_logs(player_id: str):
     """Game logs for the Stats tab -- lazy-loaded separately from player-details."""
     try:
