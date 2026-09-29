@@ -757,7 +757,10 @@ print(f"[cron] Matchup rating profiles complete: {{len(statuses)}} statuses")
 from dotenv import load_dotenv; load_dotenv()
 from data_building.oline_ratings import build_oline_ratings, out_path
 res = build_oline_ratings({season!r})
-print(f"[cron] O-line ratings: {{len(res.get('ratings', {{}}))}} teams -> {{out_path({season!r})}}")
+print(f"[cron] O-line ratings: {{len(res.get('ratings', {{}}))}} teams -> {{out_path({season!r})}} (db_saved={{res.get('db_saved')}})")
+if not res.get("db_saved"):
+    raise RuntimeError("O-line ratings were not persisted to the database; "
+                       "the file build is lost when this ephemeral container exits")
 """, "build_oline_ratings", timeout=900)
 
     # ------------------------------------------------------------------ #

@@ -270,6 +270,24 @@ def _oline_index_for(season: int, ratings: dict, team: str, pos: str) -> Optiona
 
 
 def _load_oline_ratings(season: int) -> dict:
+    # Database first (the weekly cron persists here; its container's cache/
+    # files are ephemeral), then the flat file, then the newest built season.
+    try:
+        from dashboard_services.oline_store import (
+            load_oline_ratings as _db_load_oline,
+            newest_oline_season as _db_newest_oline,
+        )
+
+        row = _db_load_oline(int(season))
+        if row and row.get("ratings"):
+            return row["ratings"]
+        newest = _db_newest_oline()
+        if newest is not None and newest != int(season):
+            row = _db_load_oline(newest)
+            if row and row.get("ratings"):
+                return row["ratings"]
+    except Exception:
+        pass
     try:
         path = os.path.join("cache", f"oline_ratings_s{int(season)}.json")
         if os.path.exists(path):
