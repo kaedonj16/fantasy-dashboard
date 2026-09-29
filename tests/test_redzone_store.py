@@ -76,7 +76,7 @@ class _FakeStoreConn:
     def _do_executemany(self, sql, rows):
         up = " ".join(sql.split()).upper()
         assert up.startswith("INSERT INTO REDZONE_PLAYS"), sql[:60]
-        for season, game_id, play_id, seq, is_td, payload_json in rows:
+        for season, game_id, play_id, seq, is_td, week, payload_json in rows:
             key = (int(season), str(game_id), str(play_id))
             existing = self.plays.get(key)
             if existing is None:
@@ -86,14 +86,17 @@ class _FakeStoreConn:
                     "play_id": str(play_id),
                     "seq": int(seq),
                     "is_td": bool(is_td),
+                    "week": int(week) if week is not None else None,
                     "payload": payload_json,
                     "observed_at": self.now[0],
                 }
             elif existing["payload"] != payload_json:
                 # Mirrors the ON CONFLICT ... IS DISTINCT FROM bump.
+                # Mirrors COALESCE(EXCLUDED.week, redzone_plays.week).
                 existing.update(
                     seq=int(seq),
                     is_td=bool(is_td),
+                    week=int(week) if week is not None else existing["week"],
                     payload=payload_json,
                     observed_at=self.now[0],
                 )
@@ -145,6 +148,29 @@ class _FakeStoreConn:
                 if r["season"] == season and r["is_td"] and r["observed_at"] > since
             ]
             rows.sort(key=lambda r: r["ts"])
+            return _FakeCursor(rows)
+        if "FROM REDZONE_PLAYS" in up and "PAYLOAD->>'PID' = ANY" in up:
+            season, days = int(params[0]), int(params[1])
+            pid_set = {str(p) for p in params[2]}
+            week = int(params[3]) if len(params) > 3 else None
+            cutoff = self.now[0] - days * 86400
+            rows = []
+            for r in self.plays.values():
+                if r["season"] != season or r["observed_at"] < cutoff:
+                    continue
+                payload = json.loads(r["payload"])
+                if str(payload.get("pid") or "") not in pid_set:
+                    continue
+                # Mirrors the optional AND week = %s clause: week-less rows
+                # never match a week-scoped read.
+                if week is not None and r["week"] != week:
+                    continue
+                rows.append({
+                    "game_id": r["game_id"],
+                    "payload": r["payload"],
+                    "ts": r["observed_at"],
+                })
+            rows.sort(key=lambda r: r["ts"], reverse=True)
             return _FakeCursor(rows)
         if up.startswith("DELETE FROM REDZONE_PLAYS"):
             cutoff = self.now[0] - int(params[0]) * 86400
@@ -267,12 +293,14 @@ def test_poll_once_backfills_recent_unseen_finals(monkeypatch):
     monkeypatch.setattr(rs, "_build_name_maps", lambda *a: ({}, {}))
     upserted = []
     monkeypatch.setattr(rs, "upsert_plays",
-                        lambda season, gid, plays: upserted.append(gid) or len(plays))
+                        lambda season, gid, plays, week=None: upserted.append((gid, week)) or len(plays))
 
     stats = rs.poll_once()
     # live + seen final re-polled; recent unseen final backfilled; old unseen final skipped
     assert stats["games"] == 3
-    assert sorted(upserted) == ["20260927_NE@MIA", "20260927_SF@ARI", "20260928_KC@BUF"]
+    # the collector stamps the current week from nfl state
+    assert {w for _, w in upserted} == {4}
+    assert sorted(gid for gid, _w in upserted) == ["20260927_NE@MIA", "20260927_SF@ARI", "20260928_KC@BUF"]
     assert [f[0] for f in fetched] == ["20260928_KC@BUF", "20260927_NE@MIA", "20260927_SF@ARI"]
 
 
@@ -303,3 +331,55 @@ def test_ensure_table_runs_once_per_process():
     other.info = SimpleNamespace(dbname="otherdb")
     rs._ensure_table(other)
     assert len(calls) == 2 * len(first_run)
+
+
+def _play_with_pid(play_id, seq, pid, week_text="run"):
+    p = _play(play_id, seq, text=week_text)
+    p["pid"] = pid
+    return p
+
+
+def test_upsert_stamps_week(store_db):
+    conn, _now = store_db
+    rs.upsert_plays(2026, "20260927_KC@BUF", [_play("p1", 1)], week=3)
+    assert conn.plays[(2026, "20260927_KC@BUF", "p1")]["week"] == 3
+
+
+def test_upsert_weekless_reupsert_keeps_week(store_db):
+    """Mirrors COALESCE(EXCLUDED.week, redzone_plays.week): a re-upsert that
+    carries no week must not wipe the week stamped by an earlier upsert."""
+    conn, now = store_db
+    rs.upsert_plays(2026, "g", [_play("p1", 1, text="run")], week=3)
+    now[0] += 60
+    rs.upsert_plays(2026, "g", [_play("p1", 1, text="run, revised")])
+    assert conn.plays[(2026, "g", "p1")]["week"] == 3
+
+
+def test_get_plays_for_pids_filters_by_week(store_db):
+    """Regression: a week-4 moments request must not return week-3 plays.
+
+    Same player involved in both weeks; only the requested week's plays
+    may come back.
+    """
+    _conn, _now = store_db
+    rs.upsert_plays(2026, "20260927_KC@BUF", [_play_with_pid("w3p", 1, "123")], week=3)
+    rs.upsert_plays(2026, "20261004_KC@DEN", [_play_with_pid("w4p", 1, "123")], week=4)
+
+    got4 = rs.get_plays_for_pids(2026, ["123"], week=4)
+    assert [p["play_id"] for p in got4] == ["w4p"]
+
+    got3 = rs.get_plays_for_pids(2026, ["123"], week=3)
+    assert [p["play_id"] for p in got3] == ["w3p"]
+
+    # A week with no collected plays yet returns nothing (the launcher for a
+    # future week stays hidden instead of showing last week's plays).
+    assert rs.get_plays_for_pids(2026, ["123"], week=5) == []
+
+
+def test_get_plays_for_pids_without_week_returns_all(store_db):
+    """Legacy recency-only behavior is preserved when no week is given."""
+    _conn, _now = store_db
+    rs.upsert_plays(2026, "20260927_KC@BUF", [_play_with_pid("w3p", 1, "123")], week=3)
+    rs.upsert_plays(2026, "20261004_KC@DEN", [_play_with_pid("w4p", 1, "123")], week=4)
+    got = rs.get_plays_for_pids(2026, ["123"])
+    assert {p["play_id"] for p in got} == {"w3p", "w4p"}

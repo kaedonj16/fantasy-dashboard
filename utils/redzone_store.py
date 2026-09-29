@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS redzone_plays (
     play_id     TEXT NOT NULL,
     seq         INTEGER NOT NULL DEFAULT 0,
     is_td       BOOLEAN NOT NULL DEFAULT FALSE,
+    week        INTEGER,
     payload     JSONB NOT NULL,
     observed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     PRIMARY KEY (season, game_id, play_id)
@@ -37,6 +38,8 @@ _INDEX_DDL = [
     "ON redzone_plays (season, observed_at) WHERE is_td",
     "CREATE INDEX IF NOT EXISTS idx_redzone_plays_observed "
     "ON redzone_plays (observed_at)",
+    "CREATE INDEX IF NOT EXISTS idx_redzone_plays_week "
+    "ON redzone_plays (season, week)",
 ]
 
 # Advisory-lock key electing the single store poller across gunicorn workers.
@@ -68,10 +71,11 @@ def _ensure_table(conn) -> None:
     _ENSURED_TABLES.add(key)
 
 
-def upsert_plays(season: int, game_id: str, plays: list[dict]) -> int:
+def upsert_plays(season: int, game_id: str, plays: list[dict], week: int | None = None) -> int:
     """Upsert one game's plays. Idempotent; revisions overwrite. Returns rows written."""
     from dashboard_services.db import get_conn
 
+    wk = int(week) if week is not None else None
     rows = [
         (
             int(season),
@@ -79,6 +83,7 @@ def upsert_plays(season: int, game_id: str, plays: list[dict]) -> int:
             str(p.get("play_id") or p.get("seq") or ""),
             int(p.get("seq") or 0),
             bool(p.get("is_td")),
+            wk,
             json.dumps(p),
         )
         for p in (plays or [])
@@ -93,11 +98,13 @@ def upsert_plays(season: int, game_id: str, plays: list[dict]) -> int:
             with conn.cursor() as cur:
                 cur.executemany(
                     """INSERT INTO redzone_plays
-                       (season, game_id, play_id, seq, is_td, payload)
-                   VALUES (%s, %s, %s, %s, %s, %s::jsonb)
+                       (season, game_id, play_id, seq, is_td, week, payload)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb)
                    ON CONFLICT (season, game_id, play_id) DO UPDATE SET
                        seq = EXCLUDED.seq,
                        is_td = EXCLUDED.is_td,
+                       -- Never let a week-less re-upsert wipe a stamped week.
+                       week = COALESCE(EXCLUDED.week, redzone_plays.week),
                        payload = EXCLUDED.payload,
                        -- Only re-stamp when the play actually changed (a
                        -- revision or a scoring flip). Unchanged re-upserts
@@ -190,8 +197,12 @@ def get_td_plays_since(season: int, since_ts: float) -> list[tuple[str, dict, fl
     return out
 
 
-def get_plays_for_pids(season: int, pids: list[str], days: int = 5) -> list[dict]:
+def get_plays_for_pids(season: int, pids: list[str], days: int = 5, week: int | None = None) -> list[dict]:
     """Plays from the last ``days`` involving any of ``pids``.
+
+    When ``week`` is given, only plays stamped for that NFL week are
+    returned (rows collected before week-stamping, i.e. week IS NULL, are
+    excluded). Omit it for the legacy recency-only behavior.
 
     Returns play payload dicts (with game_id attached) ordered by observed_at
     descending. Used by RedZone Moments to surface a matchup's big plays.
@@ -201,18 +212,23 @@ def get_plays_for_pids(season: int, pids: list[str], days: int = 5) -> list[dict
     pid_list = [str(p) for p in (pids or []) if p]
     if not pid_list:
         return []
+    week_clause = "AND week = %s" if week is not None else ""
+    params = [int(season), str(int(days)), pid_list]
+    if week is not None:
+        params.append(int(week))
     try:
         with get_conn() as conn:
             _ensure_table(conn)
             rows = conn.execute(
-                """SELECT game_id, payload,
+                f"""SELECT game_id, payload,
                           EXTRACT(EPOCH FROM observed_at) AS ts
                    FROM redzone_plays
                    WHERE season = %s
                      AND observed_at >= NOW() - (%s || ' days')::INTERVAL
                      AND payload->>'pid' = ANY(%s)
+                     {week_clause}
                    ORDER BY observed_at DESC""",
-                (int(season), str(int(days)), pid_list),
+                tuple(params),
             ).fetchall()
     except Exception as exc:
         logger.warning("[redzone-store] plays-for-pids failed: %s", exc)
@@ -444,7 +460,7 @@ def poll_once() -> dict:
         except Exception as exc:
             logger.debug("[redzone-store] pbp failed game=%s: %s", gid, exc)
             continue
-        n = upsert_plays(season, gid, plays)
+        n = upsert_plays(season, gid, plays, week=week)
         stats["games"] += 1
         stats["plays"] += n
     return stats
