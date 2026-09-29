@@ -22416,6 +22416,7 @@ tr.team-clickable {
 
     .team-modal-header {
         padding: 16px;
+        position: relative;
     }
 
     /* No room for tiles beside the title on a phone: wrap the header so the
@@ -22426,8 +22427,18 @@ tr.team-clickable {
         gap: 12px;
     }
 
+    /* Pin the close button to the header's top-right corner. Left in the
+       flex flow it wrapped onto its own line between the meta rows and the
+       stat tiles on narrow screens. */
     .team-modal-close {
-        order: 1;
+        position: absolute;
+        top: 10px;
+        right: 10px;
+    }
+
+    /* Keep the actions menu clear of the pinned close button. */
+    .tm-menu-wrap {
+        margin-right: 44px;
     }
 
     .team-modal-statbar {
