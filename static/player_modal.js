@@ -426,7 +426,13 @@ function openPlayerModal(playerId, playerName, opts) {
         const _lbl = _u.length > 14 ? _u.slice(0, 14) : _u;
         badges += `<span class="player-badge ${_icls}" title="${String(_tip).replace(/"/g, '&quot;')}"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> ${_lbl}</span>`;
         const plan = data.injury.return_plan;
-        if (plan && plan.verdict) {
+        // A "Monitor" verdict is implied by a QUESTIONABLE/DOUBTFUL tag, so
+        // rendering both pills is redundant. Other verdicts (Hold, Move to
+        // IR, Drop candidate, ...) still show: they give roster guidance the
+        // status pill does not.
+        const _planRedundant = plan && plan.verdict === 'Monitor'
+          && ['QUESTIONABLE', 'Q', 'DOUBTFUL', 'D'].includes(_u);
+        if (plan && plan.verdict && !_planRedundant) {
           const wk = plan.weeks_label || '';
           const src = plan.source === 'espn' ? 'ESPN approx' : 'approx';
           const tip = String(plan.reason || 'Approximate return guidance, not medical advice.')
