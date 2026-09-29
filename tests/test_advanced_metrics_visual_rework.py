@@ -5,6 +5,10 @@ shouting control labels, search+season on one row, solid + Metric button,
 fading Decide rail, wrapping chips with a "Clear all" text link, collapsible
 field averages). The sticky player column now applies on all viewports (base
 table CSS); the rework block only adds the mobile edge fade.
+
+The command-bar rework (mock A) superseded the header and the search+season
+row: the strip now holds search / filter / overflow icon buttons, the search
+row toggles open, and the old toolbar rows became the filter sheet.
 """
 import re
 
@@ -35,19 +39,20 @@ def _tag(html, el_id):
 
 
 def test_header_uses_compact_icon_buttons():
+    # Command-bar rework: the slim sticky strip holds the title plus search /
+    # filter / overflow icon buttons; the three old actions moved into the
+    # overflow menu with their label spans kept for the menu rows.
     html = _html()
+    assert 'id="amCmdBar"' in html
+    for el_id in ("amSearchToggle", "amFilterToggle", "amMoreToggle"):
+        tag = _tag(html, el_id)
+        assert 'title="' in tag, f"#{el_id} needs a title for the icon-button state"
     for el_id in ("amGraphBtn", "amLegendBtn", "amExportBtn"):
         tag = _tag(html, el_id)
         assert 'class="am-legend-btn"' in tag, f"#{el_id} must stay a legend button"
-        assert 'title="' in tag, f"#{el_id} needs a title for the icon-only state"
-    # Labels live in their own spans so mobile can hide them; the description
-    # gets a hook so it can be dropped on phones.
     assert html.count('class="am-legend-btn-label"') == 3
-    assert 'class="am-head-desc"' in html
-    assert 'class="am-head-actions"' in html
     css = _rework_css(html)
-    assert ".am-head .am-head-desc { display:none; }" in css
-    assert ".am-head .am-legend-btn-label { display:none; }" in css
+    assert ".am-cmdbar {" in css
 
 
 def test_control_labels_removed_from_markup_with_aria_names():
@@ -67,14 +72,20 @@ def test_control_labels_removed_from_markup_with_aria_names():
 
 
 def test_search_and_season_share_one_mobile_row():
+    # Command-bar rework: the search+season row became a search row toggled
+    # from the strip; the season picker moved into the filter sheet.
     html = _html()
+    body = html.split("<style>")[0]
+    search_row = _tag(html, "amSearchRow")
+    assert "hidden" in search_row
+    search = _tag(html, "amSearch")
+    assert 'aria-label="Search players"' in search
+    assert 'id="amSearchToggle"' in body
     css = _rework_css(html)
-    assert "#amSeasonCtrl { flex:0 1 128px;" in css
-    assert ".am-ctrl-search { flex:1 1 0;" in css
-    # Search grows, season stays compact; visual order matches the approved
-    # mockup (search left, season right) despite the DOM order.
-    assert "#amSeasonCtrl { flex:0 1 128px; min-width:0; order:2; }" in css
-    assert ".am-ctrl-search { flex:1 1 0; min-width:0; order:1; }" in css
+    assert "#amSearchRow { margin:8px 0 0; }" in css
+    assert "#amSearchRow .am-search { font-size:14px; }" in css
+    # Season controls live in the sheet, not the top row.
+    assert body.index('id="amSeasonMulti"') > body.index('id="amFilterSheet"')
 
 
 def test_add_metric_is_a_solid_button_not_a_ghost():
@@ -160,6 +171,9 @@ def test_results_table_has_fade_and_sticky_player_column():
 
 
 def test_add_metric_stays_visible_on_mobile():
-    # No regression of the declutter contract: + Metric is a primary control.
-    tag = _tag(_html(), "amAddStatBtn")
-    assert "am-mobile-filter" not in tag
+    # Command-bar rework: + Metric moved into the sheet's Metrics section
+    # (it is a secondary control; the strip keeps the metric picker visible).
+    html = _html()
+    body = html.split("<style>")[0]
+    _tag(html, "amAddStatBtn")  # still present with its id and handlers
+    assert body.index('id="amAddStatBtn"') > body.index('id="amFilterSheet"')

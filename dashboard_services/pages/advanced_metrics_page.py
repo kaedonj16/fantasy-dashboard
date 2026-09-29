@@ -274,36 +274,160 @@ def build_advanced_metrics_body(
     # Custom metric sets (saved to localStorage) are a signed-in perk: guests
     # get no dropdown, no Save/Delete buttons.
     _custom_sets_html = (
-        '<select id="amSavedSet" class="am-select am-mobile-filter" title="Saved metric sets" style="max-width:150px"><option value="">Custom sets…</option></select>\n'
-        '          <span id="amActiveSet" class="am-ctrl-label am-mobile-filter" title="Active metric set">Custom</span>\n'
-        '          <button id="amSaveSetBtn" type="button" class="am-add-stat-btn am-mobile-filter" title="Save or update a named custom set">Save set</button>\n'
-        '          <button id="amDeleteSetBtn" type="button" class="am-add-stat-btn am-clear-btn am-mobile-filter" title="Delete the selected custom set">Delete</button>'
+        '<select id="amSavedSet" class="am-select" title="Saved metric sets" style="max-width:150px"><option value="">Custom sets…</option></select>\n'
+        '          <span id="amActiveSet" class="am-ctrl-label" title="Active metric set">Custom</span>\n'
+        '          <button id="amSaveSetBtn" type="button" class="am-add-stat-btn" title="Save or update a named custom set">Save set</button>\n'
+        '          <button id="amDeleteSetBtn" type="button" class="am-add-stat-btn am-clear-btn" title="Delete the selected custom set">Delete</button>'
         if not is_guest else ""
     )
 
     html = """
     <div class="card central">
-      <div class="card-header am-head">
-        <div class="am-head-title">
-          <h2>Advanced Metrics</h2>
-          <div class="am-head-desc" style="font-size:14px;color:var(--text-muted);margin-top:4px;">
-            Rank every player by a single advanced metric. Bars are relative to the leader.
-          </div>
+      <div class="am-cmd-shell">
+      <!-- Command bar: slim sticky strip. Search, filters, and the overflow
+           menu live here; secondary controls collapse into the filter sheet. -->
+      <div class="am-cmdbar" id="amCmdBar">
+        <div class="am-cmd-title">Advanced Metrics</div>
+        <div class="am-cmd-actions">
+          <button id="amSearchToggle" type="button" class="am-cmd-btn" aria-label="Search players" aria-expanded="false" title="Search players">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="flex-shrink:0"><circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.6"/><path d="M11 11l3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+          </button>
+          <button id="amFilterToggle" type="button" class="am-cmd-btn" aria-label="Filters" aria-expanded="false" title="Filters">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="flex-shrink:0"><path d="M2 3.5h12l-4.6 5.4v4.1l-2.8 1.5V8.9L2 3.5z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
+            <span id="amFilterBadge" class="am-filter-badge" hidden></span>
+          </button>
+          <button id="amMoreToggle" type="button" class="am-cmd-btn" aria-label="More actions" aria-expanded="false" aria-haspopup="menu" title="More actions">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="flex-shrink:0"><circle cx="3.5" cy="8" r="1.4" fill="currentColor"/><circle cx="8" cy="8" r="1.4" fill="currentColor"/><circle cx="12.5" cy="8" r="1.4" fill="currentColor"/></svg>
+          </button>
         </div>
-        <div class="am-head-actions" style="display:flex;gap:8px;flex-shrink:0;flex-wrap:wrap;">
-          <button id="amGraphBtn" type="button" class="am-legend-btn" title="Graph metrics" onclick="amOpenGraph()">
+        <div id="amMoreMenu" class="am-more-menu" role="menu" hidden>
+          <button id="amGraphBtn" type="button" class="am-legend-btn" role="menuitem" title="Graph metrics" onclick="amOpenGraph()">
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style="flex-shrink:0"><path d="M2 2v10h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="5" cy="9" r="1.3" fill="currentColor"/><circle cx="8" cy="5.5" r="1.3" fill="currentColor"/><circle cx="11" cy="7.5" r="1.3" fill="currentColor"/></svg>
             <span class="am-legend-btn-label">Graph Metrics</span>
           </button>
-          <button id="amLegendBtn" type="button" class="am-legend-btn" title="Metric glossary"
+          <button id="amLegendBtn" type="button" class="am-legend-btn" role="menuitem" title="Metric glossary"
             onclick="document.getElementById('amLegendModal').style.display='flex'">
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style="flex-shrink:0"><circle cx="7" cy="7" r="6" stroke="currentColor" stroke-width="1.5"/><path d="M7 6.5v3M7 4.5h.01" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
             <span class="am-legend-btn-label">Metric Glossary</span>
           </button>
-          <button id="amExportBtn" type="button" class="am-legend-btn" title="Download the current filtered view as a CSV">
+          <button id="amExportBtn" type="button" class="am-legend-btn" role="menuitem" title="Download the current filtered view as a CSV">
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style="flex-shrink:0"><path d="M7 1.5v7m0 0 2.3-2.3M7 8.5 4.7 6.2M2.5 10v1.5a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1V10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
             <span class="am-legend-btn-label">CSV</span>
           </button>
+        </div>
+      </div>
+      <div id="amSearchRow" class="am-search-row" hidden>
+        <input id="amSearch" type="text" autocomplete="off" placeholder="Search players…" class="am-search" aria-label="Search players">
+      </div>
+
+        <!-- Filter sheet: every secondary control, grouped. Bottom sheet on
+             mobile, anchored panel on desktop. Toggled by amToggleSheet(). -->
+        <div id="amSheetBackdrop" class="am-sheet-backdrop" hidden></div>
+        <div id="amFilterSheet" class="am-filter-sheet" role="dialog" aria-label="Filters" hidden>
+          <div class="am-sheet-head">
+            <span class="am-sheet-title">Filters</span>
+            <button id="amSheetClose" type="button" class="am-cmd-btn" aria-label="Close filters" title="Close filters">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 3l8 8M11 3l-8 8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+            </button>
+          </div>
+          <div class="am-sheet-body">
+            <section class="am-sheet-sec" aria-label="Time">
+              <h4 class="am-sheet-sec-title">Time</h4>
+              <div class="am-season-row">
+                <div class="am-season-multi" id="amSeasonMulti">
+                  <button type="button" class="am-select am-season-select am-season-btn" id="amSeasonBtn"
+                    aria-haspopup="listbox" aria-expanded="false" aria-label="Select seasons">
+                    <span id="amSeasonBtnLabel"></span>
+                    <i class="fa-solid fa-chevron-down am-metric-chevron"></i>
+                  </button>
+                  <div class="am-season-menu" id="amSeasonMenu" role="listbox" aria-multiselectable="true" style="display:none;"></div>
+                </div>
+                <div id="amCombineToggle" class="otc-day-filters am-combine-toggle" style="display:none;" title="Each year keeps one row per player-season. Combine merges selected years into one row per player.">
+                  <button type="button" class="otc-day-filter am-combine-btn active" data-combine="0">Each year</button>
+                  <button type="button" class="otc-day-filter am-combine-btn" data-combine="1">Combine</button>
+                </div>
+              </div>
+              <select id="amSeason" class="am-select am-season-select" style="display:none" aria-hidden="true">__SEASON_OPTIONS__</select>
+              <div class="am-ctrl am-ctrl-weekbar" id="amWeekCtrl">
+                <div class="am-weekbar-head">
+                  <div class="otc-day-filters am-quick-ranges" id="amQuickRanges">
+                    <button type="button" class="otc-day-filter am-qr active" data-range="">Season</button>
+                    <button type="button" class="otc-day-filter am-qr" data-range="last2">Last 2</button>
+                    <button type="button" class="otc-day-filter am-qr" data-range="last4">Last 4</button>
+                  </div>
+                </div>
+                <div id="amWkBarHost"></div>
+              </div>
+            </section>
+            <section class="am-sheet-sec" aria-label="Players">
+              <h4 class="am-sheet-sec-title">Players</h4>
+              <div class="am-filter-ctrl" id="amTeamCtrl">
+                <span class="am-filter-label">Team</span>
+                <select id="amTeamFilter" class="am-select am-season-select">
+                  <option value="">All Teams</option>
+                </select>
+              </div>
+              <div class="am-vol-ctrl" id="amGamesCtrl" style="display:none;">
+                <span class="am-filter-label" id="amVolLabel">Min</span>
+                <select id="amMinGames" class="am-select am-season-select" style="font-size:12px;padding:4px 8px;"></select>
+              </div>
+              <div class="am-age-wrap" id="amAgeWrap" style="display:none;">
+                <span class="am-filter-label">Age</span>
+                <input type="number" id="amAgeMin" class="am-age-input" placeholder="Min" min="18" max="45">
+                <span class="am-filter-sep">&#8211;</span>
+                <input type="number" id="amAgeMax" class="am-age-input" placeholder="Max" min="18" max="45">
+              </div>
+              <label class="am-roster-toggle am-toggle-chip" id="amTrendToggleWrap" title="Show each player's recent usage trend (last 6 weeks) next to the metric">
+                <input type="checkbox" class="am-toggle-input" id="amTrendToggle">
+                <span class="am-toggle-box" aria-hidden="true"><svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M1.5 5.2 4 7.7 8.5 2.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+                <span class="am-toggle-text">Usage trends</span>
+              </label>
+              <label class="am-roster-toggle am-toggle-chip" id="amRosterToggleWrap" style="display:none;">
+                <input type="checkbox" class="am-toggle-input" id="amRosterToggle">
+                <span class="am-toggle-box" aria-hidden="true"><svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M1.5 5.2 4 7.7 8.5 2.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+                <span class="am-toggle-text">My roster only</span>
+              </label>
+            </section>
+            <section class="am-sheet-sec" aria-label="Metrics">
+              <h4 class="am-sheet-sec-title">Metrics</h4>
+              <div id="amAddStatWrap" style="position:relative;flex-shrink:0;">
+                <button id="amAddStatBtn" type="button" class="am-add-stat-btn">&#43; Metric</button>
+                <div id="amStatPicker" class="am-stat-picker" style="display:none;"></div>
+              </div>
+              <div id="amCompareBar" class="am-compare-bar" style="display:none;">
+                <div id="amCompareChips" class="am-compare-chips"></div>
+                <button id="amComparePinnedBtn" type="button" class="am-add-stat-btn" style="display:none;">&#8645; Compare Pinned</button>
+                <button id="amClearExtrasBtn" type="button" class="am-add-stat-btn am-clear-btn" style="display:none;" onclick="amClearExtras()">&#10005; Clear</button>
+                <button id="amClearExtrasLink" type="button" class="am-clear-link" onclick="amClearExtras()">Clear all</button>
+              </div>
+            </section>
+            <section class="am-sheet-sec" aria-label="Custom filters">
+              <h4 class="am-sheet-sec-title">Filters</h4>
+              <button id="amAddFilterBtn" type="button" class="am-add-stat-btn">&#43; Filter</button>
+              <div class="am-filter-chips" id="amFilterChips"></div>
+              <div id="amFilterForm" class="am-filter-form" style="display:none;">
+                <select id="amFilterKey" class="am-select am-season-select" style="min-width:110px;font-size:12px;padding:5px 8px;"></select>
+                <select id="amFilterOp" class="am-select am-season-select" style="min-width:52px;font-size:12px;padding:5px 8px;">
+                  <option value="gte">&ge;</option>
+                  <option value="lte">&le;</option>
+                </select>
+                <input type="number" id="amFilterVal" class="am-age-input" placeholder="Value" style="width:70px;">
+                <button id="amFilterApply" type="button" class="am-filter-apply-btn">Add</button>
+                <button id="amFilterCancel" type="button" class="am-filter-cancel-btn">Cancel</button>
+              </div>
+            </section>
+            <section class="am-sheet-sec" aria-label="Custom sets">
+              <h4 class="am-sheet-sec-title">Sets</h4>
+              __CUSTOM_SETS__
+            </section>
+            <section class="am-sheet-sec" aria-label="View">
+              <h4 class="am-sheet-sec-title">View</h4>
+              <div class="am-filter-ctrl" id="amSortCtrl">
+                <span class="am-filter-label">Sort</span>
+                <button id="amSortBtn" type="button" class="am-sort-btn">High &rarr; Low</button>
+              </div>
+            </section>
+          </div>
         </div>
       </div>
 
@@ -320,68 +444,25 @@ def build_advanced_metrics_body(
       </div>
       <div class="card-body" style="padding-top:0;">
 
-        <div class="am-toolbar" id="amToolbar">
-        <div class="am-controls" id="amControls">
-          <div class="am-ctrl">
-            <div class="am-metric-picker" id="amMetricPickerWrap">
-              <button type="button" class="am-select am-metric-btn" id="amMetricBtn" aria-haspopup="listbox" aria-expanded="false" aria-label="Primary metric">
-                <span id="amMetricBtnLabel"></span>
-                <i class="fa-solid fa-chevron-down am-metric-chevron"></i>
-              </button>
-              <div class="am-stat-picker am-metric-dropdown" id="amMetricDropdown" role="listbox" style="display:none;right:auto;left:0;"></div>
-            </div>
-            <select id="amMetric" style="display:none">__METRIC_OPTIONS__</select>
+        <!-- Primary metric: always visible, full width under the command strip. -->
+        <div class="am-cmd-metric">
+          <div class="am-metric-picker" id="amMetricPickerWrap">
+            <button type="button" class="am-select am-metric-btn" id="amMetricBtn" aria-haspopup="listbox" aria-expanded="false" aria-label="Primary metric">
+              <span id="amMetricBtnLabel"></span>
+              <i class="fa-solid fa-chevron-down am-metric-chevron"></i>
+            </button>
+            <div class="am-stat-picker am-metric-dropdown" id="amMetricDropdown" role="listbox" style="display:none;right:auto;left:0;"></div>
           </div>
-          <div class="am-ctrl am-ctrl-season" id="amSeasonCtrl">
-            <div class="am-season-row">
-              <div class="am-season-multi" id="amSeasonMulti">
-                <button type="button" class="am-select am-season-select am-season-btn" id="amSeasonBtn"
-                  aria-haspopup="listbox" aria-expanded="false" aria-label="Select seasons">
-                  <span id="amSeasonBtnLabel"></span>
-                  <i class="fa-solid fa-chevron-down am-metric-chevron"></i>
-                </button>
-                <div class="am-season-menu" id="amSeasonMenu" role="listbox" aria-multiselectable="true" style="display:none;"></div>
-              </div>
-              <div id="amCombineToggle" class="otc-day-filters am-combine-toggle" style="display:none;" title="Each year keeps one row per player-season. Combine merges selected years into one row per player.">
-                <button type="button" class="otc-day-filter am-combine-btn active" data-combine="0">Each year</button>
-                <button type="button" class="otc-day-filter am-combine-btn" data-combine="1">Combine</button>
-              </div>
-            </div>
-            <select id="amSeason" class="am-select am-season-select" style="display:none" aria-hidden="true">__SEASON_OPTIONS__</select>
-          </div>
-          <div class="am-ctrl am-ctrl-search">
-            <input id="amSearch" type="text" autocomplete="off" placeholder="Search players…" class="am-search" aria-label="Search players">
-          </div>
+          <select id="amMetric" style="display:none">__METRIC_OPTIONS__</select>
         </div>
 
-        <div class="am-subcontrols">
-          <div id="amPositions" class="otc-day-filters am-positions">
-            <button class="otc-day-filter am-pos active" data-pos="ALL">All</button>
-            <button class="otc-day-filter am-pos" data-pos="QB">QB</button>
-            <button class="otc-day-filter am-pos" data-pos="RB">RB</button>
-            <button class="otc-day-filter am-pos" data-pos="WR">WR</button>
-            <button class="otc-day-filter am-pos" data-pos="TE">TE</button>
-          </div>
-          <!-- Add Metric picker lives here so it's always accessible even when
-               the compare bar is collapsed (no extra metrics selected). -->
-          <div id="amAddStatWrap" style="position:relative;flex-shrink:0;">
-            <button id="amAddStatBtn" type="button" class="am-add-stat-btn">&#43; Metric</button>
-            <div id="amStatPicker" class="am-stat-picker" style="display:none;"></div>
-          </div>
-          <button id="amAddFilterBtn" type="button" class="am-add-stat-btn">&#43; Filter</button>
-          __CUSTOM_SETS__
-          <button id="amFiltersBtn" type="button" class="am-sort-btn am-filters-btn">Filters &#9662;</button>
-          <span class="am-ctl-divider" aria-hidden="true"></span>
-          <label class="am-roster-toggle am-toggle-chip am-mobile-filter" id="amTrendToggleWrap" title="Show each player's recent usage trend (last 6 weeks) next to the metric">
-            <input type="checkbox" class="am-toggle-input" id="amTrendToggle">
-            <span class="am-toggle-box" aria-hidden="true"><svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M1.5 5.2 4 7.7 8.5 2.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
-            <span class="am-toggle-text">Usage trends</span>
-          </label>
-          <label class="am-roster-toggle am-toggle-chip am-mobile-filter" id="amRosterToggleWrap" style="display:none;">
-            <input type="checkbox" class="am-toggle-input" id="amRosterToggle">
-            <span class="am-toggle-box" aria-hidden="true"><svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M1.5 5.2 4 7.7 8.5 2.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
-            <span class="am-toggle-text">My roster only</span>
-          </label>
+        <!-- Positions: one segmented control. JS toggles .active on the buttons. -->
+        <div id="amPositions" class="otc-day-filters am-positions am-segmented" role="group" aria-label="Positions">
+          <button class="otc-day-filter am-pos active" data-pos="ALL">All</button>
+          <button class="otc-day-filter am-pos" data-pos="QB">QB</button>
+          <button class="otc-day-filter am-pos" data-pos="RB">RB</button>
+          <button class="otc-day-filter am-pos" data-pos="WR">WR</button>
+          <button class="otc-day-filter am-pos" data-pos="TE">TE</button>
         </div>
 
         <!-- Decision presets: one-tap views organized by the question being answered.
@@ -391,72 +472,26 @@ def build_advanced_metrics_body(
         </div>
         <div class="am-preset-tagline" id="amPresetTagline" aria-live="polite"></div>
 
-        <!-- What changed: usage/xFP movers and efficiency outliers, filled by JS. -->
+        <!-- Context line: current filter summary; taps open the filter sheet.
+             Text is filled by amUpdateContextLine(). -->
+        <button id="amContextLine" type="button" class="am-context-line" aria-expanded="false" title="Open filters">
+          <span id="amContextLineText"></span>
+          <svg class="am-context-chev" width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+
+        <!-- What changed: usage/xFP movers and efficiency outliers, filled by JS.
+             Collapsed by default; the head is a slim banner with live counts. -->
         <div class="am-movers" id="amMovers" style="display:none;">
-          <div class="am-movers-head" id="amMoversHead" role="button" tabindex="0" aria-expanded="true" title="Collapse">
+          <div class="am-movers-head" id="amMoversHead" role="button" tabindex="0" aria-expanded="false" title="Expand">
+            <span class="am-movers-bolt" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M9 1L3 9h4l-1 6 6-8H8l1-6z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg></span>
             <span class="am-ctrl-label">What changed</span>
+            <span class="am-movers-summary" id="amMoversSummary"></span>
             <span class="am-movers-sub" id="amMoversSub"></span>
             <span class="am-movers-chev" id="amMoversChev"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
           </div>
           <div class="am-movers-groups" id="amMoversGroups"></div>
         </div>
 
-        <div class="am-ctrl am-mobile-filter am-ctrl-weekbar" id="amWeekCtrl">
-          <div class="am-weekbar-head">
-            <label class="am-ctrl-label">Week Range</label>
-            <div class="otc-day-filters am-quick-ranges" id="amQuickRanges">
-              <button type="button" class="otc-day-filter am-qr active" data-range="">Season</button>
-              <button type="button" class="otc-day-filter am-qr" data-range="last2">Last 2</button>
-              <button type="button" class="otc-day-filter am-qr" data-range="last4">Last 4</button>
-            </div>
-          </div>
-          <div id="amWkBarHost"></div>
-        </div>
-
-        <!-- Compare bar: only visible when extra metrics or pinned-compare is active. -->
-        <div id="amCompareBar" class="am-compare-bar" style="display:none;">
-          <div id="amCompareChips" class="am-compare-chips"></div>
-          <button id="amComparePinnedBtn" type="button" class="am-add-stat-btn" style="display:none;">&#8645; Compare Pinned</button>
-          <button id="amClearExtrasBtn" type="button" class="am-add-stat-btn am-clear-btn" style="display:none;" onclick="amClearExtras()">&#10005; Clear</button>
-          <button id="amClearExtrasLink" type="button" class="am-clear-link" onclick="amClearExtras()">Clear all</button>
-        </div>
-
-        <!-- Filter bar: team/sort always; age, vol, and combo chips when active. -->
-        <div id="amFilterBar" class="am-filter-bar" style="display:none;">
-          <div class="am-filter-ctrl am-mobile-filter" id="amTeamCtrl">
-            <span class="am-filter-label">Team</span>
-            <select id="amTeamFilter" class="am-select am-season-select">
-              <option value="">All Teams</option>
-            </select>
-          </div>
-          <div class="am-filter-ctrl am-mobile-filter" id="amSortCtrl">
-            <span class="am-filter-label">Sort</span>
-            <button id="amSortBtn" type="button" class="am-sort-btn">High &rarr; Low</button>
-          </div>
-          <button id="amAddFilterBtnM" type="button" class="am-add-stat-btn am-add-filter-m">&#43; Filter</button>
-          <div class="am-filter-chips" id="amFilterChips"></div>
-          <div class="am-age-wrap am-mobile-filter" id="amAgeWrap" style="display:none;">
-            <span class="am-filter-label">Age</span>
-            <input type="number" id="amAgeMin" class="am-age-input" placeholder="Min" min="18" max="45">
-            <span class="am-filter-sep">&#8211;</span>
-            <input type="number" id="amAgeMax" class="am-age-input" placeholder="Max" min="18" max="45">
-          </div>
-          <div class="am-vol-ctrl am-mobile-filter" id="amGamesCtrl" style="display:none;">
-            <span class="am-filter-label" id="amVolLabel">Min</span>
-            <select id="amMinGames" class="am-select am-season-select" style="font-size:12px;padding:4px 8px;"></select>
-          </div>
-          <div id="amFilterForm" class="am-filter-form" style="display:none;">
-            <select id="amFilterKey" class="am-select am-season-select" style="min-width:110px;font-size:12px;padding:5px 8px;"></select>
-            <select id="amFilterOp" class="am-select am-season-select" style="min-width:52px;font-size:12px;padding:5px 8px;">
-              <option value="gte">&ge;</option>
-              <option value="lte">&le;</option>
-            </select>
-            <input type="number" id="amFilterVal" class="am-age-input" placeholder="Value" style="width:70px;">
-            <button id="amFilterApply" type="button" class="am-filter-apply-btn">Add</button>
-            <button id="amFilterCancel" type="button" class="am-filter-cancel-btn">Cancel</button>
-          </div>
-        </div>
-        </div>
 
         <div id="amCompareModal" class="am-legend-modal" style="display:none;"
           onclick="if(event.target===this){this.style.display='none';var b=document.getElementById('amCompareBody');if(b)b.dataset.cmpReady='';}">
@@ -621,7 +656,7 @@ def build_advanced_metrics_body(
       @media (max-width:600px) {
         .am-legend-btn { padding:6px 10px; font-size:11px; }
       }
-      .am-toolbar { margin:12px 0 4px; }
+      .am-cmd-metric { margin:12px 0 8px; }
       /* Decision preset pills */
       .am-decisions { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin:10px 0 2px; }
       .am-decisions-label { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--text-muted); }
@@ -758,35 +793,15 @@ def build_advanced_metrics_body(
       /* Compare position-average baseline column */
       .am-cmp-baseline-head .am-cmp-head-name { color:var(--text-muted); }
       .am-cmp-baseline { opacity:.75; border-left:1px dashed var(--border); }
-      /* Subcontrols row: positions + action buttons + toggles */
-      .am-subcontrols { display:flex; align-items:center; gap:6px; margin-bottom:8px; flex-wrap:wrap; }
+      /* Positions live below the command strip as one segmented control. */
       .am-positions { display:flex; gap:6px; flex:1 1 auto; min-width:0; overflow-x:auto; padding-bottom:1px; }
       .am-combine-toggle { display:flex; gap:6px; flex-shrink:0; }
       .am-roster-toggle { flex-shrink:0; }
-      .am-filters-btn { display:none; }
-      /* Mobile-only add-filter button living inside the Filters panel; on
-         desktop the standalone + Filter chip covers this. Needs the extra class
-         specificity so it beats .am-add-stat-btn's display (defined later), which
-         was leaking a second "+ Filter" onto desktop. */
-      .am-add-stat-btn.am-add-filter-m { display:none; }
-      /* Mobile: metric full width, seasons + search below. Week/team/sort/age
-         sit behind the Filters button on the position row. */
+      /* Mobile: metric full width; positions wrap. Secondary controls live in
+         the filter sheet, so nothing hides behind a toggle row anymore. */
       @media (max-width:600px) {
-        .am-controls { gap:8px; }
-        .am-ctrl { flex:1 1 calc(50% - 4px); min-width:0; }
-        .am-controls .am-ctrl:first-child { flex:1 1 100%; }
-        #amSeasonCtrl { flex:1 1 100%; min-width:0; }
         .am-season-row { flex-wrap:wrap; }
-        .am-ctrl-search { flex:1 1 100%; }
         .am-ctrl .am-select, .am-filter-ctrl .am-select, .am-filter-ctrl .am-sort-btn { width:100%; min-width:0; box-sizing:border-box; }
-        #amToolbar:not(.am-open) .am-mobile-filter { display:none !important; }
-        #amToolbar:not(.am-open) #amWeekCtrl { display:none !important; }
-        .am-filters-btn { display:inline-block; flex-shrink:0; padding:6px 12px; font-size:12px; border-radius:8px; }
-        /* One filter entry point on mobile: the Filters dropdown. The standalone
-           + Filter chip hides; its action moves inside the opened panel. */
-        #amAddFilterBtn { display:none; }
-        #amFilterBar.am-mobile-open .am-add-filter-m { display:inline-block; }
-        .am-subcontrols { row-gap:8px; }
         .am-positions { flex:1 1 auto; flex-wrap:wrap; overflow-x:visible; min-width:0; }
         /* Decide pills: one swipeable row instead of three wrapped rows. */
         .am-decisions { flex-wrap:nowrap; overflow-x:auto; -webkit-overflow-scrolling:touch; padding-bottom:4px; }
@@ -1162,10 +1177,6 @@ def build_advanced_metrics_body(
       .am-sp-preset-btn:hover { background:color-mix(in srgb, var(--accent) 14%, transparent); }
       /* Filter column headers inserted before primary metric column */
       th.am-filter-col-hdr { border-left:1px solid var(--border); }
-      /* Mobile: show filter bar content (age inputs etc.) when Filters is open */
-      @media (max-width:600px) {
-        #amFilterBar.am-mobile-open { flex-wrap:wrap; }
-      }
       /* Week range note */
       .am-week-note {
         display:flex; align-items:center; gap:6px;
@@ -1288,24 +1299,21 @@ def build_advanced_metrics_body(
       html.og-render .am-graph-svg { width:auto !important; height:594px !important; max-width:1164px !important; }
 
       /* ── Advanced Metrics mobile visual rework ──────────────────────────
-         Icon-button header, search+season on one row, solid + Metric button,
+         Command strip, toggleable search row, solid + Metric button,
          fading preset rail, wrapping chips, collapsible field averages,
-         sticky player column. (The old all-caps section labels were removed
-         from the markup entirely by the desktop rework; desktop rules above
-         untouched.) */
+         sticky player column. (The old icon-button header and the
+         search+season row were replaced by the command-bar rework;
+         the rules below that still apply are kept.) */
       .am-clear-link { display:none; }
       @media (max-width:600px) {
-        /* 1. Header: icon-only actions, description hidden. */
-        .am-head .am-head-desc { display:none; }
-        .am-head .am-legend-btn-label { display:none; }
-        .am-head .am-legend-btn { padding:8px; }
-        .am-head .am-legend-btn svg { width:16px; height:16px; }
-        .am-head-actions { flex-wrap:nowrap !important; }
-        /* 2. Search and season share one row: search flex-grows, season compact.
-           Mockup order is search-then-season, so re-order the DOM pair. */
-        #amSeasonCtrl { flex:0 1 128px; min-width:0; order:2; }
-        .am-ctrl-search { flex:1 1 0; min-width:0; order:1; }
-        .am-ctrl-search .am-search { font-size:14px; }
+        /* 1. Command strip: compact title, icon actions, labeled menu rows. */
+        .am-cmdbar { margin:0 -4px; padding:2px 4px 0; }
+        .am-cmd-title { font-size:16px; }
+        .am-more-menu .am-legend-btn { padding:10px 12px; }
+        .am-more-menu .am-legend-btn svg { width:16px; height:16px; }
+        /* 2. Search row (toggled from the strip) spans full width. */
+        #amSearchRow { margin:8px 0 0; }
+        #amSearchRow .am-search { font-size:14px; }
         /* 3. + Metric: solid outlined button matching the position pills,
            not the near-invisible dashed ghost. 8px radius per --radius-pill. */
         #amAddStatBtn {
@@ -1359,11 +1367,14 @@ def build_advanced_metrics_body(
          single-row week range, Clear-all text link, collapsible field
          averages. The data table and all data logic are untouched.
          Rules that would change the approved mobile look stay inside
-         min-width:601px; the rest are safe to share. */
-      /* 1. Header: icon-only actions (labels live in title attributes). */
-      .am-head .am-legend-btn-label { display:none; }
-      .am-head .am-legend-btn { padding:8px; }
-      .am-head .am-legend-btn svg { width:16px; height:16px; }
+         min-width:601px; the rest are safe to share.
+         (Superseded in part by the command-bar rework: the .am-head toolbar
+         became the .am-cmdbar strip and the toolbar rows became the filter
+         sheet. The toggle-chip, preset, week-range, clear-link, and field
+         average rules below still apply.) */
+      /* 1. Overflow menu rows: icon + label (labels live in title attributes). */
+      .am-more-menu .am-legend-btn { padding:10px 12px; }
+      .am-more-menu .am-legend-btn svg { width:16px; height:16px; }
       /* 2. Chips row: the Clear-all text link replaces the ghost button
          everywhere now (JS already toggles .am-clear-link-show). */
       #amClearExtrasBtn { display:none !important; }
@@ -1402,16 +1413,11 @@ def build_advanced_metrics_body(
         .am-toggle-chip .am-toggle-box { display:none; }
         .am-toggle-chip .am-toggle-text { font-weight:600; }
       }
-      .am-ctl-divider { display:none; }
       @media (min-width:601px) {
-        /* 4. Row 1: metric + season + search share one clean row, no labels. */
-        #amControls { align-items:center; }
-        #amControls > .am-ctrl:first-child { flex:0 1 250px; min-width:0; }
-        #amSeasonCtrl { flex:0 1 auto; min-width:0; }
-        .am-ctrl-search { flex:1 1 200px; min-width:160px; }
+        /* 4. Command bar: title left, actions right; metric picker full width. */
+        .am-cmdbar { margin:0 -4px; padding:2px 4px 0; }
         #amMetricBtn { width:100%; min-width:0; }
-        /* 5. Row 2: positions left, tools right; solid buttons, no "Custom" echo. */
-        .am-subcontrols { gap:8px; }
+        /* 5. Sheet buttons stay solid; the redundant "Custom" echo hides. */
         #amActiveSet { display:none; }
         #amAddStatBtn, #amAddFilterBtn, #amSaveSetBtn, #amDeleteSetBtn {
           border:1px solid var(--border); border-radius:var(--radius-pill,8px);
@@ -1422,7 +1428,6 @@ def build_advanced_metrics_body(
           border-color:var(--accent,#2563eb); color:var(--accent,#2563eb);
         }
         #amDeleteSetBtn:hover { border-color:var(--loss); color:var(--loss); }
-        .am-ctl-divider { display:block; width:1px; height:24px; background:var(--border); flex-shrink:0; }
         /* 6. Presets: no label in the markup; keep the rail tidy. */
         .am-decisions { margin:8px 0 2px; }
         /* 7. What-changed strip, quieter. */
@@ -1457,6 +1462,142 @@ def build_advanced_metrics_body(
           gap:6px 18px; padding:2px 2px 10px; font-size:12.5px; color:var(--text-muted);
         }
         .am-avg-cell b { color:var(--text); font-weight:600; }
+      }
+      /* ── Advanced Metrics command bar rework (A) ──────────────────────────
+         Progressive disclosure: a slim sticky strip up top (title + search /
+         filter / overflow), the metric picker, position segmented control,
+         and decision presets always visible. Everything else (time, players,
+         metrics, filters, sets, view) lives in one filter sheet behind the
+         filter icon. Uses existing site vars so light/dark themes keep working. */
+      .am-cmd-shell { position:relative; }
+      .am-cmdbar {
+        position:sticky; top:0; z-index:60;
+        display:flex; align-items:center; gap:8px;
+        padding:6px 2px; background:var(--card);
+      }
+      .am-cmd-title {
+        flex:1 1 auto; min-width:0;
+        font-size:17px; font-weight:800; letter-spacing:-.3px; color:var(--text);
+        white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+      }
+      .am-cmd-actions { display:flex; align-items:center; gap:4px; flex-shrink:0; }
+      .am-cmd-btn {
+        position:relative; display:inline-flex; align-items:center; justify-content:center;
+        width:36px; height:36px; border:1px solid transparent; border-radius:10px;
+        background:transparent; color:var(--text); cursor:pointer;
+      }
+      .am-cmd-btn:hover { background:var(--row,rgba(0,0,0,.05)); }
+      .am-cmd-btn[aria-expanded="true"] { background:var(--row,rgba(0,0,0,.06)); border-color:var(--border); }
+      .am-filter-badge {
+        position:absolute; top:1px; right:0;
+        min-width:18px; height:18px; padding:0 5px; box-sizing:border-box;
+        display:inline-flex; align-items:center; justify-content:center;
+        background:var(--accent,#2563eb); color:#fff;
+        font-size:10px; font-weight:800; line-height:1; border-radius:10px;
+      }
+      .am-filter-badge[hidden] { display:none; }
+      .am-more-menu {
+        position:absolute; top:calc(100% + 4px); right:0; z-index:70;
+        min-width:180px; padding:6px;
+        background:var(--card); border:1px solid var(--border); border-radius:12px;
+        box-shadow:0 12px 32px rgba(0,0,0,.18);
+        display:flex; flex-direction:column; gap:2px;
+      }
+      .am-more-menu[hidden] { display:none; }
+      .am-more-menu .am-legend-btn {
+        display:flex; align-items:center; gap:10px; width:100%;
+        padding:10px 12px; border:0; border-radius:8px; background:transparent;
+        color:var(--text); font-size:13px; font-weight:600; cursor:pointer; text-align:left;
+      }
+      .am-more-menu .am-legend-btn:hover { background:var(--row,rgba(0,0,0,.05)); }
+      .am-search-row { margin:4px 0 0; }
+      .am-search-row[hidden] { display:none; }
+      .am-search-row .am-search { width:100%; box-sizing:border-box; }
+      /* Positions as one segmented unit; the buttons keep .otc-day-filter so the
+         existing active-state JS keeps working untouched. */
+      .am-positions.am-segmented {
+        gap:0; padding:0; overflow:hidden; flex-wrap:nowrap;
+        border:1px solid var(--border); border-radius:10px; background:var(--card);
+        margin:0 0 8px;
+      }
+      .am-positions.am-segmented .am-pos {
+        flex:1 1 0; border:0; border-radius:0; background:transparent;
+        padding:8px 4px; text-align:center; color:var(--text-muted);
+      }
+      .am-positions.am-segmented .am-pos + .am-pos { border-left:1px solid var(--border); }
+      .am-positions.am-segmented .am-pos.active {
+        background:var(--text); color:var(--card);
+      }
+      /* Context line: tappable summary of the current filter state. */
+      .am-context-line {
+        display:flex; align-items:center; justify-content:space-between; gap:8px;
+        width:100%; margin:0 0 8px; padding:7px 10px;
+        border:1px solid var(--border); border-radius:10px; background:var(--card);
+        color:var(--text-muted); font-size:12.5px; font-weight:600; cursor:pointer;
+      }
+      .am-context-line:hover { border-color:var(--accent,#2563eb); color:var(--text); }
+      #amContextLineText { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+      .am-context-chev { flex-shrink:0; }
+      /* Movers slim banner: collapsed shows the summary counts only. */
+      .am-movers-bolt { display:inline-flex; color:var(--accent,#2563eb); }
+      .am-movers-summary { font-size:11.5px; color:var(--text-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+      .am-movers.collapsed .am-movers-sub { display:none; }
+      .am-movers:not(.collapsed) .am-movers-summary { display:none; }
+      /* Filter sheet */
+      .am-sheet-backdrop {
+        position:fixed; inset:0; z-index:1000; background:rgba(0,0,0,.45);
+      }
+      .am-sheet-backdrop[hidden] { display:none; }
+      .am-filter-sheet {
+        z-index:1001; background:var(--card); border:1px solid var(--border);
+        color:var(--text);
+      }
+      .am-filter-sheet[hidden] { display:none; }
+      .am-sheet-head {
+        display:flex; align-items:center; justify-content:space-between;
+        padding:12px 16px; border-bottom:1px solid var(--border);
+      }
+      .am-sheet-title { font-size:15px; font-weight:800; }
+      .am-sheet-body { padding:4px 16px 20px; overflow-y:auto; }
+      .am-sheet-sec { padding:12px 0; border-bottom:1px solid var(--border); }
+      .am-sheet-sec:last-child { border-bottom:0; }
+      .am-sheet-sec-title {
+        margin:0 0 10px; font-size:11px; font-weight:700; text-transform:uppercase;
+        letter-spacing:.06em; color:var(--text-muted);
+      }
+      .am-sheet-sec .am-season-row { margin-bottom:10px; }
+      .am-sheet-sec .am-ctrl-weekbar { margin:0; }
+      .am-sheet-sec .am-filter-ctrl { display:flex; align-items:center; gap:10px; margin-bottom:10px; }
+      .am-sheet-sec .am-filter-ctrl:last-child { margin-bottom:0; }
+      .am-sheet-sec .am-filter-label { min-width:34px; font-size:12px; font-weight:600; color:var(--text-muted); }
+      .am-sheet-sec .am-vol-ctrl { display:flex; align-items:center; gap:10px; margin-bottom:10px; }
+      .am-sheet-sec .am-age-wrap { display:flex; align-items:center; gap:8px; margin-bottom:10px; }
+      .am-sheet-sec .am-roster-toggle { margin:0 8px 8px 0; }
+      .am-sheet-sec #amAddStatWrap { margin-bottom:10px; }
+      .am-sheet-sec #amCompareBar { margin:0; }
+      .am-sheet-sec #amAddFilterBtn { margin-bottom:10px; }
+      .am-sheet-sec .am-filter-chips { margin-bottom:4px; }
+      .am-sheet-sec .am-filter-chips:empty { margin-bottom:0; }
+      @media (max-width:760px) {
+        /* Bottom sheet on phones. */
+        .am-filter-sheet {
+          position:fixed; left:0; right:0; bottom:0;
+          max-height:85vh; display:flex; flex-direction:column;
+          border-radius:16px 16px 0 0; border-bottom:0;
+          box-shadow:0 -12px 40px rgba(0,0,0,.25);
+        }
+      }
+      @media (min-width:761px) {
+        /* Anchored panel under the strip on desktop. .am-cmd-shell wraps the
+           strip, search row, and sheet and is the positioned ancestor, so the
+           panel tracks the strip. */
+        .am-filter-sheet {
+          position:absolute; top:calc(100% + 6px); right:0;
+          width:400px; max-width:calc(100vw - 32px); max-height:72vh;
+          display:flex; flex-direction:column;
+          border-radius:14px; box-shadow:0 16px 48px rgba(0,0,0,.22);
+        }
+        .am-sheet-backdrop { background:transparent; }
       }
     </style>
     """
@@ -1510,7 +1651,7 @@ _AM_JS = r"""
   const searchEl  = document.getElementById('amSearch');
   const sortBtn   = document.getElementById('amSortBtn');
   const seasonSel = document.getElementById('amSeason');
-  const seasonCtrl= document.getElementById('amSeasonCtrl');
+  const seasonCtrl= document.getElementById('amSeasonMulti');
   const teamSel   = document.getElementById('amTeamFilter');
   const minGamesSel = document.getElementById('amMinGames');
   const gamesCtrl = document.getElementById('amGamesCtrl');
@@ -1799,6 +1940,7 @@ _AM_JS = r"""
     updateSortBtn(); updatePosButtons(); updateMetricTip(); updateVolCtrl(); updateVolHeader();
     _amRefreshWeekControls();
     updateSortHeaders(); updateCompareBar(); syncExtraCols(); updateFilterBar();
+    amUpdateContextLine();
     fetchData();
   };
 
@@ -1821,7 +1963,7 @@ _AM_JS = r"""
     _updateDecisionUI(null);
     state.extraMetrics = []; state.extraData = {}; state.extraPrevData = {};
     state.page = 0;
-    updateCompareBar(); syncExtraCols(); updateFilterBar(); syncURL(); fetchData();
+    updateCompareBar(); syncExtraCols(); updateFilterBar(); amUpdateContextLine(); syncURL(); fetchData();
   };
   (function _wireDecisionPills() {
     const pills = document.getElementById('amDecisionPills');
@@ -1902,8 +2044,11 @@ _AM_JS = r"""
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); _apply(!host.classList.contains('collapsed')); }
     });
     try {
-      if (localStorage.getItem('amMoversCollapsed') === '1') _apply(true);
-    } catch (e) {}
+      const stored = localStorage.getItem('amMoversCollapsed');
+      // Collapsed by default (slim banner with counts); an explicit stored
+      // choice wins over the default.
+      _apply(stored === null ? true : stored === '1');
+    } catch (e) { _apply(true); }
   }
   function _loadMovers() {
     _initMoversCollapse();
@@ -1970,6 +2115,15 @@ _AM_JS = r"""
         if (outliers.length) groups.appendChild(_moverGroup(_BOLT_SVG + '<span>Efficiency outliers</span>', 'out', outliers, ''));
         const sub = document.getElementById('amMoversSub');
         if (sub) sub.textContent = d.note || '';
+        // Slim banner summary shown while collapsed.
+        const sumEl = document.getElementById('amMoversSummary');
+        if (sumEl) {
+          const parts = [];
+          if (outliers.length) parts.push(outliers.length + ' efficiency outlier' + (outliers.length === 1 ? '' : 's'));
+          if (heating.length) parts.push(heating.length + ' heating up');
+          if (cooling.length) parts.push(cooling.length + ' cooling off');
+          sumEl.textContent = parts.join(' \u00b7 ');
+        }
         host.style.display = '';
       })
       .catch(function() { host.style.display = 'none'; });
@@ -2809,6 +2963,7 @@ _AM_JS = r"""
     }
     state.page = 0;
     updateSortHeaders();
+    amUpdateContextLine();
     render();
   }
   // Filter columns: compact columns inserted right before the primary metric column
@@ -4545,10 +4700,12 @@ _AM_JS = r"""
   }
 
   function updateFilterBar() {
-    const bar = document.getElementById('amFilterBar');
+    // Custom-metric filter chips live in the filter sheet now. The sheet is
+    // user-toggled, so there is no show/hide logic here anymore; just refresh
+    // the chip list, the filter-key options, the badge, and the context line.
     const chips = document.getElementById('amFilterChips');
     const filterKey = document.getElementById('amFilterKey');
-    if (!bar || !chips) return;
+    if (!chips) return;
     if (filterKey) {
       const primaryPositions = new Set(relevantPositions(state.metric));
       const added = new Set(['age', 'exp', 'primary']);
@@ -4604,24 +4761,7 @@ _AM_JS = r"""
       return '<span class="am-filter-chip">' + lbl + ' ' + opSym + ' ' + f.val
         + ' <button class="am-chip-x" onclick="amRemoveFilter(' + idx + ')" aria-label="Remove">\xd7</button></span>';
     }).join('');
-    // Show the filter bar only when there's something to show: active chips,
-    // the age-input controls, the vol (min games) control, or the filter form.
-    const ageVis  = (document.getElementById('amAgeWrap')  || {}).style.display !== 'none';
-    const volVis  = (document.getElementById('amGamesCtrl') || {}).style.display !== 'none';
-    const formVis = (document.getElementById('amFilterForm') || {}).style.display !== 'none';
-    // On mobile the opened Filters panel must show even when empty, so its
-    // in-panel + Filter button has somewhere to live.
-    const isMobile = window.innerWidth <= 600;
-    const mOpen = bar && bar.classList.contains('am-mobile-open') && isMobile;
-    if (bar) {
-      // Desktop: team + sort live here, so the bar stays open. Mobile: only
-      // when Filters is open (or a chip/form is active).
-      if (isMobile) {
-        bar.style.display = (state.comboFilters.length > 0 || formVis || mOpen) ? 'flex' : 'none';
-      } else {
-        bar.style.display = 'flex';
-      }
-    }
+    amRefreshFilterBadge();
   }
   window.amRemoveFilter = function(idx) {
     const removed = state.comboFilters[idx];
@@ -4645,14 +4785,8 @@ _AM_JS = r"""
     if (!wrap) return;
     const hasAge = state.rows.some(r => r.age != null);
     if (!hasAge) { wrap.style.display = 'none'; updateFilterBar(); return; }
-    // On mobile, only show the age inputs when the Filters dropdown is open.
-    const isMobile = window.innerWidth <= 600;
-    if (isMobile) {
-      const fb = document.getElementById('amFilterBar');
-      wrap.style.display = (fb && fb.classList.contains('am-mobile-open')) ? '' : 'none';
-    } else {
-      wrap.style.display = '';
-    }
+    // The age inputs live in the filter sheet, which the user opens explicitly.
+    wrap.style.display = '';
     updateFilterBar();
   }
 
@@ -4673,6 +4807,7 @@ _AM_JS = r"""
     updateSortBtn(); updatePosButtons(); updateMetricTip(); updateVolCtrl(); updateVolHeader();
     _amRefreshWeekControls();
     updateSortHeaders(); updateCompareBar(); updateFilterBar();
+    amUpdateContextLine();
     syncURL(); fetchData();
   });
   posWrap.addEventListener('click', e => {
@@ -4685,7 +4820,7 @@ _AM_JS = r"""
   sortBtn.addEventListener('click', () => {
     state.sortBy = state.metric;
     state.sortDir = state.sortDir === 'desc' ? 'asc' : 'desc'; state.page = 0;
-    updateSortBtn(); updateSortHeaders(); render();
+    updateSortBtn(); updateSortHeaders(); amUpdateContextLine(); render();
   });
   function syncSeasonBtn() {
     const label = document.getElementById('amSeasonBtnLabel');
@@ -4727,6 +4862,7 @@ _AM_JS = r"""
     _amRefreshWeekControls(true);
     state.page = 0;
     syncURL();
+    amUpdateContextLine(); amRefreshFilterBadge();
     fetchData();
     _loadMovers();
   }
@@ -4792,14 +4928,15 @@ _AM_JS = r"""
       state.page = 0;
       syncMultiSeasonUI();
       syncURL();
+      amUpdateContextLine(); amRefreshFilterBadge();
       fetchData();
     });
   }
   if (teamSel) {
-    teamSel.addEventListener('change', () => { state.team = teamSel.value || ''; state.page = 0; syncURL(); render(); });
+    teamSel.addEventListener('change', () => { state.team = teamSel.value || ''; state.page = 0; syncURL(); amUpdateContextLine(); amRefreshFilterBadge(); render(); });
   }
   if (minGamesSel) {
-    minGamesSel.addEventListener('change', () => { state.minVol = minGamesSel.value || ''; state.page = 0; syncURL(); fetchData(); });
+    minGamesSel.addEventListener('change', () => { state.minVol = minGamesSel.value || ''; state.page = 0; syncURL(); amUpdateContextLine(); amRefreshFilterBadge(); fetchData(); });
   }
   // Week-range helpers are provided by static/week_range.js, loaded before this page script.
   const amWkBarHost = document.getElementById('amWkBarHost');
@@ -4822,7 +4959,7 @@ _AM_JS = r"""
       state.weekStart = ws; state.weekEnd = we;
       state.minVol = ''; if (minGamesSel) minGamesSel.value = '';
       updateVolCtrl(); _amSyncQuickChips('custom');
-      state.page = 0; syncURL(); fetchData();
+      state.page = 0; syncURL(); amUpdateContextLine(); amRefreshFilterBadge(); fetchData();
     });
   }
   function _amRefreshWeekControls(resetInvalid) {
@@ -4854,7 +4991,7 @@ _AM_JS = r"""
     if(minGamesSel)minGamesSel.value=''; updateVolCtrl(); _amSyncQuickChips(key);
     const weeks=availableWeeks(),r=resolveWeekRange();
     _amBuildWkBar(r.ws == null ? weeks[0] : r.ws, r.we == null ? weeks[weeks.length-1] : r.we);
-    state.page=0; syncURL(); fetchData();
+    state.page=0; syncURL(); amUpdateContextLine(); amRefreshFilterBadge(); fetchData();
   });
   // CSV export of the current filtered/sorted view (all pages, not just the
   // visible one). Columns: identity + primary metric + any added metrics.
@@ -4912,34 +5049,109 @@ _AM_JS = r"""
     });
   }
   if (rosterChk) {
-    rosterChk.addEventListener('change', () => { state.rosterOnly = rosterChk.checked; state.page = 0; render(); });
+    rosterChk.addEventListener('change', () => { state.rosterOnly = rosterChk.checked; state.page = 0; amRefreshFilterBadge(); render(); });
   }
-  const filtersBtn = document.getElementById('amFiltersBtn');
-  const toolbar = document.getElementById('amToolbar') || document.getElementById('amControls');
-  if (filtersBtn && toolbar) {
-    filtersBtn.addEventListener('click', () => {
-      const open = toolbar.classList.toggle('am-open');
-      const controlsRow = document.getElementById('amControls');
-      if (controlsRow) controlsRow.classList.toggle('am-open', open);
-      filtersBtn.innerHTML = open ? 'Filters &#9652;' : 'Filters &#9662;';
-      // On mobile, also toggle the filter bar so age + filter controls become accessible.
-      const filterBar = document.getElementById('amFilterBar');
-      if (filterBar) filterBar.classList.toggle('am-mobile-open', open);
-      showAgeCtrl();
-      updateFilterBar();
-      // Close the filter form if the dropdown is closing.
-      if (!open && window.innerWidth <= 600) {
-        const ff = document.getElementById('amFilterForm');
-        if (ff) ff.style.display = 'none';
-      }
+  // ── Command bar: filter sheet, search row, overflow menu, badge, context ──
+  // One toggle for the filter sheet (bottom sheet on mobile, anchored panel
+  // on desktop). `open` forces a direction; omitted it toggles.
+  function amToggleSheet(open) {
+    const sheet = document.getElementById('amFilterSheet');
+    const backdrop = document.getElementById('amSheetBackdrop');
+    const toggle = document.getElementById('amFilterToggle');
+    const ctx = document.getElementById('amContextLine');
+    if (!sheet) return;
+    const willOpen = (typeof open === 'boolean') ? open : sheet.hidden;
+    sheet.hidden = !willOpen;
+    if (backdrop) backdrop.hidden = !willOpen;
+    if (toggle) toggle.setAttribute('aria-expanded', String(willOpen));
+    if (ctx) ctx.setAttribute('aria-expanded', String(willOpen));
+  }
+  // Context line: "2026 · Weeks 1-4 · All teams · High → Low". Taps open sheet.
+  function amUpdateContextLine() {
+    const el = document.getElementById('amContextLineText');
+    if (!el) return;
+    const parts = [amSeasonLabel(amSelectedSeasons())];
+    let weekLbl = 'Season';
+    if (state.weekRange === 'last2') weekLbl = 'Last 2';
+    else if (state.weekRange === 'last4') weekLbl = 'Last 4';
+    else {
+      const r = resolveWeekRange();
+      if (r.ws != null && r.we != null) weekLbl = 'Weeks ' + r.ws + '-' + r.we;
+    }
+    parts.push(weekLbl);
+    parts.push(state.team || 'All teams');
+    parts.push(state.sortDir === 'desc' ? 'High \u2192 Low' : 'Low \u2192 High');
+    el.textContent = parts.join(' \u00b7 ');
+  }
+  // Badge on the filter icon: count of non-default filter states.
+  function amRefreshFilterBadge() {
+    const badge = document.getElementById('amFilterBadge');
+    if (!badge) return;
+    let n = 0;
+    const seasons = amSelectedSeasons();
+    const defSeason = (cfg.seasons && cfg.seasons.length) ? String(cfg.seasons[0]) : '';
+    if (seasons.length > 1 || (seasons.length === 1 && defSeason && String(seasons[0]) !== defSeason)) n++;
+    if (state.weekRange && state.weekRange !== '') n++;
+    if (state.team) n++;
+    if (state.minVol) n++;
+    if (state.ageMin || state.ageMax) n++;
+    if (state.comboFilters && state.comboFilters.length) n += state.comboFilters.length;
+    if (state.showTrends) n++;
+    if (state.rosterOnly) n++;
+    if (n > 0) { badge.textContent = String(n); badge.hidden = false; }
+    else { badge.hidden = true; }
+  }
+  const filterToggle = document.getElementById('amFilterToggle');
+  if (filterToggle) filterToggle.addEventListener('click', () => amToggleSheet());
+  const ctxLine = document.getElementById('amContextLine');
+  if (ctxLine) ctxLine.addEventListener('click', () => amToggleSheet(true));
+  const sheetClose = document.getElementById('amSheetClose');
+  if (sheetClose) sheetClose.addEventListener('click', () => amToggleSheet(false));
+  const sheetBackdrop = document.getElementById('amSheetBackdrop');
+  if (sheetBackdrop) sheetBackdrop.addEventListener('click', () => amToggleSheet(false));
+  // Search icon toggles the row holding the existing #amSearch input.
+  const searchToggle = document.getElementById('amSearchToggle');
+  const searchRow = document.getElementById('amSearchRow');
+  if (searchToggle && searchRow) {
+    searchToggle.addEventListener('click', () => {
+      const opening = searchRow.hidden;
+      searchRow.hidden = !opening;
+      searchToggle.setAttribute('aria-expanded', String(opening));
+      if (opening && searchEl) searchEl.focus();
     });
   }
+  // Overflow menu: Graph Metrics / Metric Glossary / CSV. Closes on
+  // outside tap or Escape.
+  const moreToggle = document.getElementById('amMoreToggle');
+  const moreMenu = document.getElementById('amMoreMenu');
+  function amCloseMoreMenu() {
+    if (moreMenu && !moreMenu.hidden) {
+      moreMenu.hidden = true;
+      if (moreToggle) moreToggle.setAttribute('aria-expanded', 'false');
+    }
+  }
+  if (moreToggle && moreMenu) {
+    moreToggle.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const opening = moreMenu.hidden;
+      moreMenu.hidden = !opening;
+      moreToggle.setAttribute('aria-expanded', String(opening));
+      if (opening) amToggleSheet(false);
+    });
+    document.addEventListener('click', (e) => {
+      if (!moreMenu.hidden && !moreMenu.contains(e.target) && !moreToggle.contains(e.target)) amCloseMoreMenu();
+    });
+  }
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { amToggleSheet(false); amCloseMoreMenu(); }
+  });
   const trendChk = document.getElementById('amTrendToggle');
   if (trendChk) {
     trendChk.addEventListener('change', () => {
       state.showTrends = trendChk.checked;
       syncTrendHeader();
       if (state.showTrends && !state.trendsBySeason[trendSeasonKey()]) fetchTrends();
+      amRefreshFilterBadge();
       render();
     });
   }
@@ -4947,8 +5159,8 @@ _AM_JS = r"""
   // Age filter inputs.
   const ageMinEl = document.getElementById('amAgeMin');
   const ageMaxEl = document.getElementById('amAgeMax');
-  if (ageMinEl) ageMinEl.addEventListener('input', function() { state.ageMin = ageMinEl.value || ''; state.page = 0; render(); });
-  if (ageMaxEl) ageMaxEl.addEventListener('input', function() { state.ageMax = ageMaxEl.value || ''; state.page = 0; render(); });
+  if (ageMinEl) ageMinEl.addEventListener('input', function() { state.ageMin = ageMinEl.value || ''; state.page = 0; amRefreshFilterBadge(); render(); });
+  if (ageMaxEl) ageMaxEl.addEventListener('input', function() { state.ageMax = ageMaxEl.value || ''; state.page = 0; amRefreshFilterBadge(); render(); });
 
   // Combo filter form.
   const addFilterBtn = document.getElementById('amAddFilterBtn');
@@ -4959,14 +5171,11 @@ _AM_JS = r"""
     const toggleFilterForm = function() {
       const opening = filterForm.style.display === 'none';
       filterForm.style.display = opening ? '' : 'none';
-      // Ensure the filter bar is visible when the form is open.
-      const fb = document.getElementById('amFilterBar');
-      if (opening && fb) { fb.style.display = 'flex'; updateFilterBar(); }
+      // Make sure the filter sheet is open so the form is actually visible.
+      if (opening) amToggleSheet(true);
+      updateFilterBar();
     };
     addFilterBtn.addEventListener('click', toggleFilterForm);
-    // Mobile twin inside the Filters panel (the standalone chip hides <=600px).
-    const addFilterBtnM = document.getElementById('amAddFilterBtnM');
-    if (addFilterBtnM) addFilterBtnM.addEventListener('click', toggleFilterForm);
   }
   if (filterApply) {
     filterApply.addEventListener('click', function() {
@@ -5069,6 +5278,7 @@ _AM_JS = r"""
   }
   updateSortBtn(); updatePosButtons(); updateMetricTip(); updateVolCtrl(); updateVolHeader();
   updateSortHeaders(); updateCompareBar(); updateFilterBar(); syncURL();
+  amUpdateContextLine();
   if (!_presetLoaded) fetchData();
   loadOwnedRoster(); _loadMovers();
   // Auto-open graph modal when ?graph=1 is in the URL (from a copied graph

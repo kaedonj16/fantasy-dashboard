@@ -34,7 +34,9 @@ def test_page_restores_and_syncs_week_url_without_duplicate_init_fetch():
     assert "p.set('week_start', String(urlRange.ws))" in PAGE
     assert "window.addEventListener('load', function() { _amBuildWkBar" not in PAGE
     assert "_amBuildWkBar(r.ws == null" in PAGE
-    assert "state.page=0; syncURL(); fetchData();" in PAGE
+    # Week-slider reset: one state sync, one fetch, no duplicate init fetch.
+    # (The command-bar rework adds context/badge refreshes to the sequence.)
+    assert "state.page=0; syncURL(); amUpdateContextLine(); amRefreshFilterBadge(); fetchData();" in PAGE
 
 
 def test_available_weeks_union_is_grouped_by_season(monkeypatch):
