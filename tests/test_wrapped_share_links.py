@@ -210,3 +210,64 @@ def test_share_page_bootstrap_counts_up_without_app_bundle():
         logo_url="/static/BR_Logo_dark.png",
     )
     assert "function wrappedCountUp" in html
+
+
+def _legacy_deck_html(ns="weekly-wrapped"):
+    """Overlay markup shaped like decks minted before the nav chrome existed:
+    overlay + progress + stage only, logo imgs without src attributes."""
+    slides = "".join(
+        f"<section class='wrapped-slide' data-kind='s{i}'>"
+        f"<div class='wrapped-num'><span class='wrapped-big' "
+        f"data-w-count='{10 + i}' data-w-dp='0'>0</span></div></section>"
+        for i in range(3))
+    bars = "".join("<span class='wrapped-bar'><i></i></span>" for _ in range(4))
+    return (
+        f'<div class="wrapped-overlay" id="{ns}Overlay" hidden aria-hidden="true">'
+        f'<div class="wrapped-progress">{bars}</div>'
+        f'<div class="wrapped-stage" id="{ns}Stage">'
+        f"<section class='wrapped-slide' data-kind='intro'>"
+        f"<img alt='BR Fantasy' class='wrapped-intro-logo'>"
+        f"<div class='wrapped-league'>blackedraw</div></section>"
+        f"{slides}"
+        f"<div class='wrapped-foot'><img alt=''>"
+        f"<span class='wrapped-foot-season'>WEEK 3</span></div>"
+        f"</div></div>"
+    )
+
+
+def test_public_bootstrap_has_no_unguarded_element_binds():
+    """Regression: a stored deck minted before the overlay carried its nav
+    chrome (no Close/Next/Prev/Pause/Share/Link buttons, no ShareData script)
+    rendered a blank page, because bindOverlay called
+    getElementById('<ns>Close').addEventListener unguarded and the TypeError
+    killed the bootstrap before openWrapped() ran. Every nav binding must be
+    null-guarded in both namespaces."""
+    import re
+    from dashboard_services.pages.history_page import _wrapped_public_bootstrap_js
+    for ns in ("wrapped", "weekly-wrapped"):
+        js = _wrapped_public_bootstrap_js(ns)
+        bad = re.findall(r"getElementById\('[^']+'\)\.addEventListener", js)
+        assert not bad, (ns, bad)
+
+
+def test_public_view_repairs_legacy_deck(offline_client, fake_store):
+    """End-to-end with a legacy stored deck: the page must open the deck
+    (guarded bootstrap) and backfill the missing logo img srcs."""
+    import app
+    client = app.app.test_client()
+    html = _legacy_deck_html()
+    token = client.post("/api/wrapped/share", json={
+        "kind": "weekly", "ns": "weekly-wrapped", "overlay_html": html,
+        "share_data": {"league": "blackedraw", "week": 3},
+    }).get_json()["url"].rsplit("/wrapped/", 1)[1]
+
+    resp = client.get(f"/wrapped/{token}")
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    # Guarded nav bindings for the weekly namespace.
+    assert "if (closeBtn) closeBtn.addEventListener" in body
+    assert "if (nextBtn) nextBtn.addEventListener" in body
+    assert "if (prevBtn) prevBtn.addEventListener" in body
+    # Logo backfill wiring for the src-less imgs in legacy decks.
+    assert "window.__wrappedShareLogo" in body
+    assert "img.wrapped-intro-logo, .wrapped-foot img" in body

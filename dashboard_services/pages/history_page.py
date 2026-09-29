@@ -2182,6 +2182,24 @@ def _wrapped_public_bootstrap_js(ns: str = "wrapped") -> str:
 })();"""
     assert _launch_handler in js, "wrapped bootstrap launch handler changed; update _wrapped_public_bootstrap_js"
     js = js.replace(_launch_handler, "  openWrapped();\n})();")
+
+    _open_call = "  openWrapped();\n})();"
+    assert _open_call in js, "wrapped bootstrap open call changed; update _wrapped_public_bootstrap_js"
+    _legacy_repair = (
+        "  // Legacy decks minted before the overlay carried its nav chrome may\n"
+        "  // lack logo img srcs; backfill them so nothing renders as a broken\n"
+        "  // image, then open the deck.\n"
+        "  (function () {\n"
+        "    var logo = window.__wrappedShareLogo;\n"
+        "    if (!logo) return;\n"
+        "    var imgs = document.querySelectorAll('img.wrapped-intro-logo, .wrapped-foot img');\n"
+        "    for (var i = 0; i < imgs.length; i++) {\n"
+        "      if (!imgs[i].getAttribute('src')) imgs[i].setAttribute('src', logo);\n"
+        "    }\n"
+        "  })();\n"
+        "  openWrapped();\n})();"
+    )
+    js = js.replace(_open_call, _legacy_repair)
     return js
 
 
@@ -2214,6 +2232,8 @@ def render_wrapped_share_page(*, overlay_html: str, share_data: dict | None,
     title = label or "Fantasy Wrapped"
     desc = _wrapped_share_og_description(data)
     js = _wrapped_public_bootstrap_js(ns)
+    # json.dumps gives a safely-quoted JS string literal for the logo URL.
+    logo_js = json.dumps(str(logo_url or ""))
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -2244,7 +2264,7 @@ def render_wrapped_share_page(*, overlay_html: str, share_data: dict | None,
 <body>
 {overlay_html}
 <div class="wrapped-share-cta"><a href="/">Make your own Wrapped</a></div>
-<script>window.__wrappedSharePublic = true;</script>
+<script>window.__wrappedSharePublic = true;window.__wrappedShareLogo = {logo_js};</script>
 <script>{js}</script>
 </body>
 </html>
@@ -2476,6 +2496,7 @@ _WRAPPED_BOOTSTRAP_JS = r"""
     if (overlay.__navBound) return overlay;
     overlay.__navBound = true;
     var stage = document.getElementById('wrappedStage');
+    if (!stage) return null;   // a deck without slides has nothing to play
     var slides = Array.prototype.slice.call(stage.querySelectorAll('.wrapped-slide'));
     var bars = Array.prototype.slice.call(overlay.querySelectorAll('.wrapped-bar'));
 
@@ -2666,7 +2687,10 @@ _WRAPPED_BOOTSTRAP_JS = r"""
       document.documentElement.style.overflow = '';
     }
     overlay.__open = open;
-    document.getElementById('wrappedClose').addEventListener('click', close);
+    // Legacy shared decks (minted before the overlay carried its nav chrome)
+    // may lack these buttons; guard so a missing element never kills the deck.
+    var closeBtn = document.getElementById('wrappedClose');
+    if (closeBtn) closeBtn.addEventListener('click', close);
     var pauseBtn = document.getElementById('wrappedPause');
     if (pauseBtn) {
       pauseBtn.addEventListener('click', function (e) {
@@ -2674,8 +2698,10 @@ _WRAPPED_BOOTSTRAP_JS = r"""
         setPaused(!paused);
       });
     }
-    document.getElementById('wrappedNext').addEventListener('click', function () { go(idx + 1); });
-    document.getElementById('wrappedPrev').addEventListener('click', function () { go(idx - 1); });
+    var nextBtn = document.getElementById('wrappedNext');
+    if (nextBtn) nextBtn.addEventListener('click', function () { go(idx + 1); });
+    var prevBtn = document.getElementById('wrappedPrev');
+    if (prevBtn) prevBtn.addEventListener('click', function () { go(idx - 1); });
     document.addEventListener('keydown', function (e) {
       if (overlay.hidden) return;
       if (e.key === 'Escape') close();
