@@ -1579,11 +1579,14 @@ def build_advanced_metrics_body(
       .am-sheet-sec .am-filter-chips { margin-bottom:4px; }
       .am-sheet-sec .am-filter-chips:empty { margin-bottom:0; }
       @media (max-width:760px) {
-        /* Bottom sheet on phones. */
+        /* Bottom sheet on phones. Anchored above the fixed bottom dock via
+           --dock-safe-bottom (56px + safe-area) so the last sections are
+           never hidden behind it. */
         .am-filter-sheet {
-          position:fixed; left:0; right:0; bottom:0;
+          position:fixed; left:0; right:0;
+          bottom:calc(var(--dock-safe-bottom, 0px) + 8px);
           max-height:85vh; display:flex; flex-direction:column;
-          border-radius:16px 16px 0 0; border-bottom:0;
+          border-radius:16px;
           box-shadow:0 -12px 40px rgba(0,0,0,.25);
         }
       }
