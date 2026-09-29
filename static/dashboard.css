@@ -42177,6 +42177,18 @@ a, button, [role="button"], [role="tab"], summary, label,
   font-size: 10px; font-weight: 800; color: #b3541e; border: 1px solid #b3541e55;
   border-radius: 6px; padding: 1px 5px; margin-left: 6px; white-space: nowrap;
 }
+.for-inj-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.for-inj-row {
+  display: flex; justify-content: space-between; align-items: center; gap: 8px 12px; flex-wrap: wrap;
+  border: 1px solid var(--border); border-radius: 10px; padding: 8px 12px; background: var(--card-soft);
+}
+.for-inj-name { font-weight: 700; }
+.for-inj-meta { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+.for-inj-action { font-size: 12px; font-weight: 800; flex-shrink: 0; }
+.for-card-inj { display: flex; flex-direction: column; gap: 6px; }
+.for-card-inj ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.for-card-inj li { font-size: 13px; }
+.for-opp-inj { font-size: 13px; margin-top: 10px; }
 .for-role { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 6px; }
 .for-role-starter { background: #1a7f4b18; color: #1a7f4b; }
 .for-role-depth { background: #64748b18; color: #64748b; }
