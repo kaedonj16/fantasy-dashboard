@@ -34,34 +34,65 @@ logger = logging.getLogger(__name__)
 
 # ── Inline SVG charts ─────────────────────────────────────────────────────────
 
-def _bars_svg(pairs, width=680, height=190, bar_color="#4f8ff7"):
-    """pairs: list of (label, value). Returns an inline SVG bar chart."""
+def _bars_svg(pairs, width=680, height=190, bar_color="#4f8ff7", max_bar_w=48):
+    """pairs: list of (label, value). Returns an inline SVG bar chart.
+
+    Bars are capped at max_bar_w px and centered in their slots, so a sparse
+    series (e.g. a single day of data) does not render as one giant bar.
+    Every nonzero value gets a label above its bar, the x axis labels every
+    point (rotated when the series is dense), and the gridlines carry y-axis
+    tick labels."""
     if not pairs:
         return '<p class="muted">No data yet.</p>'
     maxv = max(v for _, v in pairs) or 1
     n = len(pairs)
-    pad_l, pad_r, pad_t, pad_b = 10, 10, 14, 30
+    rotate = n > 15
+    pad_l, pad_r, pad_t, pad_b = 34, 10, 24, 58 if rotate else 30
     plot_w = width - pad_l - pad_r
     plot_h = height - pad_t - pad_b
-    bw = plot_w / n
+    slot = plot_w / n
+    bw = min(slot * 0.64, max_bar_w)
     parts = ['<svg viewBox="0 0 %d %d" class="chart" role="img">' % (width, height)]
-    step = max(1, n // 12)
+    for frac in (0.0, 0.5, 1.0):
+        gy = pad_t + plot_h * (1 - frac)
+        cls = "grid base" if frac == 0.0 else "grid"
+        parts.append(
+            '<line x1="%d" y1="%.1f" x2="%d" y2="%.1f" class="%s"/>'
+            % (pad_l, gy, width - pad_r, gy, cls)
+        )
+        parts.append(
+            '<text x="%d" y="%.1f" text-anchor="end" class="ytick">%d</text>'
+            % (pad_l - 5, gy + 3.5, round(maxv * frac))
+        )
+    step = 1 if rotate else max(1, n // 12)
     for i, (label, value) in enumerate(pairs):
         frac = (value / maxv) if maxv else 0
         bh = max(frac * plot_h, 2 if value else 0)
-        x = pad_l + i * bw + bw * 0.18
-        w = bw * 0.64
+        x = pad_l + i * slot + (slot - bw) / 2
         y = pad_t + plot_h - bh
         parts.append(
             '<rect x="%.1f" y="%.1f" width="%.1f" height="%.1f" rx="2" fill="%s">'
             '<title>%s: %s</title></rect>'
-            % (x, y, w, bh, bar_color, html.escape(str(label)), value)
+            % (x, y, bw, bh, bar_color, html.escape(str(label)), value)
         )
-        if i % step == 0 or i == n - 1:
+        if value:
             parts.append(
-                '<text x="%.1f" y="%d" text-anchor="middle" class="axis">%s</text>'
-                % (x + w / 2, height - 10, html.escape(str(label)))
+                '<text x="%.1f" y="%.1f" text-anchor="middle" class="vallab">%s</text>'
+                % (x + bw / 2, y - 5, value)
             )
+        if i % step == 0 or i == n - 1:
+            cx = x + bw / 2
+            if rotate:
+                parts.append(
+                    '<text x="%.1f" y="%d" text-anchor="end" class="axis" '
+                    'transform="rotate(-45 %.1f %d)">%s</text>'
+                    % (cx, height - 8, cx, height - 8, html.escape(str(label)))
+                )
+            else:
+                parts.append(
+                    '<text x="%.1f" y="%d" text-anchor="middle" class="axis">%s</text>'
+                    % (cx, height - 10, html.escape(str(label)))
+                )
     parts.append("</svg>")
     return "".join(parts)
 
@@ -252,9 +283,9 @@ def admin_analytics():
             status=500, mimetype="text/html",
         )
 
-    dau_pairs = [(r["date"][5:], r["users"]) for r in dau]
-    wau_pairs = [(r["week"][5:], r["users"]) for r in wau]
-    signup_pairs = [(r["date"][5:], r["signups"]) for r in signups]
+    dau_pairs = _a.fill_daily_gaps(dau, "date", "users", 30)
+    wau_pairs = _a.fill_weekly_gaps(wau, "week", "users", 12)
+    signup_pairs = _a.fill_daily_gaps(signups, "date", "signups", 30)
 
     empty_note = (
         "Event collection just started, so these charts fill in over the coming days. "
@@ -297,7 +328,11 @@ def admin_analytics():
   .muted { color: #7a8398; font-size: 12px; }
   .chart { width: 100%%; height: auto; display: block; }
   .chart rect { fill: #4f8ff7; }
+  .chart text.vallab { font-size: 11px; fill: #5b6478; font-weight: 600; }
   .chart text.axis { font-size: 10px; fill: #7a8398; }
+  .chart text.ytick { font-size: 10px; fill: #a0a8bb; }
+  .chart line.grid { stroke: #edf0f5; stroke-width: 1; }
+  .chart line.grid.base { stroke: #dfe3ea; }
   .tablewrap { overflow-x: auto; }
   table { border-collapse: collapse; width: 100%%; font-size: 13px; }
   th, td { border: 1px solid #e8ebf1; padding: 7px 10px; text-align: right; }

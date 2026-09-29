@@ -496,6 +496,22 @@ def add_provider_league_connection(
             (account_id, provider, str(league_id), int(season), name, team_id, connection_id),
         )
         conn.commit()
+    # Product analytics: mirror the league_linked event emitted by
+    # add_user_league so provider-credential links count too.
+    from dashboard_services import analytics as _analytics
+    try:
+        from flask import has_request_context, request
+
+        _link_path = request.path if has_request_context() else None
+    except Exception:
+        _link_path = None
+    _analytics.track_event(
+        _analytics.EVENT_LEAGUE_LINKED,
+        account_id=int(account_id),
+        session_id=_analytics.ensure_anon_session_id(),
+        path=_link_path,
+        props={"platform": provider, "league_id": str(league_id)},
+    )
     # Fleaflicker private login stores the owner id (metadata.flea_owner_id), not
     # the team/roster id. Persist it as a platform identity so saved leagues can
     # resolve "your team" on reconnect even when team_id was never picked.
