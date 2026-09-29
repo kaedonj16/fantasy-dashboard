@@ -68,6 +68,21 @@ def _html():
     return build_advanced_metrics_body(False, LEADERBOARD_METRICS)
 
 
+def _style(html):
+    return html.split("<style>")[1].split("</style>")[0]
+
+
+def test_mobile_sheet_clears_the_bottom_dock():
+    """The phone bottom sheet must sit above the fixed bottom dock
+    (var(--dock-safe-bottom): 56px + safe-area), never behind it."""
+    css = _style(_html())
+    m = re.search(r"@media\s*\(max-width:\s*760px\)\s*\{(.*?)\n      \}\n    </style>", css, re.S)
+    mobile = m.group(1) if m else css
+    assert "var(--dock-safe-bottom" in mobile, "sheet must anchor above the dock"
+    assert re.search(r"\.am-filter-sheet\s*\{[^}]*bottom:\s*calc\(var\(--dock-safe-bottom", mobile), \
+        "sheet bottom edge must clear the dock"
+
+
 def _body(html):
     return html.split("<style>")[0]
 
