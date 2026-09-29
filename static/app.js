@@ -20146,7 +20146,12 @@ function renderTeamDetails(data) {
         const _tip = [injRaw, player.injury_body_part].filter(Boolean).join(' · ');
         badges += `<span class="player-badge ${_icls}" title="${_tip.replace(/"/g, '&quot;')}"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> ${_code}</span>`;
         const plan = player.return_plan;
-        if (plan && plan.verdict) {
+        // A "Monitor" verdict is implied by a Q/D tag, so rendering both
+        // pills is redundant. Other verdicts still show: they give roster
+        // guidance the status pill does not.
+        const _planRedundant = plan && plan.verdict === 'Monitor'
+          && ['QUESTIONABLE', 'Q', 'DOUBTFUL', 'D'].includes(_u);
+        if (plan && plan.verdict && !_planRedundant) {
           const wk = plan.weeks_label || '';
           const tip = String(plan.reason || 'Approximate return guidance, not medical advice.')
             .replace(/"/g, '&quot;');
