@@ -187,6 +187,7 @@ PUSH_TYPE_BUCKETS = [
             {"key": "rival_trades", "label": "Rival trade alerts"},
             {"key": "value_drops", "label": "Value drop alerts"},
             {"key": "breakout_roster", "label": "Breakout player alerts"},
+            {"key": "breakout_weekly", "label": "New breakout board"},
             {"key": "playoff_odds", "label": "Playoff odds updates"},
         ],
     },
@@ -1472,6 +1473,81 @@ def notify_breakout_roster():
         logger.warning("[notify] breakout_roster failed: %s", exc)
 
 
+# ── Notification 6b: New weekly breakout board (broadcast) ────────────────────
+
+def _breakout_weekly_due(now=None):
+    """True on Tuesdays at/after 12pm Eastern.
+
+    The weekly breakout announcement goes out once a week, Tuesday around
+    noon, not whenever the morning scoring cron happens to finish.
+    """
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    now = now or datetime.now(ZoneInfo("America/New_York"))
+    return now.weekday() == 1 and now.hour >= 12
+
+
+def notify_breakout_weekly():
+    """Broadcast once when a new week of breakout candidates is available.
+
+    Unlike notify_breakout_roster (per-owner, per-player, once per season),
+    this is a simple weekly announcement: "Week N breakouts are live, check
+    the board." It goes out on Tuesdays around 12pm Eastern, at most once per
+    completed weekly snapshot (tracked in app_state as the last announced
+    as_of_week for the season). Returns the number of devices notified.
+    """
+    try:
+        if not _breakout_weekly_due():
+            return 0
+        from dashboard_services.db import get_conn
+        from dashboard_services.api import get_nfl_state
+
+        state = get_nfl_state() or {}
+        season = state.get("season")
+        if not season:
+            return 0
+
+        try:
+            from data_building.breakout_engine.weekly_store import list_completed_weeks
+            completed = list_completed_weeks(int(season))
+        except Exception:
+            logger.debug("[notify] breakout_weekly: weekly lookup failed", exc_info=True)
+            return 0
+        if not completed:
+            return 0
+        latest_week = max(int(r.get("as_of_week", 0) or 0) for r in completed)
+        if latest_week <= 0:
+            return 0
+
+        state_key = f"breakout_weekly_announced_{season}"
+        with get_conn() as conn:
+            raw = _app_state_get(conn, state_key) or ""
+        try:
+            announced = int(raw)
+        except (TypeError, ValueError):
+            announced = 0
+        if announced >= latest_week:
+            return 0
+
+        sent = _broadcast_all(
+            title="New breakouts are live",
+            body=f"Week {latest_week} breakout candidates just dropped. Check the board.",
+            url="/",
+            tag=f"breakout-weekly-{season}-{latest_week}",
+            notif_type="breakout_weekly",
+        )
+        logger.info("[notify] breakout_weekly week %d sent %d", latest_week, sent)
+
+        if sent:
+            with get_conn() as conn:
+                _app_state_set(conn, state_key, str(latest_week))
+                conn.commit()
+        return sent or 0
+    except Exception as exc:
+        logger.warning("[notify] breakout_weekly failed: %s", exc)
+    return 0
+
+
 # ── Notification 7: Weekly top dynasty movers (broadcast) ─────────────────────
 
 def notify_top_movers():
@@ -2255,6 +2331,10 @@ def run_hourly():
         "close_game": notify_close_game() or 0,
         "transaction_drops": notify_transaction_drops() or 0,
         "injury_alert": notify_injury_alert() or 0,
+        # Tuesday ~12pm ET: "new breakout board is live" announcement. The
+        # function itself gates on the weekday/hour and once-per-week dedup,
+        # so the hourly call is a cheap no-op the rest of the time.
+        "breakout_weekly": notify_breakout_weekly() or 0,
     }
     # One combined push per digest opt-in device for everything buffered above.
     counts["digest"] = _flush_digest() or 0
