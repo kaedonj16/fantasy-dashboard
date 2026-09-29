@@ -1076,6 +1076,7 @@ function wvRenderBigGames(items) {{
     // Evidence-based copy generated from the actual factors (no generic filler).
     const facts = (d.factors || []).slice(0, 2).join(' · ');
     const cautions = (d.cautions || []).map(c => WV_BG_CAUTION[c]).filter(Boolean);
+    if (d.injury_note) {{ cautions.push(String(d.injury_note)); }}
     const sub = [d.team, d.position].filter(Boolean).join(' · ');
     const wkPts = d.actual_points != null ? d.actual_points
       : (d.week_points != null ? d.week_points : null);
@@ -1096,7 +1097,7 @@ function wvRenderBigGames(items) {{
           onclick="wvToggleSsRow(this)">
         ${{badge}}
         <span class="wv-cx-main">
-          <span class="wv-cx-name" data-wl-star-pid="${{pid}}">${{d.name || ('Player ' + pid)}}</span>
+          <span class="wv-cx-name" data-wl-star-pid="${{pid}}">${{d.name || ('Player ' + pid)}}${{wvInjBadge(d.injury_status)}}</span>
           ${{sub ? `<span class="wv-cx-sub">${{sub}}</span>` : ''}}
           ${{facts ? `<span class="wv-cx-why"><span class="wv-cx-k">WHAT CHANGED</span>${{facts}}</span>` : ''}}
           ${{live}}
@@ -1194,6 +1195,10 @@ function wvRenderWaivers() {{
       const statLbl = p.usage_stat === 'snap_pct' ? 'snap%' : (p.usage_stat === 'touches' ? 'touches' : 'targets');
       usageChip = `<span class="wv-cx-chip">&#9650; +${{p.usage_delta}} ${{statLbl}}</span>`;
     }}
+    // Injury flag: a hurt player must never read as a clean add. Compact pill
+    // by the name; the full note (designation + return timeline) rides in the
+    // tap-to-expand evidence below.
+    const injBadge = wvInjBadge(p.injury_status);
     // Big-game flag from last week rides along as a chip, not a row.
     let bgChip = '';
     if (p.big_game && p.big_game.category) {{
@@ -1210,6 +1215,10 @@ function wvRenderWaivers() {{
 
     // Evidence behind the tap: drop, schedule, usage, claim.
     const ev = [];
+    if (p.injury_note) {{
+      const injTxt = String(p.injury_note).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      ev.push(`<div class="wv-cx-evl caution"><span class="k">INJURY</span>${{injTxt}}</div>`);
+    }}
     if (p.drop && p.drop.name) {{
       ev.push(`<div class="wv-cx-evl"><span class="k">DROP</span>${{p.drop.name}}${{p.drop.position ? ' (' + p.drop.position + ')' : ''}} · Weakest spare below this target's value</div>`);
     }}
@@ -1242,7 +1251,7 @@ function wvRenderWaivers() {{
           onclick="wvToggleSsRow(this)">
         ${{badge}}
         <span class="wv-cx-main">
-          <span class="wv-cx-name" data-wl-star-pid="${{p.player_id}}">${{p.name}}</span>
+          <span class="wv-cx-name" data-wl-star-pid="${{p.player_id}}">${{p.name}}${{injBadge}}</span>
           ${{sub ? `<span class="wv-cx-sub">${{sub}}${{usageChip}}</span>` : ''}}
           ${{gainTxt ? `<span class="wv-cx-why"><span class="wv-cx-k">${{gainLbl}}</span>${{gainTxt}}</span>` : ''}}
           ${{bgChip}}
@@ -1291,7 +1300,7 @@ function wvRenderTrending(items) {{
       <button type="button" class="wv-trend-chip" onclick="openPlayerModal('${{p.player_id}}', '${{nm}}')"
               title="${{tipName}} · ${{tipAdds}}">
         <span class="wv-trend-adds"><i class="fa-solid fa-fire" aria-hidden="true"></i> ${{wvFmtAdds(p.adds)}}</span>
-        <span class="wv-trend-name">${{p.name || ''}}</span>
+        <span class="wv-trend-name">${{p.name || ''}}${{wvInjBadge(p.injury_status)}}</span>
         <span class="wv-trend-sub">${{sub}}</span>
       </button>`;
   }}).join('');

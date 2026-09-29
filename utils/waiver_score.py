@@ -70,7 +70,61 @@ INJURY_DURATION_WEEKS = {
 
 # Statuses that mean a player is NOT expected on the field, so they no longer
 # block the depth chart for the player behind them.
-_OUT_STATUSES = {"IR", "PUP", "NFI", "SUSP", "OUT", "DOUBTFUL"}
+_OUT_STATUSES = {"IR", "PUP", "NFI", "SUSP", "SUS", "OUT", "DOUBTFUL", "NA"}
+
+# Designations that mean "do not present this player as a clean pickup".
+# Sleeper emits title-case ("Out", "Questionable") and "SUS" for suspensions;
+# compare upper-cased. QUESTIONABLE is deliberately NOT here: a game-time call
+# is still addable, just flagged.
+SERIOUS_INJURY_STATUSES = {"IR", "PUP", "NFI", "SUSP", "SUS", "OUT", "DOUBTFUL", "NA"}
+
+
+def is_seriously_hurt(status) -> bool:
+    """True when a designation means the player must never be a clean add."""
+    return str(status or "").strip().upper() in SERIOUS_INJURY_STATUSES
+
+
+def waiver_injury_note(status, body_part=None, weeks_out=None) -> str | None:
+    """Short human-readable injury flag for a waiver candidate, or None.
+
+    QUESTIONABLE renders as "Game-time call" (the Start/Sit convention);
+    anything else renders designation-first with body part / return timeline
+    when known. Never invents: missing inputs are simply omitted.
+    """
+    s = str(status or "").strip()
+    if not s:
+        return None
+    su = s.upper()
+    if su == "QUESTIONABLE":
+        note = "Game-time call"
+        if body_part:
+            note += f" ({body_part})"
+        return note
+    label = su if len(su) <= 3 else s
+    parts = [label]
+    if body_part:
+        parts.append(str(body_part))
+    try:
+        w = float(weeks_out) if weeks_out is not None else None
+    except (TypeError, ValueError):
+        w = None
+    if w is not None and w > 0:
+        parts.append(f"~{int(round(w))} wks")
+    return " \u00b7 ".join(parts)
+
+
+def drop_seriously_hurt(candidates, *, dynasty: bool = False) -> list:
+    """Remove seriously-hurt players from a ranked waiver candidate list.
+
+    Redraft: a player who is OUT / DOUBTFUL / IR / PUP / NFI / NA / SUS is
+    never a pickup recommendation, so drop them. Dynasty keeps them (an IR
+    stash is a real move there) -- callers must render the injury flag instead.
+    Reads each candidate's ``self_status`` (the Sleeper designation).
+    """
+    if dynasty:
+        return list(candidates or [])
+    return [c for c in (candidates or [])
+            if not is_seriously_hurt((c or {}).get("self_status"))]
 
 
 @dataclass(frozen=True)
@@ -568,7 +622,7 @@ def self_injury_multiplier(status) -> float:
     is not a pickup this week, so his whole score is zeroed; softer statuses
     scale down."""
     s = str(status or "").upper()
-    if s in {"IR", "PUP", "NFI", "SUSP", "OUT"}:
+    if s in {"IR", "PUP", "NFI", "SUSP", "SUS", "NA", "OUT"}:
         return 0.0
     if s == "DOUBTFUL":
         return 0.35
@@ -679,11 +733,16 @@ def pick_waiver_push_candidate(
     rostered: set,
     *,
     min_value: float = 500.0,
+    players: dict | None = None,
 ) -> dict | None:
     """Top free-agent for the hourly waiver push (R05.4).
 
     Prefers higher dynasty value among skill-position players who still have an
-    NFL team. Returns ``{name, position, value, player_id}`` or None.
+    NFL team. Players with a serious injury designation are never picked: a
+    push telling a manager to add a player who is OUT or on IR is worse than
+    no push. ``players`` is the Sleeper players feed ({pid: meta}); when it is
+    unavailable the injury screen is skipped rather than failing the push.
+    Returns ``{name, position, value, player_id}`` or None.
     """
     available = []
     rostered_ids = {str(p) for p in (rostered or set())}
@@ -699,6 +758,10 @@ def pick_waiver_push_candidate(
         team = str(p.get("team") or "").strip().upper()
         if team in ("", "FA", "FREE AGENT", "NONE"):
             continue
+        if players:
+            meta = players.get(pid) or players.get(str(pid)) or {}
+            if is_seriously_hurt(meta.get("injury_status") or meta.get("status")):
+                continue
         try:
             val = float(p.get("value") or 0)
         except (TypeError, ValueError):
@@ -1134,7 +1197,7 @@ def waiver_signal(c: dict, waiver_breakout: dict,
         _up_thr = max(_up_thr, float(up_thr))
 
     # A candidate who is himself out isn't a "target" — label the reason.
-    if str(c.get("self_status") or "").upper() in {"IR", "PUP", "NFI", "SUSP", "OUT"}:
+    if is_seriously_hurt(c.get("self_status")):
         return ("signal-aging", "Injured")
 
     inj_sev = max((VACANCY_SEVERITY.get(str(s).upper(), 0.0)
