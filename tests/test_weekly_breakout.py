@@ -504,9 +504,10 @@ def test_lifecycle_transitions_across_snapshots():
 
 def test_breakout_page_does_not_send_offseason_floor_for_weekly_mode():
     source = open("app.py", encoding="utf-8").read()
-    request_line = next(line for line in source.splitlines()
-                        if "fetch('/api/breakout/candidates?season=" in line)
-    assert "min_score=50" not in request_line
+    request_lines = [line for line in source.splitlines()
+                     if "/api/breakout/candidates?season=" in line]
+    assert request_lines, "breakout page candidates request disappeared"
+    assert all("min_score=50" not in line for line in request_lines)
 
 
 def test_meaningful_rookie_early_watch_is_separate_from_default_board(monkeypatch):
