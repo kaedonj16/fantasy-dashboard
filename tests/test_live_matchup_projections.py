@@ -145,10 +145,10 @@ def test_win_prob_uses_live_remaining_projection():
 
 def test_win_prob_floors_team_variance_to_realistic_cv():
     """A full pregame lineup's spread must reflect team-level dispersion
-    (CV ~0.24), not the tight independent per-player sum that ran the win bar
-    to 1%/99%. Summing nine independent starter variances dilutes the team
-    total by ~1/sqrt(9); the floor restores a realistic coefficient of
-    variation."""
+    (CV ~0.20, fit 2026-09-29 from 2023-2025 cached game logs), not the tight
+    independent per-player sum that ran the win bar to 1%/99%. Summing nine
+    independent starter variances dilutes the team total by ~1/sqrt(9); the
+    floor restores a realistic coefficient of variation."""
     from math import erf, sqrt
 
     m = _matchups()
@@ -163,7 +163,7 @@ def test_win_prob_floors_team_variance_to_realistic_cv():
 
     # Analytic value with the CV floor active on both sides (it dominates the
     # independent sum for a full lineup).
-    cv = 0.24
+    cv = 0.20
     var = (cv * 165.0) ** 2 + (cv * 126.0) ** 2
     z = (165.0 - 126.0) / (sqrt(var) * sqrt(2))
     expected = 0.5 * (1 + erf(z))
