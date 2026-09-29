@@ -17506,8 +17506,11 @@ def _load_oline_ratings(season: int) -> dict:
 
     Shape: {team: {"composite","pass_block","run_block","pressure_rate",
     "sack_rate","line_yards","stuffed_rate",...}} on a 0-100 scale (100 = best).
-    Produced by data_building/oline_ratings.py via the daily cron. Returns {}
-    when the cache file is absent so callers can degrade gracefully. Cached
+    Built weekly by data_building/oline_ratings.py (cron_daily.py, Wednesdays
+    in season) and persisted to the oline_ratings table, since the cron's
+    ephemeral container cannot leave the cache/ JSON file behind. The flat
+    file remains as a fallback for environments without a database. Returns {}
+    when neither source has data so callers can degrade gracefully. Cached
     in-process with the same TTL as the matchup ratings."""
     key = str(season)
     now = time.time()
@@ -17516,12 +17519,23 @@ def _load_oline_ratings(season: int) -> dict:
         return _OLINE_RATINGS_CACHE[key]
     data: dict = {}
     try:
-        path = os.path.join("cache", f"oline_ratings_s{season}.json")
-        if os.path.exists(path):
-            blob = json.load(open(path))
-            data = blob.get("ratings") or {}
+        from dashboard_services.oline_store import (
+            load_oline_ratings as _db_load_oline,
+        )
+
+        row = _db_load_oline(season)
+        if row:
+            data = row.get("ratings") or {}
     except Exception:
         data = {}
+    if not data:
+        try:
+            path = os.path.join("cache", f"oline_ratings_s{season}.json")
+            if os.path.exists(path):
+                blob = json.load(open(path))
+                data = blob.get("ratings") or {}
+        except Exception:
+            data = {}
     _OLINE_RATINGS_CACHE[key] = data
     _OLINE_RATINGS_TS[key] = now
     return data
@@ -17545,21 +17559,31 @@ def _oline_rank_table(season: int, metric: str = "composite"):
 def _oline_ratings_with_fallback(season: int) -> tuple:
     """``(used_season, ratings)`` for O-line ratings with prior-season fallback.
 
-    Use the requested season's ratings, else fall back to the newest built
-    cache: O-line quality carries across seasons (year-over-year rho ~0.43),
-    so last season's rating beats showing nothing before the in-season build.
+    Use the requested season's ratings, else fall back to the newest stored
+    season (database first, then the cache/ files): O-line quality carries
+    across seasons (year-over-year rho ~0.43), so last season's rating beats
+    showing nothing before the in-season build.
     """
     used_season = int(season)
     ratings = _load_oline_ratings(used_season)
     if not ratings:
         newest = None
         try:
-            for fn in os.listdir("cache"):
-                if fn.startswith("oline_ratings_s") and fn.endswith(".json"):
-                    yr = int(fn[len("oline_ratings_s"):-len(".json")])
-                    newest = yr if newest is None else max(newest, yr)
+            from dashboard_services.oline_store import (
+                newest_oline_season as _db_newest_oline,
+            )
+
+            newest = _db_newest_oline()
         except Exception:
             newest = None
+        if newest is None:
+            try:
+                for fn in os.listdir("cache"):
+                    if fn.startswith("oline_ratings_s") and fn.endswith(".json"):
+                        yr = int(fn[len("oline_ratings_s"):-len(".json")])
+                        newest = yr if newest is None else max(newest, yr)
+            except Exception:
+                newest = None
         if newest is not None and newest != used_season:
             used_season = newest
             ratings = _load_oline_ratings(newest)

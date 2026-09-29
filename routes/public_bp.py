@@ -864,9 +864,9 @@ def _oline_index_color(v):
 @public_bp.route("/oline-rankings/<int:season>")
 def oline_rankings_page(season: Optional[int] = None):
     """Public offensive-line unit rankings, derived from open nflverse
-    play-by-play (no licensed data). Reads the cron-built cache and renders a
-    sortable-by-link table; degrades to an explanatory empty state before the
-    first build."""
+    play-by-play (no licensed data). Reads the cron-built ratings (database
+    first, cache/ file fallback) and renders a sortable-by-link table;
+    degrades to an explanatory empty state before the first build."""
     import json as _json
     from datetime import datetime as _dt
     from app import _oline_rank_table as _table, _load_oline_ratings as _load
@@ -875,26 +875,47 @@ def oline_rankings_page(season: Optional[int] = None):
     if metric not in ("composite", "pass_block", "run_block"):
         metric = "composite"
 
-    # Pick the season: explicit path arg, else the newest cache file, else now.
+    # Pick the season: explicit path arg, else the newest stored season
+    # (database first, then the cache/ files), else now.
     if season is None:
         newest = None
         try:
-            for fn in os.listdir("cache"):
-                if fn.startswith("oline_ratings_s") and fn.endswith(".json"):
-                    yr = int(fn[len("oline_ratings_s"):-len(".json")])
-                    newest = yr if newest is None else max(newest, yr)
+            from dashboard_services.oline_store import (
+                newest_oline_season as _db_newest_oline,
+            )
+
+            newest = _db_newest_oline()
         except Exception:
             newest = None
+        if newest is None:
+            try:
+                for fn in os.listdir("cache"):
+                    if fn.startswith("oline_ratings_s") and fn.endswith(".json"):
+                        yr = int(fn[len("oline_ratings_s"):-len(".json")])
+                        newest = yr if newest is None else max(newest, yr)
+            except Exception:
+                newest = None
         season = newest or _dt.now().year
 
     rows = _table(season, metric)
     generated = ""
     try:
-        path = os.path.join("cache", f"oline_ratings_s{season}.json")
-        if os.path.exists(path):
-            generated = (_json.load(open(path)).get("generated_at") or "")[:10]
+        from dashboard_services.oline_store import (
+            load_oline_ratings as _db_load_oline,
+        )
+
+        _row = _db_load_oline(season)
+        if _row and _row.get("generated_at"):
+            generated = _row["generated_at"][:10]
     except Exception:
-        generated = ""
+        _row = None
+    if not generated:
+        try:
+            path = os.path.join("cache", f"oline_ratings_s{season}.json")
+            if os.path.exists(path):
+                generated = (_json.load(open(path)).get("generated_at") or "")[:10]
+        except Exception:
+            generated = ""
 
     labels = {"composite": "Overall", "pass_block": "Pass Block", "run_block": "Run Block"}
     tabs = "".join(

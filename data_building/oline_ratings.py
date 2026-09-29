@@ -1106,6 +1106,20 @@ def build_oline_ratings(
         with open(tmp, "w") as f:
             json.dump(out, f)
         os.replace(tmp, out_path(season))
+        # The weekly cron runs in an ephemeral container, so the file above
+        # never survives there. Persist to the database too: the web app
+        # reads from dashboard_services.oline_store first. Best-effort here
+        # (backtests run without a DB); the cron asserts db_saved instead.
+        db_saved = False
+        try:
+            from dashboard_services.oline_store import (
+                save_oline_ratings as _db_save_oline,
+            )
+
+            db_saved = bool(_db_save_oline(season, out))
+        except Exception as exc:  # pragma: no cover - defensive
+            print(f"[oline_ratings] DB persist skipped: {exc}")
+        out["db_saved"] = db_saved
     return out
 
 
