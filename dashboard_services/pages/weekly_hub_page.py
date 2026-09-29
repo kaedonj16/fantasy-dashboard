@@ -12,10 +12,10 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def redzone_moments_hub_html(platform: str, league_id: str, season, week=None) -> str:
-    """RedZone Moments launcher row for the weekly hub (matchup page).
+def scorezone_moments_hub_html(platform: str, league_id: str, season, week=None) -> str:
+    """ScoreZone Moments launcher row for the weekly hub (matchup page).
 
-    Rendered hidden; the client fetches /api/redzone/moments and reveals it
+    Rendered hidden; the client fetches /api/scorezone/moments and reveals it
     only when the viewer's matchup has moments. Uses the same rzm-row markup
     and modal as the portfolio cards.
     """
@@ -27,7 +27,7 @@ def redzone_moments_hub_html(platform: str, league_id: str, season, week=None) -
         f' data-season="{_html.escape(str(season), quote=True)}"{week_attr} hidden>'
         '<button type="button" class="rzm-row-btn" data-rzm-hub-open>'
         '<span class="rzm-row-accent"></span>'
-        '<span class="rzm-row-title">RedZone Moments</span>'
+        '<span class="rzm-row-title">ScoreZone Moments</span>'
         '<span class="rzm-row-count" data-rzm-hub-count></span>'
         '<span class="rzm-row-chevron" aria-hidden="true">›</span>'
         "</button></div>"
@@ -220,12 +220,12 @@ def build_weekly_hub_body(ctx: dict) -> str:
     )
     from utils.standings_divisions import division_records_for_ctx
     _hub_div_records = division_records_for_ctx(ctx)
-    # RedZone Moments launcher: rendered under the win-probability bar of the
+    # ScoreZone Moments launcher: rendered under the win-probability bar of the
     # viewer's own matchup slide (not at the top of the tab). The client
-    # fetches /api/redzone/moments and reveals it when moments exist.
+    # fetches /api/scorezone/moments and reveals it when moments exist.
     _rzm_hub_html = ""
     if _show_matchup_preview and not offseason_mode:
-        _rzm_hub_html = redzone_moments_hub_html(platform, league_id, season, default_week)
+        _rzm_hub_html = scorezone_moments_hub_html(platform, league_id, season, default_week)
     def _rzm_html_for_matchup(m):
         if not _rzm_hub_html or not _hub_vid:
             return ""
@@ -276,7 +276,7 @@ def build_weekly_hub_body(ctx: dict) -> str:
         options.append(f"<option value='{w}'{sel}>Week {w}</option>")
     week_select_html = "".join(options)
 
-    # In-season entry point to the live Redzone, sitting by the week selector.
+    # In-season entry point to the live ScoreZone, sitting by the week selector.
     # The button only glows red when games are actually live or imminent;
     # otherwise it's a calm neutral link so it doesn't look live 24/7.
     _rz_btn_html = ""
@@ -285,9 +285,9 @@ def build_weekly_hub_body(ctx: dict) -> str:
         _rz_cls = "weekly-rz-btn weekly-rz-btn-live" if _rz_is_live else "weekly-rz-btn"
         _rz_dot = '<span class="weekly-rz-btn-dot" aria-hidden="true"></span>' if _rz_is_live else ""
         _rz_btn_html = (
-            f'<a class="{_rz_cls}" href="./redzone" '
+            f'<a class="{_rz_cls}" href="./scorezone" '
             'title="Live scoring and red-zone alerts">'
-            f'{_rz_dot}Redzone</a>'
+            f'{_rz_dot}ScoreZone</a>'
         )
 
     # Weekly Wrapped launcher: only for weeks with completed games (the helper
@@ -346,10 +346,10 @@ def build_weekly_hub_body(ctx: dict) -> str:
     platform_js = json.dumps(platform)
     season_js = json.dumps(season)
     league_js = json.dumps(league_id)
-    # Live/Redzone elements (LIVE badge, Redzone CTA, auto-refresh) only apply
+    # Live/ScoreZone elements (LIVE badge, ScoreZone CTA, auto-refresh) only apply
     # when an actual game is scheduled for today. Check the current week's
     # schedule file for a game dated today, gated to the active season (mirrors
-    # the Redzone page/nav, which is hidden in the offseason). Past seasons
+    # the ScoreZone page/nav, which is hidden in the offseason). Past seasons
     # never match today's date, so they resolve to no live UI automatically.
     games_today = (not offseason_mode) and _games_scheduled_today(season, current_week)
     games_today_js = json.dumps(bool(games_today))

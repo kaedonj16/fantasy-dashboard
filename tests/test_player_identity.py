@@ -1,5 +1,5 @@
 from utils.player_identity import PlayerIdentityResolver, normalize_player_name
-from utils.redzone_pbp import extract_pbp_plays, pbp_boxscore_mismatches
+from utils.scorezone_pbp import extract_pbp_plays, pbp_boxscore_mismatches
 
 
 PLAYERS = {

@@ -7,7 +7,7 @@ Owner-targeted notifications (``_broadcast_owner``) match
 platform user id. When subscribe stored the Google ``account_id`` instead (a
 different id namespace), that WHERE clause matched zero rows and every
 owner-targeted push — value drops, playoff odds, breakouts, matchup preview,
-standings, close game, injury, RedZone, per-owner lineup lock — was silently
+standings, close game, injury, ScoreZone, per-owner lineup lock — was silently
 sent to nobody while the league-wide/broadcast notifications still arrived. That
 is the "not getting most of the notifications" bug this pins shut.
 """

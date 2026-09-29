@@ -1197,8 +1197,8 @@ function openPlayerModal(playerId, playerName, opts) {
       // ── Show tab bar and configure it ─────────────────────────────────────
       const pmTabBar = document.getElementById('pmTabBar');
 
-      // Inject Live/Redzone tab. Shown whenever the season is active (same gate
-      // as the Redzone nav item), and always on the Redzone page/Demo itself
+      // Inject Live/ScoreZone tab. Shown whenever the season is active (same gate
+      // as the ScoreZone nav item), and always on the ScoreZone page/Demo itself
       // (#rz-root present). Hidden in the offseason. __seasonActive !== false
       // treats an unknown flag as active, preserving prior behavior.
       const _seasonActive = (window.__seasonActive !== false) || !!document.getElementById('rz-root');
@@ -1209,7 +1209,7 @@ function openPlayerModal(playerId, playerName, opts) {
         _liveBtn.className = 'pm-tab pm-tab-live';
         _liveBtn.dataset.tab = 'live';
         _liveBtn.onclick = function(e) { pmSwitchTab('live', e); };
-        _liveBtn.innerHTML = '<span class="pm-live-dot"></span>Redzone';
+        _liveBtn.innerHTML = '<span class="pm-live-dot"></span>ScoreZone';
         if (pmTabBar) pmTabBar.appendChild(_liveBtn);
       }
       pmTabBar.style.display = '';
@@ -2138,7 +2138,7 @@ function pmSwitchTab(tab, clickEvent) {
       });
   }
 
-  // ── Live tab (Redzone context) ───────────────────────────────────────────
+  // ── Live tab (ScoreZone context) ───────────────────────────────────────────
   if (tab === 'live' && panel && window.__rzGetPlayerLive) {
     panel.innerHTML = window.__rzGetPlayerLive(playerId);
     if (window._rzSyncTabLive) window._rzSyncTabLive(panel);

@@ -115,8 +115,8 @@ def test_more_sheet_lists_core_pages(offline_client):
     assert "brSheetAcctDot" in js
 
 
-def test_mobile_redzone_glow_styles_present():
-    """The mobile port of the desktop Redzone nav glow must exist in the CSS.
+def test_mobile_scorezone_glow_styles_present():
+    """The mobile port of the desktop ScoreZone nav glow must exist in the CSS.
 
     The server only emits .rz-mnav-live / .br-more-live / .rz-mnav-dot while a
     game is live or imminent (gated by app._games_live_or_imminent), so this

@@ -992,9 +992,9 @@ function loadBox(key){{
     wirePnameModal(host);
   }},function(){{host.innerHTML='<div class="nt-fine">Box score unavailable.</div>';host.__done=false;}});
 }}
-// ── Mobile box-score sheet (Redzone-style bottom sheet) ──────────────
+// ── Mobile box-score sheet (ScoreZone-style bottom sheet) ──────────────
 // On phones the inline two-column box score becomes a bottom sheet showing
-// one team at a time with a toggle, mirroring the Redzone box score sheet.
+// one team at a time with a toggle, mirroring the ScoreZone box score sheet.
 var _ntSheet=null,_ntSheetEls=null;
 function _ntSheetStatus(bx){{
   if(!bx||bx.started===false)return "Not started";

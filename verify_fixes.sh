@@ -6,9 +6,9 @@ echo "REGRESSION FIX VERIFICATION"
 echo "=========================================="
 echo ""
 
-# Test 1: Redzone receiver attribution
-echo "Test 1: Redzone receiver text fallback..."
-python -m pytest tests/test_redzone_pbp_correctness.py::test_receiver_text_fallback_when_pid_empty -xvs
+# Test 1: ScoreZone receiver attribution
+echo "Test 1: ScoreZone receiver text fallback..."
+python -m pytest tests/test_scorezone_pbp_correctness.py::test_receiver_text_fallback_when_pid_empty -xvs
 if [ $? -eq 0 ]; then
     echo "✅ Receiver text fallback test PASSED"
 else
@@ -17,13 +17,13 @@ else
 fi
 echo ""
 
-# Test 2: Existing Redzone tests
-echo "Test 2: All Redzone correctness tests..."
-python -m pytest tests/test_redzone_pbp_correctness.py -x
+# Test 2: Existing ScoreZone tests
+echo "Test 2: All ScoreZone correctness tests..."
+python -m pytest tests/test_scorezone_pbp_correctness.py -x
 if [ $? -eq 0 ]; then
-    echo "✅ All Redzone correctness tests PASSED"
+    echo "✅ All ScoreZone correctness tests PASSED"
 else
-    echo "❌ Some Redzone tests FAILED"
+    echo "❌ Some ScoreZone tests FAILED"
     exit 1
 fi
 echo ""
@@ -50,7 +50,7 @@ echo ""
 
 # Test 5: Check for receiver tracking variables
 echo "Test 5: Verify receiver tracking logic..."
-if grep -q "has_any_receiver_contrib" utils/redzone_pbp.py; then
+if grep -q "has_any_receiver_contrib" utils/scorezone_pbp.py; then
     echo "✅ Receiver tracking variables found"
 else
     echo "❌ Receiver tracking variables missing"
@@ -64,6 +64,6 @@ echo "=========================================="
 echo ""
 echo "Manual verification still required:"
 echo "1. Test site-wide interactions (player clicks, search, keyboard)"
-echo "2. Test Redzone live feed with NE/SEA game"
+echo "2. Test ScoreZone live feed with NE/SEA game"
 echo "3. Test paywall open/close/replace cycles"
 echo ""

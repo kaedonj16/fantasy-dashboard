@@ -309,8 +309,8 @@ def test_reprompt_caps_and_dismissal():
     assert "push-reprompt-dismissed" in js
     assert "Don't show again" in js
     assert "/api/ui-prefs" in js
-    # High-value moments only: RedZone + weekly hub on game days.
-    assert "'redzone'" in js or '"redzone"' in js
+    # High-value moments only: ScoreZone + weekly hub on game days.
+    assert "'scorezone'" in js or '"scorezone"' in js
 
 
 def test_portfolio_has_notification_settings_entry():

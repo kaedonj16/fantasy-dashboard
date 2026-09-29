@@ -228,16 +228,16 @@ services:
         sync: false
 
   - type: cron
-    name: redzone-td-poller
+    name: scorezone-td-poller
     runtime: python
-    # Server-side RedZone TD poll: fires push alerts even when nobody has the
-    # RedZone page open. Hits the web service so VAPID keys stay on the app.
+    # Server-side ScoreZone TD poll: fires push alerts even when nobody has the
+    # ScoreZone page open. Hits the web service so VAPID keys stay on the app.
     # No pip install — trigger_notifications.py is stdlib urllib only. The
     # endpoint fast-exits when no NFL game is live, so idle runs cost ~1s.
     schedule: "* * * * *"
     plan: starter
-    buildCommand: python -c "print('redzone-td-poller - no Python deps')"
-    startCommand: python scripts/trigger_notifications.py redzone
+    buildCommand: python -c "print('scorezone-td-poller - no Python deps')"
+    startCommand: python scripts/trigger_notifications.py scorezone
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.9
@@ -319,9 +319,9 @@ services:
         value: production
 
   - type: cron
-    name: redzone-store-poll
+    name: scorezone-store-poll
     runtime: python
-    # Owns RedZone play-store polling (moved out of the gunicorn master, where
+    # Owns ScoreZone play-store polling (moved out of the gunicorn master, where
     # --preload deploys silently orphaned the in-app thread and froze game
     # data). One poll_once() per run; the Postgres advisory lock skips the run
     # cleanly if a previous poll is still going. No APP_URL/CRON_SECRET: this
@@ -329,7 +329,7 @@ services:
     schedule: "* * * * *"
     plan: starter
     buildCommand: pip install --no-cache-dir -r requirements.txt
-    startCommand: python scripts/redzone_poll.py
+    startCommand: python scripts/scorezone_poll.py
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.9

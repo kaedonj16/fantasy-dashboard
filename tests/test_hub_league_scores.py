@@ -23,7 +23,7 @@ def test_hub_renders_league_scores_toggle():
 
     # Minimal ctx to get the matchups panel rendered. We only care that the
     # toggle markup is present with data attributes.
-    html = hub.redzone_moments_hub_html("sleeper", "123", 2026)
+    html = hub.scorezone_moments_hub_html("sleeper", "123", 2026)
     assert 'data-rzm-hub' in html  # sanity: helper works
 
     # The toggle is built inline in build_weekly_hub_body; verify the static

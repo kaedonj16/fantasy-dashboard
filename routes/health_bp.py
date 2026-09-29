@@ -48,7 +48,7 @@ def healthz_version():
         "public_js": _app._PUBLIC_JS_V,
         "rankings_js": _app._RANKINGS_JS_V,
         "teams_js": _app._TEAMS_JS_V,
-        "redzone_js": _app._REDZONE_JS_V,
+        "scorezone_js": _app._SCOREZONE_JS_V,
         "css": _app._CSS_V,
         "git_sha": os.environ.get("RENDER_GIT_COMMIT") or os.environ.get("GIT_SHA") or "",
         "started_at": _app._PROCESS_STARTED_AT,

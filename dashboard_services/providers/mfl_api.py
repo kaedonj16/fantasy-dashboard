@@ -538,7 +538,7 @@ class MFLProvider(ProviderAdapter):
         # weeklyResults carries each franchise's per-player lines (id, score, and a
         # starter/nonstarter status). Map those MFL ids to canonical (Sleeper) ids
         # via the same crosswalk the rosters use, so matchup-driven features
-        # (weekly hub, optimal lineup, live Redzone) have real player lists.
+        # (weekly hub, optimal lineup, live ScoreZone) have real player lists.
         xwalk = self._canonical_map(league_id, season)
         out = []
         for mid, matchup in enumerate(matchups, 1):

@@ -43,7 +43,7 @@ class SleeperProvider(ProviderAdapter):
         # settings here lets the generic sync_league_globals path populate
         # Sleeper scoring like every other provider, instead of silently
         # relying on some *other* call having run get_league first this
-        # request. Redzone only calls sync_league_globals, so without this the
+        # request. ScoreZone only calls sync_league_globals, so without this the
         # feed scored Sleeper leagues with default settings -- every rate
         # happens to match common scoring except rec, which defaults to 0,
         # dropping the PPR reception point on every catch.

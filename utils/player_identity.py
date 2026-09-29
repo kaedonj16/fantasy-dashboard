@@ -2,7 +2,7 @@
 
 The site canonical player key is the key in ``players_index`` (normally a
 Sleeper id).  This resolver is deliberately data-injected: provider adapters
-remain authoritative for their own IDs and RedZone supplies the already-loaded
+remain authoritative for their own IDs and ScoreZone supplies the already-loaded
 player index.  Missing or conflicting evidence returns unresolved/ambiguous;
 it never guesses a fantasy actor.
 """

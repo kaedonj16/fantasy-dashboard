@@ -857,7 +857,7 @@ def get_teams(season: int, league_id: str) -> List[Dict[str, Any]]:
     if not swid:
         _, env_swid = _espn_creds()
         swid = (env_swid or "").strip()
-    from utils.redzone_user import owner_id_variants
+    from utils.scorezone_user import owner_id_variants
     swid_ids = owner_id_variants(swid)
     out: List[Dict[str, Any]] = []
     for t in lg.teams or []:

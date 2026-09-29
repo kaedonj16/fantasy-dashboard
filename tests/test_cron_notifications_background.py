@@ -110,7 +110,7 @@ def test_cron_notifications_skips_when_previous_run_in_progress(
     assert push_mod._cron_notifications_lock.acquire(blocking=False)
     try:
         resp = _authed_post(
-            client, monkeypatch, {"secret": "s3cret", "type": "redzone"}
+            client, monkeypatch, {"secret": "s3cret", "type": "scorezone"}
         )
     finally:
         push_mod._cron_notifications_lock.release()
@@ -146,9 +146,9 @@ def test_worker_releases_lock_and_swallows_exceptions(push_mod, monkeypatch):
     def _boom():
         raise RuntimeError("boom")
 
-    monkeypatch.setattr(pn, "run_redzone_td_poll", _boom)
+    monkeypatch.setattr(pn, "run_scorezone_td_poll", _boom)
     assert push_mod._cron_notifications_lock.acquire(blocking=False)
-    push_mod._run_cron_notifications(kind="redzone")  # must not raise
+    push_mod._run_cron_notifications(kind="scorezone")  # must not raise
     assert not push_mod._cron_notifications_lock.locked()
 
 

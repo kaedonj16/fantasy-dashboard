@@ -317,13 +317,13 @@ LEAGUE_PAGES = [
     "league_health",
     "scout",
     "optimal",
-    "redzone",
+    "scorezone",
 ]
 
 SPECIAL_QUERY = {
     "graphs": "?tour=1",
     "history": "?tour=1",
-    "redzone": "?demo=1",
+    "scorezone": "?demo=1",
 }
 
 

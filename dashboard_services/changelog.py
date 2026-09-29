@@ -7,7 +7,7 @@ CHANGELOG = [
     {
         "date": "2026-09-28",
         "tag": "new",
-        "text": "RedZone Moments now live on the matchup page too: the Weekly Hub Matchups tab has the same TD and big-play cards with YOU/OPP filters and headshots, right at the top of the tab.",
+        "text": "ScoreZone Moments now live on the matchup page too: the Weekly Hub Matchups tab has the same TD and big-play cards with YOU/OPP filters and headshots, right at the top of the tab.",
         "link": "/"
     },
     {

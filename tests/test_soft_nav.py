@@ -65,7 +65,7 @@ _CASES = [
     ("/sleeper/2026/abc/waivers", False),
     ("/sleeper/2026/abc/schedule/", False),
     ("/sleeper/2026/abc/graphs", False),
-    ("/sleeper/2026/abc/redzone", False),
+    ("/sleeper/2026/abc/scorezone", False),
     ("/sleeper/2026/abc/trade", False),
     ("/sleeper/2026/abc/compare", False),
     ("/sleeper/2026/abc/metrics", False),

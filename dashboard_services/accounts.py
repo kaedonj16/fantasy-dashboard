@@ -289,7 +289,7 @@ def get_any_espn_account_credentials(account_id: int) -> Optional[dict]:
 
     Private ESPN leagues need cookies. Users often paste them once when linking
     the first league; later ESPN leagues on the same account should be able to
-    reuse that login for Redzone / live fetches.
+    reuse that login for ScoreZone / live fetches.
     """
     if not account_id:
         return None
@@ -1175,7 +1175,7 @@ def resolve_account_viewer_for_league(
         return None
     init_accounts_tables()
     from dashboard_services.db import get_conn
-    from utils.redzone_user import match_viewer_roster, owner_id_variants
+    from utils.scorezone_user import match_viewer_roster, owner_id_variants
     platform = str(platform).lower()
     key = (account_id, platform, str(league_id), int(season))
     with get_conn() as conn:

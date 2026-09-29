@@ -4,7 +4,7 @@ import logging
 import os
 from datetime import datetime, timezone
 
-from utils.redzone_user import owner_id_variants
+from utils.scorezone_user import owner_id_variants
 
 logger = logging.getLogger(__name__)
 
@@ -156,7 +156,7 @@ PUSH_TYPE_BUCKETS = [
         "types": [
             {"key": "lineup_lock", "label": "Lineup lock reminders"},
             {"key": "injury", "label": "Starter injury alerts"},
-            {"key": "redzone_scores", "label": "RedZone score alerts"},
+            {"key": "redzone_scores", "label": "ScoreZone score alerts"},
         ],
     },
     {
@@ -211,7 +211,7 @@ PUSH_TYPE_BUCKETS = [
 # Postgres, not process memory, because cron_daily.py runs each notify step as
 # its own subprocess - an in-memory buffer could never combine those.
 #
-# Live, time-critical alerts stay immediate even in digest mode: a RedZone TD
+# Live, time-critical alerts stay immediate even in digest mode: a ScoreZone TD
 # an hour late is useless, and top_movers is a weekly global announcement that
 # is never league-duplicated.
 
@@ -513,7 +513,7 @@ def _app_state_claim(conn, key, value="1"):
     the row (won the claim); a concurrent worker/poll that already claimed the
     same key gets False.
 
-    This is the multi-worker-safe dedupe primitive behind RedZone scoring pushes:
+    This is the multi-worker-safe dedupe primitive behind ScoreZone scoring pushes:
     N users polling the same live game all try to claim the same
     ``redzone_td:{league}:{game}:{play}`` key, but the row is inserted once, so
     the device push is sent exactly once regardless of how many workers/polls
@@ -528,9 +528,9 @@ def _app_state_claim(conn, key, value="1"):
     return row is not None
 
 
-# ── RedZone live scoring push (owner-targeted, canonical-play deduped) ─────────
+# ── ScoreZone live scoring push (owner-targeted, canonical-play deduped) ─────────
 
-def _redzone_roster_owner(pid, rosters):
+def _scorezone_roster_owner(pid, rosters):
     """Canonical player id → (owner_id, roster_id, is_starter) in this league.
 
     Starters win over bench players so a scoring alert targets the owner who is
@@ -547,7 +547,7 @@ def _redzone_roster_owner(pid, rosters):
     return bench or (None, None, False)
 
 
-def notify_redzone_scores(league_id, platform, pbp_by_game, player_info,
+def notify_scorezone_scores(league_id, platform, pbp_by_game, player_info,
                           rosters, scoring, *, season=None, week=None):
     """Send at most one device push per canonical touchdown to each affected
     fantasy owner, reusing push_subscriptions + VAPID via ``_broadcast_owner``.
@@ -593,7 +593,7 @@ def notify_redzone_scores(league_id, platform, pbp_by_game, player_info,
             owner_rows: dict = {}
             for play in rows:
                 pid = str(play.get("pid"))
-                owner_id, roster_id, is_starter = _redzone_roster_owner(pid, rosters)
+                owner_id, roster_id, is_starter = _scorezone_roster_owner(pid, rosters)
                 if not owner_id:
                     continue
                 sl = play.get("stat_line") or {}
@@ -607,7 +607,7 @@ def notify_redzone_scores(league_id, platform, pbp_by_game, player_info,
             if not owner_rows:
                 # No rostered owner for any scorer on this play: never broadcast
                 # a random player's touchdown league-wide.
-                logger.debug("[redzone-alert] play=%s type=td owner=none dedupe=ineligible",
+                logger.debug("[scorezone-alert] play=%s type=td owner=none dedupe=ineligible",
                              f"{gid}:{play_key}")
                 continue
 
@@ -618,10 +618,10 @@ def notify_redzone_scores(league_id, platform, pbp_by_game, player_info,
                         claimed = _app_state_claim(conn, event_key)
                         conn.commit()
                 except Exception as exc:
-                    logger.debug("[redzone-push] claim failed key=%s: %s", event_key, exc)
+                    logger.debug("[scorezone-push] claim failed key=%s: %s", event_key, exc)
                     continue
                 if not claimed:
-                    logger.debug("[redzone-alert] play=%s type=td owner=%s dedupe=duplicate",
+                    logger.debug("[scorezone-alert] play=%s type=td owner=%s dedupe=duplicate",
                                  f"{gid}:{play_key}", owner_id)
                     continue
                 pid = str(play.get("pid"))
@@ -637,8 +637,8 @@ def notify_redzone_scores(league_id, platform, pbp_by_game, player_info,
                     body = f"{body}  +{round(pts, 1)} pts"
                 if league_name:
                     body = f"{body} in {league_name}"
-                url = (f"/{platform}/{season}/{league_id}/redzone" if season
-                       else f"/{platform}/{league_id}/redzone")
+                url = (f"/{platform}/{season}/{league_id}/scorezone" if season
+                       else f"/{platform}/{league_id}/scorezone")
                 n = _broadcast_owner(
                     league_id, owner_id,
                     title=("TD: " + name + (f" · {pos}" if pos else "")),
@@ -648,16 +648,16 @@ def notify_redzone_scores(league_id, platform, pbp_by_game, player_info,
                     notif_type="redzone_scores",
                 )
                 sent += (n or 0)
-                logger.info("[redzone-alert] play=%s type=td owner=%s dedupe=sent recipients=%d",
+                logger.info("[scorezone-alert] play=%s type=td owner=%s dedupe=sent recipients=%d",
                             f"{gid}:{play_key}", owner_id, n or 0)
     return sent
 
 
-def _redzone_td_check():
+def _scorezone_td_check():
     """Check the play store for newly-observed TDs and push to subscribed leagues.
 
     Reads TD plays the elected store poller upserted since the last watermark
-    -- no upstream PBP, no per-league _redzone_collect. Called inline by the
+    -- no upstream PBP, no per-league _scorezone_collect. Called inline by the
     store thread (~15s alerts) and by the 1-min cron (backstop). Replays are
     safe: the atomic per-play-per-owner claims dedupe them. The watermark
     advances to the max observed play timestamp (never wall-clock now), so a
@@ -671,7 +671,7 @@ def _redzone_td_check():
         from datetime import date as _date
 
         from dashboard_services.api import get_nfl_state
-        from utils.redzone_store import (
+        from utils.scorezone_store import (
             get_td_plays_since as _td_since,
             get_watermark as _get_wm,
             set_watermark as _set_wm,
@@ -736,7 +736,7 @@ def _redzone_td_check():
                     season=season,
                 )
                 rosters = _get_rosters(platform, league_id, season) or []
-                sent += notify_redzone_scores(
+                sent += notify_scorezone_scores(
                     league_id, platform, pbp_by_game, player_info, rosters,
                     scoring, season=season, week=week,
                 ) or 0
@@ -745,32 +745,32 @@ def _redzone_td_check():
                 if _is_provider_not_found(le):
                     _unlink_dead_league(league_id, platform)
                 else:
-                    logger.warning("[redzone-poll] league %s failed: %s", league_id, le)
+                    logger.warning("[scorezone-poll] league %s failed: %s", league_id, le)
         _set_wm(max_ts)
         result["sent"] = sent
     except Exception as exc:
-        logger.warning("[redzone-poll] failed: %s", exc)
+        logger.warning("[scorezone-poll] failed: %s", exc)
     return result
 
 
-def run_redzone_td_poll():
-    """Server-side poller for RedZone touchdown pushes. Called every minute by
-    the redzone-td-poller cron during game windows.
+def run_scorezone_td_poll():
+    """Server-side poller for ScoreZone touchdown pushes. Called every minute by
+    the scorezone-td-poller cron during game windows.
 
     DB-backed: reads newly-stored TD plays (no upstream PBP, no per-league
-    page collect) and fans out to subscribed leagues via notify_redzone_scores,
+    page collect) and fans out to subscribed leagues via notify_scorezone_scores,
     with its atomic per-play-per-owner dedupe. The store thread also calls
-    _redzone_td_check inline every ~15s for near-instant alerts; this cron is
+    _scorezone_td_check inline every ~15s for near-instant alerts; this cron is
     the backstop and flushes digest opt-ins (otherwise their TD alerts would
     sit buffered until the next hourly run).
 
     Returns {"games": td_games, "leagues": leagues_checked, "sent": pushes}.
     """
-    result = _redzone_td_check()
+    result = _scorezone_td_check()
     try:
         result["sent"] += _flush_digest() or 0
     except Exception as exc:
-        logger.warning("[redzone-poll] digest flush failed: %s", exc)
+        logger.warning("[scorezone-poll] digest flush failed: %s", exc)
     return result
 
 
@@ -813,10 +813,10 @@ def _unlink_dead_league(league_id, platform):
                 (str(league_id), str(platform or "sleeper")),
             )
             conn.commit()
-        logger.warning("[redzone-poll] unlinked dead league %s (provider 404)",
+        logger.warning("[scorezone-poll] unlinked dead league %s (provider 404)",
                        league_id)
     except Exception as exc:
-        logger.warning("[redzone-poll] unlink dead league %s failed: %s",
+        logger.warning("[scorezone-poll] unlink dead league %s failed: %s",
                        league_id, exc)
 
 

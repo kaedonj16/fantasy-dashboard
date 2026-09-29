@@ -290,7 +290,7 @@ def page_portfolio():
             except Exception:
                 logger.debug("portfolio account viewer resolve failed", exc_info=True)
         if viewer_roster is None:
-            from utils.redzone_user import match_viewer_roster
+            from utils.scorezone_user import match_viewer_roster
             sleeper_owner = sleeper_owner_id_for_account(
                 _account_id, viewer_user_id, lg_platform,
             )
@@ -677,7 +677,7 @@ def api_portfolio_actions():
         waiver_pickup_action,
     )
     from utils.lineup_issues import find_lineup_issues
-    from utils.redzone_user import match_viewer_roster
+    from utils.scorezone_user import match_viewer_roster
 
     viewer_username = session.get("viewer_username")
     viewer_user_id = session.get("viewer_user_id")
@@ -1724,12 +1724,13 @@ def api_matchup_league_scores():
 
 
 @user_pages_bp.route("/api/redzone/moments")
-def api_redzone_moments():
-    """RedZone Moments: big plays from the viewer's current fantasy matchup.
+@user_pages_bp.route("/api/scorezone/moments")
+def api_scorezone_moments():
+    """ScoreZone Moments: big plays from the viewer's current fantasy matchup.
 
     Returns TDs, 40+ yard gains, and turnovers involving players on either
-    roster in the viewer's matchup, sourced from the RedZone play store.
-    Powers the "RedZone Moments" row under the matchup win probability bar.
+    roster in the viewer's matchup, sourced from the ScoreZone play store.
+    Powers the "ScoreZone Moments" row under the matchup win probability bar.
     """
     from flask import jsonify, request, session, g
 
@@ -1774,7 +1775,7 @@ def api_redzone_moments():
         if ctx is None:
             ctx = get_league_ctx_from_cache(platform, league_id, season, allow_build=False)
     except Exception:
-        logger.debug("[redzone-moments] ctx load failed", exc_info=True)
+        logger.debug("[scorezone-moments] ctx load failed", exc_info=True)
         return jsonify({"plays": [], "teams": {}})
     if not ctx or ctx.get("offseason_mode"):
         return jsonify({"plays": [], "teams": {}})
@@ -1789,7 +1790,7 @@ def api_redzone_moments():
             )
             viewer_rid = str((_av or {}).get("viewer_roster_id") or "")
         except Exception:
-            logger.debug("[redzone-moments] account viewer resolve failed", exc_info=True)
+            logger.debug("[scorezone-moments] account viewer resolve failed", exc_info=True)
     if not viewer_rid:
         viewer_rid = str((ctx.get("viewer") or {}).get("viewer_roster_id") or "")
     if not viewer_rid:
@@ -1801,7 +1802,7 @@ def api_redzone_moments():
             platform, resolved_league_id, season, week, ctx,
         )
     except Exception:
-        logger.debug("[redzone-moments] live build failed", exc_info=True)
+        logger.debug("[scorezone-moments] live build failed", exc_info=True)
         return jsonify({"plays": [], "teams": {}})
 
     you = opp = None
@@ -1831,7 +1832,7 @@ def api_redzone_moments():
     if not pid_to_side:
         return jsonify({"plays": [], "teams": {}})
 
-    from utils.redzone_store import get_plays_for_pids
+    from utils.scorezone_store import get_plays_for_pids
     # Week-scoped: a future/unplayed week must not surface the previous
     # week's plays (the store's recency window would otherwise do exactly
     # that, e.g. Week 3 plays showing under a Week 4 matchup on Tuesday).

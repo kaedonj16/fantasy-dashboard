@@ -1,0 +1,597 @@
+"""ScoreZone This League ↔ My Leagues scope + Plays feed contracts.
+
+Locks ``static/scorezone.js`` so:
+
+  * a late My Leagues poll cannot paint portfolio teams under This League
+  * My Leagues stream hydrates Plays at end (seed-only left the feed empty)
+  * scope switch resets feed snapshots so the other scope can rehydrate
+  * empty feed + hero focus shows the schedule, not "No matching plays"
+"""
+from __future__ import annotations
+
+import json
+import shutil
+import subprocess
+from pathlib import Path
+
+import pytest
+
+_ROOT = Path(__file__).resolve().parents[1]
+
+
+def _sz() -> str:
+    return (_ROOT / "static" / "scorezone.js").read_text(encoding="utf-8")
+
+
+def test_stale_tank01_pre_status_upgraded_by_espn():
+    """A rostered team stuck 'pre' after kickoff gets ESPN's real live/final
+    status, so Tank01 lag no longer leaves the Plays feed empty."""
+    app_src = (_ROOT / "app.py").read_text(encoding="utf-8")
+    assert "lag_teams" in app_src
+    assert "stale Tank01" in app_src
+    # Genuinely-upcoming games (kickoff in the future) must not trigger ESPN.
+    assert "now_ts >= ep" in app_src
+
+
+def _fn(name: str) -> str:
+    src = _sz()
+    # _refresh / _refreshUserStream take an opts arg now; match the open paren
+    # without assuming a specific parameter list.
+    needle = (
+        "async function %s(" % name
+        if name.startswith("_refresh")
+        else "function %s(" % name
+    )
+    assert needle in src, "missing %s" % name
+    start = src.index(needle)
+    rest = src[start + 1 :]
+    nxt = rest.find("\n  async function ")
+    nxt2 = rest.find("\n  function ")
+    cuts = [c for c in (nxt, nxt2) if c >= 0]
+    end = min(cuts) if cuts else len(rest)
+    return src[start : start + 1 + end]
+
+
+def test_refresh_guards_stale_generation_and_scope():
+    src = _fn("_refresh")
+    assert "var myGen = _streamGen" in src
+    assert "var myScope = _scope" in src
+    assert "var mySeq = ++_reqSeq" in src  # explicit request-sequence ownership
+    assert "'&scope=' + myScope" in src or '"&scope=" + myScope' in src
+    # Ownership (seq AND gen AND scope) gates every state mutation now; a
+    # scope-generation check alone could not order two same-scope requests.
+    assert "_ownsScreen(mySeq, myGen, myScope)" in src
+    assert "newData.scope !== myScope" in src
+    assert "_scopeCache[myScope] = newData" in src
+    # State must be applied before detect so owner/league labels are correct.
+    assert src.index("_setState(newData)") < src.index("_detectChanges(newData,")
+    assert "_loadingScope = false; _render()" not in src.replace("_recoverScopeLoad", "")
+
+
+def test_recover_scope_load_uses_cache_not_foreign_state():
+    src = _fn("_recoverScopeLoad")
+    # Ownership-aware and scoped to the active scope's own cache.
+    assert "_ownsScreen(seq, gen, scope)" in src
+    assert "_scopeCache[scope]" in src
+    # First-load failure replaces the skeleton with an explicit retry state;
+    # only the active scope's cached payload may be restored.
+    assert "_scopeLoadError = true" in src
+    assert "_setState(cached)" in src
+    assert "_loadingScope = false;\n      _render();" not in src or "_scopeCache" in src
+
+
+def test_scope_switch_restores_payload_and_isolated_runtime():
+    src = _sz()
+    block = src[src.index("root.querySelectorAll('.rz-scope-btn')") :]
+    block = block[: block.index("root.querySelectorAll('.rz-tab-btn')")]
+    assert "_streamGen++" in block
+    assert "var cached = _scopeCache[_scope]" in block
+    assert "_setState(cached)" in block
+    assert "_loadingScope = true" in block
+    assert "_saveScopeRuntime(_scope)" in block
+    assert "_restoreScopeRuntime(_scope, cached)" in block
+    # Only a cold scope rehydrates; a warm scope paints durable Plays immediately.
+    assert block.index("_restoreScopeRuntime") < block.index("_render();")
+    assert "_hydrateFeed(cached)" in block
+    assert "_syncScopeUrl()" in block
+
+
+def test_stream_fallbacks_check_generation():
+    src = _fn("_refreshUserStream")
+    # A superseding scope switch / newer stream (higher generation) must be
+    # detected at every await boundary so a stale stream can neither paint nor
+    # clear another request's flags.
+    assert src.count("myGen !== _streamGen") >= 3
+    assert "_scopeCache.user = base" in src
+    # Streaming unavailable / mid-stream error degrades to the aggregate fetch.
+    assert "_refresh({ manual: opts.manual })" in src
+    # A stalled stream cannot pin _streaming: it has both an overall deadline and
+    # an inactivity timeout, and ownership-aware teardown clears the flags.
+    assert "_RZ_STREAM_DEADLINE_MS" in src and "_RZ_STREAM_IDLE_MS" in src
+
+
+def test_my_leagues_stream_hydrates_plays_at_end():
+    src = _fn("_refreshUserStream")
+    full = _sz()
+    # Mid-stream must not seed prevStats (that suppressed all Plays).
+    mid = src[src.index("obj.type === 'league'") : src.index("if (_scopeRuntime.user")]
+    assert "_seedPrevStats(base)" not in mid
+    assert "_hydrateFeed(base)" in src
+    assert "_resetFeedSnapshots()" in src
+    # Meta must not wipe a last-good portfolio into an empty cache shell.
+    assert "last-good portfolio" in src
+    # Empty slices surface a failed card, not a silent drop.
+    assert "_mlFailed" in src
+    assert "function _mlFailedCard(" in full
+
+
+def test_my_leagues_plays_stay_loading_until_stream_hydrates():
+    src = _sz()
+    sync = _fn("_syncFeed")
+    stream = _fn("_refreshUserStream")
+    switch = src[src.index("root.querySelectorAll('.rz-scope-btn')") :]
+    switch = switch[: switch.index("root.querySelectorAll('.rz-tab-btn')")]
+
+    assert "_loadingPlays || (_loadingScope && !_feed.length)" in sync
+    assert "Loading plays…" in sync
+    assert "_loadingPlays = _scope === 'user' && !carryFeed" in switch
+    # Receiving stream metadata/cards must not expose an empty feed before the
+    # end-of-stream reconciliation has built the portfolio's canonical Plays.
+    mid_stream = stream[: stream.index("_saveScopeRuntime('user')")]
+    assert "_loadingPlays = false" not in mid_stream
+    assert stream.index("_saveScopeRuntime('user')") < stream.index("_loadingPlays = false")
+
+
+def test_league_plays_remain_visible_during_cold_portfolio_load():
+    src = _sz()
+    switch = src[src.index("root.querySelectorAll('.rz-scope-btn')") :]
+    switch = switch[: switch.index("root.querySelectorAll('.rz-tab-btn')")]
+
+    assert "var carryFeed = _scope === 'league'" in switch
+    assert "? _chronoSort(_feed)" in switch
+    assert "_feed = carryFeed || []" in switch
+    # Reset the destination scope's diff/PBP bookkeeping before exposing the
+    # provisional rows; the portfolio hydrate will still rebuild canonical data.
+    assert switch.index("_resetFeedSnapshots()") < switch.index("_feed = carryFeed || []")
+
+
+def test_runtime_cache_contains_all_canonical_pbp_structures():
+    src = _sz()
+    save = _fn("_saveScopeRuntime")
+    restore = _fn("_restoreScopeRuntime")
+    for name in ("feed", "pbpHistory", "pbpGames", "seenPlayIds",
+                 "seenContributions", "playGroupsByKey", "contributionsByKey"):
+        assert name in save
+    for target in ("_feed", "_pbpHistory", "_pbpGames", "_seenPlayIds",
+                   "_seenContributions", "_playGroupsByKey", "_contributionsByKey"):
+        assert target in restore
+    assert "var _scopeRuntime = { league: null, user: null }" in src
+
+
+def test_empty_and_partial_polls_merge_without_clearing_canonical_pbp():
+    refresh = _fn("_refresh")
+    between_state_and_detect = refresh[refresh.index("_setState(newData)"):refresh.index("_detectChanges(newData,")]
+    assert "_feed = []" not in between_state_and_detect
+    assert "_resetFeedSnapshots" not in between_state_and_detect
+    assert "_saveScopeRuntime(myScope)" in refresh
+    sync = _fn("_syncFeed")
+    assert "hasCanonicalPbp" in sync
+    assert "No plays match the current game or player selection" in sync
+
+
+def test_hydrate_feed_matches_cold_boot_order():
+    src = _fn("_hydrateFeed")
+    assert src.index("_seedMilestones") < src.index("_detectChanges")
+    assert src.index("_detectChanges") < src.index("_seedPrevStats")
+
+
+def test_empty_feed_with_hero_shows_schedule_not_no_matching():
+    src = _fn("_syncFeed")
+    assert "hardFilter" in src
+    assert "_heroMid && _feed.length > 0" in src
+    assert "_pregameScheduleHtml()" in src
+
+
+def test_focused_pair_drives_scorebar_and_live_chrome():
+    src = _sz()
+    assert "function _focusedPair(" in src
+    assert "function _matchupIsLive(" in src
+    assert "_matchupIsLive([_mm, _om])" in src or "_matchupIsLive([myMatchup" in src
+    # Non-viewer heroes should not hard-code the "Me" label.
+    assert "(pair && pair.isMine) ? 'Me'" in src or "pair.isMine ? 'Me'" in src
+
+
+def test_filter_polish_league_label_and_my_team_chip():
+    src = _sz()
+    # Fantasy Team/League and matchup filter rows are gone. NFL game selection
+    # belongs exclusively to the game strip; the panel offers rostered players.
+    assert "fpRow('Matchup', 'nfl'" not in src
+    assert "fpRow('Players', 'rostered', rOpts)" in src
+    assert "? 'League' : 'Team'" not in src
+    assert 'data-clear-myteam="1"' in src
+    assert "OPP · " in src
+
+
+def test_nfl_filter_is_matchups_with_scoreboard():
+    """RZ6.3 / RZ6.4 — NFL filter lists games; selected game shows board strip."""
+    src = _sz()
+    assert "function _nflMatchupOptions(" in src
+    assert "function _nflOptions(" not in src
+    assert "function _renderNflBoard(" in src
+    nfl = _fn("_nflMatchupOptions")
+    assert "game_id" in nfl
+    assert "away + ' @ ' + home" in nfl or 'away + " @ " + home' in nfl
+    # Must not list bare team abbrevs as the primary option value.
+    assert "seen[t] = 1" not in nfl
+    board = _fn("_renderNflBoard")
+    assert "rz-nfl-board" in board
+    assert "rz-nfl-poss" in board
+    assert "possession" in board
+    assert "_nflBoardSitLine" in board or "_downDist" in board
+    assert "function _nflBoardSitLine(" in src
+    assert "_downDist" in _fn("_nflBoardSitLine")
+    assert "_renderNflBoard()" in src
+    app = (_ROOT / "app.py").read_text(encoding="utf-8")
+    assert "build_games_snapshot as _rz_build_games_snapshot" in app
+    assert '"games": games' in app
+
+
+def test_scoring_prefers_roster_league_over_pid_map():
+    src = _fn("_detectChanges")
+    assert "mm.league_id" in src
+    assert "tags.pidToRoster" in src
+
+
+def test_user_scope_fetch_fallback_keeps_user_scope():
+    app = (_ROOT / "app.py").read_text(encoding="utf-8")
+    block = app[app.index("def _scorezone_fetch(") : app.index("def _scorezone_user_portfolio")]
+    assert "portfolio_unavailable" in block
+    assert '"scope": "user"' in block
+    # Must not fall through to league collect after a user-scope failure.
+    # (The league collect goes through the shared _rz_cached_collect wrapper.)
+    assert block.index("portfolio_unavailable") < block.index("_rz_cached_collect(")
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node.js not available")
+def test_stale_user_poll_discarded_after_league_switch_node():
+    harness = r"""
+var _streamGen = 0;
+var _scope = 'user';
+var _state = { scope: 'user', users: [{ display_name: 'ESPNfan5010001561' }] };
+var _scopeCache = {
+  league: { scope: 'league', users: [{ display_name: 'blackedraw-owner' }] },
+  user: _state
+};
+var _loadingScope = false;
+var applied = [];
+
+function apply(newData, myGen, myScope) {
+  if (myGen !== _streamGen || myScope !== _scope) return false;
+  if (newData && newData.scope && newData.scope !== myScope) return false;
+  _state = newData;
+  _scopeCache[myScope] = newData;
+  _loadingScope = false;
+  applied.push(newData.scope + ':' + newData.users[0].display_name);
+  return true;
+}
+
+var pollGen = _streamGen;
+var pollScope = _scope;
+
+_streamGen++;
+_scope = 'league';
+var cached = _scopeCache[_scope];
+if (cached) { _state = cached; _loadingScope = false; }
+else { _loadingScope = true; }
+
+var leagueGen = _streamGen;
+var leagueScope = _scope;
+
+var stale = apply(
+  { scope: 'user', users: [{ display_name: 'ESPNfan5010001561' }] },
+  pollGen, pollScope
+);
+var ok = apply(
+  { scope: 'league', users: [{ display_name: 'sleeper-owner' }] },
+  leagueGen, leagueScope
+);
+
+process.stdout.write(JSON.stringify({
+  staleApplied: stale,
+  leagueApplied: ok,
+  stateScope: _state.scope,
+  stateName: _state.users[0].display_name,
+  applied: applied
+}));
+"""
+    proc = subprocess.run(
+        ["node", "-e", harness],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    out = json.loads(proc.stdout)
+    assert out["staleApplied"] is False
+    assert out["leagueApplied"] is True
+    assert out["stateScope"] == "league"
+    assert out["stateName"] == "sleeper-owner"
+    assert out["applied"] == ["league:sleeper-owner"]
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node.js not available")
+def test_stream_end_hydrate_fills_plays_node():
+    """Seed-only mid-stream left Plays empty; end hydrate must fill it."""
+    harness = r"""
+var _prevStats = { 'OLD': { rush_yds: 1 } };
+var _prevPts = {};
+var _milestonesSeen = {};
+var _blowoutSeen = {};
+var _prevInjury = {};
+var _prevLeader = {};
+var _prevMatchupPts = {};
+var _scoreDelta = { me: 0, opp: 0 };
+var _flashRids = new Set();
+var _feed = [];
+
+function _resetFeedSnapshots() {
+  _prevStats = {}; _prevPts = {}; _milestonesSeen = {}; _blowoutSeen = {};
+  _prevInjury = {}; _prevLeader = {}; _prevMatchupPts = {};
+  _scoreDelta = { me: 0, opp: 0 }; _flashRids = new Set();
+}
+function _seedMilestones() {}
+function _seedInjuries() {}
+function _seedLeaders() {}
+function _seedPrevStats(data) {
+  Object.keys(data.player_info || {}).forEach(function(pid) {
+    var sl = data.player_info[pid].stat_line;
+    if (sl) _prevStats[pid] = Object.assign({}, sl);
+  });
+}
+function _detectChanges(data) {
+  Object.keys(data.player_info || {}).forEach(function(pid) {
+    var neu = data.player_info[pid].stat_line || {};
+    var old = _prevStats[pid] || {};
+    var delta = (neu.rush_yds || 0) - (old.rush_yds || 0);
+    if (delta > 0) _feed.push({ pid: pid, desc: delta + ' rush yds' });
+  });
+}
+function _hydrateFeed(data) {
+  _seedMilestones(data); _seedInjuries(data); _seedLeaders(data);
+  (data.matchups || []).forEach(function(m) {
+    _prevMatchupPts[String(m.roster_id)] = parseFloat(m.points || 0);
+  });
+  _detectChanges(data);
+  _seedPrevStats(data);
+}
+
+_resetFeedSnapshots();
+_feed = [];
+var base = {
+  matchups: [{ roster_id: '0:1', points: 10 }],
+  player_info: { '111': { stat_line: { rush_yds: 55, rush_td: 1 } } }
+};
+_seedPrevStats(base); // old mid-stream seed
+var feedAfterSeedOnly = _feed.slice();
+
+_resetFeedSnapshots();
+_feed = [];
+_hydrateFeed(base);
+
+process.stdout.write(JSON.stringify({
+  seedOnlyFeed: feedAfterSeedOnly.length,
+  hydratedFeed: _feed.length,
+  desc: _feed[0] && _feed[0].desc,
+  seededAfter: !!_prevStats['111']
+}));
+"""
+    proc = subprocess.run(
+        ["node", "-e", harness],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    out = json.loads(proc.stdout)
+    assert out["seedOnlyFeed"] == 0
+    assert out["hydratedFeed"] == 1
+    assert out["desc"] == "55 rush yds"
+    assert out["seededAfter"] is True
+
+
+def test_default_hero_filter_disabled():
+    src = _fn("_applyDefaultHero")
+    assert "return;" in src
+    assert "_heroMid = def" not in src
+    assert _fn("_defaultHeroMid").count("return null") >= 1
+
+
+def test_demo_header_button_removed():
+    src = _sz()
+    assert 'class="rz-demo-btn"' not in src
+    # Exit Demo stays available when already in demo mode.
+    assert "Exit Demo" in src or "rz-demo-exit" in src
+
+
+def test_play_descriptions_are_play_by_play():
+    src = _fn("_describe")
+    assert "Throws a " in src and "touchdown pass" in src
+    assert "Hauls in a " in src and "touchdown catch" in src
+    assert "Completes a pass for " in src
+    # Old bulk shorthand should not be returned as live copy (comment examples OK).
+    assert "return { desc: ry + ' yd TD catch'" not in src
+    assert "return { desc: py + ' yd TD pass'" not in src
+    assert "return { desc: uy + ' yd TD run'" not in src
+
+
+def test_pbp_feed_path_and_filters():
+    src = _sz()
+    assert "function _eventsFromPbp(" in src
+    assert "pbp_by_game" in src
+    assert "function _softRank(" not in src
+    assert "function _isBigPlay(" in src
+    assert 'id="rz-bigplays-btn"' in src
+    assert "function _loadPrefs(" in src
+    assert "function _savePrefs(" in src
+    assert "rz-event-delta" in src
+    assert "Try the ScoreZone demo" in src
+
+
+def test_feed_is_chronological_newest_first():
+    """The Plays feed sorts by real game time (newest first), not soft rank."""
+    src = _sz()
+    assert "function _chronoSort(" in src
+    assert "function _chronoKey(" in src
+    # The rendered feed and its maintenance both use the chronological sort.
+    assert "var filtered = _feed.filter(_eventMatches);" in src
+    assert "var list = _chronoSort(filtered);" in src
+    assert "_feed = _chronoSort(_feed)" in src
+
+
+def test_play_headlines_per_play_delta_with_muted_zero():
+    """Each card headlines the points THIS play earned (Sleeper-style), with
+    a muted 0.0 for no-score plays — never a green '+0.0' or the running
+    total masquerading as the play's points."""
+    src = _sz()
+    assert "var deltaPrimary = (d > 0.0001 ? '+' : (d < -0.0001 ? '' : '')) + _fmtFantasyDelta(d);" in src
+    assert "d < -0.0001 ? 'neg' : 'zero'" in src
+    # The old unconditional per-play string must be gone.
+    assert "var ptStr = ev.pts > 0" not in src
+    css = (_ROOT / "static" / "dashboard.css").read_text(encoding="utf-8")
+    assert ".rz-event-delta.zero" in css
+
+
+def test_quarter_label_is_prefixed():
+    """Quarter shows as 'Q4', not a bare '4' next to the clock."""
+    src = _sz()
+    assert "function _fmtQuarter(" in src
+    assert "_fmtQuarter(ev.gameQuarter)" in src
+    # Old bare-number join must be gone from the event card.
+    assert "[ev.gameQuarter, ev.gameClock]" not in src
+
+
+def test_td_alerts_only_after_initial_backfill():
+    """Cold boot ingests a whole game at once; no TD beep/push for old snaps."""
+    src = _sz()
+    assert "var _alertsArmed = false;" in src
+    # The alert set is gated on the arm flag (and a live poll), never on the raw
+    # batch size -- each eligible event is evaluated independently below.
+    assert "var _liveAlerts = _alertsArmed && animationIntent === 'live';" in src
+    assert "allEvents.length === 1" not in src
+    # A scope switch re-hydrates silently, then re-arms.
+    assert "_alertsArmed = false;" in src
+    assert "_alertsArmed = true;" in src
+
+
+def test_sleeper_style_situation_strip_and_yardage_chip():
+    """Borrowed Sleeper elements: situation strip (down/dist @ spot, RZ badge,
+    Q/clock + score) and a per-play yardage chip. No reactions or replies."""
+    src = _sz()
+    css = (_ROOT / "static" / "dashboard.css").read_text(encoding="utf-8")
+    assert "function _isInRedZone(" in src
+    assert "rz-event-meta" in src and "rz-event-situation" in src
+    assert "rz-event-delta-game" in src
+    assert '<span class="rz-event-rz">RZ</span>' in src
+    assert "rz-event-yd" in src
+    assert ".rz-event-meta" in css and ".rz-event-rz" in css
+    # The play carries its stat line so the yardage chip can be derived.
+    assert "statLine: primary.line" in src
+
+
+def test_running_cumulative_stat_line_rendered():
+    """Sleeper-style running stat line ('QB · 2/3 CMP, 13 YD') at each play."""
+    src = _sz()
+    css = (_ROOT / "static" / "dashboard.css").read_text(encoding="utf-8")
+    assert "function _cumeLine(" in src
+    assert "cume: play.cume" in src
+    assert "rz-event-cume" in src and ".rz-event-cume" in css
+    assert "' CMP'" in src
+
+
+def test_scoring_honors_distance_fg_and_te_premium():
+    """Per-play points respect distance-based FG buckets and TE premium."""
+    src = _sz()
+    assert "function _fgRate(" in src
+    assert "fgm_50p" in src and "fgm_40_49" in src and "fgm_0_39" in src
+    # TE reception premium and per-play position both flow into the scorer.
+    assert "s.bonus_rec_te" in src
+    assert "_lineToPts(line, scoring, pos)" in src
+
+
+def test_app_wires_pbp_into_collect_and_demo():
+    app = (_ROOT / "app.py").read_text(encoding="utf-8")
+    assert "extract_pbp_plays as _rz_extract_pbp_plays" in app
+    assert 'play_by_play=(want_pbp and not store_hit)' in app
+    assert '"pbp_by_game": pbp_by_game' in app
+    assert "Try ScoreZone Demo" in app
+    api = (_ROOT / "dashboard_services" / "api.py").read_text(encoding="utf-8")
+    # Compatibility name remains, but the implementation delegates to the
+    # shared ESPN event service and contains no paid request parameters.
+    assert 'fetch_tank_boxscore' in api
+    assert 'boxscore_for_game' in api
+    assert 'params["playByPlay"]' not in api
+    # Finals must still request PBP — otherwise Plays falls back to bulk
+    # "Scored X pts" cards after the game ends.
+    assert 'want_pbp = live or final' in app
+    assert 'ttl=(None if live else 300.0)' in app
+    assert "Finals: plain boxscore is enough" not in app
+
+
+def test_pbp_coverage_suppresses_bulk_points_without_new_events():
+    """Live/final and PBP-covered games never invent Scored / boxscore fiction."""
+    src = _fn("_detectChanges")
+    assert "Scored ' + delta.toFixed(1) + ' pts'" in src
+    # Live/final games never take the bulk Scored fallback or _playsFromDiff.
+    assert "code === '1' || code === '2'" in src
+    assert "_pbpGames[gid]" in src
+    # Boxscore narrative is no longer a live/final substitute for real PBP.
+    assert "pbpRows.length" not in src
+    assert "_playsFromDiff" in src  # still used for pregame / non-PBP only
+
+
+def test_app_falls_back_to_plain_boxscore_when_pbp_empty():
+    app = (_ROOT / "app.py").read_text(encoding="utf-8")
+    # Plain boxscore merge remains for scoreboard totals only.
+    assert "play_by_play=False" in app
+    assert "pbp_by_game[gid] = plays" in app
+    assert "if plays:" not in app[app.index("pbp_by_game[gid] = plays") - 80:
+                                    app.index("pbp_by_game[gid] = plays") + 40]
+    # Client is responsible for PBP-lines-only; server must not claim narrative diffs.
+    assert "narrative diffs" not in app
+    # ESPN is primary; Tank01 and then Sleeper provide fallback coverage.
+    assert "fetch_alt_pbp_plays as _rz_fetch_alt_pbp_plays" in app
+    assert "_rz_fetch_alt_pbp_plays" in app
+    assert 'providers=("espn",)' in app
+    assert app.index('providers=("espn",)') < app.index("_rz_extract_pbp_plays(", app.index('providers=("espn",)'))
+
+
+def test_events_from_pbp_resolves_name_when_pid_missing():
+    src = _fn("_eventsFromPbp")
+    assert "_pidFromPlayName" in (_ROOT / "static" / "scorezone.js").read_text(encoding="utf-8")
+    assert "fromPbp: true" in src
+
+
+def test_player_modal_clicks_use_only_the_root_delegate():
+    """A scorer click must open one modal, not one per overlapping listener."""
+    src = _sz()
+    render = _fn("_render")
+
+    assert "root.addEventListener('click'" in src
+    assert "window.openPlayerModal(pid, _name(pid), { tab: 'live' });" in src
+    assert "querySelectorAll('[data-pid]')" not in render
+
+
+def test_live_final_empty_feed_is_honest_not_boxscore():
+    src = _fn("_syncFeed")
+    assert "Play-by-play lines" in src
+    assert "not box-score summaries" in src
+
+
+def test_filter_panel_has_rostered_players_not_matchups_or_fantasy_teams():
+    src = _sz()
+    assert "function _nflMatchupOptions(" in src
+    panel = _fn("_renderFilterChips")
+    assert "fpRow('Players', 'rostered', rOpts)" in panel
+    assert "fpRow('Matchup', 'nfl'" not in panel
+    assert "_nflMatchupOptions()" not in panel
+    assert "fpRow(_scope === 'user' ? 'League' : 'Team', 'team'" not in src
+    assert "function _teamOptions(" not in src
+    assert "function _nflOptions(" not in src

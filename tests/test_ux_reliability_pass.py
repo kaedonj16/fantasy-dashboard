@@ -15,12 +15,12 @@ def test_custom_select_accessibility_contract_is_shared():
     assert "__brCustomSelectInstalled" in standalone
     assert "__brCustomSelectInstalled" in bundled
 
-def test_redzone_polling_preserves_mounted_controls_and_recovers():
-    js = text("static/redzone.js")
+def test_scorezone_polling_preserves_mounted_controls_and_recovers():
+    js = text("static/scorezone.js")
     assert "if (wasLoading) _render(); else _partialUpdate();" in js
-    assert "Could not load Redzone" in js
+    assert "Could not load ScoreZone" in js
     assert "id=\"rz-load-retry\"" in js
-    assert "aria-label=\"Refresh Redzone data\"" in js
+    assert "aria-label=\"Refresh ScoreZone data\"" in js
     assert "_pendingNewPlays" in js and "id=\"rz-new-plays\"" in js
     assert "AbortController" in js
 
