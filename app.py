@@ -19195,26 +19195,32 @@ def _ensure_sleeper_week_files(season_year: int) -> None:
 # The game-log route used to glob + fully parse every weekly stat file for
 # every season on each call (~180 files / ~90MB of JSON) just to extract one
 # player's rows. This index parses each (season, week) file once per worker
-# and keeps a compact per-player view: player_id -> 12-tuple of the stat keys
-# the game log needs, or None for a present-but-all-zero row (so a 0.0-point
-# game still renders as 0.0, not DNP). Entries are guarded by the file's
-# mtime, so a refetched week file is re-parsed on next access. Measured
-# ~38MB for all 10 seasons on disk, vs ~90MB of JSON parsed per request.
+# and keeps a compact per-player view: player_id -> {stat_key: value} of the
+# row's NONZERO stats, or None for a present-but-all-zero row (so a 0.0-point
+# game still renders as 0.0, not DNP).
+#
+# The full key set is kept (not just the 12 display keys) because score_stats
+# scores any stat key the league's scoring settings name: truncating to the
+# display keys silently undercounts custom-scoring leagues (e.g. 1 pt per
+# completion, first downs, 2pt conversions, return yards, kicker scoring).
+# Entries are guarded by the file's mtime, so a refetched week file is
+# re-parsed on next access. Measured ~59MB for all 10 seasons in a worker,
+# vs ~90MB of JSON parsed per request.
 # threading is imported at module top (gthread workers run 2 threads).
 _GAMELOG_STAT_KEYS = (
     "pass_yd", "pass_td", "pass_int", "pass_att",
     "rush_att", "rush_yd", "rush_td",
     "rec", "rec_tgt", "rec_yd", "rec_td", "fum_lost",
 )
-_WEEK_STAT_INDEX: Dict[Tuple[int, int], Tuple[float, Dict[str, Optional[tuple]]]] = {}
+_WEEK_STAT_INDEX: Dict[Tuple[int, int], Tuple[float, Dict[str, Optional[dict]]]] = {}
 _WEEK_STAT_INDEX_LOCK = threading.Lock()
 
 
-def _week_stat_index_rows(season: int, week: int) -> Dict[str, Optional[tuple]]:
+def _week_stat_index_rows(season: int, week: int) -> Dict[str, Optional[dict]]:
     """Compact per-player stat rows for one (season, week), parsed at most once.
 
-    Returns {player_id: 12-tuple} for players with any stat and
-    {player_id: None} for players whose row exists but is all zeros.
+    Returns {player_id: {stat_key: nonzero value}} for players with any stat
+    and {player_id: None} for players whose row exists but is all zeros.
     A file whose mtime changed since the cached parse is re-parsed.
     Never raises; a missing/unreadable file yields {}.
     """
@@ -19235,15 +19241,19 @@ def _week_stat_index_rows(season: int, week: int) -> Dict[str, Optional[tuple]]:
         hit = _WEEK_STAT_INDEX.get(key)
         if hit is not None and hit[0] >= mtime:
             return hit[1]
-        rows: Dict[str, Optional[tuple]] = {}
+        rows: Dict[str, Optional[dict]] = {}
         try:
             with open(path) as handle:
                 weekly = json.load(handle) or {}
             for pid, s in weekly.items():
                 if not isinstance(s, dict):
                     continue
-                vals = tuple((s.get(k) or 0) for k in _GAMELOG_STAT_KEYS)
-                rows[str(pid)] = vals if any(vals) else None
+                # Keep every nonzero stat, not just the display keys: the
+                # game-log points calc (score_stats) scores any stat key the
+                # league's scoring settings name, so dropping the rest would
+                # silently undercount custom-scoring leagues.
+                nonzero = {k: v for k, v in s.items() if v}
+                rows[str(pid)] = nonzero if nonzero else None
         except Exception:
             rows = {}
         _WEEK_STAT_INDEX[key] = (mtime, rows)
@@ -19273,12 +19283,18 @@ def _sleeper_stats_by_week(player_id: str, season_year: int) -> dict:
             continue
         rows = _week_stat_index_rows(season, int(match.group(1)))
         if pid in rows:
-            vals = rows[pid]
-            out[int(match.group(1))] = (
-                dict(zip(_GAMELOG_STAT_KEYS, vals))
-                if vals is not None
-                else {k: 0 for k in _GAMELOG_STAT_KEYS}
-            )
+            stored = rows[pid]
+            if stored is None:
+                # Present-but-all-zero row: a genuine 0.0 game, not DNP.
+                out[int(match.group(1))] = {k: 0 for k in _GAMELOG_STAT_KEYS}
+            else:
+                # Zero-fill the display keys the endpoint's _stats_dict picks
+                # (old full-row parse surfaced them as explicit zeros), then
+                # overlay every stored nonzero stat so score_stats sees the
+                # same values the pre-index parse did for custom scoring.
+                merged = {k: 0 for k in _GAMELOG_STAT_KEYS}
+                merged.update(stored)
+                out[int(match.group(1))] = merged
     return out
 
 
