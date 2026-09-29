@@ -864,6 +864,33 @@ def _drop_add_pairs(cut_candidates: list[dict],
     return pairs
 
 
+def _exclude_hurt_waiver_targets(waiver_targets: list[dict],
+                                 scoring_type: str) -> list[dict]:
+    """Dart hardening: seriously-hurt players can never be waiver "add"
+    candidates in redraft.
+
+    Uses the canonical utils.waiver_score.SERIOUS_INJURY_STATUSES set (lazy
+    import, like _urgent_needs, so this stays importable without the full
+    app stack). Dynasty keeps hurt players but labels them stash-only so the
+    report prices them as stashes, never as immediate adds.
+    """
+    try:
+        from utils.waiver_score import SERIOUS_INJURY_STATUSES
+    except Exception:
+        SERIOUS_INJURY_STATUSES = set()
+
+    def _serious(w: dict) -> bool:
+        return _inj_canonical(str(w.get("injury") or "")) in SERIOUS_INJURY_STATUSES
+
+    targets = list(waiver_targets or [])
+    if scoring_type == "redraft":
+        return [w for w in targets if not _serious(w)]
+    for w in targets:
+        if _serious(w):
+            w["stash_only"] = True
+    return targets
+
+
 def build_front_office_data(ctx: dict, viewer_roster_id: str) -> dict | None:
     """Assemble every computed input the report needs. Returns None when the
     roster cannot be resolved."""
@@ -902,7 +929,6 @@ def build_front_office_data(ctx: dict, viewer_roster_id: str) -> dict | None:
     cut_candidates = _cut_candidates(roster_rows)
     urgent_needs = _urgent_needs(ctx, roster, roster_rows, week)
     _apply_urgency(trade_targets, waiver_targets, urgent_needs)
-    _annotate_waiver_alternatives(trade_targets, waiver_targets)
     injury_rows = _build_injury_rows(ctx, roster_rows)
     # Roster table shows the ESPN return estimate next to the injury pill.
     wo_by_id = {r["id"]: r["weeks_out"] for r in injury_rows}
@@ -921,6 +947,14 @@ def build_front_office_data(ctx: dict, viewer_roster_id: str) -> dict | None:
         info = inj_map.get(str(w.get("id")) or "") or {}
         desig = str(info.get("designation") or "")
         w["injury"] = desig if _inj_is_reportable(desig, info.get("body")) else ""
+    # Dart hardening: a seriously-hurt player can never be an "add"
+    # candidate in redraft; dynasty keeps them labeled stash-only.
+    waiver_targets = _exclude_hurt_waiver_targets(waiver_targets, scoring_type)
+    # Waiver alternatives were annotated from the pre-filter list; recompute
+    # so a hurt free agent is never pitched as the reason to skip a trade.
+    for t in trade_targets:
+        t.pop("waiver_alternative", None)
+    _annotate_waiver_alternatives(trade_targets, waiver_targets)
     opponent_injuries = _opponent_injuries(ctx, this_week)
     data = {
         "team_name": team_ctx.get("team_name"),
@@ -1384,6 +1418,10 @@ def _waivers_cuts_html(data: dict, ai: dict) -> str:
             f" <span class='for-inj'>{html.escape(str(w['injury']))}</span>"
             if w.get("injury") else ""
         )
+        w_stash = (
+            " <span class='for-lbl-inline'>IR stash only</span>"
+            if w.get("stash_only") else ""
+        )
         note_html = f"<div class='for-pick-note'>{note}</div>" if note else ""
         urgent_html = ""
         if w.get("urgent"):
@@ -1394,7 +1432,7 @@ def _waivers_cuts_html(data: dict, ai: dict) -> str:
         w_items.append(
             "<li class='for-pick'>"
             "<span class='for-pick-badge for-add'>+</span>"
-            f"<div class='for-pick-body'><strong>{html.escape(w['name'])}</strong>{w_inj} "
+            f"<div class='for-pick-body'><strong>{html.escape(w['name'])}</strong>{w_inj}{w_stash} "
             f"<span class='for-muted'>{html.escape(w['position'])}, {html.escape(w['team'])}{rank}</span>"
             f"{urgent_html}{note_html}</div></li>"
         )

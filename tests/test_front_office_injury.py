@@ -10,6 +10,7 @@ Heavy deps are stubbed like tests/test_front_office_report_render.py;
 injury_return and utils.utils are stubbed per-test with monkeypatch so the
 stubs never leak into other test modules.
 """
+import json
 import sys
 import types
 
@@ -60,6 +61,8 @@ _stub("utils.roster_strength", STARTER_THRESHOLD=0)
 
 from dashboard_services.ai.front_office_report import (  # noqa: E402
     _build_injury_rows,
+    _drop_add_pairs,
+    _exclude_hurt_waiver_targets,
     _fmt_weeks_out,
     _inj_canonical,
     _inj_is_reportable,
@@ -407,3 +410,106 @@ def test_no_em_dashes_in_injury_copy():
         _injury_card_html(rows),
     ):
         assert "\u2014" not in html_out
+
+
+# ---------------------------------------------------------------------------
+# Dart hardening: seriously-hurt players can never be waiver "add"
+# candidates in redraft. Dynasty keeps them, labeled stash-only.
+# ---------------------------------------------------------------------------
+
+def _dart_like_targets():
+    return [
+        {"id": "dart", "name": "Jaxson Dart", "position": "QB", "team": "NYG",
+         "value": 900.0, "injury": "IR"},
+        {"id": "healthy", "name": "Healthy Vet", "position": "QB", "team": "DAL",
+         "value": 800.0, "injury": ""},
+        {"id": "gametime", "name": "GameTime QB", "position": "QB", "team": "BUF",
+         "value": 700.0, "injury": "Q"},
+    ]
+
+
+def test_redraft_excludes_ir_waiver_target():
+    out = _exclude_hurt_waiver_targets(_dart_like_targets(), "redraft")
+    names = [w["name"] for w in out]
+    assert "Jaxson Dart" not in names
+    # QUESTIONABLE stays: a game-time call is still a playable add.
+    assert names == ["Healthy Vet", "GameTime QB"]
+
+
+def test_redraft_excludes_every_serious_designation():
+    from utils.waiver_score import SERIOUS_INJURY_STATUSES
+    for status in sorted(SERIOUS_INJURY_STATUSES):
+        targets = [{"id": "x", "name": "Hurt Guy", "position": "RB",
+                    "team": "KC", "value": 500.0, "injury": status}]
+        assert _exclude_hurt_waiver_targets(targets, "redraft") == [], status
+    # Single-letter codes canonicalize too.
+    for code in ("O", "D"):
+        targets = [{"id": "x", "name": "Hurt Guy", "position": "RB",
+                    "team": "KC", "value": 500.0, "injury": code}]
+        assert _exclude_hurt_waiver_targets(targets, "redraft") == [], code
+
+
+def test_dynasty_keeps_hurt_labeled_stash_only():
+    targets = _dart_like_targets()
+    out = _exclude_hurt_waiver_targets(targets, "dynasty")
+    assert [w["name"] for w in out] == ["Jaxson Dart", "Healthy Vet", "GameTime QB"]
+    dart = next(w for w in out if w["name"] == "Jaxson Dart")
+    assert dart["stash_only"] is True
+    assert all(not w.get("stash_only") for w in out if w["name"] != "Jaxson Dart")
+
+
+def test_drop_add_pairs_cannot_add_hurt_player():
+    filtered = _exclude_hurt_waiver_targets(_dart_like_targets(), "redraft")
+    cuts = [{"id": "watson", "name": "Deshaun Watson", "position": "QB",
+             "team": "CLE", "value": 100.0}]
+    pairs = _drop_add_pairs(cuts, filtered)
+    assert all(p["add"]["name"] != "Jaxson Dart" for p in pairs)
+    # The stale top_move pairing ("Drop Deshaun Watson, add Jaxson Dart")
+    # is no longer constructible from redraft candidacy.
+    assert not any(
+        p["drop"]["name"] == "Deshaun Watson" and p["add"]["name"] == "Jaxson Dart"
+        for p in pairs
+    )
+
+
+def _load_prompts(monkeypatch):
+    """Import the real prompts module with hermetic client/prose stubs."""
+    client = types.ModuleType("dashboard_services.ai.client")
+    client.clean_ai_text = lambda s: s
+    client.get_ai_client = lambda: None
+    prose = types.ModuleType("dashboard_services.ai.prose")
+    prose.scrub_ai_prose_field_names = lambda d: d
+    prose.scrub_ai_result_strings = lambda d: d
+    monkeypatch.setitem(sys.modules, "dashboard_services.ai.client", client)
+    monkeypatch.setitem(sys.modules, "dashboard_services.ai.prose", prose)
+    sys.modules.pop("dashboard_services.ai.prompts", None)
+    import dashboard_services.ai.prompts as prompts
+    return prompts
+
+
+def test_prompt_bars_injured_top_move_add(monkeypatch):
+    prompts = _load_prompts(monkeypatch)
+    system = prompts.build_front_office_report_prompt({}, "redraft")
+    assert "It must NEVER recommend" in system
+    assert "serious injury designation" in system
+    assert "If every candidate at the needed position is" in system
+
+
+def test_prompt_labels_dynasty_stash_only(monkeypatch):
+    prompts = _load_prompts(monkeypatch)
+    system = prompts.build_front_office_report_prompt({}, "dynasty")
+    assert 'label it "IR stash' in system
+
+
+def test_dart_scenario_absent_from_redraft_payload(monkeypatch):
+    prompts = _load_prompts(monkeypatch)
+    filtered = _exclude_hurt_waiver_targets(_dart_like_targets(), "redraft")
+    cuts = [{"id": "watson", "name": "Deshaun Watson", "position": "QB",
+             "team": "CLE", "value": 100.0}]
+    payload = prompts.build_front_office_prompt_payload({
+        "scoring_type": "redraft",
+        "waiver_targets": filtered,
+        "drop_add_pairs": _drop_add_pairs(cuts, filtered),
+    })
+    blob = json.dumps(payload)
+    assert "Jaxson Dart" not in blob
