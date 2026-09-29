@@ -64,8 +64,10 @@ def test_paywall_and_pricing_explain_pro_and_plan_coverage():
         assert "Recommended" in source
         assert "Most popular" not in source
         assert "Your league mates are not upgraded" in source
-        assert "change it anytime" in source
         assert "your choice" in source
+    # Plan-change flexibility copy (banned "Pick them after checkout..." phrasing removed)
+    assert "switch anytime" in billing
+    assert "change it anytime" in PAYWALL_JS
     assert "What PRO includes" in billing
     assert "What remains free" in billing
     assert "Sample preview" in billing

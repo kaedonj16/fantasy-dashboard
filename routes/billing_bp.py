@@ -1381,8 +1381,8 @@ def _pricing_body(league_id: str | None = None, platform: str = "sleeper") -> st
 
     selected_plan = plan if plan in {"starter", "all_pro", "hall_of_fame"} else ""
     plans = [
-        ("starter", "Starter", "$10/year", "$1.49/mo", "PRO for you in 1 league of your choice. Pick it after checkout and change it anytime. Your league mates are not upgraded.", "Choose Starter", False),
-        ("all_pro", "All-Pro", "$30/year", "$4.49/mo", "PRO for you in up to 5 leagues. Pick them after checkout and change them anytime. Your league mates are not upgraded.", "Choose All-Pro", True),
+        ("starter", "Starter", "$10/year", "$1.49/mo", "PRO for you in 1 league of your choice. Choose your league after checkout and switch anytime. Your league mates are not upgraded.", "Choose Starter", False),
+        ("all_pro", "All-Pro", "$30/year", "$4.49/mo", "PRO for you in up to 5 leagues. Choose your leagues after checkout and switch anytime. Your league mates are not upgraded.", "Choose All-Pro", True),
         ("hall_of_fame", "Hall of Fame", "$50/year", "$7.49/mo", "PRO for you in every league you play. Your league mates are not upgraded.", "Choose Hall of Fame", False),
     ]
 

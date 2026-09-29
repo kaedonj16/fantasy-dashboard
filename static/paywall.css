@@ -455,19 +455,22 @@
 .pricing-trial-card .btn { flex-shrink:0; }
 .pricing-trial-active { border-top-color:#16a34a; }
 .pricing-trial-count { font-size:28px; font-weight:800; color:var(--brand-blue, #2563eb); flex-shrink:0; }
-.paywall-trial-strip {
-  display:flex; align-items:center; justify-content:space-between; gap:12px;
-  padding:12px 14px; margin:0 auto 16px; max-width:620px;
-  border:1px solid var(--border); border-radius:12px;
-  background:color-mix(in srgb, var(--brand-blue, #2563eb) 7%, transparent);
-  text-align:left;
+/* Paywall modal: feature name is the headline, "Premium Feature" is the eyebrow */
+.paywall-title-wrap { display:flex; flex-direction:column; gap:4px; text-align:left; }
+.paywall-eyebrow {
+  margin:0; font-size:11px; font-weight:800; letter-spacing:1.4px; text-transform:uppercase;
+  color:var(--text-muted);
 }
-.paywall-trial-copy { display:flex; flex-direction:column; gap:2px; font-size:13px; color:var(--text-muted); }
-.paywall-trial-copy strong { color:var(--text); font-size:14px; }
-.paywall-trial-btn { flex-shrink:0; white-space:nowrap; }
+.paywall-eyebrow i { margin-right:6px; }
+.paywall-lead { font-size:17px !important; color:var(--text) !important; font-weight:600; }
+/* Trial CTA as the primary action, plan cards as the secondary path */
+.paywall-trial-primary { margin:4px 0 8px; text-align:center; }
+.paywall-trial-big { font-size:16px; padding:12px 28px; width:100%; max-width:340px; }
+.paywall-trial-sub { margin:10px 0 0; font-size:13px; color:var(--text-muted); }
+.paywall-or { display:flex; align-items:center; gap:12px; margin:20px 0 0; color:var(--text-muted); font-size:12px; text-transform:uppercase; letter-spacing:1px; }
+.paywall-or::before, .paywall-or::after { content:""; flex:1; border-top:1px solid var(--border); }
 @media (max-width:600px) {
   .pricing-trial-card { flex-direction:column; align-items:stretch; text-align:center; }
-  .paywall-trial-strip { flex-direction:column; align-items:stretch; text-align:center; }
 }
 
 /* ── PRO plan modal redesign ──────────────────────────────────────────

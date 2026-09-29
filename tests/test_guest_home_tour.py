@@ -78,9 +78,9 @@ def test_real_testimonials_present():
     region = _guest_region()
     assert "THATS ACTUALLY SO SICK BRO" in region
     assert "Jayden Waddell" in region
-    assert "outperformed all my projections in 3 leagues" in region
-    assert "can't wait to see what it looks like in season" in region
-    assert "Manager name" not in region
+    assert "Name coming soon" not in region
+    assert "Blackedraw manager" not in region
+    assert "quotes-single" in region
 
 
 def test_free_tools_band_links_real_public_pages():
