@@ -31959,6 +31959,7 @@ def build_portfolio_body(
         total_wins: int = 0,
         total_losses: int = 0,
         total_ties: int = 0,
+        current_week: int = 0,
 ) -> str:
     _POS_COLORS = {"QB": "#3b82f6", "RB": "#22c55e", "WR": "#f59e0b", "TE": "#8b5cf6"}
     _ARCH_COLORS = {"QB-Heavy": "#3b82f6", "RB Corps": "#22c55e", "WR-Spread": "#f59e0b", "TE-Premium": "#8b5cf6",
@@ -32009,6 +32010,7 @@ def build_portfolio_body(
         ".pf-notif-btn:hover{color:var(--accent);border-color:var(--accent);}"
         ".pf-stat-bar{display:grid;grid-template-columns:repeat(3,1fr);"
         "border:1px solid var(--grid);border-radius:12px;overflow:hidden;background:var(--row);}"
+        ".pf-stat-bar--4{grid-template-columns:repeat(4,1fr);}"
         ".pf-stat{padding:12px 10px;text-align:center;min-width:0;}"
         ".pf-stat+.pf-stat{border-left:1px solid var(--grid);}"
         ".pf-stat-val{font-size:24px;font-weight:800;color:var(--text);line-height:1.15;"
@@ -32156,6 +32158,26 @@ def build_portfolio_body(
     # ── Summary card ────────────────────────────────────────────────────────
     rec_str = f"{total_wins}-{total_losses}" + (f"-{total_ties}" if total_ties else "")
     rec_cls = "color-win" if total_wins > total_losses else ("color-loss" if total_losses > total_wins else "")
+    # Last-week aggregate: W/L/T across leagues with a finalized result for the
+    # most recent week. Only meaningful after week 1, so the cell is omitted
+    # entirely until then (never a dangling "0-0").
+    _lw_w = _lw_l = _lw_t = 0
+    for _lg in valid_leagues or []:
+        _r = (_lg.get("last_week_result") or "").strip().upper()
+        if _r == "W":
+            _lw_w += 1
+        elif _r == "L":
+            _lw_l += 1
+        elif _r == "T":
+            _lw_t += 1
+    _show_lw = bool(current_week and current_week > 1 and (_lw_w + _lw_l + _lw_t) > 0)
+    _lw_str = f"{_lw_w}-{_lw_l}" + (f"-{_lw_t}" if _lw_t else "")
+    _lw_cls = "color-win" if _lw_w > _lw_l else ("color-loss" if _lw_l > _lw_w else "")
+    _lw_cell = (
+        f"<div class='pf-stat'><div class='pf-stat-val {_lw_cls}' data-portfolio-lw-record>{_lw_str}</div>"
+        f"<div class='pf-stat-label'>Last Week</div></div>"
+    ) if _show_lw else ""
+    _bar_cls = "pf-stat-bar pf-stat-bar--4" if _show_lw else "pf-stat-bar"
     _who = html.escape(username or "your account")
     top_strip = (
         f"<div class='card' style='margin-bottom:14px;'>"
@@ -32169,9 +32191,10 @@ def build_portfolio_body(
         f"<button type='button' class='pf-notif-btn' onclick='if(window.openNotifPrefs)window.openNotifPrefs()' title='Notification settings'>"
         f"<img src='/static/bell.png' style='width:13px;height:13px;opacity:.7;' alt=''>Alerts</button>"
         f"</div>"
-        f"<div class='pf-stat-bar'>"
+        f"<div class='{_bar_cls}'>"
         f"<div class='pf-stat'><div class='pf-stat-val' data-portfolio-league-count>{num_leagues}</div><div class='pf-stat-label'>Leagues</div></div>"
         f"<div class='pf-stat'><div class='pf-stat-val {rec_cls}' data-portfolio-agg-record data-wins='{total_wins}' data-losses='{total_losses}' data-ties='{total_ties}'>{rec_str}</div><div class='pf-stat-label'>Record</div></div>"
+        f"{_lw_cell}"
         f"<div class='pf-stat'><div class='pf-stat-val'>{season}</div><div class='pf-stat-label'>Season</div></div>"
         f"</div>"
         f"</div>"
@@ -32505,6 +32528,10 @@ def build_portfolio_body(
         total = lg.get("total_teams") or "?"
         rec = lg.get("record") or f"{wins}-{losses}"
         rec_cls2 = "color-win" if wins > losses else ("color-loss" if losses > wins else "")
+        # Last-week result hook for the client-side "Last Week" aggregate
+        # recompute as cold cards hydrate (mirrors data-wins/losses/ties).
+        _lw_r = (lg.get("last_week_result") or "").strip().upper()
+        _lw_attr = f" data-lw-result='{_lw_r}'" if _lw_r in ("W", "L", "T") else ""
 
         # Standing as an ordinal place ("10th / 10") with a red flag for a
         # bottom-third finish -- a place reads more clearly than the old "10/10",
@@ -32582,7 +32609,7 @@ def build_portfolio_body(
         # Live matchup slot: hydrated client-side (see pfLiveScores below) only
         # in-season during game weeks. Starts as a content-shaped skeleton so the
         league_rows += (
-            f"<div class='pf-lg-card' data-summary-card data-lg-key='{plat}:{lid}' data-favorite='{'true' if lg.get('is_favorite') else 'false'}' data-platform='{html.escape(str(plat), quote=True)}' data-league-id='{html.escape(str(lid), quote=True)}' data-season='{card_season}' data-wins='{wins}' data-losses='{losses}' data-ties='{ties}'>"
+            f"<div class='pf-lg-card' data-summary-card data-lg-key='{plat}:{lid}' data-favorite='{'true' if lg.get('is_favorite') else 'false'}' data-platform='{html.escape(str(plat), quote=True)}' data-league-id='{html.escape(str(lid), quote=True)}' data-season='{card_season}' data-wins='{wins}' data-losses='{losses}' data-ties='{ties}'{_lw_attr}>"
             f"<div class='pf-lg-top'>"
             f"<span class='pf-lg-crest' style='background:{_crest_hue};'>{_ini}</span>"
             f"{_lg_id(name_link, plat, off_note, '', lg.get('team_name') or '')}"

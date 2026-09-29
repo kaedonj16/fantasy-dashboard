@@ -23109,6 +23109,18 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
     if (frac >= 2 / 3 - 1e-9) return 'weak';
     return 'mid';
   }
+  // Write innerHTML only when the markup actually changed. Portfolio refresh
+  // re-renders every card, and unconditional writes force a full repaint of
+  // each card even when the data is identical. The last-written string is
+  // cached on the element because reading innerHTML back is normalized by
+  // the parser and won't match the source string.
+  function setHtmlIfChanged(el, html) {
+    if (!el) return false;
+    if (el._pfHtml === html) return false;
+    el._pfHtml = html;
+    el.innerHTML = html;
+    return true;
+  }
   function renderStrength(card, data, totalN) {
     var stats = card.querySelector('[data-summary-stats]');
     if (!stats) return;
@@ -23126,10 +23138,13 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
         '<span class="pc-rank">' + pr + '<sup>' + ord + '</sup></span></div>';
     }).join('');
     var existing = card.querySelector('.pf-lg-strength');
-    if (!chips) { if (existing) existing.remove(); return; }
+    if (!chips) { if (existing) existing.remove(); card._pfStrengthHtml = null; return; }
     var html = '<div class="pf-lg-strength"><div class="pf-lg-strength-head">' +
       '<span class="pf-lg-l">Position strength</span><span class="pf-lg-l pf-lg-l--muted">rank in league</span></div>' +
       '<div class="pf-strbar">' + chips + '</div></div>';
+    // outerHTML replaces the node, so the change cache lives on the card.
+    if (card._pfStrengthHtml === html) return;
+    card._pfStrengthHtml = html;
     if (existing) { existing.outerHTML = html; } else { stats.insertAdjacentHTML('afterend', html); }
   }
   function renderSummary(card, data) {
@@ -23159,24 +23174,31 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
             return '<span class="pf-s-pill ' + cls + '">' + (r === 'W' ? 'W' : 'L') + '</span>';
           }).join('') + '</span>'
         : '<span class="pf-streak-empty">-</span>';
-      stats.innerHTML = '<span class="pf-lg-stat"><span class="pf-lg-v ' + recCls + '">' + escapeHtml(data.record == null ? '-' : data.record) + '</span><span class="pf-lg-l">Record</span></span>' +
+      var statsHtml = '<span class="pf-lg-stat"><span class="pf-lg-v ' + recCls + '">' + escapeHtml(data.record == null ? '-' : data.record) + '</span><span class="pf-lg-l">Record</span></span>' +
         '<span class="pf-lg-stat" title="Regular-season standings: wins, then points for"><span class="pf-lg-v' + weakCls + '">' + escapeHtml(rank) + ' <small>/ ' + escapeHtml(teams) + '</small></span><span class="pf-lg-l">Standing</span></span>' +
         '<span class="pf-lg-stat pf-lg-stat--streak">' + streakHtml + '<span class="pf-lg-l">Streak</span></span>';
+      setHtmlIfChanged(stats, statsHtml);
       renderStrength(card, data, totalN);
       var stamp = data.last_successful_sync_at || data.refreshed_at;
-      if (updated && stamp) updated.textContent = (data.stale ? 'Last good data · ' : 'Updated ') + new Date(stamp).toLocaleString();
+      if (updated && stamp) {
+        var stampTxt = (data.stale ? 'Last good data · ' : 'Updated ') + new Date(stamp).toLocaleString();
+        if (updated._pfStamp !== stampTxt) { updated._pfStamp = stampTxt; updated.textContent = stampTxt; }
+      }
       if (retry) retry.hidden = true;
       card.dataset.summaryGood = 'true';
       // Stamp per-league record for aggregate recomputation, then refresh the
-      // summary bar total (server value only covered warm leagues).
+      // summary bar totals (server values only covered warm leagues).
       if (Number.isFinite(wins)) card.dataset.wins = String(wins);
       if (Number.isFinite(losses)) card.dataset.losses = String(losses);
       var ties = Number(data.ties);
       if (Number.isFinite(ties)) card.dataset.ties = String(ties);
+      var lwRes = String(data.last_week_result || '').toUpperCase();
+      if (lwRes === 'W' || lwRes === 'L' || lwRes === 'T') card.dataset.lwResult = lwRes;
       updateAggregateRecord();
+      updateLastWeekRecord();
       return true;
     }
-    if (card.dataset.summaryGood !== 'true') stats.innerHTML = '<span class="pf-lg-l">' + escapeHtml(data.message || 'Summary unavailable. Retry.') + '</span>';
+    if (card.dataset.summaryGood !== 'true') setHtmlIfChanged(stats, '<span class="pf-lg-l">' + escapeHtml(data.message || 'Summary unavailable. Retry.') + '</span>');
     if (retry) retry.hidden = false;
     return false;
   }
@@ -23198,6 +23220,10 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
       wins += w; losses += l; ties += t;
     }
     var recStr = wins + '-' + losses + (ties ? '-' + ties : '');
+    // The bar is recomputed on every card hydration and every refresh: skip
+    // the DOM write when the total didn't change so the header never repaints.
+    if (agg._pfRec === recStr) return;
+    agg._pfRec = recStr;
     agg.textContent = recStr;
     agg.dataset.wins = String(wins);
     agg.dataset.losses = String(losses);
@@ -23205,6 +23231,30 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
     agg.classList.remove('color-win', 'color-loss');
     if (wins > losses) agg.classList.add('color-win');
     else if (losses > wins) agg.classList.add('color-loss');
+  }
+  // Recompute the "Last Week" W-L-T in the portfolio summary bar as cards
+  // hydrate. Mirrors updateAggregateRecord: the server-rendered total only
+  // covers warm leagues, so cold cards contribute their data-lw-result once
+  // their summaries arrive. No-op when the server omitted the cell (week 1).
+  function updateLastWeekRecord() {
+    var agg = document.querySelector('[data-portfolio-lw-record]');
+    if (!agg) return;
+    var w = 0, l = 0, t = 0;
+    var cards = document.querySelectorAll('.pf-lg-card[data-summary-card]');
+    for (var i = 0; i < cards.length; i++) {
+      var r = (cards[i].dataset.lwResult || '').toUpperCase();
+      if (r === 'W') w++;
+      else if (r === 'L') l++;
+      else if (r === 'T') t++;
+    }
+    if (!w && !l && !t) return;
+    var lwStr = w + '-' + l + (t ? '-' + t : '');
+    if (agg._pfLw === lwStr) return;
+    agg._pfLw = lwStr;
+    agg.textContent = lwStr;
+    agg.classList.remove('color-win', 'color-loss');
+    if (w > l) agg.classList.add('color-win');
+    else if (l > w) agg.classList.add('color-loss');
   }
 
   function destroy(owner) {

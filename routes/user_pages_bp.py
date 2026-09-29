@@ -192,6 +192,12 @@ def page_portfolio():
         from_season = None
     nfl_state = get_nfl_state() or {}
     season = int(nfl_state.get("season") or datetime.now().year)
+    # Current NFL week gates the portfolio "Last Week" stat: it is only
+    # meaningful after week 1, so build_portfolio_body omits it until then.
+    try:
+        current_week = int(nfl_state.get("week") or 0)
+    except (TypeError, ValueError):
+        current_week = 0
     # Every league durably linked to the Google account, regardless of platform,
     # plus live Sleeper enrichment from linked identities. The shared builder also
     # backs /api/my-leagues so the portfolio and switcher never diverge.
@@ -592,6 +598,7 @@ def page_portfolio():
         valid_leagues, leagues_data, season,
         holdings, num_leagues, nfl_exposure, cross_pos,
         total_wins, total_losses, total_ties,
+        current_week=current_week,
     )
 
     # Always render with a league nav context - fall back to first valid league
