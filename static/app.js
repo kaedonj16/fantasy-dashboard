@@ -38,6 +38,32 @@ function escapeHtml(s) {
   });
 }
 
+// ── Guest league view recorder ──────────────────────────────────────────────
+// When a guest (not signed in) views a league dashboard, remember which league
+// it was in localStorage. If they later sign in with zero saved leagues, the
+// home page offers to attach that league to their account (see
+// maybeShowGuestClaimLeague). One record only; overwritten on each guest view.
+(function recordGuestLeagueView() {
+  try {
+    if (window._isSignedIn) return;
+    const ctx = window.__brctx;
+    if (!ctx || !ctx.leagueId || !ctx.platform) return;
+    let username = "";
+    try {
+      const savedViewer = JSON.parse(localStorage.getItem("saved_viewer") || "null");
+      if (savedViewer && savedViewer.username) username = String(savedViewer.username);
+    } catch (_) {}
+    localStorage.setItem("br-guest-league", JSON.stringify({
+      platform: String(ctx.platform).toLowerCase(),
+      league_id: String(ctx.leagueId),
+      season: ctx.season || new Date().getFullYear(),
+      name: ctx.leagueName || "",
+      username: username,
+      ts: Date.now(),
+    }));
+  } catch (_) {}
+})();
+
 /**
  * Allowlist sanitizer for AI HTML before innerHTML assignment.
  * Strips script/iframe/object/embed, on* handlers, and javascript: URLs.
@@ -11849,6 +11875,84 @@ if (!platformBtns.length) return;
   }
   window.setHomeCardState = setHomeCardState;
 
+  // ── Guest league claim ────────────────────────────────────────────────
+  // If the user signed in with zero saved leagues but previously viewed a
+  // league as a guest on this browser, offer to attach it to their account
+  // with one tap. Dismissal is remembered per browser; the prompt never nags.
+  function maybeShowGuestClaimLeague() {
+    if (document.getElementById("guestClaimCard")) return;
+    let guest = null;
+    try {
+      if (localStorage.getItem("br-guest-claim-dismissed") === "1") return;
+      guest = JSON.parse(localStorage.getItem("br-guest-league") || "null");
+    } catch (_) { return; }
+    if (!guest || !guest.platform || !guest.league_id) return;
+
+    const card = document.createElement("div");
+    card.id = "guestClaimCard";
+    card.className = "guest-claim-card";
+    const leagueLabel = guest.name || "your league";
+    card.innerHTML =
+      '<div class="guest-claim-text"><strong>You were viewing ' + safeHomeText(leagueLabel) +
+      ' as a guest.</strong><span>Save it to your account so it is here on every device.</span></div>' +
+      '<div class="guest-claim-actions"><button type="button" class="guest-claim-save">Save to my account</button>' +
+      '<button type="button" class="guest-claim-dismiss">Not now</button></div>' +
+      '<p class="guest-claim-error" role="alert" style="display:none;"></p>';
+
+    const errEl = card.querySelector(".guest-claim-error");
+    const saveBtn = card.querySelector(".guest-claim-save");
+    const dismissBtn = card.querySelector(".guest-claim-dismiss");
+    const dismiss = () => {
+      try { localStorage.setItem("br-guest-claim-dismissed", "1"); } catch (_) {}
+      card.remove();
+    };
+    if (dismissBtn) dismissBtn.addEventListener("click", dismiss);
+    if (saveBtn) saveBtn.addEventListener("click", async () => {
+      saveBtn.disabled = true;
+      saveBtn.textContent = "Saving…";
+      if (errEl) errEl.style.display = "none";
+      try {
+        const res = await fetch("/api/link/add", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            platform: guest.platform,
+            league_id: guest.league_id,
+            season: guest.season,
+            name: guest.name || undefined,
+            username: guest.username || undefined,
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.ok) {
+          throw new Error(data.error || "Could not save that league.");
+        }
+        try {
+          localStorage.removeItem("br-guest-league");
+          localStorage.setItem("br-guest-claim-dismissed", "1");
+        } catch (_) {}
+        window.location.href =
+          "/" + encodeURIComponent(guest.platform) +
+          "/" + encodeURIComponent(guest.season || new Date().getFullYear()) +
+          "/" + encodeURIComponent(guest.league_id) + "/dashboard";
+      } catch (err) {
+        saveBtn.disabled = false;
+        saveBtn.textContent = "Save to my account";
+        if (errEl) {
+          errEl.textContent = err.message || "Could not save that league.";
+          errEl.style.display = "block";
+        }
+      }
+    });
+
+    const anchor = document.getElementById("signedInHome");
+    if (anchor && anchor.parentNode) {
+      anchor.parentNode.insertBefore(card, anchor.nextSibling);
+    } else if (signedInLeagueList && signedInLeagueList.parentNode) {
+      signedInLeagueList.parentNode.insertBefore(card, signedInLeagueList.nextSibling);
+    }
+  }
+
   if (signedInHome && signedInLeagueList) {
     const loadSignedInLeagues = (options) => window.brGetMyLeagues(options).then((data) => {
       const leagues = data.leagues || [];
@@ -11859,6 +11963,8 @@ if (!platformBtns.length) return;
         const addLeagueBtn = document.getElementById("signedInAddLeague");
         if (addLeagueBtn) addLeagueBtn.textContent = "Connect your first league";
         setHomeCardState("connect");
+        // If they were viewing a league as a guest, offer to save it.
+        maybeShowGuestClaimLeague();
         return;
       }
       const pageSize = 3;
@@ -12066,6 +12172,106 @@ if (!platformBtns.length) return;
       if (espnS2Input) espnS2Input.value = "";
     }
   }
+
+  // ── Paste-your-league-URL ─────────────────────────────────────────────
+  // Each platform flow has a "Fastest: paste your league link" input. Parse
+  // the league ID out of a pasted URL and feed it into the existing manual
+  // inputs, so pasting is exactly equivalent to typing the ID by hand.
+  function parseLeagueUrl(platform, rawUrl) {
+    const u = String(rawUrl || "").trim();
+    if (!u) return null;
+    let m;
+    switch (String(platform || "").toLowerCase()) {
+      case "sleeper":
+        m = u.match(/sleeper\.app\/leagues\/(\d+)/i);
+        return m ? { league_id: m[1] } : null;
+      case "espn":
+        m = u.match(/[?&]leagueId=(\d+)/i);
+        return m ? { league_id: m[1] } : null;
+      case "yahoo":
+        m = u.match(/football\.fantasysports\.yahoo\.com\/(?:f1|nfl)\/(\d+)/i);
+        return m ? { league_id: m[1] } : null;
+      case "mfl":
+        m = u.match(/myfantasyleague\.com\/(\d{4})\/home\/(\d+)/i);
+        return m ? { league_id: m[2], season: m[1] } : null;
+      case "fleaflicker":
+        m = u.match(/fleaflicker\.com\/nfl\/leagues\/(\d+)/i);
+        return m ? { league_id: m[1] } : null;
+      default:
+        return null;
+    }
+  }
+  // Exposed for tests.
+  window.brParseLeagueUrl = parseLeagueUrl;
+
+  const LEAGUE_URL_PLATFORM_LABELS = {
+    sleeper: "Sleeper", espn: "ESPN", yahoo: "Yahoo",
+    mfl: "MFL", fleaflicker: "Fleaflicker",
+  };
+
+  function bindLeagueUrlInput(platform, urlInputId, onParsed) {
+    const urlInput = document.getElementById(urlInputId);
+    if (!urlInput) return;
+    const errEl = document.getElementById(urlInputId.replace(/UrlInput$/, "UrlError"));
+    const showError = (msg) => {
+      if (errEl) { errEl.textContent = msg; errEl.style.display = "block"; }
+      urlInput.classList.add("url-paste-invalid");
+      urlInput.classList.remove("url-paste-valid");
+    };
+    const clearError = () => {
+      if (errEl) errEl.style.display = "none";
+      urlInput.classList.remove("url-paste-invalid");
+    };
+    urlInput.addEventListener("input", () => {
+      const raw = urlInput.value;
+      if (!raw.trim()) {
+        clearError();
+        urlInput.classList.remove("url-paste-valid");
+        return;
+      }
+      const parsed = parseLeagueUrl(platform, raw);
+      if (!parsed) {
+        urlInput.classList.remove("url-paste-valid");
+        showError(
+          "That doesn't look like a " +
+          (LEAGUE_URL_PLATFORM_LABELS[platform] || platform) +
+          " league URL. Check the link and try again."
+        );
+        return;
+      }
+      clearError();
+      urlInput.classList.add("url-paste-valid");
+      onParsed(parsed);
+    });
+  }
+
+  bindLeagueUrlInput("sleeper", "sleeperUrlInput", (parsed) => {
+    // Sleeper's flow is username-based; drop the pasted league straight into
+    // the league picker so the user can continue with or without an account.
+    if (!leagueSelect) return;
+    leagueSelect.innerHTML = "";
+    const option = document.createElement("option");
+    option.value = parsed.league_id;
+    option.textContent = "League " + parsed.league_id;
+    leagueSelect.appendChild(option);
+    if (leagueSelectWrap) leagueSelectWrap.style.display = "block";
+    if (generateWrap) generateWrap.style.display = "block";
+    if (errorBox) errorBox.style.display = "none";
+    syncHomeContinueState();
+  });
+  bindLeagueUrlInput("espn", "espnUrlInput", (parsed) => {
+    if (espnLeagueIdInput) espnLeagueIdInput.value = parsed.league_id;
+  });
+  bindLeagueUrlInput("yahoo", "yahooUrlInput", (parsed) => {
+    if (yahooLeagueIdInput) yahooLeagueIdInput.value = parsed.league_id;
+  });
+  bindLeagueUrlInput("mfl", "mflUrlInput", (parsed) => {
+    if (mflLeagueIdInput) mflLeagueIdInput.value = parsed.league_id;
+    if (parsed.season && mflSeasonInput) mflSeasonInput.value = parsed.season;
+  });
+  bindLeagueUrlInput("fleaflicker", "fleaUrlInput", (parsed) => {
+    if (fleaLeagueIdInput) fleaLeagueIdInput.value = parsed.league_id;
+  });
 
   function setHomeYahooChoice() {
     if (yahooAccountChoice) yahooAccountChoice.style.display = !window._hasAccount ? "flex" : "none";

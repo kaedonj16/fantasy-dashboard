@@ -11204,6 +11204,53 @@ select:focus {
     color: #fecaca;
 }
 
+/* ── Paste-your-league-URL ─────────────────────────────────────────── */
+.url-paste-row {
+    margin-bottom: 6px;
+}
+.url-paste-row label {
+    display: block;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 6px;
+}
+.url-paste-row input[type="text"] {
+    width: 100%;
+    box-sizing: border-box;
+    min-height: 44px;
+    padding: 10px 12px;
+    font-size: 15px;
+    line-height: 1.4;
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    outline: none;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+.url-paste-row input[type="text"]::placeholder {
+    color: var(--text-muted);
+    opacity: 0.65;
+}
+.url-paste-row input[type="text"]:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.22);
+    background: rgba(255, 255, 255, 0.09);
+}
+.url-paste-row input[type="text"].url-paste-valid {
+    border-color: var(--win);
+}
+.url-paste-row input[type="text"].url-paste-invalid {
+    border-color: #f87171;
+}
+.url-paste-error {
+    margin: 6px 0 0;
+    font-size: 13px;
+    line-height: 1.45;
+    color: #fecaca;
+}
+
 .m-av {
     box-shadow: none;
 }
@@ -11987,6 +12034,83 @@ select:focus {
     display: flex;
     flex-direction: column;
     gap: 8px
+}
+
+/* ── Guest league claim card ───────────────────────────────────────── */
+.guest-claim-card {
+    margin: 12px 0;
+    padding: 14px 16px;
+    background: rgba(56, 189, 248, 0.08);
+    border: 1px solid rgba(56, 189, 248, 0.35);
+    border-radius: 12px;
+    animation: guestClaimIn 0.25s ease both;
+}
+@keyframes guestClaimIn {
+    from { opacity: 0; transform: translateY(-6px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+.guest-claim-text {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-bottom: 12px;
+}
+.guest-claim-text strong {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text);
+}
+.guest-claim-text span {
+    font-size: 13px;
+    line-height: 1.45;
+    color: var(--text-muted);
+}
+.guest-claim-actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+.guest-claim-save {
+    flex: 1;
+    min-width: 160px;
+    min-height: 44px;
+    padding: 10px 16px;
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--on-accent);
+    background: var(--accent);
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: opacity 0.15s ease;
+}
+.guest-claim-save:hover:not(:disabled) {
+    opacity: 0.9;
+}
+.guest-claim-save:disabled {
+    opacity: 0.6;
+    cursor: wait;
+}
+.guest-claim-dismiss {
+    min-height: 44px;
+    padding: 10px 16px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-muted);
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    cursor: pointer;
+    transition: color 0.15s ease, border-color 0.15s ease;
+}
+.guest-claim-dismiss:hover {
+    color: var(--text);
+    border-color: var(--text-muted);
+}
+.guest-claim-error {
+    margin: 10px 0 0;
+    font-size: 13px;
+    color: #fecaca;
 }
 
 .signed-home-league {

@@ -1457,6 +1457,11 @@ FORM_BODY = """
 
         <!-- Sleeper Flow -->
         <div id="sleeperFlow">
+          <div class="row url-paste-row">
+            <label for="sleeperUrlInput">Fastest: paste your league link</label>
+            <input type="text" id="sleeperUrlInput" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://sleeper.app/leagues/...">
+            <p class="url-paste-error" id="sleeperUrlError" role="alert" style="display:none;"></p>
+          </div>
           <div class="row">
             <label for="username">Sleeper Username</label>
             <input type="text" id="username" name="username" value="{{ username or '' }}">
@@ -1477,6 +1482,11 @@ FORM_BODY = """
             <button type="button" class="espn-home-method" data-espn-method="private" aria-pressed="false">Private League</button>
           </div>
           <p class="hint espn-home-description" id="espnHomeDescription">Public leagues: enter the League ID from your ESPN URL. Success = your league dashboard loads with standings and rosters.</p>
+          <div class="row url-paste-row">
+            <label for="espnUrlInput">Fastest: paste your league link</label>
+            <input type="text" id="espnUrlInput" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://fantasy.espn.com/...">
+            <p class="url-paste-error" id="espnUrlError" role="alert" style="display:none;"></p>
+          </div>
           <div class="row">
             <label for="espnLeagueIdInput">League ID</label>
             <input type="text" id="espnLeagueIdInput" placeholder="e.g. 336414" autocomplete="off">
@@ -1539,6 +1549,11 @@ FORM_BODY = """
 
         <!-- Yahoo Flow -->
         <div id="yahooFlow" style="display:none;">
+          <div class="row url-paste-row">
+            <label for="yahooUrlInput">Fastest: paste your league link</label>
+            <input type="text" id="yahooUrlInput" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://football.fantasysports.yahoo.com/...">
+            <p class="url-paste-error" id="yahooUrlError" role="alert" style="display:none;"></p>
+          </div>
           <div class="row">
             <label for="yahooLeagueIdInput">Yahoo League ID</label>
             <input type="text" id="yahooLeagueIdInput" placeholder="e.g. 123456" autocomplete="off">
@@ -1575,6 +1590,11 @@ FORM_BODY = """
             <button type="button" class="mfl-home-method" data-mfl-method="private" aria-pressed="false">Private League</button>
           </div>
           <p class="hint espn-home-description" id="mflHomeDescription">Connect a publicly accessible MyFantasyLeague league using its League ID.</p>
+          <div class="row url-paste-row">
+            <label for="mflUrlInput">Fastest: paste your league link</label>
+            <input type="text" id="mflUrlInput" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://www.myfantasyleague.com/...">
+            <p class="url-paste-error" id="mflUrlError" role="alert" style="display:none;"></p>
+          </div>
           <div class="row">
             <label for="mflLeagueIdInput">MFL League ID</label>
             <input type="text" id="mflLeagueIdInput" inputmode="numeric" placeholder="e.g. 12345" autocomplete="off">
@@ -1629,6 +1649,11 @@ FORM_BODY = """
             <button type="button" class="flea-home-method" data-flea-method="private" aria-pressed="false">Private League</button>
           </div>
           <p class="hint espn-home-description" id="fleaHomeDescription">Connect a publicly accessible Fleaflicker league using its League ID.</p>
+          <div class="row url-paste-row">
+            <label for="fleaUrlInput">Fastest: paste your league link</label>
+            <input type="text" id="fleaUrlInput" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://www.fleaflicker.com/nfl/leagues/...">
+            <p class="url-paste-error" id="fleaUrlError" role="alert" style="display:none;"></p>
+          </div>
           <div class="row">
             <label for="fleaLeagueIdInput">Fleaflicker League ID</label>
             <input type="text" id="fleaLeagueIdInput" inputmode="numeric" placeholder="e.g. 14153" autocomplete="off">
