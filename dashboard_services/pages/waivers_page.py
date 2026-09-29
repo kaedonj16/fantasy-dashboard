@@ -852,6 +852,14 @@ function wvLoadLab() {{
         + ' <button type="button" class="wv-lab-btn" onclick="wvLabData=null;wvLoadLab()">Try again</button></div>';
       return;
     }}
+    // Opponent failed to load: never render the degenerate 50/50. Say so and
+    // let the user retry instead of showing a placeholder that looks real.
+    if (data.opponent && data.opponent.missing) {{
+      if (body) body.innerHTML = '<div class="wv-lab-skel">'
+        + 'The opposing lineup could not be loaded, so there is no matchup to simulate yet.'
+        + ' <button type="button" class="wv-lab-btn" onclick="wvLabData=null;wvLoadLab()">Try again</button></div>';
+      return;
+    }}
     wvLabData = data;
     // Deep copy: the working lineup mutates on swaps, the payload stays pristine.
     wvLabLineup = JSON.parse(JSON.stringify(data.you.lineup));

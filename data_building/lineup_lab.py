@@ -282,29 +282,33 @@ def build_lineup_lab_payload(
     # ── Matchup: real starters + opponent ────────────────────────────────
     starters: List[str] = []
     opponent_roster_id: Any = None
+    # One matchup fetch, reused for both sides below. A second fetch doubles
+    # the chance the opponent silently goes missing (which used to render a
+    # fake 50/50); the payload now flags it instead (see opp_missing).
+    matchups: List[dict] = []
     try:
         from dashboard_services.api import get_matchups
         matchups = get_matchups(str(league_id), int(week)) or []
-        mine = next(
-            (m for m in matchups if str(m.get("roster_id")) == str(viewer_roster_id)),
-            None,
-        )
-        if mine:
-            starters = [
-                str(p) for p in (mine.get("starters") or [])
-                if p and str(p) != "0"
-            ]
-            mid = mine.get("matchup_id")
-            opp = next(
-                (m for m in matchups
-                 if m.get("matchup_id") == mid
-                 and str(m.get("roster_id")) != str(viewer_roster_id)),
-                None,
-            )
-            if opp:
-                opponent_roster_id = opp.get("roster_id")
     except Exception:
         logger.debug("lineup-lab: matchup fetch failed", exc_info=True)
+    mine = next(
+        (m for m in matchups if str(m.get("roster_id")) == str(viewer_roster_id)),
+        None,
+    )
+    if mine:
+        starters = [
+            str(p) for p in (mine.get("starters") or [])
+            if p and str(p) != "0"
+        ]
+        mid = mine.get("matchup_id")
+        opp = next(
+            (m for m in matchups
+             if m.get("matchup_id") == mid
+             and str(m.get("roster_id")) != str(viewer_roster_id)),
+            None,
+        )
+        if opp:
+            opponent_roster_id = opp.get("roster_id")
 
     proj_fn = _projection_lookup(scoring, season, week, ctx)
     roster_positions = ctx.get("roster_positions") or []
@@ -337,24 +341,24 @@ def build_lineup_lab_payload(
 
     bench_avail = [p for p in bench_all if _bench_available(p)]
 
-    # ── Opponent starters ────────────────────────────────────────────────
+    # ── Opponent starters (reuses the matchup fetch above) ───────────────
+    # opp_missing is stamped on the payload so the browser can show an
+    # explicit retry state instead of a fake 50/50 with no opponent.
     opp_starters: List[str] = []
     opp_name = "Opponent"
+    opp_missing = True
     if opponent_roster_id is not None:
-        try:
-            from dashboard_services.api import get_matchups as _gm
-            matchups2 = _gm(str(league_id), int(week)) or []
-            opp_entry = next(
-                (m for m in matchups2 if str(m.get("roster_id")) == str(opponent_roster_id)),
-                None,
-            )
-            if opp_entry:
-                opp_starters = [
-                    str(p) for p in (opp_entry.get("starters") or [])
-                    if p and str(p) != "0"
-                ]
-        except Exception:
-            opp_starters = []
+        opp_entry = next(
+            (m for m in matchups if str(m.get("roster_id")) == str(opponent_roster_id)),
+            None,
+        )
+        if opp_entry:
+            opp_starters = [
+                str(p) for p in (opp_entry.get("starters") or [])
+                if p and str(p) != "0"
+            ]
+        if opp_starters:
+            opp_missing = False
         try:
             users = ctx.get("users") or []
             rosters_by_id = {str(r.get("roster_id")): r for r in rosters}
@@ -483,6 +487,7 @@ def build_lineup_lab_payload(
             "roster_id": opponent_roster_id,
             "mean": opp_mean,
             "std": opp_std,
+            "missing": opp_missing,
         },
         "corr": corr_out,
     }
