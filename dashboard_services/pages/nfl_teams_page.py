@@ -128,6 +128,12 @@ table.nt-rank tbody tr.nt-sel td.nt-teamcol{{background:var(--accent-soft)}}
 .nt-bar i{{display:block;height:100%;background:var(--accent);border-radius:4px}}
 .nt-erk{{font-size:12px;font-weight:700;text-align:right}}
 .nt-fine{{font-size:12px;color:var(--text-muted);margin:10px 0 0}}
+.nt-chart{{width:100%;height:auto;display:block}}
+.nt-chart text{{font-family:inherit}}
+.nt-cmp{{display:flex;align-items:center;gap:8px;margin:0 0 8px;font-size:12px;color:var(--text-muted)}}
+.nt-cmp select{{font:inherit;color:var(--text);background:var(--card-soft);border:1px solid var(--border);border-radius:8px;padding:8px 10px;min-height:40px;max-width:100%}}
+.nt-cmp-legend{{display:flex;gap:14px;margin:8px 0 0;font-size:12px;color:var(--text-muted)}}
+.nt-cmp-legend i{{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px}}
 .nt-chips{{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:10px}}
 .nt-chip{{background:var(--card-soft);border-radius:10px;padding:12px;text-align:center}}
 .nt-chip .nt-clab{{font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em}}
@@ -332,6 +338,7 @@ TE:[["tgt_share","Tgt %"],["snap_pct","Snap %"],["ppg","PPR PPG"]]}};
 var DATA=null;   /* /api/nfl-team-rankings payload */
 var DETAIL=null; /* /api/nfl-team-details payload for state.team */
 var DETAIL_TEAM=null;
+var FPRINT_CMP=null; /* {{team, abbr}} fingerprint compare selection */
 
 function api(u){{return fetch(u,{{credentials:"same-origin"}}).then(function(r){{if(!r.ok)throw new Error("http "+r.status);return r.json();}});}}
 function update(patch,push){{Object.assign(state,patch);render();syncUrl(push);}}
@@ -501,6 +508,265 @@ function envRows(t){{
   ].filter(Boolean);
 }}
 
+/* Team profile charts: dependency-free SVG. Percentiles come from competition
+   ranks (rank 1 = best), so pct = (total - rank + 1) / total * 100. */
+function ntPct(entry){{
+  if(!entry||entry.rank==null||!entry.total)return null;
+  return Math.round((entry.total-entry.rank+1)/entry.total*100);
+}}
+/* #3: grouped bars of points scored vs allowed, home and away, from completed
+   games in the details schedule payload. */
+function splitsSVG(d,t){{
+  var finals=(d.schedule||[]).filter(function(g){{
+    return !g.bye&&g.status==="final"&&g.team_pts!=null&&g.opp_pts!=null;
+  }});
+  function grp(home){{
+    var gs=finals.filter(function(g){{return !!g.is_home===home;}});
+    function avg(k){{
+      if(!gs.length)return null;
+      return gs.reduce(function(s,g){{return s+Number(g[k]);}},0)/gs.length;
+    }}
+    return {{
+      n:gs.length,
+      w:gs.filter(function(g){{return g.result==="W";}}).length,
+      l:gs.filter(function(g){{return g.result==="L";}}).length,
+      sc:avg("team_pts"),al:avg("opp_pts")
+    }};
+  }}
+  var groups=[{{label:"Home",g:grp(true)}},{{label:"Away",g:grp(false)}}];
+  if(!groups[0].g.n&&!groups[1].g.n)
+    return '<p class="nt-fine">No completed games yet.</p>';
+  var max=0;
+  groups.forEach(function(gr){{
+    [gr.g.sc,gr.g.al].forEach(function(v){{if(v!=null)max=Math.max(max,v);}});
+  }});
+  max=Math.max(10,Math.ceil(max/5)*5);
+  var W=360,bx=76,bw=W-bx-44,rowH=62,top=6;
+  var H=top+groups.length*rowH+8;
+  var tcolor=teamColor(t);
+  function barW(v){{return Math.max(2,v/max*bw);}}
+  var s='<svg class="nt-chart" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="Points scored and allowed at home and away">';
+  groups.forEach(function(gr,i){{
+    var y=top+i*rowH,g=gr.g;
+    s+='<text x="0" y="'+(y+14)+'" font-size="12" font-weight="700" fill="var(--text)">'+esc(gr.label)+
+      (g.n?' <tspan font-weight="400" fill="var(--text-muted)">'+g.w+'-'+g.l+'</tspan>':'')+'</text>';
+    if(!g.n){{
+      s+='<text x="0" y="'+(y+36)+'" font-size="11" fill="var(--text-muted)">No games yet.</text>';
+      return;
+    }}
+    [{{lab:"Scored",v:g.sc,c:tcolor}},{{lab:"Allowed",v:g.al,c:"var(--text-muted)"}}].forEach(function(r,j){{
+      var by=y+20+j*20,wpx=barW(r.v);
+      s+='<text x="0" y="'+(by+10)+'" font-size="11" fill="var(--text-muted)">'+r.lab+'</text>';
+      s+='<rect x="'+bx+'" y="'+by+'" width="'+wpx.toFixed(1)+'" height="12" rx="3" fill="'+r.c+'"/>';
+      s+='<text x="'+(bx+wpx+6).toFixed(1)+'" y="'+(by+10)+'" font-size="11" font-weight="700" fill="var(--text)">'+r.v.toFixed(1)+'</text>';
+    }});
+  }});
+  return s+'</svg>';
+}}
+/* #4: radar of league percentiles across six higher-is-better offensive metrics. */
+var FPRINT_AXES=[
+  ["Scoring","points_pg"],["Pass yds","pass_yds_pg"],["Rush yds","rush_yds_pg"],
+  ["Total yds","total_yds_pg"],["Pass TD","pass_tds_pg"],["Rush TD","rush_tds_pg"]
+];
+function fingerprintSVG(t,u){{
+  var R=t.ranks||{{}};
+  var pts=FPRINT_AXES.map(function(a){{
+    return {{label:a[0],key:a[1],pct:ntPct(R[a[1]])}};
+  }}).filter(function(p){{return p.pct!=null;}});
+  if(pts.length<3)
+    return '<p class="nt-fine">Not enough ranked metrics yet.</p>';
+  var upts=null;
+  if(u&&u.team&&u.team!==t.team){{
+    var UR=u.ranks||{{}};
+    var q=pts.map(function(p){{return ntPct(UR[p.key]);}});
+    if(q.every(function(v){{return v!=null;}}))upts=q;
+  }}
+  var W=320,cx=160,cy=132,Rr=86,n=pts.length;
+  function pos(i,rad){{
+    var ang=-Math.PI/2+i*2*Math.PI/n;
+    return [cx+rad*Math.cos(ang),cy+rad*Math.sin(ang)];
+  }}
+  function ring(rad){{
+    var d=[];
+    for(var i=0;i<n;i++){{var p=pos(i,rad);d.push(p[0].toFixed(1)+' '+p[1].toFixed(1));}}
+    return d.join(' ');
+  }}
+  var s='<svg class="nt-chart" viewBox="0 0 '+W+' 264" role="img" aria-label="Team fingerprint: league percentiles">';
+  [25,50,75,100].forEach(function(r){{
+    s+='<polygon points="'+ring(Rr*r/100)+'" fill="none" stroke="var(--border)" stroke-width="1"/>';
+  }});
+  for(var i=0;i<n;i++){{
+    var pe=pos(i,Rr);
+    s+='<line x1="'+cx+'" y1="'+cy+'" x2="'+pe[0].toFixed(1)+'" y2="'+pe[1].toFixed(1)+'" stroke="var(--border)" stroke-width="1"/>';
+  }}
+  var tcolor=teamColor(t);
+  if(upts){{
+    var uv=upts.map(function(pct,i){{
+      var up=pos(i,Rr*pct/100);
+      return up[0].toFixed(1)+' '+up[1].toFixed(1);
+    }});
+    s+='<polygon points="'+uv.join(' ')+'" fill="var(--text-muted)" fill-opacity="0.15" stroke="var(--text-muted)" stroke-width="1.5"/>';
+    upts.forEach(function(pct,i){{
+      var up=pos(i,Rr*pct/100);
+      s+='<circle cx="'+up[0].toFixed(1)+'" cy="'+up[1].toFixed(1)+'" r="3" fill="var(--text-muted)"/>';
+    }});
+  }}
+  var vpts=pts.map(function(p,i){{
+    var q=pos(i,Rr*p.pct/100);
+    return q[0].toFixed(1)+' '+q[1].toFixed(1);
+  }});
+  s+='<polygon points="'+vpts.join(' ')+'" fill="'+tcolor+'" fill-opacity="0.25" stroke="'+tcolor+'" stroke-width="2"/>';
+  pts.forEach(function(p,i){{
+    var q=pos(i,Rr*p.pct/100);
+    s+='<circle cx="'+q[0].toFixed(1)+'" cy="'+q[1].toFixed(1)+'" r="3.5" fill="'+tcolor+'"/>';
+    var lp=pos(i,Rr+16);
+    var anchor=Math.abs(lp[0]-cx)<8?"middle":(lp[0]>cx?"start":"end");
+    s+='<text x="'+lp[0].toFixed(1)+'" y="'+lp[1].toFixed(1)+'" font-size="11" text-anchor="'+anchor+'" fill="var(--text)">'+
+      esc(p.label)+' <tspan font-weight="700">'+p.pct+'</tspan></text>';
+  }});
+  return s+'</svg>';
+}}
+/* Fingerprint section with a compare-team picker. The compare team renders as
+   a gray overlay polygon; the selection is ephemeral UI state (not in the URL)
+   and resets when the profile team changes. */
+function fingerprintSection(t){{
+  var teams=((DATA&&DATA.teams)||[]).slice().sort(function(a,b){{
+    var an=(a.city||"")+" "+(a.name||""),bn=(b.city||"")+" "+(b.name||"");
+    return an<bn?-1:an>bn?1:0;
+  }});
+  var cmpAbbr=(FPRINT_CMP&&FPRINT_CMP.team===state.team)?FPRINT_CMP.abbr:null;
+  var cmpRow=null;
+  var opts='<option value="">None</option>';
+  teams.forEach(function(x){{
+    if(x.team===t.team)return;
+    if(x.team===cmpAbbr)cmpRow=x;
+    opts+='<option value="'+esc(x.team)+'"'+(x.team===cmpAbbr?" selected":"")+'>'+
+      esc((((x.city||"")+" "+(x.name||"")).trim())||x.team)+'</option>';
+  }});
+  var h='<section class="nt-psec"><h3>Team fingerprint</h3>';
+  h+='<div class="nt-cmp"><label for="ntCmpSel">Compare</label><select id="ntCmpSel" aria-label="Compare fingerprint with another team">'+opts+'</select></div>';
+  h+=fingerprintSVG(t,cmpRow);
+  if(cmpRow){{
+    h+='<div class="nt-cmp-legend"><span><i style="background:'+esc(teamColor(t))+'"></i>'+esc(t.team)+
+      '</span><span><i style="background:var(--text-muted)"></i>'+esc(cmpRow.team)+'</span></div>';
+  }}
+  h+='<p class="nt-fine">League percentile by rank. Higher is better on every axis.</p></section>';
+  return h;
+}}
+/* Pass block vs run block as a 2D scatter over all 32 teams, from the already
+   loaded rankings payload. The selected team is highlighted. */
+function ev(e){{var v=e&&e.v;return (v==null||!isFinite(Number(v)))?null:Number(v);}}
+/* Generic 2D league scatter with median splits and quadrant labels.
+   cfg: pts [{{abbr,x,y}}], xLab, yLab, quads [topRight,topLeft,bottomRight,bottomLeft],
+   xTick, yTick, tip(p), aria, emptyMsg. The selected team is highlighted. */
+function scatterSVG(t,cfg){{
+  var pts=(cfg.pts||[]).filter(function(p){{return p&&p.x!=null&&p.y!=null&&isFinite(p.x)&&isFinite(p.y);}});
+  if(pts.length<4)
+    return '<p class="nt-fine">'+esc(cfg.emptyMsg||"Not enough league data.")+'</p>';
+  var xs=pts.map(function(p){{return p.x;}}),
+      ys=pts.map(function(p){{return p.y;}});
+  var xlo=Math.min.apply(null,xs),xhi=Math.max.apply(null,xs);
+  var xpad=(xhi-xlo)*0.08||1;
+  var x0=xlo-xpad,x1=xhi+xpad;
+  var ylo=Math.min.apply(null,ys),yhi=Math.max.apply(null,ys);
+  var ypad=(yhi-ylo)*0.08||1;
+  var y0=ylo-ypad,y1=yhi+ypad;
+  var W=360,H=300,ml=36,mr=14,mt=12,mb=32;
+  var pw=W-ml-mr,ph=H-mt-mb;
+  function X(v){{return ml+(v-x0)/(x1-x0)*pw;}}
+  function Y(v){{return mt+ph-(v-y0)/(y1-y0)*ph;}}
+  function med(a){{
+    var b=a.slice().sort(function(p,q){{return p-q;}});
+    var m=b.length>>1;
+    return b.length%2?b[m]:(b[m-1]+b[m])/2;
+  }}
+  var xTick=cfg.xTick||function(v){{return String(Math.round(v));}};
+  var yTick=cfg.yTick||xTick;
+  var tcolor=teamColor(t);
+  var s='<svg class="nt-chart" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="'+esc(cfg.aria||"Team scatter plot")+'">';
+  [x0,(x0+x1)/2,x1].forEach(function(tv){{
+    var x=X(tv);
+    s+='<line x1="'+x.toFixed(1)+'" y1="'+mt+'" x2="'+x.toFixed(1)+'" y2="'+(mt+ph)+'" stroke="var(--border)" stroke-width="1" stroke-dasharray="2 3" opacity="0.6"/>';
+    s+='<text x="'+x.toFixed(1)+'" y="'+(H-16)+'" font-size="10" text-anchor="middle" fill="var(--text-muted)">'+esc(xTick(tv))+'</text>';
+  }});
+  [y0,(y0+y1)/2,y1].forEach(function(tv){{
+    var y=Y(tv);
+    s+='<text x="'+(ml-6)+'" y="'+(y+3).toFixed(1)+'" font-size="10" text-anchor="end" fill="var(--text-muted)">'+esc(yTick(tv))+'</text>';
+  }});
+  var mx=X(med(xs)),my=Y(med(ys));
+  s+='<line x1="'+mx.toFixed(1)+'" y1="'+mt+'" x2="'+mx.toFixed(1)+'" y2="'+(mt+ph)+'" stroke="var(--text-muted)" stroke-width="1" stroke-dasharray="4 3" opacity="0.7"/>';
+  s+='<line x1="'+ml+'" y1="'+my.toFixed(1)+'" x2="'+(ml+pw)+'" y2="'+my.toFixed(1)+'" stroke="var(--text-muted)" stroke-width="1" stroke-dasharray="4 3" opacity="0.7"/>';
+  /* Quadrant labels, split by the median on each axis. Drawn before the dots. */
+  var qxL=ml+pw*0.25,qxR=ml+pw*0.75,qyT=mt+ph*0.22,qyB=mt+ph*0.78;
+  var q=cfg.quads||[];
+  [{{x:qxR,y:qyT,t:q[0]}},{{x:qxL,y:qyT,t:q[1]}},
+   {{x:qxR,y:qyB,t:q[2]}},{{x:qxL,y:qyB,t:q[3]}}].forEach(function(qq){{
+    if(!qq.t)return;
+    s+='<text x="'+qq.x.toFixed(1)+'" y="'+qq.y.toFixed(1)+'" font-size="10" text-anchor="middle" fill="var(--text-muted)" opacity="0.85" letter-spacing="1">'+esc(qq.t)+'</text>';
+  }});
+  pts.forEach(function(p){{
+    var x=X(p.x),y=Y(p.y),me=p.abbr===t.team;
+    s+='<circle cx="'+x.toFixed(1)+'" cy="'+y.toFixed(1)+'" r="'+(me?7:4.5)+'" fill="'+(me?tcolor:"var(--text-muted)")+'" '+
+      (me?'stroke="#fff" stroke-width="1.5" ':'')+'fill-opacity="'+(me?1:0.55)+'"><title>'+
+      esc(cfg.tip?cfg.tip(p):p.abbr)+'</title></circle>';
+    if(me){{
+      var lx=x+11>W-34?x-36:x+11;
+      s+='<text x="'+lx.toFixed(1)+'" y="'+(y+4).toFixed(1)+'" font-size="12" font-weight="800" fill="'+tcolor+'">'+esc(p.abbr)+'</text>';
+    }}
+  }});
+  s+='<text x="'+(ml+pw/2)+'" y="'+(H-2)+'" font-size="11" text-anchor="middle" fill="var(--text-muted)">'+esc(cfg.xLab||"")+'</text>';
+  s+='<text x="10" y="'+(mt+ph/2)+'" font-size="11" text-anchor="middle" fill="var(--text-muted)" transform="rotate(-90 10 '+(mt+ph/2)+')">'+esc(cfg.yLab||"")+'</text>';
+  return s+'</svg>';
+}}
+function olineScatterSVG(t){{
+  var pts=((DATA&&DATA.teams)||[]).map(function(x){{
+    var ol=x.oline||{{}};
+    return {{abbr:x.team,x:ev(ol.pass_block),y:ev(ol.run_block)}};
+  }});
+  return scatterSVG(t,{{pts:pts,xLab:"Pass block grade",yLab:"Run block grade",
+    quads:["Elite","Run-first","Pass-first","Rebuilding"],
+    tip:function(p){{return p.abbr+": pass "+Math.round(p.x)+", run "+Math.round(p.y);}},
+    aria:"Pass block vs run block grades, all teams",
+    emptyMsg:"Not enough league O-line data."}});
+}}
+function pressureScatterSVG(t){{
+  var pts=((DATA&&DATA.teams)||[]).map(function(x){{
+    var ol=x.oline||{{}};
+    return {{abbr:x.team,x:ev(ol.pressure_rate),y:ev(ol.sack_rate)}};
+  }});
+  var pct1=function(v){{return v.toFixed(1)+"%";}};
+  return scatterSVG(t,{{pts:pts,xLab:"Pressure %",yLab:"Sack %",xTick:pct1,yTick:pct1,
+    quads:["Under siege","Sitting ducks","Escape artists","Clean pocket"],
+    tip:function(p){{return p.abbr+": pressure "+p.x.toFixed(1)+"%, sacks "+p.y.toFixed(1)+"%";}},
+    aria:"Pressure rate vs sack rate, all teams",
+    emptyMsg:"Not enough league O-line data."}});
+}}
+function identityScatterSVG(t){{
+  var pts=((DATA&&DATA.teams)||[]).map(function(x){{
+    var r=x.ranks||{{}};
+    return {{abbr:x.team,x:ntPct(r.pass_yds_pg),y:ntPct(r.rush_yds_pg)}};
+  }});
+  return scatterSVG(t,{{pts:pts,xLab:"Pass yards percentile",yLab:"Rush yards percentile",
+    quads:["Balanced","Run-first","Pass-first","One-dimensional"],
+    tip:function(p){{return p.abbr+": pass "+Math.round(p.x)+"th pct, rush "+Math.round(p.y)+"th pct";}},
+    aria:"Pass offense vs rush offense percentile, all teams",
+    emptyMsg:"Not enough ranked team metrics yet."}});
+}}
+function softSpotsSVG(t){{
+  if(!DPOS){{ensureDefense();return '<p class="nt-fine">Loading defensive matchup data.</p>';}}
+  if(DPOS.failed||!DPOS.teams)return '<p class="nt-fine">Defensive matchup data is not available.</p>';
+  var pts=Object.keys(DPOS.teams).map(function(ab){{
+    var tp=DPOS.teams[ab]||{{}};
+    return {{abbr:ab,x:ev(tp.RB),y:ev(tp.WR)}};
+  }});
+  var f1=function(v){{return v.toFixed(1);}};
+  return scatterSVG(t,{{pts:pts,xLab:"FPTS allowed to RB",yLab:"FPTS allowed to WR",xTick:f1,yTick:f1,
+    quads:["Soft","Air funnel","Ground funnel","Lockdown"],
+    tip:function(p){{return p.abbr+": "+p.x.toFixed(1)+" to RB, "+p.y.toFixed(1)+" to WR";}},
+    aria:"Fantasy points allowed to running backs vs wide receivers, all defenses",
+    emptyMsg:"Not enough defensive matchup data."}});
+}}
+
 function backRow(){{
   return '<div class="nt-backrow"><button type="button" class="nt-back" id="ntBack">&larr; All teams</button></div>';
 }}
@@ -581,7 +847,14 @@ function renderProfile(){{
     }});
     h+='<p class="nt-fine">Ratings are 0-100 unit scores from public play-by-play, not commercial blocker grades. O-line ratings use the '+ol.season+' season (latest available); all other metrics use the selected season.</p></details>';
   }}
-  h+='</section></div>';
+  h+='</section>';
+  h+='<section class="nt-psec"><h3>Home vs away</h3>'+splitsSVG(d,t)+'</section>';
+  h+=fingerprintSection(t);
+  h+='</div>';
+  h+='<section class="nt-psec"><h3>Pass block vs run block</h3>'+olineScatterSVG(t)+'<p class="nt-fine">Every dot is an NFL team, the highlighted dot is this team. O-line grades use the '+esc(String((DATA&&DATA.oline_season)||"latest"))+' season (latest available).</p></section>';
+  h+='<section class="nt-psec"><h3>Pressure vs sacks</h3>'+pressureScatterSVG(t)+'<p class="nt-fine">Every dot is an NFL team. Lower is better on both axes. Rates use the '+esc(String((DATA&&DATA.oline_season)||"latest"))+' season (latest available).</p></section>';
+  h+='<section class="nt-psec"><h3>Pass vs run identity</h3>'+identityScatterSVG(t)+'<p class="nt-fine">League percentile by rank, all teams. Higher is better on both axes.</p></section>';
+  h+='<section class="nt-psec"><h3>Defensive soft spots</h3>'+softSpotsSVG(t)+'<p class="nt-fine">Fantasy points allowed per game (PPR). Higher means a softer matchup. Only completed games count.</p></section>';
   h+=defenseSection();
   h+='<section class="nt-psec"><h3>Depth chart / competition</h3><div class="nt-seg" role="group" aria-label="Position room">';
   ["QB","RB","WR","TE"].forEach(function(p){{
@@ -623,6 +896,11 @@ function renderProfile(){{
   h+='</div></div>';
   el.innerHTML=h;
   wireBack();
+  var cmpSel=el.querySelector("#ntCmpSel");
+  if(cmpSel){{cmpSel.addEventListener("change",function(){{
+    FPRINT_CMP={{team:state.team,abbr:cmpSel.value||null}};
+    renderProfile();
+  }});}}
   el.querySelectorAll(".nt-seg button").forEach(function(b){{
     b.addEventListener("click",function(){{update({{room:b.getAttribute("data-room")}},false);}});
   }});
