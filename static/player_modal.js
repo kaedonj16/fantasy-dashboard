@@ -8,6 +8,39 @@
 // _ensure_features_js concatenates this file into app-features.js instead.
 // ============================================================
 
+// In-flight player breakout eligibility fetch, published by openPlayerModal so
+// the Breakout tab can join it instead of firing a duplicate request when
+// tapped before the prefetch resolves. { playerId, promise } or null.
+var _pmBreakoutInflight = null;
+
+// Bounded per-player modal fetch cache (news + ADP). Reopening the same player
+// within the TTL reuses the payload, and in-flight requests are shared, so
+// repeated modal opens don't refetch identical data.
+var _pmSmallCache = new Map(); // key -> { ts, promise, data }
+var _PM_SMALL_TTL = 5 * 60 * 1000, _PM_SMALL_MAX = 40;
+function _pmSmallFetch(key, url) {
+  var now = Date.now();
+  var hit = _pmSmallCache.get(key);
+  if (hit) {
+    if (hit.data !== undefined && now - hit.ts < _PM_SMALL_TTL) {
+      _pmSmallCache.delete(key); _pmSmallCache.set(key, hit); // LRU refresh
+      return Promise.resolve(hit.data);
+    }
+    if (hit.data === undefined && hit.promise) return hit.promise; // in-flight
+    _pmSmallCache.delete(key); // expired or failed: fall through and refetch
+  }
+  var entry = { ts: now, promise: null, data: undefined };
+  entry.promise = fetch(url)
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (d) { entry.data = d; entry.ts = Date.now(); return d; })
+    .catch(function () { _pmSmallCache.delete(key); return null; });
+  _pmSmallCache.set(key, entry);
+  if (_pmSmallCache.size > _PM_SMALL_MAX) {
+    _pmSmallCache.delete(_pmSmallCache.keys().next().value);
+  }
+  return entry.promise;
+}
+
 // Shared, bounded player-details request layer. Modal rendering and speculative
 // viewport warming intentionally meet here so cache identity and request ownership
 // cannot drift. This file is also concatenated into app-features.js.
@@ -341,6 +374,15 @@ function openPlayerModal(playerId, playerName, opts) {
   // Start in parallel, but never join this promise to the details render.
   const _initialBreakoutPromise = _loadBreakoutEligibility().then(
     payload => ({ payload }), error => ({ error })
+  );
+  // Publish the in-flight eligibility fetch so the Breakout tab can join it
+  // instead of firing a duplicate request when tapped before it resolves.
+  // Same-tick as the call above, so this reuses the in-flight promise rather
+  // than starting a new fetch. Cleared on settle.
+  _pmBreakoutInflight = { playerId: String(playerId), promise: _loadBreakoutEligibility() };
+  _pmBreakoutInflight.promise.then(
+    () => { if (_pmBreakoutInflight && _pmBreakoutInflight.playerId === String(playerId)) _pmBreakoutInflight = null; },
+    () => { if (_pmBreakoutInflight && _pmBreakoutInflight.playerId === String(playerId)) _pmBreakoutInflight = null; }
   );
 
   // Details and eligibility intentionally have separate lifecycles. A slow or
@@ -1146,8 +1188,8 @@ function openPlayerModal(playerId, playerName, opts) {
         // Safety net: if the request hangs, reveal what we have so the skeleton
         // never sticks.
         const _t = setTimeout(() => _reveal([]), 8000);
-        fetch(`/api/player-adp/${encodeURIComponent(playerId)}?season=${encodeURIComponent(season)}`)
-          .then(r => r.ok ? r.json() : null)
+        _pmSmallFetch('adp:' + playerId + ':' + season,
+          `/api/player-adp/${encodeURIComponent(playerId)}?season=${encodeURIComponent(season)}`)
           .then(j => { clearTimeout(_t); _reveal(j && Array.isArray(j.sources) ? j.sources : []); })
           .catch(() => { clearTimeout(_t); _reveal([]); });
       })();
@@ -1297,11 +1339,14 @@ function openPlayerModal(playerId, playerName, opts) {
       // ── Lazy-load news into Overview panel ────────────────────────────────
       if (data.position && data.position !== 'PICK') {
         const _newsSrcName = s => ({espn: 'ESPN', reddit: 'Reddit', gnews: 'Google News', all: 'all sources'}[s] || s);
-        fetch(`/api/player-news/${encodeURIComponent(playerId)}`)
-          .then(r => r.json())
+        _pmSmallFetch('news:' + playerId, `/api/player-news/${encodeURIComponent(playerId)}`)
           .then(nd => {
             const nb = document.getElementById('pmNewsBody');
             if (!nb) return;
+            if (!nd) {
+              nb.innerHTML = '<span style="color:var(--text-muted);font-size:13px;">Couldn\'t load news right now.</span>';
+              return;
+            }
             const items = nd.news || [];
             const failed = nd.sources_failed || [];
             const warn = failed.length
@@ -2060,8 +2105,14 @@ function pmSwitchTab(tab, clickEvent) {
     const _boMatch = window.location.pathname.match(/\/(sleeper|espn|yahoo|mfl)\/(\d+)\/([^\/]+)/);
     const _boLeague = _boMatch ? _boMatch[3] : '';
     const _boPlatform = _boMatch ? _boMatch[1] : 'sleeper';
-    fetch(`/api/breakout/player/${encodeURIComponent(playerId)}?season=${encodeURIComponent(season)}&league_id=${encodeURIComponent(_boLeague)}&platform=${encodeURIComponent(_boPlatform)}`)
-      .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    const _boUrl = `/api/breakout/player/${encodeURIComponent(playerId)}?season=${encodeURIComponent(season)}&league_id=${encodeURIComponent(_boLeague)}&platform=${encodeURIComponent(_boPlatform)}`;
+    // Join the modal-open eligibility fetch when it's still in flight for this
+    // player instead of firing a duplicate request.
+    const _bkInflight = (_pmBreakoutInflight && _pmBreakoutInflight.playerId === String(playerId))
+      ? _pmBreakoutInflight.promise : null;
+    const _bkRequest = _bkInflight || fetch(_boUrl)
+      .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); });
+    _bkRequest
       .then(data => {
         if (!panel.isConnected) return;
         if (!data || data.available === false || (!data.weekly && data.breakout_opportunity_score == null && !data.breakout_blend)) {
@@ -4192,23 +4243,18 @@ function pmTrendsSetMode(playerId, mode) {
 }
 
 // Season mode: render a line chart for EVERY available metric at once (no
-// picker), mirroring how weekly trends shows all stats.
+// picker), mirroring how weekly trends shows all stats. One call with
+// metrics=all returns the option list and every series together.
 function pmLoadSeasonAll(playerId, host) {
   host.innerHTML = '<div style="padding:10px 0;font-size:12px;color:var(--text-muted);">Loading season trends…</div>';
   var fail = function() { host.innerHTML = '<div style="padding:10px 0;font-size:12px;color:var(--text-muted);">Couldn’t load season trends.</div>'; };
-  // First call (no metrics) returns the full list of available metrics; then
-  // request them all in one shot.
-  pmSeasonTrendFetch(playerId, null).then(function(meta) {
-    if (!meta || !meta.options || !meta.options.length) {
+  pmSeasonTrendFetch(playerId, 'all').then(function(data) {
+    if (!data || !data.options || !data.options.length || !data.series) {
       host.innerHTML = '<div style="padding:10px 0;font-size:12px;color:var(--text-muted);">No multi-season data for this player.</div>';
       return;
     }
     host.dataset.loaded = '1';
-    var keys = meta.options.map(function(o) { return o.key; });
-    pmSeasonTrendFetch(playerId, keys.join(',')).then(function(data) {
-      if (!data || !data.series) { fail(); return; }
-      host.innerHTML = buildSeasonTrendRows(meta.options, data.series, data.position);
-    }).catch(fail);
+    host.innerHTML = buildSeasonTrendRows(data.options, data.series, data.position);
   }).catch(fail);
 }
 

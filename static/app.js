@@ -203,6 +203,35 @@ function _advFetch(url, ms, init) {
     .finally(function() { if (t) clearTimeout(t); });
 }
 
+// ── Shared /api/league-players fetch ──────────────────────────────────────────
+// The nav player-search idle-preloads the full player list and the trade
+// calculator needs the same payload on the same page. Without sharing, both
+// fire independent ~1MB fetches. One page-level promise serves both callers:
+// in-flight requests are shared and completed results are reused for 60s
+// (matching the endpoint's own max-age=60). Defined above the bundle split
+// marker so the trade calculator code in the public bundle can use it.
+var __brLeaguePlayersPromise = null;
+var __brLeaguePlayersAt = 0;
+function brGetLeaguePlayersData() {
+  var now = Date.now();
+  if (__brLeaguePlayersPromise && (now - __brLeaguePlayersAt) < 60000) {
+    return __brLeaguePlayersPromise;
+  }
+  __brLeaguePlayersAt = now;
+  __brLeaguePlayersPromise = fetch('/api/league-players', { cache: 'no-store' })
+    .then(function (res) {
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      return res.json();
+    })
+    .catch(function (err) {
+      // Clear so the next caller retries instead of sharing the rejection.
+      __brLeaguePlayersPromise = null;
+      __brLeaguePlayersAt = 0;
+      throw err;
+    });
+  return __brLeaguePlayersPromise;
+}
+
 // ── Canonical position palette ────────────────────────────────────────────────
 // Single source of truth for position → color across the app (rankings, trade
 // calculator, playoff table, etc.). Previously this map was copy-pasted a dozen
@@ -5112,6 +5141,10 @@ window.initTradePage = function initTradePage(root = document) {
   // Generation counter - incremented on every recomputeTrade() call so that
   // a stale in-flight fetch response never overwrites a more recent reset.
   let _tradeGeneration = 0;
+  // Aborts the previous generation's intel fetches (trade intel, similar
+  // trades, playoff impact) when a newer recompute starts, so rapid edits
+  // don't pile up overlapping server work.
+  let _tradeIntelAbort = null;
 
   // ── Roster filter (logged-in only) ──────────────────────────────────────────
   // Restrict each side's player search to a team's roster. Side A locks to the
@@ -6191,9 +6224,10 @@ window.initTradePage = function initTradePage(root = document) {
     for (let attempt = 0; attempt < 3; attempt++) {
       if (attempt > 0) await new Promise(r => setTimeout(r, attempt * 1000));
       try {
-        const res = await fetch("/api/league-players", { cache: "no-store" });
-        if (!res.ok) throw new Error("Failed to load players (" + res.status + ").");
-        const data = await res.json();
+        // Shared page-level fetch: the nav search idle-preloads this same
+        // payload, so this usually reuses its in-flight/completed request
+        // instead of downloading the ~1MB list a second time.
+        const data = await brGetLeaguePlayersData();
         const rawData = Array.isArray(data) ? data : (Array.isArray(data.players) ? data.players : []);
         if (!Array.isArray(data) && data.tier_thresholds) _tierThresholds = data.tier_thresholds;
 
@@ -6845,7 +6879,9 @@ window.initTradePage = function initTradePage(root = document) {
       if (balBox) { balBox.innerHTML = ""; balBox.style.display = "none"; }
       // Reset the Playoff Impact card back to its default state instead of
       // leaving the last trade's simulated numbers on screen.
-      fetchPlayoffImpact();
+      if (_tradeIntelAbort) _tradeIntelAbort.abort();
+      _tradeIntelAbort = null;
+      fetchPlayoffImpact(gen, null);
       return;
     }
 
@@ -6951,7 +6987,17 @@ window.initTradePage = function initTradePage(root = document) {
       _applyTierBadges(data);
       renderTradeBalancer(data);
 
-      Promise.all([fetchTradeIntel(), fetchSimilarTrades(), fetchPlayoffImpact()]).catch(() => {});
+      // A newer recompute aborts the previous generation's intel fetches so
+      // rapid edits don't pile up overlapping server work.
+      if (_tradeIntelAbort) _tradeIntelAbort.abort();
+      _tradeIntelAbort = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+      const _intelGen = gen;
+      const _intelSignal = _tradeIntelAbort ? _tradeIntelAbort.signal : null;
+      Promise.all([
+        fetchTradeIntel(_intelGen, _intelSignal),
+        fetchSimilarTrades(_intelGen, _intelSignal),
+        fetchPlayoffImpact(_intelGen, _intelSignal),
+      ]).catch(() => {});
     } catch (err) {
       console.error("[trade] error in recomputeTrade:", err);
       if (errorBox) {
@@ -6964,7 +7010,7 @@ window.initTradePage = function initTradePage(root = document) {
   // ------------------------------------------------------------
   // fetchSimilarTrades - real trades from the DB involving these players
   // ------------------------------------------------------------
-  async function fetchSimilarTrades() {
+  async function fetchSimilarTrades(gen, signal) {
     const section = root.querySelector("#similarTradesSection");
     if (!section) return;
 
@@ -6998,9 +7044,11 @@ window.initTradePage = function initTradePage(root = document) {
           : "Sleeper dynasty comps -- real trades where these players moved to opposite sides. A teaser of the full Trade Intel feed.";
       }
 
-      const res = await fetch("/api/trade-intel/similar-trades?" + params);
+      const res = await fetch("/api/trade-intel/similar-trades?" + params, signal ? { signal } : undefined);
       if (!res.ok) throw new Error("fetch failed");
       const data = await res.json();
+      // A newer recompute started while this fetch was in flight - discard.
+      if (gen !== undefined && gen !== _tradeGeneration) return;
       const trades = data.trades || [];
 
       if (!listEl) return;
@@ -7046,6 +7094,8 @@ window.initTradePage = function initTradePage(root = document) {
       }).join('');
 
     } catch (e) {
+      // Aborted by a newer recompute, or superseded: stay quiet.
+      if ((signal && signal.aborted) || (gen !== undefined && gen !== _tradeGeneration)) return;
       if (listEl) window.brErrorState(listEl, 'Trade data unavailable.', null, { compact: true, title: 'Couldn’t load' });
     }
   }
@@ -7071,7 +7121,7 @@ window.initTradePage = function initTradePage(root = document) {
     return `${items.slice(0, -1).join(", ")}, and ${items[items.length - 1]}`;
   }
 
-  async function fetchPlayoffImpact() {
+  async function fetchPlayoffImpact(gen, signal) {
     const section = root.querySelector("#playoffImpactSection");
     const body    = root.querySelector("#playoffImpactBody");
     if (!section || !body) return;
@@ -7161,7 +7211,10 @@ window.initTradePage = function initTradePage(root = document) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ league_id: leagueId, platform, season, roster_id: rosterId, give_ids: giveIds, get_ids: getIds }),
+        ...(signal ? { signal } : {}),
       });
+      // A newer recompute started while this fetch was in flight - discard.
+      if (gen !== undefined && gen !== _tradeGeneration) return;
       if (res.status === 403) {
         body.innerHTML = _piMessage(
           "fa-lock",
@@ -7336,6 +7389,8 @@ window.initTradePage = function initTradePage(root = document) {
         ${outlookGrid}
         ${missingWarn}`;
     } catch (e) {
+      // Aborted by a newer recompute, or superseded: stay quiet.
+      if ((signal && signal.aborted) || (gen !== undefined && gen !== _tradeGeneration)) return;
       body.innerHTML = _piMessage(
         "fa-triangle-exclamation",
         "Couldn't simulate",
@@ -7347,7 +7402,7 @@ window.initTradePage = function initTradePage(root = document) {
   // ------------------------------------------------------------
   // fetchTradeIntel - loads real market data for players in the trade
   // ------------------------------------------------------------
-  async function fetchTradeIntel() {
+  async function fetchTradeIntel(gen, signal) {
     const intelPanel = root.querySelector("#tradeIntelPanel");
     const intelBody = root.querySelector("#tradeIntelBody");
     if (!intelPanel || !intelBody) return;
@@ -7373,13 +7428,16 @@ window.initTradePage = function initTradePage(root = document) {
     const results = await Promise.all(
       playerIds.map(p =>
         Promise.race([
-          fetch(`/api/trade-intel/player/${p.id}?season=${season}&league_type=${leagueType}`)
+          fetch(`/api/trade-intel/player/${p.id}?season=${season}&league_type=${leagueType}`, signal ? { signal } : undefined)
             .then(r => r.ok ? r.json() : null)
             .then(d => d ? { ...d, name: p.name, side: p.side } : null),
           _timeout(8000),
         ]).catch(() => null)
       )
     );
+
+    // Aborted by a newer recompute, or superseded: leave the panel alone.
+    if ((signal && signal.aborted) || (gen !== undefined && gen !== _tradeGeneration)) return;
 
     const valid = results.filter(r => r && r.trade_count_all > 0);
     if (valid.length === 0) {
@@ -10316,12 +10374,6 @@ window.initTradePage = function initTradePage(root = document) {
     return cachedTradeCountLabel || "150,000+";
   }
 
-  function setTradeCountLabel(label) {
-    if (label) cachedTradeCountLabel = label;
-    const el = root.querySelector("#tradeCount");
-    if (el) el.textContent = cachedTradeCountLabel;
-  }
-
   function syncScoringTypeUi() {
     const redraft = getScoringType() === "redraft";
     const sizeCtrl = root.querySelector("#leagueSizeSelect");
@@ -10838,22 +10890,9 @@ window.initTradePage = function initTradePage(root = document) {
       }
     });
 
-    // Fetch trade count from database
-    fetch('/api/trade-count')
-      .then(response => {
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        return response.json();
-      })
-      .then(data => {
-        if (data.count !== undefined) {
-          setTradeCountLabel(data.count.toLocaleString());
-        }
-      })
-      .catch(() => {
-        setTradeCountLabel(cachedTradeCountLabel || "150,000+");
-      });
+    // The trade-count label is server-rendered into #tradeCount at page load,
+    // so no client fetch is needed; tradeCountLabel() preserves it across
+    // tooltip rewrites.
   }
 
   root.querySelectorAll(".pos-filter").forEach(btn => {
@@ -21837,9 +21876,9 @@ function setupFunAwardsGrid() {
     _loading = true;
     _loadFailed = false;
     try {
-      const res = await fetch('/api/league-players', { cache: 'default' });
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      const data = await res.json();
+      // Shared page-level fetch: the trade calculator needs this same payload,
+      // so reuse its in-flight/completed request instead of a second download.
+      const data = await brGetLeaguePlayersData();
       const raw = Array.isArray(data) ? data : (Array.isArray(data.players) ? data.players : []);
       _players = raw
         .filter(p => p && p.id && p.name && p.position !== 'PICK' && !String(p.id).startsWith('pick_'))

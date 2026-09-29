@@ -201,7 +201,8 @@ def _sleeper_league_chain(league_id: str, season: int, max_seasons: int = 5) -> 
     return ids[:max_seasons]
 
 
-def _sleeper_draft_history(league_id: str, season: int) -> tuple:
+def _sleeper_draft_history(league_id: str, season: int,
+                           picks_by_draft: Optional[Dict[str, List[Dict[str, Any]]]] = None) -> tuple:
     """(player_id -> most recent drafted round, deepest completed draft rounds,
     player_id -> years_kept).
 
@@ -211,7 +212,11 @@ def _sleeper_draft_history(league_id: str, season: int) -> tuple:
     player keeps the round from the most recent draft that took him, and the
     round scale comes from the deepest completed draft found (a startup/full
     draft rather than a small rookie draft). years_kept is current_season minus
-    that draft's season minus 1 (first keep = 0)."""
+    that draft's season minus 1 (first keep = 0).
+
+    When ``picks_by_draft`` is given, every draft's fetched picks are also
+    recorded there keyed by draft_id, so later auction-cost hydration can
+    reuse them instead of re-fetching the same picks over the network."""
     drafted: Dict[str, int] = {}
     years_kept: Dict[str, int] = {}
     deepest = 0
@@ -247,6 +252,8 @@ def _sleeper_draft_history(league_id: str, season: int) -> tuple:
             except Exception:
                 logger.debug("[keeper] picks failed for %s", d.get("draft_id"), exc_info=True)
                 continue
+            if picks_by_draft is not None and d.get("draft_id"):
+                picks_by_draft[str(d.get("draft_id"))] = picks
             if not picks:
                 continue
             deepest = max(deepest, _draft_rounds(d))
@@ -337,8 +344,13 @@ def parse_auction_amounts_from_drafts(drafts: Optional[List[Dict[str, Any]]]) ->
     return out
 
 
-def _hydrate_sleeper_draft_picks(drafts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Attach picks to Sleeper draft shells (list endpoint omits pick rows)."""
+def _hydrate_sleeper_draft_picks(drafts: List[Dict[str, Any]],
+                                 picks_by_draft: Optional[Dict[str, List[Dict[str, Any]]]] = None
+                                 ) -> List[Dict[str, Any]]:
+    """Attach picks to Sleeper draft shells (list endpoint omits pick rows).
+
+    ``picks_by_draft`` reuses picks already fetched during the draft-history
+    walk so the same draft's picks are not fetched twice in one render."""
     try:
         from dashboard_services.api import get_draft_picks
     except Exception:
@@ -351,6 +363,11 @@ def _hydrate_sleeper_draft_picks(drafts: List[Dict[str, Any]]) -> List[Dict[str,
             continue
         did = row.get("draft_id")
         if not did:
+            hydrated.append(row)
+            continue
+        cached = (picks_by_draft or {}).get(str(did))
+        if cached is not None:
+            row["picks"] = cached
             hydrated.append(row)
             continue
         try:
@@ -367,13 +384,15 @@ def _auction_cost_map(
     league_id: str,
     season: int,
     drafts: Optional[List[Dict[str, Any]]] = None,
+    picks_by_draft: Optional[Dict[str, List[Dict[str, Any]]]] = None,
 ) -> Dict[str, float]:
     """Best-effort auction $ paid map for a league.
 
     MFL embeds amounts on draft picks. Sleeper returns draft shells without
     picks -- hydrate via get_draft_picks when needed. ESPN/Yahoo rarely expose
     bid amounts on the normalized draft list; the UI stays editable.
-    """
+    ``picks_by_draft`` reuses picks already fetched this render so the same
+    draft's picks are not fetched twice."""
     plat = (platform or "").lower()
     if not league_id and drafts is None:
         return {}
@@ -388,7 +407,8 @@ def _auction_cost_map(
     if costs:
         return costs
     if plat == "sleeper":
-        return parse_auction_amounts_from_drafts(_hydrate_sleeper_draft_picks(list(drafts or [])))
+        return parse_auction_amounts_from_drafts(
+            _hydrate_sleeper_draft_picks(list(drafts or []), picks_by_draft))
     return {}
 
 
@@ -420,16 +440,18 @@ def _num_rounds(platform: str, league_id: str, default: int = 15,
         return default
 
 
-def _draft_context(platform: str, league_id: str, season: int) -> tuple:
+def _draft_context(platform: str, league_id: str, season: int,
+                   picks_by_draft: Optional[Dict[str, List[Dict[str, Any]]]] = None) -> tuple:
     """(drafted_round_map, num_rounds, years_kept_map) for a league, in one pass.
 
     Keeps the Sleeper season-chain walk to a single fetch instead of doing it
     once for the picks and again for the round count. Callers that only unpack
-    two values still work against older test stubs.
-    """
+    two values still work against older test stubs. When ``picks_by_draft``
+    is given, the Sleeper walk also records each draft's picks there so
+    later auction-cost hydration reuses them instead of re-fetching."""
     plat = (platform or "").lower()
     if plat == "sleeper":
-        drafted, deepest, years = _sleeper_draft_history(league_id, season)
+        drafted, deepest, years = _sleeper_draft_history(league_id, season, picks_by_draft)
         return drafted, _num_rounds(plat, league_id, drafted=drafted, deepest=deepest), years
     if plat == "espn":
         drafted, years = _espn_draft_maps(league_id, season)
@@ -727,8 +749,11 @@ def build_keeper_body(
     values = _redraft_value_map(is_sf)
     adp = _adp_map(is_sf, _season, source=adp_source)
     value_rank = _value_rank_map(values)
+    # Picks fetched during the draft-history walk are reused by auction-cost
+    # hydration below, so the same draft's picks are not fetched twice.
+    picks_by_draft: Dict[str, List[Dict[str, Any]]] = {}
     drafted, num_rounds, years_kept = _unpack_draft_context(
-        _draft_context(platform, league_id, _season)
+        _draft_context(platform, league_id, _season, picks_by_draft)
     )
 
     roster = _viewer_roster(ctx, viewer_roster_id) or {}
@@ -810,7 +835,8 @@ def build_keeper_body(
         seed["isAuction"] = bool(_fmt.get("is_auction"))
         seed["auctionBudget"] = _fmt.get("auction_budget")
         costs = (
-            _auction_cost_map(_plat, league_id, _season, drafts=_drafts)
+            _auction_cost_map(_plat, league_id, _season, drafts=_drafts,
+                              picks_by_draft=picks_by_draft)
             if seed["isAuction"] else {}
         )
         imported = 0

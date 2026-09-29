@@ -474,7 +474,13 @@ def api_player_advanced_metrics_trend(player_id: str):
 
         valid_keys = {o["key"] for o in options}
         requested = [m.strip() for m in (request.args.get("metrics") or "").split(",") if m.strip()]
-        requested = [m for m in requested if m in valid_keys]
+        if "all" in requested:
+            # Single-call mode for the modal's Season trends view: return every
+            # available metric's series at once instead of making the client
+            # call once for the option list and again for the series.
+            requested = [o["key"] for o in options]
+        else:
+            requested = [m for m in requested if m in valid_keys]
         if not requested and options:
             requested = [options[0]["key"]]
 
