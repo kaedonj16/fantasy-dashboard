@@ -85,6 +85,7 @@ def init_weekly_metrics_db() -> None:
                 rz_targets   INTEGER,
                 rz_carries   INTEGER,
                 target_share NUMERIC,
+                carry_share  NUMERIC,
                 ppr_pts      NUMERIC,
                 pass_att     INTEGER,
                 pass_tds     INTEGER,
@@ -102,6 +103,9 @@ def init_weekly_metrics_db() -> None:
             conn.execute(
                 f"ALTER TABLE player_weekly_metrics ADD COLUMN IF NOT EXISTS {column} INTEGER"
             )
+        conn.execute(
+            "ALTER TABLE player_weekly_metrics ADD COLUMN IF NOT EXISTS carry_share NUMERIC"
+        )
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_pwm_season_week "
             "ON player_weekly_metrics (season, week)"
@@ -137,7 +141,8 @@ def build_weekly_metrics(season: int, weeks: Optional[List[int]] = None,
     if weeks is None:
         with get_conn() as conn:
             rows = conn.execute(
-                "SELECT week, BOOL_OR(rz_targets IS NULL OR rz_carries IS NULL) AS needs_rz "
+                "SELECT week, BOOL_OR(rz_targets IS NULL OR rz_carries IS NULL "
+                "OR carry_share IS NULL) AS needs_rz "
                 "FROM player_weekly_metrics WHERE season = %s GROUP BY week",
                 (int(season),),
             ).fetchall()
@@ -169,6 +174,7 @@ def build_weekly_metrics(season: int, weeks: Optional[List[int]] = None,
         # target-share leaderboard entirely (raw-stat metrics still show him).
         # Falls back to the current index team when no historical team is known.
         team_targets: Dict[str, float] = {}
+        team_carries: Dict[str, float] = {}
         player_rows: List[tuple] = []
         for pid, st in stats.items():
             if not isinstance(st, dict):
@@ -178,10 +184,13 @@ def build_weekly_metrics(season: int, weeks: Optional[List[int]] = None,
             if pos not in _POSITIONS:
                 continue
             tgt = _f(st.get("rec_tgt"))
+            car = _f(st.get("rush_att"))
             team = team_for_week(str(pid), int(season), int(week)) \
                 or canon_team(meta.get("team"))
             if team and tgt:
                 team_targets[team] = team_targets.get(team, 0.0) + tgt
+            if team and car:
+                team_carries[team] = team_carries.get(team, 0.0) + car
             player_rows.append((str(pid), pos, team, st))
 
         count = 0
@@ -201,14 +210,18 @@ def build_weekly_metrics(season: int, weeks: Optional[List[int]] = None,
                     round(targets / team_targets[team] * 100, 1)
                     if team and team_targets.get(team) else None
                 )
+                carry_share = (
+                    round(carries / team_carries[team] * 100, 1)
+                    if team and team_carries.get(team) else None
+                )
                 conn.execute(
                     """
                     INSERT INTO player_weekly_metrics
                         (player_id, season, week, position, snap_pct, snaps, team_snaps,
                          targets, receptions, rec_yards, rec_tds,
                          carries, rush_yards, rush_tds, touches, rz_targets, rz_carries,
-                         target_share, ppr_pts, pass_att, pass_tds)
-                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                         target_share, carry_share, ppr_pts, pass_att, pass_tds)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                     ON CONFLICT (player_id, season, week) DO UPDATE SET
                         position = EXCLUDED.position,
                         snap_pct = EXCLUDED.snap_pct,
@@ -225,6 +238,7 @@ def build_weekly_metrics(season: int, weeks: Optional[List[int]] = None,
                         rz_targets = EXCLUDED.rz_targets,
                         rz_carries = EXCLUDED.rz_carries,
                         target_share = EXCLUDED.target_share,
+                        carry_share = EXCLUDED.carry_share,
                         ppr_pts = EXCLUDED.ppr_pts,
                         pass_att = EXCLUDED.pass_att,
                         pass_tds = EXCLUDED.pass_tds
@@ -235,7 +249,7 @@ def build_weekly_metrics(season: int, weeks: Optional[List[int]] = None,
                         _f(st.get("rec_yd")), int(_f(st.get("rec_td"))),
                         int(carries), _f(st.get("rush_yd")), int(_f(st.get("rush_td"))),
                         int(touches), int(_f(st.get("rec_rz_tgt"))),
-                        int(_f(st.get("rush_rz_att"))), tgt_share,
+                        int(_f(st.get("rush_rz_att"))), tgt_share, carry_share,
                         _f(st.get("pts_ppr")), int(pass_att), int(_f(st.get("pass_td"))),
                     ),
                 )
@@ -253,7 +267,7 @@ def get_player_weekly_series(player_id: str, season: int) -> List[Dict[str, Any]
         rows = conn.execute(
             """
             SELECT week, snap_pct, snaps, team_snaps, targets, receptions, carries,
-                   touches, target_share, ppr_pts, rec_yards, rush_yards, pass_att,
+                   touches, target_share, carry_share, ppr_pts, rec_yards, rush_yards, pass_att,
                    rec_tds, rush_tds, pass_tds, rz_targets, rz_carries
             FROM player_weekly_metrics
             WHERE player_id = %s AND season = %s

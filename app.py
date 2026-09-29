@@ -24000,6 +24000,7 @@ def api_player_game_logs(player_id: str):
         _cached = _GAME_LOGS_CACHE.get(_cache_key)
         if _cached and time.time() - _cached[0] < _GAME_LOGS_CACHE_TTL:
             return jsonify({"game_logs_by_year": _cached[1],
+                            "season_teams": _cached[2] if len(_cached) > 2 else {},
                             "has_game_logs": has_game_logs})
 
         players_index = load_relevant_index() or {}
@@ -24031,9 +24032,11 @@ def api_player_game_logs(player_id: str):
         available_years = _PLAYER_DETAIL_YEARS_CACHE
 
         game_logs_by_year: dict = {}
+        season_teams: dict = {}
 
         for season_year in sorted(available_years, reverse=True):
             game_logs = []
+            _team_counts: dict = {}
 
             schedule_by_week: dict = {}
             for schedule_file in glob.glob(os.path.join("cache", "schedule", f"schedule_s{season_year}_w*.json")):
@@ -24058,7 +24061,7 @@ def api_player_game_logs(player_id: str):
 
             def _stats_dict(s):
                 return {k: s.get(k) for k in
-                        ["pass_yd", "pass_td", "pass_int", "rush_att", "rush_yd", "rush_td", "rec", "rec_tgt", "rec_yd",
+                        ["pass_yd", "pass_td", "pass_int", "pass_att", "rush_att", "rush_yd", "rush_td", "rec", "rec_tgt", "rec_yd",
                          "rec_td", "fum_lost"]}
 
             if schedule_by_week:
@@ -24072,6 +24075,8 @@ def api_player_game_logs(player_id: str):
                     if not isinstance(games, list):
                         continue
                     wk_team = team_for_week(player_id, season_year, week_num) or player_team
+                    if wk_team:
+                        _team_counts[wk_team] = _team_counts.get(wk_team, 0) + 1
                     opponent = ""
                     is_away = False
                     game_date = ""
@@ -24122,6 +24127,12 @@ def api_player_game_logs(player_id: str):
             if game_logs:
                 game_logs.sort(key=lambda g: g.get("date", "") or "")
                 game_logs_by_year[season_year] = game_logs
+                # Team label for the season header: most common weekly team
+                # (handles mid-season trades), else the player's current team.
+                if _team_counts:
+                    season_teams[season_year] = max(_team_counts, key=_team_counts.get)
+                elif player_team:
+                    season_teams[season_year] = player_team
 
         # ── Upcoming projected season ─────────────────────────────────────────
         # Use the request `season` param as the upcoming year.  We do NOT use
@@ -24296,6 +24307,8 @@ def api_player_game_logs(player_id: str):
                             key=lambda g: g.get("week") or 0
                         )
                         game_logs_by_year[_upcoming] = combined
+                        if player_team:
+                            season_teams[_upcoming] = player_team
             except Exception as _proj_err:
                 logger.debug(f"[game_logs] upcoming season projection failed: {_proj_err}")
 
@@ -24331,13 +24344,91 @@ def api_player_game_logs(player_id: str):
                         _g["opp_rank"] = _rk
                         _g["opp_total"] = _total
 
+        # ── Weekly advanced metrics per game ─────────────────────────────────
+        # Join the per-week usage (snap/target/carry shares, red-zone) and
+        # advanced (ADOT, YBC, xFP, broken tackles, WOPR) rows so the game log
+        # can render the expanded advanced table. Best-effort: a DB failure
+        # leaves the games without `adv` and the UI renders dashes.
+        def _fnum(v):
+            try:
+                return float(v) if v is not None else None
+            except (TypeError, ValueError):
+                return None
+
+        def _inum(v):
+            try:
+                return int(v) if v is not None else None
+            except (TypeError, ValueError):
+                return None
+
+        try:
+            from data_building.weekly_metrics import init_weekly_metrics_db
+            from data_building.advanced_metrics import (
+                init_weekly_advanced_metrics_db,
+                get_conn as _adv_get_conn,
+            )
+            init_weekly_metrics_db()
+            init_weekly_advanced_metrics_db()
+            _rec_pts = float((scoring_settings or {}).get("rec", 1.0) or 0)
+            _xfp_col = (
+                "expected_ppr" if _rec_pts >= 0.75
+                else "expected_half_ppr" if _rec_pts >= 0.25
+                else "expected_standard"
+            )
+            with _adv_get_conn() as _aconn:
+                for _yr, _logs in game_logs_by_year.items():
+                    _usage = {
+                        int(r["week"]): r for r in _aconn.execute(
+                            "SELECT week, snap_pct, target_share, carry_share, "
+                            "rz_targets, rz_carries FROM player_weekly_metrics "
+                            "WHERE player_id = %s AND season = %s",
+                            (str(player_id), int(_yr)),
+                        ).fetchall()
+                    }
+                    _adv = {
+                        int(r["week"]): r for r in _aconn.execute(
+                            "SELECT week, avg_depth_of_target, ybc_per_carry, "
+                            f"{_xfp_col} AS xfp, broken_tackles, wopr "
+                            "FROM player_weekly_advanced_metrics "
+                            "WHERE player_id = %s AND season = %s",
+                            (str(player_id), int(_yr)),
+                        ).fetchall()
+                    }
+                    for _g in _logs:
+                        if _g.get("is_bye") or _g.get("is_projection"):
+                            continue
+                        _wk = _g.get("week")
+                        try:
+                            _wk = int(_wk)
+                        except (TypeError, ValueError):
+                            continue
+                        _u = _usage.get(_wk) or {}
+                        _a = _adv.get(_wk) or {}
+                        if not _u and not _a:
+                            continue
+                        _g["adv"] = {
+                            "snap_pct": _fnum(_u.get("snap_pct")),
+                            "target_share": _fnum(_u.get("target_share")),
+                            "carry_share": _fnum(_u.get("carry_share")),
+                            "rz_targets": _inum(_u.get("rz_targets")),
+                            "rz_carries": _inum(_u.get("rz_carries")),
+                            "adot": _fnum(_a.get("avg_depth_of_target")),
+                            "ybc": _fnum(_a.get("ybc_per_carry")),
+                            "xfp": _fnum(_a.get("xfp")),
+                            "btk": _fnum(_a.get("broken_tackles")),
+                            "wopr": _fnum(_a.get("wopr")),
+                        }
+        except Exception:
+            logger.debug("[game_logs] advanced metrics join failed", exc_info=True)
+
         # Cache the fully-computed result (bounded; evict oldest when full).
         if len(_GAME_LOGS_CACHE) >= _GAME_LOGS_CACHE_MAX:
             for _k in sorted(_GAME_LOGS_CACHE, key=lambda k: _GAME_LOGS_CACHE[k][0])[:_GAME_LOGS_CACHE_MAX // 10]:
                 _GAME_LOGS_CACHE.pop(_k, None)
-        _GAME_LOGS_CACHE[_cache_key] = (time.time(), game_logs_by_year)
+        _GAME_LOGS_CACHE[_cache_key] = (time.time(), game_logs_by_year, season_teams)
 
         return jsonify({"game_logs_by_year": game_logs_by_year,
+                        "season_teams": season_teams,
                         "has_game_logs": has_game_logs})
     except Exception as e:
         logger.exception("[api_player_game_logs] error")

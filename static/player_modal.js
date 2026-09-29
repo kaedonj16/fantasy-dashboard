@@ -2172,7 +2172,7 @@ function pmSwitchTab(tab, clickEvent) {
           window.brEmptyState(panel, { icon: 'search', title: 'No game logs', message: 'No game-by-game data is available for this player yet.', compact: true });
           return;
         }
-        panel.innerHTML = _buildStatsHTML(logsByYear, false, (pmTabBar && pmTabBar.dataset.pmPosition) || '');
+        panel.innerHTML = _buildStatsHTML(logsByYear, false, (pmTabBar && pmTabBar.dataset.pmPosition) || '', data.season_teams || {});
       })
       .catch(() => {
         if (panel.isConnected) {
@@ -3637,245 +3637,488 @@ function _buildBkTabHTML(data, scoreColor) {
 }
 
 // ── Stats tab HTML builder (returns HTML string, no DOM side effects) ─────────
-function _buildStatsHTML(game_logs_by_year, skipHeader, positionHint) {
+// Averages/Totals mode for the game-log mini strips. Module-level so the
+// toggle and re-renders stay in sync across modal opens.
+window._glAvgTot = window._glAvgTot || 'avg';
+
+function _buildStatsHTML(game_logs_by_year, skipHeader, positionHint, seasonTeams) {
+  seasonTeams = seasonTeams || {};
+  const POS = (positionHint || '').toUpperCase();
+  const _num = (v) => (v == null || v === '' || isNaN(+v) ? null : +v);
+  const _r0 = (v) => String(Math.round(v));
+  const _r1 = (v) => v.toFixed(1);
+
+  // Tier tints: t-g (green) / t-o (orange) / t-r (red). Position-aware where
+  // scoring baselines differ. BTK gets the same tier treatment as the other
+  // efficiency metrics; RR is excluded entirely (never rendered).
+  const _glTier = (key, v) => {
+    if (v == null || !key) return '';
+    if (key === 'pts' || key === 'xfp')
+      return v >= (POS === 'QB' ? 24 : 18) ? 't-g' : v >= (POS === 'QB' ? 15 : 10) ? 't-o' : 't-r';
+    switch (key) {
+      case 'ypaRush': return v >= 5 ? 't-g' : v >= 4 ? 't-o' : 't-r';
+      case 'ypaPass': return v >= 8 ? 't-g' : v >= 6.5 ? 't-o' : 't-r';
+      case 'carPct': return v >= 65 ? 't-g' : v >= 45 ? 't-o' : 't-r';
+      case 'td': return v >= 1 ? 't-g' : v >= 0.5 ? 't-o' : 't-r';
+      case 'int': return v <= 0 ? 't-g' : v <= 1 ? 't-o' : 't-r';
+      case 'btk': return v >= 4 ? 't-g' : v >= 2 ? 't-o' : 't-r';
+      case 'ybc': return v >= 2 ? 't-g' : v >= 1 ? 't-o' : 't-r';
+      case 'ypt': return v >= 9 ? 't-g' : v >= 7 ? 't-o' : 't-r';
+      case 'tsPct': return v >= 25 ? 't-g' : v >= 18 ? 't-o' : 't-r';
+      case 'snpPct': return v >= 80 ? 't-g' : v >= 60 ? 't-o' : 't-r';
+      case 'wopr': return v >= 0.55 ? 't-g' : v >= 0.38 ? 't-o' : 't-r';
+      case 'ydRush': return v >= 110 ? 't-g' : v >= 80 ? 't-o' : 't-r';
+      case 'ydPass': return v >= 280 ? 't-g' : v >= 220 ? 't-o' : 't-r';
+      case 'ydRec': return v >= 90 ? 't-g' : v >= 60 ? 't-o' : 't-r';
+      case 'rec': return v >= 6 ? 't-g' : v >= 4 ? 't-o' : 't-r';
+      case 'car': return v >= 22 ? 't-g' : v >= 15 ? 't-o' : 't-r';
+      case 'att': return v >= 30 ? 't-g' : v >= 22 ? 't-o' : 't-r';
+      case 'tar': return v >= 9 ? 't-g' : v >= 6 ? 't-o' : 't-r';
+      default: return '';
+    }
+  };
+
+  // Column spec: get(g) -> number|null; fmt(v) -> string; agg: 'sum' | 'avg' |
+  // 'wavg' (carries-weighted) | 'rate' (recomputed from season totals).
+  // src 'adv' marks columns fed by the weekly advanced-metrics pipeline, so
+  // seasons with no advanced rows (or projection-only seasons) hide them
+  // instead of rendering a wall of dashes.
+  const _C = (k, h, get, fmt, tier, agg, src) =>
+    ({ k, h, get, fmt, tier: tier || '', agg: agg || 'sum', src: src || 'stat' });
+  const _sGet = (sk) => (g) => _num((g.stats || {})[sk]);
+  const _aGet = (ak) => (g) => _num((g.adv || {})[ak]);
+  const _rateGet = (nk, dk) => (g) => {
+    const s = g.stats || {};
+    const d = _num(s[dk]);
+    return d ? _num(s[nk]) / d : null;
+  };
+
+  const _FANT = [
+    _C('pts', 'Pts', (g) => _num(g.fantasy_pts), (v) => fmtPts(v), 'pts', 'sum'),
+    _C('xfp', 'xFP', _aGet('xfp'), _r1, 'xfp', 'sum', 'adv'),
+  ];
+  const _PASS = [
+    _C('patt', 'Att', _sGet('pass_att'), _r0, 'att', 'sum'),
+    _C('pyd', 'Yd', _sGet('pass_yd'), _r0, 'ydPass', 'sum'),
+    _C('pypa', 'Y/A', _rateGet('pass_yd', 'pass_att'), _r1, 'ypaPass', 'rate'),
+    _C('ptd', 'TD', _sGet('pass_td'), (v) => String(v), 'td', 'sum'),
+    _C('pint', 'INT', _sGet('pass_int'), (v) => String(v), 'int', 'sum'),
+  ];
+  const _RUSH = [
+    _C('car', 'Car', _sGet('rush_att'), _r0, 'car', 'sum'),
+    _C('ryd', 'Yd', _sGet('rush_yd'), _r0, 'ydRush', 'sum'),
+    _C('rypa', 'Yd/A', _rateGet('rush_yd', 'rush_att'), (v) => v.toFixed(2), 'ypaRush', 'rate'),
+    _C('carpct', 'Car%', _aGet('carry_share'), _r0, 'carPct', 'avg', 'adv'),
+    _C('rtd', 'TD', _sGet('rush_td'), (v) => String(v), 'td', 'sum'),
+    _C('btk', 'BTK', _aGet('btk'), _r0, 'btk', 'sum', 'adv'),
+    _C('rzcar', 'RZ Car', _aGet('rz_carries'), (v) => String(v), '', 'sum', 'adv'),
+    _C('ybc', 'YBC', _aGet('ybc'), _r1, 'ybc', 'wavg', 'adv'),
+  ];
+  const _REC = [
+    _C('tar', 'Tar', _sGet('rec_tgt'), _r0, 'tar', 'sum'),
+    _C('rec', 'Rec', _sGet('rec'), _r0, 'rec', 'sum'),
+    _C('recyd', 'Yd', _sGet('rec_yd'), _r0, 'ydRec', 'sum'),
+    _C('rectd', 'TD', _sGet('rec_td'), (v) => String(v), 'td', 'sum'),
+    _C('ypt', 'YPT', _rateGet('rec_yd', 'rec_tgt'), (v) => v.toFixed(2), 'ypt', 'rate'),
+    _C('tspct', 'TS%', _aGet('target_share'), _r0, 'tsPct', 'avg', 'adv'),
+    _C('adot', 'ADOT', _aGet('adot'), _r1, '', 'avg', 'adv'),
+    _C('rztar', 'RZ Tar', _aGet('rz_targets'), (v) => String(v), '', 'sum', 'adv'),
+  ];
+  const _USE = [
+    _C('snppct', 'SNP%', _aGet('snap_pct'), _r0, 'snpPct', 'avg', 'adv'),
+    _C('wopr', 'WOPR', _aGet('wopr'), (v) => v.toFixed(2), 'wopr', 'avg', 'adv'),
+  ];
+  const _RUSH_COMPACT = ['car', 'ryd', 'rypa', 'rtd'];
+  const _RATE_BASE = { rypa: ['rush_yd', 'rush_att'], ypt: ['rec_yd', 'rec_tgt'], pypa: ['pass_yd', 'pass_att'] };
+
+  // Sectioned column groups for one season. A column shows only when at least
+  // one real game has a value for it, so seasons without advanced rows render
+  // the classic box-score table instead of empty xFP/BTK columns. Groups are
+  // position-aware: RBs get the full rushing section, everyone else a compact
+  // one, and the passing section appears for QBs (or anyone with pass stats).
+  const _buildGroups = (realGames) => {
+    const _vis = (cols) => cols.filter((c) => realGames.some((g) => c.get(g) != null));
+    const _has = (fn) => realGames.some((g) => fn(g.stats || {}));
+    const hasPass = _has((s) => s.pass_yd || s.pass_td || s.pass_int);
+    const hasRush = _has((s) => s.rush_att || s.rush_yd || s.rush_td);
+    const hasRec = _has((s) => s.rec_tgt || s.rec || s.rec_yd || s.rec_td);
+    const hasUse = realGames.some((g) => {
+      const a = g.adv || {};
+      return a.snap_pct != null || a.target_share != null || a.carry_share != null || a.wopr != null;
+    });
+    const groups = [];
+    const fant = _vis(_FANT);
+    if (fant.length) groups.push({ label: 'Fantasy', cols: fant });
+    if (hasPass || POS === 'QB') {
+      const cols = _vis(_PASS);
+      if (cols.length) groups.push({ label: 'Passing', cols });
+    }
+    if (hasRush || POS === 'RB') {
+      const list = POS === 'RB' ? _RUSH : _RUSH.filter((c) => _RUSH_COMPACT.includes(c.k));
+      const cols = _vis(list);
+      if (cols.length) groups.push({ label: 'Rushing', cols });
+    }
+    if (hasRec || POS === 'RB' || POS === 'WR' || POS === 'TE') {
+      const cols = _vis(_REC);
+      if (cols.length) groups.push({ label: 'Receiving', cols });
+    }
+    if (hasUse) {
+      const cols = _vis(_USE);
+      if (cols.length) groups.push({ label: 'Usage', cols });
+    }
+    if (!groups.length) {
+      // Projection-only player: fall back to a position-shaped, box-score-only
+      // table (no advanced columns) rather than an empty grid.
+      const _nf = (cols) => cols.filter((c) => c.src !== 'adv');
+      groups.push({ label: 'Fantasy', cols: _nf(_FANT) });
+      const rushC = _nf(_RUSH.filter((c) => _RUSH_COMPACT.includes(c.k)));
+      if (POS === 'QB') {
+        groups.push({ label: 'Passing', cols: _nf(_PASS) });
+        if (rushC.length) groups.push({ label: 'Rushing', cols: rushC });
+      } else if (POS === 'RB') {
+        groups.push({ label: 'Rushing', cols: _nf(_RUSH) });
+        groups.push({ label: 'Receiving', cols: _nf(_REC) });
+      } else {
+        if (rushC.length) groups.push({ label: 'Rushing', cols: rushC });
+        groups.push({ label: 'Receiving', cols: _nf(_REC) });
+      }
+    }
+    return groups;
+  };
+
+  // Season aggregates over real (played, non-projection) games.
+  const _SUM_S = { car: 'rush_att', ryd: 'rush_yd', rtd: 'rush_td', tar: 'rec_tgt', rec: 'rec',
+                   recyd: 'rec_yd', rectd: 'rec_td', patt: 'pass_att', pyd: 'pass_yd',
+                   ptd: 'pass_td', pint: 'pass_int' };
+  const _SUM_A = { xfp: 'xfp', btk: 'btk', rzcar: 'rz_carries', rztar: 'rz_targets' };
+  const _AVG_A = { snp: 'snap_pct', carp: 'carry_share', tsp: 'target_share', adot: 'adot', wopr: 'wopr' };
+  const _seasonAgg = (realGames) => {
+    const agg = { n: 0, pts: 0, ybcW: 0, ybcC: 0 };
+    Object.keys(_SUM_S).forEach((k) => { agg[k] = 0; });
+    Object.keys(_SUM_A).forEach((k) => { agg[k] = 0; });
+    Object.keys(_AVG_A).forEach((k) => { agg[k] = []; });
+    realGames.forEach((g) => {
+      const s = g.stats || {}, a = g.adv || {};
+      agg.n++;
+      agg.pts += _num(g.fantasy_pts) || 0;
+      Object.entries(_SUM_S).forEach(([k, sk]) => { agg[k] += _num(s[sk]) || 0; });
+      Object.entries(_SUM_A).forEach(([k, ak]) => { agg[k] += _num(a[ak]) || 0; });
+      Object.entries(_AVG_A).forEach(([k, ak]) => {
+        const v = _num(a[ak]);
+        if (v != null) agg[k].push(v);
+      });
+      const ybc = _num(a.ybc), car = _num(s.rush_att);
+      if (ybc != null && car) { agg.ybcW += ybc * car; agg.ybcC += car; }
+    });
+    return agg;
+  };
+  const _mean = (arr) => (arr.length ? arr.reduce((x, y) => x + y, 0) / arr.length : null);
+  const _seasonDerived = (agg) => ({
+    rypa: agg.car ? agg.ryd / agg.car : null,
+    ypt: agg.tar ? agg.recyd / agg.tar : null,
+    pypa: agg.patt ? agg.pyd / agg.patt : null,
+    snp: _mean(agg.snp),
+    carp: _mean(agg.carp),
+    tsp: _mean(agg.tsp),
+    adot: _mean(agg.adot),
+    wopr: _mean(agg.wopr),
+    ybc: agg.ybcC ? agg.ybcW / agg.ybcC : null,
+    td: agg.rtd + agg.rectd,
+  });
+
+  // Mini-stat strip spec per position. Each item:
+  // [label, tierKey, avgVal, totVal, fmtAvg, fmtTot]
+  const _stripItems = (agg, d) => {
+    const n = agg.n;
+    const pa = (v) => (n && v != null ? v / n : null);
+    if (POS === 'QB') return [
+      ['G', '', n, n, _r0, _r0],
+      ['Pts', 'pts', pa(agg.pts), agg.pts, _r1, (v) => fmtPts(v)],
+      ['Att', 'att', pa(agg.patt), agg.patt, _r0, _r0],
+      ['Yd', 'ydPass', pa(agg.pyd), agg.pyd, _r0, _r0],
+      ['Y/A', 'ypaPass', d.pypa, d.pypa, _r1, _r1],
+      ['TD', 'td', pa(agg.ptd), agg.ptd, _r1, _r0],
+      ['INT', 'int', pa(agg.pint), agg.pint, _r1, _r0],
+      ['SNP%', 'snpPct', d.snp, d.snp, _r0, _r0],
+    ];
+    if (POS === 'RB') return [
+      ['G', '', n, n, _r0, _r0],
+      ['Pts', 'pts', pa(agg.pts), agg.pts, _r1, (v) => fmtPts(v)],
+      ['Car', 'car', pa(agg.car), agg.car, _r0, _r0],
+      ['Yd', 'ydRush', pa(agg.ryd), agg.ryd, _r0, _r0],
+      ['Yd/A', 'ypaRush', d.rypa, d.rypa, _r1, _r1],
+      ['TD', 'td', pa(d.td), d.td, _r1, _r0],
+      ['BTK', 'btk', pa(agg.btk), agg.btk, _r1, _r0],
+      ['SNP%', 'snpPct', d.snp, d.snp, _r0, _r0],
+    ];
+    return [
+      ['G', '', n, n, _r0, _r0],
+      ['Pts', 'pts', pa(agg.pts), agg.pts, _r1, (v) => fmtPts(v)],
+      ['Tar', 'tar', pa(agg.tar), agg.tar, _r0, _r0],
+      ['Rec', 'rec', pa(agg.rec), agg.rec, _r0, _r0],
+      ['Yd', 'ydRec', pa(agg.recyd), agg.recyd, _r0, _r0],
+      ['YPT', 'ypt', d.ypt, d.ypt, _r1, _r1],
+      ['TD', 'td', pa(d.td), d.td, _r1, _r0],
+      ['SNP%', 'snpPct', d.snp, d.snp, _r0, _r0],
+    ];
+  };
+  const _stripLabels = () => {
+    if (POS === 'QB') return ['G', 'Pts', 'Att', 'Yd', 'Y/A', 'TD', 'INT', 'SNP%'];
+    if (POS === 'RB') return ['G', 'Pts', 'Car', 'Yd', 'Yd/A', 'TD', 'BTK', 'SNP%'];
+    return ['G', 'Pts', 'Tar', 'Rec', 'Yd', 'YPT', 'TD', 'SNP%'];
+  };
+  const _stripHTML = (items, n) => items.map(([label, tier, aV, tV, fA, fT]) => {
+    const a = (n && aV != null) ? fA(aV) : '-';
+    const t = (n && tV != null) ? fT(tV) : '-';
+    const show = window._glAvgTot === 'tot' ? t : a;
+    const tc = tier ? _glTier(tier, aV) : '';
+    return `<div class="ms"><i>${label}</i><b class="${tc}" data-avg="${a}" data-tot="${t}">${show}</b></div>`;
+  }).join('');
+
+  // Season total for one column (tfoot). Rates recompute from season totals;
+  // shares average; YBC is carries-weighted.
+  const _totFor = (col, realGames) => {
+    if (col.agg === 'rate') {
+      const base = _RATE_BASE[col.k] || [];
+      let nn = 0, dd = 0;
+      realGames.forEach((g) => {
+        const s = g.stats || {};
+        const nv = _num(s[base[0]]), dv = _num(s[base[1]]);
+        if (nv != null && dv) { nn += nv; dd += dv; }
+      });
+      return dd ? nn / dd : null;
+    }
+    if (col.agg === 'wavg') {
+      let tw = 0, tc = 0;
+      realGames.forEach((g) => {
+        const v = col.get(g), c = _num((g.stats || {}).rush_att);
+        if (v != null && c) { tw += v * c; tc += c; }
+      });
+      return tc ? tw / tc : null;
+    }
+    const vals = realGames.map((g) => col.get(g)).filter((v) => v != null);
+    if (!vals.length) return null;
+    const sum = vals.reduce((a, b) => a + b, 0);
+    return col.agg === 'avg' ? sum / vals.length : sum;
+  };
+
+  // Matchup-difficulty chip: grades each game by how the opponent defense
+  // ranks vs this position (same SoS-adjusted table as the Schedule Assistant,
+  // #1 = easiest). Colors match sched_rank_color's 4-tier scale.
+  const _mPosWord = ({ QB: 'QBs', RB: 'RBs', WR: 'WRs', TE: 'TEs' })[POS] || 'this position';
+  const _matchupChip = (g) => {
+    const rk = g.opp_rank, tot = g.opp_total;
+    if (!rk || !tot) return '';
+    const pct = rk / tot;
+    const tier = pct <= 0.25 ? 1 : pct <= 0.50 ? 2 : pct <= 0.75 ? 3 : 4;
+    const opp = (g.opponent || '').replace('@', '');
+    const tip = `${opp} vs ${_mPosWord}: matchup rank #${rk} of ${tot} (#1 = easiest)`;
+    return `<span class="game-log-matchup mt${tier}" title="${tip}">#${rk}</span>`;
+  };
+  const _oppCell = (g, dash) => {
+    const code = g.opponent || dash;
+    const chip = _matchupChip(g);
+    return chip
+      ? `<span class="opp-stack"><span class="opp-code">${code}</span>${chip}</span>`
+      : code;
+  };
+  const _dateStr = (game) => {
+    let ds = game.date || '';
+    if (ds.length === 8) ds = `${parseInt(ds.substring(4, 6))}/${parseInt(ds.substring(6, 8))}`;
+    return ds;
+  };
+
   let statsHTML = '';
   if (game_logs_by_year && Object.keys(game_logs_by_year).length > 0) {
+    const _mode = window._glAvgTot || 'avg';
     statsHTML += `
       <div class="player-modal-section">
-        ${skipHeader ? '' : '<div class="pm-section-header"><span class="pm-section-label">Game Logs</span></div>'}
+        ${skipHeader ? '' : `
+        <div class="pm-section-header">
+          <span class="pm-section-label">Game Logs</span>
+          <div class="seg-light gl-toggle" role="group" aria-label="Season totals mode">
+            <span class="${_mode === 'avg' ? 'on' : ''}" data-mode="avg" onclick="glSetAvgTot('avg', this)">Averages</span>
+            <span class="${_mode === 'tot' ? 'on' : ''}" data-mode="tot" onclick="glSetAvgTot('tot', this)">Totals</span>
+          </div>
+        </div>`}
+        <div class="season-list">
     `;
 
     // Sort years in descending order (most recent first)
     const years = Object.keys(game_logs_by_year).sort((a, b) => b - a);
 
-    // Show only the stat groups this player actually has, so a WR isn't padded
-    // with empty passing/rushing columns (which pushed the real columns off-screen
-    // - worse in the side-by-side compare modal). Computed once across all years
-    // so the columns stay consistent between year sections. Falls back to the
-    // position default for projection-only players with no real stats yet.
-    // Each column: [statKey, header, roundFlag].
-    const _PASS = [['pass_yd','Pass Yd',1],['pass_td','Pass TD',0],['pass_int','INT',0]];
-    const _RUSH = [['rush_att','Rush Att',0],['rush_yd','Rush Yd',1],['rush_td','Rush TD',0]];
-    const _REC  = [['rec_tgt','Tgt',0],['rec','Rec',0],['rec_yd','Rec Yd',1],['rec_td','Rec TD',0]];
-    let _anyPass = false, _anyRush = false, _anyRec = false;
-    years.forEach(y => (game_logs_by_year[y] || []).forEach(g => {
-      const s = g.stats || {};
-      if (s.pass_yd || s.pass_td || s.pass_int) _anyPass = true;
-      if (s.rush_att || s.rush_yd || s.rush_td) _anyRush = true;
-      if (s.rec_tgt || s.rec || s.rec_yd || s.rec_td) _anyRec = true;
-    }));
-    let statCols = [];
-    if (_anyPass) statCols = statCols.concat(_PASS);
-    if (_anyRush) statCols = statCols.concat(_RUSH);
-    if (_anyRec)  statCols = statCols.concat(_REC);
-    if (!statCols.length) {
-      const P = (positionHint || '').toUpperCase();
-      statCols = P === 'QB' ? _PASS.concat(_RUSH)
-               : P === 'RB' ? _RUSH.concat(_REC)
-               : _REC;
-    }
-    const _statTh = statCols.map(c => `<th>${c[1]}</th>`).join('');
-    const _statCell = (s) => statCols.map(c => {
-      const v = s[c[0]];
-      const disp = (v != null && v > 0) ? (c[2] ? Math.round(v) : v) : '-';
-      return `<td>${disp}</td>`;
-    }).join('');
-
-    // Matchup-difficulty chip: grades each game by how the opponent defense
-    // ranks vs this position (same SoS-adjusted table as the Schedule Assistant,
-    // #1 = easiest). Colors match sched_rank_color's 4-tier scale.
-    const _mPosWord = ({QB:'QBs',RB:'RBs',WR:'WRs',TE:'TEs'})[(positionHint||'').toUpperCase()] || 'this position';
-    const _matchupChip = (g) => {
-      const rk = g.opp_rank, tot = g.opp_total;
-      if (!rk || !tot) return '';
-      const pct = rk / tot;
-      const tier = pct <= 0.25 ? 1 : pct <= 0.50 ? 2 : pct <= 0.75 ? 3 : 4;
-      const opp = (g.opponent || '').replace('@', '');
-      const tip = `${opp} vs ${_mPosWord}: matchup rank #${rk} of ${tot} (#1 = easiest)`;
-      return `<span class="game-log-matchup mt${tier}" title="${tip}">#${rk}</span>`;
-    };
-    const _oppCell = (g, dash) => {
-      const code = g.opponent || dash;
-      const chip = _matchupChip(g);
-      return chip
-        ? `<span class="opp-stack"><span class="opp-code">${code}</span>${chip}</span>`
-        : code;
-    };
-
     years.forEach((year, index) => {
       const gameLogs = game_logs_by_year[year];
       const isFirstYear = index === 0;
-      const hasRealGames = gameLogs.some(g => !g.is_projection && !g.is_bye && g.fantasy_pts != null);
-      const hasProjGames = gameLogs.some(g => g.is_projection);
+      const hasRealGames = gameLogs.some((g) => !g.is_projection && !g.is_bye && g.fantasy_pts != null);
+      const hasProjGames = gameLogs.some((g) => g.is_projection);
       const isProjection = !hasRealGames && hasProjGames;   // ALL entries are projected
-      const isMixed      = hasRealGames && hasProjGames;    // active season mid-way
+      const isMixed = hasRealGames && hasProjGames;         // active season mid-way
 
-      // Accumulate real completed games for the header (never mix in projections)
-      let totalFantasyPts = 0;
-      let totalPassYd = 0, totalPassTd = 0, totalPassInt = 0;
-      let totalRushAtt = 0, totalRushYd = 0, totalRushTd = 0;
-      let totalRecTgt = 0, totalRec = 0, totalRecYd = 0, totalRecTd = 0;
-      let totalFumLost = 0;
-      let gamesPlayed = 0;
-      // Projected totals tracked separately for the tfoot footnote
+      // Real completed games drive the aggregates and column visibility;
+      // projections, byes, and DNPs never mix in.
+      const realGames = gameLogs.filter((g) => {
+        if (g.is_bye || g.is_projection) return false;
+        const s = g.stats || {};
+        return s.pass_yd != null || s.rush_att != null || s.rec != null || s.rec_tgt != null;
+      });
       let projTotalPts = 0, projGames = 0;
-
-      gameLogs.forEach(game => {
-        if (game.is_bye) return;
-        if (game.is_projection) {
-          if (game.fantasy_pts != null) { projTotalPts += game.fantasy_pts; projGames++; }
-          return;
-        }
-        const s = game.stats || {};
-        const playedThisGame = game.stats != null && (
-          s.pass_yd != null || s.rush_att != null || s.rec != null || s.rec_tgt != null
-        );
-        if (playedThisGame) gamesPlayed++;
-        totalFantasyPts += game.fantasy_pts || 0;
-        totalPassYd  += s.pass_yd  || 0;
-        totalPassTd  += s.pass_td  || 0;
-        totalPassInt += s.pass_int || 0;
-        totalRushAtt += s.rush_att || 0;
-        totalRushYd  += s.rush_yd  || 0;
-        totalRushTd  += s.rush_td  || 0;
-        totalRecTgt  += s.rec_tgt  || 0;
-        totalRec     += s.rec      || 0;
-        totalRecYd   += s.rec_yd   || 0;
-        totalRecTd   += s.rec_td   || 0;
-        totalFumLost += s.fum_lost || 0;
+      gameLogs.forEach((g) => {
+        if (g.is_projection && g.fantasy_pts != null) { projTotalPts += g.fantasy_pts; projGames++; }
       });
 
-      // Header summary - always based on real completed games
-      const ppg = gamesPlayed > 0 ? (totalFantasyPts / gamesPlayed).toFixed(1) : '0.0';
-      let summaryHTML;
-      if (isProjection) {
-        const projPpg = projGames > 0 ? (projTotalPts / projGames).toFixed(1) : '0.0';
-        summaryHTML = `<span class="game-log-year-summary">~${projPpg} ppg &nbsp;<span style="opacity:0.65;"></span></span>`;
-      } else {
-        summaryHTML = `<span class="game-log-year-summary">${gamesPlayed}g &nbsp;·&nbsp; ${ppg} ppg &nbsp;·&nbsp; ${fmtPts(totalFantasyPts)} pts</span>`;
-      }
+      const groups = _buildGroups(realGames);
+      const allCols = groups.flatMap((gr) => gr.cols);
+      const agg = _seasonAgg(realGames);
+      const d = _seasonDerived(agg);
+      const team = seasonTeams[year] || seasonTeams[String(year)] || '';
+      const projPpg = projGames > 0 ? projTotalPts / projGames : 0;
 
-      statsHTML += `
-        <div class="game-log-year-section">
-          <div class="game-log-year-header" onclick="toggleGameLogYear(this)">
-            <div class="game-log-year-header-main">
-              <span class="game-log-year-toggle ${isFirstYear ? '' : 'collapsed'}" id="toggle-${year}">▼</span>
-              <span class="game-log-year-title">${year} Season</span>
-              ${isProjection ? '<span class="game-log-proj-badge">Projected</span>' : ''}
-            </div>
-            ${summaryHTML}
-          </div>
-          <div class="game-log-year-content ${isFirstYear ? 'expanded' : ''}" id="year-${year}">
-            <table class="game-log-table">
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Opp</th>
-                  <th class="${isProjection ? 'game-log-proj-th' : ''}">Pts${(isProjection || isMixed) ? ' *' : ''}</th>
-                  ${_statTh}
-                </tr>
-              </thead>
-              <tbody>
-      `;
+      // Closed-row mini strip. Each value carries its average and total so the
+      // toggle can flip without a re-render; tier tints stay put.
+      const stripItems = isProjection
+        ? _stripLabels().map((label, i) => {
+          if (i === 0) return ['G', '', projGames, projGames, _r0, _r0];
+          if (i === 1) return ['Pts', 'pts', projPpg, projTotalPts, (v) => '~' + _r1(v), (v) => '~' + fmtPts(v)];
+          return [label, '', null, null, _r0, _r0];
+        })
+        : _stripItems(agg, d);
+      const stripN = isProjection ? projGames : agg.n;
 
-      gameLogs.forEach(game => {
+      let rows = '';
+      gameLogs.forEach((game) => {
         // Projection row
         if (game.is_projection) {
-          const projVal = game.fantasy_pts != null ? fmtPts(game.fantasy_pts) : '–';
-          let projDate = game.date || '';
-          if (projDate.length === 8) {
-            projDate = `${parseInt(projDate.substring(4,6))}/${parseInt(projDate.substring(6,8))}`;
-          }
-          statsHTML += `
+          const projVal = game.fantasy_pts != null ? fmtPts(game.fantasy_pts) : '-';
+          rows += `
             <tr class="game-log-table-row game-log-proj-row">
-              <td>${projDate || `Wk ${game.week}`}</td>
-              <td class="game-log-table-opp">${_oppCell(game, '–')}</td>
+              <td class="sticky">${_dateStr(game) || `Wk ${game.week}`}</td>
+              <td class="game-log-table-opp">${_oppCell(game, '-')}</td>
               <td class="game-log-table-pts game-log-proj-pts">${projVal}</td>
-              ${statCols.map(() => '<td>–</td>').join('')}
+              ${allCols.filter((c) => c.k !== 'pts').map(() => '<td class="dash">-</td>').join('')}
             </tr>
           `;
           return;
         }
 
-        const stats = game.stats || null;
-
-        // Format date: 20240908 -> 9/8
-        let dateStr = game.date || '';
-        if (dateStr.length === 8) {
-          const month = parseInt(dateStr.substring(4, 6));
-          const day = parseInt(dateStr.substring(6, 8));
-          dateStr = `${month}/${day}`;
-        }
-
-        // Check if player has any stats at all
         const isBye = game.is_bye === true;
-        const hasAnyStats = !isBye && stats != null && (
-          stats.pass_yd != null || stats.rush_att != null ||
-          stats.rec != null || stats.rec_tgt != null);
+        const s = game.stats || {};
+        const hasAnyStats = !isBye && (
+          s.pass_yd != null || s.rush_att != null || s.rec != null || s.rec_tgt != null);
+        const rowClass = isBye ? 'game-log-table-row game-log-bye'
+          : hasAnyStats ? 'game-log-table-row' : 'game-log-table-row game-log-no-stats';
+        const ptsTier = hasAnyStats && game.fantasy_pts != null ? _glTier('pts', game.fantasy_pts) : '';
+        const ptsCell = isBye ? '-' : hasAnyStats
+          ? (game.fantasy_pts != null ? fmtPts(game.fantasy_pts) : '-')
+          : '<span class="gl-dnp">DNP</span>';
 
-        const val = (v) => v != null && v > 0 ? v : '-';
-        const rowClass = isBye ? 'game-log-table-row game-log-bye' : hasAnyStats ? 'game-log-table-row' : 'game-log-table-row game-log-no-stats';
-        const s = stats || {};
+        let cells = '';
+        groups.forEach((gr) => {
+          gr.cols.forEach((c, ci) => {
+            if (c.k === 'pts') return; // Pts lives in its own fixed column
+            const v = (isBye || !hasAnyStats) ? null : c.get(game);
+            const cls = ((ci === 0 ? 'sec-start ' : '') + _glTier(c.tier, v)).trim();
+            cells += `<td class="${cls}">${v == null ? '-' : c.fmt(v)}</td>`;
+          });
+        });
 
-        const ptsCell = isBye
-          ? '-'
-          : hasAnyStats ? (game.fantasy_pts != null ? fmtPts(game.fantasy_pts) : '-') : '<span style="color:#9ca3af;">DNP</span>';
-
-        statsHTML += `
+        rows += `
           <tr class="${rowClass}">
-            <td>${dateStr}</td>
+            <td class="sticky">${isBye ? '<span class="bye-code">BYE</span>' : _dateStr(game)}</td>
             <td class="game-log-table-opp">${_oppCell(game, '-')}</td>
-            <td class="game-log-table-pts">${ptsCell}</td>
-            ${_statCell(s)}
+            <td class="game-log-table-pts sec-start ${ptsTier}">${ptsCell}</td>
+            ${cells}
           </tr>
         `;
       });
 
-      const valTotal = (v) => v != null && v > 0 ? v : '-';
-
-      // Tfoot: projected season shows PPG; completed shows full totals
+      // Tfoot: season totals. Rates recompute from totals, shares average.
+      let tfoot = '';
       if (isProjection) {
-        statsHTML += `
-              </tbody>
-              <tfoot>
-                <tr class="game-log-table-total game-log-proj-row">
-                  <td><strong>Total</strong></td>
-                  <td><strong>${projGames}G</strong></td>
-                  <td class="game-log-table-pts game-log-proj-pts"><strong>${fmtPts(projTotalPts)}</strong></td>
-                  <td colspan="${statCols.length}" style="text-align:left;font-size:11px;color:var(--text-muted);padding-left:8px;">* Projected - actuals update when games are played</td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-        </div>
-        `;
+        const span = Math.max(allCols.length - 1, 1);
+        tfoot = `
+          <tfoot>
+            <tr class="game-log-table-total game-log-proj-row">
+              <td class="sticky"><strong>Total</strong></td>
+              <td><strong>${projGames}G</strong></td>
+              <td class="game-log-table-pts game-log-proj-pts"><strong>${fmtPts(projTotalPts)}</strong></td>
+              <td colspan="${span}" class="gl-tfoot-note">* Projected - actuals update when games are played</td>
+            </tr>
+          </tfoot>`;
       } else {
-        statsHTML += `
-              </tbody>
-              <tfoot>
-                <tr class="game-log-table-total">
-                  <td><strong>Total</strong></td>
-                  <td><strong>${gamesPlayed}G</strong></td>
-                  <td class="game-log-table-pts"><strong>${fmtPts(totalFantasyPts)}</strong></td>
-                  ${statCols.map(c => {
-                    const totMap = {pass_yd:totalPassYd,pass_td:totalPassTd,pass_int:totalPassInt,rush_att:totalRushAtt,rush_yd:totalRushYd,rush_td:totalRushTd,rec_tgt:totalRecTgt,rec:totalRec,rec_yd:totalRecYd,rec_td:totalRecTd};
-                    const v = totMap[c[0]];
-                    const disp = (v != null && v > 0) ? (c[2] ? Math.round(v) : v) : '-';
-                    return `<td><strong>${disp}</strong></td>`;
-                  }).join('')}
-                </tr>
-              </tfoot>
-            </table>
+        tfoot = `
+          <tfoot>
+            <tr class="game-log-table-total">
+              <td class="sticky"><strong>Total</strong></td>
+              <td><strong>${agg.n}G</strong></td>
+              ${allCols.map((c) => {
+                const t = _totFor(c, realGames);
+                const cls = c.k === 'pts' ? 'game-log-table-pts sec-start' : '';
+                return `<td class="${cls}"><strong>${t == null ? '-' : c.fmt(t)}</strong></td>`;
+              }).join('')}
+            </tr>
+          </tfoot>`;
+      }
+
+      statsHTML += `
+        <div class="game-log-year-section season-card">
+          <div class="game-log-year-header season-row${isFirstYear ? '' : ' closed'}" onclick="toggleGameLogYear(this)">
+            <div class="season-left">
+              <span class="game-log-year-toggle${isFirstYear ? '' : ' collapsed'}" id="toggle-${year}">▼</span>
+              <span class="game-log-year-title">${year} Season</span>
+              ${team ? `<span class="season-team">${team}</span>` : ''}
+              ${isProjection ? '<span class="game-log-proj-badge">Projected</span>' : ''}
+            </div>
+            <div class="mini-stats">${_stripHTML(stripItems, stripN)}</div>
+          </div>
+          <div class="game-log-year-content${isFirstYear ? ' expanded' : ''}" id="year-${year}">
+            <div class="table-wrap">
+              <table class="game-log-table gl-adv">
+                <thead>
+                  <tr class="grp">
+                    <th colspan="2"></th>
+                    ${groups.map((gr) => `<th colspan="${gr.cols.length}" class="grp-h">${gr.label}</th>`).join('')}
+                  </tr>
+                  <tr class="cols">
+                    <th class="sticky">Date</th>
+                    <th>Opp</th>
+                    ${groups.map((gr) => gr.cols.map((c, ci) =>
+                      `<th class="${ci === 0 ? 'sec-start' : ''}">${c.k === 'pts' && (isProjection || isMixed) ? 'Pts *' : c.h}</th>`
+                    ).join('')).join('')}
+                  </tr>
+                </thead>
+                <tbody>
+                  ${rows}
+                </tbody>
+                ${tfoot}
+              </table>
+              <div class="scroll-hint" aria-hidden="true">&#10095;&#10095;</div>
+            </div>
           </div>
         </div>
-        `;
-      }
+      `;
     });
 
-    statsHTML += `</div>`;
+    statsHTML += `
+        </div>
+      </div>
+    `;
   }
   return statsHTML || '<div class="player-modal-loading" style="padding:40px 0;"><div style="color:var(--text-muted);font-size:13px;">No game log data available.</div></div>';
 }
+
+// Averages/Totals toggle for the game-log mini strips. Flips the value shown
+// in every CLOSED season row; expanded tables are unaffected by design.
+window.glSetAvgTot = function (mode, el) {
+  window._glAvgTot = mode;
+  const section = (el && el.closest('.player-modal-section')) || document;
+  section.querySelectorAll('.gl-toggle span').forEach((s) => {
+    s.classList.toggle('on', s.dataset.mode === mode);
+  });
+  section.querySelectorAll('.season-row.closed .ms b').forEach((b) => {
+    b.textContent = mode === 'tot' ? b.dataset.tot : b.dataset.avg;
+  });
+};
 
 function getRoleGrade(roleScore) {
   // Calibrated for role_score v2 (absolute "% of an elite role"): only true
@@ -5585,9 +5828,16 @@ function toggleGameLogYear(arg) {
   if (content.classList.contains('expanded')) {
     content.classList.remove('expanded');
     toggle.classList.add('collapsed');
+    header.classList.add('closed');
+    // A row collapsed after a mode flip shows the current mode's values.
+    const mode = window._glAvgTot || 'avg';
+    header.querySelectorAll('.ms b').forEach((b) => {
+      b.textContent = mode === 'tot' ? b.dataset.tot : b.dataset.avg;
+    });
   } else {
     content.classList.add('expanded');
     toggle.classList.remove('collapsed');
+    header.classList.remove('closed');
   }
 }
 

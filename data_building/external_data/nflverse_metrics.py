@@ -324,6 +324,97 @@ def build_pfr_contact_yards_weekly(season: int) -> Dict[Tuple[str, int], Dict[st
     return out
 
 
+def _apply_weekly_wopr(
+    out: Dict[Tuple[str, int], Dict[str, float]],
+    teams_by_pid: Dict[str, str],
+) -> None:
+    """Weekly WOPR (1.5 * target share + 0.7 * air-yards share), in place.
+
+    Same Hermsmeyer weighting as the season snapshot, at week granularity,
+    from the pbp-derived weekly targets + air yards already in each row.
+    Team-week totals come from teams_by_pid (current team wins for traded
+    players, same approximation as the season rollup). Rows whose team-week
+    has no volume are skipped.
+    """
+    _team_wk_ay: Dict[Tuple[str, int], float] = {}
+    _team_wk_tg: Dict[Tuple[str, int], float] = {}
+    for (pid, week), cols in out.items():
+        team = str(teams_by_pid.get(str(pid)) or "").upper()
+        if not team:
+            continue
+        ay = cols.get("w_rec_air_yards") or 0.0
+        tg = cols.get("w_targets") or 0.0
+        if ay <= 0 and tg <= 0:
+            continue
+        key = (team, week)
+        _team_wk_ay[key] = _team_wk_ay.get(key, 0.0) + ay
+        _team_wk_tg[key] = _team_wk_tg.get(key, 0.0) + tg
+    for (pid, week), cols in out.items():
+        team = str(teams_by_pid.get(str(pid)) or "").upper()
+        key = (team, week)
+        tay = _team_wk_ay.get(key) or 0.0
+        ttg = _team_wk_tg.get(key) or 0.0
+        if tay <= 0 or ttg <= 0:
+            continue
+        ay = cols.get("w_rec_air_yards") or 0.0
+        tg = cols.get("w_targets") or 0.0
+        if ay <= 0 and tg <= 0:
+            continue
+        cols["wopr"] = round(1.5 * (tg / ttg) + 0.7 * (ay / tay), 3)
+
+
+def build_pfr_broken_tackles_weekly(season: int) -> Dict[Tuple[str, int], Dict[str, float]]:
+    """Per-(sleeper_id, week) broken tackles, rushing + receiving (PFR charting).
+
+    Reads the advstats rush and rec weekly files; the rush file populates
+    rushing_broken_tackles and the rec file receiving_broken_tackles (the
+    cross columns are empty in each), so summing both files per player-week
+    is safe. Coverage starts 2018. Returns {} when the feed or the id
+    crosswalk is unavailable.
+    """
+    out: Dict[Tuple[str, int], Dict[str, float]] = {}
+    if season < PFR_ADVSTATS_FLOOR:
+        return out
+    crosswalk = _pfr_to_sleeper()
+    if not crosswalk:
+        print("[nflverse_metrics] PFR broken tackles skipped: no id crosswalk")
+        return out
+    try:
+        import csv
+
+        for csv_path in (
+            download_pfr_advstats_rush_csv(season),
+            download_pfr_advstats_rec_csv(season),
+        ):
+            if not csv_path:
+                continue
+            with open(csv_path, newline="", encoding="utf-8") as f:
+                for row in csv.DictReader(f):
+                    if str(row.get("game_type", "REG")).upper() != "REG":
+                        continue
+                    try:
+                        week = int(float(row.get("week") or 0))
+                    except (ValueError, TypeError):
+                        continue
+                    if week <= 0:
+                        continue
+                    pid = crosswalk.get(str(row.get("pfr_player_id") or "").strip())
+                    if not pid:
+                        continue
+                    btk = (_f(row.get("rushing_broken_tackles")) or 0.0) + (
+                        _f(row.get("receiving_broken_tackles")) or 0.0
+                    )
+                    if btk <= 0:
+                        continue
+                    cols = out.setdefault((pid, week), {})
+                    cols["broken_tackles"] = round(
+                        cols.get("broken_tackles", 0.0) + btk, 1
+                    )
+    except Exception as e:
+        print(f"[nflverse_metrics] PFR broken tackles weekly build failed ({e})")
+    return out
+
+
 def build_pfr_catchable_weekly(season: int) -> Dict[Tuple[str, int], Dict[str, float]]:
     """Per-(sleeper_id, week) bad-throw / drop counts (PFR charting).
 
@@ -1105,12 +1196,16 @@ def build_nflverse_metrics_for_season(season: int) -> Dict[str, Dict[str, float]
 # volume column (w_dropbacks / w_carries / w_targets / w_receptions).
 def build_nflverse_weekly_metrics_for_season(
     season: int,
+    teams_by_pid: Optional[Dict[str, str]] = None,
 ) -> Dict[Tuple[str, int], Dict[str, float]]:
     """Return {(sleeper_id, week): {metric cols + weight cols}} per game week.
 
     Mirrors build_nflverse_metrics_for_season but at week granularity so the
     advanced metrics can be filtered by week. NGS publishes native per-week rows
     (week > 0); play-by-play and FTN are play-level and grouped by (player, week).
+
+    teams_by_pid, when supplied ({sleeper_id: team abbr}), enables the weekly
+    WOPR computation (needs team-week air-yard / target totals).
     """
     crosswalk = _gsis_to_sleeper()
     out: Dict[Tuple[str, int], Dict[str, float]] = {}
@@ -1451,6 +1546,25 @@ def build_nflverse_weekly_metrics_for_season(
         _apply_catchable_weekly(out, build_pfr_catchable_weekly(season))
     except Exception as e:
         print(f"[nflverse_metrics] weekly PFR catchable pct unavailable for {season} ({e})")
+
+    # ---------- PFR broken tackles (rushing + receiving charting) ----------
+    try:
+        for (pid, week), pfr_cols in build_pfr_broken_tackles_weekly(season).items():
+            if pfr_cols:
+                cols = out.setdefault((pid, week), {})
+                cols["broken_tackles"] = round(
+                    cols.get("broken_tackles", 0.0) + pfr_cols["broken_tackles"], 1
+                )
+    except Exception as e:
+        print(f"[nflverse_metrics] weekly PFR broken tackles unavailable for {season} ({e})")
+
+    # ---------- Weekly WOPR (1.5 * target share + 0.7 * air-yards share) ----------
+    # Skipped when no team map is supplied.
+    if teams_by_pid:
+        try:
+            _apply_weekly_wopr(out, teams_by_pid)
+        except Exception as e:
+            print(f"[nflverse_metrics] weekly WOPR unavailable for {season} ({e})")
 
     # Drop any (pid, week) buckets that ended up with only weight columns and no
     # actual metric value (e.g. a player who only appears as a rusher weight).
