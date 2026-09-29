@@ -143,7 +143,10 @@ def test_perf_indexes_exist():
 
 def test_redzone_shared_collect_cache():
     assert "def _rz_cached_collect" in APP
-    assert "_RZ_COLLECT_TTL = 20.0" in APP
+    # TTL must exceed the ~60s collect build time or the cache can never hit.
+    assert "_RZ_COLLECT_TTL = 60.0" in APP
+    # Single-flight: concurrent polls share one in-flight build.
+    assert "_RZ_COLLECT_INFLIGHT" in APP
     assert "_prune_ttl_cache(_RZ_COLLECT_CACHE, 32)" in APP
     # Per-viewer fields stamped onto a copy; cached payload never mutated.
     assert "d = dict(_rz_d)" in APP

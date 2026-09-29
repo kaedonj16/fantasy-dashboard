@@ -14455,20 +14455,26 @@ def _redzone_collect(platform, league_id, season, week):
 # (expires_ts, etag, collected_at, payload); callers must never mutate the
 # cached payload dict.
 _RZ_COLLECT_CACHE: dict = {}
-_RZ_COLLECT_TTL = 20.0
+# TTL must exceed the worst-case collect build time (~60s of upstream PBP
+# fetches). A shorter TTL can never serve a hit: the entry expires before the
+# build that fills it finishes, so every poll pays the full build price.
+# 60s also matches the client's own freshness window for live data.
+_RZ_COLLECT_TTL = 60.0
+# Single-flight state for in-progress collect builds, keyed like
+# _RZ_COLLECT_CACHE. Each value is a threading.Event set when the build
+# finishes (success or failure). Lets concurrent polls share one build
+# instead of each repeating ~60s of upstream fetches and starving gunicorn's
+# request threads (the 15s live-poll cadence x 60s builds x 4 worker threads
+# was queueing requests until Cloudflare 524'd them).
+_RZ_COLLECT_LOCK = threading.Lock()
+_RZ_COLLECT_INFLIGHT: dict = {}
+# A waiter must never hang longer than a build reasonably takes, even if the
+# builder thread dies without signalling.
+_RZ_COLLECT_WAIT_TIMEOUT = 90.0
 
 
-def _rz_cached_collect(platform, league_id, season, week):
-    """Return (payload, etag, collected_at) for the league-scope collect.
-
-    The etag is a content hash of the collect result, so api_redzone_data can
-    answer conditional polls with 304 without re-serializing the ~1MB body.
-    """
-    now = time.time()
-    key = (str(platform), int(season), str(league_id), int(week))
-    entry = _RZ_COLLECT_CACHE.get(key)
-    if entry is not None and entry[0] > now:
-        return entry[3], entry[1], entry[2]
+def _rz_collect_build(key, platform, league_id, season, week):
+    """Run _redzone_collect, cache it, return (payload, etag, collected_at)."""
     d = _redzone_collect(platform, league_id, season, week)
     collected_at = time.time()
     try:
@@ -14476,9 +14482,55 @@ def _rz_cached_collect(platform, league_id, season, week):
         etag = '"rz-%s"' % hashlib.sha1(fp.encode()).hexdigest()[:32]
     except Exception:
         etag = '"rz-%d"' % int(collected_at)
-    _RZ_COLLECT_CACHE[key] = (now + _RZ_COLLECT_TTL, etag, collected_at, d)
-    _prune_ttl_cache(_RZ_COLLECT_CACHE, 32)
+    with _RZ_COLLECT_LOCK:
+        _RZ_COLLECT_CACHE[key] = (time.time() + _RZ_COLLECT_TTL, etag, collected_at, d)
+        _prune_ttl_cache(_RZ_COLLECT_CACHE, 32)
     return d, etag, collected_at
+
+
+def _rz_cached_collect(platform, league_id, season, week):
+    """Return (payload, etag, collected_at) for the league-scope collect.
+
+    The etag is a content hash of the collect result, so api_redzone_data can
+    answer conditional polls with 304 without re-serializing the ~1MB body.
+
+    Single-flight: while one thread builds the collect, concurrent polls for
+    the same key wait on the in-flight build (bounded) instead of each
+    duplicating the upstream work.
+    """
+    key = (str(platform), int(season), str(league_id), int(week))
+    for _attempt in range(2):
+        now = time.time()
+        entry = _RZ_COLLECT_CACHE.get(key)
+        if entry is not None and entry[0] > now:
+            return entry[3], entry[1], entry[2]
+        with _RZ_COLLECT_LOCK:
+            # Re-check under the lock: another thread may have filled the
+            # cache between our first check and acquiring the lock.
+            entry = _RZ_COLLECT_CACHE.get(key)
+            if entry is not None and entry[0] > time.time():
+                return entry[3], entry[1], entry[2]
+            inflight = _RZ_COLLECT_INFLIGHT.get(key)
+            if inflight is None:
+                inflight = threading.Event()
+                _RZ_COLLECT_INFLIGHT[key] = inflight
+                is_builder = True
+            else:
+                is_builder = False
+        if is_builder:
+            try:
+                return _rz_collect_build(key, platform, league_id, season, week)
+            finally:
+                with _RZ_COLLECT_LOCK:
+                    _RZ_COLLECT_INFLIGHT.pop(key, None)
+                inflight.set()
+        # Share the in-flight build instead of duplicating it. Bounded wait:
+        # a dead builder must never hang us; on timeout/failure we loop and
+        # either become the builder or share the replacement build.
+        inflight.wait(timeout=_RZ_COLLECT_WAIT_TIMEOUT)
+    # Last resort: build directly (uncached-coordination) rather than wait
+    # on a peer a third time.
+    return _rz_collect_build(key, platform, league_id, season, week)
 
 
 def _redzone_fetch(platform, league_id, season, week=None, scope="league"):
