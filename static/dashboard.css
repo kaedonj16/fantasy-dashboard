@@ -21282,7 +21282,8 @@ img, svg, canvas {
     display: flex;
 }
 
-/* Charts panel: weekly + radar on row 1, the SVG scatters wrap to row 2 */
+/* Charts panel: weekly + radar on row 1, seed movement + score-vs-opponent on
+   row 2, the SVG scatters wrap below. */
 #tm-panel-charts {
     display: none;
 }
@@ -21308,6 +21309,19 @@ img, svg, canvas {
 .tm-chart-radar {
     flex: 0 0 calc(34% - 24px);
     min-width: 0;
+}
+
+/* Seed movement + score-vs-opponent: half-width pair on their own row below
+   the weekly/radar row. */
+.tm-chart-seed,
+.tm-chart-vsopp {
+    flex: 1 1 calc(50% - 12px);
+    min-width: 260px;
+}
+
+/* Actual-vs-optimal efficiency chart: full row above the chart grid. */
+.tm-chart-eff {
+    flex: 1 1 100%;
 }
 
 /* League scatters: two per row on desktop, full width when the modal is narrow.
@@ -22357,7 +22371,10 @@ tr.team-clickable {
 
     .tm-chart-weekly,
     .tm-chart-radar,
-    .tm-chart-svg {
+    .tm-chart-svg,
+    .tm-chart-seed,
+    .tm-chart-vsopp,
+    .tm-chart-eff {
         flex: 1 1 100%;
         max-width: 100%;
         min-width: 0;

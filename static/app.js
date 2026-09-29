@@ -19083,7 +19083,7 @@ function tmSwitchTab(tab) {
   if (tab === 'charts' && window.ensurePlotly) {
     window.ensurePlotly().then(function () {
       requestAnimationFrame(() => {
-        ['teamWeeklyChart', 'teamRadarChart'].forEach(id => {
+        ['teamWeeklyChart', 'teamRadarChart', 'teamSeedChart', 'teamVsOppChart'].forEach(id => {
           const el = document.getElementById(id);
           if (el) { try { Plotly.Plots.resize(el); } catch (_) {} }
         });
@@ -20067,6 +20067,12 @@ function renderTeamDetails(data) {
     if (data.graphs.radar && data.graphs.radar.z_scores) {
       graphsHTML += '<div class="team-modal-section tm-chart-radar"><h3>Team Breakdown</h3><div class="team-chart-container" id="teamRadarChart"></div></div>';
     }
+    if (data.graphs.seed_movement && data.graphs.seed_movement.length > 1) {
+      graphsHTML += '<div class="team-modal-section tm-chart-seed"><h3>Seed Movement</h3><div class="team-chart-container" id="teamSeedChart"></div></div>';
+    }
+    if (data.graphs.vs_opponent && data.graphs.vs_opponent.length > 0) {
+      graphsHTML += '<div class="team-modal-section tm-chart-vsopp"><h3>Score vs Opponent</h3><div class="team-chart-container" id="teamVsOppChart"></div></div>';
+    }
   }
   // League-wide SVG scatters (this team highlighted), injected as-is.
   if (data.graphs && data.graphs.luck_svg) {
@@ -20201,6 +20207,75 @@ function renderTeamDetails(data) {
       };
 
       window.ensurePlotly().then(function () { Plotly.newPlot('teamWeeklyChart', traces, weeklyLayout, { responsive: true, displayModeBar: false }); }).catch(function () {});
+    }
+
+    // Render seed movement chart (weekly standings rank, 1 at top)
+    if (data.graphs.seed_movement && data.graphs.seed_movement.length > 1) {
+      const theme = getPlotlyTheme();
+      const sm = data.graphs.seed_movement;
+      const seedTrace = {
+        x: sm.map(d => d.week),
+        y: sm.map(d => d.seed),
+        type: 'scatter',
+        mode: 'lines+markers',
+        name: data.team_name,
+        line: { color: (window.brandPlotlyColorway || ['#3b82f6'])[0], width: 2.5, shape: 'spline', smoothing: 0.5 },
+        marker: { size: 7 },
+        hovertemplate: `<b>${data.team_name}</b><br>Week %{x}: %{y} seed<extra></extra>`
+      };
+      const seedLayout = {
+        template: theme.template,
+        paper_bgcolor: 'rgba(0,0,0,0)',
+        plot_bgcolor: 'rgba(0,0,0,0)',
+        font: { family: window.brandPlotlyFont, size: 12.5, color: theme.textColor },
+        xaxis: { title: 'Week', standoff: 12, dtick: 1, color: theme.textColor, showgrid: false, zeroline: false },
+        yaxis: { title: 'Seed', color: theme.textColor, gridcolor: theme.gridColor, zeroline: false, autorange: 'reversed', dtick: 1 },
+        hovermode: 'x unified',
+        hoverlabel: { bgcolor: theme.hoverBg, bordercolor: theme.hoverBorder, font: { color: theme.textColor } },
+        margin: { l: 50, r: 20, t: 20, b: 50 },
+        showlegend: false
+      };
+      window.ensurePlotly().then(function () { Plotly.newPlot('teamSeedChart', [seedTrace], seedLayout, { responsive: true, displayModeBar: false }); }).catch(function () {});
+    }
+
+    // Render score vs opponent chart (grouped bars, colored by result)
+    if (data.graphs.vs_opponent && data.graphs.vs_opponent.length > 0) {
+      const theme = getPlotlyTheme();
+      const vo = data.graphs.vs_opponent;
+      const oppColors = vo.map(d => (d.win != null && d.win < 0.5) ? '#ef4444' : '#22c55e');
+      const vsOppTraces = [
+        {
+          x: vo.map(d => 'W' + d.week),
+          y: vo.map(d => d.points),
+          type: 'bar',
+          name: data.team_name,
+          marker: { color: (window.brandPlotlyColorway || ['#3b82f6'])[0] },
+          hovertemplate: `<b>${data.team_name}</b><br>Week %{x}: %{y:.1f}<extra></extra>`
+        },
+        {
+          x: vo.map(d => 'W' + d.week),
+          y: vo.map(d => d.opp_points),
+          type: 'bar',
+          name: 'Opponent',
+          marker: { color: oppColors },
+          hovertemplate: `<b>Opponent</b><br>Week %{x}: %{y:.1f}<extra></extra>`
+        }
+      ];
+      const vsOppLayout = {
+        template: theme.template,
+        paper_bgcolor: 'rgba(0,0,0,0)',
+        plot_bgcolor: 'rgba(0,0,0,0)',
+        font: { family: window.brandPlotlyFont, size: 12.5, color: theme.textColor },
+        barmode: 'group',
+        xaxis: { title: 'Week', color: theme.textColor, showgrid: false, zeroline: false },
+        yaxis: { title: 'Points', color: theme.textColor, gridcolor: theme.gridColor, zeroline: false },
+        hovermode: 'x unified',
+        hoverlabel: { bgcolor: theme.hoverBg, bordercolor: theme.hoverBorder, font: { color: theme.textColor } },
+        margin: { l: 50, r: 20, t: 20, b: 50 },
+        showlegend: true,
+        legend: { x: 0, y: 1.1, orientation: 'h', font: { color: theme.textColor } }
+      };
+      window.ensurePlotly().then(function () { Plotly.newPlot('teamVsOppChart', vsOppTraces, vsOppLayout, { responsive: true, displayModeBar: false }); }).catch(function () {});
     }
 
     // Render radar chart

@@ -158,6 +158,114 @@ def _consistency_card(team_stats, owner_colors: dict) -> str:
     </div>"""
 
 
+def _luck_trend_fig(df_weekly_finalized, owner_colors: dict):
+    """Luck-over-time line chart: cumulative actual-minus-expected wins per
+    team after each finalized week, from all-play win rate. Returns a Plotly
+    figure, or None when there is not enough data. Best-effort: any failure
+    yields None so the card simply does not render."""
+    try:
+        weeks = sorted(int(w) for w in df_weekly_finalized["week"].unique())
+        if not weeks:
+            return None
+        owners = [str(o) for o in df_weekly_finalized["owner"].unique().tolist()]
+        series = {o: [] for o in owners}
+        for wk in weeks:
+            sub = df_weekly_finalized[df_weekly_finalized["week"] <= wk]
+            ws, aw = {}, {}
+            for _, r in sub.iterrows():
+                w = int(r["week"])
+                o = str(r["owner"])
+                ws.setdefault(w, {})[o] = float(r["points"] or 0)
+                aw[o] = aw.get(o, 0.0) + float(r.get("win") or 0)
+            ap = all_play_analysis(ws, aw)
+            for o in owners:
+                ld = (ap.get(o) or {}).get("luck_delta")
+                series[o].append(float(ld) if ld is not None else None)
+        traces = []
+        for o in owners:
+            pts = [(w, v) for w, v in zip(weeks, series[o]) if v is not None]
+            if not pts:
+                continue
+            xs, ys = zip(*pts)
+            traces.append(
+                go.Scatter(
+                    x=list(xs), y=list(ys),
+                    mode="lines+markers",
+                    name=o,
+                    line=dict(color=owner_colors.get(o)),
+                    marker=dict(size=6),
+                    showlegend=False,
+                )
+            )
+        if not traces:
+            return None
+        traces.append(
+            go.Scatter(
+                x=[weeks[0], weeks[-1]], y=[0, 0],
+                mode="lines",
+                line=dict(dash="dash", color="#9ca3af"),
+                name="Even luck",
+                showlegend=False,
+                hoverinfo="skip",
+            )
+        )
+        fig = go.Figure(traces)
+        fig.update_layout(
+            xaxis_title=dict(text="Week", standoff=12),
+            xaxis=dict(dtick=1),
+            yaxis_title=dict(text="Luck (wins above expected)"),
+            hovermode="x unified",
+            margin=dict(l=52, r=20, t=10, b=45),
+            showlegend=False,
+        )
+        return fig
+    except Exception:
+        return None
+
+
+def _sos_fig(df_weekly_finalized, owner_colors: dict):
+    """Strength-of-schedule bar chart: average opponent score faced per team.
+    Returns a Plotly figure, or None when points_against is unavailable.
+    Best-effort: any failure yields None so the card simply does not render."""
+    try:
+        if "points_against" not in getattr(df_weekly_finalized, "columns", []):
+            return None
+        sub = df_weekly_finalized.dropna(subset=["points_against"])
+        if sub.empty:
+            return None
+        avg = sub.groupby("owner")["points_against"].mean().sort_values(ascending=True)
+        owners = [str(o) for o in avg.index.tolist()]
+        vals = [float(v) for v in avg.values.tolist()]
+        if not owners:
+            return None
+        league_avg = float(np.mean(vals))
+        fig = go.Figure(
+            go.Bar(
+                x=vals,
+                y=owners,
+                orientation="h",
+                marker=dict(color=[owner_colors.get(o, "#9ca3af") for o in owners]),
+                showlegend=False,
+                hovertemplate="%{y}: %{x:.1f} opp avg<extra></extra>",
+            )
+        )
+        fig.update_layout(
+            xaxis_title=dict(text="Avg opponent score", standoff=12),
+            yaxis=dict(automargin=True),
+            margin=dict(l=140, r=20, t=10, b=45),
+            showlegend=False,
+            shapes=[dict(
+                type="line",
+                x0=league_avg, x1=league_avg,
+                y0=-0.6, y1=len(owners) - 0.4,
+                line=dict(dash="dash", color="#9ca3af"),
+            )],
+        )
+        return fig
+    except Exception:
+        return None
+
+
 def build_graphs_body(ctx: dict) -> str:
     team_stats = ctx["team_stats"]
     df_weekly = ctx["df_weekly"]
@@ -371,6 +479,40 @@ def build_graphs_body(ctx: dict) -> str:
     svg_cards_html = _luck_and_value_age_cards(ctx, df_weekly, owner_colors)
     consistency_html = _consistency_card(team_stats, owner_colors)
 
+    # Luck-over-time and strength-of-schedule cards (best-effort; a None fig
+    # means the card is omitted).
+    luck_trend_fig = _luck_trend_fig(df_weekly, owner_colors)
+    if luck_trend_fig is not None:
+        apply_brand_layout(luck_trend_fig)
+    sos_fig = _sos_fig(df_weekly, owner_colors)
+    if sos_fig is not None:
+        apply_brand_layout(sos_fig)
+
+    luck_trend_html = ""
+    if luck_trend_fig is not None:
+        luck_trend_html = """
+            <div class="card">
+              <div class="card-header-row">
+                <h2>Luck Over Time</h2>
+              </div>
+              <div class="card-body graph-body">
+                <div class="svg-graph-note">Cumulative wins above (or below) what each team's scoring deserved, from all-play win rate. Above zero means the record is better than the scoring earned.</div>
+                <div id="chart-lucktrend" style="width:100%;min-height:350px;"></div>
+              </div>
+            </div>"""
+    sos_html = ""
+    if sos_fig is not None:
+        sos_html = """
+            <div class="card">
+              <div class="card-header-row">
+                <h2>Strength of Schedule Faced</h2>
+              </div>
+              <div class="card-body graph-body">
+                <div class="svg-graph-note">Average opponent score each team has faced so far. Dashed line is the league average. A soft schedule flatters a record; a brutal one hides a good team.</div>
+                <div id="chart-sos" style="width:100%;min-height:350px;"></div>
+              </div>
+            </div>"""
+
     # ---------- Sidebar: top teams + metrics + unified legend ----------
     top_rows = []
     for _, r in top3.iterrows():
@@ -512,13 +654,18 @@ def build_graphs_body(ctx: dict) -> str:
     """
 
     # ---------- Deferred chart rendering (Plotly loaded on demand) ----------
+    _chart_entries = [
+        '"chart-pfpa":' + pfpa_json,
+        '"chart-line":' + line_json,
+        '"chart-box":' + box_json,
+    ]
+    if luck_trend_fig is not None:
+        _chart_entries.append('"chart-lucktrend":' + _fig_json(luck_trend_fig))
+    if sos_fig is not None:
+        _chart_entries.append('"chart-sos":' + _fig_json(sos_fig))
     js_charts = (
         '<script>(function(){'
-        'var _FIGS={'
-        '"chart-pfpa":' + pfpa_json + ','
-        '"chart-line":'  + line_json + ','
-        '"chart-box":'   + box_json  +
-        '};'
+        'var _FIGS={' + ",".join(_chart_entries) + '};'
         'var _CFG={responsive:true,displayModeBar:false};'
         '(window.ensurePlotly?window.ensurePlotly():Promise.resolve(window.Plotly)).then(function(P){'
         'if(!P)return;'
@@ -563,6 +710,10 @@ def build_graphs_body(ctx: dict) -> str:
             {consistency_html}
 
             {svg_cards_html}
+
+            {luck_trend_html}
+
+            {sos_html}
 
             <div class="card">
               <div class="card-header-row">
