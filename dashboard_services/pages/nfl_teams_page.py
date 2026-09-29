@@ -118,6 +118,12 @@ table.nt-rank tbody tr.nt-sel td.nt-teamcol{{background:var(--accent-soft)}}
 .nt-pbody{{padding:16px}}
 .nt-pgrid{{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}}
 @media(max-width:700px){{.nt-pgrid{{grid-template-columns:1fr}}}}
+/* Two-column graph layout inside the Graphs section: two charts per row on
+   desktop, one per row on phones. Margin is zeroed on the grid children so
+   the row gap stays at 16px. */
+.nt-graphs-grid{{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:0 0 16px}}
+.nt-graphs-grid>.nt-psec{{margin-bottom:0}}
+@media(max-width:700px){{.nt-graphs-grid{{grid-template-columns:1fr}}}}
 .nt-psec{{margin-bottom:16px}}
 .nt-psec h3{{font-size:14px;margin:0 0 10px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)}}
 .nt-erow{{display:grid;grid-template-columns:150px 1fr 44px;gap:10px;align-items:center;padding:7px 0;border-top:1px solid var(--border)}}
@@ -134,6 +140,8 @@ table.nt-rank tbody tr.nt-sel td.nt-teamcol{{background:var(--accent-soft)}}
 .nt-cmp select{{font:inherit;color:var(--text);background:var(--card-soft);border:1px solid var(--border);border-radius:8px;padding:8px 10px;min-height:40px;max-width:100%}}
 .nt-cmp-legend{{display:flex;gap:14px;margin:8px 0 0;font-size:12px;color:var(--text-muted)}}
 .nt-cmp-legend i{{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px}}
+/* Non-selected scatter marks: greyed out so the selected team pops. */
+.nt-mark-dim{{filter:grayscale(1);opacity:.55}}
 .nt-chips{{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:10px}}
 .nt-chip{{background:var(--card-soft);border-radius:10px;padding:12px;text-align:center}}
 .nt-chip .nt-clab{{font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em}}
@@ -667,8 +675,9 @@ function fingerprintSection(t){{
    loaded rankings payload. The selected team is highlighted. */
 function ev(e){{var v=e&&e.v;return (v==null||!isFinite(Number(v)))?null:Number(v);}}
 /* Generic 2D league scatter with median splits and quadrant labels.
-   cfg: pts [{{abbr,x,y}}], xLab, yLab, quads [topRight,topLeft,bottomRight,bottomLeft],
-   xTick, yTick, tip(p), aria, emptyMsg. The selected team is highlighted. */
+   cfg: pts [{{abbr,x,y,logo}}], xLab, yLab, quads [topRight,topLeft,bottomRight,bottomLeft],
+   xTick, yTick, tip(p), aria, emptyMsg. Every point renders its team logo;
+   the selected team is larger, ringed in its team color, and drawn last. */
 function scatterSVG(t,cfg){{
   var pts=(cfg.pts||[]).filter(function(p){{return p&&p.x!=null&&p.y!=null&&isFinite(p.x)&&isFinite(p.y);}});
   if(pts.length<4)
@@ -714,16 +723,26 @@ function scatterSVG(t,cfg){{
     if(!qq.t)return;
     s+='<text x="'+qq.x.toFixed(1)+'" y="'+qq.y.toFixed(1)+'" font-size="10" text-anchor="middle" fill="var(--text-muted)" opacity="0.85" letter-spacing="1">'+esc(qq.t)+'</text>';
   }});
-  pts.forEach(function(p){{
+  /* Team logos as plot marks. The selected team is larger and full-color
+     while the rest are greyed out, and it is drawn after everyone else so
+     it stays on top. Dots remain as the fallback when a logo URL is missing. */
+  function dot(p){{
     var x=X(p.x),y=Y(p.y),me=p.abbr===t.team;
-    s+='<circle cx="'+x.toFixed(1)+'" cy="'+y.toFixed(1)+'" r="'+(me?7:4.5)+'" fill="'+(me?tcolor:"var(--text-muted)")+'" '+
-      (me?'stroke="#fff" stroke-width="1.5" ':'')+'fill-opacity="'+(me?1:0.55)+'"><title>'+
-      esc(cfg.tip?cfg.tip(p):p.abbr)+'</title></circle>';
+    var tip=esc(cfg.tip?cfg.tip(p):p.abbr);
+    if(p.logo){{
+      var sz=me?26:18,hx=x-sz/2,hy=y-sz/2;
+      s+='<image href="'+esc(p.logo)+'" x="'+hx.toFixed(1)+'" y="'+hy.toFixed(1)+'" width="'+sz+'" height="'+sz+'"'+(me?'':' class="nt-mark-dim"')+'><title>'+tip+'</title></image>';
+    }} else {{
+      s+='<circle cx="'+x.toFixed(1)+'" cy="'+y.toFixed(1)+'" r="'+(me?7:4.5)+'" fill="'+(me?tcolor:"var(--text-muted)")+'" '+
+        (me?'stroke="#fff" stroke-width="1.5" ':'')+'fill-opacity="'+(me?1:0.55)+'"><title>'+tip+'</title></circle>';
+    }}
     if(me){{
-      var lx=x+11>W-34?x-36:x+11;
+      var lx=x+17>W-30?x-42:x+17;
       s+='<text x="'+lx.toFixed(1)+'" y="'+(y+4).toFixed(1)+'" font-size="12" font-weight="800" fill="'+tcolor+'">'+esc(p.abbr)+'</text>';
     }}
-  }});
+  }}
+  pts.forEach(function(p){{ if(p.abbr!==t.team) dot(p); }});
+  pts.forEach(function(p){{ if(p.abbr===t.team) dot(p); }});
   s+='<text x="'+(ml+pw/2)+'" y="'+(H-2)+'" font-size="11" text-anchor="middle" fill="var(--text-muted)">'+esc(cfg.xLab||"")+'</text>';
   s+='<text x="10" y="'+(mt+ph/2)+'" font-size="11" text-anchor="middle" fill="var(--text-muted)" transform="rotate(-90 10 '+(mt+ph/2)+')">'+esc(cfg.yLab||"")+'</text>';
   return s+'</svg>';
@@ -731,7 +750,7 @@ function scatterSVG(t,cfg){{
 function olineScatterSVG(t){{
   var pts=((DATA&&DATA.teams)||[]).map(function(x){{
     var ol=x.oline||{{}};
-    return {{abbr:x.team,x:ev(ol.pass_block),y:ev(ol.run_block)}};
+    return {{abbr:x.team,x:ev(ol.pass_block),y:ev(ol.run_block),logo:x.logo}};
   }});
   return scatterSVG(t,{{pts:pts,xLab:"Pass block grade",yLab:"Run block grade",
     quads:["Elite","Run-first","Pass-first","Rebuilding"],
@@ -742,7 +761,7 @@ function olineScatterSVG(t){{
 function pressureScatterSVG(t){{
   var pts=((DATA&&DATA.teams)||[]).map(function(x){{
     var ol=x.oline||{{}};
-    return {{abbr:x.team,x:ev(ol.pressure_rate),y:ev(ol.sack_rate)}};
+    return {{abbr:x.team,x:ev(ol.pressure_rate),y:ev(ol.sack_rate),logo:x.logo}};
   }});
   var pct1=function(v){{return v.toFixed(1)+"%";}};
   return scatterSVG(t,{{pts:pts,xLab:"Pressure %",yLab:"Sack %",xTick:pct1,yTick:pct1,
@@ -754,7 +773,7 @@ function pressureScatterSVG(t){{
 function identityScatterSVG(t){{
   var pts=((DATA&&DATA.teams)||[]).map(function(x){{
     var r=x.ranks||{{}};
-    return {{abbr:x.team,x:ntPct(r.pass_yds_pg),y:ntPct(r.rush_yds_pg)}};
+    return {{abbr:x.team,x:ntPct(r.pass_yds_pg),y:ntPct(r.rush_yds_pg),logo:x.logo}};
   }});
   return scatterSVG(t,{{pts:pts,xLab:"Pass yards percentile",yLab:"Rush yards percentile",
     quads:["Balanced","Run-first","Pass-first","One-dimensional"],
@@ -765,9 +784,11 @@ function identityScatterSVG(t){{
 function softSpotsSVG(t){{
   if(!DPOS){{ensureDefense();return '<p class="nt-fine">Loading defensive matchup data.</p>';}}
   if(DPOS.failed||!DPOS.teams)return '<p class="nt-fine">Defensive matchup data is not available.</p>';
+  var logoByAbbr={{}};
+  ((DATA&&DATA.teams)||[]).forEach(function(x){{logoByAbbr[x.team]=x.logo;}});
   var pts=Object.keys(DPOS.teams).map(function(ab){{
     var tp=DPOS.teams[ab]||{{}};
-    return {{abbr:ab,x:ev(tp.RB),y:ev(tp.WR)}};
+    return {{abbr:ab,x:ev(tp.RB),y:ev(tp.WR),logo:logoByAbbr[ab]}};
   }});
   var f1=function(v){{return v.toFixed(1);}};
   return scatterSVG(t,{{pts:pts,xLab:"FPTS allowed to RB",yLab:"FPTS allowed to WR",xTick:f1,yTick:f1,
@@ -881,14 +902,14 @@ function renderProfile(){{
     h+='</tr>';
   }});
   h+='</tbody></table></div><p class="nt-fine">'+esc(d.roster_note||"Current roster")+ (d.usage_note?(" "+esc(d.usage_note)):"") +' Tap a player to open their card.</p></section>';
-  h+='<details class="nt-psec nt-collapse" open><summary><h3>Graphs</h3><span class="nt-chev" aria-hidden="true"></span></summary>';
+  h+='<details class="nt-psec nt-collapse" open><summary><h3>Graphs</h3><span class="nt-chev" aria-hidden="true"></span></summary><div class="nt-graphs-grid">';
   h+='<section class="nt-psec"><h3>Home vs away</h3>'+splitsSVG(d,t)+'</section>';
   h+=fingerprintSection(t);
-  h+='<section class="nt-psec"><h3>Pass block vs run block</h3>'+olineScatterSVG(t)+'<p class="nt-fine">Every dot is an NFL team, the highlighted dot is this team. O-line grades use the '+esc(String((DATA&&DATA.oline_season)||"latest"))+' season (latest available).</p></section>';
-  h+='<section class="nt-psec"><h3>Pressure vs sacks</h3>'+pressureScatterSVG(t)+'<p class="nt-fine">Every dot is an NFL team. Lower is better on both axes. Rates use the '+esc(String((DATA&&DATA.oline_season)||"latest"))+' season (latest available).</p></section>';
+  h+='<section class="nt-psec"><h3>Pass block vs run block</h3>'+olineScatterSVG(t)+'<p class="nt-fine">Every logo is an NFL team, the full-color logo is this team. O-line grades use the '+esc(String((DATA&&DATA.oline_season)||"latest"))+' season (latest available).</p></section>';
+  h+='<section class="nt-psec"><h3>Pressure vs sacks</h3>'+pressureScatterSVG(t)+'<p class="nt-fine">Every logo is an NFL team. Lower is better on both axes. Rates use the '+esc(String((DATA&&DATA.oline_season)||"latest"))+' season (latest available).</p></section>';
   h+='<section class="nt-psec"><h3>Pass vs run identity</h3>'+identityScatterSVG(t)+'<p class="nt-fine">League percentile by rank, all teams. Higher is better on both axes.</p></section>';
   h+='<section class="nt-psec"><h3>Defensive soft spots</h3>'+softSpotsSVG(t)+'<p class="nt-fine">Fantasy points allowed per game (PPR). Higher means a softer matchup. Only completed games count.</p></section>';
-  h+='</details>';
+  h+='</div></details>';
   h+='<details class="nt-psec nt-collapse" open><summary><h3>Schedule</h3><span class="nt-chev" aria-hidden="true"></span></summary><div class="nt-sched">';
   (d.schedule||[]).forEach(function(g){{
     if(g.bye){{h+='<div class="nt-wrow nt-bye"><span class="nt-wk">'+esc(g.week_label||"")+'</span><span class="nt-opp">Bye week</span></div>';return;}}
