@@ -73,6 +73,22 @@ TANK01_API_KEY = None
 FOOTBALLGUYS_TEAM_LOG_URL = "https://www.footballguys.com/stats/game-logs/teams"
 LEAGUE_HISTORY_CACHE: dict[str, dict] = {}
 LEAGUE_HISTORY_TTL = 60 * 60 * 12  # 12 hours
+# Memory bound: entries are tiny (one season->league map per league) but the
+# dict was unbounded, so a worker serving many distinct leagues could grow it
+# without limit. Evict the oldest entries past this count on insert.
+LEAGUE_HISTORY_CACHE_MAX = 1000
+
+
+def _prune_league_history_cache() -> None:
+    if len(LEAGUE_HISTORY_CACHE) <= LEAGUE_HISTORY_CACHE_MAX:
+        return
+    # Drop the oldest ~10% by stored ts; entries are small so this is cheap.
+    ordered = sorted(
+        LEAGUE_HISTORY_CACHE.items(), key=lambda kv: kv[1].get("ts", 0.0)
+    )
+    drop = max(1, len(ordered) - LEAGUE_HISTORY_CACHE_MAX)
+    for k, _v in ordered[:drop]:
+        LEAGUE_HISTORY_CACHE.pop(k, None)
 
 # NOTE: Don't check TANK01_API_KEY at import time - only when actually calling Tank01 API
 # This allows model training and other scripts to import this module without requiring the key
@@ -809,6 +825,7 @@ def build_league_history_map(platform: str, league_id: str, season: int) -> dict
 
         season_map = _probe_same_id_history(platform, str(league_id), int(season))
         LEAGUE_HISTORY_CACHE[cache_key] = {"ts": now, "map": season_map}
+        _prune_league_history_cache()
         return season_map
 
     if platform != "sleeper":
@@ -853,6 +870,7 @@ def build_league_history_map(platform: str, league_id: str, season: int) -> dict
         season_cursor = (league_season - 1) if league_season else (season_cursor - 1)
 
     LEAGUE_HISTORY_CACHE[cache_key] = {"ts": now, "map": season_map}
+    _prune_league_history_cache()
 
     return season_map
 

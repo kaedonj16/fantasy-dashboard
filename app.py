@@ -10,6 +10,7 @@ import math
 import os
 import pandas as pd
 import re
+import sys
 import threading
 import time
 from collections import defaultdict
@@ -19282,6 +19283,26 @@ _GAMELOG_STAT_KEYS = (
 )
 _WEEK_STAT_INDEX: Dict[Tuple[int, int], Tuple[float, Dict[str, Optional[dict]]]] = {}
 _WEEK_STAT_INDEX_LOCK = threading.Lock()
+# Memory bound: a fully parsed week file costs ~1.7MB of Python objects, and
+# ten seasons of history (~180 files) measured ~300MB per gunicorn worker --
+# the single biggest per-worker structure on the 2GB Render box. Game-log
+# traffic is overwhelmingly for recent seasons, so keep only the N most
+# recent seasons in memory; older seasons re-parse on demand (slower but
+# rare and still correct). Override with WEEK_STAT_INDEX_MAX_SEASONS.
+_WEEK_STAT_INDEX_MAX_SEASONS = _positive_env_int("WEEK_STAT_INDEX_MAX_SEASONS", 4)
+
+
+def _evict_old_week_stat_seasons() -> None:
+    """Drop _WEEK_STAT_INDEX entries from the oldest seasons.
+
+    Keeps the _WEEK_STAT_INDEX_MAX_SEASONS most recent seasons by season
+    number. Called with _WEEK_STAT_INDEX_LOCK held, after an insert.
+    """
+    seasons = sorted({s for (s, _w) in _WEEK_STAT_INDEX})
+    while len(seasons) > _WEEK_STAT_INDEX_MAX_SEASONS:
+        oldest = seasons.pop(0)
+        for k in [k for k in _WEEK_STAT_INDEX if k[0] == oldest]:
+            _WEEK_STAT_INDEX.pop(k, None)
 
 
 def _week_stat_index_rows(season: int, week: int) -> Dict[str, Optional[dict]]:
@@ -19291,6 +19312,11 @@ def _week_stat_index_rows(season: int, week: int) -> Dict[str, Optional[dict]]:
     and {player_id: None} for players whose row exists but is all zeros.
     A file whose mtime changed since the cached parse is re-parsed.
     Never raises; a missing/unreadable file yields {}.
+
+    The index is bounded to the most recent _WEEK_STAT_INDEX_MAX_SEASONS
+    seasons (see _evict_old_week_stat_seasons); older seasons re-parse on
+    demand. Stat keys and player ids are sys.intern()ed so the ~265 stat
+    keys and ~7k player ids are shared instead of duplicated per week file.
     """
     season = int(season)
     week = int(week)
@@ -19313,6 +19339,7 @@ def _week_stat_index_rows(season: int, week: int) -> Dict[str, Optional[dict]]:
         try:
             with open(path) as handle:
                 weekly = json.load(handle) or {}
+            _intern = sys.intern
             for pid, s in weekly.items():
                 if not isinstance(s, dict):
                     continue
@@ -19320,11 +19347,12 @@ def _week_stat_index_rows(season: int, week: int) -> Dict[str, Optional[dict]]:
                 # game-log points calc (score_stats) scores any stat key the
                 # league's scoring settings name, so dropping the rest would
                 # silently undercount custom-scoring leagues.
-                nonzero = {k: v for k, v in s.items() if v}
-                rows[str(pid)] = nonzero if nonzero else None
+                nonzero = {_intern(k): v for k, v in s.items() if v}
+                rows[_intern(str(pid))] = nonzero if nonzero else None
         except Exception:
             rows = {}
         _WEEK_STAT_INDEX[key] = (mtime, rows)
+        _evict_old_week_stat_seasons()
         return rows
 
 
