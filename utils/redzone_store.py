@@ -303,10 +303,17 @@ def prune_plays(retention_days: int = 7) -> int:
         return 0
 
 
-def discover_live_games() -> list[dict]:
+def discover_live_games(current_week: int | None = None) -> list[dict]:
     """League-agnostic live/final game discovery via the ESPN scoreboard.
 
-    Returns [{game_id (Tank01 'YYYYMMDD_AWAY@HOME' form), live, final}].
+    Returns [{game_id (Tank01 'YYYYMMDD_AWAY@HOME' form), live, final, week}].
+
+    The scoreboard is fetched for the current NFL week AND the previous week
+    explicitly (``?week=N``). Relying on the unparameterized scoreboard alone
+    goes blind to last week's games the moment ESPN flips it forward, so
+    collection gaps from the previous week could never be backfilled. Each
+    game is tagged with the week it was discovered under, so the collector
+    stamps the correct week even when backfilling an older game.
     """
     from utils.redzone_alt_pbp import (
         _ESPN_SCOREBOARD,
@@ -314,32 +321,56 @@ def discover_live_games() -> list[dict]:
         extract_espn_scoreboard_lookup,
     )
 
-    try:
-        import requests
+    def _fetch(week: int | None) -> dict:
+        params = {"xhr": "1"}
+        if week:
+            params["week"] = str(week)
+        try:
+            import requests
 
-        resp = requests.get(
-            _ESPN_SCOREBOARD,
-            params={"xhr": "1"},
-            headers={"User-Agent": _UA, "Accept": "application/json"},
-            timeout=10,
-        )
-        if resp.status_code != 200:
-            return []
-        lookup = extract_espn_scoreboard_lookup(resp.json())
-    except Exception as exc:
-        logger.debug("[redzone-store] scoreboard discovery failed: %s", exc)
-        return []
+            resp = requests.get(
+                _ESPN_SCOREBOARD,
+                params=params,
+                headers={"User-Agent": _UA, "Accept": "application/json"},
+                timeout=10,
+            )
+            if resp.status_code != 200:
+                return {}
+            return extract_espn_scoreboard_lookup(resp.json())
+        except Exception as exc:
+            logger.debug("[redzone-store] scoreboard discovery failed: %s", exc)
+            return {}
+
+    # (scoreboard week to fetch, NFL week to tag). The explicit week param
+    # keeps working before and after ESPN flips its default scoreboard, and
+    # the tag tells the collector which week a backfilled game belongs to.
+    fetches: list[tuple[int | None, int | None]] = []
+    wk = int(current_week) if current_week else 0
+    if wk >= 1:
+        fetches.append((wk, wk))
+        if wk > 1:
+            fetches.append((wk - 1, wk - 1))
+    else:
+        # Week unknown (e.g. state fetch failed): legacy single fetch.
+        fetches.append((None, None))
+
     seen: dict[str, dict] = {}
-    for game in lookup.values():
-        if not isinstance(game, dict):
-            continue
-        gid = str(game.get("gameID") or "")
-        if not gid or gid in seen:
-            continue
-        code = str(game.get("gameStatusCode") or "")
-        if code not in ("1", "2"):
-            continue
-        seen[gid] = {"game_id": gid, "live": code == "1", "final": code == "2"}
+    for sb_week, tag in fetches:
+        for game in _fetch(sb_week).values():
+            if not isinstance(game, dict):
+                continue
+            gid = str(game.get("gameID") or "")
+            if not gid or gid in seen:
+                continue
+            code = str(game.get("gameStatusCode") or "")
+            if code not in ("1", "2"):
+                continue
+            seen[gid] = {
+                "game_id": gid,
+                "live": code == "1",
+                "final": code == "2",
+                "week": tag,
+            }
     return list(seen.values())
 
 
@@ -404,7 +435,7 @@ def poll_once() -> dict:
     if not season:
         return stats
 
-    games = discover_live_games()
+    games = discover_live_games(current_week=week)
     if not games:
         return stats
 
@@ -412,15 +443,16 @@ def poll_once() -> dict:
     # (fetch_alt_pbp_plays force-refreshes until ESPN reports complete).
     # Finals never seen are normally skipped -- nothing new to learn -- but a
     # recent final may have gone final while the poller was down (deploy,
-    # outage). Self-heal: backfill unseen finals from the last 3 days so a
-    # poller gap can't permanently lose a game's plays (and its TDs).
+    # outage). Self-heal: backfill unseen finals from the last 7 days so a
+    # poller gap can't permanently lose a game's plays (and its TDs). The
+    # window matches the play-prune horizon: anything older is pruned anyway.
     live = [g for g in games if g["live"]]
     finals = [g for g in games if g["final"]]
     if finals:
         known = set(get_plays(season, [g["game_id"] for g in finals]).keys())
         try:
             from datetime import datetime, timedelta, timezone
-            _cutoff = (datetime.now(timezone.utc) - timedelta(days=3)).strftime("%Y%m%d")
+            _cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).strftime("%Y%m%d")
         except Exception:
             _cutoff = ""
         def _is_recent_unseen(gid: str) -> bool:
@@ -460,7 +492,10 @@ def poll_once() -> dict:
         except Exception as exc:
             logger.debug("[redzone-store] pbp failed game=%s: %s", gid, exc)
             continue
-        n = upsert_plays(season, gid, plays, week=week)
+        # Stamp the game's own week, not the current NFL week: a backfilled
+        # previous-week final must not be stamped as this week, or the
+        # week-scoped moments query would serve last week's plays again.
+        n = upsert_plays(season, gid, plays, week=g.get("week") or week)
         stats["games"] += 1
         stats["plays"] += n
     return stats

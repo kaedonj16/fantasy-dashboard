@@ -257,16 +257,97 @@ def test_get_plays_unknown_game_absent(store_db):
     assert rs.get_plays(2026, ["nope"]) == {}
 
 
+def test_discover_live_games_covers_previous_week(monkeypatch):
+    """Discovery fetches the current AND previous week scoreboards explicitly.
+
+    Regression: relying on the unparameterized scoreboard alone went blind to
+    last week's finals the moment ESPN flipped it forward, so collection gaps
+    from the previous week could never be backfilled. Each game is tagged
+    with the week it was discovered under.
+    """
+    import sys
+    import types
+
+    requested_weeks = []
+
+    class _Resp:
+        status_code = 200
+
+        def __init__(self, week):
+            self._week = week
+
+        def json(self):
+            return {"sbData": {"events": []}}
+
+    class _Requests:
+        @staticmethod
+        def get(url, params=None, headers=None, timeout=None):
+            requested_weeks.append(params.get("week"))
+            return _Resp(params.get("week"))
+
+    monkeypatch.setitem(sys.modules, "requests", _Requests)
+
+    fake_alt = types.ModuleType("utils.redzone_alt_pbp")
+    fake_alt._ESPN_SCOREBOARD = "https://example.invalid/scoreboard"
+    fake_alt._UA = "test"
+
+    def fake_lookup(payload):
+        # One live game per requested scoreboard week.
+        wk = requested_weeks[-1]
+        gid = f"2026092{wk}_AAA@BBB"
+        return {f"t{wk}": {"gameID": gid, "gameStatusCode": "1"}}
+
+    fake_alt.extract_espn_scoreboard_lookup = fake_lookup
+    monkeypatch.setitem(sys.modules, "utils.redzone_alt_pbp", fake_alt)
+
+    games = rs.discover_live_games(current_week=4)
+    assert requested_weeks == ["4", "3"]
+    by_gid = {g["game_id"]: g for g in games}
+    assert by_gid["20260924_AAA@BBB"]["week"] == 4
+    assert by_gid["20260923_AAA@BBB"]["week"] == 3
+    assert all(g["live"] for g in games)
+
+
+def test_discover_live_games_skips_previous_week_one(monkeypatch):
+    """Week 1 has no previous week to fetch."""
+    import sys
+    import types
+
+    requested_weeks = []
+
+    class _Resp:
+        status_code = 200
+
+        def json(self):
+            return {}
+
+    class _Requests:
+        @staticmethod
+        def get(url, params=None, headers=None, timeout=None):
+            requested_weeks.append(params.get("week"))
+            return _Resp()
+
+    monkeypatch.setitem(sys.modules, "requests", _Requests)
+    fake_alt = types.ModuleType("utils.redzone_alt_pbp")
+    fake_alt._ESPN_SCOREBOARD = "https://example.invalid/scoreboard"
+    fake_alt._UA = "test"
+    fake_alt.extract_espn_scoreboard_lookup = lambda payload: {}
+    monkeypatch.setitem(sys.modules, "utils.redzone_alt_pbp", fake_alt)
+
+    assert rs.discover_live_games(current_week=1) == []
+    assert requested_weeks == ["1"]
+
+
 def test_poll_once_backfills_recent_unseen_finals(monkeypatch):
     import sys
     import types
 
-    # Tank01 game ids carry the date: backfill window is 3 days.
-    monkeypatch.setattr(rs, "discover_live_games", lambda: [
-        {"game_id": "20260928_KC@BUF", "live": True, "final": False},
-        {"game_id": "20260927_NE@MIA", "live": False, "final": True},
-        {"game_id": "20260927_SF@ARI", "live": False, "final": True},
-        {"game_id": "20260920_DAL@PHI", "live": False, "final": True},
+    # Tank01 game ids carry the date: backfill window is 7 days.
+    monkeypatch.setattr(rs, "discover_live_games", lambda current_week=None: [
+        {"game_id": "20260928_KC@BUF", "live": True, "final": False, "week": 4},
+        {"game_id": "20260927_NE@MIA", "live": False, "final": True, "week": 3},
+        {"game_id": "20260927_SF@ARI", "live": False, "final": True, "week": 3},
+        {"game_id": "20260920_DAL@PHI", "live": False, "final": True, "week": 3},
     ])
     monkeypatch.setattr(rs, "get_plays", lambda season, gids: {"20260927_NE@MIA": []})
 
@@ -298,9 +379,12 @@ def test_poll_once_backfills_recent_unseen_finals(monkeypatch):
     stats = rs.poll_once()
     # live + seen final re-polled; recent unseen final backfilled; old unseen final skipped
     assert stats["games"] == 3
-    # the collector stamps the current week from nfl state
-    assert {w for _, w in upserted} == {4}
-    assert sorted(gid for gid, _w in upserted) == ["20260927_NE@MIA", "20260927_SF@ARI", "20260928_KC@BUF"]
+    # the collector stamps each game's own week (falling back to nfl state)
+    assert sorted((gid, w) for gid, w in upserted) == [
+        ("20260927_NE@MIA", 3),
+        ("20260927_SF@ARI", 3),
+        ("20260928_KC@BUF", 4),
+    ]
     assert [f[0] for f in fetched] == ["20260928_KC@BUF", "20260927_NE@MIA", "20260927_SF@ARI"]
 
 
