@@ -298,6 +298,7 @@ def build_front_office_prompt_payload(data: dict) -> dict:
                 "pos_rank": w.get("pos_rank_label") or None,
                 "injury": w.get("injury") or None,
                 "urgent_need": w.get("urgent_reason") or None,
+                "stash_only": bool(w.get("stash_only")),
             }
             for w in (data.get("waiver_targets") or [])
         ],
@@ -363,7 +364,11 @@ Return a JSON object with these fields:
 - posture: one short paragraph on the team's current posture.
 - top_move: the single most important move, naming specific players
   (one sentence). When a drop_add_pairs entry covers the top waiver add,
-  phrase it as the paired move ("Drop X, add Y").
+  phrase it as the paired move ("Drop X, add Y"). It must NEVER recommend
+  ADDING a player with a serious injury designation (IR, PUP, NFI, OUT,
+  DOUBTFUL, NA, SUS/SUSP). If every candidate at the needed position is
+  hurt, say that plainly (name the position need and the injury situation)
+  instead of recommending an injured add.
 - trade_notes: array of {"target_id", "note"} objects, one per trade target
   you can justify. target_id must be one of the target_id values in the JSON
   below. Omit targets you cannot justify; do not invent ids. Each note is two
@@ -375,6 +380,8 @@ Return a JSON object with these fields:
 - waiver_notes: array of {"id", "note"} objects, one per waiver target worth
   adding. id must be one of the id values in the JSON below. Omit the rest;
   do not invent ids. If the target has urgent_need, lead with the timeline.
+  If a target is flagged stash_only (dynasty IR stash), label it "IR stash
+  only" in its note; never present it as an immediate add.
 - gm_alert: one or two sentences. The single most urgent thing the GM must
   know. Lead with the first urgent_needs entry when present; otherwise lead
   with the trade deadline when trade_deadline.weeks_remaining is 3 or less
