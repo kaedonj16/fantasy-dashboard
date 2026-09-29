@@ -39,7 +39,11 @@ NFL_TEAM_ABBRS = frozenset({
 
 _STATE_PREFIX = "weekly_email_sent:"  # + account_id  -> value = ISO "YYYY-Www"
 # Cap connected leagues in one email so cron runtime and inbox length stay sane.
-MAX_DIGEST_LEAGUES = 8
+# Upper bound on leagues covered by one weekly digest. Raised from 8 after a
+# user with 11 connected leagues saw only 8: the cap silently dropped the
+# oldest-linked leagues. 20 keeps per-account work bounded (each league costs
+# API fetches in the background send) while covering realistic portfolios.
+MAX_DIGEST_LEAGUES = 20
 
 
 def _base_url() -> str:
