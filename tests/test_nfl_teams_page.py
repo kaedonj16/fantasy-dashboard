@@ -552,3 +552,51 @@ def test_rendered_csv_download_keeps_js_newline_escape():
                                available_seasons=[2026, 2025])
     assert 'lines.join("\\n")' in html
     assert 'lines.join("\n")' not in html.replace('lines.join("\\n")', "")
+
+
+# ── Team profile charts ───────────────────────────────────────────────────────
+
+
+def test_profile_charts_sections_and_builders_present():
+    from dashboard_services.pages.nfl_teams_page import build_nfl_teams_body
+
+    html = build_nfl_teams_body(2026, team="KC", view="overview",
+                               available_seasons=[2026, 2025])
+    # The three charts Kaedon picked: home/away splits, fingerprint radar,
+    # and pass-block vs run-block 2D scatter.
+    assert "<h3>Home vs away</h3>" in html
+    assert "<h3>Team fingerprint</h3>" in html
+    assert "<h3>Pass block vs run block</h3>" in html
+    assert "splitsSVG" in html
+    assert "fingerprintSVG" in html
+    assert "olineScatterSVG" in html
+    assert ".nt-chart" in html
+    # Extra scatter plots, all with quadrant labels.
+    assert "<h3>Pressure vs sacks</h3>" in html
+    assert "<h3>Pass vs run identity</h3>" in html
+    assert "<h3>Defensive soft spots</h3>" in html
+    assert "pressureScatterSVG" in html
+    assert "identityScatterSVG" in html
+    assert "softSpotsSVG" in html
+    assert "scatterSVG" in html
+    for label in ["Under siege", "Clean pocket", "Balanced",
+                  "One-dimensional", "Air funnel", "Lockdown"]:
+        assert label in html, label
+    # Copy honesty: no em dashes, percentiles labeled as by-rank.
+    assert "League percentile by rank" in html
+    assert "latest available" in html
+    # Fingerprint compare mode: picker + overlay builder + legend styles.
+    assert 'id="ntCmpSel"' in html
+    assert ">Compare</label>" in html or ">Compare<" in html
+    assert "fingerprintSection" in html
+    assert ".nt-cmp-legend" in html
+
+
+def test_profile_charts_use_existing_payloads():
+    # All three charts build from already-fetched data: the details schedule
+    # (home/away) and the rankings payload (ranks + league oline table).
+    # No new API surface was added for them.
+    assert "d.schedule" in PAGE_SRC
+    assert "t.ranks" in PAGE_SRC
+    assert "DATA.teams" in PAGE_SRC
+    assert "x.oline" in PAGE_SRC or ".oline" in PAGE_SRC
