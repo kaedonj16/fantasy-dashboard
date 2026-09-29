@@ -19230,7 +19230,11 @@ function _tmBuildEffChart(weeks) {
     `<div class="tm-eff-legend"><span><i class="tm-eff-dot tm-eff-actual"></i>Actual</span>` +
     `<span><i class="tm-eff-dot tm-eff-optimal"></i>Optimal</span>` +
     `<span class="tm-eff-season">Season efficiency ${effPct}%</span></div>` +
-    `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" role="img" aria-label="Weekly actual versus optimal points">` +
+    // No fixed height: with width 100% and height auto the viewBox scales
+    // the drawing to the full container width (a fixed height + the
+    // default preserveAspectRatio="meet" letterboxed the 340-unit drawing
+    // instead of stretching it).
+    `<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block;height:auto;" role="img" aria-label="Weekly actual versus optimal points">` +
     grid +
     `<polyline points="${pts('optimal')}" fill="none" stroke="var(--text-subtle)" stroke-width="2" stroke-dasharray="4 3"/>` +
     `<polyline points="${pts('actual')}" fill="none" stroke="var(--brand-blue)" stroke-width="2.5"/>` +
@@ -20381,14 +20385,17 @@ function renderTeamDetails(data) {
         plot_bgcolor: theme.plot,
         font: { family: window.brandPlotlyFont, size: 12.5, color: theme.textColor },
         xaxis: {
-          title: 'Week',
-          standoff: 12,
+          // Whole-week ticks (W1, W2, ...) instead of Plotly's fractional
+          // auto ticks (1, 1.5, 2, ...). Axis titles are redundant with the
+          // section header and tick labels, so they are dropped.
+          tickmode: 'array',
+          tickvals: weeks,
+          ticktext: weeks.map(function (w) { return 'W' + w; }),
           color: theme.textColor,
           showgrid: false,
           zeroline: false
         },
         yaxis: {
-          title: 'Points',
           color: theme.textColor,
           gridcolor: theme.gridColor,
           zeroline: false
@@ -20399,12 +20406,16 @@ function renderTeamDetails(data) {
           bordercolor: theme.hoverBorder,
           font: { color: theme.textColor }
         },
-        margin: { l: 50, r: 20, t: 20, b: 50 },
+        margin: { l: 44, r: 20, t: 48, b: 36 },
         showlegend: true,
-        legend: { 
-          x: 0, 
-          y: 1.1, 
+        // Legend floats above the plot, anchored top-left, so it never
+        // overlaps the data area.
+        legend: {
           orientation: 'h',
+          x: 0,
+          xanchor: 'left',
+          y: 1.02,
+          yanchor: 'bottom',
           font: { color: theme.textColor }
         },
         paper_bgcolor: 'rgba(0,0,0,0)',
