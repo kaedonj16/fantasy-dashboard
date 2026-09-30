@@ -13782,15 +13782,14 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   // Mobile top-bar bell: opens Recent Updates directly as a floating panel
-  // under the top bar (no More-sheet detour). The top nav lives outside
-  // #page-root, so this one-time binding survives soft-navs.
-  var topNotifBtn = document.querySelector(".br-top-notif");
-  if (topNotifBtn) {
-    bindOnce(topNotifBtn, "brTopNotifClick", "click", (e) => {
-      e.stopPropagation();
-      toggleDropdown();
-    });
-  }
+  // under the top bar (no More-sheet detour). Exposed as a global and wired
+  // via inline onclick, the same pattern as the working mobile search button,
+  // so the tap works regardless of bind timing. The document-level closer
+  // below already treats .br-top-notif taps as inside, so the panel stays open.
+  window.brToggleChangelog = function (e) {
+    if (e && e.stopPropagation) e.stopPropagation();
+    toggleDropdown();
+  };
 
   // Close on click outside. On mobile the dropdown is relocated out of
   // .changelog-bell-wrapper into the top nav, so also treat the panel itself

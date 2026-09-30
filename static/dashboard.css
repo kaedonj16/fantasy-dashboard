@@ -29990,32 +29990,6 @@ button:disabled {
     flex-shrink: 0;
 }
 
-/* On phones the re-prompt banner's two long buttons ("Enable alerts" /
-   "Don't show again") can't share one flex row with the copy at ~390px: the
-   actions are nowrap + flex-shrink: 0, so the text column gets squeezed to
-   a sliver and the buttons overlap it. Wrap the actions onto their own
-   full-width row below the text on narrow screens. Desktop keeps the single
-   row unchanged. */
-@media (max-width: 768px) {
-    #push-reprompt-banner {
-        flex-wrap: wrap;
-        gap: 12px;
-    }
-    #push-reprompt-banner .pwa-banner-left {
-        flex: 1 1 100%;
-    }
-    #push-reprompt-banner .pwa-banner-left > div {
-        min-width: 0; /* let the text column actually shrink inside the row */
-    }
-    #push-reprompt-banner .pwa-banner-actions {
-        flex: 1 1 100%;
-    }
-    #push-reprompt-banner .pwa-btn {
-        flex: 1 1 0;
-        min-width: 0;
-    }
-}
-
 /* ── Notification toast (changelog new-entry popup) ──────────────────────── */
 .notif-toast {
     position: fixed;
@@ -40071,10 +40045,12 @@ a, button, [role="button"], [role="tab"], summary, label,
         display: none;
     }
 
-    /* Mobile top-bar shortcuts: round utility buttons pinned top-right (the
+    /* Mobile top-bar shortcuts: plain icon buttons pinned top-right (the
        desktop search input and changelog bell hide with .nav-right).
-       Absolutely positioned so they never disturb the single-column grid;
-       nav-left keeps clear of them. Search sits rightmost, bell to its left. */
+       No circle chrome, just the glyph; the 38px box keeps a comfortable
+       tap target. Absolutely positioned so they never disturb the
+       single-column grid; nav-left keeps clear of them. Search sits
+       rightmost, bell to its left. */
     .top-nav.br-mnav .br-top-search,
     .top-nav.br-mnav .br-top-notif {
         display: flex;
@@ -40085,9 +40061,9 @@ a, button, [role="button"], [role="tab"], summary, label,
         transform: translateY(-50%);
         width: 38px;
         height: 38px;
-        border-radius: 50%;
-        border: 1px solid var(--border);
-        background: var(--card);
+        border: 0;
+        border-radius: 0;
+        background: transparent;
         color: var(--text);
         cursor: pointer;
         -webkit-tap-highlight-color: transparent;

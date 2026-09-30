@@ -73,10 +73,11 @@ def test_top_notif_button_shown_on_mobile():
 def test_top_notif_button_rendered_and_wired():
     assert "class='br-top-notif'" in APP_PY
     assert "id='brTopNotifDot'" in APP_PY
-    # Bound in the changelog closure next to the desktop bell (no inline
-    # onclick, no More-sheet detour).
-    assert 'querySelector(".br-top-notif")' in APP_JS
-    assert '"brTopNotifClick"' in APP_JS
+    # Wired via inline onclick to window.brToggleChangelog, the same pattern
+    # as the working mobile search button (no bind-timing dependency, no
+    # More-sheet detour).
+    assert "window.brToggleChangelog&&window.brToggleChangelog(event)" in APP_PY
+    assert "window.brToggleChangelog = function" in APP_JS
     assert "window.brOpenNotifications" not in APP_JS
     # The red dot follows the shared unread state.
     assert 'document.getElementById("brTopNotifDot")' in APP_JS
