@@ -87,6 +87,16 @@ def _migrate_plays_pid_key(conn) -> None:
     if pk_cols != _OLD_PK_COLS:
         return
     try:
+        # A table created by migration 041 has no week column: 042 adds it,
+        # but migrations run in post-deploy AFTER the web process starts
+        # serving, so this in-code safety net can fire first (prod
+        # 2026-09-30: the INSERT below failed with UndefinedColumn -- the
+        # DETAIL noted week exists only on redzone_plays_pidmig). Add the
+        # column here so the rebuild never assumes a later migration has
+        # already run.
+        conn.execute(
+            "ALTER TABLE redzone_plays ADD COLUMN IF NOT EXISTS week INTEGER"
+        )
         conn.execute(_MIG_TABLE_DDL)
         conn.execute(
             """INSERT INTO redzone_plays_pidmig
@@ -100,6 +110,16 @@ def _migrate_plays_pid_key(conn) -> None:
         logger.info("[scorezone-store] migrated redzone_plays to per-player (pid) key")
     except Exception:
         logger.exception("[scorezone-store] redzone_plays pid-key migration failed")
+        # The failed statement aborts the transaction, so without a
+        # rollback every later statement in _ensure_table dies with
+        # InFailedSqlTransaction and the store call that triggered this
+        # ensure fails too -- on every retry, since _ENSURED_TABLES is
+        # never marked. Roll back so the rest of the ensure (and the
+        # caller's read/write) can still proceed on the old schema.
+        try:
+            conn.rollback()
+        except Exception:
+            pass
 _INDEX_DDL = [
     "CREATE INDEX IF NOT EXISTS idx_redzone_plays_game_seq "
     "ON redzone_plays (season, game_id, seq)",
@@ -136,6 +156,18 @@ def _ensure_table(conn) -> None:
         return
     _migrate_plays_pid_key(conn)
     conn.execute(_TABLE_DDL)
+    # CREATE TABLE IF NOT EXISTS is a no-op on a pre-existing table, so a
+    # 041-shape table keeps missing every column added later (week in 042,
+    # pid in 043) until its file migration runs -- and post-deploy runs
+    # after serving starts. Heal in place so the index DDL below and the
+    # upserts can rely on both columns existing.
+    conn.execute(
+        "ALTER TABLE redzone_plays ADD COLUMN IF NOT EXISTS week INTEGER"
+    )
+    conn.execute(
+        "ALTER TABLE redzone_plays ADD COLUMN IF NOT EXISTS pid "
+        "TEXT NOT NULL DEFAULT ''"
+    )
     for ddl in _INDEX_DDL:
         conn.execute(ddl)
     _ENSURED_TABLES.add(key)

@@ -29,6 +29,11 @@ BEGIN
      GROUP BY c.oid;
 
     IF pk_cols = 'season,game_id,play_id' THEN
+        -- A 041-shape table has no week column yet if 042 has not run
+        -- (migrations run in post-deploy, after the web process starts;
+        -- the rebuild below SELECTs week from the source table). Add it
+        -- here so this file is self-sufficient in any run order.
+        ALTER TABLE redzone_plays ADD COLUMN IF NOT EXISTS week INTEGER;
         CREATE TABLE redzone_plays_pidmig (
             season      INTEGER NOT NULL,
             game_id     TEXT NOT NULL,
