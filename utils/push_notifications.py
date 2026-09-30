@@ -753,6 +753,89 @@ def _scorezone_td_check():
     return result
 
 
+def _scorezone_games_scheduled_today():
+    """Tri-state game-day check for the ScoreZone TD poll.
+
+    True  -- at least one NFL game is scheduled today (America/New_York).
+    False -- the schedule source answered cleanly and lists no game today.
+    None  -- unknown: the lookup failed, reported itself unavailable, or
+             returned games with no usable kickoff time. Callers must FAIL
+             OPEN on None: a schedule hiccup must never suppress TD alerts
+             on a real game day.
+
+    Source: ``dashboard_services.api.get_nfl_scores_for_date`` -- the same
+    ESPN-scoreboard wrapper ScoreZone surfaces already use, ttl-cached for
+    300s upstream, so this per-minute gate costs at most one fetch per 5
+    minutes. ESPN's CDN can ignore the dates param and answer with the whole
+    current-week slate, so each game's kickoff is converted to ET and
+    compared against today's ET date rather than trusting the payload to be
+    date-filtered.
+    """
+    from datetime import datetime as _datetime, timezone as _timezone
+    from zoneinfo import ZoneInfo
+
+    et = ZoneInfo("America/New_York")
+    today = _datetime.now(_timezone.utc).astimezone(et).date()
+    try:
+        from dashboard_services.api import get_nfl_scores_for_date
+
+        scores = get_nfl_scores_for_date(today.strftime("%Y%m%d"), timeout=10)
+    except Exception as exc:
+        logger.warning(
+            "[scorezone-poll] game-day check failed (%s); running poll anyway",
+            exc,
+        )
+        return None
+    availability = getattr(scores, "availability", None)
+    if not isinstance(scores, dict) or availability not in ("available", "stale"):
+        # get_nfl_scores_for_date returns a bare {} when the scoreboard fetch
+        # raised, and ScoreboardResult marks a failed fetch "unavailable":
+        # both mean "we don't know", not "no games".
+        logger.warning(
+            "[scorezone-poll] game-day check inconclusive "
+            "(availability=%s); running poll anyway",
+            availability,
+        )
+        return None
+    saw_kickoff = False
+    for game in scores.values():
+        if not isinstance(game, dict):
+            continue
+        kickoff = None
+        try:
+            epoch = float(game.get("gameTime_epoch"))
+        except (TypeError, ValueError):
+            epoch = 0.0
+        if epoch > 0:
+            try:
+                kickoff = _datetime.fromtimestamp(epoch, tz=_timezone.utc)
+            except (OverflowError, OSError, ValueError):
+                kickoff = None
+        if kickoff is None:
+            raw = str(game.get("gameTime") or "").strip()
+            if raw:
+                try:
+                    kickoff = _datetime.fromisoformat(raw.replace("Z", "+00:00"))
+                except ValueError:
+                    kickoff = None
+                if kickoff is not None and kickoff.tzinfo is None:
+                    # nflverse fallback rows carry a bare local game date.
+                    kickoff = kickoff.replace(tzinfo=et)
+        if kickoff is None:
+            continue
+        saw_kickoff = True
+        if kickoff.astimezone(et).date() == today:
+            return True
+    if scores and not saw_kickoff:
+        logger.warning(
+            "[scorezone-poll] game-day check inconclusive: %d scoreboard "
+            "games with no usable kickoff time; running poll anyway",
+            len(scores),
+        )
+        return None
+    return False
+
+
 def run_scorezone_td_poll():
     """Server-side poller for ScoreZone touchdown pushes. Called every minute by
     the scorezone-td-poller cron during game windows.
@@ -764,8 +847,26 @@ def run_scorezone_td_poll():
     the backstop and flushes digest opt-ins (otherwise their TD alerts would
     sit buffered until the next hourly run).
 
-    Returns {"games": td_games, "leagues": leagues_checked, "sent": pushes}.
+    Day gate: on days with no NFL game scheduled (America/New_York) there is
+    nothing to poll, so this returns a skipped result before any league
+    iteration, collect, send, or digest flush. The gate fails open -- an
+    inconclusive schedule lookup runs the normal poll.
+
+    Returns {"games": td_games, "leagues": leagues_checked, "sent": pushes},
+    or {"games": 0, "leagues": 0, "sent": 0, "skipped": "no_games_today"}.
     """
+    if _scorezone_games_scheduled_today() is False:
+        from datetime import datetime as _datetime, timezone as _timezone
+        from zoneinfo import ZoneInfo
+
+        today_et = _datetime.now(_timezone.utc).astimezone(
+            ZoneInfo("America/New_York")
+        ).date()
+        logger.info(
+            "[scorezone-poll] skipped: no NFL games scheduled today (%s ET)",
+            today_et.isoformat(),
+        )
+        return {"games": 0, "leagues": 0, "sent": 0, "skipped": "no_games_today"}
     result = _scorezone_td_check()
     try:
         result["sent"] += _flush_digest() or 0

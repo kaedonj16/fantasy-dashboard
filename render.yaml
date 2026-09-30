@@ -234,6 +234,11 @@ services:
     # ScoreZone page open. Hits the web service so VAPID keys stay on the app.
     # No pip install — trigger_notifications.py is stdlib urllib only. The
     # endpoint fast-exits when no NFL game is live, so idle runs cost ~1s.
+    # The web-side poll also day-gates: on days with no NFL game scheduled
+    # (America/New_York) it returns a skipped result immediately, so off-days
+    # and the offseason cost one cheap cached scoreboard check per minute.
+    # The every-minute schedule stays because cron cannot express NFL game
+    # days, and UTC day-of-week subsets would break on night-game spillover.
     schedule: "* * * * *"
     plan: starter
     buildCommand: python -c "print('scorezone-td-poller - no Python deps')"
