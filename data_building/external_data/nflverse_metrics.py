@@ -784,6 +784,17 @@ def build_ftn_charting_for_season(season: int) -> Dict[str, Dict[str, float]]:
     crosswalk = _gsis_to_sleeper()
     out: Dict[str, Dict[str, float]] = {}
 
+    # FTN charting has no is_blitz column (verified against the 2024/2025
+    # parquet files; nfl_data_py does no renaming): blitzes arrive as counts
+    # in n_blitzers / n_pass_rushers. If a future FTN release renames them
+    # again, warn loudly and skip the blitz outputs below instead of
+    # silently storing 0.0 for every QB.
+    has_blitz_col = "n_blitzers" in merged.columns
+    if not has_blitz_col:
+        print("[nflverse_metrics] WARNING: FTN frame missing n_blitzers; "
+              "blitz_rate_faced/epa_vs_blitz will be skipped for "
+              f"{season} (FTN columns may have been renamed upstream)")
+
     # --- Per targeted receiver: drop rate + contested catch rate ---
     recs = reg[reg["receiver_player_id"].notna()]
     agg: Dict[str, Dict[str, float]] = {}
@@ -835,7 +846,9 @@ def build_ftn_charting_for_season(season: int) -> Dict[str, Dict[str, float]]:
             b["plays"] += 1.0
             pa = _flag(r.get("is_play_action"))
             oop = _flag(r.get("is_qb_out_of_pocket"))
-            blitz = _flag(r.get("is_blitz"))
+            # No is_blitz in FTN: a dropback is blitzed when it lists at
+            # least one blitzer (n_blitzers count column).
+            blitz = 1.0 if (_f(r.get("n_blitzers")) or 0.0) > 0 else 0.0
             b["pa"] += pa
             b["oop"] += oop
             b["blitz"] += blitz
@@ -863,12 +876,13 @@ def build_ftn_charting_for_season(season: int) -> Dict[str, Dict[str, float]]:
             oop_rate = _rate_pct(b["oop"], b["plays"])
             if oop_rate is not None:
                 row["out_of_pocket_rate"] = oop_rate
-            blitz_rate = _rate_pct(b["blitz"], b["plays"])
-            if blitz_rate is not None:
-                row["blitz_rate_faced"] = blitz_rate
+            if has_blitz_col:
+                blitz_rate = _rate_pct(b["blitz"], b["plays"])
+                if blitz_rate is not None:
+                    row["blitz_rate_faced"] = blitz_rate
         if b["pa_epa_n"] > 0:
             row["play_action_epa"] = round(b["pa_epa_sum"] / b["pa_epa_n"], 3)
-        if b["blitz_epa_n"] > 0:
+        if has_blitz_col and b["blitz_epa_n"] > 0:
             row["epa_vs_blitz"] = round(b["blitz_epa_sum"] / b["blitz_epa_n"], 3)
         if row:
             out.setdefault(pid, {}).update(row)
@@ -939,6 +953,26 @@ def build_pbp_metrics_for_season(season: int) -> Dict[str, Dict[str, float]]:
             out.setdefault(pid, {}).update(cols)
 
     # --- Passing (QB) ---
+    # Scrambles are coded as run/no_play plays: passer_player_id is NULL on
+    # every scramble row, so the passer-grouped frame below can never see
+    # them (this is why scramble_rate was 0.0 for every QB). rusher_player_id
+    # IS populated on the qb_dropback==1 subset, so count scrambles from the
+    # full REG frame by rusher and look them up per passer; the denominator
+    # (dropbacks per passer) still comes from the passer frame.
+    scramble_counts: Dict[str, float] = {}
+    if "qb_scramble" in pbp.columns and "rusher_player_id" in pbp.columns:
+        scr = pbp[
+            (pbp["qb_scramble"].fillna(0) > 0)
+            & (pbp["qb_dropback"].fillna(0) > 0)
+            & pbp["rusher_player_id"].notna()
+        ]
+        scramble_counts = {
+            str(k).strip(): float(v)
+            for k, v in scr.groupby("rusher_player_id").size().items()
+        }
+    else:
+        print("[nflverse_metrics] WARNING: pbp frame missing qb_scramble/"
+              f"rusher_player_id; scramble_rate will be 0.0 for {season}")
     passes = pbp[pbp["passer_player_id"].notna()]
     for gsis, g in passes.groupby("passer_player_id"):
         dropbacks = float(g["qb_dropback"].sum()) if "qb_dropback" in g else float(len(g))
@@ -954,7 +988,8 @@ def build_pbp_metrics_for_season(season: int) -> Dict[str, Dict[str, float]]:
             cols["cpoe"] = round(cpoe, 1)
         if dropbacks > 0:
             cols["sack_rate"] = round(float(g["sack"].sum()) / dropbacks * 100, 1)
-            cols["scramble_rate"] = round(float(g["qb_scramble"].sum()) / dropbacks * 100, 1)
+            cols["scramble_rate"] = round(
+                scramble_counts.get(str(gsis).strip(), 0.0) / dropbacks * 100, 1)
             if "qb_hit" in g.columns:
                 hit_rate = _rate_pct(float(g["qb_hit"].fillna(0).sum()), dropbacks)
                 if hit_rate is not None:
@@ -1327,6 +1362,26 @@ def build_nflverse_weekly_metrics_for_season(
         pbp = pbp[pbp["season_type"] == "REG"]
 
         # --- Passing (QB) per player+week ---
+        # Same scramble caveat as the season builder: passer_player_id is
+        # NULL on scramble rows, so count them from the full REG frame by
+        # (rusher_player_id, week) and look up per passer+week.
+        scramble_counts_w: Dict[Tuple[str, int], float] = {}
+        if "qb_scramble" in pbp.columns and "rusher_player_id" in pbp.columns:
+            scr_w = pbp[
+                (pbp["qb_scramble"].fillna(0) > 0)
+                & (pbp["qb_dropback"].fillna(0) > 0)
+                & pbp["rusher_player_id"].notna()
+            ]
+            for (r_gsis, r_week), n in scr_w.groupby(
+                    ["rusher_player_id", "week"]).size().items():
+                try:
+                    scramble_counts_w[(str(r_gsis).strip(), int(r_week))] = float(n)
+                except (TypeError, ValueError):
+                    continue
+        else:
+            print("[nflverse_metrics] WARNING: weekly pbp frame missing "
+                  "qb_scramble/rusher_player_id; scramble_rate will be 0.0 "
+                  f"for {season}")
         for (gsis, week), g in pbp[pbp["passer_player_id"].notna()].groupby(
                 ["passer_player_id", "week"]):
             pid = crosswalk.get(str(gsis).strip())
@@ -1348,7 +1403,12 @@ def build_nflverse_weekly_metrics_for_season(
                 cols["cpoe"] = round(cpoe, 1)
             if dropbacks > 0:
                 cols["sack_rate"] = round(float(g["sack"].sum()) / dropbacks * 100, 1)
-                cols["scramble_rate"] = round(float(g["qb_scramble"].sum()) / dropbacks * 100, 1)
+                try:
+                    _scr_n = scramble_counts_w.get(
+                        (str(gsis).strip(), int(week)), 0.0)
+                except (TypeError, ValueError):
+                    _scr_n = 0.0
+                cols["scramble_rate"] = round(_scr_n / dropbacks * 100, 1)
                 if "qb_hit" in g.columns:
                     hit_rate = _rate_pct(float(g["qb_hit"].fillna(0).sum()), dropbacks)
                     if hit_rate is not None:
@@ -1457,6 +1517,14 @@ def build_nflverse_weekly_metrics_for_season(
                     right_on=["game_id", "play_id"],
                     how="inner",
                 )
+                # FTN has no is_blitz column; blitzes are the n_blitzers
+                # count. Warn once (not per player) and skip blitz outputs
+                # if a future FTN release renames it again.
+                if "n_blitzers" not in merged.columns:
+                    print("[nflverse_metrics] WARNING: weekly FTN frame "
+                          "missing n_blitzers; blitz_rate_faced/epa_vs_blitz "
+                          f"will be skipped for {season} (FTN columns may "
+                          "have been renamed upstream)")
                 for (gsis, week), g in merged[merged["receiver_player_id"].notna()].groupby(
                         ["receiver_player_id", "week"]):
                     pid = crosswalk.get(str(gsis).strip())
@@ -1504,11 +1572,11 @@ def build_nflverse_weekly_metrics_for_season(
                                 float(db["is_qb_out_of_pocket"].fillna(0).sum()), dropbacks)
                             if oop_rate is not None:
                                 cols["out_of_pocket_rate"] = oop_rate
-                        if "is_blitz" in db.columns:
-                            blitz_rate = _rate_pct(float(db["is_blitz"].fillna(0).sum()), dropbacks)
+                        if "n_blitzers" in db.columns:
+                            blitz_mask = db["n_blitzers"].fillna(0) > 0
+                            blitz_rate = _rate_pct(float(blitz_mask.sum()), dropbacks)
                             if blitz_rate is not None:
                                 cols["blitz_rate_faced"] = blitz_rate
-                            blitz_mask = db["is_blitz"].fillna(0) > 0
                             if blitz_mask.any() and "epa" in db.columns:
                                 blitz_epa = _f(db.loc[blitz_mask, "epa"].mean())
                                 if blitz_epa is not None:

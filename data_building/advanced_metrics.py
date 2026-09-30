@@ -12,6 +12,7 @@ These metrics inform the breakout detection algorithm and can be displayed in th
 from __future__ import annotations
 
 import logging
+import re
 import json as _json
 import os
 from typing import Dict, Any, Iterable, List, Optional, Tuple, TYPE_CHECKING
@@ -2547,6 +2548,13 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     "nfl_passer_rating":    {"label": "Passer Rating",       "category": "Passing", "positions": ["QB"], "efficiency": True, "min_vol": _V_PASS_ATT, "desc": "Standard NFL passer rating (0-158.3)."},
     "epa_per_play":         {"label": "Passing EPA / Dropback", "category": "Passing", "positions": ["QB"], "efficiency": True, "min_vol": _V_PASS_ATT, "desc": "Passing Expected Points Added per qualifying quarterback dropback (nflverse play-by-play). Week ranges are weighted by covered dropbacks, never by an unweighted mean of weekly rates."},
     "passing_epa":          {"label": "Passing EPA",         "category": "Passing", "positions": ["QB"], "min_vol": _V_PASS_ATT, "desc": "Total Expected Points Added on pass attempts over the season (nflverse)."},
+    # Season-only by design: passing_epa_per_att, explosive_run_rate,
+    # intended_air_yards_per_game, unrealized_air_yards and
+    # unrealized_air_yards_per_game are computed here from snapshot columns
+    # whose components live on different provider rows; get_metric_leaderboard
+    # evaluates them over a per-player coalesced season row. They are not in
+    # the weekly registries, so week-range requests return season values with
+    # weeklyCapable=false (see routes/advanced_metrics_bp.py).
     "passing_epa_per_att":  {"label": "Pass EPA / Att",      "category": "Passing", "positions": ["QB"], "efficiency": True, "min_vol": _V_PASS_ATT, "desc": "Expected Points Added per pass attempt (nflverse). Rate companion to total passing EPA.", "computed_sql": "m.passing_epa::float / NULLIF(m.total_pass_att, 0)", "computed_null": "m.passing_epa IS NOT NULL AND m.total_pass_att IS NOT NULL AND m.total_pass_att > 0"},
     "success_rate":         {"label": "Success Rate",        "category": "Passing", "positions": ["QB"], "efficiency": True, "pct": True, "min_vol": _V_PASS_ATT, "desc": "Percent of plays with positive EPA (nflverse)."},
     "ngs_avg_time_to_throw": {"label": "Time to Throw",      "category": "Passing", "positions": ["QB"], "efficiency": True, "min_vol": _V_PASS_ATT, "desc": "Average seconds from snap to throw (NFL Next Gen Stats). Lower often means a quicker processor; higher can mean holding to push the ball downfield."},
@@ -3992,19 +4000,14 @@ def get_metric_leaderboard(
 
     with get_conn() as conn:
         # Pre-check which columns exist to avoid aborting the transaction on
-        # a missing column reference. All volume columns were added together, so
-        # checking one proxy column tells us if they're all present.
+        # a missing column reference. Fetch the table's full column list: the
+        # computed-metric coalesce below needs to know about every component
+        # column, not just the volume proxies.
         existing_cols = {
             r["column_name"]
             for r in conn.execute(
                 "SELECT column_name FROM information_schema.columns "
-                "WHERE table_name='player_advanced_metrics' "
-                "AND column_name = ANY(%s)",
-                (["games", "total_targets", "total_receptions",
-                  "total_carries", "total_touches", "total_pass_att",
-                  "total_rush_tds", "total_rec_tds", "total_pass_tds", "total_tds",
-                  "total_snaps",
-                  "completion_pct"],),
+                "WHERE table_name='player_advanced_metrics'",
             ).fetchall()
         }
         has_games = "games" in existing_cols
@@ -4071,6 +4074,53 @@ def get_metric_leaderboard(
                     "ON v.player_id = m.player_id"
                 )
             params.append(season_for_vol)
+        # Coalesced per-player season row (alias c). Snapshot rows are partial
+        # by provider: the daily base row carries the volume totals while the
+        # nflverse/PFF sync rows carry their own metric families, so a computed
+        # metric whose components live on different rows is NULL on every
+        # single physical row (e.g. passing_epa sits on the nflverse sync row,
+        # total_pass_att on the base row). Resolve each component column — and
+        # the efficiency gate's snap_share — as its latest non-null value
+        # within the season (the same ARRAY_AGG pattern get_player_metric_ranks
+        # uses for its snapshot CTE), then evaluate computed_sql and the snap
+        # gate against that coalesced row instead of the physical row.
+        _coal_cols: set = set()
+        if _computed_sql:
+            _coal_cols |= {
+                c for c in re.findall(
+                    r"\bm\.([A-Za-z_][A-Za-z0-9_]*)",
+                    f"{_computed_sql} {_computed_null or ''}",
+                )
+                if c in existing_cols
+            }
+        if LEADERBOARD_METRICS[metric].get("efficiency") and "snap_share" in existing_cols:
+            _coal_cols.add("snap_share")
+        if _coal_cols and has_games:
+            _coal_cols.add("games")
+        coal_join = ""
+        if _coal_cols:
+            _coal_exprs = ", ".join(
+                f"(ARRAY_AGG(cx.{c} ORDER BY cx.as_of_date DESC) "
+                f"FILTER (WHERE cx.{c} IS NOT NULL))[1] AS {c}"
+                for c in sorted(_coal_cols)
+            )
+            coal_join = (
+                f" LEFT JOIN (SELECT player_id, {_coal_exprs} "
+                "FROM player_advanced_metrics cx WHERE cx.season = %s "
+                "GROUP BY cx.player_id) c ON c.player_id = m.player_id"
+            )
+            params.append(season)
+            if _computed_sql:
+                def _to_coal(mo):
+                    return (
+                        f"c.{mo.group(1)}"
+                        if mo.group(1) in _coal_cols else mo.group(0)
+                    )
+                _computed_sql = re.sub(
+                    r"\bm\.([A-Za-z_][A-Za-z0-9_]*)", _to_coal, _computed_sql)
+                if _computed_null:
+                    _computed_null = re.sub(
+                        r"\bm\.([A-Za-z_][A-Za-z0-9_]*)", _to_coal, _computed_null)
         # Season filter always applied (required for correct DISTINCT ON results).
         gate += " AND m.season = %s"
         params.append(season)
@@ -4078,7 +4128,14 @@ def get_metric_leaderboard(
             gate += " AND m.position = %s"
             params.append(pos)
         if LEADERBOARD_METRICS[metric].get("efficiency"):
-            gate += " AND (m.snap_share IS NULL OR m.snap_share >= %s)"
+            if "snap_share" in _coal_cols:
+                # Gate on the player's coalesced (latest non-null) snap_share.
+                # A per-row gate does not drop a player whose current row
+                # fails: DISTINCT ON silently falls back to their most recent
+                # passing (older) row and shows stale values.
+                gate += " AND (c.snap_share IS NULL OR c.snap_share >= %s)"
+            else:
+                gate += " AND (m.snap_share IS NULL OR m.snap_share >= %s)"
             params.append(_MIN_SNAP_FOR_EFFICIENCY)
         if season_has_vol:
             # Always require vol > 0 when the season has vol data: hides players
@@ -4092,18 +4149,30 @@ def get_metric_leaderboard(
         params.append(limit)
 
         if has_games:
-            games_col = (
-                "COALESCE(m.games, v.vol) AS games,"
-                if (use_vol_join and vol_col == "games") else "m.games AS games,"
-            )
+            if "games" in _coal_cols:
+                games_col = (
+                    "COALESCE(m.games, c.games, v.vol) AS games,"
+                    if (use_vol_join and vol_col == "games")
+                    else "COALESCE(m.games, c.games) AS games,"
+                )
+            else:
+                games_col = (
+                    "COALESCE(m.games, v.vol) AS games,"
+                    if (use_vol_join and vol_col == "games") else "m.games AS games,"
+                )
         else:
             games_col = ""
         has_specific_vol = vol_col != "games" and vol_col in existing_cols
         if has_specific_vol:
-            specific_vol_col = (
-                f"COALESCE(m.{vol_col}, v.vol) AS vol,"
-                if use_vol_join else f"m.{vol_col} AS vol,"
-            )
+            if vol_col in _coal_cols:
+                specific_vol_col = (
+                    f"COALESCE(m.{vol_col}, c.{vol_col}, v.vol) AS vol,"
+                    if use_vol_join else f"COALESCE(m.{vol_col}, c.{vol_col}) AS vol,"
+                )
+            elif use_vol_join:
+                specific_vol_col = f"COALESCE(m.{vol_col}, v.vol) AS vol,"
+            else:
+                specific_vol_col = f"m.{vol_col} AS vol,"
         else:
             specific_vol_col = ""
 
@@ -4155,7 +4224,7 @@ def get_metric_leaderboard(
                     SELECT DISTINCT ON (m.player_id)
                         m.player_id, m.position, {games_col} {specific_vol_col} {ctx_cols}
                         {metric_value_expr}
-                    FROM player_advanced_metrics m{vol_join}
+                    FROM player_advanced_metrics m{vol_join}{coal_join}
                     WHERE {metric_where}{gate}
                     ORDER BY m.player_id, m.as_of_date DESC
                 ) t
