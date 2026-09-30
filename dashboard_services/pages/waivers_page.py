@@ -2416,8 +2416,21 @@ function wvRenderStartSit() {{
       const evidence = wvSsEvidence(p);
       const schedUrl = `${{wvLeaguePath('/schedule')}}?add=${{encodeURIComponent(p.player_id)}}`;
 
+      // Quick-compare: once the first player is picked, every card shows a
+      // compare button right on the row, so picking the second needs no
+      // expanding. The already-picked card shows a filled check (tap removes).
+      const qcPicked = wvIsSelected(p.player_id);
+      const qcArmed = !!(wvCompare[0] && !wvCompare[1] && !qcPicked);
+      const qcShow = qcPicked || qcArmed;
+      const qcJson = JSON.stringify(p).replace(/"/g, '&quot;');
+      const qcName = String(p.name || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+      const qcBtn = qcShow
+        ? `<button type="button" class="wv-cx-quickcmp${{qcPicked ? ' is-picked' : ''}}" aria-label="${{qcPicked ? 'Remove from comparison' : 'Compare'}} ${{qcName}}" onclick="wvToggleCompare(${{qcJson}})"><span aria-hidden="true">${{qcPicked ? '✓ Picked' : '+ Compare'}}</span></button>`
+        : '';
+
       return sep + `
         <div class="wv-cx-row-wrap">
+          <div class="wv-cx-rowline">
           <button type="button" class="wv-cx-row" aria-expanded="false"
               onclick="wvToggleSsRow(this)">
             ${{badge}}
@@ -2428,8 +2441,10 @@ function wvRenderStartSit() {{
               ${{h2h}}
             </span>
             ${{projBlock}}
-            <span class="wv-cx-chev" aria-hidden="true">›</span>
+            ${{qcShow ? '' : '<span class="wv-cx-chev" aria-hidden="true">›</span>'}}
           </button>
+          ${{qcBtn}}
+          </div>
           <div class="wv-cx-detail">
             ${{evidence}}
             <div class="wv-cx-actions" onclick="event.stopPropagation()">
