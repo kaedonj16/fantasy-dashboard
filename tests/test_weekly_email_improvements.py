@@ -297,3 +297,42 @@ def test_trigger_does_not_retry_non_524_or_non_weekly(monkeypatch):
     assert len(calls) == 1
     assert mod.trigger("hourly") == 1
     assert len(calls) == 2
+
+
+def test_connected_leagues_covers_eleven_leagues(monkeypatch):
+    """Regression: an 11-league portfolio must not be silently capped at 8."""
+    linked = [
+        {"platform": "sleeper", "league_id": f"L{i}", "season": 2026,
+         "name": f"League {i}", "team_id": str(i)}
+        for i in range(11)
+    ]
+    monkeypatch.setattr(
+        "dashboard_services.accounts.list_user_leagues",
+        lambda aid: linked,
+    )
+
+    class _Conn:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def execute(self, *a, **k):
+            class R:
+                def fetchone(self):
+                    return None
+            return R()
+
+    monkeypatch.setattr("dashboard_services.db.get_conn", lambda: _Conn())
+    leagues = we.connected_leagues_for_account(
+        42,
+        primary_platform="sleeper",
+        primary_league_id="L0",
+        primary_season=2026,
+        primary_roster_id="0",
+        primary_name="League 0",
+    )
+    assert len(leagues) == 11
+    assert leagues[0]["league_id"] == "L0"  # primary first
+    assert {lg["league_id"] for lg in leagues} == {f"L{i}" for i in range(11)}
