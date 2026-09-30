@@ -3834,6 +3834,14 @@ button:hover {
     /* Subtle divider marks where the frozen pane ends and scrolling begins. */
     border-right: 1px solid var(--border);
 }
+
+/* Standings mobile sub-line ("3-0 (1-0) · ▲ 3W" under the team name):
+   hidden on desktop and in Detailed mode, revealed inside the 640px
+   breakpoint below for the ordinary table. Scoped so the compact rail is
+   untouched. */
+.st-tblscroll .standings-table[data-page="standings"] .st-team-sub {
+    display: none;
+}
 .standings-table[data-page="standings"] thead tr:not(.st-div-row):not(.pp-scnrow):not(.pp-cutrow) th:nth-child(1),
 .standings-table[data-page="standings"] thead tr:not(.st-div-row):not(.pp-scnrow):not(.pp-cutrow) th:nth-child(2) {
     z-index: 3;
@@ -4053,15 +4061,91 @@ button:hover {
         width: 45%;
     }
 
-    /* Mobile main standings: drop the Trend sparkline (col 6) and everything from
-       Luck onward (col 8+), keeping Seed/Team/Record/PF/PA/Streak. The
-       .st-detail-col exclusion lets the Detailed toggle reveal just the extra
-       stat columns (with horizontal scroll) without un-hiding Luck/Exp. Seed. */
-    .standings-table[data-page="standings"] th:nth-child(6),
-    .standings-table[data-page="standings"] td:nth-child(6),
-    .standings-table[data-page="standings"] th:nth-child(n+8):not(.st-detail-col),
-    .standings-table[data-page="standings"] td:nth-child(n+8):not(.st-detail-col) {
+    /* Mobile standings: Sleeper-style readability. The team name wraps to two
+       lines instead of truncating, with a "3-0 (1-0) · ▲ 3W" sub-line under it
+       (record + streak move out of their own columns, so cols 3 and 7 hide
+       here). Data columns get bigger type and breathing room; everything stays
+       reachable via horizontal scroll with Seed/Team frozen. The Team cell
+       keeps its 50vw max-width clamp: Blink ignores max-width:0 on table cells
+       in auto layout, which let long names blow the table out (~715px); 50vw
+       IS honored and only caps the blowout. (table-layout:fixed collapses Team
+       to ~13px when the division/clinch colspan rows are present, so auto
+       layout stays.) Scoped to .st-tblscroll so the compact rail is untouched,
+       and skipped when .show-detail is on (the toggle keeps its wide layout
+       with all columns and no sub-line). */
+    .st-tblscroll .standings-table[data-page="standings"]:not(.show-detail):not(.standings-compact) th:nth-child(3),
+    .st-tblscroll .standings-table[data-page="standings"]:not(.show-detail):not(.standings-compact) td:nth-child(3),
+    .st-tblscroll .standings-table[data-page="standings"]:not(.show-detail):not(.standings-compact) th:nth-child(7),
+    .st-tblscroll .standings-table[data-page="standings"]:not(.show-detail):not(.standings-compact) td:nth-child(7) {
         display: none;
+    }
+    .st-tblscroll .standings-table[data-page="standings"]:not(.show-detail):not(.standings-compact) td.team {
+        max-width: 0;
+        max-width: 50vw;
+    }
+    .st-tblscroll .standings-table[data-page="standings"]:not(.show-detail):not(.standings-compact) td.team .team-clickable {
+        white-space: normal;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        font-size: 14px;
+        font-weight: 700;
+        line-height: 1.25;
+    }
+    .st-tblscroll .standings-table[data-page="standings"]:not(.show-detail) .st-team-sub {
+        display: block;
+        margin: 2px 0 0 30px;
+        font-size: 11.5px;
+        font-weight: 600;
+        color: var(--text-muted);
+        white-space: nowrap;
+        font-variant-numeric: tabular-nums;
+    }
+    .st-tblscroll .standings-table[data-page="standings"] .st-streak-dir.up {
+        color: var(--win);
+    }
+    .st-tblscroll .standings-table[data-page="standings"] .st-streak-dir.down {
+        color: var(--loss);
+    }
+    /* Bigger, breathable data cells and small-caps headers on mobile. */
+    .st-tblscroll .standings-table[data-page="standings"]:not(.show-detail):not(.standings-compact) tbody td:not(.team) {
+        font-size: 13.5px;
+        padding: 12px 10px;
+        font-variant-numeric: tabular-nums;
+    }
+    .st-tblscroll .standings-table[data-page="standings"]:not(.show-detail):not(.standings-compact) thead th {
+        font-size: 10.5px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--text-muted);
+        padding: 10px;
+    }
+
+    /* Mobile division headers: clean Sleeper-style section header instead of
+       the gradient card. Bigger label, no "N teams" pill. */
+    .st-tblscroll .standings-table[data-page="standings"]:not(.standings-compact) .st-div-row td {
+        padding: 0;
+    }
+    .st-tblscroll .standings-table[data-page="standings"]:not(.standings-compact) .st-div-head {
+        background: none;
+        border: none;
+        box-shadow: none;
+        border-radius: 0;
+        padding: 16px 4px 8px;
+        gap: 8px;
+    }
+    .st-tblscroll .standings-table[data-page="standings"]:not(.standings-compact) .st-div-label {
+        font-size: 17px;
+        font-weight: 800;
+        text-transform: none;
+        letter-spacing: 0;
+    }
+    .st-tblscroll .standings-table[data-page="standings"]:not(.standings-compact) .st-div-meta {
+        display: none;
+    }
+    .st-tblscroll .standings-table[data-page="standings"]:not(.standings-compact) .st-div-mark {
+        height: 20px;
     }
 
     /* Playoff odds: hide Proj W-L on mobile */

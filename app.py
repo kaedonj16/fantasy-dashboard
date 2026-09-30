@@ -8563,7 +8563,7 @@ def render_standings(team_stats, length, all_play: dict = None,
     # Division records (vs same-division opponents) from the same weekly frame
     # the table is built on, so the week selector's "through week N" view stays
     # exact. Shown as "2-1 (2-0)" only when divisions are active.
-    from utils.standings_divisions import division_records, format_record_html
+    from utils.standings_divisions import division_records, format_record_html, format_record
     _div_records = division_records(detailed_df, _div_by_rid) if _use_div else {}
 
     def _row_div(owner) -> int:
@@ -8789,6 +8789,25 @@ def render_standings(team_stats, length, all_play: dict = None,
             team_cell = (
                 f"{img} {_clickable_team_name(owner, owner_to_rid)}{_div_lead_tag}"
             )
+        # Mobile Sleeper-style sub-line under the team name: "3-0 (1-0) · ▲ 3W".
+        # Hidden on desktop via CSS; the Record/Streak columns hide on mobile
+        # (non-detail) so the info is not duplicated.
+        _sub_rec = format_record(int(row['Wins']), int(row['Losses']),
+                                 int(row.get("Ties", 0) or 0),
+                                 _div_record_for(row["owner"]))
+        _sub = html.escape(_sub_rec)
+        _stxt = str(streak or "").strip()
+        if _stxt:
+            _m = re.match(r"^([WLwl])\s*(\d+)\s*$", _stxt)
+            if _m:
+                _w = _m.group(1).upper() == "W"
+                _tri = "&#9650;" if _w else "&#9660;"
+                _cls = "up" if _w else "down"
+                _sub += (f" &middot; <span class='st-streak-dir {_cls}'>{_tri}</span>"
+                         f" {_m.group(2)}{'W' if _w else 'L'}")
+            else:
+                _sub += f" &middot; {html.escape(_stxt)}"
+        team_cell += f"<div class='st-team-sub'>{_sub}</div>"
 
         # Week-over-week seed movement (positive = climbed). Same arrows as the
         # compact standings; blank when there's no prior week to compare.
@@ -8808,7 +8827,7 @@ def render_standings(team_stats, length, all_play: dict = None,
               <td>{row['PF']:.1f}</td>
               <td>{row['PA']:.1f}</td>
               <td class="st-trend-cell">{(sparklines or {}).get(owner) or ''}</td>
-              <td>{streak}</td>
+              <td>{html.escape(str(streak or ""))}</td>
               <td>{_luck_cell}</td>
               <td>{_seed_cell}</td>
               <td class="st-detail-col num">{_winpct}</td>
