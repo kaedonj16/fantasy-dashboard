@@ -768,6 +768,12 @@ def build_trade_calculator_body(
             .otc-mode-btn.is-active {{
               background:var(--text);color:var(--card);
             }}
+            /* Dark: the inverted --text fill is near-white on the dark ground.
+               Match .otc-main-tab instead: raised card surface, normal text. */
+            [data-theme="dark"] .otc-mode-btn.is-active {{
+              background:var(--card);color:var(--text);
+              box-shadow:0 1px 4px rgba(0,0,0,.35);
+            }}
 
             /* ── Archetype chips (2×2 grid) ───────────────────────── */
             #otcArchetypeChips {{
@@ -858,6 +864,16 @@ def build_trade_calculator_body(
             }}
             .otc-sugg-subtab-toggle .br-slide-ind {{
               background:var(--text);border-radius:7px;
+            }}
+            /* Dark: same fix as .otc-mode-btn -- raised card surface instead
+               of the near-white inverted fill (static pill and slider). */
+            [data-theme="dark"] .otc-sugg-subtab.is-active {{
+              background:var(--card);color:var(--text);
+              box-shadow:0 1px 4px rgba(0,0,0,.35);
+            }}
+            [data-theme="dark"] .otc-sugg-subtab-toggle .br-slide-ind {{
+              background:var(--card);
+              box-shadow:0 1px 4px rgba(0,0,0,.35);
             }}
             /* ── Trade Hub: shared "why this" ranking-explanation line ── */
             .th-why {{
