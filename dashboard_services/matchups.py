@@ -44,13 +44,23 @@ logger = logging.getLogger(__name__)
 
 
 def _format_final_game_line(score_str: str, prefix: str) -> str:
-    """Final game line once the score is known: 'Final 24-31 @ LV'.
+    """Final game line once the score is known: 'Final L 24-31 @ LV'.
 
-    Falls back to a bare 'Final' when no score is available.
+    The score is the player's team first, opponent second, so the result
+    letter reads straight off it (W / L, T for a tie). Falls back to a bare
+    'Final' when no score is available, and to the score with no letter when
+    the score cannot be parsed.
     """
-    if score_str:
-        return f"Final {score_str} {prefix}"
-    return "Final"
+    if not score_str:
+        return "Final"
+    result = ""
+    try:
+        mine, theirs = score_str.split("-", 1)
+        mine_f, theirs_f = float(mine), float(theirs)
+        result = "W" if mine_f > theirs_f else "L" if mine_f < theirs_f else "T"
+    except (ValueError, AttributeError):
+        result = ""
+    return " ".join(x for x in ["Final", result, score_str, prefix] if x)
 
 
 def _week_stats_for_slide(season, w, ensure_sleeper: bool = False) -> dict:
@@ -1415,6 +1425,69 @@ def format_player_stats(
         if v:
             parts.append(phrase(v, singular, plural if plural is not None else singular))
 
+    # Grouped box-score shorthand for QB/RB/WR/TE: the group label carries
+    # the stat type, so yards/TDs inside a group need no qualifier, TDs show
+    # only when scored, and groups join with a bullet:
+    #   RUSH 15-75 yds, 1 TD • REC 4/5-41 yds
+    #   PASS 30/55-390 yds, 2 TD, 2 INT • RUSH 2-13 yds
+    def pass_group(cmp_v, att_v, py_v, ptd_v, ints_v) -> str | None:
+        if not (att_v or cmp_v or py_v or ptd_v or ints_v):
+            return None
+        bits: list[str] = []
+        if att_v or cmp_v:
+            core = f"{int(cmp_v)}/{int(att_v)}"
+            if py_v:
+                core += f"-{int(py_v)} yds"
+            bits.append(core)
+        elif py_v:
+            bits.append(f"{int(py_v)} yds")
+        if ptd_v:
+            bits.append(f"{int(ptd_v)} TD")
+        if ints_v:
+            bits.append(f"{int(ints_v)} INT")
+        return "PASS " + ", ".join(bits)
+
+    def rush_group(ra_v, ry_v, rtd_v) -> str | None:
+        if not (ra_v or ry_v or rtd_v):
+            return None
+        if ra_v:
+            core = (
+                f"{int(ra_v)}-{int(ry_v)} yds"
+                if ry_v >= 0
+                else f"{int(ra_v)} car, {int(ry_v)} yds"
+            )
+        elif ry_v:
+            core = f"{int(ry_v)} yds"
+        else:
+            core = ""
+        if rtd_v:
+            core = f"{core}, {int(rtd_v)} TD" if core else f"{int(rtd_v)} TD"
+        return f"RUSH {core}"
+
+    def rec_group(rec_v, tgt_v, rec_yds_v, rec_td_v) -> str | None:
+        if not (rec_v or tgt_v or rec_yds_v or rec_td_v):
+            return None
+        if tgt_v:
+            # rec/tgt keeps a real 0-catch game visible: REC 0/3-0 yds.
+            core = (
+                f"{int(rec_v)}/{int(tgt_v)}-{int(rec_yds_v)} yds"
+                if rec_yds_v >= 0
+                else f"{int(rec_v)}/{int(tgt_v)}, {int(rec_yds_v)} yds"
+            )
+        elif rec_v:
+            core = (
+                f"{int(rec_v)}-{int(rec_yds_v)} yds"
+                if rec_yds_v >= 0
+                else f"{int(rec_v)}, {int(rec_yds_v)} yds"
+            )
+        elif rec_yds_v:
+            core = f"{int(rec_yds_v)} yds"
+        else:
+            core = ""
+        if rec_td_v:
+            core = f"{core}, {int(rec_td_v)} TD" if core else f"{int(rec_td_v)} TD"
+        return f"REC {core}"
+
     # ---------- DEF/DST combined branch ----------
     if lookup_pos == "DEF":
         if not team_data:
@@ -1448,13 +1521,16 @@ def format_player_stats(
         ry = player_stats.get("rush_yds", 0)
         rtd = player_stats.get("rush_td", 0)
 
-        if att or cmp: parts.append(f"{int(cmp)}/{int(att)} cmp/att")
-        add(py, "yd", "yds")
-        add(ptd, "td", "tds")
-        add(ints, "int", "ints")
-        add(ra, "car", "car")
-        add(ry, "rush yd", "rush yds")
-        add(rtd, "rush td", "rush tds")
+        groups = [
+            g
+            for g in (
+                pass_group(cmp, att, py, ptd, ints),
+                rush_group(ra, ry, rtd),
+            )
+            if g
+        ]
+        if groups:
+            parts.append(" • ".join(groups))
 
     elif lookup_pos in {"RB", "WR", "TE"}:
         ra = player_stats.get("rush_att", 0)
@@ -1465,18 +1541,17 @@ def format_player_stats(
         rec_yds = player_stats.get("rec_yds", 0)
         rec_td = player_stats.get("rec_td", 0)
 
-        if lookup_pos == "RB":
-            add(ra, "car", "car")
-            add(ry, "rush yd", "rush yds")
-            add(rtd, "rush td", "rush tds")
-        add(rec, "rec", "rec")
-        add(tgt, "tgt", "tgt")
-        add(rec_yds, "rec yd", "rec yds")
-        add(rec_td, "rec td", "rec tds")
-        if lookup_pos in {"WR", "TE"}:
-            add(ra, "car", "car")
-            add(ry, "rush yd", "rush yds")
-            add(rtd, "rush td", "rush tds")
+        # Fixed order for every position: RUSH before REC.
+        groups = [
+            g
+            for g in (
+                rush_group(ra, ry, rtd),
+                rec_group(rec, tgt, rec_yds, rec_td),
+            )
+            if g
+        ]
+        if groups:
+            parts.append(" • ".join(groups))
 
     # ---------------- K / PK ----------------
     elif lookup_pos == "K":
@@ -1536,7 +1611,7 @@ def format_player_stats(
 
 # Sleeper's per-player feed keys differ slightly from the Footballguys weekly
 # scrape that format_player_stats reads. Map them so a Sleeper line can reuse
-# the exact same formatter (lowercase labels, zero-suppression, and all).
+# the exact same formatter (grouped shorthand, zero-TD suppression, and all).
 _SLEEPER_TO_WEEKSTATS = {
     "pass_cmp": "pass_cmp", "pass_att": "pass_att", "pass_yd": "pass_yds",
     "pass_td": "pass_td", "pass_int": "int",
