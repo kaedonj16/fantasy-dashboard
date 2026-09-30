@@ -62,6 +62,71 @@ def test_playoff_seeds_division_winners_before_wild_cards():
     assert [teams[i]["wins"] for i in order] == [10, 8, 9, 2]
 
 
+def test_playoff_seeds_division_record_picks_division_winner():
+    # Kaedon's pattern inside seeding: A and B tied on overall wins in div 1;
+    # B has more PF but A is 1-0 in the division, so A takes the division
+    # winner seed and B falls to the wild-card pool.
+    teams = [
+        {"wins": 5, "pf": 900,  "division": 1, "div_record": (1, 0, 0)},  # A
+        {"wins": 5, "pf": 1000, "division": 1, "div_record": (0, 1, 0)},  # B
+        {"wins": 6, "pf": 950,  "division": 2, "div_record": (1, 0, 0)},  # C
+        {"wins": 3, "pf": 800,  "division": 2, "div_record": (0, 1, 0)},  # D
+    ]
+    # Winners: C (6 wins), A (division record beats B's PF). Then B, D.
+    assert assign_playoff_seeds(teams) == [2, 3, 1, 4]
+
+
+def test_playoff_seed_order_wild_card_pool_uses_division_record():
+    # Same-division wild cards tied on overall wins: the division winner
+    # of their head-to-head ranks first even with fewer PF.
+    teams = [
+        {"wins": 7, "pf": 900,  "division": 1, "div_record": (2, 0, 0)},  # div1 winner
+        {"wins": 6, "pf": 800,  "division": 2, "div_record": (2, 0, 0)},  # div2 winner
+        {"wins": 5, "pf": 1000, "division": 1, "div_record": (0, 1, 0)},  # WC, PF leader
+        {"wins": 5, "pf": 900,  "division": 1, "div_record": (1, 0, 0)},  # WC, div win
+    ]
+    assert playoff_seed_order(teams) == [0, 1, 3, 2]
+
+
+def test_build_standings_map_division_record_tiebreak():
+    pytest.importorskip("flask")
+    pd = pytest.importorskip("pandas")
+    from dashboard_services.service import build_standings_map
+
+    df = pd.DataFrame([
+        {"owner": "A", "Wins": 5, "PF": 900,  "PA": 1000, "Ties": 0},
+        {"owner": "B", "Wins": 5, "PF": 1000, "PA": 1000, "Ties": 0},
+        {"owner": "C", "Wins": 6, "PF": 950,  "PA": 1000, "Ties": 0},
+        {"owner": "D", "Wins": 3, "PF": 800,  "PA": 1000, "Ties": 0},
+    ])
+    roster_map = {1: "A", 2: "B", 3: "C", 4: "D"}
+    seeds = build_standings_map(
+        df, roster_map,
+        division_by_rid={1: 1, 2: 1, 3: 2, 4: 2},
+        division_records_by_rid={1: (1, 0, 0), 2: (0, 1, 0), 3: (1, 0, 0), 4: (0, 1, 0)},
+    )
+    # A takes div 1's winner seed over higher-PF B; C (6 wins) is seed 1.
+    assert seeds == {1: 2, 2: 3, 3: 1, 4: 4}
+
+
+def test_playoff_picture_division_record_seeding():
+    teams = [
+        {"id": 1, "name": "A", "wins": 5, "losses": 2, "pf": 900,
+         "division": 1, "div_record": (1, 0, 0)},
+        {"id": 2, "name": "B", "wins": 5, "losses": 2, "pf": 1000,
+         "division": 1, "div_record": (0, 1, 0)},
+        {"id": 3, "name": "C", "wins": 6, "losses": 1, "pf": 950,
+         "division": 2, "div_record": (1, 0, 0)},
+        {"id": 4, "name": "D", "wins": 3, "losses": 4, "pf": 800,
+         "division": 2, "div_record": (0, 1, 0)},
+    ]
+    res = compute_playoff_picture(teams, playoff_spots=2, total_regular_weeks=14)
+    assert [r["name"] for r in res] == ["C", "A", "B", "D"]
+    by_name = {r["name"]: r for r in res}
+    assert by_name["A"]["seed"] == 2
+    assert by_name["B"]["seed"] == 3
+
+
 def test_resolve_divisions_from_ctx():
     ctx = {
         "league_settings": {"divisions": 2},
@@ -306,3 +371,96 @@ def test_render_matchup_slide_shows_division_record(monkeypatch):
     plain = mmod.render_matchup_slide("2026", matchup, w=1, proj_week=0, **kw)
     assert "(2-0)" not in plain
     assert "2-1" in plain
+
+
+def test_division_win_pct():
+    from utils.standings_divisions import division_win_pct
+    assert division_win_pct((1, 0, 0)) == 1.0
+    assert division_win_pct((0, 1, 0)) == 0.0
+    assert division_win_pct((0, 0, 1)) == 0.5
+    assert division_win_pct((2, 1, 0)) == pytest.approx(2 / 3)
+    assert division_win_pct((1, 1, 0)) == 0.5
+    # No division games yet / missing record never outranks a played record.
+    assert division_win_pct((0, 0, 0)) == 0.0
+    assert division_win_pct(None) == 0.0
+    assert division_win_pct(()) == 0.0
+
+
+def test_render_standings_compact_division_record_breaks_record_tie():
+    # Kaedon's case: same overall record, the 1-0 division team must sit
+    # above the 0-1 team even though the 0-1 team has more PF.
+    pytest.importorskip("flask")
+    pd = pytest.importorskip("pandas")
+    import app as appmod
+
+    rows = [
+        {"owner": "A", "Wins": 1, "Losses": 1, "Ties": 0, "PF": 170, "PA": 200, "Rank": 1},
+        {"owner": "B", "Wins": 1, "Losses": 1, "Ties": 0, "PF": 185, "PA": 185, "Rank": 2},
+    ]
+    df = pd.DataFrame(rows)
+    o2r = {"A": "1", "B": "2"}
+    divisions = {"by_rid": {1: 1, 2: 1, 3: 2}, "names": {1: "East", 2: "West"},
+                 "ids": [1, 2], "count": 2}
+    html = appmod.render_standings_compact(
+        df, owner_to_rid=o2r, divisions=divisions,
+        div_records={1: (1, 0, 0), 2: (0, 1, 0)},
+    )
+    assert html.index("(1-0)") < html.index("(0-1)")
+    # The division leader badge lands on the 1-0 team, not the PF leader.
+    lead_row = html.split("st-div-leader")[1].split("</tr>")[0]
+    assert "(1-0)" in lead_row
+
+
+def test_render_standings_division_record_breaks_record_tie():
+    pytest.importorskip("flask")
+    pd = pytest.importorskip("pandas")
+    import app as appmod
+
+    rows = [
+        {"owner": "A", "Wins": 1, "Losses": 1, "Ties": 0, "PF": 170, "PA": 200,
+         "Streak": "", "avatar": "", "Win%": 0.5},
+        {"owner": "B", "Wins": 1, "Losses": 1, "Ties": 0, "PF": 185, "PA": 185,
+         "Streak": "", "avatar": "", "Win%": 0.5},
+        {"owner": "C", "Wins": 1, "Losses": 0, "Ties": 1, "PF": 190, "PA": 150,
+         "Streak": "", "avatar": "", "Win%": 0.75},
+        {"owner": "D", "Wins": 0, "Losses": 1, "Ties": 1, "PF": 165, "PA": 175,
+         "Streak": "", "avatar": "", "Win%": 0.25},
+    ]
+    df = pd.DataFrame(rows)
+    o2r = {"A": "1", "B": "2", "C": "3", "D": "4"}
+    divisions = {"by_rid": {1: 1, 2: 1, 3: 2, 4: 2}, "names": {1: "East", 2: "West"},
+                 "ids": [1, 2], "count": 2}
+    html = appmod.render_standings(
+        df, length=4, owner_to_rid=o2r, divisions=divisions,
+        detailed_df=_div_weekly_frame(pd),
+    )
+    # _div_weekly_frame: A is 1-0 in division with PF 170, B is 0-1 with
+    # PF 185. PF alone would put B first; division record must win.
+    assert html.index("(1-0)") < html.index("(0-1)")
+
+
+def test_recap_standings_rows_division_record_breaks_record_tie():
+    pd = pytest.importorskip("pandas")
+    from dashboard_services.pages.recap_page import _recap_standings_rows
+
+    # Week 1: A beats B in a division game; C beats D in the other division.
+    # Week 2 (cross-division): C beats A, B beats D. A and B finish 1-1;
+    # B has far more PF, but A is 1-0 in the division and B is 0-1.
+    rows = [
+        (1, 101, 1, "A", 100.0, 90.0), (1, 101, 2, "B", 90.0, 100.0),
+        (1, 102, 3, "C", 80.0, 70.0), (1, 102, 4, "D", 70.0, 80.0),
+        (2, 201, 1, "A", 50.0, 120.0), (2, 201, 3, "C", 120.0, 50.0),
+        (2, 202, 2, "B", 130.0, 60.0), (2, 202, 4, "D", 60.0, 130.0),
+    ]
+    df = pd.DataFrame(rows, columns=["week", "matchup_id", "roster_id", "owner",
+                                     "points", "points_against"])
+    df["finalized"] = True
+    out = _recap_standings_rows(df, {1: 1, 2: 1, 3: 2, 4: 2}, True)
+    assert [r["rid"] for r in out] == ["1", "2", "3", "4"]
+    assert out[0]["div_record"] == (1, 0, 0)
+    assert out[1]["div_record"] == (0, 1, 0)
+    assert out[1]["pf"] > out[0]["pf"]  # PF alone would have flipped them
+    # Without divisions the same frame stays wins-then-PF, flat.
+    flat = _recap_standings_rows(df, {}, False)
+    assert [r["rid"] for r in flat] == ["3", "2", "1", "4"]
+    assert all(r["div_record"] is None for r in flat)

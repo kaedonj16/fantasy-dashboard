@@ -133,6 +133,46 @@ def _weekly_efficiency_rows(efficiency_data: dict, selected_week: int) -> list[d
     return sorted(rows, key=lambda row: (-row["eff"], -row["actual"], row["rid"]))
 
 
+def _recap_standings_rows(df_weekly, division_by_rid, has_divisions) -> list[dict]:
+    """Standings snapshot rows for the recap card, grouped by division.
+
+    Within a division: overall wins, then division win% (a 1-0 division
+    team outranks a 0-1 team on the same overall record even with fewer
+    PF), then PF. Each row carries the raw ``div_record`` tuple alongside
+    the formatted ``record`` string.
+    """
+    from utils.standings_divisions import division_records, division_win_pct, format_record
+    frame = df_weekly.copy()
+    frame["win"] = frame["points"] > frame["points_against"]
+    frame["tie"] = frame["points"] == frame["points_against"]
+    _div_recs = division_records(frame, division_by_rid) if has_divisions else {}
+    rows = []
+    for rid, grp in frame.groupby("roster_id"):
+        try:
+            _rid_i = int(rid)
+        except (TypeError, ValueError):
+            _rid_i = None
+        _div_rec = None
+        if _rid_i is not None and division_by_rid.get(_rid_i):
+            _div_rec = _div_recs.get(_rid_i, (0, 0, 0))
+        _wins = int(grp["win"].sum())
+        _ties = int(grp["tie"].sum())
+        _losses = len(grp) - _wins - _ties
+        rows.append({
+            "rid": str(rid), "owner": grp["owner"].iloc[0],
+            "wins": _wins,
+            "ties": _ties,
+            "losses": _losses,
+            "pf": float(grp["points"].sum()),
+            "division": division_by_rid.get(int(rid)) if str(rid).isdigit() else None,
+            "div_record": _div_rec,
+            "record": format_record(_wins, _losses, _ties, _div_rec),
+        })
+    rows.sort(key=lambda x: (x.get("division") or 9999, -x["wins"],
+                             -division_win_pct(x.get("div_record")), -x["pf"]))
+    return rows
+
+
 def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
     from app import (  # noqa: E402  (lazy: avoids a circular import at module load)
         _build_lineup_analysis_html,
@@ -573,34 +613,8 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
     division_by_rid = division_info.get("by_rid") or {}
     division_names = division_info.get("names") or {}
     def _standings_rows(capped_ctx):
-        frame = capped_ctx["df_weekly"].copy()
-        frame["win"] = frame["points"] > frame["points_against"]
-        frame["tie"] = frame["points"] == frame["points_against"]
-        from utils.standings_divisions import division_records, format_record
-        _div_recs = division_records(frame, division_by_rid) if division_info else {}
-        rows = []
-        for rid, grp in frame.groupby("roster_id"):
-            try:
-                _rid_i = int(rid)
-            except (TypeError, ValueError):
-                _rid_i = None
-            _div_rec = None
-            if _rid_i is not None and division_by_rid.get(_rid_i):
-                _div_rec = _div_recs.get(_rid_i, (0, 0, 0))
-            _wins = int(grp["win"].sum())
-            _ties = int(grp["tie"].sum())
-            _losses = len(grp) - _wins - _ties
-            rows.append({
-                "rid": str(rid), "owner": grp["owner"].iloc[0],
-                "wins": _wins,
-                "ties": _ties,
-                "losses": _losses,
-                "pf": float(grp["points"].sum()),
-                "division": division_by_rid.get(int(rid)) if str(rid).isdigit() else None,
-                "record": format_record(_wins, _losses, _ties, _div_rec),
-            })
-        rows.sort(key=lambda x: (x.get("division") or 9999, -x["wins"], -x["pf"]))
-        return rows
+        return _recap_standings_rows(
+            capped_ctx["df_weekly"], division_by_rid, bool(division_info))
 
     standings_rows_data = _standings_rows(historical_ctx)
     _record_by_rid = {s["rid"]: s["record"] for s in standings_rows_data}

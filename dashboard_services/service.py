@@ -2103,11 +2103,15 @@ def pill(s):
     return f"<span class='badge'>{s}</span>"
 
 
-def build_standings_map(team_stats, roster_map, division_by_rid=None) -> dict[int, int]:
+def build_standings_map(team_stats, roster_map, division_by_rid=None,
+                        division_records_by_rid=None) -> dict[int, int]:
     """``roster_id -> playoff seed`` (1 = best).
 
     When ``division_by_rid`` maps roster ids onto 2+ divisions, seeds follow
-    division winners then wild cards; otherwise overall wins / PF.
+    division winners then wild cards; otherwise overall wins / PF. When
+    ``division_records_by_rid`` supplies per-team ``(w, l, t)`` division
+    records, seeding breaks overall-record ties by division win% before PF,
+    matching the standings tables.
     """
     owner_to_rid = {owner: rid for rid, owner in roster_map.items()}
     if team_stats is None or getattr(team_stats, "empty", True):
@@ -2132,12 +2136,20 @@ def build_standings_map(team_stats, roster_map, division_by_rid=None) -> dict[in
                 or division_by_rid.get(rid)
                 or 0
             )
+        div_rec = None
+        if division_records_by_rid:
+            div_rec = (
+                division_records_by_rid.get(rid_int)
+                or division_records_by_rid.get(str(rid))
+                or division_records_by_rid.get(rid)
+            )
         teams.append({
             "wins": float(row.get("Wins", 0) or 0),
             "ties": float(row.get("Ties", 0) or 0),
             "pf": float(row.get("PF", 0) or 0),
             "pa": float(row.get("PA", 0) or 0),
             "division": int(div or 0),
+            "div_record": div_rec,
         })
         owners.append(rid_int)
 

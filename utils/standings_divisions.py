@@ -106,9 +106,25 @@ def resolve_divisions(ctx: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
     return info
 
 
-def sort_key_record(wins: float, pf: float, pa: float = 0.0) -> Tuple[float, float, float]:
-    """Standings sort: more wins, more PF, fewer PA."""
-    return (float(wins), float(pf), -float(pa))
+def division_win_pct(div_record: Optional[Sequence[float]]) -> float:
+    """Winning percentage for a ``(wins, losses, ties)`` division record.
+
+    Ties count half a win. A team with no division games yet (or no record)
+    gets 0.0, so it cannot outrank a division winner on this tiebreak alone.
+    Display standings break overall-record ties by this value before PF:
+    a 1-0 division team ranks above a 0-1 team with the same overall record
+    even when the 0-1 team has scored more points.
+    """
+    if not div_record:
+        return 0.0
+    try:
+        w, l, t = (float(x or 0) for x in div_record)
+    except (TypeError, ValueError):
+        return 0.0
+    games = w + l + t
+    if games <= 0:
+        return 0.0
+    return (w + 0.5 * t) / games
 
 
 def playoff_seed_order(
@@ -120,6 +136,11 @@ def playoff_seed_order(
 
     Each team mapping needs ``wins``, ``pf``, and optionally ``pa`` / ``ties``.
     With 2+ distinct divisions, division winners are seeded ahead of wild cards.
+
+    The tiebreak chain matches the standings tables: overall wins, then
+    division win% (from an optional ``div_record`` ``(w, l, t)`` per team),
+    then PF, then PA. A team with no ``div_record`` counts as 0.0, so callers
+    that cannot supply division records keep the old wins/PF/PA behavior.
     """
     m = len(teams)
     if m == 0:
@@ -151,9 +172,17 @@ def playoff_seed_order(
         except (TypeError, ValueError):
             return 0
 
+    def _seed_key(t: Mapping[str, Any]) -> Tuple[float, float, float, float]:
+        # Higher is better on every element (PA negated).
+        return (
+            _wins(t),
+            division_win_pct(t.get("div_record")),
+            _pf(t),
+            -_pa(t),
+        )
+
     idxs = list(range(m))
-    idxs.sort(key=lambda i: sort_key_record(_wins(teams[i]), _pf(teams[i]), _pa(teams[i])),
-              reverse=True)
+    idxs.sort(key=lambda i: _seed_key(teams[i]), reverse=True)
 
     divs = [_div(t) for t in teams]
     unique = {d for d in divs if d}
@@ -168,24 +197,12 @@ def playoff_seed_order(
     rest: List[int] = []
     for div_idxs in by_div.values():
         # Best record in the division; stable tie-break by original index.
-        w = max(
-            div_idxs,
-            key=lambda i: (
-                sort_key_record(_wins(teams[i]), _pf(teams[i]), _pa(teams[i])),
-                -i,
-            ),
-        )
+        w = max(div_idxs, key=lambda i: (_seed_key(teams[i]), -i))
         winners.append(w)
         rest.extend(i for i in div_idxs if i != w)
 
-    winners.sort(
-        key=lambda i: sort_key_record(_wins(teams[i]), _pf(teams[i]), _pa(teams[i])),
-        reverse=True,
-    )
-    rest.sort(
-        key=lambda i: sort_key_record(_wins(teams[i]), _pf(teams[i]), _pa(teams[i])),
-        reverse=True,
-    )
+    winners.sort(key=lambda i: _seed_key(teams[i]), reverse=True)
+    rest.sort(key=lambda i: _seed_key(teams[i]), reverse=True)
     return winners + rest
 
 
