@@ -60,7 +60,7 @@ def premium_metrics_exposed() -> bool:
 # be incoherent.
 # PRO is the proprietary "answers" layer: the full FPOE family (per-game),
 # WOPR, usage/xFP trends, consistency/volatility answers
-# (fp_cv, xfp_stddev), proprietary composites (role_score,
+# (fp_cv), proprietary composites (role_score,
 # target_quality_score), and proprietary value (vorp, war).
 # Enforced server-side in routes/advanced_metrics_bp.py (leaderboard +
 # movers 403) and routes/players_bp.py (player modal + compare strip), and
@@ -69,7 +69,7 @@ PRO_METRICS = frozenset({
     "ppr_over_expected_per_game",
     "half_ppr_over_expected_per_game", "standard_over_expected_per_game",
     "wopr", "opportunity_trend", "xfp_trend",
-    "fp_cv", "xfp_stddev",
+    "fp_cv",
     "role_score", "target_quality_score",
     "vorp", "war",
 })
@@ -333,6 +333,7 @@ def _add_rookie_eval_columns(conn) -> None:
             ADD COLUMN IF NOT EXISTS contested_catch_rate NUMERIC,
             ADD COLUMN IF NOT EXISTS avoided_tackles NUMERIC,
             ADD COLUMN IF NOT EXISTS drop_rate NUMERIC,
+            ADD COLUMN IF NOT EXISTS uncatchable_tgt_rate NUMERIC,
             ADD COLUMN IF NOT EXISTS slot_rate NUMERIC,
             ADD COLUMN IF NOT EXISTS wide_rate NUMERIC,
             ADD COLUMN IF NOT EXISTS inline_rate NUMERIC,
@@ -374,7 +375,9 @@ def _add_rookie_eval_columns(conn) -> None:
             ADD COLUMN IF NOT EXISTS expected_standard       NUMERIC,
             ADD COLUMN IF NOT EXISTS ppr_over_expected       NUMERIC,
             ADD COLUMN IF NOT EXISTS half_ppr_over_expected  NUMERIC,
-            ADD COLUMN IF NOT EXISTS standard_over_expected  NUMERIC;
+            ADD COLUMN IF NOT EXISTS standard_over_expected  NUMERIC,
+            ADD COLUMN IF NOT EXISTS expected_tds            NUMERIC,
+            ADD COLUMN IF NOT EXISTS td_over_expected        NUMERIC;
     """)
 
     # Team and schedule ease.
@@ -448,6 +451,54 @@ def _add_rookie_eval_columns(conn) -> None:
             ADD COLUMN IF NOT EXISTS racr                               NUMERIC;
     """)
 
+    # First-down metrics from nflverse play-by-play (first_down_pass /
+    # first_down_rush flags). total_first_downs is the season count behind
+    # first_downs_per_game; the two rates are totals-first ratios.
+    conn.execute("""
+        ALTER TABLE player_advanced_metrics
+            ADD COLUMN IF NOT EXISTS total_first_downs    NUMERIC,
+            ADD COLUMN IF NOT EXISTS rec_first_down_rate  NUMERIC,
+            ADD COLUMN IF NOT EXISTS rush_first_down_rate NUMERIC;
+    """)
+
+    # QB rating when targeted (pbp aggregates on a receiver's targets) and
+    # PFR pressure rate faced (times_pressured / (attempts + times_sacked)).
+    conn.execute("""
+        ALTER TABLE player_advanced_metrics
+            ADD COLUMN IF NOT EXISTS qb_rating_when_targeted NUMERIC,
+            ADD COLUMN IF NOT EXISTS pressure_rate_faced     NUMERIC;
+    """)
+
+    # Situational play-by-play metrics: goal-line opportunity share, end
+    # zone / deep target rates, stuffed rate, third-down conversion rate.
+    # All totals-first ratios computed in the pbp builders.
+    conn.execute("""
+        ALTER TABLE player_advanced_metrics
+            ADD COLUMN IF NOT EXISTS goal_line_opp_share   NUMERIC,
+            ADD COLUMN IF NOT EXISTS end_zone_target_rate  NUMERIC,
+            ADD COLUMN IF NOT EXISTS deep_target_rate      NUMERIC,
+            ADD COLUMN IF NOT EXISTS stuffed_rate          NUMERIC,
+            ADD COLUMN IF NOT EXISTS third_down_conv_rate  NUMERIC;
+    """)
+
+    # FTN charting additions: turnover-worthy play rate (passer),
+    # contested target rate and screen target rate (receiver). Distinct
+    # from contested_catch_rate, which is catches per contested target.
+    conn.execute("""
+        ALTER TABLE player_advanced_metrics
+            ADD COLUMN IF NOT EXISTS turnover_worthy_rate  NUMERIC,
+            ADD COLUMN IF NOT EXISTS contested_target_rate NUMERIC,
+            ADD COLUMN IF NOT EXISTS screen_target_rate    NUMERIC;
+    """)
+
+    # PFR receiving broken tackles per reception, and TD share of team
+    # offensive TDs (weekly-series derived, stored as a fraction).
+    conn.execute("""
+        ALTER TABLE player_advanced_metrics
+            ADD COLUMN IF NOT EXISTS rec_broken_tackles_per_reception NUMERIC,
+            ADD COLUMN IF NOT EXISTS td_share                         NUMERIC;
+    """)
+
 
 def _extract_metric_value(metrics: Dict, metric_name: str):
     """Safely pull the scalar value from a metric payload dict."""
@@ -484,6 +535,11 @@ def calculate_receiving_metrics(usage: Dict[str, float]) -> Dict[str, Optional[f
         # Catchable Tgt %: season value is filled by the PFR catchable merge
         # (1 - drops / targets over completed REG weeks, totals divided).
         "catchable_tgt_pct": usage.get("catchable_tgt_pct"),
+        # Broken tackles per reception: filled by the PFR rec broken
+        # tackles merge (receiving_broken_tackles / total receptions,
+        # totals first, 2 decimals, not a percentage).
+        "rec_broken_tackles_per_reception": usage.get(
+            "rec_broken_tackles_per_reception"),
     }
 
 
@@ -547,6 +603,10 @@ def calculate_passing_metrics(usage: Dict[str, float]) -> Dict[str, Optional[flo
         # (1 - bad_throws / attempts over completed REG weeks, totals
         # divided). Bad throws are PFR human charting, not PFF.
         "catchable_pass_pct": usage.get("catchable_pass_pct"),
+        # Pressure rate faced: filled by the same PFR merge from the
+        # advstats pass file (times_pressured / (attempts + times_sacked),
+        # totals first). PFR human charting via nflverse, not PFF.
+        "pressure_rate_faced": usage.get("pressure_rate_faced"),
     }
 
 
@@ -1030,8 +1090,8 @@ def finalize_weekly_series_metrics(
 
     Computes from the box-score weekly series (player_weekly_metrics) and the
     weekly expected-points table (player_weekly_advanced_metrics):
-      total_snaps, rz_opp_share, rz_target_share, boom_rate, bust_rate,
-      fp_cv, xfp_stddev, xfp_trend, opportunity_trend.
+      total_snaps, rz_opp_share, rz_target_share, td_share, boom_rate,
+      bust_rate, fp_cv, xfp_stddev, xfp_trend, opportunity_trend.
 
     Best-effort: any failure (missing tables, weekly source down) leaves the
     keys unset (None) and never raises — the snapshot write must not be gated
@@ -1082,6 +1142,12 @@ def finalize_weekly_series_metrics(
     # Team RZ denominators from the same weekly series (pooled per team).
     team_rz_targets: Dict[str, float] = {}
     team_rz_opps: Dict[str, float] = {}
+    # Team offensive TD totals for td_share: every offensive TD is exactly
+    # one player's rushing or receiving TD (a passing TD is the receiver's
+    # receiving TD), so summing rec + rush TDs over the roster counts each
+    # team TD once. Pass TDs must NOT be added or every passing TD would
+    # double count.
+    team_off_tds: Dict[str, float] = {}
     for pid, weeks in series_by_pid.items():
         team = team_by_pid.get(pid) or ""
         if not team:
@@ -1091,6 +1157,8 @@ def finalize_weekly_series_metrics(
             rc = float(w.get("rz_carries") or 0)
             team_rz_targets[team] = team_rz_targets.get(team, 0.0) + rt
             team_rz_opps[team] = team_rz_opps.get(team, 0.0) + rt + rc
+            team_off_tds[team] = team_off_tds.get(team, 0.0) \
+                + float(w.get("rec_tds") or 0) + float(w.get("rush_tds") or 0)
 
     for pid, m in metrics_by_pid.items():
         try:
@@ -1123,6 +1191,11 @@ def finalize_weekly_series_metrics(
             t_opps = team_rz_opps.get(team, 0.0)
             m["rz_target_share"] = (rz_t / t_targets) if t_targets > 0 else None
             m["rz_opp_share"] = ((rz_t + rz_c) / t_opps) if t_opps > 0 else None
+
+            own_tds = sum(float(w.get("rec_tds") or 0)
+                          + float(w.get("rush_tds") or 0) for w in weeks)
+            t_tds = team_off_tds.get(team, 0.0)
+            m["td_share"] = (own_tds / t_tds) if t_tds > 0 else None
 
             xfp = xfp_by_pid.get(pid) or []
             m["xfp_stddev"] = _population_stddev(xfp)
@@ -1300,6 +1373,15 @@ def build_advanced_metrics_snapshot(
             logger.info("merged PFR catchable pct for %d players", _n_catch)
     except Exception:
         logger.exception("PFR catchable merge failed; continuing without")
+    # Receiving broken tackles per reception: same PFR advstats release,
+    # rec file only. Best-effort like the catchable merge.
+    try:
+        _n_rbt = _merge_pfr_rec_broken_tackles(usage_map, season, completed_week)
+        summary["pfr_rec_broken_tackles_rows"] = _n_rbt
+        if _n_rbt:
+            logger.info("merged PFR rec broken tackles for %d players", _n_rbt)
+    except Exception:
+        logger.exception("PFR rec broken tackles merge failed; continuing without")
     # PFR yards before/after contact and broken tackles are absent from the
     # Sleeper feed too; merge them from the nflverse PFR advstats release.
     # Best-effort: never gates the snapshot write.
@@ -1483,18 +1565,18 @@ def save_metrics_snapshot(metrics_list: List[Dict[str, Any]], as_of_date: str, s
                 INSERT INTO player_advanced_metrics (
                     player_id, as_of_date, season, position,
                     yards_per_target, catch_rate, yards_per_reception, target_quality_score,
-                    catchable_tgt_pct,
+                    catchable_tgt_pct, rec_broken_tackles_per_reception,
                     yards_per_carry, yards_per_touch, rush_td_rate,
                     ybc_per_carry, yac_per_carry, avoided_tackles,
                     yards_per_attempt, completion_pct, td_rate, int_rate,
-                    catchable_pass_pct,
+                    catchable_pass_pct, pressure_rate_faced,
                     snap_share, opportunity_share, red_zone_usage,
                     rz_targets_pg, rz_carries_pg,
                     role_score, usage_trend, efficiency_trend, games,
                     total_targets, total_receptions, total_carries, total_touches, total_pass_att,
                     target_share, route_participation,
                     total_rush_tds, total_rec_tds, total_pass_tds, total_tds,
-                    total_snaps, rz_opp_share, rz_target_share,
+                    total_snaps, rz_opp_share, rz_target_share, td_share,
                     boom_rate, bust_rate, fp_cv,
                     xfp_stddev, xfp_trend, opportunity_trend,
                     nfl_team, schedule_ease
@@ -1502,18 +1584,18 @@ def save_metrics_snapshot(metrics_list: List[Dict[str, Any]], as_of_date: str, s
                 VALUES (
                     %s, %s, %s, %s,
                     %s, %s, %s, %s,
-                    %s,
+                    %s, %s,
                     %s, %s, %s,
                     %s, %s, %s,
                     %s, %s, %s, %s,
-                    %s,
+                    %s, %s,
                     %s, %s, %s,
                     %s, %s,
                     %s, %s, %s, %s,
                     %s, %s, %s, %s, %s,
                     %s, %s,
                     %s, %s, %s, %s,
-                    %s, %s, %s,
+                    %s, %s, %s, %s,
                     %s, %s, %s,
                     %s, %s, %s,
                     %s, %s
@@ -1527,6 +1609,7 @@ def save_metrics_snapshot(metrics_list: List[Dict[str, Any]], as_of_date: str, s
                     yards_per_reception = COALESCE(EXCLUDED.yards_per_reception, player_advanced_metrics.yards_per_reception),
                     target_quality_score = EXCLUDED.target_quality_score,
                     catchable_tgt_pct = EXCLUDED.catchable_tgt_pct,
+                    rec_broken_tackles_per_reception = EXCLUDED.rec_broken_tackles_per_reception,
                     yards_per_carry = EXCLUDED.yards_per_carry,
                     yards_per_touch = EXCLUDED.yards_per_touch,
                     rush_td_rate = EXCLUDED.rush_td_rate,
@@ -1538,6 +1621,7 @@ def save_metrics_snapshot(metrics_list: List[Dict[str, Any]], as_of_date: str, s
                     td_rate = EXCLUDED.td_rate,
                     int_rate = EXCLUDED.int_rate,
                     catchable_pass_pct = EXCLUDED.catchable_pass_pct,
+                    pressure_rate_faced = EXCLUDED.pressure_rate_faced,
                     snap_share = COALESCE(EXCLUDED.snap_share, player_advanced_metrics.snap_share),
                     opportunity_share = COALESCE(EXCLUDED.opportunity_share, player_advanced_metrics.opportunity_share),
                     red_zone_usage = EXCLUDED.red_zone_usage,
@@ -1564,6 +1648,7 @@ def save_metrics_snapshot(metrics_list: List[Dict[str, Any]], as_of_date: str, s
                     total_snaps = COALESCE(EXCLUDED.total_snaps, player_advanced_metrics.total_snaps),
                     rz_opp_share = COALESCE(EXCLUDED.rz_opp_share, player_advanced_metrics.rz_opp_share),
                     rz_target_share = COALESCE(EXCLUDED.rz_target_share, player_advanced_metrics.rz_target_share),
+                    td_share = COALESCE(EXCLUDED.td_share, player_advanced_metrics.td_share),
                     boom_rate = COALESCE(EXCLUDED.boom_rate, player_advanced_metrics.boom_rate),
                     bust_rate = COALESCE(EXCLUDED.bust_rate, player_advanced_metrics.bust_rate),
                     fp_cv = COALESCE(EXCLUDED.fp_cv, player_advanced_metrics.fp_cv),
@@ -1577,13 +1662,14 @@ def save_metrics_snapshot(metrics_list: List[Dict[str, Any]], as_of_date: str, s
                 metrics.get("yards_per_target"), metrics.get("catch_rate"),
                 metrics.get("yards_per_reception"), metrics.get("target_quality_score"),
                 metrics.get("catchable_tgt_pct"),
+                metrics.get("rec_broken_tackles_per_reception"),
                 metrics.get("yards_per_carry"), metrics.get("yards_per_touch"),
                 metrics.get("rush_td_rate"),
                 metrics.get("ybc_per_carry"), metrics.get("yac_per_carry"),
                 metrics.get("avoided_tackles"),
                 metrics.get("yards_per_attempt"), metrics.get("completion_pct"),
                 metrics.get("td_rate"), metrics.get("int_rate"),
-                metrics.get("catchable_pass_pct"),
+                metrics.get("catchable_pass_pct"), metrics.get("pressure_rate_faced"),
                 metrics.get("snap_share"), metrics.get("opportunity_share"),
                 metrics.get("red_zone_usage"),
                 metrics.get("rz_targets_pg"), metrics.get("rz_carries_pg"),
@@ -1597,7 +1683,7 @@ def save_metrics_snapshot(metrics_list: List[Dict[str, Any]], as_of_date: str, s
                 metrics.get("total_rush_tds"), metrics.get("total_rec_tds"),
                 metrics.get("total_pass_tds"), metrics.get("total_tds"),
                 metrics.get("total_snaps"), metrics.get("rz_opp_share"),
-                metrics.get("rz_target_share"),
+                metrics.get("rz_target_share"), metrics.get("td_share"),
                 metrics.get("boom_rate"), metrics.get("bust_rate"),
                 metrics.get("fp_cv"),
                 metrics.get("xfp_stddev"), metrics.get("xfp_trend"),
@@ -2013,6 +2099,8 @@ def _merge_pfr_catchable(
 
     pass_totals: Dict[str, float] = {}
     drop_totals: Dict[str, float] = {}
+    pressured_totals: Dict[str, float] = {}
+    sacked_totals: Dict[str, float] = {}
 
     def _accumulate(path: Optional[str], count_col: str,
                     totals: Dict[str, float]) -> None:
@@ -2020,7 +2108,13 @@ def _merge_pfr_catchable(
             return
         import csv
         with open(path, newline="", encoding="utf-8") as f:
-            for row in csv.DictReader(f):
+            reader = csv.DictReader(f)
+            # A renamed upstream column must skip loudly, never total zeros.
+            if count_col not in (reader.fieldnames or []):
+                logger.warning(
+                    "PFR catchable merge: column %s missing; skipped", count_col)
+                return
+            for row in reader:
                 if str(row.get("game_type", "REG")).upper() != "REG":
                     continue
                 try:
@@ -2041,14 +2135,16 @@ def _merge_pfr_catchable(
                 totals[pid] = totals.get(pid, 0.0) + count
 
     try:
-        _accumulate(_nm.download_pfr_advstats_pass_csv(season), "passing_bad_throws",
-                     pass_totals)
+        _pass_csv = _nm.download_pfr_advstats_pass_csv(season)
+        _accumulate(_pass_csv, "passing_bad_throws", pass_totals)
+        _accumulate(_pass_csv, "times_pressured", pressured_totals)
+        _accumulate(_pass_csv, "times_sacked", sacked_totals)
         _accumulate(_nm.download_pfr_advstats_rec_csv(season), "receiving_drop",
-                     drop_totals)
+                    drop_totals)
     except Exception as e:
         logger.warning("PFR catchable merge: advstats unavailable (%s)", e)
         return 0
-    if not pass_totals and not drop_totals:
+    if not pass_totals and not drop_totals and not pressured_totals:
         return 0
 
     try:
@@ -2090,6 +2186,96 @@ def _merge_pfr_catchable(
                 drops = drop_totals[pfr]
                 usage["catchable_tgt_pct"] = round((tgt - drops) / tgt * 100.0, 1)
                 merged += 1
+        if usage.get("pressure_rate_faced") is None and pfr in pressured_totals:
+            # PFR pressure rate faced: times_pressured / (attempts + sacks
+            # taken). Attempts from the usage totals; sacks from the same
+            # PFR pass file (its own times_sacked column).
+            att = _season_total(usage, "total_pass_att", "avg_pass_att")
+            denom = att + sacked_totals.get(pfr, 0.0)
+            if denom > 0:
+                usage["pressure_rate_faced"] = round(
+                    pressured_totals[pfr] / denom * 100.0, 1)
+                merged += 1
+    return merged
+
+
+def _merge_pfr_rec_broken_tackles(
+    usage_map: Dict[str, Dict[str, Any]],
+    season: int,
+    completed_week: Optional[int] = None,
+) -> int:
+    """Fill usage['rec_broken_tackles_per_reception'] from PFR advstats.
+
+    Totals receiving_broken_tackles from the advstats RECEIVING file over
+    completed REG weeks and divides by total receptions (totals first,
+    never an average of weekly rates). Kept separate from the combined
+    rush+rec broken-tackles merge: this metric is receiving only. Only
+    fills players missing a value. Best-effort: any failure returns 0 and
+    leaves the map untouched; a file missing the column skips loudly.
+    """
+    if not usage_map:
+        return 0
+    try:
+        from data_building.external_data import nflverse_metrics as _nm
+    except Exception as e:
+        logger.warning("PFR rec broken tackles merge: import failed (%s)", e)
+        return 0
+    cw = _nm._pfr_to_sleeper()
+    if not cw:
+        return 0
+    totals: Dict[str, float] = {}
+    try:
+        import csv
+        path = _nm.download_pfr_advstats_rec_csv(season)
+        if not path:
+            return 0
+        with open(path, newline="", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            if "receiving_broken_tackles" not in (reader.fieldnames or []):
+                logger.warning(
+                    "PFR rec broken tackles merge: column missing; skipped")
+                return 0
+            for row in reader:
+                if str(row.get("game_type", "REG")).upper() != "REG":
+                    continue
+                try:
+                    week = int(float(row.get("week") or 0))
+                except (ValueError, TypeError):
+                    continue
+                if week <= 0 or (completed_week is not None
+                                 and week > completed_week):
+                    continue
+                pid = str(row.get("pfr_player_id") or "").strip()
+                if not pid:
+                    continue
+                try:
+                    count = float(row.get("receiving_broken_tackles") or 0)
+                except (TypeError, ValueError):
+                    continue
+                totals[pid] = totals.get(pid, 0.0) + count
+    except Exception as e:
+        logger.warning("PFR rec broken tackles merge: advstats unavailable (%s)", e)
+        return 0
+    if not totals:
+        return 0
+    inv = {v: k for k, v in cw.items()}
+    merged = 0
+    for sleeper_id, usage in usage_map.items():
+        pfr = inv.get(str(sleeper_id))
+        if pfr is None or pfr not in totals:
+            continue
+        if usage.get("rec_broken_tackles_per_reception") is not None:
+            continue
+        # Season receptions: explicit total when present, else avg * games
+        # (same convention as _merge_pfr_catchable's _season_total).
+        total_recs = usage.get("total_receptions")
+        if total_recs is None:
+            total_recs = _safe(usage.get("avg_receptions")) * _safe(usage.get("games"))
+        recs = _safe(total_recs)
+        if recs > 0:
+            usage["rec_broken_tackles_per_reception"] = round(
+                totals[pfr] / recs, 2)
+            merged += 1
     return merged
 
 
@@ -2337,13 +2523,13 @@ def get_player_career_metrics(
         'yards_per_target', 'catch_rate', 'yards_per_reception', 'target_quality_score',
         'yards_per_carry', 'yards_per_touch', 'rush_td_rate',
         'ybc_per_carry', 'yac_per_carry',
-        'catchable_pass_pct', 'catchable_tgt_pct',
+        'catchable_pass_pct',
         'yards_per_attempt', 'completion_pct', 'td_rate', 'int_rate',
-        'snap_share', 'route_participation', 'opportunity_share', 'red_zone_usage', 'role_score',
+        'snap_share', 'route_participation', 'opportunity_share', 'role_score',
         'yards_after_catch', 'yards_after_catch_per_reception', 'avg_depth_of_target',
-        'contested_catch_rate', 'avoided_tackles', 'drop_rate', 'slot_rate',
+        'contested_catch_rate', 'drop_rate', 'uncatchable_tgt_rate', 'slot_rate',
         'wide_rate', 'inline_rate', 'pass_block_rate', 'grades_offense',
-        'grades_pass_block', 'explosive_runs_10_plus', 'breakaway_percentage',
+        'grades_pass_block', 'breakaway_percentage',
         'elusive_rating', 'pff_rushing_grade', 'pff_passing_grade',
         'big_time_throw_rate', 'adjusted_completion_rate', 'pressure_to_sack_rate',
         'nfl_passer_rating', 'yprr',
@@ -2355,17 +2541,23 @@ def get_player_career_metrics(
         'ngs_rush_yards_over_expected', 'ngs_rush_yards_over_expected_per_att',
         'ngs_rush_efficiency',
         'ngs_avg_time_to_throw', 'ngs_aggressiveness', 'ngs_avg_completed_air_yards',
-        'ngs_avg_air_yards_differential', 'ngs_avg_air_yards_to_sticks', 'ngs_cpoe',
-        'ngs_max_completed_air_distance', 'ngs_avg_time_to_los',
+        'ngs_avg_air_yards_to_sticks',
         'ngs_percent_attempts_gte_eight_defenders', 'ngs_created_separation',
-        'play_action_rate', 'play_action_epa', 'out_of_pocket_rate',
+        'play_action_rate', 'play_action_epa',
         'blitz_rate_faced', 'epa_vs_blitz', 'epa_vs_stacked_box',
         'rushing_success_rate', 'receiving_success_rate',
         'rushing_epa_per_att', 'receiving_epa_per_target',
-        'qb_hit_rate', 'explosive_pass_rate', 'pacr', 'racr',
+        'qb_hit_rate', 'explosive_pass_rate',
         'total_snaps', 'rz_opp_share', 'rz_target_share',
         'boom_rate', 'bust_rate', 'fp_cv',
-        'xfp_stddev', 'xfp_trend', 'opportunity_trend',
+        'xfp_trend', 'opportunity_trend',
+        'expected_tds', 'td_over_expected',
+        'total_first_downs', 'rec_first_down_rate', 'rush_first_down_rate',
+        'qb_rating_when_targeted', 'pressure_rate_faced',
+        'goal_line_opp_share', 'end_zone_target_rate', 'deep_target_rate',
+        'stuffed_rate', 'third_down_conv_rate',
+        'turnover_worthy_rate', 'contested_target_rate', 'screen_target_rate',
+        'rec_broken_tackles_per_reception', 'td_share',
     ]
 
     with get_conn() as conn:
@@ -2507,9 +2699,10 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     # efficiency x volume columns (no dedicated yardage column exists) so this
     # stays exactly Rush Yards + Rec Yards + Pass Yards.
     "total_yards":          {"label": "Total Yards",         "category": "General", "positions": ["QB", "RB", "WR", "TE"], "integer": True, "desc": "Total yards produced in the season: rushing + receiving + passing.", "computed_sql": "ROUND(COALESCE(m.yards_per_carry * m.total_carries, 0) + COALESCE(m.yards_per_reception * m.total_receptions, 0) + COALESCE(m.yards_per_attempt * m.total_pass_att, 0))", "computed_null": "((m.yards_per_carry IS NOT NULL AND m.total_carries IS NOT NULL) OR (m.yards_per_reception IS NOT NULL AND m.total_receptions IS NOT NULL) OR (m.yards_per_attempt IS NOT NULL AND m.total_pass_att IS NOT NULL))"},
-    "total_tds":            {"label": "Total TDs",           "category": "General", "positions": ["QB", "RB", "WR", "TE"], "integer": True, "desc": "Total touchdowns (rush + receiving + passing) in the season."},
     "total_tds_per_game":   {"label": "Total TDs/G",         "category": "General", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Total touchdowns per game.", "computed_sql": "m.total_tds::float / NULLIF(m.games, 0)", "computed_null": "m.total_tds IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
-    "total_touches":        {"label": "Touches",             "category": "General", "positions": ["RB", "WR", "TE"], "integer": True, "desc": "Total carries plus receptions in the season."},
+    "first_downs_per_game": {"label": "First Downs/G",       "category": "General", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "First downs per game from the player's own plays: as passer plus as rusher plus as receiver, each play counted once (nflverse play-by-play). Chain-moving production, not just scoring.", "computed_sql": "m.total_first_downs::float / NULLIF(m.games, 0)", "computed_null": "m.total_first_downs IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
+    "goal_line_opp_share":  {"label": "Goal-Line Opp Share", "category": "General", "positions": ["RB", "WR", "TE"], "pct": True, "min_vol": _V_GAMES, "desc": "Share of the team's goal-line opportunities (carries plus targets on plays snapped inside the opponent 5, yardline_100 <= 5) that went to this player (nflverse play-by-play)."},
+    "td_share":             {"label": "TD Share", "category": "General", "positions": ["RB", "WR", "TE"], "pct": True, "pct_frac": True, "min_vol": _V_GAMES, "desc": "Share of the team's offensive touchdowns scored by this player: his rushing plus receiving TDs over the team's total (every offensive TD is one player's rush or rec TD, so nothing double counts)."},
     "touches_per_game":     {"label": "Touches/G",           "category": "General", "positions": ["RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Carries plus receptions per game.", "computed_sql": "m.total_touches::float / NULLIF(m.games, 0)", "computed_null": "m.total_touches IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
     "yards_per_touch":      {"label": "Yards / Touch",       "category": "General", "positions": ["RB", "WR", "TE"], "efficiency": True, "min_vol": _V_TOUCHES, "desc": "Yards gained per combined carry and reception."},
     "role_score":           {"label": "Role Score",          "category": "General", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "hidden": True, "desc": "Internal opportunity signal (feeds breakout detection); not shown on the front end. Share of team targets/carries, red-zone usage, and (QB) passing + rushing workload."},
@@ -2520,7 +2713,6 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     "bust_rate":            {"label": "Bust Rate",           "category": "General", "positions": ["QB", "RB", "WR", "TE"], "pct": True, "pct_frac": True, "lower_better": True, "min_vol": _V_GAMES, "desc": "Share of games below the position bust threshold (QB 15 / RB-WR 8 / TE 5 PPR). Lower is better; high bust rate means frequent lineup-killing weeks."},
     "fp_cv":                {"label": "FP Consistency (CV)", "category": "General", "positions": ["QB", "RB", "WR", "TE"], "lower_better": True, "min_vol": _V_GAMES, "desc": "Coefficient of variation of weekly PPR scores (std dev ÷ mean). Lower means steadier week-to-week scoring; high CV means boom-or-bust."},
     "opportunity_trend":    {"label": "Usage Trend",         "category": "General", "positions": ["QB", "RB", "WR", "TE"], "pct": True, "pct_frac": True, "min_vol": _V_GAMES, "desc": "Last-3-week usage vs season average on the position key stat (QB: snap %, RB: touches, WR/TE: targets), as a fraction. Positive = role is growing."},
-    "red_zone_usage":       {"label": "Red Zone Usage",      "category": "General", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Targets and carries inside the opponent's 20-yard line per game; a proxy for scoring opportunity."},
     "grades_offense":       {"label": "PFF Off Grade",       "category": "General", "positions": ["QB", "RB", "WR", "TE"], "efficiency": True, "min_vol": _V_GAMES, "desc": "PFF's overall offensive grade (0-100) from play-by-play charting."},
     "schedule_ease":        {"label": "Schedule Ease",       "category": "General", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "How easy the player's remaining schedule is vs. their position (0-100, 100 = easiest). Based on opponent defensive ratings from matchup_ratings."},
     # ── Expected Points (xFP): opportunity-based value from play-by-play ──────
@@ -2538,7 +2730,9 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     "half_ppr_over_expected_per_game": {"label": "FPOE/G (Half)", "category": "Expected Pts", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Actual minus opportunity-based expected half-PPR points per matched covered game. NEGATIVE = fantasy points left on the board.", "computed_sql": "m.half_ppr_over_expected::float / NULLIF(m.games, 0)", "computed_null": "m.half_ppr_over_expected IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
     "expected_standard_per_game": {"label": "Expected FPTS/G (Std)", "category": "Expected Pts", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Opportunity-based expected standard (non-PPR) fantasy points per covered game. This is an expectation, not guaranteed future scoring or an unrealized-points balance.", "computed_sql": "m.expected_standard::float / NULLIF(m.games, 0)", "computed_null": "m.expected_standard IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
     "standard_over_expected_per_game": {"label": "FPOE/G (Std)", "category": "Expected Pts", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Actual minus opportunity-based expected standard (non-PPR) points per matched covered game. NEGATIVE = fantasy points left on the board.", "computed_sql": "m.standard_over_expected::float / NULLIF(m.games, 0)", "computed_null": "m.standard_over_expected IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
-    "xfp_stddev":           {"label": "xFP Std Dev",         "category": "Expected Pts", "positions": ["QB", "RB", "WR", "TE"], "lower_better": True, "min_vol": _V_GAMES, "desc": "Standard deviation of weekly expected PPR (opportunity-based). Lower means a steadier role; high means the workload itself swings wildly."},
+    "expected_tds":         {"label": "Expected TDs", "category": "Expected Pts", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Expected touchdowns from the player's own opportunities: receiving TD equity on targets plus rushing TD equity on carries plus receiving TD equity on throws for passers (nflverse play-by-play, same model as Expected FPTS). A season total."},
+    "xtd_per_game":         {"label": "xTD/G", "category": "Expected Pts", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Expected touchdowns per game: the TD slice of the expected points model, from targets, carries, and throws (nflverse play-by-play).", "computed_sql": "m.expected_tds::float / NULLIF(m.games, 0)", "computed_null": "m.expected_tds IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
+    "td_over_expected":     {"label": "TD vs xTD", "category": "Expected Pts", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Actual touchdowns (rushing + receiving + passing) minus expected touchdowns. Positive = outscored the TD expectation (regression risk); negative = TDs left on the board. Two decimals, not a percentage."},
     "xfp_trend":            {"label": "xFP Trend",           "category": "Expected Pts", "positions": ["QB", "RB", "WR", "TE"], "pct": True, "pct_frac": True, "min_vol": _V_GAMES, "desc": "Last-3-week expected PPR/G vs season expected PPR/G, as a fraction. Positive = the player's opportunity quality is trending up, before outcomes."},
     # ── Passing (volume → efficiency → touchdowns → grade) ───────────────────
     # Passing yards is derived (yards/attempt x attempts) so it needs no new column.
@@ -2547,34 +2741,31 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     "completion_pct":       {"label": "Completion %",       "category": "Passing", "positions": ["QB"], "efficiency": True, "pct": True, "min_vol": _V_PASS_ATT, "desc": "Percent of pass attempts completed."},
     "adjusted_completion_rate": {"label": "Adj Completion %", "category": "Passing", "positions": ["QB"], "efficiency": True, "pct": True, "min_vol": _V_PASS_ATT, "desc": "Completion percent adjusted for drops, throwaways, spikes, and batted passes."},
     "catchable_pass_pct": {"label": "Catchable %", "category": "Passing", "positions": ["QB"], "efficiency": True, "pct": True, "min_vol": _V_PASS_ATT, "desc": "Percent of pass attempts that were catchable (1 minus the bad-throw rate). Bad throws are PFR charting via the nflverse pfr_advstats release, not PFF. Higher is better."},
+    "pressure_rate_faced": {"label": "Pressure Rate Faced", "category": "Passing", "positions": ["QB"], "efficiency": True, "pct": True, "lower_better": True, "min_vol": _V_PASS_ATT, "desc": "Percent of dropbacks (attempts plus sacks taken) on which the QB was pressured: times_pressured divided by attempts plus times_sacked. Pressures are PFR charting via the nflverse pfr_advstats release, not PFF. Lower is better."},
+    "third_down_conv_rate": {"label": "3rd Down Conv %", "category": "Passing", "positions": ["QB"], "efficiency": True, "pct": True, "min_vol": _V_PASS_ATT, "desc": "Percent of third-down dropbacks that end in a first down, from the play's first-down flag or third_down_converted (nflverse play-by-play). Season board gates on total attempts (no dropbacks total column); week ranges gate on actual third-down dropbacks."},
+    "turnover_worthy_rate": {"label": "Turnover-Worthy %", "category": "Passing", "positions": ["QB"], "efficiency": True, "pct": True, "lower_better": True, "min_vol": _V_PASS_ATT, "desc": "Percent of dropbacks charted as turnover-worthy throws (is_interception_worthy) by FTN charting via nflverse, whether or not they were actually intercepted. Lower is better."},
     "cpoe":                 {"label": "CPOE",                "category": "Passing", "positions": ["QB"], "efficiency": True, "pct": True, "min_vol": _V_PASS_ATT, "desc": "Completion Percentage Over Expected — accuracy adjusted for throw difficulty (nflverse)."},
     "nfl_passer_rating":    {"label": "Passer Rating",       "category": "Passing", "positions": ["QB"], "efficiency": True, "min_vol": _V_PASS_ATT, "desc": "Standard NFL passer rating (0-158.3)."},
     "epa_per_play":         {"label": "Passing EPA / Dropback", "category": "Passing", "positions": ["QB"], "efficiency": True, "min_vol": _V_PASS_ATT, "desc": "Passing Expected Points Added per qualifying quarterback dropback (nflverse play-by-play). Week ranges are weighted by covered dropbacks, never by an unweighted mean of weekly rates."},
     "passing_epa":          {"label": "Passing EPA",         "category": "Passing", "positions": ["QB"], "min_vol": _V_PASS_ATT, "desc": "Total Expected Points Added on pass attempts over the season (nflverse)."},
-    # Season-only by design: passing_epa_per_att, explosive_run_rate,
+    # Season-only by design: explosive_run_rate,
     # intended_air_yards_per_game, unrealized_air_yards and
     # unrealized_air_yards_per_game are computed here from snapshot columns
     # whose components live on different provider rows; get_metric_leaderboard
     # evaluates them over a per-player coalesced season row. They are not in
     # the weekly registries, so week-range requests return season values with
     # weeklyCapable=false (see routes/advanced_metrics_bp.py).
-    "passing_epa_per_att":  {"label": "Pass EPA / Att",      "category": "Passing", "positions": ["QB"], "efficiency": True, "min_vol": _V_PASS_ATT, "desc": "Expected Points Added per pass attempt (nflverse). Rate companion to total passing EPA.", "computed_sql": "m.passing_epa::float / NULLIF(m.total_pass_att, 0)", "computed_null": "m.passing_epa IS NOT NULL AND m.total_pass_att IS NOT NULL AND m.total_pass_att > 0"},
     "success_rate":         {"label": "Success Rate",        "category": "Passing", "positions": ["QB"], "efficiency": True, "pct": True, "min_vol": _V_PASS_ATT, "desc": "Percent of plays with positive EPA (nflverse)."},
     "ngs_avg_time_to_throw": {"label": "Time to Throw",      "category": "Passing", "positions": ["QB"], "efficiency": True, "min_vol": _V_PASS_ATT, "desc": "Average seconds from snap to throw (NFL Next Gen Stats). Lower often means a quicker processor; higher can mean holding to push the ball downfield."},
     "ngs_aggressiveness":   {"label": "Aggressiveness",      "category": "Passing", "positions": ["QB"], "efficiency": True, "pct": True, "min_vol": _V_PASS_ATT, "desc": "Percent of passing attempts thrown into tight windows (NFL Next Gen Stats). A public analogue to big-time-throw rate."},
     "ngs_avg_completed_air_yards": {"label": "Completed Air Yds", "category": "Passing", "positions": ["QB"], "efficiency": True, "min_vol": _V_PASS_ATT, "desc": "Average air yards on completed passes (NFL Next Gen Stats). Higher means more downfield completions, fewer checkdowns."},
-    "ngs_avg_air_yards_differential": {"label": "AY Differential", "category": "Passing", "positions": ["QB"], "efficiency": True, "min_vol": _V_PASS_ATT, "desc": "Completed air yards minus intended air yards (NFL Next Gen Stats). Negative means completions are shorter than the throws attempted."},
     "ngs_avg_air_yards_to_sticks": {"label": "Air Yds to Sticks", "category": "Passing", "positions": ["QB"], "efficiency": True, "min_vol": _V_PASS_ATT, "desc": "Average air yards relative to the first-down marker (NFL Next Gen Stats). Positive means throwing past the sticks."},
-    "ngs_cpoe":             {"label": "NGS CPOE",            "category": "Passing", "positions": ["QB"], "efficiency": True, "pct": True, "min_vol": _V_PASS_ATT, "desc": "Next Gen Stats completion percentage over expected. A second CPOE estimate alongside the nflverse play-by-play model."},
-    "ngs_max_completed_air_distance": {"label": "Max Air Distance", "category": "Passing", "positions": ["QB"], "min_vol": _V_PASS_ATT, "desc": "Longest completed air distance in yards (NFL Next Gen Stats). A raw arm-talent / deep-ball marker."},
     "qb_hit_rate":          {"label": "QB Hit Rate",         "category": "Passing", "positions": ["QB"], "efficiency": True, "pct": True, "min_vol": _V_PASS_ATT, "desc": "Percent of dropbacks on which the passer was hit (nflverse). A public pressure-faced proxy."},
     "explosive_pass_rate":  {"label": "Explosive Pass %",    "category": "Passing", "positions": ["QB"], "efficiency": True, "pct": True, "min_vol": _V_PASS_ATT, "desc": "Percent of pass attempts that gained 16+ yards (nflverse). Explosive-play rate for passers."},
     "play_action_rate":     {"label": "Play-Action %",       "category": "Passing", "positions": ["QB"], "pct": True, "min_vol": _V_PASS_ATT, "desc": "Percent of dropbacks that are play-action (FTN charting)."},
     "play_action_epa":      {"label": "PA EPA / Play",       "category": "Passing", "positions": ["QB"], "efficiency": True, "min_vol": _V_PASS_ATT, "desc": "Expected Points Added per play-action dropback (FTN + nflverse)."},
-    "out_of_pocket_rate":   {"label": "Out of Pocket %",     "category": "Passing", "positions": ["QB"], "pct": True, "min_vol": _V_PASS_ATT, "desc": "Percent of dropbacks thrown or scrambled from outside the pocket (FTN charting)."},
     "blitz_rate_faced":     {"label": "Blitz Rate Faced",    "category": "Passing", "positions": ["QB"], "pct": True, "min_vol": _V_PASS_ATT, "desc": "Percent of dropbacks against a blitz (FTN charting)."},
     "epa_vs_blitz":         {"label": "EPA vs Blitz",        "category": "Passing", "positions": ["QB"], "efficiency": True, "min_vol": _V_PASS_ATT, "desc": "Expected Points Added per dropback against the blitz (FTN + nflverse). Closest public 'vs pressure' split."},
-    "pacr":                 {"label": "PACR",                "category": "Passing", "positions": ["QB"], "efficiency": True, "min_vol": _V_PASS_ATT, "desc": "Passing Air Conversion Ratio: passing yards ÷ passing air yards. How much of the yards thrown in the air actually come in."},
     "big_time_throw_rate":  {"label": "Big-Time Throw %",   "category": "Passing", "positions": ["QB"], "efficiency": True, "pct": True, "min_vol": _V_PASS_ATT, "desc": "PFF rate of high-difficulty, high-value throws (deep and into tight windows)."},
     "int_rate":             {"label": "INT Rate",            "category": "Passing", "positions": ["QB"], "efficiency": True, "pct": True, "lower_better": True, "min_vol": _V_PASS_ATT, "desc": "Percent of pass attempts intercepted. Lower is better."},
     "sack_rate":            {"label": "Sack Rate",           "category": "Passing", "positions": ["QB"], "efficiency": True, "pct": True, "lower_better": True, "min_vol": _V_PASS_ATT, "desc": "Percent of dropbacks ending in a sack. Lower is better (nflverse)."},
@@ -2582,24 +2773,18 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     "scramble_rate":        {"label": "Scramble Rate",       "category": "Passing", "positions": ["QB"], "pct": True, "min_vol": _V_PASS_ATT, "desc": "Percent of dropbacks where the QB scrambled (nflverse)."},
     # Touchdown group: rate, season total, and per-game kept adjacent.
     "td_rate":              {"label": "Pass TD Rate",        "category": "Passing", "subcategory": "Passing",   "positions": ["QB"], "efficiency": True, "pct": True, "min_vol": _V_PASS_ATT, "desc": "Percent of pass attempts that result in a touchdown."},
-    "total_pass_tds":       {"label": "Pass TDs",            "category": "Passing", "subcategory": "Passing",   "positions": ["QB"], "integer": True, "desc": "Total passing touchdowns in the season."},
     "pass_tds_per_game":    {"label": "Pass TDs/G",          "category": "Passing", "subcategory": "Passing",   "positions": ["QB"], "min_vol": _V_GAMES, "desc": "Passing touchdowns per game.", "computed_sql": "m.total_pass_tds::float / NULLIF(m.games, 0)", "computed_null": "m.total_pass_tds IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
     "pff_passing_grade":    {"label": "PFF Pass Grade",      "category": "Passing", "positions": ["QB"], "efficiency": True, "min_vol": _V_PASS_ATT, "desc": "PFF's passing grade (0-100)."},
     # ── Rushing (volume → efficiency → touchdowns → grade) ───────────────────
-    "total_carries":        {"label": "Carries",             "category": "Rushing", "positions": ["RB", "QB"], "integer": True, "desc": "Total carries in the season."},
     "carries_per_game":     {"label": "Carries/G",           "category": "Rushing", "positions": ["RB", "QB"], "min_vol": _V_GAMES, "desc": "Carries per game.", "computed_sql": "m.total_carries::float / NULLIF(m.games, 0)", "computed_null": "m.total_carries IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
     # Rush yards is derived (yards/carry x carries) so it needs no stored column.
-    "total_rush_yards":     {"label": "Rush Yards",          "category": "Rushing", "positions": ["RB", "QB"], "integer": True, "desc": "Total rushing yards in the season.", "computed_sql": "ROUND(m.yards_per_carry * m.total_carries)", "computed_null": "m.yards_per_carry IS NOT NULL AND m.total_carries IS NOT NULL"},
     "rush_yards_per_game":  {"label": "Rush Yds/G",          "category": "Rushing", "positions": ["RB", "QB"], "min_vol": _V_GAMES, "desc": "Rushing yards per game.", "computed_sql": "m.yards_per_carry * m.total_carries / NULLIF(m.games, 0)", "computed_null": "m.yards_per_carry IS NOT NULL AND m.total_carries IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
     "yards_per_carry":      {"label": "Yards / Carry",       "category": "Rushing", "positions": ["RB", "QB"], "efficiency": True, "min_vol": _V_CARRIES, "desc": "Rushing yards gained per carry."},
     "fpts_per_carry":       {"label": "FPTs/Carry",          "category": "Rushing", "positions": ["RB", "QB"], "efficiency": True, "min_vol": _V_CARRIES, "desc": "PPR fantasy points per carry (0.1 × rush yards/carry + 6 × rush TD rate). Higher means more value per touch.", "computed_sql": "m.yards_per_carry * 0.1 + m.rush_td_rate * 6", "computed_null": "m.yards_per_carry IS NOT NULL AND m.rush_td_rate IS NOT NULL"},
     "breakaway_percentage": {"label": "Breakaway %",         "category": "Rushing", "positions": ["RB"], "efficiency": True, "pct": True, "min_vol": _V_CARRIES, "desc": "Percent of rushing yards that came on runs of 15+ yards; explosiveness."},
-    "explosive_runs_10_plus": {"label": "Explosive Runs",   "category": "Rushing", "positions": ["RB"], "min_vol": _V_CARRIES, "integer": True, "desc": "Count of runs gaining 10 or more yards in the season (nflverse). Raw explosive-play volume."},
-    "explosive_runs_pg":    {"label": "Explosive Runs/Carry", "category": "Rushing", "positions": ["RB"], "min_vol": _V_CARRIES, "desc": "Explosive runs (10+ yards) per carry.", "computed_sql": "m.explosive_runs_10_plus::float / NULLIF(v.vol, 0)", "computed_null": "m.explosive_runs_10_plus IS NOT NULL"},
     "explosive_run_rate":   {"label": "Explosive Run %",     "category": "Rushing", "positions": ["RB"], "efficiency": True, "pct": True, "pct_frac": True, "min_vol": _V_CARRIES, "desc": "Percent of carries gaining 10+ yards; big-play rate on the ground (nflverse).", "computed_sql": "m.explosive_runs_10_plus::float / NULLIF(m.total_carries, 0)", "computed_null": "m.explosive_runs_10_plus IS NOT NULL AND m.total_carries IS NOT NULL AND m.total_carries > 0"},
     "touches_per_snap":     {"label": "Touches / Snap",      "category": "Rushing", "positions": ["RB"], "efficiency": True, "min_vol": _V_SNAPS, "desc": "Share of offensive snaps that turn into a touch (carry or reception); how often the ball finds the player when on the field.", "computed_sql": "m.total_touches::float / NULLIF(m.total_snaps, 0)", "computed_null": "m.total_touches IS NOT NULL AND m.total_snaps IS NOT NULL AND m.total_snaps > 0"},
     "ngs_rush_yards_over_expected_per_att": {"label": "RYOE / Att", "category": "Rushing", "positions": ["RB"], "efficiency": True, "min_vol": _V_CARRIES, "desc": "Rush Yards Over Expected per attempt — yards created beyond what blocking/situation expected (NFL Next Gen Stats). A free creation metric, similar in spirit to elusive rating."},
-    "ngs_avg_time_to_los":  {"label": "Time to LOS",         "category": "Rushing", "positions": ["RB"], "efficiency": True, "min_vol": _V_CARRIES, "desc": "Average seconds for the rusher to reach the line of scrimmage (NFL Next Gen Stats). Lower often means hitting the hole faster."},
     "ngs_percent_attempts_gte_eight_defenders": {"label": "8+ Box Rate", "category": "Rushing", "positions": ["RB"], "pct": True, "min_vol": _V_CARRIES, "desc": "Percent of rush attempts against 8 or more defenders in the box (NFL Next Gen Stats). Higher means a tougher rushing diet."},
     "rushing_success_rate": {"label": "Rush Success %",      "category": "Rushing", "positions": ["RB", "QB"], "efficiency": True, "pct": True, "min_vol": _V_CARRIES, "desc": "Percent of rushes with positive EPA (nflverse)."},
     "rushing_epa_per_att":  {"label": "Rush EPA / Att",      "category": "Rushing", "positions": ["RB", "QB"], "efficiency": True, "min_vol": _V_CARRIES, "desc": "Expected Points Added per rush attempt (nflverse). Rate companion to total rushing EPA."},
@@ -2607,23 +2792,19 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     "yac_per_carry":        {"label": "YAC / Carry",         "category": "Rushing", "positions": ["RB", "QB"], "efficiency": True, "min_vol": _V_CARRIES, "desc": "Yards after contact per carry: what the runner created himself after first contact (PFR via nflverse). Higher means more tackle-breaking. Pairs with YBC / Carry."},
     "epa_vs_stacked_box":   {"label": "EPA vs 8+ Box",       "category": "Rushing", "positions": ["RB"], "efficiency": True, "min_vol": _V_CARRIES, "desc": "Expected Points Added per rush against 8 or more defenders in the box (FTN + nflverse)."},
     "elusive_rating":       {"label": "Elusive Rating",      "category": "Rushing", "positions": ["RB"], "efficiency": True, "min_vol": _V_CARRIES, "desc": "PFF metric for yards created after contact and missed tackles forced, independent of blocking."},
-    "avoided_tackles":      {"label": "Broken Tackles",    "category": "Rushing", "positions": ["RB"], "min_vol": _V_CARRIES, "desc": "Tackles broken on rush attempts (PFR charting via nflverse). Rewards runners who power through or slip contact."},
     "avoided_tackles_pg":   {"label": "Broken Tackles/Carry", "category": "Rushing", "positions": ["RB"], "min_vol": _V_CARRIES, "desc": "Broken tackles per carry on rush attempts (PFR charting via nflverse).", "computed_sql": "m.avoided_tackles::float / NULLIF(v.vol, 0)", "computed_null": "m.avoided_tackles IS NOT NULL"},
-    "rz_carries_pg":        {"label": "RZ Carries/G",        "category": "Rushing", "positions": ["QB", "RB"], "min_vol": _V_GAMES, "desc": "Red zone rushing attempts per game (inside opponent's 20-yard line)."},
     "rz_opp_share":         {"label": "RZ Opp Share",        "category": "Rushing", "positions": ["RB"], "pct": True, "pct_frac": True, "min_vol": _V_GAMES, "desc": "Share of the team's red-zone opportunities (carries + targets inside the 20) that went to this player; the goal-line role in one number."},
     # Touchdown group: rate, season total, and per-game kept adjacent.
     "rush_td_rate":         {"label": "Rush TD Rate",        "category": "Rushing", "subcategory": "Rushing",   "positions": ["RB", "QB"], "efficiency": True, "pct": True, "pct_frac": True, "min_vol": _V_CARRIES, "desc": "Percent of carries that result in a touchdown."},
-    "total_rush_tds":       {"label": "Rush TDs",            "category": "Rushing", "subcategory": "Rushing",   "positions": ["RB", "QB"], "integer": True, "desc": "Total rushing touchdowns in the season."},
+    "rush_first_down_rate": {"label": "Rush 1st Down %",     "category": "Rushing", "positions": ["RB", "QB"], "efficiency": True, "pct": True, "min_vol": _V_CARRIES, "desc": "Percent of carries that earn a first down (nflverse play-by-play). Chain-moving rate on the ground."},
+    "stuffed_rate":         {"label": "Stuffed %",           "category": "Rushing", "positions": ["RB", "QB"], "efficiency": True, "pct": True, "lower_better": True, "min_vol": _V_CARRIES, "desc": "Percent of carries stopped at or behind the line of scrimmage (yards gained <= 0) (nflverse play-by-play). Lower is better."},
     "rush_tds_per_game":    {"label": "Rush TDs/G",          "category": "Rushing", "subcategory": "Rushing",   "positions": ["RB", "QB"], "min_vol": _V_GAMES, "desc": "Rushing touchdowns per game.", "computed_sql": "m.total_rush_tds::float / NULLIF(m.games, 0)", "computed_null": "m.total_rush_tds IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
     "rushing_epa":          {"label": "Rushing EPA",         "category": "Rushing", "positions": ["RB", "QB"], "min_vol": _V_CARRIES, "desc": "Total Expected Points Added on rushing attempts over the season (nflverse)."},
     "pff_rushing_grade":    {"label": "PFF Rush Grade",      "category": "Rushing", "positions": ["RB", "QB"], "efficiency": True, "min_vol": _V_CARRIES, "desc": "PFF's rushing grade (0-100)."},
     # ── Receiving (volume → opportunity → efficiency → touchdowns → alignment) ─
-    "total_targets":        {"label": "Targets",             "category": "Receiving", "positions": ["WR", "RB", "TE"], "integer": True, "desc": "Total targets in the season."},
     "targets_per_game":     {"label": "Targets/G",           "category": "Receiving", "positions": ["WR", "RB", "TE"], "min_vol": _V_GAMES, "desc": "Targets per game.", "computed_sql": "m.total_targets::float / NULLIF(m.games, 0)", "computed_null": "m.total_targets IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
-    "total_receptions":     {"label": "Receptions",          "category": "Receiving", "positions": ["WR", "RB", "TE"], "integer": True, "desc": "Total receptions in the season."},
     "receptions_per_game":  {"label": "Receptions/G",        "category": "Receiving", "positions": ["WR", "RB", "TE"], "min_vol": _V_GAMES, "desc": "Receptions per game.", "computed_sql": "m.total_receptions::float / NULLIF(m.games, 0)", "computed_null": "m.total_receptions IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
     # Rec yards is derived (yards/reception x receptions) so it needs no stored column.
-    "total_rec_yards":      {"label": "Rec Yards",           "category": "Receiving", "positions": ["WR", "RB", "TE"], "integer": True, "desc": "Total receiving yards in the season.", "computed_sql": "ROUND(m.yards_per_reception * m.total_receptions)", "computed_null": "m.yards_per_reception IS NOT NULL AND m.total_receptions IS NOT NULL"},
     "rec_yards_per_game":   {"label": "Rec Yds/G",           "category": "Receiving", "positions": ["WR", "RB", "TE"], "min_vol": _V_GAMES, "desc": "Receiving yards per game.", "computed_sql": "m.yards_per_reception * m.total_receptions / NULLIF(m.games, 0)", "computed_null": "m.yards_per_reception IS NOT NULL AND m.total_receptions IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
     "total_routes":         {"label": "Routes",              "category": "Receiving", "positions": ["WR", "TE", "RB"], "integer": True, "desc": "Estimated total routes run (= season receiving yards ÷ yprr). Requires both yprr and receptions data."},
     "routes_per_game":      {"label": "Routes/G",            "category": "Receiving", "positions": ["WR", "TE", "RB"], "min_vol": _V_GAMES, "desc": "Routes run per game.", "computed_sql": "m.total_routes::float / NULLIF(v.vol, 0)", "computed_null": "m.total_routes IS NOT NULL"},
@@ -2640,7 +2821,6 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     "intended_air_yards_per_game": {"label": "Intended AY/G", "category": "Receiving", "positions": ["WR", "TE"], "min_vol": _V_TARGETS, "desc": "NGS intended air yards (distance thrown in the air to the player, completions or not) per game; the raw downfield-target volume before catch rates and YAC.", "computed_sql": "m.ngs_avg_intended_air_yards * m.total_targets / NULLIF(m.games, 0)", "computed_null": "m.ngs_avg_intended_air_yards IS NOT NULL AND m.total_targets IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
     "intended_air_yards_share": {"label": "Intended AY Share", "category": "Receiving", "positions": ["WR", "TE"], "pct": True, "min_vol": _V_TARGETS, "desc": "Share of the team's intended passing air yards directed at this player (NFL Next Gen Stats). The pure downfield-funnel read, before any catch happens.", "computed_sql": "m.ngs_pct_share_intended_air_yards", "computed_null": "m.ngs_pct_share_intended_air_yards IS NOT NULL"},
     "wopr":                 {"label": "WOPR",                "category": "Receiving", "positions": ["WR", "TE", "RB"], "min_vol": _V_GAMES, "desc": "Weighted Opportunity Rating: 1.5 × target share + 0.7 × air-yards share. Combines target volume and downfield opportunity."},
-    "rz_targets_pg":        {"label": "RZ Targets/G",        "category": "Receiving", "positions": ["WR", "TE", "RB"], "min_vol": _V_GAMES, "desc": "Red zone targets per game (inside opponent's 20-yard line)."},
     "rz_target_share":      {"label": "RZ Target Share",     "category": "Receiving", "positions": ["WR", "TE"], "pct": True, "pct_frac": True, "min_vol": _V_GAMES, "desc": "Share of the team's red-zone targets directed at this player; the trusted red-zone receiver in one number."},
     "targets_per_snap":     {"label": "Targets / Snap",      "category": "Receiving", "positions": ["WR", "TE"], "efficiency": True, "min_vol": _V_SNAPS, "desc": "Targets per offensive snap; how often the player is looked at when on the field, independent of snap volume.", "computed_sql": "m.total_targets::float / NULLIF(m.total_snaps, 0)", "computed_null": "m.total_targets IS NOT NULL AND m.total_snaps IS NOT NULL AND m.total_snaps > 0"},
     "yards_per_target":     {"label": "Yards / Target",      "category": "Receiving", "positions": ["WR", "RB", "TE"], "efficiency": True, "min_vol": _V_TARGETS, "desc": "Receiving yards earned per time targeted; measures efficiency on volume."},
@@ -2650,20 +2830,25 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     "yprr":                 {"label": "Yards / Route Run",   "category": "Receiving", "positions": ["WR", "TE", "RB"], "efficiency": True, "min_vol": _V_GAMES, "desc": "Receiving yards earned per route run (from PFF). Elite WRs are typically 2.0+; accounts for targets indirectly by rewarding yards on every snap."},
     "avg_depth_of_target":  {"label": "aDOT",                "category": "Receiving", "positions": ["WR", "RB", "TE"], "efficiency": True, "min_vol": _V_TARGETS, "desc": "Average depth of target: how far downfield (in yards) the player is thrown to."},
     "yards_after_catch_per_reception": {"label": "YAC / Reception", "category": "Receiving", "positions": ["WR", "RB", "TE"], "efficiency": True, "min_vol": _V_RECS, "desc": "Average yards gained after the catch per reception."},
+    "rec_broken_tackles_per_reception": {"label": "Broken Tackles / Catch", "category": "Receiving", "positions": ["WR", "RB", "TE"], "min_vol": _V_RECS, "desc": "Broken tackles per reception on receiving plays only (Pro Football Reference charting): PFR receiving broken tackles over receptions. Two decimals, not a percentage. Distinct from the combined rush plus rec broken tackle rates."},
     "ngs_avg_yac_above_expectation": {"label": "YAC Over Exp", "category": "Receiving", "positions": ["WR", "TE", "RB"], "efficiency": True, "min_vol": _V_RECS, "desc": "Yards after catch above expectation given the catch situation (NFL Next Gen Stats)."},
     "ngs_avg_separation":   {"label": "Separation",          "category": "Receiving", "positions": ["WR", "TE"], "efficiency": True, "min_vol": _V_TARGETS, "desc": "Average yards of separation from the nearest defender at the catch point (NFL Next Gen Stats)."},
     "ngs_avg_cushion":      {"label": "Cushion",             "category": "Receiving", "positions": ["WR", "TE"], "efficiency": True, "min_vol": _V_TARGETS, "desc": "Average yards of cushion the defender gives at the snap (NFL Next Gen Stats)."},
     "ngs_created_separation": {"label": "Created Sep",       "category": "Receiving", "positions": ["WR", "TE"], "efficiency": True, "min_vol": _V_TARGETS, "desc": "Separation minus pre-snap cushion (NFL Next Gen Stats). Positive means the receiver created space vs the look they were given."},
     "receiving_success_rate": {"label": "Rec Success %",     "category": "Receiving", "positions": ["WR", "TE", "RB"], "efficiency": True, "pct": True, "min_vol": _V_TARGETS, "desc": "Percent of targets with positive EPA (nflverse)."},
     "receiving_epa_per_target": {"label": "Rec EPA / Tgt",   "category": "Receiving", "positions": ["WR", "TE", "RB"], "efficiency": True, "min_vol": _V_TARGETS, "desc": "Expected Points Added per target (nflverse). Rate companion to total receiving EPA."},
-    "racr":                 {"label": "RACR",                "category": "Receiving", "positions": ["WR", "TE", "RB"], "efficiency": True, "min_vol": _V_TARGETS, "desc": "Receiver Air Conversion Ratio: receiving yards ÷ air yards. How much of the yards thrown at the player actually come in (catch + YAC)."},
     "contested_catch_rate": {"label": "Contested Catch %",   "category": "Receiving", "positions": ["WR", "TE"], "efficiency": True, "pct": True, "min_vol": _V_TARGETS, "desc": "Percent of contested (tightly covered) targets the player came down with."},
+    "qb_rating_when_targeted": {"label": "QB Rating vs Tgt", "category": "Receiving", "positions": ["WR", "RB", "TE"], "efficiency": True, "min_vol": _V_TARGETS, "desc": "Standard NFL passer rating (0 to 158.3) on throws targeting this player: attempts are his targets, with completions, receiving yards, receiving TDs, and interceptions on those throws, totals first (nflverse play-by-play). One decimal, not a percentage."},
+    "end_zone_target_rate": {"label": "End Zone Tgt %", "category": "Receiving", "positions": ["WR", "RB", "TE"], "efficiency": True, "pct": True, "min_vol": _V_TARGETS, "desc": "Percent of targets thrown into the end zone: air yards at least the yards to the goal line (air_yards >= yardline_100) on the target (nflverse play-by-play)."},
+    "deep_target_rate": {"label": "Deep Tgt %", "category": "Receiving", "positions": ["WR", "RB", "TE"], "efficiency": True, "pct": True, "min_vol": _V_TARGETS, "desc": "Percent of targets thrown 20+ air yards downfield (nflverse play-by-play)."},
+    "contested_target_rate": {"label": "Contested Tgt %", "category": "Receiving", "positions": ["WR", "RB", "TE"], "efficiency": True, "pct": True, "min_vol": _V_TARGETS, "desc": "Percent of charted targets that were contested (tightly covered, is_contested_ball) per FTN charting via nflverse. Not the same as Contested Catch %: this is how often coverage was tight, not whether the catch was made."},
+    "screen_target_rate": {"label": "Screen Tgt %", "category": "Receiving", "positions": ["WR", "RB", "TE"], "efficiency": True, "pct": True, "min_vol": _V_TARGETS, "desc": "Percent of charted targets that were screen passes (is_screen_pass) per FTN charting via nflverse. Designed short-game usage."},
+    "rec_first_down_rate":  {"label": "Rec 1st Down %",      "category": "Receiving", "positions": ["WR", "RB", "TE"], "efficiency": True, "pct": True, "min_vol": _V_TARGETS, "desc": "Percent of targets that result in a first down (nflverse play-by-play). How often a target moves the chains, not just catches."},
     "drop_rate":            {"label": "Drop Rate",           "category": "Receiving", "positions": ["WR", "RB", "TE"], "efficiency": True, "pct": True, "lower_better": True, "min_vol": _V_TARGETS, "desc": "Percent of catchable targets dropped. Lower is better."},
-    "catchable_tgt_pct":   {"label": "Catchable Tgt %",     "category": "Receiving", "positions": ["WR", "TE"], "efficiency": True, "pct": True, "min_vol": _V_TARGETS, "desc": "Percent of targets that were catchable (1 minus the drop rate). Drops are PFR charting via the nflverse pfr_advstats release, not PFF. Higher is better."},
+    "uncatchable_tgt_rate": {"label": "Uncatchable Tgt %",   "category": "Receiving", "positions": ["WR", "RB", "TE"], "efficiency": True, "pct": True, "lower_better": True, "min_vol": _V_TARGETS, "desc": "Percent of targets charted as uncatchable by FTN charting (off-target throws the receiver had no realistic chance to catch), via the nflverse FTN release, not PFF. Lower is better: a high rate means poor QB throw quality, not poor receiving."},
     "target_quality_score": {"label": "Target Quality",      "category": "Receiving", "positions": ["WR", "RB", "TE"], "efficiency": True, "min_vol": _V_TARGETS, "hidden": True, "desc": "Legacy internal composite of targets per game, yards per target, and receiving touchdowns; hidden because it does not adjust for target depth, location, or game situation."},
     "receiving_epa":        {"label": "Receiving EPA",       "category": "Receiving", "positions": ["WR", "TE", "RB"], "min_vol": _V_TARGETS, "desc": "Total Expected Points Added on targets over the season (nflverse)."},
     # Touchdown group: season total and per-game kept adjacent.
-    "total_rec_tds":        {"label": "Rec TDs",             "category": "Receiving", "subcategory": "Receiving", "positions": ["WR", "TE", "RB"], "integer": True, "desc": "Total receiving touchdowns in the season."},
     "rec_tds_per_game":     {"label": "Rec TDs/G",           "category": "Receiving", "subcategory": "Receiving", "positions": ["WR", "TE", "RB"], "min_vol": _V_GAMES, "desc": "Receiving touchdowns per game.", "computed_sql": "m.total_rec_tds::float / NULLIF(m.games, 0)", "computed_null": "m.total_rec_tds IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
     # Alignment / usage splits.
     "slot_rate":            {"label": "Slot Rate",           "category": "Receiving", "positions": ["WR", "TE"], "efficiency": True, "pct": True, "min_vol": _V_GAMES, "desc": "Percent of routes run from the slot."},
@@ -2688,23 +2873,14 @@ _WEEKLY_METRICS: Dict[str, Any] = {
     "catch_rate":          {"sql": "SUM(receptions)::float / NULLIF(SUM(targets), 0)",                     "min_col": "SUM(targets)",    "min_label": "Min Targets", "min_opts": [5, 10, 20, 40]},
     "yards_per_carry":     {"sql": "SUM(rush_yards)::float / NULLIF(SUM(carries), 0)",                     "min_col": "SUM(carries)",    "min_label": "Min Carries", "min_opts": [5, 10, 20, 40]},
     "yards_per_touch":     {"sql": "(SUM(rec_yards) + SUM(rush_yards))::float / NULLIF(SUM(touches), 0)",  "min_col": "SUM(touches)",    "min_label": "Min Touches", "min_opts": [5, 10, 20, 40]},
-    "total_targets":       {"sql": "SUM(targets)",                                                         "min_col": None,              "min_label": "Min Weeks", "min_opts": []},
     "targets_per_game":    {"sql": "AVG(targets)",                                                         "min_col": None,              "min_label": "Min Weeks", "min_opts": []},
-    "total_receptions":    {"sql": "SUM(receptions)",                                                      "min_col": None,              "min_label": "Min Weeks", "min_opts": []},
     "receptions_per_game": {"sql": "AVG(receptions)",                                                      "min_col": None,              "min_label": "Min Weeks", "min_opts": []},
-    "total_rec_yards":     {"sql": "SUM(rec_yards)",                                                       "min_col": None,              "min_label": "Min Weeks", "min_opts": []},
     "rec_yards_per_game":  {"sql": "AVG(rec_yards)",                                                       "min_col": None,              "min_label": "Min Weeks", "min_opts": []},
-    "total_carries":       {"sql": "SUM(carries)",                                                         "min_col": None,              "min_label": "Min Weeks", "min_opts": []},
     "carries_per_game":    {"sql": "AVG(carries)",                                                         "min_col": None,              "min_label": "Min Weeks", "min_opts": []},
-    "total_rush_yards":    {"sql": "SUM(rush_yards)",                                                      "min_col": "SUM(carries)",    "min_label": "Min Carries","min_opts": [5, 10, 20, 40]},
     "rush_yards_per_game": {"sql": "AVG(rush_yards)",                                                      "min_col": "SUM(carries)",    "min_label": "Min Carries","min_opts": [5, 10, 20, 40]},
-    "total_touches":       {"sql": "SUM(touches)",                                                                                                           "min_col": None,              "min_label": "Min Weeks",   "min_opts": []},
     "touches_per_game":    {"sql": "AVG(touches)",                                                                                                           "min_col": None,              "min_label": "Min Weeks",   "min_opts": []},
     "fpts_per_carry":      {"sql": "(SUM(rush_yards) * 0.1 + SUM(rush_tds) * 6)::float / NULLIF(SUM(carries), 0)",                                          "min_col": "SUM(carries)",    "min_label": "Min Carries", "min_opts": [5, 10, 20, 40]},
     "fpts_per_target":     {"sql": "(SUM(receptions) + SUM(rec_yards) * 0.1 + SUM(rec_tds) * 6)::float / NULLIF(SUM(targets), 0)",                          "min_col": "SUM(targets)",    "min_label": "Min Targets", "min_opts": [5, 10, 20, 40]},
-    "rz_targets_pg":       {"sql": "AVG(rz_targets)",                                                        "min_col": None,              "min_label": "Min Weeks",   "min_opts": []},
-    "rz_carries_pg":       {"sql": "AVG(rz_carries)",                                                        "min_col": None,              "min_label": "Min Weeks",   "min_opts": []},
-    "red_zone_usage":      {"sql": "AVG(COALESCE(rz_targets, 0) + COALESCE(rz_carries, 0))",                 "min_col": None,              "min_label": "Min Weeks",   "min_opts": []},
     "ppr_pts":          {"sql": "SUM(ppr_pts)",  "min_col": None, "min_label": "Min Weeks", "min_opts": []},
     "ppr_pts_per_game": {"sql": "AVG(ppr_pts)",  "min_col": None, "min_label": "Min Weeks", "min_opts": []},
     # Per-snap and per-opportunity rates over a week range (weekly table has
@@ -2855,6 +3031,7 @@ WEEKLY_ADV_METRIC_COLS: List[str] = [
     "ngs_avg_separation", "ngs_avg_cushion", "ngs_avg_intended_air_yards",
     "avg_depth_of_target", "ngs_avg_yac", "ngs_avg_expected_yac",
     "ngs_avg_yac_above_expectation", "ngs_catch_pct", "drop_rate",
+    "uncatchable_tgt_rate",
     "catchable_tgt_pct",
     "contested_catch_rate",
     "ngs_avg_time_to_throw", "ngs_aggressiveness", "ngs_avg_completed_air_yards",
@@ -2866,11 +3043,18 @@ WEEKLY_ADV_METRIC_COLS: List[str] = [
     "rushing_success_rate", "receiving_success_rate",
     "rushing_epa_per_att", "receiving_epa_per_target",
     "qb_hit_rate", "explosive_pass_rate", "pacr", "racr",
+    "rec_first_down_rate", "rush_first_down_rate", "first_downs",
+    "qb_rating_when_targeted", "pressure_rate_faced",
+    "goal_line_opp_share", "end_zone_target_rate", "deep_target_rate",
+    "stuffed_rate", "third_down_conv_rate",
+    "turnover_worthy_rate", "contested_target_rate", "screen_target_rate",
+    "rec_broken_tackles_per_reception",
     # Expected Fantasy Points (xFP): that week's expected total + over-expected
     # total, per reception format. Totals (like passing_epa) so a week range
     # sums them. See data_building/external_data/expected_points.py.
     "expected_ppr", "expected_half_ppr", "expected_standard",
     "ppr_over_expected", "half_ppr_over_expected", "standard_over_expected",
+    "expected_tds", "td_over_expected",
     # Broken tackles (PFR charting, rushing + receiving combined) and weekly
     # WOPR (1.5 * target share + 0.7 * air-yards share, Hermsmeyer weighting,
     # same formula as the season snapshot). Feed the player game logs.
@@ -2879,7 +3063,8 @@ WEEKLY_ADV_METRIC_COLS: List[str] = [
 # Volume weight columns used to weight rate metrics across a week range.
 WEEKLY_ADV_WEIGHT_COLS: List[str] = [
     "w_dropbacks", "w_pass_att", "w_carries", "w_targets", "w_receptions",
-    "w_pass_air_yards", "w_rec_air_yards",
+    "w_pass_air_yards", "w_rec_air_yards", "w_pressure_opps",
+    "w_third_down_dropbacks", "w_team_gl_opps",
 ]
 
 _weekly_adv_ready = False
@@ -3150,42 +3335,50 @@ def get_available_metric_weeks(player_id: str, season: int) -> List[int]:
 # value matches summing the underlying plays (same intent as yards/touch).
 _ADV_WEEKLY_TOTAL_METRICS = {
     "passing_epa", "rushing_epa", "receiving_epa", "yards_after_catch",
-    "explosive_runs_10_plus", "ngs_rush_yards_over_expected",
+    "ngs_rush_yards_over_expected",
     # Expected Fantasy Points: per-week totals that sum over a range (and to the
     # season snapshot). Season mode with no week bounds sums the whole season.
     "expected_ppr", "expected_half_ppr", "expected_standard",
     "ppr_over_expected", "half_ppr_over_expected", "standard_over_expected",
+    "expected_tds", "td_over_expected",
+    "first_downs",
 }
 _ADV_WEEKLY_WEIGHTED_METRICS = {
     "epa_per_play": "w_dropbacks", "cpoe": "w_dropbacks", "success_rate": "w_dropbacks",
+    "turnover_worthy_rate": "w_dropbacks",
     "sack_rate": "w_dropbacks", "scramble_rate": "w_dropbacks", "nfl_passer_rating": "w_dropbacks",
     "adjusted_completion_rate": "w_pass_att",
     "catchable_pass_pct": "w_pass_att",
+    "pressure_rate_faced": "w_pressure_opps",
+    "third_down_conv_rate": "w_third_down_dropbacks",
     "qb_hit_rate": "w_dropbacks", "explosive_pass_rate": "w_pass_att",
     "play_action_rate": "w_dropbacks", "play_action_epa": "w_dropbacks",
-    "out_of_pocket_rate": "w_dropbacks", "blitz_rate_faced": "w_dropbacks",
+    "blitz_rate_faced": "w_dropbacks",
     "epa_vs_blitz": "w_dropbacks",
     "ngs_avg_time_to_throw": "w_pass_att", "ngs_aggressiveness": "w_pass_att",
     "ngs_avg_completed_air_yards": "w_pass_att",
-    "ngs_avg_air_yards_differential": "w_pass_att",
-    "ngs_avg_air_yards_to_sticks": "w_pass_att", "ngs_cpoe": "w_pass_att",
-    "ngs_max_completed_air_distance": "w_pass_att",
-    "pacr": "w_pass_air_yards",
+    "ngs_avg_air_yards_to_sticks": "w_pass_att",
     "ngs_rush_yards_over_expected_per_att": "w_carries", "ngs_rush_efficiency": "w_carries",
     "breakaway_percentage": "w_carries",
     "rushing_success_rate": "w_carries", "rushing_epa_per_att": "w_carries",
+    "stuffed_rate": "w_carries",
     "ybc_per_carry": "w_carries", "yac_per_carry": "w_carries",
-    "ngs_avg_time_to_los": "w_carries",
     "ngs_percent_attempts_gte_eight_defenders": "w_carries",
     "epa_vs_stacked_box": "w_carries",
     "ngs_avg_separation": "w_targets", "ngs_avg_cushion": "w_targets",
     "ngs_avg_intended_air_yards": "w_targets", "avg_depth_of_target": "w_targets",
     "ngs_catch_pct": "w_targets", "drop_rate": "w_targets", "contested_catch_rate": "w_targets",
-    "catchable_tgt_pct": "w_targets",
+    "uncatchable_tgt_rate": "w_targets",
+    "qb_rating_when_targeted": "w_targets",
+    "end_zone_target_rate": "w_targets", "deep_target_rate": "w_targets",
+    "contested_target_rate": "w_targets", "screen_target_rate": "w_targets",
+    "goal_line_opp_share": "w_team_gl_opps",
+    "rec_first_down_rate": "w_targets",
+    "rush_first_down_rate": "w_carries",
     "ngs_created_separation": "w_targets",
     "receiving_success_rate": "w_targets", "receiving_epa_per_target": "w_targets",
-    "racr": "w_rec_air_yards",
     "yards_after_catch_per_reception": "w_receptions", "ngs_avg_yac": "w_receptions",
+    "rec_broken_tackles_per_reception": "w_receptions",
     "ngs_avg_expected_yac": "w_receptions", "ngs_avg_yac_above_expectation": "w_receptions",
 }
 
@@ -3215,6 +3408,14 @@ _ADV_WEEKLY_DERIVED_METRICS = {
         "(SUM(standard_over_expected) FILTER (WHERE expected_standard IS NOT NULL AND standard_over_expected IS NOT NULL))::float / NULLIF(COUNT(*) FILTER (WHERE expected_standard IS NOT NULL AND standard_over_expected IS NOT NULL), 0)",
         "expected_standard IS NOT NULL AND standard_over_expected IS NOT NULL",
     ),
+    "xtd_per_game": (
+        "(SUM(expected_tds) FILTER (WHERE expected_tds IS NOT NULL))::float / NULLIF(COUNT(*) FILTER (WHERE expected_tds IS NOT NULL), 0)",
+        "expected_tds IS NOT NULL",
+    ),
+    "first_downs_per_game": (
+        "(SUM(first_downs) FILTER (WHERE first_downs IS NOT NULL))::float / NULLIF(COUNT(*) FILTER (WHERE first_downs IS NOT NULL), 0)",
+        "first_downs IS NOT NULL",
+    ),
 }
 
 
@@ -3232,6 +3433,9 @@ _ADV_WEEKLY_VOL_BY_WEIGHT = {
     "w_receptions": {"label": "Min Recs",      "opts": [3, 5, 10, 20]},
     "w_pass_air_yards": {"label": "Min Air Yards", "opts": [100, 250, 500, 1000]},
     "w_rec_air_yards":  {"label": "Min Air Yards", "opts": [50, 100, 200, 400]},
+    "w_pressure_opps":  {"label": "Min Pressure Opps", "opts": [20, 50, 100, 200]},
+    "w_third_down_dropbacks": {"label": "Min 3rd-Down Dropbacks", "opts": [10, 20, 40, 60]},
+    "w_team_gl_opps":   {"label": "Min Team GL Opps", "opts": [5, 10, 20, 40]},
 }
 
 
@@ -3484,10 +3688,10 @@ def _stamp_season(rows: List[Dict[str, Any]], season: Optional[int]) -> List[Dic
 # metrics plus VORP/WAR and a few EPA/points totals that are not marked integer.
 _MULTI_SEASON_SUM = frozenset({
     "vorp", "war", "ppr_pts", "rushing_epa", "receiving_epa", "passing_epa",
-    "avoided_tackles",
     # xFP totals sum across seasons like the EPA totals.
     "expected_ppr", "expected_half_ppr", "expected_standard",
     "ppr_over_expected", "half_ppr_over_expected", "standard_over_expected",
+    "expected_tds", "td_over_expected",
 })
 
 
@@ -4134,15 +4338,29 @@ def get_metric_leaderboard(
             # pick below would resurrect an older row's stale value (rows
             # from the first build weeks stored a forced 0.0). Restrict
             # trend candidates to the player's max as_of_date for the season.
-            # The max ignores future-dated rows: the nflverse season sync
-            # stamps its rows March 1 of the following year so provider
-            # values win the coalesce, and those rows never carry trend
-            # columns. Counting one as "newest" silences every trend.
+            #
+            # The max must be taken over SNAPSHOT rows only, not over every
+            # physical row. The provider sync writers store their rows
+            # future-dated (sync_nflverse_metrics writes as_of_date =
+            # {season+1}-03-01, sync_pff_advanced_metrics {season+1}-02-15)
+            # so provider values win the coalesce, and those rows never
+            # carry trend columns: a raw MAX(as_of_date) always lands on a
+            # sync row, whose NULL trend then filters out every qualified
+            # player. Snapshot rows are marked by a non-null games value:
+            # the snapshot builder only includes players with games >= 1,
+            # while neither sync writer ever sets games. The CURRENT_DATE
+            # cap additionally keeps any future-dated row from speaking
+            # for a season whose sync row is already in the past.
+            _trend_max_where = (
+                " WHERE cx.player_id = m.player_id AND cx.season = m.season"
+                " AND cx.as_of_date <= CURRENT_DATE"
+            )
+            if has_games:
+                _trend_max_where += " AND cx.games IS NOT NULL"
             gate += (
                 " AND m.as_of_date = (SELECT MAX(cx.as_of_date)"
                 " FROM player_advanced_metrics cx"
-                " WHERE cx.player_id = m.player_id AND cx.season = m.season"
-                " AND cx.as_of_date <= CURRENT_DATE)"
+                + _trend_max_where + ")"
             )
         if pos:
             gate += " AND m.position = %s"
@@ -4509,6 +4727,7 @@ def get_player_metric_ranks(player_id: str, season: Optional[int] = None) -> Dic
                         (ARRAY_AGG(target_quality_score ORDER BY as_of_date DESC) FILTER (WHERE target_quality_score IS NOT NULL))[1] AS target_quality_score,
                         (ARRAY_AGG(contested_catch_rate ORDER BY as_of_date DESC) FILTER (WHERE contested_catch_rate IS NOT NULL))[1] AS contested_catch_rate,
                         (ARRAY_AGG(drop_rate ORDER BY as_of_date DESC) FILTER (WHERE drop_rate IS NOT NULL))[1] AS drop_rate,
+                        (ARRAY_AGG(uncatchable_tgt_rate ORDER BY as_of_date DESC) FILTER (WHERE uncatchable_tgt_rate IS NOT NULL))[1] AS uncatchable_tgt_rate,
                         (ARRAY_AGG(red_zone_usage ORDER BY as_of_date DESC) FILTER (WHERE red_zone_usage IS NOT NULL))[1] AS red_zone_usage,
                         (ARRAY_AGG(receiving_epa ORDER BY as_of_date DESC) FILTER (WHERE receiving_epa IS NOT NULL))[1] AS receiving_epa,
                         (ARRAY_AGG(ngs_avg_separation ORDER BY as_of_date DESC) FILTER (WHERE ngs_avg_separation IS NOT NULL))[1] AS ngs_avg_separation,
@@ -4667,6 +4886,9 @@ def get_player_metric_ranks(player_id: str, season: Optional[int] = None) -> Dic
                         CASE WHEN drop_rate IS NOT NULL AND COALESCE(total_targets,0) >= {_target_min}
                              THEN RANK() OVER (PARTITION BY (drop_rate IS NULL OR COALESCE(total_targets,0) < {_target_min}) ORDER BY drop_rate ASC)
                              ELSE NULL END AS drop_rate,
+                        CASE WHEN uncatchable_tgt_rate IS NOT NULL AND COALESCE(total_targets,0) >= {_target_min}
+                             THEN RANK() OVER (PARTITION BY (uncatchable_tgt_rate IS NULL OR COALESCE(total_targets,0) < {_target_min}) ORDER BY uncatchable_tgt_rate ASC)
+                             ELSE NULL END AS uncatchable_tgt_rate,
                         CASE WHEN receiving_epa IS NOT NULL AND COALESCE(total_targets,0) >= {_target_min}
                              THEN RANK() OVER (PARTITION BY (receiving_epa IS NULL OR COALESCE(total_targets,0) < {_target_min}) ORDER BY receiving_epa DESC)
                              ELSE NULL END AS receiving_epa,
@@ -4708,28 +4930,19 @@ def get_player_metric_ranks(player_id: str, season: Optional[int] = None) -> Dic
                 "route_participation": ("games", 4),
                 "total_routes":       ("games", 4),
                 "routes_per_game":    ("games", 4),
-                "rz_targets_pg":      ("games", 4),
-                "rz_carries_pg":      ("games", 4),
-                "explosive_runs_pg":  ("total_carries", 20),
                 "avoided_tackles_pg": ("total_carries", 20),
                 "fpts_per_carry":     ("total_carries", 20),
                 "fpts_per_target":    ("total_targets", 15),
                 "ngs_avg_time_to_throw": ("total_pass_att", 50),
                 "ngs_aggressiveness": ("total_pass_att", 50),
                 "ngs_avg_completed_air_yards": ("total_pass_att", 50),
-                "ngs_avg_air_yards_differential": ("total_pass_att", 50),
                 "ngs_avg_air_yards_to_sticks": ("total_pass_att", 50),
-                "ngs_cpoe": ("total_pass_att", 50),
-                "ngs_max_completed_air_distance": ("total_pass_att", 50),
                 "qb_hit_rate": ("total_pass_att", 50),
                 "explosive_pass_rate": ("total_pass_att", 50),
                 "play_action_rate": ("total_pass_att", 50),
                 "play_action_epa": ("total_pass_att", 50),
-                "out_of_pocket_rate": ("total_pass_att", 50),
                 "blitz_rate_faced": ("total_pass_att", 50),
                 "epa_vs_blitz": ("total_pass_att", 50),
-                "pacr": ("total_pass_att", 50),
-                "ngs_avg_time_to_los": ("total_carries", 20),
                 "ngs_percent_attempts_gte_eight_defenders": ("total_carries", 20),
                 "rushing_success_rate": ("total_carries", 20),
                 "rushing_epa_per_att": ("total_carries", 20),
@@ -4737,8 +4950,6 @@ def get_player_metric_ranks(player_id: str, season: Optional[int] = None) -> Dic
                 "ngs_created_separation": ("total_targets", 15),
                 "receiving_success_rate": ("total_targets", 15),
                 "receiving_epa_per_target": ("total_targets", 15),
-                "racr": ("total_targets", 15),
-                "passing_epa_per_att": ("total_pass_att", 50),
                 "explosive_run_rate": ("total_carries", 20),
                 "targets_per_snap": ("total_targets", 15),
                 "touches_per_snap": ("total_touches", 40),
@@ -4748,7 +4959,6 @@ def get_player_metric_ranks(player_id: str, season: Optional[int] = None) -> Dic
                 "boom_rate": ("games", 4),
                 "bust_rate": ("games", 4),
                 "fp_cv": ("games", 4),
-                "xfp_stddev": ("games", 4),
                 "xfp_trend": ("games", 4),
                 "opportunity_trend": ("games", 4),
             }
@@ -4763,25 +4973,22 @@ def get_player_metric_ranks(player_id: str, season: Optional[int] = None) -> Dic
                 (season, position),
             ).fetchall()]
             _merged_rows: Dict[str, dict] = {}
-            # The trend guard below compares fill rows against the player's
-            # newest snapshot date. Provider season-sync rows are stamped
-            # March 1 of the following year and never carry trend columns,
-            # so the newest date that counts is the newest one that has
-            # actually happened. _raw_rows is ordered newest-first per
-            # player, so the first row dated today or earlier is that date.
-            # A player with only future-dated rows gets no entry; the trend
-            # columns on their merged row are NULL either way.
-            _today_iso = _date.today().isoformat()
-            _newest_date = {}
+            # Trend authority date per player: the newest SNAPSHOT row's
+            # date. Provider sync rows are future-dated ({season+1}-03-01 /
+            # {season+1}-02-15) and never carry trend columns or a games
+            # value, so the newest physical row can never speak for trends.
+            # Rows arrive ordered as_of_date DESC, so the first row with a
+            # non-null games value that is not future-dated is the newest
+            # snapshot row (the snapshot builder only writes players with
+            # games >= 1; neither sync writer ever sets games).
+            _trend_today = _date.today().isoformat()
+            _trend_date = {}
             for _row in _raw_rows:
                 _pid = str(_row.get("player_id"))
-                if _pid in _newest_date:
-                    continue
-                _d = _row.get("as_of_date")
-                if _d is not None and str(_d)[:10] <= _today_iso:
-                    _newest_date[_pid] = _d
-            for _row in _raw_rows:
-                _pid = str(_row.get("player_id"))
+                if _pid not in _trend_date and _row.get("games") is not None:
+                    _asof = str(_row.get("as_of_date") or "")[:10]
+                    if _asof and _asof <= _trend_today:
+                        _trend_date[_pid] = _row.get("as_of_date")
                 if _pid not in _merged_rows:
                     _merged_rows[_pid] = dict(_row)
                     continue
@@ -4789,12 +4996,13 @@ def get_player_metric_ranks(player_id: str, season: Optional[int] = None) -> Dic
                 for _key, _value in _row.items():
                     if _merged.get(_key) is None and _value is not None:
                         # Trend columns are recomputed on every build: only
-                        # rows from the player's newest snapshot date may
-                        # fill them. An older row would resurrect a stale
-                        # value (e.g. the forced early-season 0.0) over the
-                        # current row's deliberate NULL.
+                        # the player's trend authority row (newest snapshot
+                        # row, see above) may fill them. An older row would
+                        # resurrect a stale value (e.g. the forced
+                        # early-season 0.0) over the current row's
+                        # deliberate NULL.
                         if _key in ("xfp_trend", "opportunity_trend") \
-                                and _row.get("as_of_date") != _newest_date.get(_pid):
+                                and _row.get("as_of_date") != _trend_date.get(_pid):
                             continue
                         _merged[_key] = _value
             srows = list(_merged_rows.values())
@@ -4815,15 +5023,10 @@ def get_player_metric_ranks(player_id: str, season: Optional[int] = None) -> Dic
                     ) / _targets
                 if _games > 0 and _row.get("total_routes") is not None:
                     _row["routes_per_game"] = _safe(_row.get("total_routes")) / _games
-                if _carries > 0 and _row.get("explosive_runs_10_plus") is not None:
-                    _row["explosive_runs_pg"] = _safe(_row.get("explosive_runs_10_plus")) / _carries
                 if _carries > 0 and _row.get("avoided_tackles") is not None:
                     _row["avoided_tackles_pg"] = _safe(_row.get("avoided_tackles")) / _carries
                 _touches = _safe(_row.get("total_touches"))
                 _snaps = _safe(_row.get("total_snaps"))
-                _pa = _safe(_row.get("total_pass_att"))
-                if _pa > 0 and _row.get("passing_epa") is not None:
-                    _row["passing_epa_per_att"] = _safe(_row.get("passing_epa")) / _pa
                 if _carries > 0 and _row.get("explosive_runs_10_plus") is not None:
                     _row["explosive_run_rate"] = _safe(_row.get("explosive_runs_10_plus")) / _carries
                 if _snaps > 0 and _targets > 0:

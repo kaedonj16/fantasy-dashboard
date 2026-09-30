@@ -17,16 +17,11 @@ PUBLIC_NEW_METRICS = (
     "ngs_avg_time_to_throw",
     "ngs_aggressiveness",
     "ngs_avg_completed_air_yards",
-    "ngs_avg_air_yards_differential",
     "ngs_avg_air_yards_to_sticks",
-    "ngs_cpoe",
-    "ngs_max_completed_air_distance",
-    "ngs_avg_time_to_los",
     "ngs_percent_attempts_gte_eight_defenders",
     "ngs_created_separation",
     "play_action_rate",
     "play_action_epa",
-    "out_of_pocket_rate",
     "blitz_rate_faced",
     "epa_vs_blitz",
     "epa_vs_stacked_box",
@@ -36,8 +31,6 @@ PUBLIC_NEW_METRICS = (
     "receiving_epa_per_target",
     "qb_hit_rate",
     "explosive_pass_rate",
-    "pacr",
-    "racr",
 )
 
 
@@ -65,7 +58,3 @@ def test_new_metrics_are_week_filterable():
     for col in ("w_pass_air_yards", "w_rec_air_yards"):
         assert col in WEEKLY_ADV_WEIGHT_COLS
 
-
-def test_pacr_and_racr_weight_by_air_yards():
-    assert _ADV_WEEKLY_WEIGHTED_METRICS["pacr"] == "w_pass_air_yards"
-    assert _ADV_WEEKLY_WEIGHTED_METRICS["racr"] == "w_rec_air_yards"

@@ -188,6 +188,21 @@ def _insert_params(conn):
             if "INSERT INTO player_advanced_metrics" in sql]
 
 
+def _insert_rows(conn):
+    """INSERT params as {column: value} dicts, keyed by the SQL column list
+    so assertions survive new persisted columns joining the snapshot."""
+    import re
+
+    rows = []
+    for sql, p in conn.executes:
+        if "INSERT INTO player_advanced_metrics" not in sql:
+            continue
+        cols = [c.strip() for c in
+                re.search(r"\((.*?)\)\s*VALUES", sql, re.S).group(1).split(",")]
+        rows.append(dict(zip(cols, p)))
+    return rows
+
+
 def test_snapshot_clamps_shrunken_games_and_totals(monkeypatch):
     import data_building.advanced_metrics as am
 
@@ -207,19 +222,18 @@ def test_snapshot_clamps_shrunken_games_and_totals(monkeypatch):
         "total_carries": 30, "total_touches": 38, "total_pass_att": None,
     }], "2026-09-28", season=2026)
 
-    params = _insert_params(conn)
-    assert len(params) == 1
-    vals = params[0]
-    # games is the 29th value, totals follow (see INSERT column order).
-    assert vals[28] == 3          # games clamped to previous 3
-    assert vals[29] == 20         # total_targets clamped
-    assert vals[30] == 14         # total_receptions clamped
-    assert vals[31] == 45         # total_carries clamped
-    assert vals[32] == 59         # total_touches clamped
-    assert vals[33] is None       # None/None stays None
+    rows = _insert_rows(conn)
+    assert len(rows) == 1
+    vals = rows[0]
+    assert vals["games"] == 3          # games clamped to previous 3
+    assert vals["total_targets"] == 20         # total_targets clamped
+    assert vals["total_receptions"] == 14         # total_receptions clamped
+    assert vals["total_carries"] == 45         # total_carries clamped
+    assert vals["total_touches"] == 59         # total_touches clamped
+    assert vals["total_pass_att"] is None       # None/None stays None
     # A build whose PFR merge failed must not wipe the stored broken-tackle
     # total either (prev 9.0 survives the missing value).
-    assert vals[14] == 9.0        # avoided_tackles clamped to previous
+    assert vals["avoided_tackles"] == 9.0        # avoided_tackles clamped to previous
 
 
 def test_snapshot_keeps_growth_and_first_write(monkeypatch):
@@ -246,10 +260,10 @@ def test_snapshot_keeps_growth_and_first_write(monkeypatch):
         "total_carries": 0, "total_touches": 3, "total_pass_att": None,
     }], "2026-09-28", season=2026)
 
-    params = _insert_params(conn)
-    assert len(params) == 2
-    assert params[0][28] == 3 and params[0][31] == 45
-    assert params[1][28] == 1 and params[1][29] == 5
+    rows = _insert_rows(conn)
+    assert len(rows) == 2
+    assert rows[0]["games"] == 3 and rows[0]["total_carries"] == 45
+    assert rows[1]["games"] == 1 and rows[1]["total_targets"] == 5
 
 
 def test_clamp_helper_none_semantics():

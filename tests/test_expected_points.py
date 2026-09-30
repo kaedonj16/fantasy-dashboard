@@ -184,4 +184,8 @@ def test_column_name_list_lines_up_across_formats():
         suf = xp._FMT_SUFFIX[fmt]
         assert f"expected_{suf}" in xp.XFP_COLS
         assert f"{suf}_over_expected" in xp.XFP_COLS
-    assert len(xp.XFP_COLS) == 2 * len(xp.FORMATS)
+    # +2: the format-independent touchdown columns (expected_tds /
+    # td_over_expected) ride the same totals machinery.
+    assert "expected_tds" in xp.XFP_COLS
+    assert "td_over_expected" in xp.XFP_COLS
+    assert len(xp.XFP_COLS) == 2 * len(xp.FORMATS) + 2

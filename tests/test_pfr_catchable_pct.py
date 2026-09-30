@@ -370,29 +370,16 @@ def test_leaderboard_entries_are_free():
     assert m["min_vol"]["col"] == "total_pass_att"
     assert m["positions"] == ["QB"]
 
-    m = _metric("catchable_tgt_pct")
-    assert m["label"] == "Catchable Tgt %"
-    assert m["category"] == "Receiving"
-    assert m.get("pro", False) is False
-    assert m.get("efficiency") is True
-    assert m.get("pct") is True
-    assert m["min_vol"]["col"] == "total_targets"
-    assert m["positions"] == ["WR", "TE"]
-
 
 def test_weekly_wiring_supports_ranges():
     assert "catchable_pass_pct" in am.WEEKLY_ADV_METRIC_COLS
     assert "catchable_tgt_pct" in am.WEEKLY_ADV_METRIC_COLS
     assert am._ADV_WEEKLY_WEIGHTED_METRICS["catchable_pass_pct"] == "w_pass_att"
-    assert am._ADV_WEEKLY_WEIGHTED_METRICS["catchable_tgt_pct"] == "w_targets"
     assert am.adv_weekly_metric_supported("catchable_pass_pct") is True
-    assert am.adv_weekly_metric_supported("catchable_tgt_pct") is True
     # Weighted re-aggregation SQL is a totals ratio, not an average of ratios.
     sql, _weight_sql = am._adv_weekly_agg_sql("catchable_pass_pct")
     assert "SUM(catchable_pass_pct * w_pass_att)" in sql
     assert "SUM(CASE WHEN catchable_pass_pct IS NOT NULL THEN w_pass_att END)" in sql
-    sql, _weight_sql = am._adv_weekly_agg_sql("catchable_tgt_pct")
-    assert "SUM(catchable_tgt_pct * w_targets)" in sql
 
 
 def test_career_numeric_aggregation_covers_new_fields():
@@ -400,7 +387,7 @@ def test_career_numeric_aggregation_covers_new_fields():
     # fields flow through it by checking the source list directly.
     import inspect
     src = inspect.getsource(am.get_player_career_metrics)
-    assert "'catchable_pass_pct'" in src and "'catchable_tgt_pct'" in src
+    assert "'catchable_pass_pct'" in src
 
 
 def test_preset_contracts_unchanged():

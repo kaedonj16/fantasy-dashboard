@@ -168,7 +168,7 @@ def test_strip_pro_metrics_helper():
 
 
 def test_pro_metrics_set_covers_full_answers_layer():
-    """The 13-metric PRO set: FPOE family, WOPR, trends, consistency,
+    """The 12-metric PRO set: FPOE family, WOPR, trends, consistency,
     composites, value. Free-anchoring metrics stay out."""
     from data_building.advanced_metrics import PRO_METRICS
 
@@ -176,7 +176,7 @@ def test_pro_metrics_set_covers_full_answers_layer():
         "ppr_over_expected_per_game",
         "half_ppr_over_expected_per_game", "standard_over_expected_per_game",
         "wopr", "opportunity_trend", "xfp_trend",
-        "fp_cv", "xfp_stddev",
+        "fp_cv",
         "role_score", "target_quality_score",
         "vorp", "war",
     })

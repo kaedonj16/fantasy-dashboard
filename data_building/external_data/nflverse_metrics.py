@@ -8,7 +8,7 @@ Build redistributable advanced metrics from the nflverse ecosystem:
   - NGS rushing (2016+)
       RYOE, efficiency, time to LOS, 8+ defender rate
   - FTN charting (2022+) joined to play-by-play
-      drop_rate, contested_catch_rate, adj completion,
+      drop_rate, contested_catch_rate, uncatchable_tgt_rate, adj completion,
       play-action / out-of-pocket / blitz splits, stacked-box EPA
   - Play-by-play EPA family
       passing/rushing/receiving EPA, CPOE, success rates, sack/scramble,
@@ -425,6 +425,11 @@ def build_pfr_catchable_weekly(season: int) -> Dict[Tuple[str, int], Dict[str, f
     pbp w_pass_att / w_targets weights). Season aggregation must total the
     counts first, never average a pct column. A row with an explicit zero
     count is meaningful (charted, none observed) and is kept.
+
+    The pass file pass also returns times_pressured / times_sacked counts
+    (keys pressured / sacked_taken) for pressure_rate_faced; those columns
+    are only read when the file actually carries them, so a renamed column
+    skips loudly (warning) instead of fabricating a season of zeros.
     Returns {} when the feed or the id crosswalk is unavailable.
     """
     out: Dict[Tuple[str, int], Dict[str, float]] = {}
@@ -443,7 +448,12 @@ def build_pfr_catchable_weekly(season: int) -> Dict[Tuple[str, int], Dict[str, f
 
         def _read(path: str, count_col: str, out_key: str) -> None:
             with open(path, newline="", encoding="utf-8") as f:
-                for row in csv.DictReader(f):
+                reader = csv.DictReader(f)
+                if count_col not in (reader.fieldnames or []):
+                    print(f"[nflverse_metrics] WARNING: PFR file missing "
+                          f"column {count_col}; {out_key} skipped for {season}")
+                    return
+                for row in reader:
                     if str(row.get("game_type", "REG")).upper() != "REG":
                         continue
                     try:
@@ -464,6 +474,8 @@ def build_pfr_catchable_weekly(season: int) -> Dict[Tuple[str, int], Dict[str, f
 
         if pass_path:
             _read(pass_path, "passing_bad_throws", "bad_throws")
+            _read(pass_path, "times_pressured", "pressured")
+            _read(pass_path, "times_sacked", "sacked_taken")
         if rec_path:
             _read(rec_path, "receiving_drop", "drops")
     except Exception as e:
@@ -495,6 +507,97 @@ def _apply_catchable_weekly(
                 row["catchable_tgt_pct"] = round((tgt - drops) / tgt * 100.0, 1)
 
 
+def _apply_pressure_weekly(
+    out: Dict[Tuple[str, int], Dict[str, float]],
+    counts: Dict[Tuple[str, int], Dict[str, float]],
+) -> None:
+    """Derive weekly pressure rate faced in place from PFR count rows.
+
+    pressure_rate_faced = times_pressured / (pass attempts + sacks taken)
+    (0-100 scale). The denominator is the pbp w_pressure_opps weight the
+    weekly passer loop stored; weeks without it are skipped, never faked.
+    """
+    for (pid, week), pfr_cols in counts.items():
+        pressured = pfr_cols.get("pressured")
+        if pressured is None:
+            continue
+        row = out.setdefault((pid, week), {})
+        denom = row.get("w_pressure_opps") or 0.0
+        if denom > 0:
+            row["pressure_rate_faced"] = round(pressured / denom * 100.0, 1)
+
+
+def build_pfr_rec_broken_tackles_weekly(
+        season: int) -> Dict[Tuple[str, int], float]:
+    """Per-(sleeper_id, week) RECEIVING broken-tackle counts (PFR charting).
+
+    Dedicated reader for rec_broken_tackles_per_reception: unlike
+    build_pfr_broken_tackles_weekly (which merges rush + rec into one
+    "broken_tackles" and skips zero rows), this reads only the advstats
+    receiving file's receiving_broken_tackles and KEEPS explicit zero rows:
+    a charted zero is a real 0.00 per reception, not missing data. Returns
+    {} when the feed or crosswalk is unavailable; a file missing the
+    column warns and returns {} rather than fabricating zeros.
+    """
+    out: Dict[Tuple[str, int], float] = {}
+    if season < PFR_ADVSTATS_FLOOR:
+        return out
+    rec_path = download_pfr_advstats_rec_csv(season)
+    if not rec_path:
+        return out
+    crosswalk = _pfr_to_sleeper()
+    if not crosswalk:
+        print("[nflverse_metrics] PFR rec broken tackles skipped: no id crosswalk")
+        return out
+    try:
+        import csv
+        with open(rec_path, newline="", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            if "receiving_broken_tackles" not in (reader.fieldnames or []):
+                print("[nflverse_metrics] WARNING: PFR rec file missing "
+                      "receiving_broken_tackles; "
+                      f"rec_broken_tackles_per_reception skipped for {season}")
+                return {}
+            for row in reader:
+                if str(row.get("game_type", "REG")).upper() != "REG":
+                    continue
+                try:
+                    week = int(float(row.get("week") or 0))
+                except (ValueError, TypeError):
+                    continue
+                if week <= 0:
+                    continue
+                pid = crosswalk.get(str(row.get("pfr_player_id") or "").strip())
+                if not pid:
+                    continue
+                try:
+                    count = float(row.get("receiving_broken_tackles") or 0)
+                except (TypeError, ValueError):
+                    continue
+                key = (pid, week)
+                out[key] = out.get(key, 0.0) + count
+    except Exception as e:
+        print(f"[nflverse_metrics] PFR rec broken tackles read failed for {season} ({e})")
+        return {}
+    return out
+
+
+def _apply_rec_broken_tackles_weekly(
+    out: Dict[Tuple[str, int], Dict[str, float]],
+    counts: Dict[Tuple[str, int], float],
+) -> None:
+    """Derive weekly broken tackles per reception in place.
+
+    Value = PFR receiving broken tackles / pbp receptions (w_receptions),
+    2 decimals, NOT a percentage. Weeks with no receptions are skipped.
+    """
+    for (pid, week), count in counts.items():
+        row = out.setdefault((pid, week), {})
+        recs = row.get("w_receptions") or 0.0
+        if recs > 0:
+            row["rec_broken_tackles_per_reception"] = round(count / recs, 2)
+
+
 def _flag(v) -> float:
     """Treat bools / 0-1 flags as 0.0 or 1.0; missing/NaN → 0.0."""
     f = _f(v)
@@ -508,6 +611,27 @@ def _rate_pct(numer: float, denom: float, digits: int = 1) -> Optional[float]:
     if denom and denom > 0:
         return round(float(numer) / float(denom) * 100.0, digits)
     return None
+
+
+def _passer_rating(att: float, cmp_: float, yds: float, td: float,
+                   ints: float) -> Optional[float]:
+    """Standard NFL passer rating from AGGREGATE counting stats.
+
+    The formula is non-linear in the aggregates, so callers must total the
+    counting stats first and apply it once (never average per-play or
+    per-week ratings). None when there are no attempts.
+    """
+    if not att or att <= 0:
+        return None
+
+    def _clamp(x):
+        return min(max(x, 0.0), 2.375)
+
+    a = _clamp((cmp_ / att - 0.3) * 5)
+    b = _clamp((yds / att - 3) * 0.25)
+    c = _clamp((td / att) * 20)
+    d = _clamp(2.375 - (ints / att) * 25)
+    return round((a + b + c + d) / 6 * 100, 1)
 
 
 def _created_separation(sep: Optional[float], cushion: Optional[float]) -> Optional[float]:
@@ -739,7 +863,8 @@ def build_ngs_rushing_for_season(season: int) -> Dict[str, Dict[str, float]]:
 
 
 def build_ftn_charting_for_season(season: int) -> Dict[str, Dict[str, float]]:
-    """Return {sleeper_id: {drop_rate, contested_catch_rate}} from FTN charting.
+    """Return {sleeper_id: {drop_rate, contested_catch_rate,
+    uncatchable_tgt_rate}} from FTN charting.
 
     FTN charting is play-level with no player id, so we join it to play-by-play
     on (game_id, play_id) to attribute each charted flag to the targeted
@@ -794,6 +919,18 @@ def build_ftn_charting_for_season(season: int) -> Dict[str, Dict[str, float]]:
         print("[nflverse_metrics] WARNING: FTN frame missing n_blitzers; "
               "blitz_rate_faced/epa_vs_blitz will be skipped for "
               f"{season} (FTN columns may have been renamed upstream)")
+    # Same fail-loud guard for the Family E flag columns: a rename must
+    # skip the metric with a warning, never store a season of zeros.
+    has_twp_col = "is_interception_worthy" in merged.columns
+    has_screen_col = "is_screen_pass" in merged.columns
+    has_contested_col = "is_contested_ball" in merged.columns
+    for _col, _what in (("is_interception_worthy", "turnover_worthy_rate"),
+                        ("is_screen_pass", "screen_target_rate"),
+                        ("is_contested_ball", "contested_target_rate")):
+        if _col not in merged.columns:
+            print(f"[nflverse_metrics] WARNING: FTN frame missing {_col}; "
+                  f"{_what} will be skipped for {season} "
+                  "(FTN columns may have been renamed upstream)")
 
     # --- Per targeted receiver: drop rate + contested catch rate ---
     recs = reg[reg["receiver_player_id"].notna()]
@@ -803,7 +940,12 @@ def build_ftn_charting_for_season(season: int) -> Dict[str, Dict[str, float]]:
         if not gsis:
             continue
         bucket = agg.setdefault(gsis, {"catchable": 0.0, "drops": 0.0,
-                                       "contested": 0.0, "contested_caught": 0.0})
+                                       "contested": 0.0, "contested_caught": 0.0,
+                                       "charted_targets": 0.0,
+                                       "targets": 0.0, "screens": 0.0})
+        bucket["charted_targets"] += 1.0
+        bucket["targets"] += 1.0
+        bucket["screens"] += _flag(r.get("is_screen_pass"))
         bucket["catchable"] += _f(r.get("is_catchable_ball")) or 0.0
         bucket["drops"] += _f(r.get("is_drop")) or 0.0
         contested = _f(r.get("is_contested_ball")) or 0.0
@@ -820,6 +962,18 @@ def build_ftn_charting_for_season(season: int) -> Dict[str, Dict[str, float]]:
         if b["contested"] > 0:
             row["contested_catch_rate"] = round(
                 b["contested_caught"] / b["contested"] * 100.0, 1)
+        if b["charted_targets"] > 0:
+            row["uncatchable_tgt_rate"] = round(
+                (b["charted_targets"] - b["catchable"])
+                / b["charted_targets"] * 100.0, 1)
+        if has_contested_col and b["targets"] > 0:
+            ct_rate = _rate_pct(b["contested"], b["targets"])
+            if ct_rate is not None:
+                row["contested_target_rate"] = ct_rate
+        if has_screen_col and b["targets"] > 0:
+            scr_rate = _rate_pct(b["screens"], b["targets"])
+            if scr_rate is not None:
+                row["screen_target_rate"] = scr_rate
         if row:
             out.setdefault(pid, {}).update(row)
 
@@ -836,6 +990,7 @@ def build_ftn_charting_for_season(season: int) -> Dict[str, Dict[str, float]]:
             "plays": 0.0, "pa": 0.0, "oop": 0.0, "blitz": 0.0,
             "pa_epa_sum": 0.0, "pa_epa_n": 0.0,
             "blitz_epa_sum": 0.0, "blitz_epa_n": 0.0,
+            "twp": 0.0,
         })
         b["att"] += _f(r.get("pass_attempt")) or 0.0
         b["cmp"] += _f(r.get("complete_pass")) or 0.0
@@ -844,6 +999,7 @@ def build_ftn_charting_for_season(season: int) -> Dict[str, Dict[str, float]]:
         dropback = _f(r.get("qb_dropback")) or _f(r.get("pass_attempt")) or 0.0
         if dropback:
             b["plays"] += 1.0
+            b["twp"] += _flag(r.get("is_interception_worthy"))
             pa = _flag(r.get("is_play_action"))
             oop = _flag(r.get("is_qb_out_of_pocket"))
             # No is_blitz in FTN: a dropback is blitzed when it lists at
@@ -880,6 +1036,10 @@ def build_ftn_charting_for_season(season: int) -> Dict[str, Dict[str, float]]:
                 blitz_rate = _rate_pct(b["blitz"], b["plays"])
                 if blitz_rate is not None:
                     row["blitz_rate_faced"] = blitz_rate
+            if has_twp_col:
+                twp_rate = _rate_pct(b["twp"], b["plays"])
+                if twp_rate is not None:
+                    row["turnover_worthy_rate"] = twp_rate
         if b["pa_epa_n"] > 0:
             row["play_action_epa"] = round(b["pa_epa_sum"] / b["pa_epa_n"], 3)
         if has_blitz_col and b["blitz_epa_n"] > 0:
@@ -932,6 +1092,8 @@ def build_pbp_metrics_for_season(season: int) -> Dict[str, Dict[str, float]]:
                 "qb_dropback", "rushing_yards", "air_yards", "yards_gained",
                 "complete_pass", "yards_after_catch",
                 "passing_yards", "pass_touchdown", "interception",
+                "first_down_pass", "first_down_rush",
+                "posteam", "yardline_100", "down", "third_down_converted",
                 "passer_player_id", "rusher_player_id", "receiver_player_id",
             ],
             downcast=True,
@@ -951,6 +1113,48 @@ def build_pbp_metrics_for_season(season: int) -> Dict[str, Dict[str, float]]:
         pid = crosswalk.get(str(gsis).strip())
         if pid and cols:
             out.setdefault(pid, {}).update(cols)
+
+    # First downs are credited per role (passer / rusher / receiver) on
+    # different play sets, so the season total is the SUM across sections;
+    # a play is never in two sections for the same player.
+    fd_by_pid: Dict[str, float] = {}
+
+    def _add_fd(gsis, n: float) -> None:
+        pid = crosswalk.get(str(gsis).strip())
+        if pid and n:
+            fd_by_pid[pid] = fd_by_pid.get(pid, 0.0) + float(n)
+
+    if "first_down_pass" not in pbp.columns or "first_down_rush" not in pbp.columns:
+        print("[nflverse_metrics] WARNING: pbp frame missing "
+              "first_down_pass/first_down_rush; first-down metrics will be "
+              f"skipped for {season}")
+
+    # Team goal-line opportunity totals: scrimmage plays (carry or pass
+    # attempt) snapped inside the opponent 5 (yardline_100 <= 5). A player's
+    # goal_line_opp_share denominator is the total of the team(s) he took
+    # goal-line plays for, which is exact for non-traded players.
+    gl_team_totals: Dict[str, float] = {}
+    if "yardline_100" in pbp.columns and "posteam" in pbp.columns:
+        _scrimmage = (pbp["rush_attempt"].fillna(0) > 0) | (
+            pbp["pass_attempt"].fillna(0) > 0)
+        _gl_plays = pbp[_scrimmage & (pbp["yardline_100"].fillna(999) <= 5)]
+        gl_team_totals = {
+            str(k).strip(): float(v)
+            for k, v in _gl_plays.groupby("posteam").size().items()
+        }
+    else:
+        print("[nflverse_metrics] WARNING: pbp frame missing "
+              f"yardline_100/posteam; goal_line_opp_share skipped for {season}")
+
+    def _gl_share(g) -> Optional[float]:
+        if not gl_team_totals or "yardline_100" not in g.columns \
+                or "posteam" not in g.columns:
+            return None
+        gl_rows = g[g["yardline_100"].fillna(999) <= 5]
+        teams = {str(t) for t in gl_rows["posteam"].dropna().unique()} or \
+            {str(t) for t in g["posteam"].dropna().unique()}
+        denom = sum(gl_team_totals.get(t, 0.0) for t in teams)
+        return _rate_pct(float(len(gl_rows)), denom)
 
     # --- Passing (QB) ---
     # Scrambles are coded as run/no_play plays: passer_player_id is NULL on
@@ -997,6 +1201,21 @@ def build_pbp_metrics_for_season(season: int) -> Dict[str, Dict[str, float]]:
         sr = _f(g["success"].mean())
         if sr is not None:
             cols["success_rate"] = round(sr * 100, 1)
+        if "first_down_pass" in g.columns:
+            _add_fd(gsis, float(g["first_down_pass"].fillna(0).sum()))
+        if "down" in g.columns:
+            third = g[g["down"].fillna(0) == 3]
+            if len(third) > 0:
+                conv_mask = None
+                for _c in ("first_down_pass", "first_down_rush",
+                           "third_down_converted"):
+                    if _c in third.columns:
+                        _m = third[_c].fillna(0) > 0
+                        conv_mask = _m if conv_mask is None else (conv_mask | _m)
+                if conv_mask is not None:
+                    conv_rate = _rate_pct(float(conv_mask.sum()), float(len(third)))
+                    if conv_rate is not None:
+                        cols["third_down_conv_rate"] = conv_rate
         # Standard NFL passer rating from box score (free, all seasons).
         att = float(g["pass_attempt"].fillna(0).sum())
         if att >= 1:
@@ -1045,6 +1264,24 @@ def build_pbp_metrics_for_season(season: int) -> Dict[str, Dict[str, float]]:
         epa_att = _f(g["epa"].mean())
         if epa_att is not None:
             cols["rushing_epa_per_att"] = round(epa_att, 3)
+        if "first_down_rush" in g.columns:
+            fd_rush = float(g["first_down_rush"].fillna(0).sum())
+            _add_fd(gsis, fd_rush)
+            carries = float(g["rush_attempt"].fillna(0).sum()) \
+                if "rush_attempt" in g else 0.0
+            fd_rate = _rate_pct(fd_rush, carries)
+            if fd_rate is not None:
+                cols["rush_first_down_rate"] = fd_rate
+        if "rush_attempt" in g.columns:
+            att_rows = g[g["rush_attempt"].fillna(0) > 0]
+            stuffed = _rate_pct(
+                float((att_rows["rushing_yards"].fillna(0) <= 0).sum()),
+                float(len(att_rows)))
+            if stuffed is not None:
+                cols["stuffed_rate"] = stuffed
+        gl_share = _gl_share(g)
+        if gl_share is not None:
+            cols["goal_line_opp_share"] = gl_share
         _emit(gsis, cols)
 
     # --- Receiving ---
@@ -1078,7 +1315,45 @@ def build_pbp_metrics_for_season(season: int) -> Dict[str, Dict[str, float]]:
             rec_yds = rec_air + total_yac
         if air > 0:
             cols["racr"] = round(rec_yds / air, 3)
+        # QB rating on throws TARGETING this receiver: the standard passer
+        # rating formula applied to the aggregate counting stats of those
+        # throws (att = targets, cmp, receiving yards, TDs, INTs).
+        rating = _passer_rating(
+            float(len(g)), receptions, rec_yds,
+            float(g["pass_touchdown"].fillna(0).sum())
+            if "pass_touchdown" in g else 0.0,
+            float(g["interception"].fillna(0).sum())
+            if "interception" in g else 0.0,
+        )
+        if rating is not None:
+            cols["qb_rating_when_targeted"] = rating
+        if "first_down_pass" in g.columns:
+            fd_rec = float(g["first_down_pass"].fillna(0).sum())
+            _add_fd(gsis, fd_rec)
+            fd_rate = _rate_pct(fd_rec, float(len(g)))
+            if fd_rate is not None:
+                cols["rec_first_down_rate"] = fd_rate
+        if "air_yards" in g.columns:
+            deep = _rate_pct(
+                float((g["air_yards"].fillna(-1) >= 20).sum()), float(len(g)))
+            if deep is not None:
+                cols["deep_target_rate"] = deep
+            if "yardline_100" in g.columns:
+                _both = g["air_yards"].notna() & g["yardline_100"].notna()
+                ez = _rate_pct(
+                    float((g.loc[_both, "air_yards"]
+                           >= g.loc[_both, "yardline_100"]).sum()),
+                    float(len(g)))
+                if ez is not None:
+                    cols["end_zone_target_rate"] = ez
+        gl_share = _gl_share(g)
+        if gl_share is not None:
+            cols["goal_line_opp_share"] = gl_share
         _emit(gsis, cols)
+
+    for pid, total in fd_by_pid.items():
+        if pid in out and total > 0:
+            out[pid]["total_first_downs"] = int(total)
 
     return out
 
@@ -1350,6 +1625,8 @@ def build_nflverse_weekly_metrics_for_season(
                 "qb_dropback", "rushing_yards", "air_yards", "yards_gained",
                 "complete_pass", "yards_after_catch",
                 "passing_yards", "pass_touchdown", "interception",
+                "first_down_pass", "first_down_rush",
+                "posteam", "yardline_100", "down", "third_down_converted",
                 "passer_player_id", "rusher_player_id", "receiver_player_id",
             ],
             downcast=True,
@@ -1360,6 +1637,34 @@ def build_nflverse_weekly_metrics_for_season(
 
     if pbp is not None and not pbp.empty:
         pbp = pbp[pbp["season_type"] == "REG"]
+
+        # Team goal-line opportunities per week (scrimmage plays inside the
+        # opponent 5) for goal_line_opp_share denominators / weights.
+        gl_team_week: Dict[Tuple[str, int], float] = {}
+        if "yardline_100" in pbp.columns and "posteam" in pbp.columns:
+            _scr_w = (pbp["rush_attempt"].fillna(0) > 0) | (
+                pbp["pass_attempt"].fillna(0) > 0)
+            _gl_w = pbp[_scr_w & (pbp["yardline_100"].fillna(999) <= 5)]
+            for (t, w), n in _gl_w.groupby(["posteam", "week"]).size().items():
+                try:
+                    gl_team_week[(str(t).strip(), int(w))] = float(n)
+                except (TypeError, ValueError):
+                    continue
+
+        def _gl_share_w(g, week):
+            """(share value or None, team GL total) for one player-week."""
+            if not gl_team_week or "yardline_100" not in g.columns \
+                    or "posteam" not in g.columns:
+                return None, 0.0
+            gl_rows = g[g["yardline_100"].fillna(999) <= 5]
+            teams = {str(t) for t in gl_rows["posteam"].dropna().unique()} or \
+                {str(t) for t in g["posteam"].dropna().unique()}
+            try:
+                wk = int(week)
+            except (TypeError, ValueError):
+                return None, 0.0
+            denom = sum(gl_team_week.get((t, wk), 0.0) for t in teams)
+            return _rate_pct(float(len(gl_rows)), denom), denom
 
         # --- Passing (QB) per player+week ---
         # Same scramble caveat as the season builder: passer_player_id is
@@ -1392,6 +1697,10 @@ def build_nflverse_weekly_metrics_for_season(
             att = float(g["pass_attempt"].fillna(0).sum())
             cols["w_dropbacks"] = dropbacks
             cols["w_pass_att"] = att
+            # Denominator for PFR pressure rate: attempts + sacks taken
+            # (sacks are dropbacks that never became attempts).
+            cols["w_pressure_opps"] = att + (
+                float(g["sack"].fillna(0).sum()) if "sack" in g else 0.0)
             pe = _f(g["epa"].sum())
             if pe is not None:
                 cols["passing_epa"] = round(pe, 1)
@@ -1416,6 +1725,23 @@ def build_nflverse_weekly_metrics_for_season(
             sr = _f(g["success"].mean())
             if sr is not None:
                 cols["success_rate"] = round(sr * 100, 1)
+            if "first_down_pass" in g.columns:
+                cols["first_downs"] = cols.get("first_downs", 0.0) + float(
+                    g["first_down_pass"].fillna(0).sum())
+            if "down" in g.columns:
+                third = g[g["down"].fillna(0) == 3]
+                cols["w_third_down_dropbacks"] = float(len(third))
+                if len(third) > 0:
+                    conv_mask = None
+                    for _c in ("first_down_pass", "first_down_rush",
+                               "third_down_converted"):
+                        if _c in third.columns:
+                            _m = third[_c].fillna(0) > 0
+                            conv_mask = _m if conv_mask is None else (conv_mask | _m)
+                    if conv_mask is not None:
+                        conv_rate = _rate_pct(float(conv_mask.sum()), float(len(third)))
+                        if conv_rate is not None:
+                            cols["third_down_conv_rate"] = conv_rate
             if att >= 1:
                 cmp_ = float(g["complete_pass"].fillna(0).sum())
                 yds = float(g["passing_yards"].fillna(0).sum())
@@ -1465,6 +1791,23 @@ def build_nflverse_weekly_metrics_for_season(
             epa_att = _f(g["epa"].mean())
             if epa_att is not None:
                 cols["rushing_epa_per_att"] = round(epa_att, 3)
+            if "first_down_rush" in g.columns:
+                fd_rush = float(g["first_down_rush"].fillna(0).sum())
+                cols["first_downs"] = cols.get("first_downs", 0.0) + fd_rush
+                fd_rate = _rate_pct(fd_rush, cols["w_carries"])
+                if fd_rate is not None:
+                    cols["rush_first_down_rate"] = fd_rate
+            att_rows = g[g["rush_attempt"].fillna(0) > 0]
+            stuffed = _rate_pct(
+                float((att_rows["rushing_yards"].fillna(0) <= 0).sum()),
+                float(len(att_rows)))
+            if stuffed is not None:
+                cols["stuffed_rate"] = stuffed
+            gl_val, gl_denom = _gl_share_w(g, week)
+            if gl_denom > 0:
+                cols["w_team_gl_opps"] = gl_denom
+            if gl_val is not None:
+                cols["goal_line_opp_share"] = gl_val
 
         # --- Receiving per player+week ---
         for (gsis, week), g in pbp[pbp["receiver_player_id"].notna()].groupby(
@@ -1501,6 +1844,39 @@ def build_nflverse_weekly_metrics_for_season(
                 ) + total_yac
             if air > 0:
                 cols["racr"] = round(rec_yds / air, 3)
+            rating = _passer_rating(
+                float(len(g)), receptions, rec_yds,
+                float(g["pass_touchdown"].fillna(0).sum())
+                if "pass_touchdown" in g else 0.0,
+                float(g["interception"].fillna(0).sum())
+                if "interception" in g else 0.0,
+            )
+            if rating is not None:
+                cols["qb_rating_when_targeted"] = rating
+            if "first_down_pass" in g.columns:
+                fd_rec = float(g["first_down_pass"].fillna(0).sum())
+                cols["first_downs"] = cols.get("first_downs", 0.0) + fd_rec
+                fd_rate = _rate_pct(fd_rec, float(len(g)))
+                if fd_rate is not None:
+                    cols["rec_first_down_rate"] = fd_rate
+            if "air_yards" in g.columns:
+                deep = _rate_pct(
+                    float((g["air_yards"].fillna(-1) >= 20).sum()), float(len(g)))
+                if deep is not None:
+                    cols["deep_target_rate"] = deep
+                if "yardline_100" in g.columns:
+                    _both = g["air_yards"].notna() & g["yardline_100"].notna()
+                    ez = _rate_pct(
+                        float((g.loc[_both, "air_yards"]
+                               >= g.loc[_both, "yardline_100"]).sum()),
+                        float(len(g)))
+                    if ez is not None:
+                        cols["end_zone_target_rate"] = ez
+            gl_val, gl_denom = _gl_share_w(g, week)
+            if gl_denom > 0:
+                cols["w_team_gl_opps"] = gl_denom
+            if gl_val is not None:
+                cols["goal_line_opp_share"] = gl_val
 
         # --- FTN charting (drop / contested / adjusted completion) per player+week ---
         if season >= FTN_FLOOR:
@@ -1525,6 +1901,14 @@ def build_nflverse_weekly_metrics_for_season(
                           "missing n_blitzers; blitz_rate_faced/epa_vs_blitz "
                           f"will be skipped for {season} (FTN columns may "
                           "have been renamed upstream)")
+                for _col, _what in (("is_interception_worthy", "turnover_worthy_rate"),
+                                    ("is_screen_pass", "screen_target_rate"),
+                                    ("is_contested_ball", "contested_target_rate")):
+                    if _col not in merged.columns:
+                        print("[nflverse_metrics] WARNING: weekly FTN frame "
+                              f"missing {_col}; {_what} will be skipped for "
+                              f"{season} (FTN columns may have been renamed "
+                              "upstream)")
                 for (gsis, week), g in merged[merged["receiver_player_id"].notna()].groupby(
                         ["receiver_player_id", "week"]):
                     pid = crosswalk.get(str(gsis).strip())
@@ -1539,8 +1923,22 @@ def build_nflverse_weekly_metrics_for_season(
                          (g["complete_pass"].fillna(0) > 0)).sum())
                     if catchable > 0:
                         cols["drop_rate"] = round(drops / catchable * 100, 1)
+                    charted_targets = float(len(g))
+                    if charted_targets > 0:
+                        cols["uncatchable_tgt_rate"] = round(
+                            (charted_targets - catchable) / charted_targets * 100, 1)
                     if contested > 0:
                         cols["contested_catch_rate"] = round(contested_caught / contested * 100, 1)
+                    charted = float(len(g))
+                    if "is_contested_ball" in g.columns and charted > 0:
+                        ct_rate = _rate_pct(contested, charted)
+                        if ct_rate is not None:
+                            cols["contested_target_rate"] = ct_rate
+                    if "is_screen_pass" in g.columns and charted > 0:
+                        scr_rate = _rate_pct(
+                            float(g["is_screen_pass"].fillna(0).sum()), charted)
+                        if scr_rate is not None:
+                            cols["screen_target_rate"] = scr_rate
                 for (gsis, week), g in merged[merged["passer_player_id"].notna()].groupby(
                         ["passer_player_id", "week"]):
                     pid = crosswalk.get(str(gsis).strip())
@@ -1581,6 +1979,12 @@ def build_nflverse_weekly_metrics_for_season(
                                 blitz_epa = _f(db.loc[blitz_mask, "epa"].mean())
                                 if blitz_epa is not None:
                                     cols["epa_vs_blitz"] = round(blitz_epa, 3)
+                        if "is_interception_worthy" in db.columns:
+                            twp_rate = _rate_pct(
+                                float(db["is_interception_worthy"].fillna(0).sum()),
+                                dropbacks)
+                            if twp_rate is not None:
+                                cols["turnover_worthy_rate"] = twp_rate
                 if "rusher_player_id" in merged.columns and "n_defense_box" in merged.columns:
                     for (gsis, week), g in merged[merged["rusher_player_id"].notna()].groupby(
                             ["rusher_player_id", "week"]):
@@ -1611,9 +2015,16 @@ def build_nflverse_weekly_metrics_for_season(
     # re-aggregate as totals ratios via the standard weighted machinery
     # (never an average of weekly pcts). Zero denominators are skipped.
     try:
-        _apply_catchable_weekly(out, build_pfr_catchable_weekly(season))
+        _pfr_counts = build_pfr_catchable_weekly(season)
+        _apply_catchable_weekly(out, _pfr_counts)
+        _apply_pressure_weekly(out, _pfr_counts)
     except Exception as e:
         print(f"[nflverse_metrics] weekly PFR catchable pct unavailable for {season} ({e})")
+    try:
+        _apply_rec_broken_tackles_weekly(
+            out, build_pfr_rec_broken_tackles_weekly(season))
+    except Exception as e:
+        print(f"[nflverse_metrics] weekly PFR rec broken tackles unavailable for {season} ({e})")
 
     # ---------- PFR broken tackles (rushing + receiving charting) ----------
     try:
@@ -1638,7 +2049,8 @@ def build_nflverse_weekly_metrics_for_season(
     # actual metric value (e.g. a player who only appears as a rusher weight).
     _weight_only = {
         "w_dropbacks", "w_pass_att", "w_carries", "w_targets", "w_receptions",
-        "w_pass_air_yards", "w_rec_air_yards",
+        "w_pass_air_yards", "w_rec_air_yards", "w_pressure_opps",
+        "w_third_down_dropbacks", "w_team_gl_opps",
     }
     for row in out.values():
         _apply_created_separation(row)

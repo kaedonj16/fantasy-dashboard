@@ -16,17 +16,17 @@ def test_position_bounds_include_xfp_totals():
 
     rows = [
         {"player_id": "1", "games": 5, "expected_ppr": 50.0,
-         "ppr_over_expected": 5.0, "total_targets": 30},
+         "ppr_over_expected": 5.0, "total_routes": 210},
         {"player_id": "2", "games": 5, "expected_ppr": 80.0,
-         "ppr_over_expected": -3.0, "total_targets": 40},
+         "ppr_over_expected": -3.0, "total_routes": 260},
         # Below the games_min qualification: must not move the leader max.
         {"player_id": "3", "games": 1, "expected_ppr": 200.0,
-         "ppr_over_expected": 90.0, "total_targets": 5},
+         "ppr_over_expected": 90.0, "total_routes": 40},
     ]
     bounds = _compute_position_bounds(rows, 4)
     assert bounds["expected_ppr"] == [50.0, 80.0]
     assert bounds["ppr_over_expected"] == [-3.0, 5.0]
-    assert bounds["total_targets"] == [30.0, 40.0]
+    assert bounds["total_routes"] == [210.0, 260.0]
 
 
 def test_value_metrics_return_position_leader_bounds(monkeypatch):

@@ -32,9 +32,18 @@ DECISION_EXPECTED = {
     "ceiling_dfs": ("boom_rate", None, "desc"),
 }
 
+# Lens presets from the 2026 metric batch: category presets whose metric
+# counts and sort directions follow their primary metric, not the 7-metric
+# "desc" house shape of EXPECTED. (primary, position, sort, metric count)
+LENS_EXPECTED = {
+    "target_quality": ("uncatchable_tgt_rate", None, "asc", 6),
+    "td_regression": ("td_over_expected", None, "desc", 5),
+}
+
 
 def test_presets_have_valid_ordered_metrics_primary_position_and_sort():
-    assert set(ADVANCED_METRIC_PRESETS) == set(EXPECTED) | set(DECISION_EXPECTED)
+    assert set(ADVANCED_METRIC_PRESETS) == (
+        set(EXPECTED) | set(DECISION_EXPECTED) | set(LENS_EXPECTED))
     for preset_id, (primary, position) in EXPECTED.items():
         preset = ADVANCED_METRIC_PRESETS[preset_id]
         assert preset["primary"] == preset["metrics"][0] == primary
@@ -57,6 +66,60 @@ def test_decision_presets_have_valid_metrics_taglines_and_sort():
         assert preset.get("tagline"), preset_id
         assert 5 <= len(preset["metrics"]) == len(set(preset["metrics"])) <= 10
         assert all(key in LEADERBOARD_METRICS for key in preset["metrics"])
+
+
+def test_lens_presets_have_valid_metrics_samples_and_free_keys():
+    from data_building.advanced_metrics import PREMIUM_METRICS, PRO_METRICS
+    for preset_id, (primary, position, sort, count) in LENS_EXPECTED.items():
+        preset = ADVANCED_METRIC_PRESETS[preset_id]
+        assert preset["primary"] == preset["metrics"][0] == primary
+        assert preset["position"] == position
+        assert preset["sort"] == sort
+        assert preset.get("kind") != "decision"
+        assert len(preset["metrics"]) == len(set(preset["metrics"])) == count
+        assert all(key in LEADERBOARD_METRICS for key in preset["metrics"])
+        # Both lens presets are free: no PRO or PREMIUM metric anywhere.
+        assert not (set(preset["metrics"]) & PRO_METRICS), preset_id
+        assert not (set(preset["metrics"]) & PREMIUM_METRICS), preset_id
+    # Samples use canonical identities, mirroring the closest presets
+    # (receiving for Target Quality, expected for TD Regression).
+    assert ADVANCED_METRIC_PRESETS["target_quality"]["samples"] == [
+        "games", "targets", "receptions"]
+    assert ADVANCED_METRIC_PRESETS["td_regression"]["samples"] == ["games"]
+    # Preset keys must never collide with metric keys (target_quality_score
+    # is a PRO metric; the preset key is target_quality, a different string).
+    assert not (set(ADVANCED_METRIC_PRESETS) & set(LEADERBOARD_METRICS))
+
+
+def test_target_quality_sorts_ascending_for_fewest_uncatchable_first():
+    # Uncatchable Tgt % is lower-is-better: ascending puts the cleanest
+    # target quality on top, worst throw quality one sort-flip away.
+    assert LEADERBOARD_METRICS["uncatchable_tgt_rate"]["lower_better"] is True
+    assert ADVANCED_METRIC_PRESETS["target_quality"]["sort"] == "asc"
+    assert ADVANCED_METRIC_PRESETS["target_quality"]["primary"] == "uncatchable_tgt_rate"
+
+
+def test_metrics_batch_keys_all_have_player_modal_glossary_entries():
+    # Every metric key added by the combined metrics PR must carry a
+    # player-modal glossary entry in _ADV_METRIC_DESCS, or the modal shows
+    # the metric with no explanation. td_share shipped without one.
+    import re
+    from pathlib import Path
+    source = (Path(__file__).resolve().parents[1] / "static"
+              / "player_modal.js").read_text(encoding="utf-8")
+    block = source.split("const _ADV_METRIC_DESCS = {", 1)[1].split("\n};", 1)[0]
+    described = set(re.findall(r"^  ([a-z0-9_]+):", block, flags=re.MULTILINE))
+    added = {
+        "uncatchable_tgt_rate", "expected_tds", "xtd_per_game",
+        "td_over_expected", "rec_first_down_rate", "rush_first_down_rate",
+        "first_downs_per_game", "qb_rating_when_targeted",
+        "pressure_rate_faced", "goal_line_opp_share", "end_zone_target_rate",
+        "deep_target_rate", "stuffed_rate", "third_down_conv_rate",
+        "turnover_worthy_rate", "contested_target_rate", "screen_target_rate",
+        "rec_broken_tackles_per_reception", "td_share",
+    }
+    assert added <= set(LEADERBOARD_METRICS)
+    assert added - described == set()
 
 
 def test_buy_low_preset_sorts_ascending_for_most_negative_first():

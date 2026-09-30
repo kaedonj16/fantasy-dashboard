@@ -128,21 +128,17 @@ def test_calculate_rushing_metrics_passes_broken_tackles_through():
 
 
 def test_metadata_names_the_actual_stat_and_source():
-    total = am.LEADERBOARD_METRICS["avoided_tackles"]
     per_carry = am.LEADERBOARD_METRICS["avoided_tackles_pg"]
-    assert total["label"] == "Broken Tackles"
     assert per_carry["label"] == "Broken Tackles/Carry"
-    for meta in (total, per_carry):
-        assert meta["category"] == "Rushing"
-        assert "PFR" in meta["desc"]
-        assert "PFF" not in meta["desc"]
+    assert per_carry["category"] == "Rushing"
+    assert "PFR" in per_carry["desc"]
+    assert "PFF" not in per_carry["desc"]
     # The derivative still divides the stored total by the volume column.
     assert per_carry["computed_sql"] == "m.avoided_tackles::float / NULLIF(v.vol, 0)"
     assert per_carry["computed_null"] == "m.avoided_tackles IS NOT NULL"
 
 
 def test_broken_tackles_is_public_now_that_pfr_sources_it():
-    assert "avoided_tackles" not in am.PREMIUM_METRICS
     assert "avoided_tackles_pg" not in am.PREMIUM_METRICS
 
 
