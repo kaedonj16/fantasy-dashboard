@@ -570,6 +570,21 @@ def build_dashboard_body(ctx: dict) -> str:
       var el = document.getElementById('dash-playoff-tile');
       if (!el) return;
       if (el.classList.contains('is-loaded')) return;
+      // Mirror of _fmt_playoff_pct_display in app.py: undecided odds read
+      // at one decimal, floored to tenths so a 99.9 never displays as 100;
+      // literal 100 / 0 only when the raw value is exact.
+      function poFloorTenths(v) {{
+        var raw = Number(v) || 0;
+        if (raw >= 100) return 100;
+        if (raw <= 0) return 0;
+        return Math.floor(raw * 10 + 1e-9) / 10;
+      }}
+      function poFmtPct(v) {{
+        var raw = Number(v) || 0;
+        if (raw >= 100) return '100';
+        if (raw <= 0) return '0';
+        return poFloorTenths(raw).toFixed(1);
+      }}
       var rid = el.getAttribute('data-roster');
       var qs = 'platform=' + encodeURIComponent(el.getAttribute('data-platform')) +
                '&league_id=' + encodeURIComponent(el.getAttribute('data-league')) +
@@ -590,19 +605,21 @@ def build_dashboard_body(ctx: dict) -> str:
             el.classList.add('is-loaded');
             return;
           }}
-          var pct = Math.round(row.playoff_pct || 0);
+          var rawPct = Number(row.playoff_pct) || 0;
+          var pct = poFloorTenths(rawPct);
+          var settled = rawPct >= 100 || rawPct <= 0;
           if (valEl) {{
-            if (window.brCountUp) window.brCountUp(valEl, {{ to: pct, dp: 0, suffix: '%', dur: 800 }});
-            else valEl.textContent = pct + '%';
+            if (window.brCountUp) window.brCountUp(valEl, {{ to: pct, dp: settled ? 0 : 1, suffix: '%', dur: 800 }});
+            else valEl.textContent = poFmtPct(rawPct) + '%';
           }}
           var sub;
           if (d.is_complete || row.is_complete) {{
-            sub = pct >= 100 ? 'Clinched' : (pct <= 0 ? 'Eliminated' : 'Playoff bound');
+            sub = rawPct >= 100 ? 'Clinched' : (rawPct <= 0 ? 'Eliminated' : 'Playoff bound');
           }} else {{
-            var first = Math.round(row.first_seed_pct || 0);
-            var bye = Math.round(row.bye_pct || 0);
-            sub = first > 0 ? (first + '% top seed')
-                : (bye > 0 ? (bye + '% first-round bye') : 'to make the playoffs');
+            var first = poFloorTenths(row.first_seed_pct);
+            var bye = poFloorTenths(row.bye_pct);
+            sub = first > 0 ? (poFmtPct(row.first_seed_pct) + '% top seed')
+                : (bye > 0 ? (poFmtPct(row.bye_pct) + '% first-round bye') : 'to make the playoffs');
           }}
           if (subEl) subEl.textContent = sub;
           el.classList.add('is-loaded');

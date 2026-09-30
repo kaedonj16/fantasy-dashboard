@@ -9851,6 +9851,12 @@ select:focus {
     color: var(--text);
 }
 
+.award-value-unit {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--muted);
+}
+
 .award-context {
     font-size: 12px;
     color: var(--muted);
@@ -9869,7 +9875,6 @@ select:focus {
 
 .award-item {
     border: 1px solid var(--os-border, rgba(148, 163, 184, 0.18));
-    border-left: 3px solid var(--os-border, rgba(148, 163, 184, 0.18));
     border-radius: 12px;
     padding: 12px;
     display: flex;
@@ -9878,12 +9883,14 @@ select:focus {
     background: color-mix(in srgb, var(--text) 3%, transparent);
 }
 
+/* Honor vs shame reads as a soft whole-tile tint plus the colored value;
+   no side accent bar (it bled over the rounded corners). */
 .award-item.award-honor {
-    border-left-color: var(--win);
+    background: color-mix(in srgb, var(--win) 6%, transparent);
 }
 
 .award-item.award-shame {
-    border-left-color: var(--loss);
+    background: color-mix(in srgb, var(--loss) 6%, transparent);
 }
 
 .award-name {
@@ -9919,6 +9926,27 @@ select:focus {
 @media (min-width: 1181px) {
     .awards-grid {
         grid-template-columns: repeat(2, 1fr);
+    }
+
+    /* A lone final tile spans the row and flips horizontal (label and
+       winner left, value and context right) instead of leaving an
+       empty cell beside it. */
+    .awards-grid > .award-item:last-child:nth-child(odd) {
+        grid-column: 1 / -1;
+        display: grid;
+        grid-template-columns: 1fr auto;
+        column-gap: 16px;
+    }
+
+    .awards-grid > .award-item:last-child:nth-child(odd) .award-name,
+    .awards-grid > .award-item:last-child:nth-child(odd) .award-winner {
+        grid-column: 1;
+    }
+
+    .awards-grid > .award-item:last-child:nth-child(odd) .award-value,
+    .awards-grid > .award-item:last-child:nth-child(odd) .award-context {
+        grid-column: 2;
+        text-align: right;
     }
 }
 
@@ -19009,6 +19037,22 @@ img, svg, canvas {
 
 .usage-mover:first-child {
     border-top: none;
+}
+
+/* Clickable rows open the player modal (global .player-clickable
+   delegate). Keep the affordance on the name, not the whole row. */
+.usage-mover.player-clickable {
+    cursor: pointer;
+}
+
+.usage-mover.player-clickable:hover {
+    color: inherit;
+    text-decoration: none;
+}
+
+.usage-mover.player-clickable:hover .um-name {
+    color: var(--brand-blue);
+    text-decoration: underline;
 }
 
 .usage-mover .um-main {
