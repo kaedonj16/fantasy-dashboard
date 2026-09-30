@@ -1820,7 +1820,7 @@ function pmInjectContextActions(playerId, playerName, data, leagueId, platform, 
   const hasLeague = !!leagueId;
   const rosterId = (data && data.fantasy_roster_id != null) ? String(data.fantasy_roster_id) : '';
   const viewerRid = (window._viewerRid != null && window._viewerRid !== '') ? String(window._viewerRid) : '';
-  const isFreeAgent = hasLeague && !(data && data.fantasy_team);
+  const isFreeAgent = hasLeague && !(data && data.fantasy_team) && !(data && data.ownership_unknown);
   const isMine = hasLeague && !!rosterId && !!viewerRid && rosterId === viewerRid;
   const isOther = hasLeague && !!(data && data.fantasy_team) && !isMine;
 

@@ -23826,6 +23826,12 @@ def api_player_details(player_id: str):
         import glob
         import re
 
+        # First modal open in this process kicks the background warm of the
+        # modal's league-independent caches (players feed, week conditions,
+        # ADP, projections, week-stat files) so later opens skip those cold
+        # fills. Once per process, off the request path, never raises.
+        _kick_player_modal_warm()
+
         # Get league context
         league_id = request.args.get("league_id")
         platform = request.args.get("platform", "sleeper")
@@ -24053,12 +24059,27 @@ def api_player_details(player_id: str):
         fantasy_team = None
         fantasy_team_owner = None
         fantasy_roster_id = None
+        ownership_unknown = False
         if league_id:
             try:
                 from dashboard_services.service import fantasy_team_and_roster_for_player as _ft_lookup
-                _ctx = _spec_ctx if _speculative else get_league_ctx_from_cache(platform, league_id, season)
+                # Ownership is best-effort decoration on the modal, so it must
+                # never pay the cold league-context build inline (measured
+                # ~6s, the largest single cold cost on this endpoint) and
+                # never 503 the whole modal when the build loses the
+                # cross-worker race. allow_build=False serves a stale ctx when
+                # one exists and kicks a background warm when none does;
+                # ownership_unknown tells the client "not resolved yet" so a
+                # rostered player is not mislabeled a free agent on the first
+                # open after a deploy.
+                _ctx = _spec_ctx if _speculative else get_league_ctx_from_cache(
+                    platform, league_id, season, allow_build=False
+                )
                 if not _ctx:
-                    return ("", 204) if _speculative else (jsonify({"error": "League unavailable"}), 503)
+                    if _speculative:
+                        return ("", 204)
+                    ownership_unknown = True
+                    _ctx = {}
                 _rosters = _ctx.get("rosters") or []
                 _users = _ctx.get("users") or []
                 _rmap = _build_roster_map(_users, _rosters)
@@ -24529,6 +24550,7 @@ def api_player_details(player_id: str):
             "pos_rank_label": player_value.get("pos_rank_label"),
             "espnHeadshot": player_meta.get("espnHeadshot"),
             "fantasy_team": fantasy_team,
+            "ownership_unknown": ownership_unknown,
             "fantasy_team_owner": fantasy_team_owner,
             "fantasy_roster_id": fantasy_roster_id,
             "injury": injury,
@@ -33636,6 +33658,88 @@ def _warm_league_players_board() -> None:
         _board_league_players_response(overlay, overlay_key=overlay_key, is_sf=is_sf)
 
 
+def _warm_player_modal_caches() -> None:
+    """Warm the league-independent caches /api/player-details pays for cold.
+
+    A cold profile of the modal (2026-09-30) put the league-scoped open at
+    ~14s local / >30s in prod against a 12s client timeout, almost none of it
+    the handler's own work: the full Sleeper players feed (~1.3s, read just
+    for injury status), the current week's conditions (odds + weather,
+    ~2.7s), the daily ADP feed (~1s), the current week's projections (~0.6s)
+    and the on-demand Sleeper week-stat backfill (~0.9s) each fill lazily on
+    first use. All are keyed by season/week only, never by league, so one
+    background pass per worker makes later modal opens skip them entirely.
+    Every step is individually best-effort; never raises.
+    """
+    try:
+        get_players_global()
+    except Exception:
+        logger.debug("warm: players feed failed", exc_info=True)
+    try:
+        from dashboard_services.api import get_nfl_state as _warm_state
+        _state = _warm_state() or {}
+        _season = int(_state.get("season") or 0)
+        _week = int(_state.get("week") or 0)
+        if not _season:
+            return
+    except Exception:
+        logger.debug("warm: nfl state failed", exc_info=True)
+        return
+    try:
+        _ensure_sleeper_week_files(_season)
+    except Exception:
+        logger.debug("warm: sleeper week files failed", exc_info=True)
+    try:
+        from dashboard_services.adp_service import fetch_sleeper_adp as _warm_adp
+        _warm_adp(_season)
+    except Exception:
+        logger.debug("warm: sleeper adp failed", exc_info=True)
+    if not _week:
+        return
+    try:
+        from utils.utils import load_week_projection as _warm_wp
+        _warm_wp(_season, _week)
+    except Exception:
+        logger.debug("warm: week projections failed", exc_info=True)
+    try:
+        from utils.game_conditions import build_week_conditions as _warm_cond
+        from utils.utils import load_week_sched as _warm_sched
+        _games = []
+        for _g in (_warm_sched(_season, _week) or []):
+            _h = str(_g.get("home") or "").upper()
+            _a = str(_g.get("away") or "").upper()
+            if _h and _a:
+                _games.append((_h, _a, str(_g.get("gameDate") or "")))
+        if _games:
+            _warm_cond(_season, _week, _games)
+    except Exception:
+        logger.debug("warm: week conditions failed", exc_info=True)
+
+
+_MODAL_WARM_LOCK = threading.Lock()
+_MODAL_WARM_STARTED = False
+
+
+def _kick_player_modal_warm() -> None:
+    """Start the player-modal cache warm once per process, off the request
+    path. Kicked lazily from the first player-details request so the warm
+    happens even when WARM_CACHES_ON_START is unset; the startup warmer also
+    runs the same pass when the flag is set. Never raises."""
+    global _MODAL_WARM_STARTED
+    try:
+        if app.testing:
+            return
+        with _MODAL_WARM_LOCK:
+            if _MODAL_WARM_STARTED:
+                return
+            _MODAL_WARM_STARTED = True
+        threading.Thread(
+            target=_warm_player_modal_caches, daemon=True, name="modal-warm",
+        ).start()
+    except Exception:
+        logger.debug("modal warm kick failed", exc_info=True)
+
+
 def _warm_global_caches() -> None:
     """Best-effort warm of the league-independent caches (model value table +
     players index + the enriched league-players payload) so the first user
@@ -33655,6 +33759,7 @@ def _warm_global_caches() -> None:
         t0 = time.perf_counter()
         for name, fn in (("model value table", get_model_value_table_cached),
                          ("players index", get_players_index_global),
+                         ("player modal caches", _warm_player_modal_caches),
                          ("league-players board", _warm_league_players_board)):
             try:
                 fn()
