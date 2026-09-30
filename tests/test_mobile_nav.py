@@ -108,7 +108,9 @@ def test_more_sheet_lists_core_pages(offline_client):
     tools_at = html.index("br-sheet-h'>Tools<")
     assert find_at < navigate_at < tools_at < account_at
     assert html.index("id='brSheetRefresh'") < account_at
-    assert html.index("What's New") < account_at
+    # Recent Updates moved out of the More sheet to the mobile top-bar bell.
+    tools_section = html.split("br-sheet-h'>Tools<", 1)[1].split("data-br-sheet-target='account'", 1)[0]
+    assert "What's New" not in tools_section
     assert html.index("Help &amp; Tours") < account_at
     css = (ROOT / "static" / "dashboard.css").read_text(encoding="utf-8")
     js = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
@@ -174,7 +176,10 @@ def test_more_information_architecture_and_shared_utilities(offline_client):
     if "data-br-sheet-panel='weekly'" in html:
         assert "data-br-sheet-target='weekly'" in root
     assert "My Leagues" in root or "Link a league" in root
-    assert "Refresh Data" in root and "What's New" in root and "Help &amp; Tours" in root
+    assert "Refresh Data" in root and "Help &amp; Tours" in root
+    # Recent Updates moved out of the More sheet to the mobile top-bar bell.
+    assert "What's New" not in root
+    assert "br-top-notif" in html
     account = html.split("data-br-sheet-panel='account'", 1)[1].split("</section>", 1)[0]
     assert "My Leagues" not in account
     assert "brSheetRefresh" not in account

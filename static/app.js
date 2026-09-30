@@ -939,12 +939,15 @@ window.brHaptic = function (pattern) {
     if (node && !node._brHome) node._brHome = { parent: node.parentNode, next: node.nextSibling };
   }
   // Relocate the shared widgets (search box, settings menu, changelog) into the
-  // sheet / search screen on mobile, or back to the top nav on desktop. Queried
-  // fresh so it still works after a soft-nav swaps in a brand-new dock + sheet.
+  // sheet / search screen / top bar on mobile, or back to the top nav on
+  // desktop. The changelog opens directly from the mobile top-bar bell as a
+  // floating panel, so it lives in the top nav on mobile instead of the More
+  // sheet. Queried fresh so it still works after a soft-nav swaps in a
+  // brand-new dock + sheet.
   function relocate() {
     var searchMount = document.getElementById('brSearchMount');
     var acctMount   = document.getElementById('brSheetAccount');
-    var newsMount   = document.getElementById('brSheetChangelog');
+    var topNav      = document.querySelector('.top-nav.br-mnav');
     var search      = document.getElementById('navSearchWrapper');
     var settings    = document.getElementById('settingsDropdown');
     var changelog   = document.getElementById('changelogDropdown');
@@ -952,7 +955,7 @@ window.brHaptic = function (pattern) {
     if (mq.matches) {
       if (search && searchMount && search.parentNode !== searchMount) searchMount.appendChild(search);
       if (settings && acctMount && settings.parentNode !== acctMount) acctMount.appendChild(settings);
-      if (changelog && newsMount && changelog.parentNode !== newsMount) newsMount.appendChild(changelog);
+      if (changelog && topNav && changelog.parentNode !== topNav) topNav.appendChild(changelog);
     } else {
       [search, settings, changelog].forEach(function (n) {
         if (n && n._brHome && n.parentNode !== n._brHome.parent) n._brHome.parent.insertBefore(n, n._brHome.next);
@@ -1095,6 +1098,8 @@ window.brHaptic = function (pattern) {
     ss.classList.add('open'); ss.setAttribute('aria-hidden', 'false');
     setTimeout(function () { var i = document.getElementById('navPlayerSearch'); if (i) i.focus(); }, 260);
   }
+  // Public open for the mobile top-bar search button.
+  window.brOpenSearch = openSearch;
   function closeSearch() {
     var ss = document.getElementById('brSearchScreen'); if (!ss) return;
     ss.classList.remove('open'); ss.setAttribute('aria-hidden', 'true');
@@ -13601,6 +13606,10 @@ function setChangelogDot(hasNew, showSettingsDot = false) {
     acctDot.hidden = !show;
     acctDot.setAttribute("aria-hidden", show ? "false" : "true");
   }
+
+  // Mobile top-bar bell dot.
+  const topNotifDot = document.getElementById("brTopNotifDot");
+  if (topNotifDot) topNotifDot.hidden = !hasNew;
 }
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -13772,14 +13781,26 @@ document.addEventListener("DOMContentLoaded", () => {
     toggleDropdown();
   });
 
+  // Mobile top-bar bell: opens Recent Updates directly as a floating panel
+  // under the top bar (no More-sheet detour). The top nav lives outside
+  // #page-root, so this one-time binding survives soft-navs.
+  var topNotifBtn = document.querySelector(".br-top-notif");
+  if (topNotifBtn) {
+    bindOnce(topNotifBtn, "brTopNotifClick", "click", (e) => {
+      e.stopPropagation();
+      toggleDropdown();
+    });
+  }
+
   // Close on click outside. On mobile the dropdown is relocated out of
-  // .changelog-bell-wrapper into #brSheetAccount, so also treat the panel itself
-  // and the Notifications row as inside.
+  // .changelog-bell-wrapper into the top nav, so also treat the panel itself
+  // and the top-bar bell as inside.
   document.addEventListener("click", (e) => {
     if (!isDropdownOpen) return;
     if (dropdown.contains(e.target)) return;
     if (bellWrapper && bellWrapper.contains(e.target)) return;
     if (e.target.closest && e.target.closest("#settingsChangelogBtn")) return;
+    if (e.target.closest && e.target.closest(".br-top-notif")) return;
     closeDropdown();
   });
 

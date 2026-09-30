@@ -278,8 +278,8 @@
     --z-gate-nested: 100002; /* identify / league picker stacked on paywall */
     --z-progress: 999999; /* #page-load-bar (top progress bar) */
 
-    /* Space the fixed mobile bottom dock (.br-mnav / .br-tabbar, 56px +
-       safe-area) owns. 0 on desktop where there is no dock; the phone value is
+    /* Space the fixed mobile bottom dock (.br-mnav / .br-tabbar, 60px +
+       safe-area + the float gap) owns. 0 on desktop where there is no dock; the phone value is
        set in the media query below. Any bottom-fixed element that must clear the
        dock should anchor to calc(var(--dock-safe-bottom) + <gap>) instead of
        re-deriving the 56px+safe-area math, so the next one can't forget it. */
@@ -288,7 +288,8 @@
 
 @media (max-width: 768px) {
     :root {
-        --dock-safe-bottom: calc(56px + env(safe-area-inset-bottom));
+        /* 60px bar + 10px float gap (+2px breathing room) + safe-area. */
+        --dock-safe-bottom: calc(60px + env(safe-area-inset-bottom) + 12px);
     }
 }
 
@@ -655,7 +656,15 @@ table, .standings-table, .mini-value, .mini-stat, .sr-stat-value,
     #brSheetAccount .settings-desktop-tools,
     #brSheetAccount .settings-tour-replays { display: none !important; }
     #brSheetAccount .settings-menu-heading { display: block; }
-    .br-sheet-changelog-mount .changelog-dropdown { position: fixed; }
+    /* Recent Updates opens directly from the mobile top-bar bell as a floating
+       panel under the top nav (it no longer lives in the More sheet). */
+    .top-nav.br-mnav .changelog-dropdown {
+        top: calc(100% + 8px);
+        right: 12px;
+        left: 12px;
+        width: auto;
+        max-width: none;
+    }
 }
 
 /* Honor reduced-motion preferences globally. */
@@ -39819,6 +39828,18 @@ a, button, [role="button"], [role="tab"], summary, label,
     display: none;
 }
 
+/* Mobile top-bar search shortcut: hidden on desktop (the full search input
+   lives in the utility bar there). */
+.br-top-search {
+    display: none;
+}
+
+/* Mobile top-bar notifications shortcut: hidden on desktop (the changelog bell
+   lives in the utility bar there). */
+.br-top-notif {
+    display: none;
+}
+
 /* The dock, the More sheet + its scrim, and the search screen are mobile-only.
    Each must be hidden on desktop; without this base rule the sheet/scrim (which
    are otherwise styled only inside the max-width:768px block) render in-flow on
@@ -39875,17 +39896,16 @@ a, button, [role="button"], [role="tab"], summary, label,
     .br-tabbar {
         display: flex;
         position: fixed;
-        left: 0;
-        right: 0;
-        bottom: 0;
+        /* Float like a pill instead of hugging the screen edges: less
+           conspicuous, Facebook-style. Icons and labels are unchanged. */
+        left: max(12px, env(safe-area-inset-left));
+        right: max(12px, env(safe-area-inset-right));
+        bottom: calc(env(safe-area-inset-bottom) + 10px);
         z-index: var(--z-chrome);
         background: var(--bg);
-        border-top: 1px solid var(--border);
-        /* Clear the home indicator: the row is a fixed height, the inset is extra. */
-        padding-bottom: env(safe-area-inset-bottom);
-        padding-left: env(safe-area-inset-left);
-        padding-right: env(safe-area-inset-right);
-        box-shadow: 0 -1px 0 rgba(0, 0, 0, .04);
+        border: 1px solid var(--border);
+        border-radius: 24px;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, .14);
     }
 
     .br-tabbar-item {
@@ -39899,12 +39919,12 @@ a, button, [role="button"], [role="tab"], summary, label,
         align-items: center;
         justify-content: center;
         gap: 3px;
-        height: 56px;
+        height: 60px;
         text-decoration: none;
         color: var(--text-muted);
-        font-size: 10.5px;
+        font-size: 10px;
         font-weight: 600;
-        letter-spacing: .01em;
+        letter-spacing: .03em;
         -webkit-tap-highlight-color: transparent;
         transition: color .12s ease, transform .08s ease;
     }
@@ -39920,7 +39940,9 @@ a, button, [role="button"], [role="tab"], summary, label,
     }
 
     .br-tabbar-item.active {
-        color: var(--accent);
+        /* The gliding pill is the active signal; the icon/label stay a strong
+       neutral instead of recoloring (one signal, not two). */
+        color: var(--text);
     }
 
     .br-tabbar-item.active .br-tabbar-lbl {
@@ -39948,10 +39970,9 @@ a, button, [role="button"], [role="tab"], summary, label,
         position: absolute;
         left: 0;
         z-index: 0;
-        /* Span only the tab row, not the safe-area padding below it, so the pill
-       hugs the icon and label instead of stretching to the very bottom. */
+        /* Span the full floating pill. */
         top: 0;
-        bottom: env(safe-area-inset-bottom);
+        bottom: 0;
         width: calc(100% / var(--n, 5));
         transform: translateX(calc(var(--i, 0) * 100%));
         transition: transform .28s var(--ease-glide);
@@ -40014,7 +40035,7 @@ a, button, [role="button"], [role="tab"], summary, label,
     }
 
     .br-more-tab.active {
-        color: var(--accent);
+        color: var(--text);
     }
 
     /* Top bar yields to the dock. Pills and utilities hide; logo + league/week
@@ -40022,6 +40043,61 @@ a, button, [role="button"], [role="tab"], summary, label,
     .top-nav.br-mnav .nav-center,
     .top-nav.br-mnav .nav-right {
         display: none;
+    }
+
+    /* Mobile top-bar shortcuts: round utility buttons pinned top-right (the
+       desktop search input and changelog bell hide with .nav-right).
+       Absolutely positioned so they never disturb the single-column grid;
+       nav-left keeps clear of them. Search sits rightmost, bell to its left. */
+    .top-nav.br-mnav .br-top-search,
+    .top-nav.br-mnav .br-top-notif {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        position: absolute;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 38px;
+        height: 38px;
+        border-radius: 50%;
+        border: 1px solid var(--border);
+        background: var(--card);
+        color: var(--text);
+        cursor: pointer;
+        -webkit-tap-highlight-color: transparent;
+    }
+
+    .top-nav.br-mnav .br-top-search {
+        right: 12px;
+    }
+
+    .top-nav.br-mnav .br-top-notif {
+        right: 58px;
+    }
+
+    .top-nav.br-mnav .br-top-search:active,
+    .top-nav.br-mnav .br-top-notif:active {
+        transform: translateY(-50%) scale(.94);
+    }
+
+    .top-nav.br-mnav .br-top-notif-dot {
+        position: absolute;
+        top: 7px;
+        right: 7px;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #E24B4A;
+        border: 1.5px solid var(--card);
+        pointer-events: none;
+    }
+
+    .top-nav.br-mnav .br-top-notif-dot[hidden] {
+        display: none;
+    }
+
+    .top-nav.br-mnav .nav-left {
+        padding-right: 100px;
     }
 
     .top-nav.br-mnav {
