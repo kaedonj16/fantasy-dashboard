@@ -413,3 +413,102 @@ def test_lab_payload_ships_injury_onset_and_opponent_haircut(lab_payload):
     assert opp["injury_adj"] == pytest.approx(round(adj, 1))
     assert opp["mean"] == pytest.approx(round(37.5 - adj, 1))
     assert opp["injury_adj"] > 0
+
+
+def test_lab_prefetch_wiring(script):
+    # One shared URL builder: prefetch and toggle load request the same thing.
+    assert "function wvLabUrl(" in script
+    assert "function wvLabKey(" in script
+    assert "function wvPrefetchLab(" in script
+    start = script.index("function wvPrefetchLab(")
+    body = script[start:script.index("\nfunction ", start + 1)]
+    assert "fetch(wvLabUrl())" in body
+    assert "wvLabPrefetch = { key: key, promise: p }" in body
+    # Failures clear the stash silently (no UI side effects in the catcher).
+    assert "wvLabPrefetch = null" in body
+    # The toggle load consumes a matching stash instead of fetching again.
+    start = script.index("function wvLoadLab(")
+    body = script[start:script.index("\nfunction ", start + 1)]
+    assert "wvLabPrefetch.key === wvLabKey()" in body
+    assert "req = wvLabPrefetch.promise" in body
+    assert "var url = wvLabUrl();" in body
+    assert "req = fetch(url).then" in body
+    # The prefetch fires from the Start/Sit success path, right after the
+    # data (and its current_week) lands — the same week the Lab load reads.
+    start = script.index("function wvFetchStartSit(")
+    body = script[start:script.index("\nfunction ", start + 1)]
+    assert body.index("wvStartSitData = d;") < body.index("wvPrefetchLab();")
+
+
+def test_lab_prefetch_fires_and_toggle_consumes(script):
+    # Behavioral, under node: the prefetch fires once with the exact Lab
+    # URL; the toggle load consumes the stash (no second fetch) and renders
+    # from it; a week switch ignores the stash; a failed prefetch is silent
+    # and the real load fetches fresh with its normal behavior.
+    js = _lab_engine_js(script)
+    out = _run_node(js, """
+var WV_PLATFORM = 'sleeper';
+var WV_LEAGUE_ID = '12345';
+var WV_SEASON = 2026;
+var wvStartSitData = { current_week: 4 };
+var fetchCalls = [];
+var fetchMode = 'ok';
+var payload = { state: 'needs_team', message: 'pick a team first' };
+function fetch(url) {
+  fetchCalls.push(url);
+  if (fetchMode === 'fail') return Promise.reject(new Error('boom'));
+  return Promise.resolve({ json: function() { return Promise.resolve(payload); } });
+}
+var bodyEl = { innerHTML: '' };
+var document = { getElementById: function(id) { return id === 'wvLabBody' ? bodyEl : null; } };
+function flush(cb) { setTimeout(cb, 20); }
+var want = '/api/lineup-lab?platform=sleeper&league_id=12345&season=2026&week=4';
+wvPrefetchLab();
+if (fetchCalls.length !== 1)
+  throw new Error('prefetch should fire exactly one fetch, got ' + fetchCalls.length);
+if (fetchCalls[0] !== want) throw new Error('prefetch URL mismatch: ' + fetchCalls[0]);
+if (wvLabUrl() !== want) throw new Error('wvLabUrl mismatch: ' + wvLabUrl());
+flush(function() {
+  wvLoadLab();
+  flush(function() {
+    if (fetchCalls.length !== 1)
+      throw new Error('toggle must consume the stash, fetches=' + fetchCalls.length);
+    if (bodyEl.innerHTML.indexOf('pick a team first') < 0)
+      throw new Error('stashed payload not rendered: ' + bodyEl.innerHTML);
+    if (wvLabPrefetch !== null) throw new Error('stash must be consumed by the load');
+    wvStartSitData = { current_week: 5 };
+    payload = { state: 'needs_team', message: 'week five' };
+    wvPrefetchLab();
+    if (fetchCalls.length !== 2) throw new Error('week-5 prefetch should fetch');
+    if (fetchCalls[1].indexOf('week=5') < 0)
+      throw new Error('week-5 URL wrong: ' + fetchCalls[1]);
+    wvStartSitData = { current_week: 6 };
+    wvLoadLab();
+    flush(function() {
+      if (fetchCalls.length !== 3)
+        throw new Error('mismatched week must fetch fresh, fetches=' + fetchCalls.length);
+      if (fetchCalls[2].indexOf('week=6') < 0)
+        throw new Error('week-6 URL wrong: ' + fetchCalls[2]);
+      fetchMode = 'fail';
+      wvStartSitData = { current_week: 7 };
+      wvPrefetchLab();
+      flush(function() {
+        if (wvLabPrefetch !== null)
+          throw new Error('failed prefetch must clear the stash');
+        fetchMode = 'ok';
+        payload = { state: 'needs_team', message: 'recovered' };
+        var before = fetchCalls.length;
+        wvLoadLab();
+        flush(function() {
+          if (fetchCalls.length !== before + 1)
+            throw new Error('load after a failed prefetch must fetch fresh');
+          if (bodyEl.innerHTML.indexOf('recovered') < 0)
+            throw new Error('fresh load not rendered: ' + bodyEl.innerHTML);
+          console.log('LAB_PREFETCH_OK');
+        });
+      });
+    });
+  });
+});
+""")
+    assert "LAB_PREFETCH_OK" in out
