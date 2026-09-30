@@ -492,6 +492,61 @@ def _make_admin_client(monkeypatch, admin=True):
         "dashboard_services.analytics.one_and_done_top_paths",
         lambda limit=5: [{"path": "/", "count": 120}, {"path": "/pricing", "count": 31}],
     )
+    monkeypatch.setattr(
+        "dashboard_services.analytics.feature_usage_ranking",
+        lambda days=30: [
+            {"event": "trade_evaluated", "uses": 42, "users": 17},
+            {"event": "waivers_viewed", "uses": 30, "users": 12},
+        ],
+    )
+    monkeypatch.setattr(
+        "dashboard_services.analytics.account_retention",
+        lambda: [{"week": "2026-09-28", "active": 9, "returned": 3, "rate": 33.3}],
+    )
+    monkeypatch.setattr(
+        "dashboard_services.analytics.traffic_sources",
+        lambda days=30: [
+            {"source": "google.com", "sessions": 30, "engaged": 5, "signed_in": 2},
+            {"source": "direct", "sessions": 20, "engaged": 4, "signed_in": 1},
+        ],
+    )
+    monkeypatch.setattr(
+        "dashboard_services.analytics.top_landing_paths",
+        lambda days=30: [
+            {"path": "/dynasty-trade-value-chart", "sessions": 25, "engaged": 1},
+        ],
+    )
+    monkeypatch.setattr(
+        "dashboard_services.analytics.paywall_summary",
+        lambda days=30: {
+            "days": 30, "total_views": 100, "viewers": 40,
+            "checkout_viewers": 10, "subscribed_viewers": 4,
+            "checkout_pct": 25.0, "subscribed_pct": 10.0,
+            "by_surface": [
+                {"surface": "locked_metric", "views": 60, "viewers": 25},
+                {"surface": "plan_modal", "views": 40, "viewers": 20},
+            ],
+            "by_metric": [{"metric": "wopr", "views": 33, "viewers": 18}],
+        },
+    )
+    monkeypatch.setattr(
+        "dashboard_services.analytics.activation_cohort",
+        lambda days=30: {
+            "days": 30, "signups": 50, "linked_24h": 20, "linked_7d": 30,
+            "linked_ever": 35, "pct_24h": 40.0, "pct_7d": 60.0,
+            "pct_ever": 70.0,
+            "by_provider": [{"provider": "sleeper", "count": 28}],
+        },
+    )
+    monkeypatch.setattr(
+        "dashboard_services.analytics.revenue_summary",
+        lambda days=30: {
+            "days": 30, "checkout_identities": 12, "subscribed_events": 6,
+            "subscribed_identities": 5, "cancelled_events": 1,
+            "checkout_conversion_pct": 41.7, "active_pro_subscriptions": 9,
+            "new_pro_subscriptions": 5,
+        },
+    )
     app = flask.Flask(__name__)
     app.secret_key = "test-secret"
     app.register_blueprint(_bp_mod.analytics_bp)
@@ -921,3 +976,448 @@ def test_analytics_page_hides_exclusion_status_when_unset(monkeypatch):
     page = resp.get_data(as_text=True)
     assert "Excluding account" not in page
     assert "Admin session: your visits are not recorded." in page
+
+
+# ── Owner metrics: external referrer hosts ────────────────────────────────────
+
+@pytest.mark.parametrize(
+    "referrer,host,expected",
+    [
+        ("https://www.google.com/search?q=br+fantasy", "brfantasyfootball.com", "www.google.com"),
+        ("https://www.google.com/", "www.brfantasyfootball.com", "www.google.com"),
+        ("https://news.example.com:8443/story", "brfantasyfootball.com", "news.example.com"),
+        ("https://brfantasyfootball.com/trade", "brfantasyfootball.com", None),
+        ("https://brfantasyfootball.com/trade", "brfantasyfootball.com:443", None),
+        ("https://BRFANTASYFOOTBALL.com/trade", "brfantasyfootball.com", None),
+        ("", "brfantasyfootball.com", None),
+        (None, "brfantasyfootball.com", None),
+        ("not a url", "brfantasyfootball.com", None),
+        ("https://", "brfantasyfootball.com", None),
+    ],
+)
+def test_external_ref_host(referrer, host, expected):
+    assert analytics.external_ref_host(referrer, host) == expected
+
+
+# ── Owner metrics: feature usage ranking ──────────────────────────────────────
+
+def test_feature_usage_ranking_parses_rows(monkeypatch):
+    _patch_fetchall(
+        monkeypatch,
+        [
+            {"event": "trade_evaluated", "uses": 42, "users": 17},
+            {"event": "waivers_viewed", "uses": 30, "users": 12},
+        ],
+    )
+    out = analytics.feature_usage_ranking()
+    assert out == [
+        {"event": "trade_evaluated", "uses": 42, "users": 17},
+        {"event": "waivers_viewed", "uses": 30, "users": 12},
+    ]
+
+
+def test_feature_usage_ranking_sql(monkeypatch, reset_tables_ready):
+    conn = _FakeConn(fetchall_result=[])
+    _patch_conn(monkeypatch, conn)
+    analytics.feature_usage_ranking()
+    sql = _select_sql(conn)
+    assert "event <> 'pageview'" in sql
+    # Distinct identities use the shared _IDENT definition.
+    assert "COUNT(DISTINCT COALESCE(account_id::text, 's:' || COALESCE(session_id, '-')))" in sql
+    assert "ORDER BY uses DESC" in sql
+
+
+# ── Owner metrics: signed-in retention ────────────────────────────────────────
+
+def test_account_retention_parses_rows(monkeypatch):
+    import datetime
+
+    _patch_fetchall(
+        monkeypatch,
+        [{"w": datetime.date(2026, 9, 28), "active": 10, "returned": 4}],
+    )
+    out = analytics.account_retention()
+    assert out == [{"week": "2026-09-28", "active": 10, "returned": 4, "rate": 40.0}]
+
+
+def test_account_retention_sql_accounts_only(monkeypatch, reset_tables_ready):
+    conn = _FakeConn(fetchall_result=[])
+    _patch_conn(monkeypatch, conn)
+    analytics.account_retention()
+    sql = _select_sql(conn)
+    assert "account_id IS NOT NULL" in sql
+    assert "LAG(w)" in sql
+    assert "date_trunc('week', created_at AT TIME ZONE 'America/New_York')::date AS w" in sql
+    assert "interval '9 weeks'" in sql
+
+
+# ── Owner metrics: paywall summary ────────────────────────────────────────────
+
+def _paywall_dispatch(sql, args=()):
+    if "total_views" in sql:
+        return [{"total_views": 100, "viewers": 40, "checkout_viewers": 10,
+                 "subscribed_viewers": 4}]
+    if "AS surface" in sql:
+        return [{"surface": "locked_metric", "views": 60, "viewers": 25}]
+    if "AS metric" in sql:
+        return [{"metric": "wopr", "views": 33, "viewers": 18}]
+    return []
+
+
+def test_paywall_summary_parses(monkeypatch):
+    monkeypatch.setattr("dashboard_services.analytics._fetchall", _paywall_dispatch)
+    out = analytics.paywall_summary()
+    assert out["total_views"] == 100
+    assert out["viewers"] == 40
+    assert out["checkout_viewers"] == 10
+    assert out["subscribed_viewers"] == 4
+    assert out["checkout_pct"] == 25.0
+    assert out["subscribed_pct"] == 10.0
+    assert out["by_surface"] == [
+        {"surface": "locked_metric", "views": 60, "viewers": 25}
+    ]
+    assert out["by_metric"] == [{"metric": "wopr", "views": 33, "viewers": 18}]
+
+
+def test_paywall_summary_sql_conversion_after_first_view(monkeypatch, reset_tables_ready):
+    conn = _FakeConn(fetchall_result=[])
+    _patch_conn(monkeypatch, conn)
+    analytics.paywall_summary()
+    sql = _select_sql(conn)
+    assert "event = 'paywall_viewed'" in sql
+    # Conversion requires the downstream event AFTER the first view.
+    assert "e.created_at > f.first_at" in sql
+    assert "'checkout_started'" in sql
+    assert "'pro_subscribed'" in sql
+    assert "props->>'surface'" in sql
+    assert "props->>'metric'" in sql
+
+
+# ── Owner metrics: traffic sources ────────────────────────────────────────────
+
+def test_traffic_sources_parses_rows(monkeypatch):
+    _patch_fetchall(
+        monkeypatch,
+        [
+            {"source": "google.com", "sessions": 30, "engaged": 5, "signed_in": 2},
+            {"source": "direct", "sessions": 20, "engaged": 4, "signed_in": 1},
+        ],
+    )
+    out = analytics.traffic_sources()
+    assert out == [
+        {"source": "google.com", "sessions": 30, "engaged": 5, "signed_in": 2},
+        {"source": "direct", "sessions": 20, "engaged": 4, "signed_in": 1},
+    ]
+
+
+def test_traffic_sources_sql_first_touch(monkeypatch, reset_tables_ready):
+    conn = _FakeConn(fetchall_result=[])
+    _patch_conn(monkeypatch, conn)
+    analytics.traffic_sources()
+    sql = _select_sql(conn)
+    # First touch per session, host-only referrer with a 'direct' fallback.
+    assert "DISTINCT ON (session_id)" in sql
+    assert "ORDER BY session_id, created_at ASC" in sql
+    assert "props->>'ref_host'" in sql
+    assert "'direct'" in sql
+    assert "s.acct_views = 0 AND s.anon_views >= 2" in sql
+    assert "session_id IS NOT NULL" in sql
+
+
+def test_top_landing_paths_parses_rows(monkeypatch):
+    _patch_fetchall(
+        monkeypatch,
+        [{"path": "/dynasty-trade-value-chart", "sessions": 25, "engaged": 1}],
+    )
+    out = analytics.top_landing_paths()
+    assert out == [
+        {"path": "/dynasty-trade-value-chart", "sessions": 25, "engaged": 1}
+    ]
+
+
+# ── Owner metrics: activation cohort ──────────────────────────────────────────
+
+@pytest.fixture()
+def reset_provider_probe():
+    analytics._user_leagues_provider_col = None
+    analytics._user_leagues_provider_col_checked = False
+    yield
+    analytics._user_leagues_provider_col = None
+    analytics._user_leagues_provider_col_checked = False
+
+
+def _cohort_dispatch(sql, args=()):
+    if "information_schema" in sql:
+        return [{"column_name": "platform"}]
+    if "DISTINCT ON (ul.account_id)" in sql:
+        return [{"provider": "sleeper", "n": 28}]
+    if "within_24h" in sql:
+        return [{"signups": 50, "linked_24h": 20, "linked_7d": 30, "linked_ever": 35}]
+    return []
+
+
+def test_activation_cohort_parses_with_provider_split(monkeypatch, reset_provider_probe):
+    monkeypatch.setattr("dashboard_services.analytics._fetchall", _cohort_dispatch)
+    out = analytics.activation_cohort()
+    assert out["signups"] == 50
+    assert out["linked_24h"] == 20
+    assert out["linked_7d"] == 30
+    assert out["linked_ever"] == 35
+    assert out["pct_24h"] == 40.0
+    assert out["pct_7d"] == 60.0
+    assert out["pct_ever"] == 70.0
+    assert out["by_provider"] == [{"provider": "sleeper", "count": 28}]
+
+
+def test_activation_cohort_without_provider_column(monkeypatch, reset_provider_probe):
+    def dispatch(sql, args=()):
+        if "information_schema" in sql:
+            return [{"column_name": "account_id"}, {"column_name": "added_at"}]
+        if "DISTINCT ON" in sql:
+            raise AssertionError("provider query must not run without the column")
+        if "within_24h" in sql:
+            return [{"signups": 10, "linked_24h": 1, "linked_7d": 2, "linked_ever": 3}]
+        return []
+
+    monkeypatch.setattr("dashboard_services.analytics._fetchall", dispatch)
+    out = analytics.activation_cohort()
+    assert out["signups"] == 10
+    assert out["by_provider"] == []
+
+
+def test_activation_cohort_sql(monkeypatch, reset_tables_ready, reset_provider_probe):
+    conn = _FakeConn(fetchall_result=[])
+    _patch_conn(monkeypatch, conn)
+    analytics.activation_cohort()
+    sql = _select_sql(conn)
+    # True cohort: the same accounts, timed from their own created_at.
+    assert "FROM accounts" in sql
+    assert "ul.account_id = c.id" in sql
+    assert "ul.added_at >= c.created_at" in sql
+    assert "interval '24 hours'" in sql
+    assert "interval '7 days'" in sql
+    assert "EXISTS" in sql
+
+
+# ── Owner metrics: revenue ────────────────────────────────────────────────────
+
+def _revenue_dispatch(sql, args=()):
+    if "user_league_subscriptions" in sql:
+        if "subscription_status" in sql:
+            return [{"count": 9}]
+        return [{"count": 5}]
+    if "checkout_started" in sql:
+        return [{"count": 12}]
+    if "pro_subscribed" in sql:
+        if "COUNT(DISTINCT" in sql:
+            return [{"count": 5}]
+        return [{"count": 6}]
+    if "pro_cancelled" in sql:
+        return [{"count": 1}]
+    return [{"count": 0}]
+
+
+def test_revenue_summary_parses(monkeypatch):
+    monkeypatch.setattr("dashboard_services.analytics._fetchall", _revenue_dispatch)
+    out = analytics.revenue_summary()
+    assert out["checkout_identities"] == 12
+    assert out["subscribed_events"] == 6
+    assert out["subscribed_identities"] == 5
+    assert out["cancelled_events"] == 1
+    assert out["checkout_conversion_pct"] == 41.7
+    assert out["active_pro_subscriptions"] == 9
+    assert out["new_pro_subscriptions"] == 5
+
+
+def test_revenue_summary_sql_active_predicate(monkeypatch, reset_tables_ready):
+    conn = _FakeConn(fetchall_result=[])
+    _patch_conn(monkeypatch, conn)
+    analytics.revenue_summary()
+    sql = _select_sql(conn)
+    # The real column is subscription_status, and "active" also requires
+    # the subscription to be unexpired (the app-wide entitlement rule).
+    assert "subscription_status = 'active'" in sql
+    assert "expires_at > now()" in sql
+    assert "'checkout_started'" in sql
+    assert "'pro_cancelled'" in sql
+
+
+def test_revenue_summary_survives_missing_tables(monkeypatch):
+    def boom(sql, args=()):
+        raise RuntimeError("relation does not exist")
+
+    monkeypatch.setattr("dashboard_services.analytics._fetchall", boom)
+    out = analytics.revenue_summary()
+    assert out["checkout_identities"] == 0
+    assert out["active_pro_subscriptions"] == 0
+
+
+# ── Owner metrics: paywall beacon endpoint ────────────────────────────────────
+
+def _make_beacon_client(monkeypatch):
+    flask = pytest.importorskip("flask")
+    from extensions import limiter
+    from routes import analytics_bp as _bp_mod
+
+    client_app = flask.Flask(__name__)
+    client_app.secret_key = "test-secret"
+    client_app.register_blueprint(_bp_mod.analytics_bp)
+    limiter.init_app(client_app)
+
+    calls = []
+
+    def capture(event, account_id=None, session_id=None, path=None, props=None):
+        calls.append({
+            "event": event, "account_id": account_id,
+            "session_id": session_id, "path": path, "props": props,
+        })
+
+    monkeypatch.setattr("dashboard_services.analytics.track_event", capture)
+    monkeypatch.setattr(
+        "dashboard_services.analytics.account_id_from_session", lambda: 7
+    )
+    monkeypatch.setattr(
+        "dashboard_services.analytics.ensure_anon_session_id", lambda: "sess-1"
+    )
+    return client_app.test_client(), calls
+
+
+def test_paywall_beacon_records_valid_view(monkeypatch):
+    client, calls = _make_beacon_client(monkeypatch)
+    resp = client.post(
+        "/api/analytics/paywall",
+        json={"surface": "locked_metric", "metric": "wopr", "path": "/advanced-metrics"},
+    )
+    assert resp.status_code == 204
+    assert calls == [{
+        "event": "paywall_viewed", "account_id": 7, "session_id": "sess-1",
+        "path": "/advanced-metrics",
+        "props": {"surface": "locked_metric", "metric": "wopr"},
+    }]
+
+
+def test_paywall_beacon_metric_optional(monkeypatch):
+    client, calls = _make_beacon_client(monkeypatch)
+    resp = client.post(
+        "/api/analytics/paywall",
+        json={"surface": "plan_modal", "path": "/pricing"},
+    )
+    assert resp.status_code == 204
+    assert len(calls) == 1
+    assert calls[0]["props"] == {"surface": "plan_modal"}
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"surface": "not-a-surface", "path": "/x"},
+        {"path": "/x"},
+        {"surface": "plan_modal"},
+        {"surface": "plan_modal", "path": "https://evil.example.com/x"},
+        {"surface": "plan_modal", "path": "/" + "a" * 512},
+        {"surface": "plan_modal", "path": 42},
+    ],
+)
+def test_paywall_beacon_drops_invalid_payloads(monkeypatch, payload):
+    client, calls = _make_beacon_client(monkeypatch)
+    resp = client.post("/api/analytics/paywall", json=payload)
+    assert resp.status_code == 204
+    assert calls == []
+
+
+def test_paywall_beacon_non_json_body(monkeypatch):
+    client, calls = _make_beacon_client(monkeypatch)
+    resp = client.post(
+        "/api/analytics/paywall", data="not json", content_type="text/plain"
+    )
+    assert resp.status_code == 204
+    assert calls == []
+
+
+# ── Owner metrics: admin page sections ────────────────────────────────────────
+
+def test_admin_page_renders_owner_metric_sections(monkeypatch):
+    client = _make_admin_client(monkeypatch, admin=True)
+    resp = client.get("/admin/analytics")
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    for section in (
+        "Most used features (last 30 days)",
+        "Signed-in retention",
+        "Activation: signup to league linked (cohort)",
+        "Revenue",
+        "Paywalls",
+        "Traffic sources",
+    ):
+        assert section in body
+    # Ranking sits directly above the by-week table; signed-in retention
+    # directly after the overall return section.
+    assert body.index("Most used features (last 30 days)") \
+        < body.index("Feature usage by week")
+    assert body.index("Week-over-week return") \
+        < body.index("Signed-in retention") \
+        < body.index("Funnel: visitor to PRO")
+    # Ranking rows: uses and unique users.
+    assert "Unique users" in body
+    assert "<td>42</td>" in body
+    assert "<td>17</td>" in body
+    # Traffic sources + landing paths.
+    assert "google.com" in body
+    assert "/dynasty-trade-value-chart" in body
+    # Paywall funnel line + surface/metric tables.
+    assert "100</strong> paywall views" in body
+    assert "locked_metric" in body
+    assert "wopr" in body
+    # Activation cohort + provider split.
+    assert "Linked within 24 hours" in body
+    assert "sleeper" in body
+    # Revenue strip.
+    assert "Currently active PRO subscriptions" in body
+
+
+def test_admin_page_owner_section_failure_still_renders(monkeypatch):
+    client = _make_admin_client(monkeypatch, admin=True)
+    from dashboard_services import analytics as _svc
+
+    def boom(days=30):
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(_svc, "paywall_summary", boom)
+    resp = client.get("/admin/analytics")
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "Paywalls" in body
+    assert "Paywall data unavailable." in body
+    # The rest of the page is unaffected.
+    assert "Daily active users" in body
+    assert "Traffic sources" in body
+
+
+# ── Owner metrics: client JS contract ─────────────────────────────────────────
+
+def test_paywall_js_beacon_contract():
+    from pathlib import Path
+
+    src = (Path(__file__).resolve().parent.parent / "static" / "paywall.js").read_text()
+    # The beacon helper posts to the endpoint and is fire-and-forget.
+    assert "window.brTrackPaywall" in src
+    assert "'/api/analytics/paywall'" in src
+    assert "keepalive: true" in src
+    # Both modal openers and the nudge renderer are instrumented.
+    assert "brPaywallNudgeSurface" in src
+    assert "window.brTrackPaywall('plan_modal')" in src
+    assert "'locked_metric'" in src
+    assert "'wrapped_finale'" in src
+    assert "'breakout_nudge'" in src
+    assert "'player_modal_nudge'" in src
+    assert "'movers_nudge'" in src
+
+
+def test_paywall_display_hooks_in_pages():
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent.parent
+    app_js = (root / "static" / "app.js").read_text()
+    assert "brTrackPaywall('breakout_nudge')" in app_js
+    history_py = (root / "dashboard_services" / "pages" / "history_page.py").read_text()
+    assert "brTrackPaywall('wrapped_finale')" in history_py

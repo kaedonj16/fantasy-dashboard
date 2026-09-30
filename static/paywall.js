@@ -1,4 +1,41 @@
 /**
+ * Paywall analytics beacon (POST /api/analytics/paywall).
+ *
+ * Counting rule: paywall_viewed fires once per DISPLAY.
+ * - Plan modal: once per showPaywall() / openHomeProModal() render, with
+ *   the surface derived from where the open came from.
+ * - Inline nudges that render without opening the modal: once per render
+ *   (brUpsell.nudge success, the Breakout lock empty state, the Wrapped
+ *   PRO finale slide), each with its own surface.
+ * A nudge click that opens the modal therefore records two events (the
+ * nudge view, then the modal view): that is the funnel, not double
+ * counting. Fire-and-forget: never throws, never blocks the paywall UI.
+ */
+window.brTrackPaywall = function brTrackPaywall(surface, metric) {
+  try {
+    var body = JSON.stringify({
+      surface: String(surface || 'plan_modal'),
+      metric: metric ? String(metric) : undefined,
+      path: window.location.pathname
+    });
+    fetch('/api/analytics/paywall', {
+      method: 'POST',
+      keepalive: true,
+      headers: { 'Content-Type': 'application/json' },
+      body: body
+    }).catch(function () {});
+  } catch (_) { /* telemetry must never break the page */ }
+};
+
+/** Map a brUpsell nudge key to its paywall surface (null when unmapped). */
+window.brPaywallNudgeSurface = function brPaywallNudgeSurface(key) {
+  if (key === 'pm-metrics') return 'player_modal_nudge';
+  if (key === 'am-movers') return 'movers_nudge';
+  if (key === 'bo-locked') return 'breakout_nudge';
+  return null;
+};
+
+/**
  * Paywall UI for premium features
  *
  * Usage:
@@ -167,6 +204,10 @@ window.brProPreview = function brProPreview(container, opts) {
         window.brUpsell.dismiss(key);
         if (root.parentNode) root.parentNode.removeChild(root);
       });
+      var _nudgeSurface = window.brPaywallNudgeSurface(key);
+      if (_nudgeSurface && typeof window.brTrackPaywall === 'function') {
+        window.brTrackPaywall(_nudgeSurface);
+      }
       return true;
     }
   };
@@ -393,6 +434,28 @@ window.showPaywall = function showPaywall(feature, opts) {
   `;
 
   document.body.appendChild(modal);
+
+  // Analytics: one paywall_viewed per modal render. Surface priority:
+  // the nudge that opened it first, then the gated thing itself.
+  (function () {
+    var surface = 'plan_modal';
+    var metric = null;
+    var mm = /^advanced-metrics-metric-([A-Za-z0-9_]+)$/.exec(String(feature || ''));
+    if (mm) metric = mm[1];
+    var src = (opts && opts.source) || '';
+    if (src.indexOf('nudge:') === 0) {
+      surface = window.brPaywallNudgeSurface(src.slice(6)) || 'plan_modal';
+    } else if (mm) {
+      surface = 'locked_metric';
+    } else if (feature === 'wrapped-pro') {
+      surface = 'wrapped_finale';
+    } else if (feature === 'breakout-candidates' || feature === 'breakout-analysis') {
+      surface = 'breakout_nudge';
+    }
+    if (typeof window.brTrackPaywall === 'function') {
+      window.brTrackPaywall(surface, metric);
+    }
+  })();
 
   var inertRoot = document.getElementById('app-scale') || document.getElementById('page-root');
   if (inertRoot) inertRoot.setAttribute('inert', '');
@@ -1344,6 +1407,9 @@ function openHomeProModal() {
       </div>
     </div>`;
   document.body.appendChild(modal);
+  if (typeof window.brTrackPaywall === 'function') {
+    window.brTrackPaywall('plan_modal');
+  }
 
   const inertRoot = document.getElementById('app-scale') || document.getElementById('page-root');
   if (inertRoot) inertRoot.setAttribute('inert', '');

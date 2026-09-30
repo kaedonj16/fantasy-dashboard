@@ -6197,6 +6197,7 @@ window.initTradePage = function initTradePage(root = document) {
           compact: true,
           cta: { label: 'Upgrade', onClick: function () { if (typeof showPaywall === 'function') showPaywall('breakout-candidates'); } }
         });
+        if (typeof window.brTrackPaywall === 'function') window.brTrackPaywall('breakout_nudge');
         if (moversPanel) moversPanel.classList.remove("otc-movers-loading");
         return;
       }

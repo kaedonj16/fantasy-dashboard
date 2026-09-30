@@ -2615,6 +2615,7 @@ _WRAPPED_BOOTSTRAP_JS = r"""
           '<button type="button" class="wrapped-pro-dismiss">Not now</button>' +
         '</div>';
       stage.appendChild(sec);
+      if (typeof window.brTrackPaywall === 'function') window.brTrackPaywall('wrapped_finale');
       var prog = overlay.querySelector('.wrapped-progress');
       if (prog) {
         var bar = document.createElement('span');

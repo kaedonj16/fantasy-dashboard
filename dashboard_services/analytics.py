@@ -38,6 +38,7 @@ import logging
 import os
 import uuid
 from typing import Any, Dict, FrozenSet, List, Optional, Sequence
+from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +63,19 @@ EVENT_PUSH_SUBSCRIBED = "push_subscribed"
 EVENT_CHECKOUT_STARTED = "checkout_started"
 EVENT_PRO_SUBSCRIBED = "pro_subscribed"
 EVENT_PRO_CANCELLED = "pro_cancelled"
+EVENT_PAYWALL_VIEWED = "paywall_viewed"
+
+# Paywall surfaces that fire EVENT_PAYWALL_VIEWED from the client (see
+# POST /api/analytics/paywall). Stable ids only; the beacon endpoint and
+# the admin aggregation share this allowlist.
+PAYWALL_SURFACES = (
+    "plan_modal",
+    "locked_metric",
+    "breakout_nudge",
+    "wrapped_finale",
+    "player_modal_nudge",
+    "movers_nudge",
+)
 
 # Substrings that mark a request as bot traffic. Bots are not users for
 # DAU/WAU purposes, so their pageviews are skipped at the hook.
@@ -255,6 +269,31 @@ def should_log_pageview(
     if any(hint in ua for hint in _BOT_UA_HINTS):
         return False
     return True
+
+
+def external_ref_host(referrer: Optional[str], request_host: Optional[str]) -> Optional[str]:
+    """Hostname of an external referrer, or None.
+
+    Pure helper for the pageview hook: returns the referrer's hostname
+    (lowercased, no port) only when the referrer parses to a host that
+    differs from the request's own host. Direct visits, internal
+    navigation, missing and malformed referrers all return None. Host
+    only: no referrer path or query is ever recorded.
+    """
+    try:
+        ref = (referrer or "").strip()
+        if not ref:
+            return None
+        host = urlparse(ref).hostname
+        if not host:
+            return None
+        own = (request_host or "").strip().lower().split(":")[0]
+        host = host.lower()
+        if own and host == own:
+            return None
+        return host[:255]
+    except Exception:
+        return None
 
 
 # ── Aggregation queries (admin page) ──────────────────────────────────────────
@@ -649,6 +688,469 @@ def funnel_last_30_days() -> Dict[str, int]:
         """
     )
     return {"visitors": visitors, "signups": signups, "linked": linked, "pro": pro}
+
+
+# ── Owner metrics: paywalls, traffic, activation, revenue, retention ───────
+
+def _window_days(days: Any, default: int = 30) -> int:
+    try:
+        return max(1, int(days))
+    except (TypeError, ValueError):
+        return default
+
+
+def paywall_summary(days: int = 30) -> Dict[str, Any]:
+    """Paywall views and their downstream conversion for the last `days`.
+
+    Views are EVENT_PAYWALL_VIEWED rows (fired client-side via
+    POST /api/analytics/paywall; counting rule lives in static/paywall.js:
+    one event per plan-modal render and one per inline nudge render).
+    Viewer identity is _IDENT (account when signed in, else session).
+    Conversion joins on that identity and requires the checkout /
+    subscription event to be timestamped AFTER the viewer's first
+    paywall view in the window.
+    """
+    days = _window_days(days)
+    ident = _IDENT
+    rows = _fetchall(
+        f"""
+        WITH views AS (
+            SELECT {ident} AS viewer, created_at
+            FROM analytics_events
+            WHERE event = 'paywall_viewed'
+              AND created_at >= now() - make_interval(days => %s)
+            {_exclusion_clause()}
+        ),
+        first_view AS (
+            SELECT viewer, MIN(created_at) AS first_at
+            FROM views GROUP BY viewer
+        )
+        SELECT
+            (SELECT COUNT(*) FROM views) AS total_views,
+            (SELECT COUNT(*) FROM first_view) AS viewers,
+            (SELECT COUNT(*) FROM first_view f WHERE EXISTS (
+                SELECT 1 FROM analytics_events e
+                WHERE e.event = 'checkout_started'
+                  AND COALESCE(e.account_id::text, 's:' || COALESCE(e.session_id, '-')) = f.viewer
+                  AND e.created_at > f.first_at
+                  {_exclusion_clause("e.account_id")}
+            )) AS checkout_viewers,
+            (SELECT COUNT(*) FROM first_view f WHERE EXISTS (
+                SELECT 1 FROM analytics_events e
+                WHERE e.event = 'pro_subscribed'
+                  AND COALESCE(e.account_id::text, 's:' || COALESCE(e.session_id, '-')) = f.viewer
+                  AND e.created_at > f.first_at
+                  {_exclusion_clause("e.account_id")}
+            )) AS subscribed_viewers
+        """,
+        (days,),
+    )
+    r = rows[0] if rows else {}
+    total_views = int(r.get("total_views") or 0)
+    viewers = int(r.get("viewers") or 0)
+    checkout_viewers = int(r.get("checkout_viewers") or 0)
+    subscribed_viewers = int(r.get("subscribed_viewers") or 0)
+
+    surface_rows = _fetchall(
+        f"""
+        SELECT COALESCE(NULLIF(props->>'surface', ''), 'unknown') AS surface,
+               COUNT(*) AS views,
+               COUNT(DISTINCT {ident}) AS viewers
+        FROM analytics_events
+        WHERE event = 'paywall_viewed'
+          AND created_at >= now() - make_interval(days => %s)
+        {_exclusion_clause()}
+        GROUP BY 1 ORDER BY views DESC, surface
+        """,
+        (days,),
+    )
+    metric_rows = _fetchall(
+        f"""
+        SELECT props->>'metric' AS metric,
+               COUNT(*) AS views,
+               COUNT(DISTINCT {ident}) AS viewers
+        FROM analytics_events
+        WHERE event = 'paywall_viewed'
+          AND created_at >= now() - make_interval(days => %s)
+          AND COALESCE(props->>'metric', '') <> ''
+        {_exclusion_clause()}
+        GROUP BY 1 ORDER BY views DESC, metric
+        LIMIT 10
+        """,
+        (days,),
+    )
+    return {
+        "days": days,
+        "total_views": total_views,
+        "viewers": viewers,
+        "checkout_viewers": checkout_viewers,
+        "subscribed_viewers": subscribed_viewers,
+        "checkout_pct": round(100.0 * checkout_viewers / viewers, 1) if viewers else 0.0,
+        "subscribed_pct": round(100.0 * subscribed_viewers / viewers, 1) if viewers else 0.0,
+        "by_surface": [
+            {"surface": str(x["surface"]), "views": int(x["views"]), "viewers": int(x["viewers"])}
+            for x in surface_rows
+        ],
+        "by_metric": [
+            {"metric": str(x["metric"]), "views": int(x["views"]), "viewers": int(x["viewers"])}
+            for x in metric_rows
+            if x["metric"]
+        ],
+    }
+
+
+# First-touch CTE shared by the two traffic aggregations: each session's
+# earliest pageview in the window gives its landing path and referrer
+# host ('direct' when the pageview recorded no external ref_host).
+_TRAFFIC_CTES = """
+    WITH pv AS (
+        SELECT account_id, session_id, path, props, created_at
+        FROM analytics_events
+        WHERE event = 'pageview' AND session_id IS NOT NULL
+          AND created_at >= now() - make_interval(days => %s)
+        {excl}
+    ),
+    sessions AS (
+        SELECT session_id,
+               COUNT(*) FILTER (WHERE account_id IS NULL) AS anon_views,
+               COUNT(*) FILTER (WHERE account_id IS NOT NULL) AS acct_views
+        FROM pv
+        GROUP BY session_id
+    ),
+    first_touch AS (
+        SELECT DISTINCT ON (session_id)
+               session_id, path AS landing_path,
+               COALESCE(NULLIF(props->>'ref_host', ''), 'direct') AS source
+        FROM pv
+        ORDER BY session_id, created_at ASC
+    )
+"""
+
+
+def traffic_sources(days: int = 30) -> List[Dict[str, Any]]:
+    """Sessions by first-touch referrer host (or 'direct'), last `days`.
+
+    Engaged uses the realistic DAU definition per session (2+ pageviews,
+    never signed in); signed_in counts sessions with any signed-in
+    pageview in the window.
+    """
+    days = _window_days(days)
+    rows = _fetchall(
+        _TRAFFIC_CTES.format(excl=_exclusion_clause())
+        + """
+        SELECT f.source AS source,
+               COUNT(*) AS sessions,
+               COUNT(*) FILTER (WHERE s.acct_views = 0 AND s.anon_views >= 2) AS engaged,
+               COUNT(*) FILTER (WHERE s.acct_views > 0) AS signed_in
+        FROM first_touch f
+        JOIN sessions s ON s.session_id = f.session_id
+        GROUP BY f.source
+        ORDER BY sessions DESC, f.source
+        LIMIT 10
+        """,
+        (days,),
+    )
+    return [
+        {
+            "source": str(r["source"]),
+            "sessions": int(r["sessions"]),
+            "engaged": int(r["engaged"]),
+            "signed_in": int(r["signed_in"]),
+        }
+        for r in rows
+    ]
+
+
+def top_landing_paths(days: int = 30) -> List[Dict[str, Any]]:
+    """Sessions by first-touch landing path, last `days` (top 10)."""
+    days = _window_days(days)
+    rows = _fetchall(
+        _TRAFFIC_CTES.format(excl=_exclusion_clause())
+        + """
+        SELECT f.landing_path AS path,
+               COUNT(*) AS sessions,
+               COUNT(*) FILTER (WHERE s.acct_views = 0 AND s.anon_views >= 2) AS engaged
+        FROM first_touch f
+        JOIN sessions s ON s.session_id = f.session_id
+        WHERE f.landing_path IS NOT NULL
+        GROUP BY f.landing_path
+        ORDER BY sessions DESC, f.landing_path
+        LIMIT 10
+        """,
+        (days,),
+    )
+    return [
+        {"path": str(r["path"]), "sessions": int(r["sessions"]), "engaged": int(r["engaged"])}
+        for r in rows
+        if r["path"]
+    ]
+
+
+def activation_cohort(days: int = 30) -> Dict[str, Any]:
+    """Signup -> league-linked cohort for accounts created in the window.
+
+    Unlike the period funnel, every stage counts the SAME accounts:
+    signups in the window, and how many of them have a user_leagues row
+    added within 24 hours / 7 days of their account creation, or at any
+    point up to now. Provider split (when built) reads the provider of
+    each 7-day-linked account's earliest link.
+    """
+    days = _window_days(days)
+    rows = _fetchall(
+        f"""
+        WITH cohort AS (
+            SELECT id, created_at
+            FROM accounts
+            WHERE created_at >= now() - make_interval(days => %s)
+            {_exclusion_clause("id")}
+        ),
+        links AS (
+            SELECT c.id,
+                   EXISTS (
+                       SELECT 1 FROM user_leagues ul
+                       WHERE ul.account_id = c.id
+                         AND ul.added_at >= c.created_at
+                         AND ul.added_at < c.created_at + interval '24 hours'
+                   ) AS within_24h,
+                   EXISTS (
+                       SELECT 1 FROM user_leagues ul
+                       WHERE ul.account_id = c.id
+                         AND ul.added_at >= c.created_at
+                         AND ul.added_at < c.created_at + interval '7 days'
+                   ) AS within_7d,
+                   EXISTS (
+                       SELECT 1 FROM user_leagues ul
+                       WHERE ul.account_id = c.id
+                   ) AS ever
+            FROM cohort c
+        )
+        SELECT COUNT(*) AS signups,
+               COUNT(*) FILTER (WHERE within_24h) AS linked_24h,
+               COUNT(*) FILTER (WHERE within_7d) AS linked_7d,
+               COUNT(*) FILTER (WHERE ever) AS linked_ever
+        FROM links
+        """,
+        (days,),
+    )
+    r = rows[0] if rows else {}
+    signups = int(r.get("signups") or 0)
+    linked_24h = int(r.get("linked_24h") or 0)
+    linked_7d = int(r.get("linked_7d") or 0)
+    linked_ever = int(r.get("linked_ever") or 0)
+
+    by_provider: List[Dict[str, Any]] = []
+    provider_col = _user_leagues_provider_column()
+    if provider_col:
+        prov_rows = _fetchall(
+            f"""
+            WITH cohort AS (
+                SELECT id, created_at
+                FROM accounts
+                WHERE created_at >= now() - make_interval(days => %s)
+                {_exclusion_clause("id")}
+            ),
+            first_links AS (
+                SELECT DISTINCT ON (ul.account_id)
+                       ul.account_id, ul.{provider_col} AS provider
+                FROM user_leagues ul
+                JOIN cohort c ON c.id = ul.account_id
+                WHERE ul.added_at >= c.created_at
+                  AND ul.added_at < c.created_at + interval '7 days'
+                ORDER BY ul.account_id, ul.added_at ASC
+            )
+            SELECT provider, COUNT(*) AS n
+            FROM first_links
+            GROUP BY provider
+            ORDER BY n DESC, provider
+            """,
+            (days,),
+        )
+        by_provider = [
+            {"provider": str(x["provider"]), "count": int(x["n"])}
+            for x in prov_rows
+            if x["provider"]
+        ]
+    return {
+        "days": days,
+        "signups": signups,
+        "linked_24h": linked_24h,
+        "linked_7d": linked_7d,
+        "linked_ever": linked_ever,
+        "pct_24h": round(100.0 * linked_24h / signups, 1) if signups else 0.0,
+        "pct_7d": round(100.0 * linked_7d / signups, 1) if signups else 0.0,
+        "pct_ever": round(100.0 * linked_ever / signups, 1) if signups else 0.0,
+        "by_provider": by_provider,
+    }
+
+
+_PROVIDER_COLUMN_CANDIDATES = ("provider", "platform", "source")
+_user_leagues_provider_col: Optional[str] = None
+_user_leagues_provider_col_checked = False
+
+
+def _user_leagues_provider_column() -> Optional[str]:
+    """The user_leagues provider/platform column name, or None.
+
+    Probed once per process from information_schema so the cohort's
+    provider split only builds when the column really exists; a failed
+    probe (no DB, missing table) returns None and the split is skipped.
+    """
+    global _user_leagues_provider_col, _user_leagues_provider_col_checked
+    if _user_leagues_provider_col_checked:
+        return _user_leagues_provider_col
+    _user_leagues_provider_col_checked = True
+    try:
+        rows = _fetchall(
+            """
+            SELECT column_name FROM information_schema.columns
+            WHERE table_name = 'user_leagues'
+            """
+        )
+        names = {str(r["column_name"]) for r in rows}
+        for cand in _PROVIDER_COLUMN_CANDIDATES:
+            if cand in names:
+                _user_leagues_provider_col = cand
+                break
+    except Exception:
+        logger.debug("[analytics] user_leagues provider probe failed", exc_info=True)
+    return _user_leagues_provider_col
+
+
+def revenue_summary(days: int = 30) -> Dict[str, Any]:
+    """Checkout / subscription numbers for the last `days` plus current PRO.
+
+    Event-based counts come from analytics_events; current/new PRO counts
+    come from user_league_subscriptions. No MRR: subscription rows do not
+    carry a reliably priced amount (see subscriptions schema), so no
+    revenue figure is estimated. Table-based counts degrade to 0 when
+    the subscriptions table is unavailable, mirroring the funnel.
+    """
+    days = _window_days(days)
+
+    def _one(sql: str, args: Sequence[Any] = ()) -> int:
+        try:
+            rows = _fetchall(sql, args)
+            return int(rows[0]["count"]) if rows else 0
+        except Exception:
+            logger.debug("[analytics] revenue query failed", exc_info=True)
+            return 0
+
+    window = "created_at >= now() - make_interval(days => %s)"
+    excl = _exclusion_clause()
+    checkout_identities = _one(
+        f"SELECT COUNT(DISTINCT {_IDENT}) AS count FROM analytics_events "
+        f"WHERE event = 'checkout_started' AND {window} {excl}",
+        (days,),
+    )
+    subscribed_events = _one(
+        f"SELECT COUNT(*) AS count FROM analytics_events "
+        f"WHERE event = 'pro_subscribed' AND {window} {excl}",
+        (days,),
+    )
+    subscribed_identities = _one(
+        f"SELECT COUNT(DISTINCT {_IDENT}) AS count FROM analytics_events "
+        f"WHERE event = 'pro_subscribed' AND {window} {excl}",
+        (days,),
+    )
+    cancelled_events = _one(
+        f"SELECT COUNT(*) AS count FROM analytics_events "
+        f"WHERE event = 'pro_cancelled' AND {window} {excl}",
+        (days,),
+    )
+    # user_league_subscriptions.user_id is a provider-side TEXT id, not an
+    # accounts.id, so the exclusion list does not apply to these two.
+    # "Currently active" is the entitlement predicate used across the app:
+    # status 'active' and not past expires_at.
+    active_pro = _one(
+        "SELECT COUNT(*) AS count FROM user_league_subscriptions "
+        "WHERE subscription_status = 'active' AND expires_at > now()"
+    )
+    new_pro = _one(
+        "SELECT COUNT(*) AS count FROM user_league_subscriptions "
+        f"WHERE {window}",
+        (days,),
+    )
+    return {
+        "days": days,
+        "checkout_identities": checkout_identities,
+        "subscribed_events": subscribed_events,
+        "subscribed_identities": subscribed_identities,
+        "cancelled_events": cancelled_events,
+        "checkout_conversion_pct": (
+            round(100.0 * subscribed_identities / checkout_identities, 1)
+            if checkout_identities else 0.0
+        ),
+        "active_pro_subscriptions": active_pro,
+        "new_pro_subscriptions": new_pro,
+    }
+
+
+def account_retention() -> List[Dict[str, Any]]:
+    """Week-over-week return for signed-in accounts only.
+
+    Same shape and New York Monday weeks as week_over_week_return(), but
+    the weekly active set is account ids only (no anonymous sessions),
+    so this tracks the signed-in core rather than all traffic.
+    """
+    rows = _fetchall(
+        f"""
+        WITH weekly AS (
+            SELECT date_trunc('week', created_at AT TIME ZONE 'America/New_York')::date AS w,
+                   account_id
+            FROM analytics_events
+            WHERE event = 'pageview' AND account_id IS NOT NULL
+              AND created_at >= now() - interval '9 weeks'
+            {_exclusion_clause()}
+            GROUP BY 1, 2
+        ),
+        flagged AS (
+            SELECT w, account_id,
+                   (LAG(w) OVER (PARTITION BY account_id ORDER BY w)
+                        = (w - interval '7 days')::date) AS returned
+            FROM weekly
+        )
+        SELECT w, COUNT(*) AS active,
+               COUNT(*) FILTER (WHERE returned) AS returned
+        FROM flagged GROUP BY 1 ORDER BY 1
+        """
+    )
+    out = []
+    for r in rows:
+        active = int(r["active"])
+        returned = int(r["returned"])
+        out.append({
+            "week": str(r["w"]),
+            "active": active,
+            "returned": returned,
+            "rate": round(100.0 * returned / active, 1) if active else 0.0,
+        })
+    return out
+
+
+def feature_usage_ranking(days: int = 30) -> List[Dict[str, Any]]:
+    """Non-pageview events ranked by use over the last `days`.
+
+    Per event: total uses and distinct identities (_IDENT: account when
+    signed in, else session), sorted by uses desc. This is the direct
+    "which features are used most" view; the by-week table shows trend.
+    """
+    days = _window_days(days)
+    rows = _fetchall(
+        f"""
+        SELECT event, COUNT(*) AS uses, COUNT(DISTINCT {_IDENT}) AS users
+        FROM analytics_events
+        WHERE event <> 'pageview'
+          AND created_at >= now() - make_interval(days => %s)
+        {_exclusion_clause()}
+        GROUP BY event
+        ORDER BY uses DESC, event
+        """,
+        (days,),
+    )
+    return [
+        {"event": str(r["event"]), "uses": int(r["uses"]), "users": int(r["users"])}
+        for r in rows
+    ]
 
 
 # ── Gap filling (continuous axes for the charts) ────────────────────────────
