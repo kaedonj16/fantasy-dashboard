@@ -297,6 +297,110 @@ def test_funnel_survives_missing_tables(monkeypatch):
     assert out == {"visitors": 0, "signups": 0, "linked": 0, "pro": 0}
 
 
+# ── DAU breakdown (diagnostic) ────────────────────────────────────────────────
+
+# Dict rows mirroring psycopg dict_row, one row per day definition.
+# Internally consistent: anon 255 = 200 one-and-done + 50 engaged + 5 linked;
+# realistic 90 = 40 signed-in + 50 engaged; headline 295 = 40 accounts +
+# 255 anon session identities.
+_BREAKDOWN_ROW_UTC = {
+    "headline": 295, "signed_in": 40, "anon_sessions": 255,
+    "anon_one_and_done": 200, "anon_engaged": 50, "anon_linked_sessions": 5,
+    "realistic_preview": 90, "total_pageviews": 812,
+}
+_BREAKDOWN_ROW_NY = {
+    "headline": 210, "signed_in": 35, "anon_sessions": 178,
+    "anon_one_and_done": 140, "anon_engaged": 35, "anon_linked_sessions": 3,
+    "realistic_preview": 70, "total_pageviews": 601,
+}
+
+_ZERO_BREAKDOWN = {
+    "headline": 0, "signed_in": 0, "anon_sessions": 0,
+    "anon_one_and_done": 0, "anon_engaged": 0, "anon_linked_sessions": 0,
+    "realistic_preview": 0, "total_pageviews": 0,
+}
+
+
+def _sample_breakdown():
+    return {"utc": dict(_BREAKDOWN_ROW_UTC), "ny": dict(_BREAKDOWN_ROW_NY)}
+
+
+def test_dau_breakdown_returns_both_day_sets(monkeypatch):
+    queue = [[dict(_BREAKDOWN_ROW_UTC)], [dict(_BREAKDOWN_ROW_NY)]]
+    seen_sql = []
+
+    def fake_fetchall(sql, args=()):
+        seen_sql.append(sql)
+        return queue.pop(0)
+
+    monkeypatch.setattr("dashboard_services.analytics._fetchall", fake_fetchall)
+    out = analytics.dau_breakdown()
+    assert out == {"utc": _BREAKDOWN_ROW_UTC, "ny": _BREAKDOWN_ROW_NY}
+    # UTC is queried first with the chart's exact day grouping; NY second.
+    assert "date_trunc('day', created_at) = date_trunc('day', now())" in seen_sql[0]
+    assert "America/New_York" in seen_sql[1]
+
+
+def test_dau_breakdown_empty_rows_zero_fill(monkeypatch):
+    _patch_fetchall(monkeypatch, [])
+    out = analytics.dau_breakdown()
+    assert out == {"utc": _ZERO_BREAKDOWN, "ny": _ZERO_BREAKDOWN}
+
+
+def test_dau_breakdown_sql_logic(monkeypatch, reset_tables_ready):
+    conn = _FakeConn(fetchall_result=[])
+    _patch_conn(monkeypatch, conn)
+    analytics.dau_breakdown()
+    sql = " ".join(w[0] for w in conn.writes if "SELECT" in w[0])
+    # Headline uses exactly the headline _IDENT definition, pageviews only.
+    assert "COUNT(DISTINCT COALESCE(account_id::text, 's:' || COALESCE(session_id, '-')))" in sql
+    assert "event = 'pageview'" in sql
+    # Per-session classification behind one-and-done / engaged / linked.
+    assert "COUNT(*) FILTER (WHERE account_id IS NULL) AS anon_views" in sql
+    assert "COUNT(*) FILTER (WHERE account_id IS NOT NULL) AS acct_views" in sql
+    assert "acct_views = 0 AND anon_views = 1" in sql
+    assert "acct_views = 0 AND anon_views >= 2" in sql
+    assert "anon_views > 0 AND acct_views > 0" in sql
+    assert "AS anon_linked_sessions" in sql
+    assert "AS realistic_preview" in sql
+    assert "AS total_pageviews" in sql
+    # Both day definitions are queried.
+    assert "date_trunc('day', created_at) = date_trunc('day', now())" in sql
+    assert "(created_at AT TIME ZONE 'America/New_York')::date" in sql
+
+
+def test_dau_breakdown_sql_excludes_account_ids(monkeypatch, reset_tables_ready, excluded_ids):
+    conn = _FakeConn(fetchall_result=[])
+    _patch_conn(monkeypatch, conn)
+    analytics.dau_breakdown()
+    sql = _select_sql(conn)
+    # One exclusion clause per day query (in the base CTE).
+    assert sql.count("COALESCE(account_id, -1) NOT IN (7, 9, 12)") == 2
+
+
+def test_one_and_done_top_paths_shape(monkeypatch):
+    _patch_fetchall(
+        monkeypatch,
+        [{"path": "/", "n": 120}, {"path": "/pricing", "n": 31}],
+    )
+    out = analytics.one_and_done_top_paths(5)
+    assert out == [{"path": "/", "count": 120}, {"path": "/pricing", "count": 31}]
+
+
+def test_one_and_done_top_paths_sql_and_limit(monkeypatch, reset_tables_ready):
+    conn = _FakeConn(fetchall_result=[])
+    _patch_conn(monkeypatch, conn)
+    analytics.one_and_done_top_paths(3)
+    selects = [w for w in conn.writes if "SELECT" in w[0]]
+    assert len(selects) == 1
+    sql, args = selects[0]
+    assert "acct_views = 0 AND anon_views = 1" in sql
+    assert "JOIN one_done" in sql
+    assert "GROUP BY b.path" in sql
+    assert "LIMIT %s" in sql
+    assert args == (3,)
+
+
 def test_events_table_ready(monkeypatch):
     _patch_fetchall(monkeypatch, [{"count": 0}])
     assert analytics.events_table_ready() is False
@@ -338,6 +442,13 @@ def _make_admin_client(monkeypatch, admin=True):
     monkeypatch.setattr(
         "dashboard_services.analytics.events_table_ready", lambda: True
     )
+    monkeypatch.setattr(
+        "dashboard_services.analytics.dau_breakdown", _sample_breakdown
+    )
+    monkeypatch.setattr(
+        "dashboard_services.analytics.one_and_done_top_paths",
+        lambda limit=5: [{"path": "/", "count": 120}, {"path": "/pricing", "count": 31}],
+    )
     app = flask.Flask(__name__)
     app.secret_key = "test-secret"
     app.register_blueprint(_bp_mod.analytics_bp)
@@ -362,6 +473,50 @@ def test_admin_page_renders_for_admin(monkeypatch):
     assert "trade_evaluated" in body
 
 
+def test_admin_page_renders_breakdown_section(monkeypatch):
+    client = _make_admin_client(monkeypatch, admin=True)
+    resp = client.get("/admin/analytics")
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "DAU breakdown: today (diagnostic)" in body
+    # The breakdown section sits directly under the DAU chart section.
+    assert body.index("Daily active users") < body.index("DAU breakdown: today (diagnostic)") \
+        < body.index("Weekly active users")
+    assert "UTC day (current chart)" in body
+    assert "New York day" in body
+    for label in (
+        "Headline DAU (current definition)",
+        "Signed-in accounts",
+        "Anonymous sessions",
+        "Anonymous: one-and-done (1 pageview)",
+        "Anonymous sessions that also signed in (counted twice)",
+        "Realistic preview (signed-in + engaged anonymous)",
+        "Total pageviews",
+    ):
+        assert label in body
+    # UTC and NY values from the stubbed breakdown both render.
+    assert "<td>295</td><td>210</td>" in body
+    assert "<td>90</td><td>70</td>" in body
+    assert "Top one-and-done paths (UTC day): /: 120, /pricing: 31" in body
+
+
+def test_admin_page_breakdown_failure_still_renders(monkeypatch):
+    client = _make_admin_client(monkeypatch, admin=True)
+    # _make_admin_client stubbed it; replace with a raising version.
+    from dashboard_services import analytics as _svc
+
+    def boom():
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(_svc, "dau_breakdown", boom)
+    resp = client.get("/admin/analytics")
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "DAU breakdown: today (diagnostic)" in body
+    assert "Breakdown unavailable." in body
+    assert "Daily active users" in body
+
+
 def test_admin_page_404_for_non_admin(monkeypatch):
     client = _make_admin_client(monkeypatch, admin=False)
     resp = client.get("/admin/analytics")
@@ -383,6 +538,9 @@ def test_admin_page_empty_state(monkeypatch):
         lambda: {"visitors": 0, "signups": 0, "linked": 0, "pro": 0},
     )
     monkeypatch.setattr("dashboard_services.analytics.events_table_ready", lambda: False)
+    monkeypatch.setattr("dashboard_services.analytics.dau_breakdown",
+                        lambda: {"utc": dict(_ZERO_BREAKDOWN), "ny": dict(_ZERO_BREAKDOWN)})
+    monkeypatch.setattr("dashboard_services.analytics.one_and_done_top_paths", lambda limit=5: [])
     app = flask.Flask(__name__)
     app.secret_key = "test-secret"
     app.register_blueprint(_bp_mod.analytics_bp)
@@ -624,6 +782,9 @@ def test_analytics_page_shows_exclusion_status(monkeypatch):
         lambda: {"visitors": 0, "signups": 0, "linked": 0, "pro": 0},
     )
     monkeypatch.setattr(analytics, "events_table_ready", lambda: False)
+    monkeypatch.setattr(analytics, "dau_breakdown",
+                        lambda: {"utc": dict(_ZERO_BREAKDOWN), "ny": dict(_ZERO_BREAKDOWN)})
+    monkeypatch.setattr(analytics, "one_and_done_top_paths", lambda limit=5: [])
 
     app = flask.Flask(__name__)
     app.secret_key = "test-secret"
@@ -655,6 +816,9 @@ def test_analytics_page_hides_exclusion_status_when_unset(monkeypatch):
         lambda: {"visitors": 0, "signups": 0, "linked": 0, "pro": 0},
     )
     monkeypatch.setattr(analytics, "events_table_ready", lambda: False)
+    monkeypatch.setattr(analytics, "dau_breakdown",
+                        lambda: {"utc": dict(_ZERO_BREAKDOWN), "ny": dict(_ZERO_BREAKDOWN)})
+    monkeypatch.setattr(analytics, "one_and_done_top_paths", lambda limit=5: [])
 
     app = flask.Flask(__name__)
     app.secret_key = "test-secret"
