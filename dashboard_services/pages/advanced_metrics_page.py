@@ -2455,6 +2455,19 @@ _AM_JS = r"""
 
   function fetchExtraData(key, _attempt) {
     _attempt = _attempt || 0;
+    // PRO-gated column for a free viewer: the client already knows this
+    // metric is locked, so settle the column into its locked state right
+    // away instead of depending on a leaderboard request that can only
+    // 403. When that round trip stalls, the cells sit on the skeleton
+    // shimmer indefinitely; the locked state renders immediately and
+    // gives the paywall a real tap target from first paint.
+    if (_mLocked(key)) {
+      if (!state.extraData[key] || !state.extraData[key].proLocked) {
+        state.extraData[key] = { byId: {}, maxAbs: 1, proLocked: true };
+        render();
+      }
+      return Promise.resolve();
+    }
     const requestToken = state.requestToken;
     function _buildExtraParams(s) {
       const p = new URLSearchParams({ metric: key, platform: cfg.platform });
