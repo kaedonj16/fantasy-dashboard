@@ -170,6 +170,11 @@ def new_components() -> Dict[str, float]:
         "x_receptions": 0.0, "x_rec_yards": 0.0, "x_rec_td": 0.0,
         "x_carries": 0.0, "x_rush_yards": 0.0, "x_rush_td": 0.0,
         "x_pass_att": 0.0, "x_pass_yards": 0.0, "x_pass_td": 0.0, "x_int": 0.0,
+        # Expected receiving TDs on plays this player THREW (valued with the
+        # receiving-TD table, per play). Kept separate from x_pass_td (the
+        # yardline-only passing table behind expected passing points) so
+        # expected_tds can count each pass play's TD equity exactly once.
+        "x_pass_rec_td": 0.0,
         # actual (same basis, so deltas reconcile)
         "a_receptions": 0.0, "a_rec_yards": 0.0, "a_rec_td": 0.0,
         "a_carries": 0.0, "a_rush_yards": 0.0, "a_rush_td": 0.0,
@@ -242,14 +247,17 @@ def actual_points(comp: Dict[str, float], fmt: str) -> float:
 
 
 # xFP columns. Both the season snapshot (a season total) and each weekly row (that
-# week's total) use the SAME six column names: they are totals, so a selected week
+# week's total) use the SAME column names: they are totals, so a selected week
 # range sums them the way the UI sums the other advanced-metric totals
 # (receiving_epa, yards_after_catch, ...), and the full-season sum matches the
 # season snapshot value. A negative *_over_expected is fantasy points left on the
-# board (elite opportunity that did not convert).
+# board (elite opportunity that did not convert). expected_tds / td_over_expected
+# are the touchdown slice of the same model: expected TDs from the player's own
+# receiving + rushing + thrown opportunities, and actual TDs minus that.
 XFP_COLS: Tuple[str, ...] = (
     "expected_ppr", "expected_half_ppr", "expected_standard",
     "ppr_over_expected", "half_ppr_over_expected", "standard_over_expected",
+    "expected_tds", "td_over_expected",
 )
 _FMT_SUFFIX = {"ppr": "ppr", "half": "half_ppr", "standard": "standard"}
 
@@ -263,6 +271,15 @@ def _total_columns_from_components(comp: Dict[str, float]) -> Dict[str, float]:
         act = actual_points(comp, fmt)
         out[f"expected_{suf}"] = round(exp, 2)
         out[f"{suf}_over_expected"] = round(act - exp, 2)
+    # Expected TDs: receiving TD equity (as a target) + rushing TD equity (as
+    # a rusher) + receiving TD equity of throws (as a passer). A pass play
+    # contributes its rec_td_prob once to the receiver and once to the
+    # passer, never twice to the same player. Actual TDs mirror that split:
+    # receiving + rushing + passing TDs actually recorded.
+    expected_tds = comp["x_rec_td"] + comp["x_rush_td"] + comp["x_pass_rec_td"]
+    actual_tds = comp["a_rec_td"] + comp["a_rush_td"] + comp["a_pass_td"]
+    out["expected_tds"] = round(expected_tds, 2)
+    out["td_over_expected"] = round(actual_tds - expected_tds, 2)
     return out
 
 
@@ -471,6 +488,10 @@ def _accumulate_player_weeks(pbp, tables: ExpectedPointsTables):
             comp = _bucket(pas_id, week)
             if comp is not None:
                 add_pass_attempt(comp, tables, ay, yl, cp=cp, xyac=xyac)
+                # The TD equity of the throw itself, on the receiving-TD
+                # basis, so the passer's expected TDs use the same table as
+                # the receiver's (a throw's TD is one event, counted once).
+                comp["x_pass_rec_td"] += tables.rec_td_prob_for(yl, ay)
                 comp["a_pass_att"] += _num(d.get("pass_attempt")) or 0.0
                 comp["a_pass_yards"] += _num(d.get("passing_yards")) or 0.0
                 comp["a_pass_td"] += _num(d.get("pass_touchdown")) or 0.0

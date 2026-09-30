@@ -151,7 +151,7 @@ def test_multi_season_sums_counting_metrics(monkeypatch):
 
     monkeypatch.setattr(am, "get_metric_leaderboard", _single)
     rows = am._multi_season_leaderboard(
-        "total_carries", position=None, limit=50, seasons=[2025, 2022],
+        "ppr_pts", position=None, limit=50, seasons=[2025, 2022],
         min_vol=None, combine=True,
     )
     assert len(rows) == 1

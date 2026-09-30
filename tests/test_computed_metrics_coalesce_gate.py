@@ -2,9 +2,12 @@
 
 Audit findings (2026-09-30):
 
-1. Five computed metrics (passing_epa_per_att, explosive_run_rate,
+1. Five computed metrics (explosive_run_rate,
    intended_air_yards_per_game, unrealized_air_yards,
-   unrealized_air_yards_per_game) were permanently empty: their components
+   unrealized_air_yards_per_game, and passing_epa_per_att, which was later
+   removed from the catalog in the metrics trim; its split-row regression
+   case below now runs on the surviving pass_tds_per_game) were permanently
+   empty: their components
    live on different snapshot rows (volume totals on the daily base row,
    EPA/NGS values on provider sync rows), and get_metric_leaderboard
    evaluated computed_sql against a single physical row, so one component
@@ -38,7 +41,7 @@ _ALL_COLS = [
     "total_receptions", "total_carries", "explosive_runs_10_plus",
     "ngs_avg_intended_air_yards", "yards_per_reception", "completion_pct",
     "total_tds", "total_snaps", "total_rush_tds", "total_rec_tds",
-    "total_pass_tds", "total_touches",
+    "total_pass_tds", "total_touches", "total_routes",
 ]
 
 
@@ -53,6 +56,12 @@ def _row(pid, pos, as_of, **kw):
 SPLIT_QB = [
     _row("q1", "QB", "2026-09-29", games=4, snap_share=0.95, total_pass_att=140),
     _row("q1", "QB", "2027-03-01", passing_epa=21.0),
+]
+# QB whose total_pass_tds sits on the nflverse sync row (2027-03-01) while
+# games sits on the daily base row: no single row has both.
+SPLIT_QB_TDS = [
+    _row("q1", "QB", "2026-09-29", games=4, snap_share=0.95, total_pass_att=140),
+    _row("q1", "QB", "2027-03-01", total_pass_tds=6),
 ]
 # RB whose explosive_runs_10_plus sits on the sync row, carries on the base row.
 SPLIT_RB = [
@@ -235,9 +244,9 @@ def _board(monkeypatch, rows, metric):
 # --------------------------------------------------------------------------- #
 # Finding 1: computed metrics over split snapshot rows
 # --------------------------------------------------------------------------- #
-def test_passing_epa_per_att_from_split_rows(monkeypatch):
-    board, _ = _board(monkeypatch, SPLIT_QB, "passing_epa_per_att")
-    assert board.get("q1") == pytest.approx(21.0 / 140)
+def test_pass_tds_per_game_from_split_rows(monkeypatch):
+    board, _ = _board(monkeypatch, SPLIT_QB_TDS, "pass_tds_per_game")
+    assert board.get("q1") == pytest.approx(6.0 / 4)
 
 
 def test_explosive_run_rate_from_split_rows(monkeypatch):
@@ -284,16 +293,15 @@ def _captured_main_sql(monkeypatch, rows, metric):
 
 
 def test_computed_sql_evaluated_on_coalesced_alias(monkeypatch):
-    sql, params = _captured_main_sql(monkeypatch, SPLIT_QB, "passing_epa_per_att")
-    assert "ARRAY_AGG(cx.passing_epa" in sql
-    assert "ARRAY_AGG(cx.total_pass_att" in sql
-    assert "c.passing_epa::float / NULLIF(c.total_pass_att, 0) AS value" in sql
-    assert "c.passing_epa IS NOT NULL" in sql
+    sql, params = _captured_main_sql(monkeypatch, SPLIT_QB_TDS, "pass_tds_per_game")
+    assert "ARRAY_AGG(cx.total_pass_tds" in sql
+    assert "ARRAY_AGG(cx.games" in sql
+    assert "c.total_pass_tds::float / NULLIF(c.games, 0) AS value" in sql
+    assert "c.total_pass_tds IS NOT NULL" in sql
     # Placeholder order must match parameter order: vol season, coalesce
-    # season, gate season, snap threshold, limit.
+    # season, gate season, limit.
     assert sql.count("%s") == len(params)
     assert params[0] == params[1] == params[2] == 2026
-    assert params[3] == am._MIN_SNAP_FOR_EFFICIENCY
     assert params[-1] == 500
 
 
@@ -306,12 +314,11 @@ def test_efficiency_gate_reads_coalesced_snap_share(monkeypatch):
 
 
 def test_plain_non_efficiency_metric_gets_no_coalesce_join(monkeypatch):
-    rows = [_row("r9", "RB", "2026-09-29", games=4, total_carries=50,
-                 explosive_runs_10_plus=7)]
-    sql, _ = _captured_main_sql(monkeypatch, rows, "explosive_runs_10_plus")
+    rows = [_row("r9", "RB", "2026-09-29", games=4, total_routes=210)]
+    sql, _ = _captured_main_sql(monkeypatch, rows, "total_routes")
     assert "ARRAY_AGG" not in sql
     assert "snap_share >= %s" not in sql
-    assert "m.explosive_runs_10_plus AS value" in sql
+    assert "m.total_routes AS value" in sql
 
 
 # --------------------------------------------------------------------------- #
@@ -358,14 +365,16 @@ def test_generated_sql_executes_against_real_engine(monkeypatch):
         "passing_epa DOUBLE, total_pass_att DOUBLE, catch_rate DOUBLE, "
         "total_targets DOUBLE, total_receptions DOUBLE, total_carries DOUBLE, "
         "explosive_runs_10_plus DOUBLE, ngs_avg_intended_air_yards DOUBLE, "
-        "yards_per_reception DOUBLE, completion_pct DOUBLE, total_tds DOUBLE)"
+        "yards_per_reception DOUBLE, completion_pct DOUBLE, total_tds DOUBLE, "
+        "total_pass_tds DOUBLE)"
     )
-    fixtures = SPLIT_QB + SPLIT_WR + GATE_CAST
+    fixtures = SPLIT_QB + SPLIT_QB_TDS + SPLIT_WR + GATE_CAST
     cols = ["player_id", "position", "season", "as_of_date", "games",
             "snap_share", "passing_epa", "total_pass_att", "catch_rate",
             "total_targets", "total_receptions", "total_carries",
             "explosive_runs_10_plus", "ngs_avg_intended_air_yards",
-            "yards_per_reception", "completion_pct", "total_tds"]
+            "yards_per_reception", "completion_pct", "total_tds",
+            "total_pass_tds"]
     for r in fixtures:
         con.execute(
             f"INSERT INTO player_advanced_metrics ({', '.join(cols)}) "
@@ -374,9 +383,9 @@ def test_generated_sql_executes_against_real_engine(monkeypatch):
         )
     monkeypatch.setattr(am, "get_conn", lambda: _DuckConn(con))
 
-    epa = {r["player_id"]: r["value"]
-           for r in am.get_metric_leaderboard("passing_epa_per_att", season=2026)}
-    assert epa.get("q1") == pytest.approx(0.15)
+    tds = {r["player_id"]: r["value"]
+           for r in am.get_metric_leaderboard("pass_tds_per_game", season=2026)}
+    assert tds.get("q1") == pytest.approx(1.5)
     unrl = {r["player_id"]: r["value"]
             for r in am.get_metric_leaderboard("unrealized_air_yards", season=2026)}
     assert unrl.get("w4") == pytest.approx(225.0)

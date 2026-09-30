@@ -18,23 +18,25 @@ from typing import Optional
 # ``samples`` uses canonical identities (not labels), which is also what the
 # table/export column builder uses for de-duplication.
 ADVANCED_METRIC_PRESETS = {
-    "rushing": {"label": "Rushing", "description": "Rushing workload and per-attempt efficiency.", "position": None, "primary": "rushing_epa_per_att", "metrics": ["rushing_epa_per_att", "carries_per_game", "yards_per_carry", "ngs_rush_yards_over_expected_per_att", "rushing_success_rate", "breakaway_percentage", "red_zone_usage"], "sort": "desc", "samples": ["games", "carries"]},
-    "receiving": {"label": "Receiving", "description": "Receiving opportunity and target efficiency.", "position": None, "primary": "target_share", "metrics": ["target_share", "receptions_per_game", "yards_per_target", "receiving_epa_per_target", "avg_depth_of_target", "ngs_avg_yac_above_expectation", "rz_targets_pg"], "sort": "desc", "samples": ["games", "targets", "receptions"]},
+    "rushing": {"label": "Rushing", "description": "Rushing workload and per-attempt efficiency.", "position": None, "primary": "rushing_epa_per_att", "metrics": ["rushing_epa_per_att", "carries_per_game", "yards_per_carry", "ngs_rush_yards_over_expected_per_att", "rushing_success_rate", "breakaway_percentage", "rz_opp_share"], "sort": "desc", "samples": ["games", "carries"]},
+    "receiving": {"label": "Receiving", "description": "Receiving opportunity and target efficiency.", "position": None, "primary": "target_share", "metrics": ["target_share", "receptions_per_game", "yards_per_target", "receiving_epa_per_target", "avg_depth_of_target", "ngs_avg_yac_above_expectation", "rz_target_share"], "sort": "desc", "samples": ["games", "targets", "receptions"]},
     "passing": {"label": "Passing", "description": "Passing efficiency per dropback and attempt.", "position": "QB", "primary": "epa_per_play", "metrics": ["epa_per_play", "cpoe", "success_rate", "explosive_pass_rate", "sack_rate", "td_rate", "int_rate"], "sort": "desc", "samples": ["games", "attempts", "dropbacks"]},
-    "rb": {"label": "RB", "description": "Running back opportunity and production.", "position": "RB", "primary": "opportunity_share", "metrics": ["opportunity_share", "carries_per_game", "target_share", "red_zone_usage", "ngs_rush_yards_over_expected_per_att", "yards_per_touch", "total_tds_per_game"], "sort": "desc", "samples": ["games", "carries", "targets", "receptions"]},
-    "wr": {"label": "WR", "description": "Wide receiver opportunity and target efficiency.", "position": "WR", "primary": "target_share", "metrics": ["target_share", "air_yards_share", "avg_depth_of_target", "yards_per_target", "receiving_epa_per_target", "rz_targets_pg", "fpts_per_target"], "sort": "desc", "samples": ["games", "targets", "receptions"]},
-    "te": {"label": "TE", "description": "Tight end opportunity and target efficiency.", "position": "TE", "primary": "target_share", "metrics": ["target_share", "receptions_per_game", "rz_targets_pg", "yards_per_target", "receiving_epa_per_target", "ngs_avg_yac_above_expectation", "fpts_per_target"], "sort": "desc", "samples": ["games", "targets", "receptions"]},
+    "rb": {"label": "RB", "description": "Running back opportunity and production.", "position": "RB", "primary": "opportunity_share", "metrics": ["opportunity_share", "carries_per_game", "target_share", "rz_opp_share", "ngs_rush_yards_over_expected_per_att", "yards_per_touch", "total_tds_per_game"], "sort": "desc", "samples": ["games", "carries", "targets", "receptions"]},
+    "wr": {"label": "WR", "description": "Wide receiver opportunity and target efficiency.", "position": "WR", "primary": "target_share", "metrics": ["target_share", "air_yards_share", "avg_depth_of_target", "yards_per_target", "receiving_epa_per_target", "rz_target_share", "fpts_per_target"], "sort": "desc", "samples": ["games", "targets", "receptions"]},
+    "te": {"label": "TE", "description": "Tight end opportunity and target efficiency.", "position": "TE", "primary": "target_share", "metrics": ["target_share", "receptions_per_game", "rz_target_share", "yards_per_target", "receiving_epa_per_target", "ngs_avg_yac_above_expectation", "fpts_per_target"], "sort": "desc", "samples": ["games", "targets", "receptions"]},
     "qb": {"label": "QB", "description": "Quarterback passing efficiency and dual-threat production.", "position": "QB", "primary": "epa_per_play", "metrics": ["epa_per_play", "cpoe", "pass_tds_per_game", "rush_yards_per_game", "scramble_rate", "sack_rate", "int_rate"], "sort": "desc", "samples": ["games", "attempts", "dropbacks", "carries"]},
-    "general": {"label": "General / Opportunity", "description": "Cross-position opportunity and red-zone workload.", "position": None, "primary": "opportunity_share", "metrics": ["opportunity_share", "snap_share", "carries_per_game", "target_share", "air_yards_share", "red_zone_usage", "rz_targets_pg"], "sort": "desc", "samples": ["games", "carries", "targets"]},
-    "expected": {"label": "Expected Points", "description": "Opportunity-based expected PPR production and efficiency vs. expectation; FPOE is not a promise of future points.", "position": None, "primary": "expected_ppr_per_game", "metrics": ["expected_ppr_per_game", "ppr_over_expected_per_game", "xfp_trend", "opportunity_share", "target_share", "red_zone_usage", "total_tds_per_game"], "sort": "desc", "samples": ["games"]},
+    "general": {"label": "General / Opportunity", "description": "Cross-position opportunity and red-zone workload.", "position": None, "primary": "opportunity_share", "metrics": ["opportunity_share", "snap_share", "carries_per_game", "target_share", "air_yards_share", "rz_opp_share", "rz_target_share"], "sort": "desc", "samples": ["games", "carries", "targets"]},
+    "expected": {"label": "Expected Points", "description": "Opportunity-based expected PPR production and efficiency vs. expectation; FPOE is not a promise of future points.", "position": None, "primary": "expected_ppr_per_game", "metrics": ["expected_ppr_per_game", "ppr_over_expected_per_game", "xfp_trend", "opportunity_share", "target_share", "rz_opp_share", "total_tds_per_game"], "sort": "desc", "samples": ["games"]},
     "receiving_profile": {"label": "Receiving Profile", "description": "Target shape, alignment context, and after-catch performance.", "position": None, "primary": "target_share", "metrics": ["target_share", "avg_depth_of_target", "air_yards_share", "ngs_avg_cushion", "ngs_avg_separation", "yards_after_catch_per_reception", "ngs_avg_yac_above_expectation"], "sort": "desc", "samples": ["games", "targets", "receptions"]},
+    "target_quality": {"label": "Target Quality", "description": "How catchable a receiver's targets are: throw quality, contested and deep looks, end-zone and screen usage.", "position": None, "primary": "uncatchable_tgt_rate", "metrics": ["uncatchable_tgt_rate", "contested_target_rate", "qb_rating_when_targeted", "deep_target_rate", "end_zone_target_rate", "screen_target_rate"], "sort": "asc", "samples": ["games", "targets", "receptions"]},
+    "td_regression": {"label": "TD Regression", "description": "Touchdowns vs. expectation: who is running hot or cold on TD luck, and the goal-line role behind it.", "position": None, "primary": "td_over_expected", "metrics": ["td_over_expected", "xtd_per_game", "td_share", "goal_line_opp_share", "first_downs_per_game"], "sort": "desc", "samples": ["games"]},
     # --- Decision presets: organized by the question being answered, not the
     # metric taxonomy. "kind": "decision" puts them in their own picker group
     # and drives the preset-pill row above the table. ---
-    "key_metrics": {"label": "Key Metrics", "kind": "decision", "tagline": "The metrics that actually predict fantasy points.", "description": "The predictive core: expected points, efficiency vs. expectation, and the opportunity signals that stick week to week. This is the default landing view.", "position": None, "primary": "expected_ppr_per_game", "metrics": ["expected_ppr_per_game", "ppr_over_expected_per_game", "opportunity_share", "target_share", "air_yards_share", "snap_share", "red_zone_usage", "opportunity_trend", "xfp_trend"], "sort": "desc", "samples": ["games"]},
-    "start_sit": {"label": "Start / Sit", "kind": "decision", "tagline": "Set your lineup with confidence.", "description": "Role first (expected PPR), then TD equity (red-zone usage), then week-to-week reliability (bust rate, consistency) and matchup ease.", "position": None, "primary": "expected_ppr_per_game", "metrics": ["expected_ppr_per_game", "ppr_over_expected_per_game", "opportunity_share", "snap_share", "red_zone_usage", "rz_targets_pg", "schedule_ease", "bust_rate", "fp_cv"], "sort": "desc", "samples": ["games"]},
+    "key_metrics": {"label": "Key Metrics", "kind": "decision", "tagline": "The metrics that actually predict fantasy points.", "description": "The predictive core: expected points, efficiency vs. expectation, and the opportunity signals that stick week to week. This is the default landing view.", "position": None, "primary": "expected_ppr_per_game", "metrics": ["expected_ppr_per_game", "ppr_over_expected_per_game", "opportunity_share", "target_share", "air_yards_share", "snap_share", "rz_opp_share", "opportunity_trend", "xfp_trend"], "sort": "desc", "samples": ["games"]},
+    "start_sit": {"label": "Start / Sit", "kind": "decision", "tagline": "Set your lineup with confidence.", "description": "Role first (expected PPR), then TD equity (red-zone usage), then week-to-week reliability (bust rate, consistency) and matchup ease.", "position": None, "primary": "expected_ppr_per_game", "metrics": ["expected_ppr_per_game", "ppr_over_expected_per_game", "opportunity_share", "snap_share", "rz_opp_share", "rz_target_share", "schedule_ease", "bust_rate", "fp_cv"], "sort": "desc", "samples": ["games"]},
     "buy_low_sell_high": {"label": "Buy Low / Sell High", "kind": "decision", "tagline": "Find mispriced players before your league does.", "description": "Sorts by PPR over expected, ascending: the most negative names are the buy-low list (role is real, production hasn't caught up); flip the sort for the sell-high list.", "position": None, "primary": "ppr_over_expected_per_game", "metrics": ["ppr_over_expected_per_game", "expected_ppr_per_game", "target_share", "air_yards_share", "opportunity_trend", "xfp_trend"], "sort": "asc", "samples": ["games"]},
-    "waiver_wire": {"label": "Waiver Wire", "kind": "decision", "tagline": "Who's earning a role worth adding?", "description": "Sorted by usage trend: players whose opportunity is growing fastest, with the snap/target/carry volume to back it up.", "position": None, "primary": "opportunity_trend", "metrics": ["opportunity_trend", "snap_share", "target_share", "carries_per_game", "expected_ppr_per_game", "red_zone_usage"], "sort": "desc", "samples": ["games"]},
+    "waiver_wire": {"label": "Waiver Wire", "kind": "decision", "tagline": "Who's earning a role worth adding?", "description": "Sorted by usage trend: players whose opportunity is growing fastest, with the snap/target/carry volume to back it up.", "position": None, "primary": "opportunity_trend", "metrics": ["opportunity_trend", "snap_share", "target_share", "carries_per_game", "expected_ppr_per_game", "rz_opp_share"], "sort": "desc", "samples": ["games"]},
     "breakout_check": {"label": "Is This Breakout Real?", "kind": "decision", "tagline": "Separate role growth from hot streaks.", "description": "Role growing + efficient = real. Role flat + way over expected = regression candidate. Compares xFP/usage trend against efficiency over expectation.", "position": None, "primary": "xfp_trend", "metrics": ["xfp_trend", "opportunity_trend", "snap_share", "ppr_over_expected_per_game", "target_share", "air_yards_share"], "sort": "desc", "samples": ["games"]},
     "ceiling_dfs": {"label": "Ceiling / DFS", "kind": "decision", "tagline": "Who can win you a week?", "description": "Sorted by boom rate: players with the per-target, per-touch, and breakaway efficiency to post a slate-breaking score.", "position": None, "primary": "boom_rate", "metrics": ["boom_rate", "expected_ppr_per_game", "fp_cv", "fpts_per_target", "yards_per_touch", "breakaway_percentage"], "sort": "desc", "samples": ["games"]},
 }
@@ -88,7 +90,6 @@ def build_advanced_metrics_body(
         "opportunity_trend": "Whether the player's role is growing or shrinking over the last 3 weeks. Catches breakouts and benchings before the box score does.",
         "xfp_trend": "Whether the quality of the player's opportunity is trending up. Separates real role growth from one hot week.",
         "fp_cv": "How steady the weekly scoring is. Low CV means set-and-forget starters; high CV means boom-or-bust.",
-        "xfp_stddev": "How much the workload itself swings week to week. Steadier roles mean more predictable lineups.",
         "role_score": "One composite of target, carry, and red-zone share. The backbone of breakout detection.",
         "target_quality_score": "Rates the quality of a receiver's targets, not just the count. Separates target hogs from efficient ones.",
         "vorp": "Season points above a replacement-level starter, sized to your league. The single best 'how valuable is this player' number.",
@@ -1846,6 +1847,7 @@ _AM_JS = r"""
                   cmpRanges: {},        // player_id -> week-range key ('' | 'first' | 'second' | 'last4' | 'custom')
                   cmpWk: {},            // player_id -> { start, end } for custom ranges
                   requestToken: 0,       // invalidates responses from an older schema/selection
+                  _boardSig: null,       // signature of the last successfully loaded board (idempotent reloads)
                   pinnedIds: _loadPins() };
   // Seven displayed metrics means six comparisons plus the primary.
   const MAX_COMPARE = Math.max(6, ...Object.values(cfg.presets || {}).map(p => (p.metrics || []).length - 1));
@@ -1913,51 +1915,51 @@ _AM_JS = r"""
     out.catch_rate = div(rec, tgt);
     out.yards_per_carry = div(rushYds, car);
     out.yards_per_touch = div(recYds + rushYds, tch);
-    out.total_targets = tgt;       out.targets_per_game = div(tgt, n);
-    out.total_receptions = rec;    out.receptions_per_game = div(rec, n);
-    out.total_rec_yards = recYds;  out.rec_yards_per_game = div(recYds, n);
-    out.total_carries = car;       out.carries_per_game = div(car, n);
-    out.total_rush_yards = rushYds; out.rush_yards_per_game = div(rushYds, n);
-    out.total_touches = tch;       out.touches_per_game = div(tch, n);
+    out.targets_per_game = div(tgt, n);
+    out.receptions_per_game = div(rec, n);
+    out.rec_yards_per_game = div(recYds, n);
+    out.carries_per_game = div(car, n);
+    out.rush_yards_per_game = div(rushYds, n);
+    out.touches_per_game = div(tch, n);
     out.ppr_pts = pprPts;          out.ppr_pts_per_game = div(pprPts, n);
     out.fpts_per_target = tgt > 0 ? (rec + recYds * 0.1 + (sel.reduce((s,w) => s + Number(w.rec_tds||0),0)) * 6) / tgt : null;
     out.fpts_per_carry = car > 0 ? (rushYds * 0.1 + (sel.reduce((s,w) => s + Number(w.rush_tds||0),0)) * 6) / car : null;
-    out.rz_targets_pg = div(rzTgt, n);
-    out.rz_carries_pg = div(rzCar, n);
-    out.red_zone_usage = div(rzTgt + rzCar, n);
 
     // NGS/FTN/EPA metrics: totals summed, rates volume-weighted -- parity with
     // the server's get_adv_weekly_range_leaderboard so ranges match the board.
     const ADV_TOTALS = ['passing_epa', 'rushing_epa', 'receiving_epa',
-      'yards_after_catch', 'explosive_runs_10_plus', 'ngs_rush_yards_over_expected',
+      'yards_after_catch', 'ngs_rush_yards_over_expected',
       'expected_ppr', 'expected_half_ppr', 'expected_standard',
-      'ppr_over_expected', 'half_ppr_over_expected', 'standard_over_expected'];
+      'ppr_over_expected', 'half_ppr_over_expected', 'standard_over_expected',
+      'expected_tds', 'td_over_expected', 'first_downs'];
     const ADV_WEIGHTED = {
       epa_per_play: 'w_dropbacks', cpoe: 'w_dropbacks', success_rate: 'w_dropbacks',
       sack_rate: 'w_dropbacks', scramble_rate: 'w_dropbacks', nfl_passer_rating: 'w_dropbacks',
       adjusted_completion_rate: 'w_pass_att',
       qb_hit_rate: 'w_dropbacks', explosive_pass_rate: 'w_pass_att',
       play_action_rate: 'w_dropbacks', play_action_epa: 'w_dropbacks',
-      out_of_pocket_rate: 'w_dropbacks', blitz_rate_faced: 'w_dropbacks',
+      blitz_rate_faced: 'w_dropbacks',
       epa_vs_blitz: 'w_dropbacks',
       ngs_avg_time_to_throw: 'w_pass_att', ngs_aggressiveness: 'w_pass_att',
       ngs_avg_completed_air_yards: 'w_pass_att',
-      ngs_avg_air_yards_differential: 'w_pass_att',
-      ngs_avg_air_yards_to_sticks: 'w_pass_att', ngs_cpoe: 'w_pass_att',
-      ngs_max_completed_air_distance: 'w_pass_att',
-      pacr: 'w_pass_air_yards',
+      ngs_avg_air_yards_to_sticks: 'w_pass_att',
       ngs_rush_yards_over_expected_per_att: 'w_carries', ngs_rush_efficiency: 'w_carries',
       breakaway_percentage: 'w_carries',
       rushing_success_rate: 'w_carries', rushing_epa_per_att: 'w_carries',
-      ngs_avg_time_to_los: 'w_carries',
       ngs_percent_attempts_gte_eight_defenders: 'w_carries',
       epa_vs_stacked_box: 'w_carries',
       ngs_avg_separation: 'w_targets', ngs_avg_cushion: 'w_targets',
       ngs_avg_intended_air_yards: 'w_targets', avg_depth_of_target: 'w_targets',
-      ngs_catch_pct: 'w_targets', drop_rate: 'w_targets', contested_catch_rate: 'w_targets',
+      ngs_catch_pct: 'w_targets', drop_rate: 'w_targets', uncatchable_tgt_rate: 'w_targets', contested_catch_rate: 'w_targets',
+      qb_rating_when_targeted: 'w_targets', pressure_rate_faced: 'w_pressure_opps',
+      end_zone_target_rate: 'w_targets', deep_target_rate: 'w_targets',
+      goal_line_opp_share: 'w_team_gl_opps', third_down_conv_rate: 'w_third_down_dropbacks',
+      stuffed_rate: 'w_carries', turnover_worthy_rate: 'w_dropbacks',
+      contested_target_rate: 'w_targets', screen_target_rate: 'w_targets',
+      rec_broken_tackles_per_reception: 'w_receptions',
+      rec_first_down_rate: 'w_targets', rush_first_down_rate: 'w_carries',
       ngs_created_separation: 'w_targets',
       receiving_success_rate: 'w_targets', receiving_epa_per_target: 'w_targets',
-      racr: 'w_rec_air_yards',
       yards_after_catch_per_reception: 'w_receptions', ngs_avg_yac: 'w_receptions',
       ngs_avg_expected_yac: 'w_receptions', ngs_avg_yac_above_expectation: 'w_receptions',
     };
@@ -1998,6 +2000,7 @@ _AM_JS = r"""
     const primary = keys[0];
     const extras = keys.slice(1);
     if (extras.length > MAX_COMPARE) throw new Error('Preset exceeds comparison-column limit');
+    const _primaryChanged = state.metric !== primary;
     state.metric = primary;
     if (metricSel) metricSel.value = primary;
     state.page = 0;
@@ -2005,7 +2008,10 @@ _AM_JS = r"""
     // A threshold on the old primary has different units and must not leak.
     state.comboFilters = state.comboFilters.filter(f => f.key === 'age' || f.key === 'exp');
     state.filterColKeys = new Set();
-    state.prevData = {};
+    // YoY arrows are keyed to the primary metric: keep them when the same
+    // preset (same primary) is re-applied so an idempotent re-apply does
+    // not strip them; fetchData rebuilds them whenever the primary moves.
+    if (_primaryChanged) state.prevData = {};
     const rel = new Set(relevantPositions(state.metric));
     if (state.position !== 'ALL' && !rel.has(state.position)) state.position = 'ALL';
     state.sortDir = preset.sort || 'desc';
@@ -2416,6 +2422,28 @@ _AM_JS = r"""
     render();
   };
 
+  // Per-column retry for a failed extra/filter column: drop the failed
+  // entry (the column falls back to its skeleton), then refetch just it.
+  window.amRetryExtra = function(key) {
+    if (!state.extraMetrics.includes(key) && !(state.filterColKeys && state.filterColKeys.has(key))) return;
+    delete state.extraData[key];
+    render();
+    fetchExtraData(key);
+  };
+  (function _wireColRetry() {
+    const host = document.getElementById('amTableBody');
+    if (!host || host.dataset.retryWired) return;
+    host.dataset.retryWired = '1';
+    // Capture phase: the retry button sits inside a row whose own click
+    // opens the player modal, so claim the click before it reaches the row.
+    host.addEventListener('click', function(e) {
+      const btn = e.target && e.target.closest ? e.target.closest('[data-am-retry]') : null;
+      if (!btn) return;
+      e.stopPropagation();
+      window.amRetryExtra(btn.dataset.amRetry);
+    }, true);
+  })();
+
   window.amClearExtras = function() {
     _showActiveSet('Custom');
     _activePresetId = null;
@@ -2720,7 +2748,7 @@ _AM_JS = r"""
   const _AM_SCORE_CEIL = { role_score: 100, grades_offense: 100, pff_passing_grade: 100,
     pff_rushing_grade: 100, nfl_passer_rating: 158.3, vorp: 150, war: 6 };
   const _AM_MINMAX = ['passing_epa', 'rushing_epa', 'receiving_epa'];
-  const _AM_RATE = ['avoided_tackles_pg', 'explosive_runs_pg'];
+  const _AM_RATE = ['avoided_tackles_pg'];
   function _amBarFill(key, v, pos, mode, rk, stats, barMax) {
     const m = cfg.metrics[key] || {};
     const valFb = Math.min(100, Math.max(3, Math.round(Math.abs(v) / barMax * 100)));
@@ -3530,7 +3558,16 @@ _AM_JS = r"""
     // Hide rows that lack data in most of the loaded extra metric columns (e.g. a
     // fullback shown with all dashes when rushing efficiency metrics are added).
     if (state.extraMetrics.length > 0) {
-      const loadedExtras = state.extraMetrics.filter(k => state.extraData[k]);
+      // Only columns that can actually carry values count toward the hit
+      // budget. PRO-locked and failed columns settle with an empty byId by
+      // construction, so counting them inflates minHits past what the free,
+      // healthy columns can ever reach (a logged-out Key Metrics board has
+      // 3 of 8 extras locked) and the whole board filters to the empty
+      // state even though the primary data is fine.
+      const loadedExtras = state.extraMetrics.filter(k => {
+        const ed = state.extraData[k];
+        return ed && !ed.proLocked && !ed.failed;
+      });
       if (loadedExtras.length > 0) {
         const minHits = Math.max(1, Math.ceil(loadedExtras.length / 2));
         displayRows = displayRows.filter(function(r) {
@@ -3733,6 +3770,18 @@ _AM_JS = r"""
               + ' data-pro-metric="' + key + '" title="' + _esc(_ml) + ' is PRO only: tap to unlock">'
               + '<div class="am-metric-cell"><div class="am-metric-bar"><div class="am-bar-track"><div class="am-bar-fill am-locked-blur" style="width:' + _bw + '%"></div></div></div>'
               + '<div class="am-val-wrap">' + _LOCK_SVG + '</div>'
+              + '</div></td>';
+            return;
+          }
+          // Failed column: the fetch (and its one retry) produced no data.
+          // Say so in the cell and offer a per-column retry. A plain dash
+          // here would read as "this player has no data" and hide the
+          // failure entirely.
+          if (ed.failed) {
+            metricCell += '<td class="am-barcell" data-column-id="metric:' + key + '"><div class="am-metric-cell">'
+              + '<div class="am-val-wrap"><button type="button" data-am-retry="' + key + '"'
+              + ' title="' + _esc(_mLabel(key)) + ' failed to load. Tap to retry."'
+              + ' style="padding:3px 10px;border:1px solid var(--border);border-radius:8px;background:var(--card);color:var(--accent,#2563eb);cursor:pointer;font-weight:700;font-size:11px;">Retry</button></div>'
               + '</div></td>';
             return;
           }
@@ -4728,6 +4777,17 @@ _AM_JS = r"""
   };
 
   function fetchData() {
+    // Idempotent reload: if this exact board (metric + season set + volume
+    // floor + week range) is already on screen, a repeat trigger (clicking
+    // the active preset pill again, re-selecting the same metric) just
+    // re-renders what is loaded instead of tearing the table down and
+    // re-firing the primary request plus every extra-column request. That
+    // burst is what made columns time out on preset re-apply.
+    const _sigRange = resolveWeekRange();
+    const _boardSig = [state.metric, state.season,
+      (state.combine && amIsMultiSeason()) ? 'c' : '',
+      state.minVol, _sigRange.ws || '', _sigRange.we || ''].join('|');
+    if (_boardSig === state._boardSig && state.rows.length) { render(); return; }
     // paywall removed -- advanced metrics is available to all users
     state.fetching = true;
     const requestToken = ++state.requestToken;
@@ -4766,14 +4826,32 @@ _AM_JS = r"""
         if (r.status === 403) return r.json().then(
           j => ({ _proOnly: !j || j.error === 'pro_only' }),
           () => ({ _proOnly: true }));
+        // Any other HTTP failure (e.g. a 500 from the leaderboard builder)
+        // is an error, not an empty board: route it to the Retry state.
+        if (!r.ok) throw new Error('leaderboard request failed: ' + r.status);
         return r.json();
       });
+    // The YoY previous-season fetch only feeds the trend arrows, so it
+    // must not gate the board: render as soon as the primary lands, then
+    // merge the arrows in when the prev fetch resolves. (Previously this
+    // was Promise.all, so one hung prev request held the whole table on
+    // skeletons for up to 15s even with the primary data already back.)
+    let _prevDone = false, _prevRows = null, _boardRendered = false;
+    function _applyPrev(pd) {
+      state.prevData = (pd && pd.players)
+        ? Object.fromEntries(pd.players.map(r => [String(r.player_id), Number(r.value)]))
+        : {};
+    }
     const prevFetch = hasPrevInData
       ? _amCmpFetch('/api/advanced-metrics/leaderboard?' + prevParams, 15000)
       : Promise.resolve(null);
+    prevFetch.then(pd => {
+      _prevDone = true; _prevRows = pd;
+      if (_boardRendered && requestToken === state.requestToken) { _applyPrev(pd); render(); }
+    });
 
-    Promise.all([mainFetch, prevFetch])
-      .then(([d, pd]) => {
+    mainFetch
+      .then(d => {
         if (requestToken !== state.requestToken) return;
         if (d && d._proOnly) {
           // PRO metric requested without PRO: open the paywall and fall back
@@ -4795,12 +4873,10 @@ _AM_JS = r"""
             state.playerPos[String(r.player_id)] = String(r.position).toUpperCase();
           }
         });
-        // Build previous-season lookup for trend arrows.
-        if (pd && pd.players) {
-          state.prevData = Object.fromEntries(pd.players.map(r => [String(r.player_id), Number(r.value)]));
-        } else {
-          state.prevData = {};
-        }
+        // Previous-season lookup for trend arrows: use it if it already
+        // landed; otherwise the prevFetch handler above merges it in.
+        if (_prevDone) _applyPrev(_prevRows);
+        else state.prevData = {};
         state.responseWeekFiltered = !!d.is_week_filtered;
         updateWeekNote(d.is_week_filtered, weekCapable);
         updateVolHeader();
@@ -4810,6 +4886,8 @@ _AM_JS = r"""
         state.extraData = {};
         state.extraPrevData = {};
         _loadExtras([...state.extraMetrics, ...(state.filterColKeys ? [...state.filterColKeys] : [])]);
+        state._boardSig = _boardSig;
+        _boardRendered = true;
         render();
       })
       .catch(() => {
@@ -4861,18 +4939,18 @@ _AM_JS = r"""
         // Passing
         'total_pass_yards',
         // Rushing
-        'total_carries', 'carries_per_game', 'total_rush_yards', 'rush_yards_per_game',
+        'carries_per_game', 'rush_yards_per_game',
         // Receiving
-        'total_targets', 'targets_per_game',
-        'total_receptions', 'receptions_per_game',
-        'total_rec_yards', 'rec_yards_per_game',
+        'targets_per_game',
+        'receptions_per_game',
+        'rec_yards_per_game',
         // Combined
-        'total_touches', 'touches_per_game',
+        'touches_per_game',
         // Routes / usage rates
         'total_routes', 'routes_per_game', 'route_participation',
         'snap_share', 'target_share', 'air_yards_share',
         // Red zone
-        'rz_targets_pg', 'rz_carries_pg', 'red_zone_usage',
+        'rz_target_share', 'rz_opp_share',
       ];
       const volOpts = [];
       _FILTER_ORDER.forEach(function(key) {

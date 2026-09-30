@@ -17379,28 +17379,25 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2, counts1, c
       'completion_pct', 'yards_per_attempt', 'td_rate', 'int_rate', 'nfl_passer_rating',
       'epa_per_play', 'passing_epa', 'cpoe', 'success_rate', 'sack_rate', 'scramble_rate',
       'adjusted_completion_rate', 'snap_share',
-      'ngs_avg_time_to_throw', 'ngs_aggressiveness', 'ngs_cpoe', 'qb_hit_rate',
-      'explosive_pass_rate', 'play_action_rate', 'epa_vs_blitz', 'pacr',
-      'total_pass_tds', 'total_rush_tds', 'total_tds',
+      'ngs_avg_time_to_throw', 'ngs_aggressiveness', 'qb_hit_rate',
+      'explosive_pass_rate', 'play_action_rate', 'epa_vs_blitz',
     ];
     const rbMetrics = [
       'yards_per_carry', 'yards_per_touch', 'rush_td_rate', 'snap_share',
-      'opportunity_share', 'red_zone_usage', 'explosive_runs_10_plus',
+      'opportunity_share', 'rz_opp_share',
       'breakaway_percentage', 'catch_rate', 'yards_after_catch', 'yards_after_catch_per_reception',
       'rushing_epa', 'ngs_rush_yards_over_expected_per_att', 'receiving_epa', 'epa_per_play',
       'rushing_success_rate', 'rushing_epa_per_att',
-      'ngs_avg_time_to_los', 'ngs_percent_attempts_gte_eight_defenders', 'epa_vs_stacked_box',
-      'total_carries', 'total_touches', 'total_targets', 'total_rush_tds', 'total_rec_tds', 'total_tds',
+      'ngs_percent_attempts_gte_eight_defenders', 'epa_vs_stacked_box',
     ];
     const wrTeMetrics = [
       'yards_per_target', 'catch_rate', 'yards_per_reception', 'target_quality_score',
-      'snap_share', 'opportunity_share', 'red_zone_usage',
+      'snap_share', 'opportunity_share', 'rz_target_share',
       'yards_after_catch', 'yards_after_catch_per_reception', 'avg_depth_of_target',
-      'contested_catch_rate', 'drop_rate',
+      'contested_catch_rate', 'drop_rate', 'uncatchable_tgt_rate',
       'ngs_avg_separation', 'ngs_avg_cushion', 'ngs_avg_yac_above_expectation',
       'ngs_created_separation', 'receiving_epa',
-      'receiving_success_rate', 'receiving_epa_per_target', 'racr',
-      'total_targets', 'total_receptions', 'total_rec_tds', 'total_tds',
+      'receiving_success_rate', 'receiving_epa_per_target',
     ];
     let rel = [];
     if (pos1 === 'QB' || pos2 === 'QB') rel.push(...qbMetrics);
@@ -17420,40 +17417,42 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2, counts1, c
     yards_per_reception:'Yards/Rec', target_quality_score:'Target Quality',
     yards_after_catch:'YAC', yards_after_catch_per_reception:'YAC/Rec',
     avg_depth_of_target:'aDOT', contested_catch_rate:'Contested Catch %',
-    drop_rate:'Drop Rate', slot_rate:'Slot Rate', wide_rate:'Wide Rate',
+    drop_rate:'Drop Rate', uncatchable_tgt_rate:'Uncatchable Tgt %', slot_rate:'Slot Rate', wide_rate:'Wide Rate',
     inline_rate:'Inline Rate',     ngs_avg_separation:'Separation',
     ngs_avg_cushion:'Cushion', ngs_avg_yac_above_expectation:'YAC Over Exp',
     ngs_created_separation:'Created Sep',
     ngs_avg_time_to_throw:'Time to Throw', ngs_aggressiveness:'Aggressiveness',
-    ngs_cpoe:'NGS CPOE', ngs_avg_completed_air_yards:'Completed Air Yds',
-    ngs_avg_air_yards_differential:'AY Differential',
+    ngs_avg_completed_air_yards:'Completed Air Yds',
     ngs_avg_air_yards_to_sticks:'Air Yds to Sticks',
-    ngs_max_completed_air_distance:'Max Air Distance',
-    ngs_avg_time_to_los:'Time to LOS',
     ngs_percent_attempts_gte_eight_defenders:'8+ Box Rate',
     qb_hit_rate:'QB Hit Rate', explosive_pass_rate:'Explosive Pass %',
     play_action_rate:'Play-Action %', play_action_epa:'PA EPA / Play',
-    out_of_pocket_rate:'Out of Pocket %', blitz_rate_faced:'Blitz Rate Faced',
+    blitz_rate_faced:'Blitz Rate Faced',
     epa_vs_blitz:'EPA vs Blitz', epa_vs_stacked_box:'EPA vs 8+ Box',
     rushing_success_rate:'Rush Success %', receiving_success_rate:'Rec Success %',
     rushing_epa_per_att:'Rush EPA / Att', receiving_epa_per_target:'Rec EPA / Tgt',
-    pacr:'PACR', racr:'RACR',
     epa_per_play:'EPA/Play', passing_epa:'Passing EPA', rushing_epa:'Rushing EPA',
     receiving_epa:'Receiving EPA', ngs_rush_yards_over_expected_per_att:'RYOE/Att',
     cpoe:'CPOE', sack_rate:'Sack Rate', scramble_rate:'Scramble Rate',
     success_rate:'Success Rate', yards_per_carry:'Yards/Carry',
     yards_per_touch:'Yards/Touch', rush_td_rate:'Rush TD Rate',
-    explosive_runs_10_plus:'10+ Yd Runs', breakaway_percentage:'Breakaway %',
+    breakaway_percentage:'Breakaway %',
     elusive_rating:'Elusive Rating', completion_pct:'Completion %',
     yards_per_attempt:'Yards/Attempt', td_rate:'TD Rate', int_rate:'INT Rate',
     nfl_passer_rating:'Passer Rating', adjusted_completion_rate:'Adj Comp %',
     snap_share:'Snap Share', opportunity_share:'Opportunity Share',
-    red_zone_usage:'Red Zone Usage', role_score:'Role Score',
+    role_score:'Role Score',
+    expected_tds:'Expected TDs', xtd_per_game:'xTD/G', td_over_expected:'TD vs xTD',
+    rec_first_down_rate:'Rec 1st Down %', rush_first_down_rate:'Rush 1st Down %',
+    first_downs_per_game:'First Downs/G',
+    qb_rating_when_targeted:'QB Rating vs Tgt', pressure_rate_faced:'Pressure Rate Faced',
+    goal_line_opp_share:'Goal-Line Opp Share', end_zone_target_rate:'End Zone Tgt %',
+    deep_target_rate:'Deep Tgt %', stuffed_rate:'Stuffed %',
+    third_down_conv_rate:'3rd Down Conv %',
+    turnover_worthy_rate:'Turnover-Worthy %', contested_target_rate:'Contested Tgt %',
+    screen_target_rate:'Screen Tgt %', rec_broken_tackles_per_reception:'Brk Tackles/Catch',
     grades_offense:'PFF Off Grade', grades_pass_block:'PFF Block Grade',
-    avoided_tackles:'Broken Tackles', pass_block_rate:'Block Rate',
-    total_carries:'Carries', total_targets:'Targets', total_receptions:'Receptions',
-    total_touches:'Touches', total_rush_tds:'Rush TDs', total_rec_tds:'Rec TDs',
-    total_pass_tds:'Pass TDs', total_tds:'Total TDs',
+    pass_block_rate:'Block Rate',
     vorp:'VORP', war:'WAR',
   };
 
@@ -17477,16 +17476,22 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2, counts1, c
 
       // Percentage-stored rates (0-100)
       'completion_pct': 85, 'adjusted_completion_rate': 90,
-      'contested_catch_rate': 65, 'drop_rate': 20,
+      'contested_catch_rate': 65, 'drop_rate': 20, 'uncatchable_tgt_rate': 50,
       'slot_rate': 100, 'wide_rate': 100, 'inline_rate': 100,
       'pass_block_rate': 100, 'breakaway_percentage': 40,
-      'opportunity_share': 25, 'red_zone_usage': 3,
+      'opportunity_share': 25,
 
       // Raw rate metrics
       'td_rate': 0.06, 'int_rate': 0.04,
 
       // Counting / volume
-      'avoided_tackles': 30, 'explosive_runs_10_plus': 25,
+      'expected_tds': 15, 'xtd_per_game': 1.2, 'td_over_expected': 8,
+      'rec_first_down_rate': 60, 'rush_first_down_rate': 40, 'first_downs_per_game': 12,
+      'qb_rating_when_targeted': 158.3, 'pressure_rate_faced': 50,
+      'goal_line_opp_share': 60, 'end_zone_target_rate': 30, 'deep_target_rate': 40,
+      'stuffed_rate': 30, 'third_down_conv_rate': 60,
+      'turnover_worthy_rate': 6, 'contested_target_rate': 40, 'screen_target_rate': 30,
+      'rec_broken_tackles_per_reception': 0.6,
 
       // Yardage metrics
       'yards_per_target': 12, 'yards_per_reception': 16, 'yards_per_carry': 7,
@@ -17499,17 +17504,15 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2, counts1, c
       'ngs_avg_separation': 5, 'ngs_avg_cushion': 9, 'ngs_avg_yac_above_expectation': 4,
       'ngs_created_separation': 3,
       'ngs_avg_time_to_throw': 3.5, 'ngs_aggressiveness': 25,
-      'ngs_avg_completed_air_yards': 12, 'ngs_avg_air_yards_differential': 4,
-      'ngs_avg_air_yards_to_sticks': 4, 'ngs_cpoe': 10,
-      'ngs_max_completed_air_distance': 60, 'ngs_avg_time_to_los': 3,
+      'ngs_avg_completed_air_yards': 12,
+      'ngs_avg_air_yards_to_sticks': 4,
       'ngs_percent_attempts_gte_eight_defenders': 50,
       'qb_hit_rate': 25, 'explosive_pass_rate': 20,
       'play_action_rate': 40, 'play_action_epa': 0.4,
-      'out_of_pocket_rate': 25, 'blitz_rate_faced': 40,
+      'blitz_rate_faced': 40,
       'epa_vs_blitz': 0.4, 'epa_vs_stacked_box': 0.3,
       'rushing_success_rate': 55, 'receiving_success_rate': 55,
       'rushing_epa_per_att': 0.3, 'receiving_epa_per_target': 0.6,
-      'pacr': 1.2, 'racr': 1.2,
 
       // EPA family (pbp-derived)
       'epa_per_play': 0.3, 'passing_epa': 150, 'rushing_epa': 40, 'receiving_epa': 60,
@@ -17531,9 +17534,6 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2, counts1, c
       'elusive_rating': 200, 'role_score': 100,
 
       // Volume counts
-      'total_carries': 300, 'total_targets': 180, 'total_receptions': 130,
-      'total_touches': 350, 'total_rush_tds': 18, 'total_rec_tds': 14,
-      'total_pass_tds': 40, 'total_tds': 45,
 
       // Opportunity / per-game rates -- these previously fell through to the
       // default range of 100, rendering near-empty bars. (Rank-percentile is
@@ -17541,15 +17541,14 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2, counts1, c
       'wopr': 0.65, 'air_yards_share': 38, 'air_yards_per_game': 110,
       'targets_per_game': 11, 'receptions_per_game': 8,
       'carries_per_game': 18, 'touches_per_game': 20,
-      'rz_carries_pg': 3, 'rz_targets_pg': 2.5,
+      'rz_target_share': 0.4, 'rz_opp_share': 0.4,
       'rec_yards_per_game': 100, 'rush_yards_per_game': 110,
-      'total_rec_yards': 1500, 'total_rush_yards': 1600,
       'ppr_pts': 350, 'ppr_pts_per_game': 24,
       'yprr': 3, 'route_participation': 100, 'total_routes': 650, 'routes_per_game': 40,
       'pass_tds_per_game': 2.5, 'rush_tds_per_game': 1, 'rec_tds_per_game': 1,
       'total_tds_per_game': 1.5,
       'fpts_per_carry': 1.5, 'fpts_per_target': 3,
-      'explosive_runs_pg': 2, 'avoided_tackles_pg': 2.5,
+      'explosive_run_rate': 0.25, 'avoided_tackles_pg': 2.5,
     };
     
     const range = metricRanges[key] || 100; // Default to 100 if not specified
@@ -17561,7 +17560,7 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2, counts1, c
     const _SCORE_CEIL = { role_score: 100, grades_offense: 100, pff_passing_grade: 100,
       pff_rushing_grade: 100, nfl_passer_rating: 158.3, vorp: 150, war: 6 };
     const _MINMAX = new Set(['passing_epa', 'rushing_epa', 'receiving_epa']);
-    const _RATE = new Set(['avoided_tackles_pg', 'explosive_runs_pg']);
+    const _RATE = new Set(['avoided_tackles_pg', 'explosive_run_rate']);
     const _rankPct = (r, n) => {
       if (!r || !n || n < 2) return null;
       return 8 + Math.max(0, Math.min(1, (n - r) / (n - 1))) * 92;
@@ -17584,7 +17583,7 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2, counts1, c
     const pct2 = fill2 != null ? Math.round(fill2)
       : (v2 != null ? Math.min(100, Math.round((v2 / range) * 100)) : 0);
 
-    const isInverse = spec ? spec.lower_better : ['int_rate', 'drop_rate', 'fumble_rate', 'pressure_to_sack_rate', 'sack_rate'].includes(key);
+    const isInverse = spec ? spec.lower_better : ['int_rate', 'drop_rate', 'uncatchable_tgt_rate', 'fumble_rate', 'pressure_to_sack_rate', 'sack_rate', 'pressure_rate_faced', 'stuffed_rate', 'turnover_worthy_rate'].includes(key);
 
     // barColor: when the bar is bounds-driven (isRankFill), the fill already
     // encodes "good = high" regardless of lower_better, so use the normal
@@ -17615,13 +17614,11 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2, counts1, c
       const decimalPctMetrics = ['catch_rate', 'snap_share', 'rush_td_rate', 'td_rate', 'int_rate'];
       const rawPctMetrics = [
         'completion_pct', 'adjusted_completion_rate', 'big_time_throw_rate',
-        'pressure_to_sack_rate', 'drop_rate', 'contested_catch_rate',
+        'pressure_to_sack_rate', 'drop_rate', 'uncatchable_tgt_rate', 'contested_catch_rate',
         'slot_rate', 'wide_rate', 'inline_rate', 'pass_block_rate',
         'breakaway_percentage', 'opportunity_share',
       ];
-      const intMetrics = ['yards_after_catch', 'explosive_runs_10_plus', 'avoided_tackles',
-        'total_carries', 'total_targets', 'total_receptions', 'total_touches',
-        'total_rush_tds', 'total_rec_tds', 'total_pass_tds', 'total_tds'];
+      const intMetrics = ['yards_after_catch'];
       if (decimalPctMetrics.includes(key)) return (v * 100).toFixed(1) + '%';
       if (rawPctMetrics.includes(key))     return v.toFixed(1) + '%';
       if (intMetrics.includes(key))        return Math.round(v).toString();
@@ -17795,40 +17792,42 @@ function _cmpAggregateWeeks(weeks, wkStart, wkEnd) {
     catch_rate: div(rec, tgt),
     yards_per_carry: div(rushYds, car),
     yards_per_touch: div(recYds + rushYds, tch),
-    total_targets: tgt, total_receptions: rec, total_carries: car, total_touches: tch,
   };
 
   // New NGS/FTN/EPA metrics: totals summed, rates volume-weighted -- parity with
   // the server-side weekly aggregation in advanced_metrics.py so a week range
   // matches the leaderboard's range numbers.
   const ADV_TOTALS = ['passing_epa', 'rushing_epa', 'receiving_epa',
-    'yards_after_catch', 'explosive_runs_10_plus', 'ngs_rush_yards_over_expected'];
+    'yards_after_catch', 'ngs_rush_yards_over_expected',
+    'expected_tds', 'td_over_expected', 'first_downs'];
   const ADV_WEIGHTED = {
     epa_per_play: 'w_dropbacks', cpoe: 'w_dropbacks', success_rate: 'w_dropbacks',
     sack_rate: 'w_dropbacks', scramble_rate: 'w_dropbacks', nfl_passer_rating: 'w_dropbacks',
     adjusted_completion_rate: 'w_pass_att',
     qb_hit_rate: 'w_dropbacks', explosive_pass_rate: 'w_pass_att',
     play_action_rate: 'w_dropbacks', play_action_epa: 'w_dropbacks',
-    out_of_pocket_rate: 'w_dropbacks', blitz_rate_faced: 'w_dropbacks',
+    blitz_rate_faced: 'w_dropbacks',
     epa_vs_blitz: 'w_dropbacks',
     ngs_avg_time_to_throw: 'w_pass_att', ngs_aggressiveness: 'w_pass_att',
     ngs_avg_completed_air_yards: 'w_pass_att',
-    ngs_avg_air_yards_differential: 'w_pass_att',
-    ngs_avg_air_yards_to_sticks: 'w_pass_att', ngs_cpoe: 'w_pass_att',
-    ngs_max_completed_air_distance: 'w_pass_att',
-    pacr: 'w_pass_air_yards',
+    ngs_avg_air_yards_to_sticks: 'w_pass_att',
     ngs_rush_yards_over_expected_per_att: 'w_carries', ngs_rush_efficiency: 'w_carries',
     breakaway_percentage: 'w_carries',
     rushing_success_rate: 'w_carries', rushing_epa_per_att: 'w_carries',
-    ngs_avg_time_to_los: 'w_carries',
     ngs_percent_attempts_gte_eight_defenders: 'w_carries',
     epa_vs_stacked_box: 'w_carries',
     ngs_avg_separation: 'w_targets', ngs_avg_cushion: 'w_targets',
     ngs_avg_intended_air_yards: 'w_targets', avg_depth_of_target: 'w_targets',
-    ngs_catch_pct: 'w_targets', drop_rate: 'w_targets', contested_catch_rate: 'w_targets',
+    ngs_catch_pct: 'w_targets', drop_rate: 'w_targets', uncatchable_tgt_rate: 'w_targets', contested_catch_rate: 'w_targets',
+    qb_rating_when_targeted: 'w_targets', pressure_rate_faced: 'w_pressure_opps',
+    end_zone_target_rate: 'w_targets', deep_target_rate: 'w_targets',
+    goal_line_opp_share: 'w_team_gl_opps', third_down_conv_rate: 'w_third_down_dropbacks',
+    stuffed_rate: 'w_carries', turnover_worthy_rate: 'w_dropbacks',
+    contested_target_rate: 'w_targets', screen_target_rate: 'w_targets',
+    rec_broken_tackles_per_reception: 'w_receptions',
+    rec_first_down_rate: 'w_targets', rush_first_down_rate: 'w_carries',
     ngs_created_separation: 'w_targets',
     receiving_success_rate: 'w_targets', receiving_epa_per_target: 'w_targets',
-    racr: 'w_rec_air_yards',
     yards_after_catch_per_reception: 'w_receptions', ngs_avg_yac: 'w_receptions',
     ngs_avg_expected_yac: 'w_receptions', ngs_avg_yac_above_expectation: 'w_receptions',
   };
@@ -18974,10 +18973,8 @@ function _cmp3MetricTable(players, datas, cfg) {
   const positions = players.map(function (p) { return String(p.position || '').toUpperCase(); }).filter(Boolean);
   const _FALLBACK = {
     vorp: 'VORP', war: 'WAR', role_score: 'Role Score', snap_share: 'Snap Share',
-    opportunity_share: 'Opportunity Share', red_zone_usage: 'Red Zone Usage',
-    total_tds: 'Total TDs', total_rush_tds: 'Rush TDs', total_rec_tds: 'Rec TDs',
-    total_carries: 'Carries', total_targets: 'Targets', total_receptions: 'Receptions',
-    total_touches: 'Touches', catch_rate: 'Catch Rate', yards_per_carry: 'Yards/Carry',
+    opportunity_share: 'Opportunity Share',
+    catch_rate: 'Catch Rate', yards_per_carry: 'Yards/Carry',
     yards_per_touch: 'Yards/Touch', yards_per_target: 'Yards/Target',
   };
   const cfgLabel = {};

@@ -5043,9 +5043,27 @@ const _ADV_METRIC_DESCS = {
   vorp: "Value Over Replacement Points: season PPR points minus a replacement-level starter at the same position (league-size aware, FLEX included). This is a season total, so missed games (injury, bench) can make VORP negative even when per-game production was starter-level.",
   war: "Wins Above Replacement: season VORP divided by points-per-win (≈ the league's weekly scoring spread). Translates points above replacement into the wins they were worth; elite players are typically 4-6+.",
   role_score: "Overall opportunity score (0-100) blending snap share, touches, and red-zone usage relative to the player's position.",
+  expected_tds: "Expected touchdowns from the player's own opportunities: receiving TD equity on targets plus rushing TD equity on carries plus receiving TD equity on throws for passers (nflverse play-by-play). A season total.",
+  xtd_per_game: "Expected touchdowns per game: the TD slice of the expected points model, from targets, carries, and throws (nflverse play-by-play).",
+  td_over_expected: "Actual touchdowns (rushing + receiving + passing) minus expected touchdowns. Positive = outscored the TD expectation (regression risk); negative = TDs left on the board.",
+  rec_first_down_rate: "Percent of targets that result in a first down (nflverse play-by-play). How often a target moves the chains, not just catches.",
+  rush_first_down_rate: "Percent of carries that earn a first down (nflverse play-by-play). Chain-moving rate on the ground.",
+  first_downs_per_game: "First downs per game from the player's own plays: as passer plus as rusher plus as receiver, each play counted once (nflverse play-by-play).",
+  qb_rating_when_targeted: "Standard NFL passer rating (0 to 158.3) on throws targeting this player: targets as attempts, with completions, receiving yards, receiving TDs, and interceptions on those throws, totals first (nflverse play-by-play). One decimal.",
+  pressure_rate_faced: "Percent of dropbacks (attempts plus sacks taken) on which the QB was pressured: PFR times_pressured divided by attempts plus times_sacked (PFR charting via nflverse). Lower is better.",
+  goal_line_opp_share: "Share of the team's goal-line opportunities (carries plus targets snapped inside the opponent 5) that went to this player (nflverse play-by-play).",
+  end_zone_target_rate: "Percent of targets thrown into the end zone: air yards at least the yards to the goal line on the target (nflverse play-by-play).",
+  deep_target_rate: "Percent of targets thrown 20+ air yards downfield (nflverse play-by-play).",
+  stuffed_rate: "Percent of carries stopped at or behind the line of scrimmage, yards gained <= 0 (nflverse play-by-play). Lower is better.",
+  third_down_conv_rate: "Percent of third-down dropbacks that end in a first down, from the play's first-down flag or third_down_converted (nflverse play-by-play).",
+  turnover_worthy_rate: "Percent of dropbacks charted as turnover-worthy throws (is_interception_worthy) by FTN charting via nflverse, whether or not they were actually intercepted. Lower is better.",
+  contested_target_rate: "Percent of charted targets that were contested (tightly covered, is_contested_ball) per FTN charting via nflverse. Different from Contested Catch %: this is how often coverage was tight.",
+  screen_target_rate: "Percent of charted targets that were screen passes (is_screen_pass) per FTN charting via nflverse.",
+  rec_broken_tackles_per_reception: "Broken tackles per reception on receiving plays only, per Pro Football Reference charting: receiving broken tackles divided by receptions. Different from the combined rush plus rec broken tackle rates.",
+  td_share: "Share of the team's offensive touchdowns scored by this player: rushing plus receiving TDs divided by the team's offensive TD total. Every offensive TD is one player's rush or receiving TD, so nothing double counts.",
   snap_share: "Percent of the team's offensive snaps the player was on the field for.",
   opportunity_share: "Share of the team's targets plus carries that went to this player.",
-  red_zone_usage: "Targets and carries inside the opponent's 20-yard line per game; a proxy for scoring opportunity.",
+  rz_opp_share: "Share of the team's red-zone opportunities (carries + targets inside the 20) that went to this player; the goal-line role in one number.",
   grades_offense: "PFF's overall offensive grade (0-100) from play-by-play charting.",
   yards_per_touch: "Yards gained per combined carry and reception.",
   yards_per_attempt: "Passing yards per attempt; core passing efficiency stat.",
@@ -5057,16 +5075,14 @@ const _ADV_METRIC_DESCS = {
   pressure_to_sack_rate: "Percent of pressured dropbacks that turn into sacks. Lower is better.",
   nfl_passer_rating: "Standard NFL passer rating (0-158.3).",
   pff_passing_grade: "PFF's passing grade (0-100).",
-  total_pass_tds: "Total passing touchdowns in the season.",
   pass_tds_per_game: "Passing touchdowns per game.",
   yards_per_carry: "Rushing yards gained per carry.",
   rush_td_rate: "Percent of carries that result in a touchdown.",
   breakaway_percentage: "Percent of rushing yards that came on runs of 15+ yards; explosiveness.",
+  explosive_run_rate: "Percent of carries gaining 10+ yards; big-play rate on the ground (nflverse).",
   elusive_rating: "PFF metric for yards created after contact and missed tackles forced, independent of blocking.",
   pff_rushing_grade: "PFF's rushing grade (0-100).",
-  explosive_runs_10_plus: "Count of runs gaining 10 or more yards in the season (PFF). Raw explosive-play volume.",
-  avoided_tackles: "Tackles broken on rush attempts (PFR charting via nflverse). Rewards runners who power through or slip contact.",
-  total_rush_tds: "Total rushing touchdowns in the season.",
+  avoided_tackles_pg: "Broken tackles per carry on rush attempts (PFR charting via nflverse).",
   route_participation: "Percent of the team's pass-play snaps on which the WR/TE ran a route.",
   target_share: "Percent of the team's total targets directed at this player.",
   air_yards_per_game: "Receiving air yards per game; a measure of downfield target volume.",
@@ -5080,6 +5096,7 @@ const _ADV_METRIC_DESCS = {
   yards_after_catch_per_reception: "Average yards gained after the catch per reception.",
   yards_after_catch: "Total yards gained after the catch in the season.",
   drop_rate: "Percent of catchable targets dropped. Lower is better.",
+  uncatchable_tgt_rate: "Percent of targets charted as uncatchable by FTN charting (off-target throws the receiver had no realistic chance to catch), via the nflverse FTN release, not PFF. Lower is better: a high rate means poor QB throw quality, not poor receiving.",
   yprr: "Receiving yards earned per route run (from PFF). Elite WRs are typically 2.0+.",
   ngs_avg_separation: "Average yards of separation from the nearest defender at the moment of catch/incompletion (NFL Next Gen Stats).",
   ngs_avg_cushion: "Average yards of cushion the defender gives at the snap (NFL Next Gen Stats).",
@@ -5088,17 +5105,12 @@ const _ADV_METRIC_DESCS = {
   ngs_avg_time_to_throw: "Average seconds from snap to throw (NFL Next Gen Stats).",
   ngs_aggressiveness: "Percent of attempts thrown into tight windows (NFL Next Gen Stats). A public analogue to big-time-throw rate.",
   ngs_avg_completed_air_yards: "Average air yards on completed passes (NFL Next Gen Stats).",
-  ngs_avg_air_yards_differential: "Completed air yards minus intended air yards (NFL Next Gen Stats).",
   ngs_avg_air_yards_to_sticks: "Average air yards relative to the first-down marker (NFL Next Gen Stats).",
-  ngs_cpoe: "Next Gen Stats completion percentage over expected.",
-  ngs_max_completed_air_distance: "Longest completed air distance in yards (NFL Next Gen Stats).",
-  ngs_avg_time_to_los: "Average seconds for the rusher to reach the line of scrimmage (NFL Next Gen Stats).",
   ngs_percent_attempts_gte_eight_defenders: "Percent of rush attempts against 8 or more defenders in the box (NFL Next Gen Stats).",
   qb_hit_rate: "Percent of dropbacks on which the passer was hit (nflverse). A public pressure-faced proxy.",
   explosive_pass_rate: "Percent of pass attempts that gained 16+ yards (nflverse).",
   play_action_rate: "Percent of dropbacks that are play-action (FTN charting).",
   play_action_epa: "Expected Points Added per play-action dropback (FTN + nflverse).",
-  out_of_pocket_rate: "Percent of dropbacks from outside the pocket (FTN charting).",
   blitz_rate_faced: "Percent of dropbacks against a blitz (FTN charting).",
   epa_vs_blitz: "Expected Points Added per dropback against the blitz (FTN + nflverse).",
   epa_vs_stacked_box: "Expected Points Added per rush against 8+ defenders in the box (FTN + nflverse).",
@@ -5106,8 +5118,6 @@ const _ADV_METRIC_DESCS = {
   receiving_success_rate: "Percent of targets with positive EPA (nflverse).",
   rushing_epa_per_att: "Expected Points Added per rush attempt (nflverse).",
   receiving_epa_per_target: "Expected Points Added per target (nflverse).",
-  pacr: "Passing Air Conversion Ratio: passing yards ÷ passing air yards.",
-  racr: "Receiver Air Conversion Ratio: receiving yards ÷ air yards.",
   epa_per_play: "Expected Points Added per play: the average value of each play the player was involved in.",
   passing_epa: "Total Expected Points Added on the player's pass attempts over the season.",
   rushing_epa: "Total Expected Points Added on the player's rushing attempts over the season.",
@@ -5122,22 +5132,16 @@ const _ADV_METRIC_DESCS = {
   inline_rate: "Percent of snaps a tight end lined up inline (attached to the formation).",
   pass_block_rate: "Percent of pass snaps spent blocking rather than running a route.",
   grades_pass_block: "PFF's pass blocking grade (0-100).",
-  total_rec_tds: "Total receiving touchdowns in the season.",
-  total_carries: "Total carries in the season.",
   carries_per_game: "Carries per game.",
-  total_targets: "Total targets in the season.",
   targets_per_game: "Targets per game.",
-  total_receptions: "Total receptions in the season.",
   receptions_per_game: "Receptions per game.",
-  total_touches: "Total carries plus receptions in the season.",
   touches_per_game: "Carries plus receptions per game.",
-  total_tds: "Total touchdowns (rush + receiving + passing) in the season.",
   // keyed by display label -- used by buildAdvancedMetricsHTML _cells()
   'Role Score': "Overall opportunity score (0-100) blending snap share, touches, and red-zone usage relative to the player's position.",
   'Snap Share': "Percent of the team's offensive snaps the player was on the field for.",
   'Route Partic': "Percent of the team's pass-play snaps on which the WR/TE ran a route. High route participation means a consistent full-time route runner.",
   'Opp Share': "Share of the team's targets plus carries that went to this player.",
-  'RZ Usage/G': "Targets and carries inside the opponent's 20-yard line per game; a proxy for scoring opportunity.",
+  'RZ Opp Share': "Share of the team's red-zone opportunities (carries + targets inside the 20) that went to this player; the goal-line role in one number.",
   'PFF Off Grade': "PFF's overall offensive grade (0-100) from play-by-play charting.",
   'Yds/Touch': "Yards gained per combined carry and reception.",
   'PFF Pass Grade': "PFF's passing grade (0-100).",
@@ -5152,9 +5156,9 @@ const _ADV_METRIC_DESCS = {
   'Rush TD Rate': "Percent of carries that result in a touchdown.",
   'PFF Rush Grade': "PFF's rushing grade (0-100).",
   'Breakaway %': "Percent of rushing yards that came on runs of 15+ yards; explosiveness.",
-  'Explosive Runs': "Count of runs gaining 10 or more yards in the season (PFF). Raw explosive-play volume.",
+  'Explosive Run %': "Percent of carries gaining 10+ yards; big-play rate on the ground (nflverse).",
   'Elusive Rating': "PFF metric for yards created after contact and missed tackles forced, independent of blocking.",
-  'Broken Tackles': "Tackles broken on rush attempts (PFR charting via nflverse). Rewards runners who power through or slip contact.",
+  'Broken Tackles/Carry': "Broken tackles per carry on rush attempts (PFR charting via nflverse).",
   'Catch Rate': "Percent of targets caught.",
   'Yds/Route Run': "Receiving yards earned per route run (from PFF). Elite WRs are typically 2.0+.",
   'Drop Rate': "Percent of catchable targets dropped. Lower is better.",
@@ -5179,16 +5183,13 @@ const _ADV_METRIC_DESCS = {
   'Usage Trend': "Recent usage trend: positive means the player's usage has risen vs. their season average.",
   'Eff Trend': "Recent efficiency trend: positive means the player has been more efficient recently vs. their season average.",
   'Carries/G': "Carries per game.",
-  'Carries': "Total carries in the season.",
+  'Rush Yds/G': "Rushing yards per game.",
+  'Rush TDs/G': "Rushing touchdowns per game.",
+  'Rec TDs/G': "Receiving touchdowns per game.",
+  'Total TDs/G': "Total touchdowns per game.",
   'Targets/G': "Targets per game.",
-  'Targets': "Total targets in the season.",
   'Touches/G': "Carries plus receptions per game.",
-  'Rush TDs': "Total rushing touchdowns in the season.",
-  'Rec TDs': "Total receiving touchdowns in the season.",
-  'Total TDs': "Total touchdowns (rush + receiving + passing) in the season.",
   'Receptions/G': "Receptions per game.",
-  'Receptions': "Total receptions in the season.",
-  'Pass TDs': "Total passing touchdowns in the season.",
   'Pass TDs/G': "Passing touchdowns per game.",
   // Labels that previously had no definition (efficiency / EPA / NGS / volume tiles)
   'Passing EPA': "Total Expected Points Added on the player's pass attempts over the season.",
@@ -5202,12 +5203,9 @@ const _ADV_METRIC_DESCS = {
   'Cushion': "Average yards of cushion the defender gives at the snap (NFL Next Gen Stats).",
   'YAC Over Expected': "Yards after catch above what was expected given the catch situation (NFL Next Gen Stats).",
   'Receiving EPA': "Total Expected Points Added on the player's targets over the season.",
-  'Touches': "Total carries plus receptions in the season.",
   'PPR Points': "Total PPR fantasy points scored in the season.",
   'PPR Pts/G': "PPR fantasy points per game.",
   'Rec Yds/G': "Receiving yards per game.",
-  'Rec Yards': "Total receiving yards in the season.",
-  'Rush Yards': "Total rushing yards in the season.",
   'Expected FP': "Expected fantasy points (full PPR): what a league-average player would score on this exact target/carry/dropback workload, from play-by-play (air yards, completion probability, expected YAC, field-position TD equity). Opportunity-based and outcome-independent.",
   'FP Over Exp': "Actual full-PPR points minus expected (xFP). Positive means the player out-scored their opportunity (often TD-driven, prone to regression); NEGATIVE means fantasy points left on the board (elite usage not yet cashed in), historically a positive-regression signal.",
 };
@@ -5273,24 +5271,22 @@ function buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive, counts, b
     wopr: 0.65, air_yards_share: 38, air_yards_per_game: 110,
     targets_per_game: 11, receptions_per_game: 8,
     carries_per_game: 18, touches_per_game: 20,
-    rz_carries_pg: 3, rz_targets_pg: 2.5, red_zone_usage: 3,
+    rz_target_share: 0.4, rz_opp_share: 0.4,
     rec_yards_per_game: 100, rush_yards_per_game: 110,
     yprr: 3, route_participation: 100, routes_per_game: 40,
     pass_tds_per_game: 2.5, rush_tds_per_game: 1, rec_tds_per_game: 1,
     total_tds_per_game: 1.5, fpts_per_carry: 1.5, fpts_per_target: 3,
-    explosive_runs_pg: 2, avoided_tackles_pg: 2.5,
+    explosive_run_rate: 0.25, avoided_tackles_pg: 2.5,
     ngs_created_separation: 3, ngs_avg_time_to_throw: 3.5,
     ngs_aggressiveness: 25, ngs_avg_completed_air_yards: 12,
-    ngs_avg_air_yards_differential: 4, ngs_avg_air_yards_to_sticks: 4,
-    ngs_cpoe: 10, ngs_max_completed_air_distance: 60,
-    ngs_avg_time_to_los: 3, ngs_percent_attempts_gte_eight_defenders: 50,
+    ngs_avg_air_yards_to_sticks: 4,
+    ngs_percent_attempts_gte_eight_defenders: 50,
     qb_hit_rate: 25, explosive_pass_rate: 20,
     play_action_rate: 40, play_action_epa: 0.4,
-    out_of_pocket_rate: 25, blitz_rate_faced: 40,
+    blitz_rate_faced: 40,
     epa_vs_blitz: 0.4, epa_vs_stacked_box: 0.3,
     rushing_success_rate: 55, receiving_success_rate: 55,
     rushing_epa_per_att: 0.3, receiving_epa_per_target: 0.6,
-    pacr: 1.2, racr: 1.2,
   };
 
   // Value: VORP / WAR -- season-only, injected by the API for season views.
@@ -5388,9 +5384,9 @@ function buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive, counts, b
       const v = metrics.breakaway_percentage;
       defs.push({ label: 'Breakaway %', fill: Math.min(v * 2.5, 100), display: v.toFixed(1) + '%', key: 'breakaway_percentage', sub: _rankSub('breakaway_percentage'), cat: 'Rushing' });
     }
-    if (metrics.explosive_runs_10_plus != null) {
-      const v = metrics.explosive_runs_10_plus;
-      defs.push({ label: 'Explosive Runs', fill: Math.min(v / 20 * 100, 100), display: v.toFixed(0), key: 'explosive_runs_10_plus', sub: _rankSub('explosive_runs_10_plus'), cat: 'Rushing' });
+    if (metrics.explosive_runs_10_plus != null && metrics.total_carries > 0) {
+      const v = metrics.explosive_runs_10_plus / metrics.total_carries;
+      defs.push({ label: 'Explosive Run %', fill: Math.min(v / 0.25 * 100, 100), display: (v * 100).toFixed(1) + '%', key: 'explosive_run_rate', sub: _rankSub('explosive_run_rate'), cat: 'Rushing' });
     }
     if (metrics.rushing_epa != null) {
       const v = metrics.rushing_epa;
@@ -5404,9 +5400,9 @@ function buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive, counts, b
       const v = metrics.elusive_rating;
       defs.push({ label: 'Elusive Rating', fill: Math.min(v / 200 * 100, 100), display: v.toFixed(1), key: 'elusive_rating', sub: _rankSub('elusive_rating'), cat: 'Rushing' });
     }
-    if (metrics.avoided_tackles != null && metrics.avoided_tackles > 0) {
-      const v = metrics.avoided_tackles;
-      defs.push({ label: 'Broken Tackles', fill: Math.min(v / 30 * 100, 100), display: v.toFixed(0), key: 'avoided_tackles', sub: _rankSub('avoided_tackles'), cat: 'Rushing' });
+    if (metrics.avoided_tackles != null && metrics.avoided_tackles > 0 && metrics.total_carries > 0) {
+      const v = metrics.avoided_tackles / metrics.total_carries;
+      defs.push({ label: 'Broken Tackles/Carry', fill: Math.min(v / 2.5 * 100, 100), display: v.toFixed(2), key: 'avoided_tackles_pg', sub: _rankSub('avoided_tackles_pg'), cat: 'Rushing' });
     }
     if (metrics.yards_per_carry != null) {
       const v = metrics.yards_per_carry;
@@ -5531,8 +5527,9 @@ function buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive, counts, b
       const v = metrics.yards_per_touch;
       defs.push({ label: 'Yds/Touch', fill: Math.min(v / 8 * 100, 100), display: v.toFixed(1), key: 'yards_per_touch', sub: _rankSub('yards_per_touch'), cat: 'General' });
     }
-    if (metrics.total_touches != null) {
-      defs.push({ label: 'Touches', fill: Math.min(metrics.total_touches / 150 * 100, 100), display: Math.round(metrics.total_touches).toString(), key: 'total_touches', sub: _rankSub('total_touches'), cat: 'Volume' });
+    const _topg = metrics.touches_per_game != null ? metrics.touches_per_game : _pg(metrics.total_touches);
+    if (_topg != null) {
+      defs.push({ label: 'Touches/G', fill: Math.min(_topg / 20 * 100, 100), display: _topg.toFixed(1), key: 'touches_per_game', sub: _rankSub('touches_per_game'), cat: 'General' });
     }
   }
 
@@ -5541,9 +5538,9 @@ function buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive, counts, b
     defs.push({ label: 'Target Quality', fill: Math.min(v / 20 * 100, 100), display: v.toFixed(1), key: 'target_quality_score', sub: _rankSub('target_quality_score'), cat: 'Receiving' });
   }
 
-  if (metrics.red_zone_usage != null && position !== 'QB') {
-    const v = metrics.red_zone_usage;
-    defs.push({ label: 'RZ Usage/G', fill: Math.min(v / 3 * 100, 100), display: v.toFixed(1), key: 'red_zone_usage', sub: _rankSub('red_zone_usage'), cat: 'General' });
+  if (metrics.rz_opp_share != null && position !== 'QB') {
+    const v = metrics.rz_opp_share;
+    defs.push({ label: 'RZ Opp Share', fill: Math.min(v / 0.4 * 100, 100), display: (v * 100).toFixed(1) + '%', key: 'rz_opp_share', sub: _rankSub('rz_opp_share'), cat: 'General' });
   }
 
   if (metrics.usage_trend != null) {
@@ -5597,32 +5594,32 @@ function buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive, counts, b
     if (_rpg != null) defs.push({ label: 'Receptions/G', fill: Math.min(_rpg / 9 * 100, 100), display: _rpg.toFixed(1), key: 'receptions_per_game', sub: _rankSub('receptions_per_game'), cat: 'Receiving' });
     const _recypg = metrics.rec_yards_per_game != null ? metrics.rec_yards_per_game : _pg(metrics.total_rec_yards);
     if (_recypg != null) defs.push({ label: 'Rec Yds/G', fill: Math.min(_recypg / 100 * 100, 100), display: _recypg.toFixed(1), key: 'rec_yards_per_game', sub: _rankSub('rec_yards_per_game'), cat: 'Receiving' });
-    if (metrics.total_targets != null) defs.push({ label: 'Targets', fill: Math.min(metrics.total_targets / (position === 'TE' ? 120 : 180) * 100, 100), display: Math.round(metrics.total_targets).toString(), key: 'total_targets', sub: _rankSub('total_targets'), cat: 'Volume' });
-    if (metrics.total_receptions != null) defs.push({ label: 'Receptions', fill: Math.min(metrics.total_receptions / 130 * 100, 100), display: Math.round(metrics.total_receptions).toString(), key: 'total_receptions', sub: _rankSub('total_receptions'), cat: 'Volume' });
-    if (metrics.total_rec_yards != null) defs.push({ label: 'Rec Yards', fill: Math.min(metrics.total_rec_yards / 1500 * 100, 100), display: Math.round(metrics.total_rec_yards).toString(), key: 'total_rec_yards', sub: _rankSub('total_rec_yards'), cat: 'Volume' });
-    const _recTdMax = position === 'TE' ? 12 : 14;
-    if (metrics.total_rec_tds != null) defs.push({ label: 'Rec TDs', fill: Math.min(metrics.total_rec_tds / _recTdMax * 100, 100), display: Math.round(metrics.total_rec_tds).toString(), key: 'total_rec_tds', sub: _rankSub('total_rec_tds'), cat: 'Receiving' });
-    if (metrics.total_tds != null) defs.push({ label: 'Total TDs', fill: Math.min(metrics.total_tds / 15 * 100, 100), display: Math.round(metrics.total_tds).toString(), key: 'total_tds', sub: _rankSub('total_tds'), cat: 'General' });
+    const _rtdpg = metrics.rec_tds_per_game != null ? metrics.rec_tds_per_game : _pg(metrics.total_rec_tds);
+    if (_rtdpg != null) defs.push({ label: 'Rec TDs/G', fill: Math.min(_rtdpg / 1 * 100, 100), display: _rtdpg.toFixed(1), key: 'rec_tds_per_game', sub: _rankSub('rec_tds_per_game'), cat: 'Receiving' });
+    const _ttdpg = metrics.total_tds_per_game != null ? metrics.total_tds_per_game : _pg(metrics.total_tds);
+    if (_ttdpg != null) defs.push({ label: 'Total TDs/G', fill: Math.min(_ttdpg / 1.5 * 100, 100), display: _ttdpg.toFixed(1), key: 'total_tds_per_game', sub: _rankSub('total_tds_per_game'), cat: 'General' });
   } else if (position === 'RB') {
     const _cpg = metrics.carries_per_game != null ? metrics.carries_per_game : _pg(metrics.total_carries);
     if (_cpg != null) defs.push({ label: 'Carries/G', fill: Math.min(_cpg / 22 * 100, 100), display: _cpg.toFixed(1), key: 'carries_per_game', sub: _rankSub('carries_per_game'), cat: 'Rushing' });
-    if (metrics.total_carries != null) defs.push({ label: 'Carries', fill: Math.min(metrics.total_carries / 300 * 100, 100), display: Math.round(metrics.total_carries).toString(), key: 'total_carries', sub: _rankSub('total_carries'), cat: 'Volume' });
     const _tpgRb = metrics.targets_per_game != null ? metrics.targets_per_game : _pg(metrics.total_targets);
     if (_tpgRb != null) defs.push({ label: 'Targets/G', fill: Math.min(_tpgRb / 7 * 100, 100), display: _tpgRb.toFixed(1), key: 'targets_per_game', sub: _rankSub('targets_per_game'), cat: 'Receiving' });
-    if (metrics.total_targets != null) defs.push({ label: 'Targets', fill: Math.min(metrics.total_targets / 100 * 100, 100), display: Math.round(metrics.total_targets).toString(), key: 'total_targets', sub: _rankSub('total_targets'), cat: 'Volume' });
     const _thpgRb = metrics.touches_per_game != null ? metrics.touches_per_game : _pg(metrics.total_touches);
     if (_thpgRb != null) defs.push({ label: 'Touches/G', fill: Math.min(_thpgRb / 25 * 100, 100), display: _thpgRb.toFixed(1), key: 'touches_per_game', sub: _rankSub('touches_per_game'), cat: 'General' });
-    if (metrics.total_touches != null) defs.push({ label: 'Touches', fill: Math.min(metrics.total_touches / 300 * 100, 100), display: Math.round(metrics.total_touches).toString(), key: 'total_touches', sub: _rankSub('total_touches'), cat: 'Volume' });
-    if (metrics.total_rush_yards != null) defs.push({ label: 'Rush Yards', fill: Math.min(metrics.total_rush_yards / 1700 * 100, 100), display: Math.round(metrics.total_rush_yards).toString(), key: 'total_rush_yards', sub: _rankSub('total_rush_yards'), cat: 'Volume' });
-    if (metrics.total_rush_tds != null) defs.push({ label: 'Rush TDs', fill: Math.min(metrics.total_rush_tds / 16 * 100, 100), display: Math.round(metrics.total_rush_tds).toString(), key: 'total_rush_tds', sub: _rankSub('total_rush_tds'), cat: 'Rushing' });
-    if (metrics.total_rec_tds != null) defs.push({ label: 'Rec TDs', fill: Math.min(metrics.total_rec_tds / 8 * 100, 100), display: Math.round(metrics.total_rec_tds).toString(), key: 'total_rec_tds', sub: _rankSub('total_rec_tds'), cat: 'Receiving' });
-    if (metrics.total_tds != null) defs.push({ label: 'Total TDs', fill: Math.min(metrics.total_tds / 20 * 100, 100), display: Math.round(metrics.total_tds).toString(), key: 'total_tds', sub: _rankSub('total_tds'), cat: 'General' });
+    const _rypg = metrics.rush_yards_per_game != null ? metrics.rush_yards_per_game : _pg(metrics.total_rush_yards);
+    if (_rypg != null) defs.push({ label: 'Rush Yds/G', fill: Math.min(_rypg / 110 * 100, 100), display: _rypg.toFixed(1), key: 'rush_yards_per_game', sub: _rankSub('rush_yards_per_game'), cat: 'Volume' });
+    const _rushTdPg = metrics.rush_tds_per_game != null ? metrics.rush_tds_per_game : _pg(metrics.total_rush_tds);
+    if (_rushTdPg != null) defs.push({ label: 'Rush TDs/G', fill: Math.min(_rushTdPg / 1.2 * 100, 100), display: _rushTdPg.toFixed(1), key: 'rush_tds_per_game', sub: _rankSub('rush_tds_per_game'), cat: 'Rushing' });
+    const _recTdPgRb = metrics.rec_tds_per_game != null ? metrics.rec_tds_per_game : _pg(metrics.total_rec_tds);
+    if (_recTdPgRb != null) defs.push({ label: 'Rec TDs/G', fill: Math.min(_recTdPgRb / 1 * 100, 100), display: _recTdPgRb.toFixed(1), key: 'rec_tds_per_game', sub: _rankSub('rec_tds_per_game'), cat: 'Receiving' });
+    const _totTdPgRb = metrics.total_tds_per_game != null ? metrics.total_tds_per_game : _pg(metrics.total_tds);
+    if (_totTdPgRb != null) defs.push({ label: 'Total TDs/G', fill: Math.min(_totTdPgRb / 1.5 * 100, 100), display: _totTdPgRb.toFixed(1), key: 'total_tds_per_game', sub: _rankSub('total_tds_per_game'), cat: 'General' });
   } else if (position === 'QB') {
-    if (metrics.total_pass_tds != null) defs.push({ label: 'Pass TDs', fill: Math.min(metrics.total_pass_tds / 40 * 100, 100), display: Math.round(metrics.total_pass_tds).toString(), key: 'total_pass_tds', sub: _rankSub('total_pass_tds'), cat: 'Passing' });
     const _ptpg = metrics.pass_tds_per_game != null ? metrics.pass_tds_per_game : _pg(metrics.total_pass_tds);
     if (_ptpg != null) defs.push({ label: 'Pass TDs/G', fill: Math.min(_ptpg / 3 * 100, 100), display: _ptpg.toFixed(1), key: 'pass_tds_per_game', sub: _rankSub('pass_tds_per_game'), cat: 'Passing' });
-    if (metrics.total_rush_tds != null) defs.push({ label: 'Rush TDs', fill: Math.min(metrics.total_rush_tds / 15 * 100, 100), display: Math.round(metrics.total_rush_tds).toString(), key: 'total_rush_tds', sub: _rankSub('total_rush_tds'), cat: 'Rushing' });
-    if (metrics.total_tds != null) defs.push({ label: 'Total TDs', fill: Math.min(metrics.total_tds / 45 * 100, 100), display: Math.round(metrics.total_tds).toString(), key: 'total_tds', sub: _rankSub('total_tds'), cat: 'General' });
+    const _rushTdPgQb = metrics.rush_tds_per_game != null ? metrics.rush_tds_per_game : _pg(metrics.total_rush_tds);
+    if (_rushTdPgQb != null) defs.push({ label: 'Rush TDs/G', fill: Math.min(_rushTdPgQb / 1 * 100, 100), display: _rushTdPgQb.toFixed(1), key: 'rush_tds_per_game', sub: _rankSub('rush_tds_per_game'), cat: 'Rushing' });
+    const _totTdPgQb = metrics.total_tds_per_game != null ? metrics.total_tds_per_game : _pg(metrics.total_tds);
+    if (_totTdPgQb != null) defs.push({ label: 'Total TDs/G', fill: Math.min(_totTdPgQb / 1.5 * 100, 100), display: _totTdPgQb.toFixed(1), key: 'total_tds_per_game', sub: _rankSub('total_tds_per_game'), cat: 'General' });
   }
 
   // Append any remaining cfg metrics not already covered above
@@ -5631,15 +5628,15 @@ function buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive, counts, b
     const _shownKeys = new Set([
       'vorp','war',
       'role_score','snap_share','route_participation','opportunity_share',
-      'red_zone_usage','grades_offense','yards_per_touch',
+      'rz_opp_share','grades_offense','yards_per_touch',
       'pff_passing_grade','big_time_throw_rate','adjusted_completion_rate',
       'nfl_passer_rating','yards_per_attempt','completion_pct',
       'td_rate','int_rate','passing_epa','epa_per_play','cpoe',
       'success_rate','sack_rate','pressure_to_sack_rate','scramble_rate',
       'yards_per_carry','rush_td_rate',
-      'pff_rushing_grade','breakaway_percentage','explosive_runs_10_plus',
+      'pff_rushing_grade','breakaway_percentage','explosive_run_rate',
       'rushing_epa','ngs_rush_yards_over_expected_per_att','elusive_rating',
-      'avoided_tackles','catch_rate',
+      'avoided_tackles_pg','catch_rate',
       'yprr','drop_rate','yards_per_target','yards_per_reception',
       'yards_after_catch_per_reception','yards_after_catch',
       'avg_depth_of_target','contested_catch_rate',
@@ -5647,11 +5644,8 @@ function buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive, counts, b
       'target_share','air_yards_per_game','air_yards_share',
       'target_quality_score','receiving_epa','slot_rate','wide_rate',
       'inline_rate','pass_block_rate','grades_pass_block',
-      'total_carries','total_targets','total_touches','total_tds',
-      'total_rush_tds','total_rec_tds','total_receptions','total_pass_tds',
       'usage_trend','efficiency_trend','games',
       'ppr_pts','ppr_pts_per_game',
-      'total_rec_yards','total_rush_yards',
       'rec_yards_per_game','rush_yards_per_game',
       'carries_per_game','targets_per_game','receptions_per_game','touches_per_game',
       'total_routes','routes_per_game',
@@ -5702,7 +5696,7 @@ function buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive, counts, b
   const _SCORE_CEIL = { role_score: 100, grades_offense: 100, pff_passing_grade: 100,
     pff_rushing_grade: 100, nfl_passer_rating: 158.3 };
   const _MINMAX_KEYS = new Set(['passing_epa', 'rushing_epa', 'receiving_epa']);
-  const _RATE_KEYS = new Set(['avoided_tackles_pg', 'explosive_runs_pg']);  // per-carry rates → rank
+  const _RATE_KEYS = new Set(['avoided_tackles_pg', 'explosive_run_rate']);  // per-carry rates → rank
   function _rankFill(key) {
     const r = ranks && ranks[key];
     const n = counts && counts[key];

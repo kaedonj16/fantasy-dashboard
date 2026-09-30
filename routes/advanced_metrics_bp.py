@@ -159,8 +159,11 @@ def api_advanced_metrics_leaderboard():
                 metric, position=position, season=season, min_vol=min_vol, combine=combine,
             )
     except Exception as e:
+        # A builder failure is an error, not an empty board: returning 200
+        # with players=[] made the client render the "No data yet" empty
+        # state for a server fault, with no retry affordance.
         logger.exception(f"[api/advanced-metrics/leaderboard] error for metric={metric}: {e}")
-        players = []
+        return jsonify({"error": "leaderboard_failed"}), 500
 
     # Attach experience so the client can offer a rookie/years-exp filter; the
     # reduced players index has no years_exp, so read the full feed (cached).
