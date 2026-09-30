@@ -271,3 +271,93 @@ def test_public_view_repairs_legacy_deck(offline_client, fake_store):
     # Logo backfill wiring for the src-less imgs in legacy decks.
     assert "window.__wrappedShareLogo" in body
     assert "img.wrapped-intro-logo, .wrapped-foot img" in body
+
+
+def test_public_view_restores_pause_and_tap_zones(offline_client, fake_store):
+    """Regression: the share sanitizer strips every <button>/<svg>/<script>
+    from the stored overlay, so public decks arrived with no Pause pill and
+    no Prev/Next tap zones: auto-play worked, tapping did nothing. The
+    public page must re-add that trusted chrome at render time, for both
+    namespaces, along with the ShareData JSON the Share card paints from."""
+    import app
+    client = app.app.test_client()
+    for ns, kind, share_data in (
+        ("weekly-wrapped", "weekly", {"league": "Blackedraw", "week": 2}),
+        ("wrapped", "season", {"league": "Blackedraw", "season": "2026"}),
+    ):
+        token = client.post("/api/wrapped/share", json={
+            "kind": kind, "ns": ns, "overlay_html": _deck_html(ns=ns),
+            "share_data": share_data,
+        }).get_json()["url"].rsplit("/wrapped/", 1)[1]
+
+        resp = client.get(f"/wrapped/{token}")
+        assert resp.status_code == 200
+        body = resp.get_data(as_text=True)
+        # Pause pill, complete with the pause/play icons paintPauseBtn toggles.
+        assert f'id="{ns}Pause"' in body, ns
+        assert 'class="wrapped-pause"' in body, ns
+        assert "wp-ic-pause" in body and "wp-ic-play" in body, ns
+        # Tap zones are what tapping a slide actually hits.
+        assert f'id="{ns}Next"' in body and "wrapped-tap-next" in body, ns
+        assert f'id="{ns}Prev"' in body and "wrapped-tap-prev" in body, ns
+        # The rest of the chrome the sanitizer stripped.
+        assert f'id="{ns}Share"' in body, ns
+        assert f'id="{ns}Link"' in body, ns
+        assert f'id="{ns}Close"' in body, ns
+        assert "wrapped-hint" in body, ns
+        # Exactly one of each (restore must not duplicate existing chrome).
+        assert body.count(f'id="{ns}Pause"') == 1, ns
+        assert body.count(f'id="{ns}Next"') == 1, ns
+        # ShareData restored from the stored share payload, not the deck.
+        assert f'id="{ns}ShareData"' in body, ns
+        assert "Blackedraw" in body, ns
+
+
+def test_public_view_restores_chrome_for_legacy_deck(offline_client, fake_store):
+    """Decks already stored without any chrome (minted before the Pause
+    control existed, then stripped again by the render sanitizer) get the
+    Pause pill and tap zones back without being re-minted."""
+    import app
+    client = app.app.test_client()
+    token = client.post("/api/wrapped/share", json={
+        "kind": "weekly", "ns": "weekly-wrapped",
+        "overlay_html": _legacy_deck_html(),
+        "share_data": {"league": "blackedraw", "week": 3},
+    }).get_json()["url"].rsplit("/wrapped/", 1)[1]
+
+    body = client.get(f"/wrapped/{token}").get_data(as_text=True)
+    assert 'id="weekly-wrappedPause"' in body
+    assert 'id="weekly-wrappedNext"' in body
+    assert 'id="weekly-wrappedPrev"' in body
+    assert 'id="weekly-wrappedShareData"' in body
+
+
+def test_restore_chrome_does_not_duplicate_present_chrome():
+    html = _deck_html(ns="weekly-wrapped")
+    out = H._restore_wrapped_share_chrome(
+        html, "weekly-wrapped", {"league": "Blackedraw", "week": 2})
+    assert out == html
+
+
+def test_public_bootstrap_has_stage_tap_fallback():
+    """If a deck ever reaches bindOverlay without tap zones again, tapping
+    the stage itself must still advance instead of sitting stuck."""
+    for ns in ("wrapped", "weekly-wrapped"):
+        pub = H._wrapped_public_bootstrap_js(ns)
+        assert "if (!nextBtn)" in pub, ns
+        assert "stage.addEventListener('click'" in pub, ns
+
+
+def test_public_view_cta_does_not_promise_standalone_wrapped():
+    """The bottom CTA links to the home page (the dashboard product), so it
+    must not promise a standalone 'make your own Wrapped' tool."""
+    html = H.render_wrapped_share_page(
+        overlay_html=_deck_html(ns="weekly-wrapped"),
+        share_data={"league": "Blackedraw", "week": 2},
+        label="Blackedraw: Week 2 Wrapped",
+        ns="weekly-wrapped",
+        css_url="/static/dashboard.css",
+        logo_url="/static/BR_Logo_dark.png",
+    )
+    assert "Make your own Wrapped" not in html
+    assert "See your league on BR Fantasy" in html

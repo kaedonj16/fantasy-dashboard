@@ -2223,6 +2223,75 @@ def _wrapped_share_og_description(share_data: dict | None) -> str:
     return desc or "A fantasy football Wrapped story"
 
 
+def _restore_wrapped_share_chrome(overlay_html: str, ns: str,
+                                  share_data: dict | None) -> str:
+    """Re-add the deck's nav chrome at public-render time.
+
+    The share sanitizer (deliberately) strips every <button>, <svg>, and
+    <script> from the stored overlay, because that HTML is untrusted client
+    input. That also strips the deck's own Share / Link / Pause / Close
+    pills, its Prev/Next tap zones, the hint, and the ShareData JSON the
+    Share card paints from, so a public deck could auto-play but could not
+    be paused or tapped through. The stored row stays sanitized; the chrome
+    below is trusted server markup, regenerated from ``ns`` + the share
+    payload column on every view, which also repairs decks already stored
+    without it. Only pieces that are actually missing are added.
+    """
+    def _has_id(idval: str) -> bool:
+        return f'id="{idval}"' in overlay_html or f"id='{idval}'" in overlay_html
+
+    if not _has_id(f"{ns}Overlay") or not _has_id(f"{ns}Stage"):
+        return overlay_html
+    pieces = []
+    if not _has_id(f"{ns}Share"):
+        pieces.append(
+            f'<button type="button" class="wrapped-share" id="{ns}Share" aria-label="Share">'
+            '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg><span>Share</span>'
+            "</button>"
+        )
+    if not _has_id(f"{ns}Link"):
+        pieces.append(
+            f'<button type="button" class="wrapped-link" id="{ns}Link" aria-label="Copy shareable link">'
+            '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg><span>Link</span>'
+            "</button>"
+        )
+    if not _has_id(f"{ns}Pause"):
+        pieces.append(
+            f'<button type="button" class="wrapped-pause" id="{ns}Pause" aria-label="Pause auto-advance" aria-pressed="false">'
+            '<svg class="wp-ic-pause" width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>'
+            '<svg class="wp-ic-play" width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="display:none"><path d="M8 5.5v13a1 1 0 0 0 1.53.85l10.2-6.5a1 1 0 0 0 0-1.7L9.53 4.65A1 1 0 0 0 8 5.5z"/></svg>'
+            "<span>Pause</span></button>"
+        )
+    if not _has_id(f"{ns}Close"):
+        pieces.append(
+            f'<button type="button" class="wrapped-close" id="{ns}Close" aria-label="Close">&times;</button>'
+        )
+    if not _has_id(f"{ns}Prev"):
+        pieces.append(
+            f'<button type="button" class="wrapped-tap wrapped-tap-prev" id="{ns}Prev" aria-label="Previous"></button>'
+        )
+    if not _has_id(f"{ns}Next"):
+        pieces.append(
+            f'<button type="button" class="wrapped-tap wrapped-tap-next" id="{ns}Next" aria-label="Next"></button>'
+        )
+    if "wrapped-hint" not in overlay_html:
+        pieces.append(
+            '<div class="wrapped-hint">Tap to advance · P to pause · Esc to close</div>'
+        )
+    if not _has_id(f"{ns}ShareData"):
+        share_json = json.dumps(share_data or {}).replace("</", "<\\/")
+        pieces.append(
+            f'<script type="application/json" id="{ns}ShareData">{share_json}</script>'
+        )
+    if not pieces:
+        return overlay_html
+    fragment = "".join(pieces)
+    cut = overlay_html.rfind("</div>")
+    if cut == -1:
+        return overlay_html + fragment
+    return overlay_html[:cut] + fragment + overlay_html[cut:]
+
+
 def render_wrapped_share_page(*, overlay_html: str, share_data: dict | None,
                               label: str, ns: str, css_url: str,
                               logo_url: str) -> str:
@@ -2236,6 +2305,9 @@ def render_wrapped_share_page(*, overlay_html: str, share_data: dict | None,
     from dashboard_services.wrapped_shares import sanitize_overlay_html
     overlay_html = sanitize_overlay_html(overlay_html or "")
     data = share_data or {}
+    # The sanitizer strips the deck's buttons/tap zones/ShareData along with
+    # any active content; put the trusted chrome back before serving.
+    overlay_html = _restore_wrapped_share_chrome(overlay_html, ns, data)
     title = label or "Fantasy Wrapped"
     desc = _wrapped_share_og_description(data)
     js = _wrapped_public_bootstrap_js(ns)
@@ -2270,7 +2342,7 @@ def render_wrapped_share_page(*, overlay_html: str, share_data: dict | None,
 </head>
 <body>
 {overlay_html}
-<div class="wrapped-share-cta"><a href="/">Make your own Wrapped</a></div>
+<div class="wrapped-share-cta"><a href="/">See your league on BR Fantasy</a></div>
 <script>window.__wrappedSharePublic = true;window.__wrappedShareLogo = {logo_js};</script>
 <script>{js}</script>
 </body>
@@ -2709,6 +2781,16 @@ _WRAPPED_BOOTSTRAP_JS = r"""
     if (nextBtn) nextBtn.addEventListener('click', function () { go(idx + 1); });
     var prevBtn = document.getElementById('wrappedPrev');
     if (prevBtn) prevBtn.addEventListener('click', function () { go(idx - 1); });
+    // Tap fallback: if the tap-zone buttons are absent (a deck whose stored
+    // markup lost its nav chrome), tapping the stage itself still advances,
+    // so the deck can never sit stuck on slide one. Slide buttons keep
+    // their own clicks.
+    if (!nextBtn) {
+      stage.addEventListener('click', function (e) {
+        if (e.target && e.target.closest && e.target.closest('button, a')) return;
+        go(idx + 1);
+      });
+    }
     document.addEventListener('keydown', function (e) {
       if (overlay.hidden) return;
       if (e.key === 'Escape') close();
