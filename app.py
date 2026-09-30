@@ -12168,6 +12168,112 @@ def _warm_league_ctx_async(platform: str, league_id: str, season: int) -> None:
             _LEAGUE_WARM_INFLIGHT.discard(key)
 
 
+# ── Cross-worker league context persistence (Redis) ──────────────────────────
+# build_league_context costs 7-28s, but the ctx only lived in this worker's
+# DASHBOARD_CACHE, so every sibling worker / recycle / deploy / eviction repaid
+# it. After a successful build the league-specific slice is pickled to Redis
+# (dashboard_services/league_ctx_store.py); a worker missing locally hydrates
+# from Redis instead of rebuilding. Fail-soft: any Redis problem degrades to
+# the exact pre-existing build path. Kill-switch: LEAGUE_CTX_REDIS=0.
+#
+# Slice decision: everything in the built ctx is stored EXCEPT the
+# league-independent globals below (the players payload alone is ~38MB parsed)
+# plus "viewer" (per-request, recomputed on every serve path). The excluded
+# globals are reattached from the loading worker's own shared caches using the
+# same accessors build_league_context uses. Small NFL-state fields
+# (current_season/current_week/season_type/team_game_lookup) stay in the slice:
+# they are snapshots that must stay consistent with the build, not live data.
+_LEAGUE_CTX_REDIS_GLOBAL_KEYS = (
+    "players", "players_map", "players_index", "teams_index",
+    "model_value_table", "rookie_rankings",
+)
+_LEAGUE_CTX_REDIS_EXCLUDE = frozenset(_LEAGUE_CTX_REDIS_GLOBAL_KEYS) | {"viewer"}
+
+
+def _league_ctx_redis_slice(ctx: dict) -> dict:
+    return {
+        k: v for k, v in ctx.items()
+        if k not in _LEAGUE_CTX_REDIS_EXCLUDE and not k.startswith("_cache")
+    }
+
+
+def _league_ctx_reattach_globals(ctx: dict) -> dict:
+    players = get_players_global()
+    ctx["players"] = players
+    ctx["players_map"] = get_players_map(players)
+    ctx["players_index"] = load_players_index()
+    ctx["teams_index"] = load_teams_index()
+    ctx["model_value_table"] = list(get_model_value_table_cached() or [])
+    ctx["rookie_rankings"] = _load_rookie_rankings_for_ctx()
+    return ctx
+
+
+def _league_ctx_redis_store(platform, season, league_id, ctx, built_at, generation) -> None:
+    """Best-effort: persist a freshly built ctx for sibling workers."""
+    try:
+        from dashboard_services import league_ctx_store as _ctx_store
+
+        if not _ctx_store.enabled():
+            return
+        blob = _ctx_store.dump_envelope(
+            generation, built_at, _league_ctx_redis_slice(ctx)
+        )
+        if blob is None:
+            return
+        _ctx_store.save(platform, season, league_id, blob, ttl_seconds=CACHE_TTL)
+    except Exception:
+        logger.debug("[league-ctx-redis] store failed", exc_info=True)
+
+
+def _league_ctx_redis_load(platform, league_id, season):
+    """Hydrate a serve-ready ctx from Redis, or None to fall through to a build.
+
+    Validation mirrors the local path (_league_ctx_cache_valid): the payload
+    must be within CACHE_TTL of its build, at or after the shared bust marker
+    (a Refresh or a roster-change expiry on any worker bumps it), and at the
+    current build generation -- a payload from before the latest successful
+    build must never be resurrected.
+    """
+    try:
+        from dashboard_services import league_ctx_store as _ctx_store
+        from dashboard_services.league_singleflight import read_generation
+
+        if not _ctx_store.enabled():
+            return None
+        envelope = _ctx_store.load(platform, season, league_id)
+        if not envelope:
+            return None
+        built_at = float(envelope.get("built_at") or 0)
+        if built_at <= 0 or (time.time() - built_at) > CACHE_TTL:
+            return None
+        if built_at < _league_bust_mtime(platform, season, league_id):
+            return None
+        current_generation = int(
+            read_generation(platform, season, league_id).get("generation") or 0
+        )
+        if int(envelope.get("generation") or 0) < current_generation:
+            return None
+        ctx = _league_ctx_reattach_globals(dict(envelope["ctx"]))
+        key = _cache_key(platform, season, league_id)
+        with _DASHBOARD_CACHE_LOCK:
+            _prune_dashboard_cache(keep=key)
+            DASHBOARD_CACHE[key] = {"ctx": ctx, "ts": built_at, "page_html": {}}
+        ctx["_cache_synced_at"] = datetime.fromtimestamp(built_at, timezone.utc).isoformat()
+        ctx["_cache_stale"] = False
+        ctx["viewer"] = get_viewer_session_for_league(
+            ctx.get("users") or [], ctx.get("rosters") or [], platform, league_id, season
+        )
+        logger.info("league_context_build %s", json.dumps({
+            "platform": platform, "season": int(season), "league_id": str(league_id),
+            "result": "redis-hit", "success": True,
+            "cache_entries": len(DASHBOARD_CACHE),
+        }, separators=(",", ":")))
+        return ctx
+    except Exception:
+        logger.debug("[league-ctx-redis] load failed", exc_info=True)
+        return None
+
+
 def get_league_ctx_from_cache(
     platform: str, league_id: str, season: int, *, allow_build: bool = True,
 ) -> dict:
@@ -12268,6 +12374,14 @@ def get_league_ctx_from_cache(
                 ctx["_cache_synced_at"] = datetime.fromtimestamp(float(entry.get("ts") or 0), timezone.utc).isoformat() if entry.get("ts") else None
                 ctx["_cache_stale"] = False
                 return ctx
+            # A sibling worker may have persisted its build to Redis (or this
+            # worker was recycled / evicted since): hydrate from there instead
+            # of repeating the 7-28s provider build. Validation inside mirrors
+            # the local freshness rules, so a busted/stale payload falls
+            # through to the build below.
+            redis_ctx = _league_ctx_redis_load(platform, league_id, season)
+            if redis_ctx is not None:
+                return redis_ctx
             # Clear provider payloads only after both lock layers are owned.
             if platform == "sleeper":
                 try:
@@ -12299,7 +12413,11 @@ def get_league_ctx_from_cache(
                 with _DASHBOARD_CACHE_LOCK:
                     _prune_dashboard_cache(keep=key)
                     DASHBOARD_CACHE[key] = {"ctx": ctx, "ts": built_at, "page_html": {}}
-                mark_success(platform, season, league_id)
+                _gen = mark_success(platform, season, league_id)
+                _league_ctx_redis_store(
+                    platform, season, league_id, ctx, built_at,
+                    int((_gen or {}).get("generation") or 0),
+                )
                 rss_after = None
                 try:
                     import psutil
