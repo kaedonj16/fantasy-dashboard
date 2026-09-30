@@ -63,13 +63,15 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-lab-slot { border-bottom: 1px solid var(--border); }
 .wv-lab-row { display: flex; align-items: center; gap: 10px; width: 100%; border: none; background: none; padding: 12px 4px; cursor: pointer; text-align: left; color: var(--text); }
 .wv-lab-pos { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; padding: 3px 8px; border-radius: 20px; font-size: 11px; font-weight: 800; }
-.wv-lab-pos.qb { background: #fee2e2; color: #b91c1c; }
-.wv-lab-pos.rb { background: #d1fae5; color: #047857; }
-.wv-lab-pos.wr { background: #dbeafe; color: #1d4ed8; }
-.wv-lab-pos.te { background: #ffedd5; color: #c2410c; }
-.wv-lab-pos.flex { background: #ede9fe; color: #6d28d9; }
-.wv-lab-pos.k { background: #fef3c7; color: #92400e; }
-.wv-lab-pos.def { background: #e5e7eb; color: #374151; }
+/* Pos chip hues match the site-wide .pos-badge palette (matchups page):
+   QB brand blue, RB green, WR amber, TE purple, FLEX teal, K pink, DEF slate. */
+.wv-lab-pos.qb { background: var(--brand-blue); color: #fff; }
+.wv-lab-pos.rb { background: #22c55e; color: #fff; }
+.wv-lab-pos.wr { background: #f59e0b; color: #fff; }
+.wv-lab-pos.te { background: #8b5cf6; color: #fff; }
+.wv-lab-pos.flex { background: #14b8a6; color: #fff; }
+.wv-lab-pos.k { background: #c92c68; color: #fff; }
+.wv-lab-pos.def { background: #475569; color: #fff; }
 .wv-lab-main { flex: 1; min-width: 0; }
 .wv-lab-name { font-size: 14px; font-weight: 700; }
 .wv-lab-line1 { display: block; }
@@ -105,6 +107,10 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-lab-opt .dl.dn { color: #dc2626; }
 .wv-lab-opt .l2 { display: block; margin-top: 6px; font-size: 12px; color: var(--text-muted); }
 .wv-lab-fine { font-size: 12px; color: var(--text-muted); margin-top: 10px; }
+/* Placeholder-only style (loading text, error/retry states). Never put this
+   class on #wvLabBody itself: the rendered Lab replaces that container's
+   innerHTML, so the 24px padding would survive into the loaded hero and
+   lineup rows and stack on the page gutters. */
 .wv-lab-skel { padding: 24px; text-align: center; color: var(--text-muted); font-size: 13px; }
 /* Lab loading state: a structured skeleton mirroring the loaded layout (hero +
    lineup rows) with a shimmer sweep, so the section animates while it loads and
@@ -678,7 +684,7 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
       <!-- Compare panel (hidden until 2 players selected) -->
       <div id="wvComparePanel" style="display:none;scroll-margin-top:16px;"></div>
       <div id="wvLab" hidden>
-        <div class="wv-lab-skel" id="wvLabBody">Loading the Lab...</div>
+        <div id="wvLabBody"><div class="wv-lab-skel">Loading the Lab...</div></div>
       </div>
       <div id="wvStartSit">
         {wv_skel}
