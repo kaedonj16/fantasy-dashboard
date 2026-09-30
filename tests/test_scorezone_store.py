@@ -65,6 +65,9 @@ class _FakeStoreConn:
         # flips these to stage a pre-migration table.
         self.table_exists = False
         self.pk_has_pid = True
+        # A 041-shape table also lacks the week column (042 adds it); the
+        # no-week migration regression test flips this off.
+        self.table_has_week = True
         self._mig_plays = None
 
     def __enter__(self):
@@ -74,6 +77,9 @@ class _FakeStoreConn:
         return False
 
     def commit(self):
+        pass
+
+    def rollback(self):
         pass
 
     def cursor(self):
@@ -119,15 +125,28 @@ class _FakeStoreConn:
                 return _FakeCursor([])
             cols = "season,game_id,play_id,pid" if self.pk_has_pid else "season,game_id,play_id"
             return _FakeCursor([{"pk_cols": cols}])
+        if up.startswith("ALTER TABLE REDZONE_PLAYS ADD COLUMN"):
+            # In-place column heal (week from 042, pid from 043): existing
+            # rows gain the column with its default (NULL week).
+            if "WEEK" in up:
+                self.table_has_week = True
+            return _FakeCursor([])
         if up.startswith("CREATE TABLE REDZONE_PLAYS_PIDMIG"):
             self._mig_plays = {}
             return _FakeCursor([])
         if up.startswith("INSERT INTO REDZONE_PLAYS_PIDMIG"):
+            # The rebuild SELECTs week from the source table; on a
+            # week-less (041-shape) source Postgres raises UndefinedColumn
+            # (prod 2026-09-30). Mirror that so the regression test fails
+            # if the migration ever assumes the column again.
+            if not self.table_has_week:
+                raise Exception('column "week" does not exist')
             # Rebuild preserving rows; pid comes from each row's payload.
             for row in self.plays.values():
                 payload = json.loads(row["payload"])
                 pid = str(payload.get("pid") or "")
                 new_row = dict(row)
+                new_row.setdefault("week", None)
                 new_row["pid"] = pid
                 key = (row["season"], row["game_id"], row["play_id"], pid)
                 self._mig_plays[key] = new_row
@@ -463,10 +482,15 @@ def test_ensure_table_runs_once_per_process():
 
     rs._ensure_table(_Conn())
     first_run = list(calls)
-    # PK introspection first, then the table DDL, then the indexes.
+    # PK introspection first, then the table DDL, then the in-place
+    # column heals, then the indexes.
     assert "PG_CONSTRAINT" in first_run[0]
     assert first_run[1].startswith("CREATE TABLE")
-    assert len(first_run) == 2 + len(rs._INDEX_DDL)
+    assert first_run[2].startswith("ALTER TABLE REDZONE_PLAYS ADD COLUMN")
+    assert "WEEK" in first_run[2]
+    assert first_run[3].startswith("ALTER TABLE REDZONE_PLAYS ADD COLUMN")
+    assert "PID" in first_run[3]
+    assert len(first_run) == 4 + len(rs._INDEX_DDL)
 
     # Second call on the same database: no DDL.
     rs._ensure_table(_Conn())
@@ -621,6 +645,34 @@ def test_migrate_pid_key_rebuilds_preserving_rows():
     rs._ENSURED_TABLES.discard("default")
     rs._ensure_table(conn)
     assert conn.plays == before
+
+
+def test_migrate_pid_key_handles_table_without_week_column():
+    """Regression (prod 2026-09-30): a 041-shape table has no week column
+    -- 042 adds it, but migrations run in post-deploy after the web
+    process starts serving, so the in-code pid-key rebuild fired first
+    and its INSERT ... SELECT referenced week, failing with
+    UndefinedColumn (DETAIL: week exists only on redzone_plays_pidmig).
+    The failed statement also aborted the transaction, taking the rest
+    of _ensure_table down with it on every store call. The migration
+    must add the column itself; rows survive with week NULL."""
+    conn = _FakeStoreConn([1_700_000_000.0])
+    conn.table_exists = True
+    conn.pk_has_pid = False
+    conn.table_has_week = False
+    payload = json.dumps({"play_id": "p1", "pid": "111", "seq": 1})
+    conn.plays[(2026, "g", "p1")] = {
+        "season": 2026, "game_id": "g", "play_id": "p1", "seq": 1,
+        "is_td": True, "payload": payload,
+        "observed_at": 1_700_000_000.0,
+    }
+    rs._ENSURED_TABLES.discard("default")
+    rs._ensure_table(conn)
+    assert conn.table_has_week is True
+    assert conn.pk_has_pid is True
+    assert set(conn.plays) == {(2026, "g", "p1", "111")}
+    assert conn.plays[(2026, "g", "p1", "111")]["payload"] == payload
+    assert conn.plays[(2026, "g", "p1", "111")]["week"] is None
 
 
 # ── Poller loudness ─────────────────────────────────────────────────────
