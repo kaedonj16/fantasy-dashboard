@@ -15,9 +15,9 @@ def test_position_stat_lines_include_requested_weekly_volume():
     # Grouped shorthand: the PASS/RUSH/REC label carries the stat type, so
     # yards and TDs inside a group need no qualifier. A QB rushing line with
     # no recorded attempts shows yards only.
-    assert qb == "PASS 20/30-250 yds, 2 TD, 1 INT • RUSH 35 yds, 1 TD"
-    assert rb == "RUSH 15-70 yds, 1 TD • REC 4/5-28 yds"
-    assert wr == "REC 3/7-51 yds, 1 TD"
+    assert qb == "PASS 20/30 250 yds, 2 TD, 1 INT • RUSH 35 yds, 1 TD"
+    assert rb == "RUSH 15 70 yds, 1 TD • REC 4/5 28 yds"
+    assert wr == "REC 3/7 51 yds, 1 TD"
     # rec_td 0 is dropped, not shown as "0 TD".
     assert "0 TD" not in rb
 
@@ -31,11 +31,33 @@ def test_stat_lines_match_the_approved_examples():
     }
     assert (
         mmod.format_player_stats(stats, "BUF", "QB", "QB One")
-        == "PASS 30/55-390 yds, 2 TD, 2 INT • RUSH 2-13 yds"
+        == "PASS 30/55 390 yds, 2 TD, 2 INT • RUSH 2 13 yds"
     )
     assert (
         mmod.format_player_stats(stats, "BUF", "RB", "RB One")
-        == "RUSH 15-75 yds, 1 TD • REC 4/5-41 yds"
+        == "RUSH 15 75 yds, 1 TD • REC 4/5 41 yds"
+    )
+
+
+def test_stat_lines_use_space_not_dash_before_yards():
+    stats = {"BUF": {"WR": {"busy wr": {"rec": 9, "tgt": 12, "rec_yds": 98, "rec_td": 1}}}}
+    assert (
+        mmod.format_player_stats(stats, "BUF", "WR", "Busy WR")
+        == "REC 9/12 98 yds, 1 TD"
+    )
+    qb_stats = {"BUF": {"QB": {"josh allen": {
+        "pass_cmp": 30, "pass_att": 55, "pass_yds": 390, "pass_td": 2,
+        "int": 2, "rush_att": 2, "rush_yds": 13}}}}
+    assert (
+        mmod.format_player_stats(qb_stats, "BUF", "QB", "Josh Allen")
+        == "PASS 30/55 390 yds, 2 TD, 2 INT • RUSH 2 13 yds"
+    )
+    rb_stats = {"BUF": {"RB": {"james cook": {
+        "rush_att": 15, "rush_yds": 75, "rush_td": 1,
+        "rec": 4, "tgt": 5, "rec_yds": 41}}}}
+    assert (
+        mmod.format_player_stats(rb_stats, "BUF", "RB", "James Cook")
+        == "RUSH 15 75 yds, 1 TD • REC 4/5 41 yds"
     )
 
 
@@ -49,16 +71,16 @@ def test_stat_line_zero_rules():
         }
     }
     quiet = mmod.format_player_stats(stats, "BUF", "RB", "Quiet RB")
-    assert quiet == "RUSH 12-48 yds • REC 3/5-29 yds"
+    assert quiet == "RUSH 12 48 yds • REC 3/5 29 yds"
     assert "TD" not in quiet
-    assert mmod.format_player_stats(stats, "BUF", "WR", "Blanked WR") == "REC 0/3-0 yds"
+    assert mmod.format_player_stats(stats, "BUF", "WR", "Blanked WR") == "REC 0/3 0 yds"
 
 
 def test_stat_line_rush_group_comes_first_even_for_wr():
     stats = {"BUF": {"WR": {"gadget wr": {"rush_att": 2, "rush_yds": 18, "rec": 5, "tgt": 6, "rec_yds": 60}}}}
     assert (
         mmod.format_player_stats(stats, "BUF", "WR", "Gadget WR")
-        == "RUSH 2-18 yds • REC 5/6-60 yds"
+        == "RUSH 2 18 yds • REC 5/6 60 yds"
     )
 
 
@@ -75,7 +97,7 @@ def test_completed_week_renders_starter_stats_but_not_bench(monkeypatch):
     }
     html = mmod.render_matchup_slide("2025", matchup, 2, 2, {}, {}, {}, {}, {})
     assert "Starter QB" in html and "PASS 200 yds" in html
-    assert "Bench WR" not in html and "REC 2/4-20 yds" not in html
+    assert "Bench WR" not in html and "REC 2/4 20 yds" not in html
     assert "m-row--bench" not in html
 
 
@@ -100,5 +122,5 @@ def test_completed_week_keeps_canonical_stats_when_schedule_is_final(monkeypatch
 def test_shared_stat_resolver_handles_suffix_nickname_and_historical_team():
     stats = {"SEA": {"RB": {"ken walker": {"rush_att": 18, "rush_yds": 91}}},
              "NE": {"WR": {"stefon diggs": {"rec": 6, "tgt": 8, "rec_yds": 74}}}}
-    assert mmod.format_player_stats(stats, "NYG", "RB", "Kenneth Walker III") == "RUSH 18-91 yds"
-    assert mmod.format_player_stats(stats, "BUF", "WR", "Stefon Diggs") == "REC 6/8-74 yds"
+    assert mmod.format_player_stats(stats, "NYG", "RB", "Kenneth Walker III") == "RUSH 18 91 yds"
+    assert mmod.format_player_stats(stats, "BUF", "WR", "Stefon Diggs") == "REC 6/8 74 yds"
