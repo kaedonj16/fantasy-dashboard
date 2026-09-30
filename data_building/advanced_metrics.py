@@ -4134,10 +4134,15 @@ def get_metric_leaderboard(
             # pick below would resurrect an older row's stale value (rows
             # from the first build weeks stored a forced 0.0). Restrict
             # trend candidates to the player's max as_of_date for the season.
+            # The max ignores future-dated rows: the nflverse season sync
+            # stamps its rows March 1 of the following year so provider
+            # values win the coalesce, and those rows never carry trend
+            # columns. Counting one as "newest" silences every trend.
             gate += (
                 " AND m.as_of_date = (SELECT MAX(cx.as_of_date)"
                 " FROM player_advanced_metrics cx"
-                " WHERE cx.player_id = m.player_id AND cx.season = m.season)"
+                " WHERE cx.player_id = m.player_id AND cx.season = m.season"
+                " AND cx.as_of_date <= CURRENT_DATE)"
             )
         if pos:
             gate += " AND m.position = %s"
@@ -4758,12 +4763,27 @@ def get_player_metric_ranks(player_id: str, season: Optional[int] = None) -> Dic
                 (season, position),
             ).fetchall()]
             _merged_rows: Dict[str, dict] = {}
+            # The trend guard below compares fill rows against the player's
+            # newest snapshot date. Provider season-sync rows are stamped
+            # March 1 of the following year and never carry trend columns,
+            # so the newest date that counts is the newest one that has
+            # actually happened. _raw_rows is ordered newest-first per
+            # player, so the first row dated today or earlier is that date.
+            # A player with only future-dated rows gets no entry; the trend
+            # columns on their merged row are NULL either way.
+            _today_iso = _date.today().isoformat()
             _newest_date = {}
+            for _row in _raw_rows:
+                _pid = str(_row.get("player_id"))
+                if _pid in _newest_date:
+                    continue
+                _d = _row.get("as_of_date")
+                if _d is not None and str(_d)[:10] <= _today_iso:
+                    _newest_date[_pid] = _d
             for _row in _raw_rows:
                 _pid = str(_row.get("player_id"))
                 if _pid not in _merged_rows:
                     _merged_rows[_pid] = dict(_row)
-                    _newest_date[_pid] = _row.get("as_of_date")
                     continue
                 _merged = _merged_rows[_pid]
                 for _key, _value in _row.items():
