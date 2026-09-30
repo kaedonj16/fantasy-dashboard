@@ -104,6 +104,190 @@ def _top_performers_by_roster(matchups: list[dict]) -> dict[str, list[dict]]:
     return out
 
 
+_POSITION_ORDER = ["QB", "RB", "WR", "TE", "K", "DEF"]
+
+
+def _top_scorers_by_position(matchups: list[dict], limit: int = 3) -> list:
+    """League-wide top scorers at each position among actual weekly starters.
+
+    Same authority rules as _top_performers_by_roster: only historical
+    lineups speak, provider points are used as-is, and missing points never
+    coerce to zero (bench points never count, they did not score for anyone).
+    Returns [(position, [player, ...]), ...] in display order; each player
+    carries pid/name/pos/nfl/pts/rid.
+    """
+    by_pos: dict[str, list[dict]] = {}
+    for matchup in matchups or []:
+        for team in (matchup.get("left") or {}, matchup.get("right") or {}):
+            rid = str(team.get("roster_id") or "")
+            if not rid or team.get("lineup_is_historical") is not True:
+                continue
+            for player in team.get("starters") or []:
+                if not player:
+                    continue  # empty slot placeholder
+                pts = player.get("pts")
+                pos = str(player.get("pos") or "").strip().upper()
+                if not pos or not isinstance(pts, (int, float)) or isinstance(pts, bool):
+                    continue
+                by_pos.setdefault(pos, []).append({
+                    "pid": str(player.get("pid") or ""),
+                    "name": str(player.get("name") or "Unknown player"),
+                    "pos": pos,
+                    "nfl": str(player.get("nfl") or ""),
+                    "pts": float(pts),
+                    "rid": rid,
+                })
+    ordered = [p for p in _POSITION_ORDER if p in by_pos]
+    ordered += sorted(p for p in by_pos if p not in _POSITION_ORDER)
+    out = []
+    for pos in ordered:
+        ranked = sorted(by_pos[pos],
+                        key=lambda p: (-p["pts"], p["name"].casefold(), p["pid"]))
+        seen: set[str] = set()
+        top = []
+        for player in ranked:
+            if player["pid"] and player["pid"] in seen:
+                continue
+            seen.add(player["pid"])
+            top.append(player)
+            if len(top) >= limit:
+                break
+        if top:
+            out.append((pos, top))
+    return out
+
+
+def _starter_player_ids(matchups: list[dict]) -> set:
+    """Player ids that actually started in these (historical) lineups."""
+    pids: set[str] = set()
+    for matchup in matchups or []:
+        for team in (matchup.get("left") or {}, matchup.get("right") or {}):
+            if team.get("lineup_is_historical") is not True:
+                continue
+            for player in team.get("starters") or []:
+                if player and player.get("pid"):
+                    pids.add(str(player["pid"]))
+    return pids
+
+
+_INJURY_SEVERITY = {"IR": 0, "OUT": 0, "PUP": 0, "NFI": 0,
+                    "DOUBTFUL": 1, "SUSP": 2, "QUESTIONABLE": 3}
+_INJURY_SEVERE = {"IR", "OUT", "PUP", "NFI", "DOUBTFUL", "SUSP"}
+
+
+def _notable_injuries(injury_df, starter_pids: set, limit: int = 8) -> list[dict]:
+    """Notable names from the league injury report: rostered players flagged
+    Out / Doubtful / IR-family, plus Questionable players who started in the
+    recap week.
+
+    injury_df is the CURRENT report (build_injury_report over the live
+    players snapshot), so callers gate this to the latest recap week, where
+    the snapshot reads as that week's injury news.
+    """
+    if injury_df is None:
+        return []
+    try:
+        records = injury_df.to_dict("records")
+    except Exception:
+        return []
+    rows: list[dict] = []
+    for rec in records:
+        if not isinstance(rec, dict):
+            continue
+        rid = str(rec.get("RosterID") or "")
+        if not rid:
+            continue  # free agents are not league news here
+        status = str(rec.get("Injury") or rec.get("Status") or "").strip().upper()
+        if status in ("", "ACTIVE", "ACT", "NAN"):
+            continue
+        pid = str(rec.get("PlayerID") or "")
+        started = pid in starter_pids
+        if status not in _INJURY_SEVERE and not (status == "QUESTIONABLE" and started):
+            continue
+
+        def _clean(v) -> str:
+            s = str(v or "").strip()
+            return "" if s.lower() == "nan" else s
+
+        rows.append({
+            "pid": pid,
+            "player": _clean(rec.get("Player")) or "Unknown player",
+            "pos": _clean(rec.get("Pos")),
+            "nfl": _clean(rec.get("NFL")),
+            "team": _clean(rec.get("Team")),
+            "rid": rid,
+            "status": status,
+            "body": _clean(rec.get("Body")),
+            "started": started,
+        })
+    rows.sort(key=lambda r: (_INJURY_SEVERITY.get(r["status"], 4),
+                             not r["started"], r["player"].casefold()))
+    return rows[:limit]
+
+
+def _recent_activity(activity_df, week: int, limit: int = 10) -> list[dict]:
+    """One week's rows from the canonical season activity table
+    (build_week_activity: kind/week/ts/data). The producer already sorts
+    newest first; filtering preserves that order.
+    """
+    if activity_df is None:
+        return []
+    try:
+        records = activity_df.to_dict("records")
+    except Exception:
+        return []
+    rows: list[dict] = []
+    for rec in records:
+        if not isinstance(rec, dict):
+            continue
+        try:
+            row_week = int(rec.get("week"))
+        except (TypeError, ValueError):
+            continue
+        if row_week != int(week):
+            continue
+        rows.append({"kind": str(rec.get("kind") or ""),
+                     "ts": rec.get("ts"),
+                     "data": rec.get("data") or {}})
+        if len(rows) >= limit:
+            break
+    return rows
+
+
+_RECAP_INJURIES_CSS = """<style>
+  .rc-inj-card { padding:6px 12px; }
+  .rc-inj-row { display:flex; align-items:center; gap:10px; padding:8px 0; min-width:0; }
+  .rc-inj-row + .rc-inj-row { border-top:1px solid var(--border); }
+  .rc-inj-status { font-size:10px; font-weight:800; letter-spacing:.05em; padding:3px 7px;
+                   border-radius:999px; color:var(--rc-inj); flex-shrink:0;
+                   background:color-mix(in srgb, var(--rc-inj) 14%, transparent); }
+  .rc-inj-main { flex:1; min-width:0; }
+  .rc-inj-name { font-size:14px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .rc-inj-sub { font-size:11px; color:var(--muted); }
+  .rc-inj-team { font-size:12px; font-weight:600; color:var(--muted); text-align:right;
+                 white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:40%; }
+</style>"""
+
+_RECAP_ACTIVITY_CSS = """<style>
+  .rc-act-card { padding:6px 12px; }
+  .rc-act-item { padding:9px 0; }
+  .rc-act-item + .rc-act-item { border-top:1px solid var(--border); }
+  .rc-act-head { display:flex; align-items:center; gap:8px; margin-bottom:5px; }
+  .rc-act-kind { font-size:10px; font-weight:800; letter-spacing:.06em; text-transform:uppercase;
+                 padding:3px 7px; border-radius:999px; }
+  .rc-act-kind--trade { color:var(--accent); background:color-mix(in srgb, var(--accent) 14%, transparent); }
+  .rc-act-kind--waiver { color:var(--win); background:color-mix(in srgb, var(--win) 14%, transparent); }
+  .rc-act-ts { font-size:11px; color:var(--muted); font-weight:600; }
+  .rc-act-sides { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:6px 16px; }
+  .rc-act-team { font-size:13px; font-weight:700; }
+  .rc-act-gets { font-size:12px; color:var(--muted); margin-top:2px; }
+  .rc-act-line { font-size:13px; }
+  .rc-act-team-inline { font-weight:700; }
+  .rc-act-asset { color:var(--text); font-weight:600; }
+  .rc-act-meta { color:var(--muted); font-weight:500; font-size:11px; margin-left:4px; }
+</style>"""
+
+
 def _weekly_efficiency_rows(efficiency_data: dict, selected_week: int) -> list[dict]:
     """Return complete weekly efficiency rows in deterministic rank order.
 
@@ -140,6 +324,8 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
         _build_recap_preview_df,
         build_standings_as_of_week,
         _mock_lineup_analysis_html,
+        ensure_activity_bits,
+        ensure_injury_bits,
         has_premium_for_viewer,
         html,
         json,
@@ -234,6 +420,8 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
         or []
     )
     top_performers = {} if preview_mode else _top_performers_by_roster(normalized_matchups)
+    position_scorers = [] if preview_mode else _top_scorers_by_position(normalized_matchups)
+    starter_pids = set() if preview_mode else _starter_player_ids(normalized_matchups)
 
     # ── Matchup pairs ──────────────────────────────────────────────────────
     matchups: list[dict] = []
@@ -302,6 +490,24 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
         return (f'<span class="{cls}" role="button" tabindex="0" '
                 f'data-roster-id="{html.escape(rid_s, quote=True)}" '
                 f'data-team-name="{tn}" style="cursor:pointer;">{body}</span>')
+
+    def player_span(name, pid="") -> str:
+        """Player name that opens the player modal, mirroring the scoreboard
+        top-performer markup. Plain text when no player id is known."""
+        safe_name = html.escape(str(name or "Unknown player"))
+        if not pid:
+            return safe_name
+        safe_pid = html.escape(str(pid), quote=True)
+        safe_name_attr = html.escape(str(name or "Unknown player"), quote=True)
+        return (
+            f'<span class="player-clickable" tabindex="0" role="button" '
+            f'data-player-id="{safe_pid}" data-player-name="{safe_name_attr}" '
+            f'data-wl-star-pid="{safe_pid}" '
+            f'data-league-id="{html.escape(str(_league_id), quote=True)}" '
+            f'data-platform="{html.escape(str(_platform), quote=True)}" '
+            f'data-season="{html.escape(str(_season), quote=True)}" '
+            f'aria-label="Open {safe_name_attr} player details">{safe_name}</span>'
+        )
 
     # Fetch the cached, shared legal-lineup analysis once. The same selected
     # week dataset drives this page section, its award cards, and the share card.
@@ -489,6 +695,34 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
     high_sub = "Season high" if season_high else f"+{float(high_row['points']) - league_avg:.1f} vs avg"
     low_sub = f"{float(low_row['points']) - league_avg:.1f} vs avg"
 
+    # ── Top scorers by position (inside Week at a Glance) ──────────────────
+    pos_scorers_html = ""
+    if position_scorers:
+        pos_cols = []
+        for pos, players in position_scorers:
+            pos_rows = []
+            for rank, p in enumerate(players, 1):
+                pos_rows.append(f"""
+      <div class="rc-pos-row">
+        <span class="rc-pos-rank">{rank}</span>
+        <div class="rc-pos-main">
+          <div class="rc-pos-name">{player_span(p["name"], p["pid"])}</div>
+          <div class="rc-pos-team">{team_name("", p["rid"])}</div>
+        </div>
+        <span class="rc-pos-pts">{p["pts"]:.1f}</span>
+      </div>""")
+            pos_cols.append(f"""
+    <div class="rc-pos-col">
+      <div class="rc-pos-head"><span class="pos-badge {html.escape(pos, quote=True)}">{html.escape(pos)}</span><span class="rc-pos-title">Top {len(players)}</span></div>
+      {''.join(pos_rows)}
+    </div>""")
+        pos_scorers_html = f"""
+  <div class="rc-pos-wrap">
+    <div class="rc-pos-label">Top scorers by position</div>
+    <div class="rc-pos-grid">{''.join(pos_cols)}
+    </div>
+  </div>"""
+
     cards_html = f"""
 <style>
   .rc-awards {{ display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; margin-bottom:20px; }}
@@ -510,6 +744,18 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
   .recap-team .team-clickable {{ border-radius:6px; }}
   .recap-team-name .team-clickable:hover {{ text-decoration:underline; }}
   .st-name .team-clickable:hover {{ text-decoration:underline; }}
+  .rc-pos-wrap {{ margin-top:14px; }}
+  .rc-pos-label {{ font-size:10px; font-weight:800; letter-spacing:.07em; text-transform:uppercase; color:var(--muted); margin-bottom:8px; }}
+  .rc-pos-grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(165px,1fr)); gap:10px; }}
+  .rc-pos-col {{ border:1px solid var(--border); border-radius:10px; padding:9px 10px; display:flex; flex-direction:column; gap:6px; min-width:0; }}
+  .rc-pos-head {{ display:flex; align-items:center; gap:7px; }}
+  .rc-pos-title {{ font-size:11px; font-weight:700; color:var(--muted); }}
+  .rc-pos-row {{ display:flex; align-items:center; gap:8px; min-width:0; }}
+  .rc-pos-rank {{ font-size:11px; font-weight:800; color:var(--muted); width:12px; flex-shrink:0; }}
+  .rc-pos-main {{ flex:1; min-width:0; }}
+  .rc-pos-name {{ font-size:13px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
+  .rc-pos-team {{ font-size:11px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
+  .rc-pos-pts {{ font-size:14px; font-weight:800; font-variant-numeric:tabular-nums; flex-shrink:0; }}
 </style>
 <section class="recap-section"><div class="recap-section-heading"><h2>Week at a Glance</h2></div>
 <div class="rc-awards">
@@ -521,7 +767,7 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
                low_sub, "var(--loss)" )}
   {matchup_card("fa-solid fa-trophy", "BIGGEST WIN", blowout, "var(--accent)") if blowout else '<div class="card rc-award"><div class="rc-award-h"><span class="rc-award-lbl">BIGGEST WIN</span></div><div class="rc-award-foot">No decisive result</div></div>'}
   {matchup_card("fa-solid fa-bolt", "CLOSEST GAME", closest, "var(--warning)") if closest else ""}
-</div></section>"""
+</div>{pos_scorers_html}</section>"""
 
     # ── Scoreboard ─────────────────────────────────────────────────────────
     def top_performer_html(rid: str) -> str:
@@ -901,6 +1147,116 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
   </div>
 </div>"""
 
+    # ── Injury report ──────────────────────────────────────────────────────
+    # build_injury_report is a CURRENT snapshot, so it only reads as this
+    # week's news on the latest recap; older weeks omit the section rather
+    # than dress today's statuses up as that week's.
+    injuries_html = ""
+    if not preview_mode and selected_week == available_weeks[-1]:
+        try:
+            ensure_injury_bits(ctx)
+            notable_injuries = _notable_injuries(ctx.get("injury_df"), starter_pids)
+        except Exception as exc:
+            logger.warning("weekly recap injuries failed league=%s season=%s week=%s: %s",
+                           ctx.get("league_id"), ctx.get("season"), selected_week, exc)
+            notable_injuries = []
+        if notable_injuries:
+            inj_rows = []
+            for inj in notable_injuries:
+                accent = ("var(--loss)" if inj["status"] in ("OUT", "IR", "PUP", "NFI")
+                          else "var(--warning)")
+                sub = " · ".join(b for b in (inj["pos"], inj["nfl"], inj["body"]) if b)
+                inj_rows.append(f"""
+    <div class="rc-inj-row">
+      <span class="rc-inj-status" style="--rc-inj:{accent};">{html.escape(inj["status"])}</span>
+      <div class="rc-inj-main">
+        <div class="rc-inj-name">{player_span(inj["player"], inj["pid"])}</div>
+        <div class="rc-inj-sub">{html.escape(sub)}</div>
+      </div>
+      <div class="rc-inj-team">{html.escape(inj["team"])}</div>
+    </div>""")
+            injuries_html = (
+                f'<section class="recap-section recap-injuries"><div class="recap-section-heading">'
+                f'<h2>Injury Report</h2><small>Latest report · league rosters</small></div>'
+                f'{_RECAP_INJURIES_CSS}<div class="card rc-inj-card">{"".join(inj_rows)}\n</div></section>'
+            )
+
+    # ── League activity: this week's trades & waiver adds ─────────────────
+    activity_html = ""
+    if not preview_mode:
+        try:
+            ensure_activity_bits(ctx)
+            recent_activity = _recent_activity(ctx.get("activity_df"), selected_week)
+        except Exception as exc:
+            logger.warning("weekly recap activity failed league=%s season=%s week=%s: %s",
+                           ctx.get("league_id"), ctx.get("season"), selected_week, exc)
+            recent_activity = []
+
+        def act_ts_label(ts) -> str:
+            try:
+                from datetime import timezone as _tz_utc
+                from zoneinfo import ZoneInfo
+                t = ts
+                if getattr(t, "tzinfo", None) is None:
+                    t = t.replace(tzinfo=_tz_utc.utc)
+                t = t.astimezone(ZoneInfo("America/New_York"))
+                return f"{t.strftime('%a')} {t.hour % 12 or 12}:{t.minute:02d} {t.strftime('%p')}"
+            except Exception:
+                return ""
+
+        def act_asset(p) -> str:
+            meta = " · ".join(b for b in (str(p.get("pos") or ""), str(p.get("team") or "")) if b)
+            meta_html = f'<span class="rc-act-meta">{html.escape(meta)}</span>' if meta else ""
+            return (f'<span class="rc-act-asset">{player_span(p.get("name"), p.get("pid"))}'
+                    f'{meta_html}</span>')
+
+        def act_pick_label(dp, receiver_rid) -> str:
+            yr, rnd = dp.get("season"), dp.get("round")
+            label = f"{yr} Rd {rnd} pick" if yr and rnd else "Draft pick"
+            orig = str(dp.get("roster_id") or "")
+            if orig and orig != str(receiver_rid):
+                label += f" via {team_by_rid.get(orig, 'another team')}"
+            return f'<span class="rc-act-asset">{html.escape(label)}</span>'
+
+        act_items = []
+        for row in recent_activity:
+            data = row["data"] if isinstance(row.get("data"), dict) else {}
+            ts_label = act_ts_label(row.get("ts"))
+            ts_html = f'<span class="rc-act-ts">{html.escape(ts_label)}</span>' if ts_label else ""
+            if row["kind"] == "trade":
+                picks = data.get("draft_picks") or []
+                sides = []
+                for tm in data.get("teams") or []:
+                    rid = tm.get("roster_id")
+                    gets = [act_asset(p) for p in tm.get("gets") or []]
+                    gets += [act_pick_label(dp, rid) for dp in picks
+                             if str(dp.get("owner_id") or "") == str(rid)]
+                    gets_html = ", ".join(gets) if gets else '<span class="rc-act-meta">Nothing</span>'
+                    sides.append(
+                        f'<div class="rc-act-side"><div class="rc-act-team">'
+                        f'{html.escape(str(tm.get("name") or ""))}</div>'
+                        f'<div class="rc-act-gets">gets {gets_html}</div></div>')
+                if sides:
+                    act_items.append(
+                        f'<div class="rc-act-item"><div class="rc-act-head">'
+                        f'<span class="rc-act-kind rc-act-kind--trade">Trade</span>{ts_html}</div>'
+                        f'<div class="rc-act-sides">{"".join(sides)}</div></div>')
+            elif row["kind"] == "waiver":
+                adds = [act_asset(p) for p in data.get("adds") or []]
+                if adds:
+                    act_items.append(
+                        f'<div class="rc-act-item"><div class="rc-act-head">'
+                        f'<span class="rc-act-kind rc-act-kind--waiver">Waiver add</span>{ts_html}</div>'
+                        f'<div class="rc-act-line"><span class="rc-act-team-inline">'
+                        f'{html.escape(str(data.get("name") or ""))}</span> added '
+                        f'{", ".join(adds)}</div></div>')
+        if act_items:
+            activity_html = (
+                f'<section class="recap-section recap-activity"><div class="recap-section-heading">'
+                f'<h2>League Activity</h2><small>Week {selected_week}</small></div>'
+                f'{_RECAP_ACTIVITY_CSS}<div class="card rc-act-card">{"".join(act_items)}</div></section>'
+            )
+
     story_html = (f'<section class="recap-section recap-story"><div class="recap-section-heading">'
                   f'<h2>Weekly Story</h2></div>{ai_column_html}</section>') if ai_column_html else ""
     up_next_html = ""
@@ -920,5 +1276,6 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
                         f'<a href="{history_url}">Open season history and recap</a>.</div></section>')
 
     return ('<main class="weekly-recap">' + week_selector + preview_banner + history_banner
-            + scoreboard_html + efficiency_html + cards_html + story_html + lineup_html + standings_html
+            + scoreboard_html + efficiency_html + cards_html + injuries_html + story_html
+            + lineup_html + standings_html + activity_html
             + up_next_html + '</main>')
