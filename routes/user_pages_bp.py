@@ -1728,9 +1728,16 @@ def api_matchup_league_scores():
 def api_scorezone_moments():
     """ScoreZone Moments: big plays from the viewer's current fantasy matchup.
 
-    Returns TDs, 40+ yard gains, and turnovers involving players on either
-    roster in the viewer's matchup, sourced from the ScoreZone play store.
+    Returns TDs, 40+ yard gains, and turnovers involving STARTING players
+    on either roster in the viewer's matchup (starters only; bench players'
+    plays are not surfaced), sourced from the ScoreZone play store.
     Powers the "ScoreZone Moments" row under the matchup win probability bar.
+
+    A cold league context (this worker has no cached ctx and none stale
+    enough to serve) answers ``pending: true`` with an empty plays list so
+    clients can tell "still warming" apart from "genuinely no moments" and
+    retry; the success body carries ``status``/``live`` so clients know
+    whether more moments can still arrive.
     """
     from flask import jsonify, request, session, g
 
@@ -1773,11 +1780,19 @@ def api_scorezone_moments():
     try:
         ctx = getattr(g, "portfolio_card_ctx", None)
         if ctx is None:
+            # allow_build=False serves the last-known-good (stale) ctx when
+            # this worker has one and warms a fresh build in the background;
+            # it only yields nothing when the worker has no entry at all.
             ctx = get_league_ctx_from_cache(platform, league_id, season, allow_build=False)
     except Exception:
         logger.debug("[scorezone-moments] ctx load failed", exc_info=True)
-        return jsonify({"plays": [], "teams": {}})
-    if not ctx or ctx.get("offseason_mode"):
+        return jsonify({"plays": [], "teams": {}, "pending": True})
+    if not ctx:
+        # Cold miss, not "no moments": the background warm kicked off by the
+        # cache layer makes a retry succeed shortly. Flag it so the client
+        # keeps retrying instead of treating the empty body as final.
+        return jsonify({"plays": [], "teams": {}, "pending": True})
+    if ctx.get("offseason_mode"):
         return jsonify({"plays": [], "teams": {}})
 
     viewer_rid = ""
@@ -1912,6 +1927,10 @@ def api_scorezone_moments():
     moments.sort(key=lambda m: (kind_order.get(m["kind"], 3), -(m.get("observed_ts") or 0)))
 
     td_count = sum(1 for m in moments if m["kind"] == "td")
+    # Matchup liveness for the client's watch loop: "pre" / "in" / "final"
+    # across both teams' starters. live == False means no new moments can
+    # arrive (beyond final plays still landing in the store).
+    status_label = _matchup_status_label(status_by_pid, list(pid_to_side.keys()))
     return jsonify({
         "plays": moments,
         "td_count": td_count,
@@ -1919,6 +1938,8 @@ def api_scorezone_moments():
             "you": you.get("name") or "You",
             "opp": (opp or {}).get("name") or "Opp",
         },
+        "status": status_label,
+        "live": status_label == "in",
     })
 
 

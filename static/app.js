@@ -23203,17 +23203,36 @@ window._rzStubPbpEvents = function(pid, state) {
 window.brRzm = (function () {
   'use strict';
   var _cache = {};
+  // Successful bodies are cached briefly: long enough to dedupe callers,
+  // short enough that live moments still surface on the next watch tick.
+  // The old cache kept the FIRST body for the whole session, so an empty
+  // (or error) first response froze the moments row even as plays landed;
+  // error and "pending" (league ctx still warming) bodies are never cached.
+  var CACHE_TTL_MS = 45000;
   function fetchMoments(platform, leagueId, season, week) {
     var key = platform + '|' + leagueId + '|' + season + '|' + (week || '');
-    if (_cache[key]) return Promise.resolve(_cache[key]);
+    var hit = _cache[key];
+    if (hit && (Date.now() - hit.ts) < CACHE_TTL_MS) return Promise.resolve(hit.body);
     var url = '/api/scorezone/moments?platform=' + encodeURIComponent(platform)
       + '&league_id=' + encodeURIComponent(leagueId)
       + '&season=' + encodeURIComponent(season || '')
       + (week ? '&week=' + encodeURIComponent(week) : '');
     var fetcher = window.brFetchWithTimeout || window.fetch;
     return fetcher(url, { cache: 'no-store', credentials: 'same-origin' }, 15000)
-      .then(function (r) { return r.json().catch(function () { return {}; }); })
-      .then(function (body) { _cache[key] = body || {}; return _cache[key]; });
+      .then(function (r) {
+        return r.json().catch(function () { return {}; }).then(function (body) {
+          if (!r.ok) {
+            var err = new Error('Moments request failed (' + r.status + ')');
+            err.status = r.status;
+            throw err;
+          }
+          return body || {};
+        });
+      })
+      .then(function (body) {
+        if (!body.pending) _cache[key] = { body: body, ts: Date.now() };
+        return body;
+      });
   }
   function kindLabel(kind) {
     if (kind === 'td') return 'TD';
@@ -23920,6 +23939,14 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
    moments. The modal open/close/filter handlers live in window.brRzm. */
 (function () {
   'use strict';
+  // Same backoff ladder as the portfolio cards: quick retries ride out a
+  // cold league ctx and store lag right after load, then a steady poll
+  // keeps watch while the matchup's games are live. A single fetch was not
+  // enough: the first response is often empty (ctx still warming, poller
+  // has not stored the play yet) and moments would never appear.
+  var RETRY_DELAYS = [3000, 6000, 10000, 15000, 25000];
+  var POLL_MS = 45000;
+  var WATCH_MS = 4 * 60 * 60 * 1000; // give up watching 4h after page load
   function initOneLauncher(launcher) {
     if (!launcher || launcher._rzmInit) return;
     launcher._rzmInit = true;
@@ -23928,15 +23955,46 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
     var season = launcher.getAttribute('data-season') || '';
     var week = launcher.getAttribute('data-week') || '';
     if (!platform || !leagueId || !window.brRzm) return;
-    window.brRzm.fetchMoments(platform, leagueId, season, week).then(function (body) {
-      var plays = (body && body.plays) || [];
-      if (!plays.length || !launcher.isConnected) return;
+    var attempts = 0;
+    var timer = null;
+    var deadline = Date.now() + WATCH_MS;
+    function schedule(delay) {
+      if (!launcher.isConnected || Date.now() > deadline) return;
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(function () { timer = null; attempt(); }, delay);
+    }
+    function nextDelay() {
+      attempts += 1;
+      return attempts <= RETRY_DELAYS.length ? RETRY_DELAYS[attempts - 1] : POLL_MS;
+    }
+    function reveal(body) {
       launcher._rzmPayload = body;
       var countEl = launcher.querySelector('[data-rzm-hub-count]');
       var tdCount = (body && body.td_count) || 0;
       if (countEl) countEl.textContent = tdCount + (tdCount === 1 ? ' touchdown' : ' touchdowns');
       launcher.hidden = false;
-    }).catch(function () {});
+    }
+    function attempt() {
+      if (!launcher.isConnected) return;
+      if (document.hidden) { schedule(POLL_MS); return; }
+      window.brRzm.fetchMoments(platform, leagueId, season, week).then(function (body) {
+        if (!launcher.isConnected) return;
+        var plays = (body && body.plays) || [];
+        if (plays.length) reveal(body);
+        // live === false (all starters' games final): no new moments can
+        // arrive, so only the quick ladder runs out (final plays can still
+        // be landing in the store) and then watching stops. A body without
+        // liveness (pending / early error shape) is treated as live.
+        if (body && body.live === false && attempts >= RETRY_DELAYS.length) return;
+        schedule(nextDelay());
+      }).catch(function (err) {
+        if (!launcher.isConnected) return;
+        // Auth failures never heal by retrying.
+        if (err && (err.status === 401 || err.status === 403)) return;
+        schedule(nextDelay());
+      });
+    }
+    attempt();
   }
   function initHubRzm(root) {
     if (typeof document.querySelector !== 'function') return;

@@ -201,7 +201,7 @@ def test_get_plays_for_pids_without_week_omits_clause(monkeypatch):
     assert len(fake.captured_params) == 3
 
 
-def _call_moments_endpoint(monkeypatch, query):
+def _call_moments_endpoint(monkeypatch, query, ctx_override="__default__"):
     """Invoke api_redzone_moments under a fake request; capture the store call."""
     import routes.user_pages_bp as bp
     from flask import Flask, session
@@ -223,6 +223,8 @@ def _call_moments_endpoint(monkeypatch, query):
         return {"season_type": "reg", "season": 2026, "week": 4, "leg": 4}
 
     def fake_ctx(*a, **k):
+        if ctx_override != "__default__":
+            return ctx_override
         return {"viewer": {"viewer_roster_id": "1"}, "resolved_league_id": "L1"}
 
     def fake_matchups(platform, league_id, season, week, ctx):
@@ -269,3 +271,27 @@ def test_moments_endpoint_uses_requested_week_not_current_week(monkeypatch):
     assert captured["matchup_week"] == 3
     body = resp.get_json()
     assert len(body["plays"]) == 1
+
+
+def test_moments_endpoint_cold_ctx_reports_pending(monkeypatch):
+    """A cold league ctx (no cached entry on this worker) must NOT look
+    like "genuinely no moments": the body carries pending: true so the
+    client keeps retrying while the cache layer warms the ctx."""
+    resp, _captured = _call_moments_endpoint(
+        monkeypatch, "platform=sleeper&league_id=L1&season=2026&week=4",
+        ctx_override={})
+    body = resp.get_json()
+    assert body["plays"] == []
+    assert body["pending"] is True
+
+
+def test_moments_endpoint_success_reports_status_and_live(monkeypatch):
+    """The success body carries matchup liveness so the hub launcher's
+    watch loop knows whether more moments can still arrive."""
+    resp, _captured = _call_moments_endpoint(
+        monkeypatch, "platform=sleeper&league_id=L1&season=2026&week=4")
+    body = resp.get_json()
+    # Fake statuses are empty -> nothing started -> "pre", not live.
+    assert body["status"] == "pre"
+    assert body["live"] is False
+    assert "pending" not in body

@@ -106,6 +106,21 @@ const scenario = JSON.parse(process.argv[3]);
 
 let fetchCalls = [];
 
+// Fake timers + virtual clock: the launcher schedules retries/polls with
+// setTimeout and bounds the watch with Date.now. Stepping the registry by
+// hand drives the watch loop deterministically (and leaves no real timers
+// behind to hold the process open).
+const timers = new Map();
+let nextTimerId = 1;
+let virtualNow = 1700000000000;
+global.setTimeout = function (fn, delay) {
+  const id = nextTimerId++;
+  timers.set(id, { fn, at: virtualNow + (delay || 0) });
+  return id;
+};
+global.clearTimeout = function (id) { timers.delete(id); };
+Date.now = function () { return virtualNow; };
+
 function makeEl(tag) {
   const el = {
     tagName: (tag || 'div').toUpperCase(),
@@ -159,25 +174,50 @@ global.document = {
 global.window = global;
 global.escapeHtml = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => (
   { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-// The hub launcher talks to the shared namespace; stub its fetch.
+// The hub launcher talks to the shared namespace; stub its fetch with a
+// scripted sequence (scenario.apiBodies) or a single body (scenario.apiBody).
 global.brRzm = {
   fetchMoments(platform, leagueId, season, week) {
     fetchCalls.push({ platform, leagueId, season, week });
-    return Promise.resolve(scenario.apiBody);
+    if (scenario.rejectStatus) {
+      const err = new Error('Moments request failed (' + scenario.rejectStatus + ')');
+      err.status = scenario.rejectStatus;
+      return Promise.reject(err);
+    }
+    const bodies = scenario.apiBodies || [scenario.apiBody];
+    return Promise.resolve(bodies[Math.min(fetchCalls.length - 1, bodies.length - 1)]);
   },
 };
 
-eval(iifeSrc);
+async function flush() {
+  for (let i = 0; i < 10; i++) await Promise.resolve();
+}
 
-setTimeout(() => {
+(async () => {
+  eval(iifeSrc);
+  await flush();
+  const steps = scenario.steps || 0;
+  for (let s = 0; s < steps; s++) {
+    if (!timers.size) break;
+    let earliestId = null;
+    let earliest = null;
+    for (const [id, t] of timers) {
+      if (!earliest || t.at < earliest.at) { earliest = t; earliestId = id; }
+    }
+    timers.delete(earliestId);
+    virtualNow = Math.max(virtualNow, earliest.at);
+    earliest.fn();
+    await flush();
+  }
   console.log(JSON.stringify({
     fetchCalls,
     launcherHidden: launcher.hidden,
     countText: countEl.textContent,
     hasPayload: !!launcher._rzmPayload,
     fetchSkipped: fetchCalls.length === 0,
+    pendingTimers: timers.size,
   }));
-}, 50);
+})();
 """
 
 
@@ -248,6 +288,53 @@ def test_hub_launcher_skips_fetch_without_league_ref():
     assert out["launcherHidden"] is True
 
 
+def test_hub_launcher_retries_until_plays_arrive():
+    """Regression: the first fetch often lands before the league ctx /
+    play store are ready (pending, then empty) and a single fetch left
+    the row hidden forever. The launcher must ride the retry ladder and
+    reveal the row when plays arrive."""
+    out = _run_harness({
+        "platform": "sleeper", "leagueId": "12345", "season": "2026",
+        "apiBodies": [
+            {"plays": [], "td_count": 0, "pending": True},
+            {"plays": [], "td_count": 0, "live": True},
+            {"plays": [{"kind": "td"}], "td_count": 2, "live": True},
+        ],
+        "steps": 2,
+    })
+    assert len(out["fetchCalls"]) == 3
+    assert out["launcherHidden"] is False
+    assert out["countText"] == "2 touchdowns"
+    assert out["hasPayload"] is True
+
+
+def test_hub_launcher_stops_after_final_ladder():
+    """All starters' games final and still no plays: the quick ladder
+    runs out (final plays can still be landing in the store), then the
+    watch stops instead of polling forever."""
+    out = _run_harness({
+        "platform": "sleeper", "leagueId": "12345", "season": "2026",
+        "apiBody": {"plays": [], "td_count": 0, "status": "final", "live": False},
+        "steps": 10,
+    })
+    assert len(out["fetchCalls"]) == 6  # initial fetch + 5 ladder retries
+    assert out["pendingTimers"] == 0
+    assert out["launcherHidden"] is True
+
+
+def test_hub_launcher_stops_on_auth_error():
+    """A 403 (league not authorized for this account) never heals by
+    retrying; the watch stops after the first rejection."""
+    out = _run_harness({
+        "platform": "sleeper", "leagueId": "12345", "season": "2026",
+        "rejectStatus": 403,
+        "steps": 5,
+    })
+    assert len(out["fetchCalls"]) == 1
+    assert out["pendingTimers"] == 0
+    assert out["launcherHidden"] is True
+
+
 # ── Shared namespace: fetch URL/cache, modal open via hub click, Escape ──
 
 _SHARED_HARNESS = r"""
@@ -305,9 +392,17 @@ global.document = {
 global.window = global;
 global.escapeHtml = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => (
   { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+// Virtual clock so the fetchMoments cache TTL can be stepped past.
+let nowVal = 1700000000000;
+Date.now = function () { return nowVal; };
 global.brFetchWithTimeout = function (url, opts, timeout) {
   fetchCalls.push({ url, timeout, creds: opts && opts.credentials });
-  return Promise.resolve({ json() { return Promise.resolve(scenario.apiBody || {}); } });
+  const status = scenario.httpStatus || 200;
+  return Promise.resolve({
+    ok: status >= 200 && status < 300,
+    status,
+    json() { return Promise.resolve(scenario.apiBody || {}); },
+  });
 };
 
 eval(iifeSrc);
@@ -320,13 +415,19 @@ function fireClick(targetClosest) {
 (async () => {
   const out = {};
   // fetchMoments: URL + cache (sequential calls; the cache fills on resolve)
-  const p1 = window.brRzm.fetchMoments('sleeper', '12345', '2026');
-  await p1;
-  const p2 = window.brRzm.fetchMoments('sleeper', '12345', '2026');
-  await p2;
+  async function callFetch() {
+    try { await window.brRzm.fetchMoments('sleeper', '12345', '2026'); return null; }
+    catch (e) { return (e && e.status) || 'error'; }
+  }
+  out.firstError = await callFetch();
+  out.secondError = await callFetch();
   out.fetchUrl = fetchCalls.length ? fetchCalls[0].url : null;
   out.fetchCount = fetchCalls.length;
   out.fetchCreds = fetchCalls.length ? fetchCalls[0].creds : null;
+  // Step past the 45s cache TTL: a third call must hit the network again.
+  nowVal += 46000;
+  out.thirdError = await callFetch();
+  out.fetchCountAfterTtl = fetchCalls.length;
 
   // Hub launcher click opens the modal with payload + league ctx.
   const hubBtn = makeEl('button');
@@ -385,6 +486,34 @@ def test_shared_fetchMoments_url_and_cache():
     assert out["fetchCreds"] == "same-origin"
     # Second call for the same league hits the cache: one network fetch.
     assert out["fetchCount"] == 1
+
+
+def test_shared_fetchMoments_http_error_rejects_and_is_not_cached():
+    """Regression: fetchMoments never checked r.ok, so a 403 body was
+    parsed and cached as an (empty) success for the whole session. An
+    HTTP error must reject with its status and never enter the cache."""
+    out = _run_shared_harness({"apiBody": {}, "httpStatus": 403})
+    assert out["firstError"] == 403
+    assert out["secondError"] == 403
+    # Both calls reached the network: nothing was cached.
+    assert out["fetchCount"] == 2
+
+
+def test_shared_fetchMoments_pending_is_not_cached():
+    """A pending body (league ctx still warming) is transient: caching it
+    would hide moments behind a 45s stale empty after the ctx warms."""
+    out = _run_shared_harness({"apiBody": {"plays": [], "td_count": 0, "pending": True}})
+    assert out["firstError"] is None
+    assert out["fetchCount"] == 2
+
+
+def test_shared_fetchMoments_cache_expires():
+    """Successful bodies are cached only briefly (45s TTL), so moments
+    that land after the first fetch surface on the next watch tick
+    instead of freezing at the first body for the whole session."""
+    out = _run_shared_harness({"apiBody": {"plays": [], "td_count": 0}})
+    assert out["fetchCount"] == 1
+    assert out["fetchCountAfterTtl"] == 2
 
 
 def test_shared_hub_click_opens_modal():
