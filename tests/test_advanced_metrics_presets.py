@@ -349,14 +349,21 @@ def test_movers_endpoint_is_pro_only(offline_client, monkeypatch):
     assert resp.get_json()["error"] == "pro_only"
 
 
-# --- Degenerate trend windows: weeks 1-3 must not render a false 0.0 flat ---
+# --- Trend windows: weeks 2-3 compare last week vs the prior weeks, so an
+# --- early-season sample yields a real signal instead of a forced 0.0 ---
 
-def test_recent_vs_season_delta_is_none_for_degenerate_windows():
+def test_recent_vs_season_delta_is_none_below_two_weeks():
     from data_building.weekly_metrics import _recent_vs_season_delta
     assert _recent_vs_season_delta([]) is None
     assert _recent_vs_season_delta([4.0]) is None
-    assert _recent_vs_season_delta([4.0, 7.0]) is None
-    assert _recent_vs_season_delta([4.0, 7.0, 5.0]) is None
+
+
+def test_recent_vs_season_delta_early_window_compares_last_vs_prior():
+    from data_building.weekly_metrics import _recent_vs_season_delta
+    # 2 weeks: last week 7 vs prior 4 -> +3.0
+    assert _recent_vs_season_delta([4.0, 7.0]) == 3.0
+    # 3 weeks: last week 5 vs prior avg 5.5 -> -0.5
+    assert _recent_vs_season_delta([4.0, 7.0, 5.0]) == -0.5
 
 
 def test_recent_vs_season_delta_computes_from_week_four():
@@ -367,11 +374,16 @@ def test_recent_vs_season_delta_computes_from_week_four():
     assert _recent_vs_season_delta([8.0, 8.0, 8.0, 2.0]) == -0.5
 
 
-def test_recent_vs_season_ratio_is_none_for_degenerate_windows():
+def test_recent_vs_season_ratio_early_window_and_guards():
     from data_building.advanced_metrics import _recent_vs_season_ratio
     assert _recent_vs_season_ratio([]) is None
-    assert _recent_vs_season_ratio([1.0, 2.0]) is None
-    assert _recent_vs_season_ratio([1.0, 2.0, 3.0]) is None
+    assert _recent_vs_season_ratio([5.0]) is None
+    # Zero prior baseline: no ratio exists.
+    assert _recent_vs_season_ratio([0.0, 0.0, 5.0]) is None
+    # 2 weeks: last 2 vs prior 1 -> +100%
+    assert _recent_vs_season_ratio([1.0, 2.0]) == pytest.approx(1.0)
+    # 3 weeks: last 3 vs prior avg 1.5 -> +100%
+    assert _recent_vs_season_ratio([1.0, 2.0, 3.0]) == pytest.approx(1.0)
     # 4+ samples compute normally: last-3 avg 3.0 vs season avg 2.25 -> +1/3
     assert _recent_vs_season_ratio([0.0, 2.0, 3.0, 4.0]) == pytest.approx(1 / 3)
 

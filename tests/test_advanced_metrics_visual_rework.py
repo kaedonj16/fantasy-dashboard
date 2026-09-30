@@ -40,17 +40,20 @@ def _tag(html, el_id):
 
 def test_header_uses_compact_icon_buttons():
     # Command-bar rework: the slim sticky strip holds the title plus search /
-    # filter / overflow icon buttons; the three old actions moved into the
-    # overflow menu with their label spans kept for the menu rows.
+    # filter / overflow icon buttons. Graph Metrics is a strip icon button
+    # too; Metric Glossary and CSV stay in the overflow menu with their
+    # label spans kept for the menu rows.
     html = _html()
     assert 'id="amCmdBar"' in html
     for el_id in ("amSearchToggle", "amFilterToggle", "amMoreToggle"):
         tag = _tag(html, el_id)
         assert 'title="' in tag, f"#{el_id} needs a title for the icon-button state"
-    for el_id in ("amGraphBtn", "amLegendBtn", "amExportBtn"):
+    graph = _tag(html, "amGraphBtn")
+    assert 'class="am-cmd-btn"' in graph, "#amGraphBtn must be a strip icon button"
+    for el_id in ("amLegendBtn", "amExportBtn"):
         tag = _tag(html, el_id)
         assert 'class="am-legend-btn"' in tag, f"#{el_id} must stay a legend button"
-    assert html.count('class="am-legend-btn-label"') == 3
+    assert html.count('class="am-legend-btn-label"') == 2
     css = _rework_css(html)
     assert ".am-cmdbar {" in css
 
@@ -176,9 +179,10 @@ def test_results_table_has_fade_and_sticky_player_column():
 
 
 def test_add_metric_stays_visible_on_mobile():
-    # Command-bar rework: + Metric moved into the sheet's Metrics section
-    # (it is a secondary control; the strip keeps the metric picker visible).
+    # + Metric lives in the positions-row host at every width (it moved out
+    # of the filter sheet entirely), so it is always visible and tappable
+    # without opening anything.
     html = _html()
     body = html.split("<style>")[0]
     _tag(html, "amAddStatBtn")  # still present with its id and handlers
-    assert body.index('id="amAddStatBtn"') > body.index('id="amFilterSheet"')
+    assert body.index('id="amFilterSheet"') < body.index('id="amAddStatHost"') < body.index('id="amAddStatBtn"')

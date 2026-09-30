@@ -307,19 +307,34 @@ def get_weekly_series_by_player(season: int, through_week: int) -> Dict[str, Lis
     return out
 
 
-def _recent_vs_season_delta(vals: List[float], recent_n: int = 3) -> Optional[float]:
-    """Last-`recent_n` average minus season average, in the stat's own units.
+def _trend_window(vals, recent_n=3):
+    """(recent_avg, baseline_avg) for a trend comparison, or (None, None).
 
-    Returns None when the recent window covers the whole sample
-    (len(vals) <= recent_n): the "recent" window IS the season sample, so the
-    delta is mathematically forced to exactly 0.0 for every player (e.g. weeks
-    1-3 of a season) — a false flat, worse than no signal at all.
+    With more than `recent_n` values the recent window is the last
+    `recent_n` weeks and the baseline is the season average. Early season
+    (2..recent_n values) that window would cover the whole sample and force
+    a 0.0 delta for every player, so the latest week is compared against
+    the average of the weeks before it. Fewer than 2 values: no signal.
+    Mirrors data_building.advanced_metrics._recent_vs_season_ratio.
     """
+    if len(vals) < 2:
+        return None, None
     if len(vals) <= recent_n:
-        return None
-    season_avg = sum(vals) / len(vals)
+        return vals[-1], sum(vals[:-1]) / (len(vals) - 1)
     recent = vals[-recent_n:]
-    return round(sum(recent) / len(recent) - season_avg, 1)
+    return sum(recent) / len(recent), sum(vals) / len(vals)
+
+
+def _recent_vs_season_delta(vals: List[float], recent_n: int = 3) -> Optional[float]:
+    """Recent-window average minus baseline average, in the stat's own units.
+
+    See _trend_window for the window rule. None when there are fewer than
+    2 values (no comparison exists yet).
+    """
+    recent_avg, baseline_avg = _trend_window(vals, recent_n)
+    if recent_avg is None or baseline_avg is None:
+        return None
+    return round(recent_avg - baseline_avg, 1)
 
 
 def _compute_usage_trends(season: int) -> Dict[str, Dict[str, Any]]:
@@ -356,17 +371,21 @@ def _compute_usage_trends(season: int) -> Dict[str, Dict[str, Any]]:
         snap_vals = [float(w.get("snap_pct") or 0) for w in weeks if w.get("snap_pct") is not None]
 
         season_avg = sum(vals) / len(vals)
-        # Degenerate window: with <=3 weeks the "last-3" window IS the season
-        # sample, so recent-vs-season is mathematically 0.0 for every player.
-        # Return None so callers render "no signal yet" instead of a false flat.
-        # The raw series is still returned (the sparkline is genuinely useful).
-        delta = _recent_vs_season_delta(vals)
-        recent_avg = round(sum(vals[-3:]) / 3, 1) if delta is not None else None
+        # Early season (<=3 weeks) the recent window is the latest week and
+        # the baseline is the prior weeks' average (see _trend_window); with
+        # 4+ weeks it is last-3 vs the season average. recent_avg/baseline_avg
+        # are only set when a real comparison exists; the raw series is
+        # always returned (the sparkline is genuinely useful).
+        recent_raw, baseline_raw = _trend_window(vals)
+        delta = (round(recent_raw - baseline_raw, 1)
+                 if recent_raw is not None and baseline_raw is not None else None)
+        recent_avg = round(recent_raw, 1) if delta is not None else None
+        baseline_avg = round(baseline_raw, 1) if delta is not None else None
         snap_delta = None
         if len(snap_vals) >= 2:
-            snap_season = sum(snap_vals) / len(snap_vals)
-            snap_recent = sum(snap_vals[-3:]) / len(snap_vals[-3:])
-            snap_delta = round(snap_recent - snap_season, 1)
+            s_recent, s_base = _trend_window(snap_vals)
+            if s_recent is not None and s_base is not None:
+                snap_delta = round(s_recent - s_base, 1)
 
         out[pid] = {
             "position": pos,
@@ -374,7 +393,8 @@ def _compute_usage_trends(season: int) -> Dict[str, Dict[str, Any]]:
             "series": [round(v, 1) for v in vals[-6:]],
             "series_weeks": [int(w["week"]) for w in weeks[-6:]],
             "season_avg": round(season_avg, 1),
-            "recent_avg": round(recent_avg, 1) if recent_avg is not None else None,
+            "recent_avg": recent_avg,
+            "baseline_avg": baseline_avg,
             "delta": delta,
             "snap_delta": snap_delta,
             "weeks_played": len(weeks),
@@ -416,12 +436,12 @@ def clear_usage_trends_cache() -> None:
 
 
 def get_recent_momentum(player_id: str, season: int) -> Optional[float]:
-    """Snap-share momentum for one player: last-3-week avg minus season avg,
-    in percentage points. None when there isn't enough weekly data."""
+    """Snap-share momentum for one player, in percentage points: the recent
+    window average minus the baseline average (see _trend_window for the
+    early-season window rule). None with fewer than 2 weeks of data."""
     series = get_player_weekly_series(player_id, season)
     snaps = [float(w["snap_pct"]) for w in series if w.get("snap_pct") is not None]
-    if len(snaps) < 3:
+    recent_avg, baseline_avg = _trend_window(snaps)
+    if recent_avg is None or baseline_avg is None:
         return None
-    season_avg = sum(snaps) / len(snaps)
-    recent_avg = sum(snaps[-3:]) / 3
-    return round(recent_avg - season_avg, 1)
+    return round(recent_avg - baseline_avg, 1)
