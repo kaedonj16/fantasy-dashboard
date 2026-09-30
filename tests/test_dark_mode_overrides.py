@@ -207,6 +207,49 @@ def test_utility_dark_override(css, selector):
 
 
 # ---------------------------------------------------------------------------
+# Inverted-token active pills (inline page styles)
+#
+# A second failure class the literal-color scan missed: active states styled
+# background:var(--text); color:var(--card). In light mode that is a dark
+# pill; in dark mode --text is near-white, so the pill glares (the Trade Hub
+# "Suggestions" subtab). Each one needs a dark override in its page file.
+# ---------------------------------------------------------------------------
+
+TRADE_PAGE = ROOT / "dashboard_services" / "pages" / "trade_calculator_page.py"
+AM_PAGE = ROOT / "dashboard_services" / "pages" / "advanced_metrics_page.py"
+
+
+@pytest.fixture(scope="module")
+def trade_page():
+    return TRADE_PAGE.read_text()
+
+
+@pytest.fixture(scope="module")
+def am_page():
+    return AM_PAGE.read_text()
+
+
+@pytest.mark.parametrize("selector", [
+    ".otc-sugg-subtab.is-active",
+    ".otc-sugg-subtab-toggle .br-slide-ind",
+    ".otc-mode-btn.is-active",
+])
+def test_trade_page_inverted_pill_dark_override(trade_page, selector):
+    assert has_dark_override(trade_page, selector), \
+        f"{selector} uses the inverted --text fill with no dark variant"
+
+
+@pytest.mark.parametrize("selector", [
+    ".am-pos.active",
+    ".am-chip.am-chip-primary",
+    ".am-positions.am-segmented .am-pos.active",
+])
+def test_am_page_inverted_pill_dark_override(am_page, selector):
+    assert has_dark_override(am_page, selector), \
+        f"{selector} uses the inverted --text fill with no dark variant"
+
+
+# ---------------------------------------------------------------------------
 # Plotly: theme toggle must restyle every chart, not just the team pair
 # ---------------------------------------------------------------------------
 

@@ -825,6 +825,9 @@ def build_advanced_metrics_body(
         font-size:12px; font-weight:600; transition:all .15s; white-space:nowrap;
       }
       .am-pos.active { background:var(--text); color:var(--card); border-color:var(--text); }
+      /* Dark: --text is near-white, so the inverted fill glares. Raised
+         card surface + normal text, matching the main tab controls. */
+      [data-theme="dark"] .am-pos.active { background:var(--card); color:var(--text); border-color:var(--border); }
       /* Metric description tooltip -- chrome matches .adv-def-tip (shared --tooltip-* tokens) */
       .am-info { position:relative; display:inline-flex; margin-left:5px; color:var(--text-muted); cursor:help; vertical-align:middle; }
       .am-info i { font-size:11px; }
@@ -943,6 +946,9 @@ def build_advanced_metrics_body(
       }
       .am-chip.am-chip-primary {
         background:var(--text); color:var(--card); border-color:var(--text);
+      }
+      [data-theme="dark"] .am-chip.am-chip-primary {
+        background:var(--card); color:var(--text); border-color:var(--border);
       }
       .am-chip-x {
         border:none; background:none; padding:0; margin:0; line-height:1;
@@ -1555,6 +1561,9 @@ def build_advanced_metrics_body(
       .am-positions.am-segmented .am-pos + .am-pos { border-left:1px solid var(--border); }
       .am-positions.am-segmented .am-pos.active {
         background:var(--text); color:var(--card);
+      }
+      [data-theme="dark"] .am-positions.am-segmented .am-pos.active {
+        background:var(--card); color:var(--text);
       }
       /* Metric-control hosts: the + Metric wrap sits beside the position
          filters and the compare bar lands directly under that row, at every
