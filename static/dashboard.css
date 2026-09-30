@@ -657,8 +657,16 @@ table, .standings-table, .mini-value, .mini-stat, .sr-stat-value,
     #brSheetAccount .settings-tour-replays { display: none !important; }
     #brSheetAccount .settings-menu-heading { display: block; }
     /* Recent Updates opens directly from the mobile top-bar bell as a floating
-       panel under the top nav (it no longer lives in the More sheet). */
+       panel under the top nav (it no longer lives in the More sheet).
+       position:absolute + transform:none are load-bearing: the <=640px rule
+       below restyles .changelog-dropdown as position:fixed with a centering
+       transform, and under fixed positioning top:calc(100% + 8px) resolves
+       against the viewport height, parking the open panel just below the
+       bottom of the screen (the "bell does nothing" bug). Absolute anchors
+       100% to the nav height instead. */
     .top-nav.br-mnav .changelog-dropdown {
+        position: absolute;
+        transform: none;
         top: calc(100% + 8px);
         right: 12px;
         left: 12px;

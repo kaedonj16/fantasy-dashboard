@@ -93,3 +93,15 @@ def test_recent_updates_out_of_more_sheet():
 def test_changelog_dropdown_lives_in_top_nav_on_mobile():
     assert "topNav.appendChild(changelog)" in APP_JS
     assert ".top-nav.br-mnav .changelog-dropdown {" in CSS
+
+
+def test_changelog_panel_anchored_to_nav_not_viewport():
+    """Regression: the <=640px .changelog-dropdown rule sets position:fixed,
+    under which top:calc(100% + 8px) resolves against the viewport height and
+    the opened panel renders below the screen (bell tap looked dead). The
+    top-nav rule must pin position:absolute + transform:none so 100% means
+    the nav height."""
+    block = CSS.split(".top-nav.br-mnav .changelog-dropdown {", 1)[1].split("}", 1)[0]
+    assert "position: absolute" in block
+    assert "transform: none" in block
+    assert "top: calc(100% + 8px)" in block
