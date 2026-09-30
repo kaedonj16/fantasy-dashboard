@@ -270,6 +270,146 @@ def test_run_scorezone_td_poll_sends_and_flushes_digest(monkeypatch):
     assert kw == {"season": 2026, "week": 4}
 
 
+def _today_et():
+    from datetime import datetime, timezone
+    from zoneinfo import ZoneInfo
+
+    return datetime.now(timezone.utc).astimezone(
+        ZoneInfo("America/New_York")).date()
+
+
+def _sz_scoreboard(games, availability="available"):
+    """A ScoreboardResult in the shape scoreboard_for_date returns."""
+    from dashboard_services.nfl_game_data import ScoreboardResult
+
+    return ScoreboardResult(games, availability=availability)
+
+
+def _sz_game_on(date_iso, hour_utc=17):
+    """A normalized scoreboard game kicking off on YYYY-MM-DD at hour_utc UTC.
+
+    17:00 UTC is midday in ET, so the game's ET date always equals the UTC
+    date -- safe to build "today"/"tomorrow" fixtures from ET dates.
+    """
+    from datetime import datetime, timezone
+
+    dt = datetime.fromisoformat(date_iso).replace(
+        hour=hour_utc, minute=0, second=0, microsecond=0,
+        tzinfo=timezone.utc)
+    return {
+        "gameID": f"{date_iso.replace('-', '')}_KC@BUF",
+        "gameTime": dt.isoformat().replace("+00:00", "Z"),
+        "gameTime_epoch": int(dt.timestamp()),
+        "home": "BUF",
+        "away": "KC",
+        "gameStatusCode": "0",
+    }
+
+
+def _sz_gate_api(monkeypatch, scores_for_date):
+    """Stub dashboard_services.api with the given scoreboard source."""
+    import sys
+
+    fake_api = _stub_module(
+        "dashboard_services.api",
+        get_nfl_state=lambda: {"season": 2026, "week": 4},
+        get_nfl_players=lambda: {},
+        get_nfl_scores_for_date=scores_for_date,
+    )
+    monkeypatch.setitem(sys.modules, "dashboard_services.api", fake_api)
+
+
+def test_scorezone_poll_skips_when_no_games_today(monkeypatch):
+    import utils.push_notifications as pn
+
+    _sz_gate_api(monkeypatch, lambda date_str, **k: _sz_scoreboard({}))
+
+    called = []
+    monkeypatch.setattr(
+        pn, "_scorezone_td_check",
+        lambda: called.append("check") or {"games": 9, "leagues": 9, "sent": 9})
+    monkeypatch.setattr(
+        pn, "_flush_digest", lambda: called.append("flush") or 0)
+
+    assert pn.run_scorezone_td_poll() == {
+        "games": 0, "leagues": 0, "sent": 0, "skipped": "no_games_today"}
+    assert called == []
+
+
+def test_scorezone_poll_skips_when_games_only_on_other_days(monkeypatch):
+    # The ESPN CDN can answer a date query with the whole current-week slate;
+    # games on other ET dates must not count as "games today".
+    from datetime import timedelta
+
+    import utils.push_notifications as pn
+
+    tomorrow = (_today_et() + timedelta(days=1)).isoformat()
+    slate = {"g1": _sz_game_on(tomorrow)}
+    _sz_gate_api(monkeypatch, lambda date_str, **k: _sz_scoreboard(slate))
+
+    called = []
+    monkeypatch.setattr(
+        pn, "_scorezone_td_check",
+        lambda: called.append("check") or {"games": 9, "leagues": 9, "sent": 9})
+    monkeypatch.setattr(
+        pn, "_flush_digest", lambda: called.append("flush") or 0)
+
+    assert pn.run_scorezone_td_poll() == {
+        "games": 0, "leagues": 0, "sent": 0, "skipped": "no_games_today"}
+    assert called == []
+
+
+def test_scorezone_poll_proceeds_when_game_scheduled_today(monkeypatch):
+    import utils.push_notifications as pn
+
+    slate = {"g1": _sz_game_on(_today_et().isoformat())}
+    _sz_gate_api(monkeypatch, lambda date_str, **k: _sz_scoreboard(slate))
+    monkeypatch.setattr(
+        pn, "_scorezone_td_check",
+        lambda: {"games": 1, "leagues": 2, "sent": 3})
+    monkeypatch.setattr(pn, "_flush_digest", lambda: 4)
+
+    # Past the gate the result is the normal poll result, no "skipped" key.
+    assert pn.run_scorezone_td_poll() == {"games": 1, "leagues": 2, "sent": 7}
+
+
+def test_scorezone_poll_fails_open_when_schedule_lookup_raises(
+        monkeypatch, caplog):
+    import logging
+
+    import utils.push_notifications as pn
+
+    def _boom(date_str, **k):
+        raise RuntimeError("scoreboard down")
+
+    _sz_gate_api(monkeypatch, _boom)
+    monkeypatch.setattr(
+        pn, "_scorezone_td_check",
+        lambda: {"games": 0, "leagues": 0, "sent": 0})
+    monkeypatch.setattr(pn, "_flush_digest", lambda: 0)
+
+    with caplog.at_level(logging.WARNING, logger="utils.push_notifications"):
+        assert pn.run_scorezone_td_poll() == {
+            "games": 0, "leagues": 0, "sent": 0}
+    assert any(
+        r.levelno == logging.WARNING and "game-day check" in r.getMessage()
+        for r in caplog.records)
+
+
+def test_scorezone_poll_fails_open_when_scoreboard_unavailable(monkeypatch):
+    import utils.push_notifications as pn
+
+    _sz_gate_api(
+        monkeypatch,
+        lambda date_str, **k: _sz_scoreboard({}, availability="unavailable"))
+    monkeypatch.setattr(
+        pn, "_scorezone_td_check",
+        lambda: {"games": 0, "leagues": 0, "sent": 0})
+    monkeypatch.setattr(pn, "_flush_digest", lambda: 0)
+
+    assert pn.run_scorezone_td_poll() == {"games": 0, "leagues": 0, "sent": 0}
+
+
 def test_trigger_scorezone_logs_sent_count(monkeypatch, capsys):
     import json as _json
 
