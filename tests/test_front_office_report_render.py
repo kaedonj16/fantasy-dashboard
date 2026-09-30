@@ -131,6 +131,7 @@ def _sample_ai(**over):
         "verdict": "CONTENDER",
         "headline": "Profiles as a balanced team.",
         "posture": "Buy now.",
+        "top_move": "Trade for Puka Nacua: he fixes the WR room now.",
         "gm_alert": "Watch the QB room.",
         "trade_notes": {"1": "Elite target."},
         "waiver_notes": {"9": "Pace rising."},
@@ -149,6 +150,30 @@ def test_hero_renders_chips_not_dot_meta():
     assert "Week 3" in out and "2-0" in out and "99% playoff odds" in out
     assert "for-report-meta" not in out
     assert "CONTENDER" in out  # verdict stamp still present
+
+
+def test_top_move_from_preview_appears_in_full_report():
+    # The card preview shows ai["top_move"]; the full report must show the
+    # same move, not drop it.
+    out = _render()
+    assert "Top move" in out
+    assert "Trade for Puka Nacua: he fixes the WR room now." in out
+    assert "for-card-move" in out
+    # It leads the report body: after the headline/posture, before the
+    # since-last-week changes and positional grades.
+    assert out.index("Profiles as a balanced team.") < out.index("Top move")
+    assert out.index("Top move") < out.index("Positional grades")
+
+
+def test_top_move_omitted_when_empty():
+    out = _render(ai=_sample_ai(top_move=""))
+    assert "Top move" not in out
+
+
+def test_top_move_is_escaped():
+    out = _render(ai=_sample_ai(top_move="<script>alert(1)</script>"))
+    assert "<script>" not in out
+    assert "&lt;script&gt;" in out
 
 
 def test_move_rows_label_trade_value_spots():
@@ -205,6 +230,91 @@ def test_trade_target_card_structure():
     assert "Analyze this trade" in out
 
 
+def _potential_entry(**over):
+    entry = {
+        "id": "7",
+        "name": "Bijan Robinson",
+        "position": "RB",
+        "age": 24,
+        "value": 850.0,
+        "partner": "Veiny Oilers",
+    }
+    entry.update(over)
+    return entry
+
+
+def test_potential_trade_targets_render_when_no_priced_deal():
+    # When the suggestions engine prices no fair package, the full report
+    # still gets a trade targets section naming who to pursue.
+    out = _render(data=_sample_data(
+        trade_targets=[], potential_trade_targets=[_potential_entry()],
+    ))
+    assert "Potential trade targets" in out
+    assert "Bijan Robinson" in out
+    assert "On Veiny Oilers" in out
+    # No priced deal exists, so no give side or analyzer link is invented.
+    assert "You give" not in out
+    assert "Analyze this trade" not in out
+
+
+def test_priced_trade_targets_take_precedence_over_potential():
+    out = _render(data=_sample_data(
+        potential_trade_targets=[_potential_entry()],
+    ))
+    assert "Trade targets" in out
+    assert "Potential trade targets" not in out
+    assert "Puka Nacua" in out
+    assert "Bijan Robinson" not in out
+
+
+def test_trade_section_empty_state_when_no_targets_at_all():
+    out = _render(data=_sample_data(trade_targets=[], potential_trade_targets=[]))
+    assert "Trade targets" in out
+    assert "No clear trade targets right now" in out
+    assert "\u2014" not in out
+
+
+def test_potential_trade_targets_are_escaped():
+    out = _render(data=_sample_data(
+        trade_targets=[],
+        potential_trade_targets=[_potential_entry(name="<script>alert(1)</script>")],
+    ))
+    assert "<script>" not in out
+    assert "&lt;script&gt;" in out
+
+
+def test_potential_trade_targets_helper_picks_need_positions(monkeypatch):
+    import dashboard_services.ai.front_office_report as fmod
+
+    # The pure-test env stubs safe_float to always return the default; the
+    # helper's value math needs the real conversion.
+    monkeypatch.setattr(
+        fmod, "safe_float", lambda x, default=0.0: default if x is None else float(x)
+    )
+    lookup = {
+        "mine": {"name": "My RB", "position": "RB", "value": 500},
+        "a": {"name": "Alpha RB", "position": "RB", "value": 800, "age": 25},
+        "b": {"name": "Beta RB", "position": "RB", "value": 700},
+        "c": {"name": "Gamma RB", "position": "RB", "value": 600},
+        "d": {"name": "Delta WR", "position": "WR", "value": 900},
+        "e": {"name": "Echo TE", "position": "TE", "value": 300},
+    }
+    ctx = {
+        "rosters": [
+            {"roster_id": 1, "players": ["mine"]},
+            {"roster_id": 2, "players": ["a", "b", "d"]},
+            {"roster_id": 3, "players": ["c", "e"]},
+        ],
+        "roster_map": {"2": "Veiny Oilers", "3": "Pittsburgh Pilots"},
+    }
+    out = fmod._potential_trade_targets(ctx, 1, lookup, ["RB", "WR"])
+    # Viewer's own player excluded, TE is not a need position, and the
+    # per-position cap drops the third RB. Need positions rank first.
+    assert [p["name"] for p in out] == ["Alpha RB", "Beta RB", "Delta WR"]
+    assert out[0]["partner"] == "Veiny Oilers"
+    assert fmod._potential_trade_targets(ctx, 1, lookup, []) == []
+
+
 def test_waivers_cuts_use_picklist():
     out = _render()
     assert "for-picklist" in out
@@ -229,7 +339,10 @@ def test_empty_sections_render_minimal_report():
     out = render_front_office_report_html({"team_name": "X"}, {})
     assert "for-hero" in out
     assert "Since last week" not in out
-    assert "Trade targets" not in out
+    # The trade section no longer vanishes: it renders an explicit empty
+    # state, same contract as the Injury report section.
+    assert "Trade targets" in out
+    assert "No clear trade targets right now" in out
 
 
 def test_css_has_new_report_selectors():

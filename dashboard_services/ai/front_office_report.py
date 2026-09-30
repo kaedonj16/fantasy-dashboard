@@ -4,9 +4,9 @@ Replaces the prose-only GM memo on the Season Hub. The report is two parts:
 
 - Card summary: verdict stamp, headline, key numbers, top move, and a
   "View full report" button. Rendered into the existing Season Hub card.
-- Full report: opened as a modal. Verdict, since-last-week changes, roster
-  table, computed positional grades, trade targets with prefilled Trade
-  Analyzer links, waiver targets, cut candidates, and a GM alert.
+- Full report: opened as a modal. Verdict, top move, since-last-week changes,
+  roster table, computed positional grades, trade targets with prefilled
+  Trade Analyzer links, waiver targets, cut candidates, and a GM alert.
 
 Design rules (from the product review):
 - Grades, ranks, values, and tiers are computed server-side. The model only
@@ -52,7 +52,7 @@ from utils.roster_strength import STARTER_THRESHOLD
 
 logger = logging.getLogger(__name__)
 
-CACHE_VERSION = "v2"
+CACHE_VERSION = "v3"
 _SKILL_POS = ("QB", "RB", "WR", "TE")
 
 
@@ -321,6 +321,65 @@ def _trade_targets(ctx: dict, viewer_roster_id: str, scoring_type: str) -> list[
             "analyzer_url": url,
         })
     return targets
+
+
+def _potential_trade_targets(ctx: dict, viewer_roster_id: str,
+                             model_value_lookup: dict,
+                             positions: list[str],
+                             limit: int = 6, per_position: int = 2) -> list[dict]:
+    """Players worth pursuing at the viewer's need positions, rostered by
+    leaguemates. Used when the suggestions engine cannot construct a fair
+    package: the report still names who to go get instead of silently
+    dropping the trade section. No give side is invented here; these are
+    targets, not priced deals."""
+    priority: list[str] = []
+    for pos in positions or []:
+        p = str(pos or "").upper()
+        if p in ("QB", "RB", "WR", "TE") and p not in priority:
+            priority.append(p)
+    if not priority:
+        return []
+    prio = {pos: i for i, pos in enumerate(priority)}
+    players_index = ctx.get("players_index") or {}
+    players_map = ctx.get("players_map") or {}
+    roster_map = ctx.get("roster_map") or {}
+    viewer_rid = str(viewer_roster_id)
+    cands: list[dict] = []
+    for r in ctx.get("rosters") or []:
+        rid = str(r.get("roster_id") or "")
+        if not rid or rid == viewer_rid:
+            continue
+        partner = _safe_str(roster_map.get(rid) or r.get("team_name") or f"Team {rid}")
+        for pid in r.get("players") or []:
+            spid = str(pid)
+            mv = model_value_lookup.get(spid) or {}
+            meta = players_index.get(spid) or players_map.get(spid) or {}
+            pos = str(meta.get("position") or meta.get("pos") or mv.get("position") or "").upper()
+            if pos not in prio:
+                continue
+            value = round(safe_float(mv.get("value") or mv.get("model_value") or mv.get("trade_value")), 1)
+            if value <= 0:
+                continue
+            cands.append({
+                "id": spid,
+                "name": _safe_str(meta.get("full_name") or meta.get("name") or mv.get("name") or spid),
+                "position": pos,
+                "team": _safe_str(meta.get("team") or mv.get("team") or "FA"),
+                "age": meta.get("age") if meta.get("age") not in (None, "") else mv.get("age"),
+                "value": value,
+                "partner": partner,
+            })
+    cands.sort(key=lambda c: (prio[c["position"]], -c["value"]))
+    out: list[dict] = []
+    per_pos_count: dict[str, int] = {}
+    for c in cands:
+        if per_pos_count.get(c["position"], 0) >= per_position:
+            continue
+        per_pos_count[c["position"]] = per_pos_count.get(c["position"], 0) + 1
+        out.append(c)
+        if len(out) >= limit:
+            break
+    return out
 
 
 def _waiver_targets(ctx: dict, viewer_roster_id: str, model_value_lookup: dict,
@@ -929,6 +988,16 @@ def build_front_office_data(ctx: dict, viewer_roster_id: str) -> dict | None:
     cut_candidates = _cut_candidates(roster_rows)
     urgent_needs = _urgent_needs(ctx, roster, roster_rows, week)
     _apply_urgency(trade_targets, waiver_targets, urgent_needs)
+    # Potential targets backstop: when no fair package exists, still name
+    # the players worth pursuing at the need positions so the full report
+    # always carries a trade targets section.
+    if trade_targets:
+        potential_targets: list[dict] = []
+    else:
+        need_positions = [u.get("position") for u in urgent_needs] + list(weakest)
+        potential_targets = _potential_trade_targets(
+            ctx, viewer_roster_id, model_value_lookup, need_positions,
+        )
     injury_rows = _build_injury_rows(ctx, roster_rows)
     # Roster table shows the ESPN return estimate next to the injury pill.
     wo_by_id = {r["id"]: r["weeks_out"] for r in injury_rows}
@@ -947,6 +1016,10 @@ def build_front_office_data(ctx: dict, viewer_roster_id: str) -> dict | None:
         info = inj_map.get(str(w.get("id")) or "") or {}
         desig = str(info.get("designation") or "")
         w["injury"] = desig if _inj_is_reportable(desig, info.get("body")) else ""
+    for p in potential_targets:
+        info = inj_map.get(str(p.get("id")) or "") or {}
+        desig = str(info.get("designation") or "")
+        p["injury"] = desig if _inj_is_reportable(desig, info.get("body")) else ""
     # Dart hardening: a seriously-hurt player can never be an "add"
     # candidate in redraft; dynasty keeps them labeled stash-only.
     waiver_targets = _exclude_hurt_waiver_targets(waiver_targets, scoring_type)
@@ -977,6 +1050,7 @@ def build_front_office_data(ctx: dict, viewer_roster_id: str) -> dict | None:
         "last_week": last_week,
         "this_week": this_week,
         "trade_targets": trade_targets,
+        "potential_trade_targets": potential_targets,
         "waiver_targets": waiver_targets,
         "cut_candidates": cut_candidates,
         "drop_add_pairs": _drop_add_pairs(cut_candidates, waiver_targets),
@@ -1408,6 +1482,39 @@ def _trade_targets_html(targets: list[dict], trade_notes: dict) -> str:
     )
 
 
+def _potential_trade_targets_html(potential: list[dict]) -> str:
+    """Fallback trade section for when the suggestions engine prices no
+    fair deal: name the players worth pursuing at the team's need
+    positions, without an invented give side. With no targets at all,
+    render the section with an explicit empty state (same contract as
+    the Injury report section) instead of vanishing."""
+    if not potential:
+        return (
+            "<div class='for-sec'><div class='for-sec-title'>Trade targets</div>"
+            "<div class='for-muted'>No clear trade targets right now. "
+            "No leaguemate surplus matches your needs at a fair price.</div></div>"
+        )
+    cards = []
+    for p in potential:
+        inj = (
+            f" <span class='for-inj'>{html.escape(str(p['injury']))}</span>"
+            if p.get("injury") else ""
+        )
+        cards.append(
+            "<div class='for-target-card'>"
+            f"<div class='for-target-top'><div class='for-target-head'><strong>{html.escape(str(p.get('name') or ''))}</strong>{inj} "
+            f"<span class='for-muted'>{html.escape(str(p.get('position') or ''))}"
+            + (f" · age {p['age']}" if p.get("age") not in (None, "") else "")
+            + f" · value {p.get('value', 0):g}</span></div>"
+            f"<span class='for-target-from'>On {html.escape(str(p.get('partner') or ''))}</span></div>"
+            "</div>"
+        )
+    return (
+        "<div class='for-sec'><div class='for-sec-title'>Potential trade targets</div>"
+        f"<div class='for-targets'>{''.join(cards)}</div></div>"
+    )
+
+
 def _waivers_cuts_html(data: dict, ai: dict) -> str:
     wnotes = ai.get("waiver_notes") or {}
     w_items = []
@@ -1476,6 +1583,7 @@ def render_front_office_report_html(data: dict, ai: dict) -> str:
     verdict = ai.get("verdict")
     headline = html.escape(str(ai.get("headline") or ""))
     posture = html.escape(str(ai.get("posture") or ""))
+    top_move = html.escape(str(ai.get("top_move") or ""))
     gm_alert = html.escape(str(ai.get("gm_alert") or ""))
     team = html.escape(str(data.get("team_name") or "Front Office Report"))
     week = data.get("week")
@@ -1485,6 +1593,8 @@ def render_front_office_report_html(data: dict, ai: dict) -> str:
     grades_html = _grades_html(data.get("grades") or [])
     changes_html = _changes_html(data)
     targets_html = _trade_targets_html(data.get("trade_targets") or [], ai.get("trade_notes") or {})
+    if not targets_html:
+        targets_html = _potential_trade_targets_html(data.get("potential_trade_targets") or [])
     waivers_html = _waivers_cuts_html(data, ai)
     roster_html = _roster_table_html(data.get("roster_rows") or [])
     injury_html = _injury_section_html(data.get("injury_rows") or [])
@@ -1504,6 +1614,12 @@ def render_front_office_report_html(data: dict, ai: dict) -> str:
             f"<p class='for-alert'>{gm_alert}</p></div>"
         )
     posture_html = f"<p class='for-posture'>{posture}</p>" if posture else ""
+    top_move_html = ""
+    if top_move:
+        top_move_html = (
+            "<div class='for-sec'><div class='for-sec-title'>Top move</div>"
+            f"<div class='for-card-move'><div>{top_move}</div></div></div>"
+        )
     stamp = _verdict_stamp(verdict)
     chips_html = _hero_chips_html(week, rec, pct, data.get("trade_deadline"))
 
@@ -1520,6 +1636,7 @@ def render_front_office_report_html(data: dict, ai: dict) -> str:
       {opp_html}
       <h3 class='for-headline'>{headline}</h3>
       {posture_html}
+      {top_move_html}
       {changes_html}
       <div class='for-sec'><div class='for-sec-title'>Positional grades</div>{grades_html}</div>
       <div class='for-sec'><div class='for-sec-title'>Roster</div>{roster_html}</div>
