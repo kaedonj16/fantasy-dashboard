@@ -15825,6 +15825,11 @@ def _rankings_ssr_content(limit: int = 150):
             age = "–"
         _val_v = float(p.get("value") or 0)
         val = f"{_val_v:.1f}" if _val_v > 0 else "-"
+        _ppg_v = p.get("ppg")
+        try:
+            ppg = f"{float(_ppg_v):.1f}" if _ppg_v not in (None, "") else "–"
+        except (TypeError, ValueError):
+            ppg = "–"
         rows.append(
             '<div class="pr-player-row pr-grid-row">'
             f'<span class="pr-rank">#{i}</span>'
@@ -15833,6 +15838,7 @@ def _rankings_ssr_content(limit: int = 150):
             f'<span class="pr-pos-cell">{pos_rank}</span>'
             f'<span class="pr-age">{age}</span>'
             f'<span class="pr-team">{team}</span>'
+            f'<span class="pr-ppg">{ppg}</span>'
             f'<span class="pr-value">{val}</span>'
             '</div>'
         )
@@ -21656,6 +21662,86 @@ def _attach_adp_to_players(players, adp_season, clear_first=False, sleeper_only=
     return _adp_sources
 
 
+def _ppg_map_with_ranks(entries: dict) -> dict:
+    """Attach positional PPG / total-points ranks to a PPG entry map.
+
+    ``entries`` maps player_id -> {"ppg", "total_pts", "games", "season",
+    "position"} with ppg/total already rounded to the displayed 0.1. Ranks use
+    competition semantics on those rounded values (ties share the better
+    rank), matching the usage-file implementation this replaced. Returns a
+    new dict keyed by player_id carrying exactly the payload fields.
+    """
+    pos_ppg: dict = {}
+    pos_total: dict = {}
+    for _e in entries.values():
+        pos_ppg.setdefault(_e["position"], []).append(_e["ppg"])
+        pos_total.setdefault(_e["position"], []).append(_e["total_pts"])
+    for _vals in pos_ppg.values():
+        _vals.sort(reverse=True)
+    for _vals in pos_total.values():
+        _vals.sort(reverse=True)
+    out = {}
+    for _pid, _e in entries.items():
+        _ppg_sorted = pos_ppg.get(_e["position"], [])
+        _tot_sorted = pos_total.get(_e["position"], [])
+        out[_pid] = {
+            "ppg": _e["ppg"],
+            "total_pts": _e["total_pts"],
+            "ppg_games": _e["games"],
+            "ppg_season": _e["season"],
+            "ppg_rank": (_ppg_sorted.index(_e["ppg"]) + 1) if _e["ppg"] in _ppg_sorted else None,
+            "total_pts_rank": (_tot_sorted.index(_e["total_pts"]) + 1) if _e["total_pts"] in _tot_sorted else None,
+        }
+    return out
+
+
+def _current_season_ppg_map(season: int, positions: dict) -> dict:
+    """PPG / total points from the CURRENT season's completed Sleeper weeks.
+
+    Same source the player modal uses: weekly stat files scored full-PPR via
+    _load_season_weekly_points (which backfills missing week files on demand).
+    The prebuilt usage_rows_<season>.json only exists for finished seasons, so
+    pointing the rankings payload at the newest usage file silently served
+    last season's numbers once the new season kicked off. Returns {} when no
+    round is complete yet (preseason) or the weekly files are unavailable;
+    the caller then leaves the PPG cells blank rather than substituting
+    another season. Any completed appearance qualifies (no games gate),
+    matching the modal and _season_rank_rows: the same player shows the same
+    PPG everywhere on the site. Never raises.
+    """
+    try:
+        from utils.season_qualification import qualification_policy
+        _policy = qualification_policy(int(season))
+        if not _policy.completed_weeks:
+            return {}
+        _weekly = _load_season_weekly_points(int(season), {"rec": 1.0}) or {}
+        if not _weekly:
+            return {}
+        from utils.fantasy_scoring import completed_points_summary
+        try:
+            _index_pos = {str(_pid): str(_meta.get("pos") or _meta.get("position") or "")
+                          for _pid, _meta in (load_players_index() or {}).items()}
+        except Exception:
+            _index_pos = {}
+        _entries = {}
+        for _pid, _pts in _weekly.items():
+            _summary = completed_points_summary(_pts)
+            if not _summary:
+                continue
+            _pid = str(_pid)
+            _entries[_pid] = {
+                "ppg": round(float(_summary["ppg"]), 1),
+                "total_pts": round(float(_summary["total"]), 1),
+                "games": int(_summary["games"]),
+                "season": int(season),
+                "position": str(positions.get(_pid) or _index_pos.get(_pid) or ""),
+            }
+        return _ppg_map_with_ranks(_entries)
+    except Exception:
+        logger.debug("[league-players] current-season PPG map failed", exc_info=True)
+        return {}
+
+
 def _build_league_players_payload(kdef: bool = False) -> dict:
     """Memoized wrapper around the (expensive) enriched player-pool build.
 
@@ -22115,61 +22201,23 @@ def _build_league_players_payload_uncached(kdef: bool = False) -> dict:
     except Exception as e:
         logger.info(f"[api/league-players] Could not add birthday data: {e}")
 
-    # Enrich with PPG and total points from usage cache (full PPR, min 4 games)
+    # Enrich with PPG and total points (full PPR) from the CURRENT season's
+    # completed weeks only: the same source and rule the player modal uses.
+    # The old lookup took the newest prebuilt usage_rows file, which only
+    # exists for finished seasons, so it silently served last season's
+    # full-year numbers all through the new season. There is deliberately
+    # no prior-season fallback: when current-season numbers are unavailable
+    # (preseason, or the weekly files fail to load) the cells stay blank
+    # instead of showing a plausible-looking old number.
     try:
-        import os as _os_lp, json as _json_lp
-        _season_lp = date.today().year
-        _usage_data_lp = None
-        _usage_season_lp = None
-        for _s in [_season_lp, _season_lp - 1]:
-            _usage_data_lp = _load_usage_rows_cached(_s)  # short-TTL cached
-            if _usage_data_lp:
-                _usage_season_lp = _s
-                break
-        if _usage_data_lp:
-            _usage_map_lp = {str(p.get("id")): p for p in _usage_data_lp if p.get("id")}
-            # Build positional PPG and total_pts lists for ranking
-            _pos_ppg_lp: dict = {}
-            _pos_total_lp: dict = {}
-            for _p in _usage_data_lp:
-                _u = _p.get("usage") or {}
-                _g = int(_u.get("games") or 0)
-                if _g < 4:
-                    continue
-                _ppg_v = _u.get("ppr_ppg")
-                if _ppg_v is None:
-                    continue
-                _ppg_v = round(float(_ppg_v), 1)
-                _tot_v = round(_ppg_v * _g, 1)
-                _pos_lp = str(_p.get("position") or "")
-                _pos_ppg_lp.setdefault(_pos_lp, []).append(_ppg_v)
-                _pos_total_lp.setdefault(_pos_lp, []).append(_tot_v)
-            # Sort descending for rank lookup
-            _pos_ppg_sorted_lp = {pos: sorted(vals, reverse=True) for pos, vals in _pos_ppg_lp.items()}
-            _pos_total_sorted_lp = {pos: sorted(vals, reverse=True) for pos, vals in _pos_total_lp.items()}
-            for _player in model_value_table:
-                _pid = str(_player.get("id") or "")
-                _entry = _usage_map_lp.get(_pid)
-                if not _entry:
-                    continue
-                _u = _entry.get("usage") or {}
-                _g = int(_u.get("games") or 0)
-                if _g < 4:
-                    continue
-                _ppg_v = _u.get("ppr_ppg")
-                if _ppg_v is None:
-                    continue
-                _ppg_v = round(float(_ppg_v), 1)
-                _tot_v = round(_ppg_v * _g, 1)
-                _pos_lp = str(_entry.get("position") or "")
-                _ppg_sorted = _pos_ppg_sorted_lp.get(_pos_lp, [])
-                _tot_sorted = _pos_total_sorted_lp.get(_pos_lp, [])
-                _player["ppg"] = _ppg_v
-                _player["total_pts"] = _tot_v
-                _player["ppg_games"] = _g
-                _player["ppg_season"] = _usage_season_lp
-                _player["ppg_rank"] = (_ppg_sorted.index(_ppg_v) + 1) if _ppg_v in _ppg_sorted else None
-                _player["total_pts_rank"] = (_tot_sorted.index(_tot_v) + 1) if _tot_v in _tot_sorted else None
+        _season_lp = int((get_nfl_state() or {}).get("season") or date.today().year)
+        _pos_lp = {str(_p.get("id") or ""): str(_p.get("position") or "")
+                   for _p in model_value_table if _p.get("id")}
+        _ppg_map_lp = _current_season_ppg_map(_season_lp, _pos_lp)
+        for _player in model_value_table:
+            _e_lp = _ppg_map_lp.get(str(_player.get("id") or ""))
+            if _e_lp:
+                _player.update(_e_lp)
     except Exception as _e_lp:
         logger.info(f"[api/league-players] PPG enrichment skipped: {_e_lp}")
 

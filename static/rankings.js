@@ -675,10 +675,13 @@ function prRender() {
   if (!adpView) {
     // On mobile (≤768px) the Age column is hidden, so switch the sort column
     // to show whatever is being sorted. On desktop all columns are visible.
+    // PPG and Total Points are the exceptions: PPG has its own always-visible
+    // column now, so when sorting by either the trailing column stays on Value.
     const _alwaysShowSort = sortBy === 'ppg' || sortBy === 'total_pts' || sortBy === 'adp';
     const sortMeta0 = (isMobile || _alwaysShowSort) ? (PR_SORT_META[sortBy] || PR_SORT_META.rank) : PR_SORT_META.rank;
+    const headerMeta0 = (sortBy === 'ppg' || sortBy === 'total_pts') ? PR_SORT_META.rank : sortMeta0;
     const sortHeaderEl = document.getElementById('prSortHeader');
-    if (sortHeaderEl) sortHeaderEl.textContent = sortMeta0.label;
+    if (sortHeaderEl) sortHeaderEl.textContent = headerMeta0.label;
     // Hide age col only on mobile when sort=age (shown in sort col instead)
     const ageHeaderEl = document.getElementById('prAgeHeader');
     if (isMobile && ageHeaderEl) ageHeaderEl.style.visibility = sortBy === 'age' ? 'hidden' : '';
@@ -688,6 +691,11 @@ function prRender() {
   }
   const _alwaysShowSort = sortBy === 'ppg' || sortBy === 'total_pts' || sortBy === 'adp';
   const sortMeta = (isMobile || _alwaysShowSort) ? (PR_SORT_META[sortBy] || PR_SORT_META.rank) : PR_SORT_META.rank;
+  // The trailing column's metric. Sorting by PPG or Total Points no longer
+  // swaps Value out: PPG renders in its own column and Total Points rides
+  // along as a sublabel under Value, so the trailing column falls back to
+  // Value for both sorts.
+  const valueMeta = (sortBy === 'ppg' || sortBy === 'total_pts') ? PR_SORT_META.rank : sortMeta;
 
   let players = prAllPlayers.slice();
 
@@ -910,22 +918,35 @@ function prRender() {
       rankDeltaHTML = `<span class="pr-rank-delta ${_up ? 'up' : 'down'}" title="${_n} spot${_n !== 1 ? 's' : ''} overall in 7 days">${_up ? '▲' : '▼'}${_n}</span>`;
     }
 
-    const sortDisplay = p.position === 'PICK' && sortBy === 'age' ? '–' : sortMeta.cell(p);
+    const sortDisplay = p.position === 'PICK' && sortBy === 'age' ? '–' : valueMeta.cell(p);
     let sortDisplayHTML;
-    if (p.position !== 'PICK' && sortBy === 'ppg' && p.ppg != null) {
-      const pRank = p.ppg_rank ? (p.position + p.ppg_rank) : '-';
+    if (p.position !== 'PICK' && sortBy === 'total_pts' && p.total_pts != null) {
+      // Value stays the main figure; the total that drives this sort (with
+      // its positional rank) rides underneath as a sublabel.
+      const tRank = p.total_pts_rank ? (p.position + p.total_pts_rank) : '';
+      const tSub = Number(p.total_pts).toFixed(1) + (tRank ? ' ' + tRank : '');
       sortDisplayHTML = `<span style="display:flex;flex-direction:column;align-items:flex-end;line-height:1.2;">`
         + `<span>${sortDisplay}</span>`
-        + `<span style="font-size:10px;font-weight:600;color:var(--text-muted);">${pRank}</span>`
-        + `</span>`;
-    } else if (p.position !== 'PICK' && sortBy === 'total_pts' && p.total_pts != null) {
-      const tRank = p.total_pts_rank ? (p.position + p.total_pts_rank) : '-';
-      sortDisplayHTML = `<span style="display:flex;flex-direction:column;align-items:flex-end;line-height:1.2;">`
-        + `<span>${sortDisplay}</span>`
-        + `<span style="font-size:10px;font-weight:600;color:var(--text-muted);">${tRank}</span>`
+        + `<span style="font-size:10px;font-weight:600;color:var(--text-muted);">${tSub}</span>`
         + `</span>`;
     } else {
       sortDisplayHTML = sortDisplay;
+    }
+
+    // Dedicated PPG column: always visible next to Value so both read at a
+    // glance. When sorting by PPG the cell also carries the positional PPG
+    // rank as a sublabel (the detail that used to replace the Value column).
+    let ppgCellHTML = '–';
+    if (p.position !== 'PICK' && p.ppg != null) {
+      if (sortBy === 'ppg') {
+        const pRank = p.ppg_rank ? (p.position + p.ppg_rank) : '-';
+        ppgCellHTML = `<span style="display:flex;flex-direction:column;align-items:flex-end;line-height:1.2;">`
+          + `<span>${Number(p.ppg).toFixed(1)}</span>`
+          + `<span style="font-size:10px;font-weight:600;color:var(--text-muted);">${pRank}</span>`
+          + `</span>`;
+      } else {
+        ppgCellHTML = Number(p.ppg).toFixed(1);
+      }
     }
 
     if (adpView) {
@@ -972,6 +993,7 @@ function prRender() {
         '<span class="pr-pos-cell">' + posRank + '</span>' +
         '<span class="pr-age">'   + (p.position === 'PICK' ? '–' : age) + '</span>' +
         '<span class="pr-team">'  + (p.team || '–') + '</span>' +
+        '<span class="pr-ppg">' + ppgCellHTML + '</span>' +
         '<span class="pr-value">' + sortDisplayHTML + '</span>';
 
       if (sparkData && sparkData.length >= 2) {
@@ -1083,7 +1105,7 @@ function prExportCSV() {
     ? window.prFilteredPlayers : prAllPlayers;
   if (!players || !players.length) return;
   const q = (s) => '"' + String(s || '').replace(/"/g, '""') + '"';
-  const header = ['Rank','Name','Position','Team','Age','Value','1QB Value','SF Value','7d Rank Change'];
+  const header = ['Rank','Name','Position','Team','Age','Value','1QB Value','SF Value','7d Rank Change','PPG','Total Pts','PPG Season'];
   const rows = players.map((p, i) => {
     const val1qb = Number(p[prValueKey(false)] ?? p.value ?? 0);
     const valsf  = Number(p[prValueKey(true)]  ?? p.sf_value ?? 0);
@@ -1096,7 +1118,10 @@ function prExportCSV() {
       Number(prGetValue(p)).toFixed(1),
       val1qb.toFixed(1),
       valsf.toFixed(1),
-      p.rank_change_7d != null ? p.rank_change_7d : ''
+      p.rank_change_7d != null ? p.rank_change_7d : '',
+      p.ppg != null ? Number(p.ppg).toFixed(1) : '',
+      p.total_pts != null ? Number(p.total_pts).toFixed(1) : '',
+      p.ppg_season != null ? p.ppg_season : ''
     ];
   });
   const csv = [header, ...rows].map(r => r.join(',')).join('\\n');
@@ -1240,6 +1265,14 @@ Promise.all([
     } catch (e) {
       return null;
     }
+  }
+
+  // Label the PPG column with the season the numbers actually describe,
+  // so a stale-looking column can never pass as current by accident.
+  const _ppgHead = document.getElementById('prPpgHeader');
+  if (_ppgHead) {
+    const _ppgSeason = (rawPlayers.find(p => p && p.ppg_season) || {}).ppg_season;
+    _ppgHead.title = _ppgSeason ? (_ppgSeason + ' season PPG (full PPR)') : 'Season PPG (full PPR)';
   }
 
   prAllPlayers = rawPlayers

@@ -150,7 +150,7 @@ def build_players_shell() -> str:
         <div id="prTableScroll">
         <!-- Table header -->
         <div id="prTableHeader" style="display:none;
-             grid-template-columns:54px 42px 1fr 52px 46px 46px 60px;
+             grid-template-columns:54px 42px 1fr 52px 46px 46px 52px 60px;
              gap:0;padding:6px 12px;border-radius:6px;
              background:var(--accent-soft);font-size:11px;
              font-weight:700;color:var(--accent);letter-spacing:0.04em;
@@ -161,6 +161,7 @@ def build_players_shell() -> str:
           <span style="text-align:center;">Pos</span>
           <span id="prAgeHeader" style="text-align:center;">Age</span>
           <span style="text-align:right;">Team</span>
+          <span id="prPpgHeader" style="text-align:right;">PPG</span>
           <span id="prSortHeader" style="text-align:right;">Value</span>
         </div>
 
@@ -183,7 +184,7 @@ def build_players_shell() -> str:
     <style>
       .pr-grid-row {
         display: grid;
-        grid-template-columns: 54px 42px 1fr 52px 46px 46px 60px;
+        grid-template-columns: 54px 42px 1fr 52px 46px 46px 52px 60px;
         align-items: center;
         gap: 0;
       }
@@ -193,6 +194,7 @@ def build_players_shell() -> str:
         transition: background 0.12s ease;
       }
       .pr-player-row:hover { background: var(--accent-soft); }
+      .pr-ppg { text-align: right; font-size: 12.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
       .pr-player-row + .pr-player-row { border-top: 1px solid var(--border); }
       #prTableScroll.pr-adp-scroll {
         overflow-x: auto;
@@ -594,10 +596,10 @@ def build_players_shell() -> str:
           width: 100%;
           min-width: 0;
         }
-        /* Table: hide Age on tablets - rank | arrow | name | pos | team | sort.
+        /* Table: hide Age on tablets - rank | arrow | name | pos | team | ppg | value.
            The ADP-source view (.pr-adp-mode) manages its own columns inline, so
            exclude it from these fixed overrides. */
-        .pr-grid-row:not(.pr-adp-mode) { grid-template-columns: 50px 42px 1fr 44px 42px 56px !important; }
+        .pr-grid-row:not(.pr-adp-mode) { grid-template-columns: 46px 38px 1fr 40px 40px 46px 52px !important; }
         .pr-age,  #prAgeHeader  { display: none !important; }
 
         /* ADP board (mobile): pin # + Player like schedule rankings; source
@@ -655,8 +657,8 @@ def build_players_shell() -> str:
         }
       }
       @media (max-width: 480px) {
-        /* Phone: rank | arrow | name | sort - hide pos and team */
-        .pr-grid-row:not(.pr-adp-mode) { grid-template-columns: 50px 42px 1fr 56px !important; }
+        /* Phone: rank | arrow | name | ppg | value - hide pos and team */
+        .pr-grid-row:not(.pr-adp-mode) { grid-template-columns: 44px 36px 1fr 42px 50px !important; }
         .pr-pos-cell, #prTableHeader:not(.pr-adp-mode) span:nth-child(4) { display: none !important; }
         .pr-team,     #prTableHeader:not(.pr-adp-mode) span:nth-child(6) { display: none !important; }
         /* ADP-source view on phones: compact header labels so "Sleeper" /
