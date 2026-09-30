@@ -1428,8 +1428,8 @@ def format_player_stats(
     # Grouped box-score shorthand for QB/RB/WR/TE: the group label carries
     # the stat type, so yards/TDs inside a group need no qualifier, TDs show
     # only when scored, and groups join with a bullet:
-    #   RUSH 15-75 yds, 1 TD • REC 4/5-41 yds
-    #   PASS 30/55-390 yds, 2 TD, 2 INT • RUSH 2-13 yds
+    #   RUSH 15 75 yds, 1 TD • REC 4/5 41 yds
+    #   PASS 30/55 390 yds, 2 TD, 2 INT • RUSH 2 13 yds
     def pass_group(cmp_v, att_v, py_v, ptd_v, ints_v) -> str | None:
         if not (att_v or cmp_v or py_v or ptd_v or ints_v):
             return None
@@ -1437,7 +1437,7 @@ def format_player_stats(
         if att_v or cmp_v:
             core = f"{int(cmp_v)}/{int(att_v)}"
             if py_v:
-                core += f"-{int(py_v)} yds"
+                core += f" {int(py_v)} yds"
             bits.append(core)
         elif py_v:
             bits.append(f"{int(py_v)} yds")
@@ -1452,7 +1452,7 @@ def format_player_stats(
             return None
         if ra_v:
             core = (
-                f"{int(ra_v)}-{int(ry_v)} yds"
+                f"{int(ra_v)} {int(ry_v)} yds"
                 if ry_v >= 0
                 else f"{int(ra_v)} car, {int(ry_v)} yds"
             )
@@ -1468,15 +1468,15 @@ def format_player_stats(
         if not (rec_v or tgt_v or rec_yds_v or rec_td_v):
             return None
         if tgt_v:
-            # rec/tgt keeps a real 0-catch game visible: REC 0/3-0 yds.
+            # rec/tgt keeps a real 0-catch game visible: REC 0/3 0 yds.
             core = (
-                f"{int(rec_v)}/{int(tgt_v)}-{int(rec_yds_v)} yds"
+                f"{int(rec_v)}/{int(tgt_v)} {int(rec_yds_v)} yds"
                 if rec_yds_v >= 0
                 else f"{int(rec_v)}/{int(tgt_v)}, {int(rec_yds_v)} yds"
             )
         elif rec_v:
             core = (
-                f"{int(rec_v)}-{int(rec_yds_v)} yds"
+                f"{int(rec_v)} {int(rec_yds_v)} yds"
                 if rec_yds_v >= 0
                 else f"{int(rec_v)}, {int(rec_yds_v)} yds"
             )

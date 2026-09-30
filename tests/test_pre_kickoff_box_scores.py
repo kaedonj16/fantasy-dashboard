@@ -240,7 +240,7 @@ def test_matchup_shows_box_score_once_game_is_live(monkeypatch):
     )
     assert "233 yds" in html
     assert "PASS 233 yds, 1 TD" in html
-    assert "RUSH 11-68 yds" in html
+    assert "RUSH 11 68 yds" in html
     # int 0 / rush td 0 are dropped, not shown as "0 INT" / "0 TD".
     assert "0 INT" not in html and "0 TD" not in html
     assert "m-cell-stats" in html
@@ -673,7 +673,7 @@ def test_matchup_fills_skill_gap_from_sleeper_feed(monkeypatch):
         team_game_lookup={"WSH": finished, "WAS": finished},
     )
     assert "233 yds" in html
-    assert "RUSH 11-68 yds" in html
+    assert "RUSH 11 68 yds" in html
     assert "0 INT" not in html
     assert "Stats unavailable" not in html
 
