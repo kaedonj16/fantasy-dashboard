@@ -210,6 +210,16 @@ def test_mobile_notifications_click_outside_handles_relocated_dropdown():
     assert "brSheetAccount" in js  # mobile inline settings-dot path
 
 
+def test_mobile_topbar_bell_wired_like_search_button(offline_client):
+    """The mobile top-bar bell must open Recent Updates via an inline onclick
+    to window.brToggleChangelog (same pattern as the working search button),
+    so the tap never depends on closure bind timing."""
+    html = _html(offline_client, GRAPHS)
+    assert "window.brToggleChangelog&&window.brToggleChangelog(event)" in html
+    js = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+    assert "window.brToggleChangelog = function" in js
+
+
 @pytest.mark.parametrize("settings,expected", [
     ({"type": 1},                    True),   # keeper league
     ({"type": 0, "max_keepers": 3},  True),   # redraft with a keeper limit

@@ -5544,10 +5544,11 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         f"    {_nav_icon('search', size=20)}"
         "  </button>"
         # Mobile-only notifications shortcut: mirrors the search button. Opens
-        # Recent Updates directly as a floating panel under the top bar (bound
-        # in app.js next to the desktop changelog bell). No-ops where the
-        # changelog isn't rendered.
-        f"  <button type='button' class='br-top-notif' aria-label='Notifications'>"
+        # Recent Updates directly as a floating panel under the top bar via
+        # window.brToggleChangelog (inline onclick, same pattern as the
+        # working search button, so the tap never depends on bind timing).
+        f"  <button type='button' class='br-top-notif' aria-label='Notifications'"
+        " onclick=\"window.brToggleChangelog&&window.brToggleChangelog(event)\">"
         f"    {_nav_icon('bell', size=20)}"
         "    <span class='br-top-notif-dot' id='brTopNotifDot' hidden></span>"
         "  </button>"

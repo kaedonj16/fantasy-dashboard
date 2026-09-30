@@ -40045,10 +40045,12 @@ a, button, [role="button"], [role="tab"], summary, label,
         display: none;
     }
 
-    /* Mobile top-bar shortcuts: round utility buttons pinned top-right (the
+    /* Mobile top-bar shortcuts: plain icon buttons pinned top-right (the
        desktop search input and changelog bell hide with .nav-right).
-       Absolutely positioned so they never disturb the single-column grid;
-       nav-left keeps clear of them. Search sits rightmost, bell to its left. */
+       No circle chrome, just the glyph; the 38px box keeps a comfortable
+       tap target. Absolutely positioned so they never disturb the
+       single-column grid; nav-left keeps clear of them. Search sits
+       rightmost, bell to its left. */
     .top-nav.br-mnav .br-top-search,
     .top-nav.br-mnav .br-top-notif {
         display: flex;
@@ -40059,9 +40061,9 @@ a, button, [role="button"], [role="tab"], summary, label,
         transform: translateY(-50%);
         width: 38px;
         height: 38px;
-        border-radius: 50%;
-        border: 1px solid var(--border);
-        background: var(--card);
+        border: 0;
+        border-radius: 0;
+        background: transparent;
         color: var(--text);
         cursor: pointer;
         -webkit-tap-highlight-color: transparent;
