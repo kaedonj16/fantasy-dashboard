@@ -993,22 +993,25 @@ def _population_stddev(vals: List[float]) -> Optional[float]:
 
 
 def _recent_vs_season_ratio(vals: List[float], recent_n: int = 3) -> Optional[float]:
-    """Last-`recent_n` average ÷ season average − 1. None when unusable.
+    """Recent-window average ÷ baseline average − 1. None when unusable.
 
     Positive = trending up. E.g. 0.15 means the recent stretch is 15% above
-    the season average.
+    the baseline.
 
-    Returns None when the recent window covers the whole sample
-    (len(vals) <= recent_n): the ratio is then mathematically forced to
-    exactly 0.0 for every player (e.g. weeks 1-3 of a season), which is
-    worse than no data at all.
+    With more than `recent_n` values the recent window is the last
+    `recent_n` weeks and the baseline is the season average. Early season
+    (2..recent_n values) that window would cover the whole sample, forcing
+    the ratio to exactly 0.0 for every player (e.g. weeks 1-3 of a season),
+    so the latest week is compared against the average of the weeks before
+    it instead. None with fewer than 2 values or a zero baseline.
     """
-    if not vals:
+    if not vals or len(vals) < 2:
         return None
     if len(vals) <= recent_n:
-        # The "recent" window IS the season sample; recent_avg == season_avg
-        # would force a meaningless 0.0. Wait for a real sample instead.
-        return None
+        prior_avg = sum(vals[:-1]) / (len(vals) - 1)
+        if prior_avg == 0:
+            return None
+        return vals[-1] / prior_avg - 1.0
     season_avg = sum(vals) / len(vals)
     if season_avg == 0:
         return None
@@ -4124,6 +4127,18 @@ def get_metric_leaderboard(
         # Season filter always applied (required for correct DISTINCT ON results).
         gate += " AND m.season = %s"
         params.append(season)
+        if metric in ("xfp_trend", "opportunity_trend"):
+            # Trend columns are recomputed on every snapshot build, so only
+            # the player's newest snapshot row may speak for them. When that
+            # row stores NULL (no signal yet), the DISTINCT ON latest-non-null
+            # pick below would resurrect an older row's stale value (rows
+            # from the first build weeks stored a forced 0.0). Restrict
+            # trend candidates to the player's max as_of_date for the season.
+            gate += (
+                " AND m.as_of_date = (SELECT MAX(cx.as_of_date)"
+                " FROM player_advanced_metrics cx"
+                " WHERE cx.player_id = m.player_id AND cx.season = m.season)"
+            )
         if pos:
             gate += " AND m.position = %s"
             params.append(pos)
@@ -4743,14 +4758,24 @@ def get_player_metric_ranks(player_id: str, season: Optional[int] = None) -> Dic
                 (season, position),
             ).fetchall()]
             _merged_rows: Dict[str, dict] = {}
+            _newest_date = {}
             for _row in _raw_rows:
                 _pid = str(_row.get("player_id"))
                 if _pid not in _merged_rows:
                     _merged_rows[_pid] = dict(_row)
+                    _newest_date[_pid] = _row.get("as_of_date")
                     continue
                 _merged = _merged_rows[_pid]
                 for _key, _value in _row.items():
                     if _merged.get(_key) is None and _value is not None:
+                        # Trend columns are recomputed on every build: only
+                        # rows from the player's newest snapshot date may
+                        # fill them. An older row would resurrect a stale
+                        # value (e.g. the forced early-season 0.0) over the
+                        # current row's deliberate NULL.
+                        if _key in ("xfp_trend", "opportunity_trend") \
+                                and _row.get("as_of_date") != _newest_date.get(_pid):
+                            continue
                         _merged[_key] = _value
             srows = list(_merged_rows.values())
 

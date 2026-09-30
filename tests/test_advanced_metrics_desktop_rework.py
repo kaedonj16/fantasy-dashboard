@@ -47,17 +47,23 @@ def _tag(html, el_id):
 
 
 def test_header_actions_are_icon_only_on_desktop():
-    # Command-bar rework: the three actions moved into the strip's overflow
-    # menu as icon + label rows (the labels aid the menu's scanability).
+    # Command-bar rework: the actions live in the strip. Graph Metrics is a
+    # first-class icon button beside search / filter / overflow; Metric
+    # Glossary and CSV stay in the overflow menu as icon + label rows (the
+    # labels aid the menu's scanability).
     html = _html()
     css = _desktop_css(html)
     assert ".am-more-menu .am-legend-btn { padding:10px 12px; }" in css
-    for el_id in ("amGraphBtn", "amLegendBtn", "amExportBtn"):
+    graph = _tag(html, "amGraphBtn")
+    assert 'class="am-cmd-btn"' in graph, "#amGraphBtn must be a strip icon button"
+    assert 'aria-label="Graph Metrics"' in graph
+    assert 'title="' in graph, "#amGraphBtn needs a title"
+    for el_id in ("amLegendBtn", "amExportBtn"):
         tag = _tag(html, el_id)
         assert 'class="am-legend-btn"' in tag, f"#{el_id} must stay a legend button"
         assert 'title="' in tag, f"#{el_id} needs a title"
-    # Each menu row keeps its label span for scanability.
-    assert html.count('class="am-legend-btn-label"') == 3
+    # The two remaining menu rows keep their label spans for scanability.
+    assert html.count('class="am-legend-btn-label"') == 2
     assert 'id="amMoreMenu"' in html
 
 

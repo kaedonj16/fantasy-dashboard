@@ -292,6 +292,9 @@ def build_advanced_metrics_body(
           <button id="amSearchToggle" type="button" class="am-cmd-btn" aria-label="Search players" aria-expanded="false" title="Search players">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="flex-shrink:0"><circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.6"/><path d="M11 11l3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
           </button>
+          <button id="amGraphBtn" type="button" class="am-cmd-btn" aria-label="Graph Metrics" title="Graph Metrics" onclick="amOpenGraph()">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style="flex-shrink:0"><path d="M2 2v10h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="5" cy="9" r="1.3" fill="currentColor"/><circle cx="8" cy="5.5" r="1.3" fill="currentColor"/><circle cx="11" cy="7.5" r="1.3" fill="currentColor"/></svg>
+          </button>
           <button id="amFilterToggle" type="button" class="am-cmd-btn" aria-label="Filters" aria-expanded="false" title="Filters">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="flex-shrink:0"><path d="M2 3.5h12l-4.6 5.4v4.1l-2.8 1.5V8.9L2 3.5z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
             <span id="amFilterBadge" class="am-filter-badge" hidden></span>
@@ -301,10 +304,6 @@ def build_advanced_metrics_body(
           </button>
         </div>
         <div id="amMoreMenu" class="am-more-menu" role="menu" hidden>
-          <button id="amGraphBtn" type="button" class="am-legend-btn" role="menuitem" title="Graph metrics" onclick="amOpenGraph()">
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style="flex-shrink:0"><path d="M2 2v10h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="5" cy="9" r="1.3" fill="currentColor"/><circle cx="8" cy="5.5" r="1.3" fill="currentColor"/><circle cx="11" cy="7.5" r="1.3" fill="currentColor"/></svg>
-            <span class="am-legend-btn-label">Graph Metrics</span>
-          </button>
           <button id="amLegendBtn" type="button" class="am-legend-btn" role="menuitem" title="Metric glossary"
             onclick="document.getElementById('amLegendModal').style.display='flex'">
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style="flex-shrink:0"><circle cx="7" cy="7" r="6" stroke="currentColor" stroke-width="1.5"/><path d="M7 6.5v3M7 4.5h.01" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
@@ -388,19 +387,6 @@ def build_advanced_metrics_body(
                 <span class="am-toggle-text">My roster only</span>
               </label>
             </section>
-            <section class="am-sheet-sec" id="amMetricsSec" aria-label="Metrics">
-              <h4 class="am-sheet-sec-title">Metrics</h4>
-              <div id="amAddStatWrap" style="position:relative;flex-shrink:0;">
-                <button id="amAddStatBtn" type="button" class="am-add-stat-btn">&#43; Metric</button>
-                <div id="amStatPicker" class="am-stat-picker" style="display:none;"></div>
-              </div>
-              <div id="amCompareBar" class="am-compare-bar" style="display:none;">
-                <div id="amCompareChips" class="am-compare-chips"></div>
-                <button id="amComparePinnedBtn" type="button" class="am-add-stat-btn" style="display:none;">&#8645; Compare Pinned</button>
-                <button id="amClearExtrasBtn" type="button" class="am-add-stat-btn am-clear-btn" style="display:none;" onclick="amClearExtras()">&#10005; Clear</button>
-                <button id="amClearExtrasLink" type="button" class="am-clear-link" onclick="amClearExtras()">Clear all</button>
-              </div>
-            </section>
             <section class="am-sheet-sec" aria-label="Custom filters">
               <h4 class="am-sheet-sec-title">Filters</h4>
               <button id="amAddFilterBtn" type="button" class="am-add-stat-btn">&#43; Filter</button>
@@ -460,10 +446,11 @@ def build_advanced_metrics_body(
         </div>
 
         <!-- Positions: one segmented control. JS toggles .active on the buttons.
-             The row also hosts the + Metric wrap on mobile (relocated by
-             amRelocateMetricControls); the compare bar lands in the host
-             directly under the row. Both hosts stay empty on desktop, where
-             the controls keep their filter-sheet home. -->
+             The row also hosts the + Metric wrap at its right end, and the
+             compare bar lands in the host directly under the row. Both
+             controls live in these hosts at every width (they moved out of
+             the filter sheet), so adding a comparison metric never needs
+             the sheet on desktop either. -->
         <div class="am-pos-row" id="amPosRow">
           <div id="amPositions" class="otc-day-filters am-positions am-segmented" role="group" aria-label="Positions">
             <button class="otc-day-filter am-pos active" data-pos="ALL">All</button>
@@ -472,9 +459,21 @@ def build_advanced_metrics_body(
             <button class="otc-day-filter am-pos" data-pos="WR">WR</button>
             <button class="otc-day-filter am-pos" data-pos="TE">TE</button>
           </div>
-          <div id="amAddStatHost" class="am-add-stat-host"></div>
+          <div id="amAddStatHost" class="am-add-stat-host">
+            <div id="amAddStatWrap" style="position:relative;flex-shrink:0;">
+              <button id="amAddStatBtn" type="button" class="am-add-stat-btn">&#43; Metric</button>
+              <div id="amStatPicker" class="am-stat-picker" style="display:none;"></div>
+            </div>
+          </div>
         </div>
-        <div id="amCompareHost" class="am-compare-host"></div>
+        <div id="amCompareHost" class="am-compare-host">
+          <div id="amCompareBar" class="am-compare-bar" style="display:none;">
+            <div id="amCompareChips" class="am-compare-chips"></div>
+            <button id="amComparePinnedBtn" type="button" class="am-add-stat-btn" style="display:none;">&#8645; Compare Pinned</button>
+            <button id="amClearExtrasBtn" type="button" class="am-add-stat-btn am-clear-btn" style="display:none;" onclick="amClearExtras()">&#10005; Clear</button>
+            <button id="amClearExtrasLink" type="button" class="am-clear-link" onclick="amClearExtras()">Clear all</button>
+          </div>
+        </div>
 
         <!-- Decision presets: one-tap views organized by the question being answered.
              Pills are server-rendered; JS wires clicks and the active state. -->
@@ -1044,6 +1043,7 @@ def build_advanced_metrics_body(
       .am-trend-delta-up   { color:var(--win); }
       .am-trend-delta-down { color:var(--loss); }
       .am-trend-delta-flat { color:var(--text-muted); opacity:.6; }
+      .am-trend-nums { font-size:10px; color:var(--text-muted); margin-top:2px; white-space:nowrap; }
       /* PRO-locked column: blocked like a paywalled column. Blurred
          placeholder bars read as hidden data; the lock badge and the
          tinted column are one tap target that opens the paywall. */
@@ -1555,15 +1555,15 @@ def build_advanced_metrics_body(
       .am-positions.am-segmented .am-pos.active {
         background:var(--text); color:var(--card);
       }
-      /* Mobile relocation hosts: on phones the + Metric wrap moves beside
-         the position filters and the compare bar lands directly under that
-         row (amRelocateMetricControls moves the existing nodes; the hosts
-         stay empty, and hidden, on desktop). */
+      /* Metric-control hosts: the + Metric wrap sits beside the position
+         filters and the compare bar lands directly under that row, at every
+         width. The compare host only takes space while the bar is shown
+         (updateCompareBar toggles .am-compare-on with the bar's display). */
       .am-pos-row { display:flex; align-items:stretch; gap:8px; margin:0 0 8px; min-width:0; }
       .am-pos-row .am-positions.am-segmented { flex:1 1 auto; margin:0; }
-      .am-add-stat-host, .am-compare-host { display:none; }
-      .am-add-stat-host:not(:empty) { display:flex; }
-      .am-compare-host:not(:empty) { display:block; }
+      .am-add-stat-host { display:flex; }
+      .am-compare-host { display:none; }
+      .am-compare-host.am-compare-on { display:block; }
       .am-add-stat-host #amAddStatWrap { display:flex; }
       .am-add-stat-host #amAddStatBtn { height:100%; }
       /* Context line: tappable summary of the current filter state. */
@@ -1611,8 +1611,6 @@ def build_advanced_metrics_body(
       .am-sheet-sec .am-vol-ctrl { display:flex; align-items:center; gap:10px; margin-bottom:10px; }
       .am-sheet-sec .am-age-wrap { display:flex; align-items:center; gap:8px; margin-bottom:10px; }
       .am-sheet-sec .am-roster-toggle { margin:0 8px 8px 0; }
-      .am-sheet-sec #amAddStatWrap { margin-bottom:10px; }
-      .am-sheet-sec #amCompareBar { margin:0; }
       .am-sheet-sec #amAddFilterBtn { margin-bottom:10px; }
       .am-sheet-sec .am-filter-chips { margin-bottom:4px; }
       .am-sheet-sec .am-filter-chips:empty { margin-bottom:0; }
@@ -1659,12 +1657,25 @@ def build_advanced_metrics_body(
         }
         .am-cmd-controls .am-cmd-metric,
         .am-cmd-controls .am-pos-row,
+        .am-cmd-controls .am-compare-host,
         .am-cmd-controls .am-decisions,
         .am-cmd-controls .am-preset-tagline,
         .am-cmd-controls .am-context-line,
         .am-cmd-controls .am-movers { margin:0; min-width:0; }
         .am-cmd-controls .am-cmd-metric { grid-area:metric; }
         .am-cmd-controls .am-pos-row { grid-area:positions; align-self:center; }
+        /* The compare row only exists while extra metrics (or pinned
+           compare) are showing; updateCompareBar toggles .am-has-compare
+           with the bar, so the layout is unchanged when nothing is picked. */
+        .am-cmd-controls.am-has-compare {
+          grid-template-areas:
+            "metric positions"
+            "compare compare"
+            "pills pills"
+            "tagline tagline"
+            "context movers";
+        }
+        .am-cmd-controls.am-has-compare .am-compare-host { grid-area:compare; }
         .am-cmd-controls .am-decisions { grid-area:pills; }
         .am-cmd-controls .am-preset-tagline { grid-area:tagline; }
         .am-cmd-controls .am-context-line { grid-area:context; width:100%; align-self:center; }
@@ -2272,9 +2283,17 @@ _AM_JS = r"""
     // Mobile shows a "Clear all" text link instead of the ghost button.
     const clearLink = document.getElementById('amClearExtrasLink');
     if (clearLink) clearLink.classList.toggle('am-clear-link-show', state.extraMetrics.length > 0);
-    // Show the compare bar only when there's something to show.
+    // Show the compare bar only when there's something to show. The host
+    // and the desktop control grid key off the same state: the host takes
+    // space only while the bar is visible, and the grid opens its full
+    // width compare row under the positions row.
     const hasPinned = pinnedBtn && pinnedBtn.style.display !== 'none';
-    if (bar) bar.style.display = (state.extraMetrics.length > 0 || hasPinned) ? 'flex' : 'none';
+    const showBar = state.extraMetrics.length > 0 || hasPinned;
+    if (bar) bar.style.display = showBar ? 'flex' : 'none';
+    const cmpHost = document.getElementById('amCompareHost');
+    if (cmpHost) cmpHost.classList.toggle('am-compare-on', showBar);
+    const cmdControls = document.querySelector('.am-cmd-controls');
+    if (cmdControls) cmdControls.classList.toggle('am-has-compare', showBar);
   }
 
   function buildStatPicker() {
@@ -2556,20 +2575,33 @@ _AM_JS = r"""
       return '<td class="am-trendcell" data-column-id="trend"><span style="opacity:.35">–</span></td>';
     }
     const statLbl = { snap_pct: 'snap%', touches: 'touches', targets: 'targets' }[t.stat] || t.stat;
+    const unit = t.stat === 'snap_pct' ? '%' : '';
     const d = t.delta;
-    // A null delta means the recent window is degenerate (<=3 weeks: the
-    // "last-3" window IS the season sample, so any number would be a lie).
-    // The sparkline still shows the real weekly series.
-    let deltaHtml = '<span class="am-trend-delta am-trend-delta-flat" title="Not enough weeks yet for a trend signal">&ndash;</span>';
+    let deltaHtml = '<span class="am-trend-delta am-trend-delta-flat">&ndash;</span>';
     if (d != null && d >= 0.5) deltaHtml = '<span class="am-trend-delta am-trend-delta-up">&#9650; +' + d.toFixed(1) + '</span>';
     else if (d != null && d <= -0.5) deltaHtml = '<span class="am-trend-delta am-trend-delta-down">&#9660; ' + d.toFixed(1) + '</span>';
-    const recentN = Math.min(3, t.weeks_played || 3);
-    const tip = (d == null || t.recent_avg == null)
-      ? 'Recent usage: only ' + (t.weeks_played || 0) + ' week(s) so far — trend signal starts with more data'
-      : 'Last-' + recentN + '-week avg ' + statLbl + ' (' + t.recent_avg
-        + ') vs season avg (' + t.season_avg + ')';
+    else if (d != null) deltaHtml = '<span class="am-trend-delta am-trend-delta-flat">' + (d > 0 ? '+' : '') + d.toFixed(1) + '</span>';
+    // The numbers render IN the cell, not only in the title tooltip: on
+    // touch devices the tooltip never shows, so a sparkline plus a dash
+    // reads as "a bar with no info". Early season (<=3 weeks) the delta
+    // compares the last week against the prior weeks' average; after that
+    // it is the last-3 average vs the season average (see _trend_window).
+    const early = (t.weeks_played || 0) <= 3;
+    let numsHtml, tip;
+    if (d != null && t.recent_avg != null && t.baseline_avg != null) {
+      numsHtml = '<div class="am-trend-nums">'
+        + t.recent_avg + unit + (early ? ' last wk' : ' L3 avg')
+        + ' vs ' + t.baseline_avg + unit + (early ? ' prior avg' : ' season')
+        + ' ' + statLbl + '</div>';
+      tip = (early ? 'Last week ' : 'Last-3-week avg ') + statLbl + ' (' + t.recent_avg + unit
+        + ') vs ' + (early ? 'prior weeks avg' : 'season avg') + ' (' + t.baseline_avg + unit + ')';
+    } else {
+      numsHtml = '<div class="am-trend-nums">Only ' + (t.weeks_played || 0) + ' wk so far: no trend yet</div>';
+      tip = 'Only ' + (t.weeks_played || 0) + ' week(s) so far: trend signal starts with a second week';
+    }
     return '<td class="am-trendcell" data-column-id="trend" title="' + tip + '">'
-      + '<div class="am-trend-inner">' + sparkline(t.series, color) + deltaHtml + '</div></td>';
+      + '<div class="am-trend-inner">' + sparkline(t.series, color) + deltaHtml + '</div>'
+      + numsHtml + '</td>';
   }
   function trendWindowWeeks() {
     // Longest series among loaded players - the label adapts to how many
@@ -3953,6 +3985,21 @@ _AM_JS = r"""
       btn.classList.toggle('active', v === (_amGraphPos || ''));
     });
   }
+  // Preset graph axes from the compare selection: the metrics the user
+  // added as extra columns become the graph's X / Y / bubble, in order.
+  // Returns null when nothing usable is selected (the caller keeps its
+  // defaults). `applic` is the graphable key list for the graph-local
+  // position; extras outside it are skipped first, so the mapping degrades
+  // to the longest usable prefix of the selection.
+  function _amGraphPresetFromSelection(applic) {
+    const extras = (state.extraMetrics || []).filter(function(k) {
+      return applic.indexOf(k) >= 0;
+    });
+    if (!extras.length) return null;
+    if (extras.length >= 3) return { x: extras[0], y: extras[1], z: extras[2] };
+    if (extras.length === 2) return { x: extras[0], y: extras[1], z: '' };
+    return { x: state.metric, y: extras[0], z: '' };
+  }
   window.amOpenGraph = function() {
     const modal = document.getElementById('amGraphModal');
     const xSel = document.getElementById('amGraphX');
@@ -3984,6 +4031,16 @@ _AM_JS = r"""
       } else {
         curY = applic.find(function(k) { return k !== curX; }) || '';
       }
+    }
+    // A compare selection wins over the defaults above: two or more added
+    // metrics become X / Y ( / bubble); a single one becomes Y against the
+    // primary metric on X. Values are only taken when the metric is
+    // graphable under the graph-local position filter.
+    const preset = _amGraphPresetFromSelection(applic);
+    if (preset) {
+      if (preset.x && applic.indexOf(preset.x) >= 0) curX = preset.x;
+      if (preset.y && applic.indexOf(preset.y) >= 0) curY = preset.y;
+      curZ = (preset.z && applic.indexOf(preset.z) >= 0) ? preset.z : '';
     }
     xSel.innerHTML = _amGraphMetricOptions(curX);
     ySel.innerHTML = _amGraphMetricOptions(curY);
@@ -5183,34 +5240,9 @@ _AM_JS = r"""
   if (ctxLine) ctxLine.addEventListener('click', () => amToggleSheet(true));
   const sheetClose = document.getElementById('amSheetClose');
   if (sheetClose) sheetClose.addEventListener('click', () => amToggleSheet(false));
-  // Mobile layout: the + Metric wrap and the added-metric compare bar sit
-  // beside / directly under the position filters instead of inside the
-  // filter sheet, so adding a comparison metric never needs the sheet.
-  // Desktop keeps them in the sheet's Metrics section. The nodes themselves
-  // move (IDs, listeners, and the fixed-position stat picker ride along);
-  // the sheet's Metrics section hides while its controls are relocated.
-  function amRelocateMetricControls() {
-    const mobile = window.matchMedia('(max-width: 760px)').matches;
-    const wrap = document.getElementById('amAddStatWrap');
-    const bar = document.getElementById('amCompareBar');
-    const sec = document.getElementById('amMetricsSec');
-    if (!wrap || !bar || !sec) return;
-    if (mobile) {
-      const host = document.getElementById('amAddStatHost');
-      const barHost = document.getElementById('amCompareHost');
-      if (host && wrap.parentNode !== host) host.appendChild(wrap);
-      if (barHost && bar.parentNode !== barHost) barHost.appendChild(bar);
-      sec.style.display = 'none';
-    } else {
-      if (wrap.parentNode !== sec) sec.appendChild(wrap);
-      if (bar.parentNode !== sec) sec.appendChild(bar);
-      sec.style.display = '';
-    }
-  }
-  const _amLayoutMq = window.matchMedia('(max-width: 760px)');
-  if (_amLayoutMq.addEventListener) _amLayoutMq.addEventListener('change', amRelocateMetricControls);
-  else if (_amLayoutMq.addListener) _amLayoutMq.addListener(amRelocateMetricControls);
-  amRelocateMetricControls();
+  // The + Metric wrap and the added-metric compare bar live in the
+  // positions-row hosts (rendered there server-side at every width), so
+  // adding a comparison metric never needs the filter sheet.
   const sheetBackdrop = document.getElementById('amSheetBackdrop');
   if (sheetBackdrop) sheetBackdrop.addEventListener('click', () => amToggleSheet(false));
   // Search icon toggles the row holding the existing #amSearch input.
@@ -5224,7 +5256,7 @@ _AM_JS = r"""
       if (opening && searchEl) searchEl.focus();
     });
   }
-  // Overflow menu: Graph Metrics / Metric Glossary / CSV. Closes on
+  // Overflow menu: Metric Glossary / CSV. Closes on
   // outside tap or Escape.
   const moreToggle = document.getElementById('amMoreToggle');
   const moreMenu = document.getElementById('amMoreMenu');
