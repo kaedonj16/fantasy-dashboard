@@ -117,7 +117,8 @@ wvLabOppStats = null;
 function __mkEntry(pid, name, pos, proj, floor, ceiling, bench) {
   return { player_id: pid, slot: pos, name: name, pos: pos, proj: proj,
            floor: floor, ceiling: ceiling, matchup: 'vs DEN', tags: [],
-           profile: {}, bench: bench || [] };
+           profile: {}, eligible: [pos], usage_stat: null, usage_avg: null,
+           bench: bench || [] };
 }
 wvLabLineup = [
   __mkEntry('p1', 'Starter A', 'QB', 18, 10, 28, [
@@ -192,6 +193,7 @@ console.log('SUMMARY=' + (html.indexOf('Chased upside: 2 swaps:') !== -1
 console.log('FLASH=' + (html.split('wv-lab-changed').length - 1));
 console.log('OPEN=' + (html.split('wv-lab-slot open').length - 1));
 console.log('SCROLLINTOVIEW=' + JSON.stringify(__scrolledIntoView));
+console.log('BTN=' + (html.indexOf('disabled title="Already your highest-ceiling lineup"') !== -1));
 console.log('SHEET=' + (html.indexOf('bench \u00b7 win% change') !== -1
   && html.indexOf('sorted by ceiling') === -1));
 console.log('NODASH=' + (html.indexOf('\u2014') === -1));
@@ -204,8 +206,9 @@ console.log('NODASH=' + (html.indexOf('\u2014') === -1));
     assert vals["SUMMARY"] == "true", "chase upside must render a labeled swap summary"
     assert vals["FLASH"] == "2", "each changed row must flash"
     assert vals["OPEN"] == "2", "changed slots must stay expanded"
-    assert vals["SCROLLINTOVIEW"] == '{"block":"nearest"}', \
-        "chase upside must scroll the first changed row into view"
+    assert vals["SCROLLINTOVIEW"] == '{"block":"nearest","behavior":"smooth"}', \
+        "chase upside must smoothly scroll the first changed row into view"
+    assert vals["BTN"] == "true", "after a full chase the Chase button must park disabled"
     assert vals["SHEET"] == "true", "bench sheets must stay in win%-delta form"
     assert vals["NODASH"] == "true", "no em dashes in Lab UI copy"
 
@@ -221,6 +224,7 @@ var html = __fakeBody.innerHTML;
 console.log('CHANGES=' + JSON.stringify(wvLabLastChanges));
 console.log('NAMES=' + wvLabLineup[0].name);
 console.log('NOTE=' + (html.indexOf('Already your highest-ceiling lineup.') !== -1));
+console.log('BTN=' + (html.indexOf('disabled title="Already your highest-ceiling lineup"') !== -1));
 console.log('FLASH=' + (html.indexOf('wv-lab-changed') !== -1));
 console.log('NODASH=' + (html.indexOf('\u2014') === -1));
 // The note must clear on the next action instead of going stale.
@@ -233,6 +237,7 @@ console.log('CLEARED=' + (html.indexOf('Already your highest-ceiling lineup.') =
     assert vals["CHANGES"] == "[]", "no swaps when the starter already has the top ceiling"
     assert vals["NAMES"] == "Starter A", "lineup must be untouched"
     assert vals["NOTE"] == "true", "no-gain chase upside must say so"
+    assert vals["BTN"] == "true", "no-gain chase upside must park the Chase button disabled"
     assert vals["FLASH"] == "false", "nothing changed, so nothing flashes"
     assert vals["NODASH"] == "true", "no em dashes in Lab UI copy"
     assert vals["CLEARED"] == "true", "the note must clear on the next action"
@@ -295,6 +300,8 @@ console.log('CHANGES=' + JSON.stringify(wvLabLastChanges));
 console.log('SWAPPED=' + (wvLabLineup[0].name === 'Bench B'));
 console.log('SUMMARY=' + (html.indexOf('1 swap:') !== -1 && html.indexOf('Bench B in for Starter A') !== -1));
 console.log('FLASH=' + (html.indexOf('wv-lab-changed') !== -1));
+console.log('OPTBTN=' + (html.indexOf('disabled title="Already optimized"') !== -1
+  && html.indexOf('Lineup optimized') !== -1));
 console.log('SCROLLINTOVIEW=' + JSON.stringify(__scrolledIntoView));
 console.log('SCROLLKEPT=' + JSON.stringify(__scrollToCalls[__scrollToCalls.length - 1]));
 """)
@@ -303,8 +310,10 @@ console.log('SCROLLKEPT=' + JSON.stringify(__scrollToCalls[__scrollToCalls.lengt
     assert vals["SWAPPED"] == "true", "optimize must actually apply the swap"
     assert vals["SUMMARY"] == "true", "optimize must render a swap summary"
     assert vals["FLASH"] == "true", "changed row must flash"
-    assert vals["SCROLLINTOVIEW"] == '{"block":"nearest"}', \
-        "optimize must scroll the first changed row into view"
+    assert vals["OPTBTN"] == "true", \
+        "after optimizing, the Optimize button must park disabled as optimized"
+    assert vals["SCROLLINTOVIEW"] == '{"block":"nearest","behavior":"smooth"}', \
+        "optimize must smoothly scroll the first changed row into view"
     assert vals["SCROLLKEPT"] == "[0,321]", "render must still preserve scroll first"
 
 
@@ -335,9 +344,38 @@ console.log('UNKNOWN=' + (html.indexOf('wv-lab-pos wrrb_flex') === -1 && html.in
     assert vals["UNKNOWN"] == "true", "unknown slot must not get a color class"
 
 
-def test_range_bar_stacked_with_min_max_labels(page):
-    assert ".wv-lab-rangeblock" in page, "range must be a stacked block"
-    assert ".wv-lab-range-ends" in page, "range needs a MIN/MAX ends row"
+def test_range_line_is_horizontal(page):
+    assert ".wv-lab-rangeline" in page, "range must be one horizontal line"
+    assert ".wv-lab-rangeblock" not in page, "the stacked range block is gone"
+    assert ".wv-lab-range-ends" not in page, "the separate MIN/MAX ends row is gone"
+
+
+def test_proj_is_start_sit_style_hero(page):
+    m = re.search(r"(?m)^\.wv-lab-proj \.n \{([^}]*)\}", page)
+    assert m, "missing .wv-lab-proj .n CSS rule"
+    assert "font-size: 23px" in m.group(1), (
+        "the Lab projection must be the Start/Sit hero number (23px), "
+        "pinned to the right of the row"
+    )
+    m2 = re.search(r"(?m)^\.wv-lab-line2 \{([^}]*)\}", page)
+    assert m2 and "display: flex" in m2.group(1), (
+        "usage/matchup/tags and the range must share one flex line under the name"
+    )
+
+
+def test_phone_detail_line_wraps_range_full_width(page):
+    m = re.search(r"@media \(max-width: 560px\) \{(.*?)\n\}", page, re.S)
+    assert m, "missing the phone breakpoint for the Lab detail line"
+    block = m.group(1)
+    assert ".wv-lab-line2 { flex-wrap: wrap" in block, (
+        "on phones the detail line must wrap instead of crushing the range bar"
+    )
+    assert ".wv-lab-line2 .wv-lab-rangeline { flex: 1 1 100%" in block, (
+        "the wrapped range line must go full width so the bar stays a real gauge"
+    )
+    assert ".wv-lab-line2 .wv-lab-meta { flex: 1 1 100%" in block, (
+        "the meta line must take its own full-width line above the range"
+    )
 
 
 def test_tags_are_outline_pills(page):
@@ -345,28 +383,135 @@ def test_tags_are_outline_pills(page):
     assert ".wv-lab-tag.td" in page
 
 
-def test_slot_row_renders_stacked_range_with_labels(lab_js):
+def test_slot_row_renders_horizontal_range_with_labels(lab_js):
     vals = _run_node(lab_js, _LAB_SETUP + r"""
 wvLabSwapDelta = function(si, b) { return 0; };
-wvLabLineup = [ __mkEntry('p1', 'Starter A', 'QB', 18, 4.4, 31.2, []) ];
+var qb = __mkEntry('p1', 'Starter A', 'QB', 18, 4.4, 31.2, []);
+qb.usage_stat = 'snap_pct'; qb.usage_avg = 98.2;
+var rb = __mkEntry('p2', 'Starter B', 'RB', 15, 8, 24, []);
+rb.usage_stat = 'touches'; rb.usage_avg = 17.34;
+wvLabLineup = [qb, rb];
 var html = wvLabRenderSlots();
-console.log('BLOCK=' + (html.indexOf('wv-lab-rangeblock') !== -1));
+var i1 = html.indexOf('wv-lab-line1'), i2 = html.indexOf('wv-lab-line2');
+var line1 = (i1 !== -1 && i2 !== -1) ? html.slice(i1, i2) : '';
+console.log('LINE=' + (html.indexOf('wv-lab-rangeline') !== -1 && i1 !== -1 && i2 !== -1 && i1 < i2));
+console.log('NAMEOWN=' + (line1.indexOf('Starter A') !== -1 && line1.indexOf('wv-lab-meta') === -1 && line1.indexOf('MIN') === -1));
+var line2 = i2 !== -1 ? html.slice(i2) : '';
+console.log('DETAIL=' + (line2.indexOf('wv-lab-meta') !== -1 && line2.indexOf('wv-lab-rangeline') !== -1 && line2.indexOf('wv-lab-meta') < line2.indexOf('wv-lab-rangeline')));
+console.log('STACKED=' + (html.indexOf('wv-lab-rangeblock') !== -1 || html.indexOf('wv-lab-sub') !== -1));
 console.log('MIN=' + (html.indexOf('<em>MIN</em>') !== -1 && html.indexOf('>4.4<') !== -1));
 console.log('MAX=' + (html.indexOf('<em>MAX</em>') !== -1 && html.indexOf('>31.2<') !== -1));
 console.log('META=' + (html.indexOf('wv-lab-meta') !== -1));
+console.log('SNAP=' + (html.indexOf('98% snaps') !== -1));
+console.log('TOUCHES=' + (html.indexOf('17.3 touches/g') !== -1));
+console.log('NOSHARE=' + (html.indexOf('% share') === -1));
 console.log('NODASH=' + (html.indexOf('\u2014') === -1));
 """)
-    assert vals["BLOCK"] == "true", "row must render the stacked range block"
-    assert vals["MIN"] == "true", "range must label its MIN end with the floor value"
-    assert vals["MAX"] == "true", "range must label its MAX end with the ceiling value"
-    assert vals["META"] == "true", "share/matchup/tags must sit in the meta line"
+    assert vals["LINE"] == "true", "row must render the horizontal range line"
+    assert vals["NAMEOWN"] == "true", "the name must sit on its own row, no meta or range in line 1"
+    assert vals["DETAIL"] == "true", "usage/matchup/tags and the range must share the line under the name"
+    assert vals["STACKED"] == "false", "row must not use the old stacked blocks"
+    assert vals["MIN"] == "true", "range line must label its MIN end with the floor value"
+    assert vals["MAX"] == "true", "range line must label its MAX end with the ceiling value"
+    assert vals["META"] == "true", "usage/matchup/tags must sit in the meta line"
+    assert vals["SNAP"] == "true", "a QB must show snap %, not a points share"
+    assert vals["TOUCHES"] == "true", "an RB must show touches per game"
+    assert vals["NOSHARE"] == "true", "the meaningless points-share stat is gone"
     assert vals["NODASH"] == "true", "no em dashes in Lab UI copy"
 
 
 def test_range_track_is_block_level(page):
-    m = re.search(r"\.wv-lab-range\s*\{([^}]*)\}", page)
-    assert m, "missing .wv-lab-range CSS"
+    m = re.search(r"(?m)^\.wv-lab-range \{([^}]*)\}", page)
+    assert m, "missing standalone .wv-lab-range CSS rule"
     assert "display" in m.group(1) and "block" in m.group(1), (
         "the range track must be display:block: as an inline span its height is "
         "ignored and the bar collapses to zero height"
     )
+
+
+def test_chase_upside_promotes_shared_bench_player_once(lab_js):
+    # Regression: one FLEX-eligible bench player copied under three slots
+    # must be promoted exactly once, not once per slot.
+    vals = _run_node(lab_js, r"""
+wvLabData = { opponent: { name: 'Opp' }, corr: {} };
+wvLabOppStats = null;
+wvLabResult = { winPct: 0.62, p10: 100, p90: 140, median: 120 };
+wvLabSwapDelta = function(si, b) { return 0.02; };  // render-only: skip sims
+wvLabEvaluate = function(lineup) { return { winPct: 0.70, median: 125, p10: 105, p90: 145 }; };
+function __e2(pid, name, pos, slot, proj, floor, ceiling, eligible, bench) {
+  return { player_id: pid, slot: slot, name: name, pos: pos, proj: proj,
+           floor: floor, ceiling: ceiling, matchup: '', tags: [],
+           profile: {}, eligible: eligible, usage_stat: null, usage_avg: null,
+           bench: bench || [] };
+}
+function __flexStar() { return __e2('w1', 'Flex Star', 'WR', 'BN', 12, 5, 40, [], []); }
+wvLabLineup = [
+  __e2('s1', 'Wide One', 'WR', 'WR', 14, 8, 20, ['WR'], [__flexStar()]),
+  __e2('s2', 'Wide Two', 'WR', 'WR', 14, 8, 21, ['WR'], [__flexStar()]),
+  __e2('s3', 'Flex Guy', 'RB', 'FLEX', 13, 7, 19, ['RB', 'TE', 'WR'], [__flexStar()])
+];
+wvLabChaseUpside();
+var html = __fakeBody.innerHTML;
+var starters = wvLabLineup.map(function(e) { return e.name; }).join('/');
+var starStarts = wvLabLineup.filter(function(e) { return e.player_id === 'w1'; }).length;
+var starBenched = 0;
+wvLabLineup.forEach(function(e) { (e.bench || []).forEach(function(b) {
+  if (b.player_id === 'w1') starBenched++;
+}); });
+console.log('CHANGES=' + JSON.stringify(wvLabLastChanges));
+console.log('STARTERS=' + starters);
+console.log('STARSTARTS=' + starStarts);
+console.log('STARBENCHED=' + starBenched);
+console.log('SUMMARY=' + (html.indexOf('Chased upside: 1 swap:') !== -1
+  && html.indexOf('Flex Star in for Flex Guy') !== -1));
+console.log('NAMECOUNT=' + (html.split('Flex Star').length - 1));
+console.log('DEMOTED=' + (html.indexOf('Flex Guy') !== -1));
+console.log('NODASH=' + (html.indexOf('\u2014') === -1));
+""")
+    assert vals["CHANGES"] == '[{"si":2,"out":"Flex Guy","inn":"Flex Star"}]', \
+        "the shared bench player must be promoted exactly once"
+    assert vals["STARTERS"] == "Wide One/Wide Two/Flex Star"
+    assert vals["STARSTARTS"] == "1", "one player, one start"
+    assert vals["STARBENCHED"] == "0", "a starter must not remain on any bench"
+    assert vals["SUMMARY"] == "true", "summary must list the single real swap"
+    assert vals["NAMECOUNT"] == "2", "Flex Star appears once as a starter, once in the summary"
+    assert vals["DEMOTED"] == "true", "the demoted starter takes the FLEX bench seat"
+    assert vals["NODASH"] == "true", "no em dashes in Lab UI copy"
+
+
+def test_optimize_no_gain_disables_button(lab_js):
+    vals = _run_node(lab_js, _LAB_SETUP + r"""
+wvLabSwapDelta = function(si, b) { return -0.03; };  // every swap loses win%
+wvLabEvaluate = function(lineup) { return { winPct: 0.62, median: 120, p10: 100, p90: 140 }; };
+wvLabOptimize();
+var html = __fakeBody.innerHTML;
+console.log('CHANGES=' + JSON.stringify(wvLabLastChanges));
+console.log('NOTE=' + (html.indexOf('Already optimized. No swaps improve your win probability.') !== -1));
+console.log('BTN=' + (html.indexOf('disabled title="Already optimized"') !== -1
+  && html.indexOf('Lineup optimized') !== -1));
+console.log('FLASH=' + (html.indexOf('wv-lab-changed') !== -1));
+// A manual swap must re-enable the button: the state is sticky, not permanent.
+wvLabSwapDelta = function(si, b) { return 0.05; };
+wvLabSwap(0, 0);
+html = __fakeBody.innerHTML;
+console.log('REENABLED=' + (html.indexOf('Optimize lineup') !== -1
+  && html.indexOf('disabled title="Already optimized"') === -1));
+""")
+    assert vals["CHANGES"] == "[]", "no swaps when every delta is negative"
+    assert vals["NOTE"] == "true", "no-gain optimize must say the lineup is already optimized"
+    assert vals["BTN"] == "true", "no-gain optimize must park the button disabled"
+    assert vals["FLASH"] == "false", "nothing changed, so nothing flashes"
+    assert vals["REENABLED"] == "true", "a lineup change must clear the parked state"
+
+
+def test_scroll_respects_reduced_motion(lab_js):
+    vals = _run_node(lab_js, _LAB_SETUP + r"""
+window.matchMedia = function(q) { return { matches: true }; };
+wvLabSwapDelta = function(si, b) { return 0.02; };
+wvLabEvaluate = function(lineup) { return { winPct: 0.70, median: 125, p10: 105, p90: 145 }; };
+wvLabLineup[1].bench = [__mkEntry('p5', 'Bench E', 'RB', 14, 6, 30, [])];
+wvLabChaseUpside();
+console.log('SCROLLINTOVIEW=' + JSON.stringify(__scrolledIntoView));
+""")
+    assert vals["SCROLLINTOVIEW"] == '{"block":"nearest","behavior":"auto"}', \
+        "reduced-motion users must get an instant scroll, not a smooth one"

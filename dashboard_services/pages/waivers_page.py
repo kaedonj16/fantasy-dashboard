@@ -59,6 +59,7 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-lab-btn { flex: 1; border: 1px solid var(--border); background: var(--card); color: var(--text); border-radius: 10px; padding: 10px 0; font-size: 13px; font-weight: 700; cursor: pointer; }
 .wv-lab-btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 .wv-lab-btn.on { outline: 2px solid var(--accent); outline-offset: -2px; }
+.wv-lab-btn:disabled { opacity: .5; cursor: default; }
 .wv-lab-slot { border-bottom: 1px solid var(--border); }
 .wv-lab-row { display: flex; align-items: center; gap: 10px; width: 100%; border: none; background: none; padding: 12px 4px; cursor: pointer; text-align: left; color: var(--text); }
 .wv-lab-pos { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; padding: 3px 8px; border-radius: 20px; font-size: 11px; font-weight: 800; }
@@ -71,22 +72,26 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-lab-pos.def { background: #e5e7eb; color: #374151; }
 .wv-lab-main { flex: 1; min-width: 0; }
 .wv-lab-name { font-size: 14px; font-weight: 700; }
-.wv-lab-sub { display: flex; flex-direction: column; gap: 3px; margin-top: 6px; }
-.wv-lab-meta { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-muted); flex-wrap: wrap; }
-.wv-lab-rangeblock { display: block; }
+.wv-lab-line1 { display: block; }
+.wv-lab-line2 { display: flex; align-items: center; gap: 6px; margin-top: 4px; min-width: 0; }
+.wv-lab-meta { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-muted); flex-wrap: nowrap; flex: 0 1 auto; min-width: 0; overflow: hidden; }
+.wv-lab-meta > span { white-space: nowrap; }
+.wv-lab-rangeline { display: flex; align-items: center; gap: 8px; margin-top: 5px; }
+.wv-lab-line2 .wv-lab-rangeline { flex: 1 1 auto; min-width: 36px; margin-top: 0; }
+.wv-lab-rangeline .wv-lab-range { flex: 1; min-width: 0; }
 .wv-lab-range { display: block; position: relative; height: 8px; background: #eef0f3; border-radius: 4px; }
 .wv-lab-range .fill { position: absolute; top: 0; bottom: 0; background: var(--accent); opacity: .5; border-radius: 4px; }
 .wv-lab-range .dot { position: absolute; top: -2px; width: 3px; height: 12px; background: #111827; border-radius: 2px; }
-.wv-lab-range-ends { display: flex; justify-content: space-between; font-size: 10px; color: var(--text-muted); margin-top: 2px; }
-.wv-lab-range-ends em { font-style: normal; font-weight: 800; font-size: 9px; letter-spacing: .05em; margin-right: 3px; }
-.wv-lab-range-ends .v { color: var(--text); font-weight: 700; }
+.wv-lab-end { font-size: 10px; color: var(--text-muted); white-space: nowrap; }
+.wv-lab-end em { font-style: normal; font-weight: 800; font-size: 9px; letter-spacing: .05em; margin-right: 3px; }
+.wv-lab-end .v { color: var(--text); font-weight: 700; }
 .wv-lab-tag { font-size: 10px; font-weight: 700; padding: 1px 7px; border-radius: 20px; background: transparent; border: 1px solid currentColor; color: #4f46e5; }
 .wv-lab-tag.td { color: #b45309; }
 .wv-lab-tag.q { color: #b91c1c; }
 .wv-lab-tag.boost, .wv-lab-tag.qb { color: #047857; }
-.wv-lab-proj { text-align: right; }
-.wv-lab-proj .n { font-size: 16px; font-weight: 800; }
-.wv-lab-proj .l { font-size: 10px; color: var(--text-muted); font-weight: 700; }
+.wv-lab-proj { flex: 0 0 auto; text-align: right; line-height: 1; }
+.wv-lab-proj .n { display: block; font-size: 23px; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+.wv-lab-proj .l { display: block; font-size: 9px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; color: var(--text-subtle); margin-top: 3px; }
 .wv-lab-chev { color: var(--text-muted); font-size: 18px; }
 .wv-lab-sheet { display: none; padding: 0 4px 12px 54px; }
 .wv-lab-slot.open .wv-lab-sheet { display: block; }
@@ -140,6 +145,15 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
   .wv-page { padding: 12px; }
   .wv-lab-sheet { padding: 0 0 12px 12px; }
   .wv-lab-row { padding: 12px 0; }
+}
+/* Phones: usage, matchup, tags and the range cannot share one line without
+   crushing the bar into a sliver. The meta takes its own full-width line and
+   the MIN, bar, MAX line goes full width under it, so the bar stays a real
+   gauge. Nothing is hidden or clipped. */
+@media (max-width: 560px) {
+  .wv-lab-line2 { flex-wrap: wrap; row-gap: 5px; }
+  .wv-lab-line2 .wv-lab-meta { flex: 1 1 100%; flex-wrap: wrap; row-gap: 3px; overflow: visible; }
+  .wv-lab-line2 .wv-lab-rangeline { flex: 1 1 100%; min-width: 0; }
 }
 
 .wv-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
@@ -709,6 +723,8 @@ var wvLabOpenSlots = {{}};   // slot index -> true while its bench sheet is expa
 var wvLabLastChanges = []; // change records (slot idx, out name, in name) from the last action
 var wvLabLastAction = '';  // 'swap' | 'optimize' | 'upside': labels the change summary
 var wvLabLastNote = '';    // one-off note line (e.g. no-gain upside), cleared by the next action
+var wvLabNoGain = {{optimize: false, upside: false}};  // sticky no-gain state: disables
+                                                     // the matching button until the lineup changes
 var WV_LAB_SIMS = 2000;
 
 // In-game injury model for the Lab (single game). Per-position onset rates
@@ -914,7 +930,7 @@ function wvLabSkeleton() {{
       + '<div class="skeleton skeleton-line w-40" style="margin:0 0 8px"></div>'
       + '<div class="skeleton skeleton-line w-80" style="margin:0"></div>'
       + '</div>'
-      + '<div class="skeleton" style="width:36px;height:22px;flex:none"></div>'
+      + '<div class="skeleton" style="width:40px;height:32px;flex:none"></div>'
       + '</div>';
   }}
   function trow() {{
@@ -974,6 +990,7 @@ function wvLoadLab() {{
     wvLabLastChanges = [];
     wvLabLastAction = '';
     wvLabLastNote = '';
+    wvLabNoGain = {{optimize: false, upside: false}};
     wvLabLineup = JSON.parse(JSON.stringify(data.you.lineup));
     var pids = [];
     wvLabLineup.forEach(function(e) {{
@@ -1014,11 +1031,23 @@ function wvLabRangeBar(e) {{
   var PMAX = 34;
   function pct(x) {{ return Math.max(0, Math.min(100, x / PMAX * 100)); }}
   var l = pct(e.floor || 0), r = pct(e.ceiling || 0), d = pct(e.proj || 0);
-  return '<span class="wv-lab-rangeblock">'
+  return '<span class="wv-lab-rangeline">'
+    + '<span class="wv-lab-end"><em>MIN</em><span class="v">' + (e.floor || 0) + '</span></span>'
     + '<span class="wv-lab-range"><span class="fill" style="left:' + l + '%;width:' + Math.max(0, r - l) + '%"></span>'
     + '<span class="dot" style="left:' + d + '%"></span></span>'
-    + '<span class="wv-lab-range-ends"><span><em>MIN</em><span class="v">' + (e.floor || 0) + '</span></span>'
-    + '<span><em>MAX</em><span class="v">' + (e.ceiling || 0) + '</span></span></span></span>';
+    + '<span class="wv-lab-end"><em>MAX</em><span class="v">' + (e.ceiling || 0) + '</span></span></span>';
+}}
+
+// Meta-line usage stat: the season average of the position's key usage stat
+// (QB snap %, RB touches, WR/TE targets), the same convention as the
+// Start/Sit cards. Empty when the payload has no usage data for the player.
+function wvLabUsageLabel(e) {{
+  var avg = e.usage_avg;
+  if (avg == null || !(avg > 0)) return '';
+  if (e.usage_stat === 'snap_pct') return Math.round(avg) + '% snaps';
+  if (e.usage_stat === 'touches') return avg.toFixed(1) + ' touches/g';
+  if (e.usage_stat === 'targets') return avg.toFixed(1) + ' targets/g';
+  return '';
 }}
 
 function wvLabPosCls(slot) {{
@@ -1075,18 +1104,27 @@ function wvLabRenderHero() {{
       + '<span class="nums"><b>' + wvLabOppStats.median.toFixed(1) + '</b> · ' + Math.round(wvLabOppStats.p10) + '-' + Math.round(wvLabOppStats.p90) + '</span></div>' : '')
     + '</div><div class="wv-lab-scale">' + ticks() + '</div>'
     + '<div class="wv-lab-modes">'
-    + '<button type="button" class="wv-lab-btn" onclick="wvLabChaseUpside()">Chase upside</button>'
-    + '<button type="button" class="wv-lab-btn primary" onclick="wvLabOptimize()">Optimize lineup</button>'
+    + wvLabActionButtons()
     + '</div></div>';
 }}
 
+// Optimize / Chase upside buttons. When an action proves the lineup already
+// optimal (no improving swap / no ceiling gain), its button stays disabled
+// until the next lineup change, so a repeat tap is not a dead click.
+function wvLabActionButtons() {{
+  var chaseDis = wvLabNoGain.upside ? ' disabled title="Already your highest-ceiling lineup"' : '';
+  var optDis = wvLabNoGain.optimize ? ' disabled title="Already optimized"' : '';
+  var optLbl = wvLabNoGain.optimize ? 'Lineup optimized' : 'Optimize lineup';
+  return '<button type="button" class="wv-lab-btn" onclick="wvLabChaseUpside()"' + chaseDis + '>Chase upside</button>'
+    + '<button type="button" class="wv-lab-btn primary" onclick="wvLabOptimize()"' + optDis + '>' + optLbl + '</button>';
+}}
+
 function wvLabRenderSlots() {{
-  var totalProj = 0, i;
-  for (i = 0; i < wvLabLineup.length; i++) totalProj += wvLabLineup[i].proj || 0;
+  var i;
   var changed = {{}};
   for (i = 0; i < (wvLabLastChanges || []).length; i++) changed[wvLabLastChanges[i].si] = true;
   return wvLabLineup.map(function(e, si) {{
-    var share = totalProj > 0 ? Math.round(100 * (e.proj || 0) / totalProj) : 0;
+    var usage = wvLabUsageLabel(e);
     var bench = (e.bench || []).slice();
     bench.forEach(function(b) {{ b._d = wvLabSwapDelta(si, b); }});
     bench.sort(function(a, b) {{ return b._d - a._d; }});
@@ -1114,12 +1152,15 @@ function wvLabRenderSlots() {{
     return '<div class="' + slotCls + '" data-si="' + si + '">'
       + '<button type="button" class="wv-lab-row" onclick="wvLabToggleSlot(' + si + ')">'
       + '<span class="wv-lab-pos' + wvLabPosCls(e.slot || e.pos) + '">' + wvLabEsc(e.slot || e.pos) + '</span>'
-      + '<span class="wv-lab-main"><span class="wv-lab-name">' + wvLabEsc(e.name) + '</span>'
-      + '<span class="wv-lab-sub">' + wvLabRangeBar(e)
-      + '<span class="wv-lab-meta"><span>' + share + '% share</span>'
+      + '<span class="wv-lab-main">'
+      + '<span class="wv-lab-line1"><span class="wv-lab-name">' + wvLabEsc(e.name) + '</span></span>'
+      + '<span class="wv-lab-line2"><span class="wv-lab-meta">'
+      + (usage ? '<span>' + usage + '</span>' : '')
       + (e.matchup ? '<span>' + wvLabEsc(e.matchup) + '</span>' : '')
-      + wvLabTags(e) + '</span></span>'
-      + '<span class="wv-lab-proj"><span class="n">' + (e.proj || 0).toFixed(1) + '</span><br><span class="l">PROJ</span></span>'
+      + wvLabTags(e) + '</span>'
+      + wvLabRangeBar(e)
+      + '</span></span>'
+      + '<span class="wv-lab-proj"><span class="n">' + (e.proj || 0).toFixed(1) + '</span><span class="l">PROJ</span></span>'
       + (bench.length ? '<span class="wv-lab-chev">›</span>' : '<span class="wv-lab-chev" style="visibility:hidden">›</span>')
       + '</button>' + sheet + '</div>';
   }}).join('');
@@ -1169,82 +1210,162 @@ function wvLabToggleSlot(si) {{
   }}
 }}
 
-function wvLabSwap(si, bi) {{
+// Bench-shaped copy of a starter entry: what a demoted starter becomes.
+function wvLabBenchEntry(e) {{
+  return {{ player_id: e.player_id, name: e.name, pos: e.pos, slot: 'BN',
+    proj: e.proj, floor: e.floor, ceiling: e.ceiling,
+    matchup: e.matchup, tags: e.tags, profile: e.profile,
+    usage_stat: e.usage_stat, usage_avg: e.usage_avg }};
+}}
+
+// True when a player of the given position may sit on the slot's bench.
+// Missing/empty eligibility means unrestricted (matches the payload builder).
+function wvLabSlotEligible(slotEntry, pos) {{
+  var el = slotEntry.eligible;
+  return !el || !el.length || el.indexOf(pos) >= 0;
+}}
+
+function wvLabBenchHas(bench, pid) {{
+  for (var i = 0; i < bench.length; i++) if (bench[i].player_id === pid) return true;
+  return false;
+}}
+
+// Insert keeping the payload's projection-desc bench order.
+function wvLabBenchInsert(bench, entry) {{
+  var i = 0;
+  while (i < bench.length && (bench[i].proj || 0) >= (entry.proj || 0)) i++;
+  bench.splice(i, 0, entry);
+}}
+
+// Promote bench[bi] of slot si into the starting lineup. One player, one
+// start: the promoted player is pulled from every other slot's bench (the
+// same bench arm can no longer start twice), and the demoted starter takes
+// a bench seat in each slot they are eligible for. Returns the change
+// record {{si, out, inn}}; callers re-render once.
+function wvLabApplySwap(si, bi) {{
   var slot = wvLabLineup[si];
-  var b = slot.bench[bi];
-  var outName = slot.name, inName = b.name;
-  var d = Math.round((wvLabSwapDelta(si, b)) * 100);
-  slot.bench[bi] = {{
-    player_id: slot.player_id, name: slot.name, pos: slot.pos, slot: slot.slot,
-    proj: slot.proj, floor: slot.floor, ceiling: slot.ceiling,
-    matchup: slot.matchup, tags: slot.tags, profile: slot.profile, bench: []
-  }};
+  var b = (slot.bench || [])[bi];
+  var outName = slot.name, inName = b.name, pid = b.player_id;
+  var i, k;
+  for (i = 0; i < wvLabLineup.length; i++) {{
+    if (i === si) continue;
+    var ob = wvLabLineup[i].bench || [];
+    var kept = [];
+    for (k = 0; k < ob.length; k++) if (ob[k].player_id !== pid) kept.push(ob[k]);
+    var demoted = wvLabBenchEntry(slot);
+    if (wvLabSlotEligible(wvLabLineup[i], demoted.pos) && !wvLabBenchHas(kept, demoted.player_id)) {{
+      wvLabBenchInsert(kept, demoted);
+    }}
+    wvLabLineup[i].bench = kept;
+  }}
+  var sb = (slot.bench || []).slice();
+  sb[bi] = wvLabBenchEntry(slot);
   var nb = {{ player_id: b.player_id, name: b.name, pos: b.pos, slot: slot.slot,
     proj: b.proj, floor: b.floor, ceiling: b.ceiling,
-    matchup: b.matchup, tags: b.tags, profile: b.profile }};
-  delete nb._d;
+    matchup: b.matchup, tags: b.tags, profile: b.profile,
+    usage_stat: b.usage_stat, usage_avg: b.usage_avg,
+    eligible: slot.eligible, bench: sb }};
   wvLabLineup[si] = nb;
-  nb.bench = slot.bench;
+  return {{si: si, out: outName, inn: inName}};
+}}
+
+// A lineup change clears both sticky no-gain states.
+function wvLabClearNoGain() {{
+  wvLabNoGain.optimize = false;
+  wvLabNoGain.upside = false;
+}}
+
+// Ease the first changed row into view. An instant jump is disorienting
+// right after the section deliberately preserves scroll across re-renders;
+// smooth motion (or none under prefers-reduced-motion) keeps the user's
+// place while still revealing the change.
+function wvLabScrollChangedIntoView(si) {{
+  var first = document.querySelector('.wv-lab-slot[data-si="' + si + '"]');
+  if (!first || !first.scrollIntoView) return;
+  var smooth = true;
+  try {{ smooth = !window.matchMedia('(prefers-reduced-motion: reduce)').matches; }} catch (_) {{}}
+  try {{ first.scrollIntoView({{block: 'nearest', behavior: smooth ? 'smooth' : 'auto'}}); }} catch (_) {{}}
+}}
+
+function wvLabSwap(si, bi) {{
+  var change = wvLabApplySwap(si, bi);
   wvLabResult = wvLabEvaluate(wvLabLineup);
   wvLabLastAction = 'swap';
   wvLabLastNote = '';
-  wvLabLastChanges = [{{si: si, out: outName, inn: inName}}];
+  wvLabClearNoGain();
+  wvLabLastChanges = [change];
   wvLabOpenSlots[si] = true;  // keep the swapped slot expanded through the render
   wvRenderLab();
 }}
 
-// Chase upside: one pass, highest ceiling wins each slot. Swaps in the
-// top-ceiling bench option wherever it beats the starter's ceiling by more
-// than 0.05. Ceiling gains are independent per slot, so no re-baseline loop
-// is needed; one wvLabEvaluate at the end refreshes the hero.
+// Collapse repeated swaps of one slot into a single record: the player who
+// started there originally out, the final starter in. A slot that ends where
+// it began drops out entirely, so a summary never names an intermediate
+// player as a starter or the same player as starting twice.
+function wvLabCoalesceChanges(changes) {{
+  var bySi = {{}}, order = [], i, out = [];
+  for (i = 0; i < changes.length; i++) {{
+    var c = changes[i];
+    if (!bySi[c.si]) {{ bySi[c.si] = {{si: c.si, out: c.out, inn: c.inn}}; order.push(c.si); }}
+    else bySi[c.si].inn = c.inn;
+  }}
+  for (i = 0; i < order.length; i++) {{
+    var r = bySi[order[i]];
+    if (r.inn !== r.out) out.push(r);
+  }}
+  out.sort(function(a, b) {{ return a.si - b.si; }});
+  return out;
+}}
+
+// Chase upside: greedily apply the largest ceiling gain until no bench
+// option beats its slot's starter by more than 0.05. Every swap re-seats
+// the demoted starter on the other slots' benches, so gains are re-scanned
+// after each swap; a bench player can only be promoted once because
+// wvLabApplySwap pulls them from every other bench. Total starter ceiling
+// strictly rises with each swap, so the loop terminates; one wvLabEvaluate
+// at the end refreshes the hero.
 function wvLabChaseUpside() {{
-  var changes = [], si, bi, ci;
-  for (si = 0; si < wvLabLineup.length; si++) {{
-    var slot = wvLabLineup[si];
-    var bench = slot.bench || [];
-    var top = null, topBi = -1;
-    for (bi = 0; bi < bench.length; bi++) {{
-      if (!top || (bench[bi].ceiling || 0) > (top.ceiling || 0)) {{
-        top = bench[bi]; topBi = bi;
+  var changes = [], guard = 0, si, bi;
+  var best = null;
+  while (guard++ < 64) {{
+    best = null;
+    for (si = 0; si < wvLabLineup.length; si++) {{
+      var bench = wvLabLineup[si].bench || [];
+      for (bi = 0; bi < bench.length; bi++) {{
+        var gain = (bench[bi].ceiling || 0) - (wvLabLineup[si].ceiling || 0);
+        if (gain > 0.05 && (!best || gain > best.gain)) best = {{ si: si, bi: bi, gain: gain }};
       }}
     }}
-    if (top && (top.ceiling || 0) - (slot.ceiling || 0) > 0.05) {{
-      changes.push({{si: si, out: slot.name, inn: top.name}});
-      slot.bench[topBi] = {{
-        player_id: slot.player_id, name: slot.name, pos: slot.pos, slot: slot.slot,
-        proj: slot.proj, floor: slot.floor, ceiling: slot.ceiling,
-        matchup: slot.matchup, tags: slot.tags, profile: slot.profile, bench: []
-      }};
-      var nb = {{ player_id: top.player_id, name: top.name, pos: top.pos, slot: slot.slot,
-        proj: top.proj, floor: top.floor, ceiling: top.ceiling,
-        matchup: top.matchup, tags: top.tags, profile: top.profile }};
-      wvLabLineup[si] = nb;
-      nb.bench = slot.bench;
-    }}
+    if (!best) break;
+    changes.push(wvLabApplySwap(best.si, best.bi));
   }}
   wvLabLastAction = 'upside';
   wvLabLastNote = '';
   if (!changes.length) {{
-    // No ceiling gains anywhere: say so instead of doing nothing silently.
+    // No ceiling gains anywhere: say so and park the button until the lineup
+    // changes, instead of a dead-feeling second click.
     wvLabLastNote = 'Already your highest-ceiling lineup.';
+    wvLabNoGain.upside = true;
     wvLabLastChanges = [];
     wvRenderLab();
     return;
   }}
+  wvLabClearNoGain();
+  if (best === null) wvLabNoGain.upside = true;  // loop ended: no gains remain
   wvLabResult = wvLabEvaluate(wvLabLineup);
-  wvLabLastChanges = changes;
-  for (ci = 0; ci < changes.length; ci++) wvLabOpenSlots[changes[ci].si] = true;
+  wvLabLastChanges = wvLabCoalesceChanges(changes);
+  for (var ci = 0; ci < wvLabLastChanges.length; ci++) wvLabOpenSlots[wvLabLastChanges[ci].si] = true;
   wvRenderLab();
-  // Bring the first changed row into view so the result is unmistakable.
-  var first = document.querySelector('.wv-lab-slot[data-si="' + changes[0].si + '"]');
-  if (first && first.scrollIntoView) {{ try {{ first.scrollIntoView({{block: 'nearest'}}); }} catch (_) {{}} }}
+  // Ease the first changed row into view so the result is unmistakable.
+  if (wvLabLastChanges.length) wvLabScrollChangedIntoView(wvLabLastChanges[0].si);
 }}
 
 function wvLabOptimize() {{
-  var applied = 0, guard = 0, si, bi, ci;
+  var guard = 0, si, bi, ci;
   var changes = [];
+  var best = null;
   while (guard++ < 12) {{
-    var best = null;
+    best = null;
     for (si = 0; si < wvLabLineup.length; si++) {{
       var bench = wvLabLineup[si].bench || [];
       for (bi = 0; bi < bench.length; bi++) {{
@@ -1254,31 +1375,28 @@ function wvLabOptimize() {{
     }}
     if (!best) break;
     // apply without re-render until the end
-    var slot = wvLabLineup[best.si], b = slot.bench[best.bi];
-    changes.push({{si: best.si, out: slot.name, inn: b.name}});
-    slot.bench[best.bi] = {{
-      player_id: slot.player_id, name: slot.name, pos: slot.pos, slot: slot.slot,
-      proj: slot.proj, floor: slot.floor, ceiling: slot.ceiling,
-      matchup: slot.matchup, tags: slot.tags, profile: slot.profile, bench: []
-    }};
-    var nb = {{ player_id: b.player_id, name: b.name, pos: b.pos, slot: slot.slot,
-      proj: b.proj, floor: b.floor, ceiling: b.ceiling,
-      matchup: b.matchup, tags: b.tags, profile: b.profile, bench: slot.bench }};
-    wvLabLineup[best.si] = nb;
+    changes.push(wvLabApplySwap(best.si, best.bi));
     wvLabResult = wvLabEvaluate(wvLabLineup);  // re-baseline for the next pick
-    applied++;
   }}
   wvLabLastAction = 'optimize';
   wvLabLastNote = '';
-  wvLabLastChanges = changes;
-  for (ci = 0; ci < changes.length; ci++) wvLabOpenSlots[changes[ci].si] = true;
-  wvRenderLab();
-  if (changes.length) {{
-    // Bring the first changed row into view so the result of Optimize is
-    // unmistakable.
-    var first = document.querySelector('.wv-lab-slot[data-si="' + changes[0].si + '"]');
-    if (first && first.scrollIntoView) {{ try {{ first.scrollIntoView({{block: 'nearest'}}); }} catch (_) {{}} }}
+  if (!changes.length) {{
+    // Already optimal: say so and park the button until the lineup changes,
+    // instead of a dead-feeling second click.
+    wvLabLastNote = 'Already optimized. No swaps improve your win probability.';
+    wvLabNoGain.optimize = true;
+    wvLabLastChanges = [];
+    wvRenderLab();
+    return;
   }}
+  wvLabClearNoGain();
+  if (best === null) wvLabNoGain.optimize = true;  // loop ended: lineup is optimal
+  wvLabLastChanges = wvLabCoalesceChanges(changes);
+  for (ci = 0; ci < wvLabLastChanges.length; ci++) wvLabOpenSlots[wvLabLastChanges[ci].si] = true;
+  wvRenderLab();
+  // Ease the first changed row into view so the result of Optimize is
+  // unmistakable.
+  if (wvLabLastChanges.length) wvLabScrollChangedIntoView(wvLabLastChanges[0].si);
 }}
 
 
