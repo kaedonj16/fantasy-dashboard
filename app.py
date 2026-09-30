@@ -5068,7 +5068,13 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             return f"<a class='{cls}'{aria} href='{href}'>{label}</a>"
 
         def simple_dropdown(label: str, items: list, active_keys: list, dropdown_id: str = "playersNavDropdown") -> str:
-            is_active = active in active_keys
+            # The parent pill is active whenever the current page is one of its
+            # own items, not only when a caller remembered to list the key in
+            # active_keys: the hand-kept lists drifted (Advanced Metrics and
+            # Trade Hub were items whose parents never lit up). active_keys
+            # stays as an explicit extra, never the only source.
+            item_keys = {item_key for _label, _href, item_key in items}
+            is_active = active in active_keys or active in item_keys
             btn_cls = "nav-pill active" if is_active else "nav-pill"
             item_html = ""
             for item_label, href, item_key in items:
@@ -5096,7 +5102,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
                 ("Trade Calculator", "/trade", "trade"),
                 ("Trade Hub <span class='nav-pro-badge'>PRO</span>", "/trade?tab=suggestions", "trade-suggestions"),
                 ("Trade Database", "/trade-database", "trade-database"),
-            ], ["trade", "trade-database"], "tradesNavDropdown"),
+            ], ["trade", "trade-suggestions", "trade-database"], "tradesNavDropdown"),
             simple_dropdown("Players", [
                 ("Player Rankings", "/players", "players"),
                 ("Compare Players", "/compare", "compare"),
@@ -5105,7 +5111,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
                 ("NFL Teams", "/nfl-teams", "nfl-teams"),
                 (f"Breakout Engine <span class='nav-pro-badge'>PRO</span>{_bo_new_badge}", "/breakouts", "breakouts"),
                 ("Prospects", "/prospects", "prospects"),
-            ], ["players", "prospects", "breakouts", "top-movers", "compare", "nfl-teams"], "playersNavDropdown"),
+            ], ["players", "prospects", "breakouts", "top-movers", "compare", "advanced-metrics", "nfl-teams"], "playersNavDropdown"),
             simple_dropdown("Draft", [
                 ("Draft Room", "/draft", "draft"),
                 ("Cheat Sheet", "/draft/cheat-sheet", "draft-cheat-sheet"),
@@ -5188,7 +5194,11 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     def nav_pill_dropdown(label: str, items: list, active_keys: list, dropdown_id: str = "playersNavDropdown",
                           btn_extra_cls: str = "") -> str:
         """Build a dropdown nav pill. items = list of (label, endpoint_or_none, key, disabled, href_suffix)."""
-        is_active = active in active_keys
+        # Same drift guard as the global nav's simple_dropdown: a page that is
+        # an item of this dropdown always lights the parent pill, whether or
+        # not the caller's active_keys list remembered its key.
+        item_keys = {item_tuple[2] for item_tuple in items if len(item_tuple) > 2}
+        is_active = active in active_keys or active in item_keys
         btn_cls = "nav-pill active" if is_active else "nav-pill"
         if btn_extra_cls:
             btn_cls += " " + btn_extra_cls
@@ -5238,7 +5248,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         ("Trade Hub <span class='nav-pro-badge'>PRO</span>", "trade.page_trade", "trade-suggestions", False,
          "?tab=suggestions"),
         ("Trade Database", "trade.page_trade_database", "trade-database", False),
-    ], ["trade", "trade-database"], "tradesNavDropdown"))
+    ], ["trade", "trade-suggestions", "trade-database"], "tradesNavDropdown"))
     # Weekly dropdown is available as soon as the draft is done
     draft_ended = has_draft_ended(league_id, platform, season)
     if draft_ended or not offseason_mode:
@@ -5297,7 +5307,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         ("NFL Teams", "league_pages.page_nfl_teams", "nfl-teams", False),
         (f"Breakout Engine <span class='nav-pro-badge'>PRO</span>{_bo_new_badge}", "page_breakouts", "breakouts", False),
         ("Prospect Rankings", "page_prospects", "prospects", False),
-    ], ["players", "prospects", "breakouts", "top-movers", "compare", "nfl-teams"], "playersNavDropdown"))
+    ], ["players", "prospects", "breakouts", "top-movers", "compare", "advanced-metrics", "nfl-teams"], "playersNavDropdown"))
     # Keeper Assistant only applies to keeper leagues; hide it for dynasty and
     # plain redraft leagues.
     _draft_items = [
