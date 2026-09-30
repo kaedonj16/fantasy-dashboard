@@ -3764,7 +3764,7 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
         aria = " aria-current='page'" if on else ""
         items += (
             f"<a class='{cls}'{aria} href='{_href(ep, suffix)}'>"
-            f"{_nav_icon(icon, size=22)}<span class='br-tabbar-lbl'>{label}</span></a>"
+            f"{_nav_icon(icon, size=24)}<span class='br-tabbar-lbl'>{label}</span></a>"
         )
     _more_live_cls = " br-more-live" if rz_live else ""
     _more_dot = "<span class='rz-mnav-dot' aria-hidden='true'></span>" if rz_live else ""
@@ -3775,7 +3775,7 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
     items += (
         f"<button type='button' class='br-tabbar-item br-more-tab{_more_live_cls}{_more_active}' id='brMoreTab' "
         f"aria-label='More navigation; current page: {_DOCK_LABELS.get(active_norm, active_norm.replace('-', ' ').title())}'{_more_current} aria-haspopup='true' aria-expanded='false'>"
-        f"{_nav_icon('more', size=22)}<span class='br-tabbar-lbl'>More</span>{_more_dot}</button>"
+        f"{_nav_icon('more', size=24)}<span class='br-tabbar-lbl'>More</span>{_more_dot}</button>"
     )
     # Sliding active-pill indicator: --n tabs wide, sitting at slot --i. Rendered
     # at the active slot so it rests correctly with no flash; app.js animates a
@@ -3895,7 +3895,6 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
     )
     tools_html = (
         f"{refresh_row}"
-        + _sheet_action_row("What's New", "whats-new", "bell") +
         "<button type='button' class='br-sheet-link br-sheet-category' data-br-action='help-tours' "
         "aria-controls='brMorePanel-help-tours'><span>Help &amp; Tours</span>"
         "<span class='br-sheet-chevron' aria-hidden='true'>&#8250;</span></button>"
@@ -4038,12 +4037,12 @@ def _mobile_nav_guest(active: str) -> str:
         aria = " aria-current='page'" if on else ""
         items += (
             f"<a class='{cls}'{aria} href='{href}'>"
-            f"{_nav_icon(icon, size=22)}<span class='br-tabbar-lbl'>{label}</span></a>"
+            f"{_nav_icon(icon, size=24)}<span class='br-tabbar-lbl'>{label}</span></a>"
         )
     items += (
         "<button type='button' class='br-tabbar-item br-more-tab' id='brMoreTab' "
         "aria-label='More' aria-haspopup='true' aria-expanded='false'>"
-        f"{_nav_icon('more', size=22)}<span class='br-tabbar-lbl'>More</span></button>"
+        f"{_nav_icon('more', size=24)}<span class='br-tabbar-lbl'>More</span></button>"
     )
     n_tabs = len(_GUEST_DOCK_TABS) + 1
     ind_hidden = "" if active_index >= 0 else " data-hidden='1'"
@@ -4146,7 +4145,6 @@ def _mobile_nav_guest(active: str) -> str:
         f"{find_html}<h3 class='br-sheet-h'>Navigate</h3><div class='br-sheet-group'>{categories}{portfolio_link or portfolio_fallback}</div>"
         "<div class='br-sheet-utility-divider' aria-hidden='true'></div>"
         "<h3 class='br-sheet-h'>Tools</h3><div class='br-sheet-group'>"
-        + _sheet_action_row("What's New", "whats-new", "bell") +
         "<button type='button' class='br-sheet-link br-sheet-category' data-br-sheet-target='learn' aria-controls='brMorePanel-learn'>"
         "<span>Help</span><span class='br-sheet-chevron' aria-hidden='true'>&#8250;</span></button></div>"
         "<div class='br-sheet-changelog-mount' id='brSheetChangelog'></div>"
@@ -5537,6 +5535,22 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         "  <div class='nav-right'>"
         f"    {utility_bar}"
         "  </div>"
+        # Mobile-only search shortcut: on phones the utility bar (with the full
+        # search input) hides and the dock takes over, so this floating button
+        # keeps search one tap away, top-right. No-ops where the search screen
+        # isn't rendered.
+        f"  <button type='button' class='br-top-search' aria-label='Search players'"
+        " onclick=\"window.brOpenSearch&&window.brOpenSearch()\">"
+        f"    {_nav_icon('search', size=20)}"
+        "  </button>"
+        # Mobile-only notifications shortcut: mirrors the search button. Opens
+        # Recent Updates directly as a floating panel under the top bar (bound
+        # in app.js next to the desktop changelog bell). No-ops where the
+        # changelog isn't rendered.
+        f"  <button type='button' class='br-top-notif' aria-label='Notifications'>"
+        f"    {_nav_icon('bell', size=20)}"
+        "    <span class='br-top-notif-dot' id='brTopNotifDot' hidden></span>"
+        "  </button>"
         "</nav>"
         f"{signin_modal}"
         f"{season_active_flag}"
