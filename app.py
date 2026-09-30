@@ -859,11 +859,18 @@ def _analytics_pageview(response):
             response.status_code,
             request.headers.get("User-Agent", ""),
         ):
+            _pageview_props = None
+            _ref_host = _analytics.external_ref_host(
+                request.headers.get("Referer", ""), request.host
+            )
+            if _ref_host:
+                _pageview_props = {"ref_host": _ref_host}
             _analytics.track_event(
                 _analytics.EVENT_PAGEVIEW,
                 account_id=_analytics.account_id_from_session(),
                 session_id=_analytics.ensure_anon_session_id(),
                 path=request.path,
+                props=_pageview_props,
             )
     except Exception:
         logger.debug("[analytics] pageview hook failed", exc_info=True)

@@ -308,6 +308,180 @@ def admin_login_submit():
 
 # ── Route ─────────────────────────────────────────────────────────────────────
 
+def _stat_table(rows):
+    """rows: list of (label, value) already-formatted strings."""
+    if not rows:
+        return ""
+    trs = "".join(
+        "<tr><th scope='row'>%s</th><td>%s</td></tr>"
+        % (html.escape(str(label)), html.escape(str(value)))
+        for label, value in rows
+    )
+    return '<div class="tablewrap"><table><tbody>%s</tbody></table></div>' % trs
+
+
+def _rank_table(headers, rows):
+    """A stats table with one label column plus numeric columns."""
+    if not rows:
+        return '<p class="muted">No data yet.</p>'
+    ths = "".join("<th>%s</th>" % html.escape(str(h)) for h in headers)
+    trs = []
+    for r in rows:
+        cells = "<th scope='row'>%s</th>" % html.escape(str(r[0])) + "".join(
+            "<td>%s</td>" % format(v, ",") for v in r[1:]
+        )
+        trs.append("<tr>%s</tr>" % cells)
+    return (
+        '<div class="tablewrap"><table><thead><tr>%s</tr></thead>'
+        "<tbody>%s</tbody></table></div>" % (ths, "".join(trs))
+    )
+
+
+def _paywall_html(summary) -> str:
+    if summary is None:
+        return "<p class='muted'>Paywall data unavailable.</p>"
+    parts = [
+        "<p class='funnel-line'>"
+        f"<strong>{summary['total_views']:,}</strong> paywall views from "
+        f"<strong>{summary['viewers']:,}</strong> viewers &rarr; "
+        f"<strong>{summary['checkout_viewers']:,}</strong> reached checkout "
+        f"({summary['checkout_pct']}%) &rarr; "
+        f"<strong>{summary['subscribed_viewers']:,}</strong> subscribed "
+        f"({summary['subscribed_pct']}%)"
+        "</p>"
+    ]
+    parts.append(
+        "<h3 class='subhead'>Views by surface</h3>"
+        + _rank_table(
+            ["Surface", "Views", "Viewers"],
+            [(r["surface"], r["views"], r["viewers"]) for r in summary.get("by_surface", [])],
+        )
+    )
+    if summary.get("by_metric"):
+        parts.append(
+            "<h3 class='subhead'>Views by locked metric</h3>"
+            + _rank_table(
+                ["Metric", "Views", "Viewers"],
+                [(r["metric"], r["views"], r["viewers"]) for r in summary["by_metric"]],
+            )
+        )
+    return "".join(parts)
+
+
+def _traffic_html(sources, landings) -> str:
+    if sources is None and landings is None:
+        return "<p class='muted'>Traffic source data unavailable.</p>"
+    parts = []
+    if sources is not None:
+        parts.append(
+            "<h3 class='subhead'>By referrer</h3>"
+            + _rank_table(
+                ["Source", "Sessions", "Engaged", "Signed in"],
+                [(r["source"], r["sessions"], r["engaged"], r["signed_in"]) for r in sources],
+            )
+        )
+    if landings is not None:
+        parts.append(
+            "<h3 class='subhead'>Top landing pages</h3>"
+            + _rank_table(
+                ["Landing path", "Sessions", "Engaged"],
+                [(r["path"], r["sessions"], r["engaged"]) for r in landings],
+            )
+        )
+    return "".join(parts)
+
+
+def _activation_html(cohort) -> str:
+    if cohort is None:
+        return "<p class='muted'>Activation cohort unavailable.</p>"
+    parts = [
+        _stat_table([
+            ("Signups", f"{cohort['signups']:,}"),
+            ("Linked within 24 hours", f"{cohort['linked_24h']:,} ({cohort['pct_24h']}%)"),
+            ("Linked within 7 days", f"{cohort['linked_7d']:,} ({cohort['pct_7d']}%)"),
+            ("Linked at any point", f"{cohort['linked_ever']:,} ({cohort['pct_ever']}%)"),
+        ])
+    ]
+    if cohort.get("by_provider"):
+        parts.append(
+            "<h3 class='subhead'>First league provider (linked within 7 days)</h3>"
+            + _rank_table(
+                ["Provider", "Accounts"],
+                [(r["provider"], r["count"]) for r in cohort["by_provider"]],
+            )
+        )
+    return "".join(parts)
+
+
+def _revenue_html(rev) -> str:
+    if rev is None:
+        return "<p class='muted'>Revenue data unavailable.</p>"
+    return _stat_table([
+        ("Checkout started (unique people)", f"{rev['checkout_identities']:,}"),
+        ("PRO subscribed (events)", f"{rev['subscribed_events']:,}"),
+        ("PRO subscribed (unique people)", f"{rev['subscribed_identities']:,}"),
+        ("Checkout to subscribed", f"{rev['checkout_conversion_pct']}%"),
+        ("PRO cancelled (events)", f"{rev['cancelled_events']:,}"),
+        ("Currently active PRO subscriptions", f"{rev['active_pro_subscriptions']:,}"),
+        ("New PRO subscriptions (window)", f"{rev['new_pro_subscriptions']:,}"),
+    ])
+
+
+def _feature_ranking_table(rankings) -> str:
+    if rankings is None:
+        return "<p class='muted'>Feature ranking unavailable.</p>"
+    if rankings:
+        return _rank_table(
+            ["Feature", "Uses", "Unique users"],
+            [(r["event"], r["uses"], r["users"]) for r in rankings],
+        )
+    return "<p class='muted'>No feature events yet.</p>"
+
+
+@analytics_bp.route("/api/analytics/paywall", methods=["POST"])
+@limiter.limit("60 per minute")
+def api_paywall_viewed():
+    """Client beacon: a paywall or upsell nudge was displayed.
+
+    Body: {"surface": <one of PAYWALL_SURFACES>, "metric"?: str,
+    "path": "/..."}. Always 204: telemetry must never break the page,
+    and invalid payloads are dropped silently rather than recorded.
+    """
+    import dashboard_services.analytics as _a
+
+    try:
+        payload = request.get_json(silent=True) or {}
+    except Exception:
+        payload = {}
+    if not isinstance(payload, dict):
+        return "", 204
+    surface = payload.get("surface")
+    path = payload.get("path")
+    metric = payload.get("metric")
+    if surface not in _a.PAYWALL_SURFACES:
+        return "", 204
+    if (
+        not isinstance(path, str)
+        or not path.startswith("/")
+        or len(path) > 512
+    ):
+        return "", 204
+    props: dict = {"surface": surface}
+    if isinstance(metric, str) and metric.strip():
+        props["metric"] = metric.strip()[:64]
+    try:
+        _a.track_event(
+            _a.EVENT_PAYWALL_VIEWED,
+            account_id=_a.account_id_from_session(),
+            session_id=_a.ensure_anon_session_id(),
+            path=path,
+            props=props,
+        )
+    except Exception:
+        pass
+    return "", 204
+
+
 @analytics_bp.route("/admin/analytics")
 def admin_analytics():
     if not is_admin():
@@ -343,6 +517,41 @@ def admin_analytics():
         logger.exception("[analytics] dau breakdown failed")
         breakdown = None
         breakdown_paths = []
+
+    # Owner metrics: each fetched in isolation (same pattern as the
+    # breakdown) so one failing query degrades only its own section.
+    try:
+        feature_ranking = _a.feature_usage_ranking()
+    except Exception:
+        logger.exception("[analytics] feature ranking failed")
+        feature_ranking = None
+    try:
+        signed_in_retention = _a.account_retention()
+    except Exception:
+        logger.exception("[analytics] account retention failed")
+        signed_in_retention = None
+    try:
+        traffic = _a.traffic_sources()
+        landings = _a.top_landing_paths()
+    except Exception:
+        logger.exception("[analytics] traffic sources failed")
+        traffic = None
+        landings = None
+    try:
+        paywall = _a.paywall_summary()
+    except Exception:
+        logger.exception("[analytics] paywall summary failed")
+        paywall = None
+    try:
+        cohort = _a.activation_cohort()
+    except Exception:
+        logger.exception("[analytics] activation cohort failed")
+        cohort = None
+    try:
+        revenue = _a.revenue_summary()
+    except Exception:
+        logger.exception("[analytics] revenue summary failed")
+        revenue = None
 
     empty_note = (
         "Event collection just started, so these charts fill in over the coming days. "
@@ -380,12 +589,42 @@ def admin_analytics():
                  "anonymous visitors), last 12 weeks."),
         _section("Signups per day", _bars_svg(signup_pairs, bar_color="#f5a623"),
                  "New accounts from the accounts table, last 30 days."),
+        _section("Most used features (last 30 days)",
+                 _feature_ranking_table(feature_ranking),
+                 "Non-pageview events ranked by uses. Unique users counts "
+                 "accounts when signed in, else sessions."),
         _section("Feature usage by week", _feature_table(usage),
                  "Explicit product events per week, last 8 weeks. Pageviews excluded."),
         _section("Week-over-week return", _retention_table(retention),
                  "Share of each week's active users who were also active the prior week."),
+        _section("Signed-in retention",
+                 _retention_table(signed_in_retention)
+                 if signed_in_retention is not None
+                 else '<p class="muted">Signed-in retention unavailable.</p>',
+                 "Same return rate for signed-in accounts only (no anonymous "
+                 "sessions), New York weeks, last 9 weeks."),
         _section("Funnel: visitor to PRO", _funnel_html(funnel),
                  "Period totals for the last 30 days. Not a strict cohort funnel."),
+        _section("Activation: signup to league linked (cohort)",
+                 _activation_html(cohort),
+                 "Accounts created in the last 30 days and how quickly they "
+                 "linked a first league. Unlike the funnel above, every stage "
+                 "counts the same accounts. Caveat: league rows that predate "
+                 "the added_at backfill carry the migration date, so old links "
+                 "can read as linked on that date."),
+        _section("Revenue", _revenue_html(revenue),
+                 "Last 30 days. Subscription counts come from the per-league "
+                 "subscription table. MRR is not shown: stored subscription "
+                 "rows carry no price; the amount charged lives in Stripe."),
+        _section("Paywalls", _paywall_html(paywall),
+                 "Last 30 days. One view is one plan-modal open or one inline "
+                 "nudge render. Conversion counts a viewer whose checkout or "
+                 "subscription came after their first view."),
+        _section("Traffic sources", _traffic_html(traffic, landings),
+                 "First pageview of each session in the last 30 days. "
+                 "Referrers are recorded host-only; sessions with no external "
+                 "referrer are direct. Engaged means 2+ pageviews and never "
+                 "signed in."),
     ])
 
     generated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
@@ -405,6 +644,8 @@ def admin_analytics():
   .card { background: #fff; border: 1px solid #e3e6ec; border-radius: 12px;
           padding: 18px 20px; margin-bottom: 18px; }
   .card h2 { font-size: 16px; margin: 0 0 10px; }
+  .card h3.subhead { font-size: 13px; margin: 16px 0 6px; }
+  .funnel-line { font-size: 14px; margin: 0 0 8px; }
   .muted { color: #7a8398; font-size: 12px; }
   .chart { width: 100%%; height: auto; display: block; }
   .chart rect { fill: #4f8ff7; }
