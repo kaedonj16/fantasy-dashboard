@@ -752,7 +752,20 @@ function wkActivateTab(tab) {{
   if (!pageLayout || !main) return;
   var mq = window.matchMedia('(min-width: 1100px)');
 
-  function toDesktop() {{
+  // Initial tab for the first reflow: honor ?tab= when it names a real tab
+  // (so the tab survives full-page reloads, including the service-worker
+  // nav-fresh auto-reload), otherwise fall back to the per-mode default.
+  function wkValidTabName(name) {{
+    if (!name) return null;
+    return tabs.querySelector('.tab-btn[data-tab="' + name + '"]') ? name : null;
+  }}
+  function wkCurrentTabName() {{
+    var b = tabs.querySelector('.tab-btn.active');
+    return wkValidTabName(b ? b.getAttribute('data-tab') : null);
+  }}
+  var initialTab = wkValidTabName(new URLSearchParams(window.location.search).get('tab'));
+
+  function toDesktop(tab) {{
     if (tabs.__mode === 'desktop') return;
     var bar   = tabs.querySelector('.tab-bar');
     var mPanel = tabs.querySelector('.tab-panel[data-tab="matchups"]');
@@ -778,12 +791,12 @@ function wkActivateTab(tab) {{
     }}
     var mBtn = bar.querySelector('.tab-btn[data-tab="matchups"]');
     if (mBtn) mBtn.style.display = 'none';
-    wkActivateTab('scorers');
+    wkActivateTab(tab || initialTab || 'scorers');
     tabs.classList.add('wk-desktop');
     tabs.__mode = 'desktop';
   }}
 
-  function toMobile() {{
+  function toMobile(tab) {{
     if (tabs.__mode === 'mobile') return;
     var bar    = tabs.querySelector('.tab-bar');
     var mPanel = tabs.querySelector('.tab-panel[data-tab="matchups"]');
@@ -804,15 +817,20 @@ function wkActivateTab(tab) {{
       var mBtn = bar.querySelector('.tab-btn[data-tab="matchups"]');
       if (mBtn) mBtn.style.display = '';
     }}
-    wkActivateTab({show_matchups_js} ? 'matchups' : 'scorers');
+    wkActivateTab(tab || initialTab || ({show_matchups_js} ? 'matchups' : 'scorers'));
     tabs.classList.remove('wk-desktop');
     tabs.__mode = 'mobile';
   }}
 
   function apply() {{ if (mq.matches) toDesktop(); else toMobile(); }}
   apply();
-  if (mq.addEventListener) mq.addEventListener('change', apply);
-  else if (mq.addListener) mq.addListener(apply);
+  function onMqChange() {{
+    // Crossing the 1100px breakpoint must not reset the tab the user is on.
+    var cur = wkCurrentTabName();
+    if (mq.matches) toDesktop(cur); else toMobile(cur);
+  }}
+  if (mq.addEventListener) mq.addEventListener('change', onMqChange);
+  else if (mq.addListener) mq.addListener(onMqChange);
 }})();
 </script>
 """

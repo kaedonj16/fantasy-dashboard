@@ -204,15 +204,27 @@ def build_optimal_body(ctx):
     teams.sort(key=lambda t: (t["eff"] is None, -(t["eff"] or 0)))
     cards = ""
     for rank, team in enumerate(teams, 1):
-        eff = "—" if team["eff"] is None else f'{team["eff"]:.1f}%'
+        eff_num = team["eff"]
+        eff = "—" if eff_num is None else f'{eff_num:.1f}%'
+        bar_w = 0 if eff_num is None else max(0, min(100, eff_num))
+        eff_warn = eff_num is not None and eff_num < 85
+        missed_hi = team["missed"] > 0.005
+        rank_tint = f" opt-rank-{rank}" if rank <= 3 else ""
         cards += (f'<details class="card opt-team{" is-viewer" if team["rid"] == viewer_rid else ""}"><summary>'
-                  f'<span class="opt-rank">#{rank}</span><strong class="opt-team-name">{_esc(team["name"])}</strong>'
-                  f'<span class="opt-team-stat opt-team-eff"><span class="opt-team-label">Efficiency</span><span class="opt-team-value">{eff}</span></span>'
-                  f'<span class="opt-team-stat opt-team-actual"><span class="opt-team-label">Actual</span><span class="opt-team-value">{team["actual"]:.1f}</span></span>'
-                  f'<span class="opt-team-stat opt-team-optimal"><span class="opt-team-label">Optimal</span><span class="opt-team-value">{team["optimal"]:.1f}</span></span>'
-                  f'<span class="opt-team-stat opt-team-missed"><span class="opt-team-label">Missed</span><span class="opt-team-value">{team["missed"]:.1f}</span></span>'
+                  f'<span class="opt-rank{rank_tint}">#{rank}</span>'
+                  f'<span class="opt-team-identity"><strong class="opt-team-name">{_esc(team["name"])}</strong>'
+                  f'<span class="opt-team-sub">{team["actual"]:.1f} of {team["optimal"]:.1f} pts</span></span>'
+                  f'<span class="opt-team-hero{" is-warn" if eff_warn else ""}">'
+                  f'<span class="opt-team-label">Efficiency</span>'
+                  f'<span class="opt-team-effnum">{eff}</span>'
+                  f'<span class="opt-team-bar" aria-hidden="true"><span style="width:{bar_w:.1f}%"></span></span></span>'
+                  f'<span class="opt-team-stats">'
+                  f'<span class="opt-team-stat"><span class="opt-team-label">Actual</span><span class="opt-team-value">{team["actual"]:.1f}</span></span>'
+                  f'<span class="opt-team-stat"><span class="opt-team-label">Optimal</span><span class="opt-team-value">{team["optimal"]:.1f}</span></span>'
+                  f'<span class="opt-team-stat"><span class="opt-team-label">Missed</span>'
+                  f'<span class="opt-team-value{" is-missed" if missed_hi else ""}">{team["missed"]:.1f}</span></span></span>'
                   f'<span class="opt-team-weeks"><span class="opt-team-label">Weeks counted</span> '
-                  f'<span class="opt-team-value">{len(team["good"])}/{len(team["data"])}</span></span></summary>'
+                  f'<span class="opt-team-value">{len(team["good"])} of {len(team["data"])} weeks</span></span></summary>'
                   + ''.join(weekly_panel(d, f'Week {d["week"]}') for d in reversed(team["data"])) + '</details>')
     heading = ('<div class="opt-leaderboard-head">Efficiency leaderboard · sorted highest first</div>'
                '<div class="opt-leaderboard-columns" aria-hidden="true"><span>Rank</span><span>Team</span>'
