@@ -85,6 +85,8 @@ def _top_performers_by_roster(matchups: list[dict]) -> dict[str, list[dict]]:
                 continue
             scored = []
             for player in team.get("starters") or []:
+                if not player:
+                    continue  # empty slot placeholder
                 pts = player.get("pts")
                 if isinstance(pts, (int, float)) and not isinstance(pts, bool):
                     scored.append({

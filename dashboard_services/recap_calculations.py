@@ -118,7 +118,7 @@ def build_lineup_analysis(matchups_by_week: dict, selected_week: int,
             if not side or side.get("lineup_is_historical") is not True:
                 continue
             historical_available = True
-            team_starters = [p for p in side.get("starters") or [] if _number(p.get("pts")) is not None]
+            team_starters = [p for p in side.get("starters") or [] if p and _number(p.get("pts")) is not None]
             team_bench = [p for p in side.get("bench") or [] if _number(p.get("pts")) is not None]
             team = {"rid": str(side.get("roster_id") or ""),
                     "team": side.get("name") or side.get("username") or "Team",
