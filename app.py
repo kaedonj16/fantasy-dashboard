@@ -10803,7 +10803,7 @@ def render_share_rankings(ctx: dict) -> str:
     rows_html = ""
     for i, d in enumerate(rows_data):
         rows_html += f"""
-        <tr>
+        <tr data-share-rank="{i + 1}" data-share-team="{html.escape(str(d['owner']), quote=True)}" data-share-value="{d['value_pct']:.10f}" data-share-production="{d['prod_pct']:.10f}">
           <td class="standings-shares-rk">{i + 1}</td>
           <td class="standings-shares-team">{_clickable_team_name(d['owner'], owner_to_rid)}</td>
           <td>
@@ -10828,13 +10828,13 @@ def render_share_rankings(ctx: dict) -> str:
       Fair share per team: {fair_pct}{proj_note} &nbsp;·&nbsp; bar fills to 2× fair share
     </p>
     <div class="st-tblscroll">
-    <table class="standings-shares-table">
+    <table class="standings-shares-table" data-sort-key="value" data-sort-dir="desc">
       <thead>
         <tr>
-          <th class="standings-shares-rk"></th>
-          <th class="standings-shares-team">Team</th>
-          <th>Value Share</th>
-          <th>{prod_label}</th>
+          <th class="standings-shares-rk" scope="col" aria-sort="none"><button type="button" class="standings-shares-sort-btn" data-share-sort="rank" aria-label="Sort by rank" title="Sort by rank">#</button></th>
+          <th class="standings-shares-team" scope="col" aria-sort="none"><button type="button" class="standings-shares-sort-btn" data-share-sort="team" aria-label="Sort by team" title="Sort by team">Team</button></th>
+          <th scope="col" aria-sort="descending" class="sorted-desc"><button type="button" class="standings-shares-sort-btn" data-share-sort="value" aria-label="Sort by value share" title="Sort by value share">Value Share</button></th>
+          <th scope="col" aria-sort="none"><button type="button" class="standings-shares-sort-btn" data-share-sort="production" aria-label="Sort by {prod_label}" title="Sort by {prod_label}">{prod_label}</button></th>
         </tr>
       </thead>
       <tbody>

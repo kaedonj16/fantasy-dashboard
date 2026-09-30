@@ -5032,7 +5032,74 @@ function initTeamTabs(root = document) {
   });
 }
 
+function standingsShareSortValue(row, key) {
+  if (key === "team") return (row.getAttribute("data-share-team") || "").toLowerCase();
+  const attr = key === "rank" ? "data-share-rank"
+    : key === "value" ? "data-share-value" : "data-share-production";
+  const n = parseFloat(row.getAttribute(attr) || "");
+  return Number.isFinite(n) ? n : -Infinity;
+}
+
+function compareStandingsShareRows(a, b, key, dir) {
+  const A = standingsShareSortValue(a, key);
+  const B = standingsShareSortValue(b, key);
+  let cmp = 0;
+  if (typeof A === "string" && typeof B === "string") cmp = A.localeCompare(B);
+  else if (A < B) cmp = -1;
+  else if (A > B) cmp = 1;
+  if (cmp) return cmp * dir;
+  // Keep equal rows in their original value-rank order, whichever column or
+  // direction the user picked, so re-sorting never shuffles ties.
+  const ar = parseFloat(a.getAttribute("data-share-rank") || "0");
+  const br = parseFloat(b.getAttribute("data-share-rank") || "0");
+  return (Number.isFinite(ar) ? ar : 0) - (Number.isFinite(br) ? br : 0);
+}
+
+function initStandingsSharesSort(root = document) {
+  const scope = root && typeof root.querySelectorAll === "function" ? root : document;
+  const tables = Array.from(scope.querySelectorAll(".standings-shares-table"));
+  if (scope.classList?.contains("standings-shares-table")) tables.unshift(scope);
+
+  tables.forEach(tbl => {
+    if (!tbl.tHead || !tbl.tBodies?.length || tbl.__sharesSortInited) return;
+    tbl.__sharesSortInited = true;
+
+    bindOnce(tbl.tHead, "standingsSharesHeadClick", "click", e => {
+      const btn = e.target?.closest?.("[data-share-sort]");
+      if (!btn || !tbl.contains(btn)) return;
+      const key = btn.getAttribute("data-share-sort");
+      if (!key) return;
+
+      const curKey = tbl.getAttribute("data-sort-key") || "value";
+      const curDir = tbl.getAttribute("data-sort-dir") === "asc" ? 1 : -1;
+      const dir = key === curKey
+        ? curDir * -1
+        : (key === "value" || key === "production" ? -1 : 1);
+
+      const tbody = tbl.tBodies[0];
+      const rows = Array.from(tbody.querySelectorAll("tr"));
+      rows.sort((a, b) => compareStandingsShareRows(a, b, key, dir));
+      tbody.replaceChildren(...rows);
+      rows.forEach((row, idx) => {
+        const rk = row.querySelector(".standings-shares-rk");
+        if (rk) rk.textContent = String(idx + 1);
+      });
+
+      tbl.setAttribute("data-sort-key", key);
+      tbl.setAttribute("data-sort-dir", dir === 1 ? "asc" : "desc");
+      tbl.querySelectorAll("thead th").forEach(th => {
+        const thBtn = th.querySelector("[data-share-sort]");
+        const active = thBtn && thBtn.getAttribute("data-share-sort") === key;
+        th.classList.toggle("sorted-asc", !!active && dir === 1);
+        th.classList.toggle("sorted-desc", !!active && dir === -1);
+        th.setAttribute("aria-sort", active ? (dir === 1 ? "ascending" : "descending") : "none");
+      });
+    });
+  });
+}
+
 function initStandingsSort(root = document) {
+  initStandingsSharesSort(root);
   const marker = root.querySelector('[data-page="standings"]');
   if (!marker) return;
 

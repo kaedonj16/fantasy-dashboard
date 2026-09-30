@@ -14626,6 +14626,37 @@ a.signed-home-league:hover {
     padding-right: 0;
 }
 
+.standings-shares-table .sorted-asc::after {
+    content: " ▲";
+}
+
+.standings-shares-table .sorted-desc::after {
+    content: " ▼";
+}
+
+.standings-shares-sort-btn {
+    appearance: none;
+    background: none;
+    border: 0;
+    padding: 0;
+    margin: 0;
+    color: inherit;
+    font: inherit;
+    letter-spacing: inherit;
+    text-transform: inherit;
+    cursor: pointer;
+}
+
+.standings-shares-sort-btn:hover {
+    color: var(--text);
+}
+
+.standings-shares-sort-btn:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: 4px;
+}
+
 .standings-shares-table tbody {
     border-top: 1px solid var(--border);
 }
