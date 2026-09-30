@@ -153,22 +153,23 @@ def _retention_table(rows):
 
 
 _BREAKDOWN_ROWS = [
-    ("Headline DAU (current definition)", "headline"),
+    ("Raw distinct identities (old definition)", "headline"),
     ("Signed-in accounts", "signed_in"),
     ("Anonymous sessions", "anon_sessions"),
     ("Anonymous: one-and-done (1 pageview)", "anon_one_and_done"),
     ("Anonymous: engaged (2+ pageviews, never signed in)", "anon_engaged"),
     ("Anonymous sessions that also signed in (counted twice)", "anon_linked_sessions"),
-    ("Realistic preview (signed-in + engaged anonymous)", "realistic_preview"),
+    ("DAU (current definition: signed-in + engaged anonymous)", "realistic_preview"),
     ("Total pageviews", "total_pageviews"),
 ]
 
 
 def _breakdown_html(breakdown, top_paths):
-    """Diagnostic DAU decomposition table + top one-and-done paths line.
+    """DAU decomposition table + top one-and-done paths line.
 
-    breakdown: {"utc": {...}, "ny": {...}} or None when the diagnostic
-    queries failed (the rest of the page must still render).
+    Reconciles the chart's realistic DAU against the raw old-definition
+    count. breakdown: {"utc": {...}, "ny": {...}} or None when the
+    breakdown queries failed (the rest of the page must still render).
     """
     if not breakdown:
         return '<p class="muted">Breakdown unavailable.</p>'
@@ -182,7 +183,7 @@ def _breakdown_html(breakdown, top_paths):
         )
     table = (
         '<div class="tablewrap"><table><thead><tr>'
-        "<th>Metric</th><th>UTC day (current chart)</th><th>New York day</th>"
+        "<th>Metric</th><th>UTC day</th><th>New York day (chart day)</th>"
         "</tr></thead><tbody>%s</tbody></table></div>" % "".join(body_rows)
     )
     paths_html = ""
@@ -192,7 +193,7 @@ def _breakdown_html(breakdown, top_paths):
             for p in top_paths
         )
         paths_html = (
-            '<p class="muted">Top one-and-done paths (UTC day): %s</p>' % listed
+            '<p class="muted">Top one-and-done paths (New York day): %s</p>' % listed
         )
     return table + paths_html
 
@@ -329,12 +330,12 @@ def admin_analytics():
             status=500, mimetype="text/html",
         )
 
-    dau_pairs = _a.fill_daily_gaps(dau, "date", "users", 30)
-    wau_pairs = _a.fill_weekly_gaps(wau, "week", "users", 12)
+    dau_pairs = _a.fill_daily_gaps(dau, "date", "users", 30, today=_a.ny_today())
+    wau_pairs = _a.fill_weekly_gaps(wau, "week", "users", 12, today=_a.ny_today())
     signup_pairs = _a.fill_daily_gaps(signups, "date", "signups", 30)
 
-    # DAU breakdown (diagnostic): fetched separately so a failure here can
-    # never take down the rest of the page.
+    # DAU breakdown (reconciliation): fetched separately so a failure here
+    # can never take down the rest of the page.
     try:
         breakdown = _a.dau_breakdown()
         breakdown_paths = _a.one_and_done_top_paths(5)
@@ -367,13 +368,16 @@ def admin_analytics():
 
     body = "".join([
         _section("Daily active users", _bars_svg(dau_pairs),
-                 "Distinct signed-in accounts plus anonymous browsers, last 30 days."),
-        _section("DAU breakdown: today (diagnostic)",
+                 "Signed-in accounts plus anonymous visitors with 2+ pages, "
+                 "New York day, last 30 days."),
+        _section("DAU breakdown: today",
                  _breakdown_html(breakdown, breakdown_paths),
-                 "What today's headline DAU is made of. Diagnostic only: "
-                 "the chart above still uses the current definition."),
+                 "What today's DAU is made of. The chart above now uses the "
+                 "realistic definition on a New York day; the raw row is the "
+                 "old definition for comparison."),
         _section("Weekly active users", _bars_svg(wau_pairs, bar_color="#34c98e"),
-                 "Distinct users per week, last 12 weeks."),
+                 "Same definition per week (signed-in accounts plus engaged "
+                 "anonymous visitors), last 12 weeks."),
         _section("Signups per day", _bars_svg(signup_pairs, bar_color="#f5a623"),
                  "New accounts from the accounts table, last 30 days."),
         _section("Feature usage by week", _feature_table(usage),

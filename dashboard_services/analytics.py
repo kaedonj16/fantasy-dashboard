@@ -275,29 +275,62 @@ def _fetchall(sql: str, args: Sequence[Any] = ()) -> List[Dict[str, Any]]:
 
 
 def dau_last_30_days() -> List[Dict[str, Any]]:
-    """Distinct users per day for the last 30 days (pageviews only)."""
+    """Distinct users per day for the last 30 days (pageviews only).
+
+    Realistic definition, on a New York day: distinct signed-in accounts
+    (any pageview count) plus anonymous sessions with 2+ pageviews that
+    never signed in that day. Sessions that also signed in are counted
+    only via their account, so nobody is double-counted. One-and-done
+    anonymous sessions (the bulk of bot / bounce traffic) are excluded.
+    """
     rows = _fetchall(
         f"""
-        SELECT date_trunc('day', created_at)::date AS d,
-               COUNT(DISTINCT {_IDENT}) AS users
-        FROM analytics_events
-        WHERE event = 'pageview' AND created_at >= now() - interval '30 days'
-        {_exclusion_clause()}
-        GROUP BY 1 ORDER BY 1
+        WITH base AS (
+            SELECT account_id, session_id,
+                   (created_at AT TIME ZONE 'America/New_York')::date AS d
+            FROM analytics_events
+            WHERE event = 'pageview' AND created_at >= now() - interval '30 days'
+            {_exclusion_clause()}
+        ),
+        sessions AS (
+            SELECT d, session_id,
+                   COUNT(*) FILTER (WHERE account_id IS NULL) AS anon_views,
+                   COUNT(*) FILTER (WHERE account_id IS NOT NULL) AS acct_views
+            FROM base
+            WHERE session_id IS NOT NULL
+            GROUP BY 1, 2
+        ),
+        per_day AS (
+            SELECT d, COUNT(DISTINCT account_id) AS signed_in
+            FROM base
+            GROUP BY 1
+        ),
+        engaged AS (
+            SELECT d, COUNT(*) AS engaged
+            FROM sessions
+            WHERE acct_views = 0 AND anon_views >= 2
+            GROUP BY 1
+        )
+        SELECT p.d AS d, p.signed_in + COALESCE(e.engaged, 0) AS users
+        FROM per_day p
+        LEFT JOIN engaged e ON e.d = p.d
+        ORDER BY 1
         """
     )
     return [{"date": str(r["d"]), "users": int(r["users"])} for r in rows]
 
 
-# ── DAU breakdown (diagnostic only; does not change the headline DAU) ───────
+# ── DAU breakdown (reconciliation view for the headline DAU) ────────────────
 #
-# The headline DAU counts distinct _IDENT values, which mixes three very
-# different things: signed-in accounts (deduplicated, trustworthy),
-# anonymous browser sessions (one per browser/device, and a brand new one
-# for every cookie-less hit), and browsers that appear as BOTH in one day
-# (counted twice). dau_breakdown() decomposes today's headline number so
-# the admin page can show what it is actually made of, under both the
-# current UTC day definition and the New York day.
+# The raw distinct _IDENT count mixes three very different things:
+# signed-in accounts (deduplicated, trustworthy), anonymous browser
+# sessions (one per browser/device, and a brand new one for every
+# cookie-less hit), and browsers that appear as BOTH in one day (counted
+# twice). The headline DAU now uses the realistic definition (signed-in
+# accounts plus engaged anonymous sessions, New York day); dau_breakdown()
+# decomposes today's numbers so the admin page can reconcile the chart
+# value against the raw old-definition count, under both the UTC day and
+# the New York day.
 
 _BREAKDOWN_KEYS = (
     "headline",
@@ -372,11 +405,11 @@ def dau_breakdown() -> Dict[str, Dict[str, int]]:
     """Today's DAU decomposed, for the UTC day and the New York day.
 
     Returns {"utc": {...}, "ny": {...}} with the _BREAKDOWN_KEYS metrics in
-    each. The "utc" headline uses exactly the _IDENT definition and day
-    grouping of dau_last_30_days(), so it matches the chart's today bar.
-    "realistic_preview" previews a stricter definition: distinct signed-in
-    accounts plus engaged anonymous sessions that never signed in that day.
-    Diagnostic only: the headline DAU/WAU definitions are unchanged.
+    each. "headline" is the raw distinct _IDENT count (the old definition,
+    kept for comparison). "realistic_preview" is the current headline
+    definition: distinct signed-in accounts plus engaged anonymous
+    sessions that never signed in that day; its New York value matches
+    the chart's today bar.
     """
     return {
         "utc": _breakdown_for_day(_DAY_FILTERS["utc"]),
@@ -385,7 +418,7 @@ def dau_breakdown() -> Dict[str, Dict[str, int]]:
 
 
 def one_and_done_top_paths(limit: int = 5) -> List[Dict[str, Any]]:
-    """Top paths among today's (UTC) one-and-done anonymous sessions.
+    """Top paths among today's (New York day) one-and-done anonymous sessions.
 
     Aggregate counts only (path + session count), no session ids or other
     per-visitor detail. Shows where single-hit anonymous traffic lands,
@@ -400,7 +433,7 @@ def one_and_done_top_paths(limit: int = 5) -> List[Dict[str, Any]]:
         WITH base AS (
             SELECT account_id, session_id, path
             FROM analytics_events
-            WHERE event = 'pageview' AND {_DAY_FILTERS["utc"]}
+            WHERE event = 'pageview' AND {_DAY_FILTERS["ny"]}
             {_exclusion_clause()}
         ),
         sessions AS (
@@ -433,15 +466,45 @@ def one_and_done_top_paths(limit: int = 5) -> List[Dict[str, Any]]:
 
 
 def wau_last_12_weeks() -> List[Dict[str, Any]]:
-    """Distinct users per ISO week for the last 12 weeks."""
+    """Distinct users per week for the last 12 weeks.
+
+    Same realistic definition as DAU, per Monday-anchored New York week:
+    distinct signed-in accounts plus anonymous sessions with 2+ pageviews
+    that never signed in that week (sessions that also signed in count
+    only via their account).
+    """
     rows = _fetchall(
         f"""
-        SELECT date_trunc('week', created_at)::date AS w,
-               COUNT(DISTINCT {_IDENT}) AS users
-        FROM analytics_events
-        WHERE event = 'pageview' AND created_at >= now() - interval '12 weeks'
-        {_exclusion_clause()}
-        GROUP BY 1 ORDER BY 1
+        WITH base AS (
+            SELECT account_id, session_id,
+                   date_trunc('week', created_at AT TIME ZONE 'America/New_York')::date AS w
+            FROM analytics_events
+            WHERE event = 'pageview' AND created_at >= now() - interval '12 weeks'
+            {_exclusion_clause()}
+        ),
+        sessions AS (
+            SELECT w, session_id,
+                   COUNT(*) FILTER (WHERE account_id IS NULL) AS anon_views,
+                   COUNT(*) FILTER (WHERE account_id IS NOT NULL) AS acct_views
+            FROM base
+            WHERE session_id IS NOT NULL
+            GROUP BY 1, 2
+        ),
+        per_week AS (
+            SELECT w, COUNT(DISTINCT account_id) AS signed_in
+            FROM base
+            GROUP BY 1
+        ),
+        engaged AS (
+            SELECT w, COUNT(*) AS engaged
+            FROM sessions
+            WHERE acct_views = 0 AND anon_views >= 2
+            GROUP BY 1
+        )
+        SELECT p.w AS w, p.signed_in + COALESCE(e.engaged, 0) AS users
+        FROM per_week p
+        LEFT JOIN engaged e ON e.w = p.w
+        ORDER BY 1
         """
     )
     return [{"week": str(r["w"]), "users": int(r["users"])} for r in rows]
@@ -477,15 +540,39 @@ def feature_usage_by_week(weeks: int = 8) -> List[Dict[str, Any]]:
 
 
 def week_over_week_return() -> List[Dict[str, Any]]:
-    """Per week: active users and how many were also active the prior week."""
+    """Per week: active users and how many were also active the prior week.
+
+    The weekly active set uses the same realistic identities as WAU, so
+    the Active column matches the WAU chart: signed-in accounts as
+    'a:'||account_id and engaged anonymous sessions (2+ pageviews, never
+    signed in that week) as 's:'||session_id.
+    """
     rows = _fetchall(
         f"""
-        WITH weekly AS (
-            SELECT date_trunc('week', created_at)::date AS w,
-                   {_IDENT} AS ident
+        WITH base AS (
+            SELECT account_id, session_id,
+                   date_trunc('week', created_at AT TIME ZONE 'America/New_York')::date AS w
             FROM analytics_events
             WHERE event = 'pageview' AND created_at >= now() - interval '9 weeks'
             {_exclusion_clause()}
+        ),
+        sessions AS (
+            SELECT w, session_id,
+                   COUNT(*) FILTER (WHERE account_id IS NULL) AS anon_views,
+                   COUNT(*) FILTER (WHERE account_id IS NOT NULL) AS acct_views
+            FROM base
+            WHERE session_id IS NOT NULL
+            GROUP BY 1, 2
+        ),
+        weekly AS (
+            SELECT w, 'a:' || account_id::text AS ident
+            FROM base
+            WHERE account_id IS NOT NULL
+            GROUP BY 1, 2
+            UNION
+            SELECT w, 's:' || session_id AS ident
+            FROM sessions
+            WHERE acct_views = 0 AND anon_views >= 2
             GROUP BY 1, 2
         ),
         flagged AS (
@@ -568,6 +655,16 @@ def funnel_last_30_days() -> Dict[str, int]:
 
 def _utc_today() -> _dt.date:
     return _dt.datetime.now(_dt.timezone.utc).date()
+
+
+def ny_today() -> _dt.date:
+    """Today's date in America/New_York (the DAU/WAU bucket timezone)."""
+    try:
+        from zoneinfo import ZoneInfo
+
+        return _dt.datetime.now(ZoneInfo("America/New_York")).date()
+    except Exception:
+        return _utc_today()
 
 
 def fill_daily_gaps(
