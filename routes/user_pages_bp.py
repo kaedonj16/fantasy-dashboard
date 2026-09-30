@@ -1485,6 +1485,8 @@ def api_portfolio_matchup():
         proj_map = dict(proj_map)  # never mutate the TTL-cached bundle
         for _team in (you, opp):
             for _p in ((_team or {}).get("starters") or []):
+                if not _p:
+                    continue  # empty slot placeholder
                 _pid = _p.get("pid")
                 if _pid is None or str(_pid) in proj_map or _pid in proj_map:
                     continue
@@ -1527,9 +1529,9 @@ def api_portfolio_matchup():
         except Exception:
             logger.debug("[portfolio-matchup] win prob failed", exc_info=True)
 
-    pids = [p.get("pid") for p in (you.get("starters") or [])]
+    pids = [p.get("pid") for p in (you.get("starters") or []) if p]
     if has_opp:
-        pids += [p.get("pid") for p in (opp.get("starters") or [])]
+        pids += [p.get("pid") for p in (opp.get("starters") or []) if p]
     status = "final" if fantasy_final else _matchup_status_label(status_by_pid, pids)
 
     matchup_result, margin = None, None
@@ -1664,6 +1666,8 @@ def api_matchup_league_scores():
         for m in matchups:
             for _team in ((m.get("left") or {}), (m.get("right") or {})):
                 for _p in ((_team or {}).get("starters") or []):
+                    if not _p:
+                        continue  # empty slot placeholder
                     _pid = _p.get("pid")
                     if _pid is None or str(_pid) in proj_map or _pid in proj_map:
                         continue
@@ -1700,9 +1704,9 @@ def api_matchup_league_scores():
                 ) * 100.0, 1)
             except Exception:
                 logger.debug("[league-scores] win prob failed", exc_info=True)
-        pids = [p.get("pid") for p in (left.get("starters") or [])]
+        pids = [p.get("pid") for p in (left.get("starters") or []) if p]
         if right_side:
-            pids += [p.get("pid") for p in (right.get("starters") or [])]
+            pids += [p.get("pid") for p in (right.get("starters") or []) if p]
         status = _matchup_status_label(status_by_pid, pids)
         is_you = (str(left.get("roster_id") or "") == viewer_rid
                   or str(right.get("roster_id") or "") == viewer_rid)
@@ -1836,11 +1840,15 @@ def api_scorezone_moments():
     # Collect starter PIDs for both teams, tagged by side.
     pid_to_side = {}
     for p in (you.get("starters") or []):
+        if not p:
+            continue  # empty slot placeholder
         pid = p.get("pid")
         if pid:
             pid_to_side[str(pid)] = "you"
     if opp:
         for p in (opp.get("starters") or []):
+            if not p:
+                continue  # empty slot placeholder
             pid = p.get("pid")
             if pid:
                 pid_to_side[str(pid)] = "opp"
@@ -1860,6 +1868,8 @@ def api_scorezone_moments():
         if not team:
             continue
         for p in (team.get("starters") or []):
+            if not p:
+                continue  # empty slot placeholder
             pid = str(p.get("pid") or "")
             if pid:
                 pid_to_name[pid] = p.get("name") or p.get("full_name") or ""

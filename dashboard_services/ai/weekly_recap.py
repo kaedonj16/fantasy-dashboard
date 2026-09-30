@@ -365,6 +365,8 @@ def _proj_win_prob(starters_a: list, starters_b: list, proj_by_pid: dict) -> flo
     def _stats(starters):
         total = var = 0.0
         for p in (starters or []):
+            if not p:
+                continue  # empty slot placeholder
             proj = float(proj_by_pid.get(str(p.get("pid") or ""), 0.0) or 0.0)
             total += proj
             sigma = max(0.4 * proj, 4.0)
@@ -381,7 +383,8 @@ def _proj_win_prob(starters_a: list, starters_b: list, proj_by_pid: dict) -> flo
 
 
 def _team_proj_total(starters: list, proj_by_pid: dict) -> float:
-    return sum(float(proj_by_pid.get(str(p.get("pid") or ""), 0.0) or 0.0) for p in (starters or []))
+    # Empty lineup slots are None placeholders; they carry no projection.
+    return sum(float(proj_by_pid.get(str(p.get("pid") or ""), 0.0) or 0.0) for p in (starters or []) if p)
 
 
 def _starter_flags(
@@ -400,6 +403,8 @@ def _starter_flags(
     byes: list[dict] = []
     risk = 0.0
     for p in (team_block.get("starters") or []):
+        if not p:
+            continue  # empty slot placeholder
         pid = str(p.get("pid") or "")
         info = player_index.get(pid) or {}
         raw = str(info.get("injury_status") or info.get("status") or "").strip().upper()

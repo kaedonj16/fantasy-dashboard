@@ -9741,7 +9741,7 @@ def _render_bench_check(ctx: dict, viewer_roster_id, last_final_week: int) -> st
         if not team:
             return ""
 
-        starters = team.get("starters") or []
+        starters = [p for p in (team.get("starters") or []) if p]
         bench = team.get("bench") or []
         if not starters:
             return ""

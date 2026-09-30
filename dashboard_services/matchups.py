@@ -1011,7 +1011,9 @@ def team_live_totals(
     any_locked = False
     missing_locked = False
 
-    starters = team.get("starters") or []
+    starters = [p for p in (team.get("starters") or []) if p]
+    # Empty lineup slots are None placeholders (see _normalize_starter_slots);
+    # they carry no player and must not enter the totals.
     projections = projections or {}
 
     for p in starters:
@@ -1152,6 +1154,8 @@ def compute_win_prob(
         pend_proj = 0.0
         pend_var = 0.0
         for p in (team.get("starters") or []):
+            if p is None:
+                continue  # empty slot placeholder (see _normalize_starter_slots)
             pid = p.get("pid")
             raw_actual = p.get("pts")
             if (
@@ -1741,6 +1745,8 @@ def _matchup_games_in_progress(m: dict, status_by_pid: dict) -> bool:
     """True when any starter on either side has a game currently in progress."""
     for side in ("left", "right"):
         for p in ((m.get(side) or {}).get("starters") or []):
+            if p is None:
+                continue  # empty slot placeholder (see _normalize_starter_slots)
             pid = p.get("pid")
             status = status_by_pid.get(pid, STATUS_NOT_STARTED)
             if pid is not None and status == STATUS_NOT_STARTED:
@@ -1914,6 +1920,7 @@ def render_matchup_slide(
         any_started = any(
             status_by_pid.get(p.get("pid"), STATUS_NOT_STARTED) in (STATUS_IN_PROGRESS, STATUS_FINAL)
             for p in (t.get("starters") or [])
+            if p  # skip None placeholders for empty slots
         )
         # No games started yet: the "live" total is just today's summed
         # projections, so a trend arrow would only show drift between two
@@ -1925,7 +1932,7 @@ def render_matchup_slide(
         # Yahoo lineup may enrich rows but must never zero the matchup header.
         actual_total = t.get("pts_total")
         if not isinstance(actual_total, (int, float)):
-            starters = t.get("starters") or []
+            starters = [p for p in (t.get("starters") or []) if p]
             lineup_complete = bool(starters) and all(
                 isinstance(p.get("pts"), (int, float)) for p in starters
             )
@@ -2664,9 +2671,9 @@ def build_league_scores_list(matchups, viewer_rid, status_by_pid, proj_map, frac
                 ) * 100.0, 1)
             except Exception:
                 win_prob = None
-        pids = [p.get("pid") for p in (left.get("starters") or [])]
+        pids = [p.get("pid") for p in (left.get("starters") or []) if p]
         if right_side:
-            pids += [p.get("pid") for p in (right.get("starters") or [])]
+            pids += [p.get("pid") for p in (right.get("starters") or []) if p]
         is_you = (str(left.get("roster_id") or "") == str(viewer_rid or "")
                   or str(right.get("roster_id") or "") == str(viewer_rid or ""))
         out.append({
