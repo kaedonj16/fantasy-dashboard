@@ -79,3 +79,27 @@ def test_submenus_expand_inline_in_collapsed_menu():
     assert "position: static" in m.group(1), (
         "submenu must expand inline instead of floating over the menu"
     )
+    assert "width: 100%" in m.group(1), (
+        "submenu must span the menu width, not shrink to a content-width card"
+    )
+
+
+def test_dropdown_wrapper_stacks_pill_above_submenu():
+    """The wrapper is a ROW inline-flex in the base styles (desktop hover
+    dropdown: pill with the menu absolutely positioned under it). Making the
+    menu position:static at mid-widths is not enough: as a row flex item it
+    renders BESIDE its pill, squeezing the pill and hanging off the panel's
+    right edge (Kaedon's 2026-09-30 screenshot). The <=768px block stacks the
+    wrapper with flex-direction: column; the mid-width block must too."""
+    block = _nav_block()
+    m = re.search(
+        r"\.top-nav\.br-mnav\s+\.nav-pill-dropdown-wrapper\s*\{([^}]*)\}", block
+    )
+    assert m, "dropdown wrappers need mid-width rules too"
+    body = m.group(1)
+    assert "flex-direction: column" in body, (
+        "wrapper must stack the submenu below its pill, not beside it"
+    )
+    assert "align-items: stretch" in body, (
+        "pill and submenu must both stretch to the full menu width"
+    )
