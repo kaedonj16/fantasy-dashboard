@@ -4762,6 +4762,18 @@ function initCardTabs(root = document) {
           p.classList.toggle("active", on);
           if (on && window.brAnimateTabPanel) window.brAnimateTabPanel(p, newIdx - oldIdx);
         });
+        // Persist the weekly-hub left tab in the URL so a reload (stale-page
+        // visibility refresh, service-worker nav-fresh, bfcache restore) lands
+        // back on it via the existing ?tab= activation. history.replaceState
+        // never navigates or reloads. Scoped to the weekly hub so other
+        // .card-tabs on the site are unaffected.
+        if (card.id === "weeklyLeftTabs" && target) {
+          try {
+            const _hubUrl = new URL(location.href);
+            _hubUrl.searchParams.set("tab", target);
+            history.replaceState(null, "", _hubUrl.toString());
+          } catch (e) { /* URL/history unavailable: tab simply won't persist */ }
+        }
       });
     });
   });
