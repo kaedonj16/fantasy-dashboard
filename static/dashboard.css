@@ -11131,6 +11131,16 @@ select:focus {
     animation: matchups-spin 0.8s linear infinite;
 }
 
+/* Week-change loading pill now shows shimmering skeleton bars (shaped like
+   the matchup content) instead of a bare spinner. */
+.matchups-loading-skel {
+    width: min(300px, 78vw);
+}
+
+.matchups-loading-skel .skeleton-line {
+    margin: 7px 0;
+}
+
 .round-1 .bracket-body, .round-2 .bracket-body {
     display: flex;
     flex-direction: column;
@@ -37368,6 +37378,22 @@ table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: point
     animation: brRiseIn .5s var(--ease-out) both;
 }
 
+/* -- Skeleton-to-content crossfade: applied to the wrapper that swaps from a
+   skeleton placeholder to real content, so the arrival reads as a soft fade
+   instead of a hard cut. ----------------------------------------------- */
+@keyframes brFadeSwap {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+.br-fade-swap {
+    animation: brFadeSwap .35s ease both;
+}
+
 .br-stagger > * {
     animation: brRiseIn .48s var(--ease-out) backwards;
 }
@@ -37665,7 +37691,7 @@ table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: point
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .br-page-enter, .br-stagger > *, .analytics-bar-fill, .sos-fill, .compare-bar-fill,
+    .br-page-enter, .br-fade-swap, .br-stagger > *, .analytics-bar-fill, .sos-fill, .compare-bar-fill,
     .dr-gbar-fill, .dr-proj-bar-fill, .pos-bar-inner, .rivalry-bar-fill,
     .br-bar-grow, .rank-mark, .br-pop, .live-dot::after, .br-chip-pop > *,
     .br-flash-up, .br-flash-down, .br-shake, .br-draw path, .dr-cell-reveal {
@@ -37674,6 +37700,19 @@ table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: point
 
     .br-lift, .br-flip, .br-slide-ind {
         transition: none !important;
+    }
+
+    .br-tab-in-l, .br-tab-in-r {
+        animation: none !important;
+    }
+
+    /* Infinite live pulses: hold the resting frame under reduced motion. */
+    .rz-nav-dot, .rz-brand-dot.is-live, .rz-live-dot-sm, .rz-fh-dot,
+    .weekly-rz-cta-dot, .weekly-live-badge::before, .pm-live-dot,
+    .rz-psb-live-dot, .rz-mnav-dot,
+    .rz-mc-state.live::before, .rz-mt-live::before, .rz-lb-live::before,
+    .br-sheet-link.rz-mnav-live {
+        animation: none !important;
     }
 }
 
@@ -38386,6 +38425,57 @@ table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: point
         opacity: 1;
         transform: none;
     }
+}
+
+/* -- Tab panel transitions: the incoming panel slides in from the direction
+   it was reached from (brAnimateTabPanel picks the side). Applied by the
+   shared tab switchers in app.js; the animation class is removed on
+   animationend so re-clicking a tab replays it. -- */
+@keyframes brTabInR {
+    from {
+        opacity: 0;
+        transform: translateX(26px);
+    }
+    to {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+@keyframes brTabInL {
+    from {
+        opacity: 0;
+        transform: translateX(-26px);
+    }
+    to {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+.br-tab-in-r {
+    animation: brTabInR .32s var(--ease-out) both;
+}
+
+.br-tab-in-l {
+    animation: brTabInL .32s var(--ease-out) both;
+}
+
+/* -- Breathing dot on the text-only LIVE badges (game-center matchup cards,
+   matchup tiles, leaderboard). currentColor keeps it theme-aware; the pulse
+   reuses the existing rz-pulse keyframes. -- */
+.rz-mc-state.live::before,
+.rz-mt-live::before,
+.rz-lb-live::before {
+    content: "";
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+    margin-right: 5px;
+    vertical-align: 1px;
+    animation: rz-pulse 1.6s ease-in-out infinite;
 }
 
 /* AI text reveal (brRevealText): each block sharpens up as the report "writes". */

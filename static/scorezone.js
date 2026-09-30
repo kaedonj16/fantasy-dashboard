@@ -3494,8 +3494,12 @@
     // When switching from This League with an existing feed, however, those
     // NFL plays are still valid while My Leagues adds its extra roster context.
     if (_loadingPlays || (_loadingScope && !_feed.length)) {
-      container.innerHTML = '<div class="rz-feed-loading">'
-        + '<span class="rz-feed-spinner"></span>Loading plays…</div>';
+      // Content-shaped placeholder (shimmer rows) instead of a bare spinner.
+      container.innerHTML = '<div class="sk-list" aria-hidden="true">'
+        + '<div class="sk-card-row"><div class="sk-lines"><div class="skeleton skeleton-line w-80"></div><div class="skeleton skeleton-line w-60"></div></div><div class="skeleton sk-chip"></div></div>'
+        + '<div class="sk-card-row"><div class="sk-lines"><div class="skeleton skeleton-line w-80"></div><div class="skeleton skeleton-line w-60"></div></div><div class="skeleton sk-chip"></div></div>'
+        + '<div class="sk-card-row"><div class="sk-lines"><div class="skeleton skeleton-line w-80"></div><div class="skeleton skeleton-line w-60"></div></div><div class="skeleton sk-chip"></div></div>'
+        + '</div>';
       _renderPagination(1);
       return;
     }

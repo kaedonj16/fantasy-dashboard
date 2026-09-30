@@ -3562,7 +3562,7 @@ _AM_JS = r"""
 
     const multiMode = state.extraMetrics.length > 0;
     const totalRanked = posRows.length;
-    tbody.innerHTML = pageRows.map((r, i) => {
+    const _rowsHtml = pageRows.map((r, i) => {
       const safe = (r.name || '').replace(/'/g, "\\'");
       const col = posColor(r.position);
       const owned = ownedIds.has(String(r.player_id));
@@ -3684,7 +3684,7 @@ _AM_JS = r"""
         ? '<tr class="am-pin-divider"><td colspan="99"></td></tr>'
         : '';
 
-      return '<tr class="am-row' + (owned ? ' am-owned' : '') + (pinned ? ' am-pinned' : '') + '" style="cursor:pointer;" '
+      return '<tr class="am-row' + (owned ? ' am-owned' : '') + (pinned ? ' am-pinned' : '') + '" data-rk-key="' + amRowKey(r) + '" style="cursor:pointer;" '
         + 'onclick="window.openPlayerModal&&openPlayerModal(\'' + r.player_id + '\',\'' + safe + '\',{tab:\'metrics\'})">'
         + rankCell
         + playerCell
@@ -3697,6 +3697,11 @@ _AM_JS = r"""
         + (state.showTrends ? trendCellHtml(r.player_id, col) : '')
         + '</tr>' + divider;
     }).join('');
+    // Animated re-sort: climbers/fallers tint by rank movement (a FLIP glide is
+    // impossible on real <tr>s, which ignore transforms). Falls back to a plain
+    // swap when the motion helper is unavailable.
+    if (window.brTableSortSwap) window.brTableSortSwap(tbody, _rowsHtml, 'data-rk-key');
+    else tbody.innerHTML = _rowsHtml;
     verifyRenderedSchema();
 
     updateComparePinnedBtn();

@@ -487,7 +487,10 @@ function renderTable(){{
     h+='</tr>';
   }});
   h+='</tbody>';
-  tbl.innerHTML=h;
+  // Animated re-sort: climbers/fallers tint by movement (a FLIP glide is
+  // impossible on real <tr>s, which ignore transforms).
+  if(window.brTableSortSwap)window.brTableSortSwap(tbl,h,'data-abbr');
+  else tbl.innerHTML=h;
   tbl.querySelectorAll(".nt-thbtn").forEach(function(b){{
     b.addEventListener("click",function(){{
       var k=b.getAttribute("data-col");

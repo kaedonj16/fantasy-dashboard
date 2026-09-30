@@ -2024,6 +2024,9 @@ function pmSwitchTab(tab, clickEvent) {
   // tab click inside the existing dialog so it cannot bubble into one of those
   // handlers and invoke openPlayerModal a second time.
   if (clickEvent && typeof clickEvent.stopPropagation === 'function') clickEvent.stopPropagation();
+  const pmBtns = Array.from(document.querySelectorAll('.pm-tab[data-tab]'));
+  const pmOldIdx = pmBtns.findIndex(t => t.classList.contains('active'));
+  const pmNewIdx = pmBtns.findIndex(t => t.getAttribute('data-tab') === tab);
   document.querySelectorAll('.pm-panel').forEach(p => p.classList.remove('pm-panel-active'));
   document.querySelectorAll('.pm-tab').forEach(t => {
     t.classList.remove('active');
@@ -2031,7 +2034,10 @@ function pmSwitchTab(tab, clickEvent) {
   });
   const panel = document.getElementById('pm-panel-' + tab);
   const btn = document.querySelector('.pm-tab[data-tab="' + tab + '"]');
-  if (panel) panel.classList.add('pm-panel-active');
+  if (panel) {
+    panel.classList.add('pm-panel-active');
+    if (window.brAnimateTabPanel) window.brAnimateTabPanel(panel, pmNewIdx - pmOldIdx);
+  }
   if (btn) {
     btn.classList.add('active');
     btn.setAttribute('aria-selected', 'true');
