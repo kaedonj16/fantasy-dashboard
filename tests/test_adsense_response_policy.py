@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import re
 import xml.etree.ElementTree as ET
+from urllib.parse import urlparse
 
 import pytest
 
@@ -152,3 +153,46 @@ def test_missing_trade_outcome_is_noindex_and_ad_free(offline_client):
     assert card.status_code == 404
     card_html = card.get_data(as_text=True)
     assert 'name="robots" content="noindex"' in card_html
+
+
+def _sitemap_paths(client):
+    response = client.get("/sitemap.xml")
+    assert response.status_code == 200
+    root = ET.fromstring(response.get_data(as_text=True))
+    ns = "{http://www.sitemaps.org/schemas/sitemap/0.9}"
+    return [urlparse(node.text).path or "/" for node in root.iter(f"{ns}loc")]
+
+
+def test_sitemap_lists_only_substantive_content_pages(offline_client):
+    paths = _sitemap_paths(offline_client)
+    # Excluded (pages stay live; they are just not submitted): the templated
+    # per-player pages, the /players duplicate of the value chart, the
+    # /trade-intel redirect, and the JS-shell pages whose server-rendered
+    # body is only a loading state.
+    assert not any(p.startswith("/player/") for p in paths)
+    for excluded in ("/players", "/trade-intel", "/nfl-teams", "/breakouts",
+                     "/trade-database", "/prospects"):
+        assert excluded not in paths, f"{excluded} must not be in the sitemap"
+    # Kept: the substantive public content surface, guides included.
+    for kept in ("/", "/trade", "/dynasty-trade-value-chart", "/top-movers",
+                 "/rankings/dynasty", "/rankings/dynasty-qb",
+                 "/rankings/dynasty-rb", "/rankings/dynasty-wr",
+                 "/rankings/dynasty-te", "/compare", "/pricing", "/privacy",
+                 "/faq", "/support", "/contact", "/about", "/terms",
+                 "/guides", "/glossary", "/guides/dynasty-trade-value"):
+        assert kept in paths, f"{kept} must stay in the sitemap"
+
+
+def test_guest_render_has_no_empty_ad_placeholder_chrome(offline_client):
+    html = offline_client.get("/").get_data(as_text=True)
+    # Our placeholder chrome is gone: no labeled box, no disclosure label.
+    # (The '.ad-container' string inside the lazy-init script is a JS
+    # selector, not markup; assert on the class attribute form instead.)
+    assert 'class="ad-container' not in html
+    assert "ad-disclosure" not in html
+    assert 'aria-label="Advertisement"' not in html
+    # Google's structural pieces stay: the bare ad <ins> element, the lazy
+    # loader that includes adsbygoogle.js, and the Funding Choices tag.
+    assert 'ins class="adsbygoogle"' in html
+    assert "pagead2.googlesyndication.com/pagead/js/adsbygoogle.js" in html
+    assert "fundingchoicesmessages.google.com" in html

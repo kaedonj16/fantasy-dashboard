@@ -1591,6 +1591,7 @@ window.brHaptic = function (pattern) {
     if (incomingAds && !currentAds) throw new Error('ad eligibility requires full navigation');
     if (!incomingAds) {
       document.querySelectorAll('.ad-container').forEach(function (el) { el.remove(); });
+      document.querySelectorAll('ins.adsbygoogle').forEach(function (el) { el.remove(); });
     }
     var sameSnapshot = ['platform', 'season', 'leagueId'].every(function (key) {
       return String(curRoot.dataset[key] || '') === String(newRoot.dataset[key] || '');
