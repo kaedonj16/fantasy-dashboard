@@ -79,7 +79,7 @@ def test_card_markup_rows_bars_and_chip(monkeypatch):
     assert "Usage risers" in out
     assert "last 3 weeks vs season average" in out
     # Top 3 only, sorted by delta desc.
-    assert out.count('<li class="usage-mover">') == 3
+    assert out.count('<li class="usage-mover player-clickable"') == 3
     assert "Snap Riser" in out and "Target Riser" in out and "Third Riser" in out
     assert "Fourth Riser" not in out
     assert "Below Threshold" not in out
@@ -101,10 +101,37 @@ def test_card_markup_rows_bars_and_chip(monkeypatch):
     assert '<span class="um-delta up">&#9650;15.5</span>' in out
 
 
+def test_rows_carry_real_player_ids_for_the_modal(monkeypatch):
+    ctx = _ctx(players_index=_index(), pids=("100", "101", "105"))
+    out = _render(monkeypatch, ctx)
+    # Each row carries the global player-clickable wiring with the real
+    # Sleeper id and display name, in delta order.
+    assert (
+        '<li class="usage-mover player-clickable" data-player-id="100" '
+        'data-player-name="Snap Riser">'
+    ) in out
+    assert (
+        '<li class="usage-mover player-clickable" data-player-id="101" '
+        'data-player-name="Target Riser">'
+    ) in out
+    assert (
+        '<li class="usage-mover player-clickable" data-player-id="105" '
+        'data-player-name="Third Riser">'
+    ) in out
+    assert out.index('data-player-id="100"') < out.index('data-player-id="101"')
+    assert out.index('data-player-id="101"') < out.index('data-player-id="105"')
+    # Excluded players get no row and no clickable attrs.
+    assert 'data-player-id="102"' not in out
+    assert 'data-player-id="104"' not in out
+
+
 def test_missing_meta_falls_back_to_name_only(monkeypatch):
     ctx = _ctx(players_index={}, pids=("101",))
     out = _render(monkeypatch, ctx)
     assert "Player 101" in out
+    # The fallback name still rides the clickable row with the real id.
+    assert 'data-player-id="101"' in out
+    assert 'data-player-name="Player 101"' in out
     assert 'class="um-sub"' not in out
     assert 'class="um-bar um-bar-recent"' in out
     assert '<span class="um-delta up">' in out

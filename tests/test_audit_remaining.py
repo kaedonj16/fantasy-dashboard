@@ -318,34 +318,20 @@ def test_keeper_years_kept_helper_exists():
 
 
 def test_playoff_tile_from_cache_math():
-    ns = {}
-    exec(
-        "def _playoff_tile_from_cache(odds_rows, viewer_roster_id, *, projected=False):\n"
-        "    if not odds_rows or not viewer_roster_id:\n"
-        "        return None\n"
-        "    rid = str(viewer_roster_id)\n"
-        "    row = next((o for o in odds_rows if str((o or {}).get('roster_id')) == rid), None)\n"
-        "    if not row:\n"
-        "        return None\n"
-        "    if projected and not row.get('is_projected'):\n"
-        "        return None\n"
-        "    pct = int(round(float(row.get('playoff_pct') or 0)))\n"
-        "    first = int(round(float(row.get('first_seed_pct') or 0)))\n"
-        "    if projected:\n"
-        "        sub = ('Projected · %s%% top seed' % first) if first > 0 else 'Projected from current rosters'\n"
-        "        return pct, sub\n"
-        "    if row.get('is_complete'):\n"
-        "        sub = 'Clinched' if pct >= 100 else ('Eliminated' if pct <= 0 else 'Playoff bound')\n"
-        "        return pct, sub\n"
-        "    bye = int(round(float(row.get('bye_pct') or 0)))\n"
-        "    sub = ('%s%% top seed' % first) if first > 0 else (('%s%% first-round bye' % bye) if bye > 0 else 'to make the playoffs')\n"
-        "    return pct, sub\n",
-        ns,
-    )
+    # Exec the REAL helpers from app.py (the formatter + tile builder sit
+    # back to back right before the share-card cache block) so this test
+    # tracks the shipped display contract instead of a hand copy:
+    # undecided odds read at one decimal and never round up to "100".
+    import math
+
+    start = APP_PY.index("def _fmt_playoff_pct_display")
+    end = APP_PY.index("# Cache for share card HTML", start)
+    ns = {"math": math}
+    exec(APP_PY[start:end], ns)
     fn = ns["_playoff_tile_from_cache"]
-    assert fn([{"roster_id": 1, "playoff_pct": 42.4, "first_seed_pct": 11.2}], 1) == (42, "11% top seed")
-    assert fn([{"roster_id": 1, "playoff_pct": 100, "is_complete": True}], 1) == (100, "Clinched")
+    assert fn([{"roster_id": 1, "playoff_pct": 42.4, "first_seed_pct": 11.2}], 1) == ("42.4", "11.2% top seed")
+    assert fn([{"roster_id": 1, "playoff_pct": 100, "is_complete": True}], 1) == ("100", "Clinched")
     assert fn([{"roster_id": 2, "playoff_pct": 30, "is_projected": True, "first_seed_pct": 0}], 2, projected=True) == (
-        30, "Projected from current rosters",
+        "30.0", "Projected from current rosters",
     )
     assert fn([{"roster_id": 1, "playoff_pct": 20}], 9) is None

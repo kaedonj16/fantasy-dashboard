@@ -14,42 +14,53 @@ def render_awards_section(awards: dict) -> str:
         # live on the Awards page.
         return ""
 
-    def acard(title, winner, value, context="", accent="honor"):
+    def acard(title, winner, value_num, value_unit="", context="", accent="honor"):
+        unit_html = (
+            f' <span class="award-value-unit">{value_unit}</span>' if value_unit else ""
+        )
         context_html = f'\n          <div class="award-context">{context}</div>' if context else ""
         return f"""
         <div class="award-item award-{accent}">
           <div class="award-name">{title}</div>
           <div class="award-winner">{winner}</div>
-          <div class="award-value">{value}</div>{context_html}
+          <div class="award-value"><span class="award-value-num">{value_num}</span>{unit_html}</div>{context_html}
         </div>"""
+
+    def streak_winner(teams):
+        # Tied teams stack one per line; a comma run-on reads as one name.
+        if len(teams) > 1:
+            return "".join(
+                f'<div class="award-winner-line">{team}</div>' for team in teams
+            )
+        return teams[0] if teams else ""
 
     rows = []
 
     if awards.get("highest_single_week"):
         t, w, p = awards["highest_single_week"]
-        rows.append(acard("Highest Single Week", t, f"{p:.1f} points", f"Week {w}"))
+        rows.append(acard("Highest Single Week", t, f"{p:.1f}", "points", f"Week {w}"))
 
     if awards.get("lowest_single_week"):
         t, w, p = awards["lowest_single_week"]
-        rows.append(acard("Lowest Single Week", t, f"{p:.1f} points", f"Week {w}", accent="shame"))
+        rows.append(acard("Lowest Single Week", t, f"{p:.1f}", "points", f"Week {w}", accent="shame"))
 
     if awards.get("longest_win_streak"):
         teams, L = awards["longest_win_streak"]
-        rows.append(acard("Longest Win Streak", ", ".join(teams), f"{L} games"))
+        rows.append(acard("Longest Win Streak", streak_winner(teams), f"{L}", "games"))
 
     if awards.get("longest_loss_streak"):
         teams, L = awards["longest_loss_streak"]
-        rows.append(acard("Longest Losing Streak", ", ".join(teams), f"{L} games", accent="shame"))
+        rows.append(acard("Longest Losing Streak", streak_winner(teams), f"{L}", "games", accent="shame"))
 
     if awards.get("most_consistent"):
         t, sd, n = awards["most_consistent"]
-        rows.append(acard("Most Consistent", t, f"σ {sd:.2f}", f"over {n} games"))
+        rows.append(acard("Most Consistent", t, f"σ {sd:.2f}", context=f"over {n} games"))
 
     if awards.get("highest_player"):
         w, pts, n, pos, team, owner, pid = awards["highest_player"]
         clickable_attrs = f" class='player-clickable' style='cursor:pointer;' data-player-id='{pid}' data-player-name='{n}'" if pid else ""
         rows.append(acard("Highest Points By a Player",
-                          f"<span{clickable_attrs}>{n}</span>", f"{pts} points", f"Week {w}"))
+                          f"<span{clickable_attrs}>{n}</span>", f"{pts}", "points", f"Week {w}"))
 
     return f"""
     <section class="os-card awards-card" data-section="awards">

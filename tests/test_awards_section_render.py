@@ -62,18 +62,29 @@ def test_tiles_have_label_winner_value_context():
     out = render_awards_section(AWARDS)
     assert out.count('class="award-item award-') == 6
     assert '<div class="award-winner">Team Alpha</div>' in out
-    assert '<div class="award-value">152.4 points</div>' in out
+    # Value splits into a strong number element and a smaller muted unit.
+    assert (
+        '<div class="award-value"><span class="award-value-num">152.4</span>'
+        ' <span class="award-value-unit">points</span></div>'
+    ) in out
     assert '<div class="award-context">Week 3</div>' in out
-    assert '<div class="award-value">61.2 points</div>' in out
+    assert '<span class="award-value-num">61.2</span>' in out
     assert '<div class="award-context">Week 5</div>' in out
-    # Tied streak winners join on the winner line.
-    assert '<div class="award-winner">Team Alpha, Team Gamma</div>' in out
-    assert '<div class="award-value">7 games</div>' in out
-    assert '<div class="award-value">6 games</div>' in out
-    # Consistency: sigma is the headline value, game count is the context.
-    assert '<div class="award-value">σ 9.12</div>' in out
+    # Tied streak winners stack one per line, never a comma run-on.
+    assert (
+        '<div class="award-winner"><div class="award-winner-line">Team Alpha</div>'
+        '<div class="award-winner-line">Team Gamma</div></div>'
+    ) in out
+    assert "Team Alpha, Team Gamma" not in out
+    assert '<span class="award-value-num">7</span>' in out
+    assert '<span class="award-value-unit">games</span>' in out
+    assert '<span class="award-value-num">6</span>' in out
+    # Consistency: sigma is the headline value (no unit), games are context.
+    assert (
+        '<div class="award-value"><span class="award-value-num">σ 9.12</span></div>'
+    ) in out
     assert '<div class="award-context">over 8 games</div>' in out
-    assert '<div class="award-value">41.25 points</div>' in out
+    assert '<span class="award-value-num">41.25</span>' in out
     assert '<div class="award-context">Week 4</div>' in out
 
 
@@ -109,4 +120,29 @@ def test_partial_awards_render_only_present_tiles():
     out = render_awards_section({"longest_loss_streak": (["Team Delta"], 6)})
     assert out.count('class="award-item award-') == 1
     assert _tiles(out) == [("award-shame", "Longest Losing Streak")]
+    # A single streak winner stays plain text on the winner line.
+    assert '<div class="award-winner">Team Delta</div>' in out
     assert "Highest Single Week" not in out
+
+
+def test_awards_css_has_tints_not_accent_bar_and_spans_orphan_tile():
+    from pathlib import Path
+
+    css = (
+        Path(__file__).resolve().parent.parent / "static" / "dashboard.css"
+    ).read_text(encoding="utf-8")
+    base = re.search(r"\.award-item \{(.*?)\}", css, re.DOTALL).group(1)
+    # The thick side accent bar is gone from the tile chrome.
+    assert "border-left" not in base
+    honor = re.search(r"\.award-item\.award-honor \{(.*?)\}", css, re.DOTALL).group(1)
+    shame = re.search(r"\.award-item\.award-shame \{(.*?)\}", css, re.DOTALL).group(1)
+    # Honor/shame distinction is a soft whole-tile tint instead.
+    assert "background: color-mix(in srgb, var(--win)" in honor
+    assert "background: color-mix(in srgb, var(--loss)" in shame
+    assert "border-left" not in honor
+    assert "border-left" not in shame
+    # A lone final tile in the 2-column grid spans the row.
+    span = re.search(
+        r"\.award-item:last-child:nth-child\(odd\) \{(.*?)\}", css, re.DOTALL
+    ).group(1)
+    assert "grid-column: 1 / -1" in span

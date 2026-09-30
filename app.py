@@ -467,11 +467,40 @@ def _playoff_sim_cached(ctx: dict, platform: str, block: bool = True) -> list:
         return []
 
 
+def _fmt_playoff_pct_display(value):
+    """Format a playoff-odds percentage for Season Hub display.
+
+    Mirrors the Playoff Odds page rule (``fmtProjPct`` in static/app.js):
+    an undecided value reads at one decimal, and the literal "100" / "0"
+    appears only when the raw value is exact (clinched / eliminated). The
+    decimal is truncated (floored) to tenths so this formatting step can
+    never round an undecided 99.9 up to "100"; the simulator already caps
+    undecided odds at 99.9 / 0.1, so this is defense in depth at the last
+    step before paint. The tiny epsilon guards float representation
+    (``99.9 * 10`` can land a hair under 999 and would floor to 99.8).
+    """
+    try:
+        raw = float(value)
+        if raw >= 100:
+            return "100"
+        if raw <= 0:
+            return "0"
+        return f"{math.floor(raw * 10 + 1e-9) / 10:.1f}"
+    except (TypeError, ValueError):
+        return "0"
+
+
 def _playoff_tile_from_cache(odds_rows, viewer_roster_id, *, projected=False):
     """Fill a hub playoff tile from a warm sim cache so first paint is not '-'.
 
-    Returns ``(pct_int, subtitle)`` or ``None`` when this roster has no row
-    (or, for the offseason tile, when the row is not a preseason projection).
+    Returns ``(pct_display, subtitle)`` or ``None`` when this roster has no
+    row (or, for the offseason tile, when the row is not a preseason
+    projection). ``pct_display`` is the string from
+    :func:`_fmt_playoff_pct_display` -- one decimal for undecided odds,
+    literal "100" / "0" only when the raw value is exact -- and callers
+    interpolate it directly as ``f"{pct}%"``. Status text and subtitle
+    selection use the RAW floats, never the display value, so a 99.9 can
+    only read as Clinched when the sim's raw value is actually >= 100.
     """
     if not odds_rows or not viewer_roster_id:
         return None
@@ -482,28 +511,34 @@ def _playoff_tile_from_cache(odds_rows, viewer_roster_id, *, projected=False):
     if projected and not row.get("is_projected"):
         return None
     try:
-        pct = int(round(float(row.get("playoff_pct") or 0)))
+        pct_raw = float(row.get("playoff_pct") or 0)
     except (TypeError, ValueError):
         return None
-    first = 0
-    try:
-        first = int(round(float(row.get("first_seed_pct") or 0)))
-    except (TypeError, ValueError):
-        first = 0
+    pct = _fmt_playoff_pct_display(pct_raw)
+
+    def _sub_pct(key):
+        try:
+            return float(row.get(key) or 0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    # Pick the subtitle from the value that will actually be displayed: a
+    # sub-percentage that truncates to 0.0 must not print "0.0% top seed".
+    first = _fmt_playoff_pct_display(_sub_pct("first_seed_pct"))
     if projected:
-        sub = f"Projected · {first}% top seed" if first > 0 else "Projected from current rosters"
+        sub = (
+            f"Projected · {first}% top seed"
+            if float(first) > 0
+            else "Projected from current rosters"
+        )
         return pct, sub
     if row.get("is_complete"):
-        sub = "Clinched" if pct >= 100 else ("Eliminated" if pct <= 0 else "Playoff bound")
+        sub = "Clinched" if pct_raw >= 100 else ("Eliminated" if pct_raw <= 0 else "Playoff bound")
         return pct, sub
-    bye = 0
-    try:
-        bye = int(round(float(row.get("bye_pct") or 0)))
-    except (TypeError, ValueError):
-        bye = 0
+    bye = _fmt_playoff_pct_display(_sub_pct("bye_pct"))
     sub = (
-        f"{first}% top seed" if first > 0
-        else (f"{bye}% first-round bye" if bye > 0 else "to make the playoffs")
+        f"{first}% top seed" if float(first) > 0
+        else (f"{bye}% first-round bye" if float(bye) > 0 else "to make the playoffs")
     )
     return pct, sub
 
@@ -9150,7 +9185,7 @@ def _render_usage_movers(ctx: dict, viewer_roster_id) -> str:
             pos = str(pmeta.get("pos") or pmeta.get("position") or "").strip().upper()
             team = str(pmeta.get("team") or "").strip().upper()
             sub = " · ".join(part for part in (pos, team) if part)
-            movers.append((float(delta), str(name), sub, t))
+            movers.append((float(delta), str(name), sub, t, pid))
         if not movers:
             return ""
         movers.sort(key=lambda x: x[0], reverse=True)
@@ -9160,7 +9195,7 @@ def _render_usage_movers(ctx: dict, viewer_roster_id) -> str:
             return f"{round(float(v), 1):g}"
 
         rows = []
-        for delta, name, sub, t in movers:
+        for delta, name, sub, t, pid in movers:
             stat_key = t.get("stat")
             stat = _stat_lbl.get(stat_key, stat_key or "")
             avg = float(t.get("season_avg") or 0)
@@ -9177,8 +9212,18 @@ def _render_usage_movers(ctx: dict, viewer_roster_id) -> str:
             sub_html = (
                 f'<span class="um-sub">{html.escape(sub)}</span>' if sub else ""
             )
+            # Whole row opens the player modal via the global
+            # .player-clickable delegate; rows without a real pid stay plain.
+            if pid:
+                li_attrs = (
+                    f' class="usage-mover player-clickable"'
+                    f' data-player-id="{html.escape(str(pid), quote=True)}"'
+                    f' data-player-name="{html.escape(name, quote=True)}"'
+                )
+            else:
+                li_attrs = ' class="usage-mover"'
             rows.append(f"""
-              <li class="usage-mover">
+              <li{li_attrs}>
                 <div class="um-main">
                   <span class="um-name">{html.escape(name)}</span>
                   {sub_html}
@@ -9539,7 +9584,7 @@ def _trade_window_card_html(ctx: dict, viewer_roster_id) -> str:
             lines.append(
                 f'Week {deadline} trade deadline, <span class="la-em">{when}</span>.'
             )
-        _odds_line = f'You\'re at <span class="la-em">{pct:.0f}%</span> playoff odds'
+        _odds_line = f'You\'re at <span class="la-em">{_fmt_playoff_pct_display(pct)}%</span> playoff odds'
         if (not is_redraft) and age_rank and n_teams:
             _sfx = "th" if 10 <= age_rank % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(age_rank % 10, "th")
             _odds_line += f" with the {age_rank}{_sfx}-oldest core of {n_teams}"
