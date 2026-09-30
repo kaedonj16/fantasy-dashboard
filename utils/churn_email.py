@@ -178,7 +178,7 @@ def build_winback(
             f"<strong>{escape(offer, quote=False)}</strong>."
         ),
         body_html=(
-            '<p style="margin:0 0 18px;font-size:13px;color:#6b7280;line-height:1.6;">'
+            '<p class="em-t3" style="margin:0 0 18px;font-size:13px;color:#6b7280;line-height:1.6;">'
             "This is a one-time offer link, just for your account. "
             "If you already resubscribed, ignore this email.</p>"
         ),

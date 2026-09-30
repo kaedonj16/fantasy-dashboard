@@ -13,6 +13,57 @@ from utils.digest_actions import action_section_html, player_deep_link, section_
 MAX_WIDTH_PX = 600
 
 
+# Dark-mode theme for email clients. Light-mode colors stay inline (the
+# default); these rules override them when the client reports dark mode.
+# Apple Mail / iOS Mail honor prefers-color-scheme; the Outlook apps stamp
+# [data-ogsc] on the markup instead, so the same rules ship under both.
+_DARK_MODE_RULES: tuple = (
+    (".em-wrap", (("background", "#0b1220"),)),
+    (".em-card", (("background", "#1a2438"), ("border-color", "#2f3f5c"))),
+    (".em-head", (("background", "#0b1220"),)),
+    (".em-sub", (("color", "#ffffff"),)),
+    (".em-kicker", (("color", "#93c5fd"),)),
+    (".em-cbody", (("background", "#1a2438"),)),
+    (".em-foot", (("background", "#1a2438"), ("border-color", "#2f3f5c"))),
+    (".em-foot-t", (("color", "#94a3b8"),)),
+    (".em-cta-btn", (("background", "#3b82f6"),)),
+    (".em-h", (("color", "#cbd5e1"),)),
+    (".em-greet", (("color", "#f1f5f9"),)),
+    (".em-t", (("color", "#f1f5f9"),)),
+    (".em-t2", (("color", "#cbd5e1"),)),
+    (".em-t3", (("color", "#94a3b8"),)),
+    (".em-k", (("color", "#cbd5e1"),)),
+    (".em-link", (("color", "#60a5fa"),)),
+    (".em-cta-a", (("color", "#60a5fa"),)),
+    (".em-sect", (("background", "#222f47"), ("border-color", "#2f3f5c"))),
+    (".em-chip", (("background", "#1e3a8a"), ("color", "#bfdbfe"))),
+    (".em-alert", (("background", "#451a03"), ("border-color", "#92400e"))),
+    (".em-alert-k", (("color", "#fbbf24"),)),
+    (".em-alert-t", (("color", "#fde68a"),)),
+    (".em-up", (("color", "#4ade80"),)),
+    (".em-dn", (("color", "#f87171"),)),
+    (".em-urgent", (("color", "#7fb0ff"),)),
+    (".em-rowb", (("border-top-color", "#2f3f5c"), ("border-bottom-color", "#2f3f5c"))),
+)
+
+
+def _dark_mode_css() -> str:
+    """Style block that themes the digest for dark-mode email clients."""
+    def block(prefix: str) -> str:
+        parts = []
+        for sel, decls in _DARK_MODE_RULES:
+            body = ";".join(f"{prop}:{val} !important" for prop, val in decls)
+            parts.append(f"{prefix}{sel}{{{body};}}")
+        return "".join(parts)
+    return (
+        "<style>"
+        "body{margin:0 !important;padding:0 !important;}"
+        f"@media (prefers-color-scheme:dark){{{block('')}}}"
+        f"{block('[data-ogsc] ')}"
+        "</style>"
+    )
+
+
 def email_shell(
     inner_html: str,
     *,
@@ -43,6 +94,11 @@ def email_shell(
     ``preheader`` is hidden inbox preview text. It must be the first text in
     the HTML body; zero-width padding keeps clients from pulling body copy
     into the snippet.
+
+    The shell returns a full HTML document with ``color-scheme`` meta tags
+    and a dark-mode stylesheet, so clients that support it (Apple Mail,
+    Outlook apps) render an intentional dark theme instead of smart-inverting
+    the light one.
     """
     pre = (preheader or "").strip()
     pre_html = ""
@@ -108,7 +164,7 @@ def email_shell(
         footer_border = "#e6ebf2"
         footer_color = "#94a3b8"
         kicker_html = (
-            '<div style="color:#93c5fd;font-size:11px;font-weight:800;'
+            '<div class="em-kicker" style="color:#93c5fd;font-size:11px;font-weight:800;'
             'letter-spacing:.14em;text-transform:uppercase;">BR Fantasy</div>'
         )
     cta = ""
@@ -117,7 +173,7 @@ def email_shell(
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:24px;">
   <tr>
     <td>
-      <a href="{escape(dash_url, quote=True)}" style="display:block;background:{cta_bg};color:#ffffff;text-decoration:none;font-weight:700;font-size:15px;padding:14px 20px;border-radius:10px;text-align:center;">{escape(cta_label, quote=False)}</a>
+      <a class="em-cta-btn" href="{escape(dash_url, quote=True)}" style="display:block;background:{cta_bg};color:#ffffff;text-decoration:none;font-weight:700;font-size:15px;padding:14px 20px;border-radius:10px;text-align:center;">{escape(cta_label, quote=False)}</a>
     </td>
   </tr>
 </table>"""
@@ -140,32 +196,45 @@ def email_shell(
             "from weekly digest emails."
         )
     return f"""\
-<div style="background:{wrapper_bg};padding:28px 12px;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">
+<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="supported-color-schemes" content="light dark">
+<title>{sub}</title>
+{_dark_mode_css()}
+</head>
+<body style="margin:0;padding:0;word-spacing:normal;">
+<div class="em-wrap" style="background:{wrapper_bg};padding:28px 12px;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">
   {pre_html}
-  <div style="max-width:{MAX_WIDTH_PX}px;margin:0 auto;background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid {card_border};">
-    <div style="background:{header_bg};padding:22px 24px 18px;">
+  <div class="em-card" style="max-width:{MAX_WIDTH_PX}px;margin:0 auto;background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid {card_border};">
+    <div class="em-head" style="background:{header_bg};padding:22px 24px 18px;">
       {logo_block}
       {kicker_html}
-      <div style="color:{subtitle_color};font-size:20px;font-weight:800;margin-top:6px;line-height:1.25;">{sub}</div>
+      <div class="em-sub" style="color:{subtitle_color};font-size:20px;font-weight:800;margin-top:6px;line-height:1.25;">{sub}</div>
     </div>
     <div style="height:4px;background:{divider};line-height:4px;font-size:0;">&nbsp;</div>
-    <div style="padding:22px 20px 24px;background:{body_bg};">
+    <div class="em-cbody" style="padding:22px 20px 24px;background:{body_bg};">
       {inner_html}
       {cta}
     </div>
-    <div style="padding:16px 22px;background:#ffffff;border-top:1px solid {footer_border};">
-      <p style="margin:0;font-size:11px;color:{footer_color};line-height:1.6;">
+    <div class="em-foot" style="padding:16px 22px;background:#ffffff;border-top:1px solid {footer_border};">
+      <p class="em-foot-t" style="margin:0;font-size:11px;color:{footer_color};line-height:1.6;">
         {footer}
       </p>
     </div>
   </div>
-</div>"""
+</div>
+</body>
+</html>"""
 
 
 def greeting_html(first_name: Optional[str]) -> str:
     hi = escape(first_name.strip(), quote=False) if first_name and first_name.strip() else "there"
     return (
-        f'<p style="margin:0 0 12px;font-size:16px;color:#0f172a;font-weight:600;">'
+        f'<p class="em-greet" style="margin:0 0 12px;font-size:16px;color:#0f172a;font-weight:600;">'
         f"Hey {hi},</p>"
     )
 
@@ -175,7 +244,7 @@ def heading(title: str) -> str:
     if not t:
         return ""
     return (
-        f'<h3 style="margin:20px 0 0;font-size:11px;font-weight:800;text-transform:uppercase;'
+        f'<h3 class="em-h" style="margin:20px 0 0;font-size:11px;font-weight:800;text-transform:uppercase;'
         f'letter-spacing:.06em;color:#334155;">{t}</h3>'
     )
 
@@ -185,7 +254,7 @@ def format_chip_html(label: str) -> str:
     if not text:
         return ""
     return (
-        f'<span style="display:inline-block;margin-top:8px;padding:5px 12px;border-radius:999px;'
+        f'<span class="em-chip" style="display:inline-block;margin-top:8px;padding:5px 12px;border-radius:999px;'
         f'background:#dbeafe;color:#1d4ed8;font-size:11px;font-weight:700;letter-spacing:.02em;">'
         f"{escape(text, quote=False)}</span>"
     )
@@ -300,37 +369,39 @@ def leagues_snapshot_table_html(entries: list) -> str:
         label = escape(name, quote=False)
         if href:
             label = (
-                f'<a href="{escape(href, quote=True)}" style="color:#0f172a;'
+                f'<a class="em-t" href="{escape(href, quote=True)}" style="color:#0f172a;'
                 f'text-decoration:none;">{label}</a>'
             )
         meta = escape(chip, quote=False)
+        focus_cls = "em-urgent" if urgent else "em-t2"
         focus_color = "#1d4ed8" if urgent else "#334155"
+        rowb_cls = "em-rowb" if i else ""
         border = "border-top:1px solid #eef2f7;" if i else ""
         standing_html = (
-            f'<td style="padding:12px 0 12px 12px;{border}font-size:13px;font-weight:700;'
+            f'<td class="{rowb_cls} em-t" style="padding:12px 0 12px 12px;{border}font-size:13px;font-weight:700;'
             f'color:#0f172a;text-align:right;white-space:nowrap;vertical-align:top;">'
             f"{escape(standing, quote=False)}</td>"
             if standing else
-            f'<td style="padding:12px 0;{border}"></td>'
+            f'<td class="{rowb_cls}" style="padding:12px 0;{border}"></td>'
         )
         focus_html = (
-            f'<div style="font-size:13px;color:{focus_color};margin-top:4px;line-height:1.4;">'
+            f'<div class="{focus_cls}" style="font-size:13px;color:{focus_color};margin-top:4px;line-height:1.4;">'
             f"{escape(focus, quote=False)}</div>"
             if focus else ""
         )
         meta_html = (
-            f'<div style="font-size:12px;color:#64748b;margin-top:2px;">{meta}</div>'
+            f'<div class="em-t3" style="font-size:12px;color:#64748b;margin-top:2px;">{meta}</div>'
             if meta else ""
         )
         body += (
             f"<tr>"
-            f'<td style="padding:12px 0;{border}vertical-align:top;">'
-            f'<div style="font-size:15px;font-weight:700;color:#0f172a;line-height:1.3;">{label}</div>'
+            f'<td class="{rowb_cls}" style="padding:12px 0;{border}vertical-align:top;">'
+            f'<div class="em-t" style="font-size:15px;font-weight:700;color:#0f172a;line-height:1.3;">{label}</div>'
             f"{meta_html}{focus_html}</td>"
             f"{standing_html}</tr>"
         )
     return (
-        f'<div style="{EMAIL_CARD_STYLE}">'
+        f'<div class="em-sect" style="{EMAIL_CARD_STYLE}">'
         f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
         f'style="width:100%;border-collapse:collapse;">{body}</table></div>'
     )
@@ -400,7 +471,7 @@ def thursday_alert_html(items: Optional[list], *, compact: bool = False) -> str:
             escape(str(it.get("name") or ""), quote=False) for it in rows[:3]
         )
         return (
-            '<p style="margin:0 0 8px;font-size:13px;color:#92400e;line-height:1.5;">'
+            '<p class="em-alert-t" style="margin:0 0 8px;font-size:13px;color:#92400e;line-height:1.5;">'
             f"<strong>Thursday night:</strong> set your lineup early, {names} "
             "play Thursday.</p>"
         )
@@ -423,12 +494,12 @@ def thursday_alert_html(items: Optional[list], *, compact: bool = False) -> str:
         body += f". Kickoff {sorted(kickoffs)[0]}"
     body += "."
     return (
-        '<div style="margin:0 0 12px;padding:12px 14px;border-radius:12px;'
+        '<div class="em-alert" style="margin:0 0 12px;padding:12px 14px;border-radius:12px;'
         'background:#fffbeb;border:1px solid #fcd34d;">'
-        '<div style="font-size:11px;font-weight:800;color:#92400e;'
+        '<div class="em-alert-k" style="font-size:11px;font-weight:800;color:#92400e;'
         'text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px;">'
         "Thursday night</div>"
-        f'<div style="font-size:14px;color:#78350f;line-height:1.5;">{body}</div>'
+        f'<div class="em-alert-t" style="font-size:14px;color:#78350f;line-height:1.5;">{body}</div>'
         "</div>"
     )
 
@@ -440,7 +511,7 @@ def league_activity_html(bullets: Optional[list], *, href: str = "") -> str:
         return ""
     from utils.digest_actions import section_card
     items = "".join(
-        f'<li style="margin:0 0 6px;font-size:14px;color:#0f172a;line-height:1.5;">'
+        f'<li class="em-t" style="margin:0 0 6px;font-size:14px;color:#0f172a;line-height:1.5;">'
         f"{escape(b, quote=False)}</li>"
         for b in clean[:4]
     )
@@ -475,11 +546,11 @@ def league_summary_html(
     stakes = ""
     if (stakes_line or "").strip():
         stakes = (
-            '<div style="font-size:13px;color:#475569;margin-top:3px;">'
+            '<div class="em-t2" style="font-size:13px;color:#475569;margin-top:3px;">'
             f"{escape(stakes_line.strip(), quote=False)}</div>"
         )
     return (
-        f'<div style="margin:0 0 8px;font-size:{size};color:#0f172a;line-height:1.4;">'
+        f'<div class="em-t" style="margin:0 0 8px;font-size:{size};color:#0f172a;line-height:1.4;">'
         f"{headline}{chip}{stakes}</div>"
     )
 
@@ -551,14 +622,15 @@ def waiver_html(
         if base and platform and season and league_id and pid:
             link = player_deep_link(base, platform, season, league_id, pid, name)
             label = (
-                f'<a href="{escape(link, quote=True)}" style="color:#0f172a;'
+                f'<a class="em-link" href="{escape(link, quote=True)}" style="color:#0f172a;'
                 f'text-decoration:none;font-weight:700;">{label}</a>'
             )
         meta = " · ".join(p for p in (pos, reason) if p)
         border = "border-top:1px solid #e2e8f0;" if shown else ""
+        rowb = "em-rowb" if shown else ""
         rows += (
-            f'<tr><td style="padding:8px 0;{border}font-size:15px;color:#0f172a;">{label}'
-            f'<div style="font-size:12px;color:#64748b;margin-top:2px;">{escape(meta, quote=False)}</div>'
+            f'<tr><td class="{rowb} em-t" style="padding:8px 0;{border}font-size:15px;color:#0f172a;">{label}'
+            f'<div class="em-t3" style="font-size:12px;color:#64748b;margin-top:2px;">{escape(meta, quote=False)}</div>'
             f"</td></tr>"
         )
         shown += 1
@@ -599,14 +671,14 @@ def roster_core_html(
         if base and platform and season and league_id and pid:
             link = player_deep_link(base, platform, season, league_id, pid, name)
             label = (
-                f'<a href="{escape(link, quote=True)}" style="color:#0f172a;'
+                f'<a class="em-link" href="{escape(link, quote=True)}" style="color:#0f172a;'
                 f'text-decoration:none;font-weight:600;">{label}</a>'
             )
         pos_s = escape(pos, quote=False)
         rows += (
-            f'<tr><td style="padding:6px 0;font-size:14px;">{label}'
-            f'<div style="font-size:12px;color:#64748b;">{pos_s}</div></td>'
-            f'<td style="padding:6px 0;font-size:14px;font-weight:700;color:#0f172a;'
+            f'<tr><td class="em-t" style="padding:6px 0;font-size:14px;">{label}'
+            f'<div class="em-t3" style="font-size:12px;color:#64748b;">{pos_s}</div></td>'
+            f'<td class="em-t" style="padding:6px 0;font-size:14px;font-weight:700;color:#0f172a;'
             f'text-align:right;white-space:nowrap;">{val:.0f}</td></tr>'
         )
     if not rows:
@@ -640,6 +712,7 @@ def _mover_rows(
     notes: Optional[dict] = None,
 ) -> str:
     color = "#16a34a" if up else "#dc2626"
+    dcls = "em-up" if up else "em-dn"
     arrow = "▲" if up else "▼"
     cells = ""
     for item in pairs:
@@ -665,14 +738,14 @@ def _mover_rows(
         nm = escape(raw_name, quote=False)
         href = escape(player_deep_link(base, platform, season, league_id, pid, raw_name), quote=True)
         note_html = (
-            f'<div style="font-size:12px;color:#64748b;font-weight:400;">{escape(str(note), quote=False)}</div>'
+            f'<div class="em-t3" style="font-size:12px;color:#64748b;font-weight:400;">{escape(str(note), quote=False)}</div>'
             if note else ""
         )
         cells += (
-            f'<tr><td style="padding:6px 0;font-size:14px;">'
-            f'<a href="{href}" style="color:#0f172a;text-decoration:none;font-weight:600;">'
+            f'<tr><td class="em-t" style="padding:6px 0;font-size:14px;">'
+            f'<a class="em-link" href="{href}" style="color:#0f172a;text-decoration:none;font-weight:600;">'
             f"{nm}</a>{note_html}</td>"
-            f'<td style="padding:6px 0;font-size:14px;font-weight:700;color:{color};'
+            f'<td class="{dcls}" style="padding:6px 0;font-size:14px;font-weight:700;color:{color};'
             f'text-align:right;white-space:nowrap;">{arrow} {abs(delta):.0f}</td></tr>'
         )
     if not cells:

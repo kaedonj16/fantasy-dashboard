@@ -220,7 +220,7 @@ def cross_league_digest_html(
         return ""
     try:
         from utils.cross_league_actions import rank_cross_league_actions
-        from utils.digest_actions import action_section_html
+        from utils.digest_actions import section_card
         from utils.digest_sections import heading
     except Exception:
         return ""
@@ -235,20 +235,21 @@ def cross_league_digest_html(
             continue
         league = str(act.get("league_name") or "").strip()
         detail = str(act.get("detail") or "").strip()
-        body_parts = []
-        if league:
-            body_parts.append(league)
-        if detail:
-            body_parts.append(detail)
-        body = " · ".join(body_parts) if body_parts else title
+        league_e = escape(league, quote=False)
+        detail_e = escape(detail, quote=False)
+        if league_e and detail_e:
+            inner = f"<strong>{league_e}</strong> · {detail_e}"
+        else:
+            inner = league_e or detail_e or escape(title, quote=False)
         href = str(act.get("href") or "").strip()
         if href and href.startswith("/") and base:
             href = base + href
-        html = action_section_html(
-            f"Across leagues · {title}" if league else title,
-            body,
+        html = section_card(
+            title,
+            inner,
             href=href,
             cta="Open →",
+            accent=True,
         )
         if html:
             bits.append(html)
@@ -333,10 +334,10 @@ def compact_league_blurb(
             chip = ""
         detail = chip
     return (
-        f'<tr><td style="padding:10px 0;border-bottom:1px solid #eef2f7;">'
-        f'<a href="{escape(href)}" style="font-size:14px;font-weight:600;color:#0f172a;'
+        f'<tr><td class="em-rowb" style="padding:10px 0;border-bottom:1px solid #eef2f7;">'
+        f'<a class="em-t" href="{escape(href)}" style="font-size:14px;font-weight:600;color:#0f172a;'
         f'text-decoration:none;">{escape(name)}</a>'
-        + (f'<div style="font-size:12px;color:#64748b;margin-top:2px;">{escape(detail)}</div>' if detail else "")
+        + (f'<div class="em-t3" style="font-size:12px;color:#64748b;margin-top:2px;">{escape(detail)}</div>' if detail else "")
         + "</td></tr>"
     )
 
@@ -1489,7 +1490,7 @@ def build_multi_league_digest(
     else:
         intro_txt = f"Snapshot across {n} connected leagues."
     intro = (
-        f'<p style="margin:0 0 4px;font-size:14px;color:#475569;line-height:1.5;">'
+        f'<p class="em-t2" style="margin:0 0 4px;font-size:14px;color:#475569;line-height:1.5;">'
         f"{escape(intro_txt, quote=False)}</p>"
     )
     moves = ""
