@@ -1,7 +1,7 @@
 // Behavioral harness for the Trade Suggestions Strategy path loader.
 //
-// Incident 2026-09-30: the Strategy view "loads the data, then goes back to
-// the loading screen and stays there showing the loading skeletons."
+// Incident 2026-09-30 (#2134): the Strategy view "loads the data, then goes
+// back to the loading screen and stays there showing the loading skeletons."
 // Root causes in the shipped loadStrategyView (static/app.js):
 //   1. The cache-hit branch referenced `strategySpinner` BEFORE its const
 //      declaration (temporal dead zone) -> every cache hit threw a
@@ -12,8 +12,15 @@
 //   3. `_strategyInflight[key] = true` leaked on the stale and 403 early
 //      returns, so that key early-returned forever afterwards.
 //
-// This harness extracts the SHIPPED function by source and drives it with a
-// fake DOM / fake fetch -- not string matching.
+// Progressive loading (this update): the loader fetches the analytical
+// slate (phase=slate, no Monte Carlo), paints it immediately, then resolves
+// each player group's sim numbers with its own request
+// (/api/trade-intel/archetype-suggestion-sim). Completions merge in place;
+// the final server-ranked order and the memory cache apply only once every
+// group settles; a failed group stays retryable and blocks caching.
+//
+// This harness extracts the SHIPPED functions by source and drives them
+// with a fake DOM / fake fetch -- not string matching.
 //
 // Run: node tests/strategy_view_harness.mjs   (exit 0 = pass)
 // APP_JS_PATH env var overrides the app.js under test.
@@ -39,6 +46,14 @@ function extractBlock(src, marker) {
 }
 
 const tick = () => new Promise((r) => setImmediate(r));
+
+async function settleUntil(cond, what) {
+  for (let i = 0; i < 200; i++) {
+    if (cond()) return;
+    await tick();
+  }
+  throw new Error('TIMEOUT waiting for: ' + what);
+}
 
 function abortError() {
   const e = new Error('The operation was aborted');
@@ -78,7 +93,27 @@ function makeFetch() {
 }
 
 const okRes = (body) => ({ ok: true, status: 200, json: async () => body });
-const PAYLOAD = { suggestions: [{ player_id: 'p1' }], current_playoff_pct: 42.5 };
+const errRes = (status) => ({ ok: false, status, json: async () => ({}) });
+
+// A slate row as the server sends it in phase=slate: sim fields null,
+// rank null, sim_pending true.
+const slateRow = (pid) => ({
+  player_id: pid, group_key: pid, name: 'Player ' + pid, sim_pending: true,
+  rank: null, win_prob_delta: null, playoff_odds_delta: null,
+  net_win_prob_delta: null, net_playoff_odds_delta: null,
+});
+const slatePayload = (pids) => ({
+  phase: 'slate', groups: pids, current_playoff_pct: null,
+  suggestions: pids.map(slateRow),
+});
+const simPayload = (pid, rank, pod) => ({
+  phase: 'sim', group_key: pid, current_playoff_pct: 42.5,
+  suggestions: [{
+    player_id: pid, group_key: pid, name: 'Player ' + pid, rank,
+    win_prob_delta: 0.01, playoff_odds_delta: pod,
+    net_win_prob_delta: 0.02, net_playoff_odds_delta: pod,
+  }],
+});
 
 let passed = 0;
 function check(name, cond) {
@@ -91,10 +126,19 @@ const unhandled = [];
 process.on('unhandledRejection', (e) => unhandled.push(e));
 
 // ── Build the loader scope ────────────────────────────────────────────────
-const fnSrc = extractBlock(APP_SRC, 'async function loadStrategyView(archetype)');
+const fnSrc = [
+  'async function loadStrategyView(archetype)',
+  'function _strategyGroupState(gk)',
+  'async function _strategySimFanout(job)',
+  'async function _strategySimLoadGroup(gk, job)',
+  'function _retryStrategyGroup(gk)',
+  'function _strategySimFinalize(job)',
+].map((m) => extractBlock(APP_SRC, m)).join('\n');
 
 function buildLoader() {
   const renders = [];
+  const impactRenders = [];
+  const cardRenders = [];
   const emptyStates = [];
   const errorStates = [];
   const els = {
@@ -103,6 +147,7 @@ function buildLoader() {
     '#seasonInput': { value: '2026' },
     '#otcStrategySpinner': makeEl(),
     '#otcStrategyImpactHint': makeEl(),
+    '#otcCurrentPOBadge': makeEl(),
   };
   const strategyImpact = makeEl();
   const strategyCards = makeEl();
@@ -122,44 +167,75 @@ var _strategyReqSeq = 0;
 var _strategyAbortCtrl = null;
 var _strategyCache = {};
 var _strategyInflight = {};
+var _strategySimGroups = {};
+var _strategySimJob = null;
+var _STRATEGY_SIM_CONCURRENCY = 3;
+var _strategyData = [];
+var _strategyFilter = null;
+var _strategyPage = 0;
+var _currentPlayoffPct = null;
 var _activeArchetype = '';
+var _renderStrategyResult = function (data, pct, arch) {
+  _strategyData = data; _currentPlayoffPct = pct; _strategyFilter = null; _strategyPage = 0;
+  renders.push({ data, pct, arch });
+  strategyImpact.innerHTML = 'RENDERED:' + arch;
+};
+var _renderImpactTable = function (data) { impactRenders.push(data); };
+var _renderStrategyCards = function (data, filter) { cardRenders.push({ data, filter }); };
 `;
   const run = new Function(
     'root', 'window', 'fetch', 'strategyImpact', 'strategyCards', 'strategyCardsHead',
     'getCurrentRosterId', 'getLeagueType', 'getLeagueSize', '_untouchableIds',
-    '_renderStrategyResult', 'showPaywall',
+    'showPaywall', 'renders', 'impactRenders', 'cardRenders',
     vars + '\n' + fnSrc + '\n' + `
 return {
   loadStrategyView,
+  retryGroup: _retryStrategyGroup,
   setArch: (a) => { _activeArchetype = a; },
-  state: () => ({ cache: _strategyCache, inflight: _strategyInflight, seq: _strategyReqSeq }),
+  state: () => ({
+    cache: _strategyCache, inflight: _strategyInflight, seq: _strategyReqSeq,
+    data: _strategyData, groups: _strategySimGroups, pct: _currentPlayoffPct,
+  }),
 };`
   );
   const api = run(
     root, windowFake, fetchFake, strategyImpact, strategyCards, strategyCardsHead,
     () => '7', () => 'dynasty', () => 12, new Set(),
-    (data, pct, arch) => {
-      renders.push({ data, pct, arch });
-      // The real render replaces the skeleton markup wholesale.
-      strategyImpact.innerHTML = 'RENDERED:' + arch;
-    },
-    () => {},
+    () => {}, renders, impactRenders, cardRenders,
   );
-  return { api, renders, emptyStates, errorStates, els, strategyImpact, strategyCards, fetchFake };
+  return { api, renders, impactRenders, cardRenders, emptyStates, errorStates, els, strategyImpact, strategyCards, fetchFake };
 }
 
-// ── 1. First load fetches, renders, caches ────────────────────────────────
+const simCallsFor = (fetchFake, gk) =>
+  fetchFake.calls.filter((c) => c.url.includes('archetype-suggestion-sim') && c.url.includes('group_key=' + gk));
+const slateCalls = (fetchFake) =>
+  fetchFake.calls.filter((c) => c.url.includes('phase=slate'));
+
+// ── 1. Progressive happy path: slate paints, sims fill in, then finalize ──
 {
   const { api, renders, els, fetchFake } = buildLoader();
   api.setArch('contending');
-  fetchFake.setHandler(() => okRes(PAYLOAD));
+  fetchFake.setHandler((url) => {
+    if (url.includes('archetype-suggestion-sim')) {
+      return url.includes('group_key=b') ? okRes(simPayload('b', 0.4, 0.02)) : okRes(simPayload('a', 0.9, 0.05));
+    }
+    return okRes(slatePayload(['a', 'b']));
+  });
   await api.loadStrategyView('contending');
-  check('first load renders the fetched suggestions',
-    renders.length === 1 && renders[0].data.length === 1 && renders[0].pct === 42.5);
-  check('first load hides the spinner', els['#otcStrategySpinner'].style.display === 'none');
-  check('first load caches the result', Object.keys(api.state().cache).length === 1);
-  check('first load leaves no in-flight flag behind',
-    Object.keys(api.state().inflight).length === 0);
+  check('slate renders immediately, before any sim completes',
+    renders.length === 1 && renders[0].data.length === 2 && renders[0].pct === null);
+  check('slate render hides the spinner', els['#otcStrategySpinner'].style.display === 'none');
+  await settleUntil(() => Object.keys(api.state().cache).length === 1, 'finalize caches the completed result');
+  check('one sim request per player group', simCallsFor(fetchFake, 'a').length === 1 && simCallsFor(fetchFake, 'b').length === 1);
+  const st = api.state();
+  check('sim numbers merged into the rendered rows',
+    st.data.find((r) => r.player_id === 'a').net_playoff_odds_delta === 0.05);
+  check('final order follows the server rank once all sims land',
+    st.data.map((r) => r.player_id).join(',') === 'a,b');
+  check('playoff pct arrives with the sim phase', st.pct === 42.5);
+  check('completed result cached with its playoff pct',
+    Object.values(st.cache)[0].playoffPct === 42.5);
+  check('no in-flight flag left behind', Object.keys(st.inflight).length === 0);
 
   // ── 2. Cache hit renders instantly (TDZ regression) ─────────────────────
   let threw = null;
@@ -167,8 +243,8 @@ return {
     await api.loadStrategyView('contending');
   } catch (e) { threw = e; }
   check('cache hit does not throw (spinner TDZ regression)', threw === null);
-  check('cache hit renders the cached result', renders.length === 2 && renders[1].arch === 'contending');
-  check('cache hit does not refetch', fetchFake.calls.length === 1);
+  check('cache hit renders the cached result', renders.length === 2 && renders[1].pct === 42.5);
+  check('cache hit does not refetch', fetchFake.calls.length === 3);
   check('cache hit hides the spinner', els['#otcStrategySpinner'].style.display === 'none');
 }
 
@@ -178,14 +254,18 @@ return {
   api.setArch('consolidate');
   let release;
   const gate = new Promise((r) => { release = r; });
-  fetchFake.setHandler(() => gate.then(() => okRes(PAYLOAD)));
-  const pA = api.loadStrategyView('consolidate'); // paints skeletons, fetch pending
+  fetchFake.setHandler((url) => {
+    if (url.includes('archetype-suggestion-sim')) return okRes(simPayload('a', 0.9, 0.05));
+    return gate.then(() => okRes(slatePayload(['a'])));
+  });
+  const pA = api.loadStrategyView('consolidate'); // paints skeletons, slate pending
   const pB = api.loadStrategyView('consolidate'); // duplicate: aborts A, must own the view
   release();
   await Promise.allSettled([pA, pB]);
-  await tick();
-  check('duplicate same-key call fetches a live replacement', fetchFake.calls.length === 2);
-  check('duplicate same-key call renders exactly once', renders.length === 1);
+  await settleUntil(() => Object.keys(api.state().cache).length === 1, 'duplicate call finalizes');
+  check('duplicate same-key call fetches a live replacement slate', slateCalls(fetchFake).length === 2);
+  check('duplicate same-key call renders the slate exactly once', renders.length === 1);
+  check('duplicate same-key call sims only for the owning request', simCallsFor(fetchFake, 'a').length === 1);
   check('duplicate same-key call does not leave skeletons on screen',
     !strategyImpact.innerHTML.includes('sk-shimmer') && strategyImpact.innerHTML === 'RENDERED:consolidate');
   check('duplicate same-key call leaves no in-flight flag behind',
@@ -195,23 +275,31 @@ return {
 // ── 4. Stale completion must not poison its key for later visits ──────────
 {
   const { api, renders, fetchFake } = buildLoader();
-  fetchFake.honorAbort = false; // A's response lands after B superseded it
+  fetchFake.honorAbort = false; // A's slate lands after B superseded it
   let releaseA;
   const gateA = new Promise((r) => { releaseA = r; });
-  fetchFake.setHandler((url) => url.includes('archetype=contending')
-    ? gateA.then(() => okRes(PAYLOAD))
-    : okRes({ suggestions: [{ player_id: 'p2' }], current_playoff_pct: 10 }));
+  fetchFake.setHandler((url) => {
+    if (url.includes('archetype-suggestion-sim')) {
+      return url.includes('group_key=d1') ? okRes(simPayload('d1', 0.7, 0.03)) : okRes(simPayload('c1', 0.7, 0.03));
+    }
+    return url.includes('archetype=contending')
+      ? gateA.then(() => okRes(slatePayload(['c1'])))
+      : okRes(slatePayload(['d1']));
+  });
   api.setArch('contending');
   const pA = api.loadStrategyView('contending');
   api.setArch('distribute');
   await api.loadStrategyView('distribute');
+  await settleUntil(() => api.state().groups['d1'] && api.state().groups['d1'].state === 'done', 'distribute sim settles');
   check('newer archetype renders while the stale one is in flight',
     renders.length === 1 && renders[0].arch === 'distribute');
   releaseA();
-  await pA; // resolves stale: returns without rendering
+  await pA; // resolves stale: returns without rendering or simming
   check('stale response never renders', renders.length === 1);
+  check('stale slate never fans out sim requests', simCallsFor(fetchFake, 'c1').length === 0);
   api.setArch('contending');
   await api.loadStrategyView('contending'); // key must still be loadable
+  await settleUntil(() => api.state().groups['c1'] && api.state().groups['c1'].state === 'done', 'contending sim settles');
   check('key loadable again after a stale completion (in-flight leak regression)',
     renders.length === 2 && renders[1].arch === 'contending');
   check('no in-flight flags remain', Object.keys(api.state().inflight).length === 0);
@@ -221,24 +309,32 @@ return {
 {
   const { api, renders, emptyStates, fetchFake } = buildLoader();
   api.setArch('rebuilding');
-  fetchFake.setHandler(() => ({ ok: false, status: 403, json: async () => ({}) }));
+  fetchFake.setHandler(() => errRes(403));
   await api.loadStrategyView('rebuilding');
   check('403 renders the PRO empty state', emptyStates.length === 1 && emptyStates[0].title === 'PRO trade tools');
-  fetchFake.setHandler(() => okRes(PAYLOAD));
+  fetchFake.setHandler((url) => url.includes('archetype-suggestion-sim')
+    ? okRes(simPayload('a', 0.9, 0.05))
+    : okRes(slatePayload(['a'])));
   await api.loadStrategyView('rebuilding');
+  await settleUntil(() => Object.keys(api.state().cache).length === 1, 'post-403 load finalizes');
   check('same key refetches after a 403 (in-flight leak regression)',
-    fetchFake.calls.length === 2 && renders.length === 1);
+    slateCalls(fetchFake).length === 2 && renders.length === 1);
 }
 
 // ── 6. Cache hit while another load is in flight replaces the skeletons ──
 {
   const { api, renders, strategyImpact, fetchFake } = buildLoader();
-  fetchFake.setHandler(() => okRes(PAYLOAD));
+  fetchFake.setHandler((url) => url.includes('archetype-suggestion-sim')
+    ? okRes(simPayload('a', 0.9, 0.05))
+    : okRes(slatePayload(['a'])));
   api.setArch('contending');
-  await api.loadStrategyView('contending'); // now cached
+  await api.loadStrategyView('contending'); // slate + sim
+  await settleUntil(() => Object.keys(api.state().cache).length === 1, 'contending cached');
   let release;
   const gate = new Promise((r) => { release = r; });
-  fetchFake.setHandler(() => gate.then(() => okRes(PAYLOAD)));
+  fetchFake.setHandler((url) => url.includes('archetype-suggestion-sim')
+    ? okRes(simPayload('a', 0.9, 0.05))
+    : gate.then(() => okRes(slatePayload(['a']))));
   api.setArch('distribute');
   const pSlow = api.loadStrategyView('distribute'); // skeletons on screen
   api.setArch('contending');
@@ -250,6 +346,60 @@ return {
     renders.length === 2 && renders[1].arch === 'contending');
   check('cache hit during an in-flight load clears the skeletons',
     strategyImpact.innerHTML === 'RENDERED:contending');
+  check('superseded in-flight load never fans out sims', simCallsFor(fetchFake, 'a').length === 1);
+}
+
+// ── 7. A failed group sim stays retryable and blocks the final cache ─────
+{
+  const { api, fetchFake } = buildLoader();
+  api.setArch('contending');
+  let bAttempts = 0;
+  fetchFake.setHandler((url) => {
+    if (url.includes('archetype-suggestion-sim')) {
+      if (url.includes('group_key=b')) {
+        bAttempts++;
+        return bAttempts === 1 ? errRes(500) : okRes(simPayload('b', 0.4, 0.02));
+      }
+      return okRes(simPayload('a', 0.9, 0.05));
+    }
+    return okRes(slatePayload(['a', 'b']));
+  });
+  await api.loadStrategyView('contending');
+  await settleUntil(() => {
+    const g = api.state().groups;
+    return g['a'] && g['a'].state === 'done' && g['b'] && g['b'].state === 'error';
+  }, 'group b fails while a completes');
+  check('failed group is marked error, not silently zeroed', api.state().groups['b'].state === 'error');
+  check('partial results are not cached as final', Object.keys(api.state().cache).length === 0);
+  check('completed group merged despite the sibling failure',
+    api.state().data.find((r) => r.player_id === 'a').net_playoff_odds_delta === 0.05);
+  check('failed group keeps its pending slate row (explicit state, no fake numbers)',
+    api.state().data.find((r) => r.player_id === 'b').net_playoff_odds_delta === null);
+  api.retryGroup('b');
+  await settleUntil(() => Object.keys(api.state().cache).length === 1, 'retry completes and finalizes');
+  check('retry resolves the group and the completed result caches',
+    api.state().groups['b'].state === 'done' && Object.keys(api.state().cache).length === 1);
+  check('final order settles after the retry',
+    api.state().data.map((r) => r.player_id).join(',') === 'a,b');
+}
+
+// ── 8. A group the sim filters out loses its slate rows ───────────────────
+{
+  const { api, fetchFake } = buildLoader();
+  api.setArch('consolidate');
+  fetchFake.setHandler((url) => {
+    if (url.includes('archetype-suggestion-sim')) {
+      return url.includes('group_key=b')
+        ? okRes({ phase: 'sim', group_key: 'b', current_playoff_pct: 42.5, suggestions: [] })
+        : okRes(simPayload('a', 0.9, 0.05));
+    }
+    return okRes(slatePayload(['a', 'b']));
+  });
+  await api.loadStrategyView('consolidate');
+  await settleUntil(() => Object.keys(api.state().cache).length === 1, 'resolved-empty group finalizes');
+  check('resolved-empty group drops its slate rows',
+    api.state().data.map((r) => r.player_id).join(',') === 'a');
+  check('result still caches when a group resolves empty', Object.keys(api.state().cache).length === 1);
 }
 
 await tick();

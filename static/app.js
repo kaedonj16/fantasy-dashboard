@@ -9472,6 +9472,14 @@ window.initTradePage = function initTradePage(root = document) {
     // misses and refetches. Cleared on context change below.
     let _strategyCache   = {};
     let _strategyInflight = {};
+    // Progressive loading state: after the analytical slate paints, each
+    // player group resolves its Monte Carlo numbers via its own request.
+    // _strategySimGroups maps group_key -> {state: pending|retrying|done|error,
+    // rows}; _strategySimJob stashes the live load's request context so a
+    // failed group can be retried in place.
+    let _strategySimGroups = {};
+    let _strategySimJob    = null;
+    const _STRATEGY_SIM_CONCURRENCY = 3;
 
     function _setSuggSubtab(tab) {
       _activeSubtab = tab;
@@ -9594,6 +9602,9 @@ window.initTradePage = function initTradePage(root = document) {
       const _ctrl = new AbortController();
       _strategyAbortCtrl = _ctrl;
       const _isStale = () => _mySeq !== _strategyReqSeq || _activeArchetype !== archetype;
+      // Any progressive sim state belongs to the load just superseded.
+      _strategySimGroups = {};
+      _strategySimJob    = null;
 
       const hasPremium = (root.querySelector("#otcHasPremium")?.value || "false") === "true";
       if (!hasPremium) {
@@ -9678,8 +9689,7 @@ window.initTradePage = function initTradePage(root = document) {
       };
 
       try {
-        const url =
-          `/api/trade-intel/archetype-suggestions` +
+        const qs =
           `?archetype=${encodeURIComponent(archetype)}` +
           `&platform=${encodeURIComponent(platform)}` +
           `&league_id=${encodeURIComponent(leagueId)}` +
@@ -9689,7 +9699,10 @@ window.initTradePage = function initTradePage(root = document) {
           `&league_size=${encodeURIComponent(leagueSize)}` +
           (_untouchableStr ? `&untouchable_ids=${encodeURIComponent(_untouchableStr)}` : "");
 
-        const res = await fetch(url, { cache: "no-store", signal: _ctrl.signal });
+        // Progressive loading: fetch the analytical slate first (no Monte
+        // Carlo, so it returns fast), paint it immediately, then resolve
+        // each player's sim numbers with its own request (_strategySimFanout).
+        const res = await fetch(`/api/trade-intel/archetype-suggestions${qs}&phase=slate`, { cache: "no-store", signal: _ctrl.signal });
         if (_isStale()) { _clearInflight(); return; }  // a newer selection superseded this one
         if (strategySpinner) strategySpinner.style.display = "none";
         if (res.status === 403) {
@@ -9709,11 +9722,23 @@ window.initTradePage = function initTradePage(root = document) {
         if (_isStale()) { _clearInflight(); return; }  // response came back after the user moved on
         _clearInflight();
         const data = raw.suggestions ?? (Array.isArray(raw) ? raw : []);
-        const _poPct = raw.current_playoff_pct ?? null;
-        // Cache only real results: a transient empty (cold league context)
-        // must not mask the retry on the next visit.
-        if (data.length) _strategyCache[_sCacheKey] = { data: data, playoffPct: _poPct };
-        _renderStrategyResult(data, _poPct, archetype);
+        if (!data.length) {
+          // Nothing matched (and nothing to simulate). Render the empty
+          // state and leave the key uncached so the next visit retries.
+          _renderStrategyResult([], null, archetype);
+          return;
+        }
+        // Paint the slate now; sim numbers fill in per player from here.
+        // The completed result joins the memory cache only once every
+        // group settles (see _strategySimFinalize).
+        const _groups = Array.isArray(raw.groups) ? raw.groups.map(String) : [];
+        _groups.forEach(gk => { _strategySimGroups[gk] = { state: "pending", rows: null }; });
+        _renderStrategyResult(data, null, archetype);
+        _strategySimJob = {
+          archetype: archetype, qs: qs, cacheKey: _sCacheKey,
+          isStale: _isStale, ctrl: _ctrl, groups: _groups,
+        };
+        _strategySimFanout(_strategySimJob);
 
       } catch (err) {
         _clearInflight();
@@ -9725,6 +9750,120 @@ window.initTradePage = function initTradePage(root = document) {
         window.brErrorState(strategyImpact, 'Could not load strategy.', () => loadStrategyView(archetype), { compact: true });
         console.error("[strategy]", err);
       }
+    }
+
+    // ── Strategy: progressive sim fill-in ───────────────────────────────────
+    // The slate paints with its sim fields pending; one request per player
+    // group then resolves that group's Monte Carlo numbers. Each completion
+    // merges its rows in place and repaints, so cards fill in one player at
+    // a time. When every group settles, rows take their final server-ranked
+    // order and the completed result joins the memory cache. A failed group
+    // blocks that final step: its cards keep an explicit retry instead of
+    // caching partial numbers as if they were final.
+    function _strategyGroupState(gk) {
+      const g = _strategySimGroups[gk];
+      return g ? g.state : null;
+    }
+
+    async function _strategySimFanout(job) {
+      const pending = job.groups.filter(gk =>
+        _strategyData.some(r => r.group_key === gk && r.sim_pending));
+      job.groups.forEach(gk => {
+        if (!pending.includes(gk)) _strategySimGroups[gk] = { state: "done", rows: [] };
+      });
+      let idx = 0;
+      const worker = async () => {
+        while (idx < pending.length) {
+          if (job.isStale()) return;
+          const gk = pending[idx++];
+          await _strategySimLoadGroup(gk, job);
+        }
+      };
+      const workers = [];
+      const n = Math.min(_STRATEGY_SIM_CONCURRENCY, pending.length);
+      for (let i = 0; i < n; i++) workers.push(worker());
+      await Promise.all(workers);
+      if (!job.isStale()) _strategySimFinalize(job);
+    }
+
+    async function _strategySimLoadGroup(gk, job) {
+      const g = _strategySimGroups[gk] || (_strategySimGroups[gk] = { state: "pending", rows: null });
+      g.state = (g.state === "error") ? "retrying" : "pending";
+      try {
+        const res = await fetch(
+          `/api/trade-intel/archetype-suggestion-sim${job.qs}&group_key=${encodeURIComponent(gk)}`,
+          { cache: "no-store", signal: job.ctrl.signal });
+        if (job.isStale()) return;
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const raw = await res.json();
+        if (job.isStale()) return;
+        const rows = raw.suggestions || [];
+        g.state = "done";
+        g.rows = rows;
+        if (raw.current_playoff_pct != null && _currentPlayoffPct === null) {
+          _currentPlayoffPct = raw.current_playoff_pct;
+          const poBadge = root.querySelector("#otcCurrentPOBadge");
+          if (poBadge) {
+            poBadge.textContent = "PO " + _currentPlayoffPct.toFixed(1) + "%";
+            poBadge.style.display = "";
+          }
+        }
+        // Merge this group's simmed rows over its slate rows, in place. A
+        // group the sim filtered out entirely loses its rows here.
+        const firstIdx = _strategyData.findIndex(r => r.group_key === gk);
+        _strategyData = _strategyData.filter(r => r.group_key !== gk);
+        if (rows.length && firstIdx >= 0) {
+          _strategyData.splice(Math.min(firstIdx, _strategyData.length), 0, ...rows);
+        }
+        _renderImpactTable(_strategyData);
+        _renderStrategyCards(_strategyData, _strategyFilter);
+      } catch (err) {
+        if (err && err.name === "AbortError") return;
+        if (job.isStale()) return;
+        g.state = "error";
+        _renderImpactTable(_strategyData);
+        _renderStrategyCards(_strategyData, _strategyFilter);
+      }
+    }
+
+    function _retryStrategyGroup(gk) {
+      const job = _strategySimJob;
+      if (!job || job.isStale()) return;
+      const g = _strategySimGroups[gk];
+      if (!g || g.state !== "error") return;
+      g.state = "retrying";
+      _renderImpactTable(_strategyData);
+      _renderStrategyCards(_strategyData, _strategyFilter);
+      _strategySimLoadGroup(gk, job).then(() => {
+        if (!job.isStale()) _strategySimFinalize(job);
+      });
+    }
+
+    function _strategySimFinalize(job) {
+      const states = Object.values(_strategySimGroups).map(g => g.state);
+      if (states.some(s => s === "pending" || s === "retrying")) return;
+      if (states.some(s => s === "error")) return;  // partial numbers never cache as final
+      if (!_strategyData.length) {
+        // Every slate row was filtered out by its sim: show the empty state.
+        window.brEmptyState(strategyImpact, {
+          icon: 'search',
+          title: 'No suggestions',
+          message: 'No packages matched this strategy for your roster.',
+          compact: true
+        });
+        strategyCards.innerHTML = "";
+        if (strategyCardsHead) strategyCardsHead.style.display = "none";
+        return;
+      }
+      // Every remaining row now carries its final server rank: settle order.
+      const ranked = _strategyData.filter(r => r.rank != null);
+      const unranked = _strategyData.filter(r => r.rank == null);
+      ranked.sort((a, b) => b.rank - a.rank);
+      _strategyData = ranked.concat(unranked);
+      _strategyPage = 0;
+      _renderImpactTable(_strategyData);
+      _renderStrategyCards(_strategyData, _strategyFilter);
+      _strategyCache[job.cacheKey] = { data: _strategyData, playoffPct: _currentPlayoffPct };
     }
 
     // Render a strategy result (fresh fetch or memory cache) into the impact
@@ -9812,12 +9951,24 @@ window.initTradePage = function initTradePage(root = document) {
           ? t.suggested_send[0].player_id
           : (t.player_id || "")).replace(/"/g, "");
 
+        const wpdBadge = `<span class="otc-strategy-impact-badge" title="${wpdTitle}" style="background:${wpdBg};color:${wpdCol};">${wpdStr}</span>`;
+        const podBadge = `<span class="otc-strategy-impact-badge" title="${podTitle}" style="background:${podBg};color:${podCol};">${podStr}</span>`;
+        // Progressive sim state for this row's group: while it simulates, the
+        // badges show a shimmer pill; a failed sim shows an explicit retry.
+        // Never a fake 0.0% rendered from the pending nulls.
+        const gState = _strategyGroupState(t.group_key || pid);
+        let badgesHtml = wpdBadge + podBadge;
+        if (gState === "pending" || gState === "retrying") {
+          badgesHtml = `<span class="otc-strategy-impact-badge sk-shimmer" title="Simulating this player's trades." style="min-width:58px;">&nbsp;</span>`;
+        } else if (gState === "error") {
+          badgesHtml = `<button class="otc-strategy-impact-badge" data-sim-retry="${pid}" title="The simulation for this player failed." style="background:#ef44441f;color:#ef4444;border:1px solid #ef444455;cursor:pointer;font:inherit;">Sim failed. Retry</button>`;
+        }
+
         return `<div class="otc-strategy-impact-row" data-pid="${pid}">
           <span style="font-size:9px;font-weight:700;padding:2px 5px;border-radius:3px;background:${col}20;color:${col};flex-shrink:0;">${displayAsset.position || t.position}</span>
           <span class="otc-strategy-impact-name">${esc(displayAsset.name || t.name)}</span>
           <div class="otc-strategy-impact-stats">
-            <span class="otc-strategy-impact-badge" title="${wpdTitle}" style="background:${wpdBg};color:${wpdCol};">${wpdStr}</span>
-            <span class="otc-strategy-impact-badge" title="${podTitle}" style="background:${podBg};color:${podCol};">${podStr}</span>
+            ${badgesHtml}
           </div>
         </div>`;
       }).join("");
@@ -9826,6 +9977,8 @@ window.initTradePage = function initTradePage(root = document) {
       if (!strategyImpact._filterBound) {
         strategyImpact._filterBound = true;
         strategyImpact.addEventListener("click", e => {
+          const retryBtn = e.target.closest("[data-sim-retry]");
+          if (retryBtn) { _retryStrategyGroup(retryBtn.dataset.simRetry); return; }
           const row = e.target.closest(".otc-strategy-impact-row");
           if (!row) return;
           const pid = row.dataset.pid;
@@ -9847,6 +10000,14 @@ window.initTradePage = function initTradePage(root = document) {
     // ── Strategy: compact trade cards ─────────────────────────────────────────
     function _renderStrategyCards(data, filterPid) {
       if (!strategyCards) return;
+      // Delegated sim-retry clicks (bound once; cards re-render constantly).
+      if (!strategyCards._simRetryBound) {
+        strategyCards._simRetryBound = true;
+        strategyCards.addEventListener("click", e => {
+          const btn = e.target.closest("[data-sim-retry]");
+          if (btn) _retryStrategyGroup(btn.dataset.simRetry);
+        });
+      }
       const esc      = s => (s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
       const posColor = POS_COLORS;
       const archColor = { contending: "#10b981", rebuilding: "#3b82f6", consolidate: "#f59e0b", distribute: "#8b5cf6" };
@@ -9944,6 +10105,19 @@ window.initTradePage = function initTradePage(root = document) {
         const wpdHtml = `<span title="Change in typical remaining-week win chance for this full trade (what you send and receive)." style="font-size:10px;font-weight:700;padding:3px 8px;border-radius:10px;background:${wpdCol}15;border:1px solid ${wpdCol}30;color:${wpdCol};white-space:nowrap;">${(wpd >= 0 ? "+" : "") + (wpd * 100).toFixed(1)}% wk</span>`;
         const podHtml = `<span title="Change in simulated playoff-make odds for this full trade. Playoffs can rise even when weekly win % dips because they depend on the rest of the season, schedule, and ceiling." style="font-size:10px;font-weight:700;padding:3px 8px;border-radius:10px;background:${podCol}15;border:1px solid ${podCol}30;color:${podCol};white-space:nowrap;">${(pod >= 0 ? "+" : "") + (pod * 100).toFixed(1)}% po</span>`;
 
+        // Progressive sim state for this card's group: while it simulates,
+        // the delta badges show a shimmer pill instead of a fake 0.0%;
+        // a failed sim shows an explicit retry.
+        const gState = _strategyGroupState(t.group_key || "");
+        let wpdOut = wpdHtml, podOut = podHtml;
+        if (gState === "pending" || gState === "retrying") {
+          wpdOut = `<span class="sk-shimmer" title="Simulating this trade." style="display:inline-block;width:64px;height:18px;border-radius:10px;">&nbsp;</span>`;
+          podOut = "";
+        } else if (gState === "error") {
+          wpdOut = `<button data-sim-retry="${(t.group_key || "").replace(/"/g, "")}" title="The simulation for this player failed." style="font-size:10px;font-weight:700;padding:3px 8px;border-radius:10px;background:#ef444415;border:1px solid #ef444455;color:#ef4444;white-space:nowrap;cursor:pointer;">Sim failed. Retry</button>`;
+          podOut = "";
+        }
+
         // Partner
         const pAColor = archColor[t.partner_arch || ""] || "var(--text-muted)";
         const pName   = esc(t.partner_team || "");
@@ -9970,7 +10144,7 @@ window.initTradePage = function initTradePage(root = document) {
           ${window.brWhyLine(t.why_line)}
           <div class="otc-rt-footer">
             <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;min-width:0;">
-              ${gradeHtml}${wpdHtml}${podHtml}
+              ${gradeHtml}${wpdOut}${podOut}
               ${partnerHtml}
             </div>
             <div style="display:flex;gap:6px;align-items:center;">
