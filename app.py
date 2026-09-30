@@ -2449,6 +2449,11 @@ BASE_HTML = """
          and the <html> background up front so switching pages stays dark. -->
     <style>html{{background:#f8fafc}}html[data-theme="dark"]{{background:#020617}}</style>
     <script>(function(){{try{{if(localStorage.getItem('theme')==='dark')document.documentElement.setAttribute('data-theme','dark');}}catch(e){{}}}})();</script>
+    <!-- Preload ONLY the active theme's #appSplash logo (the theme is already
+         resolved by the boot script above) so the logo paints WITH its splash
+         background instead of a beat after it. A static preload cannot know
+         the manual theme, so the link is created here, still in <head>. -->
+    <script>(function(){{try{{var l=document.createElement('link');l.rel='preload';l.as='image';l.href=(document.documentElement.getAttribute('data-theme')==='dark')?'/static/BR_Logo_dark.png?v=6c0c4828':'/static/BR_Logo.png?v=6c0c4828';document.head.appendChild(l);}}catch(e){{}}}})();</script>
     <meta name="google-adsense-account" content="ca-pub-9164153092633845">
     <meta name="google-site-verification" content="zuH_tCWKG_L4hm4eRDFit3xfMi-ZPFXwK2s9eap20FA">
     <meta name="google-site-verification" content="I_Fkx1dlwJvI96dzPkbM1TkUzT4Nw8DdCtSLvm7MlD4">
@@ -2484,6 +2489,40 @@ BASE_HTML = """
     <link rel="apple-touch-icon" href="/static/app-icon-180.png?v=b152bc26">
     <link rel="apple-touch-icon" sizes="180x180" href="/static/app-icon-180.png?v=b152bc26">
     <link rel="manifest" href="/static/manifest.json?v=b152bc26">
+    <!-- iOS launch images: from icon tap until first HTML paint, iOS shows
+         its OWN launch screen, and without these links it is blank white (iOS
+         ignores the manifest for this). Each image is the BR logo centered on
+         the exact #appSplash background (#f8fafc light / #020617 dark) at the
+         splash's 170px logo width, so the native image hands off to the
+         in-page pulsing splash with no visible jump. Images must be EXACT
+         device pixels or iOS ignores them. Regenerate with
+         scripts/gen_splash_images.py. No ?v= on these hrefs: some iOS
+         versions fail to match startup images whose href carries a query
+         string, and the images are content-stable. -->
+    <link rel="apple-touch-startup-image" media="(prefers-color-scheme: light) and (device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="/static/splash/splash-1290x2796.png">
+    <link rel="apple-touch-startup-image" media="(prefers-color-scheme: dark) and (device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="/static/splash/splash-1290x2796-dark.png">
+    <link rel="apple-touch-startup-image" media="(prefers-color-scheme: light) and (device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="/static/splash/splash-1179x2556.png">
+    <link rel="apple-touch-startup-image" media="(prefers-color-scheme: dark) and (device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="/static/splash/splash-1179x2556-dark.png">
+    <link rel="apple-touch-startup-image" media="(prefers-color-scheme: light) and (device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="/static/splash/splash-1170x2532.png">
+    <link rel="apple-touch-startup-image" media="(prefers-color-scheme: dark) and (device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="/static/splash/splash-1170x2532-dark.png">
+    <link rel="apple-touch-startup-image" media="(prefers-color-scheme: light) and (device-width: 428px) and (device-height: 926px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="/static/splash/splash-1284x2778.png">
+    <link rel="apple-touch-startup-image" media="(prefers-color-scheme: dark) and (device-width: 428px) and (device-height: 926px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="/static/splash/splash-1284x2778-dark.png">
+    <link rel="apple-touch-startup-image" media="(prefers-color-scheme: light) and (device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="/static/splash/splash-1242x2688.png">
+    <link rel="apple-touch-startup-image" media="(prefers-color-scheme: dark) and (device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="/static/splash/splash-1242x2688-dark.png">
+    <link rel="apple-touch-startup-image" media="(prefers-color-scheme: light) and (device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="/static/splash/splash-1125x2436.png">
+    <link rel="apple-touch-startup-image" media="(prefers-color-scheme: dark) and (device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="/static/splash/splash-1125x2436-dark.png">
+    <link rel="apple-touch-startup-image" media="(prefers-color-scheme: light) and (device-width: 360px) and (device-height: 780px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="/static/splash/splash-1080x2340.png">
+    <link rel="apple-touch-startup-image" media="(prefers-color-scheme: dark) and (device-width: 360px) and (device-height: 780px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="/static/splash/splash-1080x2340-dark.png">
+    <link rel="apple-touch-startup-image" media="(prefers-color-scheme: light) and (device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" href="/static/splash/splash-828x1792.png">
+    <link rel="apple-touch-startup-image" media="(prefers-color-scheme: dark) and (device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" href="/static/splash/splash-828x1792-dark.png">
+    <link rel="apple-touch-startup-image" media="(prefers-color-scheme: light) and (device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" href="/static/splash/splash-750x1334.png">
+    <link rel="apple-touch-startup-image" media="(prefers-color-scheme: dark) and (device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" href="/static/splash/splash-750x1334-dark.png">
+    <link rel="apple-touch-startup-image" media="(prefers-color-scheme: light) and (device-width: 414px) and (device-height: 736px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="/static/splash/splash-1242x2208.png">
+    <link rel="apple-touch-startup-image" media="(prefers-color-scheme: dark) and (device-width: 414px) and (device-height: 736px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="/static/splash/splash-1242x2208-dark.png">
+    <link rel="apple-touch-startup-image" media="(prefers-color-scheme: light) and (device-width: 1024px) and (device-height: 1366px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" href="/static/splash/splash-2048x2732.png">
+    <link rel="apple-touch-startup-image" media="(prefers-color-scheme: dark) and (device-width: 1024px) and (device-height: 1366px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" href="/static/splash/splash-2048x2732-dark.png">
+    <link rel="apple-touch-startup-image" media="(prefers-color-scheme: light) and (device-width: 834px) and (device-height: 1194px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" href="/static/splash/splash-1668x2388.png">
+    <link rel="apple-touch-startup-image" media="(prefers-color-scheme: dark) and (device-width: 834px) and (device-height: 1194px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" href="/static/splash/splash-1668x2388-dark.png">
     <!-- Status-bar chrome matches the top nav's background so the app reads as
          one surface. The app theme is a manual toggle (not OS-driven), so this
          is kept in sync by app.js rather than a prefers-color-scheme meta, which
