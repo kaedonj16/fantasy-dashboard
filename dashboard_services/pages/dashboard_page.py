@@ -446,6 +446,7 @@ def build_dashboard_body(ctx: dict) -> str:
 
     _action_queue_html = f"""
         <div class="os-action-queue os-tab-panel os-tab-active" id="os-jump-actions">{_action_inner}
+          {usage_movers_html}
         </div>"""
 
     # ScoreZone CTA: a calm pregame banner within the hour before kickoff, then a
@@ -497,11 +498,10 @@ def build_dashboard_body(ctx: dict) -> str:
               {standings_html}
             </div>
           </section>
-          {awards_html}
         </div>
         <div id="os-jump-report" class="os-tab-panel">
-          {usage_movers_html}
           {season_review_html}
+          {awards_html}
         </div>
       </aside>
 

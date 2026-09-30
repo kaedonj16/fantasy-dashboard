@@ -9845,8 +9845,15 @@ select:focus {
 /* ============================================
    STANDINGS & RANKINGS
    ============================================ */
-.award-body {
-    font-size: 14px;
+.award-value {
+    font-size: 15px;
+    font-weight: 800;
+    color: var(--text);
+}
+
+.award-context {
+    font-size: 12px;
+    color: var(--muted);
 }
 
 .award-desc {
@@ -9861,59 +9868,58 @@ select:focus {
 }
 
 .award-item {
-    color: var(--accent);
-    border: 1px solid rgba(148, 163, 184, 0.25);
-    border-radius: 14px;
-    padding: 16px;
+    border: 1px solid var(--os-border, rgba(148, 163, 184, 0.18));
+    border-left: 3px solid var(--os-border, rgba(148, 163, 184, 0.18));
+    border-radius: 12px;
+    padding: 12px;
     display: flex;
     flex-direction: column;
-    align-items: center;
-    justify-content: space-between;
-    text-align: center;
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
-    background: var(--card);
+    gap: 2px;
+    background: color-mix(in srgb, var(--text) 3%, transparent);
 }
 
-.award-item:hover {
-    transform: translateY(-4px);
-    box-shadow: 0 6px 16px rgba(250, 204, 21, 0.25);
+.award-item.award-honor {
+    border-left-color: var(--win);
+}
+
+.award-item.award-shame {
+    border-left-color: var(--loss);
 }
 
 .award-name {
+    font-size: 11px;
     font-weight: 700;
-    font-size: 16px;
-    color: var(--accent);
-    margin-bottom: 6px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--muted);
 }
 
 .award-winner {
-    margin-top: 10px;
-    font-weight: 800;
-    color: #38bdf8;
     font-size: 14px;
+    font-weight: 700;
+    color: var(--text);
+    overflow-wrap: break-word;
 }
 
-.awards-card {
-    border-radius: 18px;
-    color: #f1f5f9;
-    position: relative;
+.award-item.award-honor .award-value {
+    color: var(--win);
+}
+
+.award-item.award-shame .award-value {
+    color: var(--loss);
 }
 
 .awards-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-    gap: 18px;
-    justify-content: center;
+    grid-template-columns: 1fr;
+    gap: 10px;
     align-items: stretch;
 }
 
-.awards-title {
-    font-size: 30px;
-    font-weight: 900;
-    text-align: center;
-    margin-bottom: 22px;
-    color: #facc15;
-    letter-spacing: 0.5px;
+@media (min-width: 1181px) {
+    .awards-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
 }
 
 .rank {
@@ -18990,14 +18996,14 @@ img, svg, canvas {
 .usage-movers-card .usage-movers-list {
     list-style: none;
     margin: 0;
-    padding: 4px 0 2px;
+    padding: 6px 0 8px;
 }
 
 .usage-mover {
     display: flex;
-    align-items: baseline;
-    gap: 10px;
-    padding: 8px 16px;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px;
     border-top: 1px solid var(--os-border, rgba(148, 163, 184, 0.18));
 }
 
@@ -19005,29 +19011,78 @@ img, svg, canvas {
     border-top: none;
 }
 
-.usage-mover .um-name {
-    font-weight: 600;
+.usage-mover .um-main {
     flex: 1 1 auto;
     min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+
+.usage-mover .um-name {
+    font-weight: 600;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+.usage-mover .um-sub {
+    font-size: 11px;
+    color: var(--muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.usage-mover .um-trend {
+    flex: 0 1 148px;
+    min-width: 84px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
 }
 
 .usage-mover .um-detail {
     font-size: 12px;
     color: var(--muted);
     white-space: nowrap;
+    text-align: right;
+}
+
+.usage-mover .um-bars {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.usage-mover .um-bar {
+    display: block;
+    height: 4px;
+    border-radius: 2px;
+}
+
+.usage-mover .um-bar-season {
+    background: color-mix(in srgb, var(--text) 28%, transparent);
+}
+
+.usage-mover .um-bar-recent {
+    background: var(--win);
 }
 
 .usage-mover .um-delta {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
     font-size: 12px;
     font-weight: 700;
     white-space: nowrap;
+    padding: 3px 8px;
+    border-radius: 6px;
 }
 
 .usage-mover .um-delta.up {
     color: var(--win);
+    background: color-mix(in srgb, var(--win) 15%, transparent);
 }
 
 /* Playoff-odds hero tile fades in once the sim resolves */
