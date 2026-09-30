@@ -148,10 +148,9 @@ def build_weekly_hub_body(ctx: dict) -> str:
         try:
             from app import _build_next_week_ctx
             from dashboard_services.ai.weekly_recap import (
-                _gotw_cache_key,
                 build_weekly_recap_payload,
                 get_cached_gotw_selection,
-                save_cached_ai_text,
+                save_gotw_selection,
             )
             _team_by_rid = {str(rid): name for rid, name in (roster_map or {}).items()}
             _playoff_start = int((_league_for_preview.get("settings") or {}).get("playoff_week_start") or 14)
@@ -171,10 +170,7 @@ def build_weekly_hub_body(ctx: dict) -> str:
                     "target_week": int(default_week), "matchup_id": _game.get("matchup_id"),
                     "roster_ids": _rids,
                 }
-                save_cached_ai_text(
-                    _gotw_cache_key(platform, _gotw_lid, season, default_week),
-                    "", metadata={"gotw_selection": _sel},
-                )
+                save_gotw_selection(platform, _gotw_lid, season, _sel)
                 _gotw_selection = get_cached_gotw_selection(platform, _gotw_lid, season, default_week)
                 _gotw_key = gotw_identity_for_context(
                     _gotw_selection, loaded=True, platform=platform,

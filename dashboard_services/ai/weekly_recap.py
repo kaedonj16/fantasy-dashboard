@@ -4,6 +4,7 @@ import hashlib
 import html
 import json
 import logging
+import os
 import re
 from math import erf, sqrt
 
@@ -83,14 +84,8 @@ def _fallback_preview(game: dict) -> str:
     return " ".join(sentences[:4])
 
 
-def get_cached_gotw_selection(platform: str, league_id: str, season, target_week: int) -> dict | None:
-    """Return the deterministic selection shared with the Matchups badge."""
-    path = AI_CACHE_DIR / f"{_gotw_cache_key(platform, league_id, season, target_week)}.json"
-    try:
-        obj = json.loads(path.read_text(encoding="utf-8"))
-        selection = (obj.get("metadata") or {}).get("gotw_selection")
-    except (OSError, ValueError, TypeError):
-        return None
+def _validate_gotw_selection(selection, platform: str, league_id: str, season,
+                             target_week: int) -> dict | None:
     if not isinstance(selection, dict):
         return None
     expected = {"platform": str(platform or "").lower(), "league_id": str(league_id),
@@ -99,6 +94,157 @@ def get_cached_gotw_selection(platform: str, league_id: str, season, target_week
         return None
     ids = selection.get("roster_ids")
     return selection if isinstance(ids, list) and len(ids) == 2 and all(str(x) for x in ids) else None
+
+
+# ── Durable GOTW selection store ─────────────────────────────────────────────
+# The AI file cache lives on the web service's ephemeral disk, so a selection
+# written during the previous week vanishes on the next deploy -- and with it
+# every after-the-fact reader (the recap scoreboard's GOTW chip can only be
+# resolved once the week has been played). Redis is already provisioned for
+# the league-context store and survives deploys, so it holds the durable copy;
+# the file remains the fast local copy. Fail-soft throughout, mirroring
+# espn_draft_relay: Redis down or unconfigured degrades to file-only behavior.
+
+def _gotw_redis_key(cache_key: str) -> str:
+    return f"gotw_selection:{cache_key}"
+
+
+def _gotw_redis_client():
+    url = (os.environ.get("REDIS_URL") or "").strip()
+    if not url:
+        return None
+    try:
+        import redis  # type: ignore
+        return redis.from_url(url, socket_timeout=1.5, socket_connect_timeout=1.5)
+    except Exception:
+        return None
+
+
+def _gotw_selection_from_redis(cache_key: str) -> dict | None:
+    client = _gotw_redis_client()
+    if client is None:
+        return None
+    try:
+        raw = client.get(_gotw_redis_key(cache_key))
+    except Exception:
+        return None
+    if not raw:
+        return None
+    try:
+        selection = json.loads(raw)
+    except (ValueError, TypeError):
+        return None
+    return selection if isinstance(selection, dict) else None
+
+
+def save_gotw_selection(platform: str, league_id: str, season, selection: dict) -> None:
+    """Persist a GOTW selection to the file cache AND Redis (the durable copy).
+
+    Selections are permanent facts about a week, so the Redis copy carries no
+    TTL. Never raises: a failed save just leaves the chip to the historical
+    recovery path.
+    """
+    if not isinstance(selection, dict) or selection.get("target_week") is None:
+        return
+    try:
+        cache_key = _gotw_cache_key(platform, league_id, season, int(selection["target_week"]))
+    except (TypeError, ValueError):
+        return
+    try:
+        save_cached_ai_text(cache_key, "", metadata={"gotw_selection": selection})
+    except Exception:
+        logger.debug("[gotw] file save skipped", exc_info=True)
+    client = _gotw_redis_client()
+    if client is None:
+        return
+    try:
+        client.set(_gotw_redis_key(cache_key), json.dumps(selection))
+    except Exception:
+        logger.debug("[gotw] redis save skipped", exc_info=True)
+
+
+def get_cached_gotw_selection(platform: str, league_id: str, season, target_week: int) -> dict | None:
+    """Return the deterministic selection shared with the Matchups badge.
+
+    File cache first, then the durable Redis copy (backfilling the file so
+    later reads on this disk stay local).
+    """
+    cache_key = _gotw_cache_key(platform, league_id, season, target_week)
+    path = AI_CACHE_DIR / f"{cache_key}.json"
+    selection = None
+    try:
+        obj = json.loads(path.read_text(encoding="utf-8"))
+        selection = (obj.get("metadata") or {}).get("gotw_selection")
+    except (OSError, ValueError, TypeError):
+        selection = None
+    validated = _validate_gotw_selection(selection, platform, league_id, season, target_week)
+    if validated is not None:
+        return validated
+    validated = _validate_gotw_selection(
+        _gotw_selection_from_redis(cache_key), platform, league_id, season, target_week)
+    if validated is not None:
+        try:
+            save_cached_ai_text(cache_key, "", metadata={"gotw_selection": validated})
+        except Exception:
+            logger.debug("[gotw] file backfill skipped", exc_info=True)
+        return validated
+    return None
+
+
+def compute_historical_gotw_selection(
+        df_weekly: pd.DataFrame,
+        matchups_by_week: dict,
+        target_week: int,
+        team_by_rid: dict,
+        league: dict,
+) -> dict | None:
+    """Reconstruct the GOTW pick for an already-played week.
+
+    Recovery path for when the cached selection is gone (the file cache does
+    not survive deploys, and a completed week's pick can never be re-cached by
+    the preview writers). Runs the SAME picker as the pre-week preview using
+    the signals that remain knowable after the fact -- all-play strength,
+    records/ranks/streaks entering the week, prior meetings, playoff stakes --
+    with no projection context: projected closeness and availability drama are
+    unknowable historically and score 0 for every game, so they cannot distort
+    the ranking. Returns a selection dict (marked recovered) or None.
+    """
+    try:
+        target_week = int(target_week)
+    except (TypeError, ValueError):
+        return None
+    source_week = target_week - 1
+    if source_week < 1 or df_weekly is None or getattr(df_weekly, "empty", True):
+        return None
+    raw = ((matchups_by_week or {}).get(target_week)
+           or (matchups_by_week or {}).get(str(target_week)) or [])
+    if not raw:
+        return None
+    try:
+        storylines = _build_team_storylines(df_weekly, source_week, team_by_rid)
+        if not storylines:
+            return None
+        settings = (league or {}).get("settings") or {}
+        playoff_start = int(settings.get("playoff_week_start") or 14)
+        playoff_teams = int(settings.get("playoff_teams") or 6)
+        nctx = {
+            "matchups": raw,
+            "is_playoff": target_week >= playoff_start,
+            "playoff_round_label": "Playoff game",
+        }
+        preview = _build_next_week_preview(
+            df_weekly, {str(s["rid"]): s for s in storylines}, source_week,
+            playoff_start, playoff_teams, len(storylines), nctx)
+    except Exception:
+        logger.warning("[gotw] historical recovery failed", exc_info=True)
+        return None
+    game = (preview or {}).get("game_of_the_week") or {}
+    roster_ids = [str(game.get("roster_id_a") or ""), str(game.get("roster_id_b") or "")]
+    if not all(roster_ids):
+        return None
+    return {"source_week": source_week, "target_week": target_week,
+            "matchup_id": game.get("matchup_id"), "roster_ids": roster_ids,
+            "recovered": True}
 
 
 def _streak_for(results: list[str]) -> str:
@@ -1124,8 +1270,7 @@ def get_weekly_ai_recap(
                          "season": str(season), "source_week": int(selected_week),
                          "target_week": int(preview["next_week"]),
                          "matchup_id": game.get("matchup_id"), "roster_ids": roster_ids}
-            save_cached_ai_text(_gotw_cache_key(platform, league_id, season, preview["next_week"]),
-                                "", metadata={"gotw_selection": selection})
+            save_gotw_selection(platform, league_id, season, selection)
     return recap_html, _render_next_week_html(
         preview, looking_ahead, platform=platform, season=season, league_id=league_id)
 

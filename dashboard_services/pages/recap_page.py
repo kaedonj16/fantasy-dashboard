@@ -607,11 +607,30 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
 
     badge_map = _matchup_badges(matchups)
     # Game of the Week: the pre-week AI pick cached for this target week gets a
-    # chip on the recap scoreboard too ("the game that was GOTW").
+    # chip on the recap scoreboard too ("the game that was GOTW"). The cached
+    # selection lives on an ephemeral disk, so when it is gone (any deploy
+    # since the pick was made) reconstruct the pick from the week's historical
+    # signals and persist the recovery, or the chip is lost for good.
     try:
-        from dashboard_services.ai.weekly_recap import get_cached_gotw_selection
-        _gotw_idx = _gotw_matchup_index(
-            matchups, get_cached_gotw_selection(_platform, _league_id, _season, selected_week or 0))
+        from dashboard_services.ai.weekly_recap import (
+            compute_historical_gotw_selection,
+            get_cached_gotw_selection,
+            save_gotw_selection,
+        )
+        _gotw_selection = get_cached_gotw_selection(
+            _platform, _league_id, _season, selected_week or 0)
+        if _gotw_selection is None and not preview_mode:
+            _recovered = compute_historical_gotw_selection(
+                df_weekly, ctx.get("matchups_by_week") or {},
+                selected_week or 0, team_by_rid, league)
+            if _recovered:
+                _gotw_selection = {
+                    "platform": str(_platform or "").lower(),
+                    "league_id": str(_league_id), "season": str(_season),
+                    **_recovered,
+                }
+                save_gotw_selection(_platform, _league_id, _season, _gotw_selection)
+        _gotw_idx = _gotw_matchup_index(matchups, _gotw_selection)
     except Exception:
         logger.warning("recap gotw lookup failed", exc_info=True)
         _gotw_idx = None

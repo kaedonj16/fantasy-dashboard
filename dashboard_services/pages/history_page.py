@@ -1677,8 +1677,7 @@ def _next_week_gotw_game(ctx: dict, week: int, platform: str, league_id: str,
         from dashboard_services.ai.weekly_recap import (
             build_weekly_recap_payload,
             get_cached_gotw_selection,
-            _gotw_cache_key,
-            save_cached_ai_text,
+            save_gotw_selection,
         )
         from app import _build_next_week_ctx
     except Exception:
@@ -1722,16 +1721,14 @@ def _next_week_gotw_game(ctx: dict, week: int, platform: str, league_id: str,
             # No cached pick yet: store this deterministic one so the hub
             # badge and the wrapped teaser agree.
             try:
-                save_cached_ai_text(
-                    _gotw_cache_key(platform, league_id, season, next_week), "",
-                    metadata={"gotw_selection": {
-                        "platform": str(platform or "").lower(),
-                        "league_id": str(league_id or ""),
-                        "season": str(season),
-                        "source_week": int(week),
-                        "target_week": int(next_week),
-                        "matchup_id": game.get("matchup_id"),
-                        "roster_ids": rids}})
+                save_gotw_selection(platform, league_id, season, {
+                    "platform": str(platform or "").lower(),
+                    "league_id": str(league_id or ""),
+                    "season": str(season),
+                    "source_week": int(week),
+                    "target_week": int(next_week),
+                    "matchup_id": game.get("matchup_id"),
+                    "roster_ids": rids})
             except Exception:
                 pass
         game["target_week"] = next_week
