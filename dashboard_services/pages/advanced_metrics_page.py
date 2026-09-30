@@ -1340,8 +1340,17 @@ def build_advanced_metrics_body(
           -webkit-mask-image:linear-gradient(to right,#000 88%,transparent 100%);
           mask-image:linear-gradient(to right,#000 88%,transparent 100%);
         }
-        /* 5. Chips wrap to multiple lines; Clear becomes a text link. */
-        .am-compare-chips { flex-wrap:wrap; overflow-x:visible; padding-bottom:0; }
+        /* 5. Added-metric chips ride one flat line like the presets rail:
+           no wrapping, sideways scroll with the same edge fade; Clear
+           becomes a text link pinned beside the rail. */
+        .am-compare-bar { flex-wrap:nowrap; }
+        .am-compare-chips {
+          flex-wrap:nowrap; overflow-x:auto; -webkit-overflow-scrolling:touch;
+          padding-bottom:2px;
+          -webkit-mask-image:linear-gradient(to right,#000 88%,transparent 100%);
+          mask-image:linear-gradient(to right,#000 88%,transparent 100%);
+        }
+        .am-compare-chips .am-chip { flex-shrink:0; }
         #amClearExtrasBtn { display:none !important; }
         .am-clear-link {
           display:none; border:0; background:none; padding:6px 4px; cursor:pointer;
