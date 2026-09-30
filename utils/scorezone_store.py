@@ -23,14 +23,83 @@ CREATE TABLE IF NOT EXISTS redzone_plays (
     season      INTEGER NOT NULL,
     game_id     TEXT NOT NULL,
     play_id     TEXT NOT NULL,
+    pid         TEXT NOT NULL DEFAULT '',
     seq         INTEGER NOT NULL DEFAULT 0,
     is_td       BOOLEAN NOT NULL DEFAULT FALSE,
     week        INTEGER,
     payload     JSONB NOT NULL,
     observed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    PRIMARY KEY (season, game_id, play_id)
+    PRIMARY KEY (season, game_id, play_id, pid)
 )
 """
+
+# The pre-pid schema keyed rows by (season, game_id, play_id) only, but the
+# extractors emit ONE ROW PER INVOLVED PLAYER under the same play_id (a TD
+# pass yields a QB row and a receiver row; an interception yields a QB row
+# and a defender row). That key silently kept only one player's row per
+# play, so readers asking for the other player's plays (e.g. the QB's
+# touchdown or interception) missed them. The pid column (sourced from
+# payload->>'pid') makes each player's row independently addressable.
+_OLD_PK_COLS = "season,game_id,play_id"
+
+_PK_COLS_SQL = """
+SELECT string_agg(a.attname, ',' ORDER BY array_position(c.conkey, a.attnum)) AS pk_cols
+FROM pg_constraint c
+JOIN pg_class t ON t.oid = c.conrelid
+JOIN pg_namespace n ON n.oid = t.relnamespace
+JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = ANY (c.conkey)
+WHERE t.relname = 'redzone_plays' AND n.nspname = 'public' AND c.contype = 'p'
+GROUP BY c.oid
+"""
+
+_MIG_TABLE_DDL = """
+CREATE TABLE redzone_plays_pidmig (
+    season      INTEGER NOT NULL,
+    game_id     TEXT NOT NULL,
+    play_id     TEXT NOT NULL,
+    pid         TEXT NOT NULL DEFAULT '',
+    seq         INTEGER NOT NULL DEFAULT 0,
+    is_td       BOOLEAN NOT NULL DEFAULT FALSE,
+    week        INTEGER,
+    payload     JSONB NOT NULL,
+    observed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (season, game_id, play_id, pid)
+)
+"""
+
+
+def _migrate_plays_pid_key(conn) -> None:
+    """Rebuild redzone_plays onto the per-player key if it has the old one.
+
+    Idempotent: a no-op unless the live primary key is exactly the pre-pid
+    key. Rows are preserved; each surviving row's pid comes from its payload
+    (the old key kept one row per play, so extracted pids cannot collide).
+    Fail-soft: a failed migration logs and leaves the old table in place --
+    migration 043 applies the same rebuild at deploy.
+    """
+    try:
+        row = conn.execute(_PK_COLS_SQL).fetchone()
+    except Exception:
+        return
+    if not row:
+        return  # No table (or no PK) yet; _TABLE_DDL creates the new schema.
+    pk_cols = row.get("pk_cols") if isinstance(row, dict) else row[0]
+    if pk_cols != _OLD_PK_COLS:
+        return
+    try:
+        conn.execute(_MIG_TABLE_DDL)
+        conn.execute(
+            """INSERT INTO redzone_plays_pidmig
+                   (season, game_id, play_id, pid, seq, is_td, week, payload, observed_at)
+               SELECT season, game_id, play_id, COALESCE(payload->>'pid', ''),
+                      seq, is_td, week, payload, observed_at
+               FROM redzone_plays"""
+        )
+        conn.execute("DROP TABLE redzone_plays")
+        conn.execute("ALTER TABLE redzone_plays_pidmig RENAME TO redzone_plays")
+        logger.info("[scorezone-store] migrated redzone_plays to per-player (pid) key")
+    except Exception:
+        logger.exception("[scorezone-store] redzone_plays pid-key migration failed")
 _INDEX_DDL = [
     "CREATE INDEX IF NOT EXISTS idx_redzone_plays_game_seq "
     "ON redzone_plays (season, game_id, seq)",
@@ -65,6 +134,7 @@ def _ensure_table(conn) -> None:
     key = dbname or "default"
     if key in _ENSURED_TABLES:
         return
+    _migrate_plays_pid_key(conn)
     conn.execute(_TABLE_DDL)
     for ddl in _INDEX_DDL:
         conn.execute(ddl)
@@ -81,6 +151,7 @@ def upsert_plays(season: int, game_id: str, plays: list[dict], week: int | None 
             int(season),
             str(game_id),
             str(p.get("play_id") or p.get("seq") or ""),
+            str(p.get("pid") or ""),
             int(p.get("seq") or 0),
             bool(p.get("is_td")),
             wk,
@@ -98,9 +169,9 @@ def upsert_plays(season: int, game_id: str, plays: list[dict], week: int | None 
             with conn.cursor() as cur:
                 cur.executemany(
                     """INSERT INTO redzone_plays
-                       (season, game_id, play_id, seq, is_td, week, payload)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb)
-                   ON CONFLICT (season, game_id, play_id) DO UPDATE SET
+                       (season, game_id, play_id, pid, seq, is_td, week, payload)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s::jsonb)
+                   ON CONFLICT (season, game_id, play_id, pid) DO UPDATE SET
                        seq = EXCLUDED.seq,
                        is_td = EXCLUDED.is_td,
                        -- Never let a week-less re-upsert wipe a stamped week.
@@ -198,11 +269,15 @@ def get_td_plays_since(season: int, since_ts: float) -> list[tuple[str, dict, fl
 
 
 def get_plays_for_pids(season: int, pids: list[str], days: int = 5, week: int | None = None) -> list[dict]:
-    """Plays from the last ``days`` involving any of ``pids``.
+    """Plays involving any of ``pids``.
 
     When ``week`` is given, only plays stamped for that NFL week are
     returned (rows collected before week-stamping, i.e. week IS NULL, are
-    excluded). Omit it for the legacy recency-only behavior.
+    excluded) and the week stamp is the ONLY time filter: a week-scoped read
+    must stay correct for the whole week and beyond, but the old 5-day
+    observed_at window dropped Sunday plays by Friday -- exactly the
+    late-week reads the Weekly Hub makes. Without ``week``, the legacy
+    ``days`` recency window bounds the scan as before.
 
     Returns play payload dicts (with game_id attached) ordered by observed_at
     descending. Used by ScoreZone Moments to surface a matchup's big plays.
@@ -212,24 +287,28 @@ def get_plays_for_pids(season: int, pids: list[str], days: int = 5, week: int | 
     pid_list = [str(p) for p in (pids or []) if p]
     if not pid_list:
         return []
-    week_clause = "AND week = %s" if week is not None else ""
-    params = [int(season), str(int(days)), pid_list]
     if week is not None:
-        params.append(int(week))
+        sql = """SELECT game_id, payload,
+                        EXTRACT(EPOCH FROM observed_at) AS ts
+                 FROM redzone_plays
+                 WHERE season = %s
+                   AND payload->>'pid' = ANY(%s)
+                   AND week = %s
+                 ORDER BY observed_at DESC"""
+        params = (int(season), pid_list, int(week))
+    else:
+        sql = """SELECT game_id, payload,
+                        EXTRACT(EPOCH FROM observed_at) AS ts
+                 FROM redzone_plays
+                 WHERE season = %s
+                   AND observed_at >= NOW() - (%s || ' days')::INTERVAL
+                   AND payload->>'pid' = ANY(%s)
+                 ORDER BY observed_at DESC"""
+        params = (int(season), str(int(days)), pid_list)
     try:
         with get_conn() as conn:
             _ensure_table(conn)
-            rows = conn.execute(
-                f"""SELECT game_id, payload,
-                          EXTRACT(EPOCH FROM observed_at) AS ts
-                   FROM redzone_plays
-                   WHERE season = %s
-                     AND observed_at >= NOW() - (%s || ' days')::INTERVAL
-                     AND payload->>'pid' = ANY(%s)
-                     {week_clause}
-                   ORDER BY observed_at DESC""",
-                tuple(params),
-            ).fetchall()
+            rows = conn.execute(sql, params).fetchall()
     except Exception as exc:
         logger.warning("[scorezone-store] plays-for-pids failed: %s", exc)
         return []
@@ -420,6 +499,32 @@ def _build_name_maps(nfl_players: dict, teams: set[str]):
     return name_to_pid, player_meta_by_pid
 
 
+def _in_nfl_game_window(now=None) -> bool:
+    """True when NFL games should be live or just final (US/Eastern).
+
+    Lets a poll distinguish a genuinely idle moment (a Tuesday) from broken
+    discovery: zero games discovered inside a window means the scoreboard
+    fetch/parse is down and the store -- moments, TD pushes, everything
+    downstream -- silently goes stale.
+    """
+    from datetime import datetime, timezone
+    from zoneinfo import ZoneInfo
+
+    et = (now or datetime.now(timezone.utc)).astimezone(ZoneInfo("America/New_York"))
+    weekday, hour = et.weekday(), et.hour  # Monday == 0
+    if weekday == 6:  # Sunday: 1pm kickoffs through the Sunday night game
+        return 13 <= hour <= 23
+    if weekday == 3:  # Thursday night
+        return 20 <= hour <= 23
+    if weekday == 0:  # Monday night
+        return 20 <= hour <= 23
+    if weekday == 4:  # Friday: rare (international, Black Friday, Christmas)
+        return 20 <= hour <= 23
+    if weekday == 5 and et.month in (12, 1):  # late-season / playoff Saturdays
+        return 13 <= hour <= 23
+    return False
+
+
 def poll_once() -> dict:
     """One store iteration: discover games, fetch PBP, upsert. Returns stats."""
     from dashboard_services.api import get_nfl_players, get_nfl_state
@@ -437,6 +542,20 @@ def poll_once() -> dict:
 
     games = discover_live_games(current_week=week)
     if not games:
+        # Zero games is normal most of the week, but NOT while NFL games are
+        # being played: then it means discovery is broken and every consumer
+        # of the store quietly serves stale/empty data. Say so, loudly.
+        if (
+            str(state.get("season_type") or "").lower() in ("reg", "regular", "post")
+            and _in_nfl_game_window()
+        ):
+            logger.warning(
+                "[scorezone-store] WARNING: poll discovered 0 live/final games "
+                "during an NFL game window (season=%s week=%s) -- scoreboard "
+                "discovery may be broken; moments and TD pushes will go stale",
+                season,
+                week,
+            )
         return stats
 
     # Finals already in the store keep polling for closing-drive catch-up

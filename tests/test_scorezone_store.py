@@ -58,8 +58,14 @@ class _FakeStoreConn:
 
     def __init__(self, now):
         self.now = now
-        self.plays = {}  # (season, game_id, play_id) -> row dict
+        self.plays = {}  # (season, game_id, play_id, pid) -> row dict
         self.state = {}
+        # Schema state for the pid-key migration: a fresh DB reports the new
+        # key (the CREATE TABLE below is the new DDL). The migration test
+        # flips these to stage a pre-migration table.
+        self.table_exists = False
+        self.pk_has_pid = True
+        self._mig_plays = None
 
     def __enter__(self):
         return self
@@ -76,14 +82,15 @@ class _FakeStoreConn:
     def _do_executemany(self, sql, rows):
         up = " ".join(sql.split()).upper()
         assert up.startswith("INSERT INTO REDZONE_PLAYS"), sql[:60]
-        for season, game_id, play_id, seq, is_td, week, payload_json in rows:
-            key = (int(season), str(game_id), str(play_id))
+        for season, game_id, play_id, pid, seq, is_td, week, payload_json in rows:
+            key = (int(season), str(game_id), str(play_id), str(pid))
             existing = self.plays.get(key)
             if existing is None:
                 self.plays[key] = {
                     "season": int(season),
                     "game_id": str(game_id),
                     "play_id": str(play_id),
+                    "pid": str(pid),
                     "seq": int(seq),
                     "is_td": bool(is_td),
                     "week": int(week) if week is not None else None,
@@ -106,7 +113,35 @@ class _FakeStoreConn:
     def execute(self, sql, params=None):
         up = " ".join(sql.split()).upper()
         params = params or ()
+        if "PG_CONSTRAINT" in up:
+            # Primary-key introspection for the pid-key migration.
+            if not self.table_exists:
+                return _FakeCursor([])
+            cols = "season,game_id,play_id,pid" if self.pk_has_pid else "season,game_id,play_id"
+            return _FakeCursor([{"pk_cols": cols}])
+        if up.startswith("CREATE TABLE REDZONE_PLAYS_PIDMIG"):
+            self._mig_plays = {}
+            return _FakeCursor([])
+        if up.startswith("INSERT INTO REDZONE_PLAYS_PIDMIG"):
+            # Rebuild preserving rows; pid comes from each row's payload.
+            for row in self.plays.values():
+                payload = json.loads(row["payload"])
+                pid = str(payload.get("pid") or "")
+                new_row = dict(row)
+                new_row["pid"] = pid
+                key = (row["season"], row["game_id"], row["play_id"], pid)
+                self._mig_plays[key] = new_row
+            return _FakeCursor([])
+        if up.startswith("DROP TABLE REDZONE_PLAYS"):
+            return _FakeCursor([])
+        if up.startswith("ALTER TABLE REDZONE_PLAYS_PIDMIG RENAME"):
+            self.plays = self._mig_plays or {}
+            self._mig_plays = None
+            self.pk_has_pid = True
+            self.table_exists = True
+            return _FakeCursor([])
         if up.startswith("CREATE TABLE") or up.startswith("CREATE INDEX"):
+            self.table_exists = True
             return _FakeCursor([])
         if up.startswith("INSERT INTO REDZONE_PLAYS"):
             self._do_executemany(sql, [params])
@@ -150,19 +185,30 @@ class _FakeStoreConn:
             rows.sort(key=lambda r: r["ts"])
             return _FakeCursor(rows)
         if "FROM REDZONE_PLAYS" in up and "PAYLOAD->>'PID' = ANY" in up:
-            season, days = int(params[0]), int(params[1])
-            pid_set = {str(p) for p in params[2]}
-            week = int(params[3]) if len(params) > 3 else None
-            cutoff = self.now[0] - days * 86400
+            season = int(params[0])
+            if "OBSERVED_AT >= NOW()" in up:
+                # Legacy recency-only shape: (season, days, pid_list).
+                days = int(params[1])
+                pid_set = {str(p) for p in params[2]}
+                week = None
+                cutoff = self.now[0] - days * 86400
+            else:
+                # Week-scoped shape: (season, pid_list, week). The week stamp
+                # is the only time filter -- no recency cutoff.
+                pid_set = {str(p) for p in params[1]}
+                week = int(params[2])
+                cutoff = None
             rows = []
             for r in self.plays.values():
-                if r["season"] != season or r["observed_at"] < cutoff:
+                if r["season"] != season:
+                    continue
+                if cutoff is not None and r["observed_at"] < cutoff:
                     continue
                 payload = json.loads(r["payload"])
                 if str(payload.get("pid") or "") not in pid_set:
                     continue
-                # Mirrors the optional AND week = %s clause: week-less rows
-                # never match a week-scoped read.
+                # Mirrors the week = %s clause: week-less rows never match a
+                # week-scoped read.
                 if week is not None and r["week"] != week:
                     continue
                 rows.append({
@@ -210,19 +256,19 @@ def test_upsert_and_get_plays_ordered(store_db):
 def test_upsert_idempotent_keeps_observed_at(store_db):
     conn, now = store_db
     rs.upsert_plays(2026, "g", [_play("p1", 1)])
-    first = conn.plays[(2026, "g", "p1")]["observed_at"]
+    first = conn.plays[(2026, "g", "p1", "")]["observed_at"]
     now[0] += 3600  # an hour of polls later
     rs.upsert_plays(2026, "g", [_play("p1", 1)])
-    assert conn.plays[(2026, "g", "p1")]["observed_at"] == first
+    assert conn.plays[(2026, "g", "p1", "")]["observed_at"] == first
 
 
 def test_upsert_revision_bumps_observed_at(store_db):
     conn, now = store_db
     rs.upsert_plays(2026, "g", [_play("p1", 1, text="run")])
-    first = conn.plays[(2026, "g", "p1")]["observed_at"]
+    first = conn.plays[(2026, "g", "p1", "")]["observed_at"]
     now[0] += 3600
     rs.upsert_plays(2026, "g", [_play("p1", 1, text="run, scoring changed")])
-    assert conn.plays[(2026, "g", "p1")]["observed_at"] > first
+    assert conn.plays[(2026, "g", "p1", "")]["observed_at"] > first
 
 
 def test_td_since_watermark_semantics(store_db):
@@ -250,7 +296,7 @@ def test_prune_removes_only_old(store_db):
     now[0] += 8 * 86400
     rs.upsert_plays(2026, "g", [_play("new", 2)])
     assert rs.prune_plays(retention_days=7) == 1
-    assert set(conn.plays) == {(2026, "g", "new")}
+    assert set(conn.plays) == {(2026, "g", "new", "")}
 
 
 def test_get_plays_unknown_game_absent(store_db):
@@ -395,16 +441,32 @@ def test_ensure_table_runs_once_per_process():
     rs._ENSURED_TABLES.clear()
     calls = []
 
+    class _Cursor:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def fetchone(self):
+            return self._rows[0] if self._rows else None
+
+        def fetchall(self):
+            return self._rows
+
     class _Conn:
         info = None
 
         def execute(self, sql, params=None):
-            calls.append(" ".join(sql.split())[:12].upper())
+            calls.append(" ".join(sql.split()).upper())
+            if "PG_CONSTRAINT" in calls[-1]:
+                # Already on the per-player key: no migration rebuild.
+                return _Cursor([{"pk_cols": "season,game_id,play_id,pid"}])
+            return _Cursor([])
 
     rs._ensure_table(_Conn())
     first_run = list(calls)
-    assert len(first_run) == 1 + len(rs._INDEX_DDL)
-    assert first_run[0] == "CREATE TABLE"
+    # PK introspection first, then the table DDL, then the indexes.
+    assert "PG_CONSTRAINT" in first_run[0]
+    assert first_run[1].startswith("CREATE TABLE")
+    assert len(first_run) == 2 + len(rs._INDEX_DDL)
 
     # Second call on the same database: no DDL.
     rs._ensure_table(_Conn())
@@ -426,7 +488,7 @@ def _play_with_pid(play_id, seq, pid, week_text="run"):
 def test_upsert_stamps_week(store_db):
     conn, _now = store_db
     rs.upsert_plays(2026, "20260927_KC@BUF", [_play("p1", 1)], week=3)
-    assert conn.plays[(2026, "20260927_KC@BUF", "p1")]["week"] == 3
+    assert conn.plays[(2026, "20260927_KC@BUF", "p1", "")]["week"] == 3
 
 
 def test_upsert_weekless_reupsert_keeps_week(store_db):
@@ -436,7 +498,7 @@ def test_upsert_weekless_reupsert_keeps_week(store_db):
     rs.upsert_plays(2026, "g", [_play("p1", 1, text="run")], week=3)
     now[0] += 60
     rs.upsert_plays(2026, "g", [_play("p1", 1, text="run, revised")])
-    assert conn.plays[(2026, "g", "p1")]["week"] == 3
+    assert conn.plays[(2026, "g", "p1", "")]["week"] == 3
 
 
 def test_get_plays_for_pids_filters_by_week(store_db):
@@ -467,3 +529,150 @@ def test_get_plays_for_pids_without_week_returns_all(store_db):
     rs.upsert_plays(2026, "20261004_KC@DEN", [_play_with_pid("w4p", 1, "123")], week=4)
     got = rs.get_plays_for_pids(2026, ["123"])
     assert {p["play_id"] for p in got} == {"w3p", "w4p"}
+
+
+# ── Per-player key regressions ──────────────────────────────────────────
+
+
+def _play_pid(play_id, seq, pid, is_td=False, stat_line=None, text="play"):
+    p = _play(play_id, seq, is_td=is_td, text=text)
+    p["pid"] = pid
+    if stat_line is not None:
+        p["stat_line"] = stat_line
+    return p
+
+
+def test_upsert_keeps_every_players_row_for_one_play(store_db):
+    """Regression: extractors emit one row per involved player under the
+    same play_id, but the old (season, game_id, play_id) table key kept
+    only one of them -- a TD pass lost either the QB's or the WR's row."""
+    conn, _now = store_db
+    qb = _play_pid("p1", 1, "111", is_td=True, stat_line={"pass_td": 1, "pass_yds": 25})
+    wr = _play_pid("p1", 1, "222", is_td=True, stat_line={"rec_td": 1, "rec_yds": 25})
+    assert rs.upsert_plays(2026, "g", [qb, wr], week=4) == 2
+    assert (2026, "g", "p1", "111") in conn.plays
+    assert (2026, "g", "p1", "222") in conn.plays
+    got = rs.get_plays(2026, ["g"])
+    assert {p["pid"] for p in got["g"]} == {"111", "222"}
+    # Each player's row is independently retrievable by pid.
+    assert [p["pid"] for p in rs.get_plays_for_pids(2026, ["111"], week=4)] == ["111"]
+    assert [p["pid"] for p in rs.get_plays_for_pids(2026, ["222"], week=4)] == ["222"]
+
+
+def test_qb_interception_row_retrievable_by_qb_pid(store_db):
+    """Regression: an interception produces a QB row and a defender row
+    under one play_id. The QB's row must survive the upsert and be found
+    by his pid (the moments endpoint classifies it as his turnover)."""
+    _conn, _now = store_db
+    qb = _play_pid("int1", 7, "111", stat_line={"int": 1}, text="pass intercepted")
+    defender = _play_pid("int1", 7, "999", stat_line={"def_int": 1}, text="pass intercepted")
+    rs.upsert_plays(2026, "g", [qb, defender], week=4)
+    got = rs.get_plays_for_pids(2026, ["111"], week=4)
+    assert len(got) == 1
+    assert got[0]["play_id"] == "int1"
+    assert got[0]["stat_line"]["int"] == 1
+
+
+def test_td_scan_returns_both_rows_of_a_td_pass(store_db):
+    """Both scoring rows must reach the TD notifier: it groups rows by
+    canonical play and claims once per (play, owner), picking each owner's
+    best contribution -- so per-player rows do not double-fire pushes, but
+    dropping one upstream would lose that owner's push."""
+    _conn, _now = store_db
+    qb = _play_pid("p1", 1, "111", is_td=True, stat_line={"pass_td": 1})
+    wr = _play_pid("p1", 1, "222", is_td=True, stat_line={"rec_td": 1})
+    rs.upsert_plays(2026, "g", [qb, wr], week=4)
+    tds = rs.get_td_plays_since(2026, 0)
+    assert {p["pid"] for _g, p, _ts in tds} == {"111", "222"}
+
+
+def test_week_scoped_read_survives_past_recency_window(store_db):
+    """Regression: a week-scoped read made more than ``days`` after the
+    plays were observed must still return them -- the old 5-day
+    observed_at window silently dropped Sunday plays by the following
+    weekend. The week-less legacy read keeps its recency bound."""
+    _conn, now = store_db
+    rs.upsert_plays(2026, "g", [_play_with_pid("sun", 1, "123")], week=3)
+    now[0] += 8 * 86400  # the following Monday
+    got = rs.get_plays_for_pids(2026, ["123"], week=3)
+    assert [p["play_id"] for p in got] == ["sun"]
+    assert rs.get_plays_for_pids(2026, ["123"]) == []
+
+
+def test_migrate_pid_key_rebuilds_preserving_rows():
+    """A pre-pid table (old 3-column key) is rebuilt by _ensure_table:
+    rows survive, keyed by the pid from their payloads, and ensuring
+    again is a no-op (idempotent)."""
+    conn = _FakeStoreConn([1_700_000_000.0])
+    conn.table_exists = True
+    conn.pk_has_pid = False
+    payload = json.dumps({"play_id": "p1", "pid": "111", "seq": 1})
+    conn.plays[(2026, "g", "p1")] = {
+        "season": 2026, "game_id": "g", "play_id": "p1", "seq": 1,
+        "is_td": True, "week": 3, "payload": payload,
+        "observed_at": 1_700_000_000.0,
+    }
+    rs._ENSURED_TABLES.discard("default")
+    rs._ensure_table(conn)
+    assert conn.pk_has_pid is True
+    assert set(conn.plays) == {(2026, "g", "p1", "111")}
+    assert conn.plays[(2026, "g", "p1", "111")]["payload"] == payload
+    before = dict(conn.plays)
+    rs._ENSURED_TABLES.discard("default")
+    rs._ensure_table(conn)
+    assert conn.plays == before
+
+
+# ── Poller loudness ─────────────────────────────────────────────────────
+
+
+def test_in_nfl_game_window():
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    et = ZoneInfo("America/New_York")
+    assert rs._in_nfl_game_window(datetime(2026, 9, 27, 14, 0, tzinfo=et))      # Sunday 2pm
+    assert not rs._in_nfl_game_window(datetime(2026, 9, 27, 10, 0, tzinfo=et))  # Sunday morning
+    assert not rs._in_nfl_game_window(datetime(2026, 9, 29, 14, 0, tzinfo=et))  # Tuesday
+    assert rs._in_nfl_game_window(datetime(2026, 10, 1, 21, 0, tzinfo=et))      # Thursday night
+    assert rs._in_nfl_game_window(datetime(2026, 9, 28, 21, 0, tzinfo=et))      # Monday night
+    assert not rs._in_nfl_game_window(datetime(2026, 9, 26, 15, 0, tzinfo=et))  # September Saturday
+    assert rs._in_nfl_game_window(datetime(2027, 1, 9, 15, 0, tzinfo=et))       # January Saturday
+
+
+def test_poll_once_warns_when_no_games_during_game_window(monkeypatch, caplog):
+    """A poll that discovers zero games while NFL games are on means
+    discovery is broken; it must be loud, not a silent empty return."""
+    import logging
+    import sys
+    import types
+
+    monkeypatch.setattr(rs, "discover_live_games", lambda current_week=None: [])
+    monkeypatch.setattr(rs, "_in_nfl_game_window", lambda now=None: True)
+    fake_api = types.ModuleType("dashboard_services.api")
+    fake_api.get_nfl_state = lambda: {"season": 2026, "week": 4, "season_type": "reg"}
+    fake_api.get_nfl_players = lambda: {}
+    monkeypatch.setitem(sys.modules, "dashboard_services.api", fake_api)
+
+    with caplog.at_level(logging.WARNING, logger="utils.scorezone_store"):
+        stats = rs.poll_once()
+    assert stats == {"games": 0, "plays": 0}
+    assert "0 live/final games" in caplog.text
+
+
+def test_poll_once_quiet_when_no_games_outside_window(monkeypatch, caplog):
+    """Zero games on a Tuesday (or in preseason) is normal -- no warning."""
+    import logging
+    import sys
+    import types
+
+    monkeypatch.setattr(rs, "discover_live_games", lambda current_week=None: [])
+    fake_api = types.ModuleType("dashboard_services.api")
+    fake_api.get_nfl_state = lambda: {"season": 2026, "week": 4, "season_type": "pre"}
+    fake_api.get_nfl_players = lambda: {}
+    monkeypatch.setitem(sys.modules, "dashboard_services.api", fake_api)
+
+    with caplog.at_level(logging.WARNING, logger="utils.scorezone_store"):
+        stats = rs.poll_once()
+    assert stats == {"games": 0, "plays": 0}
+    assert "0 live/final games" not in caplog.text
