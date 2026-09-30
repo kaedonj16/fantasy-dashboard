@@ -206,6 +206,26 @@ def test_dau_sql_targets_pageviews(monkeypatch, reset_tables_ready):
     assert "COUNT(DISTINCT" in sql
 
 
+def test_dau_sql_realistic_ny_definition(monkeypatch, reset_tables_ready):
+    conn = _FakeConn(fetchall_result=[])
+    _patch_conn(monkeypatch, conn)
+    analytics.dau_last_30_days()
+    sql = " ".join(w[0] for w in conn.writes if "SELECT" in w[0])
+    # Grouped by New York day, not UTC.
+    assert "(created_at AT TIME ZONE 'America/New_York')::date AS d" in sql
+    assert "date_trunc('day', created_at)" not in sql
+    # Per-(day, session) classification reused from the breakdown.
+    assert "COUNT(*) FILTER (WHERE account_id IS NULL) AS anon_views" in sql
+    assert "COUNT(*) FILTER (WHERE account_id IS NOT NULL) AS acct_views" in sql
+    # Engaged anon only: 2+ anon views and no signed-in views, so sessions
+    # that also signed in are de-duped (counted only via their account).
+    assert "acct_views = 0 AND anon_views >= 2" in sql
+    # Signed-in accounts count regardless of pageview count.
+    assert "COUNT(DISTINCT account_id) AS signed_in" in sql
+    assert "signed_in + COALESCE(e.engaged, 0) AS users" in sql or \
+        "signed_in + COALESCE(e.engaged,0) AS users" in sql
+
+
 def test_wau_sql_uses_weekly_trunc(monkeypatch, reset_tables_ready):
     conn = _FakeConn(fetchall_result=[])
     _patch_conn(monkeypatch, conn)
@@ -213,6 +233,19 @@ def test_wau_sql_uses_weekly_trunc(monkeypatch, reset_tables_ready):
     sql = " ".join(w[0] for w in conn.writes if "SELECT" in w[0])
     assert "date_trunc('week'" in sql
     assert "pageview" in sql
+
+
+def test_wau_sql_realistic_ny_definition(monkeypatch, reset_tables_ready):
+    conn = _FakeConn(fetchall_result=[])
+    _patch_conn(monkeypatch, conn)
+    analytics.wau_last_12_weeks()
+    sql = " ".join(w[0] for w in conn.writes if "SELECT" in w[0])
+    # Monday-anchored New York weeks.
+    assert "date_trunc('week', created_at AT TIME ZONE 'America/New_York')::date AS w" in sql
+    assert "COUNT(*) FILTER (WHERE account_id IS NULL) AS anon_views" in sql
+    assert "COUNT(*) FILTER (WHERE account_id IS NOT NULL) AS acct_views" in sql
+    assert "acct_views = 0 AND anon_views >= 2" in sql
+    assert "COUNT(DISTINCT account_id) AS signed_in" in sql
 
 
 def test_signups_sql_reads_accounts_table(monkeypatch, reset_tables_ready):
@@ -267,6 +300,13 @@ def test_week_over_week_return_sql(monkeypatch, reset_tables_ready):
     sql = " ".join(w[0] for w in conn.writes if "SELECT" in w[0])
     assert "LAG(w)" in sql
     assert "interval '7 days'" in sql
+    # Realistic identities aligned with WAU: accounts as 'a:'||id, engaged
+    # anon sessions as 's:'||session, on New York weeks.
+    assert "date_trunc('week', created_at AT TIME ZONE 'America/New_York')::date AS w" in sql
+    assert "'a:' || account_id::text AS ident" in sql
+    assert "'s:' || session_id AS ident" in sql
+    assert "COUNT(*) FILTER (WHERE account_id IS NULL) AS anon_views" in sql
+    assert "acct_views = 0 AND anon_views >= 2" in sql
 
 
 def test_funnel_counts_stages(monkeypatch):
@@ -297,7 +337,7 @@ def test_funnel_survives_missing_tables(monkeypatch):
     assert out == {"visitors": 0, "signups": 0, "linked": 0, "pro": 0}
 
 
-# ── DAU breakdown (diagnostic) ────────────────────────────────────────────────
+# ── DAU breakdown (reconciliation) ────────────────────────────────────────────
 
 # Dict rows mirroring psycopg dict_row, one row per day definition.
 # Internally consistent: anon 255 = 200 one-and-done + 50 engaged + 5 linked;
@@ -336,7 +376,7 @@ def test_dau_breakdown_returns_both_day_sets(monkeypatch):
     monkeypatch.setattr("dashboard_services.analytics._fetchall", fake_fetchall)
     out = analytics.dau_breakdown()
     assert out == {"utc": _BREAKDOWN_ROW_UTC, "ny": _BREAKDOWN_ROW_NY}
-    # UTC is queried first with the chart's exact day grouping; NY second.
+    # UTC is queried first, NY second.
     assert "date_trunc('day', created_at) = date_trunc('day', now())" in seen_sql[0]
     assert "America/New_York" in seen_sql[1]
 
@@ -399,6 +439,9 @@ def test_one_and_done_top_paths_sql_and_limit(monkeypatch, reset_tables_ready):
     assert "GROUP BY b.path" in sql
     assert "LIMIT %s" in sql
     assert args == (3,)
+    # Day filter is the New York day, not UTC.
+    assert "(created_at AT TIME ZONE 'America/New_York')::date" in sql
+    assert "date_trunc('day', created_at) = date_trunc('day', now())" not in sql
 
 
 def test_events_table_ready(monkeypatch):
@@ -478,26 +521,31 @@ def test_admin_page_renders_breakdown_section(monkeypatch):
     resp = client.get("/admin/analytics")
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
-    assert "DAU breakdown: today (diagnostic)" in body
+    assert "DAU breakdown: today" in body
+    assert "(diagnostic)" not in body
     # The breakdown section sits directly under the DAU chart section.
-    assert body.index("Daily active users") < body.index("DAU breakdown: today (diagnostic)") \
+    assert body.index("Daily active users") < body.index("DAU breakdown: today") \
         < body.index("Weekly active users")
-    assert "UTC day (current chart)" in body
-    assert "New York day" in body
+    assert "UTC day" in body
+    assert "New York day (chart day)" in body
+    assert "UTC day (current chart)" not in body
+    # Chart notes state the new realistic definition.
+    assert "Signed-in accounts plus anonymous visitors with 2+ pages" in body
+    assert "Same definition per week" in body
     for label in (
-        "Headline DAU (current definition)",
+        "Raw distinct identities (old definition)",
         "Signed-in accounts",
         "Anonymous sessions",
         "Anonymous: one-and-done (1 pageview)",
         "Anonymous sessions that also signed in (counted twice)",
-        "Realistic preview (signed-in + engaged anonymous)",
+        "DAU (current definition: signed-in + engaged anonymous)",
         "Total pageviews",
     ):
         assert label in body
     # UTC and NY values from the stubbed breakdown both render.
     assert "<td>295</td><td>210</td>" in body
     assert "<td>90</td><td>70</td>" in body
-    assert "Top one-and-done paths (UTC day): /: 120, /pricing: 31" in body
+    assert "Top one-and-done paths (New York day): /: 120, /pricing: 31" in body
 
 
 def test_admin_page_breakdown_failure_still_renders(monkeypatch):
@@ -512,7 +560,7 @@ def test_admin_page_breakdown_failure_still_renders(monkeypatch):
     resp = client.get("/admin/analytics")
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
-    assert "DAU breakdown: today (diagnostic)" in body
+    assert "DAU breakdown: today" in body
     assert "Breakdown unavailable." in body
     assert "Daily active users" in body
 
@@ -709,6 +757,48 @@ def test_funnel_linked_reads_user_leagues_table(monkeypatch, reset_tables_ready)
 
 
 # ── Gap filling ─────────────────────────────────────────────────────────────
+
+def test_ny_today_returns_a_date():
+    import datetime
+
+    d = analytics.ny_today()
+    assert isinstance(d, datetime.date)
+    # Within a day of UTC today (NY is UTC-4/-5, never further away).
+    utc_today = datetime.datetime.now(datetime.timezone.utc).date()
+    assert abs((d - utc_today).days) <= 1
+
+
+def test_admin_route_passes_ny_today_to_gap_fills(monkeypatch):
+    import datetime
+
+    client = _make_admin_client(monkeypatch, admin=True)
+    sentinel = datetime.date(2026, 9, 30)
+    monkeypatch.setattr(
+        "dashboard_services.analytics.ny_today", lambda: sentinel
+    )
+    seen = {}
+
+    real_daily = analytics.fill_daily_gaps
+    real_weekly = analytics.fill_weekly_gaps
+
+    def spy_daily(rows, date_key, value_key, days=30, today=None):
+        seen.setdefault("daily_todays", []).append(today)
+        return real_daily(rows, date_key, value_key, days, today=today)
+
+    def spy_weekly(rows, date_key, value_key, weeks=12, today=None):
+        seen.setdefault("weekly_todays", []).append(today)
+        return real_weekly(rows, date_key, value_key, weeks, today=today)
+
+    monkeypatch.setattr("dashboard_services.analytics.fill_daily_gaps", spy_daily)
+    monkeypatch.setattr("dashboard_services.analytics.fill_weekly_gaps", spy_weekly)
+    resp = client.get("/admin/analytics")
+    assert resp.status_code == 200
+    # DAU (daily) and WAU (weekly) fills are aligned to the NY day; the
+    # signups daily fill is deliberately left as-is (no NY today).
+    assert seen["daily_todays"][0] == sentinel
+    assert seen["weekly_todays"] == [sentinel]
+    assert seen["daily_todays"][1] is None
+
 
 def test_fill_daily_gaps_zero_fills():
     import datetime
