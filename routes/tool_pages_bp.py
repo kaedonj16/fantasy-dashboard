@@ -341,6 +341,6 @@ def page_draft_history(platform: str = None, season: int = None, league_id: str 
     from dashboard_services.pages.draft_room_page import build_draft_history_body
     body = build_draft_history_body(league_id, season, platform)
     return render_page(
-        "Draft History | BR Fantasy", league_id, "draft", body, platform, season,
+        "Draft History | BR Fantasy", league_id, "draft-history", body, platform, season,
         description="Review your league's past and live fantasy football drafts pick-by-pick.",
     )
