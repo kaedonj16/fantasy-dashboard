@@ -6961,22 +6961,17 @@ def build_league_context(platform: str, league_id: str, season: int) -> dict:
             league_id, resolved_league_id, season,
         )
 
-    try:
-        activity_df = build_week_activity(
-            resolved_league_id, platform, season, players_map,
-            users=users, rosters=rosters,
-        )
-    except Exception as e:
-        logger.warning("[build_league_context] week activity failed: %s", e)
-        activity_df = pd.DataFrame(columns=["kind", "week", "ts", "data"])
-    injury_df = build_injury_report(
-        resolved_league_id,
-        players,
-        roster_map,
-        rosters,
-        "America/New_York",
-        False,
-    )
+    # Activity + injury sections are DEFERRED out of this build. The
+    # transactions sweep alone is ~18 of the build's ~42 provider calls
+    # (plus the injury report's full players scan), and no landing surface
+    # reads them -- the only consumers are the Activity page, the
+    # since-last-visit API, Season Wrapped, and the front-office memo.
+    # The keys stay present with None as the explicit pending marker and
+    # are filled on first use by ensure_activity_bits()/ensure_injury_bits()
+    # (same lazy pattern as ensure_weekly_bits). Consumers must never read
+    # None as "empty": they fill first or report the pending state.
+    activity_df = None
+    injury_df = None
 
     if team_stats is not None and not team_stats.empty and {"Wins", "PF"}.issubset(team_stats.columns):
         from utils.standings_divisions import roster_division_map
@@ -7819,6 +7814,84 @@ def ensure_weekly_bits(ctx: dict) -> None:
     ctx["proj_by_roster"] = proj_by_roster
 
     _apply_proj_column()
+
+
+def ensure_injury_bits(ctx: dict) -> None:
+    """Lazily populate injury_df into the ctx (deferred out of
+    build_league_context). Pure local computation over the ctx's players
+    snapshot -- no provider calls. No-op once built."""
+    if ctx.get("injury_df") is not None:
+        return
+    ctx["injury_df"] = build_injury_report(
+        ctx.get("resolved_league_id", ctx.get("league_id")),
+        ctx.get("players") or {},
+        ctx.get("roster_map") or {},
+        ctx.get("rosters") or [],
+        "America/New_York",
+        False,
+    )
+
+
+def ensure_activity_bits(ctx: dict) -> None:
+    """Lazily populate activity_df (+ injury_df) into the ctx.
+
+    build_league_context leaves both sections None (pending); the first
+    consumer that actually needs them pays the transactions sweep here
+    instead of every cold league build paying it up front. Mirrors the
+    activity block of refresh_league_ctx_section, minus the provider-cache
+    clearing (that stays refresh-only). No-op once built."""
+    ensure_injury_bits(ctx)
+    if ctx.get("activity_df") is not None:
+        return
+    try:
+        ctx["activity_df"] = build_week_activity(
+            ctx.get("resolved_league_id", ctx.get("league_id")),
+            ctx.get("platform"),
+            ctx.get("season"),
+            ctx.get("players_map"),
+            users=ctx.get("users"),
+            rosters=ctx.get("rosters"),
+        )
+    except Exception as e:
+        logger.warning("[ensure_activity_bits] week activity failed: %s", e)
+        ctx["activity_df"] = pd.DataFrame(columns=["kind", "week", "ts", "data"])
+
+
+_ACTIVITY_FILL_INFLIGHT: set = set()
+_ACTIVITY_FILL_LOCK = threading.Lock()
+
+
+def _fill_activity_section_async(platform: str, league_id: str, season: int) -> None:
+    """Background-fill a cached ctx's deferred activity section.
+
+    For best-effort readers (since-last-visit) that must not block on the
+    transactions sweep: they answer with an explicit pending state and the
+    client retries once this lands. Deduped per league, daemon thread --
+    same shape as _warm_league_ctx_async."""
+    key = _cache_key(platform, season, league_id)
+    with _ACTIVITY_FILL_LOCK:
+        if key in _ACTIVITY_FILL_INFLIGHT:
+            return
+        _ACTIVITY_FILL_INFLIGHT.add(key)
+
+    def _run() -> None:
+        try:
+            entry = DASHBOARD_CACHE.get(key)
+            if entry and entry.get("ctx"):
+                ensure_activity_bits(entry["ctx"])
+        except Exception:
+            logger.debug("[activity-fill] background fill failed", exc_info=True)
+        finally:
+            with _ACTIVITY_FILL_LOCK:
+                _ACTIVITY_FILL_INFLIGHT.discard(key)
+
+    try:
+        threading.Thread(
+            target=_run, name=f"activity-fill-{platform}-{league_id}", daemon=True,
+        ).start()
+    except Exception:
+        with _ACTIVITY_FILL_LOCK:
+            _ACTIVITY_FILL_INFLIGHT.discard(key)
 
 
 def refresh_league_ctx_section(platform: str, league_id: str, page: str, season: int,
@@ -15551,10 +15624,16 @@ def page_activity(platform: str, season: int, league_id: str):
     if cached:
         return render_page("BR Fantasy Activity", league_id, "activity", cached, platform, season)
 
-    # If the league context is already warm (user came from another page), build
-    # synchronously - it's quick once the ctx is cached and avoids the poll round-trip.
+    # If the league context is already warm (user came from another page) AND
+    # its activity section is already built, build synchronously - it's quick
+    # once the data is cached and avoids the poll round-trip. A warm ctx whose
+    # activity section is still pending (deferred out of the first build)
+    # takes the background path below so the sweep doesn't block this request.
     ctx_entry = DASHBOARD_CACHE.get(_cache_key(platform, season, league_id))
-    if _league_ctx_cache_valid(ctx_entry, platform, season, league_id):
+    if (
+        _league_ctx_cache_valid(ctx_entry, platform, season, league_id)
+        and ctx_entry["ctx"].get("activity_df") is not None
+    ):
         try:
             body = build_activity_body(ctx_entry["ctx"])
             store_page_html(platform, season, league_id, "activity", body)
@@ -20154,6 +20233,12 @@ def api_gm_memo():
 
     try:
         ctx = get_league_ctx_from_cache(platform, league_id, season)
+        # The memo's canonical injury source (injury_df) is deferred out of
+        # the league-context build; fill just that section here (local
+        # computation, no provider calls) so the report uses it instead of
+        # its players-index fallback.
+        if ctx:
+            ensure_injury_bits(ctx)
         force_refresh = bool(payload.get("force"))
         report = get_front_office_report(ctx, viewer_roster_id, force_refresh=force_refresh)
 
@@ -23199,6 +23284,24 @@ def api_since_last_visit():
     except Exception:
         logger.debug("since-last-visit ctx failed", exc_info=True)
         return jsonify(result)
+
+    # The activity section is deferred out of the first league build and
+    # fills lazily. While it is still pending, do NOT consume the visit or
+    # report zero trades/waivers (that would read as "nothing happened"):
+    # kick off the background fill and answer with an explicit pending
+    # state; the client retries with the same baseline once it lands.
+    # Only relevant when activity would actually be consulted -- a visitor
+    # with no baseline (no since, no account) never reaches the activity
+    # block below, so the roster snapshot still returns immediately.
+    if (
+        "activity_df" in ctx
+        and ctx.get("activity_df") is None
+        and (since_ms > 0 or session.get("account_id"))
+    ):
+        _fill_activity_section_async(platform, league_id, season)
+        pending_result = dict(result)
+        pending_result["activity_pending"] = True
+        return jsonify(pending_result)
 
     # Viewer roster snapshot (value + injury). Build this before consuming the
     # visit so the account's new baseline is stored in the same request.

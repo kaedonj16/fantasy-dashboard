@@ -15611,15 +15611,28 @@ async function initSinceLastVisit() {
   const rid = String((typeof window !== 'undefined' && window._viewerRid) || '');
 
   try {
-    const url = '/api/since-last-visit?platform=' + encodeURIComponent(ctx.platform) +
-      '&season=' + encodeURIComponent(ctx.season) +
-      '&league_id=' + encodeURIComponent(ctx.leagueId) +
-      '&since=' + encodeURIComponent(since) +
-      '&roster_id=' + encodeURIComponent(rid) +
-      '&' + _wlLeagueParams();
-    const res = await fetch(url, { cache: 'no-store' });
-    if (!res.ok) return;
-    const d = await res.json();
+    // The league activity section now builds lazily (deferred out of the
+    // first league-context build). While it fills in the background the API
+    // answers activity_pending WITHOUT consuming the visit, so retry with
+    // the same baseline a few times; if it never lands, stay hidden rather
+    // than rendering a fake "nothing happened" digest.
+    let d = null;
+    for (let attempt = 0; attempt < 4; attempt++) {
+      if (attempt > 0) await new Promise(function (r) { setTimeout(r, 2000); });
+      const url = '/api/since-last-visit?platform=' + encodeURIComponent(ctx.platform) +
+        '&season=' + encodeURIComponent(ctx.season) +
+        '&league_id=' + encodeURIComponent(ctx.leagueId) +
+        '&since=' + encodeURIComponent(since) +
+        '&roster_id=' + encodeURIComponent(rid) +
+        '&' + _wlLeagueParams();
+      const res = await fetch(url, { cache: 'no-store' });
+      if (!res.ok) return;
+      const payload = await res.json();
+      if (payload && payload.activity_pending) continue;
+      d = payload;
+      break;
+    }
+    if (!d) return;
 
     const items = (d && d.items) || [];
     const diff = _slvRosterDiff(

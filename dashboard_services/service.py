@@ -750,6 +750,40 @@ def get_transactions_by_week(
     return results
 
 
+def _activity_sweep_weeks(season) -> list[int]:
+    """Weeks worth sweeping for transactions in build_week_activity.
+
+    Weeks beyond the current NFL week cannot contain transactions yet, so
+    during a plain in-season week only weeks 1..current_week are swept.
+    Anything ambiguous keeps the full 1..18 sweep -- never drop a week that
+    could hold transactions:
+
+    - the state is stale (last-known-good fallback) or calendar-classified
+      rather than provider-reported,
+    - the league's season is not the live NFL season,
+    - the phase is anything but "regular" (pre / post / off),
+    - the week is outside 1..18, or the state cannot be read at all.
+    """
+    full = list(range(1, 19))
+    try:
+        target_season = int(season or 0)
+    except (TypeError, ValueError):
+        return full
+    try:
+        state = get_nfl_state() or {}
+        freshness = state.get("freshness") or {}
+        if freshness.get("stale") or freshness.get("classification") != "live":
+            return full
+        state_season = int(state.get("season") or 0)
+        season_type = (state.get("season_type") or "").lower()
+        week = int(state.get("week") or 0)
+    except Exception:
+        return full
+    if state_season == target_season and season_type == "regular" and 1 <= week <= 18:
+        return list(range(1, week + 1))
+    return full
+
+
 def build_week_activity(
         league_id: str,
         platform,
@@ -767,8 +801,8 @@ def build_week_activity(
     Optimized to minimize repeated lookups and work.
     """
 
-    # You can still change this to a dynamic list if needed
-    season_weeks = list(range(1, 19))
+    # Sweep only weeks that can contain transactions (see _activity_sweep_weeks).
+    season_weeks = _activity_sweep_weeks(season)
 
     try:
         roster_name, roster_avatar = build_roster_display_maps(
