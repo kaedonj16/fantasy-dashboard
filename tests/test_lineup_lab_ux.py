@@ -323,6 +323,36 @@ def test_pos_badges_have_color_css(page):
             "position badge color missing for %s" % pos.upper()
 
 
+def test_pos_badge_colors_match_site_pos_badge_palette(page):
+    # Site-wide .pos-badge palette (static/dashboard.css, matchups page):
+    # QB brand blue, RB green, WR amber, TE purple, FLEX teal, K pink,
+    # DEF slate, white text. The Lab chips must use the same colors.
+    expected = {
+        "qb": "background: var(--brand-blue); color: #fff;",
+        "rb": "background: #22c55e; color: #fff;",
+        "wr": "background: #f59e0b; color: #fff;",
+        "te": "background: #8b5cf6; color: #fff;",
+        "flex": "background: #14b8a6; color: #fff;",
+        "k": "background: #c92c68; color: #fff;",
+        "def": "background: #475569; color: #fff;",
+    }
+    for pos, rule in expected.items():
+        assert ".wv-lab-pos." + pos + " { " + rule + " }" in page, \
+            "Lab " + pos.upper() + " chip must match the site .pos-badge color"
+
+
+def test_lab_body_container_carries_no_skeleton_padding(page):
+    # Regression (2026-09-30): #wvLabBody itself carried .wv-lab-skel, whose
+    # 24px placeholder padding survived wvRenderLab's innerHTML swap and
+    # stacked on the page gutters, insetting the hero and every lineup row.
+    # The class belongs only on the placeholder markup inside the container;
+    # the loading skeleton and error states render their own.
+    assert 'class="wv-lab-skel" id="wvLabBody"' not in page, \
+        "#wvLabBody must not carry the padded skeleton class"
+    assert '<div id="wvLabBody"><div class="wv-lab-skel">' in page, \
+        "initial loading text keeps its own padded skeleton wrapper"
+
+
 def test_slot_row_renders_colored_pos_badge(lab_js):
     vals = _run_node(lab_js, _LAB_SETUP + r"""
 wvLabSwapDelta = function(si, b) { return 0; };
