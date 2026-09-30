@@ -109,10 +109,15 @@ def test_decide_presets_get_edge_fade_and_no_label():
     assert 'aria-label="Decision views"' in html
 
 
-def test_compare_chips_wrap_with_clear_all_link():
+def test_compare_chips_ride_one_flat_line_with_clear_all_link():
     html = _html()
     css = _rework_css(html)
-    assert ".am-compare-chips { flex-wrap:wrap; overflow-x:visible;" in css
+    # Same treatment as the presets rail: single line, sideways scroll,
+    # edge fade, chips never shrink.
+    assert ".am-compare-bar { flex-wrap:nowrap; }" in css
+    assert "flex-wrap:nowrap; overflow-x:auto; -webkit-overflow-scrolling:touch;" in css
+    assert ".am-compare-chips .am-chip { flex-shrink:0; }" in css
+    assert ".am-compare-chips { flex-wrap:wrap" not in css
     # The ghost pill hides on mobile; the text link takes over.
     assert "#amClearExtrasBtn { display:none !important; }" in css
     assert ".am-clear-link.am-clear-link-show { display:inline-block; }" in css
