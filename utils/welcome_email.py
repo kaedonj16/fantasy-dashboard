@@ -68,16 +68,16 @@ def _unsub_url(account_id: int) -> Optional[str]:
 def _section(title: str, body_html: str) -> str:
     t = escape(title, quote=False)
     return (
-        f'<h3 style="margin:22px 0 10px;font-size:11px;font-weight:800;text-transform:uppercase;'
+        f'<h3 class="em-h" style="margin:22px 0 10px;font-size:11px;font-weight:800;text-transform:uppercase;'
         f'letter-spacing:.06em;color:#0f2747;">{t}</h3>'
-        f'<div style="margin:0;font-size:14px;color:#122d4b;line-height:1.55;">{body_html}</div>'
+        f'<div class="em-t" style="margin:0;font-size:14px;color:#122d4b;line-height:1.55;">{body_html}</div>'
     )
 
 
 def _lead(body_html: str) -> str:
     """A single lead/closing paragraph. Caller supplies safe inline HTML."""
     return (
-        f'<p style="margin:0 0 18px;font-size:15px;color:#122d4b;line-height:1.6;">'
+        f'<p class="em-t" style="margin:0 0 18px;font-size:15px;color:#122d4b;line-height:1.6;">'
         f"{body_html}</p>"
     )
 
@@ -86,10 +86,10 @@ def _link_label(title: str, href: str = "") -> str:
     label = escape(title, quote=False)
     if href:
         return (
-            f'<a href="{escape(href, quote=True)}" style="color:#3b82f6;'
+            f'<a class="em-cta-a" href="{escape(href, quote=True)}" style="color:#3b82f6;'
             f'text-decoration:none;font-weight:700;">{label}</a>'
         )
-    return f'<strong style="color:#122d4b;">{label}</strong>'
+    return f'<strong class="em-t" style="color:#122d4b;">{label}</strong>'
 
 
 def _step(num: int, title: str, detail: str, href: str = "") -> str:
@@ -102,7 +102,7 @@ def _step(num: int, title: str, detail: str, href: str = "") -> str:
         f"{int(num)}</div></td>"
         f'<td style="vertical-align:top;padding:0 0 16px;">'
         f'<div style="font-size:15px;line-height:1.4;">{_link_label(title, href)}</div>'
-        f'<div style="margin-top:3px;font-size:13px;color:#6b7280;line-height:1.5;">'
+        f'<div class="em-t3" style="margin-top:3px;font-size:13px;color:#6b7280;line-height:1.5;">'
         f"{escape(detail, quote=False)}</div>"
         f"</td></tr></table>"
     )
@@ -115,7 +115,7 @@ def _feature(title: str, detail: str, href: str = "", first: bool = False) -> st
         f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0">'
         f'<tr><td style="padding:12px 0;{border}">'
         f'<div style="font-size:14px;line-height:1.4;">{_link_label(title, href)}</div>'
-        f'<div style="margin-top:2px;font-size:13px;color:#6b7280;line-height:1.5;">'
+        f'<div class="em-t3" style="margin-top:2px;font-size:13px;color:#6b7280;line-height:1.5;">'
         f"{escape(detail, quote=False)}</div>"
         f"</td></tr></table>"
     )
@@ -136,7 +136,7 @@ def _hero_banner(logos: dict[str, str], eyebrow: str = "") -> str:
         f'border-left:3px solid #122d4b;border-radius:10px;">'
         f'<tr><td style="padding:12px 16px;">'
         f'<div style="font-size:12px;font-weight:800;letter-spacing:.08em;'
-        f'text-transform:uppercase;color:#0f2747;">{eye}</div>'
+        f'text-transform:uppercase;color:#0f2747;" class="em-h">{eye}</div>'
         f"</td></tr></table>"
     )
 
@@ -218,7 +218,7 @@ def build_signup_welcome(
             "Every Tuesday we send a personalized digest for your main league: start/sit, "
             "waivers, and value moves. When you want deeper tools like trade suggestions, "
             "playoff sims, and breakout detection, PRO starts at $10/year "
-            f'(<a href="{escape(pricing, quote=True)}" style="color:#3b82f6;font-weight:700;'
+            f'(<a href="{escape(pricing, quote=True)}" class="em-cta-a" style="color:#3b82f6;font-weight:700;'
             'text-decoration:none;">see plans</a>).'
         ),
     ]

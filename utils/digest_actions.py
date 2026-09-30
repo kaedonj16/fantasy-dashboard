@@ -55,14 +55,14 @@ def section_card(
     if href and cta:
         link = (
             f'<div style="margin-top:10px;">'
-            f'<a href="{escape(href, quote=True)}" style="{_EMAIL_CTA}">'
+            f'<a class="em-cta-a" href="{escape(href, quote=True)}" style="{_EMAIL_CTA}">'
             f"{escape(cta, quote=False)}</a></div>"
         )
     chrome = EMAIL_CARD_ACCENT_STYLE if accent else EMAIL_CARD_STYLE
     return (
-        f'<div style="{chrome}">'
-        f'<div style="{_EMAIL_KICKER}">{title_s}</div>'
-        f'<div style="margin-top:8px;font-size:14px;color:#0f172a;line-height:1.5;">{inner}</div>'
+        f'<div class="em-sect" style="{chrome}">'
+        f'<div class="em-k" style="{_EMAIL_KICKER}">{title_s}</div>'
+        f'<div class="em-t" style="margin-top:8px;font-size:14px;color:#0f172a;line-height:1.5;">{inner}</div>'
         f"{link}</div>"
     )
 
