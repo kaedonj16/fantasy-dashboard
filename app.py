@@ -11708,7 +11708,6 @@ def build_projections_by_week(season: int, weeks: int, raw_scoring_settings: dic
 
 
 def _build_projections_by_week_uncached(season: int, weeks: int, raw_scoring_settings: dict = None):
-    from statistics import median
     from utils.fantasy_scoring import projection_points
     _players_for_proj = load_players_index() or {}
 
@@ -11723,7 +11722,7 @@ def _build_projections_by_week_uncached(season: int, weeks: int, raw_scoring_set
             return float(multi)  # legacy flat file
         return None
 
-    raw = {}
+    bundles = {}
     any_projections = False
     for w in range(1, weeks + 1):
         multi_week = load_week_projection(season, w) or {}
@@ -11732,28 +11731,16 @@ def _build_projections_by_week_uncached(season: int, weeks: int, raw_scoring_set
             v = _flat(pid, val)
             if v is not None:
                 flat[pid] = v
-        raw[w] = flat
         if flat:
             any_projections = True
-
-    # Median of this player's other Sleeper weeks fills a hole if one week's
-    # file omitted them. Never invent points from FantasyPros or last-season
-    # actuals -- displayed projections are Sleeper-only.
-    all_vals: dict = {}
-    for w in range(1, weeks + 1):
-        for pid, val in raw[w].items():
-            if val > 0.5:
-                all_vals.setdefault(pid, []).append(val)
-    fallback = {pid: median(vals) for pid, vals in all_vals.items()}
-
-    bundles = {}
-    for w in range(1, weeks + 1):
-        week_proj = dict(fallback)
-        for pid, val in raw[w].items():
-            # Trust Sleeper's number for this week, including an explicit 0
-            # (bye, IR, inactive). Do not replace it with the season median.
-            week_proj[pid] = val
-        bundles[w] = {"projections": week_proj}
+        # Trust Sleeper's line for this week exactly as published. A player
+        # absent from a week's file has no Sleeper line that week (bye,
+        # doubtful/out, inactive): the fetch drops their ADP-only row, so
+        # absence IS Sleeper's 0.0. Never refill an absent player from the
+        # median of their other weeks -- that resurrected full projections
+        # for doubtful players Sleeper (and ESPN) had zeroed, and invented
+        # points in bye weeks. An explicit 0 in the file is kept as 0 too.
+        bundles[w] = {"projections": flat}
 
     if not any_projections:
         logger.info("[projections] No Sleeper projection data for season %s", season)
