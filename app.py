@@ -5607,16 +5607,26 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
 # The AdSense library is the biggest controllable mobile-perf drain: in the
 # <head> it competes for bandwidth on the critical path and runs on the main
 # thread (Total Blocking Time). We now load it lazily (see _AD_INIT) on first
-# user interaction or at idle, so it's off the initial render path. The ad <ins>
-# slots still reserve their fixed height, so deferring the fill causes no CLS.
+# user interaction or at idle, so it's off the initial render path. The ad
+# <ins> slots are bare elements with no reserved placeholder box (see _AD_TOP),
+# so an unfilled slot takes no space and deferring the fill causes no CLS.
 # Google Funding Choices (certified CMP): renders the cookie-consent message
 # configured in AdSense > Privacy & messaging. Async so it never blocks first
 # paint; the googlefcPresent signal iframe is Google's documented snippet.
 _FUNDING_CHOICES = """<script async src="https://fundingchoicesmessages.google.com/i/pub-9164153092633845?ers=1"></script>
 <script>(function(){function signalGooglefcPresent(){if(!window.frames['googlefcPresent']){if(document.body){var iframe=document.createElement('iframe');iframe.style='width: 0; height: 0; border: none; z-index: -1000; left: -1000px; top: -1000px;';iframe.style.display='none';iframe.name='googlefcPresent';document.body.appendChild(iframe);}else{setTimeout(signalGooglefcPresent,0);}}}signalGooglefcPresent();})();</script>"""
 _AD_SCRIPT = ''
-_AD_TOP = """<aside class="ad-container ad-top-banner" aria-label="Advertisement"><span class="ad-disclosure">Advertisement</span><ins class="adsbygoogle" style="display:block;overflow:hidden;" data-ad-client="ca-pub-9164153092633845" data-ad-slot="5233061286" data-ad-format="horizontal" data-full-width-responsive="false"></ins></aside>"""
-_AD_BOTTOM = """<aside class="ad-container ad-bottom-content" aria-label="Advertisement"><span class="ad-disclosure">Advertisement</span><ins class="adsbygoogle" style="display:block;overflow:hidden;" data-ad-client="ca-pub-9164153092633845" data-ad-slot="5233061286" data-ad-format="horizontal" data-full-width-responsive="false"></ins></aside>"""
+# Ad slots are the bare Google <ins> element ONLY -- no wrapper box and no
+# "Advertisement" label chrome of our own. Account approval/serving is
+# external (AdSense), so there is no server-side signal that a slot will
+# fill; while the account cannot serve, our old labeled placeholder box
+# (aside.ad-container + disclosure span, with a reserved 90px grey band)
+# rendered as an empty "Advertisement" box on nearly every page, which is
+# part of what the "Low value content" review flagged. An unfilled
+# <ins class="adsbygoogle"> collapses on its own; when a real ad fills,
+# the unit renders (and is self-identifying) without our placeholder frame.
+_AD_TOP = """<ins class="adsbygoogle" style="display:block;overflow:hidden;" data-ad-client="ca-pub-9164153092633845" data-ad-slot="5233061286" data-ad-format="horizontal" data-full-width-responsive="false"></ins>"""
+_AD_BOTTOM = """<ins class="adsbygoogle" style="display:block;overflow:hidden;" data-ad-client="ca-pub-9164153092633845" data-ad-slot="5233061286" data-ad-format="horizontal" data-full-width-responsive="false"></ins>"""
 # Legal / utility / checkout pages lack enough publisher content for AdSense
 # (Google's "no publisher content" / insufficient-content policies). Never place
 # ad units there -- including when active is None (e.g. /pricing).

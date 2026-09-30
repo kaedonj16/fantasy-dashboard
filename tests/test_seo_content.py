@@ -101,10 +101,16 @@ def test_publisher_transparency_pages_are_complete(offline_client):
     assert "never ask users to click ads" in terms
 
 
-def test_ad_placements_are_explicitly_disclosed(offline_client):
+def test_ad_placements_have_no_placeholder_label(offline_client):
+    # Slots are the bare Google <ins> only: our old labeled placeholder box
+    # (aria-label + disclosure span) rendered as an empty "Advertisement"
+    # box while the account could not serve, which reads as low-value
+    # chrome. An unfilled <ins> collapses on its own; a filled unit is
+    # self-identifying.
     html = _html(offline_client, "/")
-    assert 'aria-label="Advertisement"' in html
-    assert 'class="ad-disclosure">Advertisement</span>' in html
+    assert 'aria-label="Advertisement"' not in html
+    assert 'class="ad-disclosure">Advertisement</span>' not in html
+    assert 'ins class="adsbygoogle"' in html
 
 
 @pytest.mark.parametrize("path", [

@@ -212,7 +212,14 @@ def sitemap_xml():
     nfl_state = get_nfl_state() or {}
     season = int(nfl_state.get("season") or datetime.now().year)
 
-    # Static pages always indexed
+    # Static pages always indexed. The sitemap lists only substantive
+    # content pages: the per-player trade-value pages (hundreds of
+    # near-identical templated pages), the /players duplicate of the value
+    # chart, the /trade-intel redirect, and the JS-shell pages whose
+    # server-rendered body is a loading state (/nfl-teams, /breakouts,
+    # /trade-database, /prospects) are deliberately NOT listed -- they are
+    # the bulk of what AdSense's "Low value content" finding pointed at.
+    # Those pages stay live and reachable; they are just not submitted.
     static_urls = [
         ("", "1.0", "daily"),
         ("/trade", "0.9", "daily"),
@@ -223,13 +230,7 @@ def sitemap_xml():
         ("/rankings/dynasty-rb", "0.8", "weekly"),
         ("/rankings/dynasty-wr", "0.8", "weekly"),
         ("/rankings/dynasty-te", "0.8", "weekly"),
-        ("/trade-intel", "0.8", "daily"),
-        ("/trade-database", "0.8", "weekly"),
-        ("/players", "0.7", "weekly"),
         ("/compare", "0.7", "weekly"),
-        ("/breakouts", "0.7", "weekly"),
-        ("/nfl-teams", "0.7", "weekly"),
-        ("/prospects", "0.7", "weekly"),
         ("/pricing", "0.6", "monthly"),
         ("/privacy", "0.3", "monthly"),
         ("/faq", "0.4", "monthly"),
@@ -252,19 +253,6 @@ def sitemap_xml():
         ET.SubElement(url_el, "loc").text = base + path
         ET.SubElement(url_el, "priority").text = priority
         ET.SubElement(url_el, "changefreq").text = changefreq
-
-    # Per-player trade-value pages: only the top slice by value. Submitting
-    # every slug floods the sitemap with thousands of thin pages that Google
-    # reports as "Discovered - currently not indexed" and wastes crawl budget.
-    try:
-        from app import get_top_player_slugs
-        for slug in get_top_player_slugs(300):
-            url_el = ET.SubElement(urlset, "url")
-            ET.SubElement(url_el, "loc").text = f"{base}/player/{slug}/trade-value"
-            ET.SubElement(url_el, "priority").text = "0.7"
-            ET.SubElement(url_el, "changefreq").text = "weekly"
-    except Exception:
-        logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
 
     xml_bytes = ET.tostring(urlset, encoding="unicode", xml_declaration=False)
     body = '<?xml version="1.0" encoding="UTF-8"?>\n' + xml_bytes
