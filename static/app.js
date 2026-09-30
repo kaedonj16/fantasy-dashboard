@@ -4333,6 +4333,17 @@ function showLoginGate(target, opts) {
     return true;
   }
 
+  // Pages whose whole UI lives in page state must never be silently swapped:
+  // the swap re-runs the page bootstrap and resets everything the user has
+  // done since landing. Advanced Metrics is the known case: its selected
+  // metric, compare columns, filters and open pickers are all in-memory, and
+  // its script is inline so canSwapInPlace() cannot see it as swap-unsafe.
+  // The background pass still expires and warms the league cache for these
+  // pages; only the in-place swap is skipped, so the next load is fresh.
+  function autoSwapBlocked() {
+    return !!document.getElementById('amCmdBar');
+  }
+
   async function autoRevalidate() {
     if (!autoRevalidateEligible()) return;
     doRefresh._busy = true;
@@ -4348,7 +4359,7 @@ function showLoginGate(target, opts) {
       // Swap in place when the page allows it; otherwise leave the cache warmed
       // so the next load is fresh. A silent pass must never yank the page out
       // from under the reader with a full reload the way an explicit Refresh may.
-      if (canSwapInPlace() && window.brSwapPageRoot(fresh.html)) {
+      if (!autoSwapBlocked() && canSwapInPlace() && window.brSwapPageRoot(fresh.html)) {
         updateLabels();
       }
     } catch (e) {
