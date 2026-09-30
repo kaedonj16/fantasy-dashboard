@@ -414,7 +414,11 @@ def build_weekly_hub_body(ctx: dict) -> str:
             '<button type="button" class="ls-tab" data-ls-tab="league">League Scores</button>'
             "</div>"
             '<div class="ls-view" data-ls-view="league" hidden>'
-            '<div class="ls-loading">Loading league scores...</div>'
+            '<div class="sk-list" aria-hidden="true">'
+            '<div class="sk-card-row"><div class="skeleton sk-av"></div><div class="sk-lines"><div class="skeleton skeleton-line w-60"></div><div class="skeleton skeleton-line w-40"></div></div><div class="skeleton sk-chip"></div></div>'
+            '<div class="sk-card-row"><div class="skeleton sk-av"></div><div class="sk-lines"><div class="skeleton skeleton-line w-60"></div><div class="skeleton skeleton-line w-40"></div></div><div class="skeleton sk-chip"></div></div>'
+            '<div class="sk-card-row"><div class="skeleton sk-av"></div><div class="sk-lines"><div class="skeleton skeleton-line w-60"></div><div class="skeleton skeleton-line w-40"></div></div><div class="skeleton sk-chip"></div></div>'
+            '</div>'
             "</div>"
         )
         _wk_matchups_panel = f"""
@@ -426,8 +430,10 @@ def build_weekly_hub_body(ctx: dict) -> str:
                   {matchup_html}
                 </div>
                 <div id="weeklyMatchupsLoading" class="matchups-loading hidden">
-                  <div class="matchups-loading-inner">
-                    <div class="matchups-spinner"></div>
+                  <div class="matchups-loading-inner matchups-loading-skel" aria-hidden="true">
+                    <div class="skeleton skeleton-line w-60"></div>
+                    <div class="skeleton skeleton-line w-80"></div>
+                    <div class="skeleton skeleton-line w-40"></div>
                   </div>
                 </div>
               </div>
@@ -694,9 +700,11 @@ def build_weekly_hub_body(ctx: dict) -> str:
           if (typeof window.initPageRoot === 'function') window.initPageRoot(matchupsContainer);
           if (window.brInitMoments) window.brInitMoments(matchupsContainer);
         }};
-        // Flash any matchup score that moved since the last refresh (green up /
-        // red down); falls back to a plain swap under reduced motion.
-        if (window.brFlashUpdates) window.brFlashUpdates(matchupsContainer, '.m-score-val', _applyMatchups);
+        // Tween win-probability bars and count up scores that moved since the
+        // last refresh; falls back to the score flash, then a plain swap,
+        // when the helpers are unavailable (reduced motion snaps inside).
+        if (window.brAnimateMatchupRefresh) window.brAnimateMatchupRefresh(matchupsContainer, data.matchups_html, _applyMatchups);
+        else if (window.brFlashUpdates) window.brFlashUpdates(matchupsContainer, '.m-score-val', _applyMatchups);
         else _applyMatchups();
       }}
     }}).catch(function() {{}});

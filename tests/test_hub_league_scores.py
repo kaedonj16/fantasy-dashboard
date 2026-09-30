@@ -266,7 +266,10 @@ def test_ls_tab_pending_state_stays_loading():
         "apiBody": {"matchups": [], "week": 3, "pending": True},
     })
     assert "No matchups found" not in out["leagueHtml"]
-    assert "Loading league scores" in out["leagueHtml"]
+    # Pending shows the shimmer skeleton, not the old bare text loader.
+    assert "Loading league scores" not in out["leagueHtml"]
+    assert "sk-list" in out["leagueHtml"]
+    assert "skeleton" in out["leagueHtml"]
     # Pending must not lock the loaded flag, or it can never recover.
     assert out.get("lsLoaded") != "true"
 

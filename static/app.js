@@ -2086,6 +2086,122 @@ window.emptyState = emptyState;
     });
   };
 
+  // Tween a .m-win-bar from one win probability to another. `toLp` is the new
+  // left-team percent (0-100); opts.fromLp overrides the parsed start value.
+  // The gradient hard stop, both pct labels, their leader colors, and the
+  // aria-label all follow the tween (~1.2s easeInOut). Reduced motion snaps
+  // to the target. A generation token cancels a tween superseded by a newer
+  // one on the same bar. Display-only: no probability math happens here.
+  window.brTweenWinBar = function (bar, toLp, opts) {
+    if (!bar) return;
+    opts = opts || {};
+    toLp = Math.max(0, Math.min(100, Number(toLp)));
+    if (isNaN(toLp)) return;
+    var pcts = bar.querySelectorAll('.m-wp-pct');
+    var track = bar.querySelector('.m-wp-track');
+    if (pcts.length < 2 || !track) return;
+    var fromLp = opts.fromLp != null ? Number(opts.fromLp) : parseFloat(pcts[0].textContent);
+    if (isNaN(fromLp)) fromLp = toLp;
+    fromLp = Math.max(0, Math.min(100, fromLp));
+    var WIN = '#22c55e', FADE = 'rgba(148,163,184,0.35)', MUTED = 'var(--text-muted)';
+    function render(lp) {
+      var lead = lp >= 50;
+      var lBar = lead ? WIN : FADE, rBar = lead ? FADE : WIN;
+      track.style.background = 'linear-gradient(to right,' + lBar + ' ' + lp + '%,' + rBar + ' ' + lp + '%)';
+      pcts[0].textContent = Math.round(lp) + '%';
+      pcts[1].textContent = Math.round(100 - lp) + '%';
+      pcts[0].style.color = lead ? WIN : MUTED;
+      pcts[1].style.color = lead ? MUTED : WIN;
+    }
+    function label(lp) {
+      var cur = bar.getAttribute('aria-label') || '';
+      var i = 0;
+      return cur.replace(/\d+(?= percent)/g, function () {
+        i += 1;
+        return String(Math.round(i === 1 ? lp : 100 - lp));
+      });
+    }
+    if (reduce || fromLp === toLp) {
+      render(toLp);
+      bar.setAttribute('aria-label', label(toLp));
+      return;
+    }
+    var run = (bar._brWpRun || 0) + 1;
+    bar._brWpRun = run;
+    var dur = opts.dur || 1200, st = null;
+    (function tick(now) {
+      if (bar._brWpRun !== run) return;
+      if (st === null) st = now;
+      var p = Math.min(1, (now - st) / dur);
+      var e = p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2; // easeInOutCubic
+      render(fromLp + (toLp - fromLp) * e);
+      if (p < 1) {
+        requestAnimationFrame(tick);
+        return;
+      }
+      render(toLp);
+      bar.setAttribute('aria-label', label(toLp));
+    })(performance.now());
+  };
+
+  // Animate a matchup-container refresh (weekly hub game-day poll, league
+  // scores tab): snapshot the current win bars and scores from `container`,
+  // run `applyFn` (which swaps in `newHtml`), then tween each .m-win-bar from
+  // its old pct to the new one and count up each score instead of jumping.
+  // Elements are matched by position, so `newHtml` must keep the same order
+  // (true for refreshes of the same matchups). `scoreSel` defaults to
+  // '.m-score-val'. Reduced motion: plain swap, no tween.
+  window.brAnimateMatchupRefresh = function (container, newHtml, applyFn, scoreSel) {
+    if (!container) {
+      if (applyFn) applyFn();
+      return;
+    }
+    var sel = scoreSel || '.m-score-val';
+    var tmp = document.createElement('div');
+    tmp.innerHTML = newHtml;
+    function pctOf(bar) {
+      var p = bar && bar.querySelector('.m-wp-pct');
+      return p ? parseFloat(p.textContent) : NaN;
+    }
+    var oldBars = container.querySelectorAll('.m-win-bar');
+    var newBars = tmp.querySelectorAll('.m-win-bar');
+    var targets = [];
+    for (var i = 0; i < newBars.length; i++) {
+      targets.push({ from: oldBars[i] ? pctOf(oldBars[i]) : NaN, to: pctOf(newBars[i]) });
+    }
+    var oldScores = container.querySelectorAll(sel);
+    var newScores = tmp.querySelectorAll(sel);
+    // .m-score-val carries nested markup in live mode (actual + projection +
+    // trend arrow), so count the inner .num node up and leave the rest alone.
+    // Plain score nodes (e.g. .ls-team-score) count up directly.
+    function numNode(el) {
+      return (el && el.querySelector && el.querySelector('.num')) || el;
+    }
+    var scoreTargets = [];
+    for (var j = 0; j < newScores.length; j++) {
+      scoreTargets.push({
+        from: oldScores[j] ? parseFloat(numNode(oldScores[j]).textContent) : NaN,
+        to: parseFloat(numNode(newScores[j]).textContent)
+      });
+    }
+    if (applyFn) applyFn();
+    if (reduce) return;
+    var liveBars = container.querySelectorAll('.m-win-bar');
+    for (var k = 0; k < liveBars.length && k < targets.length; k++) {
+      var t = targets[k];
+      if (!isNaN(t.from) && !isNaN(t.to) && t.from !== t.to) {
+        window.brTweenWinBar(liveBars[k], t.to, { fromLp: t.from });
+      }
+    }
+    var liveScores = container.querySelectorAll(sel);
+    for (var m = 0; m < liveScores.length && m < scoreTargets.length; m++) {
+      var s = scoreTargets[m];
+      if (!isNaN(s.from) && !isNaN(s.to) && s.from !== s.to) {
+        window.brCountUp(numNode(liveScores[m]), { from: s.from, to: s.to, dp: 1, dur: 1200 });
+      }
+    }
+  };
+
   // Count a number up from 0 (or `from`) to its target. `el` may carry
   // data-countup="728.2" (target) and data-countup-dp="1" (decimal places);
   // opts can override { to, from, dp, dur, suffix, prefix }.
@@ -2356,6 +2472,50 @@ window.emptyState = emptyState;
         el.style.transition = ''; el.classList.remove('rk-up', 'rk-down');
       }, { once: true });
     });
+  };
+
+  // Sort transition for REAL <table>s: CSS transforms don't animate <tr>/<td>,
+  // so a FLIP glide is impossible without restructuring the table into divs.
+  // Instead: snapshot the old row order by key, swap the markup, then tint
+  // climbers/fallers (rk-up / rk-down use background + opacity, which DO work
+  // on <tr>) and fade brand-new rows in. Reduced motion: plain swap.
+  window.brTableSortSwap = function (container, newHTML, keyAttr) {
+    if (!container) return;
+    keyAttr = keyAttr || 'data-rk-key';
+    var sel = 'tbody tr[' + keyAttr + ']';
+    var first = {};
+    container.querySelectorAll(sel).forEach(function (r) {
+      first[r.getAttribute(keyAttr)] = Array.prototype.indexOf.call(r.parentNode.children, r);
+    });
+    var hadRows = Object.keys(first).length > 0;
+    container.innerHTML = newHTML;
+    if (reduce || !hadRows) return;
+    container.querySelectorAll(sel).forEach(function (r) {
+      var key = r.getAttribute(keyAttr);
+      if (!(key in first)) {                    // brand-new row: fade in
+        r.style.animation = 'brRkEnter .45s ease both';
+        r.addEventListener('animationend', function () { r.style.animation = ''; }, { once: true });
+        return;
+      }
+      var ni = Array.prototype.indexOf.call(r.parentNode.children, r);
+      var d = first[key] - ni;
+      if (d === 0) return;                      // held station
+      r.classList.add(d > 0 ? 'rk-up' : 'rk-down');
+      setTimeout(function () { r.classList.remove('rk-up', 'rk-down'); }, 950);
+    });
+  };
+
+  // Tab panel entrance: the incoming panel slides in from the side it was
+  // reached from (dir > 0 = forward, dir < 0 = backward). Call right after the
+  // panel becomes visible. Reduced motion: no-op, panel just appears.
+  window.brAnimateTabPanel = function (panel, dir) {
+    if (!panel || reduce) return;
+    panel.classList.remove('br-tab-in-l', 'br-tab-in-r');
+    void panel.offsetWidth;                     // restart the animation
+    panel.classList.add(dir < 0 ? 'br-tab-in-l' : 'br-tab-in-r');
+    panel.addEventListener('animationend', function () {
+      panel.classList.remove('br-tab-in-l', 'br-tab-in-r');
+    }, { once: true });
   };
 
   // Reveal AI-generated prose as if it's being composed: the block elements
@@ -4577,8 +4737,14 @@ function initCardTabs(root = document) {
     tabs.forEach(tab => {
       bindOnce(tab, "cardTabClick", "click", () => {
         const target = tab.dataset.tab;
+        const oldIdx = tabs.findIndex(t => t.classList.contains("active"));
+        const newIdx = tabs.indexOf(tab);
         tabs.forEach(t => t.classList.toggle("active", t === tab));
-        panels.forEach(p => p.classList.toggle("active", p.dataset.tab === target));
+        panels.forEach(p => {
+          const on = p.dataset.tab === target;
+          p.classList.toggle("active", on);
+          if (on && window.brAnimateTabPanel) window.brAnimateTabPanel(p, newIdx - oldIdx);
+        });
       });
     });
   });
@@ -18365,13 +18531,18 @@ function _compareBodyHTML(p1, p2, opts) {
 // Switch compare tabs (shared by the modal and the standalone page). Resizes the
 // value-history chart when Overview becomes visible so Plotly picks up its width.
 function cmpSwitchTab(tab) {
+  const cmpBtns = Array.from(document.querySelectorAll('.compare-tab-bar [data-cmptab]'));
+  const oldIdx = cmpBtns.findIndex(b => b.classList.contains('active'));
+  const newIdx = cmpBtns.findIndex(b => b.dataset.cmptab === tab);
   document.querySelectorAll('.compare-tab-bar [data-cmptab]').forEach(function (b) {
     const on = b.dataset.cmptab === tab;
     b.classList.toggle('active', on);
     b.setAttribute('aria-selected', on ? 'true' : 'false');
   });
   document.querySelectorAll('.compare-tab-panel').forEach(function (p) {
-    p.hidden = (p.dataset.cmppanel !== tab);
+    const on = p.dataset.cmppanel === tab;
+    p.hidden = !on;
+    if (on && window.brAnimateTabPanel) window.brAnimateTabPanel(p, newIdx - oldIdx);
   });
   if (window._cmpSlideTabs) window._cmpSlideTabs.sync(true);
   // Lazy-load each tab's data on first open (see _compareWireView). Stats =
@@ -18675,13 +18846,18 @@ function renderCompareTriple(d1, d2, d3, hostEl) {
 // Tab switching for the 3-way compare. Lazy-loads each tab's per-player content
 // on first open (mirrors the two-player cmpSwitchTab).
 function cmp3SwitchTab(tab) {
+  const cmp3Btns = Array.from(document.querySelectorAll('.cmp3-tabs [data-cmp3tab]'));
+  const oldIdx = cmp3Btns.findIndex(b => b.classList.contains('active'));
+  const newIdx = cmp3Btns.findIndex(b => b.getAttribute('data-cmp3tab') === tab);
   document.querySelectorAll('.cmp3-tabs [data-cmp3tab]').forEach(function (b) {
     const on = b.getAttribute('data-cmp3tab') === tab;
     b.classList.toggle('active', on);
     b.setAttribute('aria-selected', on ? 'true' : 'false');
   });
   document.querySelectorAll('[data-cmp3panel]').forEach(function (p) {
-    p.hidden = (p.getAttribute('data-cmp3panel') !== tab);
+    const on = p.getAttribute('data-cmp3panel') === tab;
+    p.hidden = !on;
+    if (on && window.brAnimateTabPanel) window.brAnimateTabPanel(p, newIdx - oldIdx);
   });
   if (tab === 'logs') cmp3EnsureStats();
   else if (tab === 'metrics') cmp3EnsureMetrics();
@@ -19380,11 +19556,17 @@ function tmInjectRosterTradeCta() {
 }
 
 function tmSwitchTab(tab) {
+  const tabBtns = Array.from(document.querySelectorAll('.tm-tab'));
+  const oldIdx = tabBtns.findIndex(t => t.classList.contains('active'));
+  const newIdx = tabBtns.findIndex(t => t.dataset.tab === tab);
   document.querySelectorAll('.tm-panel').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.tm-tab').forEach(t => t.classList.remove('active'));
   const panel = document.getElementById('tm-panel-' + tab);
   const btn = document.querySelector('.tm-tab[data-tab="' + tab + '"]');
-  if (panel) panel.classList.add('active');
+  if (panel) {
+    panel.classList.add('active');
+    if (window.brAnimateTabPanel) window.brAnimateTabPanel(panel, newIdx - oldIdx);
+  }
   if (btn) btn.classList.add('active');
   if (window._tmSlideTabs) window._tmSlideTabs.sync(true);
 
@@ -23517,6 +23699,14 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
   'use strict';
   var _lsCache = {};
   var _lsWired = false;
+  // Content-shaped loading placeholder for the league scores list: three
+  // shimmer rows that crossfade to the real cards (replaces the bare
+  // "Loading league scores..." text).
+  var LS_SKELETON = '<div class="sk-list br-fade-swap" aria-hidden="true">'
+    + '<div class="sk-card-row"><div class="skeleton sk-av"></div><div class="sk-lines"><div class="skeleton skeleton-line w-60"></div><div class="skeleton skeleton-line w-40"></div></div><div class="skeleton sk-chip"></div></div>'
+    + '<div class="sk-card-row"><div class="skeleton sk-av"></div><div class="sk-lines"><div class="skeleton skeleton-line w-60"></div><div class="skeleton skeleton-line w-40"></div></div><div class="skeleton sk-chip"></div></div>'
+    + '<div class="sk-card-row"><div class="skeleton sk-av"></div><div class="sk-lines"><div class="skeleton skeleton-line w-60"></div><div class="skeleton skeleton-line w-40"></div></div><div class="skeleton sk-chip"></div></div>'
+    + '</div>';
   function _lsRenderList(view, matchups, week) {
     if (!matchups || !matchups.length) {
       view.innerHTML = '<div class="ls-empty">No matchups found for Week ' + escapeHtml(String(week)) + '.'
@@ -23557,7 +23747,13 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
       html += '</div>';
     });
     html += '</div>';
-    view.innerHTML = html;
+    // Swap the list in: tween any win bars and count up scores from the
+    // previous render instead of jumping (plain swap under reduced motion).
+    if (window.brAnimateMatchupRefresh) {
+      window.brAnimateMatchupRefresh(view, html, function () { view.innerHTML = html; }, '.ls-team-score');
+    } else {
+      view.innerHTML = html;
+    }
     view.dataset.lsLoaded = 'true';
   }
   function _lsShellOf(node) {
@@ -23587,7 +23783,7 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
       // Cold server cache: the API is still building league context.
       // Keep the loading state and retry instead of showing "no matchups".
       if (d && d.pending) {
-        view.innerHTML = '<div class="ls-loading">Loading league scores...</div>';
+        view.innerHTML = LS_SKELETON;
         setTimeout(function () { delete tabs._lsLoading; _lsLoad(tabs); }, 3000);
         return;
       }
@@ -23663,10 +23859,17 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
         e.preventDefault();
         var which = tab.getAttribute('data-ls-tab');
         var all = tabs.querySelectorAll('[data-ls-tab]');
-        for (var i = 0; i < all.length; i++) all[i].classList.toggle('is-active', all[i] === tab);
+        var lsOldIdx = -1, lsNewIdx = -1;
+        for (var i = 0; i < all.length; i++) {
+          if (all[i].classList.contains('is-active')) lsOldIdx = i;
+          if (all[i] === tab) lsNewIdx = i;
+          all[i].classList.toggle('is-active', all[i] === tab);
+        }
         var views = _lsViews(tabs);
+        var lsIncoming = which === 'matchup' ? views.matchupView : views.leagueView;
         if (views.matchupView) views.matchupView.hidden = which !== 'matchup';
         if (views.leagueView) views.leagueView.hidden = which !== 'league';
+        if (lsIncoming && window.brAnimateTabPanel) window.brAnimateTabPanel(lsIncoming, lsNewIdx - lsOldIdx);
         if (which === 'league') _lsLoad(tabs);
         return;
       }
@@ -23677,7 +23880,7 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
         var view = shell ? shell.querySelector('[data-ls-view="league"]') : null;
         if (view) {
           delete view.dataset.lsLoaded;
-          view.innerHTML = '<div class="ls-loading">Loading league scores...</div>';
+          view.innerHTML = LS_SKELETON;
         }
         if (tabsEl) { delete tabsEl._lsLoading; _lsLoad(tabsEl); }
       }

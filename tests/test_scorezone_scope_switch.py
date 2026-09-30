@@ -133,7 +133,12 @@ def test_my_leagues_plays_stay_loading_until_stream_hydrates():
     switch = switch[: switch.index("root.querySelectorAll('.rz-tab-btn')")]
 
     assert "_loadingPlays || (_loadingScope && !_feed.length)" in sync
-    assert "Loading plays…" in sync
+    # The old "Loading plays…" spinner text was intentionally replaced with a
+    # content-shaped skeleton shimmer; the loading state must still be painted
+    # by _syncFeed while plays are not yet hydrated.
+    assert "Loading plays…" not in sync
+    assert 'class="sk-list"' in sync
+    assert "sk-card-row" in sync
     assert "_loadingPlays = _scope === 'user' && !carryFeed" in switch
     # Receiving stream metadata/cards must not expose an empty feed before the
     # end-of-stream reconciliation has built the portfolio's canonical Plays.
