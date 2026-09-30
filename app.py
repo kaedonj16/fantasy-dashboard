@@ -9123,7 +9123,7 @@ def _render_usage_movers(ctx: dict, viewer_roster_id) -> str:
         from data_building.weekly_metrics import get_usage_trends
         trends = get_usage_trends(season) or {}
         players_index = ctx.get("players_index") or {}
-        _stat_lbl = {"snap_pct": "snap%", "touches": "touches", "targets": "targets"}
+        _stat_lbl = {"snap_pct": "Snap %", "touches": "Touches", "targets": "Targets"}
 
         movers = []
         for pid in pids:
@@ -9137,22 +9137,47 @@ def _render_usage_movers(ctx: dict, viewer_roster_id) -> str:
                 continue
             pmeta = players_index.get(pid) or {}
             name = pmeta.get("full_name") or pmeta.get("name") or f"Player {pid}"
-            movers.append((float(delta), str(name), t))
+            pos = str(pmeta.get("pos") or pmeta.get("position") or "").strip().upper()
+            team = str(pmeta.get("team") or "").strip().upper()
+            sub = " · ".join(part for part in (pos, team) if part)
+            movers.append((float(delta), str(name), sub, t))
         if not movers:
             return ""
         movers.sort(key=lambda x: x[0], reverse=True)
         movers = movers[:3]  # concise: top risers only
 
+        def _num(v: float) -> str:
+            return f"{round(float(v), 1):g}"
+
         rows = []
-        for delta, name, t in movers:
-            stat = _stat_lbl.get(t.get("stat"), t.get("stat") or "")
+        for delta, name, sub, t in movers:
+            stat_key = t.get("stat")
+            stat = _stat_lbl.get(stat_key, stat_key or "")
             avg = float(t.get("season_avg") or 0)
             recent = float(t.get("recent_avg") or 0)
+            # Mini bars: snap % scales against 100; volume stats scale to
+            # the row's own larger average so the climb reads proportionally.
+            if stat_key == "snap_pct":
+                season_w = min(max(avg, 0.0), 100.0)
+                recent_w = min(max(recent, 0.0), 100.0)
+            else:
+                peak = max(avg, recent)
+                season_w = (avg / peak * 100.0) if peak > 0 else 0.0
+                recent_w = (recent / peak * 100.0) if peak > 0 else 0.0
+            sub_html = (
+                f'<span class="um-sub">{html.escape(sub)}</span>' if sub else ""
+            )
             rows.append(f"""
               <li class="usage-mover">
-                <span class="um-name">{html.escape(name)}</span>
-                <span class="um-detail">{stat} {avg:g}&rarr;{recent:g}</span>
-                <span class="um-delta up">&#9650;{delta:g}</span>
+                <div class="um-main">
+                  <span class="um-name">{html.escape(name)}</span>
+                  {sub_html}
+                </div>
+                <div class="um-trend">
+                  <span class="um-detail">{html.escape(str(stat))} {_num(avg)} &rarr; {_num(recent)}</span>
+                  <span class="um-bars" aria-hidden="true"><span class="um-bar um-bar-season" style="width:{season_w:.1f}%"></span><span class="um-bar um-bar-recent" style="width:{recent_w:.1f}%"></span></span>
+                </div>
+                <span class="um-delta up">&#9650;{_num(delta)}</span>
               </li>""")
 
         return f"""
@@ -9160,7 +9185,7 @@ def _render_usage_movers(ctx: dict, viewer_roster_id) -> str:
           <div class="os-section-head">
             <div class="os-section-head-content">
               <h2 class="os-section-title">Usage risers</h2>
-              <div class="os-section-subtitle">Your players trending up in snaps &amp; touches</div>
+              <div class="os-section-subtitle">Your players trending up: last 3 weeks vs season average</div>
             </div>
           </div>
           <ul class="usage-movers-list">{''.join(rows)}</ul>

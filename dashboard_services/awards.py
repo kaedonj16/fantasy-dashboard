@@ -14,46 +14,58 @@ def render_awards_section(awards: dict) -> str:
         # live on the Awards page.
         return ""
 
-    def acard(title, body):
+    def acard(title, winner, value, context="", accent="honor"):
+        context_html = f'\n          <div class="award-context">{context}</div>' if context else ""
         return f"""
-        <div class="award-item">
+        <div class="award-item award-{accent}">
           <div class="award-name">{title}</div>
-          <div class="award-body">{body}</div>
+          <div class="award-winner">{winner}</div>
+          <div class="award-value">{value}</div>{context_html}
         </div>"""
 
     rows = []
 
     if awards.get("highest_single_week"):
         t, w, p = awards["highest_single_week"]
-        rows.append(acard("Highest Single Week", f"{t} - Week {w}: <strong>{p:.1f} points</strong>"))
+        rows.append(acard("Highest Single Week", t, f"{p:.1f} points", f"Week {w}"))
 
     if awards.get("lowest_single_week"):
         t, w, p = awards["lowest_single_week"]
-        rows.append(acard("Lowest Single Week", f"{t} - Week {w}: <strong>{p:.1f} points</strong>"))
+        rows.append(acard("Lowest Single Week", t, f"{p:.1f} points", f"Week {w}", accent="shame"))
 
     if awards.get("longest_win_streak"):
         teams, L = awards["longest_win_streak"]
-        rows.append(acard("Longest Win Streak", f"{', '.join(teams)} - <strong>{L} games</strong>"))
+        rows.append(acard("Longest Win Streak", ", ".join(teams), f"{L} games"))
 
     if awards.get("longest_loss_streak"):
         teams, L = awards["longest_loss_streak"]
-        rows.append(acard("Longest Losing Streak", f"{', '.join(teams)} - <strong>{L} games</strong>"))
+        rows.append(acard("Longest Losing Streak", ", ".join(teams), f"{L} games", accent="shame"))
 
     if awards.get("most_consistent"):
         t, sd, n = awards["most_consistent"]
-        rows.append(acard("Most Consistent", f"{t} - σ <strong>{sd:.2f}</strong> over {n} games"))
+        rows.append(acard("Most Consistent", t, f"σ {sd:.2f}", f"over {n} games"))
 
     if awards.get("highest_player"):
         w, pts, n, pos, team, owner, pid = awards["highest_player"]
         clickable_attrs = f" class='player-clickable' style='cursor:pointer;' data-player-id='{pid}' data-player-name='{n}'" if pid else ""
         rows.append(acard("Highest Points By a Player",
-                          f"<span{clickable_attrs}>{n}</span> - Week {w}: <strong>{pts} points</strong>"))
+                          f"<span{clickable_attrs}>{n}</span>", f"{pts} points", f"Week {w}"))
 
     return f"""
-    <div class="card awards-card" data-section="awards">
-        <h2 class="awards-title"><i class="fa-solid fa-trophy" aria-hidden="true"></i> League Awards</h2>
-      <div class="awards-grid">{''.join(rows)}</div>
-    </div>
+    <section class="os-card awards-card" data-section="awards">
+      <div class="os-section-head">
+        <div class="os-section-head-content">
+          <h2 class="os-section-title"><i class="fa-solid fa-trophy" aria-hidden="true"></i> League Awards</h2>
+          <div class="os-section-subtitle">Season superlatives so far</div>
+        </div>
+        <div class="os-section-head-actions">
+          <button type="button" class="card-collapse-toggle" aria-label="Toggle section" aria-expanded="true" data-target="dash-awards-body">&#9660;</button>
+        </div>
+      </div>
+      <div class="card-collapsible-body" id="dash-awards-body">
+        <div class="awards-grid">{''.join(rows)}</div>
+      </div>
+    </section>
     """
 
 
