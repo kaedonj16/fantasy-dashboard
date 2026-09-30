@@ -61,17 +61,29 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-lab-btn.on { outline: 2px solid var(--accent); outline-offset: -2px; }
 .wv-lab-slot { border-bottom: 1px solid var(--border); }
 .wv-lab-row { display: flex; align-items: center; gap: 10px; width: 100%; border: none; background: none; padding: 12px 4px; cursor: pointer; text-align: left; color: var(--text); }
-.wv-lab-pos { font-size: 11px; font-weight: 800; color: var(--text-muted); width: 44px; }
+.wv-lab-pos { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; padding: 3px 8px; border-radius: 20px; font-size: 11px; font-weight: 800; }
+.wv-lab-pos.qb { background: #fee2e2; color: #b91c1c; }
+.wv-lab-pos.rb { background: #d1fae5; color: #047857; }
+.wv-lab-pos.wr { background: #dbeafe; color: #1d4ed8; }
+.wv-lab-pos.te { background: #ffedd5; color: #c2410c; }
+.wv-lab-pos.flex { background: #ede9fe; color: #6d28d9; }
+.wv-lab-pos.k { background: #fef3c7; color: #92400e; }
+.wv-lab-pos.def { background: #e5e7eb; color: #374151; }
 .wv-lab-main { flex: 1; min-width: 0; }
 .wv-lab-name { font-size: 14px; font-weight: 700; }
-.wv-lab-sub { display: flex; align-items: center; gap: 8px; margin-top: 4px; font-size: 12px; color: var(--text-muted); }
-.wv-lab-range { position: relative; flex: 1; max-width: 180px; height: 8px; background: #eef0f3; border-radius: 4px; }
+.wv-lab-sub { display: flex; flex-direction: column; gap: 3px; margin-top: 6px; }
+.wv-lab-meta { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-muted); flex-wrap: wrap; }
+.wv-lab-rangeblock { display: block; }
+.wv-lab-range { display: block; position: relative; height: 8px; background: #eef0f3; border-radius: 4px; }
 .wv-lab-range .fill { position: absolute; top: 0; bottom: 0; background: var(--accent); opacity: .5; border-radius: 4px; }
 .wv-lab-range .dot { position: absolute; top: -2px; width: 3px; height: 12px; background: #111827; border-radius: 2px; }
-.wv-lab-tag { font-size: 10px; font-weight: 800; padding: 2px 7px; border-radius: 20px; background: #eef2ff; color: #4f46e5; }
-.wv-lab-tag.td { background: #fef3c7; color: #92400e; }
-.wv-lab-tag.q { background: #fee2e2; color: #991b1b; }
-.wv-lab-tag.boost, .wv-lab-tag.qb { background: #ecfdf5; color: #065f46; }
+.wv-lab-range-ends { display: flex; justify-content: space-between; font-size: 10px; color: var(--text-muted); margin-top: 2px; }
+.wv-lab-range-ends em { font-style: normal; font-weight: 800; font-size: 9px; letter-spacing: .05em; margin-right: 3px; }
+.wv-lab-range-ends .v { color: var(--text); font-weight: 700; }
+.wv-lab-tag { font-size: 10px; font-weight: 700; padding: 1px 7px; border-radius: 20px; background: transparent; border: 1px solid currentColor; color: #4f46e5; }
+.wv-lab-tag.td { color: #b45309; }
+.wv-lab-tag.q { color: #b91c1c; }
+.wv-lab-tag.boost, .wv-lab-tag.qb { color: #047857; }
 .wv-lab-proj { text-align: right; }
 .wv-lab-proj .n { font-size: 16px; font-weight: 800; }
 .wv-lab-proj .l { font-size: 10px; color: var(--text-muted); font-weight: 700; }
@@ -86,7 +98,7 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-lab-opt .dl { margin-left: auto; font-weight: 800; }
 .wv-lab-opt .dl.up { color: #059669; }
 .wv-lab-opt .dl.dn { color: #dc2626; }
-.wv-lab-opt .l2 { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 12px; color: var(--text-muted); }
+.wv-lab-opt .l2 { display: block; margin-top: 6px; font-size: 12px; color: var(--text-muted); }
 .wv-lab-fine { font-size: 12px; color: var(--text-muted); margin-top: 10px; }
 .wv-lab-skel { padding: 24px; text-align: center; color: var(--text-muted); font-size: 13px; }
 /* Lab loading state: a structured skeleton mirroring the loaded layout (hero +
@@ -108,6 +120,26 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 @media (prefers-reduced-motion: reduce) {
   .wv-lab-dots span { animation: none; }
   .wv-lab-loading .skeleton::after { animation: none; }
+  .wv-lab-slot.wv-lab-changed > .wv-lab-row { animation: none; }
+}
+/* Change flash: rows touched by Optimize or a manual swap fade from an
+   accent tint back to transparent. */
+@keyframes wv-lab-changed-flash {
+  0% { background: var(--accent-soft); }
+  100% { background: transparent; }
+}
+.wv-lab-slot.wv-lab-changed > .wv-lab-row { animation: wv-lab-changed-flash 1.6s ease-out; }
+/* Summary line listing the swaps (or a one-off note) from the last action. */
+.wv-lab-changes {
+  font-size: 12px; color: var(--text-muted); background: var(--accent-soft);
+  border-radius: 8px; padding: 8px 10px; margin: 0 0 8px;
+}
+/* Mobile: the Lab goes full width with tight gutters. Page padding drops to
+   12px and the bench sheet loses its 54px desktop indent. */
+@media (max-width: 768px) {
+  .wv-page { padding: 12px; }
+  .wv-lab-sheet { padding: 0 0 12px 12px; }
+  .wv-lab-row { padding: 12px 0; }
 }
 
 .wv-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
@@ -672,8 +704,11 @@ var wvLabBase = null;     // pid -> {{u0, u1, dud}} Float64Arrays (common random
 var wvLabOppDraws = null; // opponent team totals per sim
 var wvLabOppStats = null; // {{median, p10, p90}}
 var wvLabResult = null;   // last evaluate() output
-var wvLabUpside = false;
 var wvLabLoading = false;
+var wvLabOpenSlots = {{}};   // slot index -> true while its bench sheet is expanded
+var wvLabLastChanges = []; // change records (slot idx, out name, in name) from the last action
+var wvLabLastAction = '';  // 'swap' | 'optimize' | 'upside': labels the change summary
+var wvLabLastNote = '';    // one-off note line (e.g. no-gain upside), cleared by the next action
 var WV_LAB_SIMS = 2000;
 
 // In-game injury model for the Lab (single game). Per-position onset rates
@@ -934,6 +969,11 @@ function wvLoadLab() {{
     // scripts that never went through wvLoadLab (e.g. node harnesses).
     wvLabInjuryOnset = (data && data.injury_onset) || null;
     // Deep copy: the working lineup mutates on swaps, the payload stays pristine.
+    // Fresh data invalidates open sheets and change summaries from the old one.
+    wvLabOpenSlots = {{}};
+    wvLabLastChanges = [];
+    wvLabLastAction = '';
+    wvLabLastNote = '';
     wvLabLineup = JSON.parse(JSON.stringify(data.you.lineup));
     var pids = [];
     wvLabLineup.forEach(function(e) {{
@@ -974,9 +1014,16 @@ function wvLabRangeBar(e) {{
   var PMAX = 34;
   function pct(x) {{ return Math.max(0, Math.min(100, x / PMAX * 100)); }}
   var l = pct(e.floor || 0), r = pct(e.ceiling || 0), d = pct(e.proj || 0);
-  return '<span class="wv-lab-range"><span class="fill" style="left:' + l + '%;width:' + Math.max(0, r - l) + '%"></span>'
+  return '<span class="wv-lab-rangeblock">'
+    + '<span class="wv-lab-range"><span class="fill" style="left:' + l + '%;width:' + Math.max(0, r - l) + '%"></span>'
     + '<span class="dot" style="left:' + d + '%"></span></span>'
-    + '<span>' + (e.floor || 0) + '-' + (e.ceiling || 0) + '</span>';
+    + '<span class="wv-lab-range-ends"><span><em>MIN</em><span class="v">' + (e.floor || 0) + '</span></span>'
+    + '<span><em>MAX</em><span class="v">' + (e.ceiling || 0) + '</span></span></span></span>';
+}}
+
+function wvLabPosCls(slot) {{
+  var p = String(slot || '').toLowerCase();
+  return (p === 'qb' || p === 'rb' || p === 'wr' || p === 'te' || p === 'flex' || p === 'k' || p === 'def') ? ' ' + p : '';
 }}
 
 function wvLabTags(e) {{
@@ -1028,8 +1075,7 @@ function wvLabRenderHero() {{
       + '<span class="nums"><b>' + wvLabOppStats.median.toFixed(1) + '</b> · ' + Math.round(wvLabOppStats.p10) + '-' + Math.round(wvLabOppStats.p90) + '</span></div>' : '')
     + '</div><div class="wv-lab-scale">' + ticks() + '</div>'
     + '<div class="wv-lab-modes">'
-    + '<button type="button" class="wv-lab-btn' + (wvLabUpside ? ' on' : '') + '" onclick="wvLabToggleUpside()">'
-    + (wvLabUpside ? 'Chasing upside' : 'Chase upside') + '</button>'
+    + '<button type="button" class="wv-lab-btn" onclick="wvLabChaseUpside()">Chase upside</button>'
     + '<button type="button" class="wv-lab-btn primary" onclick="wvLabOptimize()">Optimize lineup</button>'
     + '</div></div>';
 }}
@@ -1037,33 +1083,25 @@ function wvLabRenderHero() {{
 function wvLabRenderSlots() {{
   var totalProj = 0, i;
   for (i = 0; i < wvLabLineup.length; i++) totalProj += wvLabLineup[i].proj || 0;
+  var changed = {{}};
+  for (i = 0; i < (wvLabLastChanges || []).length; i++) changed[wvLabLastChanges[i].si] = true;
   return wvLabLineup.map(function(e, si) {{
     var share = totalProj > 0 ? Math.round(100 * (e.proj || 0) / totalProj) : 0;
     var bench = (e.bench || []).slice();
-    if (wvLabUpside) {{
-      bench.sort(function(a, b) {{ return ((b.ceiling || 0) - (b.proj || 0)) - ((a.ceiling || 0) - (a.proj || 0)); }});
-    }} else {{
-      bench.forEach(function(b) {{ b._d = wvLabSwapDelta(si, b); }});
-      bench.sort(function(a, b) {{ return b._d - a._d; }});
-    }}
+    bench.forEach(function(b) {{ b._d = wvLabSwapDelta(si, b); }});
+    bench.sort(function(a, b) {{ return b._d - a._d; }});
     var best = null;
-    if (!wvLabUpside) {{
-      for (i = 0; i < bench.length; i++) {{
-        if (bench[i]._d > 0 && (best === null || bench[i]._d > best)) best = bench[i]._d;
-      }}
+    for (i = 0; i < bench.length; i++) {{
+      if (bench[i]._d > 0 && (best === null || bench[i]._d > best)) best = bench[i]._d;
     }}
     var sheet = '';
     if (bench.length) {{
-      var cap = wvLabUpside ? 'sorted by ceiling' : 'bench · win% change';
+      var cap = 'bench · win% change';
       sheet = '<div class="wv-lab-sheet"><div class="wv-lab-cap">' + cap + '</div>' + bench.map(function(b, bi) {{
         var inner;
-        if (wvLabUpside) {{
-          inner = '<span class="dl">ceil ' + (b.ceiling || 0) + '</span>';
-        }} else {{
-          var d = Math.round(b._d * 100);
-          inner = '<span class="dl ' + (d >= 0 ? 'up' : 'dn') + '">' + (d >= 0 ? '+' : '') + d + '%</span>';
-        }}
-        var isBest = !wvLabUpside && best !== null && b._d === best;
+        var d = Math.round(b._d * 100);
+        inner = '<span class="dl ' + (d >= 0 ? 'up' : 'dn') + '">' + (d >= 0 ? '+' : '') + d + '%</span>';
+        var isBest = best !== null && b._d === best;
         return '<button type="button" class="wv-lab-opt' + (isBest ? ' best' : '') + '"'
           + ' onclick="event.stopPropagation();wvLabSwap(' + si + ',' + wvLabLineup[si].bench.indexOf(b) + ')">'
           + '<span class="l1"><span>' + wvLabEsc(b.name) + '</span>' + inner + '</span>'
@@ -1071,12 +1109,14 @@ function wvLabRenderSlots() {{
           + wvLabRangeBar(b) + '</span></button>';
       }}).join('') + '</div>';
     }}
-    return '<div class="wv-lab-slot" data-si="' + si + '">'
+    var slotCls = 'wv-lab-slot' + (wvLabOpenSlots[si] ? ' open' : '')
+      + (changed[si] ? ' wv-lab-changed' : '');
+    return '<div class="' + slotCls + '" data-si="' + si + '">'
       + '<button type="button" class="wv-lab-row" onclick="wvLabToggleSlot(' + si + ')">'
-      + '<span class="wv-lab-pos">' + wvLabEsc(e.slot || e.pos) + '</span>'
+      + '<span class="wv-lab-pos' + wvLabPosCls(e.slot || e.pos) + '">' + wvLabEsc(e.slot || e.pos) + '</span>'
       + '<span class="wv-lab-main"><span class="wv-lab-name">' + wvLabEsc(e.name) + '</span>'
       + '<span class="wv-lab-sub">' + wvLabRangeBar(e)
-      + '<span>' + share + '% share</span>'
+      + '<span class="wv-lab-meta"><span>' + share + '% share</span>'
       + (e.matchup ? '<span>' + wvLabEsc(e.matchup) + '</span>' : '')
       + wvLabTags(e) + '</span></span>'
       + '<span class="wv-lab-proj"><span class="n">' + (e.proj || 0).toFixed(1) + '</span><br><span class="l">PROJ</span></span>'
@@ -1088,23 +1128,51 @@ function wvLabRenderSlots() {{
 function wvRenderLab() {{
   var body = document.getElementById('wvLabBody');
   if (!body || !wvLabData) return;
+  // Preserve scroll and expanded sheets across re-renders: a swap, optimize,
+  // or chase-upside action must never visibly repaint the section or collapse
+  // what the user had open.
+  var sy = 0;
+  try {{ sy = window.pageYOffset || (document.documentElement && document.documentElement.scrollTop) || 0; }} catch (_) {{}}
   var html = wvLabRenderHero()
     + '<div class="wv-section-title" style="margin-top:4px">Your lineup</div>'
     + '<div style="font-size:12px;color:var(--text-muted);margin:-6px 0 8px">tap a starter to swap</div>'
+    + wvLabChangesLine()
     + wvLabRenderSlots()
     + '<p class="wv-lab-fine">' + WV_LAB_SIMS.toLocaleString()
     + ' simulations per lineup. Ranges centered on start/sit projections, spread from season game logs.</p>';
   body.innerHTML = html;
+  try {{ if (window.scrollTo) window.scrollTo(0, sy); }} catch (_) {{}}
+}}
+
+// One-line summary of the last action above the lineup: the swaps it made,
+// or a one-off note (e.g. Chase upside finding nothing to change).
+function wvLabChangesLine() {{
+  if (wvLabLastNote) {{
+    return '<div class="wv-lab-changes">' + wvLabEsc(wvLabLastNote) + '</div>';
+  }}
+  if (!wvLabLastChanges || !wvLabLastChanges.length) return '';
+  var n = wvLabLastChanges.length, parts = [], i;
+  for (i = 0; i < n; i++) {{
+    parts.push(wvLabEsc(wvLabLastChanges[i].inn) + ' in for ' + wvLabEsc(wvLabLastChanges[i].out));
+  }}
+  var prefix = wvLabLastAction === 'upside' ? 'Chased upside: ' : '';
+  return '<div class="wv-lab-changes">' + prefix + n + (n === 1 ? ' swap: ' : ' swaps: ')
+    + parts.join(', ') + '</div>';
 }}
 
 function wvLabToggleSlot(si) {{
   var el = document.querySelector('.wv-lab-slot[data-si="' + si + '"]');
-  if (el) el.classList.toggle('open');
+  if (el) {{
+    // Pure class toggle: no re-render, so nothing repaints or jumps.
+    var open = el.classList.toggle('open');
+    if (open) wvLabOpenSlots[si] = true; else delete wvLabOpenSlots[si];
+  }}
 }}
 
 function wvLabSwap(si, bi) {{
   var slot = wvLabLineup[si];
   var b = slot.bench[bi];
+  var outName = slot.name, inName = b.name;
   var d = Math.round((wvLabSwapDelta(si, b)) * 100);
   slot.bench[bi] = {{
     player_id: slot.player_id, name: slot.name, pos: slot.pos, slot: slot.slot,
@@ -1118,16 +1186,63 @@ function wvLabSwap(si, bi) {{
   wvLabLineup[si] = nb;
   nb.bench = slot.bench;
   wvLabResult = wvLabEvaluate(wvLabLineup);
+  wvLabLastAction = 'swap';
+  wvLabLastNote = '';
+  wvLabLastChanges = [{{si: si, out: outName, inn: inName}}];
+  wvLabOpenSlots[si] = true;  // keep the swapped slot expanded through the render
   wvRenderLab();
 }}
 
-function wvLabToggleUpside() {{
-  wvLabUpside = !wvLabUpside;
+// Chase upside: one pass, highest ceiling wins each slot. Swaps in the
+// top-ceiling bench option wherever it beats the starter's ceiling by more
+// than 0.05. Ceiling gains are independent per slot, so no re-baseline loop
+// is needed; one wvLabEvaluate at the end refreshes the hero.
+function wvLabChaseUpside() {{
+  var changes = [], si, bi, ci;
+  for (si = 0; si < wvLabLineup.length; si++) {{
+    var slot = wvLabLineup[si];
+    var bench = slot.bench || [];
+    var top = null, topBi = -1;
+    for (bi = 0; bi < bench.length; bi++) {{
+      if (!top || (bench[bi].ceiling || 0) > (top.ceiling || 0)) {{
+        top = bench[bi]; topBi = bi;
+      }}
+    }}
+    if (top && (top.ceiling || 0) - (slot.ceiling || 0) > 0.05) {{
+      changes.push({{si: si, out: slot.name, inn: top.name}});
+      slot.bench[topBi] = {{
+        player_id: slot.player_id, name: slot.name, pos: slot.pos, slot: slot.slot,
+        proj: slot.proj, floor: slot.floor, ceiling: slot.ceiling,
+        matchup: slot.matchup, tags: slot.tags, profile: slot.profile, bench: []
+      }};
+      var nb = {{ player_id: top.player_id, name: top.name, pos: top.pos, slot: slot.slot,
+        proj: top.proj, floor: top.floor, ceiling: top.ceiling,
+        matchup: top.matchup, tags: top.tags, profile: top.profile }};
+      wvLabLineup[si] = nb;
+      nb.bench = slot.bench;
+    }}
+  }}
+  wvLabLastAction = 'upside';
+  wvLabLastNote = '';
+  if (!changes.length) {{
+    // No ceiling gains anywhere: say so instead of doing nothing silently.
+    wvLabLastNote = 'Already your highest-ceiling lineup.';
+    wvLabLastChanges = [];
+    wvRenderLab();
+    return;
+  }}
+  wvLabResult = wvLabEvaluate(wvLabLineup);
+  wvLabLastChanges = changes;
+  for (ci = 0; ci < changes.length; ci++) wvLabOpenSlots[changes[ci].si] = true;
   wvRenderLab();
+  // Bring the first changed row into view so the result is unmistakable.
+  var first = document.querySelector('.wv-lab-slot[data-si="' + changes[0].si + '"]');
+  if (first && first.scrollIntoView) {{ try {{ first.scrollIntoView({{block: 'nearest'}}); }} catch (_) {{}} }}
 }}
 
 function wvLabOptimize() {{
-  var applied = 0, guard = 0, si, bi;
+  var applied = 0, guard = 0, si, bi, ci;
+  var changes = [];
   while (guard++ < 12) {{
     var best = null;
     for (si = 0; si < wvLabLineup.length; si++) {{
@@ -1140,6 +1255,7 @@ function wvLabOptimize() {{
     if (!best) break;
     // apply without re-render until the end
     var slot = wvLabLineup[best.si], b = slot.bench[best.bi];
+    changes.push({{si: best.si, out: slot.name, inn: b.name}});
     slot.bench[best.bi] = {{
       player_id: slot.player_id, name: slot.name, pos: slot.pos, slot: slot.slot,
       proj: slot.proj, floor: slot.floor, ceiling: slot.ceiling,
@@ -1152,7 +1268,17 @@ function wvLabOptimize() {{
     wvLabResult = wvLabEvaluate(wvLabLineup);  // re-baseline for the next pick
     applied++;
   }}
+  wvLabLastAction = 'optimize';
+  wvLabLastNote = '';
+  wvLabLastChanges = changes;
+  for (ci = 0; ci < changes.length; ci++) wvLabOpenSlots[changes[ci].si] = true;
   wvRenderLab();
+  if (changes.length) {{
+    // Bring the first changed row into view so the result of Optimize is
+    // unmistakable.
+    var first = document.querySelector('.wv-lab-slot[data-si="' + changes[0].si + '"]');
+    if (first && first.scrollIntoView) {{ try {{ first.scrollIntoView({{block: 'nearest'}}); }} catch (_) {{}} }}
+  }}
 }}
 
 

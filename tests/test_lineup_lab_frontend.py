@@ -85,7 +85,7 @@ def test_lab_common_random_numbers(script):
 
 def test_lab_modes_and_actions(script):
     for fn in ("function wvSetSsMode(", "function wvLoadLab(", "function wvRenderLab(",
-               "function wvLabToggleSlot(", "function wvLabSwap(", "function wvLabToggleUpside(",
+               "function wvLabToggleSlot(", "function wvLabSwap(", "function wvLabChaseUpside(",
                "function wvLabOptimize("):
         assert fn in script, f"missing {fn}"
 
