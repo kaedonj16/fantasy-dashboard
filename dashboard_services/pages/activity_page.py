@@ -31,6 +31,7 @@ def build_activity_body(ctx: dict) -> str:
         _safe_int,
         apply_te_premium,
         apply_tier_stack_adjustment,
+        ensure_activity_bits,
         get_users,
         html,
         load_pick_value_table,
@@ -41,6 +42,10 @@ def build_activity_body(ctx: dict) -> str:
         resolve_exact_pick_slot,
         te_premium_from_settings,
     )
+
+    # Activity + injury data is deferred out of the league-context build
+    # (None = pending); fill it on first use. No-op once built.
+    ensure_activity_bits(ctx)
 
     league_id = ctx["league_id"]
     resolved_league_id = ctx.get("resolved_league_id", league_id)

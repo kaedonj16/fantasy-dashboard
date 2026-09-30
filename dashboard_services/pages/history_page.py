@@ -1122,6 +1122,13 @@ def _wrapped_activity(history_ctx: dict) -> dict:
     most active trader (owner involved in the most trades), and the waiver-wire
     leader (most adds). Returns {} when there's no activity data."""
     try:
+        if history_ctx.get("activity_df") is None and "activity_df" in history_ctx:
+            # Season activity is deferred out of the league-context build;
+            # fill it on first use. Real ctxs always carry the key (None
+            # while pending); the tour mock ctx has no key and is untouched.
+            from app import ensure_activity_bits
+
+            ensure_activity_bits(history_ctx)
         adf = history_ctx.get("activity_df")
         if adf is None or getattr(adf, "empty", True) or "kind" not in getattr(adf, "columns", []):
             return {}
