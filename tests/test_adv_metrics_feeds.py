@@ -81,14 +81,25 @@ def test_air_yards_rows_zero_team_totals_no_crash():
 # --- _average_snap_pct ---------------------------------------------------------
 
 def test_average_snap_pct():
+    # nfl_data_py offense_pct arrives as a 0-1 fraction.
+    rows = [
+        {"pfr_player_id": "p1", "offense_pct": 0.80},
+        {"pfr_player_id": "p1", "offense_pct": 0.60},
+        {"pfr_player_id": "p2", "offense_pct": 1.0},
+        {"pfr_player_id": "", "offense_pct": 0.50},
+        {"pfr_player_id": None, "offense_pct": 0.50},
+    ]
+    assert am._average_snap_pct(rows) == {"p1": pytest.approx(0.70), "p2": 1.0}
+
+
+def test_average_snap_pct_percent_scale_is_normalized():
+    # Defensive: a percent-scale reading (> 1) is converted to a fraction
+    # instead of being stored as-is or divided a second time downstream.
     rows = [
         {"pfr_player_id": "p1", "offense_pct": 80.0},
         {"pfr_player_id": "p1", "offense_pct": 60.0},
-        {"pfr_player_id": "p2", "offense_pct": 100.0},
-        {"pfr_player_id": "", "offense_pct": 50.0},
-        {"pfr_player_id": None, "offense_pct": 50.0},
     ]
-    assert am._average_snap_pct(rows) == {"p1": 70.0, "p2": 100.0}
+    assert am._average_snap_pct(rows) == {"p1": pytest.approx(0.70)}
 
 
 # --- _merge_nflverse_snap_share -------------------------------------------------
@@ -122,23 +133,39 @@ def _fake_nfl(monkeypatch, snaps_rows=None, rosters_rows=None):
 
 def test_merge_snap_share_fills_fraction(monkeypatch):
     snaps = [
-        {"pfr_player_id": "p1", "season_type": "REG", "week": 1, "offense_pct": 80.0},
-        {"pfr_player_id": "p1", "season_type": "REG", "week": 2, "offense_pct": 60.0},
+        {"pfr_player_id": "p1", "season_type": "REG", "week": 1, "offense_pct": 0.80},
+        {"pfr_player_id": "p1", "season_type": "REG", "week": 2, "offense_pct": 0.60},
     ]
     rosters = [{"pfr_id": "p1", "sleeper_id": 1234.0}]
     _fake_nfl(monkeypatch, snaps, rosters)
     usage_map = {"1234": {"games": 2}}
     merged = am._merge_nflverse_snap_share(usage_map, 2026, 2)
     assert merged == 1
-    # 0-1 fraction scale, matching the pct_frac snap_share spec
+    # 0-1 fraction scale, matching the pct_frac snap_share spec. Regression:
+    # this used to come back 0.007 (divided by 100 a second time), which the
+    # leaderboard's 0.20 efficiency gate then filtered out entirely.
     assert usage_map["1234"]["avg_off_snap_pct"] == pytest.approx(0.7)
+
+
+def test_merge_snap_share_percent_scale_input(monkeypatch):
+    # Defensive: if a feed ever ships percent-scale offense_pct, the stored
+    # share is still the equivalent fraction (80.0 in -> 0.80 out).
+    snaps = [
+        {"pfr_player_id": "p1", "season_type": "REG", "week": 1, "offense_pct": 80.0},
+    ]
+    rosters = [{"pfr_id": "p1", "sleeper_id": 1234.0}]
+    _fake_nfl(monkeypatch, snaps, rosters)
+    usage_map = {"1234": {"games": 1}}
+    merged = am._merge_nflverse_snap_share(usage_map, 2026, 1)
+    assert merged == 1
+    assert usage_map["1234"]["avg_off_snap_pct"] == pytest.approx(0.8)
 
 
 def test_merge_snap_share_filters_and_never_clobbers(monkeypatch):
     snaps = [
-        {"pfr_player_id": "p1", "season_type": "REG", "week": 3, "offense_pct": 100.0},  # after cutoff
-        {"pfr_player_id": "p1", "season_type": "PRE", "week": 1, "offense_pct": 100.0},  # preseason
-        {"pfr_player_id": "p2", "season_type": "REG", "week": 1, "offense_pct": 50.0},  # unknown pfr id
+        {"pfr_player_id": "p1", "season_type": "REG", "week": 3, "offense_pct": 1.0},  # after cutoff
+        {"pfr_player_id": "p1", "season_type": "PRE", "week": 1, "offense_pct": 1.0},  # preseason
+        {"pfr_player_id": "p2", "season_type": "REG", "week": 1, "offense_pct": 0.5},  # unknown pfr id
     ]
     rosters = [{"pfr_id": "p1", "sleeper_id": "1234"}]
     _fake_nfl(monkeypatch, snaps, rosters)

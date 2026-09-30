@@ -1905,15 +1905,28 @@ def _pfr_to_sleeper_map(season: int) -> Dict[str, str]:
     return mapping
 
 
+def _snap_pct_fraction(value) -> float:
+    """Normalize one offense_pct reading to a 0-1 fraction.
+
+    nfl_data_py's import_snap_counts returns offense_pct ALREADY as a 0-1
+    fraction (cf. pfr_snap_counts.py formatting it with :.1%, and
+    offseason_opportunity.py: "avg_off_snap_pct is already a 0-1 decimal —
+    do not divide by 100"). Defensively, a reading > 1 can only be percent
+    scale (0-100), so convert that; anything <= 1 passes through as-is.
+    """
+    v = _safe(value)
+    return v / 100.0 if v > 1.0 else v
+
+
 def _average_snap_pct(rows) -> Dict[str, float]:
-    """rows: iterable of dicts with pfr_player_id + offense_pct (0-100 scale).
-    Returns {pfr_player_id: mean offense_pct}."""
+    """rows: iterable of dicts with pfr_player_id + offense_pct.
+    Returns {pfr_player_id: mean offense_pct} as 0-1 fractions."""
     acc: Dict[str, List[float]] = {}
     for r in rows or []:
         pid = str(r.get("pfr_player_id") or "").strip()
         if not pid:
             continue
-        acc.setdefault(pid, []).append(_safe(r.get("offense_pct")))
+        acc.setdefault(pid, []).append(_snap_pct_fraction(r.get("offense_pct")))
     return {pid: sum(v) / len(v) for pid, v in acc.items() if v}
 
 
@@ -1958,7 +1971,10 @@ def _merge_nflverse_snap_share(
             usage = usage_map.get(sleeper_id) or usage_map.get(str(sleeper_id))
             if usage is None or usage.get("avg_off_snap_pct"):
                 continue
-            usage["avg_off_snap_pct"] = round(avg_pct / 100.0, 4)
+            # avg_pct is already a 0-1 fraction (see _snap_pct_fraction);
+            # do NOT divide by 100 again — that stored ~0.01 shares and the
+            # leaderboard's 0.20 efficiency gate then hid every real player.
+            usage["avg_off_snap_pct"] = round(avg_pct, 4)
             merged += 1
         return merged
     except Exception:
@@ -1976,8 +1992,11 @@ def _merge_pfr_catchable(
     QB Catchable % = 1 - bad_throws / attempts; WR/TE Catchable Tgt % =
     1 - drops / targets. Bad throws and drops are PFR human charting via the
     nflverse pfr_advstats release, not PFF. The advstats files carry only the
-    charted counts, so denominators come from the Sleeper weekly totals
-    already in usage_map (pass_att / targets over completed weeks).
+    charted counts, so denominators are the season totals in usage_map over
+    the same completed weeks: total_targets when present, otherwise the
+    per-game averages (avg_pass_att / avg_targets) times games. The usage
+    map never carries pass_att / targets keys; reading those was the bug
+    that left both pcts permanently unfilled.
 
     Only completed REG weeks are aggregated; season numbers are computed as
     totals-then-divided over those weeks, never as an average of weekly pcts.
@@ -2040,19 +2059,29 @@ def _merge_pfr_catchable(
     for pfr, sleeper in crosswalk.items():
         sleeper_to_pfr.setdefault(sleeper, pfr)
 
+    def _season_total(usage: Dict[str, Any], total_key: str,
+                      avg_key: str) -> float:
+        """Season total for a volume key: explicit total when the usage map
+        carries one, else per-game average * games (same completed weeks
+        the usage builder aggregated over)."""
+        total = usage.get(total_key)
+        if total is not None:
+            return _safe(total)
+        return _safe(usage.get(avg_key)) * _safe(usage.get("games"))
+
     merged = 0
     for sleeper_id, usage in usage_map.items():
         pfr = sleeper_to_pfr.get(sleeper_id)
         if not pfr:
             continue
         if usage.get("catchable_pass_pct") is None and pfr in pass_totals:
-            att = _safe(usage.get("pass_att")) or 0
+            att = _season_total(usage, "total_pass_att", "avg_pass_att")
             if att > 0:
                 bad = pass_totals[pfr]
                 usage["catchable_pass_pct"] = round((att - bad) / att * 100.0, 1)
                 merged += 1
         if usage.get("catchable_tgt_pct") is None and pfr in drop_totals:
-            tgt = _safe(usage.get("targets")) or 0
+            tgt = _season_total(usage, "total_targets", "avg_targets")
             if tgt > 0:
                 drops = drop_totals[pfr]
                 usage["catchable_tgt_pct"] = round((tgt - drops) / tgt * 100.0, 1)

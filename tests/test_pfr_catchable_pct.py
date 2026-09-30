@@ -230,13 +230,17 @@ def test_weekly_apply_zero_count_gives_hundred(stub_pfr_sources):
 # --- _merge_pfr_catchable (season snapshot) --------------------------------------
 
 def test_merge_totals_then_divides(stub_pfr_sources):
-    # p1: 3 + 1 bad throws over 70 attempts -> (70-4)/70*100
-    # p4: 2 + 1 drops over 15 targets -> (15-3)/15*100
+    # Denominators are season totals derived from the keys the usage
+    # builder actually emits: avg_pass_att / avg_targets * games, and the
+    # explicit total_targets when present. (The merge used to read
+    # pass_att / targets, keys that never exist, so nothing ever filled.)
+    # p1: 3 + 1 bad throws over 35.0 att/g * 2 games = 70 -> (70-4)/70*100
+    # p4: 2 + 1 drops over 7.5 tgt/g * 2 games = 15 -> (15-3)/15*100
     usage_map = {
-        "1234": {"pass_att": 70},
-        "5678": {"pass_att": 25},   # 0 bad throws -> 100%
-        "4444": {"targets": 15},
-        "5555": {"targets": 6},     # 0 drops -> 100%
+        "1234": {"avg_pass_att": 35.0, "games": 2},
+        "5678": {"avg_pass_att": 25.0, "games": 1},   # 0 bad throws -> 100%
+        "4444": {"avg_targets": 7.5, "games": 2},
+        "5555": {"total_targets": 6, "games": 1},     # 0 drops -> 100%
     }
     merged = am._merge_pfr_catchable(usage_map, 2026, completed_week=2)
     assert merged == 4
@@ -248,10 +252,29 @@ def test_merge_totals_then_divides(stub_pfr_sources):
     assert usage_map["5555"]["catchable_tgt_pct"] == pytest.approx(100.0)
 
 
+def test_merge_total_targets_preferred_over_avg_times_games(stub_pfr_sources):
+    # When the usage map carries an explicit season total it wins over the
+    # avg * games reconstruction (avg here would give 10*2=20 targets).
+    usage_map = {"4444": {"avg_targets": 10.0, "games": 2, "total_targets": 15}}
+    am._merge_pfr_catchable(usage_map, 2026, completed_week=2)
+    assert usage_map["4444"]["catchable_tgt_pct"] == pytest.approx(
+        round((15 - 3) / 15 * 100, 1))
+
+
+def test_merge_phantom_keys_do_not_fill(stub_pfr_sources):
+    # Regression for the original bug: pass_att / targets are NOT usage-map
+    # keys, so a map carrying only those must stay unfilled.
+    usage_map = {"1234": {"pass_att": 70}, "4444": {"targets": 15}}
+    merged = am._merge_pfr_catchable(usage_map, 2026, completed_week=2)
+    assert merged == 0
+    assert "catchable_pass_pct" not in usage_map["1234"]
+    assert "catchable_tgt_pct" not in usage_map["4444"]
+
+
 def test_merge_never_averages_weekly_pcts(stub_pfr_sources):
     # Weekly pcts would be 90.0 (wk1) and 97.5 (wk2); the naive mean is
     # 93.75. The merge must divide season totals instead: 94.3.
-    usage_map = {"1234": {"pass_att": 70}}
+    usage_map = {"1234": {"avg_pass_att": 35.0, "games": 2}}
     am._merge_pfr_catchable(usage_map, 2026, completed_week=2)
     val = usage_map["1234"]["catchable_pass_pct"]
     assert val == pytest.approx(94.3)
@@ -259,14 +282,16 @@ def test_merge_never_averages_weekly_pcts(stub_pfr_sources):
 
 
 def test_merge_respects_completed_week(stub_pfr_sources):
-    usage_map = {"1234": {"pass_att": 30}, "4444": {"targets": 8}}
+    usage_map = {"1234": {"avg_pass_att": 30.0, "games": 1},
+                 "4444": {"avg_targets": 8.0, "games": 1}}
     am._merge_pfr_catchable(usage_map, 2026, completed_week=1)
     assert usage_map["1234"]["catchable_pass_pct"] == pytest.approx(90.0)
     assert usage_map["4444"]["catchable_tgt_pct"] == pytest.approx(75.0)
 
 
 def test_merge_zero_denominators_guarded(stub_pfr_sources):
-    usage_map = {"1234": {"pass_att": 0}, "4444": {"targets": 0}}
+    usage_map = {"1234": {"avg_pass_att": 0.0, "games": 2},
+                 "4444": {"avg_targets": 0.0, "games": 2}}
     merged = am._merge_pfr_catchable(usage_map, 2026, completed_week=2)
     assert merged == 0
     assert "catchable_pass_pct" not in usage_map["1234"]
@@ -275,14 +300,14 @@ def test_merge_zero_denominators_guarded(stub_pfr_sources):
 
 def test_merge_small_samples_still_compute(stub_pfr_sources):
     # 3 attempts, 3 bad throws -> 0.0 (not skipped for low volume)
-    usage_map = {"1234": {"pass_att": 3}}
+    usage_map = {"1234": {"avg_pass_att": 3.0, "games": 1}}
     am._merge_pfr_catchable(usage_map, 2026, completed_week=1)
     assert usage_map["1234"]["catchable_pass_pct"] == pytest.approx(0.0)
 
 
 def test_merge_never_clobbers(stub_pfr_sources):
-    usage_map = {"1234": {"pass_att": 70, "catchable_pass_pct": 99.9},
-                 "4444": {"targets": 15, "catchable_tgt_pct": 88.8}}
+    usage_map = {"1234": {"avg_pass_att": 35.0, "games": 2, "catchable_pass_pct": 99.9},
+                 "4444": {"total_targets": 15, "games": 2, "catchable_tgt_pct": 88.8}}
     merged = am._merge_pfr_catchable(usage_map, 2026, completed_week=2)
     assert merged == 0
     assert usage_map["1234"]["catchable_pass_pct"] == pytest.approx(99.9)
@@ -294,15 +319,15 @@ def test_merge_download_failure_is_zero(monkeypatch):
         nm, "download_pfr_advstats_pass_csv", lambda s, max_age_hours=6.0: None)
     monkeypatch.setattr(
         nm, "download_pfr_advstats_rec_csv", lambda s, max_age_hours=6.0: None)
-    usage_map = {"1234": {"pass_att": 70}}
+    usage_map = {"1234": {"avg_pass_att": 35.0, "games": 2}}
     assert am._merge_pfr_catchable(usage_map, 2026, 2) == 0
-    assert usage_map == {"1234": {"pass_att": 70}}
+    assert usage_map == {"1234": {"avg_pass_att": 35.0, "games": 2}}
 
 
 def test_merge_crosswalk_failure_is_zero(monkeypatch, stub_pfr_sources):
     monkeypatch.setattr(nm, "_pfr_to_sleeper",
                         lambda: (_ for _ in ()).throw(RuntimeError("id map down")))
-    usage_map = {"1234": {"pass_att": 70}}
+    usage_map = {"1234": {"avg_pass_att": 35.0, "games": 2}}
     assert am._merge_pfr_catchable(usage_map, 2026, 2) == 0
     assert "catchable_pass_pct" not in usage_map["1234"]
 
