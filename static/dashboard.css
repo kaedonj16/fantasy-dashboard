@@ -17281,6 +17281,14 @@ img, svg, canvas {
     }
     .top-nav.br-mnav .nav-pill-dropdown-wrapper {
         width: 100%;
+        /* The base wrapper is a ROW inline-flex (pill + menu side by side for
+           the desktop hover dropdown). In the collapsed menu it must stack
+           like the <=768px block does, or the static submenu renders as a
+           flex item BESIDE its pill: the pill gets squeezed and the menu
+           hangs off the right edge of the panel as a floating card. */
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
     }
     .top-nav.br-mnav .nav-pill-dropdown-wrapper .nav-pill {
         width: 100%;
@@ -17299,6 +17307,9 @@ img, svg, canvas {
         border-radius: 10px;
         margin-top: 4px;
         border: 1px solid var(--border);
+        /* Full-width inline panel under its pill, not a content-width card. */
+        width: 100%;
+        box-sizing: border-box;
     }
     .top-nav.br-mnav .nav-pills-bottom {
         display: flex !important;
