@@ -9538,6 +9538,7 @@ window.initTradePage = function initTradePage(root = document) {
     function _onContextChangePatch() {
       suggTargetsLoaded = false;
       _strategyCache = {};
+      _strategyInflight = {};
       if (suggTab.style.display !== "none") {
         if (_activeSubtab === "suggestions" && _activeArchetype) {
           loadStrategyView(_activeArchetype);
@@ -9559,6 +9560,12 @@ window.initTradePage = function initTradePage(root = document) {
     // ── Strategy view loader ──────────────────────────────────────────────────
     async function loadStrategyView(archetype) {
       if (!strategyImpact || !strategyCards) return;
+
+      // Declared up top: the cache-hit branch below hides the spinner too, and
+      // referencing these consts before their declaration line executes is a
+      // TDZ ReferenceError (that is what stranded the view on skeletons).
+      const strategySpinner = root.querySelector("#otcStrategySpinner");
+      const impactHint      = root.querySelector("#otcStrategyImpactHint");
 
       // Newest-request-wins: bump the token and cancel any in-flight load so a
       // stale response can never render under a different (or the re-selected) chip.
@@ -9614,11 +9621,13 @@ window.initTradePage = function initTradePage(root = document) {
         _renderStrategyResult(_sCached.data, _sCached.playoffPct, archetype);
         return;
       }
-      if (_strategyInflight[_sCacheKey]) return;
+      // A flag still set at this point can only belong to the request this
+      // call just superseded (and aborted) above: its owner will never
+      // render, so deferring to it would strand the skeletons on screen
+      // forever. Clear the stale flag and fetch fresh.
+      if (_strategyInflight[_sCacheKey]) delete _strategyInflight[_sCacheKey];
 
       // Loading skeleton + spinner
-      const strategySpinner = root.querySelector("#otcStrategySpinner");
-      const impactHint      = root.querySelector("#otcStrategyImpactHint");
       if (strategySpinner) strategySpinner.style.display = "";
       // Shimmering placeholder rows (shared .sk-shimmer system). The old markup
       // referenced a non-existent `skeleton-pulse` keyframe, so nothing animated.
@@ -9637,6 +9646,17 @@ window.initTradePage = function initTradePage(root = document) {
         </div>`).join("");
       if (strategyCardsHead) strategyCardsHead.style.display = "none";
 
+      // The in-flight flag records WHICH request owns this key, and every exit
+      // below clears it only if it is still ours. The old bare `true` flag
+      // leaked on the stale / 403 early returns (the key then early-returned
+      // forever, stranding the skeletons), and an unguarded delete could
+      // clear a newer request's flag instead. Declared before the try so the
+      // catch block can use it too.
+      _strategyInflight[_sCacheKey] = _mySeq;
+      const _clearInflight = () => {
+        if (_strategyInflight[_sCacheKey] === _mySeq) delete _strategyInflight[_sCacheKey];
+      };
+
       try {
         const url =
           `/api/trade-intel/archetype-suggestions` +
@@ -9649,11 +9669,11 @@ window.initTradePage = function initTradePage(root = document) {
           `&league_size=${encodeURIComponent(leagueSize)}` +
           (_untouchableStr ? `&untouchable_ids=${encodeURIComponent(_untouchableStr)}` : "");
 
-        _strategyInflight[_sCacheKey] = true;
         const res = await fetch(url, { cache: "no-store", signal: _ctrl.signal });
-        if (_isStale()) return;  // a newer selection superseded this one
+        if (_isStale()) { _clearInflight(); return; }  // a newer selection superseded this one
         if (strategySpinner) strategySpinner.style.display = "none";
         if (res.status === 403) {
+          _clearInflight();
           window.brEmptyState(strategyImpact, {
             icon: 'lock',
             title: 'PRO trade tools',
@@ -9666,8 +9686,8 @@ window.initTradePage = function initTradePage(root = document) {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
         const raw  = await res.json();
-        if (_isStale()) return;  // response came back after the user moved on
-        delete _strategyInflight[_sCacheKey];
+        if (_isStale()) { _clearInflight(); return; }  // response came back after the user moved on
+        _clearInflight();
         const data = raw.suggestions ?? (Array.isArray(raw) ? raw : []);
         const _poPct = raw.current_playoff_pct ?? null;
         // Cache only real results: a transient empty (cold league context)
@@ -9676,7 +9696,7 @@ window.initTradePage = function initTradePage(root = document) {
         _renderStrategyResult(data, _poPct, archetype);
 
       } catch (err) {
-        delete _strategyInflight[_sCacheKey];
+        _clearInflight();
         // A superseded request was aborted on purpose - ignore it and leave the
         // newer load to own the view.
         if (err && err.name === "AbortError") return;
