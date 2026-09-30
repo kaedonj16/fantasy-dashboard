@@ -260,3 +260,113 @@ def test_weekly_hub_tab_survives_reflow_on_reload():
         "mobile_to_desktop_change": "optimal",
         "desktop_to_mobile_change": "scout",
     }
+
+
+def _opt_player(name, pos, score):
+    return (f'<span class="opt-player"><span class="opt-pos opt-pos-{pos.lower()}">{pos}</span>'
+            f'<button type="button" class="opt-player-name player-clickable" data-player-id="1" '
+            f'data-player-name="{name}">{name}</button>'
+            f'<strong class="opt-score">{score:.1f}</strong></span>')
+
+
+def _comparison_markup():
+    """Mirror of optimal_page._comparison output (same classes/nesting)."""
+    def row(slot, actual, optimal, gain, changed=False):
+        return (f'<div class="opt-lineup-row{" is-changed" if changed else ""}">'
+                f'<div class="opt-slot">{slot}</div>'
+                f'<div class="opt-side"><span class="opt-side-label">Actual</span>{actual}</div>'
+                f'<div class="opt-arrow" aria-hidden="true">→</div>'
+                f'<div class="opt-side"><span class="opt-side-label">Optimal after results</span>{optimal}</div>'
+                f'<div class="opt-gain">{gain}</div></div>')
+    return ('<div class="opt-comparison">'
+            + row("QB", _opt_player("Brock Purdy", "QB", 31.3), _opt_player("Brock Purdy", "QB", 31.3), "—")
+            + row("RB", _opt_player("Jeremiyah Love", "RB", 21.9), _opt_player("Jeremiyah Love", "RB", 21.9), "—")
+            + row("RB", _opt_player("Christian McCaffrey", "RB", 12.4),
+                  _opt_player("Breece Hall", "RB", 28.4), "+16.0", changed=True)
+            + row("WR", _opt_player("Ja'Marr Chase", "WR", 9.8),
+                  _opt_player("Justin Jefferson", "WR", 24.1), "+14.3", changed=True)
+            + '</div>')
+
+
+def _browser_opt():
+    playwright = pytest.importorskip("playwright.sync_api")
+    pw = playwright.sync_playwright().start()
+    chrome = Path("/opt/meta-chromium/chrome")
+    try:
+        if chrome.exists():
+            browser = pw.chromium.launch(headless=True, executable_path=str(chrome))
+        else:
+            browser = pw.chromium.launch(headless=True)
+    except playwright.Error:
+        pw.stop()
+        pytest.skip("Chromium is not installed")
+    return pw, browser
+
+
+@pytest.mark.parametrize("panel_width", [360, 480, 600, 900])
+def test_optimal_comparison_names_never_collapse(panel_width):
+    """Regression: in a narrow panel the two sides of a lineup row used to be
+    squeezed side-by-side until each player name was ~1 character wide and
+    wrapped letter-per-line (rows hundreds of px tall). The comparison must
+    stack by PANEL width (container query), keep names readable, keep the
+    arrow and gain visible, and never overflow horizontally. At >=650px the
+    single-row desktop layout is unchanged."""
+    pw, browser = _browser_opt()
+    try:
+        page = browser.new_page(viewport={"width": 1100, "height": 900})
+        css = (ROOT / "static/dashboard.css").read_text(encoding="utf-8")
+        page.set_content(f'<style>{css}</style><main style="width:{panel_width}px">{_comparison_markup()}</main>')
+        result = page.eval_on_selector("main", """e => {
+          const rows = [...e.querySelectorAll('.opt-lineup-row')].map(r => {
+            const sides = r.querySelectorAll('.opt-side');
+            return {stacked: sides[1].offsetTop > sides[0].offsetTop + 4,
+                    arrow: getComputedStyle(r.querySelector('.opt-arrow')).display};
+          });
+          const names = [...e.querySelectorAll('.opt-player-name')].map(n => ({w: n.offsetWidth, h: n.offsetHeight}));
+          return {client: e.clientWidth, scroll: e.scrollWidth, rows, names};
+        }""")
+        assert result["scroll"] <= result["client"] + 1
+        for name in result["names"]:
+            assert name["w"] >= 48, f"name crushed to {name['w']}px wide at panel {panel_width}"
+            assert name["h"] <= 44, f"name wrapped to {name['h']}px tall at panel {panel_width}"
+        for r in result["rows"]:
+            assert r["arrow"] != "none"
+            assert r["stacked"] == (panel_width < 650)
+    finally:
+        browser.close()
+        pw.stop()
+
+
+def _css_rule(css, selector):
+    start = css.index(selector)
+    end = css.index("}", start)
+    return css[start:end]
+
+
+def test_optimal_comparison_stacks_by_container_width():
+    """Source contract: the narrow layout is keyed to the comparison panel's
+    own width (container query, like the leaderboard cards), not only to the
+    viewport, and the name can no longer be sized below its longest word."""
+    css = (ROOT / "static/dashboard.css").read_text(encoding="utf-8")
+    assert "container-type:inline-size" in _css_rule(css, ".opt-comparison {")
+    start = css.index("@container (max-width:649px)")
+    block = css[start:css.index("\n}", start)]
+    assert ".opt-lineup-row" in block and "54px minmax(0,1fr) 48px" in block
+    assert ".opt-slot + .opt-side" in block and ".opt-arrow + .opt-side" in block
+    assert "display:none" not in block  # arrow stays visible while stacked
+    name_rule = _css_rule(css, ".opt-player-name {")
+    assert "overflow-wrap:anywhere" not in name_rule
+    assert "overflow-wrap:break-word" in name_rule
+
+
+def test_optimal_viewport_media_block_no_longer_restacks_rows():
+    """The old @media (max-width:720px) row overrides (which hid the arrow and
+    overlapped the actual score with the gain) are superseded by the
+    container query; the summary/nav rules in that block stay."""
+    css = (ROOT / "static/dashboard.css").read_text(encoding="utf-8")
+    anchor = css.index(".opt-nav { gap:7px")
+    start = css.rindex("@media (max-width:720px)", 0, anchor)
+    block = css[start:css.index("\n}", anchor)]
+    assert ".opt-summary" in block
+    assert ".opt-lineup-row" not in block
+    assert ".opt-arrow" not in block

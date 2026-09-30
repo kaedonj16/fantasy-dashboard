@@ -30371,13 +30371,13 @@ button:disabled {
 .opt-incomplete { display:flex; flex-direction:column; gap:3px; }
 .opt-incomplete strong,.opt-group-note strong { color:var(--text); }
 .opt-section-title { margin:16px 0 10px; font-size:15px; }
-.opt-comparison { overflow:hidden; border:1px solid var(--border); border-radius:var(--card-radius, 12px); background:var(--surface); }
+.opt-comparison { container-type:inline-size; overflow:hidden; border:1px solid var(--border); border-radius:var(--card-radius, 12px); background:var(--surface); }
 .opt-lineup-row { display:grid; grid-template-columns:76px minmax(0,1fr) 24px minmax(0,1fr) 58px; gap:8px; align-items:center; padding:10px 12px; border-bottom:1px solid var(--border); }
 .opt-lineup-row.is-changed { background:color-mix(in srgb, var(--accent) 7%, var(--surface)); box-shadow:inset 3px 0 var(--accent); }
 .opt-slot { color:var(--text-muted, var(--muted)); font-size:11px; font-weight:800; }
 .opt-side-label { display:none; color:var(--text-muted, var(--muted)); font-size:10px; text-transform:uppercase; }
 .opt-player { display:flex; align-items:center; gap:7px; min-width:0; }
-.opt-player-name { padding:0; border:0; background:none; color:var(--text); font:inherit; font-weight:600; text-align:left; cursor:pointer; overflow-wrap:anywhere; }
+.opt-player-name { padding:0; border:0; background:none; color:var(--text); font:inherit; font-weight:600; text-align:left; cursor:pointer; overflow-wrap:break-word; }
 .opt-player-name:hover { color:var(--accent); text-decoration:underline; }
 .opt-player-name:focus-visible,.opt-tab:focus-visible,.opt-week-select:focus-visible,details.opt-week summary:focus-visible,details.opt-team summary:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 .opt-score,.opt-gain { margin-left:auto; font-variant-numeric:tabular-nums; text-align:right; }
@@ -30439,13 +30439,27 @@ button:disabled {
   .opt-team-weeks .opt-team-label { display:none; }
 }
 .opt-empty-state { padding:30px; text-align:center; color:var(--text-muted, var(--muted)); }
+/* Stack the comparison when the PANEL is narrow (phone, hub column, split
+   view). Keyed to .opt-comparison's own width via a container query, not the
+   viewport: the single-row grid above divides whatever width is left between
+   the two sides, and .opt-player-name was the only element that could shrink
+   (its min-content was one character), so in a narrow panel the names were
+   crushed to a sliver and wrapped letter-per-line. Stacked, each side gets
+   the full content width and the actual score column stays clear of the
+   gain figure. */
+@container (max-width:649px) {
+  .opt-lineup-row { grid-template-columns:54px minmax(0,1fr) 48px; align-items:start; }
+  .opt-slot + .opt-side { grid-column:2; grid-row:1; }
+  .opt-arrow + .opt-side { grid-column:2 / 4; grid-row:2; }
+  .opt-side-label { display:block; margin-bottom:3px; }
+  .opt-arrow { grid-column:1; grid-row:2; justify-self:center; transform:rotate(90deg); }
+  .opt-gain { grid-column:3; grid-row:1; }
+  .opt-player { align-items:flex-start; }
+  .opt-score { flex:none; }
+}
 @media (max-width:720px) {
   .opt-summary { grid-template-columns:repeat(2,minmax(0,1fr)); }
   .opt-nav { gap:7px; margin-bottom:16px; }.opt-tab { padding:7px 11px; }
-  .opt-lineup-row { grid-template-columns:54px minmax(0,1fr) 48px; align-items:start; }
-  .opt-side { grid-column:2 / 4; }.opt-side-label { display:block; margin-bottom:3px; }
-  .opt-arrow { display:none; }.opt-gain { grid-column:3; grid-row:1; }
-  .opt-player { align-items:flex-start; }.opt-score { flex:none; }
   .opt-week>summary { display:grid; gap:4px; }
 }
 
