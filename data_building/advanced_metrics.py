@@ -39,7 +39,7 @@ PREMIUM_METRICS = frozenset({
     "grades_offense", "grades_pass_block", "pff_rushing_grade", "pff_passing_grade",
     "elusive_rating", "big_time_throw_rate",
     "pressure_to_sack_rate", "slot_rate", "wide_rate", "inline_rate",
-    "pass_block_rate", "avoided_tackles",
+    "pass_block_rate",
     # Snap-share proxy, not true routes data — hide until real routes are sourced.
     "route_participation",
 })
@@ -516,6 +516,11 @@ def calculate_rushing_metrics(usage: Dict[str, float]) -> Dict[str, Optional[flo
         "rush_td_rate": rush_td_rate,
         "ybc_per_carry": ybc_per_carry,
         "yac_per_carry": yac_per_carry,
+        # Broken tackles on rush attempts: season total filled by the PFR
+        # contact merge (rushing_broken_tackles from the same advstats
+        # release). Stored in the avoided_tackles column; the PFF sync can
+        # still overwrite it locally when a real PFF export is imported.
+        "avoided_tackles": usage.get("avoided_tackles"),
     }
 
 
@@ -1291,8 +1296,8 @@ def build_advanced_metrics_snapshot(
             logger.info("merged PFR catchable pct for %d players", _n_catch)
     except Exception:
         logger.exception("PFR catchable merge failed; continuing without")
-    # PFR yards before/after contact are absent from the Sleeper feed too;
-    # merge per-carry contact splits from the nflverse PFR advstats release.
+    # PFR yards before/after contact and broken tackles are absent from the
+    # Sleeper feed too; merge them from the nflverse PFR advstats release.
     # Best-effort: never gates the snapshot write.
     try:
         _n_ybc = _merge_pfr_contact_yards(usage_map, season, completed_week)
@@ -1382,6 +1387,7 @@ def load_matchup_ease(season: int) -> Dict[str, Dict[str, float]]:
 _MONOTONIC_SNAPSHOT_COUNTERS = (
     "games", "total_targets", "total_receptions",
     "total_carries", "total_touches", "total_pass_att",
+    "avoided_tackles",
 )
 
 
@@ -1443,7 +1449,8 @@ def save_metrics_snapshot(metrics_list: List[Dict[str, Any]], as_of_date: str, s
         try:
             for r in conn.execute(
                 "SELECT DISTINCT ON (player_id) player_id, games, total_targets,"
-                " total_receptions, total_carries, total_touches, total_pass_att"
+                " total_receptions, total_carries, total_touches, total_pass_att,"
+                " avoided_tackles"
                 " FROM player_advanced_metrics WHERE season = %s"
                 " ORDER BY player_id, as_of_date DESC",
                 (season,),
@@ -1474,7 +1481,7 @@ def save_metrics_snapshot(metrics_list: List[Dict[str, Any]], as_of_date: str, s
                     yards_per_target, catch_rate, yards_per_reception, target_quality_score,
                     catchable_tgt_pct,
                     yards_per_carry, yards_per_touch, rush_td_rate,
-                    ybc_per_carry, yac_per_carry,
+                    ybc_per_carry, yac_per_carry, avoided_tackles,
                     yards_per_attempt, completion_pct, td_rate, int_rate,
                     catchable_pass_pct,
                     snap_share, opportunity_share, red_zone_usage,
@@ -1493,7 +1500,7 @@ def save_metrics_snapshot(metrics_list: List[Dict[str, Any]], as_of_date: str, s
                     %s, %s, %s, %s,
                     %s,
                     %s, %s, %s,
-                    %s, %s,
+                    %s, %s, %s,
                     %s, %s, %s, %s,
                     %s,
                     %s, %s, %s,
@@ -1521,6 +1528,7 @@ def save_metrics_snapshot(metrics_list: List[Dict[str, Any]], as_of_date: str, s
                     rush_td_rate = EXCLUDED.rush_td_rate,
                     ybc_per_carry = EXCLUDED.ybc_per_carry,
                     yac_per_carry = EXCLUDED.yac_per_carry,
+                    avoided_tackles = COALESCE(EXCLUDED.avoided_tackles, player_advanced_metrics.avoided_tackles),
                     yards_per_attempt = EXCLUDED.yards_per_attempt,
                     completion_pct = EXCLUDED.completion_pct,
                     td_rate = EXCLUDED.td_rate,
@@ -1568,6 +1576,7 @@ def save_metrics_snapshot(metrics_list: List[Dict[str, Any]], as_of_date: str, s
                 metrics.get("yards_per_carry"), metrics.get("yards_per_touch"),
                 metrics.get("rush_td_rate"),
                 metrics.get("ybc_per_carry"), metrics.get("yac_per_carry"),
+                metrics.get("avoided_tackles"),
                 metrics.get("yards_per_attempt"), metrics.get("completion_pct"),
                 metrics.get("td_rate"), metrics.get("int_rate"),
                 metrics.get("catchable_pass_pct"),
@@ -2056,14 +2065,18 @@ def _merge_pfr_contact_yards(
     season: int,
     completed_week: Optional[int] = None,
 ) -> int:
-    """Fill usage['ybc_per_carry'] / usage['yac_per_carry'] from PFR advstats.
+    """Fill usage['ybc_per_carry'] / usage['yac_per_carry'] / usage['avoided_tackles'].
 
     Yards before contact measures the rushing lane the line created; yards
     after contact measures what the runner created himself. Both are
     aggregated as season totals over completed REG weeks then divided by
-    total carries (never an average of weekly averages). Only fills players
-    missing a value — never clobbers. Best-effort: any failure leaves the
-    map untouched and returns 0; never gates the snapshot write.
+    total carries (never an average of weekly averages). The same pass also
+    totals rushing_broken_tackles into usage['avoided_tackles'] (the public
+    Broken Tackles total the per-carry derivative divides by carries):
+    PFR's rushing-only broken-tackle count, never the rush+rec combined
+    figure. Only fills players missing a value — never clobbers.
+    Best-effort: any failure leaves the map untouched and returns 0;
+    never gates the snapshot write.
     """
     if not usage_map:
         return 0
@@ -2080,7 +2093,12 @@ def _merge_pfr_contact_yards(
             return 0
         totals: Dict[str, Dict[str, float]] = {}
         with open(csv_path, newline="", encoding="utf-8") as f:
-            for row in csv.DictReader(f):
+            reader = csv.DictReader(f)
+            # Older advstats files predate the broken-tackles column; only
+            # total it when the file actually carries it, so a missing
+            # column never fabricates a season of zeros.
+            has_btk = "rushing_broken_tackles" in (reader.fieldnames or [])
+            for row in reader:
                 if str(row.get("game_type", "REG")).upper() != "REG":
                     continue
                 try:
@@ -2096,14 +2114,16 @@ def _merge_pfr_contact_yards(
                     carries = float(row.get("carries") or 0)
                     ybc = float(row.get("rushing_yards_before_contact") or 0)
                     yac = float(row.get("rushing_yards_after_contact") or 0)
+                    btk = float(row.get("rushing_broken_tackles") or 0) if has_btk else 0.0
                 except (TypeError, ValueError):
                     continue
                 if carries <= 0:
                     continue
-                acc = totals.setdefault(pfr_id, {"carries": 0.0, "ybc": 0.0, "yac": 0.0})
+                acc = totals.setdefault(pfr_id, {"carries": 0.0, "ybc": 0.0, "yac": 0.0, "btk": 0.0})
                 acc["carries"] += carries
                 acc["ybc"] += ybc
                 acc["yac"] += yac
+                acc["btk"] += btk
         if not totals:
             return 0
         pfr_to_sleeper = _pfr_to_sleeper()
@@ -2115,11 +2135,18 @@ def _merge_pfr_contact_yards(
             usage = usage_map.get(sleeper_id) or usage_map.get(str(sleeper_id))
             if usage is None or acc["carries"] <= 0:
                 continue
+            filled = False
             if usage.get("ybc_per_carry") is None:
                 usage["ybc_per_carry"] = round(acc["ybc"] / acc["carries"], 2)
-                merged += 1
+                filled = True
             if usage.get("yac_per_carry") is None:
                 usage["yac_per_carry"] = round(acc["yac"] / acc["carries"], 2)
+                filled = True
+            if has_btk and usage.get("avoided_tackles") is None:
+                usage["avoided_tackles"] = acc["btk"]
+                filled = True
+            if filled:
+                merged += 1
         return merged
     except Exception:
         logger.exception("PFR contact-yards merge failed; continuing without")
@@ -2540,8 +2567,8 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     "yac_per_carry":        {"label": "YAC / Carry",         "category": "Rushing", "positions": ["RB", "QB"], "efficiency": True, "min_vol": _V_CARRIES, "desc": "Yards after contact per carry: what the runner created himself after first contact (PFR via nflverse). Higher means more tackle-breaking. Pairs with YBC / Carry."},
     "epa_vs_stacked_box":   {"label": "EPA vs 8+ Box",       "category": "Rushing", "positions": ["RB"], "efficiency": True, "min_vol": _V_CARRIES, "desc": "Expected Points Added per rush against 8 or more defenders in the box (FTN + nflverse)."},
     "elusive_rating":       {"label": "Elusive Rating",      "category": "Rushing", "positions": ["RB"], "efficiency": True, "min_vol": _V_CARRIES, "desc": "PFF metric for yards created after contact and missed tackles forced, independent of blocking."},
-    "avoided_tackles":      {"label": "Avoided Tackles",    "category": "Rushing", "positions": ["RB"], "min_vol": _V_CARRIES, "desc": "Tackles avoided (missed, broken, or forced) on rush attempts per PFF. Rewards runners who make defenders miss."},
-    "avoided_tackles_pg":   {"label": "Avoided Tackles/Carry", "category": "Rushing", "positions": ["RB"], "min_vol": _V_CARRIES, "desc": "Tackles avoided per carry (PFF).", "computed_sql": "m.avoided_tackles::float / NULLIF(v.vol, 0)", "computed_null": "m.avoided_tackles IS NOT NULL"},
+    "avoided_tackles":      {"label": "Broken Tackles",    "category": "Rushing", "positions": ["RB"], "min_vol": _V_CARRIES, "desc": "Tackles broken on rush attempts (PFR charting via nflverse). Rewards runners who power through or slip contact."},
+    "avoided_tackles_pg":   {"label": "Broken Tackles/Carry", "category": "Rushing", "positions": ["RB"], "min_vol": _V_CARRIES, "desc": "Broken tackles per carry on rush attempts (PFR charting via nflverse).", "computed_sql": "m.avoided_tackles::float / NULLIF(v.vol, 0)", "computed_null": "m.avoided_tackles IS NOT NULL"},
     "rz_carries_pg":        {"label": "RZ Carries/G",        "category": "Rushing", "positions": ["QB", "RB"], "min_vol": _V_GAMES, "desc": "Red zone rushing attempts per game (inside opponent's 20-yard line)."},
     "rz_opp_share":         {"label": "RZ Opp Share",        "category": "Rushing", "positions": ["RB"], "pct": True, "pct_frac": True, "min_vol": _V_GAMES, "desc": "Share of the team's red-zone opportunities (carries + targets inside the 20) that went to this player; the goal-line role in one number."},
     # Touchdown group: rate, season total, and per-game kept adjacent.

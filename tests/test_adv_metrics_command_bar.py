@@ -46,6 +46,11 @@ KEY_IDS = (
     "amCompareBar",
     "amCompareChips",
     "amFilterChips",
+    "amPosRow",
+    "amAddStatHost",
+    "amCompareHost",
+    "amMetricsSec",
+    "amSheetClose",
 )
 
 # getElementById targets that are intentionally not in the static markup:
@@ -152,6 +157,52 @@ def test_sheet_groups_every_secondary_control():
                   "amFilterChips", "amFilterForm", "amSavedSet", "amSaveSetBtn",
                   "amDeleteSetBtn", "amSortBtn"):
         assert f'id="{el_id}"' in tail, f"#{el_id} must live in the filter sheet"
+
+
+def test_mobile_metric_controls_relocate_beside_positions():
+    """On phones the + Metric wrap and the added-metric compare bar move out
+    of the filter sheet: the button sits beside the position filters and the
+    chips land directly under that row. The nodes themselves move (one
+    instance of each ID); desktop keeps them in the sheet."""
+    body = _body(_html())
+    # Hosts: the add-stat host is inside the positions row, after the
+    # segmented control; the compare host is the next block under the row,
+    # before the decision pills.
+    row_idx = body.index('id="amPosRow"')
+    pos_idx = body.index('id="amPositions"')
+    host_idx = body.index('id="amAddStatHost"')
+    bar_host_idx = body.index('id="amCompareHost"')
+    pills_idx = body.index('id="amDecisionPills"')
+    assert row_idx < pos_idx < host_idx < bar_host_idx < pills_idx
+    # Hosts start empty; JS fills them on mobile only.
+    assert '<div id="amAddStatHost" class="am-add-stat-host"></div>' in body
+    assert '<div id="amCompareHost" class="am-compare-host"></div>' in body
+    # Server markup still homes both controls in the sheet's Metrics section
+    # (the desktop layout); relocation is a runtime move, not a duplicate.
+    sec_idx = body.index('id="amMetricsSec"')
+    assert sec_idx < body.index('id="amAddStatWrap"') < body.index('id="amCompareBar"')
+    js = _html()[_html().index("<script>"):_html().index("</script>")]
+    assert "function amRelocateMetricControls(" in js
+    assert "matchMedia('(max-width: 760px)')" in js
+    assert "getElementById('amAddStatHost')" in js
+    assert "getElementById('amCompareHost')" in js
+    # The stat picker stays viewport-fixed off the button's rect, so it is
+    # safe no matter which home the wrap currently sits in.
+    assert "picker.style.position = 'fixed'" in js
+    assert "getBoundingClientRect" in js
+
+
+def test_sheet_close_button_is_pinned_shorter():
+    """The sheet close button at the shared 36px command size read too tall;
+    it carries its own shorter, fully pinned box model."""
+    css = _style(_html())
+    m = re.search(r"#amSheetClose\s*\{([^}]*)\}", css)
+    assert m, "#amSheetClose needs its own sizing rule"
+    rule = m.group(1)
+    assert "height:30px" in rule
+    assert "width:30px" in rule
+    assert "padding:0" in rule
+    assert "box-sizing:border-box" in rule
 
 
 def test_movers_default_to_slim_banner():

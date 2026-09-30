@@ -388,7 +388,7 @@ def build_advanced_metrics_body(
                 <span class="am-toggle-text">My roster only</span>
               </label>
             </section>
-            <section class="am-sheet-sec" aria-label="Metrics">
+            <section class="am-sheet-sec" id="amMetricsSec" aria-label="Metrics">
               <h4 class="am-sheet-sec-title">Metrics</h4>
               <div id="amAddStatWrap" style="position:relative;flex-shrink:0;">
                 <button id="amAddStatBtn" type="button" class="am-add-stat-btn">&#43; Metric</button>
@@ -459,14 +459,22 @@ def build_advanced_metrics_body(
           <select id="amMetric" style="display:none">__METRIC_OPTIONS__</select>
         </div>
 
-        <!-- Positions: one segmented control. JS toggles .active on the buttons. -->
-        <div id="amPositions" class="otc-day-filters am-positions am-segmented" role="group" aria-label="Positions">
-          <button class="otc-day-filter am-pos active" data-pos="ALL">All</button>
-          <button class="otc-day-filter am-pos" data-pos="QB">QB</button>
-          <button class="otc-day-filter am-pos" data-pos="RB">RB</button>
-          <button class="otc-day-filter am-pos" data-pos="WR">WR</button>
-          <button class="otc-day-filter am-pos" data-pos="TE">TE</button>
+        <!-- Positions: one segmented control. JS toggles .active on the buttons.
+             The row also hosts the + Metric wrap on mobile (relocated by
+             amRelocateMetricControls); the compare bar lands in the host
+             directly under the row. Both hosts stay empty on desktop, where
+             the controls keep their filter-sheet home. -->
+        <div class="am-pos-row" id="amPosRow">
+          <div id="amPositions" class="otc-day-filters am-positions am-segmented" role="group" aria-label="Positions">
+            <button class="otc-day-filter am-pos active" data-pos="ALL">All</button>
+            <button class="otc-day-filter am-pos" data-pos="QB">QB</button>
+            <button class="otc-day-filter am-pos" data-pos="RB">RB</button>
+            <button class="otc-day-filter am-pos" data-pos="WR">WR</button>
+            <button class="otc-day-filter am-pos" data-pos="TE">TE</button>
+          </div>
+          <div id="amAddStatHost" class="am-add-stat-host"></div>
         </div>
+        <div id="amCompareHost" class="am-compare-host"></div>
 
         <!-- Decision presets: one-tap views organized by the question being answered.
              Pills are server-rendered; JS wires clicks and the active state. -->
@@ -1492,6 +1500,12 @@ def build_advanced_metrics_body(
       }
       .am-cmd-btn:hover { background:var(--row,rgba(0,0,0,.05)); }
       .am-cmd-btn[aria-expanded="true"] { background:var(--row,rgba(0,0,0,.06)); border-color:var(--border); }
+      /* The filter sheet's close button reads too tall at the shared 36px
+         command size; pin it shorter with its own box model. */
+      #amSheetClose {
+        width:30px; height:30px; padding:0; box-sizing:border-box;
+        border-radius:8px; line-height:1; flex-shrink:0;
+      }
       .am-filter-badge {
         position:absolute; top:1px; right:0;
         min-width:18px; height:18px; padding:0 5px; box-sizing:border-box;
@@ -1532,6 +1546,17 @@ def build_advanced_metrics_body(
       .am-positions.am-segmented .am-pos.active {
         background:var(--text); color:var(--card);
       }
+      /* Mobile relocation hosts: on phones the + Metric wrap moves beside
+         the position filters and the compare bar lands directly under that
+         row (amRelocateMetricControls moves the existing nodes; the hosts
+         stay empty, and hidden, on desktop). */
+      .am-pos-row { display:flex; align-items:stretch; gap:8px; margin:0 0 8px; min-width:0; }
+      .am-pos-row .am-positions.am-segmented { flex:1 1 auto; margin:0; }
+      .am-add-stat-host, .am-compare-host { display:none; }
+      .am-add-stat-host:not(:empty) { display:flex; }
+      .am-compare-host:not(:empty) { display:block; }
+      .am-add-stat-host #amAddStatWrap { display:flex; }
+      .am-add-stat-host #amAddStatBtn { height:100%; }
       /* Context line: tappable summary of the current filter state. */
       .am-context-line {
         display:flex; align-items:center; justify-content:space-between; gap:8px;
@@ -1624,13 +1649,13 @@ def build_advanced_metrics_body(
           margin:12px 0 10px;
         }
         .am-cmd-controls .am-cmd-metric,
-        .am-cmd-controls .am-positions.am-segmented,
+        .am-cmd-controls .am-pos-row,
         .am-cmd-controls .am-decisions,
         .am-cmd-controls .am-preset-tagline,
         .am-cmd-controls .am-context-line,
         .am-cmd-controls .am-movers { margin:0; min-width:0; }
         .am-cmd-controls .am-cmd-metric { grid-area:metric; }
-        .am-cmd-controls .am-positions.am-segmented { grid-area:positions; align-self:center; }
+        .am-cmd-controls .am-pos-row { grid-area:positions; align-self:center; }
         .am-cmd-controls .am-decisions { grid-area:pills; }
         .am-cmd-controls .am-preset-tagline { grid-area:tagline; }
         .am-cmd-controls .am-context-line { grid-area:context; width:100%; align-self:center; }
@@ -5149,6 +5174,34 @@ _AM_JS = r"""
   if (ctxLine) ctxLine.addEventListener('click', () => amToggleSheet(true));
   const sheetClose = document.getElementById('amSheetClose');
   if (sheetClose) sheetClose.addEventListener('click', () => amToggleSheet(false));
+  // Mobile layout: the + Metric wrap and the added-metric compare bar sit
+  // beside / directly under the position filters instead of inside the
+  // filter sheet, so adding a comparison metric never needs the sheet.
+  // Desktop keeps them in the sheet's Metrics section. The nodes themselves
+  // move (IDs, listeners, and the fixed-position stat picker ride along);
+  // the sheet's Metrics section hides while its controls are relocated.
+  function amRelocateMetricControls() {
+    const mobile = window.matchMedia('(max-width: 760px)').matches;
+    const wrap = document.getElementById('amAddStatWrap');
+    const bar = document.getElementById('amCompareBar');
+    const sec = document.getElementById('amMetricsSec');
+    if (!wrap || !bar || !sec) return;
+    if (mobile) {
+      const host = document.getElementById('amAddStatHost');
+      const barHost = document.getElementById('amCompareHost');
+      if (host && wrap.parentNode !== host) host.appendChild(wrap);
+      if (barHost && bar.parentNode !== barHost) barHost.appendChild(bar);
+      sec.style.display = 'none';
+    } else {
+      if (wrap.parentNode !== sec) sec.appendChild(wrap);
+      if (bar.parentNode !== sec) sec.appendChild(bar);
+      sec.style.display = '';
+    }
+  }
+  const _amLayoutMq = window.matchMedia('(max-width: 760px)');
+  if (_amLayoutMq.addEventListener) _amLayoutMq.addEventListener('change', amRelocateMetricControls);
+  else if (_amLayoutMq.addListener) _amLayoutMq.addListener(amRelocateMetricControls);
+  amRelocateMetricControls();
   const sheetBackdrop = document.getElementById('amSheetBackdrop');
   if (sheetBackdrop) sheetBackdrop.addEventListener('click', () => amToggleSheet(false));
   // Search icon toggles the row holding the existing #amSearch input.

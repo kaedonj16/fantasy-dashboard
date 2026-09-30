@@ -194,7 +194,7 @@ def test_snapshot_clamps_shrunken_games_and_totals(monkeypatch):
     prev = [{
         "player_id": "1", "games": 3, "total_targets": 20,
         "total_receptions": 14, "total_carries": 45, "total_touches": 59,
-        "total_pass_att": None,
+        "total_pass_att": None, "avoided_tackles": 9.0,
     }]
     conn = _snapshot_conn(prev)
     monkeypatch.setattr(am, "get_conn", lambda: conn)
@@ -210,13 +210,16 @@ def test_snapshot_clamps_shrunken_games_and_totals(monkeypatch):
     params = _insert_params(conn)
     assert len(params) == 1
     vals = params[0]
-    # games is the 28th value, totals follow (see INSERT column order).
-    assert vals[27] == 3          # games clamped to previous 3
-    assert vals[28] == 20         # total_targets clamped
-    assert vals[29] == 14         # total_receptions clamped
-    assert vals[30] == 45         # total_carries clamped
-    assert vals[31] == 59         # total_touches clamped
-    assert vals[32] is None       # None/None stays None
+    # games is the 29th value, totals follow (see INSERT column order).
+    assert vals[28] == 3          # games clamped to previous 3
+    assert vals[29] == 20         # total_targets clamped
+    assert vals[30] == 14         # total_receptions clamped
+    assert vals[31] == 45         # total_carries clamped
+    assert vals[32] == 59         # total_touches clamped
+    assert vals[33] is None       # None/None stays None
+    # A build whose PFR merge failed must not wipe the stored broken-tackle
+    # total either (prev 9.0 survives the missing value).
+    assert vals[14] == 9.0        # avoided_tackles clamped to previous
 
 
 def test_snapshot_keeps_growth_and_first_write(monkeypatch):
@@ -225,7 +228,7 @@ def test_snapshot_keeps_growth_and_first_write(monkeypatch):
     prev = [{
         "player_id": "1", "games": 2, "total_targets": 12,
         "total_receptions": 8, "total_carries": 30, "total_touches": 38,
-        "total_pass_att": None,
+        "total_pass_att": None, "avoided_tackles": 5.0,
     }]
     conn = _snapshot_conn(prev)
     monkeypatch.setattr(am, "get_conn", lambda: conn)
@@ -245,8 +248,8 @@ def test_snapshot_keeps_growth_and_first_write(monkeypatch):
 
     params = _insert_params(conn)
     assert len(params) == 2
-    assert params[0][27] == 3 and params[0][30] == 45
-    assert params[1][27] == 1 and params[1][28] == 5
+    assert params[0][28] == 3 and params[0][31] == 45
+    assert params[1][28] == 1 and params[1][29] == 5
 
 
 def test_clamp_helper_none_semantics():

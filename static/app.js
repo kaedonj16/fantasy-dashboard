@@ -17424,7 +17424,7 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2, counts1, c
     snap_share:'Snap Share', opportunity_share:'Opportunity Share',
     red_zone_usage:'Red Zone Usage', role_score:'Role Score',
     grades_offense:'PFF Off Grade', grades_pass_block:'PFF Block Grade',
-    avoided_tackles:'Avoided Tackles', pass_block_rate:'Block Rate',
+    avoided_tackles:'Broken Tackles', pass_block_rate:'Block Rate',
     total_carries:'Carries', total_targets:'Targets', total_receptions:'Receptions',
     total_touches:'Touches', total_rush_tds:'Rush TDs', total_rec_tds:'Rec TDs',
     total_pass_tds:'Pass TDs', total_tds:'Total TDs',
