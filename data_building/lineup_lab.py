@@ -404,6 +404,18 @@ def build_lineup_lab_payload(
         except Exception:
             pairs = {}
 
+    # Per-player usage context for the row meta line: the season average of
+    # the position's key usage stat (QB snap %, RB touches, WR/TE targets),
+    # the same source and convention as the Start/Sit cards. Display only;
+    # missing data simply omits the stat.
+    usage_trends: Dict[str, dict] = {}
+    try:
+        from data_building.weekly_metrics import get_usage_trends
+        usage_trends = get_usage_trends(int(season)) or {}
+    except Exception:
+        logger.debug("lineup-lab: usage trends unavailable", exc_info=True)
+        usage_trends = {}
+
     def _prof(pid: str) -> dict:
         pos = _player_pos(players_index, pid)
         mean = proj_fn(pid, pos)
@@ -427,7 +439,8 @@ def build_lineup_lab_payload(
     except Exception:
         pass
 
-    def _entry(pid: str, slot: str, bench_for_slot: Optional[List[dict]] = None) -> dict:
+    def _entry(pid: str, slot: str, bench_for_slot: Optional[List[dict]] = None,
+               eligible_positions: Optional[frozenset] = None) -> dict:
         pos = _player_pos(players_index, pid)
         prof = _prof(pid)
         mean = _safe_float(prof.get("mean"))
@@ -444,9 +457,15 @@ def build_lineup_lab_payload(
             "matchup": matchup_labels.get(team, ""),
             "tags": _lab_tags(prof),
             "profile": _profile_payload(prof),
+            "usage_stat": (usage_trends.get(pid) or {}).get("stat"),
+            "usage_avg": (usage_trends.get(pid) or {}).get("season_avg"),
         }
         if bench_for_slot is not None:
             entry["bench"] = bench_for_slot
+        if eligible_positions is not None:
+            # Per-slot position eligibility, so the client can re-seat a
+            # demoted starter onto every bench they qualify for after a swap.
+            entry["eligible"] = sorted(eligible_positions)
         return entry
 
     # Bench entries with per-slot eligibility.
@@ -464,7 +483,7 @@ def build_lineup_lab_payload(
         ]
         # Sort bench by projection desc for the default view.
         bench_for_slot.sort(key=lambda e: e["proj"], reverse=True)
-        lineup.append(_entry(pid, slot, bench_for_slot))
+        lineup.append(_entry(pid, slot, bench_for_slot, eligible))
 
     # ── Opponent team distribution ───────────────────────────────────────
     opp_mean = 0.0

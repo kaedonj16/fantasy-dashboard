@@ -144,6 +144,29 @@ def test_payload_shape(lab_mocks):
     assert data["corr"] == {}
 
 
+def test_payload_ships_slot_eligibility_and_usage(lab_mocks, monkeypatch):
+    import data_building.weekly_metrics as wm_mod
+    monkeypatch.setattr(wm_mod, "get_usage_trends", lambda season: {
+        "1": {"stat": "snap_pct", "season_avg": 99.0},
+        "2": {"stat": "touches", "season_avg": 18.5},
+    })
+    data = _build(_ctx())
+    by_pid = {e["player_id"]: e for e in data["you"]["lineup"]}
+    # Slot eligibility rides along so the browser can re-seat a demoted
+    # starter under exactly the slots that accept his position.
+    assert by_pid["1"]["eligible"] == ["QB"]
+    assert by_pid["3"]["eligible"] == ["WR"]
+    assert by_pid["6"]["eligible"] == ["RB", "TE", "WR"]
+    # Per-position usage context for the row meta line (QB snap %, RB
+    # touches); players without usage data ship nulls, never a fake stat.
+    assert by_pid["1"]["usage_stat"] == "snap_pct"
+    assert by_pid["1"]["usage_avg"] == 99.0
+    assert by_pid["2"]["usage_stat"] == "touches"
+    assert by_pid["2"]["usage_avg"] == 18.5
+    assert by_pid["3"]["usage_stat"] is None
+    assert by_pid["3"]["usage_avg"] is None
+
+
 def test_unknown_roster_raises(lab_mocks):
     with pytest.raises(LookupError):
         lab_mod.build_lineup_lab_payload(
