@@ -152,6 +152,51 @@ def _retention_table(rows):
     )
 
 
+_BREAKDOWN_ROWS = [
+    ("Headline DAU (current definition)", "headline"),
+    ("Signed-in accounts", "signed_in"),
+    ("Anonymous sessions", "anon_sessions"),
+    ("Anonymous: one-and-done (1 pageview)", "anon_one_and_done"),
+    ("Anonymous: engaged (2+ pageviews, never signed in)", "anon_engaged"),
+    ("Anonymous sessions that also signed in (counted twice)", "anon_linked_sessions"),
+    ("Realistic preview (signed-in + engaged anonymous)", "realistic_preview"),
+    ("Total pageviews", "total_pageviews"),
+]
+
+
+def _breakdown_html(breakdown, top_paths):
+    """Diagnostic DAU decomposition table + top one-and-done paths line.
+
+    breakdown: {"utc": {...}, "ny": {...}} or None when the diagnostic
+    queries failed (the rest of the page must still render).
+    """
+    if not breakdown:
+        return '<p class="muted">Breakdown unavailable.</p>'
+    utc = breakdown.get("utc") or {}
+    ny = breakdown.get("ny") or {}
+    body_rows = []
+    for label, key in _BREAKDOWN_ROWS:
+        body_rows.append(
+            "<tr><th scope='row'>%s</th><td>%d</td><td>%d</td></tr>"
+            % (html.escape(label), int(utc.get(key, 0) or 0), int(ny.get(key, 0) or 0))
+        )
+    table = (
+        '<div class="tablewrap"><table><thead><tr>'
+        "<th>Metric</th><th>UTC day (current chart)</th><th>New York day</th>"
+        "</tr></thead><tbody>%s</tbody></table></div>" % "".join(body_rows)
+    )
+    paths_html = ""
+    if top_paths:
+        listed = ", ".join(
+            "%s: %d" % (html.escape(str(p["path"])), int(p["count"]))
+            for p in top_paths
+        )
+        paths_html = (
+            '<p class="muted">Top one-and-done paths (UTC day): %s</p>' % listed
+        )
+    return table + paths_html
+
+
 def _funnel_html(f):
     stages = [
         ("Visitors", f["visitors"], None),
@@ -288,6 +333,16 @@ def admin_analytics():
     wau_pairs = _a.fill_weekly_gaps(wau, "week", "users", 12)
     signup_pairs = _a.fill_daily_gaps(signups, "date", "signups", 30)
 
+    # DAU breakdown (diagnostic): fetched separately so a failure here can
+    # never take down the rest of the page.
+    try:
+        breakdown = _a.dau_breakdown()
+        breakdown_paths = _a.one_and_done_top_paths(5)
+    except Exception:
+        logger.exception("[analytics] dau breakdown failed")
+        breakdown = None
+        breakdown_paths = []
+
     empty_note = (
         "Event collection just started, so these charts fill in over the coming days. "
         "Signups come from the existing accounts table and are available now."
@@ -313,6 +368,10 @@ def admin_analytics():
     body = "".join([
         _section("Daily active users", _bars_svg(dau_pairs),
                  "Distinct signed-in accounts plus anonymous browsers, last 30 days."),
+        _section("DAU breakdown: today (diagnostic)",
+                 _breakdown_html(breakdown, breakdown_paths),
+                 "What today's headline DAU is made of. Diagnostic only: "
+                 "the chart above still uses the current definition."),
         _section("Weekly active users", _bars_svg(wau_pairs, bar_color="#34c98e"),
                  "Distinct users per week, last 12 weeks."),
         _section("Signups per day", _bars_svg(signup_pairs, bar_color="#f5a623"),

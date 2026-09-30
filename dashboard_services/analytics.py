@@ -289,6 +289,149 @@ def dau_last_30_days() -> List[Dict[str, Any]]:
     return [{"date": str(r["d"]), "users": int(r["users"])} for r in rows]
 
 
+# ── DAU breakdown (diagnostic only; does not change the headline DAU) ───────
+#
+# The headline DAU counts distinct _IDENT values, which mixes three very
+# different things: signed-in accounts (deduplicated, trustworthy),
+# anonymous browser sessions (one per browser/device, and a brand new one
+# for every cookie-less hit), and browsers that appear as BOTH in one day
+# (counted twice). dau_breakdown() decomposes today's headline number so
+# the admin page can show what it is actually made of, under both the
+# current UTC day definition and the New York day.
+
+_BREAKDOWN_KEYS = (
+    "headline",
+    "signed_in",
+    "anon_sessions",
+    "anon_one_and_done",
+    "anon_engaged",
+    "anon_linked_sessions",
+    "realistic_preview",
+    "total_pageviews",
+)
+
+# Day filters are fixed literals (never user input), so interpolating the
+# chosen one into the SQL is safe.
+_DAY_FILTERS = {
+    "utc": "date_trunc('day', created_at) = date_trunc('day', now())",
+    "ny": (
+        "(created_at AT TIME ZONE 'America/New_York')::date"
+        " = (now() AT TIME ZONE 'America/New_York')::date"
+    ),
+}
+
+
+def _breakdown_for_day(day_filter: str) -> Dict[str, int]:
+    """One day's DAU decomposition. Session classification is disjoint:
+
+    a session (non-null session_id) with any signed-in pageview that day is
+    "linked"; a purely anonymous session is "one-and-done" with exactly 1
+    pageview and "engaged" with 2+. So for anonymous sessions:
+    anon_sessions = anon_one_and_done + anon_engaged + anon_linked_sessions.
+    """
+    rows = _fetchall(
+        f"""
+        WITH base AS (
+            SELECT account_id, session_id
+            FROM analytics_events
+            WHERE event = 'pageview' AND {day_filter}
+            {_exclusion_clause()}
+        ),
+        sessions AS (
+            SELECT session_id,
+                   COUNT(*) FILTER (WHERE account_id IS NULL) AS anon_views,
+                   COUNT(*) FILTER (WHERE account_id IS NOT NULL) AS acct_views
+            FROM base
+            WHERE session_id IS NOT NULL
+            GROUP BY session_id
+        )
+        SELECT
+            (SELECT COUNT(DISTINCT {_IDENT}) FROM base) AS headline,
+            (SELECT COUNT(DISTINCT account_id) FROM base) AS signed_in,
+            (SELECT COUNT(*) FROM base) AS total_pageviews,
+            COUNT(*) FILTER (WHERE anon_views > 0) AS anon_sessions,
+            COUNT(*) FILTER (WHERE acct_views = 0 AND anon_views = 1)
+                AS anon_one_and_done,
+            COUNT(*) FILTER (WHERE acct_views = 0 AND anon_views >= 2)
+                AS anon_engaged,
+            COUNT(*) FILTER (WHERE anon_views > 0 AND acct_views > 0)
+                AS anon_linked_sessions,
+            (SELECT COUNT(DISTINCT account_id) FROM base)
+                + COUNT(*) FILTER (WHERE acct_views = 0 AND anon_views >= 2)
+                AS realistic_preview
+        FROM sessions
+        """
+    )
+    if not rows:
+        return {k: 0 for k in _BREAKDOWN_KEYS}
+    r = rows[0]
+    return {k: int(r[k] or 0) for k in _BREAKDOWN_KEYS}
+
+
+def dau_breakdown() -> Dict[str, Dict[str, int]]:
+    """Today's DAU decomposed, for the UTC day and the New York day.
+
+    Returns {"utc": {...}, "ny": {...}} with the _BREAKDOWN_KEYS metrics in
+    each. The "utc" headline uses exactly the _IDENT definition and day
+    grouping of dau_last_30_days(), so it matches the chart's today bar.
+    "realistic_preview" previews a stricter definition: distinct signed-in
+    accounts plus engaged anonymous sessions that never signed in that day.
+    Diagnostic only: the headline DAU/WAU definitions are unchanged.
+    """
+    return {
+        "utc": _breakdown_for_day(_DAY_FILTERS["utc"]),
+        "ny": _breakdown_for_day(_DAY_FILTERS["ny"]),
+    }
+
+
+def one_and_done_top_paths(limit: int = 5) -> List[Dict[str, Any]]:
+    """Top paths among today's (UTC) one-and-done anonymous sessions.
+
+    Aggregate counts only (path + session count), no session ids or other
+    per-visitor detail. Shows where single-hit anonymous traffic lands,
+    which is where cookie-less bots and preview fetchers show up.
+    """
+    try:
+        n = max(1, int(limit))
+    except (TypeError, ValueError):
+        n = 5
+    rows = _fetchall(
+        f"""
+        WITH base AS (
+            SELECT account_id, session_id, path
+            FROM analytics_events
+            WHERE event = 'pageview' AND {_DAY_FILTERS["utc"]}
+            {_exclusion_clause()}
+        ),
+        sessions AS (
+            SELECT session_id,
+                   COUNT(*) FILTER (WHERE account_id IS NULL) AS anon_views,
+                   COUNT(*) FILTER (WHERE account_id IS NOT NULL) AS acct_views
+            FROM base
+            WHERE session_id IS NOT NULL
+            GROUP BY session_id
+        ),
+        one_done AS (
+            SELECT session_id FROM sessions
+            WHERE acct_views = 0 AND anon_views = 1
+        )
+        SELECT b.path AS path, COUNT(*) AS n
+        FROM base b
+        JOIN one_done o ON o.session_id = b.session_id
+        WHERE b.account_id IS NULL AND b.path IS NOT NULL
+        GROUP BY b.path
+        ORDER BY n DESC, b.path
+        LIMIT %s
+        """,
+        (n,),
+    )
+    return [
+        {"path": str(r["path"]), "count": int(r["n"])}
+        for r in rows
+        if r["path"]
+    ]
+
+
 def wau_last_12_weeks() -> List[Dict[str, Any]]:
     """Distinct users per ISO week for the last 12 weeks."""
     rows = _fetchall(
