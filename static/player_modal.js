@@ -5065,7 +5065,7 @@ const _ADV_METRIC_DESCS = {
   elusive_rating: "PFF metric for yards created after contact and missed tackles forced, independent of blocking.",
   pff_rushing_grade: "PFF's rushing grade (0-100).",
   explosive_runs_10_plus: "Count of runs gaining 10 or more yards in the season (PFF). Raw explosive-play volume.",
-  avoided_tackles: "Tackles avoided (missed, broken, or forced) on rush attempts per PFF. Rewards runners who make defenders miss.",
+  avoided_tackles: "Tackles broken on rush attempts (PFR charting via nflverse). Rewards runners who power through or slip contact.",
   total_rush_tds: "Total rushing touchdowns in the season.",
   route_participation: "Percent of the team's pass-play snaps on which the WR/TE ran a route.",
   target_share: "Percent of the team's total targets directed at this player.",
@@ -5154,7 +5154,7 @@ const _ADV_METRIC_DESCS = {
   'Breakaway %': "Percent of rushing yards that came on runs of 15+ yards; explosiveness.",
   'Explosive Runs': "Count of runs gaining 10 or more yards in the season (PFF). Raw explosive-play volume.",
   'Elusive Rating': "PFF metric for yards created after contact and missed tackles forced, independent of blocking.",
-  'Avoided Tackles': "Tackles avoided (missed, broken, or forced) on rush attempts per PFF. Rewards runners who make defenders miss.",
+  'Broken Tackles': "Tackles broken on rush attempts (PFR charting via nflverse). Rewards runners who power through or slip contact.",
   'Catch Rate': "Percent of targets caught.",
   'Yds/Route Run': "Receiving yards earned per route run (from PFF). Elite WRs are typically 2.0+.",
   'Drop Rate': "Percent of catchable targets dropped. Lower is better.",
@@ -5406,7 +5406,7 @@ function buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive, counts, b
     }
     if (metrics.avoided_tackles != null && metrics.avoided_tackles > 0) {
       const v = metrics.avoided_tackles;
-      defs.push({ label: 'Avoided Tackles', fill: Math.min(v / 30 * 100, 100), display: v.toFixed(0), key: 'avoided_tackles', sub: _rankSub('avoided_tackles'), cat: 'Rushing' });
+      defs.push({ label: 'Broken Tackles', fill: Math.min(v / 30 * 100, 100), display: v.toFixed(0), key: 'avoided_tackles', sub: _rankSub('avoided_tackles'), cat: 'Rushing' });
     }
     if (metrics.yards_per_carry != null) {
       const v = metrics.yards_per_carry;
