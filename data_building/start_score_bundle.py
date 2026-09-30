@@ -327,7 +327,7 @@ def build_start_score_bundles(season: int = None, week: int = None) -> dict:
     from dashboard_services.api import get_nfl_state
     from dashboard_services.db import get_conn
     from dashboard_services.team_play_volume import load_team_play_volume
-    from data_building.fetch_projections import PROJ_VARIANTS, fetch_sleeper_season_ppg_variants
+    from data_building.fetch_projections import PROJ_VARIANTS
     from data_building.weekly_metrics import get_usage_trends
     from utils.consistency import BLEND_FULL_SEASON, blended_consistency_profile
     from utils.fantasy_scoring import weekly_projection_points
@@ -388,10 +388,6 @@ def build_start_score_bundles(season: int = None, week: int = None) -> dict:
             week_proj_map = load_week_projection(season, week) or {}
         except Exception:
             week_proj_map = {}
-        try:
-            season_ppg_variants = fetch_sleeper_season_ppg_variants(season, players_index) or {}
-        except Exception:
-            season_ppg_variants = {}
 
         # ── Player universe: index fantasy positions + projection entries ───
         universe: Dict[str, dict] = {}
@@ -458,27 +454,26 @@ def build_start_score_bundles(season: int = None, week: int = None) -> dict:
             oline_index = _oline_index_for(season, oline_ratings, team, pos)
             pace = expected_plays_context(team_play_volume, team, opponent, tpv_nfl_avg) or {}
             role_conf = role_confidence_from_trend(ut)
-            week_entry = week_proj_map.get(pid)
-            if not isinstance(week_entry, dict):
-                week_entry = week_proj_map.get(str(pid))
             for variant in variants:
                 pv = per_variant[variant]
                 scoring = pv["scoring"]
-                # Projection: weekly file variant value first (same
-                # weekly_projection_points selection the page uses), season
-                # median PPG fallback.
+                # Projection: this week's Sleeper line only, scored with the
+                # variant's settings (same weekly_projection_points selection
+                # the page uses: week map + player id). A player absent from
+                # the week file, or present with an explicit 0, has no line
+                # this week (bye, doubtful/out, inactive) -- Sleeper shows
+                # 0.0 for them. Never substitute season PPG here: that gave
+                # zeroed-out players their full projection and the start
+                # nod over healthy players. Season PPG stays on the bundle
+                # as its own field (season_ppg below) for form context.
                 proj_pts = 0.0
                 try:
-                    if isinstance(week_entry, dict):
-                        proj_pts = float(weekly_projection_points(
-                            week_entry, scoring, pos) or 0.0)
+                    _wk_pts = weekly_projection_points(
+                        week_proj_map, pid, scoring, pos)
+                    if _wk_pts is not None:
+                        proj_pts = float(_wk_pts)
                 except Exception:
                     proj_pts = 0.0
-                if not proj_pts:
-                    try:
-                        proj_pts = float((season_ppg_variants.get(pid) or {}).get(variant) or 0.0)
-                    except (TypeError, ValueError):
-                        proj_pts = 0.0
                 season_ppg, recent_ppg = _season_ppg_recent(pv["weekstat"], pid)
                 bust_rate = None
                 try:

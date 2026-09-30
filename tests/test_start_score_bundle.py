@@ -177,8 +177,13 @@ def _patch_build_deps(monkeypatch, tmp_path):
               "6pt_tep": 14.2},
     })
     import data_building.fetch_projections as fp
+    # Season PPG must never substitute for a weekly line (a zeroed/absent
+    # week means Sleeper has the player at 0.0). Loud sentinel: if the
+    # season fallback ever comes back, bundle proj_pts becomes 99.0 and
+    # the assertions below fail.
     monkeypatch.setattr(fp, "fetch_sleeper_season_ppg_variants",
-                        lambda season, players_index=None: {})
+                        lambda season, players_index=None: {
+                            "1": {"ppr": 99.0}, "2": {"ppr": 99.0}})
     import utils.start_sit_context as ssc
     monkeypatch.setattr(ssc, "expected_plays_context",
                         lambda teams, team, opp, avg: {
@@ -186,8 +191,16 @@ def _patch_build_deps(monkeypatch, tmp_path):
                             "league_average_plays": 63.0})
     monkeypatch.setattr(ssc, "role_confidence_from_trend", lambda ut: 0.8)
     import utils.fantasy_scoring as fs
-    monkeypatch.setattr(fs, "weekly_projection_points",
-                        lambda entry, scoring, pos="": float(entry.get("ppr") or 0))
+    # Mirror the real weekly_projection_points signature (week map + pid):
+    # the old stub took the single entry, which is how the batch's wrong
+    # call site stayed hidden -- it raised TypeError on the real function
+    # for every player and silently fell back to season PPG.
+    def _stub_wpp(week_map, pid, scoring, pos=""):
+        entry = (week_map or {}).get(str(pid))
+        if not isinstance(entry, dict):
+            return None
+        return float(entry.get("ppr") or 0)
+    monkeypatch.setattr(fs, "weekly_projection_points", _stub_wpp)
     monkeypatch.setattr(ssb, "_variant_week_points",
                         lambda season, scoring: ({"1": {"sum": 40.0, "n": 4,
                                                        "last4": [10.0, 10.0, 10.0, 10.0]}},
@@ -248,6 +261,42 @@ def test_build_writes_bundles_for_all_variants(tmp_path, monkeypatch):
     w2 = by_key[("2", "ppr")]
     assert w2["proj_pts"] == 0.0
     assert w2["usage_delta"] is None
+
+
+def test_build_zeroed_and_absent_players_stay_zero(tmp_path, monkeypatch):
+    """Sleeper zeroes a doubtful/out player's week by dropping their stat
+    line (ADP-only row, filtered out of the cache) or publishing an
+    explicit 0. Both must bundle as proj_pts 0.0 -- never refilled from
+    season PPG -- so they cannot outrank healthy players on Start/Sit."""
+    _patch_build_deps(monkeypatch, tmp_path)
+    import utils.utils as uu
+    # Player 1: explicit 0.0 line this week. Player 2: absent entirely.
+    monkeypatch.setattr(uu, "load_week_projection", lambda s, w: {
+        "1": {"raw_stats": {}, "ppr": 0.0, "half_ppr": 0.0, "std": 0.0,
+              "tep": 0.0, "6pt_ppr": 0.0, "6pt_half": 0.0, "6pt_tep": 0.0},
+    })
+    conns = []
+
+    def _fake_get_conn(*a, **k):
+        from contextlib import contextmanager
+
+        @contextmanager
+        def _cm():
+            c = _FakeConn()
+            conns.append(c)
+            yield c
+        return _cm()
+
+    monkeypatch.setattr("dashboard_services.db.get_conn", _fake_get_conn)
+
+    summary = ssb.build_start_score_bundles()
+    assert summary["ok"], summary
+    by_key = {(r[2], r[3]): json.loads(r[4]) for r in conns[-1].written}
+    for variant in ssb.VARIANT_SCORING:
+        assert by_key[("1", variant)]["proj_pts"] == 0.0
+        assert by_key[("2", variant)]["proj_pts"] == 0.0
+    # Season form is still carried as its own context field.
+    assert by_key[("1", "ppr")]["season_ppg"] == 10.0
 
 
 def test_build_never_raises_without_db(monkeypatch):
