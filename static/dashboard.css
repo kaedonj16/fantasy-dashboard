@@ -43336,3 +43336,349 @@ table.rz-bs-table thead th:first-child {
 .rzm-play-side.is-you { background: var(--accent-soft); color: var(--accent); }
 .rzm-play-text { font-size: 13px; color: var(--rz-muted); line-height: 1.45; }
 .rzm-play-meta { font-size: 11px; color: var(--text-subtle); }
+
+/* ============================================================================
+   DARK MODE AUDIT FIXES (2026-09-30)
+   Dark variants for components that shipped with hardcoded light colors.
+   Pattern follows the existing house style: translucent tint backgrounds
+   (rgba) keep working on the dark ground; text colors move to the
+   brightened 400-scale (matching --win #4ade80 / --loss #f87171).
+   ============================================================================ */
+
+/* ---- 1. Systemic: native dark scrollbars and form controls ---- */
+:root {
+    color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+    color-scheme: dark;
+}
+
+[data-theme="dark"] .scroll-box {
+    scrollbar-color: #334155 #0b1220;
+}
+
+[data-theme="dark"] .scroll-box::-webkit-scrollbar-track {
+    background: #0b1220;
+}
+
+[data-theme="dark"] .scroll-box::-webkit-scrollbar-thumb {
+    background-color: #334155;
+}
+
+[data-theme="dark"] .scroll-box::-webkit-scrollbar-thumb:hover {
+    background-color: #475569;
+}
+
+/* ---- 2. Trade Calculator (.otc-*) ---- */
+[data-theme="dark"] .otc-team-selector {
+    background: rgba(148, 163, 184, .07);
+    border-color: var(--border);
+}
+
+[data-theme="dark"] .otc-team-pill {
+    background: rgba(148, 163, 184, .14);
+    color: #cbd5e1;
+}
+
+[data-theme="dark"] .otc-team-pill:hover {
+    background: rgba(148, 163, 184, .2);
+}
+
+[data-theme="dark"] .otc-page-badge {
+    background: rgba(96, 165, 250, .14);
+    color: #93c5fd;
+}
+
+[data-theme="dark"] .otc-dropdown-rank-inline {
+    background: rgba(148, 163, 184, .14);
+    color: #94a3b8;
+}
+
+[data-theme="dark"] .otc-dropdown-item[data-position="PICK"] {
+    background: linear-gradient(135deg, rgba(74, 144, 226, .16) 0%, rgba(74, 144, 226, .07) 100%);
+    border-left-color: #4a90e2;
+}
+
+[data-theme="dark"] .otc-dropdown-item[data-position="PICK"]:hover {
+    background: linear-gradient(135deg, rgba(74, 144, 226, .22) 0%, rgba(74, 144, 226, .12) 100%);
+}
+
+[data-theme="dark"] .otc-mini-tab {
+    color: #94a3b8;
+}
+
+[data-theme="dark"] .otc-mini-tab:hover {
+    color: var(--text);
+    background: rgba(148, 163, 184, .16);
+}
+
+[data-theme="dark"] #teamsAnalyticsTabs .tab-btn:hover {
+    background: rgba(148, 163, 184, .16);
+}
+
+[data-theme="dark"] .otc-slot-empty,
+[data-theme="dark"] .otc-slot-empty-sub {
+    color: #94a3b8;
+}
+
+[data-theme="dark"] .otc-team-label,
+[data-theme="dark"] .otc-value-sub,
+[data-theme="dark"] .otc-summary-sub,
+[data-theme="dark"] .otc-chip-meta,
+[data-theme="dark"] .otc-chip-remove,
+[data-theme="dark"] .otc-mini-sub,
+[data-theme="dark"] .otc-dropdown-sub,
+[data-theme="dark"] .otc-balance-labels,
+[data-theme="dark"] .otc-team-owner-tag-muted,
+[data-theme="dark"] .dvt-tier-depth,
+[data-theme="dark"] .viewer-toggle,
+[data-theme="dark"] .os-section-subtitle,
+[data-theme="dark"] .os-waiver-sub,
+[data-theme="dark"] .pick-via {
+    color: #94a3b8;
+}
+
+[data-theme="dark"] .otc-guest-link {
+    color: #94a3b8 !important;
+}
+
+[data-theme="dark"] .otc-guest-link:hover {
+    color: #cbd5e1 !important;
+}
+
+[data-theme="dark"] .otc-view-all-link:hover {
+    color: #60a5fa !important;
+}
+
+[data-theme="dark"] .otc-balance-fair-label {
+    color: #93c5fd;
+}
+
+[data-theme="dark"] .otc-team-owner-tag {
+    color: #93c5fd;
+}
+
+[data-theme="dark"] .otc-inline-player {
+    background: rgba(148, 163, 184, .14);
+    color: #94a3b8;
+}
+
+[data-theme="dark"] .otc-sugg-pkg-value.fair,
+[data-theme="dark"] .otc-mini-row.up .otc-mini-delta,
+[data-theme="dark"] .otc-chip-delta-positive,
+[data-theme="dark"] .otc-share-btn-success {
+    color: #4ade80;
+}
+
+[data-theme="dark"] .otc-sugg-pkg-value.overpay,
+[data-theme="dark"] .otc-mini-row.down .otc-mini-delta,
+[data-theme="dark"] .otc-chip-delta-negative {
+    color: #f87171;
+}
+
+[data-theme="dark"] .otc-sugg-pkg-value.great {
+    color: #60a5fa;
+}
+
+[data-theme="dark"] .otc-delta.po {
+    color: #a5b4fc;
+}
+
+/* ---- 3. Pastel status chips ---- */
+[data-theme="dark"] .chip.diff-pos {
+    background: rgba(74, 222, 128, .14);
+    border-color: rgba(74, 222, 128, .35);
+    color: #86efac;
+}
+
+[data-theme="dark"] .chip.diff-neg {
+    background: rgba(248, 113, 113, .15);
+    border-color: rgba(248, 113, 113, .35);
+    color: #fca5a5;
+}
+
+[data-theme="dark"] .outcome-win,
+[data-theme="dark"] .outcome-got,
+[data-theme="dark"] .io.add {
+    background: rgba(74, 222, 128, .14);
+    color: #86efac;
+}
+
+[data-theme="dark"] .outcome-loss,
+[data-theme="dark"] .outcome-gave,
+[data-theme="dark"] .io.drop {
+    background: rgba(248, 113, 113, .15);
+    color: #fca5a5;
+}
+
+[data-theme="dark"] .outcome-even {
+    background: rgba(148, 163, 184, .14);
+    color: #cbd5e1;
+}
+
+[data-theme="dark"] .urgency-high {
+    background: rgba(248, 113, 113, .15);
+    color: #fca5a5;
+}
+
+[data-theme="dark"] .urgency-medium {
+    background: rgba(251, 191, 36, .14);
+    color: #fcd34d;
+}
+
+[data-theme="dark"] .urgency-low {
+    background: rgba(74, 222, 128, .14);
+    color: #86efac;
+}
+
+[data-theme="dark"] .suggestion-asset.give {
+    background: rgba(248, 113, 113, .15);
+    color: #fca5a5;
+}
+
+[data-theme="dark"] .suggestion-asset.get {
+    background: rgba(74, 222, 128, .14);
+    color: #86efac;
+}
+
+[data-theme="dark"] .depth-danger {
+    background: rgba(248, 113, 113, .1);
+}
+
+[data-theme="dark"] .depth-danger .scarcity-tier {
+    color: #fca5a5;
+}
+
+[data-theme="dark"] .depth-caution {
+    background: rgba(251, 191, 36, .1);
+}
+
+[data-theme="dark"] .depth-caution .scarcity-tier {
+    color: #fcd34d;
+}
+
+[data-theme="dark"] .streak-cold .chip-streak {
+    background: rgba(96, 165, 250, .14);
+    color: #93c5fd;
+}
+
+[data-theme="dark"] .streak-hot .chip-streak {
+    background: rgba(248, 113, 113, .14);
+    color: #fca5a5;
+}
+
+/* ---- 4. Front Office grades / trends / roles ---- */
+[data-theme="dark"] .for-grade-a,
+[data-theme="dark"] .for-role-starter,
+[data-theme="dark"] .for-trend-up {
+    color: #4ade80;
+}
+
+[data-theme="dark"] .for-grade-b {
+    color: #a3e635;
+}
+
+[data-theme="dark"] .for-grade-c {
+    color: #facc15;
+}
+
+[data-theme="dark"] .for-grade-d,
+[data-theme="dark"] .for-inj {
+    color: #fb923c;
+}
+
+[data-theme="dark"] .for-grade-f,
+[data-theme="dark"] .for-trend-down {
+    color: #f87171;
+}
+
+[data-theme="dark"] .for-role-depth {
+    color: #94a3b8;
+}
+
+/* ---- 5. Small utility chips and badges ---- */
+[data-theme="dark"] .badge {
+    background: rgba(129, 140, 248, .16);
+    color: #a5b4fc;
+}
+
+[data-theme="dark"] .highlight-box {
+    background: rgba(148, 163, 184, .1);
+}
+
+[data-theme="dark"] .link-pill {
+    background: rgba(148, 163, 184, .12);
+}
+
+[data-theme="dark"] .link-pill:hover {
+    background: rgba(148, 163, 184, .2);
+}
+
+[data-theme="dark"] .changelog-tag-fix {
+    background: rgba(251, 191, 36, .14);
+    color: #fcd34d;
+}
+
+[data-theme="dark"] .luck-chip.luck-neu {
+    background: rgba(148, 163, 184, .14);
+}
+
+[data-theme="dark"] .game-log-proj-badge {
+    color: #a5b4fc;
+}
+
+/* ---- 6. Saturated text colors that wash out on the dark ground ---- */
+[data-theme="dark"] .opt-pos-qb { color: #60a5fa; }
+[data-theme="dark"] .opt-pos-rb { color: #4ade80; }
+[data-theme="dark"] .opt-pos-wr { color: #fbbf24; }
+[data-theme="dark"] .opt-pos-te { color: #a78bfa; }
+
+[data-theme="dark"] .wt-contend .grade-window-label,
+[data-theme="dark"] .wt-contender .grade-window-label { color: #4ade80; }
+[data-theme="dark"] .wt-bubble .grade-window-label,
+[data-theme="dark"] .wt-win-now .grade-window-label { color: #fbbf24; }
+[data-theme="dark"] .wt-long-shot .grade-window-label,
+[data-theme="dark"] .wt-holding .grade-window-label { color: #94a3b8; }
+[data-theme="dark"] .wt-aging-contender .grade-window-label { color: #a3e635; }
+[data-theme="dark"] .wt-contender-window .grade-window-label { color: #60a5fa; }
+[data-theme="dark"] .wt-2yr .grade-window-label { color: #818cf8; }
+[data-theme="dark"] .wt-rising .grade-window-label { color: #a78bfa; }
+[data-theme="dark"] .wt-retooling .grade-window-label { color: #fb923c; }
+[data-theme="dark"] .wt-rebuilding .grade-window-label { color: #f87171; }
+[data-theme="dark"] .wt-full-rebuild .grade-window-label { color: #ef4444; }
+
+[data-theme="dark"] .rz-game-pill.is-live .rz-gp-status { color: #4ade80; }
+
+[data-theme="dark"] .team-strength-card .tc-index-num.dn,
+[data-theme="dark"] .team-strength-card .tc-flag.w { color: #f87171; }
+
+[data-theme="dark"] .settings-menu-logout { color: #f87171; }
+
+[data-theme="dark"] .analytics-bar-val.analytics-bar-neg { color: #f87171; }
+
+[data-theme="dark"] .watchlist-clear-btn:hover,
+[data-theme="dark"] .wl-page-remove:hover,
+[data-theme="dark"] .sched-remove:hover { color: #f87171; }
+
+[data-theme="dark"] .game-log-matchup.mt4 { color: #f87171; }
+[data-theme="dark"] .game-log-table-total td:nth-child(2) { color: #94a3b8; }
+
+[data-theme="dark"] .podium .slot.second .podium-header h3 { color: #94a3b8; }
+[data-theme="dark"] .podium .slot.third .podium-header h3 { color: #fb923c; }
+
+[data-theme="dark"] .rank-third { color: #fbbf24; }
+[data-theme="dark"] .rivalry-chip-streak { color: #fbbf24; }
+[data-theme="dark"] .rivalry-chip-blowout { color: #a5b4fc; }
+
+/* ---- 7. Muted text that sinks below the dark ground ---- */
+[data-theme="dark"] .card-collapse-toggle { color: #94a3b8; }
+[data-theme="dark"] .card-collapse-toggle:hover { color: #e5e7eb; }
+
+[data-theme="dark"] .legend-label,
+[data-theme="dark"] .home-bullets { color: var(--text); }
+
+[data-theme="dark"] .history-table thead th {
+    border-bottom-color: var(--border);
+    color: var(--text-subtle);
+}
