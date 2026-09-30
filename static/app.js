@@ -4569,49 +4569,57 @@ function bindOnce(el, key, type, handler, options) {
 
   function updatePlotlyChartsTheme() {
     if (typeof Plotly === 'undefined') return;
-    
-    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'plotly_dark' : 'plotly_white';
-    
-    // Update team modal charts if they exist
-    const weeklyChart = document.getElementById('teamWeeklyChart');
-    const radarChart = document.getElementById('teamRadarChart');
-    
+
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
     const _bt = window.brandPlotlyTheme ? window.brandPlotlyTheme() : {};
-    if (weeklyChart) {
-      const textColor = _bt.text || '#7c8798';
-      const bgColor = _bt.hoverBg || '#ffffff';
-      const borderColor = _bt.hoverBorder || '#e5e7eb';
+    const textColor = _bt.text || '#7c8798';
+    const hoverBg = _bt.hoverBg || (isDark ? '#0f172a' : '#ffffff');
+    const hoverBorder = _bt.hoverBorder || (isDark ? '#334155' : '#e5e7eb');
+    const gridColor = _bt.grid || (isDark ? 'rgba(148,163,184,0.14)' : 'rgba(15,23,42,0.08)');
+    const lineColor = isDark ? '#64748b' : '#94a3b8';
 
-      Plotly.relayout(weeklyChart, {
-        template: theme,
-        'paper_bgcolor': 'rgba(0,0,0,0)',
-        'plot_bgcolor': 'rgba(0,0,0,0)',
-        'hoverlabel.bgcolor': bgColor,
-        'hoverlabel.bordercolor': borderColor,
-        'hoverlabel.font.color': textColor
-      });
-    }
+    // Base theme: transparent plot/paper, themed hover labels, readable font.
+    // Shared by every Plotly chart so a mid-session toggle never strands
+    // a chart in the old theme.
+    const baseRelayout = {
+      'paper_bgcolor': 'rgba(0,0,0,0)',
+      'plot_bgcolor': 'rgba(0,0,0,0)',
+      'hoverlabel.bgcolor': hoverBg,
+      'hoverlabel.bordercolor': hoverBorder,
+      'hoverlabel.font.color': textColor,
+      'font.color': textColor
+    };
 
-    if (radarChart) {
-      const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-      const textColor = _bt.text || '#7c8798';
-      const gridColor = _bt.grid || (isDark ? 'rgba(148,163,184,0.14)' : 'rgba(15,23,42,0.08)');
-      const lineColor = isDark ? '#64748b' : '#94a3b8';
-      
-      Plotly.relayout(radarChart, {
-        template: theme,
-        'paper_bgcolor': 'rgba(0,0,0,0)',
-        'plot_bgcolor': 'rgba(0,0,0,0)',
-        'polar.radialaxis.tickcolor': textColor,
-        'polar.radialaxis.gridcolor': gridColor,
-        'polar.radialaxis.linecolor': lineColor,
-        'polar.angularaxis.tickcolor': textColor,
-        'polar.angularaxis.gridcolor': gridColor,
-        'polar.angularaxis.linecolor': lineColor,
-        'polar.bgcolor': 'rgba(0,0,0,0)',
-        'font.color': textColor
-      });
-    }
+    // Cartesian chrome shared by weekly/bar/scatter-style charts.
+    const axisRelayout = {
+      'xaxis.tickfont.color': textColor,
+      'xaxis.gridcolor': gridColor,
+      'xaxis.linecolor': lineColor,
+      'xaxis.zerolinecolor': lineColor,
+      'yaxis.tickfont.color': textColor,
+      'yaxis.gridcolor': gridColor,
+      'yaxis.linecolor': lineColor,
+      'yaxis.zerolinecolor': lineColor
+    };
+
+    // Radar/polar chrome (team modal radar chart).
+    const polarRelayout = {
+      'polar.bgcolor': 'rgba(0,0,0,0)',
+      'polar.radialaxis.tickcolor': textColor,
+      'polar.radialaxis.gridcolor': gridColor,
+      'polar.radialaxis.linecolor': lineColor,
+      'polar.angularaxis.tickcolor': textColor,
+      'polar.angularaxis.gridcolor': gridColor,
+      'polar.angularaxis.linecolor': lineColor
+    };
+
+    // Restyle every Plotly chart on the page, not just the team-modal pair.
+    document.querySelectorAll('.js-plotly-plot').forEach((gd) => {
+      try {
+        const relayout = Object.assign({}, baseRelayout, axisRelayout, polarRelayout);
+        Plotly.relayout(gd, relayout);
+      } catch (e) { /* leave a chart that cannot be restyled untouched */ }
+    });
   }
 
   function updateThemeIcons() {
