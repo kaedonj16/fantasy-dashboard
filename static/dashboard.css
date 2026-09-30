@@ -42277,6 +42277,20 @@ a, button, [role="button"], [role="tab"], summary, label,
 }
 .wv-cx-row-wrap + .wv-cx-row-wrap { border-top: 1px solid var(--grid); }
 .wv-cx-row-wrap.wv-cx-expanded { background: var(--bg-alt); }
+/* Quick-compare: once the first player is picked, each Start/Sit card shows a
+   compare button right on the row, so the second pick needs no expanding. */
+.wv-cx-rowline { display: flex; align-items: center; }
+.wv-cx-rowline > .wv-cx-row { flex: 1 1 auto; width: auto; min-width: 0; }
+.wv-cx-quickcmp {
+  flex: 0 0 auto; align-self: center;
+  margin: 0 10px 0 2px; padding: 9px 13px;
+  border-radius: 12px; border: 1.5px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--accent); font-size: 13px; font-weight: 700; line-height: 1;
+  display: flex; align-items: center; justify-content: center; cursor: pointer;
+  white-space: nowrap; -webkit-tap-highlight-color: transparent;
+}
+.wv-cx-quickcmp.is-picked { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 .wv-cx-badge {
   flex-shrink: 0; font-size: 10.5px; font-weight: 800; letter-spacing: 0.6px;
   padding: 5px 9px; border-radius: 8px; white-space: nowrap;
