@@ -16,7 +16,13 @@ Root causes in loadStrategyView (static/app.js):
    403 early returns, so that key early-returned forever afterwards.
 
 Behavior is covered by tests/strategy_view_harness.mjs, which extracts the
-shipped function by source and drives it with a fake DOM / fake fetch.
+shipped functions by source and drives them with a fake DOM / fake fetch.
+
+Progressive loading (later the same day): the loader fetches the analytical
+slate (phase=slate), paints it, then resolves each player group's sim
+numbers via /api/trade-intel/archetype-suggestion-sim. The contracts below
+pin that shape: slate first, finalize (final order + memory cache) only
+once every group settles, and never with a failed group outstanding.
 """
 from __future__ import annotations
 
@@ -104,3 +110,39 @@ def test_context_change_clears_inflight_flags():
     assert m, "_onContextChangePatch() not found in app.js"
     assert "_strategyCache = {};" in m.group(1)
     assert "_strategyInflight = {};" in m.group(1)
+
+
+def test_loader_fetches_slate_phase_then_per_group_sims():
+    """Progressive loading: the loader's first fetch is the analytical slate
+    (phase=slate) and per-group sim numbers come from the sim endpoint."""
+    body = _loader_body()
+    assert "phase=slate" in body
+    assert "_strategySimFanout(_strategySimJob)" in body
+    assert "archetype-suggestion-sim" in APP_JS
+    assert "function _strategySimFanout(job)" in APP_JS
+    assert "function _strategySimFinalize(job)" in APP_JS
+
+
+def test_finalize_caches_only_when_no_group_failed():
+    """The completed result joins the memory cache only after every group
+    settles; a failed group returns early so partial numbers are never
+    cached as final."""
+    m = re.search(
+        r"function _strategySimFinalize\(job\) \{(.*?)\n    \}\n",
+        APP_JS,
+        re.DOTALL,
+    )
+    assert m, "_strategySimFinalize() not found in app.js"
+    body = m.group(1)
+    err_guard = body.index('s === "error"')
+    cache_write = body.index("_strategyCache[job.cacheKey]")
+    assert err_guard < cache_write, (
+        "the error guard must run before the finalize cache write"
+    )
+
+
+def test_renderers_show_explicit_sim_states_not_fake_zeros():
+    """Pending groups render a shimmer state and failed groups a retry
+    button (data-sim-retry), in both the impact table and the cards."""
+    assert APP_JS.count("data-sim-retry") >= 3  # impact badge, card badge, delegated handlers
+    assert "_strategyGroupState" in APP_JS

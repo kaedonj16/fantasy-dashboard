@@ -30635,6 +30635,13 @@ def api_archetype_suggestions():
     viewer_roster_id = str(request.args.get("viewer_roster_id") or "").strip()
     league_type = str(request.args.get("league_type") or "1qb").strip().lower()
     league_size = int(request.args.get("league_size") or 10)
+    # Progressive loading: phase=slate returns the analytical slate instantly
+    # (sim fields pending); the per-group sim numbers come from
+    # /api/trade-intel/archetype-suggestion-sim. Default stays the full
+    # one-shot response for non-progressive callers.
+    phase = str(request.args.get("phase") or "full").strip().lower()
+    if phase not in ("full", "slate"):
+        return jsonify({"error": "phase must be full|slate"}), 400
 
     untouchable_raw = str(request.args.get("untouchable_ids") or "").strip()
     untouchable_ids = set(untouchable_raw.split(",")) - {""} if untouchable_raw else None
@@ -30662,8 +30669,74 @@ def api_archetype_suggestions():
             league_size=league_size,
             ctx=ctx,
             untouchable_ids=untouchable_ids,
+            phase=phase,
         )
         # Trade Hub: shared server-computed "Why this" line on every suggestion.
+        # Pending rows skip it: the line cites playoff impact, which is not
+        # known until that group's sim phase completes.
+        try:
+            from dashboard_services.trade_hub import why_line_for_suggestion
+            for s in results.get("suggestions") or []:
+                if isinstance(s, dict) and not s.get("why_line") and not s.get("sim_pending"):
+                    s["why_line"] = why_line_for_suggestion(s)
+        except Exception:
+            pass
+        return jsonify(results)
+    except Exception as exc:
+        return _api_err("Archetype suggestions failed", exc)
+
+
+@app.route("/api/trade-intel/archetype-suggestion-sim")
+@limiter.limit("30 per minute")
+def api_archetype_suggestion_sim():
+    """
+    GET /api/trade-intel/archetype-suggestion-sim
+    Progressive loading, sim phase: returns the suggestion rows for ONE
+    group_key (one headline player) with their Monte Carlo numbers filled in,
+    exactly as the full archetype-suggestions response computes them.
+    Premium-gated. Same league params as archetype-suggestions plus
+    group_key (from the slate response's groups list).
+    """
+    archetype = str(request.args.get("archetype") or "contending").strip().lower()
+    platform = str(request.args.get("platform") or "sleeper").strip()
+    league_id = str(request.args.get("league_id") or "").strip()
+    season = int(request.args.get("season") or datetime.now().year)
+    viewer_roster_id = str(request.args.get("viewer_roster_id") or "").strip()
+    league_type = str(request.args.get("league_type") or "1qb").strip().lower()
+    league_size = int(request.args.get("league_size") or 10)
+    group_key = str(request.args.get("group_key") or "").strip()
+
+    untouchable_raw = str(request.args.get("untouchable_ids") or "").strip()
+    untouchable_ids = set(untouchable_raw.split(",")) - {""} if untouchable_raw else None
+
+    if not league_id or not viewer_roster_id:
+        return jsonify({"error": "league_id and viewer_roster_id required"}), 400
+    if not group_key:
+        return jsonify({"error": "group_key required"}), 400
+
+    if archetype not in ("contending", "rebuilding", "consolidate", "distribute"):
+        return jsonify({"error": "archetype must be contending|rebuilding|consolidate|distribute"}), 400
+
+    user_id = session.get("viewer_username") or None
+    if not has_premium_for_viewer(user_id, session.get("viewer_user_id"), league_id, platform, season):
+        return jsonify({"paywall": True, "error": "Premium required"}), 403
+
+    try:
+        from dashboard_services.archetype_engine import get_archetype_suggestions
+        ctx = get_league_ctx_from_cache(platform=platform, league_id=league_id, season=season)
+        results = get_archetype_suggestions(
+            archetype=archetype,
+            platform=platform,
+            league_id=league_id,
+            season=season,
+            viewer_roster_id=viewer_roster_id,
+            league_type=league_type,
+            league_size=league_size,
+            ctx=ctx,
+            untouchable_ids=untouchable_ids,
+            phase="sim",
+            group_key=group_key,
+        )
         try:
             from dashboard_services.trade_hub import why_line_for_suggestion
             for s in results.get("suggestions") or []:
@@ -30673,7 +30746,7 @@ def api_archetype_suggestions():
             pass
         return jsonify(results)
     except Exception as exc:
-        return _api_err("Archetype suggestions failed", exc)
+        return _api_err("Archetype suggestion sim failed", exc)
 
 
 @app.route("/api/trade-hub/shop-package", methods=["POST"])

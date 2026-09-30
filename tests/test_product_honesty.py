@@ -379,7 +379,11 @@ def test_strategy_cards_are_decluttered():
     assert "otc-rt-fit" not in body
     assert "acptHtml" not in body
     assert "&nbsp;&middot;&nbsp;${acpt}% accept" in body
-    assert "${gradeHtml}${wpdHtml}${podHtml}" in body
+    # Pill order is grade, win delta, playoff delta. The delta slots are
+    # wpdOut/podOut since progressive loading: they carry wpdHtml/podHtml
+    # once the group's sim lands, a shimmer while pending, retry on error.
+    assert "${gradeHtml}${wpdOut}${podOut}" in body
+    assert "let wpdOut = wpdHtml, podOut = podHtml;" in body
 
 
 def test_why_this_label_stacks_above_text():
