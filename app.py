@@ -8941,7 +8941,7 @@ def render_standings(team_stats, length, all_play: dict = None,
         # Division section header between groups (skip when no divisions).
         if _use_div and div_id and div_id != _prev_div:
             _label = str(_div_names.get(div_id) or f"Division {div_id}")
-            rows.append(_standings_div_header(_label, _div_counts.get(div_id, 0), 17))
+            rows.append(_standings_div_header(_label, _div_counts.get(div_id, 0), 18))
             _prev_div = div_id
             _is_div_lead = True
 
@@ -8968,6 +8968,8 @@ def render_standings(team_stats, length, all_play: dict = None,
             _luck_cell = f"<span class='luck-chip {_lcls}' title='Actual wins minus expected wins from all-play'>{_lsign}{_luck:.1f}</span>"
         _seed = _ap.get('expected_seed')
         _seed_cell = _ord_str(_seed) if _seed else "<span class='muted'>&ndash;</span>"
+        # All-Play win %: first detail column; the foundation power rankings sort by.
+        _allplay = _dnum(_ap.get('all_play_pct'), 3)
 
         # Detail-column values (hidden until the "Detailed" toggle is on).
         _winpct = _dnum(row.get("Win%"), 3)
@@ -9052,6 +9054,7 @@ def render_standings(team_stats, length, all_play: dict = None,
               <td>{html.escape(str(streak or ""))}</td>
               <td>{_luck_cell}</td>
               <td>{_seed_cell}</td>
+              <td class="st-detail-col num">{_allplay}</td>
               <td class="st-detail-col num">{_winpct}</td>
               <td class="st-detail-col num">{_eff}</td>
               <td class="st-detail-col num">{_davg}</td>
@@ -9068,7 +9071,7 @@ def render_standings(team_stats, length, all_play: dict = None,
         if (_p and _p.get("scenario") and _p["status"] == "bubble"
                 and _p["seed"] in (_spots, (_spots or 0) + 1)):
             rows.append(
-                "<tr class='pp-scnrow'><td colspan='17'>"
+                "<tr class='pp-scnrow'><td colspan='18'>"
                 f"<div class='pp-scn'>{html.escape(_p['scenario'])}</div></td></tr>"
             )
 
@@ -9077,7 +9080,7 @@ def render_standings(team_stats, length, all_play: dict = None,
         if (not _use_div and _spots and int(row['Rank']) == _spots
                 and _spots < len(df)):
             rows.append(
-                "<tr class='pp-cutrow'><td colspan='17'>"
+                "<tr class='pp-cutrow'><td colspan='18'>"
                 "<div class='pp-cut'>Playoff line</div></td></tr>"
             )
 
@@ -9101,6 +9104,7 @@ def render_standings(team_stats, length, all_play: dict = None,
               <th scope="col">Streak</th>
               <th scope="col" title="Actual wins minus expected wins (from all-play). + = luckier than your scoring earned.">Luck</th>
               <th scope="col" title="Where you'd be seeded by all-play record instead of actual wins.">Exp. Seed</th>
+              <th scope="col" class="st-detail-col" title="All-play win rate: how this team fares against every other team each week. This is what the power rankings sort by.">All-Play</th>
               <th scope="col" class="st-detail-col" title="Fraction of games won.">Win %</th>
               <th scope="col" class="st-detail-col" title="Season lineup efficiency: actual points ÷ optimal-start points.">EFF</th>
               <th scope="col" class="st-detail-col" title="Average points per game.">Average</th>

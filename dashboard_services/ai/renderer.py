@@ -865,6 +865,15 @@ def _render_power_rankings_html_from_data(
         momentum = (momentums.get(rid) or "steady").lower()
         momentum_icon = {"rising": "↑", "falling": "↓", "steady": "→"}.get(momentum, "→")
         momentum_class = f"momentum-{momentum}"
+        # All-play stays visible: it is the foundation the ranking sorts by.
+        ap_pct = t.get("all_play_pct")
+        ap_chip = ""
+        if ap_pct is not None:
+            ap_chip = (
+                f"<span class='pr-allplay' title='All-play win rate: how this team "
+                f"fares against every other team each week. This is what the power "
+                f"rankings sort by.'>{ap_pct:.1%} All-Play</span>"
+            )
 
         rows_html += f"""
         <div class="pr-row">
@@ -874,6 +883,7 @@ def _render_power_rankings_html_from_data(
               <span class="pr-team-name team-clickable" data-roster-id="{rid}" data-team-name="{team_name}">{team_name}</span>
               <span class="pr-record">{wins}-{losses}</span>
               <span class="pr-pf">{pf:.1f} PF</span>
+              {ap_chip}
               <span class="pr-momentum {momentum_class}">{momentum_icon}</span>
             </div>
             <div class="pr-narrative">{narrative}</div>
