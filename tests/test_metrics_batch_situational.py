@@ -22,7 +22,9 @@ import pandas as pd
 import data_building.external_data.nflverse_metrics as nvm
 
 QB, WR, RB, RB2 = "00-0000001", "00-0000002", "00-0000003", "00-0000004"
-SL = {QB: "1001", WR: "1002", RB: "1003", RB2: "1004"}
+GLB, GLT = "00-0000005", "00-0000006"
+SL = {QB: "1001", WR: "1002", RB: "1003", RB2: "1004",
+      GLB: "1005", GLT: "1006"}
 
 
 class _FakeNfl(types.SimpleNamespace):
@@ -137,6 +139,72 @@ def test_weekly_situational_metrics_and_weights(monkeypatch):
     assert out[("1002", 1)]["end_zone_target_rate"] == pytest.approx(30.0)
     assert out[("1001", 1)]["third_down_conv_rate"] == pytest.approx(75.0)
     assert out[("1001", 1)]["w_third_down_dropbacks"] == pytest.approx(4.0)
+
+
+def _gl_frame():
+    """Two KC backs who appear in BOTH the rusher and receiver sections.
+
+    KC goal-line scrimmage plays (yardline_100 <= 5) total 10:
+      GLB: 2 carries; GLT: 1 carry + 2 targets; unmapped players: 5 plays.
+    GLB's targets are all midfield, so a receiving-section overwrite (the
+    shipped bug) stores 0.0 for him; GLT's combined share is (1 + 2) / 10
+    while the overwrite stores his targets-only 2 / 10.
+    """
+    plays = []
+    pid = 0
+
+    def add(**kw):
+        nonlocal pid
+        pid += 1
+        plays.append(_play(play_id=pid, **kw))
+
+    def carry(gsis, yl, yds=2):
+        add(play_type="run", pass_attempt=0, rush_attempt=1, qb_dropback=0,
+            complete_pass=0, rusher_player_id=gsis, rushing_yards=yds,
+            yards_gained=yds, yardline_100=yl)
+
+    def target(gsis, yl):
+        add(passer_player_id="00-0099999", receiver_player_id=gsis,
+            air_yards=3, yardline_100=yl)
+
+    # GLB: 2 goal-line carries, 2 midfield carries, 3 midfield targets.
+    carry(GLB, 3)
+    carry(GLB, 2)
+    carry(GLB, 50)
+    carry(GLB, 45)
+    for yl in (50, 40, 60):
+        target(GLB, yl)
+    # GLT: 1 goal-line carry, 1 midfield carry, 2 goal-line targets,
+    # 1 midfield target.
+    carry(GLT, 4)
+    carry(GLT, 50)
+    target(GLT, 3)
+    target(GLT, 2)
+    target(GLT, 55)
+    # Unmapped KC players supply the other 5 goal-line plays.
+    for _ in range(3):
+        carry("00-0099997", 3)
+    for _ in range(2):
+        target("00-0099996", 4)
+    return pd.DataFrame(plays)
+
+
+def test_season_goal_line_share_combines_carries_and_targets(monkeypatch):
+    monkeypatch.setitem(sys.modules, "nfl_data_py", _FakeNfl(pbp=_gl_frame()))
+    out = nvm.build_pbp_metrics_for_season(2024)
+    # Carries count even when the player also has (non-goal-line) targets.
+    assert out["1005"]["goal_line_opp_share"] == pytest.approx(20.0)
+    # Carries + targets over the shared team denominator, not targets only.
+    assert out["1006"]["goal_line_opp_share"] == pytest.approx(30.0)
+
+
+def test_weekly_goal_line_share_combines_carries_and_targets(monkeypatch):
+    monkeypatch.setitem(sys.modules, "nfl_data_py", _FakeNfl(pbp=_gl_frame()))
+    out = nvm.build_nflverse_weekly_metrics_for_season(2024)
+    assert out[("1005", 1)]["goal_line_opp_share"] == pytest.approx(20.0)
+    assert out[("1005", 1)]["w_team_gl_opps"] == pytest.approx(10.0)
+    assert out[("1006", 1)]["goal_line_opp_share"] == pytest.approx(30.0)
+    assert out[("1006", 1)]["w_team_gl_opps"] == pytest.approx(10.0)
 
 
 def test_family_d_specs_free_and_wired():
