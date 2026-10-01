@@ -41177,7 +41177,7 @@ a, button, [role="button"], [role="tab"], summary, label,
 .pm-room-rb .pm-troom-row { grid-template-columns: 20px minmax(120px,1fr) 92px 82px 76px 78px 54px; }
 .pm-room-qb .pm-troom-row,
 .pm-room-wr .pm-troom-row,
-.pm-room-te .pm-troom-row { grid-template-columns: 20px minmax(120px,1fr) 76px 52px 58px; }
+.pm-room-te .pm-troom-row { grid-template-columns: 20px minmax(120px,1fr) 76px 70px 58px; }
 .pm-troom-row + .pm-troom-row { border-top: 1px solid var(--grid); }
 .pm-troom-head { background: var(--card-soft); font-size: 9px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-muted); }
 .pm-troom-head span:nth-child(n+3) { text-align: right; }
