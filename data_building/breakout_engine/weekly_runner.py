@@ -410,6 +410,23 @@ def run_weekly_breakout(
             series = weekly_metrics.get_player_weekly_series(str(pid), season)
             if series:
                 raw_series[str(pid)] = series
+    # Production quality (weekly-v6): merge each week's PPR-over-expected
+    # onto the usage rows so the pure scorer can apply it as a confidence
+    # modifier. Best-effort - an empty/failed map leaves every row untouched
+    # and the modifier exactly neutral.
+    try:
+        over_expected = weekly_store.load_weekly_over_expected(season, cutoff)
+    except Exception:
+        over_expected = {}
+    if over_expected:
+        for pid, series in raw_series.items():
+            by_week = over_expected.get(str(pid)) or {}
+            if not by_week:
+                continue
+            for row in series:
+                value = by_week.get(int(row.get("week") or 0))
+                if value is not None:
+                    row["ppr_over_expected"] = value
     telemetry: Dict[str, Any] = {
         "raw_rows": sum(len(rows) for rows in raw_series.values()),
         "raw_players": len(raw_series),

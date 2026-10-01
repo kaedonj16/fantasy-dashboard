@@ -21,6 +21,13 @@ the old board conflated:
     confidence      - how much to trust it (0-100, from sample size, coverage,
                       freshness, persistence, and signal agreement)
 
+Since v6, confidence also carries a bounded production-quality modifier: a
+player who is producing above expectation with the growing role is more
+trustworthy than one whose new work is going nowhere. The modifier reads the
+per-week ``ppr_over_expected`` values the runner merges onto each row from
+``player_weekly_advanced_metrics``; it never touches breakout_score, and
+missing production data is exactly neutral.
+
 Everything in this module is pure and DB-free: ``score_player`` takes plain lists
 of weekly-row dicts so it can be unit-tested without Postgres. The thin DB layer
 (loading rows, refreshing data, persisting results) lives in
@@ -37,7 +44,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 # Bump when the scoring math changes so persisted rows are self-identifying and a
 # stale row can be told apart from a current-version one.
-SCORING_VERSION = "weekly-v5"
+SCORING_VERSION = "weekly-v6"
 
 _POSITIONS = ("QB", "RB", "WR", "TE")
 
@@ -87,6 +94,16 @@ CURRENT_ROLE_WEIGHTS = {
 # A single game's fantasy output this many times the baseline, with no matching
 # usage growth, is flagged as efficiency/TD-driven rather than a role change.
 FANTASY_SPIKE_RATIO = 1.8
+
+# Production-quality confidence modifier (v6). The breakout score stays purely
+# role-based; confidence additionally asks whether the player is PRODUCING
+# with the role. The signal is the recent window's per-game PPR points over
+# expected (``ppr_over_expected``, merged onto weekly rows by the runner from
+# player_weekly_advanced_metrics). Each +1.0 of over-expectation per game is
+# worth this many confidence points, bounded so production can corroborate or
+# warn but never dominate the trust read. Missing data adjusts by exactly 0.
+QUALITY_POINTS_PER_OVER_EXPECTED = 2.0
+QUALITY_MAX_ADJUSTMENT = 10.0
 
 
 # =============================================================================
@@ -542,6 +559,34 @@ def _persistence_factor(recent: List[Dict], baseline: List[Dict], key: str) -> O
     return above / len(r_vals)
 
 
+def _production_quality(
+    recent: List[Dict],
+    baseline: List[Dict],
+) -> Dict[str, Any]:
+    """Recent-window production vs expectation, as a confidence modifier.
+
+    Averages the per-week ``ppr_over_expected`` values (actual PPR minus
+    opportunity-based expected PPR) over the same recent/baseline windows
+    the role signals use. The adjustment keys on the RECENT mean: the
+    expectation baseline is already 0 by construction, and the baseline
+    mean is reported as context (was the player already producing?).
+
+    No production data in the recent window -> ``available`` False and an
+    adjustment of exactly 0.0: unknown production is neutral, never a
+    penalty. Weeks missing the value are skipped, never read as 0.
+    """
+    recent_q, _ = _mean_present(recent, "ppr_over_expected")
+    baseline_q, _ = _mean_present(baseline, "ppr_over_expected")
+    if recent_q is None:
+        return {"baseline": _round(baseline_q), "recent": None,
+                "adjustment": 0.0, "available": False}
+    adjustment = round(_clamp(
+        recent_q * QUALITY_POINTS_PER_OVER_EXPECTED,
+        -QUALITY_MAX_ADJUSTMENT, QUALITY_MAX_ADJUSTMENT), 1)
+    return {"baseline": _round(baseline_q), "recent": _round(recent_q),
+            "adjustment": adjustment, "available": True}
+
+
 def _compute_confidence(
     signals: Dict[str, Dict[str, Any]],
     recent: List[Dict],
@@ -850,8 +895,14 @@ def score_player(
     confidence, conf_detail = _compute_confidence(
         signals, recent, baseline_rows, position, weeks_stale, provisional
     )
+    # Production quality (v6): producing above expectation with the new role
+    # corroborates it; producing well below warns the role may not hold. This
+    # moves confidence only - the breakout score above stays role-based.
+    production_quality = _production_quality(recent, baseline_rows)
+    conf_detail["production_quality"] = production_quality
     confidence = round(_clamp(
-        confidence - 7.5 * len(diagnostics["conflicting_signals"]), 0.0, 100.0), 1)
+        confidence - 7.5 * len(diagnostics["conflicting_signals"])
+        + production_quality["adjustment"], 0.0, 100.0), 1)
 
     # Explainable component view. These are evidence summaries, not calibrated
     # probabilities. Missing optional route/RZ data remains unavailable rather

@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 
 from dashboard_services.api import get_nfl_state
 from dashboard_services.db import get_conn
+from data_building.trend_windows import recent_vs_baseline_ratio as _shared_trend_ratio
 from utils.vorp import (
     VALUE_STARTERS as _VALUE_STARTERS,
     stamp_value_metrics,
@@ -1056,28 +1057,12 @@ def _recent_vs_season_ratio(vals: List[float], recent_n: int = 3) -> Optional[fl
     """Recent-window average ÷ baseline average − 1. None when unusable.
 
     Positive = trending up. E.g. 0.15 means the recent stretch is 15% above
-    the baseline.
-
-    With more than `recent_n` values the recent window is the last
-    `recent_n` weeks and the baseline is the season average. Early season
-    (2..recent_n values) that window would cover the whole sample, forcing
-    the ratio to exactly 0.0 for every player (e.g. weeks 1-3 of a season),
-    so the latest week is compared against the average of the weeks before
-    it instead. None with fewer than 2 values or a zero baseline.
+    the baseline. The window rule (early season: latest week vs the average
+    of the weeks before it; otherwise last `recent_n` vs the season average)
+    is the canonical one in data_building.trend_windows, shared with the
+    weekly usage-trends payload so the surfaces can never disagree again.
     """
-    if not vals or len(vals) < 2:
-        return None
-    if len(vals) <= recent_n:
-        prior_avg = sum(vals[:-1]) / (len(vals) - 1)
-        if prior_avg == 0:
-            return None
-        return vals[-1] / prior_avg - 1.0
-    season_avg = sum(vals) / len(vals)
-    if season_avg == 0:
-        return None
-    recent = vals[-recent_n:]
-    recent_avg = sum(recent) / len(recent)
-    return recent_avg / season_avg - 1.0
+    return _shared_trend_ratio(vals, recent_n)
 
 
 def finalize_weekly_series_metrics(
