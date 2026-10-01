@@ -55,22 +55,51 @@ _CASES = [
     ("/sleeper/2026/abc/breakouts", True),
     ("standings", True),                     # relative href resolves off the base
     ("/sleeper/2026/abc/activity", True),
-    ("/sleeper/2026/abc/draft", False),      # draft loads its own scripts
-    ("/sleeper/2026/abc/draft/history", False),
-    ("/sleeper/2026/abc/keeper", False),     # not on the allowlist
     ("/sleeper/2026/abc/league_health", True),  # League Health URL (not "commissioner")
     ("/sleeper/2026/abc/commissioner", True),   # legacy alias still allowlisted
-    # Script-driven pages that init on DOMContentLoaded / a bootstrap don't
-    # survive an in-place swap, so they navigate natively.
-    ("/sleeper/2026/abc/waivers", False),
-    ("/sleeper/2026/abc/schedule/", False),
-    ("/sleeper/2026/abc/graphs", False),
-    ("/sleeper/2026/abc/scorezone", False),
-    ("/sleeper/2026/abc/trade", False),
-    ("/sleeper/2026/abc/compare", False),
-    ("/sleeper/2026/abc/metrics", False),
-    ("/sleeper/2026/abc/prospects", False),
-    ("/watchlist", False),
+    # Every shell page now participates: page scripts are re-runnable (var /
+    # IIFE state, readyState-guarded init or the reexec DOMContentLoaded/load
+    # bridge) and their external scripts are on the SOFT_OK_SCRIPTS allowlist.
+    ("/sleeper/2026/abc/waivers", True),
+    ("/sleeper/2026/abc/schedule/", True),
+    ("/sleeper/2026/abc/graphs", True),
+    ("/sleeper/2026/abc/scorezone", True),
+    ("/sleeper/2026/abc/trade", True),
+    ("/sleeper/2026/abc/trade-database", True),
+    ("/sleeper/2026/abc/compare", True),
+    ("/sleeper/2026/abc/metrics", True),
+    ("/sleeper/2026/abc/nfl-teams", True),
+    ("/sleeper/2026/abc/prospects", True),
+    ("/sleeper/2026/abc/keeper", True),
+    ("/sleeper/2026/abc/draft", True),
+    ("/sleeper/2026/abc/draft/history", True),   # last segment is "history"
+    ("/sleeper/2026/abc/draft/cheat-sheet", True),
+    ("/watchlist", True),
+    ("/portfolio", True),
+    ("/top-movers", True),
+    ("/oline-rankings", True),
+    ("/dynasty-trade-value-chart", True),
+    ("/rankings/dynasty", True),
+    ("/players", True),
+    ("/sleeper/2026/abc/share-card", True),
+    ("/about", True),
+    ("/glossary", True),
+    ("/faq", True),
+    ("/pricing", True),
+    ("/privacy", True),
+    ("/terms", True),
+    ("/support", True),
+    ("/contact", True),
+    ("/guides", True),
+    ("/guides/dynasty-trade-value", True),   # slug segment: /guides/ prefix rule
+    # Deliberately NOT soft-navigable: the landing page (document-load wiring),
+    # auth/admin flows, and per-object pages whose last segment is an id/slug.
+    ("/", False),
+    ("/login", False),
+    ("/sleeper/2026/abc/player/1234", False),
+    ("/wrapped/sometoken", False),
+    ("/t/abc123", False),
+    ("/espn/2026/12345", False),
 ]
 
 

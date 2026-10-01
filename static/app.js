@@ -1297,9 +1297,21 @@ window.brHaptic = function (pattern) {
   // External page scripts that are written to be safe to re-run on a swap (they
   // rebind to fresh page elements and guard any document-level listeners). Any
   // page whose page-root pulls in a script NOT on this list is full-navigated.
-  var SOFT_OK_SCRIPTS = ['teams.js', 'rankings.js'];
+  // Matching compares normalized basenames: served srcs are minified
+  // (/static/rankings.min.js?v=...), so the query/hash and a trailing ".min"
+  // are stripped before comparing -- a plain substring match on the list
+  // entries would never match a minified src and silently full-navigate.
+  var SOFT_OK_SCRIPTS = ['teams.js', 'rankings.js', 'scorezone.js', 'keeper.js',
+    'cheat_sheet.js', 'custom_selects.js', 'draft_room.js',
+    'draft_board_core.js', 'draft_grade_team.js', 'pick_score.js'];
+  function softScriptBase(src) {
+    var base = String(src || '').split(/[?#]/)[0].split('/').pop() || '';
+    return base.replace(/\.min(\.js)$/i, '$1');
+  }
   function scriptReRunnable(src) {
-    return SOFT_OK_SCRIPTS.some(function (n) { return src.indexOf('/' + n) !== -1; });
+    if (!src) return true;
+    var base = softScriptBase(src);
+    return SOFT_OK_SCRIPTS.indexOf(base) !== -1;
   }
   // DOMParser/innerHTML never runs <script>; re-create each one (inline and the
   // allow-listed external ones) so page data bootstraps and page modules execute
@@ -1307,12 +1319,40 @@ window.brHaptic = function (pattern) {
   // Inline page scripts must be re-runnable: no top-level let/const (a second
   // execution throws "already declared" and leaves the swapped DOM hydrateless).
   // Use var or function-scoped declarations for page-level state instead.
+  // DOMContentLoaded (and window load) already fired for this document, so a
+  // swapped-in script that registers for them would wait forever; capture those
+  // registrations while the new scripts run and invoke them right after, in
+  // order -- the swapped page's "loaded" moment. Registrations for any other
+  // event type pass straight through to the real addEventListener.
   function reexecScripts(container) {
-    container.querySelectorAll('script').forEach(function (old) {
-      var s = document.createElement('script');
-      for (var i = 0; i < old.attributes.length; i++) s.setAttribute(old.attributes[i].name, old.attributes[i].value);
-      if (!old.src) s.textContent = old.textContent;
-      old.parentNode.replaceChild(s, old);
+    var deferred = [];
+    var docAdd = document.addEventListener;
+    var winAdd = window.addEventListener;
+    function capture(target, orig) {
+      return function (type, fn, opts) {
+        if (typeof fn === 'function' &&
+            (type === 'DOMContentLoaded' || (target === window && type === 'load'))) {
+          deferred.push([type, fn]);
+          return;
+        }
+        return orig.call(target, type, fn, opts);
+      };
+    }
+    document.addEventListener = capture(document, docAdd);
+    window.addEventListener = capture(window, winAdd);
+    try {
+      container.querySelectorAll('script').forEach(function (old) {
+        var s = document.createElement('script');
+        for (var i = 0; i < old.attributes.length; i++) s.setAttribute(old.attributes[i].name, old.attributes[i].value);
+        if (!old.src) s.textContent = old.textContent;
+        old.parentNode.replaceChild(s, old);
+      });
+    } finally {
+      document.addEventListener = docAdd;
+      window.addEventListener = winAdd;
+    }
+    deferred.forEach(function (pair) {
+      try { pair[1].call(document, new Event(pair[0])); } catch (e) {}
     });
   }
 
@@ -1655,35 +1695,41 @@ window.brHaptic = function (pattern) {
     }
   };
 
-  // Pages that can be swapped in place (script-free, or their page script is on
-  // the re-runnable allow-list). Everything else -- Draft, Keeper, ScoreZone,
-  // Prospects, Trade, Compare, Metrics -- loads its own scripts, so we let the
-  // browser navigate to it natively (a single load) rather than fetch it here
-  // only to bail to a full load anyway.
-  // Pages whose inline scripts initialise on DOMContentLoaded (waivers,
-  // graphs) or run a self-contained bootstrap (schedule) don't survive an
-  // in-place swap -- DOMContentLoaded has already fired, so their data never
-  // loads and the page "struggles to load". Like Draft/Keeper/etc. they load
-  // their own scripts, so let the browser navigate to them natively.
+  // Pages that can be swapped in place. A page qualifies when its inline
+  // scripts are re-runnable (var/function-scoped state, init via the
+  // readyState guard or the reexec DOMContentLoaded/load bridge) and every
+  // external script it pulls in is on the SOFT_OK_SCRIPTS allow-list. Any
+  // page that fails those checks at runtime still falls back to a full
+  // navigation -- the whitelist is an optimisation, never a trap.
+  // The landing page ('/') is deliberately NOT here: its league-form and
+  // saved-league wiring binds once at document load across the bundle, so
+  // the logo keeps a native load.
   var SOFT_NAV_PAGES = {
     dashboard: 1, standings: 1, teams: 1, activity: 1, weekly: 1,
     recap: 1, awards: 1, history: 1, commissioner: 1, league_health: 1,
-    players: 1, breakouts: 1,
+    players: 1, breakouts: 1, waivers: 1, schedule: 1, graphs: 1,
+    metrics: 1, 'nfl-teams': 1, scorezone: 1, keeper: 1, compare: 1,
+    trade: 1, 'trade-database': 1, prospects: 1, draft: 1,
+    'cheat-sheet': 1, watchlist: 1, portfolio: 1, 'top-movers': 1,
+    'oline-rankings': 1, 'dynasty-trade-value-chart': 1, dynasty: 1,
+    'share-card': 1, about: 1, glossary: 1, guides: 1, faq: 1,
+    pricing: 1, privacy: 1, terms: 1, support: 1, contact: 1,
   };
   function softNavigable(href) {
     var path;
     try { path = new URL(href, location.href).pathname; } catch (e) { return false; }
-    if (path.indexOf('/draft') !== -1) return false;   // draft + draft history load their own scripts
+    if (path.indexOf('/guides/') !== -1) return true;   // /guides/<slug>: the slug is the last segment
     var seg = path.replace(/\/+$/, '').split('/').pop();
     return SOFT_NAV_PAGES[seg] === 1;
   }
 
   function softNavTargetFromEvent(e) {
     // Mobile navigates from the dock + sheet; desktop from the top nav pills,
-    // dropdown items and the logo.
+    // dropdown items and the logo. The site footer persists outside
+    // #page-root, so its page links opt in on both layouts too.
     return mq.matches
-      ? e.target.closest('a.br-tabbar-item, .br-sheet a.br-sheet-link')
-      : e.target.closest('.top-nav a.nav-pill, .top-nav a.nav-pill-dropdown-item, .top-nav .nav-left > a');
+      ? e.target.closest('a.br-tabbar-item, .br-sheet a.br-sheet-link, .site-footer a')
+      : e.target.closest('.top-nav a.nav-pill, .top-nav a.nav-pill-dropdown-item, .top-nav .nav-left > a, .site-footer a');
   }
 
   // Lineup sub-navigation owns only its live region. It intentionally does not
@@ -11787,6 +11833,13 @@ window.initPageRoot = function initPageRoot(root = document) {
   }
   if (tradePageExists(root)) {
     window.initTradePage?.(root);
+  }
+  // Compare's full-load init runs via _deferInit at document load, which a
+  // swap never re-fires -- run it here on swaps only (root !== document) so
+  // a full load doesn't double-bind.
+  if (root !== document && typeof initComparePage === 'function' &&
+      root.querySelector('[data-page="compare"]')) {
+    initComparePage();
   }
   if (recapPageExists(root)) {
     initRecapPage(root);

@@ -4389,6 +4389,9 @@
 
   async function _refresh(opts) {
     opts = opts || {};
+    // Soft-nav swapped this page out: the DOM this closure owns is detached,
+    // so polling and stream refreshes must stop instead of fetching forever.
+    if (root.isConnected === false) return;
     // Automatic polls defer to whatever request already owns the network so they
     // never pile up. A manual refresh preempts: it cancels the in-flight request
     // (and a possibly-stalled My Leagues stream) and starts clean.
@@ -4852,6 +4855,12 @@
   }
 
   function _tick() {
+    // Soft-nav swapped this page out: stop the 1s timer for good rather than
+    // polling a detached page forever (and stacking one timer per visit).
+    if (root.isConnected === false) {
+      if (_timer) { clearInterval(_timer); _timer = null; }
+      return;
+    }
     if (_streaming) return; // hold the countdown/poll while a stream is loading cards
     // Offseason / non-game day: stay idle -- no countdown, no polling, no live
     // look. Checked first so the timer never ticks down when nothing is on.
