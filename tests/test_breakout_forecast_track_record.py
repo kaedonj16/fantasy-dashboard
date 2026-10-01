@@ -1097,6 +1097,23 @@ def test_forecast_outlook_top_tracking_hit_is_live_only():
     assert all("reconstructed" not in t for t in top)
 
 
+def test_forecast_outlook_preseason_top_label_is_preseason():
+    # The top-list label for preseason calls reads "Preseason" (the
+    # board's name in the rail), not the raw phase name "Offseason".
+    import dashboard_services.breakout_api as api
+
+    board = {"candidates": [{
+        "player_id": "7", "player_name": "P7",
+        "breakout_opportunity_score": 61.0,
+        "forecast": {"kind": "preseason", "phase": "offseason",
+                     "band": "tracking_to_hit", "band_label": "Stub",
+                     "basis": "stub", "state": "forecast"},
+    }]}
+    top = api._forecast_outlook(board)["preseason"]["top_tracking_hit"]
+    assert len(top) == 1
+    assert top[0]["group_label"] == "Preseason"
+
+
 def test_outlook_reconstructed_no_baseline_counts_separately(monkeypatch):
     # A reconstructed call whose player has outcome games but no baseline
     # at all (initial-role shape) must land in the no-baseline split, not

@@ -1872,7 +1872,10 @@ def _forecast_outlook(board: Dict) -> Dict:
                 "basis": forecast.get("basis"),
                 "group_label": (
                     candidate.get("classification_label") if kind == "weekly"
-                    else _phase_label(forecast.get("phase"))),
+                    # The board is called the preseason board everywhere in
+                    # the rail; the raw phase name ("Offseason") reads like
+                    # the player's current status, so label it Preseason.
+                    else "Preseason"),
             }
             top[kind].append((float(score or 0), entry))
     for kind in ("weekly", "preseason"):
