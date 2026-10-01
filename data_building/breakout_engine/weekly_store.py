@@ -350,6 +350,19 @@ def record_run(
         )
 
 
+def _completed_run_criteria() -> str:
+    """SQL fragment (run alias ``r``) for a run whose stored snapshot is
+    complete and servable: finished, fully inserted, and the stored score
+    rows match the inserted count exactly."""
+    return (
+        "r.status='completed' AND r.completed_at IS NOT NULL "
+        "AND r.expected_row_count > 0 "
+        "AND r.inserted_row_count = r.expected_row_count "
+        f"AND (SELECT COUNT(*) FROM {WEEKLY_SCORES_TABLE} s "
+        "     WHERE s.run_id=r.id) = r.inserted_row_count"
+    )
+
+
 def latest_scored_week(season: int) -> Optional[int]:
     """Most recent snapshot compatible with the current scorer.
 
@@ -361,11 +374,7 @@ def latest_scored_week(season: int) -> Optional[int]:
         row = conn.execute(
             f"SELECT MAX(r.as_of_week) AS w FROM {WEEKLY_RUNS_TABLE} r "
             f"WHERE r.season = %s AND r.scoring_version = %s "
-            f"AND r.status='completed' AND r.completed_at IS NOT NULL "
-            f"AND r.expected_row_count > 0 "
-            f"AND r.inserted_row_count = r.expected_row_count "
-            f"AND (SELECT COUNT(*) FROM {WEEKLY_SCORES_TABLE} s "
-            f"     WHERE s.run_id=r.id) = r.inserted_row_count",
+            f"AND {_completed_run_criteria()}",
             (int(season), SCORING_VERSION),
         ).fetchone()
     return int(row["w"]) if row and row.get("w") is not None else None
@@ -385,23 +394,22 @@ def has_any_weekly_snapshot(season: int) -> bool:
 def list_completed_weeks(season: int) -> List[Dict[str, Any]]:
     """Completed weekly snapshots for a season, oldest first.
 
-    Uses the same completion criteria as :func:`latest_scored_week` so only
-    weeks the reader can actually serve are advertised (e.g. for a week
-    selector showing each week's predicted breakouts).
+    Every completed run counts, whatever scoring version produced it:
+    historical snapshots are served verbatim under the version they were
+    scored with (see :func:`get_serving_run`), so a version bump must not
+    hide earlier weeks from the selector. When two completed runs cover
+    the same week under different versions, the week is advertised once,
+    with the serving run's version and date.
     """
-    from data_building.breakout_engine.weekly_breakout import SCORING_VERSION
     init_weekly_breakout_db()
     with get_conn() as conn:
         rows = conn.execute(
-            f"SELECT r.as_of_week AS w, r.as_of_date AS d FROM {WEEKLY_RUNS_TABLE} r "
-            f"WHERE r.season = %s AND r.scoring_version = %s "
-            f"AND r.status='completed' AND r.completed_at IS NOT NULL "
-            f"AND r.expected_row_count > 0 "
-            f"AND r.inserted_row_count = r.expected_row_count "
-            f"AND (SELECT COUNT(*) FROM {WEEKLY_SCORES_TABLE} s "
-            f"     WHERE s.run_id=r.id) = r.inserted_row_count "
-            f"ORDER BY r.as_of_week ASC",
-            (int(season), SCORING_VERSION),
+            f"SELECT DISTINCT ON (r.as_of_week) r.as_of_week AS w, "
+            f"r.as_of_date AS d, r.scoring_version AS v "
+            f"FROM {WEEKLY_RUNS_TABLE} r "
+            f"WHERE r.season = %s AND {_completed_run_criteria()} "
+            f"ORDER BY r.as_of_week ASC, r.completed_at DESC, r.id DESC",
+            (int(season),),
         ).fetchall()
     out = []
     for row in rows:
@@ -409,8 +417,28 @@ def list_completed_weeks(season: int) -> List[Dict[str, Any]]:
         out.append({
             "as_of_week": int(row.get("w")),
             "as_of_date": d.isoformat() if hasattr(d, "isoformat") else d,
+            "scoring_version": row.get("v"),
         })
     return out
+
+
+def get_serving_run(season: int, as_of_week: int) -> Optional[Dict[str, Any]]:
+    """The completed run whose stored snapshot serves an explicit
+    historical-week request: the most recently completed run for that week
+    under ANY scoring version (ties broken by highest run id, so the pick
+    is deterministic). Only the default latest view is gated on the current
+    SCORING_VERSION; a week the user explicitly picks is served as it was
+    actually scored."""
+    init_weekly_breakout_db()
+    with get_conn() as conn:
+        row = conn.execute(
+            f"SELECT r.* FROM {WEEKLY_RUNS_TABLE} r "
+            f"WHERE r.season = %s AND r.as_of_week = %s "
+            f"AND {_completed_run_criteria()} "
+            f"ORDER BY r.completed_at DESC, r.id DESC LIMIT 1",
+            (int(season), int(as_of_week)),
+        ).fetchone()
+    return dict(row) if row else None
 
 
 def load_previous_week_scores(season: int, before_week: int) -> Dict[str, Dict[str, Any]]:
@@ -494,33 +522,60 @@ def load_weekly_candidates(
 ) -> Dict[str, Any]:
     """Load the weekly board for a season.
 
-    When as_of_week is None, uses the latest snapshot that has rows (so a failed
-    refresh still serves the last good week rather than an empty board). Returns
-    a payload with candidates plus freshness metadata.
+    When as_of_week is None, uses the latest snapshot scored with the
+    current SCORING_VERSION (so a failed refresh still serves the last good
+    current-version week rather than an empty board, and stale-version
+    history is never dressed up as the current board). When as_of_week is
+    given, serves that week's stored snapshot verbatim under the version
+    its own run recorded (see :func:`get_serving_run`). Returns a payload
+    with candidates plus freshness metadata.
     """
     init_weekly_breakout_db()
     from data_building.breakout_engine.weekly_breakout import SCORING_VERSION
-    week = as_of_week if as_of_week is not None else latest_scored_week(season)
-    if week is None:
-        return {
-            "season": season, "as_of_week": None, "candidates": [], "count": 0,
-            "data_available": False, "data_status": "unavailable",
-        }
+    serving_run: Optional[Dict[str, Any]] = None
+    if as_of_week is None:
+        week = latest_scored_week(season)
+        if week is None:
+            return {
+                "season": season, "as_of_week": None, "candidates": [], "count": 0,
+                "data_available": False, "data_status": "unavailable",
+            }
+        serving_version = SCORING_VERSION
+    else:
+        week = int(as_of_week)
+        serving_run = get_serving_run(season, week)
+        if serving_run is None:
+            return {
+                "season": season, "as_of_week": week, "candidates": [], "count": 0,
+                "data_available": False, "data_status": "unavailable",
+            }
+        serving_version = serving_run.get("scoring_version")
 
-    params: List[Any] = [int(season), int(week), SCORING_VERSION, float(min_score)]
     clause = ""
+    extra_params: List[Any] = []
     if classifications:
         clause = " AND s.classification = ANY(%s)"
-        params.append(list(classifications))
-    query = (
-        f"SELECT s.* FROM {WEEKLY_SCORES_TABLE} s "
-        f"JOIN {WEEKLY_RUNS_TABLE} r ON r.id=s.run_id "
-        f"WHERE s.season = %s AND s.as_of_week = %s AND s.scoring_version = %s "
-        f"AND r.status='completed' AND r.completed_at IS NOT NULL "
-        f"AND r.expected_row_count=r.inserted_row_count "
-        f"AND s.breakout_score >= %s{clause} "
-        f"ORDER BY s.breakout_score DESC, s.confidence DESC"
-    )
+        extra_params.append(list(classifications))
+    if serving_run is not None:
+        # Historical snapshot: exactly the serving run's stored rows.
+        params = [int(serving_run["id"]), float(min_score)] + extra_params
+        query = (
+            f"SELECT s.* FROM {WEEKLY_SCORES_TABLE} s "
+            f"WHERE s.run_id = %s "
+            f"AND s.breakout_score >= %s{clause} "
+            f"ORDER BY s.breakout_score DESC, s.confidence DESC"
+        )
+    else:
+        params = [int(season), int(week), SCORING_VERSION, float(min_score)] + extra_params
+        query = (
+            f"SELECT s.* FROM {WEEKLY_SCORES_TABLE} s "
+            f"JOIN {WEEKLY_RUNS_TABLE} r ON r.id=s.run_id "
+            f"WHERE s.season = %s AND s.as_of_week = %s AND s.scoring_version = %s "
+            f"AND r.status='completed' AND r.completed_at IS NOT NULL "
+            f"AND r.expected_row_count=r.inserted_row_count "
+            f"AND s.breakout_score >= %s{clause} "
+            f"ORDER BY s.breakout_score DESC, s.confidence DESC"
+        )
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(query, params)
@@ -529,7 +584,7 @@ def load_weekly_candidates(
     if limit and limit > 0:
         rows = rows[:limit]
 
-    completed_run = get_completed_run(season, int(week), SCORING_VERSION)
+    completed_run = serving_run or get_completed_run(season, int(week), SCORING_VERSION)
     run = get_latest_run(season)
     latest_run_week = run.get("as_of_week") if run else week
     weeks_stale = max(0, int(latest_run_week or week) - int(week)) if latest_run_week else 0
@@ -550,7 +605,7 @@ def load_weekly_candidates(
         "data_available": True,
         "data_status": "stale" if weeks_stale >= 1 else "ok",
         "weeks_stale": weeks_stale,
-        "scoring_version": SCORING_VERSION,
+        "scoring_version": serving_version,
         "last_run_status": (run or {}).get("status"),
         "snapshot_status": (completed_run or {}).get("status"),
         "completed_at": (completed_run or {}).get("completed_at"),
