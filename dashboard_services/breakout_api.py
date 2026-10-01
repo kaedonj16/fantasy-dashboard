@@ -1850,7 +1850,7 @@ def _forecast_outlook(board: Dict) -> Dict:
             score = candidate.get("breakout_score")
             if score is None:
                 score = candidate.get("breakout_opportunity_score")
-            top[kind].append((float(score or 0), {
+            entry = {
                 "player_id": str(candidate.get("player_id") or ""),
                 "player_name": candidate.get("player_name"),
                 "band": band,
@@ -1859,7 +1859,11 @@ def _forecast_outlook(board: Dict) -> Dict:
                 "group_label": (
                     candidate.get("classification_label") if kind == "weekly"
                     else _phase_label(forecast.get("phase"))),
-            }))
+            }
+            if candidate.get("reconstructed"):
+                entry["reconstructed"] = True
+                entry["call_week"] = candidate.get("call_week")
+            top[kind].append((float(score or 0), entry))
     for kind in ("weekly", "preseason"):
         ranked = sorted(top[kind], key=lambda item: item[0], reverse=True)
         outlook[kind]["top_tracking_hit"] = [
@@ -1885,6 +1889,60 @@ def _merged_board_candidates(*boards: Dict) -> Dict:
             seen.add(key)
             merged.append(candidate)
     return {"candidates": merged}
+
+
+def _empty_backtest_outlook() -> Dict:
+    from data_building.breakout_engine import forecasts as _forecasts
+
+    return {
+        "counts": {
+            _forecasts.BAND_TRACKING_HIT: 0,
+            _forecasts.BAND_BORDERLINE: 0,
+            _forecasts.BAND_TRACKING_MISS: 0,
+        },
+        "open_calls": 0,
+        "pending_calls": 0,
+        "top_tracking_hit": [],
+        "weeks": [],
+    }
+
+
+def _backtest_outlook(season: int) -> Dict:
+    """Forecast outlook over the reconstructed weeks' open calls.
+
+    The reconstructions are a backtest, not the live board, so their
+    forecasts report under their own labeled entry and never fold into
+    the live outlook.weekly counts. Aggregation reuses _forecast_outlook
+    over synthetic candidates; fails soft to the zeroed entry.
+    """
+    from data_building.breakout_engine import forecasts as _forecasts
+
+    try:
+        weeks, views = _forecasts.weekly_backtest_forecasts(
+            season, limit=BREAKOUT_BOARD_LIMIT)
+    except Exception:
+        logger.warning(
+            "breakout track record: backtest outlook failed", exc_info=True)
+        return _empty_backtest_outlook()
+    if not views:
+        return {**_empty_backtest_outlook(), "weeks": weeks}
+    candidates = []
+    for view in views.values():
+        classification = str(view.get("classification") or "")
+        candidates.append({
+            "player_id": view.get("player_id"),
+            "player_name": view.get("player_name"),
+            "classification": classification,
+            "classification_label": _WEEKLY_CLASS_LABELS.get(
+                classification, classification.title() or "Unknown"),
+            "breakout_score": view.get("breakout_score"),
+            "reconstructed": True,
+            "call_week": view.get("call_week"),
+            "forecast": view.get("forecast"),
+        })
+    entry = _forecast_outlook({"candidates": candidates})["weekly"]
+    entry["weeks"] = weeks
+    return entry
 
 
 def get_breakout_track_record(requested_season: Optional[int] = None) -> Dict:
@@ -1920,7 +1978,8 @@ def get_breakout_track_record(requested_season: Optional[int] = None) -> Dict:
             "groups": [],
             "definition": SEASON_HIT_DEFINITION,
         },
-        "outlook": _forecast_outlook({}),
+        "outlook": {**_forecast_outlook({}),
+                    "weekly_backtest": _empty_backtest_outlook()},
         "hits": [],
         "misses": [],
     }
@@ -1983,6 +2042,7 @@ def get_breakout_track_record(requested_season: Optional[int] = None) -> Dict:
         preseason_board = {}
     payload["outlook"] = _forecast_outlook(
         _merged_board_candidates(board, preseason_board))
+    payload["outlook"]["weekly_backtest"] = _backtest_outlook(season)
     return payload
 
 

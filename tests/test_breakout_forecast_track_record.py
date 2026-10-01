@@ -348,6 +348,10 @@ def _patch_track_record(monkeypatch):
     })
     monkeypatch.setattr(forecasts, "season_track_record", lambda season: {
         "available": False, "groups": [], "overall": None})
+    # No reconstructions by default: the backtest outlook reads this set
+    # first and stays zeroed without touching the store.
+    monkeypatch.setattr(forecasts, "load_reconstructed_weeks",
+                        lambda season: set())
     board = {"view": "weekly", "candidates": [
         {"player_id": "1", "player_name": "Alpha", "classification": "emerging_breakout",
          "classification_label": "Emerging Breakout", "breakout_score": 55.0,
@@ -763,6 +767,139 @@ def test_v5_shaped_row_renders_without_confidence_detail():
 
 
 # ---------------------------------------------------------------------------
+# backtest outlook: forecasts for the reconstructed weeks' open calls
+# ---------------------------------------------------------------------------
+
+_HELD = {"snap": 65.0, "tgt": 9.0, "car": 11.0, "ppr": 18.0}
+_REVERTED = {"snap": 41.0, "tgt": 4.0, "car": 6.0, "ppr": 8.5}
+
+
+def _recon_row(pid, week, score):
+    return make_call(as_of_week=week, player_id=pid,
+                     player_name=f"Player {pid}", breakout_score=score)
+
+
+def _patch_backtest_outlook(monkeypatch, *, through=3, week_rows=None,
+                            series=None):
+    """Reconstructed weeks 1-2 with stored runs, layered on the two-board
+    track record stubs. ``week_rows`` maps week -> the score rows stored
+    under that week's reconstruction run."""
+    from data_building.breakout_engine import weekly_store
+
+    api = _patch_two_boards(monkeypatch)
+    runs = {1: {"id": 11}, 2: {"id": 12}}
+    if week_rows is None:
+        week_rows = {
+            1: [_recon_row("101", 1, 55.0), _recon_row("102", 1, 50.0)],
+            2: [_recon_row("101", 2, 60.0), _recon_row("103", 2, 45.0)],
+        }
+    rows_by_run = {runs[w]["id"]: rows for w, rows in week_rows.items()}
+    if series is None:
+        series = {
+            "101": [wk(2, **_HELD), wk(3, **_HELD)],
+            "102": [wk(2, **_REVERTED), wk(3, **_REVERTED)],
+            "103": [],
+        }
+    monkeypatch.setattr(forecasts, "load_reconstructed_weeks",
+                        lambda season: {1, 2})
+    monkeypatch.setattr(weekly_store, "get_reconstructed_run",
+                        lambda season, week: runs.get(week))
+    monkeypatch.setattr(weekly_store, "load_run_score_rows",
+                        lambda run_id: rows_by_run.get(run_id, []))
+    monkeypatch.setattr(wg, "default_through_week", lambda season: through)
+    monkeypatch.setattr(wg, "load_season_series",
+                        lambda season, through_week: series)
+    return api
+
+
+def test_backtest_outlook_counts_reconstructed_open_calls(monkeypatch):
+    api = _patch_backtest_outlook(monkeypatch)
+    payload = api.get_breakout_track_record(2026)
+
+    backtest = payload["outlook"]["weekly_backtest"]
+    assert backtest["weeks"] == [1, 2]
+    # 101 tracks to hit (week 2 call), 102 tracks to miss, 103 has no
+    # games yet so it is pending with no band.
+    assert backtest["counts"] == {
+        "tracking_to_hit": 1, "borderline": 0, "tracking_to_miss": 1}
+    assert backtest["open_calls"] == 2
+    assert backtest["pending_calls"] == 1
+    top = backtest["top_tracking_hit"]
+    assert len(top) == 1
+    assert top[0]["player_id"] == "101"
+    assert top[0]["reconstructed"] is True
+    assert top[0]["group_label"] == "Emerging Breakout"
+    # Player 101 was called in BOTH reconstructed weeks; the later call
+    # wins the merge, so the basis reflects only week 3 being in.
+    assert top[0]["call_week"] == 2
+    assert "1 of 3 weeks in" in top[0]["basis"]
+
+
+def test_backtest_outlook_never_folds_into_live_outlook(monkeypatch):
+    api = _patch_backtest_outlook(monkeypatch)
+    payload = api.get_breakout_track_record(2026)
+
+    # The live weekly outlook still reflects the live board only (the
+    # two-board stub: one tracking to hit, one pending), untouched by the
+    # reconstructed calls counted in weekly_backtest.
+    live = payload["outlook"]["weekly"]
+    assert live["counts"] == {
+        "tracking_to_hit": 1, "borderline": 0, "tracking_to_miss": 0}
+    assert live["open_calls"] == 1
+    assert live["pending_calls"] == 1
+    assert all("reconstructed" not in t for t in live["top_tracking_hit"])
+
+
+def test_backtest_outlook_skips_mature_reconstructed_calls(monkeypatch):
+    # Through week 6 both the week 1 and week 2 outcome windows are
+    # complete: the calls are the grader's business and forecast nothing.
+    api = _patch_backtest_outlook(monkeypatch, through=6)
+    payload = api.get_breakout_track_record(2026)
+
+    backtest = payload["outlook"]["weekly_backtest"]
+    assert backtest["weeks"] == [1, 2]
+    assert backtest["counts"] == {
+        "tracking_to_hit": 0, "borderline": 0, "tracking_to_miss": 0}
+    assert backtest["open_calls"] == 0
+    assert backtest["pending_calls"] == 0
+    assert backtest["top_tracking_hit"] == []
+
+
+def test_backtest_outlook_caps_each_week_at_the_board_limit(monkeypatch):
+    api = _patch_backtest_outlook(
+        monkeypatch,
+        week_rows={1: [_recon_row(f"c{i}", 1, 100.0 - i) for i in range(20)],
+                   2: []},
+        series={})
+    seen = {"counts": []}
+
+    def _record(season, calls):
+        seen["counts"].append(len(calls))
+        return {}
+
+    monkeypatch.setattr(forecasts, "weekly_forecasts_for_calls", _record)
+    payload = api.get_breakout_track_record(2026)
+
+    import dashboard_services.breakout_api as api_mod
+    assert seen["counts"][0] == api_mod.BREAKOUT_BOARD_LIMIT == 15
+    assert payload["outlook"]["weekly_backtest"]["weeks"] == [1, 2]
+
+
+def test_backtest_outlook_zeroed_without_reconstructions(monkeypatch):
+    api = _patch_track_record(monkeypatch)
+    payload = api.get_breakout_track_record(2026)
+
+    assert payload["outlook"]["weekly_backtest"] == {
+        "counts": {"tracking_to_hit": 0, "borderline": 0,
+                   "tracking_to_miss": 0},
+        "open_calls": 0,
+        "pending_calls": 0,
+        "top_tracking_hit": [],
+        "weeks": [],
+    }
+
+
+# ---------------------------------------------------------------------------
 # page + stylesheet wiring
 # ---------------------------------------------------------------------------
 
@@ -777,6 +914,10 @@ def test_breakout_page_has_sidebar_and_forecast_chip():
     # The chip literally carries the word Forecast on the card.
     assert "Forecast: " in src
     assert "candidate.forecast" in src
+    # Backtest outlook subsection + slim track record pending lines.
+    assert "weekly_backtest" in src
+    assert "Weekly backtest" in src
+    assert "bo-rail-pending-line" in src
 
 
 def test_dashboard_css_has_rail_and_chip_styles():
@@ -784,5 +925,6 @@ def test_dashboard_css_has_rail_and_chip_styles():
     assert ".bo-layout" in css
     assert ".bo-rail" in css
     assert ".bo-rail-section" in css
+    assert ".bo-rail-pending-line" in css
     assert ".bo-fc-chip" in css
     assert "border-radius: 999px" not in css.split(".bo-fc-chip")[1].split("}")[0]

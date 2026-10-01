@@ -452,6 +452,39 @@ def get_serving_run(season: int, as_of_week: int) -> Optional[Dict[str, Any]]:
     return dict(row) if row else None
 
 
+def get_reconstructed_run(season: int, as_of_week: int) -> Optional[Dict[str, Any]]:
+    """The completed reconstruction run for a week (detail.reconstructed)
+    under the current SCORING_VERSION, most recently completed first, or
+    None. Serving never uses this (originals win there); it exists for
+    backtest reads that need the reconstruction's own stored rows."""
+    from data_building.breakout_engine.weekly_breakout import SCORING_VERSION
+    init_weekly_breakout_db()
+    with get_conn() as conn:
+        row = conn.execute(
+            f"SELECT r.* FROM {WEEKLY_RUNS_TABLE} r "
+            f"WHERE r.season = %s AND r.as_of_week = %s AND r.scoring_version = %s "
+            f"AND COALESCE(r.detail->>'reconstructed', 'false') = 'true' "
+            f"AND {_completed_run_criteria()} "
+            f"ORDER BY r.completed_at DESC, r.id DESC LIMIT 1",
+            (int(season), int(as_of_week), SCORING_VERSION),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def load_run_score_rows(run_id: int) -> List[Dict[str, Any]]:
+    """Raw stored score rows for one run, best breakout score first."""
+    init_weekly_breakout_db()
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"SELECT s.* FROM {WEEKLY_SCORES_TABLE} s "
+                f"WHERE s.run_id = %s "
+                f"ORDER BY s.breakout_score DESC, s.confidence DESC",
+                (int(run_id),),
+            )
+            return [dict(r) for r in cur.fetchall()]
+
+
 def load_previous_week_scores(season: int, before_week: int) -> Dict[str, Dict[str, Any]]:
     """Latest compatible score per player before a new snapshot (lifecycle input)."""
     from data_building.breakout_engine.weekly_breakout import SCORING_VERSION

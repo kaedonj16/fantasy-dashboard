@@ -344,3 +344,48 @@ def test_week_list_with_only_old_version_weeks_opens_on_preseason(monkeypatch):
     assert [w["value"] for w in payload["weeks"]] == ["preseason", 1, 2]
     # Never open the default view on a stale-version snapshot.
     assert payload["latest_week"] == "preseason"
+
+
+# ---------------------------------------------------------------------------
+# reconstruction run reads (backtest outlook source)
+# ---------------------------------------------------------------------------
+
+def test_get_reconstructed_run_targets_flagged_current_version_run(monkeypatch):
+    _no_init(monkeypatch)
+    run = _run_row(13, 1, SCORING_VERSION, datetime(2026, 10, 5, 9, 0))
+    run["detail"] = {"reconstructed": True}
+    conn = _StoreConn(serving_run=run)
+    monkeypatch.setattr(weekly_store, "get_conn", lambda: conn)
+
+    found = weekly_store.get_reconstructed_run(2026, 1)
+
+    assert found["id"] == 13
+    query, params = conn.queries[0]
+    assert "reconstructed" in query
+    # The reconstruction read is version-pinned (unlike serving), matching
+    # the reconstructed-week set the track record splits grades by.
+    assert "r.scoring_version = %s" in query
+    assert params == (2026, 1, SCORING_VERSION)
+
+
+def test_get_reconstructed_run_none_when_no_reconstruction(monkeypatch):
+    _no_init(monkeypatch)
+    conn = _StoreConn(serving_run=None)
+    monkeypatch.setattr(weekly_store, "get_conn", lambda: conn)
+
+    assert weekly_store.get_reconstructed_run(2026, 3) is None
+
+
+def test_load_run_score_rows_reads_exactly_that_run(monkeypatch):
+    _no_init(monkeypatch)
+    rows = [_score_row("p1", 7, 2, OLD_VERSION),
+            _score_row("p2", 7, 2, OLD_VERSION)]
+    conn = _StoreConn(score_rows=rows)
+    monkeypatch.setattr(weekly_store, "get_conn", lambda: conn)
+
+    loaded = weekly_store.load_run_score_rows(7)
+
+    assert [r["player_id"] for r in loaded] == ["p1", "p2"]
+    query, params = conn.cursor_queries[0]
+    assert "s.run_id = %s" in query
+    assert params == (7,)
