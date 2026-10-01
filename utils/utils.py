@@ -90,11 +90,11 @@ STATUS_IN_PROGRESS = "in_progress"
 STATUS_FINAL = "final"
 
 TEAM_ALIASES = {
-    "jax": "JAX", "jacksonville": "JAX", "gb": "GB", "gnb": "GB", "nwe": "NE", "ne": "NE",
+    "jax": "JAX", "jac": "JAX", "jacksonville": "JAX", "gb": "GB", "gnb": "GB", "nwe": "NE", "ne": "NE",
     "sfo": "SF", "sf": "SF", "kan": "KC", "kc": "KC", "tam": "TB", "tb": "TB",
     "was": "WAS", "was football team": "WAS", "wsh": "WAS",
     "lv": "LV", "oak": "LV", "sd": "LAC", "lac": "LAC", "la chargers": "LAC",
-    "stl": "LAR", "lar": "LAR", "la rams": "LAR", "no": "NO", "nor": "NO",
+    "stl": "LAR", "lar": "LAR", "la": "LAR", "la rams": "LAR", "no": "NO", "nor": "NO",
     "bal": "BAL", "cin": "CIN", "pit": "PIT", "cle": "CLE", "buf": "BUF", "mia": "MIA",
     "nyj": "NYJ", "nyg": "NYG", "phi": "PHI", "dal": "DAL", "wasdc": "WAS",
     "min": "MIN", "chi": "CHI", "det": "DET", "atl": "ATL", "car": "CAR", "norleans": "NO",
