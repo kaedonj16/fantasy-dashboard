@@ -348,8 +348,8 @@ def _patch_track_record(monkeypatch):
     })
     monkeypatch.setattr(forecasts, "season_track_record", lambda season: {
         "available": False, "groups": [], "overall": None})
-    # No reconstructions by default: the backtest outlook reads this set
-    # first and stays zeroed without touching the store.
+    # No reconstructions by default: the pooled outlook's reconstruction
+    # read sees this empty set and never touches the store.
     monkeypatch.setattr(forecasts, "load_reconstructed_weeks",
                         lambda season: set())
     board = {"view": "weekly", "candidates": [
@@ -563,7 +563,7 @@ def test_outlook_counts_only_the_surfaced_top_15_per_board(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# track record split: reconstructed grades form a separate backtest entry
+# track record: reconstructed grades pool into the one weekly record
 # ---------------------------------------------------------------------------
 
 def _split_rows():
@@ -598,30 +598,25 @@ def _split_rows():
     return rows
 
 
-def test_weekly_track_record_splits_reconstructed_grades(monkeypatch):
+def test_weekly_track_record_pools_reconstructed_grades(monkeypatch):
     monkeypatch.setattr(forecasts, "load_weekly_grade_rows",
                         lambda season: _split_rows())
     monkeypatch.setattr(forecasts, "load_reconstructed_weeks",
                         lambda season: {1, 2})
     record = forecasts.weekly_track_record(2026)
 
-    # Live rates exclude every reconstructed call.
-    assert record["overall"]["graded"] == 12
+    # One pooled record: no separate backtest entry anywhere.
+    assert "backtest" not in record
+    # Live (12 graded) and reconstructed (15 graded) calls sum into one
+    # overall, and the 10-graded floor applies to the pooled groups.
+    assert record["overall"]["graded"] == 27
+    assert record["overall"]["hit"] == 19
     groups = {g["classification"]: g for g in record["groups"]}
-    assert groups["emerging_breakout"]["graded"] == 12
-    assert groups["emerging_breakout"]["hit_rate"] == pytest.approx(7 / 12, abs=1e-4)
-    assert "watchlist" not in groups
-
-    backtest = record["backtest"]
-    assert backtest is not None
-    assert backtest["weeks"] == [1, 2]
-    assert backtest["overall"]["graded"] == 15
-    bt_groups = {g["classification"]: g for g in backtest["groups"]}
-    assert bt_groups["emerging_breakout"]["graded"] == 12
-    assert bt_groups["emerging_breakout"]["hit_rate"] == pytest.approx(1.0)
-    # The same 10-graded floor applies to the backtest line.
-    assert bt_groups["watchlist"]["graded"] == 3
-    assert bt_groups["watchlist"]["hit_rate"] is None
+    assert groups["emerging_breakout"]["graded"] == 24
+    assert groups["emerging_breakout"]["hit_rate"] == \
+        pytest.approx(19 / 24, abs=1e-4)
+    assert groups["watchlist"]["graded"] == 3
+    assert groups["watchlist"]["hit_rate"] is None
 
     # Biggest hits span both sets; the reconstructed one is flagged.
     assert record["hits"][0]["player_id"] == "rb0"
@@ -630,44 +625,42 @@ def test_weekly_track_record_splits_reconstructed_grades(monkeypatch):
     assert live_hit["reconstructed"] is False
 
 
-def test_weekly_track_record_without_reconstructions_has_no_backtest(monkeypatch):
+def test_weekly_track_record_without_reconstructions(monkeypatch):
     monkeypatch.setattr(forecasts, "load_weekly_grade_rows",
                         lambda season: _track_record_rows())
     monkeypatch.setattr(forecasts, "load_reconstructed_weeks",
                         lambda season: set())
     record = forecasts.weekly_track_record(2026)
 
-    assert record["backtest"] is None
+    assert "backtest" not in record
     assert record["overall"]["graded"] == 16
     assert all(h["reconstructed"] is False for h in record["hits"])
 
 
-def test_track_record_payload_carries_backtest_with_labels(monkeypatch):
+def test_track_record_payload_weekly_record_is_combined(monkeypatch):
     api = _patch_track_record(monkeypatch)
     monkeypatch.setattr(forecasts, "weekly_track_record", lambda season: {
         "scoring_version": "weekly-v6", "min_sample": 10,
-        "overall": {"calls": 0, "graded": 0, "hit": 0, "partial": 0,
-                    "miss": 0, "ungraded": 0, "hit_rate": None,
-                    "partial_rate": None, "miss_rate": None},
-        "groups": [], "hits": [], "misses": [],
-        "backtest": {"weeks": [1, 2, 3],
-                     "overall": {"calls": 20, "graded": 20, "hit": 12,
-                                 "partial": 5, "miss": 3, "ungraded": 0,
-                                 "hit_rate": 0.6, "partial_rate": 0.25,
-                                 "miss_rate": 0.15},
-                     "groups": [{"classification": "emerging_breakout",
-                                 "calls": 20, "graded": 20, "hit": 12,
-                                 "partial": 5, "miss": 3, "ungraded": 0,
-                                 "hit_rate": 0.6, "partial_rate": 0.25,
-                                 "miss_rate": 0.15}]},
+        "overall": {"calls": 27, "graded": 27, "hit": 19, "partial": 3,
+                    "miss": 5, "ungraded": 0, "hit_rate": 19 / 27,
+                    "partial_rate": 3 / 27, "miss_rate": 5 / 27},
+        "groups": [{"classification": "emerging_breakout",
+                    "calls": 24, "graded": 24, "hit": 19, "partial": 3,
+                    "miss": 2, "ungraded": 0, "hit_rate": 19 / 24,
+                    "partial_rate": 0.125, "miss_rate": 2 / 24}],
+        "hits": [], "misses": [],
     })
 
     payload = api.get_breakout_track_record(2026)
 
-    backtest = payload["weekly"]["backtest"]
-    assert backtest["weeks"] == [1, 2, 3]
-    assert backtest["groups"][0]["label"] == "Emerging Breakout"
-    assert backtest["overall"]["hit_rate"] == pytest.approx(0.6)
+    weekly = payload["weekly"]
+    # The combined weekly record carries no backtest section and no
+    # provenance week list; the outlook has no backtest entry either.
+    assert "backtest" not in weekly
+    assert "reconstructed_weeks" not in weekly
+    assert weekly["overall"]["graded"] == 27
+    assert weekly["groups"][0]["label"] == "Emerging Breakout"
+    assert "weekly_backtest" not in payload["outlook"]
 
 
 def test_track_record_route_registered():
@@ -814,7 +807,7 @@ def test_v5_shaped_row_renders_without_confidence_detail():
 
 
 # ---------------------------------------------------------------------------
-# backtest outlook: forecasts for the reconstructed weeks' open calls
+# pooled outlook: reconstructed weeks' open calls join the weekly outlook
 # ---------------------------------------------------------------------------
 
 _HELD = {"snap": 65.0, "tgt": 9.0, "car": 11.0, "ppr": 18.0}
@@ -826,8 +819,8 @@ def _recon_row(pid, week, score):
                      player_name=f"Player {pid}", breakout_score=score)
 
 
-def _patch_backtest_outlook(monkeypatch, *, through=3, week_rows=None,
-                            series=None):
+def _patch_reconstructed_outlook(monkeypatch, *, through=3, week_rows=None,
+                                 series=None):
     """Reconstructed weeks 1-2 with stored runs, layered on the two-board
     track record stubs. ``week_rows`` maps week -> the score rows stored
     under that week's reconstruction run."""
@@ -859,61 +852,84 @@ def _patch_backtest_outlook(monkeypatch, *, through=3, week_rows=None,
     return api
 
 
-def test_backtest_outlook_counts_reconstructed_open_calls(monkeypatch):
-    api = _patch_backtest_outlook(monkeypatch)
+def test_outlook_pools_reconstructed_open_calls(monkeypatch):
+    api = _patch_reconstructed_outlook(monkeypatch)
     payload = api.get_breakout_track_record(2026)
 
-    backtest = payload["outlook"]["weekly_backtest"]
-    assert backtest["weeks"] == [1, 2]
-    # 101 tracks to hit (week 2 call), 102 tracks to miss, 103 has no
-    # games yet so it is pending with no band.
-    assert backtest["counts"] == {
-        "tracking_to_hit": 1, "borderline": 0, "tracking_to_miss": 1}
-    assert backtest["open_calls"] == 2
-    assert backtest["pending_calls"] == 1
-    top = backtest["top_tracking_hit"]
-    assert len(top) == 1
-    assert top[0]["player_id"] == "101"
-    assert top[0]["reconstructed"] is True
-    assert top[0]["group_label"] == "Emerging Breakout"
+    # No separate backtest entry: the reconstructed forecasts are inside
+    # the one weekly outlook.
+    assert "weekly_backtest" not in payload["outlook"]
+    weekly = payload["outlook"]["weekly"]
+    # Reconstructed: 101 tracks to hit (its week 2 call), 102 tracks to
+    # miss, 103 has no games yet. Live board: Alpha tracks to hit,
+    # Delta pending. Pooled, each player counted once:
+    assert weekly["counts"] == {
+        "tracking_to_hit": 2, "borderline": 0, "tracking_to_miss": 1}
+    assert weekly["open_calls"] == 3
+    assert weekly["pending_calls"] == 2
+    top = weekly["top_tracking_hit"]
+    assert [t["player_id"] for t in top] == ["101", "1"]
     # Player 101 was called in BOTH reconstructed weeks; the later call
-    # wins the merge, so the basis reflects only week 3 being in.
+    # wins the merge, so the basis reflects only week 3 being in, and
+    # the entry keeps its Backtest tag.
+    assert top[0]["reconstructed"] is True
     assert top[0]["call_week"] == 2
     assert "1 of 3 weeks in" in top[0]["basis"]
+    assert top[0]["group_label"] == "Emerging Breakout"
+    # The live entry carries no backtest tag.
+    assert "reconstructed" not in top[1]
 
 
-def test_backtest_outlook_never_folds_into_live_outlook(monkeypatch):
-    api = _patch_backtest_outlook(monkeypatch)
+def test_outlook_live_call_beats_reconstructed_call(monkeypatch):
+    api = _patch_two_boards(monkeypatch)
+
+    def _view(pid, band, score, name):
+        return {"player_id": pid, "player_name": name,
+                "classification": "watchlist", "breakout_score": score,
+                "call_week": 1,
+                "forecast": {"kind": "weekly", "band": band,
+                             "band_label": "Stub", "basis": "recon stub"}}
+
+    monkeypatch.setattr(forecasts, "weekly_backtest_forecasts",
+                        lambda season, limit=None: ([1], {
+                            # Same player as the live board's Alpha,
+                            # but the reconstruction says miss.
+                            "1": _view("1", "tracking_to_miss", 99.0, "Alpha"),
+                            "9": _view("9", "tracking_to_hit", 88.0, "Iota"),
+                        }))
     payload = api.get_breakout_track_record(2026)
 
-    # The live weekly outlook still reflects the live board only (the
-    # two-board stub: one tracking to hit, one pending), untouched by the
-    # reconstructed calls counted in weekly_backtest.
-    live = payload["outlook"]["weekly"]
-    assert live["counts"] == {
-        "tracking_to_hit": 1, "borderline": 0, "tracking_to_miss": 0}
-    assert live["open_calls"] == 1
-    assert live["pending_calls"] == 1
-    assert all("reconstructed" not in t for t in live["top_tracking_hit"])
+    weekly = payload["outlook"]["weekly"]
+    # The player counts once, with the LIVE forecast: the reconstructed
+    # miss never lands, and Alpha's top entry is untagged.
+    assert weekly["counts"] == {
+        "tracking_to_hit": 2, "borderline": 0, "tracking_to_miss": 0}
+    assert weekly["open_calls"] == 2
+    assert weekly["pending_calls"] == 1
+    top = {t["player_id"]: t for t in weekly["top_tracking_hit"]}
+    assert set(top) == {"1", "9"}
+    assert "reconstructed" not in top["1"]
+    assert top["9"]["reconstructed"] is True
+    assert top["9"]["call_week"] == 1
 
 
-def test_backtest_outlook_skips_mature_reconstructed_calls(monkeypatch):
+def test_outlook_skips_mature_reconstructed_calls(monkeypatch):
     # Through week 6 both the week 1 and week 2 outcome windows are
-    # complete: the calls are the grader's business and forecast nothing.
-    api = _patch_backtest_outlook(monkeypatch, through=6)
+    # complete: the calls are the grader's business and forecast
+    # nothing, so the pooled weekly outlook is the live board alone.
+    api = _patch_reconstructed_outlook(monkeypatch, through=6)
     payload = api.get_breakout_track_record(2026)
 
-    backtest = payload["outlook"]["weekly_backtest"]
-    assert backtest["weeks"] == [1, 2]
-    assert backtest["counts"] == {
-        "tracking_to_hit": 0, "borderline": 0, "tracking_to_miss": 0}
-    assert backtest["open_calls"] == 0
-    assert backtest["pending_calls"] == 0
-    assert backtest["top_tracking_hit"] == []
+    weekly = payload["outlook"]["weekly"]
+    assert weekly["counts"] == {
+        "tracking_to_hit": 1, "borderline": 0, "tracking_to_miss": 0}
+    assert weekly["open_calls"] == 1
+    assert weekly["pending_calls"] == 1
+    assert "weekly_backtest" not in payload["outlook"]
 
 
-def test_backtest_outlook_caps_each_week_at_the_board_limit(monkeypatch):
-    api = _patch_backtest_outlook(
+def test_reconstructed_forecasts_cap_each_week_at_the_board_limit(monkeypatch):
+    _patch_reconstructed_outlook(
         monkeypatch,
         week_rows={1: [_recon_row(f"c{i}", 1, 100.0 - i) for i in range(20)],
                    2: []},
@@ -925,25 +941,25 @@ def test_backtest_outlook_caps_each_week_at_the_board_limit(monkeypatch):
         return {}
 
     monkeypatch.setattr(forecasts, "weekly_forecasts_for_calls", _record)
-    payload = api.get_breakout_track_record(2026)
-
     import dashboard_services.breakout_api as api_mod
+    weeks, views = forecasts.weekly_backtest_forecasts(
+        2026, limit=api_mod.BREAKOUT_BOARD_LIMIT)
+
     assert seen["counts"][0] == api_mod.BREAKOUT_BOARD_LIMIT == 15
-    assert payload["outlook"]["weekly_backtest"]["weeks"] == [1, 2]
+    assert weeks == [1, 2]
+    assert views == {}
 
 
-def test_backtest_outlook_zeroed_without_reconstructions(monkeypatch):
+def test_outlook_without_reconstructions_is_board_only(monkeypatch):
     api = _patch_track_record(monkeypatch)
     payload = api.get_breakout_track_record(2026)
 
-    assert payload["outlook"]["weekly_backtest"] == {
-        "counts": {"tracking_to_hit": 0, "borderline": 0,
-                   "tracking_to_miss": 0},
-        "open_calls": 0,
-        "pending_calls": 0,
-        "top_tracking_hit": [],
-        "weeks": [],
-    }
+    assert "weekly_backtest" not in payload["outlook"]
+    weekly = payload["outlook"]["weekly"]
+    assert weekly["open_calls"] == 3
+    assert weekly["pending_calls"] == 1
+    assert all("reconstructed" not in t
+               for t in weekly["top_tracking_hit"])
 
 
 # ---------------------------------------------------------------------------
@@ -961,9 +977,14 @@ def test_breakout_page_has_sidebar_and_forecast_chip():
     # The chip literally carries the word Forecast on the card.
     assert "Forecast: " in src
     assert "candidate.forecast" in src
-    # Backtest outlook subsection + slim track record pending lines.
-    assert "weekly_backtest" in src
-    assert "Weekly backtest" in src
+    # Combined sections only: no separate backtest outlook subsection,
+    # no track-record backtest block, and no provenance note copy. The
+    # per-entry Backtest chip and the slim pending lines stay.
+    assert "weekly_backtest" not in src
+    assert "Weekly backtest" not in src
+    assert "never count toward the live rates" not in src
+    assert "re-scored later" not in src
+    assert "bo-grade-chip-bt" in src
     assert "bo-rail-pending-line" in src
 
 
