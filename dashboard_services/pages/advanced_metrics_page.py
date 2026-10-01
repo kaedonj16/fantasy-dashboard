@@ -1071,6 +1071,10 @@ def build_advanced_metrics_body(
       .am-cmp-table thead th { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--text-muted); border-bottom:2px solid var(--border); }
       .am-cmp-table tbody tr:hover td { background:rgba(128,128,128,.04); }
       .am-cmp-table th:first-child, .am-cmp-table td:first-child { padding-left:2px; }
+      .am-cmp-table thead th:first-child, .am-cmp-table td.am-cmp-metric { position:sticky; left:0; background:var(--card); border-right:1px solid var(--border); }
+      .am-cmp-table thead th:first-child { z-index:3; }
+      .am-cmp-table td.am-cmp-metric { z-index:2; }
+      .am-cmp-table tbody tr:hover td.am-cmp-metric { background-color:var(--card); background-image:linear-gradient(rgba(128,128,128,.04), rgba(128,128,128,.04)); }
       /* Player header cell */
       .am-cmp-player-head { vertical-align:top; min-width:150px; text-transform:none !important; letter-spacing:0 !important; color:var(--text) !important; }
       .am-cmp-head-name { display:flex; align-items:center; gap:6px; font-size:14px; font-weight:800; color:var(--text); }

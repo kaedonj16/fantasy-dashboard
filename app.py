@@ -17375,7 +17375,7 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
         table_rows_html += f"""
         <tr>
           <td>{_rank_badge(rank)}</td>
-          <td>{html.escape(str(row['display_name']))} {rings}</td>
+          <td class="hist-team">{html.escape(str(row['display_name']))} {rings}</td>
           <td style="font-weight:700;color:var(--accent);">{int(row['Championships'])}</td>
           <td style="{rec_style}">{int(row['Wins'])}-{int(row['Losses'])}</td>
           <td>
@@ -17396,7 +17396,7 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
         <div class="history-table-wrap">
           <table class="history-table">
             <thead><tr>
-              <th>#</th><th>Team</th><th>Titles</th><th>Record</th>
+              <th>#</th><th class="hist-team">Team</th><th>Titles</th><th>Record</th>
               <th>Win%</th><th>PF</th><th>PA</th><th>Avg/Wk</th><th>Best Wk</th><th>Seasons</th>
             </tr></thead>
             <tbody>{table_rows_html}</tbody>
