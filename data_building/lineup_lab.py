@@ -262,6 +262,7 @@ def build_lineup_lab_payload(
     season: int,
     week: int,
     scoring_settings: Optional[dict] = None,
+    platform: str = "sleeper",
 ) -> dict:
     """Build the Lab payload for one viewer roster and week.
 
@@ -292,8 +293,14 @@ def build_lineup_lab_payload(
     # fake 50/50); the payload now flags it instead (see opp_missing).
     matchups: List[dict] = []
     try:
-        from dashboard_services.api import get_matchups
-        matchups = get_matchups(str(league_id), int(week)) or []
+        # Canonical platform path: provider adapters normalize every
+        # platform's matchups to the same Sleeper-shaped rows. The legacy
+        # dashboard_services.api.get_matchups is Sleeper-only and returns
+        # [] for a Yahoo/ESPN league id, which silently dropped the
+        # opponent for every non-Sleeper league.
+        from dashboard_services.platform_api import get_matchups
+        matchups = get_matchups(
+            platform, str(league_id), int(week), int(season)) or []
     except Exception:
         logger.debug("lineup-lab: matchup fetch failed", exc_info=True)
     mine = next(

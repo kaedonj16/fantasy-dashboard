@@ -14114,6 +14114,7 @@ def api_lineup_lab():
             viewer_roster_id=viewer_roster_id,
             season=season,
             week=week,
+            platform=platform,
         )
     except LookupError as e:
         return jsonify({"state": "team_not_linked", "message": str(e)}), 409
