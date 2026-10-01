@@ -647,6 +647,21 @@ def main() -> Dict[str, Any]:
 
     if context.mode == MODE_WEEKLY:
         summary = run_weekly_breakout(context, refresh=True, min_score=0.0)
+        # Feedback loop: grade any matured calls against realized outcomes
+        # (weekly_grading). Runs after the snapshot attempt regardless of its
+        # status - older calls may have matured even when this week's run
+        # skipped - and is best-effort: grading must never break scoring.
+        try:
+            from data_building.breakout_engine.weekly_grading import (
+                grade_weekly_breakouts,
+            )
+            graded = grade_weekly_breakouts(
+                context.season, through_week=context.cutoff_week,
+            )
+            summary = {**summary, "grading": graded}
+            print(f"[calculate_breakouts] weekly grading: {graded}")
+        except Exception as exc:
+            print(f"[calculate_breakouts] weekly grading skipped: {exc}")
         return {"mode": "weekly", **summary}
 
     # ── offseason / preseason: unchanged historical scorer ───────────────────
