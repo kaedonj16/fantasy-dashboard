@@ -91,7 +91,7 @@ def _inj_row(rid, pid, player, status, injury="", body="", pos="RB", nfl="KC",
             "Body": body, "Last Updated": None, "NewsUrl": ""}
 
 
-def test_notable_injuries_severe_plus_questionable_starters_only():
+def test_notable_injuries_only_newly_injured_starters():
     df = _injury_df([
         _inj_row("1", "out1", "Out Starter", "Active", injury="Out", body="Knee"),
         _inj_row("1", "qstart", "Questionable Starter", "Questionable"),
@@ -100,17 +100,35 @@ def test_notable_injuries_severe_plus_questionable_starters_only():
         _inj_row("3", "fine", "Healthy", "Active", team="Team C"),
         _inj_row("", "fa", "Free Agent", "Out", team="Free Agent"),
         _inj_row("3", "dbt", "Doubtful Guy", "Active", injury="Doubtful", team="Team C"),
+        _inj_row("3", "oldout", "Out Since Week One", "Active", injury="Out",
+                 team="Team C"),
     ])
 
     rows = _notable_injuries(df, {"out1", "qstart"})
 
-    # Severity first (Out/IR, then Doubtful, then Questionable); the
-    # questionable bench player, the healthy player, and the free agent
-    # are not league injury news.
-    assert [r["pid"] for r in rows] == ["out1", "ir1", "dbt", "qstart"]
+    # Only players who started the recap week count as newly injured: the
+    # Out starter (hurt during/after the game he played) and the
+    # Questionable starter. The IR stash, the doubtful non-starter, and
+    # the player who was already Out before this week stay off the list,
+    # as do the healthy player and the free agent.
+    assert [r["pid"] for r in rows] == ["out1", "qstart"]
     assert rows[0]["status"] == "OUT"
     assert rows[0]["body"] == "Knee"
     assert rows[0]["started"] is True
+    assert all(r["started"] for r in rows)
+
+
+def test_notable_injuries_severity_order_among_new_injuries():
+    df = _injury_df([
+        _inj_row("1", "q1", "Que Starter", "Questionable"),
+        _inj_row("1", "ir1", "Ir Starter", "IR"),
+        _inj_row("2", "d1", "Dbt Starter", "Active", injury="Doubtful",
+                 team="Team B"),
+    ])
+
+    rows = _notable_injuries(df, {"q1", "ir1", "d1"})
+
+    assert [r["pid"] for r in rows] == ["ir1", "d1", "q1"]
 
 
 def test_notable_injuries_handles_missing_report():
@@ -147,6 +165,10 @@ def test_recap_source_contracts_for_new_sections():
     assert "ensure_injury_bits" in page and "ensure_activity_bits" in page
     assert 'selected_week == available_weeks[-1]' in page
     assert "<h2>Injury Report</h2>" in page
+    # Injury report is new-injuries-only and lays out in two columns
+    # (stacking to one on phones).
+    assert "<small>New this week</small>" in page
+    assert "grid-template-columns:repeat(2, minmax(0,1fr))" in page
     # League activity renders after standings, before Up Next.
     assert "<h2>League Activity</h2>" in page
     ret = page.split("return ('<main class=\"weekly-recap\">'", 1)[1]
