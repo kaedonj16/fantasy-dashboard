@@ -232,19 +232,44 @@ def build_profiles(
     ctx = ctx or {}
     players = _players_index()
     season_files_cur = _week_files(season)
-    # Team target concentration for the current season (Herfindahl of targets).
-    concentration = _team_concentration(season, players)
+    # Team target concentration for the current season (Herfindahl of
+    # targets). Computed lazily on the first cache miss below: when every
+    # requested profile is served from _PROFILE_CACHE, the league-wide
+    # pass is skipped entirely.
+    concentration: Optional[Dict[str, float]] = None
+
+    # Per-player profile cache: same key shape and TTL as the
+    # get_player_profile wrapper. Callers that pass ctx overrides always
+    # build fresh — their inputs are not part of the key, exactly as
+    # before this cache was consulted here.
+    use_cache = not ctx
+    sig = profile_inputs_signature(season, week) if use_cache else ""
+    now = time.time()
 
     out: Dict[str, dict] = {}
     for req in requests:
         pid = str(req.get("player_id"))
         pos = (req.get("pos") or "").upper()
         mean = _safe_float(req.get("mean"), 0.0)
+        key = (pid, pos, round(float(mean), 2), season, week, sig)
+        if use_cache:
+            hit = _PROFILE_CACHE.get(key)
+            if hit and now - hit[0] < _PROFILE_TTL:
+                out[pid] = hit[1]
+                continue
         try:
-            out[pid] = _build_one(pid, pos, mean, season, week, ctx, players, concentration)
+            if concentration is None:
+                concentration = _team_concentration(season, players)
+            prof = _build_one(pid, pos, mean, season, week, ctx, players, concentration)
         except Exception:
             logger.debug("player_distributions: profile failed for %s", pid, exc_info=True)
+            # Build-error fallbacks are never cached: a transient failure
+            # must not stick for the whole TTL.
             out[pid] = _fallback_profile(pid, pos, mean, "build_error")
+            continue
+        out[pid] = prof
+        if use_cache:
+            _PROFILE_CACHE[key] = (now, prof)
     return out
 
 

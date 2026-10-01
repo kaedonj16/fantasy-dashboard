@@ -13892,6 +13892,18 @@ def api_start_sit_options():
     })
 
 
+# Lineup Lab payload cache: a full payload build recomputes ~40 player
+# distribution profiles plus league-wide passes, so successful builds are
+# reused for a few minutes. The profile-inputs signature in the key
+# invalidates an entry when the players index (injuries/usage) changes
+# mid-week. Only successful payloads are stored; 409/503 paths never land
+# here.
+_LAB_PAYLOAD_CACHE: dict = {}  # key -> (monotonic ts, payload)
+_LAB_PAYLOAD_TTL = 300.0
+_LAB_PAYLOAD_LOCK = threading.Lock()
+_LAB_PAYLOAD_MAX = 64
+
+
 @app.route("/api/lineup-lab")
 def api_lineup_lab():
     """Lineup Lab payload: starters + eligible bench + opponent distribution.
@@ -13929,6 +13941,16 @@ def api_lineup_lab():
     except (TypeError, ValueError):
         week = int(ctx.get("current_week") or 1)
 
+    from data_building.player_distributions import profile_inputs_signature
+    cache_key = (
+        platform, league_id, int(season), int(week), str(viewer_roster_id),
+        profile_inputs_signature(int(season), int(week)),
+    )
+    with _LAB_PAYLOAD_LOCK:
+        hit = _LAB_PAYLOAD_CACHE.get(cache_key)
+        if hit and time.monotonic() - hit[0] < _LAB_PAYLOAD_TTL:
+            return jsonify(hit[1])
+
     try:
         from data_building.lineup_lab import build_lineup_lab_payload
         payload = build_lineup_lab_payload(
@@ -13945,6 +13967,11 @@ def api_lineup_lab():
         return jsonify({"state": "temporarily_unavailable", "retryable": True,
                         "message": "Lineup Lab is temporarily unavailable."}), 503
     payload["state"] = "loaded"
+    with _LAB_PAYLOAD_LOCK:
+        _LAB_PAYLOAD_CACHE[cache_key] = (time.monotonic(), payload)
+        if len(_LAB_PAYLOAD_CACHE) > _LAB_PAYLOAD_MAX:
+            oldest = min(_LAB_PAYLOAD_CACHE, key=lambda k: _LAB_PAYLOAD_CACHE[k][0])
+            del _LAB_PAYLOAD_CACHE[oldest]
     return jsonify(payload)
 
 

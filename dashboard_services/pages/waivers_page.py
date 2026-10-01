@@ -725,6 +725,7 @@ var wvLabOppDraws = null; // opponent team totals per sim
 var wvLabOppStats = null; // {{median, p10, p90}}
 var wvLabResult = null;   // last evaluate() output
 var wvLabLoading = false;
+var wvLabPrefetch = null;  // {{key, promise}}: background Lab payload fetch
 var wvLabOpenSlots = {{}};   // slot index -> true while its bench sheet is expanded
 var wvLabLastChanges = []; // change records (slot idx, out name, in name) from the last action
 var wvLabLastAction = '';  // 'swap' | 'optimize' | 'upside': labels the change summary
@@ -924,6 +925,35 @@ function wvLabEvaluate(lineup) {{
   }};
 }}
 
+// One URL builder for the Lab payload: the background prefetch and the
+// toggle load must request the exact same thing.
+function wvLabUrl() {{
+  var week = (wvStartSitData && wvStartSitData.current_week) || '';
+  return '/api/lineup-lab?platform=' + encodeURIComponent(WV_PLATFORM)
+    + '&league_id=' + encodeURIComponent(WV_LEAGUE_ID)
+    + '&season=' + encodeURIComponent(WV_SEASON)
+    + (week ? '&week=' + encodeURIComponent(week) : '');
+}}
+
+function wvLabKey() {{
+  var week = (wvStartSitData && wvStartSitData.current_week) || '';
+  return WV_LEAGUE_ID + '|' + WV_SEASON + '|' + week;
+}}
+
+// Warm the Lab in the background once Start/Sit data lands, so the payload
+// (and the server-side cache behind it) is ready when the Lab toggle is
+// tapped. Failures are silent: the stash is dropped and the real load keeps
+// its normal loading/error behavior.
+function wvPrefetchLab() {{
+  var key = wvLabKey();
+  if (wvLabPrefetch && wvLabPrefetch.key === key) return;
+  var p = fetch(wvLabUrl()).then(function(r) {{ return r.json(); }});
+  wvLabPrefetch = {{ key: key, promise: p }};
+  p.catch(function() {{
+    if (wvLabPrefetch && wvLabPrefetch.key === key) wvLabPrefetch = null;
+  }});
+}}
+
 // Structured loading skeleton for the Lab: mirrors the loaded layout (hero +
 // lineup rows) so the section animates while it loads and the page does not
 // repaint when results arrive.
@@ -964,12 +994,17 @@ function wvLoadLab() {{
   wvLabLoading = true;
   var body = document.getElementById('wvLabBody');
   if (body) body.innerHTML = wvLabSkeleton();
-  var week = (wvStartSitData && wvStartSitData.current_week) || '';
-  var url = '/api/lineup-lab?platform=' + encodeURIComponent(WV_PLATFORM)
-    + '&league_id=' + encodeURIComponent(WV_LEAGUE_ID)
-    + '&season=' + encodeURIComponent(WV_SEASON)
-    + (week ? '&week=' + encodeURIComponent(week) : '');
-  fetch(url).then(function(r) {{ return r.json(); }}).then(function(data) {{
+  // Consume the background prefetch when it is for this league/season/week;
+  // a different week (or no prefetch) fetches fresh, exactly as before.
+  var req;
+  if (wvLabPrefetch && wvLabPrefetch.key === wvLabKey()) {{
+    req = wvLabPrefetch.promise;
+    wvLabPrefetch = null;
+  }} else {{
+    var url = wvLabUrl();
+    req = fetch(url).then(function(r) {{ return r.json(); }});
+  }}
+  req.then(function(data) {{
     wvLabLoading = false;
     if (!data || data.state !== 'loaded' || !data.you || !data.you.lineup) {{
       if (body) body.innerHTML = '<div class="wv-lab-skel">'
@@ -1855,6 +1890,7 @@ function wvFetchStartSit() {{
       }}
       wvStartSitData = d;
       wvStartSitData._lineup_requirements = d.lineup_requirements || {{}};
+      wvPrefetchLab();
       wvSyncPosPills();
       wvRenderStartSit();
     }})
