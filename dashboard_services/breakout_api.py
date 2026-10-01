@@ -907,11 +907,12 @@ def get_weekly_breakout_candidates(season: int, min_score: float = 0.0,
     except Exception:
         logger.warning("weekly breakout: player index enrich failed", exc_info=True)
 
-    # Live forecasts for open calls on the current board only (an explicit
-    # historical snapshot is a finished view; its calls are graded, not
-    # forecast). Computed at read time from the raw snapshot rows, never
-    # stored, and never part of any hit rate.
-    if as_of_week is None and candidates:
+    # Live forecasts attach on the current board and on explicit week
+    # views for open calls. Computed at read time from the raw snapshot
+    # rows, never stored, and never part of any hit rate.
+    # weekly_forecasts_for_calls itself skips mature calls, so finished
+    # historical weeks get no chips without any extra gate here.
+    if candidates:
         try:
             from data_building.breakout_engine import forecasts as _bo_forecasts
             _served = {str(c.get("player_id")): c for c in candidates}
@@ -1855,7 +1856,11 @@ def _forecast_outlook(board: Dict) -> Dict:
                 bucket["pending_no_baseline"] += 1
             elif forecast.get("state") == "no_games":
                 bucket["pending_no_games"] += 1
-        if band == _forecasts.BAND_TRACKING_HIT:
+        # Top list is live-board-only by design: reconstructed (backtest)
+        # calls still count toward the band counts above, but the named
+        # top entries show only calls on the current live boards.
+        if (band == _forecasts.BAND_TRACKING_HIT
+                and not candidate.get("reconstructed")):
             score = candidate.get("breakout_score")
             if score is None:
                 score = candidate.get("breakout_opportunity_score")
@@ -1869,9 +1874,6 @@ def _forecast_outlook(board: Dict) -> Dict:
                     candidate.get("classification_label") if kind == "weekly"
                     else _phase_label(forecast.get("phase"))),
             }
-            if candidate.get("reconstructed"):
-                entry["reconstructed"] = True
-                entry["call_week"] = candidate.get("call_week")
             top[kind].append((float(score or 0), entry))
     for kind in ("weekly", "preseason"):
         ranked = sorted(top[kind], key=lambda item: item[0], reverse=True)
