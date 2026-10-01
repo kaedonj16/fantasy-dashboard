@@ -187,6 +187,7 @@ def api_advanced_metrics_leaderboard():
     # page); skipped otherwise so behavior is unchanged.
     if selected_seasons:
         try:
+            from data_building.external_data.player_current_team import normalize_nfl_team
             from data_building.external_data.player_team_history import teams_in_season
             for _p in players or []:
                 years = _p.get("seasons") or (
@@ -200,10 +201,15 @@ def api_advanced_metrics_leaderboard():
                     except (TypeError, ValueError):
                         continue
                     for stint in teams_in_season(str(_p.get("player_id")), year_i) or []:
-                        all_stints.append(stint)
-                        team = stint.get("team")
+                        # teams_in_season resolves in history form (Rams = LA);
+                        # rows elsewhere carry the site form (LAR) from the
+                        # players index. Stamp site form so the team filter
+                        # never splits one franchise into two entries.
+                        team = normalize_nfl_team(stint.get("team"))
                         if not team:
                             continue
+                        stint = {**stint, "team": team}
+                        all_stints.append(stint)
                         team_weeks.setdefault(team, [])
                         for wk in stint.get("weeks") or []:
                             if wk not in team_weeks[team]:

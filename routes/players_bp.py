@@ -118,6 +118,7 @@ def api_player_weekly_metrics(player_id: str):
     # Attach the opponent faced each week (from the player's team THAT week + the
     # week's schedule) so the weekly trend charts can show "78 yds vs NYG" on hover.
     try:
+        from data_building.external_data.player_current_team import normalize_nfl_team
         from data_building.external_data.player_team_history import team_for_week
         from data_building.weekly_metrics import week_opponent_map
         _omap: dict = {}
@@ -129,7 +130,7 @@ def api_player_weekly_metrics(player_id: str):
             team = team_for_week(str(player_id), season, wk)
             if not team:
                 continue
-            w["team"] = team
+            w["team"] = normalize_nfl_team(team) or team
             omap = _omap.get(wk)
             if omap is None:
                 omap = week_opponent_map(season, wk)

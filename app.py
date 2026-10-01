@@ -18342,7 +18342,7 @@ def _compute_fpts_against(season: int, scoring_settings=None, completed_through_
             if not sched_files:
                 continue
             games = json.load(open(sched_files[0], encoding="utf-8"))
-            _alias = {"WSH": "WAS"}
+            _alias = {"WSH": "WAS", "LA": "LAR", "JAC": "JAX"}
 
             def _n(t):
                 return _alias.get(t, t)
@@ -25461,6 +25461,40 @@ def _game_log_proj_from_week(upcoming, cur_season, cur_week, season_type) -> int
     return 1
 
 
+# team_for_week() resolves in nflverse form (Rams = LA, and that module
+# canonicalises site LAR back to LA), while the schedule files use site form
+# (LAR / WAS / JAX). The game-log loop must translate before matching, or a
+# Rams game never matches: played weeks lose their date/opponent and an
+# unplayed week is misread as a bye (whose row then suppresses the week's
+# projection via _actual_weeks).
+_HISTORY_TEAM_TO_SITE = {"LA": "LAR", "WSH": "WAS", "JAC": "JAX"}
+
+
+def _game_log_matchup(wk_team, games):
+    """Find wk_team's game in one week's schedule list.
+
+    Returns (opponent, is_away, game_date, site_team). Matching goes through
+    team_abbr_keys so a history-form code (LA) matches the schedule's site
+    form (LAR) in either direction - the same helper the projection path
+    uses. opponent/game_date are "" when the team has no game that week (a
+    real bye). site_team is wk_team in site form, for the season header.
+    """
+    raw = str(wk_team or "").strip().upper()
+    site_team = _HISTORY_TEAM_TO_SITE.get(raw, raw)
+    keys = set(team_abbr_keys(site_team)) if site_team else set()
+    if keys:
+        for game in games or []:
+            if not isinstance(game, dict):
+                continue
+            home_team = game.get("home", "")
+            away_team = game.get("away", "")
+            if home_team in keys:
+                return away_team, False, game.get("gameDate", ""), site_team
+            if away_team in keys:
+                return home_team, True, game.get("gameDate", ""), site_team
+    return "", False, "", site_team
+
+
 def _load_schedule_week_file(schedule_file: str):
     """Parse one schedule week file into (week_num, games) or None.
 
@@ -25613,27 +25647,12 @@ def api_player_game_logs(player_id: str):
                     games = schedule_by_week[week_num]
                     if not isinstance(games, list):
                         continue
-                    wk_team = team_for_week(player_id, season_year, week_num) or player_team
+                    opponent, is_away, game_date, wk_team = _game_log_matchup(
+                        team_for_week(player_id, season_year, week_num) or player_team,
+                        games,
+                    )
                     if wk_team:
                         _team_counts[wk_team] = _team_counts.get(wk_team, 0) + 1
-                    opponent = ""
-                    is_away = False
-                    game_date = ""
-                    for game in games:
-                        if not isinstance(game, dict):
-                            continue
-                        home_team = game.get("home", "")
-                        away_team = game.get("away", "")
-                        if wk_team and wk_team == home_team:
-                            opponent = away_team;
-                            is_away = False;
-                            game_date = game.get("gameDate", "");
-                            break
-                        elif wk_team and wk_team == away_team:
-                            opponent = home_team;
-                            is_away = True;
-                            game_date = game.get("gameDate", "");
-                            break
                     stats = (stats_by_week.get(week_num) or {}).get(player_id)
                     # Bye week: no game found for this team and no stats
                     if not opponent and not game_date and stats is None:
