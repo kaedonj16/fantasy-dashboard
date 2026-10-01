@@ -1621,10 +1621,13 @@ function wvLabBenchEntry(e) {{
 }}
 
 // True when a player of the given position may sit on the slot's bench.
-// Missing/empty eligibility means unrestricted (matches the payload builder).
+// A missing eligibility list means unrestricted (legacy payloads); an
+// explicitly empty list means nothing qualifies, so a starter the builder
+// could not seat never suggests illegal swaps (matches the payload builder).
 function wvLabSlotEligible(slotEntry, pos) {{
   var el = slotEntry.eligible;
-  return !el || !el.length || el.indexOf(pos) >= 0;
+  if (!el) return true;
+  return el.indexOf(pos) >= 0;
 }}
 
 function wvLabBenchHas(bench, pid) {{

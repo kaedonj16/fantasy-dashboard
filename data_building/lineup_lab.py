@@ -407,6 +407,20 @@ def build_lineup_lab_payload(
         if opp:
             opponent_roster_id = opp.get("roster_id")
 
+    if mine and not starters:
+        # Providers whose matchup starters come from a boxscore
+        # (Fleaflicker) publish empty/"0" starters before kickoff or when
+        # the boxscore fetch fails. The roster's currently-set starters
+        # are the best available truth then. Scoped to a found matchup row
+        # so the offseason (no matchup at all) keeps the
+        # optimal-by-projection fallback below.
+        roster_starters = [
+            str(p) for p in (viewer_roster.get("starters") or [])
+            if p and str(p) != "0"
+        ]
+        if roster_starters:
+            starters = roster_starters
+
     proj_fn = _projection_lookup(scoring, season, week, ctx)
     roster_positions = ctx.get("roster_positions") or []
     slot_counts = _slot_counts(roster_positions)
@@ -461,6 +475,19 @@ def build_lineup_lab_payload(
         if opp_entry:
             opp_starters = [
                 str(p) for p in (opp_entry.get("starters") or [])
+                if p and str(p) != "0"
+            ]
+        if not opp_starters:
+            # Same pre-game / failed-boxscore gap as the viewer's side:
+            # fall back to the opponent's currently-set roster starters
+            # (Fleaflicker get_rosters carries them from FetchRoster).
+            oroster = next(
+                (r for r in rosters
+                 if str(r.get("roster_id")) == str(opponent_roster_id)),
+                None,
+            ) or {}
+            opp_starters = [
+                str(p) for p in (oroster.get("starters") or [])
                 if p and str(p) != "0"
             ]
         if opp_starters:
@@ -660,9 +687,17 @@ def build_lineup_lab_payload(
     for pid in starters:
         slot = starter_slots.get(pid, "")
         eligible = _slot_eligible_positions(slot) if slot else frozenset()
+        if not eligible:
+            # Unseated starter (unknown position, or a slot name nothing
+            # resolves to): fall back to the player's own position, so the
+            # per-slot bench pool stays legal. A starter with no known
+            # position gets an empty pool: no swap involving them can be
+            # proven legal, so Best moves / Optimize must not suggest one.
+            pos = _player_pos(players_index, pid)
+            eligible = frozenset({pos}) if pos else frozenset()
         bench_for_slot = [
             bench_entries[p] for p in bench_avail
-            if not eligible or _player_pos(players_index, p) in eligible
+            if _player_pos(players_index, p) in eligible
         ]
         # Sort bench by projection desc for the default view.
         bench_for_slot.sort(key=lambda e: e["proj"], reverse=True)
