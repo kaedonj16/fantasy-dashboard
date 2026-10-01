@@ -2361,8 +2361,12 @@ function _pmFetchTradesInto(panel, playerId, season, ctx) {
     if (ctx.leagueId) url += `&league_id=${encodeURIComponent(ctx.leagueId)}`;
   }
 
-  fetch(url)
-    .then(r => r.json().then(d => ({ status: r.status, ok: r.ok, d: d || {} })).catch(() => ({ status: r.status, ok: r.ok, d: {} })))
+  // Bound the wait: when the origin stalls, fail fast into the retry card
+  // below instead of spinning until the CDN gives up (~100s).
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 15000);
+  fetch(url, { signal: ctrl.signal })
+    .then(r => { clearTimeout(timer); return r.json().then(d => ({ status: r.status, ok: r.ok, d: d || {} })).catch(() => ({ status: r.status, ok: r.ok, d: {} })); })
     .then(res => {
       if (!panel.isConnected || !body.isConnected) return;
       if (res.status === 403 && res.d.paywall) {
@@ -2388,6 +2392,7 @@ function _pmFetchTradesInto(panel, playerId, season, ctx) {
       body.innerHTML = `<div style="padding:4px 0;">${_pmRenderTradeCards(trades, playerId, { showTeams: scope === 'league' })}</div>`;
     })
     .catch(() => {
+      clearTimeout(timer);
       if (panel.isConnected && body.isConnected) {
         window.brErrorState(body, 'Could not load trade history.', () => {
           _pmFetchTradesInto(panel, playerId, season, ctx);
@@ -2396,11 +2401,10 @@ function _pmFetchTradesInto(panel, playerId, season, ctx) {
     });
 }
 
-// Prefetch the lazy tabs (Stats / Trades / Adv Metrics) once the modal's
-// Overview has loaded, so clicking a tab shows already-rendered content instead
-// of a spinner. We reuse pmSwitchTab's exact load path by briefly activating
-// each un-loaded tab and restoring the current one -- all synchronously in one
-// idle callback, so no intermediate tab state is ever painted.
+// Lazy tabs (Stats / Trades / Adv Metrics) load on demand via pmSwitchTab;
+// there is deliberately no background prefetch (pmPrefetchTabs is a no-op),
+// so opening a modal never fires the league history-chain scans behind the
+// Trades endpoints until the user actually asks for them.
 // ── Team tab (player modal) ───────────────────────────────────────────────────
 let _pmTeamAdvOpen = false;
 let _pmTeamSchedOpen = false;
