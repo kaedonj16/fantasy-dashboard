@@ -448,4 +448,20 @@ def findings(rows: Sequence[Dict[str, Any]],
                 f"under {scoring_version}; its highest fitted value is "
                 f"{_pct(top['probability'])} at a breakout score of "
                 f"{top['score']:g} ({n_current} graded calls).")
+
+    # (e) Cohort baselines: an observed fact about how many graded calls
+    # were measured against a rookie-cohort baseline rather than a
+    # personal baseline. Reported as its own group while the sample is
+    # small; never a recommendation.
+    cohort_rows = [r for r in current
+                   if str(r.get("baseline_source") or "") == "cohort"]
+    if cohort_rows:
+        n_cohort = len(cohort_rows)
+        hits = sum(1 for r in cohort_rows if _verdict(r) == GRADE_HIT)
+        partials = sum(1 for r in cohort_rows if _verdict(r) == GRADE_PARTIAL)
+        misses = sum(1 for r in cohort_rows if _verdict(r) == GRADE_MISS)
+        out.append(
+            f"{n_cohort} graded calls under {scoring_version} were measured "
+            f"against a rookie-cohort baseline ({hits} hits, {partials} "
+            f"partials, {misses} misses).")
     return out

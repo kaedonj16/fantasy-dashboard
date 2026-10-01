@@ -90,6 +90,7 @@ def weekly_forecast(
     weekly_rows: Sequence[Dict[str, Any]],
     through_week: int,
     prior_rows: Optional[Sequence[Dict[str, Any]]] = None,
+    cohort_ppg: Optional[float] = None,
 ) -> Optional[Dict[str, Any]]:
     """Live forecast for one open weekly call. Pure.
 
@@ -130,8 +131,10 @@ def weekly_forecast(
                      f"the Week {call_week} call",
         })
         return base
-    baseline, _source = wg.resolve_baseline(call, rows, prior_rows)
-    verdict = wg.classify_outcome(baseline, outcome)
+    baseline, _source = wg.resolve_baseline(call, rows, prior_rows,
+                                             cohort_ppg)
+    verdict = wg.classify_outcome(baseline, outcome,
+                                  cohort=(_source == "cohort"))
     base.update({
         "ppg_delta": wg._round(verdict.get("ppg_delta")),
         "opp_delta": wg._round(verdict.get("opp_delta")),
@@ -150,12 +153,16 @@ def weekly_forecast(
         wg.GRADE_MISS: BAND_TRACKING_MISS,
     }.get(verdict.get("grade"), BAND_BORDERLINE)
     games = outcome["games"]
+    basis = (f"{len(elapsed)} of {wg.OUTCOME_WEEKS} weeks in, "
+             f"{games} game{'s' if games != 1 else ''} played")
+    if _source == "cohort":
+        basis += (f" vs a {baseline['ppr_ppg']:.1f} PPG typical-rookie "
+                  f"{call.get('position') or 'player'} baseline")
     base.update({
         "state": "forecast",
         "band": band,
         "band_label": BAND_LABELS[band],
-        "basis": f"{len(elapsed)} of {wg.OUTCOME_WEEKS} weeks in, "
-                 f"{games} game{'s' if games != 1 else ''} played",
+        "basis": basis,
     })
     return base
 
@@ -313,7 +320,8 @@ def weekly_forecasts_for_calls(
     """{player_id: forecast} for the open calls among ``calls`` (raw
     weekly_breakout_scores rows). One bulk series load for the season,
     plus the prior-season series only when an open call's baseline PPG
-    needs the prior-season fill."""
+    needs the prior-season fill, plus the cohort aggregate only when an
+    open call has no baseline at all."""
     through = wg.default_through_week(season)
     if through is None:
         return {}
@@ -325,11 +333,15 @@ def weekly_forecasts_for_calls(
     prior_series: Dict[str, List[Dict[str, Any]]] = {}
     if any(wg.call_needs_prior_ppg(c) for c in open_calls):
         prior_series = wg.load_prior_season_series(season)
+    cohort: Dict[str, float] = {}
+    if any(wg.call_needs_cohort_baseline(c) for c in open_calls):
+        cohort = wg.load_cohort_baselines(season)
     out: Dict[str, Dict[str, Any]] = {}
     for call in open_calls:
         pid = str(call.get("player_id") or "")
         forecast = weekly_forecast(
-            call, series.get(pid, []), through, prior_series.get(pid))
+            call, series.get(pid, []), through, prior_series.get(pid),
+            cohort.get(str(call.get("position") or "")))
         if forecast is not None:
             out[pid] = forecast
     return out
