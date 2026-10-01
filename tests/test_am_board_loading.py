@@ -154,6 +154,8 @@ _FETCH_PREAMBLE = (
     "function showAgeCtrl() {}\n"
     "var extrasLoaded = [];\n"
     "function _loadExtras(keys) { extrasLoaded.push(keys); }\n"
+    "var weeklyBoCalls = 0;\n"
+    "function _ensureWeeklyBreakouts() { weeklyBoCalls++; }\n"
     "var fetchCalls = [];\n"
     "function fetch(url) {\n"
     "  fetchCalls.push(String(url));\n"

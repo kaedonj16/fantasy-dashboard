@@ -13,6 +13,7 @@ Each function calculates one of the 7 component scores:
 All functions return (score: float, details: Dict) tuples.
 """
 
+import logging
 import math
 from datetime import date, timedelta
 from typing import List, Optional, Tuple
@@ -24,6 +25,7 @@ from .db_helpers import (
     get_arrivals_by_team_position,
     get_team_stats,
     get_player_advanced_metrics,
+    get_player_weekly_windows,
 )
 from utils.coerce import safe_float as _safe_float, safe_int as _safe_int
 
@@ -1823,12 +1825,27 @@ def _inseason_role_trajectory_score(
     """
     In-season trajectory:
     compares recent window vs previous window using stabilized deltas.
-    """
-    current_metrics = get_player_advanced_metrics(player_id, as_of_date, lookback_days)
-    previous_date = as_of_date - timedelta(days=lookback_days)
-    previous_metrics = get_player_advanced_metrics(player_id, previous_date, lookback_days)
 
-    if not current_metrics or not previous_metrics:
+    The windows are built from per-week usage rows (player_weekly_metrics,
+    via db_helpers.get_player_weekly_windows): snap share, opportunity
+    share (targets + carries over the team total), and red-zone
+    opportunity share, all as 0-1 fractions averaged over the player's
+    latest active weeks vs the active weeks right before them.
+
+    The role_score delta still comes from player_advanced_metrics
+    snapshots (window averages via get_player_advanced_metrics). Snapshot
+    pairs do not always exist (early season, new player); when they don't,
+    that one sub-signal sits at its no-change point (delta 0) and is
+    flagged role_score_available=False in details rather than dragging
+    the whole component to neutral. A snapshot query ERROR is handled
+    the same way here, explicitly: the helper logs and raises, this call
+    site logs a warning and degrades only the role sub-signal, because
+    the weekly usage windows are this component's primary data.
+    """
+    season = as_of_date.year if as_of_date.month >= 8 else as_of_date.year - 1
+    windows = get_player_weekly_windows(player_id, season, lookback_days)
+
+    if not windows:
         return OFFSEASON_NEUTRAL_SCORE, {
             "player_id": player_id,
             "phase_mode": "in_season",
@@ -1836,17 +1853,52 @@ def _inseason_role_trajectory_score(
             "lookback_days": lookback_days,
         }
 
-    curr_snap = _safe_float(current_metrics.get("snap_share", 0))
-    prev_snap = _safe_float(previous_metrics.get("snap_share", 0))
+    current_metrics = windows["current"]
+    previous_metrics = windows["previous"]
 
-    curr_opp = _safe_float(current_metrics.get("opportunity_share", 0))
-    prev_opp = _safe_float(previous_metrics.get("opportunity_share", 0))
+    def _window_delta(key: str):
+        curr = current_metrics.get(key)
+        prev = previous_metrics.get(key)
+        if curr is None or prev is None:
+            # No-change point for a sub-signal with no data in a window;
+            # the caller flags availability in details.
+            return 0.0, False
+        return _safe_float(curr) - _safe_float(prev), True
 
-    curr_rz = _safe_float(current_metrics.get("red_zone_usage", 0))
-    prev_rz = _safe_float(previous_metrics.get("red_zone_usage", 0))
+    snap_delta, snap_available = _window_delta("snap_share")
+    opp_delta, opp_available = _window_delta("opportunity_share")
+    rz_delta, rz_available = _window_delta("red_zone_usage")
 
-    curr_role = _safe_float(current_metrics.get("role_score", 0))
-    prev_role = _safe_float(previous_metrics.get("role_score", 0))
+    curr_snap = current_metrics.get("snap_share")
+    prev_snap = previous_metrics.get("snap_share")
+    curr_opp = current_metrics.get("opportunity_share")
+    prev_opp = previous_metrics.get("opportunity_share")
+    curr_rz = current_metrics.get("red_zone_usage")
+    prev_rz = previous_metrics.get("red_zone_usage")
+
+    # role_score delta from snapshot window averages (fixed as_of_date
+    # helper). Missing pair or a query error degrades this sub-signal
+    # only; see the docstring.
+    curr_role = None
+    prev_role = None
+    role_available = False
+    try:
+        curr_snapshot = get_player_advanced_metrics(player_id, as_of_date, lookback_days)
+        previous_date = as_of_date - timedelta(days=lookback_days)
+        prev_snapshot = get_player_advanced_metrics(player_id, previous_date, lookback_days)
+        if curr_snapshot and prev_snapshot:
+            _curr_role = curr_snapshot.get("role_score")
+            _prev_role = prev_snapshot.get("role_score")
+            if _curr_role is not None and _prev_role is not None:
+                curr_role = _safe_float(_curr_role)
+                prev_role = _safe_float(_prev_role)
+                role_available = True
+    except Exception:
+        logging.getLogger(__name__).warning(
+            "role trajectory: snapshot role_score unavailable for player %s; "
+            "role sub-signal scored at its no-change point",
+            player_id, exc_info=True)
+    role_delta = (curr_role - prev_role) if role_available else 0.0
 
     curr_sample = max(
         _safe_float(current_metrics.get("sample_size", 0)),
@@ -1866,11 +1918,6 @@ def _inseason_role_trajectory_score(
         (_sample_confidence(prev_sample, full_confidence=30, min_confidence=0.45), 0.45),
     ])
 
-    snap_delta = curr_snap - prev_snap
-    opp_delta = curr_opp - prev_opp
-    rz_delta = curr_rz - prev_rz
-    role_delta = curr_role - prev_role
-
     snap_score = _normalize_range(snap_delta, -0.15, 0.25) * 28.0
     opp_score = _normalize_range(opp_delta, -0.12, 0.22) * 34.0
     rz_score = _normalize_range(rz_delta, -0.08, 0.18) * 18.0
@@ -1887,15 +1934,14 @@ def _inseason_role_trajectory_score(
         synergy_bonus += 2.5
 
     # Weekly usage momentum: per-week snap share gives a finer-grained read
-    # than the snapshot windows above. Last-3-week avg vs season avg (in
+    # than the windows above. Last-3-week avg vs season avg (in
     # percentage points), worth up to ±8 points. Guarded — the engine must
     # work without weekly data.
     momentum_bonus = 0.0
     momentum_pp = None
     try:
         from data_building.weekly_metrics import get_recent_momentum
-        _wk_season = as_of_date.year if as_of_date.month >= 8 else as_of_date.year - 1
-        momentum_pp = get_recent_momentum(player_id, _wk_season)
+        momentum_pp = get_recent_momentum(player_id, season)
         if momentum_pp is not None:
             momentum_bonus = _clamp(momentum_pp * 0.8, -8.0, 8.0)
     except Exception:
@@ -1903,21 +1949,31 @@ def _inseason_role_trajectory_score(
 
     total_score = _clamp(stabilized_total + synergy_bonus + momentum_bonus, 0.0, 100.0)
 
+    def _rounded(value, digits):
+        return round(value, digits) if value is not None else None
+
     details = {
         "player_id": player_id,
         "phase_mode": "in_season",
         "lookback_days": lookback_days,
+        "data_source": "weekly_windows",
+        "current_weeks": current_metrics.get("weeks"),
+        "previous_weeks": previous_metrics.get("weeks"),
+        "snap_share_available": snap_available,
+        "opportunity_share_available": opp_available,
+        "red_zone_available": rz_available,
+        "role_score_available": role_available,
         "window_confidence": round(window_confidence, 3),
         "curr_sample": round(curr_sample, 1),
         "prev_sample": round(prev_sample, 1),
-        "curr_snap_share": round(curr_snap, 3),
-        "prev_snap_share": round(prev_snap, 3),
-        "curr_opportunity_share": round(curr_opp, 3),
-        "prev_opportunity_share": round(prev_opp, 3),
-        "curr_red_zone_usage": round(curr_rz, 3),
-        "prev_red_zone_usage": round(prev_rz, 3),
-        "curr_role_score_metric": round(curr_role, 2),
-        "prev_role_score_metric": round(prev_role, 2),
+        "curr_snap_share": _rounded(curr_snap, 3),
+        "prev_snap_share": _rounded(prev_snap, 3),
+        "curr_opportunity_share": _rounded(curr_opp, 3),
+        "prev_opportunity_share": _rounded(prev_opp, 3),
+        "curr_red_zone_usage": _rounded(curr_rz, 3),
+        "prev_red_zone_usage": _rounded(prev_rz, 3),
+        "curr_role_score_metric": _rounded(curr_role, 2),
+        "prev_role_score_metric": _rounded(prev_role, 2),
         "snap_delta": round(snap_delta, 3),
         "opp_delta": round(opp_delta, 3),
         "rz_delta": round(rz_delta, 3),

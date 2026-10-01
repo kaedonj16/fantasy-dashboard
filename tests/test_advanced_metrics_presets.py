@@ -28,7 +28,7 @@ DECISION_EXPECTED = {
     "start_sit": ("expected_ppr_per_game", None, "desc"),
     "buy_low_sell_high": ("ppr_over_expected_per_game", None, "asc"),
     "waiver_wire": ("opportunity_trend", None, "desc"),
-    "breakout_check": ("xfp_trend", None, "desc"),
+    "breakout_check": ("breakout_trend_score", None, "desc"),
     "ceiling_dfs": ("boom_rate", None, "desc"),
 }
 

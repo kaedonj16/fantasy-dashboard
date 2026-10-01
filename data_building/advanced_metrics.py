@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 
 from dashboard_services.api import get_nfl_state
 from dashboard_services.db import get_conn
+from data_building.trend_windows import recent_vs_baseline_ratio as _shared_trend_ratio
 from utils.vorp import (
     VALUE_STARTERS as _VALUE_STARTERS,
     stamp_value_metrics,
@@ -68,7 +69,7 @@ def premium_metrics_exposed() -> bool:
 PRO_METRICS = frozenset({
     "ppr_over_expected_per_game",
     "half_ppr_over_expected_per_game", "standard_over_expected_per_game",
-    "wopr", "opportunity_trend", "xfp_trend",
+    "wopr", "opportunity_trend", "xfp_trend", "breakout_trend_score",
     "fp_cv",
     "role_score", "target_quality_score",
     "vorp", "war",
@@ -1056,28 +1057,12 @@ def _recent_vs_season_ratio(vals: List[float], recent_n: int = 3) -> Optional[fl
     """Recent-window average ÷ baseline average − 1. None when unusable.
 
     Positive = trending up. E.g. 0.15 means the recent stretch is 15% above
-    the baseline.
-
-    With more than `recent_n` values the recent window is the last
-    `recent_n` weeks and the baseline is the season average. Early season
-    (2..recent_n values) that window would cover the whole sample, forcing
-    the ratio to exactly 0.0 for every player (e.g. weeks 1-3 of a season),
-    so the latest week is compared against the average of the weeks before
-    it instead. None with fewer than 2 values or a zero baseline.
+    the baseline. The window rule (early season: latest week vs the average
+    of the weeks before it; otherwise last `recent_n` vs the season average)
+    is the canonical one in data_building.trend_windows, shared with the
+    weekly usage-trends payload so the surfaces can never disagree again.
     """
-    if not vals or len(vals) < 2:
-        return None
-    if len(vals) <= recent_n:
-        prior_avg = sum(vals[:-1]) / (len(vals) - 1)
-        if prior_avg == 0:
-            return None
-        return vals[-1] / prior_avg - 1.0
-    season_avg = sum(vals) / len(vals)
-    if season_avg == 0:
-        return None
-    recent = vals[-recent_n:]
-    recent_avg = sum(recent) / len(recent)
-    return recent_avg / season_avg - 1.0
+    return _shared_trend_ratio(vals, recent_n)
 
 
 def finalize_weekly_series_metrics(
@@ -2734,6 +2719,7 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     "xtd_per_game":         {"label": "xTD/G", "category": "Expected Pts", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Expected touchdowns per game: the TD slice of the expected points model, from targets, carries, and throws (nflverse play-by-play).", "computed_sql": "m.expected_tds::float / NULLIF(m.games, 0)", "computed_null": "m.expected_tds IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
     "td_over_expected":     {"label": "TD vs xTD", "category": "Expected Pts", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Actual touchdowns (rushing + receiving + passing) minus expected touchdowns. Positive = outscored the TD expectation (regression risk); negative = TDs left on the board. Two decimals, not a percentage."},
     "xfp_trend":            {"label": "xFP Trend",           "category": "Expected Pts", "positions": ["QB", "RB", "WR", "TE"], "pct": True, "pct_frac": True, "min_vol": _V_GAMES, "desc": "Last-3-week expected PPR/G vs season expected PPR/G, as a fraction. Positive = the player's opportunity quality is trending up, before outcomes."},
+    "breakout_trend_score": {"label": "Breakout Score",    "category": "Expected Pts", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Composite breakout signal on a 0-100 scale: xFP Trend, Usage Trend, and FPOE/G, each min-max normalized across the qualified pool and averaged. xFP Trend is required; a missing secondary component is skipped, never invented. High = opportunity quality and role rising together."},
     # ── Passing (volume → efficiency → touchdowns → grade) ───────────────────
     # Passing yards is derived (yards/attempt x attempts) so it needs no new column.
     "total_pass_yards":     {"label": "Pass Yards",          "category": "Passing", "positions": ["QB"], "integer": True, "desc": "Total passing yards in the season.", "computed_sql": "ROUND(m.yards_per_attempt * m.total_pass_att)", "computed_null": "m.yards_per_attempt IS NOT NULL AND m.total_pass_att IS NOT NULL"},
@@ -4135,6 +4121,94 @@ def get_player_value_metrics(
     }
 
 
+# ── Breakout Score (composite of the three PRO breakout signals) ────────────
+# Blends xFP Trend (opportunity quality), Usage Trend (role growth), and
+# FPOE/G (production vs expectation) behind the "Is This Breakout Real?"
+# preset. Each component is min-max normalized across the qualified pool for
+# the requested position/season, then averaged and scaled to 0-100. xFP
+# Trend is required: a player without it gets no composite at all, never a
+# partial invention. A missing secondary component is skipped (the average
+# uses the components the player actually has). A component whose pool
+# values are all identical carries no signal and normalizes to the neutral
+# midpoint 0.5.
+# The composite is computed from the component LEADERBOARDS, not raw
+# snapshot rows, so the trend gate in get_metric_leaderboard (newest
+# snapshot row only; future-dated provider rows never speak for trends)
+# applies to the trend components exactly as on their own boards, and the
+# component boards' daily caches make the extra fetches cheap.
+# Season-only like xfp_trend: the composite is in no weekly registry, so
+# week-range requests return season values with weeklyCapable=false.
+_BREAKOUT_TREND_COMPONENTS = (
+    "xfp_trend", "opportunity_trend", "ppr_over_expected_per_game",
+)
+_BREAKOUT_TREND_REQUIRED = "xfp_trend"
+_BREAKOUT_TREND_FETCH_LIMIT = 500
+
+
+def _compute_breakout_trend_scores(components_by_pid):
+    """Pure composite math: {player_id: {component: value|None}} -> {player_id: score}.
+
+    Only players with a non-null xFP Trend (the required component) are
+    scored. Each component is min-max normalized across the pool players
+    who have it; the composite is the mean of the player's available
+    normalized components, scaled to 0-100 and rounded to 1 decimal.
+    """
+    pool = {
+        pid: comps for pid, comps in (components_by_pid or {}).items()
+        if comps.get(_BREAKOUT_TREND_REQUIRED) is not None
+    }
+    if not pool:
+        return {}
+    bounds = {}
+    for key in _BREAKOUT_TREND_COMPONENTS:
+        vals = [float(c[key]) for c in pool.values() if c.get(key) is not None]
+        if vals:
+            bounds[key] = (min(vals), max(vals))
+    scores = {}
+    for pid, comps in pool.items():
+        parts = []
+        for key in _BREAKOUT_TREND_COMPONENTS:
+            v = comps.get(key)
+            if v is None or key not in bounds:
+                continue
+            lo, hi = bounds[key]
+            parts.append(0.5 if hi <= lo else (float(v) - lo) / (hi - lo))
+        if parts:
+            scores[pid] = round(100.0 * sum(parts) / len(parts), 1)
+    return scores
+
+
+def get_breakout_trend_leaderboard(position=None, season=None, min_vol=None, limit=500):
+    """Leaderboard rows for breakout_trend_score.
+
+    Identity/context fields come from the player's xFP Trend board row;
+    the composite replaces ``value``. Sorted by score descending.
+    """
+    boards = {
+        key: get_metric_leaderboard(
+            key, position=position, season=season, min_vol=min_vol,
+            limit=_BREAKOUT_TREND_FETCH_LIMIT,
+        )
+        for key in _BREAKOUT_TREND_COMPONENTS
+    }
+    components_by_pid: Dict[str, Dict[str, Any]] = {}
+    base_rows: Dict[str, Dict[str, Any]] = {}
+    for key, rows in boards.items():
+        for row in rows or []:
+            pid = str(row.get("player_id"))
+            components_by_pid.setdefault(pid, {})[key] = _as_float(row.get("value"))
+            if key == _BREAKOUT_TREND_REQUIRED:
+                base_rows[pid] = row
+    scores = _compute_breakout_trend_scores(components_by_pid)
+    out = []
+    for pid, score in scores.items():
+        row = dict(base_rows[pid])
+        row["value"] = score
+        out.append(row)
+    out.sort(key=lambda r: r["value"], reverse=True)
+    return out[:limit] if limit else out
+
+
 def get_metric_leaderboard(
     metric: str,
     position: Optional[str] = None,
@@ -4170,6 +4244,13 @@ def get_metric_leaderboard(
     if metric in VALUE_METRICS:
         return _stamp_season(
             get_value_leaderboard(metric, position=position, limit=limit, season=season),
+            season,
+        )
+    # Breakout Score is a Python composite of three component leaderboards.
+    if metric == "breakout_trend_score":
+        return _stamp_season(
+            get_breakout_trend_leaderboard(
+                position=position, season=season, min_vol=min_vol, limit=limit),
             season,
         )
     if metric in _ADV_WEEKLY_DERIVED_METRICS:

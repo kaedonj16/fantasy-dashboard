@@ -37,7 +37,7 @@ ADVANCED_METRIC_PRESETS = {
     "start_sit": {"label": "Start / Sit", "kind": "decision", "tagline": "Set your lineup with confidence.", "description": "Role first (expected PPR), then TD equity (red-zone usage), then week-to-week reliability (bust rate, consistency) and matchup ease.", "position": None, "primary": "expected_ppr_per_game", "metrics": ["expected_ppr_per_game", "ppr_over_expected_per_game", "opportunity_share", "snap_share", "rz_opp_share", "rz_target_share", "schedule_ease", "bust_rate", "fp_cv"], "sort": "desc", "samples": ["games"]},
     "buy_low_sell_high": {"label": "Buy Low / Sell High", "kind": "decision", "tagline": "Find mispriced players before your league does.", "description": "Sorts by PPR over expected, ascending: the most negative names are the buy-low list (role is real, production hasn't caught up); flip the sort for the sell-high list.", "position": None, "primary": "ppr_over_expected_per_game", "metrics": ["ppr_over_expected_per_game", "expected_ppr_per_game", "target_share", "air_yards_share", "opportunity_trend", "xfp_trend"], "sort": "asc", "samples": ["games"]},
     "waiver_wire": {"label": "Waiver Wire", "kind": "decision", "tagline": "Who's earning a role worth adding?", "description": "Sorted by usage trend: players whose opportunity is growing fastest, with the snap/target/carry volume to back it up.", "position": None, "primary": "opportunity_trend", "metrics": ["opportunity_trend", "snap_share", "target_share", "carries_per_game", "expected_ppr_per_game", "rz_opp_share"], "sort": "desc", "samples": ["games"]},
-    "breakout_check": {"label": "Is This Breakout Real?", "kind": "decision", "tagline": "Separate role growth from hot streaks.", "description": "Role growing + efficient = real. Role flat + way over expected = regression candidate. Compares xFP/usage trend against efficiency over expectation.", "position": None, "primary": "xfp_trend", "metrics": ["xfp_trend", "opportunity_trend", "snap_share", "ppr_over_expected_per_game", "target_share", "air_yards_share"], "sort": "desc", "samples": ["games"]},
+    "breakout_check": {"label": "Is This Breakout Real?", "kind": "decision", "tagline": "Separate role growth from hot streaks.", "description": "Role growing + efficient = real. Role flat + way over expected = regression candidate. Sorted by the Breakout Score, a 0-100 blend of xFP trend, usage trend, and efficiency over expectation.", "position": None, "primary": "breakout_trend_score", "metrics": ["breakout_trend_score", "xfp_trend", "opportunity_trend", "snap_share", "ppr_over_expected_per_game", "target_share", "air_yards_share"], "sort": "desc", "samples": ["games"]},
     "ceiling_dfs": {"label": "Ceiling / DFS", "kind": "decision", "tagline": "Who can win you a week?", "description": "Sorted by boom rate: players with the per-target, per-touch, and breakaway efficiency to post a slate-breaking score.", "position": None, "primary": "boom_rate", "metrics": ["boom_rate", "expected_ppr_per_game", "fp_cv", "fpts_per_target", "yards_per_touch", "breakaway_percentage"], "sort": "desc", "samples": ["games"]},
 }
 
@@ -89,6 +89,7 @@ def build_advanced_metrics_body(
         "wopr": "Target share plus air-yards share in one number. One of the stickiest predictors of WR fantasy value.",
         "opportunity_trend": "Whether the player's role is growing or shrinking over the last 3 weeks. Catches breakouts and benchings before the box score does.",
         "xfp_trend": "Whether the quality of the player's opportunity is trending up. Separates real role growth from one hot week.",
+        "breakout_trend_score": "xFP trend, usage trend, and points over expectation blended into one 0-100 score. The sort for the Is This Breakout Real? board.",
         "fp_cv": "How steady the weekly scoring is. Low CV means set-and-forget starters; high CV means boom-or-bust.",
         "role_score": "One composite of target, carry, and red-zone share. The backbone of breakout detection.",
         "target_quality_score": "Rates the quality of a receiver's targets, not just the count. Separates target hogs from efficient ones.",
@@ -3772,6 +3773,7 @@ _AM_JS = r"""
       const playerCell = '<td class="am-player" data-column-id="player"><div class="am-player-inner">'
         + '<span class="am-name">' + (r.name || '') + '</span>'
         + ownedBadge
+        + _weeklyChipHtml(r)
         + '<span class="am-player-right">'
         + '<span class="am-meta">' + amTeamLabel(r) + '</span>'
         + '<span class="am-meta" style="color:' + col + ';font-weight:600">' + r.position + '</span>'
@@ -4848,6 +4850,63 @@ _AM_JS = r"""
     });
   };
 
+  // ── Weekly breakout cross-reference (breakout_check preset only) ──────
+  // When the "Is This Breakout Real?" board is on screen, fetch the current
+  // weekly Breakout Engine board ONCE and chip the AM rows whose players are
+  // on it ("Weekly: Emerging 62"), linking to the board at /breakouts.
+  // Best-effort decoration: a failed fetch or an unavailable weekly board
+  // simply means no chips, never an error state on this board, and the
+  // result is cached per season so rows never refetch individually.
+  var _weeklyBo = { season: null, byId: null, inflight: false };
+  var _WEEKLY_CHIP_LABELS = {
+    emerging_breakout: 'Emerging',
+    provisional_emerging: 'Provisional Emerging',
+    temporary_opportunity: 'Temporary Opportunity',
+    early_watch: 'Early Watch',
+    watchlist: 'Watchlist',
+  };
+  function _ensureWeeklyBreakouts() {
+    if (_activePresetId !== 'breakout_check' || amIsMultiSeason()) return;
+    const sel = amSelectedSeasons();
+    const season = (sel && sel.length === 1) ? sel[0] : ((cfg.seasons && cfg.seasons[0]) || null);
+    if (!season) return;
+    if (_weeklyBo.season === season && (_weeklyBo.byId || _weeklyBo.inflight)) return;
+    _weeklyBo.season = season; _weeklyBo.byId = null; _weeklyBo.inflight = true;
+    fetch('/api/breakout/candidates?season=' + encodeURIComponent(season))
+      .then(r => (r && r.ok) ? r.json() : null)
+      .then(d => {
+        _weeklyBo.inflight = false;
+        const byId = {};
+        if (d && d.data_available !== false && Array.isArray(d.candidates)) {
+          d.candidates.forEach(function(c) {
+            // Weekly board rows only: offseason candidates carry no
+            // `weekly` flag and must never be chipped as a weekly call.
+            if (!c || c.weekly !== true || c.player_id == null) return;
+            const lbl = _WEEKLY_CHIP_LABELS[c.classification];
+            const sc = Number(c.breakout_score);
+            if (!lbl || !isFinite(sc)) return;
+            byId[String(c.player_id)] = { label: lbl, score: sc };
+          });
+        }
+        _weeklyBo.byId = byId;
+        if (_activePresetId === 'breakout_check') render();
+      })
+      .catch(function() {
+        _weeklyBo.inflight = false;
+        _weeklyBo.byId = {};
+      });
+  }
+  function _weeklyChipHtml(r) {
+    if (_activePresetId !== 'breakout_check' || amIsMultiSeason()) return '';
+    if (!_weeklyBo.byId) return '';
+    const hit = _weeklyBo.byId[String(r.player_id)];
+    if (!hit) return '';
+    return '<a class="am-chip am-weekly-chip" href="/breakouts" '
+      + 'onclick="event.stopPropagation()" '
+      + 'title="On the current weekly Breakout Engine board: ' + hit.label + ', score ' + Math.round(hit.score) + '. Open the board.">'
+      + 'Weekly: ' + hit.label + ' ' + Math.round(hit.score) + '</a>';
+  }
+
   function fetchData() {
     // Idempotent reload: if this exact board (metric + season set + volume
     // floor + week range) is already on screen, a repeat trigger (clicking
@@ -4859,7 +4918,7 @@ _AM_JS = r"""
     const _boardSig = [state.metric, state.season,
       (state.combine && amIsMultiSeason()) ? 'c' : '',
       state.minVol, _sigRange.ws || '', _sigRange.we || ''].join('|');
-    if (_boardSig === state._boardSig && state.rows.length) { render(); return; }
+    if (_boardSig === state._boardSig && state.rows.length) { render(); _ensureWeeklyBreakouts(); return; }
     // paywall removed -- advanced metrics is available to all users
     state.fetching = true;
     const requestToken = ++state.requestToken;
@@ -4961,6 +5020,7 @@ _AM_JS = r"""
         state._boardSig = _boardSig;
         _boardRendered = true;
         render();
+        _ensureWeeklyBreakouts();
       })
       .catch(() => {
         if (requestToken !== state.requestToken) return;

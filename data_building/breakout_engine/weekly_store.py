@@ -456,6 +456,34 @@ def get_completed_run(season: int, as_of_week: int, scoring_version: str) -> Opt
     return dict(row) if row else None
 
 
+def load_weekly_over_expected(season: int, through_week: int) -> Dict[str, Dict[int, float]]:
+    """Per-player weekly PPR-over-expected from player_weekly_advanced_metrics.
+
+    Returns {player_id: {week: ppr_over_expected}} for non-null values only.
+    The runner merges these onto the usage rows so the pure scorer can apply
+    the production-quality confidence modifier (weekly-v6). Best-effort: any
+    failure (table absent, source down) returns {} and the run proceeds with
+    the modifier neutral rather than failing the whole board.
+    """
+    out: Dict[str, Dict[int, float]] = {}
+    try:
+        with get_conn() as conn:
+            rows = conn.execute(
+                "SELECT player_id, week, ppr_over_expected "
+                "FROM player_weekly_advanced_metrics "
+                "WHERE season = %s AND week <= %s AND ppr_over_expected IS NOT NULL",
+                (int(season), int(through_week)),
+            ).fetchall()
+    except Exception:
+        return {}
+    for raw in rows:
+        r = dict(raw)
+        if r.get("week") is None:
+            continue
+        out.setdefault(str(r["player_id"]), {})[int(r["week"])] = float(r["ppr_over_expected"])
+    return out
+
+
 def load_weekly_candidates(
     season: int,
     as_of_week: Optional[int] = None,

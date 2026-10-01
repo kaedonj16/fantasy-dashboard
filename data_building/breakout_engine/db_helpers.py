@@ -13,7 +13,7 @@ import logging
 import json
 import os
 from datetime import date, timedelta
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from dashboard_services.db import get_conn
 from .config import (
@@ -240,13 +240,17 @@ def get_player_advanced_metrics(
     """
     Get player's advanced metrics for a specific date or date range.
 
-    Args:
-        player_id: Player ID
-        as_of_date: Date to get metrics for
-        lookback_days: If > 0, get average over this many days
+    The snapshot table's date column is `as_of_date` (there is no `date`
+    column). Returns None only when there is genuinely no data: no snapshot
+    row on the exact date, or no rows inside the lookback window (an AVG()
+    over zero rows yields one all-NULL row, which is translated to None).
 
-    Returns:
-        Dictionary with advanced metric fields, or None if not found
+    Query ERRORS are not swallowed: they are logged and re-raised. A bad
+    column or a broken connection is a programming/ops error and must
+    surface, not masquerade as "no data" (that is how the in-season role
+    trajectory silently scored neutral for every player). Callers that can
+    legitimately run without snapshot data handle the raise at their call
+    site.
     """
     try:
         if lookback_days > 0:
@@ -264,8 +268,8 @@ def get_player_advanced_metrics(
                     AVG(catch_rate) as catch_rate
                 FROM {PLAYER_ADVANCED_METRICS_TABLE}
                 WHERE player_id = %s
-                  AND date >= %s
-                  AND date <= %s
+                  AND as_of_date >= %s
+                  AND as_of_date <= %s
             """
 
             with get_conn() as conn:
@@ -288,21 +292,173 @@ def get_player_advanced_metrics(
                     yards_per_touch
                 FROM {PLAYER_ADVANCED_METRICS_TABLE}
                 WHERE player_id = %s
-                  AND date = %s
+                  AND as_of_date = %s
             """
 
             with get_conn() as conn:
                 with conn.cursor() as cur:
                     cur.execute(query, (player_id, as_of_date))
                     row = cur.fetchone()
-
-        if not row:
-            return None
-
-        return dict(row)
     except Exception:
-        # Table doesn't exist or query failed - return None
+        logging.getLogger(__name__).error(
+            "get_player_advanced_metrics query failed for player %s "
+            "(as_of_date=%s, lookback_days=%s)",
+            player_id, as_of_date, lookback_days, exc_info=True)
+        raise
+
+    if not row:
         return None
+
+    result = dict(row)
+    if lookback_days > 0 and all(v is None for v in result.values()):
+        # AVG() over zero matching rows returns one all-NULL row rather
+        # than no row: that is genuinely "no data in window", not an error.
+        return None
+    return result
+
+
+# =============================================================================
+# WEEKLY TRAJECTORY WINDOWS (in-season role trajectory data path)
+# =============================================================================
+
+_WEEKLY_SHARE_SERIES_CACHE: Dict[int, Dict[str, List[Dict]]] = {}
+
+
+def clear_weekly_trajectory_cache() -> None:
+    """Drop the per-season weekly share series cache (tests / manual use)."""
+    _WEEKLY_SHARE_SERIES_CACHE.clear()
+
+
+def _weekly_num(value) -> float:
+    try:
+        return float(value) if value is not None else 0.0
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _weekly_share_series(season: int) -> Dict[str, List[Dict]]:
+    """Per-player weekly share series for a season, cached per process.
+
+    Built once per season from player_weekly_metrics (via
+    weekly_metrics.get_weekly_series_by_player). Each entry is
+    {week, snap_share, opportunity_share, red_zone_share, snaps, targets,
+    carries, opportunities} with shares as 0-1 fractions:
+
+    - snap_share: snap_pct / 100 (None when the week has no snap data).
+    - opportunity_share: (targets + carries) over the TEAM's weekly
+      targets + carries. Team totals sum the team's skill-player rows -
+      the same approximation build_weekly_metrics uses for target/carry
+      share - attributed with team_for_week so a traded player counts
+      toward the team he played for that week.
+    - red_zone_share: (rz_targets + rz_carries) over the team's weekly
+      red-zone opportunities, same attribution. None when the team had
+      no red-zone opportunities that week (share undefined, not zero).
+    """
+    season = int(season)
+    cached = _WEEKLY_SHARE_SERIES_CACHE.get(season)
+    if cached is not None:
+        return cached
+
+    # Lazy imports: weekly_metrics pulls Sleeper fetch machinery and the
+    # team-history maps; db_helpers is imported by paths that must stay
+    # light (same pattern as components' get_recent_momentum import).
+    from data_building.weekly_metrics import get_weekly_series_by_player
+    from data_building.external_data.player_team_history import team_for_week
+
+    by_player = get_weekly_series_by_player(season, 99)
+
+    team_of: Dict[Tuple[str, int], Optional[str]] = {}
+    team_opp: Dict[Tuple[str, int], float] = {}
+    team_rz: Dict[Tuple[str, int], float] = {}
+    for pid, rows in by_player.items():
+        for row in rows:
+            week = int(row.get("week") or 0)
+            team = team_for_week(pid, season, week)
+            team_of[(str(pid), week)] = team
+            if not team:
+                continue
+            opp = _weekly_num(row.get("targets")) + _weekly_num(row.get("carries"))
+            rz = _weekly_num(row.get("rz_targets")) + _weekly_num(row.get("rz_carries"))
+            team_opp[(team, week)] = team_opp.get((team, week), 0.0) + opp
+            team_rz[(team, week)] = team_rz.get((team, week), 0.0) + rz
+
+    series: Dict[str, List[Dict]] = {}
+    for pid, rows in by_player.items():
+        entries: List[Dict] = []
+        for row in rows:
+            week = int(row.get("week") or 0)
+            team = team_of.get((str(pid), week))
+            targets = _weekly_num(row.get("targets"))
+            carries = _weekly_num(row.get("carries"))
+            opps = targets + carries
+            rz_opps = _weekly_num(row.get("rz_targets")) + _weekly_num(row.get("rz_carries"))
+            snap_pct = row.get("snap_pct")
+            opp_total = team_opp.get((team, week), 0.0) if team else 0.0
+            rz_total = team_rz.get((team, week), 0.0) if team else 0.0
+            entries.append({
+                "week": week,
+                "snap_share": (float(snap_pct) / 100.0) if snap_pct is not None else None,
+                "opportunity_share": (opps / opp_total) if opp_total > 0 else None,
+                "red_zone_share": (rz_opps / rz_total) if rz_total > 0 else None,
+                "snaps": _weekly_num(row.get("snaps")),
+                "targets": targets,
+                "carries": carries,
+                "opportunities": opps,
+            })
+        entries.sort(key=lambda e: e["week"])
+        series[str(pid)] = entries
+
+    _WEEKLY_SHARE_SERIES_CACHE[season] = series
+    return series
+
+
+def get_player_weekly_windows(
+        player_id: str,
+        season: int,
+        lookback_days: int = 14
+) -> Optional[Dict]:
+    """
+    Recent-vs-prior weekly usage windows for the in-season trajectory.
+
+    The recent window is the player's latest `lookback_days / 7` active
+    weeks; the prior window is the same number of active weeks immediately
+    before it (mirroring the old calendar windows: recent lookback_days
+    vs the lookback_days before those).
+
+    Returns {"current": {...}, "previous": {...}} where each window dict
+    carries snap_share / opportunity_share / red_zone_usage as 0-1
+    fraction averages (None when that window has no such data) plus
+    sample_size / snaps / opportunities / targets / carries totals and a
+    weeks count. Returns None when the player has fewer than 2 active
+    weeks, i.e. no comparison exists.
+    """
+    series = _weekly_share_series(season).get(str(player_id)) or []
+    if len(series) < 2:
+        return None
+
+    n = len(series)
+    window_weeks = max(1, min(int(round(lookback_days / 7.0)), n // 2))
+    recent = series[n - window_weeks:]
+    prior = series[n - 2 * window_weeks:n - window_weeks]
+
+    def _aggregate(entries: List[Dict]) -> Dict:
+        def _avg(key: str) -> Optional[float]:
+            vals = [e[key] for e in entries if e.get(key) is not None]
+            return (sum(vals) / len(vals)) if vals else None
+
+        return {
+            "snap_share": _avg("snap_share"),
+            "opportunity_share": _avg("opportunity_share"),
+            "red_zone_usage": _avg("red_zone_share"),
+            "sample_size": sum(e["opportunities"] for e in entries),
+            "snaps": sum(e["snaps"] for e in entries),
+            "opportunities": sum(e["opportunities"] for e in entries),
+            "targets": sum(e["targets"] for e in entries),
+            "carries": sum(e["carries"] for e in entries),
+            "weeks": len(entries),
+        }
+
+    return {"current": _aggregate(recent), "previous": _aggregate(prior)}
 
 
 def get_player_previous_season_usage(

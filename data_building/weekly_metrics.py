@@ -24,6 +24,7 @@ import threading
 import time
 
 from dashboard_services.db import get_conn
+from data_building.trend_windows import trend_window as _shared_trend_window
 from data_building.external_data.sleeper_bulk_stats import fetch_week_stats
 from data_building.external_data.player_team_history import team_for_week, canon_team
 from utils.utils import load_players_index, path_week_schedule
@@ -310,19 +311,15 @@ def get_weekly_series_by_player(season: int, through_week: int) -> Dict[str, Lis
 def _trend_window(vals, recent_n=3):
     """(recent_avg, baseline_avg) for a trend comparison, or (None, None).
 
-    With more than `recent_n` values the recent window is the last
-    `recent_n` weeks and the baseline is the season average. Early season
-    (2..recent_n values) that window would cover the whole sample and force
-    a 0.0 delta for every player, so the latest week is compared against
-    the average of the weeks before it. Fewer than 2 values: no signal.
-    Mirrors data_building.advanced_metrics._recent_vs_season_ratio.
+    The canonical window rule lives in data_building.trend_windows and is
+    shared with advanced_metrics._recent_vs_season_ratio: with more than
+    `recent_n` values the recent window is the last `recent_n` weeks and
+    the baseline is the season average; early season (2..recent_n values)
+    the latest week is compared against the average of the weeks before
+    it, so a young sample yields a real signal instead of a forced 0.0.
+    Fewer than 2 values: no signal.
     """
-    if len(vals) < 2:
-        return None, None
-    if len(vals) <= recent_n:
-        return vals[-1], sum(vals[:-1]) / (len(vals) - 1)
-    recent = vals[-recent_n:]
-    return sum(recent) / len(recent), sum(vals) / len(vals)
+    return _shared_trend_window(vals, recent_n)
 
 
 def _recent_vs_season_delta(vals: List[float], recent_n: int = 3) -> Optional[float]:
