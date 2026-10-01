@@ -283,3 +283,72 @@ def test_blend_thin_headlines_not_over_merged():
     ]
     out = _blend_sources([items], limit=10)
     assert len(out) == 2
+
+
+# ── Reddit RSS fallback parsing (the .json listings are IP-blocked) ──────────
+
+_REDDIT_RSS = """<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <category term="nfl" label="r/nfl"/>
+    <title>Drake London hauls in two touchdowns in Falcons win</title>
+    <link href="https://www.reddit.com/r/nfl/comments/aaa/london/"/>
+    <updated>2026-09-29T12:00:00+00:00</updated>
+    <content type="html">&lt;a href="https://www.reddit.com/user/reporter"&gt;u/reporter&lt;/a&gt; &lt;a href="https://www.espn.com/nfl/story/_/id/111/london-tds"&gt;[link]&lt;/a&gt; &lt;a href="https://www.reddit.com/r/nfl/comments/aaa/london/"&gt;[comments]&lt;/a&gt;</content>
+  </entry>
+  <entry>
+    <category term="fantasyfootball" label="r/fantasyfootball"/>
+    <title>Drake London injury update: expected to play Sunday</title>
+    <link href="https://www.reddit.com/r/fantasyfootball/comments/bbb/london/"/>
+    <updated>2026-09-30T08:30:00+00:00</updated>
+    <content type="html">&lt;a href="https://www.reddit.com/r/fantasyfootball/"&gt;r/fantasyfootball&lt;/a&gt; &lt;a href="https://www.atlantafalcons.com/news/london-update"&gt;[link]&lt;/a&gt;</content>
+  </entry>
+  <entry>
+    <category term="fantasyfootball" label="r/fantasyfootball"/>
+    <title>Drake London discussion thread</title>
+    <link href="https://www.reddit.com/r/fantasyfootball/comments/ccc/london/"/>
+    <updated>2026-09-30T09:00:00+00:00</updated>
+    <content type="html">&lt;a href="https://preview.redd.it/xyz.png"&gt;img&lt;/a&gt; &lt;a href="https://www.reddit.com/r/fantasyfootball/comments/ccc/london/"&gt;[comments]&lt;/a&gt;</content>
+  </entry>
+  <entry>
+    <category term="nfl" label="r/nfl"/>
+    <title>Bijan Robinson named NFC offensive player of the week</title>
+    <link href="https://www.reddit.com/r/nfl/comments/ddd/bijan/"/>
+    <updated>2026-09-30T10:00:00+00:00</updated>
+    <content type="html">&lt;a href="https://www.nfl.com/news/bijan-award"&gt;[link]&lt;/a&gt;</content>
+  </entry>
+</feed>"""
+
+
+def test_reddit_rss_keeps_external_link_posts_sorted_newest_first():
+    from dashboard_services.news import _parse_reddit_rss
+    out = _parse_reddit_rss(_REDDIT_RSS)
+    # Self post (no off-Reddit link) drops out; the rest sort newest-first.
+    assert [i["headline"] for i in out] == [
+        "Bijan Robinson named NFC offensive player of the week",
+        "Drake London injury update: expected to play Sunday",
+        "Drake London hauls in two touchdowns in Falcons win",
+    ]
+    espn = out[-1]
+    assert espn["url"] == "https://www.espn.com/nfl/story/_/id/111/london-tds"
+    assert espn["source"] == "espn.com · r/nfl"
+    assert espn["published"] == "2026-09-29T12:00:00Z"
+
+
+def test_reddit_rss_require_substr_filters_by_title():
+    from dashboard_services.news import _parse_reddit_rss
+    out = _parse_reddit_rss(_REDDIT_RSS, require_substr="london")
+    assert len(out) == 2
+    assert all("london" in i["headline"].lower() for i in out)
+
+
+def test_reddit_rss_bad_xml_returns_empty():
+    from dashboard_services.news import _parse_reddit_rss
+    assert _parse_reddit_rss("not xml at all") == []
+
+
+# ── ESPN host (site.api is IP-blocked; site.web.api is not) ───────────────────
+
+def test_espn_base_uses_unblocked_web_host():
+    from dashboard_services.news import _ESPN_BASE
+    assert _ESPN_BASE == "https://site.web.api.espn.com/apis/site/v2/sports/football/nfl"

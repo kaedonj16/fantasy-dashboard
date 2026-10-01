@@ -37,6 +37,16 @@ _GENERAL_TTL = 600  # 10 min for bulk headline cache
 _HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; fantasy-dashboard/1.0)"}
 _TIMEOUT = 6
 
+# ESPN's site.api host 403s server/datacenter IPs (Akamai "Access Denied",
+# verified 2026-10-01 in prod + sandbox with any User-Agent) -- the same block
+# that killed the site.api scoreboard feed. site.web.api serves the identical
+# API and is not blocked, so all ESPN news fetches use it. Caveat: its
+# per-athlete news returns 200 with an empty article list for every player
+# (verified for several stars), so athlete items effectively come from the
+# general feed via the _name_match fallback in _async_player_news; the athlete
+# request stays so a future web-host fix revives it without another change.
+_ESPN_BASE = "https://site.web.api.espn.com/apis/site/v2/sports/football/nfl"
+
 # ── Reddit source ─────────────────────────────────────────────────────────────
 # r/nfl and r/fantasyfootball are the two most reliable NFL subs (r/nfl in
 # particular only allows reputable sources and flairs verified reporters). We
@@ -124,10 +134,7 @@ async def _async_fetch_athlete(client: httpx.AsyncClient, espn_id: str) -> tuple
     if cached and now - cached[0] < _TTL:
         return espn_id, cached[1], None
     try:
-        url = (
-            f"https://site.api.espn.com/apis/site/v2/sports/football/nfl"
-            f"/athletes/{espn_id}/news?limit=15"
-        )
+        url = f"{_ESPN_BASE}/athletes/{espn_id}/news?limit=15"
         r = await client.get(url, headers=_HEADERS, timeout=_TIMEOUT)
         if not r.is_success:
             logger.warning("[news] ESPN athlete feed failed for espn_id=%s: HTTP %s",
@@ -155,7 +162,7 @@ async def _async_fetch_general() -> tuple[list, Optional[str]]:
     try:
         async with httpx.AsyncClient() as client:
             r = await client.get(
-                "https://site.api.espn.com/apis/site/v2/sports/football/nfl/news?limit=150",
+                f"{_ESPN_BASE}/news?limit=150",
                 headers=_HEADERS,
                 timeout=_TIMEOUT,
             )
@@ -225,6 +232,88 @@ def _parse_reddit_children(children: list, require_substr: Optional[str] = None)
     return items
 
 
+def _parse_reddit_rss(xml_text: str, require_substr: Optional[str] = None) -> list:
+    """Parse a Reddit Atom (.rss) listing into news items (newest-first).
+
+    RSS is the fallback for the .json listings, which Reddit blocks from
+    server IPs (403 network-block page regardless of User-Agent, verified
+    2026-10-01). The feed carries no score/stickied/nsfw fields, so the
+    upvote floor can't be enforced here; the external-link rule still
+    applies -- an entry counts only when its content links off Reddit, and
+    the first off-Reddit link is the article URL (self/text posts and
+    reddit-hosted media link only to Reddit domains and drop out). When
+    ``require_substr`` is given (the player's last name), the post title
+    must contain it, same as the JSON path.
+    """
+    import html as _html
+    import xml.etree.ElementTree as ET
+    from urllib.parse import urlparse
+
+    try:
+        root = ET.fromstring(xml_text)
+    except Exception:
+        return []
+    ns = {"a": "http://www.w3.org/2005/Atom"}
+    items = []
+    for entry in root.findall("a:entry", ns):
+        title = (entry.findtext("a:title", default="", namespaces=ns) or "").strip()
+        if not title:
+            continue
+        if require_substr and require_substr not in title.lower():
+            continue
+        content = _html.unescape(entry.findtext("a:content", default="", namespaces=ns) or "")
+        ext = ""
+        dom = ""
+        for href in re.findall(r'href="([^"]+)"', content):
+            if not href.startswith("http"):
+                continue
+            host = (urlparse(href).hostname or "").lower()
+            if not host or any(bad in host for bad in _REDDIT_EXCLUDE_DOMAINS):
+                continue
+            ext, dom = href, host.removeprefix("www.")
+            break
+        if not ext:
+            continue
+        updated = (entry.findtext("a:updated", default="", namespaces=ns) or "").strip()
+        published = ""
+        if updated:
+            try:
+                dt = datetime.fromisoformat(updated.replace("Z", "+00:00"))
+                published = dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+            except Exception:
+                published = ""
+        cat = entry.find("a:category", ns)
+        sub = (cat.get("term") or "") if cat is not None else ""
+        src = f"{dom} · r/{sub}" if dom and sub else (f"r/{sub}" if sub else "Reddit")
+        items.append({
+            "headline":    title,
+            "description": "",
+            "published":   published,
+            "age":         _age_label(published) if published else "",
+            "url":         ext,
+            "source":      src,
+        })
+    items.sort(key=lambda it: it["published"], reverse=True)
+    return items
+
+
+async def _async_fetch_reddit_rss(client, path: str, params: dict,
+                                  require_substr: Optional[str] = None) -> Optional[list]:
+    """GET a Reddit .rss listing (``path`` is e.g. "search.rss" / "top.rss")
+    and return its parsed items, or None on any failure. Never raises."""
+    try:
+        r = await client.get(
+            f"https://www.reddit.com/r/{_REDDIT_SUBS}/{path}",
+            params=params,
+            headers=_HEADERS, timeout=_TIMEOUT,
+        )
+        if not r.is_success:
+            return None
+        return _parse_reddit_rss(r.text, require_substr=require_substr)
+    except Exception:
+        return None
+
+
 async def _async_fetch_reddit(client, player_name: str, limit: int = 8) -> tuple[list, Optional[str]]:
     """Community-vetted Reddit posts mentioning a specific player. Never raises.
     Returns (items, error); error is None on success, else SRC_REDDIT."""
@@ -235,6 +324,8 @@ async def _async_fetch_reddit(client, player_name: str, limit: int = 8) -> tuple
     cached = _CACHE.get(key)
     if cached and now - cached[0] < _REDDIT_TTL:
         return cached[1], None
+    last = player_name.lower().split()[-1] if player_name.split() else ""
+    json_err: Optional[str] = None
     try:
         r = await client.get(
             f"https://www.reddit.com/r/{_REDDIT_SUBS}/search.json",
@@ -244,18 +335,31 @@ async def _async_fetch_reddit(client, player_name: str, limit: int = 8) -> tuple
             },
             headers=_HEADERS, timeout=_TIMEOUT,
         )
-        if not r.is_success:
-            logger.warning("[news] Reddit search failed for %r: HTTP %s", player_name, r.status_code)
-            return [], SRC_REDDIT
-        children = ((r.json() or {}).get("data") or {}).get("children") or []
-        last = player_name.lower().split()[-1] if player_name.split() else ""
-        items = _parse_reddit_children(children, require_substr=last)[:limit]
+        if r.is_success:
+            children = ((r.json() or {}).get("data") or {}).get("children") or []
+            items = _parse_reddit_children(children, require_substr=last)[:limit]
+            _CACHE[key] = (now, items)
+            return items, None
+        json_err = f"HTTP {r.status_code}"
+    except Exception as e:
+        json_err = f"{type(e).__name__}: {e}"
+    # Reddit blocks the .json listings from server IPs but serves the same
+    # search as RSS; fall back before declaring the source down.
+    rss_items = await _async_fetch_reddit_rss(
+        client, "search.rss",
+        {"q": f'"{player_name}"', "restrict_sr": "on",
+         "sort": "new", "t": "month", "limit": 25},
+        require_substr=last,
+    )
+    if rss_items is not None:
+        logger.warning("[news] Reddit search JSON failed for %r (%s); using RSS fallback",
+                       player_name, json_err)
+        items = rss_items[:limit]
         _CACHE[key] = (now, items)
         return items, None
-    except Exception as e:
-        logger.warning("[news] Reddit search failed for %r: %s: %s",
-                       player_name, type(e).__name__, e)
-        return [], SRC_REDDIT
+    logger.warning("[news] Reddit search failed for %r: %s (RSS fallback also failed)",
+                   player_name, json_err)
+    return [], SRC_REDDIT
 
 
 async def _async_fetch_reddit_hot(client, limit: int = 12) -> tuple[list, Optional[str]]:
@@ -267,22 +371,32 @@ async def _async_fetch_reddit_hot(client, limit: int = 12) -> tuple[list, Option
     cached = _CACHE.get(key)
     if cached and now - cached[0] < _REDDIT_TTL:
         return cached[1], None
+    json_err: Optional[str] = None
     try:
         r = await client.get(
             f"https://www.reddit.com/r/{_REDDIT_SUBS}/top.json",
             params={"t": "day", "limit": 25, "raw_json": 1},
             headers=_HEADERS, timeout=_TIMEOUT,
         )
-        if not r.is_success:
-            logger.warning("[news] Reddit hot-posts feed failed: HTTP %s", r.status_code)
-            return [], SRC_REDDIT
-        children = ((r.json() or {}).get("data") or {}).get("children") or []
-        items = _parse_reddit_children(children)[:limit]
+        if r.is_success:
+            children = ((r.json() or {}).get("data") or {}).get("children") or []
+            items = _parse_reddit_children(children)[:limit]
+            _CACHE[key] = (now, items)
+            return items, None
+        json_err = f"HTTP {r.status_code}"
+    except Exception as e:
+        json_err = f"{type(e).__name__}: {e}"
+    # Same server-IP block as search: fall back to the top.rss listing.
+    rss_items = await _async_fetch_reddit_rss(
+        client, "top.rss", {"t": "day", "limit": 25},
+    )
+    if rss_items is not None:
+        logger.warning("[news] Reddit hot-posts JSON failed (%s); using RSS fallback", json_err)
+        items = rss_items[:limit]
         _CACHE[key] = (now, items)
         return items, None
-    except Exception as e:
-        logger.warning("[news] Reddit hot-posts feed failed: %s: %s", type(e).__name__, e)
-        return [], SRC_REDDIT
+    logger.warning("[news] Reddit hot-posts feed failed: %s (RSS fallback also failed)", json_err)
+    return [], SRC_REDDIT
 
 
 def _parse_gnews_item(item_el) -> dict:
