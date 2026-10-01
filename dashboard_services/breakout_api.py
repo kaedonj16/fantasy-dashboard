@@ -1965,7 +1965,7 @@ def get_breakout_track_record(requested_season: Optional[int] = None) -> Dict:
 
     try:
         board = get_breakout_board_candidates(
-            season, BREAKOUT_BOARD_MIN_SCORE, None)
+            season, BREAKOUT_BOARD_MIN_SCORE, BREAKOUT_BOARD_LIMIT)
     except Exception:
         logger.warning("breakout track record: board load failed", exc_info=True)
         board = {}
@@ -1973,10 +1973,13 @@ def get_breakout_track_record(requested_season: Optional[int] = None) -> Dict:
     # preseason board, but in season the default board is the weekly one,
     # so the outlook would never see the preseason calls. Load that board
     # explicitly too and aggregate over both; each load fails soft on its
-    # own, and the merge dedupes the out-of-season overlap.
+    # own, and the merge dedupes the out-of-season overlap. Both loads use
+    # the same top-N cap the boards surface, so the outlook counts exactly
+    # the candidates the page displays, not every stored call.
     try:
         preseason_board = get_breakout_board_candidates(
-            season, BREAKOUT_BOARD_MIN_SCORE, None, week="preseason")
+            season, BREAKOUT_BOARD_MIN_SCORE, BREAKOUT_BOARD_LIMIT,
+            week="preseason")
     except Exception:
         logger.warning(
             "breakout track record: preseason board load failed", exc_info=True)
