@@ -8,6 +8,8 @@ import threading as _threading
 import requests
 import time
 import traceback
+import uuid
+from contextlib import contextmanager as _contextmanager
 from bs4 import BeautifulSoup
 from collections import OrderedDict as _OrderedDict, defaultdict
 from datetime import date, datetime, timezone
@@ -365,10 +367,20 @@ def write_json(path, data):
     """
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
-    tmp = p.with_suffix(".tmp")
-    with tmp.open("w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-    tmp.replace(p)
+    # Unique tmp per writer: a shared tmp name made concurrent writers for
+    # the same path collide -- the first replace won and the second raised
+    # Errno 2, discarding the work and forcing a refetch.
+    tmp = p.parent / (p.name + f".tmp-{os.getpid()}-{uuid.uuid4().hex}")
+    try:
+        with tmp.open("w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        tmp.replace(p)
+    except Exception:
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+        raise
 
 
 # Overlay cache for DB-backed current NFL teams on top of the JSON index.
@@ -589,8 +601,56 @@ def load_week_schedule(season: int, w: int):
     return canonicalize_schedule(schedule)
 
 
-_WEEK_PROJ_MEMO: dict = {}
+def _week_proj_memo_max_from_env() -> int:
+    try:
+        return max(1, int(os.getenv("WEEK_PROJ_MEMO_MAX", "24")))
+    except (TypeError, ValueError):
+        return 24
+
+
+_WEEK_PROJ_MEMO_MAX = _week_proj_memo_max_from_env()
+_WEEK_PROJ_MEMO: _OrderedDict = _OrderedDict()
 _WEEK_PROJ_MEMO_LOCK = _threading.Lock()
+
+
+def _read_week_projection_file(season: int, w: int, use_memo: bool = True) -> Dict:
+    """Parse the on-disk cache for (season, week) through the bounded LRU memo.
+
+    Never fetches: returns {} when the file is missing or unreadable.  The
+    memo is an LRU keyed by (season, week, mtime); inserting past
+    ``_WEEK_PROJ_MEMO_MAX`` evicts only the oldest entries (the previous
+    clear-all behavior dropped every week's parsed copy at once and forced
+    a re-parse storm on the next requests).
+    """
+    proj_path = Path(path_week_proj(season, w))
+    if not proj_path.exists():
+        return {}
+
+    try:
+        mtime = proj_path.stat().st_mtime
+    except OSError:
+        mtime = None
+    memo_key = (int(season), int(w), mtime)
+    if use_memo:
+        with _WEEK_PROJ_MEMO_LOCK:
+            cached = _WEEK_PROJ_MEMO.get(memo_key)
+            if cached is not None:
+                _WEEK_PROJ_MEMO.move_to_end(memo_key)
+                return cached
+
+    try:
+        with open(proj_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        data = data if isinstance(data, dict) else {}
+    except Exception as e:
+        print(f"[projections] load failed for {season} w{w}: {e}")
+        return {}
+    with _WEEK_PROJ_MEMO_LOCK:
+        _WEEK_PROJ_MEMO[memo_key] = data
+        _WEEK_PROJ_MEMO.move_to_end(memo_key)
+        while len(_WEEK_PROJ_MEMO) > _WEEK_PROJ_MEMO_MAX:
+            _WEEK_PROJ_MEMO.popitem(last=False)
+    return data
 
 
 def load_week_projection(season: int, w: int, force_refresh: bool = False) -> Optional[Dict]:
@@ -605,35 +665,19 @@ def load_week_projection(season: int, w: int, force_refresh: bool = False) -> Op
         except Exception as e:
             print(f"[projections] fetch failed for {season} w{w}: {e}")
 
-    if not proj_path.exists():
-        return {}
-
-    try:
-        mtime = proj_path.stat().st_mtime
-    except OSError:
-        mtime = None
-    memo_key = (int(season), int(w), mtime)
-    if not force_refresh:
-        cached = _WEEK_PROJ_MEMO.get(memo_key)
-        if cached is not None:
-            return cached
-
-    try:
-        with open(proj_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        data = data if isinstance(data, dict) else {}
-    except Exception as e:
-        print(f"[projections] load failed for {season} w{w}: {e}")
-        return {}
-    with _WEEK_PROJ_MEMO_LOCK:
-        if len(_WEEK_PROJ_MEMO) > 48:
-            _WEEK_PROJ_MEMO.clear()
-        _WEEK_PROJ_MEMO[memo_key] = data
-    return data
+    return _read_week_projection_file(season, w, use_memo=not force_refresh)
 
 
 def save_week_projections(season: int, week: int, proj_map: dict) -> None:
     write_json(path_week_proj(season, week), proj_map)
+    # Persist to Redis (fail-soft) so a fresh instance with an empty disk
+    # cache can restore this week instead of refetching it from Sleeper.
+    try:
+        from dashboard_services import proj_store
+
+        proj_store.save(season, week, proj_map)
+    except Exception:
+        pass
 
 
 def save_week_schedule(season: int, week: int, data: List[Dict]) -> None:
@@ -699,6 +743,101 @@ def _week_proj_is_stale(season: int, week: int, cache_path: str) -> bool:
     return age > _WEEK_PROJ_TTL_HOURS * 3600
 
 
+# ------------------------------------------------
+# Week-projection singleflight (in-process + cross-process)
+# ------------------------------------------------
+
+_WEEK_PROJ_BUILD_LOCK_TIMEOUT = 20.0
+_WEEK_PROJ_LOCKS: Dict[tuple, _threading.RLock] = {}
+_WEEK_PROJ_LOCKS_GUARD = _threading.Lock()
+
+
+def _week_proj_lock(season: int, week: int) -> _threading.RLock:
+    """Per-(season, week) in-process lock from a small guarded registry.
+
+    An RLock because load_week_projection can re-enter
+    get_week_projections_cached for the same week on the same thread.
+    Distinct (season, week) pairs are bounded in practice (18 weeks per
+    season), so the registry needs no eviction.
+    """
+    key = (int(season), int(week))
+    with _WEEK_PROJ_LOCKS_GUARD:
+        lock = _WEEK_PROJ_LOCKS.get(key)
+        if lock is None:
+            lock = _threading.RLock()
+            _WEEK_PROJ_LOCKS[key] = lock
+        return lock
+
+
+@_contextmanager
+def _week_proj_cross_lock(season: int, week: int):
+    """Yield True when the caller may fetch, False when another process owns it.
+
+    Wraps the cross-process resource_build_lock (Postgres advisory lock, flock
+    fallback).  Fail-open by design: if the lock machinery itself errors
+    (import failure, no database and no fcntl, ...), the caller proceeds
+    under the in-process lock alone rather than losing projections entirely.
+    """
+    try:
+        from dashboard_services.league_singleflight import (
+            LeagueBuildBusy,
+            resource_build_lock,
+        )
+    except Exception:
+        yield True
+        return
+    cm = resource_build_lock(
+        f"projections:{int(season)}:{int(week)}",
+        timeout=_WEEK_PROJ_BUILD_LOCK_TIMEOUT,
+    )
+    try:
+        cm.__enter__()
+    except LeagueBuildBusy:
+        yield False
+        return
+    except Exception:
+        yield True
+        return
+    try:
+        yield True
+    finally:
+        try:
+            cm.__exit__(None, None, None)
+        except Exception:
+            pass
+
+
+def _restore_week_proj_from_redis(season: int, week: int, cache_path: str) -> Optional[Dict]:
+    """Restore a missing week-projection file from Redis, or None.
+
+    Writes the file only (never re-saves to Redis, so restores cannot loop)
+    and stamps its mtime with the stored ``saved_at`` so the existing
+    staleness logic judges the restored copy exactly like a fetched one.
+    Returns the data when the restored file is usable and not stale; None
+    sends the caller down the normal Sleeper fetch path.
+    """
+    try:
+        from dashboard_services import proj_store
+
+        hit = proj_store.load(season, week)
+    except Exception:
+        return None
+    if not hit:
+        return None
+    saved_at, data = hit
+    if not isinstance(data, dict) or not data:
+        return None
+    stamp = saved_at if saved_at and saved_at > 0 else time.time()
+    try:
+        write_json(cache_path, data)
+        os.utime(cache_path, (stamp, stamp))
+    except Exception:
+        return None
+    if _week_proj_is_stale(season, week, cache_path):
+        return None
+    return _read_week_projection_file(season, week) or data
+
+
 def get_week_projections_cached(
         season: int,
         week: int,
@@ -707,12 +846,20 @@ def get_week_projections_cached(
 ) -> Dict:
     """
     fetch_fn returns { sleeper_id: {ppr, half_ppr, std, tep, ...} }.
+
+    Concurrency contract: projections are league-independent, so at most one
+    thread/process fetches a (season, week) at a time.  Waiters re-check the
+    disk cache after acquiring the locks and serve the winner's file.
+    ``force_refresh`` is debounced: it refetches only when the file is
+    missing, empty, or stale, so per-league live-week refresh calls cannot
+    each trigger a Sleeper fetch inside the TTL window.
     """
     cache_path = path_week_proj(season, week)
     memo_key = (int(season), int(week))
 
-    if os.path.exists(cache_path) and not force_refresh:
-        # Serve from disk unless this is the live week and its cache has aged out.
+    if os.path.exists(cache_path):
+        # Serve from disk unless this is the live week and its cache has aged
+        # out.  This now applies to force_refresh too (the debounce above).
         # Empty ``{}`` placeholders are always stale and are removed below.
         if not _week_proj_is_stale(season, week, cache_path):
             return load_week_projection(season, week) or {}
@@ -724,19 +871,51 @@ def get_week_projections_cached(
         if fail_until and time.time() < fail_until:
             return {}
 
-    data = fetch_fn(season, week) or {}
-    if data:
-        with _WEEK_PROJ_FAIL_LOCK:
-            _WEEK_PROJ_FAIL_UNTIL.pop(memo_key, None)
-        save_week_projections(season, week, proj_map=data)
-        return data
+    with _week_proj_lock(season, week):
+        # Re-check after acquiring: another thread may have just fetched.
+        if os.path.exists(cache_path):
+            if not _week_proj_is_stale(season, week, cache_path):
+                return _read_week_projection_file(season, week)
+            _remove_empty_week_proj(cache_path)
 
-    # Do not persist ``{}`` — it masquerades as a populated cache after deploys
-    # and cron "fresh today" checks. Back off briefly in this process instead.
-    with _WEEK_PROJ_FAIL_LOCK:
-        _WEEK_PROJ_FAIL_UNTIL[memo_key] = time.time() + _WEEK_PROJ_EMPTY_TTL_SEC
-    _remove_empty_week_proj(cache_path)
-    return {}
+        if not force_refresh:
+            with _WEEK_PROJ_FAIL_LOCK:
+                fail_until = _WEEK_PROJ_FAIL_UNTIL.get(memo_key, 0.0)
+            if fail_until and time.time() < fail_until:
+                return {}
+
+        with _week_proj_cross_lock(season, week) as may_fetch:
+            if not may_fetch:
+                # Another process is fetching; serve whatever is on disk
+                # (possibly {}) instead of duplicating the fetch.
+                return _read_week_projection_file(season, week)
+
+            # Re-check again: the previous lock owner may have written the
+            # file while this caller waited on the cross-process lock.
+            if os.path.exists(cache_path):
+                if not _week_proj_is_stale(season, week, cache_path):
+                    return _read_week_projection_file(season, week)
+                _remove_empty_week_proj(cache_path)
+
+            if not os.path.exists(cache_path):
+                restored = _restore_week_proj_from_redis(season, week, cache_path)
+                if restored is not None:
+                    return restored
+
+            data = fetch_fn(season, week) or {}
+            if data:
+                with _WEEK_PROJ_FAIL_LOCK:
+                    _WEEK_PROJ_FAIL_UNTIL.pop(memo_key, None)
+                save_week_projections(season, week, proj_map=data)
+                return data
+
+            # Do not persist ``{}`` — it masquerades as a populated cache
+            # after deploys and cron "fresh today" checks. Back off briefly
+            # in this process instead.
+            with _WEEK_PROJ_FAIL_LOCK:
+                _WEEK_PROJ_FAIL_UNTIL[memo_key] = time.time() + _WEEK_PROJ_EMPTY_TTL_SEC
+            _remove_empty_week_proj(cache_path)
+            return {}
 
 
 def get_or_refresh_schedule_path(season: int, week: int) -> Optional[str]:
