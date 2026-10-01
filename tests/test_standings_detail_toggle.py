@@ -1,7 +1,7 @@
 """The Standings page "Detailed" tab is now a toggle on the single standings table.
 
-The standings table carries 8 extra columns (Win %, EFF, Average, Std Dev,
-Best Week, Worst Week, SOS Past, SOS Future) after Exp. Seed, hidden via
+The standings table carries 9 extra columns (All-Play, Win %, EFF, Average,
+Std Dev, Best Week, Worst Week, SOS Past, SOS Future) after Exp. Seed, hidden via
 .st-detail-col until the toggle adds .show-detail. Standings row order,
 division headers, and playoff-picture rows are unchanged; there is no
 click-to-sort (the old #stats sorter only ever bound to the deleted table).
@@ -42,9 +42,9 @@ def _render(**kw):
 
 def test_detail_columns_render_with_correct_formatting():
     html = _render(detailed_df=_detailed_df(), efficiency={"1": 87.4, "2": 92.0})
-    # 8 header cells + 8 per data row.
-    assert html.count("st-detail-col") == 8 + 8 * 2
-    for header in ("Win %", "EFF", "Average", "Std Dev", "Best Week",
+    # 9 header cells + 9 per data row.
+    assert html.count("st-detail-col") == 9 + 9 * 2
+    for header in ("All-Play", "Win %", "EFF", "Average", "Std Dev", "Best Week",
                    "Worst Week", "SOS Past", "SOS Future"):
         assert f">{header}</th>" in html
     # Win %: 3 decimals; EFF: whole percent; SOS: 1 decimal; rest: 2.
@@ -65,7 +65,7 @@ def test_detail_columns_fall_back_to_dash_without_data():
     import app as appmod
     html = appmod.render_standings(
         df, length=2, owner_to_rid={"Alpha": "1", "Bravo": "2"})
-    assert html.count("st-detail-col") == 8 + 8 * 2
+    assert html.count("st-detail-col") == 9 + 9 * 2
     assert "–" in html  # missing Best/Worst, EFF, SOS, AVG, STD all dash out
 
 
@@ -76,12 +76,14 @@ def test_standings_row_order_and_format_unchanged():
     headers = [h.split(">")[-1] for h in thead.split("</th>")[:-1]]
     assert headers[:9] == ["Seed", "Team", "Record", "PF", "PA", "Trend",
                            "Streak", "Luck", "Exp. Seed"]
-    assert len(headers) == 17
+    # All-Play is the first detail column, right after Exp. Seed.
+    assert headers[9] == "All-Play"
+    assert len(headers) == 18
     # Seed order preserved (Alpha 10-2 before Bravo 7-5).
     assert html.index("Alpha") < html.index("Bravo")
 
 
-def test_full_width_rows_span_all_17_columns():
+def test_full_width_rows_span_all_18_columns():
     import app as appmod
     df = _team_stats()
     divisions = {"by_rid": {1: 1, 2: 2}, "names": {1: "East", 2: "West"},
@@ -90,9 +92,25 @@ def test_full_width_rows_span_all_17_columns():
         df, length=2, owner_to_rid={"Alpha": "1", "Bravo": "2"},
         divisions=divisions)
     assert "st-div-row" in html
-    assert "colspan='17'" in html
+    assert "colspan='18'" in html
     assert "colspan='9'" not in html
     assert 'colspan="11"' not in html and "colspan='11'" not in html
+
+
+def test_all_play_detail_column_shows_value():
+    import app as appmod
+    html = appmod.render_standings(
+        _team_stats(), length=2, owner_to_rid={"Alpha": "1", "Bravo": "2"},
+        all_play={"Alpha": {"all_play_pct": 0.833, "luck_delta": 1.0,
+                            "expected_seed": 1},
+                  "Bravo": {"all_play_pct": 0.417, "luck_delta": -1.0,
+                            "expected_seed": 2}})
+    # Header first among detail columns, tooltip explains it in plain language.
+    assert ">All-Play</th>" in html
+    assert "All-play win rate" in html
+    # Row cells carry each team's all-play win % (3 decimals, like Win %).
+    assert ">0.833</td>" in html
+    assert ">0.417</td>" in html
 
 
 def test_no_details_tab_in_standings_page():

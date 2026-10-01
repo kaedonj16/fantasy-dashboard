@@ -4,14 +4,18 @@ Two scoring modes share the same z-score math:
 
 1. ``performance_power_scores`` -- results-only (standings, historical week
    views, career/tour graphs). Reconstructible from weekly scores alone.
-2. ``blended_team_scores`` -- canonical live power rankings.
+2. ``blended_team_scores`` -- canonical live power rankings: true strength.
 
-In-season rank is all-play win % (the ``record`` term, which is all-play when
-weekly scores exist), with PPG as the tie-break. A walk-forward backtest of
-the previous eight-term ``PHASE_WEIGHTS`` table did not beat all-play out of
-sample; playoff / SoS / momentum / consistency remain on the team payload as
-display chips but do not vote on order. Preseason is still value-heavy
-(roster strength is the only real signal before games).
+Live in-season rank blends the all-play ``record`` term (0.80) with
+injury-adjusted roster strength (0.20, ``starter_value_available``). All-play
+remains the dominant signal -- a walk-forward backtest of the previous
+eight-term ``PHASE_WEIGHTS`` table did not beat all-play out of sample -- but
+a team missing its stars to injury no longer reads as weak as its all-play
+record claims. PPG breaks ties. Playoff / SoS / momentum / consistency remain
+on the team payload as display chips but do not vote on order. Preseason is
+still value-heavy (roster strength is the only real signal before games) and
+now uses the injury-adjusted value so an IR'd starter no longer counts at
+full value.
 """
 from __future__ import annotations
 
@@ -34,14 +38,16 @@ PERFORMANCE_WEIGHTS = {
 # z-score (AVG/PPG). Weights sum to 1.0; missing optional components
 # (playoff / ros / momentum) redistribute onto the remaining terms.
 #
-# In-season (early/mid/late): all-play only. PPG is applied as a sort
-# tie-break in ``blended_team_scores``, not as a competing z-weight -- a
-# tiny pf weight would still reorder teams when all-play disagrees with PPG.
-# Zero-weight keys are still computed and returned on ``power_components``.
+# In-season (early/mid/late): all-play record dominates (0.80) with
+# injury-adjusted roster strength voting at 0.20 -- true strength, not pure
+# results. PPG is applied as a sort tie-break in ``blended_team_scores``, not
+# as a competing z-weight -- a tiny pf weight would still reorder teams when
+# all-play disagrees with PPG. Zero-weight keys are still computed and
+# returned on ``power_components``.
 _IN_SEASON_WEIGHTS = {
     "pf": 0.00,
-    "record": 1.00,
-    "value": 0.00,
+    "record": 0.80,
+    "value": 0.20,
     "momentum": 0.00,
     "consistency": 0.00,
     "sos": 0.00,
@@ -171,6 +177,61 @@ def starter_lineup_value(
     return round(sum(core[:8]), 1)
 
 
+# ── Injury availability ─────────────────────────────────────────────────────
+# Sleeper designations that mean the player cannot be fielded. Questionable is
+# deliberately available at full value: those players usually play. The
+# "DOUBTUL" spelling mirrors the pre-existing typo in utils/lineup_issues.py's
+# SERIOUS_INJURY_STATUSES so either feed spelling is caught.
+UNAVAILABLE_INJURY_STATUSES = frozenset({"OUT", "IR", "DOUBTFUL", "DOUBTUL"})
+
+
+def _norm_injury_status(raw: Any) -> str:
+    return str(raw or "").strip().upper()
+
+
+def player_is_unavailable(injury_status: Any) -> bool:
+    """True when the designation means the player cannot be fielded."""
+    return _norm_injury_status(injury_status) in UNAVAILABLE_INJURY_STATUSES
+
+
+def available_starter_lineup_value(
+    player_ids: Sequence[Any],
+    model_value_lookup: Mapping[str, Mapping[str, Any]],
+    *,
+    redraft_key: str,
+    roster_positions: Optional[Sequence[Any]] = None,
+    injury_by_pid: Optional[Mapping[Any, Any]] = None,
+) -> float:
+    """Injury-adjusted ``starter_lineup_value``: the lineup you can field.
+
+    Unavailable designations (Out / IR / Doubtful) are removed before the
+    slot-legal derivation, so their slots refill from the bench exactly the
+    way the raw value fills them; a slot nothing on the roster can fill
+    contributes 0. Questionable counts at full value.
+
+    When ``injury_by_pid`` is missing -- or carries no designation for any
+    roster player, meaning the league has no injury data -- this returns the
+    raw ``starter_lineup_value`` unchanged. Never invents a discount.
+    """
+    statuses = injury_by_pid or {}
+    pids = [str(p) for p in (player_ids or []) if str(p or "").strip()]
+    has_any = any(_norm_injury_status(statuses.get(p)) for p in pids)
+    if not has_any:
+        return starter_lineup_value(
+            player_ids,
+            model_value_lookup,
+            redraft_key=redraft_key,
+            roster_positions=roster_positions,
+        )
+    eligible = [p for p in pids if not player_is_unavailable(statuses.get(p))]
+    return starter_lineup_value(
+        eligible,
+        model_value_lookup,
+        redraft_key=redraft_key,
+        roster_positions=roster_positions,
+    )
+
+
 def performance_component_z(
     *,
     win_pct: Sequence[float],
@@ -291,12 +352,18 @@ def blended_team_scores(
     """Score and sort team dicts; returns the same list sorted best-first.
 
     Each team may carry raw fields:
-      avg (preferred) or pf, luck_adj_win, starter_value, momentum, consistency,
+      avg (preferred) or pf, luck_adj_win, starter_value,
+      starter_value_available, momentum, consistency,
       sos, ros_ease (higher = easier remaining schedule), playoff_pct
+
+    The ``value`` term reads ``starter_value_available`` (injury-adjusted
+    roster strength) when the caller computed it, falling back to the raw
+    ``starter_value`` for historical rows and callers without injury data.
 
     Writes ``power_score``, ``power_components``, and ``rank``.
     Component key ``pf`` is the scoring-volume z-score (AVG/PPG based).
-    In-season ``power_score`` is the all-play (record) z-score; PPG breaks ties.
+    In-season ``power_score`` is 0.80 all-play (record) + 0.20
+    injury-adjusted roster strength; PPG breaks ties.
     """
     if not teams:
         return teams
@@ -312,9 +379,18 @@ def blended_team_scores(
         except (TypeError, ValueError):
             return 0.0
 
+    def _value_of(t: dict) -> float:
+        for key in ("starter_value_available", "starter_value"):
+            if t.get(key) is not None:
+                try:
+                    return float(t.get(key))
+                except (TypeError, ValueError):
+                    pass
+        return 0.0
+
     scoring_z = z_scores([_avg_of(t) for t in teams])
     record_z = z_scores([float(t.get("luck_adj_win") or 0.0) for t in teams])
-    value_z = z_scores([float(t.get("starter_value") or 0.0) for t in teams])
+    value_z = z_scores([_value_of(t) for t in teams])
     mom_z = z_scores([float(t.get("momentum") or 0.0) for t in teams])
     con_z = z_scores([float(t.get("consistency") or 0.0) for t in teams])
     sos_z = z_scores([

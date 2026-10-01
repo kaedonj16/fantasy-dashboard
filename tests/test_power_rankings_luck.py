@@ -3,7 +3,9 @@
   1. The win term is all-play (not a mix with actual W-L), so a team that
      scores well but lost the schedule lottery isn't punished as if it were bad.
   2. The value term is the top-8 win-now (redraft) starter total, not a
-     whole-roster dynasty average. In-season it is display-only.
+     whole-roster dynasty average. In-season the injury-adjusted value votes
+     at 0.20 alongside all-play (this fixture has no injury data, so adjusted
+     == raw and the all-play order here is unchanged).
   3. Momentum / SoS chips stay on the payload but do not reorder in-season rank.
 
 The heavy roster-summary/grade helpers are stubbed so this stays a pure-math
@@ -132,7 +134,7 @@ def test_momentum_is_labeled_but_does_not_reorder_in_season():
     assert hot["momentum"] > 0 and cold["momentum"] < 0
     assert hot["momentum_label"] == "Heating up"
     assert cold["momentum_label"] == "Cooling off"
-    # ...but in-season rank is all-play, so identical résumés stay tied.
+    # ...identical résumés (same roster value too) stay tied.
     assert hot["power_score"] == cold["power_score"]
 
 

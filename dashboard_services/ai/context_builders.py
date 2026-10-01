@@ -1788,11 +1788,12 @@ def build_power_rankings_context(ctx: dict) -> dict:
     Build context for AI-generated power rankings.
 
     PowerScore comes from ``dashboard_services.power_score.blended_team_scores``.
-    In-season the sort is all-play win % with PPG as the tie-break. Momentum,
-    consistency, SoS, ROS ease, playoff odds, and starter value are still
-    computed for chips / narrative; they do not vote on in-season order.
-    Preseason remains value-weighted. Starter value fills real lineup slots
-    when ``roster_positions`` are known.
+    In-season blends all-play win % (0.80) with injury-adjusted roster
+    strength (0.20), PPG as the tie-break. Momentum, consistency, SoS, ROS
+    ease, and playoff odds are still computed for chips / narrative; they do
+    not vote on in-season order. Preseason remains value-weighted, now on the
+    injury-adjusted value so an IR'd starter no longer counts at full.
+    Starter value fills real lineup slots when ``roster_positions`` are known.
     """
 
     rosters = ctx.get("rosters") or []
@@ -1818,6 +1819,7 @@ def build_power_rankings_context(ctx: dict) -> dict:
     _CORE_POS = {"QB", "RB", "WR", "TE"}
 
     from dashboard_services.power_score import (
+        available_starter_lineup_value,
         blended_team_scores,
         season_phase_from_progress,
         starter_lineup_value,
@@ -2018,6 +2020,24 @@ def build_power_rankings_context(ctx: dict) -> dict:
             redraft_key=redraft_key,
             roster_positions=roster_positions,
         )
+        # True-strength term: the lineup the team can actually field. Injury
+        # designations ride on the Sleeper player feed (players_index /
+        # players_map); with no injury data anywhere this equals the raw
+        # starter value exactly (see available_starter_lineup_value).
+        _players_index = ctx.get("players_index") or {}
+        _players_map = ctx.get("players_map") or {}
+        _injury_by_pid = {}
+        for _pid in roster.get("players") or []:
+            _spid = str(_pid)
+            _meta = _players_index.get(_spid) or _players_map.get(_spid) or {}
+            _injury_by_pid[_spid] = _meta.get("injury_status") or ""
+        starter_value_available = available_starter_lineup_value(
+            roster.get("players") or [],
+            model_value_lookup,
+            redraft_key=redraft_key,
+            roster_positions=roster_positions,
+            injury_by_pid=_injury_by_pid,
+        )
 
         players_summary = summarize_roster_players(
             roster=roster,
@@ -2078,6 +2098,7 @@ def build_power_rankings_context(ctx: dict) -> dict:
             "avg": round(avg_ppg, 2),
             "avg_value": round(avg_value, 1),
             "starter_value": starter_value,
+            "starter_value_available": starter_value_available,
             "momentum": momentum,
             "momentum_label": momentum_label,
             "consistency": consistency,
@@ -2100,7 +2121,8 @@ def build_power_rankings_context(ctx: dict) -> dict:
     if not team_data:
         return {"teams": []}
 
-    # Canonical PowerScore (shared engine: in-season all-play, preseason value).
+    # Canonical PowerScore (shared engine: in-season all-play + availability,
+    # preseason injury-adjusted value).
     _games_played = max((t["wins"] + t["losses"] for t in team_data), default=0)
     _phase = season_phase_from_progress(
         games_played=_games_played,
