@@ -327,8 +327,11 @@ def test_get_matchups_hydrates_weekly_points_and_preserves_missing(monkeypatch):
     home = next(r for r in rows if r["roster_id"] == 1)
     assert home["points"] == 77.25  # never replace Yahoo's official team total
     assert home["players_points"] == {"qb": 14.5, "k": 0.0, "PHI": -2.0, "bench": 6.25}
-    assert home["starters"] == ["qb", "k", "PHI", "missing"]
-    assert home["starters_points"] == [14.5, 0.0, -2.0, None]
+    # Starters publish in canonical slot order (QB, WR, K, DEF here), not
+    # Yahoo's raw return order, with points realigned to match.
+    assert home["starters"] == ["qb", "missing", "k", "PHI"]
+    assert home["starters_slots"] == ["QB", "WR", "K", "DEF"]
+    assert home["starters_points"] == [14.5, None, 0.0, -2.0]
     assert any("/stats;type=week;week=1" in path for path in paths)
 
 

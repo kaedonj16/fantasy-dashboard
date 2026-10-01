@@ -210,6 +210,61 @@ def _optimal_fallback_lineup(
     return lineup
 
 
+def _assign_starter_slots(
+    starters: List[str],
+    claimed_slots: Dict[str, str],
+    slot_order: List[str],
+    players_index: dict,
+) -> Dict[str, str]:
+    """Resolve the slot each starter actually occupies.
+
+    Providers that know the real slots publish a parallel ``starters_slots``
+    list (Yahoo reports ``selected_position`` per player); those claims win
+    when they are legal for the player's position and within the league's
+    slot capacity. Any starter left over is seated by position eligibility,
+    most restrictive slots first, so a flex-eligible player cannot steal a
+    dedicated slot from the player who needs it. Pairing starters with
+    slots by raw list index is never safe: a provider whose starter order
+    differs from ``roster_positions`` order seats a WR in an RB slot (and
+    a K in the TE slot), and every per-slot bench pool built from the
+    wrong slot is wrong too.
+    """
+    capacity: Dict[str, int] = {}
+    for slot in slot_order:
+        capacity[slot] = capacity.get(slot, 0) + 1
+    assigned: Dict[str, str] = {}
+    used: Dict[str, int] = {}
+    for pid in starters:
+        slot = str(claimed_slots.get(pid) or "").upper()
+        if not slot or pid in assigned:
+            continue
+        if used.get(slot, 0) >= capacity.get(slot, 0):
+            continue
+        pos = _player_pos(players_index, pid)
+        if pos and pos not in _slot_eligible_positions(slot):
+            continue
+        assigned[pid] = slot
+        used[slot] = used.get(slot, 0) + 1
+    remaining: List[str] = []
+    for slot in dict.fromkeys(slot_order):
+        remaining.extend([slot] * (capacity[slot] - used.get(slot, 0)))
+    remaining.sort(key=lambda s: len(_slot_eligible_positions(s)))
+    pool = [pid for pid in starters if pid not in assigned]
+    for slot in remaining:
+        eligible = _slot_eligible_positions(slot)
+        pick = next(
+            (p for p in pool if _player_pos(players_index, p) in eligible),
+            None,
+        )
+        if pick is None:
+            continue
+        assigned[pick] = slot
+        pool.remove(pick)
+    for pid in starters:
+        assigned.setdefault(pid, "")
+    return assigned
+
+
 def _team_std_from_profiles(
     pids: List[str], profiles: Dict[str, dict], pairs: Dict[tuple, float]
 ) -> float:
@@ -307,6 +362,7 @@ def build_lineup_lab_payload(
 
     # ── Matchup: real starters + opponent ────────────────────────────────
     starters: List[str] = []
+    matchup_slots: Dict[str, str] = {}
     opponent_roster_id: Any = None
     # One matchup fetch, reused for both sides below. A second fetch doubles
     # the chance the opponent silently goes missing (which used to render a
@@ -332,6 +388,15 @@ def build_lineup_lab_payload(
             str(p) for p in (mine.get("starters") or [])
             if p and str(p) != "0"
         ]
+        # Parallel real slots when the provider publishes them (Yahoo):
+        # starters arrive in the provider's own order there, so the slot
+        # list is the only record of who sits where.
+        raw_slots = mine.get("starters_slots") or []
+        matchup_slots = {
+            str(p): str(s)
+            for p, s in zip(mine.get("starters") or [], raw_slots)
+            if p and str(p) != "0" and s
+        }
         mid = mine.get("matchup_id")
         opp = next(
             (m for m in matchups
@@ -346,20 +411,28 @@ def build_lineup_lab_payload(
     roster_positions = ctx.get("roster_positions") or []
     slot_counts = _slot_counts(roster_positions)
 
+    fallback_slots: Dict[str, str] = {}
     if not starters:
         # Offseason / week not yet set: fall back to optimal by projection.
-        starters = [pid for _, pid in _optimal_fallback_lineup(
-            roster_pids, proj_fn, players_index, slot_counts)]
+        fallback = _optimal_fallback_lineup(
+            roster_pids, proj_fn, players_index, slot_counts)
+        starters = [pid for _, pid in fallback]
+        fallback_slots = {pid: slot for slot, pid in fallback}
 
-    # Map each starter to its slot for eligibility (order of roster_positions).
+    # Map each starter to the slot it actually occupies (see
+    # _assign_starter_slots): provider-claimed slots first, then position
+    # eligibility. Never a raw index zip against roster_positions.
     slot_order: List[str] = []
     for slot in roster_positions or []:
         name = str(slot or "").upper()
         if name and name not in ("BN", "IR", "TAXI"):
             slot_order.append(name)
-    starter_slots: Dict[str, str] = {}
-    for i, pid in enumerate(starters):
-        starter_slots[pid] = slot_order[i] if i < len(slot_order) else ""
+    starter_slots = _assign_starter_slots(
+        starters, fallback_slots or matchup_slots, slot_order, players_index)
+    # Display in slot order regardless of the provider's starter order.
+    _slot_rank = {slot: i for i, slot in enumerate(slot_order)}
+    starters.sort(
+        key=lambda pid: _slot_rank.get(starter_slots.get(pid, ""), len(slot_order)))
 
     week_teams = _week_team_set(season, week)
     bench_all = [p for p in roster_pids if p not in set(starters)]
