@@ -170,8 +170,9 @@ def test_explicit_old_version_week_serves_its_stored_snapshot(monkeypatch):
 
 def test_two_version_week_serves_most_recently_completed_run(monkeypatch):
     _no_init(monkeypatch)
-    # Postgres applies the ORDER BY (completed_at DESC, id DESC); the fake
-    # hands back the run that ordering selects: the newer v6 re-run.
+    # Postgres applies the ORDER BY (originals first, then completed_at
+    # DESC, id DESC); the fake hands back the run that ordering selects:
+    # the newer v6 re-run, both runs being originals.
     run = _run_row(11, 2, SCORING_VERSION, datetime(2026, 10, 5, 9, 0))
     conn = _StoreConn(serving_run=run)
     monkeypatch.setattr(weekly_store, "get_conn", lambda: conn)
@@ -180,8 +181,86 @@ def test_two_version_week_serves_most_recently_completed_run(monkeypatch):
 
     assert serving["id"] == 11
     query = conn.queries[0][0]
-    assert "ORDER BY r.completed_at DESC, r.id DESC" in query
+    assert "reconstructed" in query
+    assert "r.completed_at DESC, r.id DESC" in query
+    # The original-over-reconstruction preference sorts BEFORE recency.
+    assert query.index("reconstructed") < query.index("r.completed_at DESC")
     assert "r.scoring_version = %s" not in query
+
+
+def test_serving_run_prefers_original_over_newer_reconstruction(monkeypatch):
+    _no_init(monkeypatch)
+    # Week 2 has an original v5 run (completed Sep 20) and a NEWER
+    # reconstructed v6 run (completed Oct 5). Under the serving ORDER BY
+    # the original wins, so Postgres hands back the v5 run: the selector
+    # keeps serving the board as it was actually published that week.
+    original = _run_row(7, 2, OLD_VERSION, datetime(2026, 9, 20, 12, 0))
+    conn = _StoreConn(serving_run=original)
+    monkeypatch.setattr(weekly_store, "get_conn", lambda: conn)
+
+    serving = weekly_store.get_serving_run(2026, 2)
+
+    assert serving["id"] == 7
+    assert serving["scoring_version"] == OLD_VERSION
+
+
+def test_serving_run_falls_back_to_reconstruction_when_no_original(monkeypatch):
+    _no_init(monkeypatch)
+    recon = _run_row(13, 1, SCORING_VERSION, datetime(2026, 10, 5, 9, 0))
+    recon["detail"] = {"reconstructed": True}
+    conn = _StoreConn(serving_run=recon)
+    monkeypatch.setattr(weekly_store, "get_conn", lambda: conn)
+
+    serving = weekly_store.get_serving_run(2026, 1)
+
+    assert serving["id"] == 13
+
+
+class _LatestConn:
+    def __init__(self, week):
+        self._week = week
+        self.captured = {}
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+    def execute(self, query, params):
+        self.captured["query"] = query
+        self.captured["params"] = params
+        return _Result(one={"w": self._week})
+
+
+def test_latest_scored_week_excludes_reconstructed_runs(monkeypatch):
+    _no_init(monkeypatch)
+    conn = _LatestConn(4)
+    monkeypatch.setattr(weekly_store, "get_conn", lambda: conn)
+
+    assert weekly_store.latest_scored_week(2026) == 4
+    # A reconstructed run for a later week must not become the default
+    # latest view: the MAX query filters reconstructions out.
+    assert "reconstructed" in conn.captured["query"]
+    assert conn.captured["params"] == (2026, SCORING_VERSION)
+
+
+def test_list_completed_weeks_prefers_original_run_per_week(monkeypatch):
+    _no_init(monkeypatch)
+    conn = _ListConn([
+        {"w": 1, "d": date(2026, 9, 13), "v": SCORING_VERSION},
+        {"w": 2, "d": date(2026, 9, 20), "v": OLD_VERSION},
+    ])
+    monkeypatch.setattr(weekly_store, "get_conn", lambda: conn)
+
+    weeks = weekly_store.list_completed_weeks(2026)
+
+    assert [w["as_of_week"] for w in weeks] == [1, 2]
+    query = conn.captured["query"]
+    # The advertised version/date come from the serving run, so the
+    # DISTINCT ON ordering applies the same original-first preference.
+    assert "reconstructed" in query
+    assert query.index("reconstructed") < query.index("r.completed_at DESC")
 
 
 def test_explicit_week_without_completed_run_is_unavailable(monkeypatch):

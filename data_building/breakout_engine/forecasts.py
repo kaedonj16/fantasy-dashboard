@@ -385,7 +385,35 @@ def load_weekly_grade_rows(season: int) -> List[Dict[str, Any]]:
     return [dict(r) for r in rows]
 
 
-def _grade_row_view(row: Dict[str, Any]) -> Dict[str, Any]:
+def load_reconstructed_weeks(season: int) -> set:
+    """Weeks whose current-version calls are v6 reconstructions: completed
+    runs flagged ``detail.reconstructed`` under the current scoring version.
+
+    A (season, week, scoring_version) maps to exactly one run, so grade
+    rows partition exactly by their ``as_of_week``. Fails soft to an empty
+    set: with no reconstruction metadata, every grade counts as live.
+    """
+    from data_building.breakout_engine.weekly_breakout import SCORING_VERSION
+    from data_building.breakout_engine.weekly_store import WEEKLY_RUNS_TABLE
+    try:
+        with get_conn() as conn:
+            rows = conn.execute(
+                f"SELECT DISTINCT as_of_week FROM {WEEKLY_RUNS_TABLE} "
+                f"WHERE season = %s AND scoring_version = %s "
+                f"AND status = 'completed' "
+                f"AND COALESCE(detail->>'reconstructed', 'false') = 'true'",
+                (int(season), SCORING_VERSION),
+            ).fetchall()
+        return {int(r["as_of_week"]) for r in rows
+                if r.get("as_of_week") is not None}
+    except Exception:
+        logger.warning("forecasts: reconstructed-week read failed",
+                       exc_info=True)
+        return set()
+
+
+def _grade_row_view(row: Dict[str, Any],
+                    reconstructed: bool = False) -> Dict[str, Any]:
     return {
         "player_id": str(row.get("player_id") or ""),
         "player_name": row.get("player_name"),
@@ -396,6 +424,7 @@ def _grade_row_view(row: Dict[str, Any]) -> Dict[str, Any]:
         "ppg_delta": wg._num(row.get("ppg_delta")),
         "opp_delta": wg._num(row.get("opp_delta")),
         "snap_delta": wg._num(row.get("snap_delta")),
+        "reconstructed": bool(reconstructed),
     }
 
 
@@ -403,15 +432,21 @@ def top_grade_rows(
     rows: Sequence[Dict[str, Any]],
     grade: str,
     limit: int = TOP_GRADES_LIMIT,
+    reconstructed_weeks: Optional[set] = None,
 ) -> List[Dict[str, Any]]:
     """The biggest graded hits / misses from grade rows. Pure.
 
     Hits rank by PPG delta descending. Misses rank by PPG delta ascending
     (the deepest production collapse first), falling back to opportunity
     delta when no PPG delta was recorded. Rows missing the ranking delta
-    sort last, never first.
+    sort last, never first. When ``reconstructed_weeks`` is given, each
+    view is flagged so the UI can tag backtest rows.
     """
-    picked = [_grade_row_view(r) for r in rows if r.get("grade") == grade]
+    recon = reconstructed_weeks or set()
+    picked = [
+        _grade_row_view(r, reconstructed=r.get("as_of_week") in recon)
+        for r in rows if r.get("grade") == grade
+    ]
     if grade == wg.GRADE_HIT:
         picked.sort(key=lambda v: (v["ppg_delta"] is None,
                                    -(v["ppg_delta"] or 0.0)))
@@ -427,14 +462,34 @@ def top_grade_rows(
 def weekly_track_record(season: int) -> Dict[str, Any]:
     """Weekly hit rates per classification + biggest hits/misses, from
     finished grades only. Rates come from the grader's own summarizer, so
-    the 10-graded floor applies exactly as it does for threshold review."""
+    the 10-graded floor applies exactly as it does for threshold review.
+
+    Reconstructed (backtest) calls are graded by the same grader, but
+    their rates are reported separately under ``backtest`` and NEVER enter
+    the live overall/groups: the live line stays live-only. Biggest
+    hits/misses span both sets, with reconstructed rows flagged.
+    """
     from data_building.breakout_engine.weekly_breakout import SCORING_VERSION
     try:
         rows = load_weekly_grade_rows(season)
     except Exception:
         logger.warning("forecasts: weekly grade read failed", exc_info=True)
         rows = []
-    summary = wg.summarize_grade_rows(rows)
+    recon_weeks = load_reconstructed_weeks(season)
+    live_rows = [r for r in rows if r.get("as_of_week") not in recon_weeks]
+    recon_rows = [r for r in rows if r.get("as_of_week") in recon_weeks]
+    summary = wg.summarize_grade_rows(live_rows)
+    backtest = None
+    if recon_weeks:
+        recon_summary = wg.summarize_grade_rows(recon_rows)
+        backtest = {
+            "weeks": sorted(recon_weeks),
+            "overall": recon_summary["overall"],
+            "groups": [
+                {"classification": key, **bucket}
+                for key, bucket in recon_summary["by_classification"].items()
+            ],
+        }
     return {
         "scoring_version": SCORING_VERSION,
         "min_sample": summary["min_sample"],
@@ -443,8 +498,11 @@ def weekly_track_record(season: int) -> Dict[str, Any]:
             {"classification": key, **bucket}
             for key, bucket in summary["by_classification"].items()
         ],
-        "hits": top_grade_rows(rows, wg.GRADE_HIT),
-        "misses": top_grade_rows(rows, wg.GRADE_MISS),
+        "backtest": backtest,
+        "hits": top_grade_rows(rows, wg.GRADE_HIT,
+                               reconstructed_weeks=recon_weeks),
+        "misses": top_grade_rows(rows, wg.GRADE_MISS,
+                                 reconstructed_weeks=recon_weeks),
     }
 
 
