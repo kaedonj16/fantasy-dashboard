@@ -1939,7 +1939,9 @@ def get_breakout_track_record(requested_season: Optional[int] = None) -> Dict:
 
     Track record (finished grades only): weekly hit rates per
     classification for the current scoring version, season to date, plus
-    the season engine's hit rates by phase once its grades table exists.
+    hit rates by breakout-score band and confidence band over the same
+    pooled weekly calls, plus the season engine's hit rates by phase
+    once its grades table exists.
     Weekly grades pool live and reconstructed calls into one record.
     Forecast outlook: band counts over the open calls, with the
     reconstructed weeks' open calls pooled into the weekly counts (a
@@ -1959,6 +1961,8 @@ def get_breakout_track_record(requested_season: Optional[int] = None) -> Dict:
             "min_sample": MIN_SUMMARY_SAMPLE,
             "overall": None,
             "groups": [],
+            "score_bands": [],
+            "confidence_bands": [],
             "definition": WEEKLY_HIT_DEFINITION,
         },
         "season_engine": {
@@ -1988,6 +1992,8 @@ def get_breakout_track_record(requested_season: Optional[int] = None) -> Dict:
         "min_sample": weekly_tr["min_sample"],
         "overall": weekly_tr["overall"],
         "groups": [_with_class_label(g) for g in weekly_tr["groups"]],
+        "score_bands": weekly_tr.get("score_bands") or [],
+        "confidence_bands": weekly_tr.get("confidence_bands") or [],
         "definition": WEEKLY_HIT_DEFINITION,
     }
     payload["hits"] = [_with_class_label(h) for h in weekly_tr["hits"]]

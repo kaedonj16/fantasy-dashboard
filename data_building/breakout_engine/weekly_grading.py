@@ -57,6 +57,7 @@ import json
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
 from dashboard_services.db import get_conn
+from data_building.breakout_engine.weekly_breakout import display_classification
 from data_building.breakout_engine.weekly_store import (
     WEEKLY_SCORES_TABLE,
     init_weekly_breakout_db,
@@ -429,12 +430,16 @@ def summarize_grade_rows(
     version. Rates are over graded calls only (hit + partial + miss;
     ungraded calls are excluded from the denominator) and are None for any
     group with fewer than ``min_sample`` graded calls - counts are always
-    real, never suppressed."""
+    real, never suppressed. Classification groups use the display label:
+    stored "watchlist" calls scored under the watchlist floor aggregate as
+    "monitored"."""
     rows = list(rows)
     by_classification: Dict[str, List[Dict[str, Any]]] = {}
     by_version: Dict[str, List[Dict[str, Any]]] = {}
     for row in rows:
-        by_classification.setdefault(str(row.get("classification") or "unknown"), []).append(row)
+        by_classification.setdefault(
+            display_classification(row.get("classification"),
+                                   row.get("breakout_score")), []).append(row)
         by_version.setdefault(str(row.get("scoring_version") or "unknown"), []).append(row)
     return {
         "min_sample": int(min_sample),

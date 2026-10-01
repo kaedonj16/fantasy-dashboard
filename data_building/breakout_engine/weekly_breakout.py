@@ -16,7 +16,11 @@ is real and not diluted by including the same games on both sides), rewards
 usage growth *before* it turns into fantasy points, and separates three things
 the old board conflated:
 
-    classification  - what kind of situation this is (emerging / temporary / watchlist)
+    classification  - what kind of situation this is (emerging / temporary /
+                      early_watch / watchlist / monitored). "monitored" is the
+                      honest residual label: the player was evaluated but scored
+                      below the watchlist floor, so they are not a candidate at
+                      all.
     breakout_score  - how large the role change is (0-100, sample-independent)
     confidence      - how much to trust it (0-100, from sample size, coverage,
                       freshness, persistence, and signal agreement)
@@ -1165,6 +1169,30 @@ def score_player(
     }
 
 
+def display_classification(classification: Any, breakout_score: Any) -> str:
+    """Aggregate/display label for a stored weekly classification.
+
+    A call stored as "watchlist" whose final breakout_score is below
+    WATCHLIST_MIN_SCORE was never a candidate - it aggregates and displays
+    as "monitored" so by-classification summaries are not flooded with
+    no-signal rows. Every other classification passes through unchanged
+    (temporary_opportunity, early_watch, and emerging_breakout stay as
+    stored even when they occur below 18), and a missing score passes the
+    stored label through unchanged rather than guessing. Stored rows are
+    never rewritten; apply this at read/aggregate time only.
+    """
+    label = str(classification or "unknown")
+    if label == "watchlist":
+        try:
+            score = (None if breakout_score is None
+                     else float(breakout_score))
+        except (TypeError, ValueError):
+            score = None
+        if score is not None and score < WATCHLIST_MIN_SCORE:
+            return "monitored"
+    return label
+
+
 def _classify(
     *,
     breakout_score: float,
@@ -1175,9 +1203,13 @@ def _classify(
 ) -> str:
     """Emerging vs temporary vs watchlist. Score gates candidacy; the *kind* of
     situation is decided by persistence, sample, and whether a short-term absence
-    is the identifiable cause."""
+    is the identifiable cause.
+
+    (Currently unused - the live path goes through _classify_final_evidence -
+    kept vocabulary-consistent so a revival does not reintroduce the old
+    residual label.)"""
     if breakout_score < WATCHLIST_MIN_SCORE:
-        return "watchlist"
+        return "monitored"
     # A verified teammate absence driving the work is a temporary opportunity even
     # when the number is large - it may not persist once the starter returns.
     if injury_vacated and (provisional or baseline_games < EMERGING_MIN_BASELINE_GAMES):
@@ -1199,20 +1231,32 @@ def _classify_final_evidence(
 
     Keeping this after every penalty/cap prevents an intermediate 60 from
     retaining an emerging label after becoming a final 36.
+
+    The residual outcome is stored under the honest residual label: below
+    WATCHLIST_MIN_SCORE a call nothing flagged is "monitored", not
+    "watchlist". Only the residual "watchlist" outcome is gated this way;
+    temporary_opportunity / early_watch / emerging_breakout pass through
+    untouched wherever they legitimately occur, including below 18.
     """
     if garbage_time:
-        return "watchlist"
-    if established:
-        return "temporary_opportunity" if injury_vacated and meaningful_role else "watchlist"
-    if injury_vacated:
-        return "temporary_opportunity" if meaningful_role else "watchlist"
-    if final_score < WATCHLIST_MIN_SCORE:
-        return "watchlist"
-    if (final_score >= EMERGING_MIN_SCORE and recent_games >= 2 and persistent
+        classification = "watchlist"
+    elif established:
+        classification = ("temporary_opportunity"
+                          if injury_vacated and meaningful_role else "watchlist")
+    elif injury_vacated:
+        classification = ("temporary_opportunity"
+                          if meaningful_role else "watchlist")
+    elif final_score < WATCHLIST_MIN_SCORE:
+        classification = "watchlist"
+    elif (final_score >= EMERGING_MIN_SCORE and recent_games >= 2 and persistent
             and meaningful_role and supporting_signals >= MIN_SUPPORTING_SIGNALS
             and (not provisional or recent_games >= 2)):
-        return "emerging_breakout"
-    return "early_watch" if meaningful_role and supporting_signals >= 1 else "watchlist"
+        classification = "emerging_breakout"
+    else:
+        classification = ("early_watch"
+                          if meaningful_role and supporting_signals >= 1
+                          else "watchlist")
+    return display_classification(classification, final_score)
 
 
 def _build_risks(

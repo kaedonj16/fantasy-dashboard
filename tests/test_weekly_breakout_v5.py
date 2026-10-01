@@ -82,5 +82,7 @@ def test_known_veteran_without_baseline_is_not_an_emerging_breakout():
         [row(1, 85, 28, 9, routes=31, team_dropbacks=38)], cutoff_week=1,
     )
     assert result["established_player"] is True
-    assert result["classification"] == "watchlist"
+    # An established one-game player is capped under the watchlist floor,
+    # so the honest residual label applies rather than "watchlist".
+    assert result["classification"] == "monitored"
     assert result["main_board_eligible"] is False
