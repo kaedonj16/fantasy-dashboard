@@ -16914,9 +16914,11 @@ def page_breakouts(platform: str, season: int, league_id: str):
         var html = '';
         groups.forEach(function (g) {{
           if (g.hit_rate != null) {{
-            html += '<div class="bo-rail-row"><div><div class="bo-rail-name">' + (g.label || '') + '</div>'
+            var pct = Math.round(g.hit_rate * 100);
+            html += '<div class="bo-rail-row"><div class="bo-rail-row-main"><div class="bo-rail-name">' + (g.label || '') + '</div>'
+              + '<div class="bo-rail-bar"><span style="width:' + pct + '%;"></span></div>'
               + '<div class="bo-rail-meta">based on ' + (g.graded || 0) + ' graded calls</div></div>'
-              + '<div class="bo-rail-value">' + Math.round(g.hit_rate * 100) + '% hits</div></div>';
+              + '<div class="bo-rail-value bo-rail-rate">' + pct + '%<span class="bo-rail-rate-word"> hits</span></div></div>';
           }} else {{
             html += '<div class="bo-rail-row"><div><div class="bo-rail-name">' + (g.label || '') + '</div>'
               + '<div class="bo-rail-meta">' + pendingText + ' · based on ' + (g.graded || 0) + ' graded calls</div></div></div>';
@@ -16925,15 +16927,36 @@ def page_breakouts(platform: str, season: int, league_id: str):
         return html;
       }}
 
+      function _boWeeksLabel(weeks) {{
+        if (!weeks || !weeks.length) return '';
+        var ranges = [];
+        var start = null;
+        var prev = null;
+        weeks.forEach(function (w) {{
+          if (start === null) {{ start = w; prev = w; return; }}
+          if (w === prev + 1) {{ prev = w; return; }}
+          ranges.push(start === prev ? '' + start : start + '-' + prev);
+          start = w; prev = w;
+        }});
+        if (start !== null) ranges.push(start === prev ? '' + start : start + '-' + prev);
+        return (weeks.length === 1 ? 'week ' : 'weeks ') + ranges.join(', ');
+      }}
+
       function renderBoTrackRecord(data) {{
         var weekly = data.weekly || {{}};
         var seasonEng = data.season_engine || {{}};
         var pendingText = data.pending_text || 'Still grading, not enough finished calls yet';
         var html = '<div class="bo-rail-title">Track Record</div>';
-        html += '<div class="bo-rail-meta" style="font-weight:700;">Weekly calls' + (weekly.scoring_version ? ' (' + weekly.scoring_version + ')' : '') + '</div>';
+        html += '<div class="bo-rail-group">Weekly calls' + (weekly.scoring_version ? ' (' + weekly.scoring_version + ')' : '') + '</div>';
         html += _boTrackRows(weekly.groups, pendingText);
         html += '<div class="bo-rail-sub">' + (weekly.definition || '') + '</div>';
-        html += '<div class="bo-rail-meta" style="font-weight:700;margin-top:10px;">Season calls by phase</div>';
+        var backtest = weekly.backtest;
+        if (backtest) {{
+          html += '<div class="bo-rail-group" style="margin-top:10px;">' + (weekly.scoring_version || '') + ' backtest, ' + _boWeeksLabel(backtest.weeks) + ' reconstructed</div>';
+          html += _boTrackRows(backtest.groups, pendingText);
+          html += '<div class="bo-rail-sub">Backtest calls were re-scored later using only the data known at the time. They never count toward the live rates above.</div>';
+        }}
+        html += '<div class="bo-rail-group" style="margin-top:10px;">Season calls by phase</div>';
         if (seasonEng.available) {{
           html += _boTrackRows(seasonEng.groups, pendingText);
         }} else {{
@@ -16945,20 +16968,20 @@ def page_breakouts(platform: str, season: int, league_id: str):
 
       function _boOutlookBlock(title, block) {{
         var counts = (block && block.counts) || {{}};
-        var html = '<div class="bo-rail-meta" style="font-weight:700;">' + title + '</div>';
+        var html = '<div class="bo-rail-group">' + title + '</div>';
         if (!block || ((block.open_calls || 0) === 0 && (block.pending_calls || 0) === 0)) {{
           return html + '<div class="bo-rail-pending">No open calls right now.</div>';
         }}
-        var bands = [['tracking_to_hit', 'Tracking to hit', '#10b981'], ['borderline', 'Borderline', '#f59e0b'], ['tracking_to_miss', 'Tracking to miss', '#ef4444']];
+        var bands = [['tracking_to_hit', 'Tracking to hit', 'bo-band-hit'], ['borderline', 'Borderline', 'bo-band-borderline'], ['tracking_to_miss', 'Tracking to miss', 'bo-band-miss']];
         bands.forEach(function (b) {{
-          html += '<div class="bo-rail-row"><div class="bo-rail-name" style="color:' + b[2] + ';">' + b[1] + '</div><div class="bo-rail-value">' + (counts[b[0]] || 0) + '</div></div>';
+          html += '<div class="bo-rail-row"><span class="bo-band-pill ' + b[2] + '">' + b[1] + '</span><div class="bo-rail-value">' + (counts[b[0]] || 0) + '</div></div>';
         }});
         if (block.pending_calls) {{
           html += '<div class="bo-rail-meta" style="margin-top:4px;">' + block.pending_calls + ' more open call' + (block.pending_calls === 1 ? '' : 's') + ' with no games yet, so no band yet.</div>';
         }}
         var top = block.top_tracking_hit || [];
         if (top.length) {{
-          html += '<div class="bo-rail-meta" style="font-weight:700;margin-top:8px;">Top calls tracking to hit</div>';
+          html += '<div class="bo-rail-group" style="margin-top:8px;">Top calls tracking to hit</div>';
           top.forEach(function (t) {{
             html += '<div style="padding:4px 0;border-top:1px solid var(--border);"><div class="bo-rail-name">' + (t.player_name || 'Unknown')
               + (t.group_label ? ' <span class="bo-rail-meta">' + t.group_label + '</span>' : '') + '</div>'
@@ -16987,9 +17010,11 @@ def page_breakouts(platform: str, season: int, league_id: str):
           var role = '';
           if (r.opp_delta != null) role = (r.opp_delta >= 0 ? '+' : '') + Number(r.opp_delta).toFixed(1) + ' touches/g';
           else if (r.snap_delta != null) role = (r.snap_delta >= 0 ? '+' : '') + Number(r.snap_delta).toFixed(1) + ' snap pts';
+          var chips = (r.reconstructed ? '<span class="bo-grade-chip bo-grade-chip-bt">Backtest</span> ' : '')
+            + (r.label ? '<span class="bo-grade-chip">' + r.label + '</span> ' : '');
           html += '<div class="bo-rail-row"><div><div class="bo-rail-name">' + (r.player_name || 'Unknown') + '</div>'
-            + '<div class="bo-rail-meta">' + (r.label || '') + ' · Week ' + (r.call_week != null ? r.call_week : '?') + ' call' + (role ? ' · ' + role : '') + '</div></div>'
-            + '<div class="bo-rail-value" style="color:' + color + ';">' + delta + '</div></div>';
+            + '<div class="bo-rail-meta">' + chips + 'Week ' + (r.call_week != null ? r.call_week : '?') + ' call' + (role ? ' · ' + role : '') + '</div></div>'
+            + '<div class="bo-rail-value bo-delta" style="color:' + color + ';">' + delta + '</div></div>';
         }});
         return html;
       }}

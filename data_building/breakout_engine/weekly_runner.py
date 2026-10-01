@@ -332,12 +332,23 @@ def run_weekly_breakout(
     *,
     refresh: bool = True,
     min_score: float = 0.0,
+    players_index_override: Optional[Dict[str, Any]] = None,
+    full_players_override: Optional[Dict[str, Any]] = None,
+    run_detail_extra: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Score and persist the weekly breakout board for ``context``.
 
     Preserves the previous snapshot (records a skipped/stale run, writes nothing)
     when the required weekly data can't be refreshed or is empty. Returns a
     summary dict for logging.
+
+    The override kwargs exist for as-of reconstructions (see
+    ``reconstruction.py``): when supplied, they replace the live players
+    index and the live Sleeper feed with historical snapshots, so the pure
+    scorer runs on exactly the inputs known at the original run's date.
+    When they are None the live path is unchanged. ``run_detail_extra``
+    keys are merged into the run summary (existing keys win), and so flow
+    into the published run's detail.
     """
     # Local imports keep this module importable in the pure test suite; only the
     # actual run touches the DB / feeds.
@@ -349,7 +360,8 @@ def run_weekly_breakout(
         score_player, SCORING_VERSION, WATCHLIST_MIN_SCORE,
     )
     from data_building.breakout_engine import weekly_store
-    from utils.utils import load_players_index
+    if players_index_override is None:
+        from utils.utils import load_players_index
 
     season = context.season
     cutoff = context.cutoff_week
@@ -357,6 +369,8 @@ def run_weekly_breakout(
         "season": season, "mode": context.mode, "cutoff_week": cutoff,
         "scoring_version": SCORING_VERSION, "as_of_date": context.as_of_date.isoformat(),
     }
+    for _key, _value in (run_detail_extra or {}).items():
+        summary.setdefault(_key, _value)
 
     if context.mode != MODE_WEEKLY or cutoff is None:
         summary["status"] = "skipped"
@@ -384,19 +398,25 @@ def run_weekly_breakout(
             return summary
 
     # ── candidate universe: skill players on active rosters ──────────────────
-    players_index = load_players_index() or {}
+    if players_index_override is not None:
+        players_index = players_index_override
+    else:
+        players_index = load_players_index() or {}
     prior = _prior_baseline_map(season)
     try:
         previous_scores = weekly_store.load_previous_week_scores(season, cutoff)
     except Exception:
         previous_scores = {}
 
-    full_players: Dict[str, Any] = {}
-    try:
-        from dashboard_services.api import get_nfl_players
-        full_players = get_nfl_players() or {}
-    except Exception:
+    if full_players_override is not None:
+        full_players: Dict[str, Any] = full_players_override
+    else:
         full_players = {}
+        try:
+            from dashboard_services.api import get_nfl_players
+            full_players = get_nfl_players() or {}
+        except Exception:
+            full_players = {}
     injuries = _injury_context_map(full_players)
 
     results: List[Dict[str, Any]] = []

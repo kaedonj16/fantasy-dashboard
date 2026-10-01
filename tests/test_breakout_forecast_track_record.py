@@ -429,6 +429,196 @@ def test_definitions_have_no_em_dashes_and_pending_text_exact():
         "Still grading, not enough finished calls yet"
 
 
+# ---------------------------------------------------------------------------
+# outlook: the preseason board is aggregated even in season (Part A)
+# ---------------------------------------------------------------------------
+
+def _patch_two_boards(monkeypatch, *, preseason_raises=False,
+                      preseason_board=None):
+    """Default board serves weekly calls only; the preseason board is a
+    separate load, exactly like production in season."""
+    api = _patch_track_record(monkeypatch)
+    default_board = {"view": "weekly", "candidates": [
+        {"player_id": "1", "player_name": "Alpha", "classification": "emerging_breakout",
+         "classification_label": "Emerging Breakout", "breakout_score": 55.0,
+         "forecast": {"kind": "weekly", "band": "tracking_to_hit", "band_label": "Tracking to hit",
+                      "basis": "1 of 3 weeks in, 1 game played"}},
+        {"player_id": "4", "player_name": "Delta", "classification": "watchlist",
+         "classification_label": "Watchlist", "breakout_score": 22.0,
+         "forecast": {"kind": "weekly", "band": None, "state": "no_games",
+                      "basis": "No games yet in the 3 weeks after the Week 4 call"}},
+    ]}
+    if preseason_board is None:
+        preseason_board = {"view": "preseason", "candidates": [
+            {"player_id": "5", "player_name": "Epsilon", "phase": "preseason",
+             "breakout_opportunity_score": 70.0,
+             "forecast": {"kind": "preseason", "band": "tracking_to_miss",
+                          "band_label": "Tracking to miss", "basis": "Forecast 8.0 PPG vs a 10.0 PPG target, 4 games in"}},
+        ]}
+
+    def _board(season, min_score, limit, week=None):
+        if week == "preseason":
+            if preseason_raises:
+                raise RuntimeError("preseason board unavailable")
+            return preseason_board
+        return default_board
+
+    monkeypatch.setattr(api, "get_breakout_board_candidates", _board)
+    return api
+
+
+def test_outlook_counts_preseason_board_in_season(monkeypatch):
+    api = _patch_two_boards(monkeypatch)
+    payload = api.get_breakout_track_record(2026)
+
+    outlook = payload["outlook"]
+    assert outlook["weekly"]["counts"] == {
+        "tracking_to_hit": 1, "borderline": 0, "tracking_to_miss": 0}
+    assert outlook["weekly"]["pending_calls"] == 1
+    # The bug: the preseason section read "No open calls right now" while
+    # the preseason board carried live forecasts.
+    assert outlook["preseason"]["counts"]["tracking_to_miss"] == 1
+    assert outlook["preseason"]["open_calls"] == 1
+
+
+def test_outlook_preseason_load_failure_is_fail_soft(monkeypatch):
+    api = _patch_two_boards(monkeypatch, preseason_raises=True)
+    payload = api.get_breakout_track_record(2026)
+
+    outlook = payload["outlook"]
+    assert outlook["weekly"]["counts"]["tracking_to_hit"] == 1
+    assert outlook["preseason"]["open_calls"] == 0
+    assert outlook["preseason"]["counts"] == {
+        "tracking_to_hit": 0, "borderline": 0, "tracking_to_miss": 0}
+
+
+def test_outlook_merged_boards_never_double_count(monkeypatch):
+    # Out of season the default board IS the preseason board: the same
+    # call arrives from both loads and must be counted once.
+    shared = {"view": "preseason", "candidates": [
+        {"player_id": "5", "player_name": "Epsilon", "phase": "preseason",
+         "breakout_opportunity_score": 70.0,
+         "forecast": {"kind": "preseason", "band": "tracking_to_miss",
+                      "band_label": "Tracking to miss", "basis": "Forecast 8.0 PPG vs a 10.0 PPG target, 4 games in"}},
+    ]}
+    api = _patch_two_boards(monkeypatch, preseason_board=shared)
+    monkeypatch.setattr(api, "get_breakout_board_candidates",
+                        lambda season, min_score, limit, week=None: shared)
+
+    payload = api.get_breakout_track_record(2026)
+
+    assert payload["outlook"]["preseason"]["counts"]["tracking_to_miss"] == 1
+    assert payload["outlook"]["preseason"]["open_calls"] == 1
+
+
+# ---------------------------------------------------------------------------
+# track record split: reconstructed grades form a separate backtest entry
+# ---------------------------------------------------------------------------
+
+def _split_rows():
+    rows = []
+    # Live (week 4): emerging 12 graded (7 hit / 3 partial / 2 miss).
+    for i in range(7):
+        row = _grade_row(f"lh{i}", "emerging_breakout", "hit", 5.0 - i * 0.1)
+        row["as_of_week"] = 4
+        rows.append(row)
+    for i in range(3):
+        row = _grade_row(f"lp{i}", "emerging_breakout", "partial", 1.0)
+        row["as_of_week"] = 4
+        rows.append(row)
+    for i in range(2):
+        row = _grade_row(f"lm{i}", "emerging_breakout", "miss", -4.0 - i)
+        row["as_of_week"] = 4
+        rows.append(row)
+    # Reconstructed (weeks 1-2): emerging 12 graded, plus the single
+    # biggest hit of the whole set.
+    row = _grade_row("rb0", "emerging_breakout", "hit", 9.5)
+    row["as_of_week"] = 1
+    rows.append(row)
+    for i in range(11):
+        row = _grade_row(f"rh{i}", "emerging_breakout", "hit", 4.0)
+        row["as_of_week"] = 2
+        rows.append(row)
+    # Reconstructed watchlist: only 3 graded, below the floor.
+    for i in range(3):
+        row = _grade_row(f"rw{i}", "watchlist", "miss", -3.0)
+        row["as_of_week"] = 1
+        rows.append(row)
+    return rows
+
+
+def test_weekly_track_record_splits_reconstructed_grades(monkeypatch):
+    monkeypatch.setattr(forecasts, "load_weekly_grade_rows",
+                        lambda season: _split_rows())
+    monkeypatch.setattr(forecasts, "load_reconstructed_weeks",
+                        lambda season: {1, 2})
+    record = forecasts.weekly_track_record(2026)
+
+    # Live rates exclude every reconstructed call.
+    assert record["overall"]["graded"] == 12
+    groups = {g["classification"]: g for g in record["groups"]}
+    assert groups["emerging_breakout"]["graded"] == 12
+    assert groups["emerging_breakout"]["hit_rate"] == pytest.approx(7 / 12, abs=1e-4)
+    assert "watchlist" not in groups
+
+    backtest = record["backtest"]
+    assert backtest is not None
+    assert backtest["weeks"] == [1, 2]
+    assert backtest["overall"]["graded"] == 15
+    bt_groups = {g["classification"]: g for g in backtest["groups"]}
+    assert bt_groups["emerging_breakout"]["graded"] == 12
+    assert bt_groups["emerging_breakout"]["hit_rate"] == pytest.approx(1.0)
+    # The same 10-graded floor applies to the backtest line.
+    assert bt_groups["watchlist"]["graded"] == 3
+    assert bt_groups["watchlist"]["hit_rate"] is None
+
+    # Biggest hits span both sets; the reconstructed one is flagged.
+    assert record["hits"][0]["player_id"] == "rb0"
+    assert record["hits"][0]["reconstructed"] is True
+    live_hit = next(h for h in record["hits"] if h["player_id"] == "lh0")
+    assert live_hit["reconstructed"] is False
+
+
+def test_weekly_track_record_without_reconstructions_has_no_backtest(monkeypatch):
+    monkeypatch.setattr(forecasts, "load_weekly_grade_rows",
+                        lambda season: _track_record_rows())
+    monkeypatch.setattr(forecasts, "load_reconstructed_weeks",
+                        lambda season: set())
+    record = forecasts.weekly_track_record(2026)
+
+    assert record["backtest"] is None
+    assert record["overall"]["graded"] == 16
+    assert all(h["reconstructed"] is False for h in record["hits"])
+
+
+def test_track_record_payload_carries_backtest_with_labels(monkeypatch):
+    api = _patch_track_record(monkeypatch)
+    monkeypatch.setattr(forecasts, "weekly_track_record", lambda season: {
+        "scoring_version": "weekly-v6", "min_sample": 10,
+        "overall": {"calls": 0, "graded": 0, "hit": 0, "partial": 0,
+                    "miss": 0, "ungraded": 0, "hit_rate": None,
+                    "partial_rate": None, "miss_rate": None},
+        "groups": [], "hits": [], "misses": [],
+        "backtest": {"weeks": [1, 2, 3],
+                     "overall": {"calls": 20, "graded": 20, "hit": 12,
+                                 "partial": 5, "miss": 3, "ungraded": 0,
+                                 "hit_rate": 0.6, "partial_rate": 0.25,
+                                 "miss_rate": 0.15},
+                     "groups": [{"classification": "emerging_breakout",
+                                 "calls": 20, "graded": 20, "hit": 12,
+                                 "partial": 5, "miss": 3, "ungraded": 0,
+                                 "hit_rate": 0.6, "partial_rate": 0.25,
+                                 "miss_rate": 0.15}]},
+    })
+
+    payload = api.get_breakout_track_record(2026)
+
+    backtest = payload["weekly"]["backtest"]
+    assert backtest["weeks"] == [1, 2, 3]
+    assert backtest["groups"][0]["label"] == "Emerging Breakout"
+    assert backtest["overall"]["hit_rate"] == pytest.approx(0.6)
+
+
 def test_track_record_route_registered():
     flask = pytest.importorskip("flask")
     from dashboard_services.breakout_api import register_breakout_routes

@@ -1868,15 +1868,35 @@ def _forecast_outlook(board: Dict) -> Dict:
     return outlook
 
 
+def _merged_board_candidates(*boards: Dict) -> Dict:
+    """One candidate list across boards, deduped per (player, forecast
+    kind). The default board IS the preseason board out of season, so the
+    same call can arrive twice; forecast kinds are disjoint per board, so
+    a call is never double counted."""
+    merged: List[Dict] = []
+    seen = set()
+    for board in boards:
+        for candidate in (board or {}).get("candidates", []):
+            forecast = candidate.get("forecast")
+            kind = forecast.get("kind") if isinstance(forecast, dict) else None
+            key = (str(candidate.get("player_id") or ""), kind)
+            if key in seen:
+                continue
+            seen.add(key)
+            merged.append(candidate)
+    return {"candidates": merged}
+
+
 def get_breakout_track_record(requested_season: Optional[int] = None) -> Dict:
     """Sidebar payload for the breakout page.
 
     Track record (finished grades only): weekly hit rates per
     classification for the current scoring version, season to date, plus
     the season engine's hit rates by phase once its grades table exists.
-    Forecast outlook: live band counts over the board's open calls, kept
-    strictly separate from the grade-based rates. Plus the biggest graded
-    hits and misses so far.
+    Reconstructed (backtest) weekly calls report under their own labeled
+    entry and never enter the live rates. Forecast outlook: live band
+    counts over the board's open calls, kept strictly separate from the
+    grade-based rates. Plus the biggest graded hits and misses so far.
     """
     from data_building.breakout_engine import forecasts as _forecasts
     from data_building.breakout_engine.weekly_grading import MIN_SUMMARY_SAMPLE
@@ -1891,6 +1911,7 @@ def get_breakout_track_record(requested_season: Optional[int] = None) -> Dict:
             "min_sample": MIN_SUMMARY_SAMPLE,
             "overall": None,
             "groups": [],
+            "backtest": None,
             "definition": WEEKLY_HIT_DEFINITION,
         },
         "season_engine": {
@@ -1914,12 +1935,18 @@ def get_breakout_track_record(requested_season: Optional[int] = None) -> Dict:
         out["label"] = _WEEKLY_CLASS_LABELS.get(key, key.title() or "Unknown")
         return out
 
+    backtest_tr = weekly_tr.get("backtest")
     payload["weekly"] = {
         "available": True,
         "scoring_version": weekly_tr["scoring_version"],
         "min_sample": weekly_tr["min_sample"],
         "overall": weekly_tr["overall"],
         "groups": [_with_class_label(g) for g in weekly_tr["groups"]],
+        "backtest": None if backtest_tr is None else {
+            "weeks": backtest_tr["weeks"],
+            "overall": backtest_tr["overall"],
+            "groups": [_with_class_label(g) for g in backtest_tr["groups"]],
+        },
         "definition": WEEKLY_HIT_DEFINITION,
     }
     payload["hits"] = [_with_class_label(h) for h in weekly_tr["hits"]]
@@ -1942,7 +1969,20 @@ def get_breakout_track_record(requested_season: Optional[int] = None) -> Dict:
     except Exception:
         logger.warning("breakout track record: board load failed", exc_info=True)
         board = {}
-    payload["outlook"] = _forecast_outlook(board)
+    # Preseason forecasts attach only when the loaded board IS the
+    # preseason board, but in season the default board is the weekly one,
+    # so the outlook would never see the preseason calls. Load that board
+    # explicitly too and aggregate over both; each load fails soft on its
+    # own, and the merge dedupes the out-of-season overlap.
+    try:
+        preseason_board = get_breakout_board_candidates(
+            season, BREAKOUT_BOARD_MIN_SCORE, None, week="preseason")
+    except Exception:
+        logger.warning(
+            "breakout track record: preseason board load failed", exc_info=True)
+        preseason_board = {}
+    payload["outlook"] = _forecast_outlook(
+        _merged_board_candidates(board, preseason_board))
     return payload
 
 

@@ -367,6 +367,9 @@ def latest_scored_week(season: int) -> Optional[int]:
     """Most recent snapshot compatible with the current scorer.
 
     Old rows remain as history, but are never advertised as the current board.
+    Reconstructed runs (detail.reconstructed) never count here either: the
+    default latest view stays on live current-version runs only, even when
+    a backtest reconstruction exists for some week.
     """
     from data_building.breakout_engine.weekly_breakout import SCORING_VERSION
     init_weekly_breakout_db()
@@ -374,6 +377,7 @@ def latest_scored_week(season: int) -> Optional[int]:
         row = conn.execute(
             f"SELECT MAX(r.as_of_week) AS w FROM {WEEKLY_RUNS_TABLE} r "
             f"WHERE r.season = %s AND r.scoring_version = %s "
+            f"AND COALESCE(r.detail->>'reconstructed', 'false') <> 'true' "
             f"AND {_completed_run_criteria()}",
             (int(season), SCORING_VERSION),
         ).fetchone()
@@ -399,7 +403,9 @@ def list_completed_weeks(season: int) -> List[Dict[str, Any]]:
     scored with (see :func:`get_serving_run`), so a version bump must not
     hide earlier weeks from the selector. When two completed runs cover
     the same week under different versions, the week is advertised once,
-    with the serving run's version and date.
+    with the serving run's version and date. A reconstructed run
+    (detail.reconstructed) only ever advertises a week that has no
+    original completed run, matching the serving preference.
     """
     init_weekly_breakout_db()
     with get_conn() as conn:
@@ -408,7 +414,9 @@ def list_completed_weeks(season: int) -> List[Dict[str, Any]]:
             f"r.as_of_date AS d, r.scoring_version AS v "
             f"FROM {WEEKLY_RUNS_TABLE} r "
             f"WHERE r.season = %s AND {_completed_run_criteria()} "
-            f"ORDER BY r.as_of_week ASC, r.completed_at DESC, r.id DESC",
+            f"ORDER BY r.as_of_week ASC, "
+            f"CASE WHEN COALESCE(r.detail->>'reconstructed', 'false') = 'true' "
+            f"THEN 1 ELSE 0 END ASC, r.completed_at DESC, r.id DESC",
             (int(season),),
         ).fetchall()
     out = []
@@ -424,18 +432,21 @@ def list_completed_weeks(season: int) -> List[Dict[str, Any]]:
 
 def get_serving_run(season: int, as_of_week: int) -> Optional[Dict[str, Any]]:
     """The completed run whose stored snapshot serves an explicit
-    historical-week request: the most recently completed run for that week
-    under ANY scoring version (ties broken by highest run id, so the pick
-    is deterministic). Only the default latest view is gated on the current
-    SCORING_VERSION; a week the user explicitly picks is served as it was
-    actually scored."""
+    historical-week request. A non-reconstructed (original) completed run
+    always wins, however old; only when no original exists does a
+    reconstructed run serve. Within the same class, the most recently
+    completed run wins under ANY scoring version (ties broken by highest
+    run id, so the pick is deterministic). Only the default latest view is
+    gated on the current SCORING_VERSION; a week the user explicitly picks
+    is served as it was actually scored."""
     init_weekly_breakout_db()
     with get_conn() as conn:
         row = conn.execute(
             f"SELECT r.* FROM {WEEKLY_RUNS_TABLE} r "
             f"WHERE r.season = %s AND r.as_of_week = %s "
             f"AND {_completed_run_criteria()} "
-            f"ORDER BY r.completed_at DESC, r.id DESC LIMIT 1",
+            f"ORDER BY CASE WHEN COALESCE(r.detail->>'reconstructed', 'false') = 'true' "
+            f"THEN 1 ELSE 0 END ASC, r.completed_at DESC, r.id DESC LIMIT 1",
             (int(season), int(as_of_week)),
         ).fetchone()
     return dict(row) if row else None
