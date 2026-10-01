@@ -613,6 +613,26 @@ class MFLProvider(ProviderAdapter):
                  "draft_order": {}, "slot_to_roster_id": {}, "last_picked": 0,
                  "picks": filled}]
 
+    def get_draft_picks(self, league_id, season, draft_id=None):
+        """Canonical pick rows from the draftResults payload get_drafts embeds.
+
+        Pick player ids are MFL ids in the raw export; map them through the
+        same name crosswalk get_rosters uses so consumers see canonical
+        (Sleeper-keyed) ids. Unmapped ids keep their MFL id (they simply
+        cannot match site player data)."""
+        drafts = self.get_drafts(league_id, season) or []
+        xwalk = self._canonical_map(league_id, season)
+        rows = []
+        for d in drafts:
+            for p in (d or {}).get("picks") or []:
+                row = dict(p)
+                raw_pid = str(row.get("player_id") or "")
+                if raw_pid and xwalk.get(raw_pid):
+                    row["player_id"] = xwalk[raw_pid]
+                rows.append(row)
+        rows.sort(key=lambda r: _int(r.get("pick_no")))
+        return rows
+
     def get_traded_picks(self, league_id, season):
         raw = self._export("futureDraftPicks", league_id, season, ttl=1800)
         picks = _items((raw.get("futureDraftPicks") or {}).get("futureDraftPick", []), "futureDraftPick")

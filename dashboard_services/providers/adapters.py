@@ -8,6 +8,56 @@ _COMMON = frozenset({LEAGUE, USERS, ROSTERS, STARTERS, MATCHUPS, STANDINGS,
                      SCORING_SETTINGS, ROSTER_SETTINGS})
 
 
+def _as_int_or_none(value):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _espn_pick_row(raw, idx, canon):
+    """One ESPN draft pick (mDraftDetail dict or espn_api Pick object) as a
+    canonical Sleeper-shaped pick row, or None when it carries no player.
+
+    Player ids resolve through the ESPN->canonical crosswalk; unresolved ids
+    keep their ESPN id (the keeper page's convention) so the pick still
+    occupies its board slot even though it cannot match site player data.
+    """
+    def _get(*names):
+        for name in names:
+            val = raw.get(name) if isinstance(raw, dict) else getattr(raw, name, None)
+            if val is not None:
+                return val
+        return None
+
+    espn_pid = _get("playerId", "player_id")
+    if espn_pid is None or str(espn_pid).strip() in ("", "0", "-1"):
+        return None
+    team_id = _get("teamId", "team_id")
+    if team_id is None:
+        team_obj = _get("team")
+        if team_obj is not None and not isinstance(team_obj, (str, int)):
+            team_id = getattr(team_obj, "team_id", None)
+        else:
+            team_id = team_obj
+    meta = {}
+    bid = _get("bid_amount", "bidAmount")
+    if bid is not None:
+        meta["amount"] = bid
+    if _get("keeper", "isKeeper"):
+        meta["keeper"] = True
+    return {
+        "player_id": str(canon.get(str(espn_pid)) or espn_pid),
+        "roster_id": str(team_id) if team_id is not None else "",
+        "picked_by": str(team_id) if team_id is not None else "",
+        "pick_no": _as_int_or_none(_get("overallPickNumber",
+                                        "overall_pick_number", "pick_no")) or idx + 1,
+        "round": _as_int_or_none(_get("roundId", "round_num", "round")) or 0,
+        "draft_slot": _as_int_or_none(_get("roundPickNumber", "round_pick")) or 0,
+        "metadata": meta,
+    }
+
+
 class SleeperProvider(ProviderAdapter):
     metadata = ProviderMetadata("sleeper", "Sleeper", "username", capabilities=
         _COMMON | frozenset({TRADED_PICKS, FUTURE_PICKS, BRACKET}))
@@ -34,6 +84,11 @@ class SleeperProvider(ProviderAdapter):
     def get_drafts(self, league_id, season):
         from dashboard_services.api import get_drafts
         return get_drafts(league_id)
+    def get_draft_picks(self, league_id, season, draft_id=None):
+        from dashboard_services.api import get_draft_picks
+        if not draft_id:
+            return []
+        return get_draft_picks(str(draft_id)) or []
     def get_transactions(self, league_id, season, week):
         from dashboard_services.api import get_transactions
         return get_transactions(league_id, week) or []
@@ -74,6 +129,23 @@ class ESPNProvider(ProviderAdapter):
     def get_traded_picks(self, league_id, season): return []
     def get_bracket(self, league_id, season, kind): return self._api().espn_get_bracket_like(league_id=league_id, season=season, kind=kind)
     def get_drafts(self, league_id, season): return self._api().get_drafts(season, league_id)
+    def get_draft_picks(self, league_id, season, draft_id=None):
+        espn_api = self._api()
+        try:
+            canon = espn_api._espn_to_canon_cached()
+        except Exception:
+            canon = {}
+        try:
+            raw_picks = espn_api.iter_draft_picks(int(season), str(league_id)) or []
+        except Exception:
+            raw_picks = []
+        rows = []
+        for idx, raw in enumerate(raw_picks):
+            row = _espn_pick_row(raw, idx, canon)
+            if row:
+                rows.append(row)
+        rows.sort(key=lambda r: r["pick_no"])
+        return rows
     def get_transactions(self, league_id, season, week): return self._api().get_transactions(season, league_id, week)
     def get_league_globals(self, league_id, season): return self._api().get_league_globals(season, league_id)
 
@@ -100,5 +172,37 @@ class YahooProvider(ProviderAdapter):
         from dashboard_services.platform_api import _yahoo_token
         return yahoo_api.get_bracket_like(league_id, season, kind, _yahoo_token(league_id, season))
     def get_drafts(self, league_id, season): return self._call("get_drafts", league_id, season)
+    def get_draft_picks(self, league_id, season, draft_id=None):
+        from . import yahoo_api
+        from dashboard_services.platform_api import _yahoo_token
+        token = _yahoo_token(league_id, season)
+        if not token:
+            return []
+        try:
+            xwalk = yahoo_api._yahoo_id_to_canonical()
+        except Exception:
+            xwalk = {}
+        rows = []
+        raw_rows = yahoo_api.get_draft_pick_rows(int(season), str(league_id), token) or []
+        for r in raw_rows:
+            # Yahoo ids are not site ids; an unmapped pick cannot be graded or
+            # matched to a player, so drop it (get_draft_results' convention).
+            canon = xwalk.get(str(r.get("player_id") or ""))
+            if not canon:
+                continue
+            meta = {}
+            if r.get("cost") is not None:
+                meta["amount"] = r.get("cost")
+            rows.append({
+                "player_id": str(canon),
+                "roster_id": str(r.get("team_id") or ""),
+                "picked_by": str(r.get("team_id") or ""),
+                "pick_no": _as_int_or_none(r.get("pick")) or 0,
+                "round": _as_int_or_none(r.get("round")) or 0,
+                "draft_slot": 0,
+                "metadata": meta,
+            })
+        rows.sort(key=lambda r: r["pick_no"])
+        return rows
     def get_transactions(self, league_id, season, week): return self._call("get_transactions", league_id, season, week)
     def get_league_globals(self, league_id, season): return self._call("get_league_globals", league_id, season)

@@ -497,9 +497,36 @@ def get_player_acquisition_events(
 
     # ── Draft pick that selected this player (completed drafts only) ──────────
     try:
-        from dashboard_services.api import get_drafts, get_draft_picks
-        for hist_lid in {str(v) for v in season_map.values()}:
-            drafts = get_drafts(hist_lid) or []
+        # (league_id, draft rows, fetch_picks(draft) -> pick rows). Sleeper
+        # keeps its legacy per-draft endpoints; every other platform goes
+        # through the canonical platform_api draft paths, so a non-Sleeper
+        # league id never hits the Sleeper transport (which 404s, and the
+        # failure used to be swallowed here, silently dropping the drafted
+        # event from the timeline).
+        draft_scan: list = []
+        if plat == "sleeper":
+            from dashboard_services.api import get_drafts, get_draft_picks
+            for hist_lid in {str(v) for v in season_map.values()}:
+                draft_scan.append((
+                    hist_lid,
+                    get_drafts(hist_lid) or [],
+                    lambda d: get_draft_picks(str(d.get("draft_id"))),
+                ))
+        else:
+            from dashboard_services.platform_api import (
+                get_draft_picks as _platform_draft_picks,
+                get_drafts as _platform_drafts,
+            )
+            for hist_season, hist_lid in season_map.items():
+                hist_lid = str(hist_lid)
+                draft_scan.append((
+                    hist_lid,
+                    _platform_drafts(plat, hist_lid, int(hist_season)) or [],
+                    lambda d, _lid=hist_lid, _season=int(hist_season):
+                        _platform_draft_picks(
+                            plat, _lid, _season, draft_id=d.get("draft_id")),
+                ))
+        for hist_lid, drafts, fetch_picks in draft_scan:
             for d in drafts:
                 if str(d.get("status") or "") != "complete":
                     continue
@@ -510,7 +537,7 @@ def get_player_acquisition_events(
                     d_season = int(d.get("season"))
                 except (TypeError, ValueError):
                     d_season = None
-                picks = get_draft_picks(str(draft_id)) or []
+                picks = fetch_picks(d) or []
                 names = _roster_names(plat, hist_lid, int(d_season)) if d_season else {}
                 for p in picks:
                     if str(p.get("player_id") or "") != pid:

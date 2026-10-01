@@ -86,6 +86,7 @@ from dashboard_services.rank_medals import rank_mark
 from dashboard_services.team_crest import team_crest
 from dashboard_services.platform_api import (
     get_bracket,
+    get_draft_picks,
     get_drafts,
     get_league,
     get_rosters,
@@ -28424,7 +28425,6 @@ def api_draft_grades():
         return jsonify(_dg_hit[1])
 
     try:
-        from dashboard_services.api import fetch_json
         from collections import defaultdict as _defaultdict
 
         # ── Draft picks ─────────────────────────────────────────────────────
@@ -28437,7 +28437,10 @@ def api_draft_grades():
         if not draft_id:
             return jsonify({"error": "Draft has no ID"}), 404
 
-        picks_raw = fetch_json(f"/draft/{draft_id}/picks") or []
+        # Picks come from the platform's own draft-results path. The old code
+        # fed the draft id to Sleeper's /draft/{id}/picks transport for every
+        # platform, so ESPN/Yahoo synthetic draft ids 404'd and the route 500'd.
+        picks_raw = get_draft_picks(platform, league_id, season, draft_id=draft_id) or []
         if not isinstance(picks_raw, list) or not picks_raw:
             return jsonify({"error": "Draft has no picks yet"}), 404
 
