@@ -176,13 +176,17 @@ _INJURY_SEVERE = {"IR", "OUT", "PUP", "NFI", "DOUBTFUL", "SUSP"}
 
 
 def _notable_injuries(injury_df, starter_pids: set, limit: int = 8) -> list[dict]:
-    """Notable names from the league injury report: rostered players flagged
-    Out / Doubtful / IR-family, plus Questionable players who started in the
-    recap week.
+    """Players who got injured THIS week: rostered players on the current
+    injury report who started in the recap week.
 
     injury_df is the CURRENT report (build_injury_report over the live
-    players snapshot), so callers gate this to the latest recap week, where
-    the snapshot reads as that week's injury news.
+    players snapshot) with no status history, so "newly injured" is read
+    off the one hard fact the recap has: the player was healthy enough to
+    start in the recap week, so the designation they carry now postdates
+    that game -- they went down during it or in the days since. Players
+    who were already out (long-term IR, multi-week absences) didn't start
+    and stay off the list. Callers gate this to the latest recap week,
+    where the snapshot reads as that week's injury news.
     """
     if injury_df is None:
         return []
@@ -202,7 +206,9 @@ def _notable_injuries(injury_df, starter_pids: set, limit: int = 8) -> list[dict
             continue
         pid = str(rec.get("PlayerID") or "")
         started = pid in starter_pids
-        if status not in _INJURY_SEVERE and not (status == "QUESTIONABLE" and started):
+        if not started:
+            continue  # already injured before this week -- not new
+        if status not in _INJURY_SEVERE and status != "QUESTIONABLE":
             continue
 
         def _clean(v) -> str:
@@ -255,9 +261,14 @@ def _recent_activity(activity_df, week: int, limit: int = 10) -> list[dict]:
 
 
 _RECAP_INJURIES_CSS = """<style>
-  .rc-inj-card { padding:6px 12px; }
+  .rc-inj-card { padding:6px 12px; display:grid;
+                 grid-template-columns:repeat(2, minmax(0,1fr)); column-gap:20px; }
   .rc-inj-row { display:flex; align-items:center; gap:10px; padding:8px 0; min-width:0; }
-  .rc-inj-row + .rc-inj-row { border-top:1px solid var(--border); }
+  .rc-inj-row:nth-child(n+3) { border-top:1px solid var(--border); }
+  @media (max-width:640px) {
+    .rc-inj-card { grid-template-columns:minmax(0,1fr); }
+    .rc-inj-row:nth-child(2) { border-top:1px solid var(--border); }
+  }
   .rc-inj-status { font-size:10px; font-weight:800; letter-spacing:.05em; padding:3px 7px;
                    border-radius:999px; color:var(--rc-inj); flex-shrink:0;
                    background:color-mix(in srgb, var(--rc-inj) 14%, transparent); }
@@ -1164,7 +1175,9 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
     # ── Injury report ──────────────────────────────────────────────────────
     # build_injury_report is a CURRENT snapshot, so it only reads as this
     # week's news on the latest recap; older weeks omit the section rather
-    # than dress today's statuses up as that week's.
+    # than dress today's statuses up as that week's. Within the section,
+    # _notable_injuries keeps only players who started the recap week --
+    # the newly injured -- not the full standing injury list.
     injuries_html = ""
     if not preview_mode and selected_week == available_weeks[-1]:
         try:
@@ -1191,7 +1204,7 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
     </div>""")
             injuries_html = (
                 f'<section class="recap-section recap-injuries"><div class="recap-section-heading">'
-                f'<h2>Injury Report</h2><small>Latest report · league rosters</small></div>'
+                f'<h2>Injury Report</h2><small>New this week</small></div>'
                 f'{_RECAP_INJURIES_CSS}<div class="card rc-inj-card">{"".join(inj_rows)}\n</div></section>'
             )
 
