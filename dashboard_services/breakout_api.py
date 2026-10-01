@@ -8,7 +8,7 @@ Includes detailed breakout type classification (readiness vs opportunity driven)
 import logging
 import os
 from datetime import date
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from flask import Blueprint, jsonify, request
 
@@ -907,6 +907,22 @@ def get_weekly_breakout_candidates(season: int, min_score: float = 0.0,
     except Exception:
         logger.warning("weekly breakout: player index enrich failed", exc_info=True)
 
+    # Live forecasts for open calls on the current board only (an explicit
+    # historical snapshot is a finished view; its calls are graded, not
+    # forecast). Computed at read time from the raw snapshot rows, never
+    # stored, and never part of any hit rate.
+    if as_of_week is None and candidates:
+        try:
+            from data_building.breakout_engine import forecasts as _bo_forecasts
+            _served = {str(c.get("player_id")): c for c in candidates}
+            _raw_rows = [r for r in rows if str(r.get("player_id")) in _served]
+            for _pid, _forecast in _bo_forecasts.weekly_forecasts_for_calls(
+                    season, _raw_rows).items():
+                if _pid in _served:
+                    _served[_pid]["forecast"] = _forecast
+        except Exception:
+            logger.warning("weekly breakout: forecast attach failed", exc_info=True)
+
     return {
         "season": season,
         "candidates": candidates,
@@ -1128,6 +1144,21 @@ def get_breakout_candidates(season: Optional[int] = None, min_score: float = 0.0
     except Exception:
         logger.warning("breakout_api: failed to enrich candidates with player index", exc_info=True)
 
+    # Live forecasts for the preseason calls on this board, keyed by player:
+    # each forecast describes the player's final pre-season snapshot call,
+    # computed at read time and never stored or counted in any hit rate.
+    if candidates:
+        try:
+            from data_building.breakout_engine import forecasts as _bo_forecasts
+            _fc_map = _bo_forecasts.preseason_forecasts_for_season(
+                season, player_ids=[c.get('player_id') for c in candidates])
+            for c in candidates:
+                _fc = _fc_map.get(str(c.get('player_id')))
+                if _fc is not None:
+                    c['forecast'] = _fc
+        except Exception:
+            logger.warning("breakout_api: preseason forecast attach failed", exc_info=True)
+
     return {
         'season': season,
         'candidates': candidates,
@@ -1177,12 +1208,25 @@ def list_breakout_weeks(requested_season: Optional[int] = None) -> Dict:
             logger.debug("list_breakout_weeks: weekly lookup failed", exc_info=True)
     weeks = [{"value": "preseason", "label": "Preseason"}]
     for row in completed:
-        weeks.append({
+        entry = {
             "value": row["as_of_week"],
             "label": f"Week {row['as_of_week']}",
             "as_of_date": row.get("as_of_date"),
-        })
-    latest_week = completed[-1]["as_of_week"] if completed else "preseason"
+        }
+        if row.get("scoring_version"):
+            entry["scoring_version"] = row["scoring_version"]
+        weeks.append(entry)
+    # The board opens on the latest CURRENT-version snapshot. Older-version
+    # weeks remain selectable (they serve their stored snapshot verbatim),
+    # but the default view stays gated on the current scoring version.
+    try:
+        from data_building.breakout_engine.weekly_breakout import (
+            SCORING_VERSION as _current_version)
+    except Exception:
+        _current_version = None
+    _current_weeks = [row for row in completed
+                      if row.get("scoring_version") in (None, _current_version)]
+    latest_week = _current_weeks[-1]["as_of_week"] if _current_weeks else "preseason"
     try:
         preseason_available = bool(opportunity_data_ready(season)) if season else False
     except Exception:
@@ -1749,6 +1793,159 @@ def aligned_breakout_scores(player_ids, requested_season: Optional[int] = None) 
     return out
 
 
+# =============================================================================
+# TRACK RECORD + FORECAST OUTLOOK (breakout page sidebar)
+# =============================================================================
+
+WEEKLY_HIT_DEFINITION = (
+    "A weekly hit means the player kept the bigger role and gained at "
+    "least 2 PPR points per game over the 3 weeks after the call."
+)
+SEASON_HIT_DEFINITION = (
+    "A season hit means the player beat his own prior season per game "
+    "scoring by at least 15 percent. With no real prior season to beat, "
+    "the bar is 10 PPR points per game."
+)
+TRACK_RECORD_PENDING_TEXT = "Still grading, not enough finished calls yet"
+
+
+def _phase_label(phase: object) -> str:
+    return str(phase or "unknown").replace("_", " ").title()
+
+
+def _forecast_outlook(board: Dict) -> Dict:
+    """Aggregate the board's per-call forecasts into band counts plus the
+    top Tracking to hit calls. Forecasts only: nothing here reads grades,
+    and nothing here is ever merged into a hit rate."""
+    from data_building.breakout_engine import forecasts as _forecasts
+
+    outlook: Dict[str, Dict] = {}
+    for kind in ("weekly", "preseason"):
+        outlook[kind] = {
+            "counts": {
+                _forecasts.BAND_TRACKING_HIT: 0,
+                _forecasts.BAND_BORDERLINE: 0,
+                _forecasts.BAND_TRACKING_MISS: 0,
+            },
+            "open_calls": 0,
+            "pending_calls": 0,
+            "top_tracking_hit": [],
+        }
+    top: Dict[str, List] = {"weekly": [], "preseason": []}
+    for candidate in (board or {}).get("candidates", []):
+        forecast = candidate.get("forecast")
+        if not isinstance(forecast, dict):
+            continue
+        kind = forecast.get("kind")
+        if kind not in outlook:
+            continue
+        bucket = outlook[kind]
+        band = forecast.get("band")
+        if band in bucket["counts"]:
+            bucket["counts"][band] += 1
+            bucket["open_calls"] += 1
+        else:
+            bucket["pending_calls"] += 1
+        if band == _forecasts.BAND_TRACKING_HIT:
+            score = candidate.get("breakout_score")
+            if score is None:
+                score = candidate.get("breakout_opportunity_score")
+            top[kind].append((float(score or 0), {
+                "player_id": str(candidate.get("player_id") or ""),
+                "player_name": candidate.get("player_name"),
+                "band": band,
+                "band_label": forecast.get("band_label"),
+                "basis": forecast.get("basis"),
+                "group_label": (
+                    candidate.get("classification_label") if kind == "weekly"
+                    else _phase_label(forecast.get("phase"))),
+            }))
+    for kind in ("weekly", "preseason"):
+        ranked = sorted(top[kind], key=lambda item: item[0], reverse=True)
+        outlook[kind]["top_tracking_hit"] = [
+            entry for _score, entry in ranked[:_forecasts.TOP_FORECAST_LIMIT]
+        ]
+    return outlook
+
+
+def get_breakout_track_record(requested_season: Optional[int] = None) -> Dict:
+    """Sidebar payload for the breakout page.
+
+    Track record (finished grades only): weekly hit rates per
+    classification for the current scoring version, season to date, plus
+    the season engine's hit rates by phase once its grades table exists.
+    Forecast outlook: live band counts over the board's open calls, kept
+    strictly separate from the grade-based rates. Plus the biggest graded
+    hits and misses so far.
+    """
+    from data_building.breakout_engine import forecasts as _forecasts
+    from data_building.breakout_engine.weekly_grading import MIN_SUMMARY_SAMPLE
+
+    season = _resolve_bo_season(requested_season)
+    payload: Dict[str, Any] = {
+        "season": season,
+        "pending_text": TRACK_RECORD_PENDING_TEXT,
+        "weekly": {
+            "available": False,
+            "scoring_version": None,
+            "min_sample": MIN_SUMMARY_SAMPLE,
+            "overall": None,
+            "groups": [],
+            "definition": WEEKLY_HIT_DEFINITION,
+        },
+        "season_engine": {
+            "available": False,
+            "overall": None,
+            "groups": [],
+            "definition": SEASON_HIT_DEFINITION,
+        },
+        "outlook": _forecast_outlook({}),
+        "hits": [],
+        "misses": [],
+    }
+    if not season:
+        return payload
+
+    weekly_tr = _forecasts.weekly_track_record(season)
+
+    def _with_class_label(entry: Dict) -> Dict:
+        out = dict(entry)
+        key = str(out.get("classification") or "")
+        out["label"] = _WEEKLY_CLASS_LABELS.get(key, key.title() or "Unknown")
+        return out
+
+    payload["weekly"] = {
+        "available": True,
+        "scoring_version": weekly_tr["scoring_version"],
+        "min_sample": weekly_tr["min_sample"],
+        "overall": weekly_tr["overall"],
+        "groups": [_with_class_label(g) for g in weekly_tr["groups"]],
+        "definition": WEEKLY_HIT_DEFINITION,
+    }
+    payload["hits"] = [_with_class_label(h) for h in weekly_tr["hits"]]
+    payload["misses"] = [_with_class_label(m) for m in weekly_tr["misses"]]
+
+    season_tr = _forecasts.season_track_record(season)
+    payload["season_engine"] = {
+        "available": season_tr["available"],
+        "overall": season_tr["overall"],
+        "groups": [
+            {**g, "label": _phase_label(g.get("phase"))}
+            for g in season_tr["groups"]
+        ],
+        "definition": SEASON_HIT_DEFINITION,
+    }
+
+    try:
+        board = get_breakout_board_candidates(
+            season, BREAKOUT_BOARD_MIN_SCORE, None)
+    except Exception:
+        logger.warning("breakout track record: board load failed", exc_info=True)
+        board = {}
+    payload["outlook"] = _forecast_outlook(board)
+    return payload
+
+
 @breakout_bp.route('/candidates')
 def candidates():
     """Get breakout candidates. Non-premium users receive a 3-candidate preview."""
@@ -1792,6 +1989,15 @@ def weeks():
     """
     requested_season = request.args.get('season', type=int)
     return jsonify(list_breakout_weeks(requested_season))
+
+
+@breakout_bp.route('/track-record')
+def track_record():
+    """Sidebar aggregate for the breakout page: the grade-based track
+    record, the live forecast outlook over open calls, and the biggest
+    graded hits and misses."""
+    requested_season = request.args.get('season', type=int)
+    return jsonify(get_breakout_track_record(requested_season))
 
 
 @breakout_bp.route('/candidates/<position>')

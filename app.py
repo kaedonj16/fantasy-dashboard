@@ -16740,6 +16740,8 @@ def page_breakouts(platform: str, season: int, league_id: str):
         {_bo_last_updated}
       </div>
       <div class="card-body">
+       <div class="bo-layout">
+        <div class="bo-main">
         <!-- Position Filter + Week Selector -->
         <div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; margin-bottom: 16px;">
           <div class="otc-day-filters breakout-filters">
@@ -16772,6 +16774,28 @@ def page_breakouts(platform: str, season: int, league_id: str):
           <div id="breakoutsEmptyTitle">No breakout candidates found</div>
           <div id="breakoutsEmptyDetail" style="font-size:13px;margin-top:8px;display:none;"></div>
         </div>
+        </div><!-- /bo-main -->
+
+        <!-- Sidebar: track record, forecast outlook, biggest graded hits/misses -->
+        <aside class="bo-rail" id="boRail" aria-label="Breakout track record and forecast outlook">
+          <div class="bo-rail-section" id="boRailTrackRecord">
+            <div class="bo-rail-title">Track Record</div>
+            <div class="bo-rail-pending">Loading track record...</div>
+          </div>
+          <div class="bo-rail-section" id="boRailOutlook">
+            <div class="bo-rail-title">Forecast Outlook</div>
+            <div class="bo-rail-pending">Loading forecast outlook...</div>
+          </div>
+          <div class="bo-rail-section" id="boRailHits">
+            <div class="bo-rail-title">Biggest Hits</div>
+            <div class="bo-rail-pending">Loading biggest hits...</div>
+          </div>
+          <div class="bo-rail-section" id="boRailMisses">
+            <div class="bo-rail-title">Biggest Misses</div>
+            <div class="bo-rail-pending">Loading biggest misses...</div>
+          </div>
+        </aside>
+       </div><!-- /bo-layout -->
       </div>
     </div>
 
@@ -16873,6 +16897,126 @@ def page_breakouts(platform: str, season: int, league_id: str):
           if (sel) sel.addEventListener('change', onBreakoutWeekChange);
           loadBreakouts('latest');
         }});
+
+      // Sidebar: track record (finished grades only), the live forecast
+      // outlook over open calls, and the biggest graded hits and misses.
+      // Forecasts and grades are rendered from separate payload sections
+      // and never merged into one number.
+      function _boRailSet(id, html) {{
+        var el = document.getElementById(id);
+        if (el) el.innerHTML = html;
+      }}
+
+      function _boTrackRows(groups, pendingText) {{
+        if (!groups || !groups.length) {{
+          return '<div class="bo-rail-pending">' + pendingText + '<br>Based on 0 graded calls so far.</div>';
+        }}
+        var html = '';
+        groups.forEach(function (g) {{
+          if (g.hit_rate != null) {{
+            html += '<div class="bo-rail-row"><div><div class="bo-rail-name">' + (g.label || '') + '</div>'
+              + '<div class="bo-rail-meta">based on ' + (g.graded || 0) + ' graded calls</div></div>'
+              + '<div class="bo-rail-value">' + Math.round(g.hit_rate * 100) + '% hits</div></div>';
+          }} else {{
+            html += '<div class="bo-rail-row"><div><div class="bo-rail-name">' + (g.label || '') + '</div>'
+              + '<div class="bo-rail-meta">' + pendingText + ' · based on ' + (g.graded || 0) + ' graded calls</div></div></div>';
+          }}
+        }});
+        return html;
+      }}
+
+      function renderBoTrackRecord(data) {{
+        var weekly = data.weekly || {{}};
+        var seasonEng = data.season_engine || {{}};
+        var pendingText = data.pending_text || 'Still grading, not enough finished calls yet';
+        var html = '<div class="bo-rail-title">Track Record</div>';
+        html += '<div class="bo-rail-meta" style="font-weight:700;">Weekly calls' + (weekly.scoring_version ? ' (' + weekly.scoring_version + ')' : '') + '</div>';
+        html += _boTrackRows(weekly.groups, pendingText);
+        html += '<div class="bo-rail-sub">' + (weekly.definition || '') + '</div>';
+        html += '<div class="bo-rail-meta" style="font-weight:700;margin-top:10px;">Season calls by phase</div>';
+        if (seasonEng.available) {{
+          html += _boTrackRows(seasonEng.groups, pendingText);
+        }} else {{
+          html += '<div class="bo-rail-pending">' + pendingText + '</div>';
+        }}
+        html += '<div class="bo-rail-sub">' + (seasonEng.definition || '') + '</div>';
+        _boRailSet('boRailTrackRecord', html);
+      }}
+
+      function _boOutlookBlock(title, block) {{
+        var counts = (block && block.counts) || {{}};
+        var html = '<div class="bo-rail-meta" style="font-weight:700;">' + title + '</div>';
+        if (!block || ((block.open_calls || 0) === 0 && (block.pending_calls || 0) === 0)) {{
+          return html + '<div class="bo-rail-pending">No open calls right now.</div>';
+        }}
+        var bands = [['tracking_to_hit', 'Tracking to hit', '#10b981'], ['borderline', 'Borderline', '#f59e0b'], ['tracking_to_miss', 'Tracking to miss', '#ef4444']];
+        bands.forEach(function (b) {{
+          html += '<div class="bo-rail-row"><div class="bo-rail-name" style="color:' + b[2] + ';">' + b[1] + '</div><div class="bo-rail-value">' + (counts[b[0]] || 0) + '</div></div>';
+        }});
+        if (block.pending_calls) {{
+          html += '<div class="bo-rail-meta" style="margin-top:4px;">' + block.pending_calls + ' more open call' + (block.pending_calls === 1 ? '' : 's') + ' with no games yet, so no band yet.</div>';
+        }}
+        var top = block.top_tracking_hit || [];
+        if (top.length) {{
+          html += '<div class="bo-rail-meta" style="font-weight:700;margin-top:8px;">Top calls tracking to hit</div>';
+          top.forEach(function (t) {{
+            html += '<div style="padding:4px 0;border-top:1px solid var(--border);"><div class="bo-rail-name">' + (t.player_name || 'Unknown')
+              + (t.group_label ? ' <span class="bo-rail-meta">' + t.group_label + '</span>' : '') + '</div>'
+              + '<div class="bo-rail-meta">' + (t.basis || '') + '</div></div>';
+          }});
+        }}
+        return html;
+      }}
+
+      function renderBoOutlook(data) {{
+        var outlook = data.outlook || {{}};
+        var html = '<div class="bo-rail-title">Forecast Outlook</div>';
+        html += _boOutlookBlock('Weekly calls', outlook.weekly);
+        html += '<div style="margin-top:10px;">' + _boOutlookBlock('Preseason calls', outlook.preseason) + '</div>';
+        html += '<div class="bo-rail-sub">Forecasts are live projections from games played so far. They are not grades and never count toward the track record hit rates.</div>';
+        _boRailSet('boRailOutlook', html);
+      }}
+
+      function _boGradeRows(rows, emptyText, color) {{
+        if (!rows || !rows.length) {{
+          return '<div class="bo-rail-pending">' + emptyText + '</div>';
+        }}
+        var html = '';
+        rows.forEach(function (r) {{
+          var delta = r.ppg_delta != null ? (r.ppg_delta >= 0 ? '+' : '') + Number(r.ppg_delta).toFixed(1) + ' PPG' : 'PPG n/a';
+          var role = '';
+          if (r.opp_delta != null) role = (r.opp_delta >= 0 ? '+' : '') + Number(r.opp_delta).toFixed(1) + ' touches/g';
+          else if (r.snap_delta != null) role = (r.snap_delta >= 0 ? '+' : '') + Number(r.snap_delta).toFixed(1) + ' snap pts';
+          html += '<div class="bo-rail-row"><div><div class="bo-rail-name">' + (r.player_name || 'Unknown') + '</div>'
+            + '<div class="bo-rail-meta">' + (r.label || '') + ' · Week ' + (r.call_week != null ? r.call_week : '?') + ' call' + (role ? ' · ' + role : '') + '</div></div>'
+            + '<div class="bo-rail-value" style="color:' + color + ';">' + delta + '</div></div>';
+        }});
+        return html;
+      }}
+
+      function renderBoHitsMisses(data) {{
+        _boRailSet('boRailHits', '<div class="bo-rail-title">Biggest Hits</div>' + _boGradeRows(data.hits, 'No graded hits yet. Hits appear here once a call finishes its 3 week window and grades as a hit.', '#10b981'));
+        _boRailSet('boRailMisses', '<div class="bo-rail-title">Biggest Misses</div>' + _boGradeRows(data.misses, 'No graded misses yet. Misses appear here once a call finishes its 3 week window and grades as a miss.', '#ef4444'));
+      }}
+
+      function loadBreakoutSidebar() {{
+        fetch('/api/breakout/track-record?season={bo_season}')
+          .then(res => res.json())
+          .then(function (data) {{
+            renderBoTrackRecord(data || {{}});
+            renderBoOutlook(data || {{}});
+            renderBoHitsMisses(data || {{}});
+          }})
+          .catch(function (err) {{
+            console.error('Error loading breakout sidebar:', err);
+            var msg = '<div class="bo-rail-pending">Could not load. Refresh the page to try again.</div>';
+            _boRailSet('boRailTrackRecord', '<div class="bo-rail-title">Track Record</div>' + msg);
+            _boRailSet('boRailOutlook', '<div class="bo-rail-title">Forecast Outlook</div>' + msg);
+            _boRailSet('boRailHits', '<div class="bo-rail-title">Biggest Hits</div>' + msg);
+            _boRailSet('boRailMisses', '<div class="bo-rail-title">Biggest Misses</div>' + msg);
+          }});
+      }}
+      loadBreakoutSidebar();
 
       function filterBreakouts(position) {{
         currentFilter = position;
@@ -17095,6 +17239,25 @@ def page_breakouts(platform: str, season: int, league_id: str):
                </div>`
             : '';
 
+          // Live forecast chip: a projection from games played so far, never
+          // a grade. Dashed border + the word Forecast keep it visually
+          // distinct from every grade or hit-rate element on the page.
+          const fc = candidate.forecast || null;
+          let fcColor = '#6b7280';
+          if (fc && fc.band === 'tracking_to_hit') fcColor = '#10b981';
+          else if (fc && fc.band === 'borderline') fcColor = '#d97706';
+          else if (fc && fc.band === 'tracking_to_miss') fcColor = '#ef4444';
+          const forecastHtml = !fc ? ''
+            : fc.band
+            ? `<div style="margin-bottom:10px;display:flex;flex-wrap:wrap;gap:6px;align-items:center;">
+                 <span class="bo-fc-chip" style="border-color:${{fcColor}};color:${{fcColor}};" title="Live projection from the games played so far. Tracking to hit means the numbers so far already clear the bar this call is graded on. A forecast is not a grade and never counts toward the hit rate.">Forecast: ${{fc.band_label}}</span>
+                 <span style="font-size:11px;color:var(--text-muted);">${{fc.basis || ''}}</span>
+               </div>`
+            : `<div style="margin-bottom:10px;display:flex;flex-wrap:wrap;gap:6px;align-items:center;">
+                 <span class="bo-fc-chip" title="No forecast band yet. A band appears once there is a game and a baseline to project from.">Forecast: ${{fc.state === 'no_games' ? 'no games yet' : 'not enough data yet'}}</span>
+                 <span style="font-size:11px;color:var(--text-muted);">${{fc.basis || ''}}</span>
+               </div>`;
+
           const signalPoints = weeklySignal ? parseFloat(weeklySignal.points || 0) : 0;
           const barFill = Math.min(100, Math.max(0, isWeekly ? signalPoints : topComp.val));
           const driverLabel = isWeekly ? _boWeeklySignalText(weeklySignal) : `Top Driver: ${{topComp.label}}`;
@@ -17122,6 +17285,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
                 </div>
               </div>
               <div style="margin-bottom:12px;">${{ppgHtml}}</div>
+              ${{forecastHtml}}
               <div style="margin-bottom:10px;">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
                   <span style="font-size:11px;color:var(--text-muted);">${{driverLabel}}</span>
