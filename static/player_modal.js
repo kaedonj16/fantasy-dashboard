@@ -984,6 +984,7 @@ function openPlayerModal(playerId, playerName, opts) {
           </div>
         </div>`;
       let overviewHTML = `
+        <div id="pmStartSitStrip" class="pm-ss-strip" hidden></div>
         ${scoringToggles}
         <div class="pm-hero-row" ${heroGridStyle}>
           <div class="pm-hero-stat pm-hero-primary">
@@ -1387,6 +1388,7 @@ function openPlayerModal(playerId, playerName, opts) {
 
       pmInjectContextActions(playerId, playerName, data, leagueId, platform, season);
       _pmLoadInLeague(playerId, data, leagueId, platform, season);
+      _pmLoadStartSitStrip(playerId, data, leagueId, platform, season);
 
       // The "vs Avg <pos><tier>" benchmark is reachable from Actions → Compare
       // (it offers the positional-tier averages as pickable opponents),
@@ -1745,6 +1747,58 @@ function _pmRenderInLeague(el, events) {
       '<button type="button" class="pm-inleague-more" onclick="var r=this.previousElementSibling; r.hidden=!r.hidden; this.textContent=r.hidden?\'View full history\':\'Show less\';">View full history</button>' : '') +
     (nowEvent ? row(nowEvent) : '') +
     '</div>';
+}
+
+function _pmLoadStartSitStrip(playerId, data, leagueId, platform, season) {
+  // Slim one-line Start/Sit verdict at the top of the Overview. Only in a
+  // league context where the endpoint can resolve the viewer's team; any
+  // other state (hidden, failure) leaves the strip out entirely -- never a
+  // placeholder or a fabricated verdict.
+  var el = document.getElementById('pmStartSitStrip');
+  if (!el) return;
+  if (!leagueId) return;
+  var pos = String((data && data.position) || '').toUpperCase();
+  if (pos === 'PICK') return;
+  var url = '/api/player-startsit-strip?platform=' + encodeURIComponent(platform || 'sleeper')
+    + '&league_id=' + encodeURIComponent(leagueId)
+    + '&season=' + encodeURIComponent(season || '')
+    + '&player_id=' + encodeURIComponent(playerId);
+  var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+  var timer = ctrl ? setTimeout(function() { try { ctrl.abort(); } catch (e) {} }, 15000) : null;
+  fetch(url, ctrl ? { signal: ctrl.signal } : undefined)
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (timer) clearTimeout(timer);
+      if (!document.body.contains(el)) return;
+      if (!d || d.state === 'hidden') return;
+      function esc(s) {
+        return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      }
+      function why(s) {
+        // Numbers read bold in the compact strip; everything else is plain.
+        return esc(s).replace(/(\d+(?:\.\d+)?)/g, '<b>$1</b>');
+      }
+      var link = '';
+      if (d.compare) {
+        var href = '/' + encodeURIComponent(platform || 'sleeper') + '/' + encodeURIComponent(season || '')
+          + '/' + encodeURIComponent(leagueId) + '/waivers?tab=startsit&guest=' + encodeURIComponent(playerId);
+        link = '<a class="pm-ss-link" href="' + href + '">Compare in Start/Sit</a>';
+      }
+      if (d.state === 'unavailable') {
+        el.className = 'pm-ss-strip pm-ss-na';
+        el.innerHTML = '<span class="pm-ss-text">' + esc(d.text || 'Start/sit unavailable') + '</span>' + link;
+        el.hidden = false;
+        return;
+      }
+      if (d.state !== 'ok') return;
+      el.className = 'pm-ss-strip ' + (d.tone === 'start' ? 'pm-ss-start' : 'pm-ss-bench');
+      el.innerHTML = '<span class="pm-ss-verdict">' + esc(d.verdict || '') + '</span>'
+        + (d.slot ? '<span class="pm-ss-slot">' + esc(d.slot) + '</span>' : '')
+        + '<span class="pm-ss-why">' + why(d.reason || '') + '</span>'
+        + link;
+      el.hidden = false;
+    })
+    .catch(function() { if (timer) clearTimeout(timer); });
 }
 
 function _pmLoadInLeague(playerId, data, leagueId, platform, season) {

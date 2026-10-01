@@ -13300,11 +13300,25 @@ def _apply_q_flex_safeguard(positions_out: dict, flex_slots: int) -> int:
     return swaps
 
 
+_SS_GUEST_CAP = 5
+
+
+def _parse_guest_pids(raw) -> list:
+    """Guest player ids from a comma-separated query param (deduped, capped)."""
+    out: list = []
+    for part in str(raw or "").split(","):
+        pid = part.strip()
+        if pid and pid not in out:
+            out.append(pid)
+    return out[:_SS_GUEST_CAP]
+
+
 @app.route("/api/start-sit-options")
 def api_start_sit_options():
     """
     Returns roster options grouped by position for the viewing user.
-    Query params: platform, league_id, season
+    Query params: platform, league_id, season, guests (optional
+    comma-separated player ids evaluated as guests alongside the roster)
     """
     platform = (request.args.get("platform") or "sleeper").strip().lower()
     league_id = (request.args.get("league_id") or "").strip()
@@ -13313,23 +13327,39 @@ def api_start_sit_options():
     if not league_id:
         return jsonify({"error": "league_id required"}), 400
 
+    payload, status = _build_start_sit_options(
+        platform, league_id, season,
+        _parse_guest_pids(request.args.get("guests")))
+    return jsonify(payload), status
+
+
+def _build_start_sit_options(platform: str, league_id: str, season: int,
+                             guest_pids=()):
+    """Start/Sit options payload + HTTP status (see api_start_sit_options).
+
+    Guests are non-roster players run through the exact same row pipeline
+    as the viewer's roster: each joins its position group carrying a guest
+    flag and an owner label, but guests never take a roster start flag,
+    never enter the flex pools, the close-call pairs, or the optimal-lineup
+    advice -- those keep roster-only semantics.
+    """
     if not _session_signed_in():
-        return jsonify({"state": "sign_in_required", "positions": {},
-                        "message": "Sign in to see your lineup."}), 401
+        return {"state": "sign_in_required", "positions": {},
+                "message": "Sign in to see your lineup."}, 401
 
     try:
         ctx = get_league_ctx_from_cache(platform, league_id, season)
     except Exception as e:
         logger.warning("start/sit lineup unavailable", exc_info=True)
-        return jsonify({"state": "temporarily_unavailable", "positions": {},
-                        "retryable": True, "message": "Lineup data is temporarily unavailable."}), 503
+        return {"state": "temporarily_unavailable", "positions": {},
+                "retryable": True, "message": "Lineup data is temporarily unavailable."}, 503
 
     viewer = ctx.get("viewer") or {}
     viewer_roster_id = viewer.get("viewer_roster_id")
 
     if not viewer_roster_id:
-        return jsonify({"state": "team_not_linked", "positions": {},
-                        "message": "Select or link your team to view start/sit advice."}), 409
+        return {"state": "team_not_linked", "positions": {},
+                "message": "Select or link your team to view start/sit advice."}, 409
 
     rosters = ctx.get("rosters") or []
     viewer_roster = next(
@@ -13337,8 +13367,8 @@ def api_start_sit_options():
         None,
     )
     if not viewer_roster:
-        return jsonify({"state": "team_not_linked", "positions": {},
-                        "message": "Your linked team could not be resolved in this league."}), 409
+        return {"state": "team_not_linked", "positions": {},
+                "message": "Your linked team could not be resolved in this league."}, 409
 
     reserve_set = {str(p) for p in (viewer_roster.get("reserve") or [])}
     taxi_set = {str(p) for p in (viewer_roster.get("taxi") or [])}
@@ -13346,6 +13376,29 @@ def api_start_sit_options():
         str(pid) for pid in (viewer_roster.get("players") or [])
         if str(pid) not in reserve_set and str(pid) not in taxi_set
     ]
+    # Guests already on the viewer's roster are just roster rows; drop them
+    # so a player is never evaluated twice.
+    _roster_pid_set = set(player_ids)
+    guest_pids = [str(p) for p in (guest_pids or [])
+                  if str(p) not in _roster_pid_set]
+
+    # Guest owner labels: whose roster each player sits on in this league
+    # (display name, else team name), or "Free Agent" when unrostered.
+    _owner_by_pid: dict = {}
+    _users_by_id = {str(u.get("user_id")): u
+                    for u in (ctx.get("users") or []) if isinstance(u, dict)}
+    for _r in rosters:
+        _rname = ""
+        _u = _users_by_id.get(str(_r.get("owner_id") or ""))
+        if _u:
+            _rname = str(_u.get("display_name") or _u.get("username") or "")
+        if not _rname:
+            _rname = str((_r.get("metadata") or {}).get("team_name") or "")
+        for _p in (_r.get("players") or []):
+            _owner_by_pid[str(_p)] = _rname or "Another team"
+
+    def _owner_label(pid: str) -> str:
+        return _owner_by_pid.get(str(pid)) or "Free Agent"
     players_index = ctx.get("players_index") or {}
     players_full = ctx.get("players") or {}
     try:
@@ -13397,6 +13450,12 @@ def api_start_sit_options():
         logger.debug("[start-sit] bundle lookup skipped", exc_info=True)
         _ss_variant, _ss_bundles = None, {}
     _ss_use_bundles = bool(_ss_variant and _ss_bundles)
+    if guest_pids:
+        # Bundles cover the viewer's roster only -- a guest has no bundle --
+        # so any request carrying guests takes the live path for every row
+        # (roster and guest alike, keeping their numbers comparable).
+        _ss_bundles = {}
+        _ss_use_bundles = False
 
     # ── FPTS-against data (for "Def vs pos" pts/gm display) ──────────────────
     fpts_against: dict = {}
@@ -13665,12 +13724,16 @@ def api_start_sit_options():
         logger.debug("[start-sit] absence index skipped", exc_info=True)
 
     positions_out: dict = {pos: [] for pos in _ss_groups}
-    for pid in player_ids:
+
+    def _ss_build_row(pid: str):
+        """One Start/Sit row for any player id, roster or guest, from the
+        same inputs either way. Returns (pos, row), or None when the
+        player's position has no group in this league."""
         row = rows_by_id.get(pid) or {}
         meta = players_index.get(pid) or {}
         pos = _start_sit_pos(row.get("position") or row.get("pos") or meta.get("pos") or "")
         if pos not in positions_out:
-            continue
+            return None
         player_name = row.get("name") or meta.get("name") or f"Player {pid}"
         team = (row.get("team") or meta.get("team") or "").upper()
         opponent = opponent_map.get(team, "")
@@ -13763,6 +13826,9 @@ def api_start_sit_options():
             _ut_ss = _ss_usage_trends.get(pid) or {}
             _role_conf_ss = role_confidence_from_trend(_ut_ss)
         usage_delta = _ut_ss.get("delta")
+        # The bundle path never resolves consistency; keep it per-row so a
+        # bundle row can never inherit the previous player's value.
+        _cons = None
         if _bun is not None:
             _bust = _bun.get("bust_rate")
             _ol_ss = ({"primary_value": _bun.get("oline_index")}
@@ -13821,7 +13887,7 @@ def api_start_sit_options():
             except Exception:
                 _return_plan = None
 
-        positions_out[pos].append({
+        return pos, {
             "player_id": pid,
             "name": player_name,
             "team": team,
@@ -13882,7 +13948,21 @@ def api_start_sit_options():
             },
             "likely_range": likely_range(score, _role_conf_ss),
             "_score": score,
-        })
+        }
+
+    for pid in player_ids:
+        _built = _ss_build_row(pid)
+        if _built:
+            positions_out[_built[0]].append(_built[1])
+
+    guest_rows: list = []
+    for pid in guest_pids:
+        _built = _ss_build_row(pid)
+        if _built:
+            _grow = _built[1]
+            _grow["guest"] = True
+            _grow["owner_label"] = _owner_label(pid)
+            guest_rows.append((_built[0], _grow))
 
     flex_slots = lineup_requirements.get("FLEX") or 0
     sflex_slots = (lineup_requirements.get("SUPER_FLEX") or 0) + (lineup_requirements.get("SFLEX") or 0)
@@ -13991,6 +14071,100 @@ def api_start_sit_options():
         for p in positions_out[pos]:
             del p["_score"]
 
+    _has_roster_rows = any(bool(players) for players in positions_out.values())
+
+    # ── Guests: verdict vs the viewer's roster, then merge into groups ────
+    # Computed only now, with every roster flag final, and from roster rows
+    # alone: would this guest start, and whose slot would he take? Guests
+    # are inserted by score without disturbing roster order or flags.
+    guests_out: list = []
+    if guest_pids:
+        _flex_floor_row = None
+        for _pos in positions_out:
+            for _p in positions_out[_pos]:
+                if _p.get("flex_start") and (
+                        _flex_floor_row is None
+                        or (_p.get("start_score") or 0.0)
+                        < (_flex_floor_row.get("start_score") or 0.0)):
+                    _flex_floor_row = _p
+        for _gpos, _grow in guest_rows:
+            _roster_pos = [p for p in positions_out[_gpos]
+                           if not p.get("on_bye") and not p.get("guest")]
+            _gscore = _grow.get("start_score") or 0.0
+            _ahead = [p for p in _roster_pos
+                      if (p.get("start_score") or 0.0) > _gscore]
+            _rank = len(_ahead) + 1
+            _pos_starters = [p for p in _roster_pos
+                             if p.get("start") and not p.get("flex_start")]
+            _grow["guest_rank"] = _rank
+            if _grow.get("on_bye"):
+                _grow["would_start"] = False
+                _grow["guest_slot"] = f"{_gpos}{_rank}"
+                _grow["guest_note"] = "On bye this week"
+            elif _pos_starters and _rank <= len(_pos_starters):
+                _disp = _pos_starters[-1]
+                _slot = f"{_gpos}{len(_pos_starters)}"
+                _grow["would_start"] = True
+                _grow["guest_slot"] = _slot
+                _grow["guest_vs_name"] = _disp["name"]
+                _grow["guest_vs_proj"] = _disp.get("proj_pts")
+                _grow["guest_note"] = f"Starts over your {_slot} · {_disp['name']}"
+            elif (_flex_floor_row is not None
+                    and _gpos in ("RB", "WR", "TE", "QB")
+                    and _gscore > (_flex_floor_row.get("start_score") or 0.0)):
+                _slot = "SUPER FLEX" if _gpos == "QB" else "FLEX"
+                _grow["would_start"] = True
+                _grow["guest_slot"] = _slot
+                _grow["guest_vs_name"] = _flex_floor_row["name"]
+                _grow["guest_vs_proj"] = _flex_floor_row.get("proj_pts")
+                _grow["guest_note"] = f"Starts at {_slot} over {_flex_floor_row['name']}"
+            elif not _roster_pos:
+                _grow["would_start"] = False
+                _grow["guest_slot"] = f"{_gpos}{_rank}"
+                _grow["guest_note"] = f"No rostered {_gpos} to compare against"
+            elif _rank >= 3:
+                _grow["would_start"] = False
+                _grow["guest_slot"] = f"{_gpos}{_rank}"
+                _grow["guest_note"] = f"Behind your {_gpos}{_rank - 2} and {_gpos}{_rank - 1}"
+            elif _rank == 2:
+                _grow["would_start"] = False
+                _grow["guest_slot"] = f"{_gpos}{_rank}"
+                _grow["guest_note"] = f"Behind your {_gpos}1 · {_ahead[0]['name']}"
+            else:
+                _grow["would_start"] = False
+                _grow["guest_slot"] = f"{_gpos}{_rank}"
+                _grow["guest_note"] = f"Bench: your {_gpos}{_rank}"
+            _grow.pop("_score", None)
+            _arr = positions_out[_gpos]
+            _ins = len(_arr)
+            for _i, _p in enumerate(_arr):
+                if (_p.get("start_score") or 0.0) < _gscore:
+                    _ins = _i
+                    break
+            _arr.insert(_ins, _grow)
+            guests_out.append({
+                "player_id": _grow["player_id"],
+                "name": _grow["name"],
+                "pos": _gpos,
+                "owner_label": _grow.get("owner_label") or "Free Agent",
+            })
+        # A requested guest with no row (his position is not started in
+        # this league) still surfaces in the guest list so the UI can say
+        # so explicitly instead of silently dropping him.
+        _rowed = {g["player_id"] for g in guests_out}
+        for _pid in guest_pids:
+            if _pid not in _rowed:
+                _m = players_index.get(_pid) or {}
+                _r = rows_by_id.get(_pid) or {}
+                guests_out.append({
+                    "player_id": _pid,
+                    "name": _r.get("name") or _m.get("name") or f"Player {_pid}",
+                    "pos": _start_sit_pos(
+                        _r.get("position") or _r.get("pos") or _m.get("pos") or ""),
+                    "owner_label": _owner_label(_pid),
+                    "no_slot": True,
+                })
+
     try:
         from dashboard_services.market_intelligence.repository import attach_weekly_signals as _attach_mi_ss
         _flat_mi_ss = [p for values in positions_out.values() for p in values]
@@ -13999,8 +14173,8 @@ def api_start_sit_options():
     except Exception:
         logger.debug("market intelligence unavailable for start/sit", exc_info=True)
 
-    has_eligible = any(bool(players) for players in positions_out.values())
-    return jsonify({
+    has_eligible = _has_roster_rows
+    return {
         "state": "loaded" if has_eligible else "empty_roster",
         "positions": positions_out,
         "lineup_requirements": lineup_requirements,
@@ -14008,7 +14182,164 @@ def api_start_sit_options():
         "sflex_slots": sflex_slots,
         "current_week": current_week,
         "lineup_advice": lineup_advice,
-    })
+        "guests": guests_out,
+    }, 200
+
+
+# ── Player-modal Start/Sit strip ─────────────────────────────────────────
+# One-line verdict for the modal Overview, distilled from the same
+# Start/Sit options payload the page renders (no second model). Short-TTL
+# in-process cache keyed by viewer + player: a modal open pays one options
+# build per player per couple of minutes, not one per open.
+_SS_STRIP_CACHE: dict = {}  # key -> (monotonic ts, distilled dict)
+_SS_STRIP_TTL = 120.0
+
+
+def _ss_ordinal(n: int) -> str:
+    if 10 <= n % 100 <= 20:
+        suf = "th"
+    else:
+        suf = {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+    return f"{n}{suf}"
+
+
+@app.route("/api/player-startsit-strip")
+def api_player_startsit_strip():
+    """Slim Start/Sit verdict for one player in the viewer's league.
+
+    States: "hidden" (no strip: no league context, signed out, no linked
+    team, or the player's position is not started in this league),
+    "unavailable" (show the text, never a fabricated verdict: bye week, no
+    projection, or the read failed), "ok" (verdict + slot + reason).
+    """
+    platform = (request.args.get("platform") or "sleeper").strip().lower()
+    league_id = (request.args.get("league_id") or "").strip()
+    season = int(request.args.get("season") or datetime.now().year)
+    player_id = (request.args.get("player_id") or "").strip()
+
+    if not league_id or not player_id:
+        return jsonify({"state": "hidden"})
+    if not _session_signed_in():
+        return jsonify({"state": "hidden"})
+    try:
+        ctx = get_league_ctx_from_cache(platform, league_id, season)
+    except Exception:
+        return jsonify({"state": "unavailable",
+                        "text": "Start/sit read unavailable right now"})
+    viewer_roster_id = ((ctx.get("viewer") or {}).get("viewer_roster_id"))
+    if not viewer_roster_id:
+        return jsonify({"state": "hidden"})
+
+    _ckey = (platform, league_id, int(season), str(viewer_roster_id), player_id)
+    _hit = _SS_STRIP_CACHE.get(_ckey)
+    if _hit and time.monotonic() - _hit[0] < _SS_STRIP_TTL:
+        return jsonify(_hit[1])
+
+    payload, status = _build_start_sit_options(
+        platform, league_id, season, [player_id])
+    if status in (401, 409):
+        return jsonify({"state": "hidden"})
+    if status != 200:
+        return jsonify({"state": "unavailable",
+                        "text": "Start/sit read unavailable right now"})
+
+    week = payload.get("current_week") or ""
+    row = None
+    row_pos = None
+    for _pos, _rows in (payload.get("positions") or {}).items():
+        for _r in _rows or []:
+            if str(_r.get("player_id")) == player_id:
+                row, row_pos = _r, _pos
+                break
+        if row is not None:
+            break
+    if row is None:
+        # His position group does not exist in this league (e.g. a kicker
+        # in a no-K league): no strip rather than a misleading verdict.
+        return jsonify({"state": "hidden"})
+
+    def _matchup_note(r) -> str:
+        try:
+            _dr = int(r.get("def_rank") or 0)
+        except (TypeError, ValueError):
+            _dr = 0
+        _opp = str(r.get("opponent_team") or "").upper()
+        if _dr and _opp and _dr <= 10:
+            return f"{_opp} allows the {_ss_ordinal(_dr)} most points to {row_pos}s"
+        return ""
+
+    if row.get("on_bye"):
+        out = {"state": "unavailable", "week": week, "compare": True,
+               "text": f"On bye in Week {week}"}
+    elif not (row.get("proj_pts") or 0):
+        out = {"state": "unavailable", "week": week, "compare": True,
+               "text": f"No projection for Week {week}"}
+    else:
+        proj = row.get("proj_pts") or 0
+        _roster_rows = [p for p in (payload.get("positions") or {}).get(row_pos, [])
+                        if not p.get("guest") and not p.get("on_bye")]
+        if row.get("guest"):
+            if row.get("would_start"):
+                _vs = row.get("guest_vs_proj")
+                if _vs is not None:
+                    _reason = (f"Projects {proj} vs your "
+                               f"{row.get('guest_slot')}'s {_vs}")
+                else:
+                    _reason = f"Projects {proj} · {row.get('guest_note') or ''}"
+                _note = _matchup_note(row)
+                if _note:
+                    _reason += f" · {_note}"
+                out = {"state": "ok", "week": week, "compare": True,
+                       "tone": "start", "verdict": "Would start for you",
+                       "slot": row.get("guest_slot") or "",
+                       "reason": _reason}
+            else:
+                out = {"state": "ok", "week": week, "compare": True,
+                       "tone": "bench", "verdict": "Bench for you",
+                       "slot": row.get("guest_slot") or "",
+                       "reason": f"Projects {proj} · {row.get('guest_note') or ''}"}
+        else:
+            _rank = next((i + 1 for i, p in enumerate(_roster_rows)
+                          if str(p.get("player_id")) == player_id), None)
+            if row.get("start") or row.get("flex_start"):
+                if row.get("flex_start"):
+                    _slot = "SUPER FLEX" if row_pos == "QB" else "FLEX"
+                else:
+                    _slot = f"{row_pos}{_rank}" if _rank else row_pos
+                _parts = [f"Projects {proj}"]
+                if _rank == 1:
+                    _parts.append(f"top {row_pos} score in your lineup")
+                _bench_peer = next(
+                    (p for p in _roster_rows
+                     if not p.get("start") and not p.get("flex_start")), None)
+                if _bench_peer is not None and (proj - (_bench_peer.get("proj_pts") or 0)) > 0:
+                    _parts.append(
+                        f"bench {row_pos} projects "
+                        f"{round(proj - (_bench_peer.get('proj_pts') or 0), 1)} lower")
+                _note = _matchup_note(row)
+                if _note:
+                    _parts.append(_note)
+                out = {"state": "ok", "week": week, "compare": True,
+                       "tone": "start", "verdict": "Start",
+                       "slot": _slot, "reason": " · ".join(_parts)}
+            else:
+                _parts = [f"Projects {proj}"]
+                _starters = [p for p in _roster_rows if p.get("start")]
+                if _starters:
+                    _marg = _starters[-1]
+                    _mrank = _roster_rows.index(_marg) + 1
+                    _parts.append(
+                        f"your {row_pos}{_mrank} {_marg.get('name')} "
+                        f"projects {_marg.get('proj_pts')}")
+                out = {"state": "ok", "week": week, "compare": True,
+                       "tone": "bench", "verdict": "Bench",
+                       "slot": f"{row_pos}{_rank}" if _rank else row_pos,
+                       "reason": " · ".join(_parts)}
+
+    if len(_SS_STRIP_CACHE) > 512:
+        _SS_STRIP_CACHE.clear()
+    _SS_STRIP_CACHE[_ckey] = (time.monotonic(), out)
+    return jsonify(out)
 
 
 # Lineup Lab payload cache: a full payload build recomputes ~40 player
@@ -14102,9 +14433,11 @@ def api_lineup_lab():
         week = int(ctx.get("current_week") or 1)
 
     from data_building.player_distributions import profile_inputs_signature
+    guest_pids = _parse_guest_pids(request.args.get("guests"))
     cache_key = (
         platform, league_id, int(season), int(week), str(viewer_roster_id),
         profile_inputs_signature(int(season), int(week)),
+        tuple(guest_pids),
     )
     with _LAB_PAYLOAD_LOCK:
         hit = _LAB_PAYLOAD_CACHE.get(cache_key)
@@ -14120,6 +14453,7 @@ def api_lineup_lab():
             season=season,
             week=week,
             platform=platform,
+            guest_pids=guest_pids,
         )
     except LookupError as e:
         return jsonify({"state": "team_not_linked", "message": str(e)}), 409

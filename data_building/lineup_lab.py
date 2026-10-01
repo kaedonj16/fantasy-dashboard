@@ -263,10 +263,21 @@ def build_lineup_lab_payload(
     week: int,
     scoring_settings: Optional[dict] = None,
     platform: str = "sleeper",
+    guest_pids: Optional[List[str]] = None,
 ) -> dict:
     """Build the Lab payload for one viewer roster and week.
 
     Raises LookupError when the roster/matchup cannot be resolved.
+
+    Guests are non-roster players (free agents or another team's) the
+    viewer wants to test as hypothetical starters. They are returned under
+    ``payload["guests"]`` as bench-shaped entries built by the same
+    profile machinery as roster players; the browser seats them into
+    eligible slots' bench pools. Guest state is view-only: guests are
+    never written into the lineup, the bench, or any roster data. A guest
+    whose data cannot support a simulation (unknown player, bye week,
+    serious injury, no projection) is flagged ``available: False`` with an
+    explicit reason instead of invented samples.
     """
     scoring = scoring_settings or ctx.get("raw_scoring_settings") or ctx.get("scoring_settings") or {}
     players_index = ctx.get("players_index") or {}
@@ -284,6 +295,15 @@ def build_lineup_lab_payload(
         str(pid) for pid in (viewer_roster.get("players") or [])
         if str(pid) not in reserve_set and str(pid) not in taxi_set
     ]
+
+    # Guests: anyone on the viewer's roster (starters, bench, IR, taxi) is
+    # already in the Lab through the normal pools, so they are not guests.
+    _viewer_all_pids = {str(p) for p in (viewer_roster.get("players") or [])}
+    guest_pids_clean: List[str] = []
+    for _gp in (guest_pids or []):
+        _gp = str(_gp)
+        if _gp and _gp not in _viewer_all_pids and _gp not in guest_pids_clean:
+            guest_pids_clean.append(_gp)
 
     # ── Matchup: real starters + opponent ────────────────────────────────
     starters: List[str] = []
@@ -386,7 +406,11 @@ def build_lineup_lab_payload(
             pass
 
     # ── Profiles + correlations (shared model) ───────────────────────────
-    all_pids = list(dict.fromkeys(starters + bench_avail + opp_starters))
+    # Guests with a resolvable position join the same profile build (and
+    # the same-team correlation pool) as roster players.
+    _guest_known = [p for p in guest_pids_clean if _player_pos(players_index, p)]
+    all_pids = list(dict.fromkeys(
+        starters + bench_avail + opp_starters + _guest_known))
     requests = []
     for pid in all_pids:
         pos = _player_pos(players_index, pid)
@@ -408,7 +432,8 @@ def build_lineup_lab_payload(
     pairs: Dict[tuple, float] = {}
     if _correlation_pairs is not None:
         try:
-            pairs = _correlation_pairs(list(dict.fromkeys(starters + bench_avail)), int(season))
+            pairs = _correlation_pairs(list(dict.fromkeys(
+                starters + bench_avail + _guest_known)), int(season))
         except Exception:
             pairs = {}
 
@@ -570,6 +595,48 @@ def build_lineup_lab_payload(
         bench_for_slot.sort(key=lambda e: e["proj"], reverse=True)
         lineup.append(_entry(pid, slot, bench_for_slot, eligible))
 
+    # ── Guests (hypothetical starters, view state only) ──────────────────
+    def _owner_label(pid: str) -> str:
+        for r in rosters:
+            if str(pid) in {str(x) for x in (r.get("players") or [])}:
+                owner_id = r.get("owner_id")
+                user = next(
+                    (u for u in (ctx.get("users") or [])
+                     if str(u.get("user_id")) == str(owner_id)), None)
+                if user:
+                    return (str(user.get("display_name")
+                                or user.get("username") or "")
+                            or str((r.get("metadata") or {}).get("team_name") or "")
+                            or "Another team")
+                return (str((r.get("metadata") or {}).get("team_name") or "")
+                        or "Another team")
+        return "Free Agent"
+
+    guests_out: List[dict] = []
+    for pid in guest_pids_clean:
+        entry = _entry(pid, "BN")
+        entry["guest"] = True
+        entry["owner_label"] = _owner_label(pid)
+        _gstatus = str(
+            (players_index.get(str(pid)) or {}).get("injury_status") or ""
+        ).upper()
+        if pid not in players_index and not _player_pos(players_index, pid):
+            entry["available"] = False
+            entry["unavailable_reason"] = "Player not found in the player pool"
+        elif _on_bye(players_index, pid, week_teams):
+            entry["available"] = False
+            entry["unavailable_reason"] = f"On bye in Week {int(week)}"
+        elif _gstatus in _SERIOUS_INJURY:
+            entry["available"] = False
+            entry["unavailable_reason"] = f"Unavailable ({_gstatus.title()})"
+        elif not (entry.get("proj") or 0) > 0:
+            entry["available"] = False
+            entry["unavailable_reason"] = f"No projection for Week {int(week)}"
+        else:
+            entry["available"] = True
+            entry["unavailable_reason"] = None
+        guests_out.append(entry)
+
     # ── Opponent team distribution ───────────────────────────────────────
     opp_mean = 0.0
     opp_std = 15.0
@@ -599,6 +666,7 @@ def build_lineup_lab_payload(
     payload = {
         "week": int(week),
         "n_sims": _N_SIMS,
+        "guests": guests_out,
         # Per-position single-game injury onset rates, sourced from
         # data_building/injury_rates.py (the same research-backed table as the
         # season sim). The browser draws in-game injuries off these.
