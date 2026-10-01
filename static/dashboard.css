@@ -2041,6 +2041,13 @@ html[data-theme="dark"] img[src*="discord-brands-solid.png"] {
     border-radius: 8px;
 }
 
+.bo-rail-pending-line {
+    font-size: 11.5px;
+    color: var(--text-muted);
+    line-height: 1.45;
+    padding: 2px 0;
+}
+
 .bo-rail-row-main {
     flex: 1 1 auto;
     min-width: 0;

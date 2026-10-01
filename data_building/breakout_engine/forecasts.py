@@ -322,6 +322,63 @@ def weekly_forecasts_for_calls(
     return out
 
 
+def weekly_backtest_forecasts(
+    season: int,
+    limit: Optional[int] = None,
+) -> Tuple[List[int], Dict[str, Dict[str, Any]]]:
+    """Open-call forecasts for the season's reconstructed (backtest) weeks.
+
+    Returns ``(weeks, views)``: ``weeks`` are the reconstructed weeks whose
+    runs were actually loaded, ascending; ``views`` maps player_id to the
+    call/forecast view for the player's most recent reconstructed call
+    (weeks are walked oldest first, so the later week's forecast wins the
+    merge). Each week's stored rows are capped to the top ``limit`` by
+    breakout score, the same surfaced-candidates cap the boards use.
+    Mature calls drop out via :func:`weekly_forecasts_for_calls` itself:
+    once a call's outcome window completes it is the grader's business
+    and leaves this outlook on its own. Each week fails soft on its own,
+    and with no reconstructions the result is ``([], {})``.
+    """
+    from data_building.breakout_engine import weekly_store
+
+    included: List[int] = []
+    views: Dict[str, Dict[str, Any]] = {}
+    for week in sorted(load_reconstructed_weeks(season)):
+        try:
+            run = weekly_store.get_reconstructed_run(season, week)
+            if not run:
+                continue
+            # load_run_score_rows returns best score first.
+            rows = weekly_store.load_run_score_rows(run["id"])
+        except Exception:
+            logger.warning(
+                "forecasts: backtest week %s run load failed", week,
+                exc_info=True)
+            continue
+        included.append(week)
+        if limit:
+            rows = rows[: int(limit)]
+        try:
+            calls_forecasts = weekly_forecasts_for_calls(season, rows)
+        except Exception:
+            logger.warning(
+                "forecasts: backtest week %s forecast failed", week,
+                exc_info=True)
+            continue
+        by_pid = {str(r.get("player_id") or ""): r for r in rows}
+        for pid, fc in calls_forecasts.items():
+            row = by_pid.get(pid) or {}
+            views[pid] = {
+                "player_id": pid,
+                "player_name": row.get("player_name"),
+                "classification": row.get("classification"),
+                "breakout_score": wg._num(row.get("breakout_score")),
+                "call_week": week,
+                "forecast": fc,
+            }
+    return included, views
+
+
 def preseason_forecasts_for_season(
     season: int,
     player_ids: Optional[Sequence[Any]] = None,

@@ -16909,7 +16909,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
 
       function _boTrackRows(groups, pendingText) {{
         if (!groups || !groups.length) {{
-          return '<div class="bo-rail-pending">' + pendingText + '<br>Based on 0 graded calls so far.</div>';
+          return '<div class="bo-rail-pending-line">' + pendingText + ' · based on 0 graded calls so far</div>';
         }}
         var html = '';
         groups.forEach(function (g) {{
@@ -16949,7 +16949,6 @@ def page_breakouts(platform: str, season: int, league_id: str):
         var html = '<div class="bo-rail-title">Track Record</div>';
         html += '<div class="bo-rail-group">Weekly calls' + (weekly.scoring_version ? ' (' + weekly.scoring_version + ')' : '') + '</div>';
         html += _boTrackRows(weekly.groups, pendingText);
-        html += '<div class="bo-rail-sub">' + (weekly.definition || '') + '</div>';
         var backtest = weekly.backtest;
         if (backtest) {{
           html += '<div class="bo-rail-group" style="margin-top:10px;">' + (weekly.scoring_version || '') + ' backtest, ' + _boWeeksLabel(backtest.weeks) + ' reconstructed</div>';
@@ -16960,15 +16959,24 @@ def page_breakouts(platform: str, season: int, league_id: str):
         if (seasonEng.available) {{
           html += _boTrackRows(seasonEng.groups, pendingText);
         }} else {{
-          html += '<div class="bo-rail-pending">' + pendingText + '</div>';
+          html += '<div class="bo-rail-pending-line">' + pendingText + '</div>';
         }}
-        html += '<div class="bo-rail-sub">' + (seasonEng.definition || '') + '</div>';
+        var defs = [];
+        if (weekly.definition) defs.push(weekly.definition);
+        if (seasonEng.definition) defs.push(seasonEng.definition);
+        if (defs.length) {{
+          html += '<div class="bo-rail-sub">' + defs.join(' ') + '</div>';
+        }}
         _boRailSet('boRailTrackRecord', html);
       }}
 
       function _boOutlookBlock(title, block) {{
         var counts = (block && block.counts) || {{}};
         var html = '<div class="bo-rail-group">' + title + '</div>';
+        if (block && block.weeks && block.weeks.length) {{
+          var wl = _boWeeksLabel(block.weeks);
+          html += '<div class="bo-rail-meta">' + wl.charAt(0).toUpperCase() + wl.slice(1) + ' reconstructed</div>';
+        }}
         if (!block || ((block.open_calls || 0) === 0 && (block.pending_calls || 0) === 0)) {{
           return html + '<div class="bo-rail-pending">No open calls right now.</div>';
         }}
@@ -16985,7 +16993,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
           top.forEach(function (t) {{
             html += '<div style="padding:4px 0;border-top:1px solid var(--border);"><div class="bo-rail-name">' + (t.player_name || 'Unknown')
               + (t.group_label ? ' <span class="bo-rail-meta">' + t.group_label + '</span>' : '') + '</div>'
-              + '<div class="bo-rail-meta">' + (t.basis || '') + '</div></div>';
+              + '<div class="bo-rail-meta">' + (t.reconstructed ? '<span class="bo-grade-chip bo-grade-chip-bt">Backtest</span> ' : '') + (t.basis || '') + '</div></div>';
           }});
         }}
         return html;
@@ -16996,6 +17004,10 @@ def page_breakouts(platform: str, season: int, league_id: str):
         var html = '<div class="bo-rail-title">Forecast Outlook</div>';
         html += _boOutlookBlock('Weekly calls', outlook.weekly);
         html += '<div style="margin-top:10px;">' + _boOutlookBlock('Preseason calls', outlook.preseason) + '</div>';
+        var backtestOutlook = outlook.weekly_backtest;
+        if (backtestOutlook && ((backtestOutlook.open_calls || 0) > 0 || (backtestOutlook.pending_calls || 0) > 0)) {{
+          html += '<div style="margin-top:10px;">' + _boOutlookBlock('Weekly backtest', backtestOutlook) + '</div>';
+        }}
         html += '<div class="bo-rail-sub">Forecasts are live projections from games played so far. They are not grades and never count toward the track record hit rates.</div>';
         _boRailSet('boRailOutlook', html);
       }}
