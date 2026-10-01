@@ -1146,15 +1146,30 @@ def build_pbp_metrics_for_season(season: int) -> Dict[str, Dict[str, float]]:
         print("[nflverse_metrics] WARNING: pbp frame missing "
               f"yardline_100/posteam; goal_line_opp_share skipped for {season}")
 
-    def _gl_share(g) -> Optional[float]:
+    # Goal-line opportunities are credited per role (rusher / receiver) on
+    # different play sets, so the player's total is the SUM across sections;
+    # a play is never in two sections for the same player (the first-downs
+    # trap above). Accumulate GL plays per player along with the UNION of
+    # the teams he took them for, then divide once by those teams' combined
+    # GL total. Writing the share per section instead lets the receiving
+    # section overwrite the rushing one (receiving-only ~0 for most backs),
+    # and summing the two per-section denominators would count a single
+    # team's total twice and halve the share.
+    gl_by_pid: Dict[str, list] = {}
+
+    def _add_gl(gsis, g) -> None:
         if not gl_team_totals or "yardline_100" not in g.columns \
                 or "posteam" not in g.columns:
-            return None
+            return
+        pid = crosswalk.get(str(gsis).strip())
+        if not pid:
+            return
         gl_rows = g[g["yardline_100"].fillna(999) <= 5]
         teams = {str(t) for t in gl_rows["posteam"].dropna().unique()} or \
             {str(t) for t in g["posteam"].dropna().unique()}
-        denom = sum(gl_team_totals.get(t, 0.0) for t in teams)
-        return _rate_pct(float(len(gl_rows)), denom)
+        entry = gl_by_pid.setdefault(pid, [0.0, set()])
+        entry[0] += float(len(gl_rows))
+        entry[1] |= teams
 
     # --- Passing (QB) ---
     # Scrambles are coded as run/no_play plays: passer_player_id is NULL on
@@ -1279,9 +1294,7 @@ def build_pbp_metrics_for_season(season: int) -> Dict[str, Dict[str, float]]:
                 float(len(att_rows)))
             if stuffed is not None:
                 cols["stuffed_rate"] = stuffed
-        gl_share = _gl_share(g)
-        if gl_share is not None:
-            cols["goal_line_opp_share"] = gl_share
+        _add_gl(gsis, g)
         _emit(gsis, cols)
 
     # --- Receiving ---
@@ -1346,14 +1359,19 @@ def build_pbp_metrics_for_season(season: int) -> Dict[str, Dict[str, float]]:
                     float(len(g)))
                 if ez is not None:
                     cols["end_zone_target_rate"] = ez
-        gl_share = _gl_share(g)
-        if gl_share is not None:
-            cols["goal_line_opp_share"] = gl_share
+        _add_gl(gsis, g)
         _emit(gsis, cols)
 
     for pid, total in fd_by_pid.items():
         if pid in out and total > 0:
             out[pid]["total_first_downs"] = int(total)
+
+    for pid, (gl_n, gl_teams) in gl_by_pid.items():
+        if pid in out:
+            denom = sum(gl_team_totals.get(t, 0.0) for t in gl_teams)
+            gl_share = _rate_pct(gl_n, denom)
+            if gl_share is not None:
+                out[pid]["goal_line_opp_share"] = gl_share
 
     return out
 
@@ -1651,20 +1669,31 @@ def build_nflverse_weekly_metrics_for_season(
                 except (TypeError, ValueError):
                     continue
 
-        def _gl_share_w(g, week):
-            """(share value or None, team GL total) for one player-week."""
+        # Same sum-across-sections rule as the season builder: a player-
+        # week's goal-line plays are his rusher rows plus his receiver rows
+        # inside the 5 (never both on one play), over the UNION of the teams
+        # he took them for that week. Accumulate here and write the combined
+        # share (and its w_team_gl_opps weight) once both role sections ran;
+        # writing per section lets receiving overwrite rushing.
+        gl_by_pw: Dict[Tuple[str, int], list] = {}
+
+        def _add_gl_w(gsis, g, week) -> None:
             if not gl_team_week or "yardline_100" not in g.columns \
                     or "posteam" not in g.columns:
-                return None, 0.0
-            gl_rows = g[g["yardline_100"].fillna(999) <= 5]
-            teams = {str(t) for t in gl_rows["posteam"].dropna().unique()} or \
-                {str(t) for t in g["posteam"].dropna().unique()}
+                return
+            pid = crosswalk.get(str(gsis).strip())
+            if not pid:
+                return
             try:
                 wk = int(week)
             except (TypeError, ValueError):
-                return None, 0.0
-            denom = sum(gl_team_week.get((t, wk), 0.0) for t in teams)
-            return _rate_pct(float(len(gl_rows)), denom), denom
+                return
+            gl_rows = g[g["yardline_100"].fillna(999) <= 5]
+            teams = {str(t) for t in gl_rows["posteam"].dropna().unique()} or \
+                {str(t) for t in g["posteam"].dropna().unique()}
+            entry = gl_by_pw.setdefault((pid, wk), [0.0, set()])
+            entry[0] += float(len(gl_rows))
+            entry[1] |= teams
 
         # --- Passing (QB) per player+week ---
         # Same scramble caveat as the season builder: passer_player_id is
@@ -1803,11 +1832,7 @@ def build_nflverse_weekly_metrics_for_season(
                 float(len(att_rows)))
             if stuffed is not None:
                 cols["stuffed_rate"] = stuffed
-            gl_val, gl_denom = _gl_share_w(g, week)
-            if gl_denom > 0:
-                cols["w_team_gl_opps"] = gl_denom
-            if gl_val is not None:
-                cols["goal_line_opp_share"] = gl_val
+            _add_gl_w(gsis, g, week)
 
         # --- Receiving per player+week ---
         for (gsis, week), g in pbp[pbp["receiver_player_id"].notna()].groupby(
@@ -1872,11 +1897,18 @@ def build_nflverse_weekly_metrics_for_season(
                         float(len(g)))
                     if ez is not None:
                         cols["end_zone_target_rate"] = ez
-            gl_val, gl_denom = _gl_share_w(g, week)
-            if gl_denom > 0:
-                cols["w_team_gl_opps"] = gl_denom
-            if gl_val is not None:
-                cols["goal_line_opp_share"] = gl_val
+            _add_gl_w(gsis, g, week)
+
+        # Write the combined goal-line share (and its rollup weight) now
+        # that both the rushing and receiving sections have accumulated.
+        for (pid, wk), (gl_n, gl_teams) in gl_by_pw.items():
+            denom = sum(gl_team_week.get((t, wk), 0.0) for t in gl_teams)
+            if denom > 0:
+                row = _row(pid, wk)
+                row["w_team_gl_opps"] = denom
+                gl_val = _rate_pct(gl_n, denom)
+                if gl_val is not None:
+                    row["goal_line_opp_share"] = gl_val
 
         # --- FTN charting (drop / contested / adjusted completion) per player+week ---
         if season >= FTN_FLOOR:
