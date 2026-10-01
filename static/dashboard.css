@@ -5644,23 +5644,22 @@ strong + .player-badge,
 
 .otc-breakout-row .otc-player-name {
     cursor: pointer;
-    transition: color 0.2s ease;
+    transition: opacity 0.2s ease;
 }
 
 .otc-breakout-row .otc-player-name:hover {
-    color: var(--brand-blue);
-    text-decoration: underline;
+    opacity: 0.72;
 }
 
-/* Global player clickable styling */
+/* Global player clickable styling: inline player names just dim slightly
+   on hover, like team names (no blue, no underline). */
 .player-clickable {
     cursor: pointer;
-    transition: color 0.2s ease;
+    transition: opacity 0.2s ease;
 }
 
 .player-clickable:hover {
-    color: var(--brand-blue);
-    text-decoration: underline;
+    opacity: 0.72;
 }
 
 /* Breakout player names specific styling */
@@ -5671,9 +5670,8 @@ strong + .player-badge,
 }
 
 .breakout-player-name.player-clickable:hover {
-    color: var(--brand-blue);
-    text-decoration: underline;
-    transform: translateY(-1px);
+    opacity: 0.72;
+    transform: none;
 }
 
 /* View All link styling */
@@ -7681,7 +7679,7 @@ a.otc-value-name {
 }
 
 a.otc-value-name:hover {
-    text-decoration: underline;
+    opacity: 0.72;
 }
 
 .otc-value-rank {
@@ -11680,7 +11678,7 @@ select:focus {
 }
 
 .whl-name:hover {
-    color: var(--accent);
+    opacity: 0.72;
 }
 
 .whl-pts {
@@ -13850,7 +13848,7 @@ a.signed-home-league:hover {
 }
 
 .inj-pname:hover {
-    text-decoration: underline;
+    opacity: 0.72;
 }
 
 .inj-meta {
@@ -19090,11 +19088,11 @@ img, svg, canvas {
 .usage-mover.player-clickable:hover {
     color: inherit;
     text-decoration: none;
+    opacity: 1;
 }
 
 .usage-mover.player-clickable:hover .um-name {
-    color: var(--brand-blue);
-    text-decoration: underline;
+    opacity: 0.72;
 }
 
 .usage-mover .um-main {
@@ -22765,7 +22763,7 @@ img.tm-sched-avatar {
 .tm-mu-hname.player-clickable,
 .tm-team-link { cursor: pointer; }
 .tm-mu-hname.player-clickable:hover,
-.tm-team-link:hover { color: var(--accent); text-decoration: underline; }
+.tm-team-link:hover { opacity: 0.72; }
 
 .tm-mu-h-slot {
     font-size: 9px;
@@ -28305,7 +28303,7 @@ tr.team-clickable {
 }
 
 .compare-chip:hover .compare-chip-name {
-    color: var(--accent);
+    opacity: 0.72;
 }
 
 .compare-chip-vs {
@@ -30409,7 +30407,7 @@ button:disabled {
 .opt-side-label { display:none; color:var(--text-muted, var(--muted)); font-size:10px; text-transform:uppercase; }
 .opt-player { display:flex; align-items:center; gap:7px; min-width:0; }
 .opt-player-name { padding:0; border:0; background:none; color:var(--text); font:inherit; font-weight:600; text-align:left; cursor:pointer; overflow-wrap:break-word; }
-.opt-player-name:hover { color:var(--accent); text-decoration:underline; }
+.opt-player-name:hover { opacity:.72; }
 .opt-player-name:focus-visible,.opt-tab:focus-visible,.opt-week-select:focus-visible,details.opt-week summary:focus-visible,details.opt-team summary:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 .opt-score,.opt-gain { margin-left:auto; font-variant-numeric:tabular-nums; text-align:right; }
 .opt-gain { color:var(--accent); font-size:12px; font-weight:800; }
@@ -30902,7 +30900,7 @@ button:disabled {
 }
 
 .sched-pname:hover {
-    color: var(--accent);
+    opacity: 0.72;
 }
 
 /* Rankings view is filtered to a single position, so the per-row position badge
@@ -32477,8 +32475,7 @@ button:disabled {
 }
 
 .dvt-player-link:hover {
-    color: #38bdf8;
-    text-decoration: underline;
+    opacity: 0.72;
 }
 
 .dvt-pos-badge {
@@ -32755,8 +32752,7 @@ button:disabled {
 }
 
 .rf-name:hover {
-    color: var(--accent);
-    text-decoration: underline;
+    opacity: 0.72;
 }
 
 .rf-team {
@@ -32963,8 +32959,7 @@ button:disabled {
 }
 
 .rnk-player-link:hover {
-    color: #38bdf8;
-    text-decoration: underline;
+    opacity: 0.72;
 }
 
 .rnk-pos-badge {
@@ -42025,8 +42020,8 @@ a, button, [role="button"], [role="tab"], summary, label,
 /* player rows -- clickable cards that sit on the drawer */
 .team-strength-card .pos-detail-inner .player-activity { padding: 7px 10px; border-radius: 9px; background: var(--card); border: 1px solid var(--border); transition: border-color .15s ease, box-shadow .15s ease; }
 .team-strength-card .pos-detail-inner .player-activity:hover { border-color: color-mix(in srgb, var(--brand-blue) 45%, var(--border)); box-shadow: 0 2px 8px -4px color-mix(in srgb, var(--brand-blue) 55%, transparent); }
-.team-strength-card .pos-detail-inner .player-clickable { font-size: 13px; font-weight: 600; transition: color .15s ease; }
-.team-strength-card .pos-detail-inner .player-clickable:hover { color: var(--brand-blue); }
+.team-strength-card .pos-detail-inner .player-clickable { font-size: 13px; font-weight: 600; transition: opacity .15s ease; }
+.team-strength-card .pos-detail-inner .player-clickable:hover { opacity: 0.72; }
 .team-strength-card .pos-detail-inner .player-trade-value { font-weight: 800; font-variant-numeric: tabular-nums; }
 /* draft-capital pick list */
 .team-strength-card .pos-detail-inner .dc-pick-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }

@@ -19129,7 +19129,7 @@ function renderCompareTriple(d1, d2, d3, hostEl) {
     + '.cmp3-hs{width:52px;height:52px;border-radius:50%;object-fit:cover;background:var(--surface2,rgba(127,127,127,.12));}'
     + '.cmp3-hs-blank{display:inline-block;}'
     + '.cmp3-name{font-weight:800;font-size:14px;color:var(--text);line-height:1.15;text-align:center;}'
-    + '.cmp3-head:hover .cmp3-name{text-decoration:underline;}'
+    + '.cmp3-head:hover .cmp3-name{opacity:.72;}'
     + '.cmp3-accent{width:26px;height:3px;border-radius:2px;}'
     + '.cmp3-meta{font-size:11px;color:var(--muted);text-align:center;}'
     + '.cmp3-rowlbl{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:700;padding:10px;white-space:nowrap;}'

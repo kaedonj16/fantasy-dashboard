@@ -33002,6 +33002,8 @@ def _portfolio_movers_card(holdings: list, pos_colors: dict) -> str:
         "border-bottom:1px solid var(--grid,var(--border));cursor:pointer;}"
         ".pfm-row:last-child{border-bottom:none;}"
         ".pfm-row:hover{background:var(--row,rgba(127,127,127,.05));}"
+        ".pfm-row.player-clickable:hover{opacity:1;}"
+        ".pfm-row.player-clickable:hover .pfm-name{opacity:.72;}"
         ".pfm-pos{font-weight:800;font-size:11px;min-width:26px;}"
         ".pfm-name{flex:1;min-width:0;font-weight:600;font-size:13px;line-height:1.25;overflow-wrap:anywhere;}"
         ".pfm-sh{font-size:10px;font-weight:700;color:var(--text-subtle);"
