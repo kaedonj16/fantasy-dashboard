@@ -662,6 +662,21 @@ def main() -> Dict[str, Any]:
             print(f"[calculate_breakouts] weekly grading: {graded}")
         except Exception as exc:
             print(f"[calculate_breakouts] weekly grading skipped: {exc}")
+        # Season feedback loop: grade the preseason (season-engine) calls
+        # whose early (week 8) or final (season-complete) windows have
+        # closed (season_grading). Best-effort like the grading above: it
+        # must never break scoring, skips fast when no stage gate has
+        # opened, and only ever grades this run's season - older seasons
+        # are backfilled by scripts/grade_season_breakouts.py.
+        try:
+            from data_building.breakout_engine.season_grading import (
+                grade_season_breakouts,
+            )
+            season_graded = grade_season_breakouts(context.season)
+            summary = {**summary, "season_grading": season_graded}
+            print(f"[calculate_breakouts] season grading: {season_graded}")
+        except Exception as exc:
+            print(f"[calculate_breakouts] season grading skipped: {exc}")
         return {"mode": "weekly", **summary}
 
     # ── offseason / preseason: unchanged historical scorer ───────────────────
