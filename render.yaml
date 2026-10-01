@@ -440,6 +440,39 @@ services:
       - key: FANTASY_SEASON
         value: "2026"
 
+  - type: cron
+    name: breakout-weekly-report
+    runtime: python
+    # Wednesday ~9am Eastern. Render cron expressions are UTC (TZ env does
+    # not shift the schedule). 13:00 UTC is 9am EDT / 8am EST. The script
+    # emails the weekly breakout report: how the last 7 days of graded
+    # calls did, the season record, and the calibration suggested-changes
+    # plan. Read-only; it never changes scoring. When email is not
+    # configured it prints the report and exits 0.
+    schedule: "0 13 * * 3"
+    plan: starter
+    buildCommand: pip install --no-cache-dir -r requirements.txt
+    startCommand: python scripts/send_weekly_breakout_report.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: DATABASE_URL
+        fromDatabase:
+          name: brfantasy-db
+          property: connectionString
+      - key: BREAKOUT_REPORT_EMAIL
+        value: kaedonj@brfantasyfootball.com
+      - key: BREVO_API_KEY
+        sync: false
+      - key: EMAIL_USER
+        value: kaedonj@brfantasyfootball.com
+      - key: EMAIL_PASSWORD
+        sync: false
+      - key: SMTP_SERVER
+        value: smtp.gmail.com
+      - key: SMTP_PORT
+        value: 587
+
 databases:
   - name: brfantasy-db
     databaseName: brfantasy
