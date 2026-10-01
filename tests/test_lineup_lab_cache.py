@@ -5,11 +5,16 @@ Pins three behaviors added with the Lab perf fix:
 - ``/api/lineup-lab`` serves a repeat identical request from the
   in-memory payload cache without rebuilding, keys entries by
   week/roster (no collisions), and never caches error outcomes.
+- Cache entries carry a per-entry TTL: a payload with an in-progress
+  live state expires after the short live TTL, while pre-game and
+  all-final payloads keep the full TTL.
 - ``build_profiles`` reuses the shared ``_PROFILE_CACHE`` per player on
   repeat calls (same key shape as ``get_player_profile``).
 - Build-error fallback profiles are never cached, so a transient
   failure is retried instead of sticking for the whole TTL.
 """
+
+import copy
 
 import pytest
 
@@ -186,3 +191,144 @@ def test_build_profiles_does_not_cache_build_errors(pd_hermetic, monkeypatch):
     assert "fallback" not in out3["p1"]["factors"]
     pd_mod.build_profiles(reqs, 2026, 4)
     assert real_calls["n"] == 1
+
+
+# ── Live-aware payload TTL ───────────────────────────────────────────────
+# Per-player live state ships on lineup entries (and bench entries nested
+# in each row) as {"status": "final" | "live", "points": ...}; see
+# tests/test_lineup_lab_live.py for the payload shapes these mirror.
+
+_PREGAME_PAYLOAD = {
+    "week": 4,
+    "you": {"roster_id": 7, "lineup": [{"player_id": "1"}]},
+    "opponent": {"name": "Opp"},
+}
+
+_LIVE_PAYLOAD = {
+    "week": 4,
+    "live": True,
+    "you": {"roster_id": 7, "lineup": [
+        {"player_id": "1", "live": {"status": "final", "points": 24.3}},
+        {"player_id": "2", "live": {"status": "live", "points": 10.0},
+         "bench": [{"player_id": "4",
+                    "live": {"status": "final", "points": 6.4}}]},
+    ]},
+    "opponent": {"name": "Opp"},
+}
+
+_BENCH_LIVE_PAYLOAD = {
+    "week": 4,
+    "live": True,
+    "you": {"roster_id": 7, "lineup": [
+        {"player_id": "1", "live": {"status": "final", "points": 24.3},
+         "bench": [{"player_id": "4",
+                    "live": {"status": "live", "points": 1.2}}]},
+    ]},
+    "opponent": {"name": "Opp"},
+}
+
+_FINAL_PAYLOAD = {
+    "week": 4,
+    "live": True,
+    "you": {"roster_id": 7, "lineup": [
+        {"player_id": "1", "live": {"status": "final", "points": 24.3}},
+        {"player_id": "2", "live": {"status": "final", "points": 19.8},
+         "bench": [{"player_id": "4",
+                    "live": {"status": "final", "points": 6.4}}]},
+    ]},
+    "opponent": {"name": "Opp", "live_points": 101.5},
+}
+
+
+def test_lab_payload_ttl_decision():
+    import app as appmod
+
+    assert appmod._LAB_PAYLOAD_LIVE_TTL == 30.0
+    assert appmod._lab_payload_ttl(_PREGAME_PAYLOAD) == appmod._LAB_PAYLOAD_TTL
+    assert appmod._lab_payload_ttl(_FINAL_PAYLOAD) == appmod._LAB_PAYLOAD_TTL
+    assert appmod._lab_payload_ttl(_LIVE_PAYLOAD) == appmod._LAB_PAYLOAD_LIVE_TTL
+    # In-progress state carried only by a nested bench entry counts too.
+    assert (appmod._lab_payload_ttl(_BENCH_LIVE_PAYLOAD)
+            == appmod._LAB_PAYLOAD_LIVE_TTL)
+
+
+@pytest.fixture
+def lab_clock(monkeypatch):
+    """Controllable monotonic clock; same seam as the usage-trends
+    cache tests (patch time.monotonic through the app module)."""
+    import app as appmod
+
+    now = [1000.0]
+    monkeypatch.setattr(appmod.time, "monotonic", lambda: now[0])
+    return now
+
+
+def _lab_route_fixed_payload(offline_client, monkeypatch, payload):
+    import app as appmod
+
+    appmod._LAB_PAYLOAD_CACHE.clear()
+    monkeypatch.setattr(appmod, "_session_signed_in", lambda: True)
+    monkeypatch.setattr(
+        appmod, "get_league_ctx_from_cache", lambda *a, **k: dict(_CTx))
+    calls = {"n": 0}
+
+    def fake_build(**kwargs):
+        calls["n"] += 1
+        return copy.deepcopy(payload)
+
+    monkeypatch.setattr(lab_mod, "build_lineup_lab_payload", fake_build)
+    return calls
+
+
+def test_lab_route_live_payload_expires_after_short_ttl(
+        offline_client, monkeypatch, lab_clock):
+    calls = _lab_route_fixed_payload(offline_client, monkeypatch,
+                                     _LIVE_PAYLOAD)
+    try:
+        assert offline_client.get(_URL).status_code == 200
+        assert calls["n"] == 1
+        lab_clock[0] += 29  # inside the 30s live TTL: still cached
+        assert offline_client.get(_URL).status_code == 200
+        assert calls["n"] == 1
+        lab_clock[0] += 2  # 31s after the build: stale, rebuilds
+        assert offline_client.get(_URL).status_code == 200
+        assert calls["n"] == 2
+    finally:
+        import app as appmod
+        appmod._LAB_PAYLOAD_CACHE.clear()
+
+
+def test_lab_route_pregame_payload_keeps_full_ttl(
+        offline_client, monkeypatch, lab_clock):
+    calls = _lab_route_fixed_payload(offline_client, monkeypatch,
+                                     _PREGAME_PAYLOAD)
+    try:
+        assert offline_client.get(_URL).status_code == 200
+        assert calls["n"] == 1
+        lab_clock[0] += 299  # inside the 300s TTL: still cached
+        assert offline_client.get(_URL).status_code == 200
+        assert calls["n"] == 1
+        lab_clock[0] += 2  # 301s after the build: stale, rebuilds
+        assert offline_client.get(_URL).status_code == 200
+        assert calls["n"] == 2
+    finally:
+        import app as appmod
+        appmod._LAB_PAYLOAD_CACHE.clear()
+
+
+def test_lab_route_all_final_payload_keeps_full_ttl(
+        offline_client, monkeypatch, lab_clock):
+    calls = _lab_route_fixed_payload(offline_client, monkeypatch,
+                                     _FINAL_PAYLOAD)
+    try:
+        assert offline_client.get(_URL).status_code == 200
+        assert calls["n"] == 1
+        lab_clock[0] += 31  # past the live TTL: all-final stays cached
+        assert offline_client.get(_URL).status_code == 200
+        assert calls["n"] == 1
+        lab_clock[0] += 270  # 301s after the build: stale, rebuilds
+        assert offline_client.get(_URL).status_code == 200
+        assert calls["n"] == 2
+    finally:
+        import app as appmod
+        appmod._LAB_PAYLOAD_CACHE.clear()
