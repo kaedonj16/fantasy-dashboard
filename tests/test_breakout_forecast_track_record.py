@@ -996,3 +996,152 @@ def test_dashboard_css_has_rail_and_chip_styles():
     assert ".bo-rail-pending-line" in css
     assert ".bo-fc-chip" in css
     assert "border-radius: 999px" not in css.split(".bo-fc-chip")[1].split("}")[0]
+
+
+# ---------------------------------------------------------------------------
+# track record calibration bands (score + confidence, pooled, shared math)
+# ---------------------------------------------------------------------------
+
+def _band_grade_row(pid, score, conf, grade, week=4,
+                    classification="emerging_breakout"):
+    return {
+        "player_id": pid, "player_name": f"Player {pid}",
+        "classification": classification, "as_of_week": week,
+        "breakout_score": score, "confidence": conf, "grade": grade,
+        "outcome_games": 3, "ppg_delta": 2.0, "opp_delta": 1.0,
+        "snap_delta": 5.0,
+    }
+
+
+def _band_rows():
+    rows = []
+    # 42-59 score / 70+ confidence: 12 graded emerging calls. Ten are
+    # live (week 4); two come from reconstructed week 1 and pool in.
+    grades = ["hit"] * 7 + ["partial"] * 3 + ["miss"] * 2
+    for i, grade in enumerate(grades):
+        rows.append(_band_grade_row(f"a{i}", 50.0, 85.0, grade,
+                                    week=1 if i >= 10 else 4))
+    # 60+ score / 40-69 confidence: 4 graded, all hits (below the floor).
+    for i in range(4):
+        rows.append(_band_grade_row(f"b{i}", 75.0, 50.0, "hit"))
+    # 18-41 score / Under 40 confidence: 3 graded watchlist misses.
+    for i in range(3):
+        rows.append(_band_grade_row(f"c{i}", 30.0, 20.0, "miss",
+                                    classification="watchlist"))
+    # No recorded score: excluded from score bands, still graded overall
+    # and inside the 70+ confidence band.
+    rows.append(_band_grade_row("d0", None, 85.0, "hit",
+                                classification="watchlist"))
+    # No recorded confidence: excluded from confidence bands, still in
+    # the 60+ score band.
+    rows.append(_band_grade_row("e0", 65.0, None, "hit",
+                                classification="watchlist"))
+    return rows
+
+
+def test_weekly_track_record_score_and_confidence_bands(monkeypatch):
+    monkeypatch.setattr(forecasts, "load_weekly_grade_rows",
+                        lambda season: _band_rows())
+    monkeypatch.setattr(forecasts, "load_reconstructed_weeks",
+                        lambda season: {1, 2})
+    record = forecasts.weekly_track_record(2026)
+
+    assert record["overall"]["graded"] == 21
+    score = {b["label"]: b for b in record["score_bands"]}
+    # Fixed band order; the empty Under 18 band is omitted like a
+    # classification with no calls.
+    assert [b["label"] for b in record["score_bands"]] == \
+        ["18-41", "42-59", "60+"]
+    pooled = score["42-59"]
+    assert pooled["calls"] == 12          # live 10 + reconstructed 2
+    assert pooled["graded"] == 12
+    assert pooled["hit"] == 7 and pooled["partial"] == 3
+    assert pooled["miss"] == 2
+    assert pooled["hit_rate"] == pytest.approx(7 / 12, abs=1e-4)
+    assert score["60+"]["graded"] == 5    # includes the confidenceless row
+    assert score["60+"]["hit_rate"] is None   # below the 10-graded floor
+    assert score["18-41"]["graded"] == 3
+    assert score["18-41"]["miss"] == 3
+    # The scoreless grade counts overall and by classification, just
+    # not in any score band: band graded sums to one less than overall.
+    assert sum(b["graded"] for b in record["score_bands"]) == 20
+    groups = {g["classification"]: g for g in record["groups"]}
+    assert groups["watchlist"]["graded"] == 5
+
+    conf = {b["label"]: b for b in record["confidence_bands"]}
+    assert [b["label"] for b in record["confidence_bands"]] == \
+        ["Under 40", "40-69", "70+"]
+    assert conf["70+"]["graded"] == 13    # includes the scoreless row
+    assert conf["70+"]["hit"] == 8
+    assert conf["70+"]["hit_rate"] == pytest.approx(8 / 13, abs=1e-4)
+    assert conf["40-69"]["graded"] == 4
+    assert conf["40-69"]["hit_rate"] is None
+    assert conf["Under 40"]["graded"] == 3
+    # The confidenceless grade is the one missing from the band sum.
+    assert sum(b["graded"] for b in record["confidence_bands"]) == 20
+
+
+def test_weekly_track_record_no_bands_until_something_grades(monkeypatch):
+    monkeypatch.setattr(forecasts, "load_weekly_grade_rows",
+                        lambda season: [])
+    record = forecasts.weekly_track_record(2026)
+    assert record["groups"] == []
+    assert record["score_bands"] == []
+    assert record["confidence_bands"] == []
+
+    ungraded = [_band_grade_row(f"u{i}", 50.0, 80.0, "ungraded")
+                for i in range(3)]
+    monkeypatch.setattr(forecasts, "load_weekly_grade_rows",
+                        lambda season: ungraded)
+    record = forecasts.weekly_track_record(2026)
+    assert record["overall"]["graded"] == 0
+    assert record["score_bands"] == []
+    assert record["confidence_bands"] == []
+
+
+def test_track_record_payload_carries_bands(monkeypatch):
+    api = _patch_track_record(monkeypatch)
+    monkeypatch.setattr(forecasts, "weekly_track_record", lambda season: {
+        "scoring_version": "weekly-v6", "min_sample": 10,
+        "overall": {"calls": 21, "graded": 21, "hit": 12, "partial": 3,
+                    "miss": 6, "ungraded": 0, "hit_rate": 12 / 21,
+                    "partial_rate": 3 / 21, "miss_rate": 6 / 21},
+        "groups": [{"classification": "emerging_breakout", "calls": 16,
+                    "graded": 16, "hit": 11, "partial": 3, "miss": 2,
+                    "ungraded": 0, "hit_rate": 11 / 16,
+                    "partial_rate": 3 / 16, "miss_rate": 2 / 16}],
+        "score_bands": [
+            {"label": "42-59", "calls": 12, "graded": 12, "hit": 7,
+             "partial": 3, "miss": 2, "ungraded": 0,
+             "hit_rate": 7 / 12, "partial_rate": 0.25,
+             "miss_rate": 2 / 12}],
+        "confidence_bands": [
+            {"label": "70+", "calls": 13, "graded": 13, "hit": 8,
+             "partial": 3, "miss": 2, "ungraded": 0,
+             "hit_rate": 8 / 13, "partial_rate": 3 / 13,
+             "miss_rate": 2 / 13}],
+        "hits": [], "misses": [],
+    })
+
+    payload = api.get_breakout_track_record(2026)
+
+    weekly = payload["weekly"]
+    assert weekly["score_bands"][0]["label"] == "42-59"
+    assert weekly["score_bands"][0]["graded"] == 12
+    assert weekly["score_bands"][0]["hit_rate"] == pytest.approx(7 / 12)
+    assert weekly["confidence_bands"][0]["label"] == "70+"
+    assert weekly["confidence_bands"][0]["hit_rate"] == \
+        pytest.approx(8 / 13)
+
+
+def test_breakout_page_renders_calibration_band_rows():
+    src = (ROOT / "app.py").read_text(encoding="utf-8")
+    # The weekly record renders band rows under muted subheads, from the
+    # payload's band lists, through the same row renderer as the
+    # classification groups.
+    assert "By score" in src
+    assert "By confidence" in src
+    assert "weekly.score_bands" in src
+    assert "weekly.confidence_bands" in src
+    assert "_boTrackRows(weekly.score_bands, pendingText)" in src
+    assert "_boTrackRows(weekly.confidence_bands, pendingText)" in src
