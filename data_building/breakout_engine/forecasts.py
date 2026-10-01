@@ -89,6 +89,7 @@ def weekly_forecast(
     call: Dict[str, Any],
     weekly_rows: Sequence[Dict[str, Any]],
     through_week: int,
+    prior_rows: Optional[Sequence[Dict[str, Any]]] = None,
 ) -> Optional[Dict[str, Any]]:
     """Live forecast for one open weekly call. Pure.
 
@@ -96,7 +97,10 @@ def weekly_forecast(
     call is the grader's business then, not a forecast's). Otherwise a dict
     whose ``band`` is set only when at least one outcome game has been
     played and a role baseline exists; the zero-game and no-baseline cases
-    return explicit states with no band.
+    return explicit states with no band. ``prior_rows`` is the player's
+    prior-season series, forwarded to the grader's baseline resolution so
+    a prior-season-baseline call forecasts against the same filled PPG
+    baseline it will eventually grade against.
     """
     call_week = int(call.get("as_of_week") or 0)
     through = int(through_week)
@@ -126,7 +130,7 @@ def weekly_forecast(
                      f"the Week {call_week} call",
         })
         return base
-    baseline, _source = wg.resolve_baseline(call, rows)
+    baseline, _source = wg.resolve_baseline(call, rows, prior_rows)
     verdict = wg.classify_outcome(baseline, outcome)
     base.update({
         "ppg_delta": wg._round(verdict.get("ppg_delta")),
@@ -307,7 +311,9 @@ def weekly_forecasts_for_calls(
     calls: Sequence[Dict[str, Any]],
 ) -> Dict[str, Dict[str, Any]]:
     """{player_id: forecast} for the open calls among ``calls`` (raw
-    weekly_breakout_scores rows). One bulk series load for the season."""
+    weekly_breakout_scores rows). One bulk series load for the season,
+    plus the prior-season series only when an open call's baseline PPG
+    needs the prior-season fill."""
     through = wg.default_through_week(season)
     if through is None:
         return {}
@@ -316,10 +322,14 @@ def weekly_forecasts_for_calls(
     if not open_calls:
         return {}
     series = wg.load_season_series(season, through)
+    prior_series: Dict[str, List[Dict[str, Any]]] = {}
+    if any(wg.call_needs_prior_ppg(c) for c in open_calls):
+        prior_series = wg.load_prior_season_series(season)
     out: Dict[str, Dict[str, Any]] = {}
     for call in open_calls:
         pid = str(call.get("player_id") or "")
-        forecast = weekly_forecast(call, series.get(pid, []), through)
+        forecast = weekly_forecast(
+            call, series.get(pid, []), through, prior_series.get(pid))
         if forecast is not None:
             out[pid] = forecast
     return out

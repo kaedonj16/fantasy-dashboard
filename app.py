@@ -16967,8 +16967,11 @@ def page_breakouts(platform: str, season: int, league_id: str):
         bands.forEach(function (b) {{
           html += '<div class="bo-rail-row"><span class="bo-band-pill ' + b[2] + '">' + b[1] + '</span><div class="bo-rail-value">' + (counts[b[0]] || 0) + '</div></div>';
         }});
-        if (block.pending_calls) {{
-          html += '<div class="bo-rail-meta" style="margin-top:4px;">' + block.pending_calls + ' more open call' + (block.pending_calls === 1 ? '' : 's') + ' with no games yet, so no band yet.</div>';
+        if (block.pending_no_games) {{
+          html += '<div class="bo-rail-meta" style="margin-top:4px;">' + block.pending_no_games + ' more open call' + (block.pending_no_games === 1 ? '' : 's') + ' with no games yet, so no band yet.</div>';
+        }}
+        if (block.pending_no_baseline) {{
+          html += '<div class="bo-rail-meta" style="margin-top:4px;">' + block.pending_no_baseline + ' more open call' + (block.pending_no_baseline === 1 ? '' : 's') + ' with no baseline to measure against, so no band yet.</div>';
         }}
         var top = block.top_tracking_hit || [];
         if (top.length) {{

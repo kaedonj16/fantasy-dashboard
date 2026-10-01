@@ -187,6 +187,98 @@ def test_prior_season_baseline_never_uses_current_season_weeks():
     assert grade["grade"] == "partial"
 
 
+# ---------------------------------------------------------------------------
+# prior-season PPG fill: baseline PPG resolved from prior-season rows
+# ---------------------------------------------------------------------------
+
+def _prior_call():
+    """A prior-season-baseline call: stored snap/opp, no stored PPG."""
+    return make_call(baseline_ppg=None, baseline_snap=45.0, baseline_opp=9.0,
+                     baseline_weeks=(), baseline_source="prior_season")
+
+
+def _prior_rows(ppg=10.0):
+    return [wk(w, snap=50, tgt=5, car=8, ppr=ppg) for w in (1, 2, 3)]
+
+
+def _held_outcome_rows():
+    # opp 16 (+7 vs stored 9), snap 60 (+15 vs stored 45), PPG 20.0.
+    return [wk(5, snap=60, tgt=7, car=9, ppr=20.0),
+            wk(6, snap=60, tgt=7, car=9, ppr=20.0),
+            wk(7, snap=60, tgt=7, car=9, ppr=20.0)]
+
+
+def test_prior_season_ppg_fill_from_prior_rows_can_hit():
+    grade = wg.grade_call(_prior_call(), _held_outcome_rows(), _prior_rows())
+    assert grade["grade"] == "hit"
+    assert grade["baseline_ppg"] == 10.0     # prior-season mean PPG
+    assert grade["ppg_delta"] == 10.0
+    # Snap/opp came from the stored evidence, PPG from prior-season rows.
+    assert grade["baseline_source"] == "mixed"
+
+
+def test_prior_season_fill_uses_prior_rows_never_current_season():
+    # Pre-call current-season weeks are the recent window: even with prior
+    # rows supplied, their 25.0 PPG must not leak into the baseline.
+    rows = [wk(2, snap=80, tgt=10, car=10, ppr=25.0),
+            wk(3, snap=80, tgt=10, car=10, ppr=25.0)] + _held_outcome_rows()
+    grade = wg.grade_call(_prior_call(), rows, _prior_rows())
+    assert grade["baseline_ppg"] == 10.0
+    assert grade["grade"] == "hit"
+
+
+def test_prior_season_without_prior_rows_behaves_exactly_as_before():
+    for prior_rows in (None, []):
+        grade = wg.grade_call(_prior_call(), _held_outcome_rows(), prior_rows)
+        assert grade["baseline_ppg"] is None
+        assert grade["ppg_delta"] is None
+        assert grade["baseline_source"] == "stored"
+        # Role held but production rise unmeasured: partial ceiling.
+        assert grade["grade"] == "partial"
+
+
+def test_orchestrator_loads_prior_series_for_calls_that_need_it(monkeypatch):
+    _no_db(monkeypatch)
+    loaded = []
+
+    def _series(season, through):
+        loaded.append(season)
+        if season == 2025:
+            return {"101": _prior_rows()}
+        return {"101": _held_outcome_rows()}
+
+    saved = []
+    monkeypatch.setattr(wg, "load_calls", lambda season: [_prior_call()])
+    monkeypatch.setattr(wg, "load_existing_grade_keys", lambda season: set())
+    monkeypatch.setattr(wg, "load_season_series", _series)
+    monkeypatch.setattr(wg, "save_grade_rows",
+                        lambda grades: saved.extend(grades) or len(grades))
+    summary = wg.grade_weekly_breakouts(2026, through_week=7)
+    assert loaded == [2026, 2025]            # current first, then prior
+    assert summary["by_grade"] == {"hit": 1}
+    assert saved[0]["baseline_ppg"] == 10.0
+    assert saved[0]["baseline_source"] == "mixed"
+
+
+def test_orchestrator_skips_prior_load_when_no_call_needs_it(monkeypatch):
+    _no_db(monkeypatch)
+    loaded = []
+
+    def _series(season, through):
+        loaded.append(season)
+        return {"101": [wk(5, snap=65, tgt=9, car=11, ppr=18.0),
+                        wk(6, snap=65, tgt=9, car=11, ppr=18.0),
+                        wk(7, snap=65, tgt=9, car=11, ppr=18.0)]}
+
+    monkeypatch.setattr(wg, "load_calls", lambda season: [make_call()])
+    monkeypatch.setattr(wg, "load_existing_grade_keys", lambda season: set())
+    monkeypatch.setattr(wg, "load_season_series", _series)
+    monkeypatch.setattr(wg, "save_grade_rows", lambda grades: len(grades))
+    summary = wg.grade_weekly_breakouts(2026, through_week=7)
+    assert loaded == [2026]                  # no prior-season load paid for
+    assert summary["by_grade"] == {"hit": 1}
+
+
 def test_window_stats_means_and_opportunity_definition():
     stats = wg.window_stats([
         wk(5, snap=50, tgt=4, car=6, ppr=10.0),

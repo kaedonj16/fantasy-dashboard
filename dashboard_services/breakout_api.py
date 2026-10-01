@@ -1829,6 +1829,8 @@ def _forecast_outlook(board: Dict) -> Dict:
             },
             "open_calls": 0,
             "pending_calls": 0,
+            "pending_no_games": 0,
+            "pending_no_baseline": 0,
             "top_tracking_hit": [],
         }
     top: Dict[str, List] = {"weekly": [], "preseason": []}
@@ -1846,6 +1848,13 @@ def _forecast_outlook(board: Dict) -> Dict:
             bucket["open_calls"] += 1
         else:
             bucket["pending_calls"] += 1
+            # Bandless calls split by why: no outcome games yet vs no
+            # baseline to measure against. The rail prints a separate,
+            # honest line for each instead of calling both "no games".
+            if forecast.get("state") == "no_baseline":
+                bucket["pending_no_baseline"] += 1
+            elif forecast.get("state") == "no_games":
+                bucket["pending_no_games"] += 1
         if band == _forecasts.BAND_TRACKING_HIT:
             score = candidate.get("breakout_score")
             if score is None:
