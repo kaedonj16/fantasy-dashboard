@@ -1,5 +1,21 @@
 (function(){
   var cfg = window.__draftCfg || {};
+  // Soft-nav identity anchor: this closure owns the draft page whose hero was
+  // in the DOM when the module (re-)executed. If that exact element leaves
+  // the document, the page was swapped away and every timer below must stop
+  // -- bare getElementById checks can't tell this page's DOM from a later
+  // draft page's, and stop*() would otherwise hide the NEW page's elements.
+  var _drRootEl = document.getElementById('drHero');
+  function _drGone(){ return !!_drRootEl && _drRootEl.isConnected === false; }
+  // Gone-path stop: clear ONLY this closure's timers. stopPolling() /
+  // stopPickTimer() also hide elements by id, which after a swap into
+  // another draft page would hit the NEW page's elements.
+  function _stopTimersOnly(){
+    if (pollTimer){ clearTimeout(pollTimer); pollTimer = null; }
+    if (pollTickTimer){ clearInterval(pollTickTimer); pollTickTimer = null; }
+    if (_timerInterval){ clearInterval(_timerInterval); _timerInterval = null; }
+    _pollInFlight = false;
+  }
   // Server flag can false-positive when a league has mock auction drafts or ESPN
   // budget fields on a snake league -- the synced draft's type overrides it.
   function isAuctionMode(){
@@ -6531,7 +6547,10 @@
   function startPolling(){
     stopPolling();
     _pollCount = 0; _liveSig = null;
-    pollTickTimer = setInterval(function(){ updatePollStatus(); updateDraftBanner(); }, 1000);
+    pollTickTimer = setInterval(function(){
+      if (_drGone()){ _stopTimersOnly(); return; }
+      updatePollStatus(); updateDraftBanner();
+    }, 1000);
     pollOnce();
   }
   function schedulePoll(){
@@ -6575,6 +6594,7 @@
   // periodic full poll refreshes slot names and trade-based ownership.
   function pollOnce(){
     if (!state || state.mode !== 'live'){ stopPolling(); return; }
+    if (_drGone()){ _stopTimersOnly(); return; }
     if (_pollInFlight) return;  // never overlap ESPN/Sleeper live requests
     if (_espnAuthFailed || _espnFallbackShown) return;
     _pollCount++;
@@ -6726,6 +6746,7 @@
     var el = document.getElementById('drPickTimer');
     if (el) el.style.display = '';
     function tick(){
+      if (_drGone()){ _stopTimersOnly(); return; }
       if (!state || state.pickTimer <= 0){ stopPickTimer(); return; }
       var elapsed = Math.round((Date.now() - _timerPickStart) / 1000);
       var remaining = Math.max(0, state.pickTimer - elapsed);

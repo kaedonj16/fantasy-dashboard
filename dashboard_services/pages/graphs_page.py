@@ -640,7 +640,7 @@ def build_graphs_body(ctx: dict) -> str:
       }});
     }}
 
-    document.addEventListener('DOMContentLoaded', () => {{
+    function _initRadar() {{
       const selA = document.getElementById('radarTeamA');
       const selB = document.getElementById('radarTeamB');
       if (!selA || !selB) return;
@@ -649,7 +649,14 @@ def build_graphs_body(ctx: dict) -> str:
 
       selA.addEventListener('change', () => renderRadar(selA.value, selB.value));
       selB.addEventListener('change', () => renderRadar(selA.value, selB.value));
-    }});
+    }}
+    // Soft-nav swaps never re-fire DOMContentLoaded (it already fired for
+    // this document), so init immediately when the document is parsed.
+    if (document.readyState === 'loading') {{
+      document.addEventListener('DOMContentLoaded', _initRadar);
+    }} else {{
+      _initRadar();
+    }}
     </script>
     """
 
