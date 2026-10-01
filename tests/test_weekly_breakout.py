@@ -99,7 +99,9 @@ def test_td_spike_without_role_growth_is_not_a_breakout():
     res = wb.score_player(WR, rows, cutoff_week=4)
     assert res["breakout_score"] < wb.WATCHLIST_MIN_SCORE
     assert res["fantasy"]["spike_without_role"] is True
-    assert res["classification"] == "watchlist"
+    # Flat usage is no signal at all: the residual label below the
+    # watchlist floor is "monitored", not "watchlist".
+    assert res["classification"] == "monitored"
 
 
 def test_routes_and_high_value_usage_are_explainable_when_available():
@@ -175,7 +177,7 @@ def test_rookie_week1_is_provisional_without_prior_history():
     # evidence (not the old hard 35.0 cliff): still low for one game, but it
     # varies player to player instead of pinning at exactly 35.
     assert res["confidence"] < 60.0
-    assert res["classification"] in ("watchlist", "temporary_opportunity")
+    assert res["classification"] in ("monitored", "temporary_opportunity")
     assert res["signals"]["snap_share"]["baseline"] is None
     assert res["signals"]["snap_share"]["delta"] is None
     assert res["breakout_score"] < 100
@@ -433,7 +435,9 @@ def test_missing_cache_veteran_is_not_assumed_rookie():
     veteran = {**WR, "years_exp": 4, "season": 2026}
     res = wb.score_player(veteran, [wk(1, 75, 25, 9)], cutoff_week=1)
     assert res["is_rookie"] is False
-    assert res["classification"] == "watchlist"
+    # The unknown-history veteran is capped under the watchlist floor, so
+    # the residual label is "monitored".
+    assert res["classification"] == "monitored"
     assert res["breakout_score"] < wb.WATCHLIST_MIN_SCORE + 2
 
 
@@ -451,7 +455,7 @@ def test_te_blocking_snap_increase_does_not_clear_emerging_quality():
         row["routes"] = routes
     res = wb.score_player(te, rows, cutoff_week=3)
     assert "snaps_up_routes_down" in res["conflicting_signals"]
-    assert res["classification"] == "watchlist"
+    assert res["classification"] == "monitored"
 
 
 def test_team_volume_count_spike_without_share_growth_stays_watchlist():
@@ -474,13 +478,13 @@ def test_role_held_after_starter_return_increases_sustainability():
     assert held["sustainability_score"] > normal["sustainability_score"]
 
 
-def test_garbage_time_qb_is_watchlist_and_discounted():
+def test_garbage_time_qb_is_monitored_and_discounted():
     qb = {"player_id": "q", "position": "QB", "years_exp": 2}
     rows = [wk(1, 10, pa=3, car=1), wk(2, 95, pa=35, car=6)]
     rows[-1]["garbage_time"] = True
     res = wb.score_player(qb, rows, cutoff_week=2)
     assert res["opportunity_source"] == "garbage_time"
-    assert res["classification"] == "watchlist"
+    assert res["classification"] == "monitored"
 
 
 def test_ranking_confidence_cannot_overpower_signal_magnitude():

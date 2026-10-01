@@ -31,10 +31,14 @@ Conventions:
 * A row whose score (or confidence) is missing is excluded from that band
   set only; it still counts toward the overall / classification / version
   summaries.
+* By-classification summaries use the display label: a stored "watchlist"
+  call scored under the watchlist floor aggregates as "monitored".
 """
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Sequence, Tuple
+
+from data_building.breakout_engine.weekly_breakout import display_classification
 
 GRADE_HIT = "hit"
 GRADE_PARTIAL = "partial"
@@ -152,7 +156,9 @@ def summarize_bands(
     Returns the overall bucket, every score band and confidence band in
     fixed band order (empty bands included, zeroed), and by-classification
     / by-scoring-version buckets, all in the grader's bucket shape with
-    rates None below ``min_sample`` graded in the group.
+    rates None below ``min_sample`` graded in the group. The
+    by-classification buckets use the display label, so stored "watchlist"
+    calls scored under the watchlist floor aggregate as "monitored".
     """
     rows = list(rows)
 
@@ -167,7 +173,11 @@ def summarize_bands(
             for label, _lo, _hi in bands
         ]
 
-    by_classification = _grouped(rows, "classification")
+    by_classification: Dict[str, List[Dict[str, Any]]] = {}
+    for row in rows:
+        by_classification.setdefault(
+            display_classification(row.get("classification"),
+                                   row.get("breakout_score")), []).append(row)
     by_version = _grouped(rows, "scoring_version")
     return {
         "min_sample": int(min_sample),
