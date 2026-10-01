@@ -1505,6 +1505,11 @@ input[type="search"] {
     vertical-align: middle;
 }
 
+#ppLeagueWrap .csd-wrap {
+    display: block;
+    width: 100%;
+}
+
 .csd-trigger {
     display: inline-flex;
     align-items: center;

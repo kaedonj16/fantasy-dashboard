@@ -289,6 +289,7 @@
           "<input class='pp-signin-input' id='ppUser' type='text' placeholder='Sleeper username' autocomplete='username'>" +
           "<div id='ppLeagueWrap' style='display:none;'><select class='pp-signin-select' id='ppLeague'></select></div>" +
           "<button type='button' class='otc-btn otc-btn-primary' id='ppGo' style='width:100%;'>Find my leagues</button>";
+        if (window.initCustomSelects) window.initCustomSelects(stepEl);
         var userEl = document.getElementById("ppUser");
         var go = document.getElementById("ppGo");
         var wrap = document.getElementById("ppLeagueWrap");

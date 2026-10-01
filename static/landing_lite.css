@@ -2167,6 +2167,11 @@ input[type="search"] {
     margin-top: 8px;
 }
 
+.signin-modal-box .csd-wrap {
+    display: block;
+    width: 100%;
+}
+
 .home-card .error-message {
     margin-top: 8px;
     font-size: 13px;

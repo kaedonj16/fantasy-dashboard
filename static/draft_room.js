@@ -8585,6 +8585,7 @@
       + '<div class="dr-pt-chiprow" id="drPtGetChips"></div>'
       + pickerHtml('drPtR')
       + '<div id="drPtResult" class="dr-pt-result"></div>';
+    if (window.initCustomSelects) window.initCustomSelects(msg);
     var btns = document.getElementById('drModalBtns');
     btns.innerHTML = '';
     var close = document.createElement('button');

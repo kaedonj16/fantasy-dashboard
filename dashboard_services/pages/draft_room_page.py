@@ -1025,6 +1025,7 @@ _DRAFT_ROOM_HTML = r"""
   .dr-pt-chip:hover { border-color: var(--accent,#38bdf8); color: var(--accent,#38bdf8); }
   .dr-pt-picker { display: flex; gap: 6px; align-items: center; margin: 6px 0 4px; }
   .dr-pt-sel { flex: 1 1 auto; min-width: 0; padding: 8px 9px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 13px; }
+  .dr-pt-picker .csd-wrap { flex: 1 1 auto; min-width: 0; }
   .dr-pt-add { flex: 0 0 auto; white-space: nowrap; padding: 8px 14px; }
   .dr-pt-chiprow { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; min-height: 20px; margin: 2px 0; }
   .dr-pt-tok { display: inline-flex; align-items: center; gap: 2px; font-size: 12px; font-weight: 800;

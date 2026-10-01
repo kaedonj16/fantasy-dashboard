@@ -2871,12 +2871,15 @@ function _pmTeamShareBar(data) {
     'color-mix(in srgb, var(--text-subtle) 27%, var(--card))',
   ];
   let gi = 0;
+  // Custom tooltip only (data-def + advEnterMetricDef), the same engine as
+  // the metric rows above: a native title would surface a plain browser
+  // tooltip instead, and never fires on touch.
   const bars = segs.map(s => {
     const col = s.me ? 'var(--accent)' : grays[Math.min(gi++, grays.length - 1)];
-    const tip = `${s.name}: ${s.pct}% of team targets`;
-    return `<i class="${s.me ? 'me' : ''}" style="width:${s.pct}%;background:${col}" title="${tip.replace(/"/g, '&quot;')}">${s.pct >= 9 ? '<span>' + s.pct + '%</span>' : ''}</i>`;
+    const tip = `${s.name}: ${s.pct}% of team targets`.replace(/"/g, '&quot;');
+    return `<i class="${s.me ? 'me' : ''}" style="width:${s.pct}%;background:${col}" data-def="${tip}" onmouseenter="advEnterMetricDef(event)" onmouseleave="advLeaveMetricDef(event)" onclick="advShowMetricDef(event)">${s.pct >= 9 ? '<span>' + s.pct + '%</span>' : ''}</i>`;
   }).join('');
-  const restBar = rest > 3 ? `<i style="width:${rest}%;background:var(--border)" title="Rest of offense: ${rest}%"></i>` : '';
+  const restBar = rest > 3 ? `<i style="width:${rest}%;background:var(--border)" data-def="Rest of offense: ${rest}%" onmouseenter="advEnterMetricDef(event)" onmouseleave="advLeaveMetricDef(event)" onclick="advShowMetricDef(event)"></i>` : '';
   const last = String(data.player_name || '').split(' ').slice(-1)[0];
   return `<div class="pm-tshare-cap"><span>Team target share</span><span><b>${me ? me.pct + '%' : '--'}</b>${me ? ' to ' + last : ''}</span></div>
     <div class="pm-tshare-bar">${bars}${restBar}</div>`;
