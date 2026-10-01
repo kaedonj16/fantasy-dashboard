@@ -975,6 +975,7 @@ function _showLeaguePickerModal(planType, triggerBtn) {
     </div>`;
   document.body.appendChild(modal);
   _stackAbovePaywall(modal);
+  if (window.initCustomSelects) window.initCustomSelects(modal);
 
   const select = modal.querySelector('#_leaguePickerSelect');
   const submitBtn = modal.querySelector('#_leaguePickerSubmit');
@@ -1099,6 +1100,7 @@ function _showIdentifyModal(planType, triggerBtn) {
     </div>`;
   document.body.appendChild(modal);
   _stackAbovePaywall(modal);
+  if (window.initCustomSelects) window.initCustomSelects(modal);
 
   const input = modal.querySelector('#_identifyInput');
   const submitBtn = modal.querySelector('#_identifySubmit');

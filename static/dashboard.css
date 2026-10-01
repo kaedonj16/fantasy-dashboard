@@ -8033,6 +8033,14 @@ select:focus {
     margin-top: 8px;
 }
 
+/* Sign-in modal selects (paywall checkout/identify modals, player-page
+   league picker) are width:100% rows too, but sit flush under their labels. */
+.signin-modal-box .csd-wrap,
+#ppLeagueWrap .csd-wrap {
+    display: block;
+    width: 100%;
+}
+
 .csd-trigger {
     display: inline-flex;
     align-items: center;
