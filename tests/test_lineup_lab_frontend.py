@@ -398,6 +398,61 @@ def lab_payload(monkeypatch):
         ctx=ctx, league_id="123", viewer_roster_id=7, season=2026, week=4)
 
 
+def test_lab_deep_link_wiring(script):
+    # ?tab=lab rides the existing Start/Sit deep link, then flips Start/Sit
+    # into Lab mode so the Lab loads through the normal path.
+    start = script.index("function wvDeepLink(")
+    end = script.index("\n}\n", start) + 3
+    body = script[start:end]
+    assert "tab === 'startsit' || tab === 'lab'" in body
+    assert "wvSetTab('startsit')" in body
+    assert "if (tab === 'lab') wvSetSsMode('lab');" in body
+
+
+def test_lab_deep_link_activates_lab(script):
+    # Behavioral, under node: ?tab=lab switches to the Start/Sit tab AND
+    # Lab mode (which is what triggers the Lab load); ?tab=startsit only
+    # switches the tab; no tab does nothing; and without a Start/Sit tab
+    # (best ball) the deep link stays inert.
+    start = script.index("function wvDeepLink(")
+    end = script.index("\n}\n", start) + 3
+    js = script[start:end]
+    out = _run_node(js, """
+var calls = [];
+var tabBtn = {};
+var secEl = { scrollIntoView: function() { calls.push('scroll'); } };
+var document = { getElementById: function(id) {
+  if (id === 'wvTabStartSit') return tabBtn;
+  if (id === 'wvSectionStartSit') return secEl;
+  return null;
+} };
+function wvSetTab(t) { calls.push('tab:' + t); }
+function wvSetSsMode(m) { calls.push('mode:' + m); }
+var window = { location: { search: '?tab=lab' } };
+wvDeepLink();
+if (calls.join(',') !== 'tab:startsit,mode:lab,scroll')
+  throw new Error('lab deep link wrong: ' + calls.join(','));
+calls = [];
+window.location.search = '?tab=startsit';
+wvDeepLink();
+if (calls.join(',') !== 'tab:startsit,scroll')
+  throw new Error('startsit deep link wrong: ' + calls.join(','));
+calls = [];
+window.location.search = '';
+wvDeepLink();
+if (calls.length !== 0)
+  throw new Error('plain load must not deep link: ' + calls.join(','));
+calls = [];
+tabBtn = null;
+window.location.search = '?tab=lab';
+wvDeepLink();
+if (calls.length !== 0)
+  throw new Error('no Start/Sit tab (best ball) must stay inert');
+console.log('LAB_DEEP_LINK_OK');
+""")
+    assert "LAB_DEEP_LINK_OK" in out
+
+
 def test_lab_payload_ships_injury_onset_and_opponent_haircut(lab_payload):
     from data_building.injury_rates import (
         expected_injury_loss_per_week, injury_onset_rate,

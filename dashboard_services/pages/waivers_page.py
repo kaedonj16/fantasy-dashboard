@@ -2803,13 +2803,17 @@ function wvLineupAdvice() {{
 }}
 
 // Deep link: ?tab=startsit opens the Start/Sit Advisor (switches the mobile
-// tab and scrolls the section into view on desktop).
+// tab and scrolls the section into view on desktop). ?tab=lab does the same
+// and also flips Start/Sit into Lab mode, which loads the Lab through the
+// normal path (prefetch stash included).
 function wvDeepLink() {{
   try {{
     const params = new URLSearchParams(window.location.search);
-    if ((params.get('tab') || '').toLowerCase() === 'startsit') {{
+    const tab = (params.get('tab') || '').toLowerCase();
+    if (tab === 'startsit' || tab === 'lab') {{
       if (!document.getElementById('wvTabStartSit')) return;
       wvSetTab('startsit');
+      if (tab === 'lab') wvSetSsMode('lab');
       const sec = document.getElementById('wvSectionStartSit');
       if (sec) sec.scrollIntoView({{ behavior: 'smooth', block: 'start' }});
     }}

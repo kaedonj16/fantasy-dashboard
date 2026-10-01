@@ -243,6 +243,22 @@ def test_changelog_announces_undrafted_matchup_preview_hide():
     assert "–" not in entry["text"]
 
 
+def test_changelog_announces_lineup_lab_speed_and_nav_entry():
+    from dashboard_services.changelog import CHANGELOG
+
+    entry = next(
+        e for e in CHANGELOG
+        if "lineup lab" in e.get("text", "").lower()
+        and "weekly nav menu" in e.get("text", "").lower()
+    )
+    assert CHANGELOG[0] is entry
+    assert entry["date"] == "2026-09-30"
+    assert entry["tag"] == "update"
+    assert entry["link"] == "/waivers?tab=lab"
+    assert "—" not in entry["text"]
+    assert "–" not in entry["text"]
+
+
 def test_no_platform_specific_spacer_before_os_layout():
     """Hub builders must start body with .os-layout — no provider wrapper."""
     for name in ("dashboard_page.py", "offseason_dashboard_page.py"):
