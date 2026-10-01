@@ -23711,6 +23711,22 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
     return [card.dataset.platform || '', card.dataset.leagueId || '', card.dataset.season || ''].join(':');
   }
   function displayed(card) { return card.isConnected && card.style.display !== 'none'; }
+  function number(value, digits) {
+    var n = Number(value);
+    if (!Number.isFinite(n)) return '-';
+    return n.toFixed(digits == null ? 1 : digits);
+  }
+  function stateNote(slot, text, kind) {
+    var note = slot.querySelector('[data-matchup-state]');
+    if (!note) { note = document.createElement('div'); note.setAttribute('data-matchup-state', ''); slot.appendChild(note); }
+    // Stamp when this text first appeared so a transient note can't get stuck:
+    // the pending branch below drops "Updating matchup…" if the backend stays
+    // cold far longer than any warm should take.
+    if (note.textContent !== text || !note.dataset.noteSince) note.dataset.noteSince = String(Date.now());
+    note.className = 'pf-live-unavailable pf-live-state-' + kind;
+    note.textContent = text;
+    return note;
+  }
   function posTier(rank, total) {
     var r = Number(rank), n = Number(total);
     if (!Number.isFinite(r) || !Number.isFinite(n) || n <= 1 || r <= 0) return 'mid';
@@ -23867,6 +23883,60 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
     else if (l > w) agg.classList.add('color-loss');
   }
 
+  // Score/result band only: status line, your score vs opponent (with
+  // projected finals while the week is open), the win-probability bar, and
+  // the WON/LOST BY result once final. No My Matchup / League Scores tabs
+  // and no ScoreZone Moments here -- those live on the matchup page.
+  function matchupHtml(data) {
+    var you = data.you, opp = data.opp, status = data.status || 'pre';
+    var label = status === 'in' ? 'Live · Wk ' + escapeHtml(data.week) : (status === 'final' ? 'Final · Wk ' + escapeHtml(data.week) : 'Wk ' + escapeHtml(data.week));
+    function side(team, name, opposite) {
+      return '<div class="pf-live-side' + (opposite ? ' opp' : '') + '"><div class="pf-live-lbl">' + escapeHtml(name) + '</div><div class="pf-live-score">' + (team ? number(team.score, status === 'final' ? 2 : 1) : '-') + '</div>' + (team && status !== 'final' ? '<div class="pf-live-proj">proj ' + number(team.proj, 1) + '</div>' : '') + '</div>';
+    }
+    var extra = '';
+    if (status === 'final' && opp) {
+      var result = data.result || 'T', margin = number(data.margin, 2);
+      extra = '<div class="pf-live-result">' + escapeHtml(result === 'W' ? 'WON BY ' + margin : (result === 'L' ? 'LOST BY ' + margin : 'TIED')) + '</div>';
+    } else if (opp && data.win_prob != null) {
+      var chance = Math.max(0, Math.min(100, Math.round(Number(data.win_prob))));
+      extra = '<div class="pf-live-wp" title="Win probability"><div class="pf-live-wp-track"><div class="pf-live-wp-fill" style="width:' + chance + '%"></div></div><div class="pf-live-wp-lbls"><span class="pf-live-wp-you">' + chance + '% to win</span><span class="pf-live-wp-opp">' + (100 - chance) + '%</span></div></div>';
+    }
+    return '<div class="pf-live-status' + (status === 'in' ? ' is-live' : '') + '"><span class="pf-live-dot"></span>' + label + '</div><div class="pf-live-grid">' + side(you, 'You', false) + side(opp, opp ? (opp.name || 'Opp') : 'Bye', true) + '</div>' + extra;
+  }
+  function renderMatchup(slot, data) {
+    if (!slot || !data) return false;
+    if (data.pending) {
+      slot.hidden = false; slot.setAttribute('aria-busy', 'true');
+      if (slot.dataset.matchupGood === 'true') {
+        var note = stateNote(slot, 'Updating matchup…', 'stale');
+        // The retry loop re-renders on every poll, so a healthy refresh clears
+        // this via the success path below. If the backend stays cold (cache
+        // churn after worker recycles), the note would sit next to populated
+        // scores forever; drop it after ~90s and let last good stand alone.
+        if (Date.now() - Number(note.dataset.noteSince || 0) > 90000) note.remove();
+      }
+      return false;
+    }
+    if (data.failed || data.state === 'error' || data.state === 'unavailable' && data.applicable !== false) {
+      slot.hidden = false; slot.removeAttribute('aria-busy');
+      if (slot.dataset.matchupGood === 'true') stateNote(slot, data.message || 'Matchup update failed · showing last score', 'stale');
+      else slot.innerHTML = '<div class="pf-live-unavailable">' + escapeHtml(data.message || 'Matchup temporarily unavailable') + ' <button type="button" data-matchup-retry>Retry</button></div>';
+      return false;
+    }
+    if (data.applicable === false) {
+      slot.hidden = true; slot.removeAttribute('aria-busy'); slot.dataset.matchupGood = 'false';
+      return true;
+    }
+    if (!data.live || !data.you) {
+      slot.hidden = false; slot.removeAttribute('aria-busy');
+      if (slot.dataset.matchupGood === 'true') stateNote(slot, 'Matchup response incomplete · showing last score', 'stale');
+      return false;
+    }
+    slot.innerHTML = matchupHtml(data); slot.hidden = false; slot.removeAttribute('aria-busy');
+    slot.dataset.matchupGood = 'true'; slot._isLive = data.status === 'in';
+    return true;
+  }
+
   function destroy(owner) {
     if (!owner || owner.dead) return;
     owner.dead = true;
@@ -23898,9 +23968,11 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
     owner.timers.add(timer);
   }
   function applyCard(owner, card, payload) {
-    if (!owner.alive() || !card.isConnected) return { summary: false, pending: false };
+    if (!owner.alive() || !card.isConnected) return { summary: false, matchup: false, pending: false };
     var summaryOK = payload.summary ? renderSummary(card, payload.summary) : false;
-    return { summary: summaryOK, pending: !!payload.pending };
+    var slot = card.querySelector('[data-lg-live]');
+    var matchupOK = slot ? renderMatchup(slot, payload.matchup || (payload.pending ? { pending: true } : { failed: true })) : true;
+    return { summary: summaryOK, matchup: matchupOK, pending: !!(payload.pending || payload.matchup && payload.matchup.pending) };
   }
   function requestCard(owner, item) {
     var card = item.card, key = identity(card), signal = owner.controller && owner.controller.signal;
@@ -23936,7 +24008,7 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
       }
       var payload = error.payload || { state: 'error', message: error.message };
       if (payload.state === 'unavailable' && /sign in/i.test(payload.message || '')) payload.message = 'Session expired. Sign in again.';
-      applyCard(owner, card, { summary: payload });
+      applyCard(owner, card, { summary: payload, matchup: { failed: true, message: payload.message } });
       if (item.tracker) item.tracker({ summary: false, matchup: false, pending: false });
       card._pfAttempts = (card._pfAttempts || 0) + 1;
       if (card._pfAttempts <= RETRY_DELAYS.length) schedule(owner, card, RETRY_DELAYS[card._pfAttempts - 1]);
@@ -23970,9 +24042,15 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
     owner.pollTimer = setInterval(function () {
       if (!owner.alive() || document.hidden) return;
       owner.cards(true).forEach(function (card) {
-        // Pick up visible cards that never hydrated (e.g. page-2 cards
-        // whose retries exhausted while contexts were warming).
-        if (card.dataset.summaryGood !== 'true') schedule(owner, card);
+        var slot = card.querySelector('[data-lg-live]');
+        if (slot && slot._isLive) { schedule(owner, card); return; }
+        // Also pick up visible cards that never hydrated (e.g. page-2 cards
+        // whose retries exhausted while contexts were warming). A slot whose
+        // matchup came back not-applicable (matchupGood 'false') is terminal,
+        // not a hydration failure, so it doesn't requeue forever.
+        var summaryGood = card.dataset.summaryGood === 'true';
+        var matchupGood = !slot || slot.dataset.matchupGood === 'true' || slot.dataset.matchupGood === 'false';
+        if (!summaryGood || !matchupGood) schedule(owner, card);
       });
     }, 45000);
   }
@@ -24014,7 +24092,7 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
       return new Promise(function (resolve) {
         var remaining = cards.length;
         cards.forEach(function (card) { schedule(owner, card, 0, true, function (result) {
-          if (result.summary && !result.pending) successes++; else { if (result.pending) pending++; failures++; }
+          if (result.summary && result.matchup && !result.pending) successes++; else { if (result.pending) pending++; failures++; }
           if (!--remaining) resolve();
         }); });
       });
@@ -24030,9 +24108,10 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
     owner.refresh = refresh;
     window.brRefreshCurrentPage = refresh;
     window.__pfRenderSummary = renderSummary;
+    window.__pfRenderMatchup = renderMatchup;
     window.__pfQueueCard = function (card) { schedule(owner, card, 0, true); };
     document.addEventListener('click', function (event) {
-      var button = event.target.closest && event.target.closest('[data-summary-retry]');
+      var button = event.target.closest && event.target.closest('[data-summary-retry],[data-matchup-retry]');
       if (!button || !owner.alive() || !owner.root.contains(button)) return;
       button.hidden = true; schedule(owner, button.closest('.pf-lg-card'), 0, true);
     }, owner.controller ? { signal: owner.controller.signal } : false);
@@ -24046,7 +24125,7 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
     var owner = createOwner(root); current = owner; bind(owner); startPolling(owner); startCountdown(owner);
     owner.cards(false).forEach(function (card) { schedule(owner, card); });
   };
-  window.__brPortfolioCardsTest = { renderSummary: renderSummary, identity: identity };
+  window.__brPortfolioCardsTest = { renderSummary: renderSummary, renderMatchup: renderMatchup, identity: identity };
 })();
 
 /* Weekly hub: League Scores tab (My Matchup | League Scores).

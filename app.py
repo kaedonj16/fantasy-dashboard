@@ -33538,12 +33538,18 @@ def build_portfolio_body(
         _crest_hue = f"hsl({sum(ord(c) for c in _raw_name) % 360} 52% 46%)"
 
         if lg.get("loading"):
+            _lg_season_shell = lg.get("season") or season
             _updated = html.escape(str(lg.get("last_updated") or "Awaiting first refresh"))
             league_rows += (
                 f"<div class='pf-lg-card' data-summary-card data-lg-key='{plat}:{lid}' data-favorite='{'true' if lg.get('is_favorite') else 'false'}' "
                 f"data-platform='{html.escape(str(plat), quote=True)}' data-league-id='{html.escape(str(lid), quote=True)}' data-season='{card_season}'>"
                 f"<div class='pf-lg-top'><span class='pf-lg-crest' style='background:{_crest_hue};'>{_ini}</span>"
                 f"{_lg_id(name_link, plat)}{_lg_tools(bool(lg.get('is_favorite')), _unlink_btn(plat, lid, card_season))}</div>"
+                f"<div class='pf-lg-live' aria-busy='true' data-lg-live data-platform='{html.escape(str(plat), quote=True)}' "
+                f"data-league-id='{html.escape(str(lid), quote=True)}' data-season='{html.escape(str(_lg_season_shell), quote=True)}'>"
+                "<div class='pf-live-skel' aria-hidden='true'><div class='skeleton pf-live-skel-status'></div>"
+                "<div class='pf-live-grid'><div class='pf-live-side'><div class='skeleton pf-live-skel-score'></div></div>"
+                "<div class='pf-live-side opp'><div class='skeleton pf-live-skel-score'></div></div></div></div></div>"
                 f"<div class='pf-lg-stats' data-summary-stats><span class='pf-lg-stat'><span class='pf-lg-v'>-</span><span class='pf-lg-l'>Record loading</span></span>"
                 f"<span class='pf-lg-stat'><span class='pf-lg-v'>-</span><span class='pf-lg-l'>Standing loading</span></span>"
                 f"<span class='pf-lg-stat'><span class='pf-lg-v' data-summary-streak>...</span><span class='pf-lg-l'>Streak loading</span></span></div>"
@@ -33725,6 +33731,38 @@ def build_portfolio_body(
 
         # Live matchup slot: hydrated client-side (see pfLiveScores below) only
         # in-season during game weeks. Starts as a content-shaped skeleton so the
+        # band doesn't pop in empty; hides after fetch when scores aren't live.
+        # Kept out of the offseason cards. Score/result only: no My Matchup /
+        # League Scores tabs and no ScoreZone Moments (those live on the matchup
+        # page / Weekly Hub).
+        _lg_season_live = lg.get("season") or season
+        live_skel = (
+            "<div class='pf-live-skel' aria-hidden='true'>"
+            "<div class='skeleton pf-live-skel-status'></div>"
+            "<div class='pf-live-grid'>"
+            "<div class='pf-live-side'>"
+            "<div class='skeleton pf-live-skel-lbl'></div>"
+            "<div class='skeleton pf-live-skel-score'></div>"
+            "<div class='skeleton pf-live-skel-proj'></div>"
+            "</div>"
+            "<div class='pf-live-side opp'>"
+            "<div class='skeleton pf-live-skel-lbl'></div>"
+            "<div class='skeleton pf-live-skel-score'></div>"
+            "<div class='skeleton pf-live-skel-proj'></div>"
+            "</div>"
+            "</div>"
+            "<div class='skeleton pf-live-skel-wp'></div>"
+            "</div>"
+        )
+        live_slot = (
+            "" if lg.get("offseason") else
+            f"<div class='pf-lg-live' data-lg-live aria-busy='true' "
+            f"data-platform='{html.escape(str(plat), quote=True)}' "
+            f"data-league-id='{html.escape(str(lid), quote=True)}' "
+            f"data-season='{html.escape(str(_lg_season_live), quote=True)}'>"
+            f"{live_skel}</div>"
+        )
+
         league_rows += (
             f"<div class='pf-lg-card' data-summary-card data-lg-key='{plat}:{lid}' data-favorite='{'true' if lg.get('is_favorite') else 'false'}' data-platform='{html.escape(str(plat), quote=True)}' data-league-id='{html.escape(str(lid), quote=True)}' data-season='{card_season}' data-wins='{wins}' data-losses='{losses}' data-ties='{ties}'{_lw_attr}>"
             f"<div class='pf-lg-top'>"
@@ -33732,6 +33770,7 @@ def build_portfolio_body(
             f"{_lg_id(name_link, plat, off_note, '', lg.get('team_name') or '')}"
             f"{_lg_tools(bool(lg.get('is_favorite')), _unlink_btn(plat, lid, card_season))}"
             f"</div>"
+            f"{live_slot}"
             f"<div class='pf-lg-stats' data-summary-stats>"
             f"<span class='pf-lg-stat'><span class='pf-lg-v {rec_cls2}'>{rec}</span>"
             f"<span class='pf-lg-l'>Record</span></span>"
@@ -33844,6 +33883,60 @@ def build_portfolio_body(
         "border-radius:8px;padding:5px 12px;font-size:13px;font-weight:700;cursor:pointer;}"
         ".pf-lg-pager button:disabled{opacity:.4;cursor:default;}"
         ".pf-lg-pager-lbl{font-size:12.5px;color:var(--text-muted);font-weight:600;min-width:96px;text-align:center;}"
+        # Live matchup band: your total vs opponent as a head-to-head, each side's
+        # projected final, and a win-probability bar (your share green, the
+        # opponent's the remainder). Hydrated client-side (pfLiveScores); starts
+        # as a skeleton, then swaps to scores or hides when not live. A neutral
+        # inset -- not another bordered card -- so it doesn't echo the
+        # Record/Standing/Streak row beneath it.
+        ".pf-lg-live{border-radius:8px;padding:7px 9px 8px;"
+        "background:color-mix(in srgb,var(--text-subtle) 9%,transparent);"
+        "display:flex;flex-direction:column;gap:6px;}"
+        # The class sets display:flex, which would otherwise beat the UA
+        # [hidden]{display:none}; hide after fetch when scores aren't live.
+        ".pf-lg-live[hidden]{display:none;}"
+        # Content-shaped skeleton (status + two scores + WP track) using the
+        # shared .skeleton shimmer so the band reserves space while loading.
+        ".pf-live-skel{display:flex;flex-direction:column;gap:6px;}"
+        ".pf-live-skel-status{height:8px;width:72px;border-radius:4px;}"
+        ".pf-live-skel-lbl{height:8px;width:48px;border-radius:4px;}"
+        ".pf-live-side.opp .pf-live-skel-lbl{width:56px;}"
+        ".pf-live-skel-score{height:20px;width:52px;border-radius:4px;margin-top:2px;}"
+        ".pf-live-skel-proj{height:7px;width:40px;border-radius:4px;}"
+        ".pf-live-skel-wp{height:6px;width:100%;border-radius:999px;margin-top:2px;}"
+        ".pf-live-status{font-size:9px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;"
+        "color:var(--text-subtle);display:flex;align-items:center;gap:5px;}"
+        ".pf-live-dot{width:6px;height:6px;border-radius:50%;background:var(--text-subtle);flex:0 0 auto;}"
+        ".pf-live-status.is-live{color:var(--win);}"
+        ".pf-live-status.is-live .pf-live-dot{background:var(--win);animation:pfLivePulse 1.6s ease-in-out infinite;}"
+        "@keyframes pfLivePulse{0%,100%{opacity:1;}50%{opacity:.35;}}"
+        # Head-to-head: your side left-aligned, opponent right-aligned. The leader's
+        # score is crisp; the trailer's is muted, so who's ahead reads at a glance.
+        ".pf-live-grid{display:flex;align-items:flex-end;justify-content:space-between;gap:10px;}"
+        ".pf-live-side{min-width:0;display:flex;flex-direction:column;gap:1px;}"
+        ".pf-live-side.opp{align-items:flex-end;text-align:right;}"
+        ".pf-live-lbl{font-size:10px;font-weight:700;color:var(--text-muted);max-width:100%;"
+        "overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}"
+        ".pf-live-score{font-size:20px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums;"
+        "color:var(--text-subtle);}"
+        ".pf-live-side.win .pf-live-score{color:var(--text);}"
+        ".pf-live-proj{font-size:9.5px;color:var(--text-subtle);font-variant-numeric:tabular-nums;}"
+        # Win-probability bar: your chance filled from the left in win-green over a
+        # loss-red remainder (the opponent's chance). Reads as a tug-of-war.
+        ".pf-live-wp{display:flex;flex-direction:column;gap:3px;}"
+        ".pf-live-wp-track{position:relative;height:6px;border-radius:999px;overflow:hidden;"
+        "background:color-mix(in srgb,var(--loss) 24%,transparent);}"
+        ".pf-live-wp-fill{position:absolute;left:0;top:0;bottom:0;border-radius:999px;"
+        "background:var(--win);transition:width .5s ease;}"
+        ".pf-live-wp-lbls{display:flex;justify-content:space-between;font-size:9px;font-weight:800;"
+        "font-variant-numeric:tabular-nums;letter-spacing:.02em;}"
+        ".pf-live-wp-you{color:var(--win);}"
+        ".pf-live-wp-opp{color:var(--loss);}"
+        ".pf-live-result{font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;"
+        "text-align:center;color:var(--text);margin-top:4px;}"
+        ".pf-live-unavailable{font-size:11px;color:var(--text-muted);}"
+        ".pf-live-unavailable button{font:inherit;font-size:11px;font-weight:700;cursor:pointer;"
+        "background:none;border:none;color:var(--accent);padding:0;}"
         "@media(max-width:640px){"
         ".pf-lg-grid{grid-template-columns:minmax(0,1fr);gap:7px;}"
         ".pf-lg-card{padding:9px 10px;gap:6px;}"
@@ -33902,12 +33995,15 @@ def build_portfolio_body(
         ".catch(function(){c.setAttribute('data-favorite',on?'false':'true');render();});}});"
         "if(prev)prev.addEventListener('click',function(){if(page>0){page--;render();queueVisible();}});"
         "if(next)next.addEventListener('click',function(){page++;render();queueVisible();});"
-        "function queueVisible(){if(!window.__pfQueueCard)return;"
+        "function queueVisible(){if(!window.__pfQueueCard)return;var ord=ordered();"
         "ord.forEach(function(c,i){if(i>=page*PAGE&&i<(page+1)*PAGE){"
-        "if(c.dataset.summaryGood!=='true')window.__pfQueueCard(c);}});}"
+        "var slot=c.querySelector('[data-lg-live]');"
+        "var hydrated=c.dataset.summaryGood==='true'&&(!slot||slot.dataset.matchupGood==='true');"
+        "if(!hydrated)window.__pfQueueCard(c);}});}"
         "render();})();</script>"
         # One page-scoped owner manages hydration, refresh, polling and cleanup.
         "<script>/* Portfolio cards are started by initPageRoot after deferred helpers load. */</script>"
+        # Matchup hydration is part of the consolidated card lifecycle above.
     )
 
     # ── Positional strength ───────────────────────────────────────────────

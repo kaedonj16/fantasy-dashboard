@@ -214,3 +214,25 @@ def test_summary_endpoint_returns_pending_without_running_provider_work(offline_
     assert body["state"] == "pending"
     assert body["pending"] is True
     assert body["retry_after_ms"] == 3000
+
+
+def test_fast_shell_pager_queue_visible_defines_its_own_ord(offline_client, monkeypatch):
+    """Regression: queueVisible() referenced `ord`, which was local to
+    render(), so every Prev/Next click threw `ReferenceError: ord is not
+    defined` and newly visible cards were never queued for hydration.
+    queueVisible must compute its own ordered list."""
+    import routes.user_pages_bp as pages
+    monkeypatch.setattr(pages, "get_nfl_state", lambda: {"season": 2026})
+    leagues = [{"league_id": f"L{i}", "platform": "espn", "season": 2026,
+                "name": f"League {i}"} for i in range(1, 6)]
+    monkeypatch.setattr("dashboard_services.accounts.resolve_my_leagues",
+                        lambda *a, **k: (leagues, 2026))
+    monkeypatch.setattr("dashboard_services.accounts.schedule_account_league_reconciliation",
+                        lambda *a: None)
+    monkeypatch.setattr(pages, "get_league_ctx_from_cache",
+                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("offline")))
+    with offline_client.session_transaction() as sess:
+        sess["account_id"] = 12
+    response = offline_client.get("/portfolio")
+    assert response.status_code == 200
+    assert b"function queueVisible(){if(!window.__pfQueueCard)return;var ord=ordered();" in response.data

@@ -55,13 +55,13 @@ def test_portfolio_actions_skips_cold_leagues():
     assert "if not lctx:" in fn
 
 
-def test_portfolio_cards_have_no_matchup_client():
+def test_portfolio_cards_have_matchup_client():
     source = (ROOT / "static" / "app.js").read_text()
-    # The matchup band was removed from portfolio cards: no matchup renderer,
-    # no live-matchup slot, and no matchup-slot repolling. The 45s poller keys
-    # refresh off summary hydration instead, so cards never refetch forever
-    # for a missing matchup.
-    assert "renderMatchup" not in source
-    assert "matchupHtml" not in source
-    assert "data-lg-live" not in source
-    assert "if (card.dataset.summaryGood !== 'true') schedule(owner, card)" in source
+    # The score/result band is back on portfolio cards (2026-10-01, reversing
+    # #2025 for this portion only): matchup renderer, live-matchup slot, and
+    # matchup-aware repolling all return. The 45s poller no longer keys off
+    # summary hydration alone.
+    assert "renderMatchup" in source
+    assert "matchupHtml" in source
+    assert "data-lg-live" in source
+    assert "if (card.dataset.summaryGood !== 'true') schedule(owner, card)" not in source
