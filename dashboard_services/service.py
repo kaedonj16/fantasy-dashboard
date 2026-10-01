@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import html
 import logging
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone, date
@@ -718,12 +719,31 @@ def compute_streaks(df_weekly: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(out)
 
 
+# Short-TTL cache for the per-week transaction scan. Callers such as the
+# player modal's league-trades/acquisition endpoints walk every season in a
+# league's history chain, re-fetching the same weeks on every modal open;
+# transactions for a league-week change rarely, so reuse them briefly.
+# Partial results (any week failed) are never cached, so a transient
+# provider error retries on the next call instead of sticking.
+_TX_BY_WEEK_CACHE: dict = {}  # (platform, league_id, season, weeks) -> (ts, results)
+_TX_BY_WEEK_TTL = 300.0
+_TX_BY_WEEK_MAX = 256
+_TX_BY_WEEK_LOCK = threading.Lock()
+
+
 def get_transactions_by_week(
         league_id: str,
         season_weeks: list[int],
         platform: str = "sleeper",
         season: int = 0,
 ) -> dict[int, list[dict]]:
+    weeks = list(season_weeks)
+    cache_key = (str(platform), str(league_id), int(season), tuple(weeks))
+    with _TX_BY_WEEK_LOCK:
+        hit = _TX_BY_WEEK_CACHE.get(cache_key)
+        if hit and time.time() - hit[0] < _TX_BY_WEEK_TTL:
+            return {w: list(txns) for w, txns in hit[1].items()}
+
     results: dict[int, list[dict]] = {}
 
     def _fetch(w: int):
@@ -731,8 +751,8 @@ def get_transactions_by_week(
         return w, tx if isinstance(tx, list) else []
 
     failures: list[tuple[int, Exception]] = []
-    with ThreadPoolExecutor(max_workers=min(len(season_weeks), 8)) as pool:
-        futures = {pool.submit(_fetch, w): w for w in season_weeks}
+    with ThreadPoolExecutor(max_workers=min(len(weeks), 8)) as pool:
+        futures = {pool.submit(_fetch, w): w for w in weeks}
         for fut in as_completed(futures):
             w = futures[fut]
             try:
@@ -747,6 +767,13 @@ def get_transactions_by_week(
             "[transactions] %s week(s) failed for league %s: %s",
             len(failures), league_id, failures[0][1],
         )
+    else:
+        with _TX_BY_WEEK_LOCK:
+            _TX_BY_WEEK_CACHE[cache_key] = (
+                time.time(), {w: list(txns) for w, txns in results.items()})
+            if len(_TX_BY_WEEK_CACHE) > _TX_BY_WEEK_MAX:
+                oldest = min(_TX_BY_WEEK_CACHE, key=lambda k: _TX_BY_WEEK_CACHE[k][0])
+                del _TX_BY_WEEK_CACHE[oldest]
     return results
 
 

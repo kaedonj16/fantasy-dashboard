@@ -27784,6 +27784,35 @@ def api_team_details(roster_id: str):
         return _api_err("Request failed", e)
 
 
+# ── Player league-trades response cache ─────────────────────────────────────
+# /api/player-league-trades and /api/player-acquisition both rescan the
+# league's full history chain (every season's transactions plus draft
+# resolution), and the player modal's Overview calls them on every open.
+# League trade data changes rarely, so cache the built payload briefly,
+# keyed by everything that shapes it. Payloads are league data (no
+# per-user content), so entries are safe to share across requests.
+_PLAYER_TRADES_CACHE: dict = {}  # key -> (monotonic ts, payload)
+_PLAYER_TRADES_TTL = 600.0
+_PLAYER_TRADES_MAX = 256
+_PLAYER_TRADES_LOCK = threading.Lock()
+
+
+def _player_trades_cache_get(key):
+    with _PLAYER_TRADES_LOCK:
+        hit = _PLAYER_TRADES_CACHE.get(key)
+        if hit and time.monotonic() - hit[0] < _PLAYER_TRADES_TTL:
+            return hit[1]
+    return None
+
+
+def _player_trades_cache_put(key, payload) -> None:
+    with _PLAYER_TRADES_LOCK:
+        _PLAYER_TRADES_CACHE[key] = (time.monotonic(), payload)
+        if len(_PLAYER_TRADES_CACHE) > _PLAYER_TRADES_MAX:
+            oldest = min(_PLAYER_TRADES_CACHE, key=lambda k: _PLAYER_TRADES_CACHE[k][0])
+            del _PLAYER_TRADES_CACHE[oldest]
+
+
 @app.route("/api/player-league-trades/<player_id>")
 def api_player_league_trades(player_id: str):
     """
@@ -27811,6 +27840,11 @@ def api_player_league_trades(player_id: str):
         if not league_id:
             return jsonify({"error": "league_id required"}), 400
 
+        cache_key = ("trades", platform, league_id, season, limit, str(player_id))
+        cached = _player_trades_cache_get(cache_key)
+        if cached is not None:
+            return jsonify(cached)
+
         payload = get_player_league_trades(
             player_id=player_id,
             platform=platform,
@@ -27818,6 +27852,7 @@ def api_player_league_trades(player_id: str):
             season=season,
             limit=limit,
         )
+        _player_trades_cache_put(cache_key, payload)
         return jsonify(payload)
     except Exception as e:
         logger.exception("[api_player_league_trades] error")
@@ -27839,9 +27874,14 @@ def api_player_acquisition(player_id: str):
             season = datetime.now().year
         if not league_id:
             return jsonify({"error": "league_id required"}), 400
+        cache_key = ("acquisition", platform, league_id, season, str(player_id))
+        cached = _player_trades_cache_get(cache_key)
+        if cached is not None:
+            return jsonify(cached)
         payload = get_player_acquisition_events(
             player_id, platform=platform, league_id=league_id, season=season,
         )
+        _player_trades_cache_put(cache_key, payload)
         return jsonify(payload)
     except Exception as e:
         logger.exception("[api_player_acquisition] error")
