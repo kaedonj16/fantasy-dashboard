@@ -33902,7 +33902,7 @@ def build_portfolio_body(
         ".catch(function(){c.setAttribute('data-favorite',on?'false':'true');render();});}});"
         "if(prev)prev.addEventListener('click',function(){if(page>0){page--;render();queueVisible();}});"
         "if(next)next.addEventListener('click',function(){page++;render();queueVisible();});"
-        "function queueVisible(){if(!window.__pfQueueCard)return;"
+        "function queueVisible(){if(!window.__pfQueueCard)return;var ord=ordered();"
         "ord.forEach(function(c,i){if(i>=page*PAGE&&i<(page+1)*PAGE){"
         "if(c.dataset.summaryGood!=='true')window.__pfQueueCard(c);}});}"
         "render();})();</script>"
