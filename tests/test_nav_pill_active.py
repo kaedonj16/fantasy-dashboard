@@ -99,7 +99,8 @@ LEAGUE_DROPDOWN_CASES = [
     ("standings", "teamsNavBtn"), ("teams", "teamsNavBtn"),
     ("activity", "teamsNavBtn"), ("league_health", "teamsNavBtn"),
     ("weekly", "weeklyNavBtn"), ("recap", "weeklyNavBtn"),
-    ("waivers", "weeklyNavBtn"), ("schedule", "weeklyNavBtn"),
+    ("waivers", "weeklyNavBtn"), ("lineup-lab", "weeklyNavBtn"),
+    ("schedule", "weeklyNavBtn"),
     ("scorezone", "weeklyNavBtn"),
     ("draft", "draftNavBtn"), ("draft-cheat-sheet", "draftNavBtn"),
     ("draft-history", "draftNavBtn"), ("keeper", "draftNavBtn"),
@@ -130,6 +131,7 @@ def test_league_nav_plain_pills(nav_env, active, label):
     ("/sleeper/2026/L/trade?tab=suggestions", "trade", "tradesNavBtn"),
     ("/sleeper/2026/L/weekly?tab=scout", "weekly", "weeklyNavBtn"),
     ("/sleeper/2026/L/weekly?tab=optimal", "weekly", "weeklyNavBtn"),
+    ("/sleeper/2026/L/waivers?tab=lab", "waivers", "weeklyNavBtn"),
 ])
 def test_league_nav_tab_subpages_light_parent(nav_env, path, active, btn_id):
     app = nav_env
@@ -204,7 +206,7 @@ def test_dropdown_item_keys_covered_by_active_keys():
         r'"Weekly", _weekly_items,\s*\[([^\]]*)\]', nav_src, re.S)
     assert weekly_active, "league Weekly dropdown call not found"
     weekly_keys = re.findall(r'"([^"]+)"', weekly_active.group(1))
-    for key in ("weekly", "recap", "scout", "optimal", "waivers", "schedule", "scorezone"):
+    for key in ("weekly", "recap", "scout", "optimal", "waivers", "lineup-lab", "schedule", "scorezone"):
         assert key in weekly_keys, f"Weekly active_keys missing {key}"
     draft_active = re.search(
         r'nav_pill_dropdown\("Draft", _draft_items,\s*\[([^\]]*)\]', nav_src, re.S)
@@ -228,3 +230,53 @@ def test_draft_history_page_uses_its_own_active_key():
     fn = fn[:fn.index("\n@tool_pages_bp", 1)] if "\n@tool_pages_bp" in fn[1:] else fn
     assert '"draft-history"' in fn
     assert 'league_id, "draft",' not in fn
+
+
+def _weekly_menu_items(html):
+    """(label, href, cls) for each item in the league Weekly dropdown, in order."""
+    menu = re.search(r"id='weeklyNavMenu'.*?</div>", html, re.S)
+    assert menu, "Weekly dropdown menu not rendered"
+    return re.findall(
+        r"<a class='(nav-pill-dropdown-item[^']*)'(?: aria-current='page')? "
+        r"href='([^']*)'>([^<]+)</a>",
+        menu.group(0),
+    )
+
+
+def test_lineup_lab_item_sits_under_start_sit_in_weekly_dropdown(nav_env):
+    app = nav_env
+    with app.app.test_request_context("/sleeper/2026/L/waivers"):
+        app.session["account_id"] = 42
+        html = app.build_nav("L", "waivers", "sleeper", 2026)
+    items = _weekly_menu_items(html)
+    labels = [label for _cls, _href, label in items]
+    assert "Lineup Lab" in labels
+    i = labels.index("Lineup Lab")
+    # Directly beneath Waivers & Start/Sit, deep-linking into the Lab view.
+    assert labels[i - 1] == "Waivers & Start/Sit"
+    assert items[i][1].endswith("/waivers?tab=lab")
+
+
+def test_lineup_lab_item_is_the_active_one_on_lab_deep_link(nav_env):
+    app = nav_env
+    with app.app.test_request_context("/sleeper/2026/L/waivers?tab=lab"):
+        app.session["account_id"] = 42
+        html = app.build_nav("L", "waivers", "sleeper", 2026)
+    _assert_only_parent(html, LEAGUE_PARENT, btn_id="weeklyNavBtn")
+    items = {label: cls for cls, _href, label in _weekly_menu_items(html)}
+    assert "active" in items["Lineup Lab"].split()
+    assert "active" not in items["Waivers & Start/Sit"].split()
+
+
+def test_mobile_sheet_lineup_lab_row_under_waivers(nav_env):
+    app = nav_env
+    with app.app.test_request_context("/sleeper/2026/L/waivers?tab=lab"):
+        app.session["account_id"] = 42
+        sheet = app._mobile_nav("waivers", "L", "sleeper", 2026)
+    # The Lab row deep-links to the Lab view and is the marked row on
+    # ?tab=lab; the Waivers row is not.
+    assert ("<a class='br-sheet-link active' aria-current='page' "
+            "href='/sleeper/2026/L/waivers?tab=lab'>") in sheet
+    assert "<a class='br-sheet-link' href='/sleeper/2026/L/waivers'>" in sheet
+    assert sheet.index("Waivers & Start/Sit") < sheet.index("Lineup Lab")
+    assert sheet.index("Lineup Lab") < sheet.index("Schedule Assistant")

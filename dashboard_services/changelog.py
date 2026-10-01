@@ -5,6 +5,12 @@ Each entry represents a user-facing change.
 
 CHANGELOG = [
     {
+        "date": "2026-09-30",
+        "tag": "update",
+        "text": "The Lineup Lab is much faster: repeat visits and week switches now load from a cache, and Start/Sit warms the Lab up in the background so it is ready when you open it. The Lab also has its own entry in the Weekly nav menu, right under Waivers & Start/Sit.",
+        "link": "/waivers?tab=lab"
+    },
+    {
         "date": "2026-09-28",
         "tag": "new",
         "text": "ScoreZone Moments now live on the matchup page too: the Weekly Hub Matchups tab has the same TD and big-play cards with YOU/OPP filters and headshots, right at the top of the tab.",

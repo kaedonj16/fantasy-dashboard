@@ -3642,6 +3642,9 @@ _NAV_ICON_PATHS = {
     "star": ("<path d='M11.5 3.2a.6.6 0 0 1 1 0l2.1 4.3 4.8.7a.6.6 0 0 1 .3 1L16.5 16l.8 4.8"
              "a.6.6 0 0 1-.9.6L12 19.1l-4.3 2.3a.6.6 0 0 1-.9-.6l.8-4.8-3.5-3.4a.6.6 0 0 1 .3-1l4.8-.7z'/>"),
     "refresh": "<path d='M21 12a9 9 0 1 1-2.64-6.36'/><path d='M21 3v6h-6'/>",
+    "flask": ("<path d='M10 2v7.527a2 2 0 0 1-.211.896L4.72 20.55a1 1 0 0 0 .9 1.45h12.76"
+              "a1 1 0 0 0 .9-1.45l-5.069-10.127A2 2 0 0 1 14 9.527V2'/><path d='M8.5 2h7'/>"
+              "<path d='M7 16h10'/>"),
 }
 
 # Every league page the mobile dock can point at: key -> (icon, endpoint, suffix).
@@ -3665,6 +3668,7 @@ _NAV_PAGE_META = {
     "optimal": ("bars2", "page_weekly", "?tab=optimal"),
     "scorezone": ("pulse", "page_scorezone", ""),
     "waivers": ("list", "league_pages.page_waivers", ""),
+    "lineup-lab": ("flask", "league_pages.page_waivers", "?tab=lab"),
     "schedule": ("list", "page_schedule", ""),
     "trade": ("swap", "trade.page_trade", ""),
     "trade-suggestions": ("swap", "trade.page_trade", "?tab=suggestions"),
@@ -3686,7 +3690,7 @@ _DOCK_LABELS = {
     "dashboard": "Home", "players": "Rankings", "weekly": "Matchups", "teams": "Teams",
     "draft": "Draft", "keeper": "Keeper", "standings": "Standings", "activity": "Activity",
     "league_health": "Health", "recap": "Recap", "scout": "Scout", "optimal": "Lineup",
-    "scorezone": "ScoreZone", "waivers": "Waivers", "schedule": "Schedule", "trade": "Trades",
+    "scorezone": "ScoreZone", "waivers": "Waivers", "lineup-lab": "Lab", "schedule": "Schedule", "trade": "Trades",
     "trade-suggestions": "Trades", "trade-database": "Trades",
     "compare": "Compare", "top-movers": "Movers", "advanced-metrics": "Metrics",
     "nfl-teams": "Teams", "breakouts": "Breakouts", "prospects": "Prospects", "draft-history": "History",
@@ -3796,6 +3800,8 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
         active_norm = "trade-suggestions"
     if active == "weekly" and _tab in ("scout", "optimal"):
         active_norm = _tab
+    if active == "waivers" and _tab == "lab":
+        active_norm = "lineup-lab"
 
     nfl_state = get_nfl_state() or {}
     offseason = _nfl_offseason_mode(nfl_state, season)
@@ -3917,6 +3923,9 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
             _sl("waivers", "Waivers" if _bb_sheet else "Waivers & Start/Sit"),
             _sl("schedule", "Schedule Assistant"),
         ]
+        if not _bb_sheet:
+            # The Lab is a Start/Sit mode: best-ball leagues have neither.
+            rows.insert(5, _sl("lineup-lab", "Lineup Lab"))
         if not offseason:
             if rz_live:
                 _rz_icon, _rz_ep, _rz_suffix = _NAV_PAGE_META["scorezone"]
@@ -3993,7 +4002,7 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
 
     category_keys = {
         "Trades": {"trade", "trade-suggestions", "trade-database"},
-        "Weekly": {"weekly", "recap", "scout", "optimal", "waivers", "schedule", "scorezone"},
+        "Weekly": {"weekly", "recap", "scout", "optimal", "waivers", "lineup-lab", "schedule", "scorezone"},
         "League": {"standings", "teams", "activity", "league_health"},
         "Players": {"players", "compare", "top-movers", "advanced-metrics", "nfl-teams", "breakouts", "prospects"},
         "Draft": {"draft", "draft-cheat-sheet", "keeper", "draft-history"},
@@ -5026,6 +5035,10 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     # not their own pages, so ?tab=scout/optimal highlights the right nav item.
     if active == "weekly" and _tab_param in ("scout", "optimal"):
         active = _tab_param
+    # The Lineup Lab is a mode of the Start/Sit tab on the Waivers page, so
+    # ?tab=lab highlights the Lab nav item instead of Waivers & Start/Sit.
+    if active == "waivers" and _tab_param == "lab":
+        active = "lineup-lab"
 
     nfl_state = get_nfl_state() or {}
     offseason_mode = _nfl_offseason_mode(nfl_state, season)
@@ -5303,6 +5316,10 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             (_waiver_label, "league_pages.page_waivers", "waivers", False),
             ("Schedule Assistant", "page_schedule", "schedule", False),
         ]
+        if not _bb:
+            # The Lab is a Start/Sit mode, directly under Waivers & Start/Sit.
+            _weekly_items.insert(
+                5, ("Lineup Lab", "league_pages.page_waivers", "lineup-lab", False, "?tab=lab"))
         # ScoreZone lives inside the Weekly dropdown. The Weekly button glows and
         # the ScoreZone item pulses with a live dot only while games are live or
         # about to kick off (the hour before) -- not for the whole game day.
@@ -5325,7 +5342,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
                 _rz_pulse = "nav-pill-scorezone-live"
         nav_pills.append(nav_pill_dropdown(
             "Weekly", _weekly_items,
-            ["weekly", "recap", "scorezone", "scout", "optimal", "waivers", "schedule"],
+            ["weekly", "recap", "scorezone", "scout", "optimal", "waivers", "lineup-lab", "schedule"],
             "weeklyNavDropdown", btn_extra_cls=_rz_pulse,
         ))
     nav_pills.append(nav_pill_dropdown("League", [
