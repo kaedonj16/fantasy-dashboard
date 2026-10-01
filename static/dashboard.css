@@ -42014,8 +42014,6 @@ a, button, [role="button"], [role="tab"], summary, label,
 .pwr-bar > div { height: 100%; border-radius: 4px; background: var(--accent); }
 .pwr-right { text-align: right; }
 .pwr-score { font-family: "Archivo", system-ui, sans-serif; font-weight: 800; font-size: 15px; color: var(--text); font-variant-numeric: tabular-nums; }
-.pwr-row.streak-hot .pwr-pos { color: var(--loss); }
-.pwr-row.streak-cold .pwr-pos { color: var(--accent); }
 
 /* ---- Insight strip --------------------------------------- */
 .standings-insights-wrap { margin-top: 16px; }
