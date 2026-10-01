@@ -4026,6 +4026,64 @@ button:hover {
     font-weight: 600;
 }
 
+/* Frozen Rank + Team pane for the dynasty value standings: same pattern
+   as the standings page freeze, scoped so no other .standings-table is
+   affected. Row tints are translucent color-mix overlays on the card, so
+   the frozen cells get opaque equivalents mixed over var(--card). */
+.standings-table.dynasty-table thead th:nth-child(1),
+.standings-table.dynasty-table thead th:nth-child(2),
+.standings-table.dynasty-table tbody td:nth-child(1),
+.standings-table.dynasty-table tbody td:nth-child(2) {
+    position: sticky;
+    background: var(--card);
+    z-index: 2;
+}
+.standings-table.dynasty-table thead th:nth-child(1),
+.standings-table.dynasty-table tbody td:nth-child(1) {
+    left: 0;
+    width: 52px;
+    min-width: 52px;
+}
+.standings-table.dynasty-table thead th:nth-child(2),
+.standings-table.dynasty-table tbody td:nth-child(2) {
+    left: 52px;
+    border-right: 1px solid var(--border);
+}
+.standings-table.dynasty-table thead th:nth-child(-n+2) {
+    z-index: 3;
+}
+.standings-table.dynasty-table tbody tr.is-top3 td:nth-child(-n+2) {
+    background: color-mix(in srgb, var(--accent) 4%, var(--card));
+}
+.standings-table.dynasty-table tbody tr:hover td:nth-child(-n+2) {
+    background: color-mix(in srgb, var(--accent) 7%, var(--card));
+}
+
+/* Frozen Pos + Player pane for the portfolio holdings table (a
+   .standings-table variant keyed by #pfTable). */
+#pfTable thead th:nth-child(1),
+#pfTable thead th:nth-child(2),
+#pfTable tbody td:nth-child(1),
+#pfTable tbody td:nth-child(2) {
+    position: sticky;
+    background: var(--card);
+    z-index: 2;
+}
+#pfTable thead th:nth-child(1),
+#pfTable tbody td:nth-child(1) {
+    left: 0;
+    width: 46px;
+    min-width: 46px;
+}
+#pfTable thead th:nth-child(2),
+#pfTable tbody td:nth-child(2) {
+    left: 46px;
+    border-right: 1px solid var(--border);
+}
+#pfTable thead th:nth-child(-n+2) {
+    z-index: 3;
+}
+
 /* Narrow screens: keep the emphasis but add zero width vs the original table
    so all five columns still fit -- drop the bar, keep 20px avatars, and render
    the top-3 rank as a coloured number instead of a filled badge box. */
@@ -20317,6 +20375,66 @@ img, svg, canvas {
 
 .game-log-no-stats td:first-child {
     background-color: var(--row);
+}
+
+/* Frozen Date + Opp pane at every width. Below 768px the media block adds
+   Pts as a third frozen column with its own divider; here the pane ends
+   after Opp. The two header rows are targeted separately: tr.grp's first
+   cell spans both frozen columns, tr.cols carries the Date/Opp headers.
+   Fixed widths give the second column a known left offset. Every row
+   state that paints a td background gets an opaque twin here so scrolled
+   cells never show through the pane. */
+.game-log-table thead tr.grp th:first-child,
+.game-log-table thead tr.cols th:nth-child(1),
+.game-log-table thead tr.cols th:nth-child(2),
+.game-log-table tbody td:nth-child(1),
+.game-log-table tbody td:nth-child(2),
+.game-log-table tfoot td:nth-child(1),
+.game-log-table tfoot td:nth-child(2) {
+    position: sticky;
+}
+.game-log-table thead tr.grp th:first-child,
+.game-log-table thead tr.cols th:nth-child(1),
+.game-log-table tbody td:nth-child(1),
+.game-log-table tfoot td:nth-child(1) {
+    left: 0;
+    width: 48px;
+}
+.game-log-table thead tr.cols th:nth-child(2),
+.game-log-table tbody td:nth-child(2),
+.game-log-table tfoot td:nth-child(2) {
+    left: 48px;
+    width: 46px;
+}
+.game-log-table thead tr.grp th:first-child,
+.game-log-table thead tr.cols th:nth-child(-n+2) {
+    background: var(--bg-alt);
+    z-index: 3;
+}
+.game-log-table tbody td:nth-child(-n+2),
+.game-log-table tfoot td:nth-child(-n+2) {
+    background: var(--card);
+    z-index: 2;
+}
+.game-log-table tbody tr:nth-child(even) td:nth-child(-n+2) {
+    background: var(--row);
+}
+.game-log-table tbody tr.game-log-no-stats td:nth-child(-n+2),
+.game-log-table tbody tr.game-log-bye td:nth-child(-n+2) {
+    background: var(--row);
+}
+.game-log-table tbody tr:hover td:nth-child(-n+2),
+.game-log-table tfoot td:nth-child(-n+2) {
+    background: var(--bg-alt);
+}
+@media (min-width: 769px) {
+    /* Pane-edge divider on desktop; on mobile the divider sits on the
+       third (Pts) column instead, per the frozen-pane media block. */
+    .game-log-table thead tr.cols th:nth-child(2),
+    .game-log-table tbody td:nth-child(2),
+    .game-log-table tfoot td:nth-child(2) {
+        border-right: 1px solid var(--border);
+    }
 }
 
 /* ── Game log season cards + advanced sectioned table ───────────────────── */
