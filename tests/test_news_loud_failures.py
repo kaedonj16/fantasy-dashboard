@@ -186,3 +186,52 @@ def test_fetch_gnews_general_http_error_warns_and_reports_gnews(monkeypatch, cap
     assert err == news.SRC_GNEWS
     assert any(r.levelno == logging.WARNING and "500" in r.getMessage()
                and "Google News" in r.getMessage() for r in caplog.records)
+
+
+# ── Reddit RSS fallback (the .json listings are IP-blocked from servers) ─────
+
+_RSS_ONE_LINK_POST = """<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <category term="nfl" label="r/nfl"/>
+    <title>Drake London hauls in two touchdowns in Falcons win</title>
+    <link href="https://www.reddit.com/r/nfl/comments/aaa/london/"/>
+    <updated>2026-09-29T12:00:00+00:00</updated>
+    <content type="html">&lt;a href="https://www.espn.com/nfl/story/_/id/111/london-tds"&gt;[link]&lt;/a&gt;</content>
+  </entry>
+</feed>"""
+
+
+class _RssFallbackClient:
+    """Reddit .json -> 403 (the server-IP block); .rss -> the Atom listing."""
+
+    def __init__(self, rss_status=200):
+        self._rss_status = rss_status
+
+    async def get(self, url, **kwargs):
+        if url.endswith(".rss"):
+            return _FakeResp(status_code=self._rss_status, text=_RSS_ONE_LINK_POST)
+        return _FakeResp(status_code=403)
+
+
+def test_fetch_reddit_search_json_403_falls_back_to_rss():
+    items, err = news._run(news._async_fetch_reddit(_RssFallbackClient(), "Drake London"))
+
+    assert err is None
+    assert [i["url"] for i in items] == ["https://www.espn.com/nfl/story/_/id/111/london-tds"]
+    assert items[0]["source"] == "espn.com · r/nfl"
+
+
+def test_fetch_reddit_hot_json_403_falls_back_to_rss():
+    items, err = news._run(news._async_fetch_reddit_hot(_RssFallbackClient()))
+
+    assert err is None
+    assert [i["url"] for i in items] == ["https://www.espn.com/nfl/story/_/id/111/london-tds"]
+
+
+def test_fetch_reddit_json_and_rss_both_fail_reports_reddit():
+    items, err = news._run(
+        news._async_fetch_reddit(_RssFallbackClient(rss_status=403), "Drake London"))
+
+    assert items == []
+    assert err == news.SRC_REDDIT
