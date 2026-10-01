@@ -47,13 +47,18 @@ composite, so it (and any other missing field) is computed from the weekly
 rows over the call's stored ``baseline_weeks``; when those are absent, the
 up-to-3 weeks immediately before the call week. Prior-season baselines
 (``baseline_source == 'prior_season'``) never fall back to current-season
-weeks - those weeks are the call's *recent* window, not its baseline - so
-such calls may grade without a PPG delta and cap at partial when the role
-held (a hit requires a measured production rise).
+weeks - those weeks are the call's *recent* window, not its baseline.
+Their stored evidence carries no PPG (the engine's prior-season pseudo-row
+has no fantasy points), so when the caller supplies the player's
+prior-season rows, the baseline PPG is filled from them instead: the mean
+PPR PPG over that prior season, registered as a computed field. Without
+prior-season rows such calls grade with no PPG delta and cap at partial
+when the role held (a hit requires a measured production rise).
 """
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
 from dashboard_services.db import get_conn
@@ -65,6 +70,8 @@ from data_building.breakout_engine.weekly_store import (
 
 GRADES_TABLE = "weekly_breakout_grades"
 GRADING_VERSION = "weekly-grading-v1"
+
+logger = logging.getLogger(__name__)
 
 # A call is graded over the 3 weeks after the call week, and only once those
 # 3 subsequent weeks exist in the data (3 NFL weeks ~= 21 days).
@@ -244,12 +251,32 @@ def baseline_window_weeks(call: Dict[str, Any]) -> List[int]:
     return [w for w in range(call_week - BASELINE_FALLBACK_WEEKS, call_week) if w >= 1]
 
 
+def call_needs_prior_ppg(call: Dict[str, Any]) -> bool:
+    """True when the call's baseline PPG can only come from prior-season
+    rows: a prior-season-baseline call whose stored evidence carries no
+    PPG (the engine's prior-season pseudo-row has no fantasy points).
+    Bulk loaders use this to decide whether a prior-season series load
+    is worth doing at all."""
+    return (
+        call.get("baseline_source") == "prior_season"
+        and stored_baseline(call).get("ppr_ppg") is None
+    )
+
+
 def resolve_baseline(
     call: Dict[str, Any],
     weekly_rows: Sequence[Dict[str, Any]],
+    prior_rows: Optional[Sequence[Dict[str, Any]]] = None,
 ) -> Tuple[Dict[str, Optional[float]], str]:
     """(baseline stats, source) for a call: stored evidence per field first,
     computed-from-weekly-rows for any field the evidence lacks.
+
+    One exception to the weekly-rows fallback: a prior-season-baseline
+    call whose stored PPG is missing takes its baseline PPG from
+    ``prior_rows`` (the player's prior-season weekly rows, when the
+    caller supplies them) as that season's mean PPR PPG. Current-season
+    weeks are never promoted into a prior-season baseline. The filled
+    PPG registers as a computed field for source bookkeeping.
 
     Source is ``stored`` when every resolved field came from the evidence,
     ``computed`` when every field came from weekly rows, ``mixed`` for a
@@ -262,6 +289,9 @@ def resolve_baseline(
     computed = window_stats(window_rows) if window_rows else {
         "games": 0, "ppr_ppg": None, "opp_pg": None, "snap_pct": None,
     }
+    prior_ppg: Optional[float] = None
+    if prior_rows and call.get("baseline_source") == "prior_season":
+        prior_ppg = window_stats(list(prior_rows)).get("ppr_ppg")
     baseline: Dict[str, Optional[float]] = {}
     origins: Set[str] = set()
     for field in ("ppr_ppg", "snap_pct", "opp_pg"):
@@ -270,6 +300,9 @@ def resolve_baseline(
             origins.add("stored")
         elif computed.get(field) is not None:
             baseline[field] = computed[field]
+            origins.add("computed")
+        elif field == "ppr_ppg" and prior_ppg is not None:
+            baseline[field] = prior_ppg
             origins.add("computed")
         else:
             baseline[field] = None
@@ -328,12 +361,19 @@ def _delta(outcome_value: Optional[float], baseline_value: Optional[float]) -> O
     return float(outcome_value) - float(baseline_value)
 
 
-def grade_call(call: Dict[str, Any], weekly_rows: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
+def grade_call(
+    call: Dict[str, Any],
+    weekly_rows: Sequence[Dict[str, Any]],
+    prior_rows: Optional[Sequence[Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
     """Grade one persisted call against the player's weekly rows. Pure.
 
     ``weekly_rows`` is the player's full-season player_weekly_metrics series
     (any order); only the baseline window and the OUTCOME_WEEKS weeks after
-    the call week are read.
+    the call week are read. ``prior_rows`` is the player's prior-season
+    series, used only to fill the baseline PPG of a prior-season-baseline
+    call whose stored evidence has none (see :func:`resolve_baseline`);
+    omitting it preserves the historical behavior exactly.
     """
     call_week = int(call.get("as_of_week") or 0)
     outcome_weeks = [call_week + i for i in range(1, OUTCOME_WEEKS + 1)]
@@ -341,7 +381,7 @@ def grade_call(call: Dict[str, Any], weekly_rows: Sequence[Dict[str, Any]]) -> D
     rows = [r for r in weekly_rows if _num(r.get("week")) is not None]
     outcome_rows = [r for r in rows if int(r["week"]) in outcome_week_set]
     outcome = window_stats(outcome_rows)
-    baseline, baseline_source = resolve_baseline(call, rows)
+    baseline, baseline_source = resolve_baseline(call, rows, prior_rows)
     verdict = classify_outcome(baseline, outcome)
     return {
         "player_id": str(call.get("player_id") or ""),
@@ -519,6 +559,26 @@ def load_season_series(season: int, through_week: int) -> Dict[str, List[Dict[st
     return get_weekly_series_by_player(int(season), int(through_week))
 
 
+# Whole-season frontier for prior-season series loads: a prior-season
+# baseline PPG is a full-season mean, so the load is never week-capped.
+PRIOR_SEASON_THROUGH_WEEK = 18
+
+
+def load_prior_season_series(season: int) -> Dict[str, List[Dict[str, Any]]]:
+    """player_id -> every weekly_metrics row of the season BEFORE
+    ``season``. Supplies the baseline PPG fill for prior-season-baseline
+    calls (see :func:`resolve_baseline`). Bulk callers load this only
+    when a call actually needs the fill; a failed or empty load degrades
+    to no fill, never to a fabricated baseline."""
+    try:
+        return load_season_series(int(season) - 1, PRIOR_SEASON_THROUGH_WEEK)
+    except Exception:
+        logger.warning(
+            "weekly grading: prior-season series load failed for season %s",
+            season, exc_info=True)
+        return {}
+
+
 def save_grade_rows(grades: List[Dict[str, Any]]) -> int:
     """Insert grades idempotently. An existing grade for the same call is
     never duplicated and never rewritten (grades are immutable history).
@@ -602,8 +662,19 @@ def grade_weekly_breakouts(
 
     if pending:
         series = load_season_series(season, through)
-        grades = [grade_call(call, series.get(str(call.get("player_id") or ""), []))
-                  for call in pending]
+        # Prior-season series only when a pending call's baseline PPG can
+        # come from nowhere else; most runs never pay for the extra load.
+        prior_series: Dict[str, List[Dict[str, Any]]] = {}
+        if any(call_needs_prior_ppg(call) for call in pending):
+            prior_series = load_prior_season_series(season)
+        grades = [
+            grade_call(
+                call,
+                series.get(str(call.get("player_id") or ""), []),
+                prior_series.get(str(call.get("player_id") or "")),
+            )
+            for call in pending
+        ]
         summary["inserted"] = save_grade_rows(grades)
         summary["graded"] = len(grades)
         for grade in grades:

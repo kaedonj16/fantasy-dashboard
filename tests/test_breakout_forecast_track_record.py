@@ -13,6 +13,9 @@ Design rules pinned here:
 """
 from __future__ import annotations
 
+import json
+import shutil
+import subprocess
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
@@ -103,6 +106,62 @@ def test_weekly_forecast_needs_a_role_baseline():
     fc = forecasts.weekly_forecast(call, [HELD_ROW], through_week=5)
     assert fc["state"] == "no_baseline"
     assert fc["band"] is None
+
+
+def _prior_season_call(**overrides):
+    # Stored snap/opp baselines but no stored PPG: the engine's
+    # prior-season pseudo-row carries no fantasy points.
+    return make_call(baseline_ppg=None, baseline_source="prior_season",
+                     baseline_weeks=[], **overrides)
+
+
+def test_weekly_forecast_prior_season_call_caps_at_borderline_without_prior_rows():
+    fc = forecasts.weekly_forecast(_prior_season_call(), [HELD_ROW],
+                                   through_week=5)
+    # The role clearly held (opp +10, snap +25), but with no PPG baseline
+    # the production rise is unmeasured, so a hit is impossible.
+    assert fc["state"] == "forecast"
+    assert fc["band"] == forecasts.BAND_BORDERLINE
+    assert fc["ppg_delta"] is None
+
+
+def test_weekly_forecast_prior_season_ppg_fill_tracks_to_hit():
+    prior_rows = [wk(1, ppr=9.0), wk(2, ppr=11.0)]   # prior mean 10.0 PPG
+    fc = forecasts.weekly_forecast(_prior_season_call(), [HELD_ROW],
+                                   through_week=5, prior_rows=prior_rows)
+    assert fc["state"] == "forecast"
+    assert fc["band"] == forecasts.BAND_TRACKING_HIT
+    assert fc["ppg_delta"] == pytest.approx(8.0)     # 18.0 vs prior 10.0
+
+
+def test_weekly_forecasts_for_calls_loads_prior_series_when_needed(monkeypatch):
+    loaded = []
+
+    def _series(season, through):
+        loaded.append(season)
+        if season == 2025:
+            return {"101": [wk(1, ppr=9.0), wk(2, ppr=11.0)]}
+        return {"101": [HELD_ROW]}
+
+    monkeypatch.setattr(wg, "default_through_week", lambda season: 5)
+    monkeypatch.setattr(wg, "load_season_series", _series)
+    out = forecasts.weekly_forecasts_for_calls(2026, [_prior_season_call()])
+    assert loaded == [2026, 2025]
+    assert out["101"]["band"] == forecasts.BAND_TRACKING_HIT
+
+
+def test_weekly_forecasts_for_calls_skips_prior_load_when_unneeded(monkeypatch):
+    loaded = []
+
+    def _series(season, through):
+        loaded.append(season)
+        return {"101": [HELD_ROW]}
+
+    monkeypatch.setattr(wg, "default_through_week", lambda season: 5)
+    monkeypatch.setattr(wg, "load_season_series", _series)
+    out = forecasts.weekly_forecasts_for_calls(2026, [make_call()])
+    assert loaded == [2026]                  # no prior-season load paid for
+    assert out["101"]["band"] == forecasts.BAND_TRACKING_HIT
 
 
 def test_weekly_forecast_never_for_a_mature_call():
@@ -867,6 +926,10 @@ def test_outlook_pools_reconstructed_open_calls(monkeypatch):
         "tracking_to_hit": 2, "borderline": 0, "tracking_to_miss": 1}
     assert weekly["open_calls"] == 3
     assert weekly["pending_calls"] == 2
+    # Both pending calls (Delta on the live board, 103 reconstructed) are
+    # bandless only because no outcome game has been played yet.
+    assert weekly["pending_no_games"] == 2
+    assert weekly["pending_no_baseline"] == 0
     top = weekly["top_tracking_hit"]
     assert [t["player_id"] for t in top] == ["101", "1"]
     # Player 101 was called in BOTH reconstructed weeks; the later call
@@ -960,6 +1023,130 @@ def test_outlook_without_reconstructions_is_board_only(monkeypatch):
     assert weekly["pending_calls"] == 1
     assert all("reconstructed" not in t
                for t in weekly["top_tracking_hit"])
+
+
+# ---------------------------------------------------------------------------
+# outlook pending split: no games yet vs no baseline to measure against
+# ---------------------------------------------------------------------------
+
+def test_forecast_outlook_splits_pending_by_state():
+    import dashboard_services.breakout_api as api
+
+    def _cand(pid, kind, band, state=None):
+        forecast = {"kind": kind, "band": band, "band_label": None,
+                    "basis": "stub"}
+        if state is not None:
+            forecast["state"] = state
+        return {"player_id": pid, "player_name": f"P{pid}",
+                "classification": "watchlist",
+                "classification_label": "Watchlist", "breakout_score": 30.0,
+                "forecast": forecast}
+
+    board = {"candidates": [
+        _cand("1", "weekly", "tracking_to_hit", "forecast"),
+        _cand("2", "weekly", None, "no_games"),
+        _cand("3", "weekly", None, "no_baseline"),
+        _cand("4", "weekly", None, "no_baseline"),
+        _cand("5", "preseason", None, "no_games"),
+    ]}
+    outlook = api._forecast_outlook(board)
+
+    weekly = outlook["weekly"]
+    assert weekly["open_calls"] == 1
+    assert weekly["pending_calls"] == 3
+    assert weekly["pending_no_games"] == 1
+    assert weekly["pending_no_baseline"] == 2
+    # Preseason forecasts have no no-baseline state; the split reports 0.
+    preseason = outlook["preseason"]
+    assert preseason["pending_calls"] == 1
+    assert preseason["pending_no_games"] == 1
+    assert preseason["pending_no_baseline"] == 0
+
+
+def test_outlook_reconstructed_no_baseline_counts_separately(monkeypatch):
+    # A reconstructed call whose player has outcome games but no baseline
+    # at all (initial-role shape) must land in the no-baseline split, not
+    # in the no-games count.
+    no_base = make_call(as_of_week=1, player_id="104",
+                        player_name="Player 104", breakout_score=40.0,
+                        evidence={}, baseline_source="none",
+                        baseline_weeks=[])
+    api = _patch_reconstructed_outlook(
+        monkeypatch,
+        week_rows={1: [no_base], 2: []},
+        series={"104": [wk(2, **_HELD), wk(3, **_HELD)]})
+    payload = api.get_breakout_track_record(2026)
+
+    weekly = payload["outlook"]["weekly"]
+    # Live board: Alpha tracks to hit, Delta has no games yet.
+    # Reconstruction: 104 played both elapsed window weeks, no baseline.
+    assert weekly["counts"]["tracking_to_hit"] == 1
+    assert weekly["pending_calls"] == 2
+    assert weekly["pending_no_games"] == 1
+    assert weekly["pending_no_baseline"] == 1
+
+
+# ---------------------------------------------------------------------------
+# rail rendering: the pending lines are split and honestly labeled
+# ---------------------------------------------------------------------------
+
+def _extract_bo_outlook_block(src):
+    """The _boOutlookBlock function source from the breakout page f-string
+    in app.py, with the f-string's doubled braces collapsed back into the
+    real JS braces."""
+    start = src.index("function _boOutlookBlock(title, block)")
+    i = src.index("{{", start)
+    depth, j = 0, i
+    while True:
+        two = src[j:j + 2]
+        if two == "{{":
+            depth += 1
+            j += 2
+            continue
+        if two == "}}":
+            depth -= 1
+            j += 2
+            if depth == 0:
+                break
+            continue
+        j += 1
+    return src[start:j].replace("{{", "{").replace("}}", "}")
+
+
+@pytest.mark.skipif(shutil.which("node") is None,
+                    reason="node not available")
+def test_rail_outlook_block_renders_pending_lines_by_state():
+    src = (ROOT / "app.py").read_text(encoding="utf-8")
+    fn_src = _extract_bo_outlook_block(src)
+    driver = """
+var counts = {tracking_to_hit: 0, borderline: 0, tracking_to_miss: 0};
+function block(pending, noGames, noBaseline) {
+  return {counts: counts, open_calls: 1, pending_calls: pending,
+          pending_no_games: noGames, pending_no_baseline: noBaseline,
+          top_tracking_hit: []};
+}
+var out = {
+  both: _boOutlookBlock('Weekly calls', block(3, 2, 1)),
+  gamesOnly: _boOutlookBlock('Weekly calls', block(2, 2, 0)),
+  baselineOnly: _boOutlookBlock('Weekly calls', block(1, 0, 1)),
+  none: _boOutlookBlock('Weekly calls', block(0, 0, 0))
+};
+console.log(JSON.stringify(out));
+"""
+    res = subprocess.run(["node", "-e", fn_src + "\n" + driver],
+                         capture_output=True, text=True, timeout=20)
+    assert res.returncode == 0, res.stderr
+    out = json.loads(res.stdout)
+
+    assert "2 more open calls with no games yet" in out["both"]
+    assert "1 more open call with no baseline to measure against" in out["both"]
+    assert "with no games yet" in out["gamesOnly"]
+    assert "no baseline to measure against" not in out["gamesOnly"]
+    assert "with no games yet" not in out["baselineOnly"]
+    assert "1 more open call with no baseline to measure against" in out["baselineOnly"]
+    assert "no band yet" not in out["none"]
+    # UI copy carries no em dashes.
+    assert "—" not in out["both"]
 
 
 # ---------------------------------------------------------------------------
