@@ -243,7 +243,7 @@ def test_changelog_announces_undrafted_matchup_preview_hide():
     assert "–" not in entry["text"]
 
 
-def test_changelog_announces_lineup_lab_speed_and_nav_entry():
+def test_changelog_announces_lineup_lab_as_new():
     from dashboard_services.changelog import CHANGELOG
 
     entry = next(
@@ -253,7 +253,8 @@ def test_changelog_announces_lineup_lab_speed_and_nav_entry():
     )
     assert CHANGELOG[0] is entry
     assert entry["date"] == "2026-09-30"
-    assert entry["tag"] == "update"
+    assert entry["tag"] == "new"
+    assert "brand new" in entry["text"].lower()
     assert entry["link"] == "/waivers?tab=lab"
     assert "—" not in entry["text"]
     assert "–" not in entry["text"]

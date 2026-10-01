@@ -6,8 +6,8 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-09-30",
-        "tag": "update",
-        "text": "The Lineup Lab is much faster: repeat visits and week switches now load from a cache, and Start/Sit warms the Lab up in the background so it is ready when you open it. The Lab also has its own entry in the Weekly nav menu, right under Waivers & Start/Sit.",
+        "tag": "new",
+        "text": "Lineup Lab: a brand new lineup simulator on the Start/Sit tab. It plays out your matchup thousands of times to give you a real win probability, floor and ceiling ranges for every starter, the best bench swaps, and a why breakdown for each spot. Optimize for the highest win chance or chase upside when you need a ceiling game. Find it in the Weekly nav menu, right under Waivers & Start/Sit.",
         "link": "/waivers?tab=lab"
     },
     {
