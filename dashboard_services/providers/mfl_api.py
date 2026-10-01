@@ -91,6 +91,35 @@ def _raise_for_status(response) -> None:
         raise ProviderUnavailableError("MyFantasyLeague is temporarily unavailable.") from exc
 
 
+def _seat_starters_in_slot_order(starters, roster_positions, pos_by_pid):
+    """Seat a starter list into the league's slot order by eligibility.
+
+    MFL flags starters in weeklyResults but returns them in its own
+    player order, not lineup-slot order, while index-based consumers
+    pair starters with roster_positions by list position -- the same
+    failure shape as Yahoo's raw roster order. Returns
+    (ordered_starters, starters_slots); starters_slots is empty when no
+    legal seating exists, in which case the input order is returned
+    unchanged.
+    """
+    raw = [str(s) for s in starters or [] if s]
+    if not raw or len(set(raw)) != len(raw) or not roster_positions or not pos_by_pid:
+        return list(starters or []), []
+    try:
+        from utils.optimal_lineup import assign_fixed_lineup, starting_slots
+
+        slots = starting_slots(roster_positions)
+        assignment = assign_fixed_lineup(raw, pos_by_pid, roster_positions)
+    except Exception:
+        return list(starters or []), []
+    if not assignment:
+        return list(starters or []), []
+    pairs = [(slot, pid) for slot, pid in zip(slots, assignment) if pid]
+    if len(pairs) != len(raw):
+        return list(starters or []), []
+    return [pid for _, pid in pairs], [slot for slot, _ in pairs]
+
+
 def _items(value: Any, singular: str) -> list[dict]:
     if isinstance(value, list):
         return [x for x in value if isinstance(x, dict)]
@@ -440,23 +469,24 @@ class MFLProvider(ProviderAdapter):
             logger.warning("MFL player crosswalk unavailable error=%s", type(exc).__name__)
             return {}
 
-    def get_rosters(self, league_id, season):
-        raw = self._export("rosters", league_id, season, ttl=300)
-        rosters = _items((raw.get("rosters") or {}).get("franchise", []), "franchise")
-        xwalk = self._canonical_map(league_id, season)
-        # MFL rosters carry no lineup, so derive each team's starters from the most
-        # recent scored week (weeklyResults flags starter/nonstarter per player).
-        starters_by_fid = self._latest_starters(league_id, season, xwalk)
-        slots = []
-        pos_by_pid: dict[str, str] = {}
-        if not any(starters_by_fid.values()):
-            try:
-                lg = self.get_league(league_id, season)
-                slots = lg.get("roster_positions") or []
-            except Exception:
-                slots = []
+    def _seating_context(self, league_id, season):
+        """(roster_positions, pos_by_pid) for slot seating, fail-soft.
+
+        League slots come from the cached league export; positions come
+        from the shared player index. Any failure yields empties and the
+        caller keeps the provider's raw starter order.
+        """
+        slots: list = []
+        pos_by_pid: dict = {}
+        try:
+            lg = self.get_league(league_id, season)
+            slots = lg.get("roster_positions") or []
+        except Exception:
+            slots = []
+        if slots:
             try:
                 from utils.utils import load_players_index
+
                 index = load_players_index() or {}
                 pos_by_pid = {
                     str(pid): str((info or {}).get("position") or (info or {}).get("pos") or "").upper()
@@ -464,6 +494,18 @@ class MFLProvider(ProviderAdapter):
                 }
             except Exception:
                 pos_by_pid = {}
+        return slots, pos_by_pid
+
+    def get_rosters(self, league_id, season):
+        raw = self._export("rosters", league_id, season, ttl=300)
+        rosters = _items((raw.get("rosters") or {}).get("franchise", []), "franchise")
+        xwalk = self._canonical_map(league_id, season)
+        # MFL rosters carry no lineup, so derive each team's starters from the most
+        # recent scored week (weeklyResults flags starter/nonstarter per player).
+        starters_by_fid = self._latest_starters(league_id, season, xwalk)
+        slots, pos_by_pid = ([], {})
+        if rosters:
+            slots, pos_by_pid = self._seating_context(league_id, season)
         out = []
         for r in rosters:
             entries = _items(r.get("player", []), "player")
@@ -474,9 +516,14 @@ class MFLProvider(ProviderAdapter):
             if not starters and players and slots:
                 from utils.starter_lineup import derive_starters_from_slots
                 starters = derive_starters_from_slots(players, slots, pos_by_pid)
+            starters_slots: list = []
+            if starters and slots and pos_by_pid:
+                starters, starters_slots = _seat_starters_in_slot_order(
+                    starters, slots, pos_by_pid,
+                )
             out.append({"league_id": str(league_id), "roster_id": _int(r.get("id")),
                         "owner_id": str(r.get("id")), "players": players,
-                        "starters": starters,
+                        "starters": starters, "starters_slots": starters_slots,
                         "reserve": reserve, "taxi": None,
                         "settings": {}, "metadata": {"unmapped_player_count": len(entries)-len(players)}})
         return out
@@ -540,6 +587,7 @@ class MFLProvider(ProviderAdapter):
         # via the same crosswalk the rosters use, so matchup-driven features
         # (weekly hub, optimal lineup, live ScoreZone) have real player lists.
         xwalk = self._canonical_map(league_id, season)
+        slots, pos_by_pid = self._seating_context(league_id, season)
         out = []
         for mid, matchup in enumerate(matchups, 1):
             franchises = _items(matchup.get("franchise", []), "franchise")
@@ -561,9 +609,21 @@ class MFLProvider(ProviderAdapter):
                     if status == "starter" or str(p.get("shouldStart") or "") == "1":
                         starters.append(cid)
                         starters_points.append(pts)
+                starters_slots: list = []
+                if starters and slots and pos_by_pid:
+                    ordered, starters_slots = _seat_starters_in_slot_order(
+                        starters, slots, pos_by_pid,
+                    )
+                    if starters_slots:
+                        pts_by_pid = dict(zip(starters, starters_points))
+                        starters = ordered
+                        starters_points = [pts_by_pid.get(pid, 0.0) for pid in ordered]
+                    else:
+                        starters_slots = []
                 out.append({"matchup_id": mid, "roster_id": _int(team.get("id")),
                             "points": _num(team.get("score")), "players": players,
                             "starters": starters, "starters_points": starters_points,
+                            "starters_slots": starters_slots,
                             "players_points": players_points, "week": int(week),
                             "custom_points": None})
         return out
