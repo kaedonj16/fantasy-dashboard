@@ -371,7 +371,7 @@ def _patch_track_record(monkeypatch):
                       "band_label": "Tracking to miss", "basis": "Forecast 8.0 PPG vs a 10.0 PPG target, 4 games in"}},
     ]}
     monkeypatch.setattr(api, "get_breakout_board_candidates",
-                        lambda season, min_score, as_of_week: board)
+                        lambda season, min_score, limit, week=None: board)
     return api
 
 
@@ -509,6 +509,53 @@ def test_outlook_merged_boards_never_double_count(monkeypatch):
 
     assert payload["outlook"]["preseason"]["counts"]["tracking_to_miss"] == 1
     assert payload["outlook"]["preseason"]["open_calls"] == 1
+
+
+def test_outlook_counts_only_the_surfaced_top_15_per_board(monkeypatch):
+    # The boards surface only the top BREAKOUT_BOARD_LIMIT candidates, so
+    # the sidebar outlook must aggregate that same set. The stub keeps 20
+    # forecast-carrying candidates per board and honors the limit exactly
+    # like the real loader (score order, then truncate); the track record
+    # must ask for the cap and the outlook must reflect 15, not 20.
+    api = _patch_track_record(monkeypatch)
+    seen_limits = []
+
+    def _candidates(prefix, kind):
+        return [
+            {"player_id": f"{prefix}{i}", "player_name": f"{prefix} {i}",
+             "classification": "watchlist",
+             "classification_label": "Watchlist",
+             "breakout_score": 100.0 - i,
+             "forecast": {"kind": kind, "band": "tracking_to_hit",
+                          "band_label": "Tracking to hit",
+                          "basis": "stubbed"}}
+            for i in range(20)
+        ]
+
+    def _board(season, min_score, limit, week=None):
+        seen_limits.append(limit)
+        if week == "preseason":
+            candidates = _candidates("p", "preseason")
+            view = "preseason"
+        else:
+            candidates = _candidates("w", "weekly")
+            view = "weekly"
+        if limit is not None:
+            candidates = candidates[:limit]
+        return {"view": view, "candidates": candidates}
+
+    monkeypatch.setattr(api, "get_breakout_board_candidates", _board)
+
+    payload = api.get_breakout_track_record(2026)
+
+    assert api.BREAKOUT_BOARD_LIMIT == 15
+    assert seen_limits == [api.BREAKOUT_BOARD_LIMIT,
+                           api.BREAKOUT_BOARD_LIMIT]
+    outlook = payload["outlook"]
+    assert outlook["weekly"]["open_calls"] == 15
+    assert outlook["weekly"]["counts"]["tracking_to_hit"] == 15
+    assert outlook["preseason"]["open_calls"] == 15
+    assert outlook["preseason"]["counts"]["tracking_to_hit"] == 15
 
 
 # ---------------------------------------------------------------------------
