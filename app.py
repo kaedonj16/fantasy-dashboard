@@ -16927,21 +16927,6 @@ def page_breakouts(platform: str, season: int, league_id: str):
         return html;
       }}
 
-      function _boWeeksLabel(weeks) {{
-        if (!weeks || !weeks.length) return '';
-        var ranges = [];
-        var start = null;
-        var prev = null;
-        weeks.forEach(function (w) {{
-          if (start === null) {{ start = w; prev = w; return; }}
-          if (w === prev + 1) {{ prev = w; return; }}
-          ranges.push(start === prev ? '' + start : start + '-' + prev);
-          start = w; prev = w;
-        }});
-        if (start !== null) ranges.push(start === prev ? '' + start : start + '-' + prev);
-        return (weeks.length === 1 ? 'week ' : 'weeks ') + ranges.join(', ');
-      }}
-
       function renderBoTrackRecord(data) {{
         var weekly = data.weekly || {{}};
         var seasonEng = data.season_engine || {{}};
@@ -16949,12 +16934,6 @@ def page_breakouts(platform: str, season: int, league_id: str):
         var html = '<div class="bo-rail-title">Track Record</div>';
         html += '<div class="bo-rail-group">Weekly calls' + (weekly.scoring_version ? ' (' + weekly.scoring_version + ')' : '') + '</div>';
         html += _boTrackRows(weekly.groups, pendingText);
-        var backtest = weekly.backtest;
-        if (backtest) {{
-          html += '<div class="bo-rail-group" style="margin-top:10px;">' + (weekly.scoring_version || '') + ' backtest, ' + _boWeeksLabel(backtest.weeks) + ' reconstructed</div>';
-          html += _boTrackRows(backtest.groups, pendingText);
-          html += '<div class="bo-rail-sub">Backtest calls were re-scored later using only the data known at the time. They never count toward the live rates above.</div>';
-        }}
         html += '<div class="bo-rail-group" style="margin-top:10px;">Season calls by phase</div>';
         if (seasonEng.available) {{
           html += _boTrackRows(seasonEng.groups, pendingText);
@@ -16973,10 +16952,6 @@ def page_breakouts(platform: str, season: int, league_id: str):
       function _boOutlookBlock(title, block) {{
         var counts = (block && block.counts) || {{}};
         var html = '<div class="bo-rail-group">' + title + '</div>';
-        if (block && block.weeks && block.weeks.length) {{
-          var wl = _boWeeksLabel(block.weeks);
-          html += '<div class="bo-rail-meta">' + wl.charAt(0).toUpperCase() + wl.slice(1) + ' reconstructed</div>';
-        }}
         if (!block || ((block.open_calls || 0) === 0 && (block.pending_calls || 0) === 0)) {{
           return html + '<div class="bo-rail-pending">No open calls right now.</div>';
         }}
@@ -17004,10 +16979,6 @@ def page_breakouts(platform: str, season: int, league_id: str):
         var html = '<div class="bo-rail-title">Forecast Outlook</div>';
         html += _boOutlookBlock('Weekly calls', outlook.weekly);
         html += '<div style="margin-top:10px;">' + _boOutlookBlock('Preseason calls', outlook.preseason) + '</div>';
-        var backtestOutlook = outlook.weekly_backtest;
-        if (backtestOutlook && ((backtestOutlook.open_calls || 0) > 0 || (backtestOutlook.pending_calls || 0) > 0)) {{
-          html += '<div style="margin-top:10px;">' + _boOutlookBlock('Weekly backtest', backtestOutlook) + '</div>';
-        }}
         html += '<div class="bo-rail-sub">Forecasts are live projections from games played so far. They are not grades and never count toward the track record hit rates.</div>';
         _boRailSet('boRailOutlook', html);
       }}

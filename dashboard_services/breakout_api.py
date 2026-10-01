@@ -1874,9 +1874,12 @@ def _forecast_outlook(board: Dict) -> Dict:
 
 def _merged_board_candidates(*boards: Dict) -> Dict:
     """One candidate list across boards, deduped per (player, forecast
-    kind). The default board IS the preseason board out of season, so the
-    same call can arrive twice; forecast kinds are disjoint per board, so
-    a call is never double counted."""
+    kind); the first board to carry a key wins it. The default board IS
+    the preseason board out of season, so the same call can arrive
+    twice; forecast kinds are disjoint per board, so a call is never
+    double counted. The live board is merged ahead of the reconstructed
+    candidates for the same reason: a live call always outranks a
+    reconstruction of the same player."""
     merged: List[Dict] = []
     seen = set()
     for board in boards:
@@ -1891,41 +1894,29 @@ def _merged_board_candidates(*boards: Dict) -> Dict:
     return {"candidates": merged}
 
 
-def _empty_backtest_outlook() -> Dict:
-    from data_building.breakout_engine import forecasts as _forecasts
+def _reconstructed_outlook_candidates(season: int) -> List[Dict]:
+    """Synthetic forecast candidates from the reconstructed weeks' open
+    calls, shaped like board candidates so the outlook merge pools them
+    with the live board's calls into the one weekly outlook.
 
-    return {
-        "counts": {
-            _forecasts.BAND_TRACKING_HIT: 0,
-            _forecasts.BAND_BORDERLINE: 0,
-            _forecasts.BAND_TRACKING_MISS: 0,
-        },
-        "open_calls": 0,
-        "pending_calls": 0,
-        "top_tracking_hit": [],
-        "weeks": [],
-    }
-
-
-def _backtest_outlook(season: int) -> Dict:
-    """Forecast outlook over the reconstructed weeks' open calls.
-
-    The reconstructions are a backtest, not the live board, so their
-    forecasts report under their own labeled entry and never fold into
-    the live outlook.weekly counts. Aggregation reuses _forecast_outlook
-    over synthetic candidates; fails soft to the zeroed entry.
+    Each reconstructed week's stored calls are capped at the board limit
+    inside weekly_backtest_forecasts. The merge in
+    get_breakout_track_record places these candidates AFTER the boards,
+    so under its first-wins dedupe a live board call for the same player
+    always beats the reconstruction; top list entries that survive from a
+    reconstruction keep their reconstructed flag and call week, so the
+    rail can tag them. Fails soft to an empty list.
     """
     from data_building.breakout_engine import forecasts as _forecasts
 
     try:
-        weeks, views = _forecasts.weekly_backtest_forecasts(
+        _weeks, views = _forecasts.weekly_backtest_forecasts(
             season, limit=BREAKOUT_BOARD_LIMIT)
     except Exception:
         logger.warning(
-            "breakout track record: backtest outlook failed", exc_info=True)
-        return _empty_backtest_outlook()
-    if not views:
-        return {**_empty_backtest_outlook(), "weeks": weeks}
+            "breakout track record: reconstructed outlook failed",
+            exc_info=True)
+        return []
     candidates = []
     for view in views.values():
         classification = str(view.get("classification") or "")
@@ -1940,9 +1931,7 @@ def _backtest_outlook(season: int) -> Dict:
             "call_week": view.get("call_week"),
             "forecast": view.get("forecast"),
         })
-    entry = _forecast_outlook({"candidates": candidates})["weekly"]
-    entry["weeks"] = weeks
-    return entry
+    return candidates
 
 
 def get_breakout_track_record(requested_season: Optional[int] = None) -> Dict:
@@ -1951,9 +1940,10 @@ def get_breakout_track_record(requested_season: Optional[int] = None) -> Dict:
     Track record (finished grades only): weekly hit rates per
     classification for the current scoring version, season to date, plus
     the season engine's hit rates by phase once its grades table exists.
-    Reconstructed (backtest) weekly calls report under their own labeled
-    entry and never enter the live rates. Forecast outlook: live band
-    counts over the board's open calls, kept strictly separate from the
+    Weekly grades pool live and reconstructed calls into one record.
+    Forecast outlook: band counts over the open calls, with the
+    reconstructed weeks' open calls pooled into the weekly counts (a
+    live board call wins per player), kept strictly separate from the
     grade-based rates. Plus the biggest graded hits and misses so far.
     """
     from data_building.breakout_engine import forecasts as _forecasts
@@ -1969,7 +1959,6 @@ def get_breakout_track_record(requested_season: Optional[int] = None) -> Dict:
             "min_sample": MIN_SUMMARY_SAMPLE,
             "overall": None,
             "groups": [],
-            "backtest": None,
             "definition": WEEKLY_HIT_DEFINITION,
         },
         "season_engine": {
@@ -1978,8 +1967,7 @@ def get_breakout_track_record(requested_season: Optional[int] = None) -> Dict:
             "groups": [],
             "definition": SEASON_HIT_DEFINITION,
         },
-        "outlook": {**_forecast_outlook({}),
-                    "weekly_backtest": _empty_backtest_outlook()},
+        "outlook": _forecast_outlook({}),
         "hits": [],
         "misses": [],
     }
@@ -1994,18 +1982,12 @@ def get_breakout_track_record(requested_season: Optional[int] = None) -> Dict:
         out["label"] = _WEEKLY_CLASS_LABELS.get(key, key.title() or "Unknown")
         return out
 
-    backtest_tr = weekly_tr.get("backtest")
     payload["weekly"] = {
         "available": True,
         "scoring_version": weekly_tr["scoring_version"],
         "min_sample": weekly_tr["min_sample"],
         "overall": weekly_tr["overall"],
         "groups": [_with_class_label(g) for g in weekly_tr["groups"]],
-        "backtest": None if backtest_tr is None else {
-            "weeks": backtest_tr["weeks"],
-            "overall": backtest_tr["overall"],
-            "groups": [_with_class_label(g) for g in backtest_tr["groups"]],
-        },
         "definition": WEEKLY_HIT_DEFINITION,
     }
     payload["hits"] = [_with_class_label(h) for h in weekly_tr["hits"]]
@@ -2043,9 +2025,14 @@ def get_breakout_track_record(requested_season: Optional[int] = None) -> Dict:
         logger.warning(
             "breakout track record: preseason board load failed", exc_info=True)
         preseason_board = {}
-    payload["outlook"] = _forecast_outlook(
-        _merged_board_candidates(board, preseason_board))
-    payload["outlook"]["weekly_backtest"] = _backtest_outlook(season)
+    # The reconstructed weeks' open calls pool into the weekly outlook:
+    # their synthetic candidates merge AFTER the boards, so under the
+    # first-wins dedupe the live board's call for the same player always
+    # beats the reconstruction. The pooled set is the live board's top 15
+    # plus each reconstructed week's top 15; it is not re-capped whole.
+    payload["outlook"] = _forecast_outlook(_merged_board_candidates(
+        board, preseason_board,
+        {"candidates": _reconstructed_outlook_candidates(season)}))
     return payload
 
 
