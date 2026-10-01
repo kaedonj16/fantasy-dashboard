@@ -396,7 +396,7 @@ def build_prospects_body(is_admin: bool = False) -> str:
   .rk-rank { font-size: 12px; font-weight: 700; color: var(--text-muted); display: flex; flex-direction: column; align-items: center; gap: 1px; }
   .rk-name-cell { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
   .rk-name { font-size: 13px; font-weight: 600; color: var(--text); }
-  .rk-name:hover { text-decoration: underline; }
+  .rk-name:hover { opacity: 0.72; }
   .rk-meta { font-size: 11px; color: var(--text-muted); }
   .rk-pos  { text-align: center; font-size: 11px; font-weight: 700; color: var(--text-muted); }
   .rk-age  { text-align: center; font-size: 12px; color: var(--text-muted); }
