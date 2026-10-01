@@ -18619,14 +18619,15 @@ function _ssWhyLine(p) {
     rows.push({imp: Math.abs(m - 1), txt: labels[key] + ' ' + (pct >= 0 ? '+' : '-') + Math.abs(pct).toFixed(0) + '%'});
   }
   rows.sort((a, b) => b.imp - a.imp);
-  return rows.slice(0, 3).map(r => r.txt).join(' · ');
+  return rows.slice(0, 4).map(r => r.txt).join(' · ');
 }
-// Joined display text for one absence list ('teammates' | 'opponents').
+// HTML for one absence list ('teammates' | 'opponents'): each entry escaped
+// individually and stacked on its own line via <br>, not one '; ' wall.
 function _ssAbsText(p, key) {
   const x = (p && p.stats && p.stats.start_sit) || {};
   const a = ((x.absences || {})[key]) || [];
-  const t = a.map(e => e && e.text).filter(Boolean);
-  return t.length ? t.join('; ') : null;
+  const t = a.map(e => e && e.text).filter(Boolean).map(txt => _ssEsc(txt));
+  return t.length ? t.join('<br>') : null;
 }
 
 // Full Start/Sit tab body for N players (2 for compare/modal, 3 for the page).
@@ -18713,8 +18714,8 @@ function _buildStartSitTabHTML(players) {
   const rMatchup = _ssTableRow('Matchup', players.map(p => { const c = _ssMuChip(ss(p).def_rank, ss(p).def_total); return { num: null, html: c || dash }; }), null);
   // Notable absences around each player's game. Display only; rows drop out
   // entirely when neither player has anything notable.
-  const rTmAbs = _ssTableRow('Teammates out', players.map(p => { const t = _ssAbsText(p, 'teammates'); return { num: null, html: t ? _ssEsc(t) : dash }; }), null);
-  const rOppAbs = _ssTableRow('Opp defense out', players.map(p => { const t = _ssAbsText(p, 'opponents'); return { num: null, html: t ? _ssEsc(t) : dash }; }), null);
+  const rTmAbs = _ssTableRow('Teammates out', players.map(p => { const t = _ssAbsText(p, 'teammates'); return { num: null, html: t || dash }; }), null);
+  const rOppAbs = _ssTableRow('Opp defense out', players.map(p => { const t = _ssAbsText(p, 'opponents'); return { num: null, html: t || dash }; }), null);
 
   // Empty rows return '' from _ssTableRow; drop them and skip a section header
   // whose whole group hid out, so a missing signal leaves no trace.

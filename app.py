@@ -12820,6 +12820,63 @@ def _load_season_weekly_points(season: int, scoring_settings: dict) -> dict:
     return out
 
 
+_SNAP_TOTALS_CACHE: dict = {}
+
+
+def _load_season_snap_totals(season: int) -> dict:
+    """{player_id: (off_snaps, team_snaps, games)} for a season.
+
+    Reads the same cached Sleeper weekly stat files as
+    _load_season_weekly_points and sums ``off_snp`` / ``tm_off_snp``; a week
+    counts as a game when the stat line carries a ``tm_off_snp`` value.
+    Used to identify starting offensive linemen by snap share (Sleeper
+    gives linemen no depth-chart data). Cached like the weekly-points
+    cache. Never raises.
+    """
+    from utils.season_qualification import qualification_policy
+    completed_weeks = tuple(qualification_policy(int(season)).completed_weeks)
+    key = (int(season), completed_weeks)
+    hit = _SNAP_TOTALS_CACHE.get(key)
+    _ensure_sleeper_week_files(season)
+    pattern = os.path.join(CACHE_DIR, "sleeper_stats", f"sleeper_stats_s{season}_w*.json")
+    files = glob.glob(pattern)
+    newest = max((os.path.getmtime(p) for p in files), default=0.0)
+    if hit and time.time() - hit[0] < _WEEKLY_PTS_TTL and newest <= hit[0]:
+        return hit[1]
+    out: dict = {}
+    try:
+        for wf in sorted(files, key=_sleeper_stats_week_num):
+            if _sleeper_stats_week_num(wf) not in completed_weeks:
+                continue
+            try:
+                with open(wf) as f:
+                    week_stats = json.load(f)
+            except Exception:
+                continue
+            if not isinstance(week_stats, dict):
+                continue
+            for pid, st in week_stats.items():
+                if not isinstance(st, dict):
+                    continue
+                if st.get("tm_off_snp") is None:
+                    continue
+                try:
+                    tm_snaps = float(st.get("tm_off_snp"))
+                    off_snaps = float(st.get("off_snp") or 0.0)
+                except (TypeError, ValueError):
+                    continue
+                acc = out.setdefault(str(pid), [0.0, 0.0, 0])
+                acc[0] += off_snaps
+                acc[1] += tm_snaps
+                acc[2] += 1
+    except Exception:
+        logger.debug("[start-sit] snap totals load failed", exc_info=True)
+    out = {pid: (v[0], v[1], v[2]) for pid, v in out.items()}
+    _SNAP_TOTALS_CACHE[key] = (time.time(), out)
+    _prune_ttl_cache(_SNAP_TOTALS_CACHE, 8)
+    return out
+
+
 # Compact per-player weekly scoring cache: (pids, flat) where flat is an
 # array('d') holding 6 floats per player --
 #   [season_sum, season_n, last4_0, last4_1, last4_2, last4_3]
@@ -13541,7 +13598,47 @@ def api_start_sit_options():
     _ss_absence_index: dict = {}
     try:
         from utils.start_sit_context import build_absence_index as _ss_abs_idx
-        _ss_absence_index = _ss_abs_idx(players_full) or {}
+        # Importance gate data: pooled current + prior season weekly points
+        # scored with this endpoint's stamped scoring settings, so a proven
+        # producer counts as a notable absence even when the injury slid his
+        # depth-chart order. Best-effort: depth-only gate on any failure.
+        _ss_productive = None
+        try:
+            from utils.start_sit_context import (
+                productive_pids_from_weekly_points as _ss_prod_fn,
+            )
+            _abs_eff = locals().get("_eff_ss")
+            if _abs_eff is None:
+                from utils.league_scoring import stamp_scoring_aliases as _ss_stamp_abs
+                _abs_raw = ctx.get("raw_scoring_settings") or ctx.get("scoring_settings") or {}
+                _abs_eff = _ss_stamp_abs(_abs_raw) if _abs_raw else {}
+            _ss_productive = _ss_prod_fn(
+                _load_season_weekly_points(int(season), _abs_eff),
+                _load_season_weekly_points(int(season) - 1, _abs_eff),
+            )
+        except Exception:
+            _ss_productive = None
+            logger.debug("[start-sit] productive set skipped", exc_info=True)
+        # Starting offensive linemen have no depth data in Sleeper; identify
+        # them by pooled snap share so a hurt starter counts as a notable
+        # absence too. Best-effort: no linemen on any failure.
+        _ss_linemen = None
+        try:
+            from utils.start_sit_context import (
+                starting_lineman_pids as _ss_line_fn,
+            )
+            _ss_linemen = _ss_line_fn(
+                [_load_season_snap_totals(int(season)),
+                 _load_season_snap_totals(int(season) - 1)],
+                {str(_pid): str(_p.get("position") or _p.get("pos") or "")
+                 for _pid, _p in (players_full or {}).items()
+                 if isinstance(_p, dict)},
+            )
+        except Exception:
+            _ss_linemen = None
+            logger.debug("[start-sit] starting linemen skipped", exc_info=True)
+        _ss_absence_index = _ss_abs_idx(players_full, productive_pids=_ss_productive,
+                                        starting_linemen=_ss_linemen) or {}
     except Exception:
         logger.debug("[start-sit] absence index skipped", exc_info=True)
 
@@ -24520,8 +24617,47 @@ def api_player_details(player_id: str):
                             absence_notes as _ss_abs_notes,
                             build_absence_index as _ss_abs_idx,
                         )
+                        # Same productive-producer gate as the Start/Sit
+                        # page: pooled weekly points under this scope's
+                        # (stamped) scoring settings. Best-effort.
+                        _ss_productive = None
+                        try:
+                            from utils.league_scoring import (
+                                stamp_scoring_aliases as _ss_stamp_pd,
+                            )
+                            from utils.start_sit_context import (
+                                productive_pids_from_weekly_points as _ss_prod_pd,
+                            )
+                            _eff_pd = _ss_stamp_pd(scoring_settings) if scoring_settings else {}
+                            _ss_productive = _ss_prod_pd(
+                                _load_season_weekly_points(int(season), _eff_pd),
+                                _load_season_weekly_points(int(season) - 1, _eff_pd),
+                            )
+                        except Exception:
+                            _ss_productive = None
+                        # Starting linemen via pooled snap share, same as
+                        # the Start/Sit page. Best-effort: none on failure.
+                        _ss_linemen = None
+                        _pd_players: dict = {}
+                        try:
+                            from utils.start_sit_context import (
+                                starting_lineman_pids as _ss_line_pd,
+                            )
+                            _pd_players = get_players_global() or {}
+                            _ss_linemen = _ss_line_pd(
+                                [_load_season_snap_totals(int(season)),
+                                 _load_season_snap_totals(int(season) - 1)],
+                                {str(_pid): str(_p.get("position") or _p.get("pos") or "")
+                                 for _pid, _p in _pd_players.items()
+                                 if isinstance(_p, dict)},
+                            )
+                        except Exception:
+                            _ss_linemen = None
+                            _pd_players = {}
                         _ss_absences = _ss_abs_notes(
-                            _ss_abs_idx(get_players_global() or {}),
+                            _ss_abs_idx(_pd_players or get_players_global() or {},
+                                        productive_pids=_ss_productive,
+                                        starting_linemen=_ss_linemen),
                             _ss_team, _ss_opp, exclude_pid=player_id,
                         ) or _ss_absences
                     except Exception:

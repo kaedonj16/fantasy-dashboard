@@ -2206,6 +2206,16 @@ function wvCmpDerive(p) {{
     : c.label === 'Volatile' ? 'volatile'
     : c.label === 'Boom or bust' ? 'boombust' : 'balanced');
   const env = p.weather || p.game_env;
+  const olNum = p.oline && p.oline.primary_value != null ? Number(p.oline.primary_value) : null;
+  let olTxt = '–';
+  if (olNum != null) {{
+    const olLbl = p.oline.primary === 'pass_block' ? 'pass blk'
+      : p.oline.primary === 'run_block' ? 'run blk'
+      : (p.position === 'RB' ? 'run blk'
+        : (p.position === 'QB' || p.position === 'WR' || p.position === 'TE') ? 'pass blk' : 'o-line');
+    const olRk = p.oline.primary_rank ? ' (#' + p.oline.primary_rank + ')' : '';
+    olTxt = Math.round(olNum) + ' ' + olLbl + olRk;
+  }}
   return {{
     proj:     p.proj_pts > 0 ? p.proj_pts : null,
     l4:       p.recent_ppg > 0 ? p.recent_ppg : (p.season_ppg > 0 ? p.season_ppg : null),
@@ -2222,6 +2232,8 @@ function wvCmpDerive(p) {{
     playsL4:    (p.play_volume && p.play_volume.plays_faced_l4_pg != null) ? p.play_volume.plays_faced_l4_pg : null,
     vegasNum: p.implied_total != null ? p.implied_total : null,
     vegas:    p.implied_total != null ? (p.implied_total + ' implied') : '–',
+    olineNum: olNum,
+    oline:    olTxt,
     venue:    env ? `<span class="wv-ss-env wv-ss-env-${{env.kind}}">${{env.label}}</span>` : (p.on_bye ? 'BYE' : '–'),
     value:    p.value > 0 ? Math.round(p.value) : null,
     rank:     p.pos_rank_label || '–',
@@ -2271,6 +2283,7 @@ function wvVerdictReasons(a, b, wi) {{
     ['vegas',   'a higher team total'],
     ['weather', 'a cleaner forecast'],
     ['avail',   'fewer injury concerns'],
+    ['oline',   'a stronger offensive line'],
   ];
   mult.forEach(f => {{
     let mw = fw[f[0]] != null ? fw[f[0]] : 1, ml = fl[f[0]] != null ? fl[f[0]] : 1;
@@ -2324,6 +2337,7 @@ function wvCmpReasonBar(reasonTxt, da, db) {{
   if (t === 'a safer floor') return ['FLOOR', da.floorNum, db.floorNum];
   if (t === 'better recent form') return ['RECENT FORM (L4 PPG)', da.l4, db.l4];
   if (t === 'a higher team total') return ['VEGAS TOTAL', da.vegasNum, db.vegasNum];
+  if (t === 'a stronger offensive line') return ['O-LINE', da.olineNum, db.olineNum];
   return null;
 }}
 
@@ -2366,6 +2380,7 @@ function wvRenderCompare() {{
   const wVal  = wvWinPair(da.value, db.value, true);
   const wFl   = wvWinPair(da.floorNum, db.floorNum, true);
   const wVeg  = wvWinPair(da.vegasNum, db.vegasNum, true);
+  const wOline = wvWinPair(da.olineNum, db.olineNum, true);
   // Position-relative 0-100 Start/Sit index (same one the player modal / Compare
   // page show), so a QB and a WR are comparable here too. Null when the week's
   // position pool was unavailable to build the anchor.
@@ -2434,6 +2449,7 @@ function wvRenderCompare() {{
     row('vs. NFL average', wvFmtVsAvg(da.playsVsAvg), wvFmtVsAvg(db.playsVsAvg)) +
     row('Last 4 games', dash(da.playsL4), dash(db.playsL4)) +
     row('Vegas total', da.vegas, db.vegas, wVeg[0], wVeg[1]) +
+    row('O-Line', da.oline, db.oline, wOline[0], wOline[1]) +
     row('Venue', da.venue, db.venue);
   const fullCount = (fullRows.match(/wv-cmp-row/g) || []).length;
 
@@ -2606,13 +2622,24 @@ function wvSsEvidence(p) {{
   }}
   // Notable absences around this player's game. Display only: the score never
   // sees these (Sleeper's projections already price teammate injuries in).
-  const absT = ((p.absences && p.absences.teammates) || []).map(a => a.text).filter(Boolean);
-  const absO = ((p.absences && p.absences.opponents) || []).map(a => a.text).filter(Boolean);
+  // Each absence gets its own stacked line: bold name, muted status, instead
+  // of one semicolon-joined wall of text. Entry text is "Name (IR, Knee)".
+  const wvAbsLine = (txt) => {{
+    const i = txt.indexOf(' (');
+    if (i < 0) return `<span class="wv-abs"><b>${{txt}}</b></span>`;
+    const nm = txt.slice(0, i);
+    let st = txt.slice(i + 2);
+    if (st.endsWith(')')) st = st.slice(0, -1);
+    st = st.replace(', ', ' · ');
+    return `<span class="wv-abs"><b>${{nm}}</b> <span class="wv-abs-st">${{st}}</span></span>`;
+  }};
+  const absT = ((p.absences && p.absences.teammates) || []).map(a => a.text).filter(Boolean).map(wvAbsLine);
+  const absO = ((p.absences && p.absences.opponents) || []).map(a => a.text).filter(Boolean).map(wvAbsLine);
   if (absT.length) {{
-    ev.push(`<div class="wv-cx-ev"><span class="k">TEAMMATES OUT</span><span class="v">${{absT.join('; ')}}</span></div>`);
+    ev.push(`<div class="wv-cx-ev"><span class="k">TEAMMATES OUT</span><span class="v">${{absT.join('')}}</span></div>`);
   }}
   if (absO.length) {{
-    ev.push(`<div class="wv-cx-ev"><span class="k">OPP DEFENSE OUT</span><span class="v">${{absO.join('; ')}}</span></div>`);
+    ev.push(`<div class="wv-cx-ev"><span class="k">OPP DEFENSE OUT</span><span class="v">${{absO.join('')}}</span></div>`);
   }}
   const pv = p.play_volume;
   if (pv && pv.plays_faced_pg != null) {{
