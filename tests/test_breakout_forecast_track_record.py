@@ -774,23 +774,28 @@ def test_weekly_board_attaches_forecast_for_open_calls(monkeypatch):
     assert candidates[0]["forecast"]["band"] == "tracking_to_hit"
 
 
-def test_weekly_board_no_forecast_on_historical_week_view(monkeypatch):
+def test_weekly_board_attaches_forecast_on_explicit_week_view(monkeypatch):
+    # Explicit week views attach forecasts for open calls too: a week 2
+    # board whose outcome window is still open is forecast business,
+    # not finished history. weekly_forecasts_for_calls skips mature
+    # calls itself, so finished weeks get no chips.
     import dashboard_services.breakout_api as api
     from data_building.breakout_engine import weekly_store
 
-    def _boom(season, calls):
-        raise AssertionError("forecasts are only for the live board")
-
     monkeypatch.setattr(weekly_store, "load_weekly_candidates",
                         lambda season, **kw: _weekly_payload())
-    monkeypatch.setattr(forecasts, "weekly_forecasts_for_calls", _boom)
+    monkeypatch.setattr(forecasts, "weekly_forecasts_for_calls",
+                        lambda season, calls: {"101": {
+                            "kind": "weekly", "band": "tracking_to_hit",
+                            "band_label": "Tracking to hit",
+                            "basis": "1 of 3 weeks in, 1 game played"}})
 
     payload = api.get_weekly_breakout_candidates(
         2026, min_score=0, limit=None, as_of_week=2)
     candidates = payload["candidates"]
 
     assert len(candidates) == 1
-    assert "forecast" not in candidates[0]
+    assert candidates[0]["forecast"]["band"] == "tracking_to_hit"
 
 
 def test_preseason_board_attaches_forecast(monkeypatch):
@@ -931,16 +936,12 @@ def test_outlook_pools_reconstructed_open_calls(monkeypatch):
     assert weekly["pending_no_games"] == 2
     assert weekly["pending_no_baseline"] == 0
     top = weekly["top_tracking_hit"]
-    assert [t["player_id"] for t in top] == ["101", "1"]
-    # Player 101 was called in BOTH reconstructed weeks; the later call
-    # wins the merge, so the basis reflects only week 3 being in, and
-    # the entry keeps its Backtest tag.
-    assert top[0]["reconstructed"] is True
-    assert top[0]["call_week"] == 2
-    assert "1 of 3 weeks in" in top[0]["basis"]
-    assert top[0]["group_label"] == "Emerging Breakout"
+    # The named top entries are live-board-only: reconstructed tracking
+    # hits still count in the band counts above, but they are never
+    # named in the top list.
+    assert [t["player_id"] for t in top] == ["1"]
     # The live entry carries no backtest tag.
-    assert "reconstructed" not in top[1]
+    assert "reconstructed" not in top[0]
 
 
 def test_outlook_live_call_beats_reconstructed_call(monkeypatch):
@@ -964,16 +965,16 @@ def test_outlook_live_call_beats_reconstructed_call(monkeypatch):
 
     weekly = payload["outlook"]["weekly"]
     # The player counts once, with the LIVE forecast: the reconstructed
-    # miss never lands, and Alpha's top entry is untagged.
+    # miss never lands. The reconstructed-only tracking hit (9) counts
+    # in the band counts but never lands in the named top list, which
+    # is live-board-only.
     assert weekly["counts"] == {
         "tracking_to_hit": 2, "borderline": 0, "tracking_to_miss": 0}
     assert weekly["open_calls"] == 2
     assert weekly["pending_calls"] == 1
     top = {t["player_id"]: t for t in weekly["top_tracking_hit"]}
-    assert set(top) == {"1", "9"}
+    assert set(top) == {"1"}
     assert "reconstructed" not in top["1"]
-    assert top["9"]["reconstructed"] is True
-    assert top["9"]["call_week"] == 1
 
 
 def test_outlook_skips_mature_reconstructed_calls(monkeypatch):
@@ -1061,6 +1062,39 @@ def test_forecast_outlook_splits_pending_by_state():
     assert preseason["pending_calls"] == 1
     assert preseason["pending_no_games"] == 1
     assert preseason["pending_no_baseline"] == 0
+
+
+def test_forecast_outlook_top_tracking_hit_is_live_only():
+    # Reconstructed (backtest) calls count toward the band counts, but
+    # the named top entries only ever show live-board calls, even when
+    # a reconstructed call would rank first by score.
+    import dashboard_services.breakout_api as api
+
+    def _cand(pid, band, score, reconstructed):
+        cand = {
+            "player_id": pid, "player_name": f"P{pid}",
+            "classification": "watchlist", "classification_label": "Watchlist",
+            "breakout_score": score,
+            "forecast": {"kind": "weekly", "band": band,
+                         "band_label": "Stub", "basis": "stub",
+                         "state": "forecast"},
+        }
+        if reconstructed:
+            cand["reconstructed"] = True
+            cand["call_week"] = 2
+        return cand
+
+    board = {"candidates": [
+        _cand("9", "tracking_to_hit", 99.0, True),
+        _cand("1", "tracking_to_hit", 30.0, False),
+    ]}
+    weekly = api._forecast_outlook(board)["weekly"]
+
+    assert weekly["counts"]["tracking_to_hit"] == 2
+    assert weekly["open_calls"] == 2
+    top = weekly["top_tracking_hit"]
+    assert [t["player_id"] for t in top] == ["1"]
+    assert all("reconstructed" not in t for t in top)
 
 
 def test_outlook_reconstructed_no_baseline_counts_separately(monkeypatch):
