@@ -7075,10 +7075,12 @@ def build_league_context(platform: str, league_id: str, season: int) -> dict:
     injury_df = None
 
     if team_stats is not None and not team_stats.empty and {"Wins", "PF"}.issubset(team_stats.columns):
-        from utils.standings_divisions import roster_division_map
+        from utils.standings_divisions import division_records, roster_division_map
+        _by_rid = roster_division_map(rosters)
         standings_map = build_standings_map(
             team_stats, roster_map,
-            division_by_rid=roster_division_map(rosters),
+            division_by_rid=_by_rid,
+            division_records_by_rid=division_records(df_weekly, _by_rid),
         )
     else:
         standings_map = {}
@@ -8127,10 +8129,12 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
             ctx["team_stats"] = team_stats
 
             if team_stats is not None and not team_stats.empty and {"Wins", "PF"}.issubset(team_stats.columns):
-                from utils.standings_divisions import roster_division_map
+                from utils.standings_divisions import division_records, roster_division_map
+                _by_rid = roster_division_map(rosters)
                 ctx["standings_map"] = build_standings_map(
                     team_stats, roster_map,
-                    division_by_rid=roster_division_map(rosters),
+                    division_by_rid=_by_rid,
+                    division_records_by_rid=division_records(df_weekly, _by_rid),
                 )
             else:
                 ctx["standings_map"] = {}
@@ -8512,16 +8516,21 @@ def render_standings_compact(team_stats, length=None, movement=None, owner_to_ri
     _seed_teams = [
         {"wins": float(rr["Wins"]), "ties": float(rr.get("Ties", 0) or 0),
          "pf": float(rr["PF"]), "pa": float(rr.get("PA", 0) or 0),
-         "division": int(rr["_division"] or 0)}
+         "division": int(rr["_division"] or 0),
+         "div_record": _div_record_for(rr["owner"])}
         for _, rr in df.iterrows()
     ]
     df["Rank"] = assign_playoff_seeds(_seed_teams)
 
     if _use_div:
+        # Within a division: overall wins, then division win% (a 1-0 division
+        # team outranks a 0-1 team on the same overall record), then PF, PA.
+        from utils.standings_divisions import division_win_pct
+        df["_div_pct"] = [division_win_pct(_div_record_for(o)) for o in df["owner"]]
         df["_div_sort"] = df["_division"].map(lambda d: int(d) if int(d) else 10_000)
         df = df.sort_values(
-            by=["_div_sort", "Wins", "PF", "PA"],
-            ascending=[True, False, False, True],
+            by=["_div_sort", "Wins", "_div_pct", "PF", "PA"],
+            ascending=[True, False, False, False, True],
         ).reset_index(drop=True)
     else:
         df = df.sort_values(by=["Rank"], ascending=[True]).reset_index(drop=True)
@@ -8789,7 +8798,8 @@ def render_standings(team_stats, length, all_play: dict = None,
     _seed_teams = [
         {"wins": float(rr["Wins"]), "ties": float(rr.get("Ties", 0) or 0),
          "pf": float(rr["PF"]), "pa": float(rr.get("PA", 0) or 0),
-         "division": int(rr["_division"] or 0)}
+         "division": int(rr["_division"] or 0),
+         "div_record": _div_record_for(rr["owner"])}
         for _, rr in df.iterrows()
     ]
     _seeds = assign_playoff_seeds(_seed_teams)
@@ -8798,11 +8808,15 @@ def render_standings(team_stats, length, all_play: dict = None,
     # Display order: by division (then record within), or overall seed.
     # Unassigned (division 0) sorts last so named divisions stay contiguous.
     if _use_div:
+        # Within a division: overall wins, then division win% (a 1-0 division
+        # team outranks a 0-1 team on the same overall record), then PF, PA.
+        from utils.standings_divisions import division_win_pct
+        df["_div_pct"] = [division_win_pct(_div_record_for(o)) for o in df["owner"]]
         df["_div_sort"] = df["_division"].map(lambda d: int(d) if int(d) else 10_000)
         df = (
             df.sort_values(
-                by=["_div_sort", "Wins", "PF", "PA"],
-                ascending=[True, False, False, True],
+                by=["_div_sort", "Wins", "_div_pct", "PF", "PA"],
+                ascending=[True, False, False, False, True],
             )
             .reset_index(drop=True)
         )
@@ -8823,7 +8837,8 @@ def render_standings(team_stats, length, all_play: dict = None,
                 {"id": str(rr["owner"]), "name": str(rr["owner"]),
                  "wins": int(rr["Wins"]), "losses": int(rr["Losses"]),
                  "ties": int(rr.get("Ties", 0) or 0), "pf": float(rr["PF"]),
-                 "division": int(rr["_division"] or 0)}
+                 "division": int(rr["_division"] or 0),
+                 "div_record": _div_record_for(rr["owner"])}
                 for _, rr in df.iterrows()
             ]
             _pic = compute_playoff_picture(_teams, int(playoff_spots), int(total_regular_weeks))

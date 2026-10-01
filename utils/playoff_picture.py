@@ -65,7 +65,9 @@ def compute_playoff_picture(
     """Return the teams sorted by seed, each annotated with playoff status.
 
     ``teams``: dicts with ``id``, ``name``, ``wins``, ``losses`` and optionally
-    ``ties``, ``pf``, and ``division``. ``total_regular_weeks`` is the number of
+    ``ties``, ``pf``, ``division``, and ``div_record`` (a ``(w, l, t)`` record
+    vs division opponents; seeding breaks overall-record ties by division
+    win% before PF, matching the standings tables). ``total_regular_weeks`` is the number of
     regular-season games each team plays (``playoff_week_start - 1``).
     ``bye_spots`` defaults to the standard bracket byes for ``playoff_spots``.
 
@@ -97,6 +99,7 @@ def compute_playoff_picture(
             "wins": w, "losses": l, "ties": ti,
             "pf": float(t.get("pf", 0.0) or 0.0),
             "division": div,
+            "div_record": t.get("div_record"),
             "games_left": gl,
             "max_wins": w + gl,
         })
@@ -134,6 +137,7 @@ def compute_playoff_picture(
                 "pf": o["pf"],
                 "pa": 0.0,
                 "division": o["division"],
+                "div_record": o.get("div_record"),
                 "id": o["id"],
             })
         seeds = assign_playoff_seeds(hypo)
@@ -165,7 +169,8 @@ def compute_playoff_picture(
                 bye_worst = {o["id"]: (o["wins"] if o["id"] == t["id"] else o["max_wins"])
                              for o in ts}
                 hypo = [{"wins": bye_worst[o["id"]], "ties": o["ties"], "pf": o["pf"],
-                         "division": o["division"], "id": o["id"]} for o in ts]
+                         "division": o["division"], "div_record": o.get("div_record"),
+                         "id": o["id"]} for o in ts]
                 seeds = assign_playoff_seeds(hypo)
                 self_seed = next(seeds[i] for i, o in enumerate(hypo) if o["id"] == t["id"])
                 clinched_bye = self_seed <= bye_spots
