@@ -41053,7 +41053,10 @@ a, button, [role="button"], [role="tab"], summary, label,
 /* focus-position room table (container keeps the .pm-team-usage class) */
 .pm-team-usage { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 11px; overflow: hidden; }
 .pm-troom-row { display: grid; grid-template-columns: 20px 1fr 92px 46px 42px; align-items: center; gap: 9px; padding: 8px 11px; font-size: 12px; }
-.pm-room-rb .pm-troom-row { grid-template-columns: 20px minmax(120px,1fr) repeat(5, minmax(58px, auto)); }
+/* Fixed tracks, never content-sized: every row is its own grid, so auto
+   tracks resolve per row and the header labels (wide) drift from the data
+   values (narrow). Widths fit the 9px header labels (TARGET SHARE etc.). */
+.pm-room-rb .pm-troom-row { grid-template-columns: 20px minmax(120px,1fr) 92px 82px 76px 78px 54px; }
 .pm-room-qb .pm-troom-row,
 .pm-room-wr .pm-troom-row,
 .pm-room-te .pm-troom-row { grid-template-columns: 20px minmax(120px,1fr) 76px 52px 58px; }
