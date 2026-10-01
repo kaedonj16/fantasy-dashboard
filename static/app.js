@@ -317,12 +317,17 @@ if (window.__FEATURES_JS || window.__PLAYER_MODAL_JS) {
 // Reopening the installed app resumes a frozen page from the last session, and
 // on a slow network the service worker paints the last cached copy - both show
 // stale data. Reload when the page comes back to the foreground after sitting
-// idle, and listen for the service worker's "a fresh copy just landed" signal
-// right after a cached-shell launch. Live surfaces (draft room, ScoreZone) manage
-// their own freshness and are never yanked out from under the user.
+// hidden for STALE_MS or longer, and listen for the service worker's "a fresh
+// copy just landed" signal right after a cached-shell launch. The clock runs
+// on hidden time only: the stamp is taken when the page goes away, so time
+// spent actively using the page never counts, and a few minutes away never
+// yanks the page (and the view state on it) out from under the user. Live
+// surfaces (draft room, ScoreZone) manage their own freshness and are never
+// yanked out from under the user.
 (function () {
-  var STALE_MS = 10 * 60 * 1000;   // resume older than this -> reload
+  var STALE_MS = 10 * 60 * 1000;   // hidden at least this long -> reload on return
   var loadedAt = Date.now();
+  var hiddenSince = 0;
   var reloading = false;
   function liveSurface() {
     return !!document.getElementById('drSideTabs') || !!document.getElementById('rz-root');
@@ -338,11 +343,19 @@ if (window.__FEATURES_JS || window.__PLAYER_MODAL_JS) {
     location.reload();
   }
   function maybeResumeReload() {
-    if (Date.now() - loadedAt >= STALE_MS) reloadOnce();
+    // No hidden stamp -> the page never went away; never reload.
+    if (!hiddenSince) return;
+    var hiddenFor = Date.now() - hiddenSince;
+    hiddenSince = 0;
+    if (hiddenFor >= STALE_MS) reloadOnce();
   }
   document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'hidden') { hiddenSince = Date.now(); return; }
     if (document.visibilityState === 'visible') maybeResumeReload();
   });
+  // pagehide covers freezes that skip the hidden transition (bfcache entry,
+  // app discard); the stamp is what a later pageshow evaluates.
+  window.addEventListener('pagehide', function () { hiddenSince = Date.now(); });
   // bfcache restore (back/forward or PWA resume on some platforms).
   window.addEventListener('pageshow', function (e) {
     if (e.persisted) maybeResumeReload();

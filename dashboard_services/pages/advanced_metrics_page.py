@@ -1812,6 +1812,59 @@ _AM_JS = r"""
     return {primary:raw.primary, metrics:extras, position:['ALL','QB','RB','WR','TE'].includes(raw.position) ? raw.position : 'ALL', sort:raw.sort === 'asc' ? 'asc' : 'desc', minVol:raw.minVol == null ? '' : String(raw.minVol)};
   }
 
+  // Working-view persistence: the board's current view (active preset or
+  // hand-built columns, position, season, week range, sort) is kept in
+  // localStorage so a reload - stale-page auto-refresh, app update, manual -
+  // lands back on the same metrics instead of resetting to the last preset.
+  // Written from syncURL() (the choke point view changes flow through) plus
+  // the few paths that skip syncURL: column add/remove/clear, sort, preset
+  // load, and saved-set apply.
+  const _AM_VIEW_KEY = 'amViewV1';
+  function _persistAmView() {
+    try {
+      localStorage.setItem(_AM_VIEW_KEY, JSON.stringify({
+        v: 1,
+        preset: _activePresetId || null,
+        metric: state.metric,
+        extraMetrics: state.extraMetrics.slice(),
+        position: state.position,
+        season: state.season,
+        weekRange: state.weekRange,
+        weekStart: state.weekStart,
+        weekEnd: state.weekEnd,
+        sortBy: state.sortBy,
+        sortDir: state.sortDir,
+      }));
+    } catch (e) {}
+  }
+  function _loadAmView() {
+    let v = null;
+    try { v = JSON.parse(localStorage.getItem(_AM_VIEW_KEY) || 'null'); } catch (e) { return null; }
+    if (!v || typeof v !== 'object' || v.v !== 1) return null;
+    // The primary metric must still exist; anything unrecognized is dropped
+    // the same way _validCustomSet sanitizes a saved set. Corrupt or stale
+    // views return null and the caller falls back to today's landing rules.
+    if (!v.metric || !cfg.metrics[v.metric]) return null;
+    const seen = new Set([v.metric]);
+    const extras = (Array.isArray(v.extraMetrics) ? v.extraMetrics : []).filter(function(k) {
+      if (!cfg.metrics[k] || seen.has(k)) return false; seen.add(k); return true;
+    }).slice(0, MAX_COMPARE);
+    const wk = function(n) { const x = Number(n); return Number.isFinite(x) && x >= 1 && x <= 18 ? x : null; };
+    const range = ['last4', 'last8', 'last12', 'custom'].includes(v.weekRange) ? v.weekRange : '';
+    const ws = wk(v.weekStart), we = wk(v.weekEnd);
+    return {
+      preset: (typeof v.preset === 'string' && _PRESETS[v.preset]) ? v.preset : null,
+      metric: v.metric,
+      extraMetrics: extras,
+      position: ['ALL', 'QB', 'RB', 'WR', 'TE'].includes(v.position) ? v.position : 'ALL',
+      season: typeof v.season === 'string' ? v.season : '',
+      weekRange: (range === 'custom' && (ws == null || we == null)) ? '' : range,
+      weekStart: ws, weekEnd: we,
+      sortBy: (v.sortBy === 'name' || v.sortBy === 'games' || cfg.metrics[v.sortBy]) ? v.sortBy : v.metric,
+      sortDir: v.sortDir === 'asc' ? 'asc' : 'desc',
+    };
+  }
+
   const _initParams = new URLSearchParams(window.location.search);
   function syncURL() {
     const p = new URLSearchParams();
@@ -1828,6 +1881,7 @@ _AM_JS = r"""
     }
     const qs = p.toString();
     history.replaceState(null, '', qs ? '?' + qs : window.location.pathname);
+    _persistAmView();
   }
 
   const state = { metric: metricSel.value,
@@ -2038,6 +2092,7 @@ _AM_JS = r"""
     _amRefreshWeekControls();
     updateSortHeaders(); updateCompareBar(); syncExtraCols(); updateFilterBar();
     amUpdateContextLine();
+    _persistAmView();
     fetchData();
   };
 
@@ -2409,6 +2464,7 @@ _AM_JS = r"""
         fetchExtraData(key);
       }
     }
+    _persistAmView();
     buildStatPicker();
   };
 
@@ -2429,6 +2485,7 @@ _AM_JS = r"""
     syncExtraCols();
     updateFilterBar();
     render();
+    _persistAmView();
   };
 
   // Per-column retry for a failed extra/filter column: drop the failed
@@ -2472,6 +2529,7 @@ _AM_JS = r"""
     syncExtraCols();
     updateFilterBar();
     render();
+    _persistAmView();
   };
 
   function _orderByCategory(keys) {
@@ -3117,6 +3175,7 @@ _AM_JS = r"""
     state.page = 0;
     updateSortHeaders();
     amUpdateContextLine();
+    _persistAmView();
     render();
   }
   // Filter columns: compact columns inserted right before the primary metric column
@@ -5053,7 +5112,7 @@ _AM_JS = r"""
   sortBtn.addEventListener('click', () => {
     state.sortBy = state.metric;
     state.sortDir = state.sortDir === 'desc' ? 'asc' : 'desc'; state.page = 0;
-    updateSortBtn(); updateSortHeaders(); amUpdateContextLine(); render();
+    updateSortBtn(); updateSortHeaders(); amUpdateContextLine(); _persistAmView(); render();
   });
   function syncSeasonBtn() {
     const label = document.getElementById('amSeasonBtnLabel');
@@ -5471,7 +5530,7 @@ _AM_JS = r"""
     state.comboFilters = []; state.filterColKeys = new Set(); state.page = 0; _activePresetId = null; _showActiveSet(name);
     _updateDecisionUI(null);
     updateSortBtn(); updatePosButtons(); updateMetricTip(); updateVolCtrl(); updateVolHeader();
-    updateCompareBar(); syncExtraCols(); updateFilterBar(); fetchData();
+    updateCompareBar(); syncExtraCols(); updateFilterBar(); _persistAmView(); fetchData();
   });
   const saveSetBtn = document.getElementById('amSaveSetBtn');
   if (saveSetBtn) saveSetBtn.addEventListener('click', function() {
@@ -5492,6 +5551,65 @@ _AM_JS = r"""
   });
   refreshSavedSets();
 
+  // Restore the persisted working view (see _persistAmView). Explicit URL
+  // params are deep links and keep today's behavior: any state-bearing param
+  // suppresses the persisted view entirely.
+  const _AM_URL_STATE_KEYS = ['preset', 'metric', 'pos', 'season', 'combine', 'minvol', 'team', 'week_start', 'week_end'];
+  function _hasAmUrlState() { return _AM_URL_STATE_KEYS.some(function(k) { return _initParams.has(k); }); }
+  function _applyAmViewContext(v) {
+    // Season goes through the existing selection path so the season menu,
+    // week controls, and combine toggle stay in sync.
+    if (v.season) {
+      const years = v.season.split(',').map(function(s) { return parseInt(s, 10); })
+        .filter(function(y) { return Number.isFinite(y); });
+      const sorted = years.slice().sort(function(a, b) { return b - a; });
+      if (sorted.length && sorted.join(',') !== amSelectedSeasons().join(',')) applySeasonSelection(years);
+    }
+    if (v.weekRange) {
+      state.weekRange = v.weekRange;
+      state.weekStart = v.weekRange === 'custom' ? v.weekStart : null;
+      state.weekEnd = v.weekRange === 'custom' ? v.weekEnd : null;
+      _amRefreshWeekControls(true);
+    }
+  }
+  function _applyAmView(v) {
+    // Custom (hand-built) view: apply through the same refresh chain the
+    // saved-set loader uses.
+    _applyAmViewContext(v);
+    state.metric = v.metric; metricSel.value = v.metric;
+    state.extraMetrics = v.extraMetrics.slice();
+    state.extraData = {}; state.extraPrevData = {}; state.prevData = {};
+    state.comboFilters = []; state.filterColKeys = new Set();
+    state.position = v.position;
+    const rel = new Set(relevantPositions(state.metric));
+    if (state.position !== 'ALL' && !rel.has(state.position)) state.position = 'ALL';
+    state.sortBy = v.sortBy; state.sortDir = v.sortDir;
+    state.minVol = defaultVol(state.metric);
+    state.page = 0; _activePresetId = null; _showActiveSet('Custom');
+    _updateDecisionUI(null);
+    updateCompareBar(); syncExtraCols(); updateFilterBar(); amUpdateContextLine();
+    fetchData();
+  }
+  function _restoreAmView() {
+    const v = _loadAmView();
+    if (!v) return false;
+    if (v.preset) {
+      // Same PRO rule as the amLastPreset fallback: a free viewer with a
+      // stale PRO preset in the view falls through to the default landing.
+      if (!cfg.hasPremium && _isProPreset(v.preset)) return false;
+      _applyAmViewContext(v);
+      amLoadPreset(v.preset);
+      // The preset loader forces its own sort; a sort she chose on top of
+      // the preset (header click) is part of the view, so re-apply it.
+      if (v.sortBy !== state.sortBy || v.sortDir !== state.sortDir) {
+        state.sortBy = v.sortBy; state.sortDir = v.sortDir; updateSortHeaders();
+      }
+      return true;
+    }
+    _applyAmView(v);
+    return true;
+  }
+
   state.minVol = _initParams.get('minvol') || defaultVol(state.metric);
   const _searchInit = _initParams.get('search') || '';
   if (_searchInit && searchEl) { searchEl.value = _searchInit; state.search = _searchInit; }
@@ -5502,6 +5620,11 @@ _AM_JS = r"""
   // amLoadPreset itself opens the paywall for those).
   if (_presetInit && _PRESETS[_presetInit] && (cfg.hasPremium || !_isProPreset(_presetInit))) {
     amLoadPreset(_presetInit); _presetLoaded = true;
+  }
+  else if (!_hasAmUrlState() && _restoreAmView()) {
+    // No deep-link params: restore the persisted working view (preset via
+    // amLoadPreset, custom via the saved-set refresh chain).
+    _presetLoaded = true;
   }
   else {
     // Default landing: the last-used decision view, else Key Metrics

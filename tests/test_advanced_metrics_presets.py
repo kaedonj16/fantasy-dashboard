@@ -264,6 +264,54 @@ def test_preset_choice_is_shareable_via_url():
     assert "_initParams.get('preset')" in _AM_JS
 
 
+def test_working_view_is_persisted_on_view_changes():
+    # Versioned localStorage key holding the whole working view.
+    assert "_AM_VIEW_KEY = 'amViewV1'" in _AM_JS
+    assert "localStorage.setItem(_AM_VIEW_KEY, JSON.stringify({" in _AM_JS
+    for field in ("preset: _activePresetId || null", "metric: state.metric",
+                  "extraMetrics: state.extraMetrics.slice()", "position: state.position",
+                  "season: state.season", "weekRange: state.weekRange",
+                  "weekStart: state.weekStart", "weekEnd: state.weekEnd",
+                  "sortBy: state.sortBy", "sortDir: state.sortDir"):
+        assert field in _AM_JS
+    # syncURL is the choke point: every view change flowing through it
+    # persists the view too.
+    sync = _AM_JS[_AM_JS.index("function syncURL()"):]
+    sync = sync[: sync.index("\n  }")]
+    assert "_persistAmView();" in sync
+    # The paths that skip syncURL persist explicitly: preset load, column
+    # add/remove/clear, both sort paths, and saved-set apply (plus syncURL).
+    assert _AM_JS.count("_persistAmView();") >= 8
+
+
+def test_working_view_restore_precedence_and_fallbacks():
+    assert "localStorage.getItem(_AM_VIEW_KEY)" in _AM_JS
+    assert "function _restoreAmView()" in _AM_JS
+    # Corrupt or stale views are rejected wholesale by the loader.
+    load = _AM_JS[_AM_JS.index("function _loadAmView()"):]
+    load = load[: load.index("\n  }")]
+    assert "v.v !== 1" in load
+    assert "if (!v.metric || !cfg.metrics[v.metric]) return null;" in load
+    # Landing precedence: explicit ?preset= first, then the persisted view,
+    # then the amLastPreset / Key Metrics fallback.
+    chain = _AM_JS[_AM_JS.index("if (_presetInit && _PRESETS[_presetInit]"):]
+    assert chain.index("amLoadPreset(_presetInit)") < chain.index("_restoreAmView()") \
+        < chain.index("localStorage.getItem('amLastPreset')")
+    assert "!_hasAmUrlState() && _restoreAmView()" in _AM_JS
+    # Any state-bearing URL param suppresses the persisted view.
+    keys = _AM_JS[_AM_JS.index("_AM_URL_STATE_KEYS"):]
+    keys = keys[: keys.index("];")]
+    for key in ("'preset'", "'metric'", "'pos'", "'season'", "'combine'",
+                "'minvol'", "'team'", "'week_start'", "'week_end'"):
+        assert key in keys
+    # Preset views restore through amLoadPreset with its PRO gating intact;
+    # custom views apply their fields through the saved-set refresh chain.
+    assert "if (!cfg.hasPremium && _isProPreset(v.preset)) return false;" in _AM_JS
+    assert "amLoadPreset(v.preset)" in _AM_JS
+    assert "state.extraMetrics = v.extraMetrics.slice();" in _AM_JS
+    assert "state.sortBy = v.sortBy; state.sortDir = v.sortDir;" in _AM_JS
+
+
 def test_schedule_ease_is_displayable_for_start_sit():
     # The Start/Sit matchup column needs Schedule Ease visible to the table.
     from data_building.advanced_metrics import LEADERBOARD_METRICS

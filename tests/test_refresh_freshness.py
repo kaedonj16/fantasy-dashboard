@@ -82,6 +82,120 @@ def test_nav_fresh_honors_user_refresh_on_warm_launch():
     assert stale.index("if (!userRefresh && Date.now() - loadedAt > 20000)") > stale.index("brUserRefresh")
 
 
+def _stale_iife() -> str:
+    start = APP_JS.index("// ── Stale-page auto-refresh")
+    return APP_JS[start : APP_JS.index("})();", start)]
+
+
+def test_stale_reload_keys_on_hidden_duration_not_page_age():
+    stale = _stale_iife()
+    # The stamp is taken when the page actually goes away.
+    assert "var hiddenSince = 0" in stale
+    assert "document.visibilityState === 'hidden') { hiddenSince = Date.now(); return; }" in stale
+    assert "window.addEventListener('pagehide', function () { hiddenSince = Date.now(); });" in stale
+    # The reload decision is keyed on how long the page stayed hidden, and a
+    # visible event with no preceding hidden stamp never reloads.
+    assert "if (!hiddenSince) return;" in stale
+    assert "var hiddenFor = Date.now() - hiddenSince;" in stale
+    assert "hiddenSince = 0;\n    if (hiddenFor >= STALE_MS) reloadOnce();" in stale
+    # Page age no longer drives the resume reload.
+    assert "Date.now() - loadedAt >= STALE_MS" not in stale
+    # bfcache restore goes through the same hidden-duration rule.
+    assert "if (e.persisted) maybeResumeReload();" in stale
+
+
+def test_stale_reload_guards_and_nav_fresh_unchanged():
+    stale = _stale_iife()
+    assert "var STALE_MS = 10 * 60 * 1000" in stale
+    # One-auto-reload-per-minute loop guard and live-surface exemptions stay.
+    assert "brAutoRefreshTs" in stale
+    assert "document.getElementById('drSideTabs')" in stale
+    assert "document.getElementById('rz-root')" in stale
+    # The nav-fresh launch handler is a separate mechanism and is untouched.
+    assert "d.type !== 'nav-fresh'" in stale
+    assert "if (!userRefresh && Date.now() - loadedAt > 20000) return;" in stale
+
+
+@pytest.mark.skipif(os.environ.get("SKIP_NODE") == "1", reason="node skipped")
+def test_stale_reload_hidden_duration_behavior_node():
+    """Behavioral: brief absences never reload no matter how old the page is;
+    only a hidden stretch of STALE_MS or longer does. Two fresh IIFE
+    instances: visibilitychange-driven returns, then the bfcache path."""
+    import shutil
+    import subprocess
+
+    if shutil.which("node") is None:
+        pytest.skip("Node.js not available")
+    # _stale_iife() stops before the closing "})();" (the source-assert
+    # convention in this file); the runnable harness needs it back.
+    src = _stale_iife() + "})();"
+    prefix = r"""
+var window = globalThis;
+var handlers = { doc: {}, win: {} };
+var reloads = 0;
+var now = 1000000000;
+Date.now = function() { return now; };
+var store = {};
+var sessionStorage = {
+  getItem: function(k) { return Object.prototype.hasOwnProperty.call(store, k) ? store[k] : null; },
+  setItem: function(k, v) { store[k] = String(v); },
+  removeItem: function(k) { delete store[k]; }
+};
+var document = {
+  visibilityState: 'visible',
+  getElementById: function() { return null; },
+  addEventListener: function(name, fn) { handlers.doc[name] = fn; }
+};
+window.addEventListener = function(name, fn) { handlers.win[name] = fn; };
+var navigator = {};
+var location = { href: 'http://x/advanced-metrics', reload: function() { reloads++; } };
+""" + src
+    drivers = [
+        # visibilitychange path.
+        r"""
+function vis(state) { document.visibilityState = state; handlers.doc['visibilitychange'](); }
+// The reported bug: page open and actively used for 30 minutes, then away
+// for 2 minutes. Page age must not trigger a reload.
+now += 30 * 60000;
+vis('hidden'); now += 2 * 60000; vis('visible');
+if (reloads !== 0) process.exit(2);
+// A short absence after a long one is still short.
+vis('hidden'); now += 9 * 60000; vis('visible');
+if (reloads !== 0) process.exit(3);
+// Hidden for the full stale window: reload exactly once.
+vis('hidden'); now += 11 * 60000; vis('visible');
+if (reloads !== 1) process.exit(4);
+// A later visible event with no fresh hidden period cannot re-fire (the
+// stamp was consumed, and in production the page has reloaded anyway).
+now += 11 * 60000; vis('visible');
+if (reloads !== 1) process.exit(5);
+process.exit(0);
+""",
+        # bfcache path (pagehide stamps, persisted pageshow evaluates).
+        r"""
+// No hidden stamp: a persisted pageshow alone never reloads.
+handlers.win['pageshow']({ persisted: true });
+if (reloads !== 0) process.exit(2);
+// A short freeze does not reload either.
+handlers.win['pagehide'](); now += 3 * 60000;
+handlers.win['pageshow']({ persisted: true });
+if (reloads !== 0) process.exit(3);
+// A freeze of STALE_MS or longer reloads on restore.
+handlers.win['pagehide'](); now += 11 * 60000;
+handlers.win['pageshow']({ persisted: true });
+if (reloads !== 1) process.exit(4);
+process.exit(0);
+""",
+    ]
+    with tempfile.TemporaryDirectory() as td:
+        for i, driver in enumerate(drivers):
+            fp = os.path.join(td, "stale_reload_check_%d.js" % i)
+            with open(fp, "w", encoding="utf-8") as fh:
+                fh.write(prefix + driver)
+            res = subprocess.run(["node", fp], capture_output=True, text=True, timeout=8)
+            assert res.returncode == 0, (res.stderr or res.stdout)
+
+
 def test_sw_late_network_notifies_after_explicit_refresh_fallback():
     block = SW[SW.index("async function handleNavigate") : SW.index("// ── Push notifications")]
     assert "notifyNavFresh(request, networkFetch)" in block
