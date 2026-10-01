@@ -4,7 +4,9 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List
 
-from dashboard_services.providers.base import BRACKET, UnsupportedCapabilityError
+from dashboard_services.providers.base import (
+    BRACKET, DRAFT_RESULTS, UnsupportedCapabilityError,
+)
 from dashboard_services.providers.registry import (
     get_provider, get_provider_capabilities, normalize_platform,
 )
@@ -84,6 +86,31 @@ def get_bracket(platform: str, league_id: str, kind: str, season: int):
 
 def get_drafts(platform: str, league_id: str, season: int) -> List[Dict[str, Any]]:
     return get_provider(platform).get_drafts(league_id, season)
+
+
+def get_draft_picks(
+    platform: str, league_id: str, season: int, draft_id: Any = None,
+) -> List[Dict[str, Any]]:
+    """Draft pick rows in the canonical Sleeper shape for one league/season.
+
+    Providers publish rows with canonical (Sleeper-keyed) ``player_id`` plus
+    ``roster_id`` / ``pick_no`` / ``round`` / ``draft_slot`` / ``metadata`` --
+    the same shape Sleeper's ``/draft/{id}/picks`` returns -- so grading and
+    timeline consumers never call a platform transport directly. (Feeding a
+    non-Sleeper synthetic draft id to the Sleeper transport 404s; that is how
+    Draft Grades 500'd and player timelines lost their drafted event for every
+    non-Sleeper league.) A provider without the draft-results capability, or
+    one whose adapter declines it, yields [] so callers render their honest
+    no-draft state. ``draft_id`` only matters for Sleeper, whose picks are
+    addressed per draft; other providers resolve picks from league + season.
+    """
+    provider = get_provider(platform)
+    if not provider.supports(DRAFT_RESULTS):
+        return []
+    try:
+        return provider.get_draft_picks(league_id, season, draft_id=draft_id) or []
+    except UnsupportedCapabilityError:
+        return []
 
 
 def get_transactions(platform: str, league_id: str, week: int, season: int) -> List[Dict[str, Any]]:

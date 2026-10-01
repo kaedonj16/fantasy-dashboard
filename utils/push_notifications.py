@@ -1361,7 +1361,8 @@ def notify_rival_trades():
     """Notify league subscribers when a high-value player is traded in their league."""
     try:
         from dashboard_services.db import get_conn
-        from dashboard_services.api import get_nfl_state, get_transactions
+        from dashboard_services.api import get_nfl_state
+        from dashboard_services.platform_api import get_transactions
         from utils.utils import load_model_value_table
 
         state  = get_nfl_state() or {}
@@ -1386,7 +1387,7 @@ def notify_rival_trades():
 
         for league_id, platform in leagues:
             try:
-                txns = get_transactions(league_id, week) or []
+                txns = get_transactions(platform, league_id, int(week), int(season)) or []
                 for t in txns:
                     if t.get("type") != "trade":
                         continue

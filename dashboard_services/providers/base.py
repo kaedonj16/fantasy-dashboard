@@ -79,6 +79,9 @@ class ProviderAdapter:
             f"{self.metadata.display_name} does not support {capability}."
         )
 
+    def get_draft_picks(self, league_id, season, draft_id=None):
+        return self._unsupported(DRAFT_RESULTS)
+
 
 # Legacy typed wrappers retained for callers of providers.sleeper.
 @dataclass
