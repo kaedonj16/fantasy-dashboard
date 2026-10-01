@@ -13,7 +13,9 @@ Two read-only views over the breakout engines' persisted calls:
 * **Track record** aggregates *finished* grades only: weekly hit rates per
   classification for the current scoring version (via the grader's own
   ``summarize_grade_rows``, so the 10-graded floor and rate math match the
-  grader exactly), plus the season engine's grades by phase once that table
+  grader exactly), plus calibration band rates by breakout score and by
+  confidence over the same pooled calls (via ``calibration``'s shared
+  helpers), plus the season engine's grades by phase once that table
   exists. The season grades table is written by the season grading path;
   until it exists (or has rows) the season section reports an explicit
   pending state, never an error and never a fabricated rate.
@@ -36,6 +38,7 @@ import logging
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from dashboard_services.db import get_conn
+from data_building.breakout_engine import calibration
 from data_building.breakout_engine import weekly_grading as wg
 
 logger = logging.getLogger(__name__)
@@ -535,6 +538,25 @@ def weekly_track_record(season: int) -> Dict[str, Any]:
         rows = []
     recon_weeks = load_reconstructed_weeks(season)
     summary = wg.summarize_grade_rows(rows)
+    # Calibration bands over the same pooled rows, via the shared
+    # calibration helpers so the rail and the calibration CLI can never
+    # disagree. Bands surface only once something has graded (with zero
+    # graded calls the block is its slim pending line and nothing else),
+    # and a band with no calls at all is omitted, exactly like a
+    # classification with no calls.
+    band_summary = calibration.summarize_bands(rows)
+    if summary["overall"]["graded"] > 0:
+        score_bands = [
+            _band_view(entry) for entry in band_summary["score_bands"]
+            if entry["calls"] > 0
+        ]
+        confidence_bands = [
+            _band_view(entry) for entry in band_summary["confidence_bands"]
+            if entry["calls"] > 0
+        ]
+    else:
+        score_bands = []
+        confidence_bands = []
     return {
         "scoring_version": SCORING_VERSION,
         "min_sample": summary["min_sample"],
@@ -543,10 +565,29 @@ def weekly_track_record(season: int) -> Dict[str, Any]:
             {"classification": key, **bucket}
             for key, bucket in summary["by_classification"].items()
         ],
+        "score_bands": score_bands,
+        "confidence_bands": confidence_bands,
         "hits": top_grade_rows(rows, wg.GRADE_HIT,
                                reconstructed_weeks=recon_weeks),
         "misses": top_grade_rows(rows, wg.GRADE_MISS,
                                  reconstructed_weeks=recon_weeks),
+    }
+
+
+def _band_view(entry: Dict[str, Any]) -> Dict[str, Any]:
+    """A calibration band entry in the rail's group-row shape: the band
+    label rides as ``label`` and the bucket fields pass through."""
+    return {
+        "label": entry["band"],
+        "calls": entry["calls"],
+        "graded": entry["graded"],
+        "hit": entry["hit"],
+        "partial": entry["partial"],
+        "miss": entry["miss"],
+        "ungraded": entry["ungraded"],
+        "hit_rate": entry["hit_rate"],
+        "partial_rate": entry["partial_rate"],
+        "miss_rate": entry["miss_rate"],
     }
 
 

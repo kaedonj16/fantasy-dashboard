@@ -16934,6 +16934,14 @@ def page_breakouts(platform: str, season: int, league_id: str):
         var html = '<div class="bo-rail-title">Track Record</div>';
         html += '<div class="bo-rail-group">Weekly calls' + (weekly.scoring_version ? ' (' + weekly.scoring_version + ')' : '') + '</div>';
         html += _boTrackRows(weekly.groups, pendingText);
+        if (weekly.score_bands && weekly.score_bands.length) {{
+          html += '<div class="bo-rail-group" style="margin-top:10px;">By score</div>';
+          html += _boTrackRows(weekly.score_bands, pendingText);
+        }}
+        if (weekly.confidence_bands && weekly.confidence_bands.length) {{
+          html += '<div class="bo-rail-group" style="margin-top:10px;">By confidence</div>';
+          html += _boTrackRows(weekly.confidence_bands, pendingText);
+        }}
         html += '<div class="bo-rail-group" style="margin-top:10px;">Season calls by phase</div>';
         if (seasonEng.available) {{
           html += _boTrackRows(seasonEng.groups, pendingText);
