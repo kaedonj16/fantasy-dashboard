@@ -145,6 +145,25 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
   font-size: 12px; color: var(--text-muted); background: var(--accent-soft);
   border-radius: 8px; padding: 8px 10px; margin: 0 0 8px;
 }
+/* Best moves card: the top single swaps that raise win probability. */
+.wv-lab-moves { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; margin-bottom: 12px; }
+.wv-lab-move { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; background: none; border: 1px solid var(--border); border-radius: 10px; padding: 9px 11px; margin-top: 6px; cursor: pointer; color: var(--text); font-size: 13px; }
+.wv-lab-move .mv-names { font-weight: 700; }
+.wv-lab-move .mv-win { margin-left: auto; color: var(--text-muted); font-weight: 700; white-space: nowrap; }
+.wv-lab-move .dl.up { color: #059669; font-weight: 800; }
+.wv-lab-moves-none { font-size: 13px; color: var(--text-muted); }
+/* Why panel: sits under the tapped starter row, opened by tapping the range
+   line. Only ever shows fields the payload actually carries. */
+.wv-lab-why { display: none; padding: 10px 12px 12px; border-top: 1px dashed var(--border); }
+.wv-lab-slot.why-open .wv-lab-why { display: block; }
+.wv-lab-why .wl { font-size: 12.5px; margin-top: 4px; }
+.wv-lab-why .wl b { color: var(--text-muted); font-weight: 700; text-transform: uppercase; font-size: 10.5px; letter-spacing: .05em; margin-right: 6px; }
+.wv-lab-rangeline.tap { cursor: pointer; }
+/* Live mode: final scores lock into the sim; in-progress players get a chip. */
+.wv-lab-locked { font-size: 12px; font-weight: 800; color: #059669; }
+.wv-lab-live-badge { background: #dc2626; color: #fff; border-radius: 6px; padding: 1px 6px; font-size: 10px; font-weight: 800; letter-spacing: .05em; margin-right: 6px; }
+.wv-lab-live-chip { background: #dc2626; color: #fff; border-radius: 6px; padding: 1px 6px; font-size: 10px; font-weight: 800; letter-spacing: .05em; margin-left: 6px; vertical-align: 2px; }
+.wv-lab-live-chip.final { background: #059669; }
 /* Mobile: the Lab goes full width with tight gutters. Page padding drops to
    12px and the bench sheet loses its 54px desktop indent. */
 @media (max-width: 768px) {
@@ -733,6 +752,19 @@ var wvLabLastNote = '';    // one-off note line (e.g. no-gain upside), cleared b
 var wvLabNoGain = {{optimize: false, upside: false}};  // sticky no-gain state: disables
                                                      // the matching button until the lineup changes
 var WV_LAB_SIMS = 2000;
+// Shared-sample engine state (Feature: shared-sample sims). Every player's
+// per-sim points are simulated ONCE per payload load, correlated through a
+// single Cholesky of the full player pool, so evaluating any lineup is just
+// summing the right players' samples. Swap deltas reprice only the swapped
+// slot against the cached totals of the current lineup.
+var wvLabSamples = null;     // pid -> {{own, raw}} Float64Arrays of per-sim points
+var wvLabSamplesBase = null; // the wvLabBase object wvLabSamples was built from
+var wvLabProfiles = {{}};      // pid -> profile (registered from payload entries)
+var wvLabEffCache = {{}};      // pid|replPid|onset -> effective per-sim array (injury model applied)
+var wvLabCurTotals = null;   // per-sim totals of wvLabLineup as last evaluated
+var wvLabCurEffs = null;     // per-slot effective arrays behind wvLabCurTotals
+var wvLabBusy = false;       // chunked-async Optimize/Chase in flight (buttons park)
+var wvLabWhySlot = -1;       // slot whose "why" panel is open (-1 = none)
 
 // In-game injury model for the Lab (single game). Per-position onset rates
 // are read from the payload (wvLabData.injury_onset), which comes from the
@@ -852,68 +884,162 @@ function wvLabBestRepl(entry) {{
   var pf = best.pf;
   return {{
     pid: best.pid,
+    pf: pf,
     sp: wvLabSkewParams(pf.mean || 0, pf.std || 8, pf.skew_alpha == null ? 2 : pf.skew_alpha),
     dud: pf.dud_risk || 0
   }};
 }}
 
-// Evaluate one lineup on the common random numbers. Returns
-// {{winPct, median, p10, p90}}. Correlated via Gaussian copula (Cholesky).
-function wvLabEvaluate(lineup) {{
-  var n = WV_LAB_SIMS, m = lineup.length, i, j, s;
-  if (!m || !wvLabOppDraws) return {{ winPct: 0.5, median: 0, p10: 0, p90: 0 }};
-  var pids = [];
-  for (i = 0; i < m; i++) pids.push(lineup[i].player_id);
+// ── Shared-sample engine ────────────────────────────────────────────────
+// Each player's per-sim points are simulated ONCE per payload (correlated
+// through one Cholesky of the FULL player pool), so evaluating any lineup
+// is just summing the right players' samples. Because a subset of a
+// multivariate normal keeps the matching submatrix covariance, lineups
+// evaluated off the shared samples have the same distribution as lineups
+// simulated on their own (Monte Carlo tolerance), and swap deltas compare
+// identical sim streams, so they stay signal, not noise.
+// Two draws are kept per player: "own" (correlated with the pool) and
+// "raw" (the player's own uniforms, used for injury replacements exactly
+// as the old per-call evaluator drew them).
+function wvLabRegisterProfiles(lineup) {{
+  var i, j;
+  var list = lineup || [];
+  for (i = 0; i < list.length; i++) {{
+    var e = list[i];
+    if (!e || !e.player_id) continue;
+    if (e.profile && !wvLabProfiles[e.player_id]) wvLabProfiles[e.player_id] = e.profile;
+    var bench = e.bench || [];
+    for (j = 0; j < bench.length; j++) {{
+      var b = bench[j];
+      if (b && b.player_id && b.profile && !wvLabProfiles[b.player_id]) wvLabProfiles[b.player_id] = b.profile;
+    }}
+  }}
+}}
+
+function wvLabBuildSamples() {{
+  var pids = Object.keys(wvLabBase || {{}});
+  var n = WV_LAB_SIMS, i, j, s;
+  var corr = (wvLabData && wvLabData.corr) || {{}};
   var mat = [];
-  for (i = 0; i < m; i++) {{
+  for (i = 0; i < pids.length; i++) {{
     var row = [];
-    for (j = 0; j < m; j++) {{
+    for (j = 0; j < pids.length; j++) {{
       if (i === j) {{ row.push(1); continue; }}
       var a = pids[i], b = pids[j];
       var key = a < b ? a + ':' + b : b + ':' + a;
-      row.push(wvLabData.corr[key] || 0);
+      row.push(corr[key] || 0);
     }}
     mat.push(row);
   }}
   var L = wvLabCholesky(mat);
-  var params = [];
-  for (i = 0; i < m; i++) {{
-    var pf = lineup[i].profile || {{}};
-    params.push({{
-      sp: wvLabSkewParams(pf.mean || 0, pf.std || 8, pf.skew_alpha == null ? 2 : pf.skew_alpha),
-      dud: pf.dud_risk || 0,
-      onset: wvLabInjuryOnsetFor(lineup[i].pos),
-      repl: wvLabBestRepl(lineup[i])
-    }});
-  }}
-  var totals = new Float64Array(n);
-  for (s = 0; s < n; s++) {{
-    var tot = 0;
-    for (i = 0; i < m; i++) {{
+  var samples = {{}};
+  for (i = 0; i < pids.length; i++) {{
+    var pf = wvLabProfiles[pids[i]];
+    if (!pf) continue;
+    var sp = wvLabSkewParams(pf.mean || 0, pf.std || 8, pf.skew_alpha == null ? 2 : pf.skew_alpha);
+    var dud = pf.dud_risk || 0;
+    var bu = wvLabBase[pids[i]];
+    var own = new Float64Array(n), raw = new Float64Array(n);
+    for (s = 0; s < n; s++) {{
       var c0 = 0, c1 = 0;
       for (j = 0; j <= i; j++) {{
         c0 += L[i][j] * wvLabBase[pids[j]].u0[s];
         c1 += L[i][j] * wvLabBase[pids[j]].u1[s];
       }}
-      var pr = params[i], x, bu = wvLabBase[pids[i]];
-      if (pr.onset > 0 && bu.inj[s] < pr.onset) {{
-        // In-game injury: the starter leaves and the team starts someone
-        // else. Best eligible bench player takes the slot (drawn off their
-        // own shared uniforms); with an empty bench, a waiver-wire
-        // replacement at ~45% of the starter's output. Never a zero.
-        if (pr.repl) {{
-          var rp = pr.repl, ru = wvLabBase[rp.pid];
-          x = wvLabDrawPlayer(rp.sp, rp.dud, ru.dud[s], ru.u0[s], ru.u1[s]);
-        }} else {{
-          x = wvLabDrawPlayer(pr.sp, pr.dud, bu.dud[s], c0, c1) * WV_LAB_INJURY_REPLACEMENT;
-        }}
-      }} else {{
-        x = wvLabDrawPlayer(pr.sp, pr.dud, bu.dud[s], c0, c1);
-      }}
-      tot += x;
+      own[s] = wvLabDrawPlayer(sp, dud, bu.dud[s], c0, c1);
+      raw[s] = wvLabDrawPlayer(sp, dud, bu.dud[s], bu.u0[s], bu.u1[s]);
     }}
-    totals[s] = tot;
+    samples[pids[i]] = {{ own: own, raw: raw }};
   }}
+  wvLabSamples = samples;
+  wvLabSamplesBase = wvLabBase;
+  wvLabEffCache = {{}};
+  wvLabCurTotals = null;
+  wvLabCurEffs = null;
+}}
+
+function wvLabEnsureSamples(lineup) {{
+  wvLabRegisterProfiles(lineup);
+  if (!wvLabSamples || wvLabSamplesBase !== wvLabBase) {{ wvLabBuildSamples(); return; }}
+  // A player whose profile arrived after the build (e.g. a swap candidate
+  // first seen as a trial entry) triggers one rebuild; the pool order is
+  // fixed, so existing players keep their exact sample values.
+  for (var pid in wvLabProfiles) {{
+    if (wvLabBase[pid] && !wvLabSamples[pid]) {{ wvLabBuildSamples(); return; }}
+  }}
+}}
+
+// Effective per-sim points for one entry: the injury model and live
+// locking applied to the player's shared samples.
+// - A final live player is locked at their actual points (constant array).
+// - With injury onset, sims where the player leaves early score the best
+//   bench replacement's raw draw instead, or the player's own draw at
+//   WV_LAB_INJURY_REPLACEMENT when the bench is empty. Never a zero.
+// - Otherwise the player's own (correlated) samples, returned directly.
+function wvLabEntryEff(entry) {{
+  var pid = entry.player_id, s;
+  var live = entry.live;
+  if (live && live.status === 'final' && live.points != null) {{
+    var lk = wvLabEffCache[pid + '|LOCK'];
+    if (!lk) {{
+      lk = new Float64Array(WV_LAB_SIMS);
+      for (s = 0; s < WV_LAB_SIMS; s++) lk[s] = live.points;
+      wvLabEffCache[pid + '|LOCK'] = lk;
+    }}
+    return lk;
+  }}
+  var smp = wvLabSamples && wvLabSamples[pid];
+  if (!smp) return null;
+  var onset = wvLabInjuryOnsetFor(entry.pos);
+  if (!(onset > 0)) return smp.own;
+  var repl = wvLabBestRepl(entry);
+  if (repl && !wvLabSamples[repl.pid]) {{
+    if (repl.pf) wvLabProfiles[repl.pid] = wvLabProfiles[repl.pid] || repl.pf;
+    wvLabBuildSamples();
+    smp = wvLabSamples[pid];
+    if (!smp) return null;
+  }}
+  var key = pid + '|' + (repl ? repl.pid : '') + '|' + onset;
+  var eff = wvLabEffCache[key];
+  if (eff) return eff;
+  eff = new Float64Array(WV_LAB_SIMS);
+  var inj = wvLabBase[pid].inj, own = smp.own;
+  var raw = repl ? wvLabSamples[repl.pid].raw : null;
+  for (s = 0; s < WV_LAB_SIMS; s++) {{
+    eff[s] = inj[s] < onset ? (raw ? raw[s] : own[s] * WV_LAB_INJURY_REPLACEMENT) : own[s];
+  }}
+  wvLabEffCache[key] = eff;
+  return eff;
+}}
+
+function wvLabTotalsFor(lineup) {{
+  wvLabEnsureSamples(lineup);
+  var totals = new Float64Array(WV_LAB_SIMS), effs = [], i, s;
+  for (i = 0; i < lineup.length; i++) {{
+    var eff = wvLabEntryEff(lineup[i]);
+    effs.push(eff);
+    for (s = 0; s < WV_LAB_SIMS; s++) totals[s] += eff[s];
+  }}
+  return {{ totals: totals, effs: effs }};
+}}
+
+// Win probability only (no percentile sort): used by swap deltas.
+function wvLabWinPct(lineup) {{
+  if (!lineup.length || !wvLabOppDraws) return 0.5;
+  var t = wvLabTotalsFor(lineup).totals, wins = 0, s;
+  for (s = 0; s < WV_LAB_SIMS; s++) if (t[s] > wvLabOppDraws[s]) wins++;
+  return wins / WV_LAB_SIMS;
+}}
+
+// Evaluate one lineup on the shared samples. Returns
+// {{winPct, median, p10, p90}}. Evaluating the working lineup also caches
+// its per-sim totals, which is what makes swap deltas O(1) slots.
+function wvLabEvaluate(lineup) {{
+  var n = WV_LAB_SIMS, s;
+  if (!lineup.length || !wvLabOppDraws) return {{ winPct: 0.5, median: 0, p10: 0, p90: 0 }};
+  var built = wvLabTotalsFor(lineup);
+  var totals = built.totals;
+  if (lineup === wvLabLineup) {{ wvLabCurTotals = totals; wvLabCurEffs = built.effs; }}
   var wins = 0;
   for (s = 0; s < n; s++) if (totals[s] > wvLabOppDraws[s]) wins++;
   var sorted = Array.prototype.slice.call(totals).sort(function(a, b) {{ return a - b; }});
@@ -923,6 +1049,33 @@ function wvLabEvaluate(lineup) {{
     p10: sorted[Math.floor(n * 0.1)],
     p90: sorted[Math.floor(n * 0.9)]
   }};
+}}
+
+// Win% delta of swapping bench option b into slot si (common random
+// numbers). Fast path: reprice only slot si against the cached totals of
+// the current lineup; a one-slot trial differs from the current lineup in
+// exactly that slot's effective samples, so the result is identical to a
+// full evaluate of the trial. Falls back to a full evaluate whenever the
+// cache is cold or stale.
+function wvLabSwapDelta(si, b) {{
+  if (wvLabLineup && wvLabResult && wvLabOppDraws) {{
+    wvLabEnsureSamples([b]);
+    // Read the cache AFTER ensuring samples: a rebuild (first sight of a
+    // new profile) invalidates the cached totals, and then the full
+    // evaluate below is the correct path.
+    var effIn = wvLabEntryEff(b);
+    var curTotals = wvLabCurTotals, curEffs = wvLabCurEffs;
+    if (effIn && curTotals && curEffs && curEffs[si]) {{
+      var wins = 0, s;
+      for (s = 0; s < WV_LAB_SIMS; s++) {{
+        if (curTotals[s] - curEffs[si][s] + effIn[s] > wvLabOppDraws[s]) wins++;
+      }}
+      return wins / WV_LAB_SIMS - wvLabResult.winPct;
+    }}
+  }}
+  var trial = wvLabLineup.slice();
+  trial[si] = b;
+  return wvLabWinPct(trial) - wvLabResult.winPct;
 }}
 
 // One URL builder for the Lab payload: the background prefetch and the
@@ -1032,6 +1185,14 @@ function wvLoadLab() {{
     wvLabLastAction = '';
     wvLabLastNote = '';
     wvLabNoGain = {{optimize: false, upside: false}};
+    wvLabSamples = null;
+    wvLabSamplesBase = null;
+    wvLabProfiles = {{}};
+    wvLabEffCache = {{}};
+    wvLabCurTotals = null;
+    wvLabCurEffs = null;
+    wvLabWhySlot = -1;
+    wvLabBusy = false;
     wvLabLineup = JSON.parse(JSON.stringify(data.you.lineup));
     var pids = [];
     wvLabLineup.forEach(function(e) {{
@@ -1041,7 +1202,13 @@ function wvLoadLab() {{
     var seed = (Date.now() % 100000) | 0;
     wvLabBase = wvLabBuildBase(pids, WV_LAB_SIMS, seed);
     var opp = data.opponent || {{}};
-    if (opp.mean > 0) {{
+    if (opp.live_points != null) {{
+      // Live mode: every opposing starter is final, so the opponent total
+      // is a known constant, not a distribution.
+      wvLabOppDraws = new Float64Array(WV_LAB_SIMS);
+      for (var ls = 0; ls < WV_LAB_SIMS; ls++) wvLabOppDraws[ls] = opp.live_points;
+      wvLabOppStats = {{ median: opp.live_points, p10: opp.live_points, p90: opp.live_points }};
+    }} else if (opp.mean > 0) {{
       var rand = wvLabRng(seed + 7);
       var sp = wvLabSkewParams(opp.mean, opp.std || 15, 2.0);
       wvLabOppDraws = new Float64Array(WV_LAB_SIMS);
@@ -1068,12 +1235,20 @@ function wvLoadLab() {{
 
 function wvLabEsc(s) {{ return String(s == null ? '' : s).replace(/'/g, "\\'").replace(/</g, '&lt;'); }}
 
-function wvLabRangeBar(e) {{
+function wvLabRangeBar(e, si) {{
+  // Live mode: a finished game locks the score; there is no range left.
+  if (e.live && e.live.status === 'final' && e.live.points != null) {{
+    return '<span class="wv-lab-locked">Final · ' + e.live.points + ' pts</span>';
+  }}
   var PMAX = 34;
   function pct(x) {{ return Math.max(0, Math.min(100, x / PMAX * 100)); }}
   var l = pct(e.floor || 0), r = pct(e.ceiling || 0), d = pct(e.proj || 0);
-  return '<span class="wv-lab-rangeline">'
-    + '<span class="wv-lab-end"><em>MIN</em><span class="v">' + (e.floor || 0) + '</span></span>'
+  // Starter rows (si given) open the why panel on tap; bench option rows
+  // stay plain (their tap already means "swap").
+  var tap = (si != null);
+  return '<span class="wv-lab-rangeline' + (tap ? ' tap' : '') + '"'
+    + (tap ? ' onclick="event.stopPropagation();wvLabToggleWhy(' + si + ')" title="Why this range?"' : '')
+    + '><span class="wv-lab-end"><em>MIN</em><span class="v">' + (e.floor || 0) + '</span></span>'
     + '<span class="wv-lab-range"><span class="fill" style="left:' + l + '%;width:' + Math.max(0, r - l) + '%"></span>'
     + '<span class="dot" style="left:' + d + '%"></span></span>'
     + '<span class="wv-lab-end"><em>MAX</em><span class="v">' + (e.ceiling || 0) + '</span></span></span>';
@@ -1102,11 +1277,111 @@ function wvLabTags(e) {{
   }}).join('');
 }}
 
-// Win% delta of swapping bench option b into slot si (common random numbers).
-function wvLabSwapDelta(si, b) {{
-  var trial = wvLabLineup.slice();
-  trial[si] = b;
-  return wvLabEvaluate(trial).winPct - wvLabResult.winPct;
+// ── Best moves card ─────────────────────────────────────────────────────
+// The top single swaps that raise win probability by at least a full
+// point, best first (at most 3). Rendered only in the fresh state: once an
+// action has run, the changes summary line takes over the same spot.
+function wvLabBestMoves() {{
+  var moves = [], si, bi;
+  if (!wvLabLineup || !wvLabResult) return moves;
+  for (si = 0; si < wvLabLineup.length; si++) {{
+    var bench = wvLabLineup[si].bench || [];
+    for (bi = 0; bi < bench.length; bi++) {{
+      var d = wvLabSwapDelta(si, bench[bi]);
+      if (Math.round(d * 100) >= 1) {{
+        moves.push({{ si: si, bi: bi, out: wvLabLineup[si].name, inn: bench[bi].name, delta: d }});
+      }}
+    }}
+  }}
+  moves.sort(function(a, b) {{ return b.delta - a.delta; }});
+  return moves.slice(0, 3);
+}}
+
+function wvLabRenderBestMoves() {{
+  if (wvLabLastChanges.length || wvLabLastNote) return '';
+  var moves = wvLabBestMoves();
+  var head = '<div class="wv-lab-moves"><div class="wv-lab-cap">Best moves</div>';
+  if (!moves.length) {{
+    return head + '<div class="wv-lab-moves-none">Your lineup is already the best single-swap option. No bench swap improves your win probability.</div></div>';
+  }}
+  var before = Math.round(wvLabResult.winPct * 100);
+  var rows = moves.map(function(m) {{
+    var after = Math.round((wvLabResult.winPct + m.delta) * 100);
+    return '<button type="button" class="wv-lab-move" onclick="wvLabSwap(' + m.si + ',' + m.bi + ')">'
+      + '<span class="mv-names">' + wvLabEsc(m.inn) + ' in for ' + wvLabEsc(m.out) + '</span>'
+      + '<span class="mv-win">Win ' + before + '% → ' + after + '%</span>'
+      + '<span class="dl up">+' + Math.round(m.delta * 100) + '%</span></button>';
+  }}).join('');
+  return head + rows + '</div>';
+}}
+
+// ── Why panel ───────────────────────────────────────────────────────────
+// Tapping a starter's range line opens a panel under the row explaining
+// the range from fields the payload actually carries: matchup string,
+// usage (season average), game-log spread, and correlation partners.
+// Lines with no data behind them are omitted, never invented.
+function wvLabPlayerName(pid) {{
+  var i, j;
+  var list = wvLabLineup || [];
+  for (i = 0; i < list.length; i++) {{
+    if (list[i].player_id === pid) return list[i].name;
+    var bench = list[i].bench || [];
+    for (j = 0; j < bench.length; j++) if (bench[j].player_id === pid) return bench[j].name;
+  }}
+  return null;
+}}
+
+function wvLabWhyHtml(e) {{
+  var lines = [];
+  if (e.matchup) lines.push('<div class="wl"><b>Matchup</b>' + wvLabEsc(e.matchup) + '</div>');
+  var usage = wvLabUsageLabel(e);
+  if (usage) lines.push('<div class="wl"><b>Usage</b>' + wvLabEsc(usage) + ' (season average)</div>');
+  var pf = e.profile || {{}};
+  if (pf.std != null) {{
+    var spread = 'Std ' + pf.std;
+    if (pf.dud_risk) spread += ' · dud risk ' + Math.round(pf.dud_risk * 100) + '%';
+    lines.push('<div class="wl"><b>Spread</b>' + spread + '</div>');
+  }}
+  var corr = (wvLabData && wvLabData.corr) || {{}}, partners = [], key;
+  for (key in corr) {{
+    var parts = key.split(':');
+    if (parts.length !== 2) continue;
+    var other = parts[0] === e.player_id ? parts[1] : (parts[1] === e.player_id ? parts[0] : null);
+    if (other) partners.push({{ pid: other, rho: corr[key] }});
+  }}
+  partners.sort(function(a, b) {{ return Math.abs(b.rho) - Math.abs(a.rho); }});
+  if (partners.length) {{
+    var names = [];
+    for (var i = 0; i < Math.min(3, partners.length); i++) {{
+      var nm = wvLabPlayerName(partners[i].pid);
+      if (nm) names.push(wvLabEsc(nm) + ' (' + (partners[i].rho >= 0 ? '+' : '') + partners[i].rho.toFixed(2) + ')');
+    }}
+    if (names.length) lines.push('<div class="wl"><b>Correlation</b>' + names.join(', ') + '</div>');
+  }}
+  if (e.live && e.live.status === 'final') {{
+    lines.push('<div class="wl"><b>Live</b>Final: scored ' + e.live.points + ' pts. Locked in the sim.</div>');
+  }} else if (e.live && e.live.status === 'live') {{
+    lines.push('<div class="wl"><b>Live</b>In progress' + (e.live.points != null ? ': ' + e.live.points + ' pts so far' : '') + '. Still simulated.</div>');
+  }}
+  if (!lines.length) lines.push('<div class="wl">No extra detail for this player this week.</div>');
+  return lines.join('');
+}}
+
+// Pure class toggle (like wvLabToggleSlot): opening one panel closes any
+// other, and nothing re-renders.
+function wvLabToggleWhy(si) {{
+  var el = document.querySelector('.wv-lab-slot[data-si="' + si + '"]');
+  if (wvLabWhySlot === si) {{
+    if (el && el.classList.contains('why-open')) el.classList.toggle('why-open');
+    wvLabWhySlot = -1;
+    return;
+  }}
+  if (wvLabWhySlot >= 0) {{
+    var prev = document.querySelector('.wv-lab-slot[data-si="' + wvLabWhySlot + '"]');
+    if (prev && prev.classList.contains('why-open')) prev.classList.toggle('why-open');
+  }}
+  wvLabWhySlot = si;
+  if (el && !el.classList.contains('why-open')) el.classList.toggle('why-open');
 }}
 
 function wvLabRenderHero() {{
@@ -1115,6 +1390,7 @@ function wvLabRenderHero() {{
   var winPct = Math.round(r.winPct * 100);
   var oppName = wvLabEsc(opp.name || 'Opponent');
   var lbl = 'Win probability · ' + WV_LAB_SIMS.toLocaleString() + ' sims · vs ' + oppName;
+  if (wvLabData.live) lbl = '<span class="wv-lab-live-badge">LIVE</span>' + lbl + ' · final scores locked';
   var tmin = Math.min(r.p10, wvLabOppStats ? wvLabOppStats.p10 : r.p10);
   var tmax = Math.max(r.p90, wvLabOppStats ? wvLabOppStats.p90 : r.p90);
   var pad = (tmax - tmin) * 0.08 || 10;
@@ -1153,11 +1429,15 @@ function wvLabRenderHero() {{
 // optimal (no improving swap / no ceiling gain), its button stays disabled
 // until the next lineup change, so a repeat tap is not a dead click.
 function wvLabActionButtons() {{
+  if (wvLabBusy) {{
+    return '<button type="button" class="wv-lab-btn" disabled>Chase upside</button>'
+      + '<button type="button" class="wv-lab-btn primary" disabled>Optimizing...</button>';
+  }}
   var chaseDis = wvLabNoGain.upside ? ' disabled title="Already your highest-ceiling lineup"' : '';
   var optDis = wvLabNoGain.optimize ? ' disabled title="Already optimized"' : '';
   var optLbl = wvLabNoGain.optimize ? 'Lineup optimized' : 'Optimize lineup';
-  return '<button type="button" class="wv-lab-btn" onclick="wvLabChaseUpside()"' + chaseDis + '>Chase upside</button>'
-    + '<button type="button" class="wv-lab-btn primary" onclick="wvLabOptimize()"' + optDis + '>' + optLbl + '</button>';
+  return '<button type="button" class="wv-lab-btn" onclick="wvLabChaseUpsideAsync()"' + chaseDis + '>Chase upside</button>'
+    + '<button type="button" class="wv-lab-btn primary" onclick="wvLabOptimizeAsync()"' + optDis + '>' + optLbl + '</button>';
 }}
 
 function wvLabRenderSlots() {{
@@ -1189,21 +1469,30 @@ function wvLabRenderSlots() {{
       }}).join('') + '</div>';
     }}
     var slotCls = 'wv-lab-slot' + (wvLabOpenSlots[si] ? ' open' : '')
-      + (changed[si] ? ' wv-lab-changed' : '');
+      + (changed[si] ? ' wv-lab-changed' : '')
+      + (wvLabWhySlot === si ? ' why-open' : '');
+    var isFinal = e.live && e.live.status === 'final' && e.live.points != null;
+    var isLive = e.live && e.live.status === 'live';
+    var liveChip = isFinal ? '<span class="wv-lab-live-chip final">FINAL</span>'
+      : (isLive ? '<span class="wv-lab-live-chip">LIVE</span>' : '');
+    var projHtml = isFinal
+      ? '<span class="wv-lab-proj"><span class="n">' + e.live.points + '</span><span class="l">FINAL</span></span>'
+      : '<span class="wv-lab-proj"><span class="n">' + (e.proj || 0).toFixed(1) + '</span><span class="l">PROJ</span></span>';
     return '<div class="' + slotCls + '" data-si="' + si + '">'
       + '<button type="button" class="wv-lab-row" onclick="wvLabToggleSlot(' + si + ')">'
       + '<span class="wv-lab-pos' + wvLabPosCls(e.slot || e.pos) + '">' + wvLabEsc(e.slot || e.pos) + '</span>'
       + '<span class="wv-lab-main">'
-      + '<span class="wv-lab-line1"><span class="wv-lab-name">' + wvLabEsc(e.name) + '</span></span>'
+      + '<span class="wv-lab-line1"><span class="wv-lab-name">' + wvLabEsc(e.name) + '</span>' + liveChip + '</span>'
       + '<span class="wv-lab-line2"><span class="wv-lab-meta">'
       + (usage ? '<span>' + usage + '</span>' : '')
       + (e.matchup ? '<span>' + wvLabEsc(e.matchup) + '</span>' : '')
       + wvLabTags(e) + '</span>'
-      + wvLabRangeBar(e)
+      + wvLabRangeBar(e, si)
       + '</span></span>'
-      + '<span class="wv-lab-proj"><span class="n">' + (e.proj || 0).toFixed(1) + '</span><span class="l">PROJ</span></span>'
+      + projHtml
       + (bench.length ? '<span class="wv-lab-chev">›</span>' : '<span class="wv-lab-chev" style="visibility:hidden">›</span>')
-      + '</button>' + sheet + '</div>';
+      + '</button>' + sheet
+      + '<div class="wv-lab-why">' + wvLabWhyHtml(e) + '</div></div>';
   }}).join('');
 }}
 
@@ -1216,8 +1505,9 @@ function wvRenderLab() {{
   var sy = 0;
   try {{ sy = window.pageYOffset || (document.documentElement && document.documentElement.scrollTop) || 0; }} catch (_) {{}}
   var html = wvLabRenderHero()
+    + wvLabRenderBestMoves()
     + '<div class="wv-section-title" style="margin-top:4px">Your lineup</div>'
-    + '<div style="font-size:12px;color:var(--text-muted);margin:-6px 0 8px">tap a starter to swap</div>'
+    + '<div style="font-size:12px;color:var(--text-muted);margin:-6px 0 8px">tap a starter to swap · tap the range for the why</div>'
     + wvLabChangesLine()
     + wvLabRenderSlots()
     + '<p class="wv-lab-fine">' + WV_LAB_SIMS.toLocaleString()
@@ -1256,7 +1546,7 @@ function wvLabBenchEntry(e) {{
   return {{ player_id: e.player_id, name: e.name, pos: e.pos, slot: 'BN',
     proj: e.proj, floor: e.floor, ceiling: e.ceiling,
     matchup: e.matchup, tags: e.tags, profile: e.profile,
-    usage_stat: e.usage_stat, usage_avg: e.usage_avg }};
+    usage_stat: e.usage_stat, usage_avg: e.usage_avg, live: e.live }};
 }}
 
 // True when a player of the given position may sit on the slot's bench.
@@ -1304,7 +1594,7 @@ function wvLabApplySwap(si, bi) {{
   var nb = {{ player_id: b.player_id, name: b.name, pos: b.pos, slot: slot.slot,
     proj: b.proj, floor: b.floor, ceiling: b.ceiling,
     matchup: b.matchup, tags: b.tags, profile: b.profile,
-    usage_stat: b.usage_stat, usage_avg: b.usage_avg,
+    usage_stat: b.usage_stat, usage_avg: b.usage_avg, live: b.live,
     eligible: slot.eligible, bench: sb }};
   wvLabLineup[si] = nb;
   return {{si: si, out: outName, inn: inName}};
@@ -1401,24 +1691,24 @@ function wvLabChaseUpside() {{
   if (wvLabLastChanges.length) wvLabScrollChangedIntoView(wvLabLastChanges[0].si);
 }}
 
-function wvLabOptimize() {{
-  var guard = 0, si, bi, ci;
-  var changes = [];
-  var best = null;
-  while (guard++ < 12) {{
-    best = null;
-    for (si = 0; si < wvLabLineup.length; si++) {{
-      var bench = wvLabLineup[si].bench || [];
-      for (bi = 0; bi < bench.length; bi++) {{
-        var d = wvLabSwapDelta(si, bench[bi]);
-        if (d > 0.001 && (!best || d > best.d)) best = {{ si: si, bi: bi, d: d }};
-      }}
+// One greedy Optimize round: the single best improving swap against the
+// current baseline, or null when no swap improves win probability.
+function wvLabOptimizeScan() {{
+  var best = null, si, bi;
+  for (si = 0; si < wvLabLineup.length; si++) {{
+    var bench = wvLabLineup[si].bench || [];
+    for (bi = 0; bi < bench.length; bi++) {{
+      var d = wvLabSwapDelta(si, bench[bi]);
+      if (d > 0.001 && (!best || d > best.d)) best = {{ si: si, bi: bi, d: d }};
     }}
-    if (!best) break;
-    // apply without re-render until the end
-    changes.push(wvLabApplySwap(best.si, best.bi));
-    wvLabResult = wvLabEvaluate(wvLabLineup);  // re-baseline for the next pick
   }}
+  return best;
+}}
+
+// Shared Optimize bookkeeping once the greedy rounds are done: noMore is
+// true when the last scan found nothing (the lineup is optimal).
+function wvLabFinishOptimize(changes, noMore) {{
+  var ci;
   wvLabLastAction = 'optimize';
   wvLabLastNote = '';
   if (!changes.length) {{
@@ -1431,13 +1721,62 @@ function wvLabOptimize() {{
     return;
   }}
   wvLabClearNoGain();
-  if (best === null) wvLabNoGain.optimize = true;  // loop ended: lineup is optimal
+  if (noMore) wvLabNoGain.optimize = true;  // loop ended: lineup is optimal
   wvLabLastChanges = wvLabCoalesceChanges(changes);
   for (ci = 0; ci < wvLabLastChanges.length; ci++) wvLabOpenSlots[wvLabLastChanges[ci].si] = true;
   wvRenderLab();
   // Ease the first changed row into view so the result of Optimize is
   // unmistakable.
   if (wvLabLastChanges.length) wvLabScrollChangedIntoView(wvLabLastChanges[0].si);
+}}
+
+function wvLabOptimize() {{
+  var state = {{ changes: [], rounds: 0, lastNull: false }};
+  while (state.rounds++ < 12) {{
+    var best = wvLabOptimizeScan();
+    if (!best) {{ state.lastNull = true; break; }}
+    // apply without re-render until the end
+    state.changes.push(wvLabApplySwap(best.si, best.bi));
+    wvLabResult = wvLabEvaluate(wvLabLineup);  // re-baseline for the next pick
+  }}
+  wvLabFinishOptimize(state.changes, state.lastNull);
+}}
+
+// Chunked-async Optimize: one greedy round per tick so the page stays
+// responsive and the busy button state paints between rounds. Same scan,
+// same bookkeeping, same result as wvLabOptimize.
+function wvLabOptimizeAsync() {{
+  if (wvLabBusy) return;
+  wvLabBusy = true;
+  wvRenderLab();
+  var state = {{ changes: [], rounds: 0, lastNull: false }};
+  function step() {{
+    if (state.rounds++ < 12) {{
+      var best = wvLabOptimizeScan();
+      if (best) {{
+        state.changes.push(wvLabApplySwap(best.si, best.bi));
+        wvLabResult = wvLabEvaluate(wvLabLineup);
+        setTimeout(step, 0);
+        return;
+      }}
+      state.lastNull = true;
+    }}
+    wvLabBusy = false;
+    wvLabFinishOptimize(state.changes, state.lastNull);
+  }}
+  setTimeout(step, 0);
+}}
+
+// Chase upside scans only ceiling numbers (no sims), so it stays
+// synchronous; the async wrapper just lets the busy state paint first.
+function wvLabChaseUpsideAsync() {{
+  if (wvLabBusy) return;
+  wvLabBusy = true;
+  wvRenderLab();
+  setTimeout(function() {{
+    wvLabBusy = false;
+    wvLabChaseUpside();
+  }}, 0);
 }}
 
 

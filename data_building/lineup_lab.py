@@ -352,6 +352,7 @@ def build_lineup_lab_payload(
     opp_starters: List[str] = []
     opp_name = "Opponent"
     opp_missing = True
+    opp_entry: Optional[dict] = None
     if opponent_roster_id is not None:
         opp_entry = next(
             (m for m in matchups if str(m.get("roster_id")) == str(opponent_roster_id)),
@@ -427,6 +428,7 @@ def build_lineup_lab_payload(
 
     # ── Matchup label per player (vs/away) ───────────────────────────────
     matchup_labels: Dict[str, str] = {}
+    sched: list = []
     try:
         from utils.utils import load_week_sched as _lsched2
         sched = _lsched2(season, week) or []
@@ -438,6 +440,79 @@ def build_lineup_lab_payload(
                 matchup_labels[away] = f"@ {home}"
     except Exception:
         pass
+
+    # ── Live state (current week only) ───────────────────────────────────
+    # Once games start, the matchup entries carry real per-player points
+    # (players_points). A player whose game is final locks at their actual
+    # points in the browser sim; a player mid-game is flagged live for
+    # display only (the sim has no partial-game model). The final+points
+    # double gate keeps every pre-game and past-week payload unchanged.
+    live_by_pid: Dict[str, dict] = {}
+    opp_live_points: Optional[float] = None
+    mine_points = (mine or {}).get("players_points") or {}
+    opp_points = (opp_entry or {}).get("players_points") or {}
+    _is_current_week = False
+    try:
+        _is_current_week = int(week) == int(ctx.get("current_week") or 0)
+    except (TypeError, ValueError):
+        _is_current_week = False
+    if _is_current_week and (mine_points or opp_points):
+        try:
+            from utils.utils import build_games_by_team as _bgbt
+            from utils.utils import lookup_team_map as _ltm
+            _games_by_team = _bgbt(sched or [])
+        except Exception:
+            _games_by_team = {}
+        if _games_by_team:
+            def _live_state(pid: str, points_map: dict) -> Optional[dict]:
+                team = _player_team(players_index, pid)
+                if _player_pos(players_index, pid) == "DEF" and not team:
+                    meta = players_index.get(str(pid)) or {}
+                    team = str(meta.get("full_name") or "").upper().split(" ")[0]
+                if not team:
+                    return None
+                game = _ltm(_games_by_team, team)
+                if not game:
+                    return None
+                status = game.get("status")
+                # The time-window status can call a long game final early;
+                # when the feed carries an explicit game status it wins.
+                raw_game = game.get("game") or {}
+                tank_code = str(raw_game.get("gameStatusCode") or "").strip()
+                tank_text = str(raw_game.get("gameStatus") or "").lower()
+                if tank_code == "2" or "final" in tank_text or "completed" in tank_text:
+                    status = "post"
+                elif tank_code == "1" or "in progress" in tank_text or "live" in tank_text:
+                    status = "in"
+                pts: Optional[float] = None
+                raw_pts = points_map.get(pid)
+                if raw_pts is None:
+                    raw_pts = points_map.get(str(pid))
+                if raw_pts is not None:
+                    try:
+                        pts = round(float(raw_pts), 1)
+                    except (TypeError, ValueError):
+                        pts = None
+                if status == "post":
+                    if pts is None:
+                        return None
+                    return {"status": "final", "points": pts}
+                if status == "in":
+                    state: Dict[str, Any] = {"status": "live"}
+                    if pts is not None:
+                        state["points"] = pts
+                    return state
+                return None
+
+            for pid in list(dict.fromkeys(starters + bench_avail)):
+                st = _live_state(pid, mine_points)
+                if st:
+                    live_by_pid[pid] = st
+            if opp_starters:
+                opp_states = [_live_state(pid, opp_points) for pid in opp_starters]
+                if all(s is not None and s["status"] == "final" for s in opp_states):
+                    opp_live_points = round(
+                        sum(s["points"] for s in opp_states if s), 1)
 
     def _entry(pid: str, slot: str, bench_for_slot: Optional[List[dict]] = None,
                eligible_positions: Optional[frozenset] = None) -> dict:
@@ -460,6 +535,9 @@ def build_lineup_lab_payload(
             "usage_stat": (usage_trends.get(pid) or {}).get("stat"),
             "usage_avg": (usage_trends.get(pid) or {}).get("season_avg"),
         }
+        live = live_by_pid.get(pid)
+        if live:
+            entry["live"] = live
         if bench_for_slot is not None:
             entry["bench"] = bench_for_slot
         if eligible_positions is not None:
@@ -511,7 +589,7 @@ def build_lineup_lab_payload(
     for (a, b), rho in pairs.items():
         corr_out[f"{a}:{b}"] = round(float(rho), 3)
 
-    return {
+    payload = {
         "week": int(week),
         "n_sims": _N_SIMS,
         # Per-position single-game injury onset rates, sourced from
@@ -535,3 +613,11 @@ def build_lineup_lab_payload(
         },
         "corr": corr_out,
     }
+    # Live keys exist only when live state does, so pre-game and past-week
+    # payloads stay byte-identical to before. The opponent locks only when
+    # their whole lineup is final (their side ships as an aggregate).
+    if opp_live_points is not None:
+        payload["opponent"]["live_points"] = opp_live_points
+    if live_by_pid or opp_live_points is not None:
+        payload["live"] = True
+    return payload

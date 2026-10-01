@@ -13897,11 +13897,52 @@ def api_start_sit_options():
 # reused for a few minutes. The profile-inputs signature in the key
 # invalidates an entry when the players index (injuries/usage) changes
 # mid-week. Only successful payloads are stored; 409/503 paths never land
-# here.
-_LAB_PAYLOAD_CACHE: dict = {}  # key -> (monotonic ts, payload)
+# here. Each entry carries its own TTL: while any involved game is still
+# in progress the entry lives only _LAB_PAYLOAD_LIVE_TTL seconds so live
+# state stays near-fresh; all-final and pre-game payloads keep the full
+# TTL.
+_LAB_PAYLOAD_CACHE: dict = {}  # key -> (monotonic ts, ttl seconds, payload)
 _LAB_PAYLOAD_TTL = 300.0
+_LAB_PAYLOAD_LIVE_TTL = 30.0
 _LAB_PAYLOAD_LOCK = threading.Lock()
 _LAB_PAYLOAD_MAX = 64
+
+
+def _lab_payload_ttl(payload: dict) -> float:
+    """TTL for a built Lab payload, decided from its per-player live state.
+
+    Player entries carry ``live: {"status": "final" | "live", ...}`` once
+    their game starts (bench entries nested in each lineup row included).
+    Any live status that is not "final" means a game is still in progress,
+    so the payload gets the short live TTL; all-final and no-live-state
+    payloads keep the standard TTL.
+    """
+    statuses = []
+
+    def _walk(node):
+        if isinstance(node, dict):
+            live = node.get("live")
+            if isinstance(live, dict) and "status" in live:
+                statuses.append(live.get("status"))
+            for value in node.values():
+                _walk(value)
+        elif isinstance(node, list):
+            for value in node:
+                _walk(value)
+
+    _walk(payload)
+    if statuses:
+        if any(status != "final" for status in statuses):
+            return _LAB_PAYLOAD_LIVE_TTL
+        return _LAB_PAYLOAD_TTL
+    # No per-player live state found. The payload-level live flag is set
+    # only alongside per-player state or an opponent lock (which requires
+    # every opposing starter final); if it is ever set without either,
+    # the state cannot be proven all-final, so stay conservative.
+    opponent = payload.get("opponent") or {}
+    if payload.get("live") and "live_points" not in opponent:
+        return _LAB_PAYLOAD_LIVE_TTL
+    return _LAB_PAYLOAD_TTL
 
 
 @app.route("/api/lineup-lab")
@@ -13948,8 +13989,8 @@ def api_lineup_lab():
     )
     with _LAB_PAYLOAD_LOCK:
         hit = _LAB_PAYLOAD_CACHE.get(cache_key)
-        if hit and time.monotonic() - hit[0] < _LAB_PAYLOAD_TTL:
-            return jsonify(hit[1])
+        if hit and time.monotonic() - hit[0] < hit[1]:
+            return jsonify(hit[2])
 
     try:
         from data_building.lineup_lab import build_lineup_lab_payload
@@ -13968,7 +14009,8 @@ def api_lineup_lab():
                         "message": "Lineup Lab is temporarily unavailable."}), 503
     payload["state"] = "loaded"
     with _LAB_PAYLOAD_LOCK:
-        _LAB_PAYLOAD_CACHE[cache_key] = (time.monotonic(), payload)
+        _LAB_PAYLOAD_CACHE[cache_key] = (
+            time.monotonic(), _lab_payload_ttl(payload), payload)
         if len(_LAB_PAYLOAD_CACHE) > _LAB_PAYLOAD_MAX:
             oldest = min(_LAB_PAYLOAD_CACHE, key=lambda k: _LAB_PAYLOAD_CACHE[k][0])
             del _LAB_PAYLOAD_CACHE[oldest]
