@@ -1662,6 +1662,17 @@ def _yahoo_players_need_hydration(raw_players: List[Dict]) -> bool:
 _YAHOO_BENCH_SLOTS = frozenset({"BN", "NA"})
 _YAHOO_IR_SLOTS = frozenset({"IR", "IR+"})
 
+# Canonical starter-slot display order, matching the rank the matchup page
+# and the Lineup Lab assign slots in. Yahoo returns roster rows in its own
+# order, which is NOT roster_positions order, so starters must be sorted by
+# the slot Yahoo actually placed them in before any consumer pairs them
+# with slots by index (the Sleeper contract).
+_YAHOO_SLOT_RANK = {
+    "QB": 0, "RB": 1, "WR": 2, "TE": 3,
+    "RB_WR": 4, "WR_TE": 4, "RB_TE": 4, "FLEX": 4, "SUPER_FLEX": 4,
+    "K": 5, "DEF": 6,
+}
+
 
 def _yahoo_player_canonical(rp: Any) -> tuple[Optional[str], Optional[str]]:
     """Return (canonical_id, selected_position) for one Yahoo roster row."""
@@ -1676,16 +1687,26 @@ def _yahoo_player_canonical(rp: Any) -> tuple[Optional[str], Optional[str]]:
     return _resolve_player(name, pos, team, yahoo_id=yid), sel_pos
 
 
-def _split_yahoo_lineup(raw_players: List[Any]) -> tuple[List[str], List[str], List[str]]:
-    """Map Yahoo roster rows to (players, starters, reserve/IR).
+def _split_yahoo_lineup_detailed(
+    raw_players: List[Any],
+) -> tuple[List[str], List[str], List[str], List[str]]:
+    """Map Yahoo roster rows to (players, starters, starters_slots, reserve).
 
     BN/NA are not starters and not IR -- ``build_teams_overview`` puts those
     leftover ``players`` on the dashboard Bench list. Putting BN in
     ``reserve`` hid the rest of the roster because the teams-card does not
     render IR.
+
+    Yahoo reports each player's real slot in ``selected_position`` but
+    returns the rows in its own display order, not in the league's
+    ``roster_positions`` order. Starters are therefore sorted into
+    canonical slot order (stable within a slot) and ``starters_slots``
+    carries the canonical slot each starter actually occupies, parallel
+    to ``starters``. Without this, index-based consumers pair a WR with
+    the RB slot (and a K with the TE slot) whenever Yahoo's order differs.
     """
     players: List[str] = []
-    starters: List[str] = []
+    starter_rows: List[tuple] = []
     reserve: List[str] = []
     fallback_starters: List[str] = []
     for rp in raw_players:
@@ -1707,9 +1728,21 @@ def _split_yahoo_lineup(raw_players: List[Any]) -> tuple[List[str], List[str], L
                 fallback_starters.append(canon)
             continue
         else:
-            starters.append(canon)
-    if not starters and fallback_starters:
-        starters = fallback_starters[:9]
+            starter_rows.append((canon, _YAHOO_SLOT.get(slot, slot)))
+    if not starter_rows and fallback_starters:
+        # No slot information at all (all-BN response): keep the historical
+        # fallback and leave the slots blank so consumers assign by player
+        # position instead of trusting row order.
+        starter_rows = [(pid, "") for pid in fallback_starters[:9]]
+    starter_rows.sort(key=lambda row: _YAHOO_SLOT_RANK.get(row[1], 7))
+    starters = [pid for pid, _slot in starter_rows]
+    starters_slots = [slot for _pid, slot in starter_rows]
+    return players, starters, starters_slots, reserve
+
+
+def _split_yahoo_lineup(raw_players: List[Any]) -> tuple[List[str], List[str], List[str]]:
+    """Map Yahoo roster rows to (players, starters, reserve/IR)."""
+    players, starters, _slots, reserve = _split_yahoo_lineup_detailed(raw_players)
     return players, starters, reserve
 
 
@@ -1764,7 +1797,7 @@ def get_rosters(season: int, league_id: str, access_token: str) -> List[Dict[str
         raw_players = roster_by_key.get(team_key) or _extract_roster_players(t)
         if _yahoo_players_need_hydration(raw_players) and team_key:
             raw_players = _fetch_team_roster_players(access_token, team_key, week)
-        players, starters, reserve = _split_yahoo_lineup(raw_players)
+        players, starters, starters_slots, reserve = _split_yahoo_lineup_detailed(raw_players)
 
         # If every mapped player landed in starters, lineup slots are still missing.
         if (
@@ -1775,7 +1808,7 @@ def get_rosters(season: int, league_id: str, access_token: str) -> List[Dict[str
         ):
             retry_players = _fetch_team_roster_players(access_token, team_key, week)
             if retry_players:
-                players, starters, reserve = _split_yahoo_lineup(retry_players)
+                players, starters, starters_slots, reserve = _split_yahoo_lineup_detailed(retry_players)
 
         fpts_whole = int(pts_for)
         fpts_dec   = int(round((pts_for - fpts_whole) * 100))
@@ -1807,6 +1840,7 @@ def get_rosters(season: int, league_id: str, access_token: str) -> List[Dict[str
                 "waiver_position":      0,
             },
             "starters": starters,
+            "starters_slots": starters_slots,
             "taxi":     None,
         })
     _yahoo_debug(
@@ -2043,13 +2077,15 @@ def _hydrate_yahoo_matchup_lineups(
         raw_players = by_key.get(tk) or []
         if not raw_players:
             continue
-        players, starters, _reserve = _split_yahoo_lineup(raw_players)
+        players, starters, starters_slots, _reserve = _split_yahoo_lineup_detailed(raw_players)
         if players and len(starters) == len(players) and len(players) > 9:
             starters = players[:9]
+            starters_slots = [""] * len(starters)
         if players:
             row["players"] = players
         if starters:
             row["starters"] = starters
+            row["starters_slots"] = starters_slots
         players_points: Dict[str, float] = {}
         for rp in raw_players:
             canonical, _slot = _yahoo_player_canonical(rp)
