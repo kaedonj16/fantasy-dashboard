@@ -8,6 +8,12 @@ per call to weekly_breakout_grades (idempotent: re-running grades only
 newly matured calls), then prints hit / partial / miss rates grouped by
 classification and scoring version for threshold review.
 
+Each run also snapshots the live Sleeper injury designations for the
+current NFL week (player_injury_snapshots): a call whose outcome window
+was wiped out by injury (< 2 games played with IR/PUP/NFI or OUT/
+DOUBTFUL designations) grades "injured" - terminal, and excluded from
+the hit-rate denominators.
+
 Usage:
     python scripts/grade_weekly_breakouts.py
     python scripts/grade_weekly_breakouts.py --season 2026
@@ -50,6 +56,7 @@ def _print_bucket(label: str, bucket: dict) -> None:
         f"  {label:<28} calls={bucket['calls']:<5} graded={bucket['graded']:<5} "
         f"hit={bucket['hit']:<4} partial={bucket['partial']:<4} "
         f"miss={bucket['miss']:<4} ungraded={bucket['ungraded']:<4} "
+        f"injured={bucket.get('injured', 0):<4} "
         f"hit_rate={_fmt(bucket['hit_rate'])} "
         f"partial_rate={_fmt(bucket['partial_rate'])} "
         f"miss_rate={_fmt(bucket['miss_rate'])}"
