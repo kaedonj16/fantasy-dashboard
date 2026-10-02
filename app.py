@@ -16687,6 +16687,29 @@ def metrics_graph_og_image(platform: str, season: int, league_id: str):
                     headers={"Cache-Control": "public, max-age=3600"})
 
 
+@app.route("/metrics/og.png")
+def metrics_graph_og_image_public():
+    """League-free variant of the shared-graph social preview: renders
+    /metrics?og=1&... headless so copied graph links (which never carry league
+    info) still unfurl with the graph screenshot."""
+    from dashboard_services.og_render import render_url_to_png
+    from urllib.parse import urlencode as _ue
+    params = {k: request.args.get(k) for k in ("gx", "gy", "gz", "gn", "season", "metric", "pos", "minvol")
+              if request.args.get(k)}
+    params["og"] = "1"
+    render_url = f"{request.host_url.rstrip('/')}/metrics?{_ue(params)}"
+    cache_key = "graph-public:" + _ue({k: v for k, v in sorted(params.items())})
+    png = render_url_to_png(
+        render_url, 1200, 630,
+        wait_selector="html[data-og-ready]",
+        cache_key=cache_key,
+    )
+    if not png:
+        return redirect(f"{request.host_url.rstrip('/')}/static/BR_Logo.png?v=6c0c4828")
+    return Response(png, mimetype="image/png",
+                    headers={"Cache-Control": "public, max-age=3600"})
+
+
 @app.route("/<platform>/<int:season>/<league_id>/breakouts")
 def page_breakouts(platform: str, season: int, league_id: str):
     """Dedicated page for breakout candidates with detailed projections."""

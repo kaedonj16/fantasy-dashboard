@@ -4772,20 +4772,31 @@ _AM_JS = r"""
       };
       blobMaker(function(blob) {
         if (!blob) {
-          // Last-resort fallback: data-URL anchor download.
+          // Last-resort fallback: data-URL anchor download. On iOS the
+          // download attribute is ignored, so open the PNG in a new tab
+          // where the native long-press menu offers Save to Photos / Files.
           try {
             const a = document.createElement('a');
-            a.href = canvas.toDataURL('image/png'); a.download = fname;
+            const durl = canvas.toDataURL('image/png');
+            a.href = durl;
+            if (_amIsIOS()) { a.target = '_blank'; }
+            else { a.download = fname; }
+            a.rel = 'noopener';
+            a.style.position = 'fixed'; a.style.left = '-9999px';
             document.body.appendChild(a); a.click();
-            setTimeout(function() { document.body.removeChild(a); }, 100);
-            flash('Saved ✓');
+            setTimeout(function() { document.body.removeChild(a); }, 1000);
+            flash(_amIsIOS() ? 'Opened: long-press the image to save' : 'Saved ✓');
           } catch (e2) { flash('Failed'); }
           return;
         }
-        // Prefer the native share sheet on mobile (Save to Photos, Messages, …).
+        // Prefer the native share sheet on touch devices (Save to Photos, Messages, …).
+        // Desktop browsers that support file sharing (e.g. desktop Safari)
+        // would otherwise show a share sheet with no download option, so
+        // they go straight to the real file download below.
         let file = null;
         try { file = new File([blob], fname, { type: 'image/png' }); } catch (_) {}
-        if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
+        const coarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+        if (file && coarse && navigator.canShare && navigator.canShare({ files: [file] })) {
           navigator.share({ files: [file], title: 'BR Fantasy Metrics' })
             .then(function() { flash('Shared ✓'); })
             .catch(function(err) {
@@ -4800,19 +4811,33 @@ _AM_JS = r"""
     img.onerror = function() { flash('Failed'); };
     img.src = src;
   };
+  // True on iPhone / iPad / iPod (including iPadOS reporting a desktop UA).
+  function _amIsIOS() {
+    return /iP(hone|od|ad)/.test(navigator.userAgent) ||
+      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  }
   // Trigger a real file download from a Blob via an <a download> click.
+  // iOS Safari ignores the download attribute (the click just navigates to
+  // the image with no save option), so there the PNG opens in a new tab and
+  // the native long-press menu offers Save to Photos / Save to Files.
   function _amAnchorDownload(blob, fname, flash) {
     try {
       const objUrl = URL.createObjectURL(blob);
+      const ios = _amIsIOS();
       const a = document.createElement('a');
-      a.href = objUrl; a.download = fname;
+      a.href = objUrl;
+      if (ios) { a.target = '_blank'; }
+      else { a.download = fname; }
       a.rel = 'noopener';
       a.style.position = 'fixed'; a.style.left = '-9999px';
       document.body.appendChild(a); a.click();
       setTimeout(function() {
-        document.body.removeChild(a); URL.revokeObjectURL(objUrl);
+        document.body.removeChild(a);
+        // The new tab still needs the object URL; revoke it later on iOS.
+        if (ios) setTimeout(function() { URL.revokeObjectURL(objUrl); }, 60000);
+        else URL.revokeObjectURL(objUrl);
       }, 1000);
-      flash('Saved ✓');
+      flash(ios ? 'Opened: long-press the image to save' : 'Saved ✓');
     } catch (e) { flash('Failed'); }
   }
   // Copy a shareable link that will reopen this exact graph configuration.
@@ -4830,7 +4855,11 @@ _AM_JS = r"""
     if (yk) p.set('gy', yk); else p.delete('gy');
     if (zk) p.set('gz', zk); else p.delete('gz');
     p.set('gn', topN);
-    const url = window.location.origin + window.location.pathname + '?' + p.toString();
+    // Shared links always use the league-free /metrics route: the league-
+    // scoped path is /<platform>/<season>/<league_id>/metrics, so copying
+    // window.location.pathname would leak the league id into the URL.
+    p.delete('league_id');
+    const url = window.location.origin + '/metrics?' + p.toString();
     const flash = function(msg) {
       if (!btn) return;
       const prev = btn.innerHTML;
