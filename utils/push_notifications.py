@@ -553,7 +553,9 @@ def notify_scorezone_scores(league_id, platform, pbp_by_game, player_info,
     fantasy owner, reusing push_subscriptions + VAPID via ``_broadcast_owner``.
 
     Owner targeting: canonical player → league roster → roster owner → that
-    owner's push subscriptions (never a league-wide broadcast). A passing TD is
+    owner's push subscriptions (never a league-wide broadcast). Only players
+    in a starting lineup trigger an alert -- bench players' touchdowns stay
+    quiet. A passing TD is
     two contributions (QB pass_td + WR rec_td) grouped under one canonical NFL
     play, so each owner is notified once about their own scorer.
 
@@ -595,6 +597,12 @@ def notify_scorezone_scores(league_id, platform, pbp_by_game, player_info,
                 pid = str(play.get("pid"))
                 owner_id, roster_id, is_starter = _scorezone_roster_owner(pid, rosters)
                 if not owner_id:
+                    continue
+                if not is_starter:
+                    # Bench player: TD alerts only go out for starting-lineup
+                    # players, so a scorer riding someone's pine stays quiet.
+                    logger.debug("[scorezone-alert] play=%s type=td owner=%s dedupe=benched",
+                                 f"{gid}:{play_key}", owner_id)
                     continue
                 sl = play.get("stat_line") or {}
                 is_scorer = bool(sl.get("rush_td") or sl.get("rec_td")

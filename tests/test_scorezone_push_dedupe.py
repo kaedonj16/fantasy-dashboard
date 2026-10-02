@@ -143,6 +143,49 @@ def test_nullified_td_is_not_pushed():
     assert sends == []
 
 
+def test_bench_player_td_is_not_pushed():
+    """Only starting-lineup players trigger TD alerts -- a scorer riding the
+    bench stays quiet while a starter on the same roster still notifies."""
+    sends = []
+    rosters = [
+        {"roster_id": 1, "owner_id": "O1", "starters": ["rb"], "players": ["rb", "wr"]},
+    ]
+    pbp = {"g1": [
+        _td_row("rb", "p1", rush_td=1),
+        _td_row("wr", "p2", rec_td=1),
+    ]}
+    n = _run_notify(pbp, rosters, PLAYER_INFO, SCORING, sends)
+    assert n == 1
+    assert len(sends) == 1
+    assert sends[0]["owner"] == "O1"
+    assert "Aaron Jones" in sends[0]["title"]  # the starter, not the benched WR
+
+
+def test_starter_wins_over_bench_for_same_player():
+    """The same NFL player owned by two teams: the starter's owner is
+    notified, the owner with him on the bench is not."""
+    sends = []
+    rosters = [
+        {"roster_id": 1, "owner_id": "O1", "starters": [], "players": ["rb"]},
+        {"roster_id": 2, "owner_id": "O2", "starters": ["rb"], "players": ["rb"]},
+    ]
+    pbp = {"g1": [_td_row("rb", "p1", rush_td=1)]}
+    n = _run_notify(pbp, rosters, PLAYER_INFO, SCORING, sends)
+    assert n == 1
+    assert [s["owner"] for s in sends] == ["O2"]
+
+
+def test_all_bench_td_plays_send_nothing():
+    sends = []
+    rosters = [
+        {"roster_id": 1, "owner_id": "O1", "starters": ["qb"], "players": ["qb", "wr"]},
+    ]
+    pbp = {"g1": [_td_row("wr", "p1", rec_td=1)]}
+    n = _run_notify(pbp, rosters, PLAYER_INFO, SCORING, sends)
+    assert n == 0
+    assert sends == []
+
+
 def test_app_state_claim_is_atomic_one_shot():
     """The dedupe primitive returns True once, then False for the same key."""
     fake_db, _ = _fake_db_module()
