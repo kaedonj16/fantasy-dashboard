@@ -13066,11 +13066,17 @@ a.signed-home-league:hover {
 
 .home-hero {
     display: grid;
-    grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
     gap: 40px;
     align-items: center;
     position: relative;
     z-index: 1;
+    /* AdSense Tier 2: the connect card (.home-hero-right) now sits after the
+       editorial sections in DOM order; grid placement keeps the hero pair
+       visually side by side on desktop. */
+    grid-column: 1;
+    grid-row: 1;
+    align-self: center;
 }
 
 .home-hero-left {
@@ -13086,6 +13092,11 @@ a.signed-home-league:hover {
     align-items: flex-end;
     gap: 0;
     animation: homeCardIn var(--dur-slow) var(--ease-out) .08s both;
+    /* AdSense Tier 2: DOM position is after the editorial sections; this
+       places it back beside the hero intro on desktop. */
+    grid-column: 2;
+    grid-row: 1;
+    align-self: center;
 }
 
 /* The Get started card stays first; the testimonial and PRO CTA stack under
@@ -13294,9 +13305,17 @@ a.signed-home-league:hover {
     max-width: 1120px;
     margin: 0 auto;
     padding: 36px 24px 88px;
-    display: flex;
-    flex-direction: column;
-    gap: 36px;
+    /* AdSense Tier 2: grid lets the hero intro (col 1) and the connect card
+       (col 2, placed after editorial sections in DOM order) share the top row
+       while every other section spans the full width below. */
+    display: grid;
+    grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+    column-gap: 40px;
+    row-gap: 36px;
+}
+
+.home-page > :not(.home-hero):not(.home-hero-right) {
+    grid-column: 1 / -1;
 }
 
 .home-brand {
@@ -15845,6 +15864,16 @@ html[data-theme="dark"] .contact-social-pill img {
     color: var(--text);
 }
 
+/* AdSense Tier 2: guide bodies now use real h2 subheadings; normalize the
+   browser default heading margins so section rhythm is consistent. */
+h2.static-section-title {
+    margin: 22px 0 8px;
+}
+
+h2.static-section-title:first-child {
+    margin-top: 0;
+}
+
 .subtle-label {
     font-size: 12px;
     opacity: .75;
@@ -16769,6 +16798,29 @@ img, svg, canvas {
         justify-content: flex-start;
     }
 
+    /* AdSense Tier 2: on stacked layouts the page returns to a flex column and
+       the connect card is ordered back directly beneath the hero intro, so the
+       visual order matches the pre-reorder design on phones and tablets. The
+       margin preserves the old 40px stacked-hero gap (page gap is 36px). */
+    .home-page {
+        display: flex;
+        flex-direction: column;
+        gap: 36px;
+    }
+
+    .home-page > * {
+        order: 3;
+    }
+
+    .home-page > .home-hero {
+        order: 1;
+    }
+
+    .home-page > .home-hero-right {
+        order: 2;
+        margin-top: 4px;
+    }
+
     .home-pro-benefits {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
@@ -16798,6 +16850,12 @@ img, svg, canvas {
 
     .home-hero-right {
         justify-content: stretch;
+    }
+
+    /* AdSense Tier 2: keep the pre-reorder 24px stacked-hero rhythm
+       (28px page gap minus 4px). */
+    .home-page > .home-hero-right {
+        margin-top: -4px;
     }
 
     .home-title {

@@ -25,9 +25,16 @@ QUOTE = "THATS ACTUALLY SO SICK BRO"
 
 
 def _hero() -> str:
-    start = APP_PY.index('<section class="home-hero">')
-    end = APP_PY.index("</section>", start)
-    return APP_PY[start:end]
+    # AdSense Tier 2 moved the connect card (.home-hero-right) after the
+    # editorial sections in DOM order; CSS grid/flex placement keeps it
+    # visually co-located with the hero. The funnel assertions cover the hero
+    # section plus the relocated card, which together hold exactly the content
+    # the old in-hero card held.
+    hero_start = APP_PY.index('<section class="home-hero">')
+    hero_end = APP_PY.index("</section>", hero_start) + len("</section>")
+    card_start = APP_PY.index('<div class="home-hero-right">', hero_end)
+    card_end = APP_PY.index('<section class="indie">', card_start)
+    return APP_PY[hero_start:hero_end] + APP_PY[card_start:card_end]
 
 
 # ── Hero funnel order: free path (Get started) before the PRO CTA ────────────

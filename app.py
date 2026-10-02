@@ -1492,350 +1492,7 @@ FORM_BODY = """
       </div>
     </div>
 
-    <div class="home-hero-right">
-      <div class="home-card">
-        <h2 class="home-card-title" id="homeCardTitle">{% if session.get('account_id') %}Your leagues{% else %}Get started{% endif %}</h2>
-
-        {% if not session.get('account_id') %}
-        <div class="home-account-entry home-account-top">
-          <span class="home-account-lead">Connect your league below. No account needed to look around.</span>
-          <a class="google-continue-btn" href="/auth/google?intent=login&amp;next=/"><span class="google-button-title">Sign in with Google</span></a>
-        </div>
-        {% else %}
-        <div id="signedInHome" class="signed-in-home">
-          <div class="signed-in-home-header"><p class="signed-in-home-greeting">Welcome back{% if session.get('account_first_name') %}, {{ session.get('account_first_name')|e }}{% endif %}</p><a class="home-reset-user" href="/reset-user">Not me?</a></div>
-          <div id="signedInLeagueList">Loading your saved leagues…</div>
-          <button type="button" id="signedInAddLeague" aria-expanded="false" aria-controls="connectLeagueFlow">Connect another league</button>
-        </div>
-        {% endif %}
-
-        <div id="connectLeagueFlow"{% if session.get('account_id') %} hidden{% endif %}>
-        <button type="button" id="homeConnectBack" class="home-connect-back"{% if not session.get('account_id') %} hidden{% endif %}>← Back</button>
-        <div class="home-steps-hint">
-          <div class="home-step-item" id="hintStep1">
-            <span class="home-step-num">1</span>
-            <span class="home-step-label">Platform</span>
-          </div>
-          <div class="home-step-connector"></div>
-          <div class="home-step-item" id="hintStep2">
-            <span class="home-step-num">2</span>
-            <span class="home-step-label">Connect</span>
-          </div>
-          <div class="home-step-connector"></div>
-          <div class="home-step-item" id="hintStep3">
-            <span class="home-step-num">3</span>
-            <span class="home-step-label">Choose team</span>
-          </div>
-        </div>
-
-        <div class="row">
-          <label for="platformSelect">Platform</label>
-          <div class="platform-selector">
-            <button type="button" class="platform-btn active" data-platform="sleeper">Sleeper</button>
-            <button type="button" class="platform-btn" data-platform="espn">ESPN</button>
-            <button type="button" class="platform-btn" data-platform="yahoo">Yahoo</button>
-            <button type="button" class="platform-btn" data-platform="mfl">MFL</button>
-            <button type="button" class="platform-btn" data-platform="fleaflicker">Fleaflicker</button>
-          </div>
-        </div>
-
-        <!-- Sleeper Flow -->
-        <div id="sleeperFlow">
-          <div class="row url-paste-row">
-            <label for="sleeperUrlInput">Fastest: paste your league link</label>
-            <input type="text" id="sleeperUrlInput" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://sleeper.app/leagues/...">
-            <p class="url-paste-error" id="sleeperUrlError" role="alert" style="display:none;"></p>
-          </div>
-          <div class="row">
-            <label for="username">Sleeper Username</label>
-            <input type="text" id="username" name="username" value="{{ username or '' }}">
-          </div>
-
-          <div class="row">
-            <button type="button" id="lookupBtn">Find My Leagues</button>
-          </div>
-        </div>
-
-        <!-- ESPN Flow -->
-        <div id="espnFlow" style="display:none;">
-          <div class="espn-home-methods" role="radiogroup" aria-label="ESPN league type">
-            {% if espn_otp_enabled %}
-            <button type="button" class="espn-home-method" data-espn-method="email" aria-pressed="false">Email</button>
-            {% endif %}
-            <button type="button" class="espn-home-method active" data-espn-method="public" aria-pressed="true">Public League</button>
-            <button type="button" class="espn-home-method" data-espn-method="private" aria-pressed="false">Private League</button>
-          </div>
-          <p class="hint espn-home-description" id="espnHomeDescription">Public leagues: enter the League ID from your ESPN URL. Success = your league dashboard loads with standings and rosters.</p>
-          <div class="row url-paste-row">
-            <label for="espnUrlInput">Fastest: paste your league link</label>
-            <input type="text" id="espnUrlInput" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://fantasy.espn.com/...">
-            <p class="url-paste-error" id="espnUrlError" role="alert" style="display:none;"></p>
-          </div>
-          <div class="row">
-            <label for="espnLeagueIdInput">League ID</label>
-            <input type="text" id="espnLeagueIdInput" placeholder="e.g. 336414" autocomplete="off">
-          </div>
-          {% if espn_otp_enabled %}
-          <div id="espnHomeEmailRow" style="display:none;">
-            <div class="row">
-              <label for="espnHomeEmailInput">ESPN email</label>
-              <input type="email" id="espnHomeEmailInput" placeholder="you@email.com" autocomplete="email">
-            </div>
-          </div>
-          <div class="row" id="espnEmailSendRow" style="display:none;">
-            <button type="button" id="espnEmailSendBtn" class="espn-otp-launch">Email me a code</button>
-          </div>
-          {% endif %}
-          <div id="espnHomePrivateFields" style="display:none;">
-            <p class="hint espn-extension-connect"><strong>Fastest on desktop:</strong> use the BR Fantasy browser extension to securely fill your ESPN connection. On mobile, continue this step on a supported desktop browser.</p>
-            <details class="espn-home-help"><summary>Advanced setup: enter ESPN cookies manually</summary>
-            <div class="row">
-              <label for="espnSwidInput">SWID</label>
-              <input type="text" id="espnSwidInput" autocomplete="off" spellcheck="false" placeholder="{XXXXXXXX-XXXX-XXXX-...}">
-            </div>
-            <div class="row">
-              <label for="espnS2Input">ESPN_S2</label>
-              <input type="text" id="espnS2Input" autocomplete="off" spellcheck="false" placeholder="AEB...">
-            </div>
-            <details class="espn-home-help"><summary>Paste your whole cookie string instead</summary>
-              <textarea id="espnCookieBlob" rows="3" autocomplete="off" spellcheck="false" style="width:100%;box-sizing:border-box;font:inherit;resize:vertical;" placeholder="Paste the whole cookie string here, e.g. SWID=...; espn_s2=AEB…  We'll pull out both values."></textarea>
-              <p class="hint" id="espnCookieStatus" aria-live="polite" style="margin-top:6px;"></p>
-              <ol>
-                <li>In another tab, sign in at <strong>espn.com</strong> and open your league.</li>
-                <li>Right-click the page → <strong>Inspect</strong>, then open <strong>Application → Cookies → https://www.espn.com</strong>.</li>
-                <li>Select the <code>SWID</code> and <code>espn_s2</code> rows (or all of them), copy, and paste here, and we extract the two we need.</li>
-              </ol>
-              <strong>Treat these like a password.</strong> They're stored encrypted and only used to read your league.
-            </details>
-            </details>
-          </div>
-          <div class="row" id="espnSubmitRow">
-            <button type="button" id="espnSubmitBtn">Connect League</button>
-          </div>
-          <div id="espnError" class="error-message" style="display:none;"></div>
-          <div class="row" id="espnTeamPickWrap" style="display:none;">
-            <label for="espnTeamSelect">Your team</label>
-            <select id="espnTeamSelect"></select>
-          </div>
-          <div id="espnPrivateChoice" class="provider-account-choice" style="display:none;">
-            <button type="button" id="espnPrivateGoogle" class="google-continue-btn">
-              <span class="google-button-title">Continue with Google</span>
-              <span>Save your leagues &amp; settings, synced across devices</span>
-              <small>Free &middot; no password</small>
-            </button>
-            <div class="provider-choice-or">OR</div>
-            <button type="button" id="espnPrivateGuest" class="continue-without-account-btn">
-              <strong>Continue without account</strong>
-              <span>Quick view on this device &middot; nothing saved</span>
-            </button>
-          </div>
-        </div>
-
-        <!-- Yahoo Flow -->
-        <div id="yahooFlow" style="display:none;">
-          <div class="row url-paste-row">
-            <label for="yahooUrlInput">Fastest: paste your league link</label>
-            <input type="text" id="yahooUrlInput" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://football.fantasysports.yahoo.com/...">
-            <p class="url-paste-error" id="yahooUrlError" role="alert" style="display:none;"></p>
-          </div>
-          <div class="row">
-            <label for="yahooLeagueIdInput">Yahoo League ID</label>
-            <input type="text" id="yahooLeagueIdInput" placeholder="e.g. 123456" autocomplete="off">
-          </div>
-          <div class="row">
-            <label for="yahooTeamName">Your Team Name <span style="font-weight:400;font-size:0.85em;">(optional)</span></label>
-            <input type="text" id="yahooTeamName" placeholder="e.g. Dynasty Monsters">
-          </div>
-          <div class="row" id="yahooSubmitRow">
-            <button type="button" id="yahooConnectBtn">Connect Yahoo Account</button>
-          </div>
-          <div id="yahooError" class="error-message" style="display:none;"></div>
-          <div id="yahooAccountChoice" class="provider-account-choice" style="display:none;">
-            <button type="button" id="yahooPrivateGoogle" class="google-continue-btn">
-              <span class="google-button-title">Continue with Google</span>
-              <span>Save your leagues &amp; settings, synced across devices</span>
-              <small>Free &middot; no password</small>
-            </button>
-            <div class="provider-choice-or">OR</div>
-            <button type="button" id="yahooPrivateGuest" class="continue-without-account-btn">
-              <strong>Continue without account</strong>
-              <span>Quick view on this device &middot; nothing saved</span>
-            </button>
-          </div>
-          <p class="hint" style="margin-top:6px;">
-            You'll be redirected to Yahoo to authorize access, then returned here.
-          </p>
-        </div>
-
-        <!-- MFL Flow -->
-        <div id="mflFlow" style="display:none;">
-          <div class="espn-home-methods" role="radiogroup" aria-label="MFL league type">
-            <button type="button" class="mfl-home-method active" data-mfl-method="public" aria-pressed="true">Public League</button>
-            <button type="button" class="mfl-home-method" data-mfl-method="private" aria-pressed="false">Private League</button>
-          </div>
-          <p class="hint espn-home-description" id="mflHomeDescription">Connect a publicly accessible MyFantasyLeague league using its League ID.</p>
-          <div class="row url-paste-row">
-            <label for="mflUrlInput">Fastest: paste your league link</label>
-            <input type="text" id="mflUrlInput" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://www.myfantasyleague.com/...">
-            <p class="url-paste-error" id="mflUrlError" role="alert" style="display:none;"></p>
-          </div>
-          <div class="row">
-            <label for="mflLeagueIdInput">MFL League ID</label>
-            <input type="text" id="mflLeagueIdInput" inputmode="numeric" placeholder="e.g. 12345" autocomplete="off">
-          </div>
-          <div class="row">
-            <label for="mflSeasonInput">Season</label>
-            <input type="text" id="mflSeasonInput" inputmode="numeric" placeholder="{{ viewed_season }}" autocomplete="off">
-          </div>
-          <div id="mflHomePrivateFields" style="display:none;">
-            <div class="row">
-              <label for="mflApikeyInput">League APIKEY <span style="font-weight:400;font-size:0.85em;">(optional)</span></label>
-              <input type="password" id="mflApikeyInput" autocomplete="off" spellcheck="false" placeholder="From MFL Help → Developer's API">
-            </div>
-            <div class="row">
-              <label for="mflCookieInput">MFL_USER_ID cookie <span style="font-weight:400;font-size:0.85em;">(optional)</span></label>
-              <input type="password" id="mflCookieInput" autocomplete="off" spellcheck="false" placeholder="Cookie value or MFL_USER_ID=…">
-            </div>
-            <details class="espn-home-help"><summary>Or sign in once to obtain the cookie</summary>
-              <div class="row">
-                <label for="mflUsernameInput">MFL username</label>
-                <input type="text" id="mflUsernameInput" autocomplete="username">
-              </div>
-              <div class="row">
-                <label for="mflPasswordInput">MFL password</label>
-                <input type="password" id="mflPasswordInput" autocomplete="current-password">
-              </div>
-              <p class="hint">Password is used only to fetch the official login cookie and is never stored.</p>
-            </details>
-          </div>
-          <div class="row" id="mflSubmitRow">
-            <button type="button" id="mflSubmitBtn">Connect League</button>
-          </div>
-          <div id="mflError" class="error-message" style="display:none;"></div>
-          <div id="mflPrivateChoice" class="provider-account-choice" style="display:none;">
-            <button type="button" id="mflPrivateGoogle" class="google-continue-btn">
-              <span class="google-button-title">Continue with Google</span>
-              <span>Save your leagues &amp; settings, synced across devices</span>
-              <small>Free &middot; no password</small>
-            </button>
-            <div class="provider-choice-or">OR</div>
-            <button type="button" id="mflPrivateGuest" class="continue-without-account-btn">
-              <strong>Continue without account</strong>
-              <span>Quick view on this device &middot; nothing saved</span>
-            </button>
-          </div>
-        </div>
-
-        <!-- Fleaflicker Flow -->
-        <div id="fleaflickerFlow" style="display:none;">
-          <div class="espn-home-methods" role="radiogroup" aria-label="Fleaflicker league type">
-            <button type="button" class="flea-home-method active" data-flea-method="public" aria-pressed="true">Public League</button>
-            <button type="button" class="flea-home-method" data-flea-method="private" aria-pressed="false">Private League</button>
-          </div>
-          <p class="hint espn-home-description" id="fleaHomeDescription">Connect a publicly accessible Fleaflicker league using its League ID.</p>
-          <div class="row url-paste-row">
-            <label for="fleaUrlInput">Fastest: paste your league link</label>
-            <input type="text" id="fleaUrlInput" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://www.fleaflicker.com/nfl/leagues/...">
-            <p class="url-paste-error" id="fleaUrlError" role="alert" style="display:none;"></p>
-          </div>
-          <div class="row">
-            <label for="fleaLeagueIdInput">Fleaflicker League ID</label>
-            <input type="text" id="fleaLeagueIdInput" inputmode="numeric" placeholder="e.g. 14153" autocomplete="off">
-          </div>
-          <div class="row">
-            <label for="fleaSeasonInput">Season</label>
-            <input type="text" id="fleaSeasonInput" inputmode="numeric" placeholder="{{ viewed_season }}" autocomplete="off">
-          </div>
-          <div id="fleaHomePrivateFields" style="display:none;">
-            <div class="row">
-              <label for="fleaEmailInput">Fleaflicker email</label>
-              <input type="email" id="fleaEmailInput" autocomplete="email" placeholder="you@email.com">
-            </div>
-            <div class="row">
-              <label for="fleaPasswordInput">Password</label>
-              <input type="password" id="fleaPasswordInput" autocomplete="current-password">
-            </div>
-            <p class="hint">We exchange these for a login token and never store your password.</p>
-            <details class="espn-home-help"><summary>Or paste an existing login token</summary>
-              <div class="row">
-                <label for="fleaTokenInput">Authorization token</label>
-                <input type="password" id="fleaTokenInput" autocomplete="off" spellcheck="false" placeholder="Token from /api/Login">
-              </div>
-            </details>
-          </div>
-          <div class="row" id="fleaSubmitRow">
-            <button type="button" id="fleaSubmitBtn">Connect League</button>
-          </div>
-          <div id="fleaError" class="error-message" style="display:none;"></div>
-          <div class="row" id="fleaTeamPickWrap" style="display:none;">
-            <label for="fleaTeamSelect">Your team</label>
-            <select id="fleaTeamSelect"></select>
-          </div>
-          <div id="fleaPrivateChoice" class="provider-account-choice" style="display:none;">
-            <button type="button" id="fleaPrivateGoogle" class="google-continue-btn">
-              <span class="google-button-title">Continue with Google</span>
-              <span>Save your leagues &amp; settings, synced across devices</span>
-              <small>Free &middot; no password</small>
-            </button>
-            <div class="provider-choice-or">OR</div>
-            <button type="button" id="fleaPrivateGuest" class="continue-without-account-btn">
-              <strong>Continue without account</strong>
-              <span>Quick view on this device &middot; nothing saved</span>
-            </button>
-          </div>
-        </div>
-
-<form method="post" id="leagueSelectForm">
-          <input type="hidden" name="platform" id="formPlatform" value="sleeper">
-          <input type="hidden" name="season" value="{{ viewed_season }}">
-          <input type="hidden" name="username" id="formUsername" value="">
-          <input type="hidden" name="team_id" id="formTeamId" value="">
-          <input type="hidden" name="next" id="formNext" value="{{ next_url or '' }}">
-
-          <div class="row" id="leagueSelectWrap" style="display:none;">
-            <label for="league">Choose League</label>
-            <select id="league" name="league" required>
-              <option value="">Select a league</option>
-            </select>
-          </div>
-
-          <div class="row" id="generateWrap" style="display:none;flex-direction:column;gap:0;align-items:stretch;">
-            <button type="button" id="googleContinueBtn" class="google-continue-btn">
-              <span class="google-button-title">Continue with Google</span>
-              <span style="font-size:11px;font-weight:500;color:#5f6368;">Save your leagues &amp; settings, synced across devices</span>
-              <span style="font-size:10px;font-weight:600;color:#80868b;">Free &middot; no password</span>
-            </button>
-            <div style="display:flex;align-items:center;gap:10px;margin:14px 0;color:rgba(255,255,255,.5);font-size:10.5px;font-weight:800;letter-spacing:.1em;">
-              <span style="flex:1;height:1px;background:rgba(255,255,255,.18);"></span>OR<span style="flex:1;height:1px;background:rgba(255,255,255,.18);"></span>
-            </div>
-            <button type="submit" class="continue-without-account-btn">
-              <span style="font-size:13.5px;font-weight:700;color:#fff;">Continue without account</span>
-              <span style="font-size:11px;font-weight:500;color:rgba(255,255,255,.62);">Quick view on this device &middot; nothing saved</span>
-            </button>
-          </div>
-
-          <div id="lookupError" class="error-message" style="display:none;"></div>
-
-          {% if error %}
-          <div class="error-message">{{ error }}</div>
-          {% endif %}
-        </form>
-
-        <p class="hint" id="sleeperHint">
-          Pick a league, then <strong>Continue with Google</strong> to save it across devices, or continue without an account for a quick look.
-        </p>
-        </div>
-      </div>
-      <figure class="home-hero-proof">
-        <blockquote>THATS ACTUALLY SO SICK BRO</blockquote>
-        <figcaption><strong>Jayden Waddell</strong><span>Pittsburgh Pilots, on the weekly recap</span></figcaption>
-      </figure>
-      <p class="home-pro-hero-cta">
-        <button type="button" class="home-pro-open-btn" data-home-pro-open>Unlock PRO</button>
-        <span>See what PRO includes. A Google account is required to subscribe.</span>
-      </p>
-    </div>
-  </section>
+</section>
 
   {% if not session.get('account_id') %}
 <div class="trust-strip">
@@ -2262,6 +1919,353 @@ FORM_BODY = """
   </details>
 </section>
 
+  <!-- AdSense Tier 2: the connect card sits after the editorial sections in DOM
+       order so crawlers meet hero/editorial content before account machinery.
+       Grid placement in dashboard.css keeps it visually beside the hero. -->
+    <div class="home-hero-right">
+      <div class="home-card">
+        <h2 class="home-card-title" id="homeCardTitle">{% if session.get('account_id') %}Your leagues{% else %}Get started{% endif %}</h2>
+
+        {% if not session.get('account_id') %}
+        <div class="home-account-entry home-account-top">
+          <span class="home-account-lead">Connect your league below. No account needed to look around.</span>
+          <a class="google-continue-btn" href="/auth/google?intent=login&amp;next=/"><span class="google-button-title">Sign in with Google</span></a>
+        </div>
+        {% else %}
+        <div id="signedInHome" class="signed-in-home">
+          <div class="signed-in-home-header"><p class="signed-in-home-greeting">Welcome back{% if session.get('account_first_name') %}, {{ session.get('account_first_name')|e }}{% endif %}</p><a class="home-reset-user" href="/reset-user">Not me?</a></div>
+          <div id="signedInLeagueList">Loading your saved leagues…</div>
+          <button type="button" id="signedInAddLeague" aria-expanded="false" aria-controls="connectLeagueFlow">Connect another league</button>
+        </div>
+        {% endif %}
+
+        <div id="connectLeagueFlow"{% if session.get('account_id') %} hidden{% endif %}>
+        <button type="button" id="homeConnectBack" class="home-connect-back"{% if not session.get('account_id') %} hidden{% endif %}>← Back</button>
+        <div class="home-steps-hint">
+          <div class="home-step-item" id="hintStep1">
+            <span class="home-step-num">1</span>
+            <span class="home-step-label">Platform</span>
+          </div>
+          <div class="home-step-connector"></div>
+          <div class="home-step-item" id="hintStep2">
+            <span class="home-step-num">2</span>
+            <span class="home-step-label">Connect</span>
+          </div>
+          <div class="home-step-connector"></div>
+          <div class="home-step-item" id="hintStep3">
+            <span class="home-step-num">3</span>
+            <span class="home-step-label">Choose team</span>
+          </div>
+        </div>
+
+        <div class="row">
+          <label for="platformSelect">Platform</label>
+          <div class="platform-selector">
+            <button type="button" class="platform-btn active" data-platform="sleeper">Sleeper</button>
+            <button type="button" class="platform-btn" data-platform="espn">ESPN</button>
+            <button type="button" class="platform-btn" data-platform="yahoo">Yahoo</button>
+            <button type="button" class="platform-btn" data-platform="mfl">MFL</button>
+            <button type="button" class="platform-btn" data-platform="fleaflicker">Fleaflicker</button>
+          </div>
+        </div>
+
+        <!-- Sleeper Flow -->
+        <div id="sleeperFlow">
+          <div class="row url-paste-row">
+            <label for="sleeperUrlInput">Fastest: paste your league link</label>
+            <input type="text" id="sleeperUrlInput" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://sleeper.app/leagues/...">
+            <p class="url-paste-error" id="sleeperUrlError" role="alert" style="display:none;"></p>
+          </div>
+          <div class="row">
+            <label for="username">Sleeper Username</label>
+            <input type="text" id="username" name="username" value="{{ username or '' }}">
+          </div>
+
+          <div class="row">
+            <button type="button" id="lookupBtn">Find My Leagues</button>
+          </div>
+        </div>
+
+        <!-- ESPN Flow -->
+        <div id="espnFlow" style="display:none;">
+          <div class="espn-home-methods" role="radiogroup" aria-label="ESPN league type">
+            {% if espn_otp_enabled %}
+            <button type="button" class="espn-home-method" data-espn-method="email" aria-pressed="false">Email</button>
+            {% endif %}
+            <button type="button" class="espn-home-method active" data-espn-method="public" aria-pressed="true">Public League</button>
+            <button type="button" class="espn-home-method" data-espn-method="private" aria-pressed="false">Private League</button>
+          </div>
+          <p class="hint espn-home-description" id="espnHomeDescription">Public leagues: enter the League ID from your ESPN URL. Success = your league dashboard loads with standings and rosters.</p>
+          <div class="row url-paste-row">
+            <label for="espnUrlInput">Fastest: paste your league link</label>
+            <input type="text" id="espnUrlInput" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://fantasy.espn.com/...">
+            <p class="url-paste-error" id="espnUrlError" role="alert" style="display:none;"></p>
+          </div>
+          <div class="row">
+            <label for="espnLeagueIdInput">League ID</label>
+            <input type="text" id="espnLeagueIdInput" placeholder="e.g. 336414" autocomplete="off">
+          </div>
+          {% if espn_otp_enabled %}
+          <div id="espnHomeEmailRow" style="display:none;">
+            <div class="row">
+              <label for="espnHomeEmailInput">ESPN email</label>
+              <input type="email" id="espnHomeEmailInput" placeholder="you@email.com" autocomplete="email">
+            </div>
+          </div>
+          <div class="row" id="espnEmailSendRow" style="display:none;">
+            <button type="button" id="espnEmailSendBtn" class="espn-otp-launch">Email me a code</button>
+          </div>
+          {% endif %}
+          <div id="espnHomePrivateFields" style="display:none;">
+            <p class="hint espn-extension-connect"><strong>Fastest on desktop:</strong> use the BR Fantasy browser extension to securely fill your ESPN connection. On mobile, continue this step on a supported desktop browser.</p>
+            <details class="espn-home-help"><summary>Advanced setup: enter ESPN cookies manually</summary>
+            <div class="row">
+              <label for="espnSwidInput">SWID</label>
+              <input type="text" id="espnSwidInput" autocomplete="off" spellcheck="false" placeholder="{XXXXXXXX-XXXX-XXXX-...}">
+            </div>
+            <div class="row">
+              <label for="espnS2Input">ESPN_S2</label>
+              <input type="text" id="espnS2Input" autocomplete="off" spellcheck="false" placeholder="AEB...">
+            </div>
+            <details class="espn-home-help"><summary>Paste your whole cookie string instead</summary>
+              <textarea id="espnCookieBlob" rows="3" autocomplete="off" spellcheck="false" style="width:100%;box-sizing:border-box;font:inherit;resize:vertical;" placeholder="Paste the whole cookie string here, e.g. SWID=...; espn_s2=AEB…  We'll pull out both values."></textarea>
+              <p class="hint" id="espnCookieStatus" aria-live="polite" style="margin-top:6px;"></p>
+              <ol>
+                <li>In another tab, sign in at <strong>espn.com</strong> and open your league.</li>
+                <li>Right-click the page → <strong>Inspect</strong>, then open <strong>Application → Cookies → https://www.espn.com</strong>.</li>
+                <li>Select the <code>SWID</code> and <code>espn_s2</code> rows (or all of them), copy, and paste here, and we extract the two we need.</li>
+              </ol>
+              <strong>Treat these like a password.</strong> They're stored encrypted and only used to read your league.
+            </details>
+            </details>
+          </div>
+          <div class="row" id="espnSubmitRow">
+            <button type="button" id="espnSubmitBtn">Connect League</button>
+          </div>
+          <div id="espnError" class="error-message" style="display:none;"></div>
+          <div class="row" id="espnTeamPickWrap" style="display:none;">
+            <label for="espnTeamSelect">Your team</label>
+            <select id="espnTeamSelect"></select>
+          </div>
+          <div id="espnPrivateChoice" class="provider-account-choice" style="display:none;">
+            <button type="button" id="espnPrivateGoogle" class="google-continue-btn">
+              <span class="google-button-title">Continue with Google</span>
+              <span>Save your leagues &amp; settings, synced across devices</span>
+              <small>Free &middot; no password</small>
+            </button>
+            <div class="provider-choice-or">OR</div>
+            <button type="button" id="espnPrivateGuest" class="continue-without-account-btn">
+              <strong>Continue without account</strong>
+              <span>Quick view on this device &middot; nothing saved</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Yahoo Flow -->
+        <div id="yahooFlow" style="display:none;">
+          <div class="row url-paste-row">
+            <label for="yahooUrlInput">Fastest: paste your league link</label>
+            <input type="text" id="yahooUrlInput" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://football.fantasysports.yahoo.com/...">
+            <p class="url-paste-error" id="yahooUrlError" role="alert" style="display:none;"></p>
+          </div>
+          <div class="row">
+            <label for="yahooLeagueIdInput">Yahoo League ID</label>
+            <input type="text" id="yahooLeagueIdInput" placeholder="e.g. 123456" autocomplete="off">
+          </div>
+          <div class="row">
+            <label for="yahooTeamName">Your Team Name <span style="font-weight:400;font-size:0.85em;">(optional)</span></label>
+            <input type="text" id="yahooTeamName" placeholder="e.g. Dynasty Monsters">
+          </div>
+          <div class="row" id="yahooSubmitRow">
+            <button type="button" id="yahooConnectBtn">Connect Yahoo Account</button>
+          </div>
+          <div id="yahooError" class="error-message" style="display:none;"></div>
+          <div id="yahooAccountChoice" class="provider-account-choice" style="display:none;">
+            <button type="button" id="yahooPrivateGoogle" class="google-continue-btn">
+              <span class="google-button-title">Continue with Google</span>
+              <span>Save your leagues &amp; settings, synced across devices</span>
+              <small>Free &middot; no password</small>
+            </button>
+            <div class="provider-choice-or">OR</div>
+            <button type="button" id="yahooPrivateGuest" class="continue-without-account-btn">
+              <strong>Continue without account</strong>
+              <span>Quick view on this device &middot; nothing saved</span>
+            </button>
+          </div>
+          <p class="hint" style="margin-top:6px;">
+            You'll be redirected to Yahoo to authorize access, then returned here.
+          </p>
+        </div>
+
+        <!-- MFL Flow -->
+        <div id="mflFlow" style="display:none;">
+          <div class="espn-home-methods" role="radiogroup" aria-label="MFL league type">
+            <button type="button" class="mfl-home-method active" data-mfl-method="public" aria-pressed="true">Public League</button>
+            <button type="button" class="mfl-home-method" data-mfl-method="private" aria-pressed="false">Private League</button>
+          </div>
+          <p class="hint espn-home-description" id="mflHomeDescription">Connect a publicly accessible MyFantasyLeague league using its League ID.</p>
+          <div class="row url-paste-row">
+            <label for="mflUrlInput">Fastest: paste your league link</label>
+            <input type="text" id="mflUrlInput" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://www.myfantasyleague.com/...">
+            <p class="url-paste-error" id="mflUrlError" role="alert" style="display:none;"></p>
+          </div>
+          <div class="row">
+            <label for="mflLeagueIdInput">MFL League ID</label>
+            <input type="text" id="mflLeagueIdInput" inputmode="numeric" placeholder="e.g. 12345" autocomplete="off">
+          </div>
+          <div class="row">
+            <label for="mflSeasonInput">Season</label>
+            <input type="text" id="mflSeasonInput" inputmode="numeric" placeholder="{{ viewed_season }}" autocomplete="off">
+          </div>
+          <div id="mflHomePrivateFields" style="display:none;">
+            <div class="row">
+              <label for="mflApikeyInput">League APIKEY <span style="font-weight:400;font-size:0.85em;">(optional)</span></label>
+              <input type="password" id="mflApikeyInput" autocomplete="off" spellcheck="false" placeholder="From MFL Help → Developer's API">
+            </div>
+            <div class="row">
+              <label for="mflCookieInput">MFL_USER_ID cookie <span style="font-weight:400;font-size:0.85em;">(optional)</span></label>
+              <input type="password" id="mflCookieInput" autocomplete="off" spellcheck="false" placeholder="Cookie value or MFL_USER_ID=…">
+            </div>
+            <details class="espn-home-help"><summary>Or sign in once to obtain the cookie</summary>
+              <div class="row">
+                <label for="mflUsernameInput">MFL username</label>
+                <input type="text" id="mflUsernameInput" autocomplete="username">
+              </div>
+              <div class="row">
+                <label for="mflPasswordInput">MFL password</label>
+                <input type="password" id="mflPasswordInput" autocomplete="current-password">
+              </div>
+              <p class="hint">Password is used only to fetch the official login cookie and is never stored.</p>
+            </details>
+          </div>
+          <div class="row" id="mflSubmitRow">
+            <button type="button" id="mflSubmitBtn">Connect League</button>
+          </div>
+          <div id="mflError" class="error-message" style="display:none;"></div>
+          <div id="mflPrivateChoice" class="provider-account-choice" style="display:none;">
+            <button type="button" id="mflPrivateGoogle" class="google-continue-btn">
+              <span class="google-button-title">Continue with Google</span>
+              <span>Save your leagues &amp; settings, synced across devices</span>
+              <small>Free &middot; no password</small>
+            </button>
+            <div class="provider-choice-or">OR</div>
+            <button type="button" id="mflPrivateGuest" class="continue-without-account-btn">
+              <strong>Continue without account</strong>
+              <span>Quick view on this device &middot; nothing saved</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Fleaflicker Flow -->
+        <div id="fleaflickerFlow" style="display:none;">
+          <div class="espn-home-methods" role="radiogroup" aria-label="Fleaflicker league type">
+            <button type="button" class="flea-home-method active" data-flea-method="public" aria-pressed="true">Public League</button>
+            <button type="button" class="flea-home-method" data-flea-method="private" aria-pressed="false">Private League</button>
+          </div>
+          <p class="hint espn-home-description" id="fleaHomeDescription">Connect a publicly accessible Fleaflicker league using its League ID.</p>
+          <div class="row url-paste-row">
+            <label for="fleaUrlInput">Fastest: paste your league link</label>
+            <input type="text" id="fleaUrlInput" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://www.fleaflicker.com/nfl/leagues/...">
+            <p class="url-paste-error" id="fleaUrlError" role="alert" style="display:none;"></p>
+          </div>
+          <div class="row">
+            <label for="fleaLeagueIdInput">Fleaflicker League ID</label>
+            <input type="text" id="fleaLeagueIdInput" inputmode="numeric" placeholder="e.g. 14153" autocomplete="off">
+          </div>
+          <div class="row">
+            <label for="fleaSeasonInput">Season</label>
+            <input type="text" id="fleaSeasonInput" inputmode="numeric" placeholder="{{ viewed_season }}" autocomplete="off">
+          </div>
+          <div id="fleaHomePrivateFields" style="display:none;">
+            <div class="row">
+              <label for="fleaEmailInput">Fleaflicker email</label>
+              <input type="email" id="fleaEmailInput" autocomplete="email" placeholder="you@email.com">
+            </div>
+            <div class="row">
+              <label for="fleaPasswordInput">Password</label>
+              <input type="password" id="fleaPasswordInput" autocomplete="current-password">
+            </div>
+            <p class="hint">We exchange these for a login token and never store your password.</p>
+            <details class="espn-home-help"><summary>Or paste an existing login token</summary>
+              <div class="row">
+                <label for="fleaTokenInput">Authorization token</label>
+                <input type="password" id="fleaTokenInput" autocomplete="off" spellcheck="false" placeholder="Token from /api/Login">
+              </div>
+            </details>
+          </div>
+          <div class="row" id="fleaSubmitRow">
+            <button type="button" id="fleaSubmitBtn">Connect League</button>
+          </div>
+          <div id="fleaError" class="error-message" style="display:none;"></div>
+          <div class="row" id="fleaTeamPickWrap" style="display:none;">
+            <label for="fleaTeamSelect">Your team</label>
+            <select id="fleaTeamSelect"></select>
+          </div>
+          <div id="fleaPrivateChoice" class="provider-account-choice" style="display:none;">
+            <button type="button" id="fleaPrivateGoogle" class="google-continue-btn">
+              <span class="google-button-title">Continue with Google</span>
+              <span>Save your leagues &amp; settings, synced across devices</span>
+              <small>Free &middot; no password</small>
+            </button>
+            <div class="provider-choice-or">OR</div>
+            <button type="button" id="fleaPrivateGuest" class="continue-without-account-btn">
+              <strong>Continue without account</strong>
+              <span>Quick view on this device &middot; nothing saved</span>
+            </button>
+          </div>
+        </div>
+
+<form method="post" id="leagueSelectForm">
+          <input type="hidden" name="platform" id="formPlatform" value="sleeper">
+          <input type="hidden" name="season" value="{{ viewed_season }}">
+          <input type="hidden" name="username" id="formUsername" value="">
+          <input type="hidden" name="team_id" id="formTeamId" value="">
+          <input type="hidden" name="next" id="formNext" value="{{ next_url or '' }}">
+
+          <div class="row" id="leagueSelectWrap" style="display:none;">
+            <label for="league">Choose League</label>
+            <select id="league" name="league" required>
+              <option value="">Select a league</option>
+            </select>
+          </div>
+
+          <div class="row" id="generateWrap" style="display:none;flex-direction:column;gap:0;align-items:stretch;">
+            <button type="button" id="googleContinueBtn" class="google-continue-btn">
+              <span class="google-button-title">Continue with Google</span>
+              <span style="font-size:11px;font-weight:500;color:#5f6368;">Save your leagues &amp; settings, synced across devices</span>
+              <span style="font-size:10px;font-weight:600;color:#80868b;">Free &middot; no password</span>
+            </button>
+            <div style="display:flex;align-items:center;gap:10px;margin:14px 0;color:rgba(255,255,255,.5);font-size:10.5px;font-weight:800;letter-spacing:.1em;">
+              <span style="flex:1;height:1px;background:rgba(255,255,255,.18);"></span>OR<span style="flex:1;height:1px;background:rgba(255,255,255,.18);"></span>
+            </div>
+            <button type="submit" class="continue-without-account-btn">
+              <span style="font-size:13.5px;font-weight:700;color:#fff;">Continue without account</span>
+              <span style="font-size:11px;font-weight:500;color:rgba(255,255,255,.62);">Quick view on this device &middot; nothing saved</span>
+            </button>
+          </div>
+
+          <div id="lookupError" class="error-message" style="display:none;"></div>
+
+          {% if error %}
+          <div class="error-message">{{ error }}</div>
+          {% endif %}
+        </form>
+
+        <p class="hint" id="sleeperHint">
+          Pick a league, then <strong>Continue with Google</strong> to save it across devices, or continue without an account for a quick look.
+        </p>
+        </div>
+      </div>
+      <figure class="home-hero-proof">
+        <blockquote>THATS ACTUALLY SO SICK BRO</blockquote>
+        <figcaption><strong>Jayden Waddell</strong><span>Pittsburgh Pilots, on the weekly recap</span></figcaption>
+      </figure>
+      <p class="home-pro-hero-cta">
+        <button type="button" class="home-pro-open-btn" data-home-pro-open>Unlock PRO</button>
+        <span>See what PRO includes. A Google account is required to subscribe.</span>
+      </p>
+    </div>
+  
 <section class="indie">
   <p>Built by a fantasy manager, not a media company.<span>Designed for leagues like yours. Tuned every week of the season.</span></p>
 </section>

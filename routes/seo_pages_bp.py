@@ -546,9 +546,12 @@ def page_player_trade_value(slug: str):
             + (f"<meta name='twitter:image' content='{html.escape(_img)}'>" if _img else "")
         )
 
+        # AdSense Tier 2: player trade-value pages are templated per-player output
+        # (already excluded from the sitemap in Tier 1). Keep them out of the
+        # search index while leaving them fully usable for managers.
         return render_page(title, None, "players", body,
                            description=description, og_tags=og_tags,
-                           lite_js=True)
+                           lite_js=True, noindex=True)
     except Exception:
         logger.exception("[player-page] render failed for slug=%s pid=%s", slug, pid)
         # This is an unavailable response, not indexable player content. A 503
