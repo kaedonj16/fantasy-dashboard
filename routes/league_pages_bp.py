@@ -226,7 +226,13 @@ def page_advanced_metrics(platform: str = None, season: int = None, league_id: s
             from urllib.parse import urlencode as _ue
             _og_qs = {k: request.args.get(k) for k in ("gx", "gy", "gz", "gn", "season", "metric", "pos", "minvol")
                       if request.args.get(k)}
-            og_img = f"{origin}/{platform}/{season}/{league_id}/metrics/og.png?{_ue(_og_qs)}"
+            # League-free shared links (the /metrics route) get a league-free
+            # preview image; the league-scoped path keeps its own so the
+            # screenshot renders with that league's context.
+            if platform and season and league_id:
+                og_img = f"{origin}/{platform}/{season}/{league_id}/metrics/og.png?{_ue(_og_qs)}"
+            else:
+                og_img = f"{origin}/metrics/og.png?{_ue(_og_qs)}"
             og_title = f"{_mlabel(gy)} vs {_mlabel(gx)} | BR Fantasy"
             og_desc = "Advanced metrics scatter: compare efficiency and opportunity across the league."
             t = html.escape(og_title, quote=True)
