@@ -107,7 +107,9 @@ def is_connection_healthy(conn: psycopg.Connection) -> bool:
 
 def _configure_pooled_conn(conn: psycopg.Connection) -> None:
     """Run once per pooled connection: set the session's default isolation level
-    so individual checkouts don't pay a per-request SET round-trip."""
+    so individual checkouts don't pay a per-request SET round-trip, and bound
+    every statement with a statement_timeout so a wedged query fails fast
+    instead of eating a gunicorn request thread forever."""
     try:
         conn.execute("SET SESSION CHARACTERISTICS AS TRANSACTION ISOLATION LEVEL READ COMMITTED")
         conn.commit()
@@ -116,6 +118,19 @@ def _configure_pooled_conn(conn: psycopg.Connection) -> None:
             conn.rollback()
         except Exception:
             logger.debug("suppressed exception", exc_info=True)
+    try:
+        _stmt_ms = int(os.getenv("PG_STATEMENT_TIMEOUT_MS", "60000"))
+    except (TypeError, ValueError):
+        _stmt_ms = 60000
+    if _stmt_ms > 0:
+        try:
+            conn.execute(f"SET statement_timeout = {_stmt_ms}")
+            conn.commit()
+        except Exception:
+            try:
+                conn.rollback()
+            except Exception:
+                logger.debug("suppressed exception", exc_info=True)
 
 
 def _check_pooled_conn(conn: psycopg.Connection) -> None:

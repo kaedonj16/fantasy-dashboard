@@ -336,8 +336,25 @@ class _ContextLock:
         self.last_used = time.monotonic()
 
 
-def _acquire_context_lock(key):
-    """Acquire a ref-counted lock and prune only entries with no owner/waiter."""
+class ContextLockBusy(TimeoutError):
+    """The bounded wait for a league's local context lock expired.
+
+    Raised by _acquire_context_lock when another thread holds the lock past
+    the timeout -- the holder is wedged or its build is pathological. Callers
+    must degrade (stale cache) instead of blocking the request thread forever:
+    under gthread workers an unbounded wait permanently eats a request slot,
+    and enough of those wedged threads takes the whole service down.
+    """
+
+
+def _acquire_context_lock(key, timeout=None):
+    """Acquire a ref-counted lock and prune only entries with no owner/waiter.
+
+    timeout: max seconds to wait for the per-key lock; None waits forever
+    (legacy behavior). On timeout the refcount slot is released and
+    ContextLockBusy is raised so the caller can degrade gracefully instead
+    of wedging the request thread.
+    """
     with _CTX_LOCKS_LOCK:
         state = _CTX_LOCKS.get(key)
         if state is None:
@@ -353,7 +370,16 @@ def _acquire_context_lock(key):
             for old_key, _ in idle[:len(_CTX_LOCKS) - _CTX_LOCKS_MAX]:
                 _CTX_LOCKS.pop(old_key, None)
     started = time.monotonic()
-    state.lock.acquire()
+    if timeout is None:
+        state.lock.acquire()
+    elif not state.lock.acquire(timeout=timeout):
+        # Release our refcount slot so the entry stays prunable once the
+        # (wedged) holder eventually lets go of the lock.
+        with _CTX_LOCKS_LOCK:
+            state.users = max(0, state.users - 1)
+        raise ContextLockBusy(
+            f"timed out after {timeout}s waiting for league context lock {key!r}"
+        )
     return state, time.monotonic() - started
 
 
@@ -12587,7 +12613,25 @@ def get_league_ctx_from_cache(
             )
             return old
         return {}
-    key_lock, local_wait = _acquire_context_lock(key)
+    try:
+        key_lock, local_wait = _acquire_context_lock(
+            key,
+            timeout=_positive_env_int("LEAGUE_CTX_LOCAL_LOCK_TIMEOUT_SECONDS", 60),
+        )
+    except ContextLockBusy:
+        # Another thread is stuck holding this league's lock (wedged build).
+        # Degrade to the stale entry exactly like the cross-worker
+        # LeagueBuildBusy path below, instead of wedging this thread too.
+        old = (stale_entry or {}).get("ctx")
+        old_ts = float((stale_entry or {}).get("ts") or 0)
+        stale_window = _positive_env_int("LEAGUE_STALE_IF_ERROR_SECONDS", 21600)
+        if old and time.time() - old_ts <= stale_window:
+            old["_cache_stale"] = True
+            old["_cache_synced_at"] = (
+                datetime.fromtimestamp(old_ts, timezone.utc).isoformat() if old_ts else None
+            )
+            return old
+        raise
     try:
         # Re-check after acquiring lock - another thread may have built it while we waited
         entry = DASHBOARD_CACHE.get(key)
