@@ -4,6 +4,7 @@ import logging
 import html
 import json
 from datetime import datetime, date
+from zoneinfo import ZoneInfo
 from itertools import zip_longest
 from pathlib import Path
 from typing import Dict, List, Any, Optional
@@ -1316,10 +1317,20 @@ def parse_game_datetime(game_time_str: str) -> datetime:
     """
     Convert Tank01 game date/time into a real datetime object.
 
-    game_date: "20251204"
-    game_time_str: "8:15p" or "1:00a" (Tank01 style)
+    game_time_str: "8:15p" or "1:00a" (Tank01 style), or ISO
+        "2026-10-04T20:25Z".
     """
-    time_str = game_time_str.strip().lower()
+    time_str = game_time_str.strip()
+
+    # ISO format: parse as UTC, return Eastern-naive for comparison with
+    # now_dt (which is Eastern-naive at the call site).
+    if "T" in time_str:
+        iso = time_str.replace("Z", "+00:00")
+        dt_utc = datetime.fromisoformat(iso)
+        dt_et = dt_utc.astimezone(ZoneInfo("America/New_York"))
+        return dt_et.replace(tzinfo=None)
+
+    time_str = time_str.lower()
 
     # Add missing "m"
     if time_str.endswith("a") or time_str.endswith("p"):
@@ -2031,6 +2042,21 @@ def render_matchup_slide(
                 display_time = display_time[:-1] + " pm"
             elif display_time.endswith("a"):
                 display_time = display_time[:-1] + " am"
+            elif "T" in display_time:
+                # ISO format (e.g. "2026-10-04T20:25Z") -- parse as UTC and
+                # show in Eastern as "4:25 PM".
+                try:
+                    iso = display_time.replace("Z", "+00:00")
+                    dt_utc = datetime.fromisoformat(iso)
+                    et = ZoneInfo("America/New_York")
+                    dt_et = dt_utc.astimezone(et)
+                    # Update dow from the ET date in case UTC midnight crossover
+                    dow = dt_et.strftime("%a")
+                    display_time = dt_et.strftime("%-I:%M %p").lower().replace(" ", "")
+                    # "4:25pm" -> "4:25 PM"
+                    display_time = display_time[:-2] + " " + display_time[-2:].upper()
+                except (ValueError, KeyError):
+                    logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
 
             off_ranks = offense_ranks.get(opp, {})
 
