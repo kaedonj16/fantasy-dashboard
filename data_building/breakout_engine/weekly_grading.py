@@ -35,9 +35,23 @@ Outcome thresholds (change vs the call's stored baseline; see
 * miss   = role reverted
 * partial = anything in between (role held without production, role
   partially retained, production up on a partially retained role, ...)
-* ungraded = the player had no games in the outcome window (injury /
-  bye-stacked: absence is not a failed call) or no role baseline exists
-  to grade against.
+* injured = the outcome window was wiped out by injury: fewer than 2
+  games played while the player carried an IR / PUP / NFI designation
+  (any outcome week) or an OUT / DOUBTFUL designation (>= 2 of the 3
+  outcome weeks). QUESTIONABLE never voids. Injury is a terminal grade
+  (excluded from hit-rate denominators) - an injured player did not
+  fail the call, the call simply cannot be evaluated. With >= 2 games
+  played the call had its shot and grades normally on those games, no
+  matter the designation.
+* ungraded = the player had no games in the outcome window for any
+  other reason (bye-stacked, healthy scratch: absence is not a failed
+  call) or no role baseline exists to grade against.
+
+Injury designations come from weekly snapshots of the Sleeper players
+feed (see :func:`snapshot_injury_statuses`), because a designation is
+only meaningful if it was recorded DURING the outcome week. No
+backfill: calls whose outcome weeks predate snapshotting grade under
+the normal rules.
 
 Baseline precedence, per field: the call's stored evidence first
 (``fantasy.baseline_ppg``, ``signals.snap_share.baseline``, and for RBs
@@ -69,7 +83,8 @@ from data_building.breakout_engine.weekly_store import (
 )
 
 GRADES_TABLE = "weekly_breakout_grades"
-GRADING_VERSION = "weekly-grading-v2"
+INJURY_SNAPSHOTS_TABLE = "player_injury_snapshots"
+GRADING_VERSION = "weekly-grading-v3"
 
 logger = logging.getLogger(__name__)
 
@@ -105,8 +120,10 @@ GRADE_HIT = "hit"
 GRADE_PARTIAL = "partial"
 GRADE_MISS = "miss"
 GRADE_UNGRADED = "ungraded"
+GRADE_INJURED = "injured"
 
 _INIT_DONE = False
+_SNAPSHOT_INIT_DONE = False
 
 
 def init_weekly_breakout_grades_db() -> None:
@@ -158,6 +175,83 @@ def init_weekly_breakout_grades_db() -> None:
             f"ON {GRADES_TABLE} (classification)"
         )
     _INIT_DONE = True
+
+
+def init_injury_snapshots_db() -> None:
+    """Create the weekly injury-designation snapshot table if absent.
+    Idempotent; safe to call on every run (acts as the migration for
+    existing databases)."""
+    global _SNAPSHOT_INIT_DONE
+    if _SNAPSHOT_INIT_DONE:
+        return
+    with get_conn() as conn:
+        conn.execute(
+            f"""
+            CREATE TABLE IF NOT EXISTS {INJURY_SNAPSHOTS_TABLE} (
+                player_id     TEXT NOT NULL,
+                season        INTEGER NOT NULL,
+                week          INTEGER NOT NULL,
+                injury_status TEXT,
+                status        TEXT,
+                captured_at   TIMESTAMPTZ DEFAULT NOW(),
+                PRIMARY KEY (player_id, season, week)
+            )
+            """
+        )
+        conn.execute(
+            f"CREATE INDEX IF NOT EXISTS idx_injsnap_season_week "
+            f"ON {INJURY_SNAPSHOTS_TABLE} (season, week)"
+        )
+    _SNAPSHOT_INIT_DONE = True
+
+
+def snapshot_injury_statuses(season: int, week: int) -> int:
+    """Capture one row per player of the live Sleeper injury designations
+    for the current NFL week. Upsert: the latest snapshot within a week
+    wins (captured_at refreshes). Fail-soft by design - a missing feed
+    or a DB error logs and returns 0, and must never break the pipeline
+    that calls this. Returns the number of rows written."""
+    init_injury_snapshots_db()
+    try:
+        from dashboard_services.api import get_nfl_players
+        feed = get_nfl_players() or {}
+    except Exception:
+        logger.warning(
+            "weekly grading: injury snapshot skipped (players feed unavailable)",
+            exc_info=True)
+        return 0
+    rows = []
+    for pid, p in feed.items():
+        if not isinstance(p, dict):
+            continue
+        rows.append((
+            str(pid),
+            int(season),
+            int(week),
+            p.get("injury_status") or None,
+            p.get("status") or None,
+        ))
+    if not rows:
+        return 0
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.executemany(
+                    f"INSERT INTO {INJURY_SNAPSHOTS_TABLE} "
+                    f"(player_id, season, week, injury_status, status) "
+                    f"VALUES (%s, %s, %s, %s, %s) "
+                    f"ON CONFLICT (player_id, season, week) DO UPDATE SET "
+                    f"injury_status = EXCLUDED.injury_status, "
+                    f"status = EXCLUDED.status, "
+                    f"captured_at = NOW()",
+                    rows,
+                )
+    except Exception:
+        logger.warning(
+            "weekly grading: injury snapshot write failed for season %s week %s",
+            season, week, exc_info=True)
+        return 0
+    return len(rows)
 
 
 # =============================================================================
@@ -408,11 +502,95 @@ def _delta(outcome_value: Optional[float], baseline_value: Optional[float]) -> O
     return float(outcome_value) - float(baseline_value)
 
 
+# Injury designations, kept LOCAL on purpose: dashboard_services.injuries
+# imports pandas, and this grading module must stay importable on the
+# pandas-less CI shard. These mirror the canonical sets there
+# (INJURY_STATUSES / INJURY_SHORT_STATUSES) - if that module ever adds a
+# new season-voiding designation, mirror it here too.
+# Designations that void an outcome window outright (any single week).
+_SEVERE_INJURY_DESIGNATIONS = {"IR", "PUP", "NFI"}
+# Designations that void only when they wipe most of the window.
+_ABSENT_INJURY_DESIGNATIONS = {"OUT", "DOUBTFUL"}
+_SHORT_INJURY_TO_LONG = {"Q": "QUESTIONABLE", "D": "DOUBTFUL",
+                         "O": "OUT", "IR": "IR"}
+_SHORT_INJURY_FORMS = set(_SHORT_INJURY_TO_LONG)
+
+
+def canon_injury_status(value: Any) -> str:
+    """Normalize a raw Sleeper designation to its canonical long form
+    (upper-cased; short forms like 'Q'/'D'/'O' expanded). Unknown or
+    non-injury values ('Active', '', None) normalize to ''."""
+    if value is None:
+        return ""
+    v = str(value).strip().upper()
+    if not v or v in ("ACTIVE", "ACT", "NONE", "-"):
+        return ""
+    if v in _SHORT_INJURY_FORMS:
+        v = _SHORT_INJURY_TO_LONG.get(v, v)
+    return v
+
+
+def classify_injury_window(
+    outcome_games: int,
+    injury_by_week: Dict[int, Dict[str, Any]],
+    outcome_weeks: Sequence[int],
+) -> Dict[str, Any]:
+    """Decide whether injury voids a call's outcome window. Pure.
+
+    ``injury_by_week`` maps week -> {"injury_status": ..., "status": ...}
+    from the weekly snapshots; weeks with no snapshot simply do not
+    vote. Returns {"injured": bool, "reason": str|None,
+    "designation": str|None, "weeks": [...]}.
+
+    Rule (the 2-games rule): with >= 2 games played the call had its
+    shot - it grades normally on those games regardless of designation.
+    Below 2 games the window is voided ("injured") when any outcome week
+    carries an IR / PUP / NFI designation, or when OUT / DOUBTFUL covers
+    >= 2 of the 3 outcome weeks. QUESTIONABLE never voids.
+    """
+    result: Dict[str, Any] = {"injured": False, "reason": None,
+                              "designation": None, "weeks": []}
+    if int(outcome_games or 0) >= 2:
+        return result
+    severe = _SEVERE_INJURY_DESIGNATIONS
+    absent = _ABSENT_INJURY_DESIGNATIONS
+    out_weeks: List[int] = []
+    out_designation: Optional[str] = None
+    for week in outcome_weeks:
+        snap = (injury_by_week or {}).get(int(week)) or {}
+        for field in ("status", "injury_status"):
+            designation = canon_injury_status(snap.get(field))
+            if not designation:
+                continue
+            if designation in severe:
+                result.update({
+                    "injured": True,
+                    "reason": "on_ir_during_window",
+                    "designation": designation,
+                    "weeks": [int(week)],
+                })
+                return result
+            if designation in absent:
+                if int(week) not in out_weeks:
+                    out_weeks.append(int(week))
+                if out_designation is None:
+                    out_designation = designation
+    if len(out_weeks) >= 2:
+        result.update({
+            "injured": True,
+            "reason": "out_during_window",
+            "designation": out_designation,
+            "weeks": sorted(out_weeks),
+        })
+    return result
+
+
 def grade_call(
     call: Dict[str, Any],
     weekly_rows: Sequence[Dict[str, Any]],
     prior_rows: Optional[Sequence[Dict[str, Any]]] = None,
     cohort_ppg: Optional[float] = None,
+    injury_by_week: Optional[Dict[int, Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """Grade one persisted call against the player's weekly rows. Pure.
 
@@ -424,7 +602,10 @@ def grade_call(
     omitting it preserves the historical behavior exactly. ``cohort_ppg``
     is the position's mean rookie-year PPG, used only to fill the baseline
     of an initial-role call that has no baseline at all; omitting it also
-    preserves the historical behavior exactly.
+    preserves the historical behavior exactly. ``injury_by_week`` maps
+    week -> {"injury_status": ..., "status": ...} from the weekly injury
+    snapshots; when injury voids the outcome window the grade is
+    GRADE_INJURED (terminal) instead of a hit/partial/miss verdict.
     """
     call_week = int(call.get("as_of_week") or 0)
     outcome_weeks = [call_week + i for i in range(1, OUTCOME_WEEKS + 1)]
@@ -432,10 +613,40 @@ def grade_call(
     rows = [r for r in weekly_rows if _num(r.get("week")) is not None]
     outcome_rows = [r for r in rows if int(r["week"]) in outcome_week_set]
     outcome = window_stats(outcome_rows)
+    injury = classify_injury_window(outcome["games"],
+                                    injury_by_week or {}, outcome_weeks)
     baseline, baseline_source = resolve_baseline(call, rows, prior_rows,
                                                  cohort_ppg)
-    verdict = classify_outcome(baseline, outcome,
-                               cohort=(baseline_source == "cohort"))
+    if injury["injured"]:
+        verdict = {
+            "grade": GRADE_INJURED,
+            "role_state": "injured",
+            "reason": injury["reason"],
+            "opp_delta": None,
+            "snap_delta": None,
+            "ppg_delta": None,
+            "injury": {
+                "designation": injury["designation"],
+                "weeks": injury["weeks"],
+            },
+        }
+    else:
+        verdict = classify_outcome(baseline, outcome,
+                                   cohort=(baseline_source == "cohort"))
+    detail: Dict[str, Any] = {
+        "role_state": verdict["role_state"],
+        "reason": verdict["reason"],
+    }
+    if verdict.get("injury"):
+        detail["injury"] = verdict["injury"]
+    detail["thresholds"] = {
+        "ppg_hit_delta": PPG_HIT_DELTA,
+        "cohort_miss_delta": -PPG_HIT_DELTA,
+        "opp_held_delta": OPP_HELD_DELTA,
+        "snap_held_delta": SNAP_HELD_DELTA,
+        "opp_reverted_delta": OPP_REVERTED_DELTA,
+        "snap_reverted_delta": SNAP_REVERTED_DELTA,
+    }
     return {
         "player_id": str(call.get("player_id") or ""),
         "player_name": call.get("player_name"),
@@ -460,18 +671,7 @@ def grade_call(
         "baseline_snap_pct": _round(baseline.get("snap_pct")),
         "outcome_snap_pct": _round(outcome.get("snap_pct")),
         "snap_delta": _round(verdict.get("snap_delta")),
-        "detail": {
-            "role_state": verdict["role_state"],
-            "reason": verdict["reason"],
-            "thresholds": {
-                "ppg_hit_delta": PPG_HIT_DELTA,
-                "cohort_miss_delta": -PPG_HIT_DELTA,
-                "opp_held_delta": OPP_HELD_DELTA,
-                "snap_held_delta": SNAP_HELD_DELTA,
-                "opp_reverted_delta": OPP_REVERTED_DELTA,
-                "snap_reverted_delta": SNAP_REVERTED_DELTA,
-            },
-        },
+        "detail": detail,
     }
 
 
@@ -490,7 +690,8 @@ def call_key(call: Dict[str, Any]) -> Tuple[str, int, int, str]:
 # =============================================================================
 
 def _rate_bucket(rows: List[Dict[str, Any]], min_sample: int) -> Dict[str, Any]:
-    counts = {GRADE_HIT: 0, GRADE_PARTIAL: 0, GRADE_MISS: 0, GRADE_UNGRADED: 0}
+    counts = {GRADE_HIT: 0, GRADE_PARTIAL: 0, GRADE_MISS: 0,
+              GRADE_UNGRADED: 0, GRADE_INJURED: 0}
     for row in rows:
         grade = str(row.get("grade") or "")
         if grade in counts:
@@ -510,6 +711,7 @@ def _rate_bucket(rows: List[Dict[str, Any]], min_sample: int) -> Dict[str, Any]:
         "partial": counts[GRADE_PARTIAL],
         "miss": counts[GRADE_MISS],
         "ungraded": counts[GRADE_UNGRADED],
+        "injured": counts[GRADE_INJURED],
         "hit_rate": _rate(counts[GRADE_HIT]),
         "partial_rate": _rate(counts[GRADE_PARTIAL]),
         "miss_rate": _rate(counts[GRADE_MISS]),
@@ -522,7 +724,8 @@ def summarize_grade_rows(
 ) -> Dict[str, Any]:
     """Hit / partial / miss rates overall, by classification, and by scoring
     version. Rates are over graded calls only (hit + partial + miss;
-    ungraded calls are excluded from the denominator) and are None for any
+    ungraded and injured calls are excluded from the denominator - injured
+    calls are counted separately for transparency) and are None for any
     group with fewer than ``min_sample`` graded calls - counts are always
     real, never suppressed. Classification groups use the display label:
     stored "watchlist" calls scored under the watchlist floor aggregate as
@@ -586,7 +789,9 @@ def load_existing_grade_keys(season: int) -> Set[Tuple[str, int, int, str]]:
 
     Ungraded rows are not grades (they record 'could not grade yet') and
     never block a future grading attempt, so a call that was ungraded for
-    lack of a baseline becomes gradeable once a baseline exists."""
+    lack of a baseline becomes gradeable once a baseline exists. Every
+    other grade (hit, partial, miss, injured) is terminal: it is written
+    once and never retried."""
     init_weekly_breakout_grades_db()
     with get_conn() as conn:
         rows = conn.execute(
@@ -703,6 +908,43 @@ def load_cohort_baselines(season: int) -> Dict[str, float]:
     }
 
 
+def load_injury_weeks(
+    season: int,
+    player_ids: Sequence[str],
+    weeks: Sequence[int],
+) -> Dict[str, Dict[int, Dict[str, Any]]]:
+    """player_id -> {week -> {"injury_status", "status"}} from the weekly
+    injury snapshots. One bulk query for every pending call's outcome
+    window. A failed or empty load degrades to {} (no injury evidence),
+    never to a fabricated designation."""
+    ids = sorted({str(p) for p in player_ids if p})
+    wks = sorted({int(w) for w in weeks if _num(w) is not None})
+    if not ids or not wks:
+        return {}
+    try:
+        init_injury_snapshots_db()
+        with get_conn() as conn:
+            rows = conn.execute(
+                f"SELECT player_id, week, injury_status, status "
+                f"FROM {INJURY_SNAPSHOTS_TABLE} "
+                f"WHERE season = %s AND player_id = ANY(%s) AND week = ANY(%s)",
+                (int(season), ids, wks),
+            ).fetchall()
+    except Exception:
+        logger.warning(
+            "weekly grading: injury snapshot load failed for season %s",
+            season, exc_info=True)
+        return {}
+    out: Dict[str, Dict[int, Dict[str, Any]]] = {}
+    for r in (rows or []):
+        d = dict(r)
+        out.setdefault(str(d.get("player_id")), {})[int(d.get("week") or 0)] = {
+            "injury_status": d.get("injury_status"),
+            "status": d.get("status"),
+        }
+    return out
+
+
 def save_grade_rows(grades: List[Dict[str, Any]]) -> int:
     """Insert grades idempotently. An existing grade for the same call is
     never duplicated and never rewritten (grades are immutable history).
@@ -766,6 +1008,26 @@ def grade_weekly_breakouts(
         "inserted": 0,
         "by_grade": {},
     }
+    # Injury-designation snapshot: grading needs each player's designation
+    # DURING each outcome week, so capture this week's Sleeper designations
+    # now, on every run (even when nothing is gradeable yet - future calls
+    # need the history). Best-effort and fail-soft: the snapshot must never
+    # break grading (or the scoring run that calls it).
+    try:
+        from dashboard_services.api import get_nfl_state
+        nfl_state = get_nfl_state() or {}
+        snap_week = int(nfl_state.get("week") or 0)
+        if snap_week >= 1:
+            summary["injury_snapshot"] = {
+                "week": snap_week,
+                "rows": snapshot_injury_statuses(season, snap_week),
+            }
+        else:
+            summary["injury_snapshot"] = {"status": "skipped",
+                                          "reason": "no nfl week in state"}
+    except Exception as exc:
+        summary["injury_snapshot"] = {"status": "skipped",
+                                      "reason": str(exc)}
     if through is None:
         summary["status"] = "skipped"
         summary["reason"] = "no weekly metrics for season"
@@ -796,12 +1058,25 @@ def grade_weekly_breakouts(
         cohort: Dict[str, float] = {}
         if any(call_needs_cohort_baseline(call) for call in pending):
             cohort = load_cohort_baselines(season)
+        # Injury snapshots for every pending call's outcome window, in one
+        # bulk query; each call then gets its own player's week map.
+        outcome_weeks_all = sorted({
+            int(call.get("as_of_week") or 0) + i
+            for call in pending for i in range(1, OUTCOME_WEEKS + 1)
+        })
+        injury_weeks = load_injury_weeks(
+            season,
+            [str(call.get("player_id") or "") for call in pending],
+            outcome_weeks_all,
+        )
         grades = [
             grade_call(
                 call,
                 series.get(str(call.get("player_id") or ""), []),
                 prior_series.get(str(call.get("player_id") or "")),
                 cohort.get(str(call.get("position") or "")),
+                injury_by_week=injury_weeks.get(
+                    str(call.get("player_id") or ""), {}),
             )
             for call in pending
         ]
