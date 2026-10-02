@@ -4490,7 +4490,7 @@ _AM_JS = r"""
     if (_amGraphQuadrants && ptsAll.length >= 4) {
       // Plain-speak descriptors for high/low values, keyed by metric.
       // Falls back to "High/Low {label}" when a metric has no entry.
-      const _qd = {;
+      const _qd = {
         'adjusted_completion_rate': ['Accurate', 'Inaccurate'],
         'air_yards_per_game': ['Downfield volume', 'No downfield'],
         'air_yards_share': ['Commands air yards', 'Few air yards'],
