@@ -1794,6 +1794,7 @@ function _pmLoadStartSitStrip(playerId, data, leagueId, platform, season) {
       el.className = 'pm-ss-strip ' + (d.tone === 'start' ? 'pm-ss-start' : 'pm-ss-bench');
       el.innerHTML = '<span class="pm-ss-verdict">' + esc(d.verdict || '') + '</span>'
         + (d.slot ? '<span class="pm-ss-slot">' + esc(d.slot) + '</span>' : '')
+        + (d.grade != null ? '<span class="pm-ss-grade" title="Start/Sit grade, 0 to 100">' + esc(d.grade) + '</span>' : '')
         + '<span class="pm-ss-why">' + why(d.reason || '') + '</span>'
         + link;
       el.hidden = false;

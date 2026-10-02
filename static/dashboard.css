@@ -22062,6 +22062,7 @@ td.t-g, td.t-o, td.t-r { font-weight: 700; }
 .pm-ss-start .pm-ss-verdict { color: var(--win); }
 .pm-ss-bench .pm-ss-verdict { color: color-mix(in srgb, var(--warning) 72%, var(--text)); }
 .pm-ss-slot { padding: 2px 8px; border-radius: 8px; background: var(--card); border: 1px solid var(--border); font-size: 11.5px; font-weight: 700; color: var(--text); white-space: nowrap; }
+.pm-ss-grade { padding: 2px 8px; border-radius: 8px; background: var(--card); border: 1px solid var(--border); font-size: 11.5px; font-weight: 700; color: var(--text); white-space: nowrap; }
 .pm-ss-why { color: var(--muted, var(--text-muted)); }
 .pm-ss-why b { color: var(--text); font-weight: 700; }
 .pm-ss-text { color: var(--muted, var(--text-muted)); }
